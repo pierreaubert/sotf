@@ -5,6 +5,7 @@ use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Card, HStack, StackAlign, StackSpacing, Text, TextSize,
     TextWeight, VStack,
 };
+use sotf_audio_player::room_eq_types::DspChainOutputExt;
 
 /// Export format options shown in the dropdown. Index 0 is the native
 /// SotF JSON; indices 1–6 map to `autoeq::roomeq::ExportFormat` variants.
@@ -555,8 +556,7 @@ impl PlayerView {
     }
 
     fn apply_room_eq_to_player(&mut self, cx: &mut Context<Self>) {
-        use sotf_audio_player::room_eq_types::parse_eq_filters_from_json;
-        use sotf_audio_player::{EQFilter, PluginSettings, PluginType};
+        use sotf_audio_player::EQFilter;
 
         // Get the DSP output and channel results from state.
         // channel_results preserves the output channel order (0=FL, 1=FR, 2=C, etc.)
@@ -594,36 +594,33 @@ impl PlayerView {
         // channel_result_names preserves the order from the recording config
         // (0=FL, 1=FR, 2=C, 3=LFE, 4=SL, 5=SR for 5.1).
         let mut per_channel_filters: Vec<Vec<EQFilter>> = Vec::new();
+        let mut per_channel_broadband: Vec<Vec<EQFilter>> = Vec::new();
         for channel_name in &channel_result_names {
             if let Some(channel_dsp) = dsp_output.channels.get(channel_name) {
-                let mut channel_eq_filters: Vec<EQFilter> = Vec::new();
-                for plugin in &channel_dsp.plugins {
-                    if plugin.plugin_type.eq_ignore_ascii_case("eq")
-                        && let Some(filters) =
-                            plugin.parameters.get("filters").and_then(|f| f.as_array())
-                    {
-                        channel_eq_filters.extend(parse_eq_filters_from_json(filters));
-                    }
-                }
+                let (channel_eq_filters, channel_bb_filters) =
+                    classify_channel_eq_filters(channel_dsp);
                 log::info!(
-                    "Channel '{}': {} EQ filters",
+                    "Channel '{}': {} EQ filters, {} broadband filters",
                     channel_name,
-                    channel_eq_filters.len()
+                    channel_eq_filters.len(),
+                    channel_bb_filters.len(),
                 );
                 per_channel_filters.push(channel_eq_filters);
+                per_channel_broadband.push(channel_bb_filters);
             } else {
-                // Channel has no DSP output (e.g., optimization skipped it)
                 log::info!(
                     "Channel '{}': no DSP output, using empty filters",
                     channel_name
                 );
-                per_channel_filters.push(Vec::new());
+                per_channel_filters.push(Vec::<EQFilter>::new());
+                per_channel_broadband.push(Vec::<EQFilter>::new());
             }
         }
 
         // Check if we have any filters at all
         let total_filters: usize = per_channel_filters.iter().map(|f| f.len()).sum();
-        if total_filters == 0 {
+        let total_bb: usize = per_channel_broadband.iter().map(|f| f.len()).sum();
+        if total_filters == 0 && total_bb == 0 {
             log::warn!("No EQ filters found in optimization results");
             self.state.update(cx, |state, _| {
                 state.app.measurement_state.room_eq_state.error_message =
@@ -633,8 +630,8 @@ impl PlayerView {
         }
 
         let num_channels = per_channel_filters.len();
-        // Use first channel's filters as the global fallback
         let global_filters = per_channel_filters.first().cloned().unwrap_or_default();
+        let global_bb = per_channel_broadband.first().cloned().unwrap_or_default();
 
         log::info!(
             "Applying room EQ with {} channels, {} total filters (per-channel mode)",
@@ -654,63 +651,15 @@ impl PlayerView {
         // show the success toast.
         self.state.update(cx, |state, _| {
             let plugin_graph = &mut state.app.plugin_state.graph;
-
-            let new_settings = PluginSettings::EQ {
-                channels: num_channels,
-                filters: global_filters.clone(),
-                channel_filters: Some(per_channel_filters.clone()),
-                per_channel_mode: true,
-                max_filters: 10,
-                tdf2: false,
-                topology: 0.0,
-            };
-
-            // Check if there's an existing EQ plugin
-            if let Some(eq_idx) = plugin_graph.find_plugin_index(&PluginType::EQ) {
-                // Update existing EQ plugin
-                if let Some(eq_plugin) = plugin_graph.get_plugin_mut(eq_idx) {
-                    eq_plugin.settings = new_settings;
-                    log::info!(
-                        "Updated existing EQ plugin at index {} with per-channel room EQ ({} channels, {} global filters)",
-                        eq_idx,
-                        num_channels,
-                        global_filters.len(),
-                    );
-                }
-            } else {
-                // No EQ plugin exists, add one at the end before Matrix and Output Monitor
-                let insert_idx = plugin_graph.user_plugin_insert_index();
-                match plugin_graph.insert_plugin(insert_idx, &PluginType::EQ) {
-                    Ok(_node_id) => {
-                        // Configure the newly inserted plugin with per-channel room EQ
-                        if let Some(eq_plugin) = plugin_graph.get_plugin_mut(insert_idx) {
-                            eq_plugin.settings = new_settings;
-                        } else {
-                            log::error!(
-                                "Failed to get plugin at index {} after insertion",
-                                insert_idx
-                            );
-                        }
-                        log::info!(
-                            "Inserted new EQ plugin at index {} with per-channel room EQ ({} channels, {} global filters)",
-                            insert_idx,
-                            num_channels,
-                            global_filters.len(),
-                        );
-                    }
-                    Err(e) => {
-                        log::error!("Failed to insert EQ plugin: {}", e);
-                        state.app.measurement_state.room_eq_state.error_message =
-                            Some(format!("Failed to insert EQ plugin: {}", e));
-                        state.app.ui_state.toast_message =
-                            Some(crate::app::ToastMessage::error(format!(
-                                "Failed to insert EQ plugin: {}",
-                                e
-                            )));
-                        return;
-                    }
-                }
-            }
+            upsert_named_room_eq_plugins(
+                plugin_graph,
+                num_channels,
+                &global_bb,
+                &per_channel_broadband,
+                total_bb,
+                &global_filters,
+                &per_channel_filters,
+            );
 
             // Flush immediately to the engine — don't defer via
             // `pending_plugin_update` which depends on the timer.
@@ -988,6 +937,11 @@ impl PlayerView {
 
             let node_id = graph.add_plugin_node(&plugin_type, NodePosition::new(x, y));
 
+            // Derive a user-facing name for EQ plugins from the `label`
+            // metadata carried in the DSP params — this is how the optimizer
+            // tells us which EQ is which (broadband vs main room correction).
+            let derived_name = derive_plugin_name(&node_config.plugin_type, &node_config.parameters);
+
             // Apply actual parameters from the DSP output to the plugin settings
             // so the modal shows the real optimized values, not defaults.
             if let Some(node) = graph.nodes.get_mut(&node_id) {
@@ -996,6 +950,7 @@ impl PlayerView {
                     &node_config.plugin_type,
                     &node_config.parameters,
                 );
+                node.plugin.name = derived_name;
             }
 
             id_map.insert(node_config.id, node_id);
@@ -1044,6 +999,216 @@ impl PlayerView {
         }
 
         graph
+    }
+}
+
+/// Split a channel's DSP plugins into main-room-EQ filters and broadband
+/// pre-correction filters based on the `parameters.label` tag each plugin
+/// carries.
+///
+/// The optimizer emits multiple EQ plugins per channel — main room
+/// correction is **unlabeled**, broadband pre-correction is labeled
+/// `"broadband"` (see `autoeq::roomeq::spectral_align::create_alignment_plugins`),
+/// and other stages (`cea2034`, `user_preference`, `channel_matching`) are
+/// not user-editable and are filtered out.
+///
+/// Regression guard for Issue 6: the emitter used to produce an
+/// **unlabeled** broadband plugin, which got merged into the main bucket
+/// here. Downstream `upsert_named_room_eq_plugins` then inserted a single
+/// merged EQ instead of the two expected named plugins. Keeping the
+/// classifier as a pure function lets tests exercise the full flow
+/// from real optimizer output to filter lists.
+pub fn classify_channel_eq_filters(
+    channel_dsp: &sotf_audio_player::room_eq_types::ChannelDspChain,
+) -> (
+    Vec<sotf_audio_player::EQFilter>,
+    Vec<sotf_audio_player::EQFilter>,
+) {
+    use sotf_audio_player::room_eq_types::parse_eq_filters_from_json;
+
+    let mut main_filters: Vec<sotf_audio_player::EQFilter> = Vec::new();
+    let mut bb_filters: Vec<sotf_audio_player::EQFilter> = Vec::new();
+
+    for plugin in &channel_dsp.plugins {
+        if !plugin.plugin_type.eq_ignore_ascii_case("eq") {
+            continue;
+        }
+        let Some(filters) = plugin.parameters.get("filters").and_then(|f| f.as_array()) else {
+            continue;
+        };
+        let label = plugin.parameters.get("label").and_then(|l| l.as_str());
+        match label {
+            Some("broadband") => {
+                bb_filters.extend(parse_eq_filters_from_json(filters));
+            }
+            None => {
+                // Unlabeled = main room EQ
+                main_filters.extend(parse_eq_filters_from_json(filters));
+            }
+            _ => {
+                // Other labels (cea2034, user_preference, channel_matching) — skip
+            }
+        }
+    }
+
+    (main_filters, bb_filters)
+}
+
+/// Linear index of the first **user** EQ plugin with no custom name.
+///
+/// A user who ran "Apply to Rack" in an older build will have an anonymous
+/// EQ sitting in the chain. Re-running Apply in the current build needs to
+/// reclaim that node as "Room EQ" instead of inserting a third EQ alongside
+/// it — otherwise the rack accumulates stale plugins across runs.
+fn unnamed_user_eq_index(graph: &sotf_audio_player::PluginGraph) -> Option<usize> {
+    use sotf_audio::plugins::PluginType;
+    use sotf_audio_player::plugin_graph::NodeRole;
+    graph.plugins_linear()?.iter().position(|n| {
+        matches!(n.plugin.plugin_type(), PluginType::EQ)
+            && n.plugin.name.as_deref().is_none_or(str::is_empty)
+            && !n.plugin.permanent
+            && n.role == NodeRole::User
+    })
+}
+
+/// Upsert the two named EQ plugins ("Broadband EQ" + "Room EQ") into the
+/// plugin graph. Extracted from `apply_room_eq_to_player` so the logic is
+/// unit-testable against a raw `PluginGraph` without a full `Context`.
+///
+/// Behavior contract (see `room_eq_apply_tests.rs`):
+///
+/// - When `total_bb > 0`, produces **two** named EQ plugins.
+///   Main is "Room EQ" with `max_filters=10`; broadband is "Broadband EQ"
+///   with `max_filters=4`. Both run in per-channel mode.
+/// - Pre-existing unnamed user EQ plugins (e.g. from an older
+///   Apply-to-Rack build) are adopted in-place as "Room EQ" so the rack
+///   does not accumulate stale nodes on upgrade.
+/// - Second Apply with same names is idempotent: the existing named EQ
+///   is updated in place rather than duplicated.
+pub fn upsert_named_room_eq_plugins(
+    graph: &mut sotf_audio_player::PluginGraph,
+    num_channels: usize,
+    global_bb: &[sotf_audio_player::EQFilter],
+    per_channel_broadband: &[Vec<sotf_audio_player::EQFilter>],
+    total_bb: usize,
+    global_filters: &[sotf_audio_player::EQFilter],
+    per_channel_filters: &[Vec<sotf_audio_player::EQFilter>],
+) {
+    use sotf_audio_player::{PluginSettings, PluginType};
+
+    // Step 1: migrate stale unnamed EQ (pre-release upgrade path).
+    if let Some(existing_idx) = unnamed_user_eq_index(graph)
+        && let Some(p) = graph.get_plugin_mut(existing_idx)
+    {
+        p.name = Some("Room EQ".to_string());
+        log::info!(
+            "Adopted pre-existing unnamed EQ at index {} as 'Room EQ'",
+            existing_idx
+        );
+    }
+
+    // Step 2: name-keyed upsert helper. Tracks new nodes by stable
+    // GraphNodeId so inserts that shift sibling positions don't leave us
+    // writing settings into a neighbouring plugin.
+    let upsert_eq = |graph: &mut sotf_audio_player::PluginGraph,
+                     settings: PluginSettings,
+                     name: &str| {
+        if let Some(idx) = graph.find_plugin_index_by_name(name) {
+            if let Some(p) = graph.get_plugin_mut(idx) {
+                p.settings = settings;
+                p.name = Some(name.to_string());
+                log::info!("Updated existing '{}' EQ at index {}", name, idx);
+            }
+            return;
+        }
+
+        let insert_idx = graph.user_plugin_insert_index();
+        match graph.insert_plugin(insert_idx, &PluginType::EQ) {
+            Ok(node_id) => {
+                if let Some(node) = graph.nodes.get_mut(&node_id) {
+                    node.plugin.settings = settings;
+                    node.plugin.name = Some(name.to_string());
+                }
+                log::info!(
+                    "Inserted '{}' EQ at linear index {} (node {:?})",
+                    name,
+                    insert_idx,
+                    node_id
+                );
+            }
+            Err(e) => {
+                log::error!("Failed to insert '{}' EQ: {}", name, e);
+            }
+        }
+    };
+
+    // Step 3: broadband correction EQ (first in chain)
+    if total_bb > 0 {
+        let bb_settings = PluginSettings::EQ {
+            channels: num_channels,
+            filters: global_bb.to_vec(),
+            channel_filters: Some(per_channel_broadband.to_vec()),
+            per_channel_mode: true,
+            max_filters: 4,
+            tdf2: false,
+            topology: 0.0,
+        };
+        upsert_eq(graph, bb_settings, "Broadband EQ");
+    }
+
+    // Step 4: main room correction EQ (after broadband)
+    let main_settings = PluginSettings::EQ {
+        channels: num_channels,
+        filters: global_filters.to_vec(),
+        channel_filters: Some(per_channel_filters.to_vec()),
+        per_channel_mode: true,
+        max_filters: 10,
+        tdf2: false,
+        topology: 0.0,
+    };
+    upsert_eq(graph, main_settings, "Room EQ");
+
+    // Step 5: post-condition sanity log — makes it obvious in logs if we
+    // ever regress back to the merged-EQ bug.
+    let named_eq_count = graph
+        .plugins()
+        .iter()
+        .filter(|p| {
+            matches!(p.plugin_type(), PluginType::EQ)
+                && p.name
+                    .as_deref()
+                    .is_some_and(|n| n == "Room EQ" || n == "Broadband EQ")
+        })
+        .count();
+    log::info!(
+        "After upsert: {} named room-EQ plugins in graph (expected {}, total EQs {})",
+        named_eq_count,
+        if total_bb > 0 { 2 } else { 1 },
+        graph
+            .plugins()
+            .iter()
+            .filter(|p| matches!(p.plugin_type(), PluginType::EQ))
+            .count()
+    );
+}
+
+/// Derive a user-facing plugin name from the DSP params the optimizer emits.
+///
+/// Today the only plugin type that carries a semantic label is `EQ`
+/// (`"broadband"` for the pre-correction EQ, unlabeled for the main room
+/// correction). Returning `None` lets the UI fall back to the generic
+/// plugin type display name.
+fn derive_plugin_name(plugin_type_str: &str, parameters: &serde_json::Value) -> Option<String> {
+    if !plugin_type_str.eq_ignore_ascii_case("eq") {
+        return None;
+    }
+    match parameters.get("label").and_then(|l| l.as_str()) {
+        Some("broadband") => Some("Broadband EQ".to_string()),
+        Some("cea2034") => Some("Speaker EQ".to_string()),
+        Some("user_preference") => Some("Preference EQ".to_string()),
+        Some(other) if !other.is_empty() => Some(other.to_string()),
+        // Unlabeled = main room correction EQ
+        _ => Some("Room EQ".to_string()),
     }
 }
 

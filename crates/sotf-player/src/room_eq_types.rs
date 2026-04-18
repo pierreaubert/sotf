@@ -1861,6 +1861,8 @@ pub struct ChannelOptResult {
     pub pre_score: f64,
     pub post_score: f64,
     pub eq_filters: Vec<EqFilterConfig>,
+    /// Broadband pre-correction filters (lowshelf/highshelf), separate from main EQ
+    pub broadband_filters: Vec<EqFilterConfig>,
     pub crossover_freqs: Option<Vec<f64>>,
     pub driver_gains: Option<Vec<f64>>,
     pub original_response: Option<Vec<(f64, f64)>>,
@@ -1880,52 +1882,40 @@ pub struct ChannelOptResult {
     pub impulse_response: Option<Vec<(f64, f64)>>,
 }
 
-/// DSP chain output format
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DspChainOutput {
-    pub channels: std::collections::HashMap<String, ChannelDspChain>,
-    pub metadata: Option<DspChainMetadata>,
-}
+// DSP chain output types are the canonical `autoeq::roomeq` types — we
+// re-export them here so downstream code keeps referring to
+// `sotf_audio_player::room_eq_types::{DspChainOutput, ChannelDspChain, ...}`
+// but we don't drop any fields on the floor (initial/final curves,
+// target curve, pre/post IR, loss_type, inter-channel deviation, EPA
+// metrics). Previously we had parallel stripped copies of these structs
+// and a lossy field-by-field conversion in the Step-4 optimiser; that
+// meant the Review step plot silently lost curves that the optimiser
+// had already computed.
 
-impl DspChainOutput {
+/// DSP plugin configuration (alias for `autoeq::roomeq::PluginConfigWrapper`).
+pub type DspPluginConfig = autoeq::roomeq::PluginConfigWrapper;
+
+/// DSP chain metadata (alias for `autoeq::roomeq::OptimizationMetadata`).
+pub type DspChainMetadata = autoeq::roomeq::OptimizationMetadata;
+
+pub use autoeq::roomeq::{ChannelDspChain, DriverDspChain, DspChainOutput};
+
+/// Extension trait for `DspChainOutput` providing player-side helpers.
+///
+/// Lives here (not in `autoeq`) because it's a player concern: does this
+/// chain correspond to a linear rack, or does it need a parallel
+/// multi-driver graph? The autoeq crate doesn't know or care about the
+/// player's rack model.
+pub trait DspChainOutputExt {
     /// Returns true if the DSP output can be applied to a linear rack
     /// (no multi-driver crossovers requiring parallel paths).
-    pub fn is_rack_compatible(&self) -> bool {
+    fn is_rack_compatible(&self) -> bool;
+}
+
+impl DspChainOutputExt for DspChainOutput {
+    fn is_rack_compatible(&self) -> bool {
         self.channels.values().all(|chain| chain.drivers.is_none())
     }
-}
-
-/// DSP chain for a single channel
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChannelDspChain {
-    pub channel: String,
-    pub plugins: Vec<DspPluginConfig>,
-    pub drivers: Option<Vec<DriverDspChain>>,
-}
-
-/// DSP chain for a driver in multi-driver setup
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DriverDspChain {
-    pub name: String,
-    pub index: usize,
-    pub plugins: Vec<DspPluginConfig>,
-}
-
-/// DSP plugin configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DspPluginConfig {
-    pub plugin_type: String,
-    pub parameters: serde_json::Value,
-}
-
-/// DSP chain metadata
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DspChainMetadata {
-    pub pre_score: f64,
-    pub post_score: f64,
-    pub algorithm: String,
-    pub iterations: usize,
-    pub timestamp: String,
 }
 
 /// A control point for custom target curve editing
@@ -2522,60 +2512,76 @@ mod tests {
     // is_rack_compatible tests
     // =========================================================================
 
+    use super::DspChainOutputExt;
+
+    /// Build a bare `ChannelDspChain` with all optional curve/IR fields
+    /// defaulted to `None`. The `is_rack_compatible` check only looks at
+    /// `drivers`, so the rest of the fields are irrelevant here and we
+    /// don't want to repeat them at every call site.
+    fn bare_chain(name: &str, drivers: Option<Vec<DriverDspChain>>) -> ChannelDspChain {
+        ChannelDspChain {
+            channel: name.to_string(),
+            plugins: vec![],
+            drivers,
+            initial_curve: None,
+            final_curve: None,
+            eq_response: None,
+            target_curve: None,
+            pre_ir: None,
+            post_ir: None,
+        }
+    }
+
+    fn bare_driver(name: &str, index: usize) -> DriverDspChain {
+        DriverDspChain {
+            name: name.to_string(),
+            index,
+            plugins: vec![],
+            initial_curve: None,
+        }
+    }
+
+    fn bare_output(channels: Vec<(String, ChannelDspChain)>) -> DspChainOutput {
+        DspChainOutput {
+            version: "1.0.0".to_string(),
+            channels: channels.into_iter().collect(),
+            metadata: None,
+        }
+    }
+
     #[test]
     fn test_is_rack_compatible_no_drivers() {
-        let output = DspChainOutput {
-            channels: [
-                ("L".to_string(), ChannelDspChain { channel: "L".to_string(), plugins: vec![], drivers: None }),
-                ("R".to_string(), ChannelDspChain { channel: "R".to_string(), plugins: vec![], drivers: None }),
-            ].into_iter().collect(),
-            metadata: None,
-        };
+        let output = bare_output(vec![
+            ("L".to_string(), bare_chain("L", None)),
+            ("R".to_string(), bare_chain("R", None)),
+        ]);
         assert!(output.is_rack_compatible());
     }
 
     #[test]
     fn test_is_rack_compatible_with_drivers() {
-        let output = DspChainOutput {
-            channels: [(
-                "L".to_string(),
-                ChannelDspChain {
-                    channel: "L".to_string(),
-                    plugins: vec![],
-                    drivers: Some(vec![DriverDspChain {
-                        name: "woofer".to_string(),
-                        index: 0,
-                        plugins: vec![],
-                    }]),
-                },
-            )].into_iter().collect(),
-            metadata: None,
-        };
+        let output = bare_output(vec![(
+            "L".to_string(),
+            bare_chain("L", Some(vec![bare_driver("woofer", 0)])),
+        )]);
         assert!(!output.is_rack_compatible());
     }
 
     #[test]
     fn test_is_rack_compatible_mixed() {
-        let output = DspChainOutput {
-            channels: [
-                ("L".to_string(), ChannelDspChain { channel: "L".to_string(), plugins: vec![], drivers: None }),
-                ("R".to_string(), ChannelDspChain {
-                    channel: "R".to_string(),
-                    plugins: vec![],
-                    drivers: Some(vec![DriverDspChain { name: "woofer".to_string(), index: 0, plugins: vec![] }]),
-                }),
-            ].into_iter().collect(),
-            metadata: None,
-        };
+        let output = bare_output(vec![
+            ("L".to_string(), bare_chain("L", None)),
+            (
+                "R".to_string(),
+                bare_chain("R", Some(vec![bare_driver("woofer", 0)])),
+            ),
+        ]);
         assert!(!output.is_rack_compatible());
     }
 
     #[test]
     fn test_is_rack_compatible_empty() {
-        let output = DspChainOutput {
-            channels: std::collections::HashMap::new(),
-            metadata: None,
-        };
+        let output = bare_output(vec![]);
         assert!(output.is_rack_compatible());
     }
 }

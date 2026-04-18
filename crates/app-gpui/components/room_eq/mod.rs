@@ -20,14 +20,14 @@ use gpui_ui_kit::{
 
 mod actions;
 mod custom_target_modal;
-mod render;
+pub mod render;
 mod step_1_load;
 mod step_2_delay_detection;
 mod step_3_configure;
 mod step_3_process;
 mod step_4_optimise;
 mod step_5_review;
-mod step_6_export;
+pub mod step_6_export;
 
 impl PlayerView {
     /// Main Room EQ screen entry point

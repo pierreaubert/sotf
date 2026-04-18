@@ -2,8 +2,16 @@
 //!
 //! Performs comprehensive validation of RoomConfig before optimization.
 
-use super::types::{OptimizerConfig, RoomConfig, SpeakerConfig, TiltType};
+use super::types::{
+    OptimizerConfig, ProcessingMode, RoomConfig, SpeakerConfig, TargetShape, TiltType,
+};
+use crate::{MeasurementRef, MeasurementSource};
 use std::collections::HashMap;
+
+/// Frequency (Hz) above which `ProcessingMode::PhaseLinear` tends to need an
+/// impractical number of FIR taps. Crossing this with default FIR settings
+/// produces quietly-degraded high-frequency response.
+const PHASE_LINEAR_RECOMMENDED_MAX_FREQ_HZ: f64 = 2000.0;
 
 /// Result of configuration validation
 #[derive(Debug, Clone)]
@@ -69,17 +77,42 @@ pub fn validate_room_config(config: &RoomConfig) -> ValidationResult {
     // Validate optimizer config
     validate_optimizer_config(&config.optimizer, &mut result);
 
-    // Warn when both target_curve and target_tilt are set (non-flat)
-    if config.target_curve.is_some()
-        && let Some(ref tilt) = config.optimizer.target_tilt
-        && tilt.tilt_type != TiltType::Flat
-    {
-        result.add_warning(
-            "Both target_curve and target_tilt are configured. \
-             target_tilt will be baked into the measurement and target_curve \
-             will be ignored to avoid double-application."
-                .to_string(),
-        );
+    // I1 — warn when both target_curve and a non-trivial target_response
+    // are set. `target_response` is baked into the measurement during
+    // optimization; when both are present, `target_curve` is silently
+    // ignored to prevent double-application. Users often don't realise
+    // that setting both means only one takes effect.
+    //
+    // The pre-existing legacy-path variant (target_curve + target_tilt
+    // with non-Flat tilt) is preserved too so that stale configs that
+    // skip `migrate_target_config` still surface the conflict.
+    if config.target_curve.is_some() {
+        if let Some(ref tr) = config.optimizer.target_response {
+            let has_shape = tr.shape != TargetShape::Flat
+                || tr.slope_db_per_octave.abs() > 1e-6
+                || tr.preference.bass_shelf_db.abs() > 1e-6
+                || tr.preference.treble_shelf_db.abs() > 1e-6
+                || tr.broadband_precorrection;
+            if has_shape {
+                result.add_warning(
+                    "Both target_curve and target_response are configured. \
+                     target_response takes precedence — it is baked into the \
+                     measurement before EQ optimization, and target_curve is \
+                     ignored to avoid double-application. Set only one."
+                        .to_string(),
+                );
+            }
+        }
+        if let Some(ref tilt) = config.optimizer.target_tilt
+            && tilt.tilt_type != TiltType::Flat
+        {
+            result.add_warning(
+                "Both target_curve and target_tilt are configured. \
+                 target_tilt will be baked into the measurement and target_curve \
+                 will be ignored to avoid double-application."
+                    .to_string(),
+            );
+        }
     }
 
     // Validate speaker configurations
@@ -87,6 +120,10 @@ pub fn validate_room_config(config: &RoomConfig) -> ValidationResult {
 
     // Validate crossover references
     validate_crossovers(&config.speakers, config.crossovers.as_ref(), &mut result);
+
+    // Cross-validate option interactions that depend on the speaker map
+    // (multi-measurement weights, CEA2034 source detection).
+    validate_cross_option_interactions(config, &mut result);
 
     result
 }
@@ -218,6 +255,88 @@ fn validate_optimizer_config(opt: &OptimizerConfig, result: &mut ValidationResul
             "Unknown mode '{}', must be one of {:?}",
             opt.mode, valid_modes
         ));
+    }
+
+    // B4 — deprecate the legacy `mode` string in favour of `processing_mode`.
+    // `mode` only models `[iir, fir, mixed, mixed_phase]` and cannot express
+    // newer values (`warped_iir`, `kautz_modal`). The code branches on
+    // `processing_mode` throughout, so a config that sets `mode` but leaves
+    // `processing_mode` at the default silently gets `LowLatency` behaviour
+    // regardless of what `mode` says.
+    //
+    // Heuristic: emit a deprecation warning when the user's `mode` string
+    // does not align with their `processing_mode` enum. The alignment map
+    // is: iir↔LowLatency, fir↔PhaseLinear, mixed↔Hybrid, mixed_phase↔MixedPhase.
+    // `warped_iir` / `kautz_modal` have no legacy equivalent — configs that
+    // select those via `processing_mode` must either leave `mode` at its
+    // default "iir" or accept the warning.
+    let expected_mode_for_processing = match opt.processing_mode {
+        ProcessingMode::LowLatency => Some("iir"),
+        ProcessingMode::PhaseLinear => Some("fir"),
+        ProcessingMode::Hybrid => Some("mixed"),
+        ProcessingMode::MixedPhase => Some("mixed_phase"),
+        ProcessingMode::WarpedIir | ProcessingMode::KautzModal => None,
+    };
+    if let Some(expected) = expected_mode_for_processing {
+        if opt.mode != expected {
+            result.add_warning(format!(
+                "Legacy `mode` field is \"{}\" but `processing_mode` is {:?} (expected \"{}\"). \
+                 `mode` is deprecated — `processing_mode` is authoritative. Remove `mode` \
+                 from your config, or align it with `processing_mode`.",
+                opt.mode, opt.processing_mode, expected,
+            ));
+        }
+    } else if opt.mode != "iir" {
+        // WarpedIir / KautzModal: `mode` must be left at default or removed.
+        result.add_warning(format!(
+            "`processing_mode={:?}` has no equivalent `mode` string. The legacy `mode` \
+             field is deprecated; remove it from your config to avoid confusion.",
+            opt.processing_mode,
+        ));
+    }
+
+    // I5 — PhaseLinear FIR at a wide frequency range silently under-resolves HF.
+    // With default tap counts (≤4096), a linear-phase FIR designed for
+    // [min_freq .. 20 kHz] lacks the resolution to represent high-frequency
+    // room behaviour. The test suite caps max_freq for FIR modes
+    // (roomeq_generated_data_test.rs), but production code does not.
+    if opt.processing_mode == ProcessingMode::PhaseLinear
+        && opt.max_freq > PHASE_LINEAR_RECOMMENDED_MAX_FREQ_HZ
+    {
+        result.add_warning(format!(
+            "processing_mode=phase_linear with max_freq={:.0} Hz exceeds the recommended \
+             ceiling of {:.0} Hz for reasonable FIR tap counts. Consider capping max_freq \
+             or increasing fir.taps; the resulting correction will otherwise be accurate \
+             only in the bass/low-mid range.",
+            opt.max_freq, PHASE_LINEAR_RECOMMENDED_MAX_FREQ_HZ
+        ));
+    }
+
+    // I2 — Schroeder split with a non-zero slope is inherently lossy: the low-
+    // and high-frequency regions are optimized independently, so the slope
+    // cannot be hit exactly across the crossover. The QA binary documents
+    // this empirically in roomeq_qa_quality.rs. Warn the user so they know
+    // the target slope will be approximated rather than matched.
+    if opt.schroeder_split.as_ref().is_some_and(|s| s.enabled) {
+        let has_slope = opt
+            .target_response
+            .as_ref()
+            .map(|t| t.slope_db_per_octave.abs() > f64::EPSILON)
+            .unwrap_or(false)
+            || opt
+                .target_tilt
+                .as_ref()
+                .map(|t| t.tilt_type != TiltType::Flat || t.slope_db_per_octave.abs() > 1e-6)
+                .unwrap_or(false);
+        if has_slope {
+            result.add_warning(
+                "schroeder_split is enabled together with a non-zero target slope \
+                 (target_response.slope_db_per_octave or target_tilt). The modal and \
+                 diffuse regions are optimized independently, so the requested slope \
+                 will be approximated rather than matched exactly across the crossover."
+                    .to_string(),
+            );
+        }
     }
 
     // Validate FIR config if mode requires it
@@ -481,6 +600,122 @@ fn validate_crossovers(
                 crossover_ref
             ));
         }
+    }
+}
+
+/// Validate interactions between optimizer options and the resolved speaker map.
+///
+/// Covers:
+/// - B10: `multi_measurement.weights.len()` must match the number of
+///   measurements on every `MeasurementSource::Multiple` in the speaker map.
+/// - I4: `cea2034_correction.enabled` requires that at least one speaker
+///   carries a CEA2034/spinorama-shaped source (speaker_name set, or a path
+///   that contains "cea2034"/"spinorama"). Applying the 3-pass pipeline to
+///   plain in-room responses silently produces garbage.
+fn validate_cross_option_interactions(config: &RoomConfig, result: &mut ValidationResult) {
+    validate_multi_measurement_weights(config, result);
+    validate_cea2034_source_plausibility(config, result);
+}
+
+/// Collect all `MeasurementSource`s referenced by a speaker, so the validator
+/// can inspect counts, paths, and speaker-name metadata uniformly.
+fn collect_sources(speaker: &SpeakerConfig) -> Vec<&MeasurementSource> {
+    match speaker {
+        SpeakerConfig::Single(s) => vec![s],
+        SpeakerConfig::Group(g) => g.measurements.iter().collect(),
+        SpeakerConfig::MultiSub(m) => m.subwoofers.iter().collect(),
+        SpeakerConfig::Cardioid(c) => vec![&c.front, &c.rear],
+        SpeakerConfig::Dba(d) => d.front.iter().chain(d.rear.iter()).collect(),
+    }
+}
+
+fn validate_multi_measurement_weights(config: &RoomConfig, result: &mut ValidationResult) {
+    let Some(mm) = config.optimizer.multi_measurement.as_ref() else {
+        return;
+    };
+    let Some(weights) = mm.weights.as_ref() else {
+        return;
+    };
+
+    for (channel, speaker) in &config.speakers {
+        for source in collect_sources(speaker) {
+            let count = match source {
+                MeasurementSource::Multiple(m) => m.measurements.len(),
+                MeasurementSource::InMemoryMultiple(curves) => curves.len(),
+                _ => continue,
+            };
+            if count != weights.len() {
+                result.add_error(format!(
+                    "Channel '{}': multi_measurement.weights has {} entries but the channel \
+                     has {} measurements. The lengths must match; `optimize_channel_eq_multi` \
+                     would otherwise index out of bounds.",
+                    channel,
+                    weights.len(),
+                    count,
+                ));
+            }
+        }
+    }
+}
+
+/// Return true if a measurement path/metadata plausibly points at CEA2034
+/// (spinorama) data. The check is heuristic on purpose — the validator's job
+/// is to flag the common misuse "`cea2034_correction.enabled=true` applied to
+/// plain in-room measurements", not to guarantee correctness.
+fn source_is_cea2034_shaped(source: &MeasurementSource) -> bool {
+    // A named speaker is the strongest signal: spinorama fetches set it, and
+    // the 3-pass pipeline uses that name as a cache key.
+    if source.speaker_name().is_some() {
+        return true;
+    }
+    let path_hints = |path: &std::path::Path| {
+        let lower = path.to_string_lossy().to_lowercase();
+        lower.contains("cea2034") || lower.contains("spinorama") || lower.contains("cea-2034")
+    };
+    let ref_hint = |r: &MeasurementRef| match r {
+        MeasurementRef::Path(p) => path_hints(p),
+        MeasurementRef::Named { path, name } => {
+            path_hints(path)
+                || name
+                    .as_deref()
+                    .map(|n| n.to_lowercase().contains("cea2034") || n.to_lowercase().contains("spinorama"))
+                    .unwrap_or(false)
+        }
+        MeasurementRef::Inline(_) => false,
+    };
+    match source {
+        MeasurementSource::Single(s) => ref_hint(&s.measurement),
+        MeasurementSource::Multiple(m) => m.measurements.iter().any(ref_hint),
+        MeasurementSource::InMemory(_) | MeasurementSource::InMemoryMultiple(_) => false,
+    }
+}
+
+fn validate_cea2034_source_plausibility(config: &RoomConfig, result: &mut ValidationResult) {
+    let enabled = config
+        .optimizer
+        .cea2034_correction
+        .as_ref()
+        .is_some_and(|c| c.enabled);
+    if !enabled {
+        return;
+    }
+
+    let any_plausible = config
+        .speakers
+        .values()
+        .flat_map(collect_sources)
+        .any(source_is_cea2034_shaped);
+
+    if !any_plausible {
+        result.add_warning(
+            "cea2034_correction is enabled but no speaker looks like a CEA2034/spinorama \
+             source (no speaker_name set, no path/name hint of 'cea2034' or 'spinorama'). \
+             The 3-pass correction pipeline assumes spinorama-shaped data; applying it to \
+             plain in-room responses will produce incorrect results. \
+             Either disable cea2034_correction or provide a speaker_name so the pipeline \
+             can fetch the matching spinorama data."
+                .to_string(),
+        );
     }
 }
 

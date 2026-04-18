@@ -73,6 +73,153 @@ fn compute_flat_loss(curve: &Curve, min_freq: f64, max_freq: f64) -> f64 {
     crate::loss::flat_loss(&curve.freq, &normalized_spl, min_freq, max_freq)
 }
 
+/// Runs a single channel through `process_single_speaker` and prepends an
+/// alignment-gain plugin to the returned DSP chain.
+///
+/// This is the Phase 3 feature-parity bridge: the generic per-channel path
+/// honours every `OptimizerConfig` feature (excursion protection, target
+/// tilt/response, broadband matching, CEA2034 correction). Workflows that
+/// used to call `eq::optimize_channel_eq` directly bypassed all of them.
+/// By routing each channel through `process_single_speaker` with the
+/// original `MeasurementSource` (so `speaker_name` propagates to CEA2034)
+/// and a config clone carrying any workflow-specific frequency overrides,
+/// the workflow inherits the full feature matrix.
+///
+/// The alignment gain is not applied to the curve itself — it is added as a
+/// plugin at the head of the chain. `process_single_speaker`'s internal
+/// decisions (F3 detection, passband estimation, target tilt, etc.) use
+/// relative-to-peak thresholds that are gain-invariant, so passing the raw
+/// curve is equivalent to passing an aligned one.
+///
+/// `config_override` lets stereo 2.1 / home-cinema-with-sub clone
+/// `config` and narrow `optimizer.min_freq` / `max_freq` to the band of
+/// interest (e.g. Pre-EQ at `min_xo`) before the delegation call.
+#[allow(clippy::type_complexity)]
+fn run_channel_via_generic_path(
+    role: &str,
+    source: &crate::MeasurementSource,
+    config: &RoomConfig,
+    alignment_gain_db: f64,
+    sample_rate: f64,
+    output_dir: &Path,
+) -> Result<(ChannelDspChain, ChannelOptimizationResult, f64, f64, Option<Vec<f64>>)> {
+    let (
+        raw_chain,
+        pre_score,
+        post_score,
+        initial_curve,
+        final_curve,
+        biquads,
+        _mean_spl,
+        _arrival_ms,
+        fir_coeffs,
+    ) = super::speaker_eq::process_single_speaker(
+        role, source, config, sample_rate, output_dir, None, None, None,
+    )?;
+
+    // Prepend the alignment gain plugin without touching the inner chain's
+    // existing plugins (excursion HPF, broadband shelf, CEA2034 PEQ, fine EQ).
+    let mut plugins: Vec<_> = Vec::with_capacity(raw_chain.plugins.len() + 1);
+    if alignment_gain_db.abs() > 0.01 {
+        plugins.push(output::create_gain_plugin(alignment_gain_db));
+    }
+    plugins.extend(raw_chain.plugins);
+
+    let chain = ChannelDspChain {
+        channel: role.to_string(),
+        plugins,
+        drivers: raw_chain.drivers,
+        initial_curve: raw_chain.initial_curve,
+        final_curve: raw_chain.final_curve,
+        eq_response: raw_chain.eq_response,
+        pre_ir: raw_chain.pre_ir,
+        post_ir: raw_chain.post_ir,
+        target_curve: raw_chain.target_curve,
+    };
+
+    let channel_result = ChannelOptimizationResult {
+        name: role.to_string(),
+        pre_score,
+        post_score,
+        initial_curve,
+        final_curve,
+        biquads,
+        fir_coeffs: fir_coeffs.clone(),
+    };
+
+    Ok((chain, channel_result, pre_score, post_score, fir_coeffs))
+}
+
+/// Coherent (complex) sum of N main channels, used by the stereo-2.1 and
+/// home-cinema-with-sub crossover optimizers.
+///
+/// The previous per-bin SPL average with a discarded/averaged phase hid
+/// inter-channel phase mismatches from the crossover / group-delay loss
+/// (B8). Using the complex sum preserves phase coherence the same way
+/// `preprocess_cardioid` does for the front/rear sub pair.
+///
+/// Missing phase is treated as 0° to match the rest of the pipeline's
+/// convention for measurements that weren't captured with phase.
+///
+/// Expects every input curve to share the same frequency grid. Empty or
+/// single-element input panics — callers always supply ≥ 1 main.
+fn complex_sum_mains(curves: &[&Curve]) -> Curve {
+    use num_complex::Complex;
+    assert!(!curves.is_empty(), "complex_sum_mains needs ≥ 1 curve");
+    let n = curves.iter().map(|c| c.spl.len()).min().unwrap();
+    let freq = curves[0].freq.slice(ndarray::s![..n]).to_owned();
+    let divisor = curves.len() as f64;
+
+    let mut spl = ndarray::Array1::<f64>::zeros(n);
+    let mut phase = ndarray::Array1::<f64>::zeros(n);
+    for i in 0..n {
+        let mut sum = Complex::new(0.0_f64, 0.0);
+        for c in curves {
+            let mag = 10.0_f64.powf(c.spl[i] / 20.0);
+            let phi = c.phase.as_ref().map(|p| p[i]).unwrap_or(0.0).to_radians();
+            sum += Complex::from_polar(mag, phi);
+        }
+        sum /= divisor;
+        spl[i] = 20.0 * sum.norm().max(1e-12).log10();
+        phase[i] = sum.arg().to_degrees();
+    }
+
+    Curve {
+        freq,
+        spl,
+        phase: Some(phase),
+    }
+}
+
+/// Resolve the `MeasurementSource` for a logical role via the SystemConfig →
+/// RoomConfig.speakers indirection. Workflows only accept `SpeakerConfig::Single`
+/// roles; any other variant is rejected up front so the generic path doesn't
+/// see half-processed data.
+fn resolve_single_source<'a>(
+    role: &str,
+    config: &'a RoomConfig,
+    sys: &SystemConfig,
+) -> Result<&'a crate::MeasurementSource> {
+    let meas_key = sys
+        .speakers
+        .get(role)
+        .ok_or_else(|| AutoeqError::InvalidConfiguration {
+            message: format!("Missing speaker mapping for '{}'", role),
+        })?;
+    let cfg = config
+        .speakers
+        .get(meas_key)
+        .ok_or_else(|| AutoeqError::InvalidConfiguration {
+            message: format!("Missing speaker config for key '{}'", meas_key),
+        })?;
+    match cfg {
+        SpeakerConfig::Single(s) => Ok(s),
+        _ => Err(AutoeqError::InvalidConfiguration {
+            message: format!("Workflow requires Single speaker config for '{}'", role),
+        }),
+    }
+}
+
 /// Helper to load curves for all logical channels
 fn load_logical_channels(
     config: &RoomConfig,
@@ -385,11 +532,19 @@ fn preprocess_dba(
 }
 
 /// Workflow for Stereo 2.0 (No Subwoofer)
+///
+/// Per-channel EQ is delegated to `process_single_speaker` so that
+/// `excursion_protection`, `target_response`/`target_tilt`,
+/// `broadband_target_matching`, and `cea2034_correction` all apply inside
+/// the workflow. An alignment-gain plugin is prepended to the returned
+/// DSP chain without affecting feature decisions (F3 detection, passband
+/// estimation, and target tilt all use relative-to-peak thresholds that
+/// are gain-invariant).
 pub fn optimize_stereo_2_0(
     config: &RoomConfig,
     sys: &SystemConfig,
     sample_rate: f64,
-    _output_dir: &Path,
+    output_dir: &Path,
 ) -> Result<RoomOptimizationResult> {
     info!("Running Stereo 2.0 Optimization Workflow");
 
@@ -403,91 +558,39 @@ pub fn optimize_stereo_2_0(
     }
     let gains = align_channels_to_lowest(&curves, &ranges);
 
-    // 3. Optimization
-    let min_freq = config.optimizer.min_freq;
-    let max_freq = config.optimizer.max_freq;
+    // 3. Optimization — delegate each channel to the generic path so features apply.
     let mut channel_chains = HashMap::new();
     let mut channel_results = HashMap::new();
     let mut pre_scores = Vec::new();
     let mut post_scores = Vec::new();
 
-    for (role, curve) in &curves {
+    for role in curves.keys() {
         let gain = *gains.get(role).unwrap_or(&0.0);
-
-        // Apply gain to curve for optimization context
-        let mut aligned_curve = curve.clone();
-        for s in aligned_curve.spl.iter_mut() {
-            *s += gain;
-        }
-
-        // Pre-optimization score
-        let pre_score = compute_flat_loss(&aligned_curve, min_freq, max_freq);
+        let source = resolve_single_source(role, config, sys)?;
 
         info!(
-            "  Optimizing '{}' with alignment gain {:.2} dB (pre_score={:.4})",
-            role, gain, pre_score
+            "  Optimizing '{}' with alignment gain {:.2} dB",
+            role, gain
         );
 
-        let (filters, _loss) = super::optimize::optimize_eq_with_optional_schroeder(
-            &aligned_curve,
-            &config.optimizer,
-            config.target_curve.as_ref(),
+        let (chain, ch_result, pre_score, post_score, _fir) = run_channel_via_generic_path(
+            role,
+            source,
+            config,
+            gain,
             sample_rate,
-        )
-        .map_err(|e| AutoeqError::OptimizationFailed {
-            message: e.to_string(),
-        })?;
+            output_dir,
+        )?;
 
-        // Build Chain
-        let mut plugins = Vec::new();
-        if gain.abs() > 0.01 {
-            plugins.push(output::create_gain_plugin(gain));
-        }
-        if !filters.is_empty() {
-            plugins.push(output::create_eq_plugin(&filters));
-        }
-
-        // Compute final response
-        let resp =
-            response::compute_peq_complex_response(&filters, &aligned_curve.freq, sample_rate);
-        let final_curve_obj = response::apply_complex_response(&aligned_curve, &resp);
-
-        // Post-optimization score
-        let post_score = compute_flat_loss(&final_curve_obj, min_freq, max_freq);
-
-        info!("  '{}' post_score={:.4}", role, post_score);
-
-        let initial_data: super::types::CurveData = (&aligned_curve).into();
-        let final_data: super::types::CurveData = (&final_curve_obj).into();
-        let eq_resp = super::output::compute_eq_response(&initial_data, &final_data);
-        let chain = ChannelDspChain {
-            channel: role.clone(),
-            plugins,
-            drivers: None,
-            initial_curve: Some(initial_data),
-            final_curve: Some(final_data),
-            eq_response: Some(eq_resp),
-            pre_ir: None,
-            post_ir: None,
-            target_curve: None,
-        };
+        info!(
+            "  '{}' pre_score={:.4} post_score={:.4}",
+            role, pre_score, post_score
+        );
 
         channel_chains.insert(role.clone(), chain);
+        channel_results.insert(role.clone(), ch_result);
         pre_scores.push(pre_score);
         post_scores.push(post_score);
-
-        channel_results.insert(
-            role.clone(),
-            ChannelOptimizationResult {
-                name: role.clone(),
-                pre_score,
-                post_score,
-                initial_curve: curve.clone(),
-                final_curve: final_curve_obj,
-                biquads: filters,
-                fir_coeffs: None,
-            },
-        );
     }
 
     let avg_pre = pre_scores.iter().sum::<f64>() / pre_scores.len() as f64;
@@ -520,11 +623,18 @@ pub fn optimize_stereo_2_0(
 }
 
 /// Workflow for Stereo 2.1 (With Subwoofer)
+///
+/// Phase 3b: per-channel features (`excursion_protection`, `target_response`,
+/// `broadband_target_matching`, `cea2034_correction`) are applied via
+/// `process_single_speaker` at the Pre-EQ stage and the resulting plugin
+/// stack is inserted before the crossover HP/LP in the final DSP chain.
+/// Post-EQ remains a plain cleanup pass on the post-crossover curve, with
+/// the "do no harm" guard from Phase 3a.
 pub fn optimize_stereo_2_1(
     config: &RoomConfig,
     sys: &SystemConfig,
     sample_rate: f64,
-    _output_dir: &Path,
+    output_dir: &Path,
 ) -> Result<RoomOptimizationResult> {
     info!("Running Stereo 2.1 Optimization Workflow");
 
@@ -640,61 +750,103 @@ pub fn optimize_stereo_2_1(
         aligned_curves.insert(role.clone(), c);
     }
 
-    // 3. Pre-EQ (Linearization) for L and R
-    // Min freq = min_xo to ensure coverage even if crossover drops to min
-    let mut pre_eq_filters = HashMap::new();
-    let mut linearized_curves = aligned_curves.clone();
+    // 3. Pre-EQ — route each channel through `process_single_speaker` so
+    //    excursion / CEA2034 / broadband / target-response all apply. The
+    //    returned plugin stack is kept as the per-channel "feature chain"
+    //    that runs before crossover HP/LP in the final DSP assembly. The
+    //    returned final_curve is the linearized, feature-corrected curve
+    //    used to inform crossover optimization.
+    //
+    //    Mains: min_freq = min_xo so the optimizer focuses on the post-
+    //    crossover band (the F3 clamp inside `process_single_speaker`
+    //    still raises this further when the speaker's F3 > min_xo).
+    //
+    //    Sub: max_freq = max_xo so the optimizer focuses on the pre-
+    //    crossover band. The sub is fed as an in-memory source — it
+    //    carries no speaker_name, so CEA2034 correction is automatically
+    //    skipped (subs aren't spinorama-shaped).
+    let mut pre_eq_plugins: HashMap<String, Vec<super::types::PluginConfigWrapper>> =
+        HashMap::new();
+    let mut linearized_curves: HashMap<String, Curve> = HashMap::new();
 
     for role in ["L", "R"] {
-        let mut opt_config = config.optimizer.clone();
-        opt_config.min_freq = min_xo;
+        let source = resolve_single_source(role, config, sys)?;
+        let mut per_config = config.clone();
+        per_config.optimizer.min_freq = min_xo;
 
         info!(
-            "  Pre-EQ Linearization for '{}' (min {:.1} Hz)",
+            "  Pre-EQ via generic path for '{}' (min_freq={:.1} Hz)",
             role, min_xo
         );
-        let (filters, _) = eq::optimize_channel_eq(
-            &aligned_curves[role],
-            &opt_config,
-            config.target_curve.as_ref(),
-            sample_rate,
-        )
-        .map_err(|e| AutoeqError::OptimizationFailed {
-            message: e.to_string(),
-        })?;
+        let (chain, ch_result, _pre_score, _post_score, _fir) =
+            run_channel_via_generic_path(
+                role,
+                source,
+                &per_config,
+                0.0,
+                sample_rate,
+                output_dir,
+            )?;
+        pre_eq_plugins.insert(role.to_string(), chain.plugins);
+        linearized_curves.insert(role.to_string(), ch_result.final_curve);
+    }
 
-        // Apply filters
-        let resp = response::compute_peq_complex_response(
-            &filters,
-            &aligned_curves[role].freq,
-            sample_rate,
+    // Sub Pre-EQ: inline source with no speaker_name → CEA2034 skipped.
+    {
+        let sub_source =
+            crate::MeasurementSource::InMemory(sub_preprocess.combined_curve.clone());
+        let mut sub_config = config.clone();
+        sub_config.optimizer.max_freq = max_xo;
+        info!(
+            "  Pre-EQ via generic path for '{}' (max_freq={:.1} Hz)",
+            sub_role, max_xo
         );
-        let linear = response::apply_complex_response(&aligned_curves[role], &resp);
+        let (chain, ch_result, _pre_score, _post_score, _fir) =
+            run_channel_via_generic_path(
+                sub_role,
+                &sub_source,
+                &sub_config,
+                0.0,
+                sample_rate,
+                output_dir,
+            )?;
+        pre_eq_plugins.insert(sub_role.to_string(), chain.plugins);
+        linearized_curves.insert(sub_role.to_string(), ch_result.final_curve);
+    }
 
-        pre_eq_filters.insert(role.to_string(), filters);
-        linearized_curves.insert(role.to_string(), linear);
+    // Aligned linearized curves: post-feature curves at the listening level
+    // that the crossover optimizer operates on, and that `apply_chain`
+    // below filters through the crossover HP/LP. Using these (instead of
+    // the raw `aligned_curves`) is what makes the Post-EQ step see the
+    // same curve the listener will hear after the feature stack.
+    let mut aligned_pre_eq_curves: HashMap<String, Curve> = HashMap::new();
+    for role in ["L", "R", sub_role] {
+        let mut c = linearized_curves[role].clone();
+        let g = *gains.get(role).unwrap_or(&0.0);
+        for s in c.spl.iter_mut() {
+            *s += g;
+        }
+        aligned_pre_eq_curves.insert(role.to_string(), c);
     }
 
     // 4. Crossover Optimization
-    // Virtual Main = Avg(L, R)
-    // We average the LINEARIZED curves
-    let l_curve = &linearized_curves["L"];
-    let r_curve = &linearized_curves["R"];
-    let sub_curve = &linearized_curves[sub_role]; // Sub is not linearized in step 3? Spec says "Optimal EQ for L and R".
+    // Virtual Main = complex sum of aligned + linearized L and R
+    let l_curve = &aligned_pre_eq_curves["L"];
+    let r_curve = &aligned_pre_eq_curves["R"];
+    let sub_curve = &aligned_pre_eq_curves[sub_role];
 
-    // Average L and R
-    // Average magnitude (SPL)
-    // Note: geometric average of magnitude? Or average of dB?
-    // compute_average_response does average of SPL values (dB).
-    // Let's simple average dB for Virtual Main
-    let mut virtual_main = l_curve.clone();
-    for i in 0..virtual_main.spl.len() {
-        virtual_main.spl[i] = (l_curve.spl[i] + r_curve.spl[i]) / 2.0;
-        // Phase averaging is tricky. Use L phase?
-        // For crossover optimization, we need phase.
-        // Assuming L and R are phase-coherent (level aligned).
-        // Let's use L phase.
-    }
+    // Virtual Main = complex sum of L and R, divided by 2.
+    //
+    // The crossover optimizer needs a *coherent* summed magnitude+phase for
+    // the mains, not separate averages. Earlier code took `(L.spl + R.spl)/2`
+    // and kept only L's phase, which left the optimizer blind to phase
+    // mismatches between L and R (common in asymmetric rooms). The
+    // group-delay- and phase-aware crossover loss then worked against a
+    // phantom channel that matched neither L nor R.
+    //
+    // `preprocess_cardioid` already uses complex summation for the same
+    // reason; this brings the 2.1 virtual-main in line (B8).
+    let virtual_main = complex_sum_mains(&[l_curve, r_curve]);
 
     // Optimize Crossover between Virtual Main and Sub
     // We reuse crossover::optimize_crossover. It expects a list of drivers.
@@ -767,23 +919,27 @@ pub fn optimize_stereo_2_1(
             c
         };
 
-    // Note: Applying to ALIGNED curves (not linearized), and ignoring optimized delay per user request.
+    // Apply the crossover to the POST-FEATURE curves so Post-EQ sees the
+    // same response the listener will hear after Pre-EQ + crossover.
+    // Phase 3a used aligned_curves (raw + alignment gain) here, but now
+    // that the feature stack lives in the final chain before the crossover,
+    // the post-crossover reference must carry the feature correction.
     let l_post = apply_chain(
-        &aligned_curves["L"],
+        &aligned_pre_eq_curves["L"],
         &hp_biquads,
         main_gain_post,
         0.0,
         false,
     );
     let r_post = apply_chain(
-        &aligned_curves["R"],
+        &aligned_pre_eq_curves["R"],
         &hp_biquads,
         main_gain_post,
         0.0,
         false,
     );
     let sub_post_initial = apply_chain(
-        &aligned_curves[sub_role],
+        &aligned_pre_eq_curves[sub_role],
         &lp_biquads,
         sub_gain_post,
         0.0,
@@ -831,6 +987,7 @@ pub fn optimize_stereo_2_1(
     // Sub: max_freq = xover - 20
     let mut post_eq_filters = HashMap::new();
 
+    let main_post_max_freq = config.optimizer.max_freq;
     for role in ["L", "R"] {
         let mut opt_config = config.optimizer.clone();
         opt_config.min_freq = final_xo_freq + 20.0;
@@ -845,7 +1002,32 @@ pub fn optimize_stereo_2_1(
         .map_err(|e| AutoeqError::OptimizationFailed {
             message: e.to_string(),
         })?;
-        post_eq_filters.insert(role.to_string(), filters);
+
+        // B7 — "do no harm" guard on the Mains Post-EQ. When Pre-EQ +
+        // Crossover already leaves the post-crossover curve flat, a tight
+        // Post-EQ can over-fit and worsen it (narrow modes, excursion-
+        // constrained bass). The Sub Post-EQ has had this guard for a
+        // while; mirror it on L/R.
+        let pre = compute_flat_loss(post_curve, opt_config.min_freq, main_post_max_freq);
+        let eq_resp =
+            response::compute_peq_complex_response(&filters, &post_curve.freq, sample_rate);
+        let post_curve_after = response::apply_complex_response(post_curve, &eq_resp);
+        let post = compute_flat_loss(
+            &post_curve_after,
+            opt_config.min_freq,
+            main_post_max_freq,
+        );
+        if post < pre {
+            post_eq_filters.insert(role.to_string(), filters);
+        } else {
+            log::warn!(
+                "  {} Post-EQ discarded: score regressed from {:.4} to {:.4}",
+                role,
+                pre,
+                post
+            );
+            post_eq_filters.insert(role.to_string(), Vec::new());
+        }
     }
 
     // Sub Post-EQ
@@ -883,7 +1065,8 @@ pub fn optimize_stereo_2_1(
     // 8. Construct Output Chains
     let mut channel_chains = HashMap::new();
 
-    // L/R Chain: AlignGain -> Crossover(HP) -> MainGain -> Delay -> PostEQ
+    // L/R Chain: AlignGain -> [Pre-EQ feature stack: excursion, CEA2034,
+    //            broadband, main EQ] -> Crossover(HP) -> MainGain -> Delay -> PostEQ
     for role in ["L", "R"] {
         let mut plugins = Vec::new();
         let align_gain = *gains.get(role).unwrap_or(&0.0);
@@ -891,7 +1074,14 @@ pub fn optimize_stereo_2_1(
             plugins.push(output::create_gain_plugin(align_gain));
         }
 
-        // Pre-EQ removed per user request (optimization relies on Post-EQ)
+        // Pre-EQ feature stack from `process_single_speaker`: excursion
+        // HPF + CEA2034 Pass 1 + broadband shelf+gain + per-channel EQ.
+        // Inserted here (before the crossover HP) so the features act on
+        // the raw speaker signal and the crossover integration picks up
+        // the feature-corrected response.
+        if let Some(stack) = pre_eq_plugins.get(role) {
+            plugins.extend(stack.clone());
+        }
 
         // Crossover HP
         plugins.push(output::create_crossover_plugin(
@@ -941,12 +1131,17 @@ pub fn optimize_stereo_2_1(
         channel_chains.insert(role.to_string(), chain);
     }
 
-    // Sub Chain: AlignGain -> Crossover(LP) -> SubGain(Invert) -> PostEQ
-    // With optional per-driver chains for multi-sub configurations
+    // Sub Chain: AlignGain -> [Pre-EQ feature stack: excursion, broadband,
+    //            sub EQ — CEA2034 skipped since no speaker_name on the
+    //            inline source] -> Crossover(LP) -> SubGain(Invert) -> PostEQ
     let mut sub_plugins = Vec::new();
     let sub_align_gain = *gains.get(sub_role).unwrap_or(&0.0);
     if sub_align_gain.abs() > 0.01 {
         sub_plugins.push(output::create_gain_plugin(sub_align_gain));
+    }
+
+    if let Some(stack) = pre_eq_plugins.get(sub_role) {
+        sub_plugins.extend(stack.clone());
     }
 
     sub_plugins.push(output::create_crossover_plugin(
@@ -1218,18 +1413,25 @@ pub fn optimize_home_cinema(
             &curves,
             sub_preprocess.unwrap(),
             sample_rate,
+            _output_dir,
         )
     } else {
-        optimize_home_cinema_no_sub(config, &main_roles, &curves, sample_rate)
+        optimize_home_cinema_no_sub(config, sys, &main_roles, &curves, sample_rate, _output_dir)
     }
 }
 
 /// Home Cinema X.0 (no subwoofer): per-channel EQ optimization
+///
+/// Delegates each channel to `process_single_speaker` so every feature
+/// (excursion protection, target response, broadband matching, CEA2034
+/// correction) applies uniformly with the generic path.
 fn optimize_home_cinema_no_sub(
     config: &RoomConfig,
+    sys: &SystemConfig,
     main_roles: &[String],
     curves: &HashMap<String, Curve>,
     sample_rate: f64,
+    output_dir: &Path,
 ) -> Result<RoomOptimizationResult> {
     // Level alignment: mains measured from 100 Hz to 2000 Hz
     let mut ranges = HashMap::new();
@@ -1238,84 +1440,38 @@ fn optimize_home_cinema_no_sub(
     }
     let gains = align_channels_to_lowest(curves, &ranges);
 
-    let min_freq = config.optimizer.min_freq;
-    let max_freq = config.optimizer.max_freq;
     let mut channel_chains = HashMap::new();
     let mut channel_results = HashMap::new();
     let mut pre_scores = Vec::new();
     let mut post_scores = Vec::new();
 
     for role in main_roles {
-        let curve = &curves[role];
         let gain = *gains.get(role).unwrap_or(&0.0);
+        let source = resolve_single_source(role, config, sys)?;
 
-        let mut aligned_curve = curve.clone();
-        for s in aligned_curve.spl.iter_mut() {
-            *s += gain;
-        }
-
-        let pre_score = compute_flat_loss(&aligned_curve, min_freq, max_freq);
         info!(
-            "  Optimizing '{}' with alignment gain {:.2} dB (pre_score={:.4})",
-            role, gain, pre_score
+            "  Optimizing '{}' with alignment gain {:.2} dB",
+            role, gain
         );
 
-        let (filters, _loss) = super::optimize::optimize_eq_with_optional_schroeder(
-            &aligned_curve,
-            &config.optimizer,
-            config.target_curve.as_ref(),
+        let (chain, ch_result, pre_score, post_score, _fir) = run_channel_via_generic_path(
+            role,
+            source,
+            config,
+            gain,
             sample_rate,
-        )
-        .map_err(|e| AutoeqError::OptimizationFailed {
-            message: e.to_string(),
-        })?;
+            output_dir,
+        )?;
 
-        let mut plugins = Vec::new();
-        if gain.abs() > 0.01 {
-            plugins.push(output::create_gain_plugin(gain));
-        }
-        if !filters.is_empty() {
-            plugins.push(output::create_eq_plugin(&filters));
-        }
-
-        let resp =
-            response::compute_peq_complex_response(&filters, &aligned_curve.freq, sample_rate);
-        let final_curve_obj = response::apply_complex_response(&aligned_curve, &resp);
-        let post_score = compute_flat_loss(&final_curve_obj, min_freq, max_freq);
-
-        info!("  '{}' post_score={:.4}", role, post_score);
-
-        let initial_data: super::types::CurveData = (&aligned_curve).into();
-        let final_data: super::types::CurveData = (&final_curve_obj).into();
-        let eq_resp = super::output::compute_eq_response(&initial_data, &final_data);
-        let chain = ChannelDspChain {
-            channel: role.clone(),
-            plugins,
-            drivers: None,
-            initial_curve: Some(initial_data),
-            final_curve: Some(final_data),
-            eq_response: Some(eq_resp),
-            pre_ir: None,
-            post_ir: None,
-            target_curve: None,
-        };
+        info!(
+            "  '{}' pre_score={:.4} post_score={:.4}",
+            role, pre_score, post_score
+        );
 
         channel_chains.insert(role.clone(), chain);
+        channel_results.insert(role.clone(), ch_result);
         pre_scores.push(pre_score);
         post_scores.push(post_score);
-
-        channel_results.insert(
-            role.clone(),
-            ChannelOptimizationResult {
-                name: role.clone(),
-                pre_score,
-                post_score,
-                initial_curve: curve.clone(),
-                final_curve: final_curve_obj,
-                biquads: filters,
-                fir_coeffs: None,
-            },
-        );
     }
 
     let avg_pre = pre_scores.iter().sum::<f64>() / pre_scores.len() as f64;
@@ -1347,7 +1503,12 @@ fn optimize_home_cinema_no_sub(
     })
 }
 
-/// Home Cinema X.1 (with subwoofer): crossover management + per-channel EQ
+/// Home Cinema X.1 (with subwoofer): crossover management + per-channel EQ.
+///
+/// Phase 3b: per-channel features apply via `process_single_speaker` at
+/// Pre-EQ, the plugin stack is inserted before the crossover HP/LP in
+/// the final chain, and Post-EQ remains a cleanup pass with the B7
+/// "do no harm" guard.
 fn optimize_home_cinema_with_sub(
     config: &RoomConfig,
     sys: &SystemConfig,
@@ -1355,6 +1516,7 @@ fn optimize_home_cinema_with_sub(
     curves: &HashMap<String, Curve>,
     sub_preprocess: SubPreprocessResult,
     sample_rate: f64,
+    output_dir: &Path,
 ) -> Result<RoomOptimizationResult> {
     let sub_role = "LFE";
 
@@ -1405,49 +1567,87 @@ fn optimize_home_cinema_with_sub(
         aligned_curves.insert(role.clone(), c);
     }
 
-    // 2. Pre-EQ linearization for all main channels
-    let mut pre_eq_filters = HashMap::new();
-    let mut linearized_curves = aligned_curves.clone();
+    // 2. Pre-EQ — route each channel through `process_single_speaker` so
+    //    excursion / CEA2034 / broadband / target-response all apply. The
+    //    returned plugin stack becomes the "feature chain" that runs
+    //    before crossover HP/LP in the final DSP assembly; the returned
+    //    final_curve is the linearized curve the crossover optimizer
+    //    sees. See `optimize_stereo_2_1` for the shared rationale.
+    let mut pre_eq_plugins: HashMap<String, Vec<super::types::PluginConfigWrapper>> =
+        HashMap::new();
+    let mut linearized_curves: HashMap<String, Curve> = HashMap::new();
 
     for role in main_roles {
-        let mut opt_config = config.optimizer.clone();
-        opt_config.min_freq = min_xo;
-
+        let source = resolve_single_source(role, config, sys)?;
+        let mut per_config = config.clone();
+        per_config.optimizer.min_freq = min_xo;
         info!(
-            "  Pre-EQ Linearization for '{}' (min {:.1} Hz)",
+            "  Pre-EQ via generic path for '{}' (min_freq={:.1} Hz)",
             role, min_xo
         );
-        let (filters, _) = eq::optimize_channel_eq(
-            &aligned_curves[role],
-            &opt_config,
-            config.target_curve.as_ref(),
+        let (chain, ch_result, _pre, _post, _fir) = run_channel_via_generic_path(
+            role,
+            source,
+            &per_config,
+            0.0,
             sample_rate,
-        )
-        .map_err(|e| AutoeqError::OptimizationFailed {
-            message: e.to_string(),
-        })?;
+            output_dir,
+        )?;
+        pre_eq_plugins.insert(role.clone(), chain.plugins);
+        linearized_curves.insert(role.clone(), ch_result.final_curve);
+    }
 
-        let resp = response::compute_peq_complex_response(
-            &filters,
-            &aligned_curves[role].freq,
-            sample_rate,
+    // Sub Pre-EQ
+    {
+        let sub_source =
+            crate::MeasurementSource::InMemory(sub_preprocess.combined_curve.clone());
+        let mut sub_config = config.clone();
+        sub_config.optimizer.max_freq = max_xo;
+        info!(
+            "  Pre-EQ via generic path for '{}' (max_freq={:.1} Hz)",
+            sub_role, max_xo
         );
-        let linear = response::apply_complex_response(&aligned_curves[role], &resp);
-
-        pre_eq_filters.insert(role.clone(), filters);
-        linearized_curves.insert(role.clone(), linear);
+        let (chain, ch_result, _pre, _post, _fir) = run_channel_via_generic_path(
+            sub_role,
+            &sub_source,
+            &sub_config,
+            0.0,
+            sample_rate,
+            output_dir,
+        )?;
+        pre_eq_plugins.insert(sub_role.to_string(), chain.plugins);
+        linearized_curves.insert(sub_role.to_string(), ch_result.final_curve);
     }
 
-    // 3. Virtual Main = dB average of all linearized main channels
-    let ref_curve = &linearized_curves[&main_roles[0]];
-    let mut virtual_main = ref_curve.clone();
-    for i in 0..virtual_main.spl.len() {
-        let sum: f64 = main_roles.iter().map(|r| linearized_curves[r].spl[i]).sum();
-        virtual_main.spl[i] = sum / main_roles.len() as f64;
+    // Aligned linearized curves (post-feature, at listening level) — used
+    // for crossover optimization and for the apply_chain step below.
+    let mut aligned_pre_eq_curves: HashMap<String, Curve> = HashMap::new();
+    for role in main_roles {
+        let mut c = linearized_curves[role].clone();
+        let g = *gains.get(role).unwrap_or(&0.0);
+        for s in c.spl.iter_mut() {
+            *s += g;
+        }
+        aligned_pre_eq_curves.insert(role.clone(), c);
     }
+    {
+        let mut c = linearized_curves[sub_role].clone();
+        let g = *gains.get(sub_role).unwrap_or(&0.0);
+        for s in c.spl.iter_mut() {
+            *s += g;
+        }
+        aligned_pre_eq_curves.insert(sub_role.to_string(), c);
+    }
+
+    // 3. Virtual Main = coherent complex sum of all feature-corrected mains
+    let main_refs: Vec<&Curve> = main_roles
+        .iter()
+        .map(|r| &aligned_pre_eq_curves[r])
+        .collect();
+    let virtual_main = complex_sum_mains(&main_refs);
 
     // 4. Crossover optimization between Virtual Main and LFE
-    let sub_curve = &linearized_curves[sub_role];
+    let sub_curve = &aligned_pre_eq_curves[sub_role];
 
     let crossover_type_enum = crossover::parse_crossover_type(xover_type_str).map_err(|e| {
         AutoeqError::InvalidConfiguration {
@@ -1504,13 +1704,17 @@ fn optimize_home_cinema_with_sub(
         c
     };
 
-    // Post-crossover curves for all mains and sub
+    // Post-crossover curves for all mains and sub.
+    // Using aligned_pre_eq_curves (post-feature, post-align) so Post-EQ
+    // sees the real curve the listener will hear after the feature stack
+    // and crossover.
     let mut main_post_curves = HashMap::new();
     for role in main_roles {
-        let post = apply_chain(&aligned_curves[role], &hp_biquads, main_gain_post);
+        let post = apply_chain(&aligned_pre_eq_curves[role], &hp_biquads, main_gain_post);
         main_post_curves.insert(role.clone(), post);
     }
-    let sub_post_initial = apply_chain(&aligned_curves[sub_role], &lp_biquads, sub_gain_post);
+    let sub_post_initial =
+        apply_chain(&aligned_pre_eq_curves[sub_role], &lp_biquads, sub_gain_post);
 
     // Re-align sub level post-crossover (use first main as reference)
     // Each curve has its own frequency grid, so use the correct one for each.
@@ -1545,13 +1749,15 @@ fn optimize_home_cinema_with_sub(
 
     // 6. Post-EQ
     let mut post_eq_filters = HashMap::new();
+    let main_post_max_freq = config.optimizer.max_freq;
 
     for role in main_roles {
         let mut opt_config = config.optimizer.clone();
         opt_config.min_freq = final_xo_freq + 20.0;
 
+        let post_curve = &main_post_curves[role];
         let (filters, _) = eq::optimize_channel_eq(
-            &main_post_curves[role],
+            post_curve,
             &opt_config,
             config.target_curve.as_ref(),
             sample_rate,
@@ -1559,7 +1765,29 @@ fn optimize_home_cinema_with_sub(
         .map_err(|e| AutoeqError::OptimizationFailed {
             message: e.to_string(),
         })?;
-        post_eq_filters.insert(role.clone(), filters);
+
+        // B7 — "do no harm" guard on the Mains Post-EQ, mirroring the
+        // long-standing Sub guard below.
+        let pre = compute_flat_loss(post_curve, opt_config.min_freq, main_post_max_freq);
+        let eq_resp =
+            response::compute_peq_complex_response(&filters, &post_curve.freq, sample_rate);
+        let post_curve_after = response::apply_complex_response(post_curve, &eq_resp);
+        let post = compute_flat_loss(
+            &post_curve_after,
+            opt_config.min_freq,
+            main_post_max_freq,
+        );
+        if post < pre {
+            post_eq_filters.insert(role.clone(), filters);
+        } else {
+            log::warn!(
+                "  {} Post-EQ discarded: score regressed from {:.4} to {:.4}",
+                role,
+                pre,
+                post
+            );
+            post_eq_filters.insert(role.clone(), Vec::new());
+        }
     }
 
     // Sub Post-EQ
@@ -1596,12 +1824,17 @@ fn optimize_home_cinema_with_sub(
     // 7. Build output chains
     let mut channel_chains = HashMap::new();
 
-    // Main channels: AlignGain -> Crossover(HP) -> MainGain -> Delay -> PostEQ
+    // Main channels: AlignGain -> [Pre-EQ feature stack] -> Crossover(HP)
+    //                -> MainGain -> Delay -> PostEQ
     for role in main_roles {
         let mut plugins = Vec::new();
         let align_gain = *gains.get(role).unwrap_or(&0.0);
         if align_gain.abs() > 0.01 {
             plugins.push(output::create_gain_plugin(align_gain));
+        }
+
+        if let Some(stack) = pre_eq_plugins.get(role) {
+            plugins.extend(stack.clone());
         }
 
         plugins.push(output::create_crossover_plugin(
@@ -1656,11 +1889,16 @@ fn optimize_home_cinema_with_sub(
         channel_chains.insert(role.clone(), chain);
     }
 
-    // Sub chain: AlignGain -> Crossover(LP) -> SubGain(Invert) -> Delay -> PostEQ
+    // Sub chain: AlignGain -> [Pre-EQ feature stack] -> Crossover(LP)
+    //            -> SubGain(Invert) -> Delay -> PostEQ
     let mut sub_plugins = Vec::new();
     let sub_align_gain = *gains.get(sub_role).unwrap_or(&0.0);
     if sub_align_gain.abs() > 0.01 {
         sub_plugins.push(output::create_gain_plugin(sub_align_gain));
+    }
+
+    if let Some(stack) = pre_eq_plugins.get(sub_role) {
+        sub_plugins.extend(stack.clone());
     }
 
     sub_plugins.push(output::create_crossover_plugin(

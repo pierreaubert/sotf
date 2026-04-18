@@ -11,7 +11,7 @@ pub mod icons;
 pub mod migration;
 pub mod plugins;
 pub mod recording;
-mod room_eq;
+pub mod room_eq;
 mod settings;
 mod spinorama_eq;
 pub use plugins::{

@@ -1274,6 +1274,25 @@ impl PluginGraph {
             .position(|n| n.plugin.plugin_type() == *plugin_type)
     }
 
+    /// Find the linear index of a plugin by its custom `name` field.
+    ///
+    /// Used by the room-EQ export flow to upsert distinct EQ instances
+    /// ("Room EQ", "Broadband EQ") without accidentally clobbering each
+    /// other — a name-agnostic lookup by `PluginType::EQ` would always
+    /// find the first match and overwrite it.
+    pub fn find_plugin_index_by_name(&self, name: &str) -> Option<usize> {
+        self.plugins_linear()?
+            .iter()
+            .position(|n| n.plugin.name.as_deref() == Some(name))
+    }
+
+    /// Set the custom `name` on the plugin at the given linear index.
+    pub fn set_plugin_name_by_index(&mut self, index: usize, name: Option<String>) {
+        if let Some(plugin) = self.get_plugin_mut(index) {
+            plugin.name = name;
+        }
+    }
+
     /// Find the linear index of a plugin node by its `GraphNodeId`.
     pub fn linear_index_of_node(&self, node_id: GraphNodeId) -> Option<usize> {
         self.plugins_linear()?
@@ -2022,7 +2041,7 @@ impl PluginGraph {
     fn node_display_name(&self, id: GraphNodeId) -> String {
         if let Some(node) = self.nodes.get(&id) {
             let enabled = if node.plugin.enabled { "" } else { " [off]" };
-            format!("{}{}", node.plugin.plugin_type().name(), enabled)
+            format!("{}{}", node.plugin.display_name(), enabled)
         } else if let Some(special) = self.special_nodes.get(&id) {
             special.display_name()
         } else {

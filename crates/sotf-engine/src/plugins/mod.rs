@@ -3744,6 +3744,11 @@ pub struct Plugin {
     /// Temporarily disabled due to channel incompatibility; auto-restores on compatible tracks
     #[serde(skip)]
     pub suspended: bool,
+    /// Optional user-facing name (e.g., "Room EQ", "Broadband EQ"). When None,
+    /// the UI falls back to the plugin type display name. Persisted to JSON
+    /// so named instances survive save/reload.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 impl Plugin {
@@ -3754,6 +3759,7 @@ impl Plugin {
             settings: PluginSettings::default_for(plugin_type),
             permanent: false,
             suspended: false,
+            name: None,
         }
     }
 
@@ -3765,6 +3771,7 @@ impl Plugin {
             settings: PluginSettings::default_for(plugin_type),
             permanent: true,
             suspended: false,
+            name: None,
         }
     }
 
@@ -3775,6 +3782,15 @@ impl Plugin {
     /// Returns true if this plugin is permanent and cannot be removed
     pub fn is_permanent(&self) -> bool {
         self.permanent
+    }
+
+    /// User-facing display name. Falls back to the plugin type's static name
+    /// when no custom name has been set.
+    pub fn display_name(&self) -> String {
+        match &self.name {
+            Some(n) if !n.is_empty() => n.clone(),
+            _ => self.plugin_type().name().to_string(),
+        }
     }
 
     pub fn to_plugin_config(&self, sample_rate: f64) -> Option<PluginConfig> {

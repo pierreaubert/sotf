@@ -76,6 +76,16 @@ pub use ui::{
     DEFAULT_MAX_FONT_SIZE_PX, DEFAULT_MIN_FONT_SIZE_PX,
 };
 
+// Re-export room EQ rack-apply helper for testing.
+// Exposes the pure function that "Apply to Rack" uses to insert/upsert
+// the Broadband EQ + Room EQ plugins. Tests in
+// `tests/room_eq_apply_tests.rs` assert it produces two distinct named
+// EQs and stays idempotent on re-apply.
+pub use components::room_eq::render::should_render_filter_plot;
+pub use components::room_eq::step_6_export::{
+    classify_channel_eq_filters, upsert_named_room_eq_plugins,
+};
+
 // Re-export EQ chart functions and constants for testing
 pub use components::plugins::ui_eq::{
     CHART_BOTTOM_MARGIN, CHART_HEIGHT, CHART_LEFT_MARGIN, CHART_RIGHT_MARGIN, CHART_TOP_MARGIN,

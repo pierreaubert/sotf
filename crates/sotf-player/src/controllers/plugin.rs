@@ -1124,6 +1124,7 @@ impl PluginController {
             settings: settings.clone(),
             permanent: false,
             suspended: false,
+            name: None,
         };
         let loaded_type = temp.plugin_type();
         let current_type = plugin.plugin_type();

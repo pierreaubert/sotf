@@ -514,10 +514,18 @@ pub fn create_alignment_plugins(
         ));
     }
 
+    // Tag this EQ as "broadband" so downstream consumers (Review-step
+    // plot, "Apply to Rack") can tell it apart from the main room-EQ.
+    // Without the label they get bucketed together and the user ends up
+    // with a single merged EQ + no broadband curve in the plot.
+    //
+    // Regression tests in
+    // `crates/app-gpui/tests/room_eq_apply_tests.rs::classify_real_emitter_output_separates_broadband_from_main`
+    // pin this contract.
     let eq_plugin = if shelf_filters.is_empty() {
         None
     } else {
-        Some(output::create_eq_plugin(&shelf_filters))
+        Some(output::create_labeled_eq_plugin(&shelf_filters, "broadband"))
     };
 
     let gain_plugin = if result.flat_gain_db.abs() >= MIN_CORRECTION_DB {

@@ -546,6 +546,32 @@ impl LineChart {
         self
     }
 
+    /// Set the stroke dash pattern for the most recently added series.
+    ///
+    /// This applies to whichever series was last pushed via `add_series*`
+    /// (primary or secondary axis). If no additional series has been added,
+    /// this is a no-op — use [`Self::dash_array`] to style the primary series
+    /// supplied to [`line`].
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// use gpui_px::{line, StrokeDashArray};
+    /// let x = vec![1.0, 2.0, 3.0];
+    /// let spl = vec![80.0, 85.0, 82.0];
+    /// let di = vec![5.0, 6.0, 5.5];
+    /// let chart = line(&x, &spl)
+    ///     .label("SPL")
+    ///     .add_series_y2(&di, Some("DI"), 0xff7f0e, 2.0, 1.0)
+    ///     .series_dash_array(StrokeDashArray::Dashed)
+    ///     .build();
+    /// ```
+    pub fn series_dash_array(mut self, pattern: StrokeDashArray) -> Self {
+        if let Some(last) = self.series.last_mut() {
+            last.dash_array = Some(pattern);
+        }
+        self
+    }
+
     /// Set the chart theme.
     ///
     /// # Example

@@ -22,7 +22,6 @@ use super::slope;
 use super::target_tilt;
 use super::types::{
     ChannelDspChain, MeasurementSource, OptimizerConfig, ProcessingMode, RoomConfig, TargetShape,
-    TiltType,
 };
 
 // Import from optimize and group_processing modules
@@ -177,6 +176,13 @@ pub(super) fn process_single_speaker(
         curve.freq[curve.freq.len() - 1]
     );
 
+    // B3 — warn when optimizer.{min,max}_freq falls outside the measurement.
+    super::optimize::warn_if_optimizer_bounds_exceed_data(
+        channel_name,
+        &curve,
+        &room_config.optimizer,
+    );
+
     // Use probe-based arrival time if available (more accurate), else fall back to WAV onset
     let arrival_time_ms: Option<f64> = if let Some(probe_ms) = probe_arrival_ms {
         debug!(
@@ -280,42 +286,16 @@ pub(super) fn process_single_speaker(
         } else {
             None
         }
-    } else if let Some(tilt_config) = &room_config.optimizer.target_tilt {
-        // Legacy path: target_tilt without migration (shouldn't happen after migrate_target_config)
-        if tilt_config.tilt_type == TiltType::FromMeasurement {
-            // Resolve FromMeasurement in legacy path too
-            let measured_slope = slope::estimate_slope_db_per_octave(
-                &curve,
-                slope::DEFAULT_SLOPE_MIN_FREQ,
-                slope::DEFAULT_SLOPE_MAX_FREQ,
-            )
-            .unwrap_or(0.0);
-            info!(
-                "  FromMeasurement (legacy): estimated slope = {:.2} dB/octave from '{}'",
-                measured_slope, channel_name
-            );
-            let resolved = super::types::TargetTiltConfig {
-                tilt_type: TiltType::Custom,
-                slope_db_per_octave: measured_slope,
-                ..tilt_config.clone()
-            };
-            Some(target_tilt::build_target_curve_with_tilt(
-                &curve.freq,
-                &resolved,
-            ))
-        } else if tilt_config.tilt_type != TiltType::Flat {
-            info!(
-                "  Building target curve with legacy {:?} tilt ({:.2} dB/octave)",
-                tilt_config.tilt_type, tilt_config.slope_db_per_octave
-            );
-            Some(target_tilt::build_target_curve_with_tilt(
-                &curve.freq,
-                tilt_config,
-            ))
-        } else {
-            None
-        }
     } else {
+        // All public entry points (optimize_room, optimize_speaker, config_loader)
+        // call `OptimizerConfig::migrate_target_config` before reaching this code,
+        // which folds any legacy `target_tilt`/`broadband_target_matching` into
+        // `target_response`. Reaching this branch with `target_tilt` still populated
+        // would mean a caller skipped migration — treat that as a configuration bug.
+        debug_assert!(
+            room_config.optimizer.target_tilt.is_none(),
+            "target_tilt present without target_response — migrate_target_config() was not called on the OptimizerConfig before optimization",
+        );
         None
     };
 
@@ -650,7 +630,10 @@ pub(super) fn process_single_speaker(
                 if let Some(g) = gain_plugin {
                     plugins.push(g);
                 }
-                if let Some(eq) = eq_plugin {
+                if let Some(mut eq) = eq_plugin {
+                    // Label the broadband EQ so the UI can distinguish it
+                    // from the main room-correction EQ.
+                    eq.parameters["label"] = serde_json::json!("broadband");
                     plugins.push(eq);
                 }
 
@@ -775,7 +758,7 @@ pub(super) fn process_single_speaker(
 
             // Report initial loss so the progress chart has data
             if let Some(ref mut cb) = callback {
-                cb(1, pre_score);
+                cb(1, pre_score, None);
             }
 
             // Check if we should force excess phase correction for GD-Opt on subwoofer
@@ -871,7 +854,7 @@ pub(super) fn process_single_speaker(
 
             // Report final loss so the progress chart shows the FIR improvement
             if let Some(ref mut cb) = callback {
-                cb(2, post_score);
+                cb(2, post_score, None);
             }
 
             // Extend curves to 20 Hz – 20 kHz for display output
@@ -1801,8 +1784,11 @@ pub(super) fn process_single_speaker(
 /// optimization with different Q constraints. Otherwise falls back to standard
 /// single-pass optimization.
 ///
-/// This is the unified entry point for EQ optimization that both the generic
-/// pipeline and system-config workflows should use.
+/// Historically used by the system-config workflows; after Phase 3 those
+/// workflows route per-channel EQ through `process_single_speaker`, which
+/// applies the Schroeder split itself inside `prepare_single_channel_eq`.
+/// Kept as an internal convenience wrapper for tests and future callers.
+#[allow(dead_code)]
 pub(super) fn optimize_eq_with_optional_schroeder(
     curve: &Curve,
     optimizer: &OptimizerConfig,

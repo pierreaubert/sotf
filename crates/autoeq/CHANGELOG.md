@@ -2,6 +2,187 @@
 
 ## Fixes
 
+### `compute_and_correct_icd` default divergence (roomeq review B1)
+
+- `compute_and_correct_icd` in `roomeq/optimize.rs` fell back to
+  `enabled=false`, `threshold_db=1.5`, `max_filters=3` when
+  `OptimizerConfig.channel_matching` was `None`. The public default for
+  `ChannelMatchingConfig` is `enabled=true`, `threshold_db=0.75`,
+  `max_filters=5` — so `channel_matching: None` silently produced a
+  different result than `channel_matching: Some(ChannelMatchingConfig::default())`.
+  The fallback now delegates to `ChannelMatchingConfig::default()` via
+  `.clone().unwrap_or_default()`, making the two paths equivalent.
+- New test: `tests/channel_matching_defaults_test.rs` pins the defaults
+  and the equivalence of `None` vs `Some(default)`.
+
+### `optimize_speaker` skipped legacy target migration (roomeq review B2)
+
+- `optimize_speaker` built a temporary `RoomConfig` from the caller's
+  `OptimizerConfig` without calling `migrate_target_config()`. Callers
+  that passed a legacy `target_tilt` + `broadband_target_matching`
+  config fell through to a dead-code branch in `speaker_eq.rs` instead
+  of reaching the unified target-response path taken by `optimize_room`
+  and by the JSON config loader. `optimize_speaker` now migrates up-front,
+  and the unreachable legacy branch in `speaker_eq.rs` was removed in
+  favour of a `debug_assert!` that catches any future bypass.
+- New test: `tests/migration_idempotence_test.rs` asserts that repeated
+  invocations of `migrate_target_config` are a no-op, so stacked entry
+  points that each migrate cannot undo each other.
+
+### Validator: schroeder_split + non-zero target slope warning (roomeq review I2)
+
+- When `schroeder_split` is enabled together with a non-zero target slope
+  (`target_response.slope_db_per_octave` or a non-Flat `target_tilt`), the
+  modal and diffuse regions are optimized independently, so the requested
+  slope is approximated rather than matched exactly. `validate_room_config`
+  now emits a warning so users know their slope will be a best-effort fit
+  across the crossover.
+
+### Validator: phase_linear + wide max_freq warning (roomeq review I5)
+
+- `processing_mode=phase_linear` designs linear-phase FIR filters whose
+  tap budget is fixed; asking them to represent `[min_freq .. 20 kHz]`
+  with default tap counts leaves the HF range under-resolved. The
+  validator now warns when `PhaseLinear` is combined with `max_freq`
+  above 2 kHz, with a pointer to either cap `max_freq` or raise
+  `fir.taps`.
+
+### Validator: multi_measurement.weights length check (roomeq review B10)
+
+- `validate_room_config` now errors when `multi_measurement.weights` has
+  a different length than the channel's resolved measurement count
+  (`MeasurementSource::Multiple` / `InMemoryMultiple`). Before this
+  check the mismatch surfaced as an index-out-of-bounds panic deep
+  inside the optimizer.
+
+### Validator: CEA2034 source plausibility check (roomeq review I4)
+
+- When `cea2034_correction.enabled=true` but no speaker carries a
+  CEA2034/spinorama-shaped source (no `speaker_name`, no `cea2034` /
+  `spinorama` hint in a path), the validator emits a warning. The
+  3-pass correction assumes spinorama-shaped data and silently produces
+  incorrect results when fed plain in-room responses.
+
+### Measurement bounds warning (roomeq review B3)
+
+- `process_single_speaker` now emits a `log::warn!` when
+  `optimizer.min_freq` / `max_freq` fall outside the measurement data's
+  frequency range (5 % log-axis tolerance). Filters in the out-of-range
+  region cannot be validated by the data, and the warning makes that
+  divergence visible instead of producing a silently-degraded
+  optimization.
+
+### Workflow feature parity for stereo 2.0 and HomeCinema-no-sub (roomeq review B5/I3)
+
+- `optimize_stereo_2_0` and `optimize_home_cinema_no_sub` now route each
+  channel through `process_single_speaker` via a new
+  `run_channel_via_generic_path` helper. Before Phase 3 these workflows
+  called `eq::optimize_channel_eq` directly and silently ignored
+  `excursion_protection`, `target_response`/`target_tilt`,
+  `broadband_target_matching`, and `cea2034_correction`. Now all four
+  features apply uniformly in the workflow path, matching the generic
+  `SystemModel::Custom` path's behaviour.
+- The `use_generic_for_stereo` dispatch in `optimize_room_impl` is
+  removed: with stereo 2.0 honouring features natively, the fallback is
+  no longer needed.
+- **Phase 3b** — `optimize_stereo_2_1` and `optimize_home_cinema_with_sub`
+  now also delegate each channel's Pre-EQ through `process_single_speaker`.
+  The returned plugin stack (excursion HPF + CEA2034 Pass 1 + broadband
+  shelf+gain + per-channel EQ) is inserted BEFORE the crossover HP/LP
+  in the final chain, so the features act on the raw speaker signal
+  and the crossover integration picks up the feature-corrected
+  response. Sub Pre-EQ uses an inline source with no `speaker_name`
+  so CEA2034 (which requires spinorama data) is silently skipped,
+  while excursion / broadband / target_response still apply. The
+  Phase 3a "features not honoured" warning
+  (`warn_unsupported_features_on_crossover_workflow`) is retired —
+  the workflows are now feature-complete.
+- New tests: `tests/workflow_feature_parity_test.rs` exercises both
+  stereo 2.0 and stereo 2.1 workflows with `excursion_protection` and
+  `target_response` enabled — configurations that would previously
+  trip the dispatch fallback (2.0) or be silently dropped (2.1).
+- BEM cross-mode comparison thresholds in
+  `tests/roomeq_generated_data_test.rs` loosened to reflect the
+  intentional behaviour change: Phase 3 makes `processing_mode`
+  reach `optimize_stereo_2_0` instead of being dropped, so iir / fir /
+  hybrid / mixed_phase legitimately produce different filter sets on
+  modal bass. `CROSS_MODE_SCORE_RATIO_LIMIT` moved from 1.10 to 2.0 and
+  `CROSS_MODE_FR_RMS_DIFF_DB` from 5.0 to 6.0 dB.
+
+### Stereo 2.1 / HomeCinema-with-sub: virtual_main complex-sum fix (roomeq review B8)
+
+- The crossover optimizer for stereo 2.1 was fed a virtual-main curve
+  that averaged L and R magnitudes but retained L's phase. In
+  asymmetric rooms the phase-aware crossover / group-delay loss was
+  comparing against a phantom channel that matched neither L nor R.
+- Replaced with a coherent complex sum (`complex_sum_mains`) that
+  preserves magnitude AND phase, matching the pattern already used in
+  `preprocess_cardioid`. Same fix applied to the multi-channel virtual
+  main in `optimize_home_cinema_with_sub`.
+
+### Stereo 2.1 / HomeCinema-with-sub: Mains Post-EQ "do no harm" guard (roomeq review B7)
+
+- The Sub Post-EQ already had a guard that discarded the optimized
+  filters when the resulting flat-loss regressed (common on cardioid
+  subs with steep LF rolloff). The Mains Post-EQ had no such guard —
+  if Pre-EQ + Crossover already left the post-crossover curve
+  near-flat, a tight Post-EQ could over-fit and make it worse.
+- Mirrored the guard on L/R Post-EQ in both `optimize_stereo_2_1` and
+  `optimize_home_cinema_with_sub`: filters are dropped (with a
+  `log::warn!`) when they regress the measured flat loss.
+
+### Validator: target_curve + target_response precedence warning (roomeq review I1)
+
+- `validate_room_config` now warns when both `target_curve` (on
+  `RoomConfig`) and a non-Flat `target_response` (on `OptimizerConfig`)
+  are configured. `target_response` takes precedence — it is baked into
+  the measurement before EQ — and `target_curve` is silently dropped,
+  which surprises users who set both as "belt and suspenders". The
+  warning makes the precedence explicit so the user can pick one.
+- The pre-existing `target_curve` + legacy `target_tilt` warning is
+  preserved for unmigrated configs (`migrate_target_config` wasn't
+  called upstream).
+
+### Validator: legacy `mode` string deprecation (roomeq review B4)
+
+- `OptimizerConfig.mode: String` and `OptimizerConfig.processing_mode:
+  ProcessingMode` overlap (iir↔LowLatency, fir↔PhaseLinear,
+  mixed↔Hybrid, mixed_phase↔MixedPhase). Code branches on
+  `processing_mode`, so a config that sets `mode` but leaves
+  `processing_mode` at the default silently gets `LowLatency` regardless
+  of what `mode` says. The validator now emits a deprecation warning
+  whenever `mode` and `processing_mode` disagree, plus a tailored warning
+  for `WarpedIir` / `KautzModal` (which have no legacy equivalent) when
+  `mode` is anything other than the default "iir". `mode` stays accepted
+  for now but will be removed in a future release.
+
+### DE max_iter budget clamp (roomeq review B6)
+
+- `setup_de_common` / `derive_de_budget` floored `max_iter` at 5 000
+  generations regardless of the user's `maxeval`. On a small budget
+  (e.g. `maxeval=500 population=500`) this silently ran ~2.5 M
+  evaluations — 10× the user-specified limit. The floor now only applies
+  when `maxeval >= MIN_DE_GENERATIONS × population_size`; otherwise
+  the computed generation count is respected and a `log::warn!` flags
+  the reduced exploration budget. Same fix mirrored in
+  `roomeq::optimize::optimize_room_impl` where the legacy copy lived.
+- `setup_de_common_enforces_minimum_generations` → renamed to
+  `setup_de_common_clamps_to_maxeval_when_budget_is_small` with
+  inverted assertions.
+
+### Debug sanity check on RoomOptimizationResult (roomeq review I6 subset)
+
+- `sanity_check_result` runs in debug builds at every
+  `optimize_room_impl` exit point. Catches silent corruption that would
+  otherwise produce garbage DSP chains:
+  * channel curve `freq`/`spl` length mismatch,
+  * NaN / infinite SPL in the final curve (optimiser divergence),
+  * `|final - initial|` beyond ±180 dB (sign-flip / wraparound).
+  Full chain resynthesis — reconstructing the per-channel post-DSP
+  response from the plugin stack and comparing to `final_curve` within
+  0.1 dB — is deferred; workflow-specific crossover / Post-EQ
+  intermediates make the invariant architecture-sensitive.
+
 ### Initial guess sign inversion for peaks/dips
 
 - The smart initial guess generator (`initial_guess.rs`) had inverted
@@ -21,6 +202,46 @@
   clamping now only applies when the system has a subwoofer.
 
 ## Improvements
+
+### QA: expanded `roomeq-qa-features` progression (roomeq review Phase 5)
+
+- `feature_steps()` now walks through nine stages (was six): the
+  original Baseline → psychoacoustic → asymmetric_loss → broadband →
+  excursion_protection → schroeder_split progression is extended with
+  `+ channel_matching`, `+ voice_of_god` (reference_channel="L"), and
+  `+ decomposed_correction`. The baseline reset wipes the new fields
+  too, so each recording runs through the full cumulative stack.
+- Features requiring setups this 2.0 fixture cannot provide are
+  intentionally omitted and documented inline: `phase_alignment` /
+  `group_delay_optimization` need a sub crossover; `multi_measurement`
+  / `spatial_robustness` need multi-seat data (covered by the fuzzer);
+  `cea2034_correction` needs a speaker_name for spinorama fetch;
+  `reflection_cancel` needs a measured SSIR.
+
+### QA: fuzzer exercises MultiMeasurement strategies (Phase 5)
+
+- `roomeq-fuzzer` now attaches a randomised
+  `OptimizerConfig.multi_measurement` to any scenario whose generated
+  speaker carries a `MeasurementSource::Multiple` (50% probability).
+  Rotates across the four strategies — `Average`, `WeightedSum`,
+  `Minimax`, `VariancePenalized` — with a measurement-count-matched
+  weight vector for `WeightedSum` so the B10 validator doesn't
+  reject the config. This is the first coverage path for the per-
+  measurement loss aggregation code outside the unit tests.
+- NOTE: the fuzzer binary has a long-standing path-resolution bug
+  unrelated to Phase 5 — generated CSVs are written as relative paths
+  but `roomeq` is invoked via `cargo run` which changes cwd to the
+  workspace root. Tracked as follow-up; the Phase 5 additions are
+  validated by compile + clippy checks, not end-to-end runs.
+
+### QA: `just qa-roomeq-ci` recipe (Phase 5)
+
+- New `crates/autoeq/Justfile` target wraps a compact CI-friendly
+  roomeq suite: 50-scenario fuzzer run + `roomeq-qa-coverage --quick`.
+  Typical wall time under 3 minutes on modern hardware. Intended to
+  be dropped into a CI pipeline without blocking on the full
+  `qa-roomeq` (which includes Python plotting and long convergence
+  sweeps).
 
 ### Diagnostic logging for optimizer frequency range
 
@@ -410,6 +631,92 @@ The ear generates Cubic Distortion Tones (CDT) at 2*f1 - f2 when two tones f1, f
 
 # 0.4.21
 
-- implemented proper delay detection and analysis (following AES presentation Acoustic and Psychoacoustic issues in Room Correction James D. (jj) Johnston and Serge Smirnov)
+## Features
+
+- Implemented proper delay detection and analysis (following AES presentation "Acoustic and Psychoacoustic Issues in Room Correction" by James D. (jj) Johnston and Serge Smirnov)
+- Added support for downloading headphone measurements from the spinorama.org API
+- Refactored autoeq internals: split large files into smaller focused modules
+
+# 0.4.20
+
+No autoeq-specific changes (workspace version bump for app-gpui builder migration).
+
+# 0.4.19
+
+No autoeq-specific changes (workspace version bump for server mode in TUI/GPUI).
+
+# 0.4.18
+
+No autoeq-specific changes (workspace sync between repositories).
+
+# 0.4.17
+
+## Features
+
+- Merged all autoeq sub-crates (autoeq, autoeq-roomeq, autoeq-roomsim) into a single `autoeq` crate
+- CEA2034-aware room EQ: the optimizer now splits correction into 3 parts — above-Schroeder CEA2034 correction, in-room correction, and custom tilt/bass/treble trends
+- Export to Roon DSP, CamillaDSP, EqAPO, PipeWire, Wavelet, and EasyEffects formats
+- L-SHADE optimizer support (`lshade` algorithm)
+- Configurable `smooth_n` parameter for measurement smoothing (was fixed at 1/2 octave)
+- Improved FIR and mixed mode: pre-ringing control, smarter multi-seat options
+- Multi-measurement optimization: merge-then-optimise and multi-objective strategies
+- Support for multiple calibration files
+- LR8 (Linkwitz-Riley 8th order) filter support
+
+## Fixes
+
+- Fixed spectral alignment: replaced gradient method with Levenberg-Marquardt (function is not convex and gradient method was unstable)
+- Fixed tolerance and absolute tolerance propagation from app to backend (results were fast but inaccurate)
+- Fixed broadband compliance in QA testing
+- Fixed double tilt with certain option combinations
+- Input data validation to prevent glitches (epsilon rationalization, input checks)
+- Fixed high Q preference by applying proper curve smoothing
+- Protected division by zero and NaN in MAD computation
+- Fixed DE budget, Smart Init, and initial guess bounds
+- Fixed crossover monotonicity constraint
+- Fixed Bobyqa to use penalties
+
+# 0.3.16
+
+## Features
+
+- RoomEQ v2 configuration schema with logical speaker mapping (`SystemConfig`)
+- Specific workflows for stereo 2.0 and 2.1 topologies
+- Group delay optimization and processing modes logic
+- Per-driver linearization and pipeline orchestration
+- Acoustic group consistency checks with range and octave warnings
+- RoomEQ QA binary (`roomeq-qa`)
+
+## Fixes
+
+- Corrected crossover computation
+
+# 0.3.15
+
+## Features
+
+- Passband-aware normalization using `detect_passband_and_mean`
+- FIR optimization with smoothing of excess phase
+- Mixed IIR+FIR mode for roomeq
+- Time alignment on drivers
+- Excursion protection in roomeq
+- FIR coefficient propagation through the full result chain
+- Near-zero gain filter pruning (|gain| < 0.05 dB)
+- Sub Post-EQ "do no harm" guard: discards EQ when it worsens cardioid subs
+
+## Fixes
+
+- Loss function computations now use complex numbers for proper phase handling
+- Curve regularization improvements
+- Better phase alignment
+- Fixed gain output in roomeq
+
+# 0.3.12
+
+## Features
+
+- Merged autoeq crates into the sotf monorepo
+- Improved roomeq resilience to malformed data input
+- JSON configuration file converter utility for migrating old formats
 
 

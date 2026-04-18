@@ -5,7 +5,7 @@ use crate::components::graphs::common::theme_to_chart_theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_px::line;
+use gpui_px::{StrokeDashArray, line};
 use gpui_ui_kit::{
     Badge, BadgeVariant, Button, ButtonVariant, Card, Column, HStack, Progress, ProgressSize,
     ProgressVariant, Spinner, SpinnerSize, StackAlign, StackSpacing, Table, TableTheme, Text,
@@ -299,8 +299,8 @@ impl PlayerView {
                         let value_color = theme.text_primary;
                         let accent = theme.accent;
 
-                        // Helper: build a label: value row
-                        let row = |label: &str, value: String| {
+                        // Inline compact pair: "label: value" on one line
+                        let pair = |label: &str, value: String| {
                             HStack::new()
                                 .spacing(StackSpacing::Xs)
                                 .child(
@@ -316,105 +316,99 @@ impl PlayerView {
                                 )
                         };
 
-                        let bool_badge = |label: &str, enabled: bool| {
-                            HStack::new()
-                                .spacing(StackSpacing::Xs)
-                                .child(
-                                    Text::new(format!("{}:", label))
-                                        .size(TextSize::Xs)
-                                        .color(label_color),
-                                )
-                                .child(
-                                    Text::new(if enabled { "ON" } else { "OFF" })
-                                        .size(TextSize::Xs)
-                                        .weight(TextWeight::Semibold)
-                                        .color(if enabled { accent } else { label_color }),
-                                )
+                        // Show only enabled toggles as accent-tinted chips —
+                        // disabled flags add noise, not signal.
+                        let chip = |label: &'static str| {
+                            Text::new(label)
+                                .size(TextSize::Xs)
+                                .weight(TextWeight::Semibold)
+                                .color(accent)
+                        };
+
+                        // Collapse channel list to a single compact line:
+                        // "3: FL, FR, C" rather than "3 (FL, FR, C)".
+                        let channels_text = if channel_names.is_empty() {
+                            "None".to_string()
+                        } else {
+                            format!(
+                                "{}: {}",
+                                channel_names.len(),
+                                channel_names.join(", ")
+                            )
+                        };
+
+                        let refine_text = if param_refine {
+                            format!("ON ({})", param_local_algo)
+                        } else {
+                            "OFF".to_string()
                         };
 
                         VStack::new()
                             .spacing(StackSpacing::Xs)
-                            // Channels
-                            .child(row(
-                                "Channels",
-                                if channel_names.is_empty() {
-                                    "None".to_string()
-                                } else {
-                                    format!(
-                                        "{} ({})",
-                                        channel_names.len(),
-                                        channel_names.join(", ")
-                                    )
-                                },
-                            ))
-                            // Mode & Algorithm
+                            // Row 1: algorithm identity + channels.
                             .child(
                                 HStack::new()
                                     .spacing(StackSpacing::Md)
-                                    .child(row("Mode", param_mode))
-                                    .child(row("Algorithm", param_algorithm))
-                                    .child(row("PEQ Model", param_peq_model)),
+                                    .child(pair("Channels", channels_text))
+                                    .child(pair("Mode", param_mode))
+                                    .child(pair("Algo", param_algorithm))
+                                    .child(pair("Model", param_peq_model)),
                             )
-                            // Filters & Iterations
+                            // Row 2: numeric parameters packed together.
                             .child(
                                 HStack::new()
                                     .spacing(StackSpacing::Md)
-                                    .child(row("Filters", param_num_filters.to_string()))
-                                    .child(row("Max Iter", param_max_iter.to_string()))
-                                    .child(row("Population", param_population.to_string())),
-                            )
-                            // Frequency range
-                            .child(
-                                HStack::new()
-                                    .spacing(StackSpacing::Md)
-                                    .child(row(
-                                        "Freq Range",
-                                        format!("{:.0} - {:.0} Hz", param_min_freq, param_max_freq),
+                                    .child(pair(
+                                        "Filters",
+                                        param_num_filters.to_string(),
                                     ))
-                                    .child(row(
-                                        "Q Range",
-                                        format!("{:.1} - {:.1}", param_min_q, param_max_q),
+                                    .child(pair(
+                                        "Iter",
+                                        param_max_iter.to_string(),
                                     ))
-                                    .child(row(
-                                        "dB Range",
-                                        format!("{:.1} - {:.1}", param_min_db, param_max_db),
+                                    .child(pair(
+                                        "Pop",
+                                        param_population.to_string(),
+                                    ))
+                                    .child(pair(
+                                        "Freq",
+                                        format!(
+                                            "{:.0}-{:.0} Hz",
+                                            param_min_freq, param_max_freq
+                                        ),
+                                    ))
+                                    .child(pair(
+                                        "Q",
+                                        format!("{:.1}-{:.1}", param_min_q, param_max_q),
+                                    ))
+                                    .child(pair(
+                                        "dB",
+                                        format!(
+                                            "{:.1}/{:.1}",
+                                            param_min_db, param_max_db
+                                        ),
                                     )),
                             )
-                            // Toggles
+                            // Row 3: feature flags — only show the enabled
+                            // ones (plus Refine which carries local algo).
                             .child(
                                 HStack::new()
                                     .spacing(StackSpacing::Md)
-                                    .child(bool_badge("Refine", param_refine))
-                                    .when(param_refine, |h| {
-                                        h.child(row("Local Algo", param_local_algo))
+                                    .child(pair("Refine", refine_text))
+                                    .when(param_psychoacoustic, |h| {
+                                        h.child(chip("Psychoacoustic"))
                                     })
-                                    .child(bool_badge("Psychoacoustic", param_psychoacoustic))
-                                    .child(bool_badge("Asymmetric Loss", param_asymmetric_loss)),
-                            )
-                            // Advanced features (only show enabled ones)
-                            .when(
-                                param_target_tilt
-                                    || param_excursion
-                                    || param_schroeder
-                                    || param_phase_alignment,
-                                |vstack| {
-                                    vstack.child(
-                                        HStack::new()
-                                            .spacing(StackSpacing::Md)
-                                            .when(param_target_tilt, |h| {
-                                                h.child(bool_badge("Target Tilt", true))
-                                            })
-                                            .when(param_excursion, |h| {
-                                                h.child(bool_badge("Excursion Protection", true))
-                                            })
-                                            .when(param_schroeder, |h| {
-                                                h.child(bool_badge("Schroeder Split", true))
-                                            })
-                                            .when(param_phase_alignment, |h| {
-                                                h.child(bool_badge("Phase Alignment", true))
-                                            }),
-                                    )
-                                },
+                                    .when(param_asymmetric_loss, |h| {
+                                        h.child(chip("Asymmetric Loss"))
+                                    })
+                                    .when(param_target_tilt, |h| h.child(chip("Target Tilt")))
+                                    .when(param_excursion, |h| {
+                                        h.child(chip("Excursion Protection"))
+                                    })
+                                    .when(param_schroeder, |h| h.child(chip("Schroeder Split")))
+                                    .when(param_phase_alignment, |h| {
+                                        h.child(chip("Phase Alignment"))
+                                    }),
                             )
                     }),
             )
@@ -475,7 +469,10 @@ impl PlayerView {
                     std::collections::HashMap::new();
                 let mut all_losses: Vec<f64> = Vec::new();
 
-                for (iter, loss, speaker) in &history {
+                let mut epa_data: std::collections::HashMap<String, (Vec<f64>, Vec<f64>)> =
+                    std::collections::HashMap::new();
+
+                for (iter, loss, speaker, epa) in &history {
                     if !loss.is_finite() || *loss <= 0.0 {
                         continue;
                     }
@@ -492,6 +489,14 @@ impl PlayerView {
                     let (iters, losses) = channel_data.get_mut(speaker).unwrap();
                     iters.push(*iter as f64);
                     losses.push(*loss);
+
+                    if let Some(ep) = epa {
+                        let entry = epa_data
+                            .entry(speaker.clone())
+                            .or_insert_with(|| (Vec::new(), Vec::new()));
+                        entry.0.push(*iter as f64);
+                        entry.1.push(*ep);
+                    }
                 }
                 let current_loss_val = all_losses.last().copied().unwrap_or(0.0);
                 let best_loss = all_losses.iter().copied().fold(f64::INFINITY, f64::min);
@@ -575,9 +580,6 @@ impl PlayerView {
                     for (idx, ch_name) in channel_order.iter().enumerate().skip(1) {
                         let (ch_iters, ch_losses) = &channel_data[ch_name];
                         let color = channel_colors[idx % channel_colors.len()];
-                        // Each channel has its own X (iteration) values, so use
-                        // add_series_with_x to avoid misaligning Y against the
-                        // primary series X.
                         builder = builder.add_series_with_x(
                             ch_iters,
                             ch_losses,
@@ -587,6 +589,57 @@ impl PlayerView {
                             1.0,
                         );
                     }
+
+                    // Add EPA preference on secondary (right) Y-axis.
+                    // Same color as the channel's loss series, thinner stroke,
+                    // dashed so it's visually distinct from the loss trace.
+                    //
+                    // Auto-scale Y2 from the actual EPA values. The DE
+                    // optimizer only re-evaluates EPA when it finds an
+                    // improved candidate, so the raw values sit in a narrow
+                    // band (typically ~3-6). A fixed [0, 10] range would
+                    // flatten these out and look like a constant line.
+                    let has_epa = channel_order
+                        .iter()
+                        .any(|ch| epa_data.get(ch).is_some_and(|(v, _)| !v.is_empty()));
+                    if has_epa {
+                        let (epa_min, epa_max) = epa_data
+                            .values()
+                            .flat_map(|(_, vals)| vals.iter().copied())
+                            .filter(|v| v.is_finite())
+                            .fold(
+                                (f64::INFINITY, f64::NEG_INFINITY),
+                                |(min, max), v| (min.min(v), max.max(v)),
+                            );
+                        // Pad by 10% of the span (or 0.5 if degenerate)
+                        // so extremes don't hug the chart edge.
+                        let (y2_lo, y2_hi) = if epa_min.is_finite() && epa_max.is_finite() {
+                            let span = (epa_max - epa_min).max(0.5);
+                            let pad = span * 0.1;
+                            (epa_min - pad, epa_max + pad)
+                        } else {
+                            (0.0, 10.0)
+                        };
+                        builder = builder.y2_label("EPA Preference").y2_range(y2_lo, y2_hi);
+                        for (idx, ch_name) in channel_order.iter().enumerate() {
+                            if let Some((ep_iters, ep_vals)) = epa_data.get(ch_name) {
+                                if !ep_iters.is_empty() {
+                                    let color = channel_colors[idx % channel_colors.len()];
+                                    builder = builder
+                                        .add_series_y2_with_x(
+                                            ep_iters,
+                                            ep_vals,
+                                            Some(&format!("EPA {}", ch_name)),
+                                            color,
+                                            1.0,
+                                            0.6,
+                                        )
+                                        .series_dash_array(StrokeDashArray::Dashed);
+                                }
+                            }
+                        }
+                    }
+
                     builder.build()
                 } else {
                     // No data yet — build an empty chart
@@ -696,9 +749,9 @@ impl PlayerView {
                                 Table::new("optimizer-params-table", pairs)
                                     .column(
                                         Column::new("key", "Parameter")
-                                            .width(px(250.0))
+                                            .width(px(380.0))
                                             .sortable(false)
-                                            .resizable(false)
+                                            .resizable(true)
                                             .cell_render(
                                                 move |pair: &(String, String), _, _, _| {
                                                     Text::new(pair.0.clone())
@@ -859,7 +912,7 @@ impl PlayerView {
 
         // Create async channel for progress updates from blocking thread
         let (progress_tx, progress_rx) =
-            smol::channel::bounded::<(usize, f64, f32, String, Option<String>)>(100);
+            smol::channel::bounded::<(usize, f64, f32, String, Option<String>, Option<f64>)>(100);
 
         // Clone state for progress receiver task
         let state_for_progress = self.state.clone();
@@ -881,17 +934,17 @@ impl PlayerView {
                 loop {
                     // Block until at least one message arrives (or channel closes).
                     let first = progress_rx.recv().await;
-                    let Ok((mut iteration, mut loss, mut overall_progress, mut speaker, mut message)) =
+                    let Ok((mut iteration, mut loss, mut overall_progress, mut speaker, mut message, first_epa)) =
                         first
                     else {
                         break;
                     };
 
                     // Drain all additional pending messages without blocking.
-                    let mut batch: Vec<(usize, f64, String)> =
-                        vec![(iteration, loss, speaker.clone())];
-                    while let Ok((it, l, op, sp, msg)) = progress_rx.try_recv() {
-                        batch.push((it, l, sp.clone()));
+                    let mut batch: Vec<(usize, f64, String, Option<f64>)> =
+                        vec![(iteration, loss, speaker.clone(), first_epa)];
+                    while let Ok((it, l, op, sp, msg, ep)) = progress_rx.try_recv() {
+                        batch.push((it, l, sp.clone(), ep));
                         iteration = it;
                         loss = l;
                         overall_progress = op;
@@ -912,9 +965,9 @@ impl PlayerView {
                         }
 
                         let history = &mut room_eq.progress_history;
-                        for (it, l, sp) in batch {
+                        for (it, l, sp, ep) in batch {
                             if history.len() < 10000 {
-                                history.push((it, l, sp));
+                                history.push((it, l, sp, ep));
                             }
                         }
                         cx.notify();
@@ -953,8 +1006,9 @@ impl PlayerView {
                     let overall = progress.overall_progress as f32;
 
                     // Send progress update (non-blocking)
-                    let _ =
-                        progress_tx_clone.try_send((iteration, loss, overall, speaker, message));
+                    let epa = progress.epa_preference;
+                    let _ = progress_tx_clone
+                        .try_send((iteration, loss, overall, speaker, message, epa));
                     CallbackAction::Continue
                 });
 
@@ -992,6 +1046,57 @@ impl PlayerView {
                         .iter()
                         .filter_map(|name| {
                             room_result.channel_results.get(name).map(|channel_res| {
+                                // Extract broadband filters from the DSP chain
+                                // (labeled "broadband" EQ plugins)
+                                // Extract broadband filters from the DSP chain
+                                // (labeled "broadband" EQ plugins)
+                                let bb_filters: Vec<EqFilterConfig> = room_result
+                                    .channels
+                                    .get(name)
+                                    .map(|chain| {
+                                        chain
+                                            .plugins
+                                            .iter()
+                                            .filter(|p| {
+                                                p.plugin_type.eq_ignore_ascii_case("eq")
+                                                    && p.parameters
+                                                        .get("label")
+                                                        .and_then(|l| l.as_str())
+                                                        == Some("broadband")
+                                            })
+                                            .flat_map(|p| {
+                                                p.parameters
+                                                    .get("filters")
+                                                    .and_then(|f| f.as_array())
+                                                    .unwrap_or(&vec![])
+                                                    .iter()
+                                                    .map(|fj| EqFilterConfig {
+                                                        filter_type: fj
+                                                            .get("filter_type")
+                                                            .and_then(|v| v.as_str())
+                                                            .unwrap_or("peak")
+                                                            .to_string(),
+                                                        frequency: fj
+                                                            .get("freq")
+                                                            .or(fj.get("frequency"))
+                                                            .and_then(|v| v.as_f64())
+                                                            .unwrap_or(1000.0),
+                                                        q: fj
+                                                            .get("q")
+                                                            .and_then(|v| v.as_f64())
+                                                            .unwrap_or(0.707),
+                                                        gain_db: fj
+                                                            .get("db_gain")
+                                                            .or(fj.get("gain_db"))
+                                                            .and_then(|v| v.as_f64())
+                                                            .unwrap_or(0.0),
+                                                    })
+                                                    .collect::<Vec<_>>()
+                                            })
+                                            .collect()
+                                    })
+                                    .unwrap_or_default();
+
                                 ChannelOptResult {
                                     channel_name: name.clone(),
                                     pre_score: channel_res.pre_score,
@@ -1006,6 +1111,7 @@ impl PlayerView {
                                             gain_db: b.db_gain,
                                         })
                                         .collect(),
+                                    broadband_filters: bb_filters,
                                     crossover_freqs: None,
                                     driver_gains: None,
                                     original_response: Some(
@@ -1081,48 +1187,11 @@ impl PlayerView {
                     let avg_pre = room_result.combined_pre_score;
                     let avg_post = room_result.combined_post_score;
 
-                    // Build full DSP output from roomeq ChannelDspChain (preserves all
-                    // plugin types: EQ, gain, delay, convolution, crossover, etc.)
-                    let dsp_channels: std::collections::HashMap<
-                        String,
-                        crate::app::types::ChannelDspChain,
-                    > = room_result
-                        .channels
-                        .iter()
-                        .map(|(name, chain)| {
-                            (
-                                name.clone(),
-                                crate::app::types::ChannelDspChain {
-                                    channel: chain.channel.clone(),
-                                    plugins: chain
-                                        .plugins
-                                        .iter()
-                                        .map(|p| crate::app::types::DspPluginConfig {
-                                            plugin_type: p.plugin_type.clone(),
-                                            parameters: p.parameters.clone(),
-                                        })
-                                        .collect(),
-                                    drivers: chain.drivers.as_ref().map(|drivers| {
-                                        drivers
-                                            .iter()
-                                            .map(|d| crate::app::types::DriverDspChain {
-                                                name: d.name.clone(),
-                                                index: d.index,
-                                                plugins: d
-                                                    .plugins
-                                                    .iter()
-                                                    .map(|p| crate::app::types::DspPluginConfig {
-                                                        plugin_type: p.plugin_type.clone(),
-                                                        parameters: p.parameters.clone(),
-                                                    })
-                                                    .collect(),
-                                            })
-                                            .collect()
-                                    }),
-                                },
-                            )
-                        })
-                        .collect();
+                    // Hand the rich autoeq `DspChainOutput` straight through —
+                    // `crate::app::types::DspChainOutput` is now just a
+                    // re-export, so no lossy field-by-field copy, no
+                    // dropped curves/IRs.
+                    let dsp_output = room_result.to_dsp_chain_output();
 
                     // Update final state
                     state_clone.update(&mut cx.clone(), |state, cx| {
@@ -1139,24 +1208,7 @@ impl PlayerView {
                         state.app.measurement_state.room_eq_state.overall_progress = 1.0;
                         state.app.measurement_state.room_eq_state.current_channel = None;
 
-                        state.app.measurement_state.room_eq_state.dsp_output =
-                            Some(crate::app::types::DspChainOutput {
-                                channels: dsp_channels,
-                                metadata: Some(crate::app::types::DspChainMetadata {
-                                    pre_score: avg_pre,
-                                    post_score: avg_post,
-                                    algorithm: state
-                                        .app
-                                        .measurement_state
-                                        .room_eq_state
-                                        .optimizer_config
-                                        .algorithm
-                                        .as_str()
-                                        .to_string(),
-                                    iterations: max_iter,
-                                    timestamp: chrono::Utc::now().to_rfc3339(),
-                                }),
-                            });
+                        state.app.measurement_state.room_eq_state.dsp_output = Some(dsp_output);
 
                         state.app.measurement_state.room_eq_state.step =
                             crate::app::types::RoomEqStep::Review;

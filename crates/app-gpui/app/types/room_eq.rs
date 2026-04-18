@@ -183,7 +183,7 @@ pub struct RoomEqState {
     /// Overall progress (0.0 - 1.0)
     pub overall_progress: f32,
     /// Progress history for visualization: (iteration, loss, channel_name)
-    pub progress_history: Vec<(usize, f64, String)>,
+    pub progress_history: Vec<(usize, f64, String, Option<f64>)>,
     /// Current iteration number
     pub current_iteration: usize,
     /// Current loss value

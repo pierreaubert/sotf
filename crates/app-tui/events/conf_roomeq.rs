@@ -673,6 +673,7 @@ pub fn poll_room_eq_optimization(app: &mut App) -> bool {
                                 gain_db: b.db_gain,
                             })
                             .collect(),
+                        broadband_filters: vec![],
                         crossover_freqs: None,
                         driver_gains: None,
                         original_response: Some(

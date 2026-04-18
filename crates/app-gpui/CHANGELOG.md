@@ -1,5 +1,21 @@
 # 0.5.16
 
+## Code changes
+
+### Room EQ: dropped lossy DSP-chain conversion in Step-4 optimiser
+
+- `step_4_optimise.rs` previously rebuilt the optimiser's `DspChainOutput`
+  field-by-field into a stripped-down sotf-player copy, losing
+  `initial_curve`, `final_curve`, `eq_response`, `target_curve`,
+  `pre_ir`, `post_ir`, `loss_type`, `inter_channel_deviation`, and
+  `epa_per_channel` on every run. Now passes
+  `room_result.to_dsp_chain_output()` straight through — sotf-player's
+  `DspChainOutput` is a re-export of the autoeq type, so no data loss.
+- `room_eq_config_tests.rs` and `room_eq_apply_tests.rs` migrated to
+  the rich `ChannelDspChain` / `DspChainOutput` shape via local
+  `chain(...)` / `driver(...)` / `output(...)` helpers so the `None`
+  soup of optional curve/IR fields doesn't pollute every test site.
+
 ## Fixes
 
 ### Room EQ: Schroeder split disabled for stereo without subwoofer

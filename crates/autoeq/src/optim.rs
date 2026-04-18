@@ -1093,10 +1093,12 @@ pub fn optimize_filters_with_algo_override(
     }
 }
 
-/// Simple progress callback: (iteration, best_loss) -> continue/stop
+/// Progress callback: (iteration, best_loss, epa_preference) -> continue/stop
 ///
 /// Used to thread per-iteration optimizer progress through the room EQ call chain.
-pub type OptimProgressCallback = Box<dyn FnMut(usize, f64) -> crate::de::CallbackAction + Send>;
+/// `epa_preference` is `Some` when EPA is computed (every N iterations), `None` otherwise.
+pub type OptimProgressCallback =
+    Box<dyn FnMut(usize, f64, Option<f64>) -> crate::de::CallbackAction + Send>;
 
 /// Optimize filter parameters with a progress callback for per-iteration updates.
 ///
@@ -1133,7 +1135,7 @@ pub fn optimize_filters_with_callback(
         Some(AlgorithmCategory::Metaheuristics(mh_name)) => {
             let mh_cb: Box<
                 dyn FnMut(&super::optim_mh::MHIntermediate) -> crate::de::CallbackAction + Send,
-            > = Box::new(move |intermediate| callback(intermediate.iter, intermediate.fun));
+            > = Box::new(move |intermediate| callback(intermediate.iter, intermediate.fun, None));
             optimize_filters_mh_with_callback(
                 x,
                 lower_bounds,
@@ -1146,9 +1148,55 @@ pub fn optimize_filters_with_callback(
             )
         }
         Some(AlgorithmCategory::AutoEQ(autoeq_name)) => {
+            // Clone data needed for EPA computation inside the DE callback.
+            let epa_config = objective_data.epa_config.clone();
+            let epa_freqs = ndarray::Array1::from(
+                objective_data.freqs.iter().copied().collect::<Vec<f64>>(),
+            );
+            // The normalized measurement is: target - deviation
+            // (since deviation = target - normalized_measurement).
+            // The corrected response after applying PEQ is:
+            //   corrected = normalized + peq = (target - deviation) + peq
+            let epa_normalized: Vec<f64> = objective_data
+                .target
+                .iter()
+                .zip(objective_data.deviation.iter())
+                .map(|(&t, &d)| t - d)
+                .collect();
+            let epa_srate = objective_data.srate;
+            let epa_model = objective_data.peq_model;
+            let mut epa_gen_counter: usize = 0;
+            const EPA_INTERVAL: usize = 10;
+
             let de_cb: Box<
                 dyn FnMut(&crate::de::DEIntermediate) -> crate::de::CallbackAction + Send,
-            > = Box::new(move |intermediate| callback(intermediate.iter, intermediate.fun));
+            > = Box::new(move |intermediate| {
+                epa_gen_counter += 1;
+                let epa = if epa_gen_counter % EPA_INTERVAL == 0 {
+                    // Corrected = normalized_measurement + PEQ response
+                    let peq_spl = x2spl(
+                        &epa_freqs,
+                        intermediate.x.as_slice().unwrap(),
+                        epa_srate,
+                        epa_model,
+                    );
+                    let corrected: Vec<f64> = epa_normalized
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &n)| n + peq_spl[i])
+                        .collect();
+                    let cfg = epa_config.clone().unwrap_or_default();
+                    let score = crate::loss::epa::score::compute_epa_normalized(
+                        epa_freqs.as_slice().unwrap(),
+                        &corrected,
+                        &cfg,
+                    );
+                    Some(score.preference)
+                } else {
+                    None
+                };
+                callback(intermediate.iter, intermediate.fun, epa)
+            });
             optimize_filters_autoeq_with_callback(
                 x,
                 lower_bounds,

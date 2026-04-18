@@ -42,7 +42,8 @@ pub(crate) fn draw_plugin_list(f: &mut Frame, area: Rect, app: &App) {
         .enumerate()
         .map(|(i, plugin)| {
             let enabled_marker = if plugin.enabled { "●" } else { "○" };
-            let display_name = if app.plugin_graph.is_input_monitor(i) {
+            let custom_name = plugin.name.clone();
+            let fallback: &str = if app.plugin_graph.is_input_monitor(i) {
                 "Loudness Monitor Input"
             } else if app.plugin_graph.is_output_monitor(i) {
                 "Loudness Monitor Output"
@@ -51,6 +52,9 @@ pub(crate) fn draw_plugin_list(f: &mut Frame, area: Rect, app: &App) {
             } else {
                 plugin.plugin_type().name()
             };
+            let display_name: String = custom_name
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| fallback.to_string());
             let content = format!("{} {} - {}", enabled_marker, i + 1, display_name);
 
             let style = if plugin.enabled {

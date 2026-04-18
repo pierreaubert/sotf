@@ -22,8 +22,7 @@ use super::types::{
 };
 
 // Private module imports for extracted functions
-pub(super) use super::speaker_eq::optimize_eq_with_optional_schroeder;
-use super::speaker_eq::process_single_speaker; // Re-export for workflows
+use super::speaker_eq::process_single_speaker;
 
 use super::crossover_utils::check_group_consistency;
 use super::group_processing::{
@@ -83,6 +82,50 @@ type MixedModeResult = (
 /// within the measurement range and is tricked into returning a deep
 /// mid-band null. First-above / last-above indices are robust to both
 /// failure modes.
+/// B3 — warn when the optimizer frequency range is outside the measurement data.
+///
+/// Filters can only be placed within the frequency span the measurement
+/// actually covers. If `min_freq` falls below the lowest measured frequency,
+/// or `max_freq` above the highest, the optimizer will either find no data
+/// there (and skip the region) or interpolate through a roll-off, producing
+/// a silently degraded result. Surface the divergence as a `log::warn!` so
+/// it appears in the `roomeq` binary's stderr and in any consumer that
+/// attaches a log subscriber.
+///
+/// The tolerance is 5 % on the log axis — small numerical mismatches (e.g.
+/// 19.99 Hz vs 20 Hz) are ignored, but a user who asks the optimizer to
+/// work down to 10 Hz with a measurement that only starts at 100 Hz gets
+/// the warning.
+pub(super) fn warn_if_optimizer_bounds_exceed_data(
+    channel_name: &str,
+    curve: &Curve,
+    opt: &super::types::OptimizerConfig,
+) {
+    if curve.freq.is_empty() {
+        return;
+    }
+    let data_min = curve.freq[0];
+    let data_max = curve.freq[curve.freq.len() - 1];
+    // 5 % log-axis tolerance (~one-twelfth of an octave).
+    let log_margin = 0.05;
+    let min_tol = data_min * 10_f64.powf(-log_margin);
+    let max_tol = data_max * 10_f64.powf(log_margin);
+    if opt.min_freq < min_tol {
+        warn!(
+            "Channel '{}': optimizer.min_freq={:.1} Hz is below measurement minimum {:.1} Hz. \
+             Filters in [{:.1} .. {:.1}] Hz will have no data to correct and will be ignored.",
+            channel_name, opt.min_freq, data_min, opt.min_freq, data_min,
+        );
+    }
+    if opt.max_freq > max_tol {
+        warn!(
+            "Channel '{}': optimizer.max_freq={:.1} Hz is above measurement maximum {:.1} Hz. \
+             Filters in [{:.1} .. {:.1}] Hz will have no data to correct and will be ignored.",
+            channel_name, opt.max_freq, data_max, data_max, opt.max_freq,
+        );
+    }
+}
+
 pub(super) fn detect_passband_and_mean(curve: &Curve) -> (Option<(f64, f64)>, f64) {
     let freqs_f32: Vec<f32> = curve.freq.iter().map(|&f| f as f32).collect();
     let spl_f32: Vec<f32> = curve.spl.iter().map(|&s| s as f32).collect();
@@ -431,6 +474,8 @@ pub struct RoomOptimizationProgress {
     pub overall_progress: f64,
     /// Optional log message for display
     pub message: Option<String>,
+    /// EPA preference score (higher = better), computed every N iterations
+    pub epa_preference: Option<f64>,
 }
 
 /// Callback type for room optimization progress
@@ -552,6 +597,53 @@ pub fn optimize_room_with_probe_arrivals(
     )
 }
 
+/// I6 — debug-only sanity invariants on the final `RoomOptimizationResult`.
+///
+/// Catches silent corruption bugs that would otherwise produce garbage DSP
+/// chains (misaligned indexing, NaN fallout from the optimiser). A full
+/// chain resynthesis would need to simulate every plugin type (gain /
+/// delay / biquad / FIR) and reproduce each workflow's intermediate curve
+/// derivation — that invariant is deferred to Phase 5. A magnitude-delta
+/// envelope was considered but had to be removed: in 2.1 / home-cinema
+/// workflows the Sub channel's `final_curve` legitimately reaches
+/// −300 dB where the LP crossover attenuates far-above-passband content,
+/// which is not a bug.
+///
+/// Invariants that do hold universally:
+///   1. Every channel's `freq` and `spl` lengths match (on both the
+///      initial and final curves).
+///   2. No NaN or infinite SPL values in the final curve — they signal
+///      optimiser divergence.
+#[cfg(debug_assertions)]
+fn sanity_check_result(result: &RoomOptimizationResult) {
+    for (name, ch) in &result.channel_results {
+        assert_eq!(
+            ch.initial_curve.freq.len(),
+            ch.initial_curve.spl.len(),
+            "channel '{}': initial_curve freq/spl length mismatch",
+            name,
+        );
+        assert_eq!(
+            ch.final_curve.freq.len(),
+            ch.final_curve.spl.len(),
+            "channel '{}': final_curve freq/spl length mismatch",
+            name,
+        );
+        for (i, v) in ch.final_curve.spl.iter().enumerate() {
+            assert!(
+                v.is_finite(),
+                "channel '{}': final_curve.spl[{}]={} is non-finite (optimiser diverged)",
+                name,
+                i,
+                v,
+            );
+        }
+    }
+}
+
+#[cfg(not(debug_assertions))]
+fn sanity_check_result(_result: &RoomOptimizationResult) {}
+
 fn optimize_room_impl(
     config: &RoomConfig,
     sample_rate: f64,
@@ -617,32 +709,15 @@ fn optimize_room_impl(
             .values()
             .any(|key| matches!(config.speakers.get(key), Some(SpeakerConfig::Group(_))));
 
-        // The Stereo 2.0 workflow (no subwoofer) doesn't implement per-channel
-        // features like excursion protection, target tilt, or broadband matching.
-        // These are only in process_single_speaker (the generic path). For simple
-        // stereo configs, fall through to the generic path when these features are
-        // active. Multi-channel workflows (2.1, 5.1) have subwoofer/crossover logic
-        // that the generic path cannot replicate, so keep them on their workflows.
-        let use_generic_for_stereo = sys.model == SystemModel::Stereo
-            && sys.subwoofers.is_none()
-            && (config
-                .optimizer
-                .excursion_protection
-                .as_ref()
-                .is_some_and(|e| e.enabled)
-                || config.optimizer.target_response.is_some()
-                || config.optimizer.target_tilt.is_some()
-                || config
-                    .optimizer
-                    .broadband_target_matching
-                    .as_ref()
-                    .is_some_and(|b| b.enabled));
+        // Phase 3: workflows route per-channel EQ through
+        // `process_single_speaker` (via `run_channel_via_generic_path`)
+        // so excursion / target_response / broadband / CEA2034 apply
+        // uniformly across Stereo 2.0, Stereo 2.1, HomeCinema-no-sub, and
+        // HomeCinema-with-sub. The previous `use_generic_for_stereo`
+        // fallback and Phase 3a's "features not honoured" warning are
+        // both retired — the workflows are now feature-complete.
 
-        if use_generic_for_stereo {
-            info!("Stereo 2.0 with excursion/tilt/broadband features, using generic path");
-        }
-
-        if !has_group && !use_generic_for_stereo {
+        if !has_group {
             let workflow_name = match sys.model {
                 SystemModel::Stereo => {
                     if sys.subwoofers.is_some() {
@@ -672,6 +747,7 @@ fn optimize_room_impl(
                             workflow_name,
                             sys.speakers.len()
                         )),
+                        epa_preference: None,
                     },
                 );
             }
@@ -729,6 +805,7 @@ fn optimize_room_impl(
                             workflow_name,
                             summary.join("\n")
                         )),
+                        epa_preference: None,
                     },
                 );
                 // Workflows only do IIR. If FIR/Hybrid mode is requested, post-generate
@@ -748,6 +825,7 @@ fn optimize_room_impl(
                             loss: 0.0,
                             overall_progress: 0.95,
                             message: Some("Generating FIR coefficients...".to_string()),
+                            epa_preference: None,
                         },
                     );
                     let out_dir = output_dir.unwrap_or(Path::new("."));
@@ -780,6 +858,7 @@ fn optimize_room_impl(
                             loss: 0.0,
                             overall_progress: 0.95,
                             message: Some("Generating mixed-phase FIR...".to_string()),
+                            epa_preference: None,
                         },
                     );
                     let out_dir = output_dir.unwrap_or(Path::new("."));
@@ -817,6 +896,7 @@ fn optimize_room_impl(
                             loss: 0.0,
                             overall_progress: 0.96,
                             message: Some("Phase correction...".to_string()),
+                            epa_preference: None,
                         },
                     );
                 }
@@ -851,6 +931,7 @@ fn optimize_room_impl(
                         loss: 0.0,
                         overall_progress: 0.97,
                         message: Some("Computing impulse responses...".to_string()),
+                        epa_preference: None,
                     },
                 );
                 for (channel_name, ch_result) in &result.channel_results {
@@ -888,11 +969,13 @@ fn optimize_room_impl(
                             loss: 0.0,
                             overall_progress: 0.98,
                             message: Some("Channel matching analysis...".to_string()),
+                            epa_preference: None,
                         },
                     );
                     compute_and_correct_icd(&mut result, config, sample_rate);
                 }
 
+                sanity_check_result(&result);
                 return Ok(result);
             }
         }
@@ -992,6 +1075,7 @@ fn optimize_room_impl(
                 "Starting optimization for {} channels",
                 total_speakers
             )),
+            epa_preference: None,
         },
     );
 
@@ -1014,11 +1098,39 @@ fn optimize_room_impl(
         .min(config.optimizer.max_iter.max(1));
     let pop_multiplier = desired_pop.div_ceil(n_free).max(4);
     let population_size = pop_multiplier * n_free;
-    let max_iterations =
-        (config.optimizer.max_iter.saturating_sub(population_size) / population_size).max(5000);
+    // B6 — only apply the 5000-generation floor when the user's budget
+    // actually supports it; otherwise honour the requested max_iter so
+    // QA / benchmark runs don't silently exceed their evaluation budget.
+    // Mirrors `derive_de_budget` in `optim_de.rs`.
+    const DE_GENERATIONS_FLOOR: usize = 5000;
+    let computed_generations =
+        config.optimizer.max_iter.saturating_sub(population_size) / population_size;
+    let budget_supports_floor =
+        config.optimizer.max_iter >= DE_GENERATIONS_FLOOR.saturating_mul(population_size);
+    let max_iterations = if budget_supports_floor {
+        computed_generations.max(DE_GENERATIONS_FLOOR)
+    } else {
+        let capped = computed_generations.max(1);
+        if config.optimizer.max_iter > 0 && capped < DE_GENERATIONS_FLOOR {
+            warn!(
+                "DE budget: max_iter={} with population_size={} is below the {} generation floor × pop. \
+                 Running {} generations — expect degraded convergence. Raise max_iter to {} to regain the floor.",
+                config.optimizer.max_iter,
+                population_size,
+                DE_GENERATIONS_FLOOR,
+                capped,
+                DE_GENERATIONS_FLOOR.saturating_mul(population_size),
+            );
+        }
+        capped
+    };
     info!(
-        "DE budget: {} params, population_size={}, max_generations={} (from max_iter={}, floor=5000)",
-        n_params, population_size, max_iterations, config.optimizer.max_iter
+        "DE budget: {} params, population_size={}, max_generations={} (from max_iter={}, floor={} when budget allows)",
+        n_params,
+        population_size,
+        max_iterations,
+        config.optimizer.max_iter,
+        DE_GENERATIONS_FLOOR,
     );
     let callback_shared: Arc<Mutex<Option<RoomOptimizationCallback>>> =
         Arc::new(Mutex::new(callback));
@@ -1041,6 +1153,7 @@ fn optimize_room_impl(
                     loss: 0.0,
                     overall_progress: speaker_idx as f64 / total_speakers as f64,
                     message: Some(format!("Processing channel: {}", channel_name)),
+                    epa_preference: None,
                 },
             );
             if stop {
@@ -1055,7 +1168,7 @@ fn optimize_room_impl(
             let si = speaker_idx;
             let ts = total_speakers;
             let mi = max_iterations;
-            Some(Box::new(move |iter: usize, loss: f64| {
+            Some(Box::new(move |iter: usize, loss: f64, epa: Option<f64>| {
                 let base_progress = si as f64 / ts as f64;
                 let speaker_progress = if mi > 0 { iter as f64 / mi as f64 } else { 0.0 };
                 let overall = (base_progress + speaker_progress / ts as f64).min(1.0);
@@ -1072,6 +1185,7 @@ fn optimize_room_impl(
                         loss,
                         overall_progress: overall,
                         message: None,
+                        epa_preference: epa,
                     });
                     return match action {
                         CallbackAction::Continue => crate::de::CallbackAction::Continue,
@@ -1121,6 +1235,7 @@ fn optimize_room_impl(
                                 "Channel {}: {:.4} -> {:.4}",
                                 channel_name, pre_score, post_score
                             )),
+                            epa_preference: None,
                         },
                     );
                     // Note: can't break here since we're inside a match arm.
@@ -1200,6 +1315,7 @@ fn optimize_room_impl(
                         "Generating FIR coefficients for {}...",
                         channel_name
                     )),
+                    epa_preference: None,
                 },
             );
             post_generate_fir(
@@ -1315,6 +1431,7 @@ fn optimize_room_impl(
                 loss: 0.0,
                 overall_progress: 0.92,
                 message: Some("Spectral channel alignment...".to_string()),
+                epa_preference: None,
             },
         );
         let min_freq = config.optimizer.min_freq;
@@ -1405,6 +1522,7 @@ fn optimize_room_impl(
                     "Voice of God alignment (ref: '{}')...",
                     vog_config.reference_channel
                 )),
+                epa_preference: None,
             },
         );
         info!(
@@ -1472,6 +1590,7 @@ fn optimize_room_impl(
                     loss: 0.0,
                     overall_progress: 0.0,
                     message: Some("Running phase alignment...".to_string()),
+                    epa_preference: None,
                 },
             );
 
@@ -1570,6 +1689,7 @@ fn optimize_room_impl(
                     loss: 0.0,
                     overall_progress: 0.0,
                     message: Some("Running group delay optimization...".to_string()),
+                    epa_preference: None,
                 },
             );
         }
@@ -1593,6 +1713,7 @@ fn optimize_room_impl(
                         loss: 0.0,
                         overall_progress: 0.0,
                         message: Some(format!("Optimizing GD for '{}'", main_name)),
+                        epa_preference: None,
                     },
                 );
 
@@ -1643,6 +1764,7 @@ fn optimize_room_impl(
                 loss: 0.0,
                 overall_progress: 0.96,
                 message: Some("Phase correction...".to_string()),
+                epa_preference: None,
             },
         );
     }
@@ -1669,6 +1791,7 @@ fn optimize_room_impl(
             loss: 0.0,
             overall_progress: 0.97,
             message: Some("Computing impulse responses...".to_string()),
+            epa_preference: None,
         },
     );
     for (channel_name, result) in &channel_results {
@@ -1754,11 +1877,13 @@ fn optimize_room_impl(
                 loss: 0.0,
                 overall_progress: 0.98,
                 message: Some("Channel matching analysis...".to_string()),
+                epa_preference: None,
             },
         );
         compute_and_correct_icd(&mut result, config, sample_rate);
     }
 
+    sanity_check_result(&result);
     Ok(result)
 }
 
@@ -1790,11 +1915,17 @@ fn compute_and_correct_icd(
         icd.midrange_rms_db, icd.midrange_peak_db, icd.midrange_peak_freq, icd.passband_rms_db,
     );
 
-    // Check if correction is enabled and needed
-    let matching_cfg = config.optimizer.channel_matching.as_ref();
-    let enabled = matching_cfg.is_some_and(|c| c.enabled);
-    let threshold = matching_cfg.map_or(1.5, |c| c.threshold_db);
-    let max_filters = matching_cfg.map_or(3, |c| c.max_filters);
+    // Check if correction is enabled and needed.
+    // When the user omits `channel_matching`, fall back to `ChannelMatchingConfig::default()`
+    // so the two paths (None vs Some(default)) produce identical behaviour.
+    let matching_cfg = config
+        .optimizer
+        .channel_matching
+        .clone()
+        .unwrap_or_default();
+    let enabled = matching_cfg.enabled;
+    let threshold = matching_cfg.threshold_db;
+    let max_filters = matching_cfg.max_filters;
 
     if enabled && icd.midrange_rms_db > threshold {
         info!(
@@ -1951,6 +2082,13 @@ pub fn optimize_speaker(
     sample_rate: f64,
     _callback: Option<SpeakerOptimizationCallback>,
 ) -> Result<SpeakerOptimizationResult> {
+    // Migrate legacy `target_tilt` + `broadband_target_matching` into `target_response`
+    // to match the behaviour of `optimize_room_impl`. Without this, in-memory callers
+    // that go through `optimize_speaker` with a legacy config silently take a divergent
+    // path in `speaker_eq.rs`. Idempotent — safe to call even on already-migrated configs.
+    let mut optimizer_config = optimizer_config.clone();
+    optimizer_config.migrate_target_config();
+
     // Create a minimal RoomConfig for internal processing
     let room_config = RoomConfig {
         version: super::types::default_config_version(),
@@ -1958,7 +2096,7 @@ pub fn optimize_speaker(
         speakers: HashMap::new(),
         crossovers: None,
         target_curve: target_curve.cloned(),
-        optimizer: optimizer_config.clone(),
+        optimizer: optimizer_config,
         recording_config: None,
         cea2034_cache: None,
     };

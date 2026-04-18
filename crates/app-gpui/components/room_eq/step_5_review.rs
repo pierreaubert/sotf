@@ -347,6 +347,28 @@ impl PlayerView {
             None
         };
 
+        // Detect whether this channel's DSP chain contains an FIR /
+        // convolution block so the filter plot can flag it in the legend.
+        // We can't decompose the FIR magnitude into parametric bands, but
+        // the user needs to know an FIR correction is active — otherwise
+        // the "Corrected" curve will show changes that no individual IIR
+        // line accounts for.
+        let has_fir = room_eq
+            .dsp_output
+            .as_ref()
+            .and_then(|out| out.channels.get(&result.channel_name))
+            .map(|chain| {
+                chain.plugins.iter().any(|p| {
+                    let t = p.plugin_type.to_ascii_lowercase();
+                    t == "fir"
+                        || t == "convolution"
+                        || t == "convolve"
+                        || t == "firfilter"
+                        || t == "fir_filter"
+                })
+            })
+            .unwrap_or(false);
+
         render_channel_result_card(
             d,
             result,
@@ -356,6 +378,7 @@ impl PlayerView {
             normalize_to_target,
             chart_state,
             target_curve_data.as_deref(),
+            has_fir,
         )
         .into_any_element()
     }

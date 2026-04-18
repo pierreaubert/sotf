@@ -9,6 +9,26 @@ use gpui_ui_kit::{
 };
 use sotf_audio::signal_analysis as dsp;
 
+/// Whether the Review step should render the per-filter plot for a
+/// channel result.
+///
+/// Pure predicate extracted from [`Self::render_room_eq_review`] so that
+/// the rule is testable in isolation. The plot should appear whenever we
+/// have frequency-response data **and** at least one filter stage to
+/// overlay — either the main IIR set (`has_main`) or the broadband
+/// pre-correction (`has_broadband`).
+///
+/// Regression guard for Issue 6: a previous version gated on `has_main`
+/// alone, which meant broadband-only optimizations rendered no plot at
+/// all even though filters existed.
+pub fn should_render_filter_plot(
+    has_response_data: bool,
+    has_main: bool,
+    has_broadband: bool,
+) -> bool {
+    has_response_data && (has_main || has_broadband)
+}
+
 /// Interpolate a target curve (control points) at the given frequency values using log-frequency interpolation
 fn interpolate_target_at_frequencies(frequencies: &[f64], target: &[(f64, f64)]) -> Vec<f64> {
     frequencies
@@ -42,6 +62,30 @@ fn interpolate_target_at_frequencies(frequencies: &[f64], target: &[(f64, f64)])
             if result.is_finite() { result } else { 0.0 }
         })
         .collect()
+}
+
+/// Interpolate a sampled curve at a single frequency using log-frequency linear interpolation.
+fn interpolate_value_at(frequencies: &[f64], values: &[f64], target_freq: f64) -> f64 {
+    if frequencies.is_empty() || values.is_empty() {
+        return 0.0;
+    }
+    if target_freq <= frequencies[0] {
+        return values[0];
+    }
+    if target_freq >= *frequencies.last().unwrap() {
+        return *values.last().unwrap();
+    }
+    for i in 0..frequencies.len() - 1 {
+        if target_freq >= frequencies[i] && target_freq <= frequencies[i + 1] {
+            let denom = frequencies[i + 1].ln() - frequencies[i].ln();
+            if denom.abs() < 1e-12 {
+                return values[i];
+            }
+            let t = (target_freq.ln() - frequencies[i].ln()) / denom;
+            return values[i] + t * (values[i + 1] - values[i]);
+        }
+    }
+    *values.last().unwrap()
 }
 
 // === Free functions for channel configuration UI ===
@@ -225,6 +269,7 @@ pub(crate) fn render_channel_result_card(
     normalize_to_target: bool,
     interactive_state: Option<&gpui_px::interaction::InteractiveChartState>,
     target_curve: Option<&[(f64, f64)]>,
+    has_fir: bool,
 ) -> impl IntoElement {
     use crate::components::graphs::format_frequency;
 
@@ -281,24 +326,36 @@ pub(crate) fn render_channel_result_card(
                         ),
                 ),
         )
-        // Filter plot: each filter and the sum (if available)
-        .when(has_response_data && !result.eq_filters.is_empty(), |div| {
-            let (Some(original), Some(normalized)) = (
-                result.original_response.as_ref(),
-                result.normalized_response.as_ref(),
-            ) else {
-                return div;
-            };
-            div.child(render_filter_plot(
-                original,
-                normalized,
-                &result.eq_filters,
-                theme,
-                smoothing_octaves,
-                y_axis_auto,
-                interactive_state,
-            ))
-        })
+        // Filter plot: each filter and the sum (if available).
+        // Render if there are ANY filters to show (main IIR or broadband
+        // pre-correction). Previously this gated on `eq_filters` only, so
+        // broadband-only optimizations silently dropped the plot.
+        .when(
+            should_render_filter_plot(
+                has_response_data,
+                !result.eq_filters.is_empty(),
+                !result.broadband_filters.is_empty(),
+            ),
+            |div| {
+                let (Some(original), Some(normalized)) = (
+                    result.original_response.as_ref(),
+                    result.normalized_response.as_ref(),
+                ) else {
+                    return div;
+                };
+                div.child(render_filter_plot(
+                    original,
+                    normalized,
+                    &result.eq_filters,
+                    &result.broadband_filters,
+                    has_fir,
+                    theme,
+                    smoothing_octaves,
+                    y_axis_auto,
+                    interactive_state,
+                ))
+            },
+        )
         // Original vs Corrected with trendlines (if available)
         .when(has_response_data, |div| {
             let (Some(original), Some(normalized)) = (
@@ -363,18 +420,36 @@ pub(crate) fn render_channel_result_card(
         .when_some(result.impulse_response.as_ref(), |div, ir| {
             div.child(render_impulse_response_graph(ir, theme))
         })
-        // EQ Filter details
-        .child(
-            VStack::new()
-                .spacing(StackSpacing::Xs)
-                .child(
-                    Text::new("EQ Filters")
-                        .weight(TextWeight::Semibold)
-                        .size(TextSize::Xs)
-                        .color(theme.text_primary),
-                )
-                .child(render_filter_table(d, &result.eq_filters, theme)),
-        )
+        // EQ Filter details — main (IIR room correction) and broadband
+        // pre-correction are shown as separate tables so users can tell them
+        // apart. The `Applied to Rack` action creates one named plugin per
+        // section, so the grouping here mirrors what lands in the rack.
+        .when(!result.eq_filters.is_empty(), |el| {
+            el.child(
+                VStack::new()
+                    .spacing(StackSpacing::Xs)
+                    .child(
+                        Text::new("Room EQ Filters")
+                            .weight(TextWeight::Semibold)
+                            .size(TextSize::Xs)
+                            .color(theme.text_primary),
+                    )
+                    .child(render_filter_table(d, &result.eq_filters, theme)),
+            )
+        })
+        .when(!result.broadband_filters.is_empty(), |el| {
+            el.child(
+                VStack::new()
+                    .spacing(StackSpacing::Xs)
+                    .child(
+                        Text::new("Broadband Pre-correction Filters")
+                            .weight(TextWeight::Semibold)
+                            .size(TextSize::Xs)
+                            .color(theme.text_primary),
+                    )
+                    .child(render_filter_table(d, &result.broadband_filters, theme)),
+            )
+        })
         // Crossover info (if multi-driver)
         .when_some(result.crossover_freqs.as_ref(), |el, xover_freqs| {
             el.child(
@@ -433,35 +508,43 @@ fn render_response_comparison_graph(
     let original_values_raw: Vec<f64> = original.iter().map(|(_, db)| *db).collect();
     let corrected_values_raw: Vec<f64> = corrected.iter().map(|(_, db)| *db).collect();
 
-    let offset = crate::app::types::RoomEqState::calculate_normalization_offset(
-        &frequencies,
-        &original_values_raw,
-    );
-    let mut original_values: Vec<f64> = original_values_raw.iter().map(|&db| db - offset).collect();
-    let mut corrected_values: Vec<f64> =
-        corrected_values_raw.iter().map(|&db| db - offset).collect();
-
-    // When normalizing to target, subtract the interpolated target curve from all series
-    // so the target becomes a flat 0dB reference line and deviations are clearly visible
+    // When normalizing to target, subtract the interpolated target curve from all
+    // series so the target becomes a flat 0 dB line, then anchor at 1000 Hz.
     let target_interpolated =
         target_curve.map(|target| interpolate_target_at_frequencies(&frequencies, target));
 
-    if normalize_to_target
-        && let Some(ref target_vals) = target_interpolated
-    {
-        // Normalize target with same 1-2kHz method, then subtract from
-        // original/corrected (which already had their own offset subtracted)
-        let target_offset = crate::app::types::RoomEqState::calculate_normalization_offset(
-            &frequencies,
-            target_vals,
-        );
-        for (i, v) in original_values.iter_mut().enumerate() {
-            *v -= target_vals[i] - target_offset;
-        }
-        for (i, v) in corrected_values.iter_mut().enumerate() {
-            *v -= target_vals[i] - target_offset;
-        }
-    }
+    // normalize_to_target shifts are deferred until after trend computation.
+    // First, subtract the target curve (if normalizing) so the target becomes 0 dB.
+    let (original_values, corrected_values): (Vec<f64>, Vec<f64>) =
+        if normalize_to_target
+            && let Some(ref target_vals) = target_interpolated
+        {
+            // Subtract target from raw curves (target becomes 0 dB everywhere)
+            let orig: Vec<f64> = original_values_raw
+                .iter()
+                .zip(target_vals.iter())
+                .map(|(&o, &t)| o - t)
+                .collect();
+            let corr: Vec<f64> = corrected_values_raw
+                .iter()
+                .zip(target_vals.iter())
+                .map(|(&c, &t)| c - t)
+                .collect();
+            (orig, corr)
+        } else {
+            // Standard normalization: 1-2 kHz average
+            let offset = crate::app::types::RoomEqState::calculate_normalization_offset(
+                &frequencies,
+                &original_values_raw,
+            );
+            (
+                original_values_raw.iter().map(|&db| db - offset).collect(),
+                corrected_values_raw
+                    .iter()
+                    .map(|&db| db - offset)
+                    .collect(),
+            )
+        };
 
     let original_smooth =
         dsp::smooth_response_f64(&frequencies, &original_values, smoothing_octaves);
@@ -561,6 +644,29 @@ fn render_response_comparison_graph(
 
     let orig_trend = calculate_trend(&frequencies, &original_smooth);
     let corr_trend = calculate_trend(&frequencies, &corrected_smooth);
+
+    // When normalizing to target, shift each curve (and its trend) so its
+    // trend line crosses 0 dB at 1 kHz.  This makes deviations from the
+    // target directly readable without the broadband level difference
+    // obscuring them.
+    let (original_smooth, corrected_smooth, orig_trend, corr_trend) =
+        if normalize_to_target && target_interpolated.is_some() {
+            let log_1k = 1000.0_f64.log10(); // 3.0
+            let orig_offset = orig_trend
+                .map(|(s, i)| s * log_1k + i)
+                .unwrap_or_else(|| interpolate_value_at(&frequencies, &original_smooth, 1000.0));
+            let corr_offset = corr_trend
+                .map(|(s, i)| s * log_1k + i)
+                .unwrap_or_else(|| interpolate_value_at(&frequencies, &corrected_smooth, 1000.0));
+            (
+                original_smooth.iter().map(|&v| v - orig_offset).collect::<Vec<_>>(),
+                corrected_smooth.iter().map(|&v| v - corr_offset).collect::<Vec<_>>(),
+                orig_trend.map(|(s, i)| (s, i - orig_offset)),
+                corr_trend.map(|(s, i)| (s, i - corr_offset)),
+            )
+        } else {
+            (original_smooth, corrected_smooth, orig_trend, corr_trend)
+        };
 
     let (x_min, x_max) = interactive_state
         .filter(|s| s.is_zoomed())
@@ -680,18 +786,25 @@ fn render_response_comparison_graph(
         .into_any_element()
 }
 
-/// Render the filter plot showing each individual filter and their combined response
+/// Render the filter plot showing each individual filter and their combined response.
+///
+/// `has_fir` tells the plot whether the channel's DSP chain contains a
+/// convolution/FIR block. We can't decompose FIR magnitude into parametric
+/// bands, but at minimum the user deserves to know the chain includes an
+/// FIR correction they won't see as individual lines.
 fn render_filter_plot(
     original: &[(f64, f64)],
     corrected: &[(f64, f64)],
     eq_filters: &[crate::app::types::EqFilterConfig],
+    broadband_filters: &[crate::app::types::EqFilterConfig],
+    has_fir: bool,
     theme: &crate::theme::Theme,
     _smoothing_octaves: f64,
     y_axis_auto: bool,
     interactive_state: Option<&gpui_px::interaction::InteractiveChartState>,
 ) -> impl IntoElement {
     use crate::components::graphs::common::theme_to_chart_theme;
-    use gpui_px::{LegendPosition, ScaleType, line};
+    use gpui_px::{LegendPosition, ScaleType, StrokeDashArray, line};
     use math_audio_iir_fir::{Biquad, BiquadFilterType};
 
     const GRAPH_WIDTH: f32 = 1200.0;
@@ -715,7 +828,7 @@ fn render_filter_plot(
     let _corrected_normalized: Vec<f64> =
         corrected_values_raw.iter().map(|&db| db - offset).collect();
 
-    if frequencies.is_empty() || eq_filters.is_empty() {
+    if frequencies.is_empty() || (eq_filters.is_empty() && broadband_filters.is_empty()) {
         return div()
             .child(
                 Text::new("No filter data available")
@@ -740,80 +853,85 @@ fn render_filter_plot(
         0x1f77b4u32,
     ];
 
-    let mut chart_builder = line(&frequencies, &vec![0.0; frequencies.len()])
-        .x_scale(ScaleType::Log)
-        .x_range(20.0, 20000.0)
-        .y_range(-12.0, 6.0)
-        .y_label("EQ (dB)")
-        .label("Sum")
-        .legend_position(LegendPosition::Bottom)
-        .color(GREEN)
-        .stroke_width(2.0)
-        .opacity(1.0)
-        .theme(chart_theme.clone())
-        .size(GRAPH_WIDTH, GRAPH_HEIGHT);
+    let parse_type = |s: &str| -> BiquadFilterType {
+        match s {
+            "peak" | "pk" | "Peak" => BiquadFilterType::Peak,
+            "lowshelf" | "ls" | "Lowshelf" => BiquadFilterType::Lowshelf,
+            "highshelf" | "hs" | "Highshelf" => BiquadFilterType::Highshelf,
+            "lowpass" | "lp" | "Lowpass" => BiquadFilterType::Lowpass,
+            "highpass" | "hp" | "Highpass" => BiquadFilterType::Highpass,
+            _ => BiquadFilterType::Peak,
+        }
+    };
 
-    let eq_response: Vec<f64> = frequencies
-        .iter()
-        .map(|&freq| {
-            eq_filters
-                .iter()
-                .map(|f| {
-                    let filter_type = match f.filter_type.as_str() {
-                        "peak" | "pk" => BiquadFilterType::Peak,
-                        "lowshelf" | "ls" => BiquadFilterType::Lowshelf,
-                        "highshelf" | "hs" => BiquadFilterType::Highshelf,
-                        "lowpass" | "lp" => BiquadFilterType::Lowpass,
-                        "highpass" | "hp" => BiquadFilterType::Highpass,
-                        _ => BiquadFilterType::Peak,
-                    };
-                    let biquad = Biquad::new(filter_type, f.frequency, SAMPLE_RATE, f.q, f.gain_db);
-                    biquad.log_result(freq)
-                })
-                .sum::<f64>()
-        })
-        .collect();
+    let filter_response_at = |f: &crate::app::types::EqFilterConfig, freq: f64| -> f64 {
+        let biquad = Biquad::new(parse_type(&f.filter_type), f.frequency, SAMPLE_RATE, f.q, f.gain_db);
+        biquad.log_result(freq)
+    };
 
     let sanitize = |v: &[f64]| -> Vec<f64> {
         v.iter()
             .map(|&x| if x.is_finite() { x } else { 0.0 })
             .collect()
     };
-    let eq_response = sanitize(&eq_response);
+
+    // Compute combined sum of main EQ + broadband
+    let all_filters: Vec<&crate::app::types::EqFilterConfig> =
+        eq_filters.iter().chain(broadband_filters.iter()).collect();
+    let eq_response: Vec<f64> = sanitize(
+        &frequencies
+            .iter()
+            .map(|&freq| all_filters.iter().map(|f| filter_response_at(f, freq)).sum::<f64>())
+            .collect::<Vec<_>>(),
+    );
+
+    let mut chart_builder = line(&frequencies, &vec![0.0; frequencies.len()])
+        .x_scale(ScaleType::Log)
+        .x_range(20.0, 20000.0)
+        .y_range(-12.0, 6.0)
+        .y_label("EQ (dB)")
+        .label("Sum")
+        .legend_position(LegendPosition::Right)
+        .color(GREEN)
+        .stroke_width(2.0)
+        .opacity(1.0)
+        .theme(chart_theme.clone())
+        .size(GRAPH_WIDTH, GRAPH_HEIGHT);
 
     chart_builder = chart_builder.add_series(&eq_response, Some("Sum"), GREEN, 2.0, 1.0);
 
+    // Main EQ filters (parametric IIR biquads from the room optimizer).
     for (i, filter) in eq_filters.iter().enumerate() {
-        let filter_response: Vec<f64> = frequencies
-            .iter()
-            .map(|&freq| {
-                let filter_type = match filter.filter_type.as_str() {
-                    "peak" | "pk" => BiquadFilterType::Peak,
-                    "lowshelf" | "ls" => BiquadFilterType::Lowshelf,
-                    "highshelf" | "hs" => BiquadFilterType::Highshelf,
-                    "lowpass" | "lp" => BiquadFilterType::Lowpass,
-                    "highpass" | "hp" => BiquadFilterType::Highpass,
-                    _ => BiquadFilterType::Peak,
-                };
-                let biquad = Biquad::new(
-                    filter_type,
-                    filter.frequency,
-                    SAMPLE_RATE,
-                    filter.q,
-                    filter.gain_db,
-                );
-                biquad.log_result(freq)
-            })
-            .collect();
-        let filter_response = sanitize(&filter_response);
+        let resp = sanitize(
+            &frequencies.iter().map(|&f| filter_response_at(filter, f)).collect::<Vec<_>>(),
+        );
         let color = filter_colors[i % filter_colors.len()];
         let label = format!(
-            "F{} {} {:.0}Hz",
+            "IIR {} {} {:.0}Hz",
             i + 1,
             filter.filter_type,
             filter.frequency
         );
-        chart_builder = chart_builder.add_series(&filter_response, Some(&label), color, 1.5, 0.7);
+        chart_builder = chart_builder.add_series(&resp, Some(&label), color, 1.5, 0.7);
+    }
+
+    // Broadband pre-correction filters — same palette but drawn dashed so
+    // the user can visually separate "room IIR correction" from "driver
+    // tonal pre-tilt" without having to hunt the color legend.
+    const BB_COLOR: u32 = 0x8B4513; // saddle brown — distinct from PK palette
+    for (i, filter) in broadband_filters.iter().enumerate() {
+        let resp = sanitize(
+            &frequencies.iter().map(|&f| filter_response_at(filter, f)).collect::<Vec<_>>(),
+        );
+        let label = format!(
+            "Broadband {} {} {:.0}Hz",
+            i + 1,
+            filter.filter_type,
+            filter.frequency
+        );
+        chart_builder = chart_builder
+            .add_series(&resp, Some(&label), BB_COLOR, 1.5, 0.7)
+            .series_dash_array(StrokeDashArray::Dashed);
     }
 
     let (x_min, x_max) = interactive_state
@@ -860,6 +978,32 @@ fn render_filter_plot(
         }
     });
 
+    let iir_count = eq_filters.len();
+    let bb_count = broadband_filters.len();
+    // Tell the user exactly what each line represents. This header line
+    // doubles as a legend key so they can parse the chart without hunting
+    // through the color-coded entries on the side.
+    let mut subtitle_parts: Vec<String> = Vec::new();
+    if iir_count > 0 {
+        subtitle_parts.push(format!("{} IIR peak filters", iir_count));
+    }
+    if bb_count > 0 {
+        subtitle_parts.push(format!(
+            "{} broadband pre-corrections (dashed)",
+            bb_count
+        ));
+    }
+    if has_fir {
+        subtitle_parts.push(
+            "FIR correction applied (magnitude included in Corrected curve)".to_string(),
+        );
+    }
+    let subtitle = if subtitle_parts.is_empty() {
+        None
+    } else {
+        Some(subtitle_parts.join(" + "))
+    };
+
     VStack::new()
         .spacing(StackSpacing::Xs)
         .child(
@@ -868,6 +1012,13 @@ fn render_filter_plot(
                 .size(TextSize::Xs)
                 .color(theme.text_primary),
         )
+        .when_some(subtitle, |el, s| {
+            el.child(
+                Text::new(s)
+                    .size(TextSize::Xs)
+                    .color(theme.text_secondary),
+            )
+        })
         .when_some(chart_element, |el, c| el.child(c))
         .into_any_element()
 }
@@ -1116,18 +1267,8 @@ fn render_phase_graph(
         chart_builder = chart_builder.add_series(av, Some("After"), ORANGE, 1.5, 0.9);
     }
 
-    let chart = match chart_builder.build() {
-        Ok(c) => c,
-        Err(_) => {
-            return div()
-                .child(
-                    Text::new("Phase: chart error")
-                        .size(TextSize::Xs)
-                        .color(theme.text_muted),
-                )
-                .into_any_element();
-        }
-    };
+    let chart_element: Option<gpui::AnyElement> =
+        chart_builder.build().ok().map(|c| c.into_any_element());
 
     VStack::new()
         .spacing(StackSpacing::Xs)
@@ -1137,7 +1278,7 @@ fn render_phase_graph(
                 .size(TextSize::Xs)
                 .color(theme.text_primary),
         )
-        .child(chart.into_any_element())
+        .when_some(chart_element, |div, el| div.child(el))
         .into_any_element()
 }
 
@@ -1178,7 +1319,7 @@ fn render_impulse_response_graph(
     y_min -= margin;
     y_max += margin;
 
-    let chart = match line(&samples, &sanitize)
+    let chart_element: Option<gpui::AnyElement> = line(&samples, &sanitize)
         .x_scale(ScaleType::Linear)
         .x_range(
             samples.first().copied().unwrap_or(0.0),
@@ -1194,18 +1335,8 @@ fn render_impulse_response_graph(
         .theme(chart_theme)
         .size(GRAPH_WIDTH, GRAPH_HEIGHT)
         .build()
-    {
-        Ok(c) => c,
-        Err(_) => {
-            return div()
-                .child(
-                    Text::new("IR: chart error")
-                        .size(TextSize::Xs)
-                        .color(theme.text_muted),
-                )
-                .into_any_element();
-        }
-    };
+        .ok()
+        .map(|c| c.into_any_element());
 
     VStack::new()
         .spacing(StackSpacing::Xs)
@@ -1215,7 +1346,7 @@ fn render_impulse_response_graph(
                 .size(TextSize::Xs)
                 .color(theme.text_primary),
         )
-        .child(chart.into_any_element())
+        .when_some(chart_element, |div, el| div.child(el))
         .into_any_element()
 }
 
@@ -1413,18 +1544,8 @@ fn render_group_delay_graph(
         chart_builder = chart_builder.add_series(av, Some("After"), ORANGE, 1.5, 0.9);
     }
 
-    let chart = match chart_builder.build() {
-        Ok(c) => c,
-        Err(_) => {
-            return div()
-                .child(
-                    Text::new("Group Delay: chart error")
-                        .size(TextSize::Xs)
-                        .color(theme.text_muted),
-                )
-                .into_any_element();
-        }
-    };
+    let chart_element: Option<gpui::AnyElement> =
+        chart_builder.build().ok().map(|c| c.into_any_element());
 
     VStack::new()
         .spacing(StackSpacing::Xs)
@@ -1434,6 +1555,6 @@ fn render_group_delay_graph(
                 .size(TextSize::Xs)
                 .color(theme.text_primary),
         )
-        .child(chart)
+        .when_some(chart_element, |div, el| div.child(el))
         .into_any_element()
 }

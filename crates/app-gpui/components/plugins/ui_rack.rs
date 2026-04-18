@@ -322,7 +322,10 @@ impl PlayerView {
                     (
                         p.plugin_type().clone(),
                         p.enabled,
-                        p.plugin_type().name().to_string(),
+                        // Prefer the plugin's custom user-facing name (e.g.
+                        // "Room EQ", "Broadband EQ") so exported room-EQ
+                        // instances are distinguishable in the rack.
+                        p.display_name(),
                         p.is_permanent(),
                         graph.is_input_monitor(i),
                         graph.is_output_monitor(i),

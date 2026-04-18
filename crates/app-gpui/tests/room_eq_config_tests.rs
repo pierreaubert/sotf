@@ -485,8 +485,53 @@ fn test_import_broadband_with_enabled_false() {
 // These tests verify the ordering for all standard surround configurations.
 // ============================================================================
 
-use sotf_audio_player::room_eq_types::DriverDspChain;
+use sotf_audio_player::room_eq_types::{DriverDspChain, DspChainOutputExt};
 use sotf_audio_player_gpui::{ChannelDspChain, ChannelOptResult, DspChainOutput, DspPluginConfig};
+
+/// Build a `ChannelDspChain` with no optional curves / impulse responses
+/// populated. These tests only exercise channel ordering, broadband /
+/// main-EQ separation, and rack compatibility — none of which look at
+/// the curve/IR fields — so spelling them out at every call site is
+/// pure noise.
+fn chain(
+    name: &str,
+    plugins: Vec<DspPluginConfig>,
+    drivers: Option<Vec<DriverDspChain>>,
+) -> ChannelDspChain {
+    ChannelDspChain {
+        channel: name.to_string(),
+        plugins,
+        drivers,
+        initial_curve: None,
+        final_curve: None,
+        eq_response: None,
+        target_curve: None,
+        pre_ir: None,
+        post_ir: None,
+    }
+}
+
+/// Build a `DriverDspChain` with no optional `initial_curve`.
+fn driver(name: &str, index: usize, plugins: Vec<DspPluginConfig>) -> DriverDspChain {
+    DriverDspChain {
+        name: name.to_string(),
+        index,
+        plugins,
+        initial_curve: None,
+    }
+}
+
+/// Build a `DspChainOutput` from a channels map with default version and
+/// no metadata.
+fn output(
+    channels: std::collections::HashMap<String, ChannelDspChain>,
+) -> DspChainOutput {
+    DspChainOutput {
+        version: "1.0.0".to_string(),
+        channels,
+        metadata: None,
+    }
+}
 
 /// Simulate the channel-to-filter mapping logic from apply_room_eq_to_player.
 /// Given channel names in output order and a DSP output HashMap, returns
@@ -527,6 +572,7 @@ fn build_mock_results(speaker_labels: &[&str]) -> (Vec<ChannelOptResult>, DspCha
                 q: 1.0,
                 gain_db: -3.0,
             }],
+            broadband_filters: vec![],
             crossover_freqs: None,
             driver_gains: None,
             original_response: None,
@@ -542,9 +588,9 @@ fn build_mock_results(speaker_labels: &[&str]) -> (Vec<ChannelOptResult>, DspCha
 
         channels.insert(
             label.to_string(),
-            ChannelDspChain {
-                channel: label.to_string(),
-                plugins: vec![DspPluginConfig {
+            chain(
+                label,
+                vec![DspPluginConfig {
                     plugin_type: "EQ".to_string(),
                     parameters: serde_json::json!({
                         "filters": [{
@@ -555,15 +601,12 @@ fn build_mock_results(speaker_labels: &[&str]) -> (Vec<ChannelOptResult>, DspCha
                         }]
                     }),
                 }],
-                drivers: None,
-            },
+                None,
+            ),
         );
     }
 
-    let dsp_output = DspChainOutput {
-        channels,
-        metadata: None,
-    };
+    let dsp_output = output(channels);
 
     (channel_results, dsp_output)
 }
@@ -733,28 +776,22 @@ fn test_hashmap_insertion_order_irrelevant() {
         let freq = (idx + 1) as f64 * 100.0;
         channels.insert(
             label.to_string(),
-            ChannelDspChain {
-                channel: label.to_string(),
-                plugins: vec![DspPluginConfig {
+            chain(
+                label,
+                vec![DspPluginConfig {
                     plugin_type: "EQ".to_string(),
                     parameters: serde_json::json!({
                         "filters": [{"filter_type": "peak", "frequency": freq, "q": 1.0, "gain_db": -3.0}]
                     }),
                 }],
-                drivers: None,
-            },
+                None,
+            ),
         );
     }
 
     // channel_result_names in correct output order
     let channel_result_names: Vec<String> = labels.iter().map(|s| s.to_string()).collect();
-    let freqs = extract_filter_freqs(
-        &channel_result_names,
-        &DspChainOutput {
-            channels,
-            metadata: None,
-        },
-    );
+    let freqs = extract_filter_freqs(&channel_result_names, &output(channels));
 
     for (idx, &freq) in freqs.iter().enumerate() {
         let expected = (idx + 1) as f64 * 100.0;
@@ -879,20 +916,17 @@ fn build_autoeq_dsp_output(channels: &[(&str, Vec<(f64, f64, f64)>)]) -> DspChai
             .collect();
         map.insert(
             name.to_string(),
-            ChannelDspChain {
-                channel: name.to_string(),
-                plugins: vec![DspPluginConfig {
+            chain(
+                name,
+                vec![DspPluginConfig {
                     plugin_type: "eq".to_string(),
                     parameters: serde_json::json!({ "filters": filter_json }),
                 }],
-                drivers: None,
-            },
+                None,
+            ),
         );
     }
-    DspChainOutput {
-        channels: map,
-        metadata: None,
-    }
+    output(map)
 }
 
 #[test]
@@ -1011,35 +1045,34 @@ fn test_save_to_rack_5_1_surround() {
 
 #[test]
 fn test_save_to_rack_no_filters_detected() {
-    let dsp = DspChainOutput {
-        channels: [
+    let dsp = output(
+        [
             (
                 "L".to_string(),
-                ChannelDspChain {
-                    channel: "L".to_string(),
-                    plugins: vec![DspPluginConfig {
+                chain(
+                    "L",
+                    vec![DspPluginConfig {
                         plugin_type: "eq".to_string(),
                         parameters: serde_json::json!({ "filters": [] }),
                     }],
-                    drivers: None,
-                },
+                    None,
+                ),
             ),
             (
                 "R".to_string(),
-                ChannelDspChain {
-                    channel: "R".to_string(),
-                    plugins: vec![DspPluginConfig {
+                chain(
+                    "R",
+                    vec![DspPluginConfig {
                         plugin_type: "eq".to_string(),
                         parameters: serde_json::json!({ "filters": [] }),
                     }],
-                    drivers: None,
-                },
+                    None,
+                ),
             ),
         ]
         .into_iter()
         .collect(),
-        metadata: None,
-    };
+    );
 
     let mut graph = PluginGraph::with_default_rack();
     let (total, _) = simulate_save_to_rack(&["L", "R"], &dsp, &mut graph);
@@ -1065,12 +1098,12 @@ fn test_save_to_rack_missing_channel() {
 
 #[test]
 fn test_save_to_rack_multiple_eq_plugins_merged() {
-    let dsp = DspChainOutput {
-        channels: [(
+    let dsp = output(
+        [(
             "L".to_string(),
-            ChannelDspChain {
-                channel: "L".to_string(),
-                plugins: vec![
+            chain(
+                "L",
+                vec![
                     DspPluginConfig {
                         plugin_type: "eq".to_string(),
                         parameters: serde_json::json!({ "filters": [
@@ -1084,13 +1117,12 @@ fn test_save_to_rack_multiple_eq_plugins_merged() {
                         ]}),
                     },
                 ],
-                drivers: None,
-            },
+                None,
+            ),
         )]
         .into_iter()
         .collect(),
-        metadata: None,
-    };
+    );
 
     let mut graph = PluginGraph::with_default_rack();
     let (total, per_ch) = simulate_save_to_rack(&["L"], &dsp, &mut graph);
@@ -1102,12 +1134,12 @@ fn test_save_to_rack_multiple_eq_plugins_merged() {
 
 #[test]
 fn test_save_to_rack_non_eq_plugins_skipped() {
-    let dsp = DspChainOutput {
-        channels: [(
+    let dsp = output(
+        [(
             "L".to_string(),
-            ChannelDspChain {
-                channel: "L".to_string(),
-                plugins: vec![
+            chain(
+                "L",
+                vec![
                     DspPluginConfig {
                         plugin_type: "gain".to_string(),
                         parameters: serde_json::json!({ "gain_db": -6.0 }),
@@ -1123,13 +1155,12 @@ fn test_save_to_rack_non_eq_plugins_skipped() {
                         parameters: serde_json::json!({ "delay_ms": 5.0 }),
                     },
                 ],
-                drivers: None,
-            },
+                None,
+            ),
         )]
         .into_iter()
         .collect(),
-        metadata: None,
-    };
+    );
 
     let mut graph = PluginGraph::with_default_rack();
     let (total, per_ch) = simulate_save_to_rack(&["L"], &dsp, &mut graph);
@@ -1139,39 +1170,38 @@ fn test_save_to_rack_non_eq_plugins_skipped() {
 
 #[test]
 fn test_save_to_rack_plugin_type_case_insensitive() {
-    let dsp = DspChainOutput {
-        channels: [
+    let dsp = output(
+        [
             (
                 "L".to_string(),
-                ChannelDspChain {
-                    channel: "L".to_string(),
-                    plugins: vec![DspPluginConfig {
+                chain(
+                    "L",
+                    vec![DspPluginConfig {
                         plugin_type: "EQ".to_string(), // uppercase
                         parameters: serde_json::json!({ "filters": [
                             {"filter_type": "peak", "freq": 100.0, "q": 1.0, "db_gain": -1.0}
                         ]}),
                     }],
-                    drivers: None,
-                },
+                    None,
+                ),
             ),
             (
                 "R".to_string(),
-                ChannelDspChain {
-                    channel: "R".to_string(),
-                    plugins: vec![DspPluginConfig {
+                chain(
+                    "R",
+                    vec![DspPluginConfig {
                         plugin_type: "Eq".to_string(), // mixed case
                         parameters: serde_json::json!({ "filters": [
                             {"filter_type": "peak", "freq": 200.0, "q": 1.0, "db_gain": -2.0}
                         ]}),
                     }],
-                    drivers: None,
-                },
+                    None,
+                ),
             ),
         ]
         .into_iter()
         .collect(),
-        metadata: None,
-    };
+    );
 
     let mut graph = PluginGraph::with_default_rack();
     let (total, per_ch) = simulate_save_to_rack(&["L", "R"], &dsp, &mut graph);
@@ -1182,41 +1212,40 @@ fn test_save_to_rack_plugin_type_case_insensitive() {
 
 #[test]
 fn test_multi_driver_not_rack_compatible() {
-    let dsp = DspChainOutput {
-        channels: [(
+    let dsp = output(
+        [(
             "L".to_string(),
-            ChannelDspChain {
-                channel: "L".to_string(),
-                plugins: vec![DspPluginConfig {
+            chain(
+                "L",
+                vec![DspPluginConfig {
                     plugin_type: "eq".to_string(),
                     parameters: serde_json::json!({ "filters": [
                         {"filter_type": "peak", "freq": 100.0, "q": 1.0, "db_gain": -3.0}
                     ]}),
                 }],
-                drivers: Some(vec![
-                    DriverDspChain {
-                        name: "woofer".to_string(),
-                        index: 0,
-                        plugins: vec![DspPluginConfig {
+                Some(vec![
+                    driver(
+                        "woofer",
+                        0,
+                        vec![DspPluginConfig {
                             plugin_type: "crossover".to_string(),
                             parameters: serde_json::json!({ "type": "lowpass", "freq": 2000.0 }),
                         }],
-                    },
-                    DriverDspChain {
-                        name: "tweeter".to_string(),
-                        index: 1,
-                        plugins: vec![DspPluginConfig {
+                    ),
+                    driver(
+                        "tweeter",
+                        1,
+                        vec![DspPluginConfig {
                             plugin_type: "crossover".to_string(),
                             parameters: serde_json::json!({ "type": "highpass", "freq": 2000.0 }),
                         }],
-                    },
+                    ),
                 ]),
-            },
+            ),
         )]
         .into_iter()
         .collect(),
-        metadata: None,
-    };
+    );
 
     assert!(
         !dsp.is_rack_compatible(),
