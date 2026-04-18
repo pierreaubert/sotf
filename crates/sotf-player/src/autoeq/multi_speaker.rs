@@ -432,13 +432,17 @@ pub fn to_speaker_results(
             normalized_curve: sr.input_curve.clone(),
             individual_filter_responses: sr.individual_filter_responses.clone(),
             output_path: String::new(),
-            on_axis_curve: vec![0.0; sr.frequencies.len()],
-            lw_curve: vec![0.0; sr.frequencies.len()],
-            er_curve: vec![0.0; sr.frequencies.len()],
-            sp_curve: vec![0.0; sr.frequencies.len()],
-            pir_curve: vec![0.0; sr.frequencies.len()],
-            er_di_curve: vec![0.0; sr.frequencies.len()],
-            sp_di_curve: vec![0.0; sr.frequencies.len()],
+            // Multi-speaker room EQ does not carry CEA2034 spinorama data
+            // per-speaker; the seven spin curves are left empty so downstream
+            // `is_empty()` checks detect absence correctly (a zero-filled
+            // vector would silently render as a flat 0 dB curve in plots).
+            on_axis_curve: Vec::new(),
+            lw_curve: Vec::new(),
+            er_curve: Vec::new(),
+            sp_curve: Vec::new(),
+            pir_curve: Vec::new(),
+            er_di_curve: Vec::new(),
+            sp_di_curve: Vec::new(),
             optimization_history: multi_result.optimization_history.clone(),
             initial_loss: sr.initial_loss,
             final_loss: sr.final_loss,

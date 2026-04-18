@@ -1,3 +1,36 @@
+# 0.5.119
+
+## Bug fixes
+
+- `SpeakerOptimizationResult`: the seven CEA2034 spinorama curves
+  (`on_axis_curve`, `lw_curve`, `er_curve`, `sp_curve`, `pir_curve`,
+  `er_di_curve`, `sp_di_curve`) are now populated with empty
+  `Vec<f64>` when spin data is absent, instead of zero-filled vectors
+  sized to `frequencies.len()`. Consumers in `speaker_graphs.rs`
+  (e.g. `render_spinorama_main_response_plot`,
+  `render_tonal_balance_plot`) and `SpinoramaCurves::is_valid` /
+  `has_pir` already use `is_empty()` as an absence sentinel — the
+  previous zero-filled vectors silently passed those checks and
+  caused misleading flat-line plots at 0 dB. Affects both the
+  single-speaker `From<SpeakerOptResult>` conversion and the
+  multi-speaker `to_speaker_results` builder.
+
+## Tier-1 dedup re-audit (no code change)
+
+- Re-audit of `sotf-player::room_eq_types` against
+  `autoeq::roomeq::types::config::*` found the six candidates
+  (`TargetTiltConfig`, `ExcursionProtectionConfig`,
+  `SchroederSplitConfig`, `PhaseAlignmentConfig`, `MultiSeatConfig`,
+  `BroadbandTargetMatchingConfig`) are **not** trivial stripped
+  copies: each pair diverges in at least one of default values,
+  field names (`slope` vs `slope_db_per_octave`), field types
+  (`String` vs enum, `f64` vs `Option<f64>`), field nesting
+  (flat vs nested `LowFreqFilterConfig` / `HighFreqFilterConfig`),
+  or field count (extra `enabled` flag on the UI side that the
+  backend represents as `Option<T>`). They stay separate by design;
+  any future unification needs a serde-alias migration plus
+  behavioural review, not a blind `pub use`.
+
 # 0.5.118
 
 ## Code changes

@@ -245,9 +245,15 @@ pub struct SpeakerOptimizationResult {
 
 impl From<SpeakerOptResult> for SpeakerOptimizationResult {
     fn from(result: SpeakerOptResult) -> Self {
-        let n = result.curves.frequencies.len();
-
-        // Extract spin data curves if available
+        // Extract spin data curves if available.
+        //
+        // When spin data is absent (headphone mode, or speakers without a
+        // CEA2034 measurement), the seven spinorama curves are returned as
+        // empty `Vec<f64>` — NOT zero-filled vectors. Downstream renderers
+        // (e.g. `speaker_graphs::render_spinorama_main_response_plot`) rely
+        // on `is_empty()` to detect absent data and pick a fallback curve;
+        // a zero-filled vector silently passes that check and produces a
+        // misleading flat-line plot at 0 dB.
         let (on_axis, lw, er, sp, pir, er_di, sp_di) = if let Some(ref spin) = result.spin_data {
             (
                 spin.on_axis.spl.iter().copied().collect(),
@@ -260,13 +266,13 @@ impl From<SpeakerOptResult> for SpeakerOptimizationResult {
             )
         } else {
             (
-                vec![0.0; n],
-                vec![0.0; n],
-                vec![0.0; n],
-                vec![0.0; n],
-                vec![0.0; n],
-                vec![0.0; n],
-                vec![0.0; n],
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
             )
         };
 
