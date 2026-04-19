@@ -1,3 +1,23 @@
+# 0.5.122
+
+## Room EQ: follow autoeq 0.4.30 unified `target_response` (breaking)
+
+- `RoomEqConfig` now carries a single `target_response:
+  TargetResponseUiConfig` field in place of the legacy
+  `target_tilt` + `broadband_target_matching` pair. The new struct
+  mirrors `autoeq::roomeq::TargetResponseConfig` — target shape
+  (`flat` / `harman` / `custom` / `file` / `from_measurement`),
+  preference shelves (bass + treble), and the
+  `broadband_precorrection` toggle.
+- The serialized wire format changes accordingly. Saved user
+  room-EQ configurations from 0.5.121 and earlier will not
+  deserialize without manual migration because the two old fields
+  no longer exist on the struct. This matches the autoeq config
+  schema bump (1.3.0 → 2.0.0).
+- `multi_speaker` no longer plumbs `target_tilt` through the
+  optimizer configuration — callers are expected to set
+  `target_response` directly.
+
 # 0.5.121
 
 ## QueueController: gate file-existence validation behind `testing` feature

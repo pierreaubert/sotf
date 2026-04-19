@@ -768,21 +768,10 @@
           ]
         },
         "target_response": {
-          "description": "Unified target response configuration (preferred over legacy target_tilt + broadband)",
+          "description": "Unified target response configuration (shape + preference shelves + broadband pre-correction toggle)",
           "anyOf": [
             {
               "$ref": "#/$defs/TargetResponseConfig"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "target_tilt": {
-          "description": "Legacy target curve tilt configuration — migrated to `target_response` at load time",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/TargetTiltConfig"
             },
             {
               "type": "null"
@@ -838,17 +827,6 @@
           "anyOf": [
             {
               "$ref": "#/$defs/VoiceOfGodConfig"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "broadband_target_matching": {
-          "description": "Broadband target matching configuration (v2.1)",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/BroadbandTargetMatchingConfig"
             },
             {
               "type": "null"
@@ -1337,66 +1315,6 @@
         }
       }
     },
-    "TargetTiltConfig": {
-      "description": "Target curve tilt configuration",
-      "type": "object",
-      "properties": {
-        "tilt_type": {
-          "description": "Tilt type: flat, harman, or custom",
-          "$ref": "#/$defs/TiltType",
-          "default": "flat"
-        },
-        "slope_db_per_octave": {
-          "description": "Slope in dB per octave (negative = downward tilt towards high frequencies)",
-          "type": "number",
-          "format": "double",
-          "default": -0.8
-        },
-        "reference_freq": {
-          "description": "Reference frequency where tilt equals 0 dB (Hz)",
-          "type": "number",
-          "format": "double",
-          "default": 1000.0
-        },
-        "bass_shelf_db": {
-          "description": "Bass shelf boost in dB (applied below bass_shelf_freq)",
-          "type": "number",
-          "format": "double",
-          "default": 0.0
-        },
-        "bass_shelf_freq": {
-          "description": "Bass shelf frequency in Hz",
-          "type": "number",
-          "format": "double",
-          "default": 200.0
-        }
-      }
-    },
-    "TiltType": {
-      "description": "Target curve tilt type for room correction",
-      "oneOf": [
-        {
-          "description": "Flat target (no tilt)",
-          "type": "string",
-          "const": "flat"
-        },
-        {
-          "description": "Harman-style tilt (-0.8 dB/octave with bass shelf)",
-          "type": "string",
-          "const": "harman"
-        },
-        {
-          "description": "Custom tilt with user-specified parameters",
-          "type": "string",
-          "const": "custom"
-        },
-        {
-          "description": "Derive slope from the input measurement curve at optimization time",
-          "type": "string",
-          "const": "frommeasurement"
-        }
-      ]
-    },
     "ExcursionProtectionConfig": {
       "description": "Excursion protection configuration",
       "type": "object",
@@ -1673,17 +1591,6 @@
       "required": [
         "reference_channel"
       ]
-    },
-    "BroadbandTargetMatchingConfig": {
-      "description": "Configuration for broadband target matching",
-      "type": "object",
-      "properties": {
-        "enabled": {
-          "description": "Enable broadband target matching",
-          "type": "boolean",
-          "default": true
-        }
-      }
     },
     "MultiMeasurementConfig": {
       "description": "Configuration for multi-measurement optimization",

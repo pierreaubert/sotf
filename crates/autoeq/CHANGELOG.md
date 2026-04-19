@@ -1,3 +1,42 @@
+# 0.4.30
+
+## Removed
+
+### Legacy target-tilt / broadband-matching / mode config knobs — breaking API change
+
+- `OptimizerConfig` no longer carries `mode: String`, `target_tilt:
+  Option<TargetTiltConfig>`, or `broadband_target_matching:
+  Option<BroadbandTargetMatchingConfig>`. The unified
+  `target_response: Option<TargetResponseConfig>` field (shape +
+  preference shelves + broadband pre-correction toggle) replaces
+  all three. Configs that still set any of the removed fields will
+  fail validation.
+- `OptimizerConfig::migrate_target_config()` is removed along with
+  its call sites. There is no more legacy → unified migration pass:
+  the canonical schema is the only input shape accepted by the
+  loader.
+- `TargetTiltConfig`, `TiltType`, and
+  `BroadbandTargetMatchingConfig` are deleted. The curve-building
+  helpers that were tied to them —
+  `build_harman_target_curve`,
+  `build_harman_target_curve_with_bass_boost`, and
+  `build_target_curve_with_tilt` — are also gone. Callers should
+  go through the unified `target_response` path
+  (`build_complete_target_curve` and helpers in
+  `roomeq/target_tilt.rs` are the kept surface).
+- `allow_delay()` now reads `processing_mode != ProcessingMode::LowLatency`
+  instead of the removed `mode != "iir"` sentinel.
+- Config schema version bumped **1.3.0 → 2.0.0**
+  (`default_config_version`). JSON configs authored against the
+  old schema will no longer round-trip.
+- Documentation, JSON examples, and the optimizer-config JSON
+  schema entries for `target_tilt` /
+  `broadband_target_matching` / `TargetTiltConfig` /
+  `BroadbandTargetMatchingConfig` / `TiltType` have been deleted
+  from `bin/roomeq/INPUT_FORMAT.md`, `bin/roomeq/README.md`, and
+  `bin/roomeq/input_schema.json`. The `target_response` field is
+  now the documented entry point for target shaping.
+
 # 0.4.29
 
 ## Removed

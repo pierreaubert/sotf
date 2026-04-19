@@ -534,12 +534,11 @@ fn preprocess_dba(
 /// Workflow for Stereo 2.0 (No Subwoofer)
 ///
 /// Per-channel EQ is delegated to `process_single_speaker` so that
-/// `excursion_protection`, `target_response`/`target_tilt`,
-/// `broadband_target_matching`, and `cea2034_correction` all apply inside
-/// the workflow. An alignment-gain plugin is prepended to the returned
-/// DSP chain without affecting feature decisions (F3 detection, passband
-/// estimation, and target tilt all use relative-to-peak thresholds that
-/// are gain-invariant).
+/// `excursion_protection`, `target_response`, and `cea2034_correction`
+/// all apply inside the workflow. An alignment-gain plugin is prepended
+/// to the returned DSP chain without affecting feature decisions
+/// (F3 detection, passband estimation, and target shaping all use
+/// relative-to-peak thresholds that are gain-invariant).
 pub fn optimize_stereo_2_0(
     config: &RoomConfig,
     sys: &SystemConfig,
@@ -625,11 +624,11 @@ pub fn optimize_stereo_2_0(
 /// Workflow for Stereo 2.1 (With Subwoofer)
 ///
 /// Phase 3b: per-channel features (`excursion_protection`, `target_response`,
-/// `broadband_target_matching`, `cea2034_correction`) are applied via
-/// `process_single_speaker` at the Pre-EQ stage and the resulting plugin
-/// stack is inserted before the crossover HP/LP in the final DSP chain.
-/// Post-EQ remains a plain cleanup pass on the post-crossover curve, with
-/// the "do no harm" guard from Phase 3a.
+/// `cea2034_correction`) are applied via `process_single_speaker` at the
+/// Pre-EQ stage and the resulting plugin stack is inserted before the
+/// crossover HP/LP in the final DSP chain. Post-EQ remains a plain cleanup
+/// pass on the post-crossover curve, with the "do no harm" guard from
+/// Phase 3a.
 pub fn optimize_stereo_2_1(
     config: &RoomConfig,
     sys: &SystemConfig,
