@@ -20,76 +20,241 @@
 
 ---
 
-## 2. Recording changes (prerequisite)
+## 2. Recording changes (prerequisite) — design locked
 
-GD-Opt v2 is blocked on getting trustworthy phase below the Schroeder frequency. These changes live in `crates/sotf-engine/src/signal_recorder.rs` and the recording wizard under `crates/app-gpui/components/room_eq/`.
+This section describes the full set of changes to the recording pipeline
+that GD-Opt v2 is blocked on. Everything here is committed as the design
+of record; implementation phases are enumerated in §2.10.
 
-### 2.1 Sweep parameters
+### 2.1 North star and acceptance criteria
 
-Today the sweep is a generic log sine (`gen_log_sweep`) parameterised by `start_freq`, `end_freq`, `amp`, `duration`. Bass precision wants:
+When a user completes the recording wizard on a 2.1 system with a
+modestly noisy room and a calibrated UMIK-1:
 
-- **`start_freq` as low as the system can play cleanly.** Default: 10 Hz (not 20). The phase of the first measured bin drives the unwrap for everything above; starting at 20 Hz already inside many rooms' first modal region poisons the unwrap.
-- **Duration auto-derived from octave range, not fixed seconds.** At least **3 seconds per octave below 100 Hz** to let modal energy settle before the sweep leaves the band. A 10 Hz→20 kHz sweep then needs ~15 s of bass content; today a 10 s sweep gives ~1 s below 100 Hz, which is why bass SNR collapses.
-- **Pre- and post-silence windows.** Pre-roll silence long enough for HVAC/electronics noise estimation (2 s); post-roll long enough for the longest room decay (RT60 + 1 s). Both written to WAV so the decoder can estimate noise floor deterministically.
-- **Deterministic level.** The current `amp` is open-ended. Cap bass energy to a target SPL (e.g. 85 dB @ 1 m equivalent) to avoid subwoofer driver excursion producing harmonic distortion that contaminates phase.
+1. Exported per-channel curves carry a `coherence` column with γ² ≥ 0.9
+   across `[band_lo, band_hi]` on ≥ 80 % of recordings.
+2. The `BassPhaseConfidence` gate (§3.5) classifies the recording as
+   `Trustworthy` deterministically.
+3. Every WAV file needed to recompute the curves offline is in the
+   session directory, with pre- and post-silence windows intact.
+4. The bass-anchor step resolves the first measured bin's phase
+   without the current 2π wraparound ambiguity.
 
-**Schema addition** (not an API change — new optional fields in `RecordingConfiguration`):
+Failure is **graceful**: if any of (1)–(4) fail, the wizard still
+completes, the optimiser runs magnitude-only, and the report emits
+`Advisory::GdOptDegradedPhase { reason }`.
+
+### 2.2 Data contract — `RecordingConfiguration` + `SplCalibration`
+
+All new fields are optional (`Option<_>`) so that intermediate-phase
+session files load via serde defaults. Session files written before
+GD-1a are *not* migrated — see §2.11 Q6.
 
 ```rust
 pub struct RecordingConfiguration {
-    // ...
-    pub bass_octave_duration_s: Option<f32>,   // default 3.0
+    // ... existing fields unchanged ...
+
+    // --- A: sweep shape ---
+    pub bass_octave_duration_s: Option<f32>,   // default 3.0; clamp [1.0 .. 10.0]
     pub pre_silence_s: Option<f32>,            // default 2.0
     pub post_silence_s: Option<f32>,           // default = schroeder_rt60 + 1.0
-    pub sweep_level_db_spl: Option<f32>,       // target SPL at listening position
+    pub sweep_level_db_spl: Option<f32>,       // target SPL @ listening position
+
+    // --- B: multi-sweep ---
+    pub num_sweeps: Option<u8>,                // default 4; clamp [1 .. 8]
+    pub coherence_threshold: Option<f32>,      // default 0.9; user-exposed, clamp [0.5 .. 0.99]
+
+    // --- D: bass anchor ---
+    pub bass_probe_freq_hz: Option<f32>,       // default 20.0 (or 1.25 × min_freq, whichever higher)
+    pub bass_probe_cycles: Option<u16>,        // default 5
+
+    // --- E: mic phase calibration ---
+    pub mic_phase_calibration_path: Option<String>,
+    pub mic_phase_calibration_paths: Option<Vec<Option<String>>>,
+
+    // --- Q4: SPL calibration anchor ---
+    pub spl_calibration: Option<SplCalibration>,
+}
+
+/// SPL calibration anchor captured from a pre-sweep reference-tone read.
+/// Maps a peak-sample-value on the recording ADC to a dBSPL reading at
+/// the listening position, so `sweep_level_db_spl` can be targeted
+/// deterministically.
+pub struct SplCalibration {
+    /// User-reported dBSPL at the listening position during calibration.
+    pub reported_db_spl: f32,
+    /// Frequency of the calibration tone in Hz (default 1000).
+    pub reference_freq_hz: f32,
+    /// Peak sample value observed on the recording ADC during the tone.
+    pub peak_sample_level: f32,
+    /// Offset: `dbspl_at_mic = 20*log10(peak_sample_value) + spl_offset_db`.
+    pub spl_offset_db: f32,
 }
 ```
 
-### 2.2 Multi-sweep averaging below Schroeder
+### 2.3 Data contract — `Curve` extensions
 
-Single-sweep phase below 100 Hz is dominated by HVAC and electronic mains harmonics. Use **coherence averaging** over N ≥ 4 sweeps:
+```rust
+pub struct Curve {
+    pub freq: Array1<f64>,
+    pub spl: Array1<f64>,
+    pub phase: Option<Array1<f64>>,
+    // --- NEW (all Option<_>; default None for legacy CSVs) ---
+    pub coherence: Option<Array1<f64>>,
+    pub noise_floor_db: Option<Array1<f64>>,
+    // Min-phase / excess-phase are computed at LOAD time (Q3), not
+    // persisted to the CSV. Left as cached fields on the struct so
+    // callers can lazily request them.
+    pub min_phase: Option<Array1<f64>>,
+    pub excess_phase: Option<Array1<f64>>,
+    pub excess_delay_ms: Option<f64>,
+}
+```
 
-1. Record N consecutive sweeps back-to-back with the post-silence window in between.
-2. Deconvolve each sweep independently to obtain N impulse responses `h_i(t)`.
-3. Compute the per-bin complex average `H̄(f) = (1/N) Σ H_i(f)` and the magnitude-squared coherence `γ²(f) = |H̄|² / ⟨|H|²⟩`.
-4. Export `coherence` alongside `spl` and `phase` in the CSV.
+### 2.4 CSV column layout
 
-**Coherence is the confidence metric.** Below γ² = 0.9 the phase is untrustworthy and GD-Opt must refuse to correct.
+Legacy CSVs (`freq, spl, phase`) keep loading unchanged. New CSVs append
+two columns:
 
-### 2.3 Signal type: log sweep, not MLS
-
-Log sine sweep is the chosen excitation. MLS was considered and rejected:
-
-| Property | Log sweep | MLS |
+| Column | Source | Consumed by |
 |---|---|---|
-| Bass energy per driver-excursion limit | Wins — slow sweep concentrates in-band. | Loses — flat power spectrum spreads energy. |
-| Harmonic distortion handling | Wins — HD lands at negative times in deconvolved IR, gated off. | Loses — HD smears across the IR as correlated noise that corrupts phase. |
-| Coherence estimation | Needs N sweeps (already doing this). | Native from a single recording. |
-| Robustness to non-stationarity (HVAC) | Only the in-band frequencies at the moment of the glitch are lost. | Whole sequence ruined. |
+| `coherence` | §2.5, computed during multi-sweep averaging | GD confidence gate; optimiser weight |
+| `noise_floor_db` | Pre-silence window RMS per 1/6-octave band | SNR gate in §3.5; Evaluating UI |
 
-Bass SNR is driver-excursion-limited, not mic-limited. The sweep's bass energy advantage dominates; multi-sweep averaging (§2.2) closes the coherence gap.
+`min_phase_deg`, `excess_phase_deg`, and `excess_delay_ms` are **not**
+persisted to CSV — they are recomputed at load time from the raw sweep
+WAVs per the decision in §2.11 Q3. Keeping them out of CSV means the
+decomposition algorithm can evolve without requiring recording
+re-export.
 
-### 2.4 Min-phase / excess-phase decomposition at measurement time
+CSV readers key off column-name (not position), so additional columns
+in either direction are tolerated.
 
-Rather than ad-hoc time windowing, decompose each channel's complex response via Hilbert transform on log-magnitude: `H = H_min · H_excess · e^{-jωτ}`. Reuses the existing [`mixed_phase::decompose_phase`](../src/roomeq/mixed_phase.rs). Export both components alongside `spl`/`phase`/`coherence`.
+### 2.5 Session directory layout
 
-- **H_min** — realisable by any IIR (including AP biquads). This is what the optimiser manipulates.
-- **H_excess · e^{-jωτ}** — pure delay + modal non-minimum-phase zeros. Not correctable by IIR; lives in the objective as an uncontrollable constant.
+```
+<recording_dir>/
+  config.json                          # RecordingConfiguration
+  probe_wideband.wav                   # existing narrowband delay probe
+  probe_bass.wav                       # NEW: per-channel bass tone burst
+  ch00_left/
+    sweep_01.wav                       # NEW: per-sweep raw capture
+    sweep_02.wav
+    sweep_03.wav
+    sweep_04.wav
+    fr.csv                             # extended column set (see §2.4)
+  ch01_right/...
+```
 
-Below ~100 Hz the direct sound and first reflections are indistinguishable at metre-scale wavelengths, so `H_excess ≈ 1` and min-phase ≈ measured — no gate tuning required, no "gated LF is fictional" artefact.
+Per-sweep WAVs are **always** kept (§2.11 Q2). The coherence-averaged
+IR is *not* persisted; it is recomputed on load. Storage cost: ~150 MB
+for a 5-channel session at the defaults — acceptable.
 
-### 2.5 Probe step integration
+### 2.6 Wizard flow — 7 steps
 
-The existing Probe step (tone-burst delay detection) captures arrival times. Extend it to capture a **short bass tone burst** (20 Hz, 5 cycles) per channel and fit its envelope phase. This gives a per-channel anchor for the sweep-derived phase that survives even if the sweep SNR is marginal. Feed the anchor into the sweep unwrap as a hard constraint on the first bin.
+```
+Config
+  └─ SplCalibration       [NEW, Q4 required]
+Capture
+Probe                     [existing wideband narrow-band delay probe]
+  └─ BassAnchor           [NEW, Q1 dedicated sub-step]
+Evaluating
+Saving
+```
 
-### 2.6 Calibrated microphone phase
+- **Config** gains: per-channel mic-phase picker (E); `num_sweeps`
+  slider (B); `bass_octave_duration_s` slider (A); `coherence_threshold`
+  numeric in Advanced (Q5).
+- **SplCalibration** is a blocking gate: user plays a 1 kHz tone at
+  a fixed digital level, types the dBSPL their handheld meter reads
+  at the listening position, and `spl_offset_db` is persisted.
+  `sweep_level_db_spl` becomes non-optional on write (though the
+  field on disk stays `Option<_>` for wire-format stability).
+- **Capture** shows per-sweep progress ("Sweep 2 / 4") and a
+  live coherence preview after each sweep completes.
+- **Probe** is unchanged.
+- **BassAnchor** plays a 20 Hz × 5-cycle tone burst per channel and
+  fits envelope phase. Total run: ~20 s for a 5-channel system.
+- **Evaluating** shows a coherence strip below the FR plot
+  (green ≥ 0.9, amber 0.7–0.9, red < 0.7) and the per-channel
+  `excess_delay_ms` number (computed on load in §2.3).
+- **Saving** writes the extended CSVs + `config.json` (+ all raw
+  sweep WAVs).
 
-USB measurement mics (UMIK-1 etc.) typically ship with magnitude calibration only. Below 50 Hz the mic's own phase can drift ±30°. Add:
+### 2.7 Defaults & budgets
 
-- `mic_calibration_phase_path: Option<PathBuf>` in `RecordingConfiguration`.
-- A secondary calibration routine (sub-bass comparison against a known reference, e.g. a measurement-grade electret) that produces a 4-column CSV (`freq, mag_db, phase_deg, coherence`).
+| Parameter | Default | Rationale |
+|---|---|---|
+| `bass_octave_duration_s` | 3.0 | Lets modal energy settle below 100 Hz |
+| `pre_silence_s` | 2.0 | HVAC / mains-harmonic noise-floor estimation |
+| `post_silence_s` | `rt60 + 1.0` | Captures full room decay; RT60 from room volume if absent |
+| `num_sweeps` | 4 | Bootstrap budget in §3.3 needs N ≥ 4 for the 3σ test |
+| `coherence_threshold` | 0.9 | Matches optimiser refusal threshold in §3.5 |
+| `bass_probe_freq_hz` | 20.0 | Below every plausible bass XO |
+| `bass_probe_cycles` | 5 | Enough for envelope phase fit; short enough to avoid modal ringing |
 
-Without mic phase calibration, bass phase from cheap mics is a rounding error compared to the room. Document this clearly — the UI should surface "Bass phase untrusted: mic phase not calibrated" as an `Advisory`.
+Total recording time at defaults, 5-channel system, 10 Hz → 20 kHz:
+~14 min (was ~1 min). GD-Opt v2 requires this budget; surface an
+early-warning "estimated capture time" in the Config step.
+
+### 2.8 Failure modes
+
+All failures surface through `RoomEqReport::Advisory`; the recording
+pipeline itself never aborts.
+
+| Trigger | Advisory reason | Effect on GD-Opt |
+|---|---|---|
+| `num_sweeps == 1` OR coherence column missing | `"no_coherence_data"` | Skip GD-Opt |
+| Mean coherence in `[band_lo, band_hi]` < 0.9 | `"coherence_below_threshold"` | Skip GD-Opt |
+| `noise_floor_db` within 10 dB of in-band signal | `"snr_below_10db"` | Skip GD-Opt |
+| Mic phase cal absent on known unflat-phase mics | `"mic_phase_uncalibrated"` | Warn, proceed |
+| Bass probe envelope-phase fit residual > 20° | `"bass_anchor_unreliable"` | Proceed without anchor |
+| `bass_octave_duration_s < 2.0` OR `num_sweeps < 4` | `"insufficient_bass_duration"` | Skip GD-Opt |
+| `spl_calibration` absent | `"no_spl_calibration"` | Warn (Q4 says require at wizard level, but the gate stays in case of config-file-only paths) |
+
+### 2.9 Cross-cutting
+
+- **Determinism:** extend the existing probe seed pattern to the sweep
+  generator; expose as optional `seed: Option<u64>` in
+  `RecordingConfiguration`. QA sets; UI hides.
+- **Sample rate:** all upgrades are sample-rate-agnostic. 20 Hz × 5
+  cycles = 250 ms = 12 000 samples @ 48 kHz.
+- **Storage:** ~150 MB/session. Session-size shown in Saving step
+  for visibility, no opt-out.
+- **Format compat:** extended CSV starts with the legacy three
+  columns in the same units, so external tools (REW, ARTA,
+  HolmImpulse) keep working.
+
+### 2.10 Implementation phases
+
+Each phase is independently mergeable. Phases touching
+`crates/sotf-engine` get a dedicated PR per the engine/plugins rule.
+
+| Phase | Scope | Files touched |
+|---|---|---|
+| **GD-1a** | Config types only — `RecordingConfiguration` extensions, `SplCalibration`, schema regen | autoeq (config types + schema), tests |
+| **GD-1a.1** | Delete `migrate_legacy_recording`; introduce `AutoeqError::UnsupportedRecordingFormat` | sotf-engine (engine PR) |
+| **GD-1a.2** | `Curve` extensions (`coherence`, `noise_floor_db`, `min_phase`, `excess_phase`, `excess_delay_ms`) + `..Default::default()` spread across ~11 call sites; CSV reader tolerance for the new columns | autoeq + sotf-player + app-gpui + app-tui + gpui-toolkit demos (~11 files, one mechanical sweep per crate) |
+| **GD-1b** | Sweep shape (A): octave-scaled generator + pre/post silence | math-dsp, sotf-engine, Config UI |
+| **GD-1c** | Multi-sweep (B): `record_multi_sweep`, `compute_coherence`, session-directory layout, Capture UI | sotf-engine (engine PR), Capture UI |
+| **GD-1d** | Load-time min-phase decomposition (Q3): `Curve::decompose_into_cache()` called by CSV loader and by `Curve::from_measurement` | autoeq |
+| **GD-1e** | BassAnchor wizard step (Q1-b) | sotf-engine, app-gpui wizard |
+| **GD-1e.5** | SplCalibration wizard step (Q4) | sotf-engine (tone playback), app-gpui wizard |
+| **GD-1f** | Mic phase calibration loader (E) | math-dsp, Config UI |
+| **GD-1g** | `BassPhaseConfidence` gate stub reading from `Curve` | autoeq (prep for GD-2) |
+
+Estimated effort: ~13 working days.
+
+### 2.11 Decision log (resolves §9 of the review)
+
+| # | Question | Decision | Rationale |
+|---|---|---|---|
+| 1 | Bass tone burst location | **(b)** dedicated wizard sub-step (BassAnchor) | Clean separation; reuses probe persistence; engine code is a trimmed variant of `probe_channel_delays_core` |
+| 2 | Raw sweep persistence | **Persist all**, no user toggle | Required to re-compute coherence / min-phase offline after algorithm changes |
+| 3 | Min-phase decomposition time | **Load time**, not save time | Decoupling: decomposition algorithm can evolve without CSV re-export |
+| 4 | SPL cap | **Require** with a calibration routine | Determinism; avoids overdriving subwoofers at bass sweep levels |
+| 5 | Coherence threshold UI | **Exposed** as a numeric in Advanced | User-visible quality gate |
+| 6 | `migrate_legacy_recording` | **Drop** entirely | "No back-compat" direction; legacy recordings fail with a typed error |
 
 ---
 

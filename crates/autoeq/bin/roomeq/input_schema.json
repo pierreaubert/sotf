@@ -7,7 +7,7 @@
     "version": {
       "description": "Configuration version (semantic versioning, e.g. \"1.0.0\")",
       "type": "string",
-      "default": "1.3.0"
+      "default": "2.0.0"
     },
     "system": {
       "description": "System configuration (v2.1) - Decouples logical roles from measurements",
@@ -52,7 +52,6 @@
       "description": "Optimizer configuration",
       "$ref": "#/$defs/OptimizerConfig",
       "default": {
-        "mode": "iir",
         "processing_mode": "low_latency",
         "loss_type": "flat",
         "algorithm": "autoeq:de",
@@ -558,18 +557,13 @@
       "description": "Optimizer configuration",
       "type": "object",
       "properties": {
-        "mode": {
-          "description": "Optimization mode: \"iir\" (default), \"fir\", \"mixed\"",
-          "type": "string",
-          "default": "iir"
-        },
         "processing_mode": {
-          "description": "Processing mode for RoomEQ v2",
+          "description": "Processing mode — selects the filter class used for correction.",
           "$ref": "#/$defs/ProcessingMode",
           "default": "low_latency"
         },
         "fir": {
-          "description": "FIR configuration (if mode is \"fir\" or \"mixed\")",
+          "description": "FIR configuration (used when `processing_mode` requires FIR filters)",
           "anyOf": [
             {
               "$ref": "#/$defs/FirConfig"
@@ -768,7 +762,7 @@
           ]
         },
         "target_response": {
-          "description": "Unified target response configuration (shape + preference shelves + broadband pre-correction toggle)",
+          "description": "Unified target response configuration (shape + preference shelves + broadband pre-correction)",
           "anyOf": [
             {
               "$ref": "#/$defs/TargetResponseConfig"
@@ -2109,6 +2103,114 @@
             "string",
             "null"
           ]
+        },
+        "bass_octave_duration_s": {
+          "description": "Per-octave bass sweep duration in seconds. Defaults to 3.0; the\nsweep generator scales total duration so that the band below\n100 Hz receives `bass_octave_duration_s` seconds per octave.\nClamped to `[1.0 .. 10.0]` at load time.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "pre_silence_s": {
+          "description": "Pre-sweep silence window in seconds. Used by the coherence\naverager to estimate the noise-floor. Default 2.0.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "post_silence_s": {
+          "description": "Post-sweep silence window in seconds. Default\n`schroeder_rt60 + 1.0`; falls back to `2.0` if no RT60 estimate\nis available.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "sweep_level_db_spl": {
+          "description": "Target sweep level at the listening position in dBSPL. Requires\n[`spl_calibration`](Self::spl_calibration) to be populated.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "num_sweeps": {
+          "description": "Number of sweeps recorded back-to-back for coherence averaging.\nDefault 4. Clamped to `[1 .. 8]` at load time.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint8",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "coherence_threshold": {
+          "description": "Coherence threshold below which the GD confidence gate declares\nbass phase untrustworthy. Default 0.9. Clamped to `[0.5 .. 0.99]`.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "bass_probe_freq_hz": {
+          "description": "Centre frequency of the bass tone burst captured by the\nBassAnchor wizard step. Default 20.0 Hz (or\n`1.25 * min_freq`, whichever is higher).",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "bass_probe_cycles": {
+          "description": "Number of cycles in the bass tone burst. Default 5.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "mic_phase_calibration_path": {
+          "description": "Path to the microphone phase calibration CSV (4 columns:\n`freq, mag_db, phase_deg, coherence`). Magnitude calibration\nalready lives under [`mic_calibration_path`](Self::mic_calibration_path).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mic_phase_calibration_paths": {
+          "description": "Per-channel mic phase calibration files, aligned with\n[`mic_calibration_paths`](Self::mic_calibration_paths).",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "spl_calibration": {
+          "description": "SPL calibration anchor captured from a pre-sweep reference tone.\nRequired on new recordings by the SplCalibration wizard step;\nstored here so that replayed recordings can re-derive\n`sweep_level_db_spl`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SplCalibration"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recording_seed": {
+          "description": "Deterministic seed for the sweep / probe generators. QA sets it;\nthe UI hides it. When `None`, the generators use their internal\nfixed seed constants.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
         }
       }
     },
@@ -2172,6 +2274,38 @@
         "arrival_ms",
         "gain_db",
         "snr_db"
+      ]
+    },
+    "SplCalibration": {
+      "description": "SPL calibration anchor captured from a pre-sweep reference tone.\n\nMaps the peak sample value observed on the recording ADC during a\nreference tone to a dBSPL reading taken by the user at the listening\nposition with an external meter. Once captured, the sweep playback\nlevel is chosen so the in-band energy at the listening position hits\n[`RecordingConfiguration::sweep_level_db_spl`](RecordingConfiguration::sweep_level_db_spl)\ndeterministically — avoiding the subwoofer driver over-excursion\nthat would otherwise contaminate bass phase with harmonic distortion.",
+      "type": "object",
+      "properties": {
+        "reported_db_spl": {
+          "description": "User-reported dBSPL at the listening position during calibration.",
+          "type": "number",
+          "format": "float"
+        },
+        "reference_freq_hz": {
+          "description": "Frequency of the calibration tone in Hz (default 1000).",
+          "type": "number",
+          "format": "float"
+        },
+        "peak_sample_level": {
+          "description": "Peak sample value observed on the recording ADC during the tone,\nin the range `[0.0 .. 1.0]`.",
+          "type": "number",
+          "format": "float"
+        },
+        "spl_offset_db": {
+          "description": "Offset mapping ADC peak level to dBSPL at the mic:\n`dbspl_at_mic = 20 * log10(peak_sample_value) + spl_offset_db`.",
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "reported_db_spl",
+        "reference_freq_hz",
+        "peak_sample_level",
+        "spl_offset_db"
       ]
     }
   }

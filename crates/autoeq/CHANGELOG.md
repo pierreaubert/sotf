@@ -1,3 +1,41 @@
+# 0.4.31
+
+## GD-Opt v2 — Phase GD-1a: recording-config types
+
+Types-only slice of Phase GD-1 from
+[`docs/gd_opt_v2_plan.md`](docs/gd_opt_v2_plan.md). Purely additive:
+no existing behaviour changes, no call sites touched outside this
+phase.
+
+- `RecordingConfiguration` gains ten new optional fields documented
+  in §2.2 of the plan: `bass_octave_duration_s`, `pre_silence_s`,
+  `post_silence_s`, `sweep_level_db_spl`, `num_sweeps`,
+  `coherence_threshold`, `bass_probe_freq_hz`, `bass_probe_cycles`,
+  `mic_phase_calibration_path`, `mic_phase_calibration_paths`,
+  `spl_calibration`, and `recording_seed`. All default to `None`;
+  session files written before this release continue to load via
+  serde defaults.
+- New `SplCalibration` struct with `reported_db_spl`,
+  `reference_freq_hz`, `peak_sample_level`, `spl_offset_db` and the
+  convenience helpers `dbspl_for_peak_level` /
+  `peak_level_for_dbspl`. Populated by the SplCalibration wizard
+  step landing later in Phase GD-1.
+- `bin/roomeq/input_schema.json` regenerated. Net changes: adds the
+  `SplCalibration` definition and the twelve new
+  `RecordingConfiguration` properties; drops the vestigial `"mode"`
+  property from `OptimizerConfig` (already removed from the Rust
+  struct in 0.4.29); bumps `version.default` from `"1.3.0"` to
+  `"2.0.0"` to match `default_config_version`.
+
+Tests added in `roomeq::types::config::tests`:
+- `spl_calibration_roundtrip_and_helpers`
+- `recording_configuration_accepts_gd_v2_fields`
+- `recording_configuration_legacy_json_still_loads`
+
+No behaviour change; downstream consumers see the new fields as
+`Option<_>` on `RecordingConfiguration` and can ignore them until
+the later phases wire them through.
+
 # 0.4.30
 
 ## Removed
