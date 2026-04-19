@@ -120,7 +120,7 @@ pub use reflection_cancel::{
 
 // Utility modules
 mod ir_waveform;
-mod phase_utils;
+pub(crate) mod phase_utils;
 pub mod synthetic;
 mod time_align;
 mod weighted_loss;

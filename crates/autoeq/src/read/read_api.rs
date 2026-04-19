@@ -249,7 +249,7 @@ pub fn extract_curve_by_name(
         ).into());
     }
 
-    Ok(crate::Curve {
+    let mut curve = crate::Curve {
         freq: Array1::from(freqs),
         spl: Array1::from(spls),
         phase: if !phases.is_empty() {
@@ -258,7 +258,11 @@ pub fn extract_curve_by_name(
             None
         },
         ..Default::default()
-    })
+    };
+    // GD-1d: populate min-phase / excess-phase cache at the network-load boundary.
+    // No-op when phase is absent. See docs/gd_opt_v2_plan.md §2.4 and §2.11 Q3.
+    curve.decompose_into_cache();
+    Ok(curve)
 }
 
 fn decode_typed_array(bdata: &str, dtype: &str) -> Result<Vec<f64>, Box<dyn Error>> {
