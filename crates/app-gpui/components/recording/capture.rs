@@ -1733,6 +1733,11 @@ impl PlayerView {
                     .as_ref()
                     .and_then(|p| std::path::Path::new(p).file_name())
                     .map(|f| f.to_string_lossy().to_string()),
+                // GD-Opt v2 fields (see crates/autoeq/docs/gd_opt_v2_plan.md §2.2);
+                // wired in later phases (GD-1b for sweep shape, GD-1e.5 for
+                // SPL calibration, GD-1f for mic phase, etc.). Initialize to
+                // None here so the struct literal compiles.
+                ..Default::default()
             };
 
             // Convert ChannelRecording to speakers HashMap with inline measurements
