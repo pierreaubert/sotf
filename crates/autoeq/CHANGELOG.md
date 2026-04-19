@@ -37,6 +37,18 @@
   `bin/roomeq/input_schema.json`. The `target_response` field is
   now the documented entry point for target shaping.
 
+### `TargetShape` canonical wire format
+
+- `TargetShape` now serializes with `#[serde(rename_all =
+  "snake_case")]` instead of `lowercase`. The only practical
+  difference is that the `FromMeasurement` variant serializes as
+  `"from_measurement"` (previously `"frommeasurement"`). The
+  `#[serde(alias = "from_measurement")]` attribute that papered
+  over this has been removed — the underscore form is now the
+  single canonical value on both the serialization and
+  deserialization sides. `input_schema.json` has been updated to
+  match.
+
 # 0.4.29
 
 ## Removed

@@ -182,7 +182,7 @@ pub enum SystemModel {
 
 /// Target response shape preset
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default, PartialEq)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum TargetShape {
     /// Flat in-room response (no tilt)
     #[default]
@@ -194,7 +194,6 @@ pub enum TargetShape {
     /// Load target curve from external CSV file (`curve_path` must be set)
     File,
     /// Derive slope from the input measurement curve at optimization time
-    #[serde(alias = "from_measurement")]
     FromMeasurement,
 }
 
@@ -1628,6 +1627,31 @@ impl RoomConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn target_shape_canonical_wire_format() {
+        // Pins the on-the-wire string for every TargetShape variant.
+        // `from_measurement` (underscore) is the sole canonical form,
+        // matching bin/roomeq/input_schema.json and INPUT_FORMAT.md.
+        let cases = [
+            (TargetShape::Flat, "\"flat\""),
+            (TargetShape::Harman, "\"harman\""),
+            (TargetShape::Custom, "\"custom\""),
+            (TargetShape::File, "\"file\""),
+            (TargetShape::FromMeasurement, "\"from_measurement\""),
+        ];
+        for (variant, expected) in cases {
+            let serialized = serde_json::to_string(&variant).unwrap();
+            assert_eq!(serialized, expected, "serialize {variant:?}");
+            let round_tripped: TargetShape = serde_json::from_str(&serialized).unwrap();
+            assert_eq!(round_tripped, variant, "round-trip {variant:?}");
+        }
+        // Old canonical form used before the snake_case switch must no
+        // longer deserialize — a paranoid guard against accidental
+        // reintroduction of the `#[serde(alias = "from_measurement")]`
+        // back-compat shim.
+        assert!(serde_json::from_str::<TargetShape>("\"frommeasurement\"").is_err());
+    }
 
     #[test]
     fn test_optimizer_config_default_has_decomposed_correction_enabled() {

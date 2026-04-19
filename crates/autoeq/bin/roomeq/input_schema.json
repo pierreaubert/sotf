@@ -1281,7 +1281,7 @@
         {
           "description": "Derive slope from the input measurement curve at optimization time",
           "type": "string",
-          "const": "frommeasurement"
+          "const": "from_measurement"
         }
       ]
     },

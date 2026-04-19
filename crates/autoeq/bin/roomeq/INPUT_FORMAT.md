@@ -703,7 +703,7 @@ With a custom slope, bass preference shelf, and broadband pre-correction:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `shape` | string | `"flat"` | Target shape: `"flat"`, `"harman"` (-0.8 dB/oct at 1 kHz), `"custom"`, `"file"` (load CSV from `curve_path`), `"from_measurement"` (auto-derive slope from input curve). Accepts `"from_measurement"` as an alias. |
+| `shape` | string | `"flat"` | Target shape: `"flat"`, `"harman"` (-0.8 dB/oct at 1 kHz), `"custom"`, `"file"` (load CSV from `curve_path`), `"from_measurement"` (auto-derive slope from input curve) |
 | `slope_db_per_octave` | number | `-0.8` | Slope in dB/octave (negative = downward tilt). Used when `shape == "custom"`. Ignored for `"flat"`, `"harman"`, `"file"`, `"from_measurement"`. |
 | `reference_freq` | number (Hz) | `1000` | Frequency where the target slope passes through 0 dB |
 | `curve_path` | string (path) | - | Path to a target-curve CSV (required when `shape == "file"`) |
