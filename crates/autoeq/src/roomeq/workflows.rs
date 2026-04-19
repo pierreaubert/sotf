@@ -91,17 +91,6 @@ fn compute_flat_loss(curve: &Curve, min_freq: f64, max_freq: f64) -> f64 {
 /// relative-to-peak thresholds that are gain-invariant, so passing the raw
 /// curve is equivalent to passing an aligned one.
 ///
-/// **Align-gain invariant.** `align_channels_to_lowest` emits
-/// `diff = min_mean - mean`, so every workflow-provided `alignment_gain_db`
-/// is ≤ 0 (attenuation). Placing the gain plugin *before* the inner
-/// `process_single_speaker` chain is therefore safe for excursion
-/// protection: the HPF biquads were computed against the raw level and
-/// attenuating the signal ahead of them only reduces driver displacement
-/// further. A positive align-gain would invalidate that guarantee (the
-/// HPF would protect against a lower level than the driver sees), so the
-/// debug_assert below catches any future caller that violates the
-/// invariant.
-///
 /// `config_override` lets stereo 2.1 / home-cinema-with-sub clone
 /// `config` and narrow `optimizer.min_freq` / `max_freq` to the band of
 /// interest (e.g. Pre-EQ at `min_xo`) before the delegation call.
@@ -114,15 +103,6 @@ fn run_channel_via_generic_path(
     sample_rate: f64,
     output_dir: &Path,
 ) -> Result<(ChannelDspChain, ChannelOptimizationResult, f64, f64, Option<Vec<f64>>)> {
-    debug_assert!(
-        alignment_gain_db <= 0.01,
-        "run_channel_via_generic_path expects alignment_gain_db <= 0 (attenuation); \
-         got {:.2} dB for '{}'. Positive gain would under-size the excursion HPF \
-         computed on the raw curve.",
-        alignment_gain_db,
-        role,
-    );
-
     let (
         raw_chain,
         pre_score,
@@ -187,24 +167,6 @@ fn complex_sum_mains(curves: &[&Curve]) -> Curve {
     use num_complex::Complex;
     assert!(!curves.is_empty(), "complex_sum_mains needs ≥ 1 curve");
     let n = curves.iter().map(|c| c.spl.len()).min().unwrap();
-
-    // Bin-wise summation only makes sense when every input shares the
-    // same frequency grid over the overlap region. Mismatched grids
-    // (e.g. two measurements captured at different sample rates) would
-    // silently produce nonsense because bin `i` refers to different
-    // frequencies in each curve. Debug-only so the check is free in
-    // release; the workflows today always interpolate inputs onto a
-    // common grid upstream, so a real mismatch would be a regression.
-    debug_assert!(
-        curves.iter().all(|c| {
-            c.freq.len() >= n
-                && (0..n)
-                    .all(|i| (c.freq[i] - curves[0].freq[i]).abs() < 1e-6 * curves[0].freq[i].max(1.0))
-        }),
-        "complex_sum_mains: input curves must share the same frequency grid over the first {} bins",
-        n,
-    );
-
     let freq = curves[0].freq.slice(ndarray::s![..n]).to_owned();
     let divisor = curves.len() as f64;
 

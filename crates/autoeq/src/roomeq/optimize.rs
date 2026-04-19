@@ -601,30 +601,27 @@ pub fn optimize_room_with_probe_arrivals(
     )
 }
 
-/// I6 — sanity invariants on the final `RoomOptimizationResult`.
+/// I6 — debug-only sanity invariants on the final `RoomOptimizationResult`.
 ///
 /// Catches silent corruption bugs that would otherwise produce garbage DSP
 /// chains (misaligned indexing, NaN fallout from the optimiser). A full
 /// chain resynthesis would need to simulate every plugin type (gain /
 /// delay / biquad / FIR) and reproduce each workflow's intermediate curve
-/// derivation — that invariant is deferred. A magnitude-delta
+/// derivation — that invariant is deferred to Phase 5. A magnitude-delta
 /// envelope was considered but had to be removed: in 2.1 / home-cinema
 /// workflows the Sub channel's `final_curve` legitimately reaches
 /// −300 dB where the LP crossover attenuates far-above-passband content,
 /// which is not a bug.
 ///
-/// The function runs in both debug AND release:
-///   - In debug builds, panics on violation so tests surface the exact
-///     failed invariant.
-///   - In release builds, returns an `Err` instead so release QA / fuzz
-///     runs don't silently ship a corrupted result when the optimiser
-///     diverges — they get a clean error that downstream callers can
-///     handle.
-///
-/// Invariants:
+/// Invariants that do hold universally:
 ///   1. Every channel's `freq` and `spl` lengths match (on both the
 ///      initial and final curves).
-///   2. No NaN or infinite SPL values in the final curve.
+///   2. No NaN or infinite SPL values in the final curve — they signal
+///      optimiser divergence.
+/// Runs in both debug AND release. Debug panics (via `debug_assert!`) so
+/// tests surface the exact violated invariant; release returns a clean
+/// `Err` so fuzz / QA runs report divergence instead of shipping a
+/// corrupted DSP chain.
 fn sanity_check_result(result: &RoomOptimizationResult) -> Result<()> {
     for (name, ch) in &result.channel_results {
         if ch.initial_curve.freq.len() != ch.initial_curve.spl.len() {

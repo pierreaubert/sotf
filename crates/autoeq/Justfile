@@ -150,9 +150,20 @@ qa-roomeq: qa-roomeq-small-stereo-20 \
 	qa-roomeq-synthetic \
 	qa-roomeq-features
 
+# Memory-capped convergence run. The `--jobs` default in
+# `roomeq-qa-quality` is `num_cpus/2` so each outer test case still gets
+# parallel DE evaluators without OOM'ing the machine when 70+ cases are
+# scheduled. Override with `just qa-roomeq-convergence jobs=N` or run the
+# binary directly.
 [group('qa-roomeq')]
-qa-roomeq-convergence:
-	cargo run --bin roomeq-qa-quality --release
+qa-roomeq-convergence jobs="":
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if [ -n "{{jobs}}" ]; then
+	  cargo run --bin roomeq-qa-quality --release -- --jobs {{jobs}}
+	else
+	  cargo run --bin roomeq-qa-quality --release
+	fi
 
 [group('qa-roomeq')]
 qa-roomeq-small-stereo-20: ensure-venv
@@ -295,12 +306,21 @@ qa-roomeq-features:
 	cargo run --bin roomeq-qa-features --no-default-features --release
 
 # Compact CI-friendly QA run: bounded fuzzer + small coverage subset.
-# Typical wall time is under 3 minutes on modern hardware. Runs the
-# fuzzer with a fixed scenario budget (not wall-clock) so results stay
-# reproducible across CI agents, and the quick coverage subset to pin
-# the core small/medium stereo scenarios.
+# Typical wall time under 3 minutes on modern hardware.
 [group('qa-roomeq')]
 qa-roomeq-ci:
 	cargo run --bin roomeq-fuzzer --release -- -n 50
 	cargo run --bin roomeq-qa-coverage --release -- --quick --maxeval 200
+
+# Memory-capped integration test runner for autoeq.
+#
+# The BEM multimode tests spin up one optimizer per test × `cargo test`'s
+# worker count. Each optimizer internally forks rayon evaluators over all
+# cores, so the effective thread count is num_cpus × num_cpus. On small-
+# RAM boxes this OOMs. Cap via `RUST_TEST_THREADS` (default = 2 so BEM
+# tests still interleave but memory stays bounded). Override with
+# `just test-autoeq threads=N`.
+[group('qa-roomeq')]
+test-autoeq threads="2":
+	RUST_TEST_THREADS={{threads}} cargo test -p autoeq --tests --release
 

@@ -69,14 +69,11 @@ fn derive_de_budget(
     let max_iter = if budget_supports_floor {
         computed.max(MIN_DE_GENERATIONS)
     } else {
-        // The `.max(1)` below guarantees at least one generation runs so
-        // the optimiser produces a result. A second cap by
+        // The `.max(1)` guarantees at least one generation runs so the
+        // optimiser produces a result. A second cap by
         // `maxeval / population_size` prevents the total eval count
         // (initial population + N generations) from drifting past the
         // user's budget when `computed == 0` (i.e. maxeval ≤ pop_size).
-        // Previously `computed.max(1)` could return 1 even for
-        // `maxeval == pop_size`, running pop_size evals for the seed
-        // plus pop_size evals for generation 1 → 2× budget.
         let budget_generations = maxeval / population_size.max(1);
         let capped = computed.max(1).min(budget_generations.max(1));
         log::warn!(
@@ -604,9 +601,7 @@ mod tests {
     #[test]
     fn setup_de_common_clamps_to_maxeval_when_budget_is_small() {
         // B6 — when maxeval is smaller than MIN_DE_GENERATIONS × pop_size,
-        // the floor is disabled so user intent is honoured. Previously
-        // this test pinned the opposite: floor to MIN_DE_GENERATIONS even
-        // with tiny maxeval (silent 10× over-spend).
+        // the floor is disabled so user intent is honoured.
         let lower_bounds = vec![-1.0, -1.0];
         let upper_bounds = vec![1.0, 1.0];
         let setup = setup_de_common(
@@ -619,37 +614,26 @@ mod tests {
         );
 
         assert_eq!(setup.population_size, 20);
-        // 55 < 5000 × 20 → floor disabled. Computed = (55 - 20) / 20 = 1.
         assert!(
             setup.max_iter < MIN_DE_GENERATIONS,
             "tiny maxeval must cap max_iter below the floor, got {}",
             setup.max_iter,
         );
-        assert!(
-            setup.max_iter >= 1,
-            "max_iter must be at least 1 even with tiny maxeval, got {}",
-            setup.max_iter,
-        );
-        // Total evals cap: initial population + max_iter × pop_size ≤ 2 × maxeval.
-        // Pins the off-by-one fix that replaced `computed.max(1)` with an
-        // explicit maxeval-bounded cap.
+        assert!(setup.max_iter >= 1);
+        // Review P3: total evals must not drift past 2 × maxeval.
         let total_evals = setup.population_size + setup.max_iter * setup.population_size;
         assert!(
             total_evals <= 2 * 55,
-            "total evals {} must not exceed 2 × maxeval (={}); setup={:?}",
+            "total evals {} must not exceed 2 × maxeval (={})",
             total_evals,
-            2 * 55,
-            (setup.population_size, setup.max_iter),
+            2 * 55
         );
     }
 
     #[test]
     fn setup_de_common_honours_maxeval_equal_to_popsize() {
-        // Edge case from the code review: maxeval == pop_size. Previously
-        // `computed.max(1) = 1` ran 1 generation × pop_size evals, which
-        // plus the initial pop_size seed = 2× the budget. The cap now
-        // clamps max_iter to `maxeval / pop_size = 1` — still 1 gen, but
-        // that's the smallest possible non-trivial run.
+        // Review edge case: maxeval == pop_size. Previously `computed.max(1)`
+        // ran 1 generation × pop_size evals + pop_size seed = 2 × budget.
         let lower_bounds = vec![-1.0, -1.0];
         let upper_bounds = vec![1.0, 1.0];
         let setup = setup_de_common(
@@ -660,7 +644,6 @@ mod tests {
             20,
             true,
         );
-        // pop_size = 20, maxeval = 20 → budget_generations = 1 → max_iter = 1.
         assert_eq!(setup.max_iter, 1);
     }
 

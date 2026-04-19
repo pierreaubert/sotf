@@ -186,9 +186,8 @@ struct ModeConfig {
 ///   hybrid / mixed_phase produced near-identical results. Phase 3 routes
 ///   each channel through `process_single_speaker`, which honours
 ///   `processing_mode` — so modes now genuinely diverge on bass-heavy
-///   scenarios (IIR targets narrow modes; FIR phase-linearizes; hybrid
-///   blends). Observed ratios: up to 1.7× on small rooms with a strong
-///   sub-100 Hz mode. The limit is loosened to 2.0× to reflect this.
+///   scenarios. Observed ratios: up to 1.7× on small rooms with a strong
+///   sub-100 Hz mode. Limit loosened to 2.0× to reflect this.
 ///
 /// **FR peak diff**: Large (11-20 dB) at specific room mode frequencies.
 ///   IIR targets narrow modes precisely; FIR spreads correction broadly.
@@ -200,7 +199,7 @@ struct ModeConfig {
 ///   IIR and FIR handle the same modal peak with different filter shapes.
 ///
 /// **Improvement**: All modes achieve 34-58% per-channel, 45-55% combined.
-const CROSS_MODE_SCORE_RATIO_LIMIT: f64 = 2.0; // modes within 2× on combined score (post-Phase 3)
+const CROSS_MODE_SCORE_RATIO_LIMIT: f64 = 2.0; // post-Phase-3 calibration
 const MIN_IMPROVEMENT_PCT: f64 = 0.25; // require 25% combined improvement
 const MAX_CHANNEL_REGRESSION: f64 = 1.02; // max 2% regression per channel
 /// RMS dB difference — the meaningful broadband agreement metric.
