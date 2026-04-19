@@ -1,11 +1,15 @@
 //! Recording screen module
 //!
-//! Multi-channel audio recording workflow with four steps:
+//! Multi-channel audio recording workflow with six steps:
 //! 1. Config - Device selection and channel mapping
 //! 2. Capture - Record frequency response for each channel
-//! 3. Evaluating - View and analyze frequency response graphs
-//! 4. Saving - Save recordings and configuration to disk
+//! 3. Probe - Tone-burst arrival-time probe per channel
+//! 4. BassAnchor - Low-frequency tone burst for first-bin phase anchor
+//!    (GD-Opt v2; `docs/gd_opt_v2_plan.md` §2.6)
+//! 5. Evaluating - View and analyze frequency response graphs
+//! 6. Saving - Save recordings and configuration to disk
 
+mod bass_anchor;
 mod capture;
 mod config;
 mod evaluating;
@@ -38,6 +42,9 @@ impl PlayerView {
             RecordingStep::Config => self.render_recording_config_step(cx).into_any_element(),
             RecordingStep::Capture => self.render_recording_capture_step(cx).into_any_element(),
             RecordingStep::Probe => self.render_recording_probe_step(cx).into_any_element(),
+            RecordingStep::BassAnchor => {
+                self.render_recording_bass_anchor_step(cx).into_any_element()
+            }
             RecordingStep::Evaluating => {
                 self.render_recording_evaluating_step(cx).into_any_element()
             }
@@ -105,6 +112,7 @@ impl PlayerView {
                     RecordingStep::Config => "config",
                     RecordingStep::Capture => "capture",
                     RecordingStep::Probe => "probe",
+                    RecordingStep::BassAnchor => "bass_anchor",
                     RecordingStep::Evaluating => "evaluating",
                     RecordingStep::Saving => "saving",
                 };
@@ -129,6 +137,9 @@ impl PlayerView {
             RecordingStep::Capture => !all_recorded || is_recording,
             // Probe is optional; always allow advancing past it.
             RecordingStep::Probe => false,
+            // BassAnchor is optional (GD-Opt v2 marks it a confidence
+            // upgrade, not a requirement); advance freely.
+            RecordingStep::BassAnchor => false,
             RecordingStep::Evaluating => false,
             RecordingStep::Saving => false,
         };

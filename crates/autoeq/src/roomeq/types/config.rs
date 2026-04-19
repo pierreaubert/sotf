@@ -106,6 +106,19 @@ pub struct RecordingConfiguration {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub probe_wav_relative: Option<String>,
 
+    /// Bass anchor results captured during the GD-1e BassAnchor
+    /// wizard step — per-channel phase of a low-frequency tone burst
+    /// at `bass_probe_freq_hz`. Populated after the wizard finishes;
+    /// absent when the user skipped the step.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bass_anchor_results: Option<BassAnchorResultsLegacy>,
+
+    /// Relative path (within the recording directory) of the raw
+    /// bass-anchor WAV. `None` when the BassAnchor step was skipped
+    /// or when recording persistence was disabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bass_anchor_wav_relative: Option<String>,
+
     // ------------------------------------------------------------------
     // GD-Opt v2 recording extensions (see `docs/gd_opt_v2_plan.md` §2).
     // All optional; absent values degrade the GD confidence gate but
@@ -227,6 +240,43 @@ pub struct ProbeChannelResultLegacy {
     pub arrival_ms: f64,
     pub gain_db: f64,
     pub snr_db: f64,
+}
+
+/// Serializable mirror of the engine's `BassAnchorResults`. Captures
+/// the per-channel phase at the bass anchor frequency so that GD-Opt
+/// v2's confidence gate (§3.5 of `docs/gd_opt_v2_plan.md`) and
+/// optimiser (§3.2) can ingest it at config-load time without
+/// depending on `sotf-engine`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct BassAnchorResultsLegacy {
+    /// Per-channel phase + quality metrics.
+    pub channels: Vec<BassAnchorChannelResultLegacy>,
+    /// Sample rate used for the capture (Hz).
+    pub sample_rate: u32,
+    /// Tone-burst centre frequency in Hz (nominal 20 Hz).
+    pub bass_freq_hz: f32,
+    /// Number of cycles in the burst (nominal 5).
+    pub bass_cycles: u16,
+}
+
+/// Per-channel bass-anchor result (mirror of `BassAnchorChannelResult`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct BassAnchorChannelResultLegacy {
+    /// Channel name (e.g. "L", "R", "Sub").
+    pub channel_name: String,
+    /// Channel output index used during playback.
+    pub channel_index: usize,
+    /// Measured phase of the bass tone at the listening position,
+    /// degrees in `(−180°, 180°]`, sin-referenced against the emitted
+    /// burst.
+    pub bass_anchor_phase_deg: f64,
+    /// Linear magnitude of the DFT bin at the bass frequency.
+    /// Used as an SNR proxy.
+    pub bass_anchor_magnitude: f64,
+    /// |phase_half1 − phase_half2| in degrees. Values above the
+    /// `"bass_anchor_unreliable"` advisory threshold (§2.8, 20°) mean
+    /// the GD confidence gate should discard this channel's anchor.
+    pub bass_anchor_stability_deg: f64,
 }
 
 // ============================================================================

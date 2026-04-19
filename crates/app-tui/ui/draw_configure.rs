@@ -614,6 +614,19 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
             draw_recording_probe_step(f, content, app);
         }
 
+        RecordingStep::BassAnchor => {
+            // GD-Opt v2 Phase GD-1e — minimal textual placeholder in
+            // the TUI. The GPUI wizard carries the full step; the TUI
+            // surface will catch up in a follow-up.
+            use ratatui::widgets::Paragraph;
+            let para = Paragraph::new(
+                "Bass Anchor (GD-Opt v2) — optional. Displayed in the GPUI wizard; \
+                 TUI support arrives with the live capture controller.",
+            )
+            .wrap(ratatui::widgets::Wrap { trim: true });
+            f.render_widget(para, content);
+        }
+
         RecordingStep::Evaluating => {
             let inner = Layout::default()
                 .direction(Direction::Vertical)

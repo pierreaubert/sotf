@@ -1733,6 +1733,31 @@ impl PlayerView {
                     .as_ref()
                     .and_then(|p| std::path::Path::new(p).file_name())
                     .map(|f| f.to_string_lossy().to_string()),
+                // GD-Opt v2 Phase GD-1e — bass anchor results, when captured.
+                bass_anchor_results: rec_state.bass_anchor_capture.results.as_ref().map(|r| {
+                    autoeq::roomeq::BassAnchorResultsLegacy {
+                        channels: r
+                            .channels
+                            .iter()
+                            .map(|c| autoeq::roomeq::BassAnchorChannelResultLegacy {
+                                channel_name: c.channel_name.clone(),
+                                channel_index: c.channel_index,
+                                bass_anchor_phase_deg: c.bass_anchor_phase_deg,
+                                bass_anchor_magnitude: c.bass_anchor_magnitude,
+                                bass_anchor_stability_deg: c.bass_anchor_stability_deg,
+                            })
+                            .collect(),
+                        sample_rate: r.sample_rate,
+                        bass_freq_hz: r.bass_freq_hz,
+                        bass_cycles: r.bass_cycles,
+                    }
+                }),
+                bass_anchor_wav_relative: rec_state
+                    .bass_anchor_capture
+                    .wav_path
+                    .as_ref()
+                    .and_then(|p| std::path::Path::new(p).file_name())
+                    .map(|f| f.to_string_lossy().to_string()),
                 // GD-Opt v2 Phase GD-1b fields — wired from RecordingState UI knobs.
                 // bass_octave_duration_s of 3.0 is the default; the UI allows 1×/2×/4×
                 // presets (1.5/3.0/5.0). pre_silence_s defaults to 2.0.

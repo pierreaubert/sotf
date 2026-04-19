@@ -1,60 +1,20 @@
 # 0.4.34
 
-## GD-Opt v2 — Phase GD-1d.1: log-aware minimum-phase reconstruction
+## GD-Opt v2 — Phase GD-1e: bass anchor types (autoeq side)
 
-Tracks a bug surfaced during GD-1d review: `reconstruct_minimum_phase`
-in `roomeq/phase_utils.rs` treated the `spl` array as an
-index-domain sequence and ignored its `freq` argument, producing
-~80° residual error on real log-spaced measurements. See
-`docs/gd_opt_v2_plan.md` §2.10 row **GD-1d.1**.
+Follows the BassAnchor wizard step design from
+`docs/gd_opt_v2_plan.md` §2.6 and §2.11 Q1. Purely additive.
 
-- **The fix** resamples `ln|H|` onto a DC-anchored uniform *linear*
-  grid, applies the FFT-based Hilbert on that grid, and interpolates
-  back to the caller's frequency points. The grid spans `[0, 16·f_max]`
-  with 131 072 bins so the physical range sits well inside the
-  Hilbert's stable interior.
-- The log-magnitude is extrapolated past `f_max` with a log-linear
-  tail whose slope is fit from the last octave of input data
-  (`final_octave_log_slope`). For 1st-order lowpass this recovers
-  the analytical −6 dB/oct asymptote exactly.
-- The even-extension step uses full endpoint duplication
-  (`[a,b,c,d,d,c,b,a]`, length `2·n_linear`), not the N+N−2 form.
-  The naive form left 2 trailing zeros after
-  `next_power_of_two`, which introduced ~6 units of ringing in the
-  first bin on a constant input — 38° of spurious min-phase. With
-  the pow2-exact extension a constant input yields a constant
-  extended sequence and the Hilbert output is exactly zero.
+- New `BassAnchorResultsLegacy` / `BassAnchorChannelResultLegacy`
+  structs mirror the engine's `BassAnchorResults` 1:1 so the
+  autoeq-side loader stays lean.
+- `RecordingConfiguration` gains two new optional fields:
+  `bass_anchor_results: Option<BassAnchorResultsLegacy>` and
+  `bass_anchor_wav_relative: Option<String>`. Both default to `None`;
+  pre-GD-1e session files still load via serde defaults.
 
-### Accuracy, 256-point log-spaced 1st-order lowpass at fc = 1 kHz
-
-|  Tolerance region       | Pre-fix  | GD-1d.1  |
-|:------------------------|---------:|---------:|
-| full-range max          | ~500°    | ~4.4°    |
-| mid80 max               | ~230°    | ~2.2°    |
-| mid80 mean              | ~110°    | 0.4°     |
-| residual below 600 Hz   | ~130°    | < 1°     |
-
-### Tests
-
-- New `reconstruct_minimum_phase_lowpass_log_spaced_accurate`
-  (`phase_utils`) pins the full / mid80 / low-mid residual bounds.
-- `test_reconstruct_minimum_phase_flat` and
-  `test_reconstruct_minimum_phase_flat_128` tightened from
-  `mean < 100°` / `mean < 50°` to `max < 0.5°`.
-- `test_reconstruct_minimum_phase_lowpass` and `…_lowpass_256`
-  now compare against the analytical `-arctan(f/fc)` instead of
-  asserting mere non-triviality.
-- GD-1d's `minimum_phase_input_cache_fields_are_populated_and_finite`
-  renamed to `minimum_phase_input_is_recovered_accurately` and
-  upgraded from structural checks to residual assertions
-  (mid80 max < 2.5°, low-mid max < 1°, max excess < 5°).
-- `allpass_flat_magnitude_has_near_zero_min_phase` tightened from
-  `mean < 5°` to `max < 0.5°`.
-
-`cargo test -p autoeq --lib` → 431 passed (+2 from 429).
-`cargo test -p autoeq --tests` → 562 total, 0 failed.
-`cargo check -p sotf-player --lib`, `-p sotf-gpui --lib`,
-`-p sotf-tui --lib` all clean.
+No behaviour change in autoeq — the fields are consumed by the
+GD confidence gate + optimiser in later phases (GD-1g, GD-3).
 
 # 0.4.33
 

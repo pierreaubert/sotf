@@ -13,7 +13,8 @@ fn recording_step_prev_wrap(
         RecordingStep::Config => RecordingStep::Saving,
         RecordingStep::Capture => RecordingStep::Config,
         RecordingStep::Probe => RecordingStep::Capture,
-        RecordingStep::Evaluating => RecordingStep::Probe,
+        RecordingStep::BassAnchor => RecordingStep::Probe,
+        RecordingStep::Evaluating => RecordingStep::BassAnchor,
         RecordingStep::Saving => RecordingStep::Evaluating,
     }
 }
@@ -25,7 +26,8 @@ fn recording_step_next_wrap(
     match s {
         RecordingStep::Config => RecordingStep::Capture,
         RecordingStep::Capture => RecordingStep::Probe,
-        RecordingStep::Probe => RecordingStep::Evaluating,
+        RecordingStep::Probe => RecordingStep::BassAnchor,
+        RecordingStep::BassAnchor => RecordingStep::Evaluating,
         RecordingStep::Evaluating => RecordingStep::Saving,
         RecordingStep::Saving => RecordingStep::Config,
     }
@@ -361,6 +363,13 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
 
         RecordingStep::Probe => {
             handle_probe_step_keys(app, key);
+            None
+        }
+
+        RecordingStep::BassAnchor => {
+            // GD-Opt v2 Phase GD-1e — display-only in the TUI for now.
+            // Navigation keys fall through to the wizard-level handler
+            // via the outer loop; no step-specific actions yet.
             None
         }
 
