@@ -44,7 +44,7 @@ output under `metadata.epa_per_channel`, even when `loss_type != "epa"`.
 | `optim_mh.rs` | MetaHeuristics wrapper |
 | `optim_callback.rs` | Progress callback utilities |
 | `read/` | Spinorama API client, CSV parsing, smoothing, interpolation, normalization |
-| `roomeq/` | Multi-channel room optimization (types, workflows, export, spectral alignment, group delay, phase, multi-seat, multi-sub, DBA, FIR, excursion protection) |
+| `roomeq/` | Multi-channel room optimization (types, workflows, export, spectral alignment, phase, multi-seat, multi-sub, DBA, FIR, excursion protection) |
 | `plot/` | Visualization (spinorama plots, filter plots, driver plots, result plots) |
 | `constraints/` | Frequency spacing, ceiling, min gain, crossover monotonicity |
 | `x2peq.rs` | Solution vector to PEQ conversion |

@@ -202,11 +202,7 @@ cargo run --bin roomeq --release -- --config room_config.json --output dsp_chain
     "min_q": 0.5, "max_q": 10.0,
     "min_db": -12.0, "max_db": 12.0,
     "min_freq": 20.0, "max_freq": 20000.0,
-    "max_iter": 10000,
-    "gd_opt": {
-      "enabled": true,
-      "target_ms": 0.0
-    }
+    "max_iter": 10000
   }
 }
 ```

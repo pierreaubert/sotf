@@ -13,7 +13,6 @@
     }
   },
   "optimizer": {
-    "mode": "iir",
     "processing_mode": "low_latency",
     "loss_type": "flat",
     "algorithm": "autoeq:de",

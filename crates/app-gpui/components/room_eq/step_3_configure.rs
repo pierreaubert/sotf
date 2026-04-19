@@ -80,22 +80,20 @@ impl PlayerView {
             allow_delay: config.allow_delay,
             seed_enabled: config.seed.is_some(),
             seed: config.seed.unwrap_or(42),
-            gd_opt_enabled: config.gd_opt.enabled,
-            gd_opt_target_ms: config.gd_opt.target_ms,
             vog_enabled: config.vog.enabled,
             vog_reference_channel: config.vog.reference_channel.clone(),
-            broadband_target_matching: config.broadband_target_matching.enabled,
+            broadband_target_matching: config.target_response.broadband_precorrection,
             mixed_crossover_freq: config.mixed_config.crossover_freq,
             mixed_crossover_type: config.mixed_config.crossover_type.clone(),
             mixed_fir_band: config.mixed_config.fir_band.clone(),
 
-            // Scenario B
-            use_target_tilt: config.target_tilt.enabled,
-            tilt_type: config.target_tilt.tilt_type.clone(),
-            tilt_slope: config.target_tilt.slope,
-            tilt_reference_freq: config.target_tilt.reference_freq,
-            tilt_bass_shelf_db: config.target_tilt.bass_shelf_db,
-            tilt_bass_shelf_freq: config.target_tilt.bass_shelf_freq,
+            // Target response (shape + preference shelves)
+            use_target_tilt: config.target_response.enabled,
+            tilt_type: config.target_response.shape.clone(),
+            tilt_slope: config.target_response.slope_db_per_octave,
+            tilt_reference_freq: config.target_response.reference_freq,
+            tilt_bass_shelf_db: config.target_response.bass_shelf_db,
+            tilt_bass_shelf_freq: config.target_response.bass_shelf_freq,
 
             use_excursion_protection: config.excursion_protection.enabled,
             excursion_auto_detect_f3: config.excursion_protection.auto_detect_f3,
@@ -861,7 +859,7 @@ impl PlayerView {
                     });
                 }
             })
-            // Target Tilt
+            // Target Response
             .on_use_target_tilt_change({
                 let state = self.state.clone();
                 move |v, _window, cx| {
@@ -871,7 +869,7 @@ impl PlayerView {
                             .measurement_state
                             .room_eq_state
                             .optimizer_config
-                            .target_tilt
+                            .target_response
                             .enabled = v;
                         cx.notify();
                     });
@@ -886,8 +884,8 @@ impl PlayerView {
                             .measurement_state
                             .room_eq_state
                             .optimizer_config
-                            .target_tilt
-                            .tilt_type = v.to_string();
+                            .target_response
+                            .shape = v.to_string();
                         state
                             .app
                             .measurement_state
@@ -921,8 +919,8 @@ impl PlayerView {
                             .measurement_state
                             .room_eq_state
                             .optimizer_config
-                            .target_tilt
-                            .slope = v;
+                            .target_response
+                            .slope_db_per_octave = v;
                         cx.notify();
                     });
                 }
@@ -936,7 +934,7 @@ impl PlayerView {
                             .measurement_state
                             .room_eq_state
                             .optimizer_config
-                            .target_tilt
+                            .target_response
                             .reference_freq = v;
                         cx.notify();
                     });
@@ -951,7 +949,7 @@ impl PlayerView {
                             .measurement_state
                             .room_eq_state
                             .optimizer_config
-                            .target_tilt
+                            .target_response
                             .bass_shelf_db = v;
                         cx.notify();
                     });
@@ -966,7 +964,7 @@ impl PlayerView {
                             .measurement_state
                             .room_eq_state
                             .optimizer_config
-                            .target_tilt
+                            .target_response
                             .bass_shelf_freq = v;
                         cx.notify();
                     });
@@ -1459,36 +1457,6 @@ impl PlayerView {
                     });
                 }
             })
-            .on_gd_opt_enabled_change({
-                let state = self.state.clone();
-                move |v, _window, cx| {
-                    state.update(cx, |state, cx| {
-                        state
-                            .app
-                            .measurement_state
-                            .room_eq_state
-                            .optimizer_config
-                            .gd_opt
-                            .enabled = v;
-                        cx.notify();
-                    });
-                }
-            })
-            .on_gd_opt_target_ms_change({
-                let state = self.state.clone();
-                move |v, _window, cx| {
-                    state.update(cx, |state, cx| {
-                        state
-                            .app
-                            .measurement_state
-                            .room_eq_state
-                            .optimizer_config
-                            .gd_opt
-                            .target_ms = v;
-                        cx.notify();
-                    });
-                }
-            })
             .on_vog_enabled_change({
                 let state = self.state.clone();
                 move |v, _window, cx| {
@@ -1548,8 +1516,8 @@ impl PlayerView {
                             .measurement_state
                             .room_eq_state
                             .optimizer_config
-                            .broadband_target_matching
-                            .enabled = v;
+                            .target_response
+                            .broadband_precorrection = v;
                         cx.notify();
                     });
                 }

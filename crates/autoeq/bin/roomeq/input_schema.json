@@ -833,17 +833,6 @@
             }
           ]
         },
-        "gd_opt": {
-          "description": "Group Delay Optimization configuration (v2)",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/GroupDelayOptimizationConfig"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
         "vog": {
           "description": "Voice of God optimization configuration (v2)",
           "anyOf": [
@@ -1666,23 +1655,6 @@
           "const": "average"
         }
       ]
-    },
-    "GroupDelayOptimizationConfig": {
-      "description": "Configuration for Group Delay Optimization (GD-Opt)",
-      "type": "object",
-      "properties": {
-        "enabled": {
-          "description": "Enable Group Delay Optimization",
-          "type": "boolean",
-          "default": false
-        },
-        "target_ms": {
-          "description": "Target group delay at crossover (ms)",
-          "type": "number",
-          "format": "double",
-          "default": 0.0
-        }
-      }
     },
     "VoiceOfGodConfig": {
       "description": "Configuration for Voice of God (Timbre Matching)",

@@ -29,18 +29,18 @@ fn test_broadband_matching() {
     }
     fs::write(&measurement_path, csv_content).expect("Failed to write measurement");
 
-    // 2. Create config with broadband matching enabled
+    // 2. Create config with broadband pre-correction enabled via target_response.
     let config = serde_json::json!({
-        "version": "1.3.0",
+        "version": "2.0.0",
         "speakers": {
             "left": {
                 "path": measurement_path.to_str().unwrap()
             }
         },
-        "target_curve": "flat",
         "optimizer": {
-            "broadband_target_matching": {
-                "enabled": true
+            "target_response": {
+                "shape": "flat",
+                "broadband_precorrection": true
             },
             "num_filters": 3, // Allow a few filters for broadband matching to produce EQ plugins
             "min_freq": 20.0,

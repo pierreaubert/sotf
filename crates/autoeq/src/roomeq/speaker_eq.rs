@@ -287,15 +287,6 @@ pub(super) fn process_single_speaker(
             None
         }
     } else {
-        // All public entry points (optimize_room, optimize_speaker, config_loader)
-        // call `OptimizerConfig::migrate_target_config` before reaching this code,
-        // which folds any legacy `target_tilt`/`broadband_target_matching` into
-        // `target_response`. Reaching this branch with `target_tilt` still populated
-        // would mean a caller skipped migration — treat that as a configuration bug.
-        debug_assert!(
-            room_config.optimizer.target_tilt.is_none(),
-            "target_tilt present without target_response — migrate_target_config() was not called on the OptimizerConfig before optimization",
-        );
         None
     };
 
@@ -553,14 +544,7 @@ pub(super) fn process_single_speaker(
         .optimizer
         .target_response
         .as_ref()
-        .map(|tr| tr.broadband_precorrection)
-        .unwrap_or(false)
-        || room_config
-            .optimizer
-            .broadband_target_matching
-            .as_ref()
-            .map(|bb| bb.enabled)
-            .unwrap_or(false);
+        .is_some_and(|tr| tr.broadband_precorrection);
 
     let (curve_for_optim, broadband_plugins, broadband_biquads, bb_mean_shift) =
         if broadband_enabled {
@@ -761,19 +745,7 @@ pub(super) fn process_single_speaker(
                 cb(1, pre_score, None);
             }
 
-            // Check if we should force excess phase correction for GD-Opt on subwoofer
-            let mut opt_config = clamped_optimizer.clone();
-            if let Some(gd_opt) = &clamped_optimizer.gd_opt
-                && gd_opt.enabled
-                && (channel_name == "lfe" || channel_name.starts_with("sub"))
-                && let Some(fir) = &mut opt_config.fir
-            {
-                fir.correct_excess_phase = true;
-                info!(
-                    "  GD-Opt: Forcing excess phase correction for '{}'",
-                    channel_name
-                );
-            }
+            let opt_config = clamped_optimizer.clone();
 
             // Apply target tilt to the curve (subtract tilt from measurement),
             // same as LowLatency does
@@ -906,35 +878,7 @@ pub(super) fn process_single_speaker(
             }
 
             // Legacy sequential mixed mode: IIR first, then FIR on residual
-            // Check if we should force excess phase correction for GD-Opt on subwoofer
-            let mut opt_config = clamped_optimizer.clone();
-            if let Some(gd_opt) = &clamped_optimizer.gd_opt
-                && gd_opt.enabled
-            {
-                let is_sub = if let Some(sys) = &room_config.system {
-                    // V2.1 System Config
-                    if let Some(meas_key) = sys.speakers.get(channel_name) {
-                        if let Some(subs) = &sys.subwoofers {
-                            subs.mapping.contains_key(meas_key)
-                        } else {
-                            false
-                        }
-                    } else {
-                        false
-                    }
-                } else {
-                    // Legacy
-                    channel_name == "lfe" || channel_name.starts_with("sub")
-                };
-
-                if is_sub && let Some(fir) = &mut opt_config.fir {
-                    fir.correct_excess_phase = true;
-                    info!(
-                        "  GD-Opt: Forcing excess phase correction for '{}'",
-                        channel_name
-                    );
-                }
-            }
+            let opt_config = clamped_optimizer.clone();
 
             // Apply target tilt to the curve (subtract tilt from measurement),
             // same as LowLatency does
@@ -1869,9 +1813,7 @@ pub(super) fn optimize_with_schroeder_split(
     let has_non_flat_target = optimizer
         .target_response
         .as_ref()
-        .map(|tr| tr.shape != TargetShape::Flat)
-        .unwrap_or(false)
-        || optimizer.target_tilt.is_some();
+        .is_some_and(|tr| tr.shape != TargetShape::Flat);
 
     let low_max_db = if let Some(configured_max) = low_config.max_db {
         // Explicit max_db override for below-Schroeder (handles large room modes)

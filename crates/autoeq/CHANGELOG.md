@@ -1,5 +1,29 @@
 # 0.4.29
 
+## Removed
+
+### Group Delay Optimization v1 (GD-Opt v1) — breaking API change
+
+- Removed the v1 GD-Opt feature: the `optimizer.gd_opt` config knob,
+  the `GroupDelayOptimizationConfig` struct, and the `group_delay.rs`
+  module. The implementation did not converge in practice and is being
+  redesigned from scratch.
+- Documentation, JSON examples, and the optimizer-config schema entries
+  for `gd_opt` / `GroupDelayOptimizationConfig` have been deleted from
+  `README.md`, `bin/roomeq/INPUT_FORMAT.md`, `bin/roomeq/README.md`, and
+  `bin/roomeq/input_schema.json`. The legacy top-level `group_delay`
+  array (sub-to-speaker delay alignment) is removed alongside it.
+- Configs that still set `optimizer.gd_opt` or a top-level `group_delay`
+  array will fail validation. This is a **breaking API change**.
+- Measurement-side group-delay analysis (`compute_group_delay`,
+  `excess_group_delay_ms`, `group_delay_ms` CSV columns,
+  `phase_aware::compute_group_delay`) is unaffected — it is a separate
+  analysis API, not part of the optimizer.
+- A redesigned v2 is described in
+  [`docs/gd_opt_v2_plan.md`](docs/gd_opt_v2_plan.md). The schema
+  version bump that retires the `gd_opt` field formally will land in a
+  later phase (Phase A2).
+
 # 0.4.28
 
 ## Tests

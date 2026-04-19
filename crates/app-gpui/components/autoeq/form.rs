@@ -197,8 +197,6 @@ pub struct AutoEqForm {
     pub(crate) on_allow_delay_change: Option<BoolCallback>,
     pub(crate) on_seed_enabled_change: Option<BoolCallback>,
     pub(crate) on_seed_change: Option<UsizeCallback>,
-    pub(crate) on_gd_opt_enabled_change: Option<BoolCallback>,
-    pub(crate) on_gd_opt_target_ms_change: Option<F64Callback>,
     pub(crate) on_vog_enabled_change: Option<BoolCallback>,
     pub(crate) on_vog_reference_channel_change: Option<StringCallback>,
     pub(crate) on_vog_reference_channel_toggle: Option<ToggleCallback>,
@@ -345,8 +343,6 @@ impl AutoEqForm {
             on_allow_delay_change: None,
             on_seed_enabled_change: None,
             on_seed_change: None,
-            on_gd_opt_enabled_change: None,
-            on_gd_opt_target_ms_change: None,
             on_vog_enabled_change: None,
             on_vog_reference_channel_change: None,
             on_vog_reference_channel_toggle: None,
@@ -1155,22 +1151,6 @@ impl AutoEqForm {
         handler: impl Fn(usize, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_seed_change = Some(Box::new(handler));
-        self
-    }
-
-    pub fn on_gd_opt_enabled_change(
-        mut self,
-        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
-    ) -> Self {
-        self.on_gd_opt_enabled_change = Some(Box::new(handler));
-        self
-    }
-
-    pub fn on_gd_opt_target_ms_change(
-        mut self,
-        handler: impl Fn(f64, &mut Window, &mut App) + 'static,
-    ) -> Self {
-        self.on_gd_opt_target_ms_change = Some(Box::new(handler));
         self
     }
 

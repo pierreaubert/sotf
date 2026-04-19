@@ -2129,9 +2129,8 @@ mod processing_mode_tests {
 #[cfg(test)]
 mod harman_regression_tests {
     use super::*;
-    use crate::roomeq::target_tilt::{
-        build_harman_target_curve, build_harman_target_curve_with_bass_boost,
-    };
+    use crate::roomeq::target_tilt::build_complete_target_curve;
+    use crate::roomeq::types::{TargetResponseConfig, TargetShape, UserPreference};
 
     fn make_curve_with_freqs(freqs: Vec<f64>, spl: Vec<f64>) -> Curve {
         Curve {
@@ -2139,6 +2138,19 @@ mod harman_regression_tests {
             spl: Array1::from_vec(spl),
             phase: None,
         }
+    }
+
+    fn harman_curve(freqs: &[f64], bass_shelf_db: f64) -> Curve {
+        let config = TargetResponseConfig {
+            shape: TargetShape::Harman,
+            preference: UserPreference {
+                bass_shelf_db,
+                bass_shelf_freq: 200.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        build_complete_target_curve(&Array1::from_vec(freqs.to_vec()), &config)
     }
 
     /// Regression test: optimization should not produce NaN or Inf loss with Harman target
@@ -2177,15 +2189,13 @@ mod harman_regression_tests {
         let freqs: Vec<f64> = (0..100)
             .map(|i| 20.0 * (1000.0 / 20.0_f64).powf(i as f64 / 99.0))
             .collect();
-        let curve = build_harman_target_curve(&Array1::from_vec(freqs.clone()));
+        let curve = harman_curve(&freqs, 0.0);
 
-        // Find index closest to 1000 Hz (reference frequency)
         let idx_ref = freqs
             .iter()
             .position(|f| (f - 1000.0).abs() < freqs[1] - freqs[0])
             .unwrap_or(freqs.len() / 2);
 
-        // At reference frequency, target should be ~0 dB
         assert!(
             curve.spl[idx_ref].abs() < 0.1,
             "At 1kHz reference, target should be ~0 dB, got {:.4}",
@@ -2199,26 +2209,20 @@ mod harman_regression_tests {
         let freqs: Vec<f64> = (0..100)
             .map(|i| 20.0 * (1000.0 / 20.0_f64).powf(i as f64 / 99.0))
             .collect();
-        let curve =
-            build_harman_target_curve_with_bass_boost(&Array1::from_vec(freqs.clone()), 6.0);
+        let curve = harman_curve(&freqs, 6.0);
 
-        // Use approximate frequency spacing to find close indices
         let freq_step = freqs[1] - freqs[0];
 
-        // Find index close to 100 Hz (well below 200 Hz shelf)
         let idx_bass = freqs
             .iter()
             .position(|f| (f - 100.0).abs() < freq_step * 2.0)
             .unwrap_or(5);
-
-        // At 100 Hz, should have significant bass boost
         assert!(
             curve.spl[idx_bass] > 4.0,
             "At 100Hz with +6dB bass boost, should have >4dB boost, got {:.2}",
             curve.spl[idx_bass]
         );
 
-        // Find index close to 1 kHz (should be near 0)
         let idx_ref = freqs
             .iter()
             .position(|f| (f - 1000.0).abs() < freq_step * 2.0)
@@ -2236,18 +2240,16 @@ mod harman_regression_tests {
         let freqs: Vec<f64> = (0..100)
             .map(|i| 20.0 * (1000.0 / 20.0_f64).powf(i as f64 / 99.0))
             .collect();
-        let curve = build_harman_target_curve(&Array1::from_vec(freqs.clone()));
+        let curve = harman_curve(&freqs, 0.0);
 
         let freq_step = freqs[1] - freqs[0];
 
-        // Find index close to 200 Hz (low frequency end)
         let idx_low = freqs
             .iter()
             .position(|f| (f - 200.0).abs() < freq_step * 2.0)
             .unwrap_or(10);
         let idx_high = freqs.len() - 1;
 
-        // High frequency should have negative tilt relative to low frequency
         assert!(
             curve.spl[idx_high] < curve.spl[idx_low] - 1.0,
             "High freq should be significantly below low freq (tilt), got low={:.2}, high={:.2}",

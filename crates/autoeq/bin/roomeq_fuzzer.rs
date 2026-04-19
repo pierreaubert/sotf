@@ -4,8 +4,8 @@
 //! Includes panic handling and config validation for robust fuzzing.
 
 use autoeq::roomeq::{
-    CrossoverConfig, DBAConfig, MultiSubGroup, OptimizerConfig, RoomConfig, SpeakerConfig,
-    SpeakerGroup, TargetCurveConfig,
+    CrossoverConfig, DBAConfig, MultiSubGroup, OptimizerConfig, ProcessingMode, RoomConfig,
+    SpeakerConfig, SpeakerGroup, TargetCurveConfig,
 };
 use clap::Parser;
 use rand::Rng;
@@ -569,13 +569,13 @@ fn generate_random_config(
     } else {
         "ls-pk-hs".to_string()
     };
-    let mode = if rng.random_bool(0.7) {
-        "iir".to_string()
+    let processing_mode = if rng.random_bool(0.7) {
+        ProcessingMode::LowLatency
     } else {
-        "fir".to_string()
+        ProcessingMode::PhaseLinear
     };
 
-    let fir_config = if mode == "fir" {
+    let fir_config = if matches!(processing_mode, ProcessingMode::PhaseLinear) {
         Some(autoeq::roomeq::FirConfig {
             taps: 1024,
             phase: "linear".to_string(),
@@ -609,7 +609,7 @@ fn generate_random_config(
             max_db: 12.0,
             loss_type,
             peq_model,
-            mode,
+            processing_mode,
             fir: fir_config,
             ..OptimizerConfig::default()
         },

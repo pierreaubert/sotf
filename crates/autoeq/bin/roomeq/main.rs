@@ -52,7 +52,7 @@ struct Args {
     #[arg(long, value_name = "TYPE")]
     schema: Option<String>,
 
-    /// Path to override config JSON file (overrides any section: optimizer, speakers, crossovers, group_delay, etc.)
+    /// Path to override config JSON file (overrides any section: optimizer, speakers, crossovers, etc.)
     #[arg(long, alias = "optim-config")]
     override_config: Option<PathBuf>,
 

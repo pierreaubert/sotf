@@ -119,11 +119,6 @@ impl ParamLimits {
         max: 999999.0,
         step: 1.0,
     };
-    pub const GD_TARGET_MS: Self = Self {
-        min: 0.0,
-        max: 50.0,
-        step: 0.1,
-    };
     pub const MIXED_CROSSOVER_FREQ: Self = Self {
         min: 50.0,
         max: 2000.0,
@@ -282,10 +277,6 @@ pub struct AutoEqConfig {
     pub seed_enabled: bool,
     /// Random seed value
     pub seed: u64,
-    /// Enable group delay optimization
-    pub gd_opt_enabled: bool,
-    /// Group delay target in ms
-    pub gd_opt_target_ms: f64,
     /// Enable Voice of God (timbre matching)
     pub vog_enabled: bool,
     /// VoG reference channel name
@@ -407,8 +398,6 @@ impl Default for AutoEqConfig {
             allow_delay: false,
             seed_enabled: false,
             seed: 42,
-            gd_opt_enabled: false,
-            gd_opt_target_ms: 0.0,
             vog_enabled: false,
             vog_reference_channel: "C".to_string(),
             broadband_target_matching: false,

@@ -19,8 +19,8 @@
     "refine": true,
     "psychoacoustic": true,
     "asymmetric_loss": true,
-    "target_tilt": {
-      "tilt_type": "harman"
+    "target_response": {
+      "shape": "harman"
     },
     "excursion_protection": {
       "enabled": true,

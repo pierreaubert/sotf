@@ -160,39 +160,6 @@ freq,spl
 - `Butterworth12` or `BW12`: Butterworth 12 dB/oct (2nd order)
 - `Butterworth24` or `BW24`: Butterworth 24 dB/oct (4th order)
 
-### Group Delay Optimization
-
-Group delay optimization aligns the phase/timing between subwoofers and main speakers in the crossover region. This minimizes group delay variation in the combined response, resulting in better transient response and smoother frequency transitions.
-
-```json
-{
-  "speakers": {
-    "sub": "measurements/subwoofer.csv",
-    "left": "measurements/left_speaker.csv",
-    "right": "measurements/right_speaker.csv"
-  },
-  "group_delay": [
-    {
-      "subwoofer": "sub",
-      "speakers": ["left", "right"],
-      "min_freq": 30.0,
-      "max_freq": 120.0
-    }
-  ],
-  "optimizer": {
-    "num_filters": 10
-  }
-}
-```
-
-Configuration options:
-- `subwoofer`: Channel name of the subwoofer to use as reference
-- `speakers`: Array of speaker channel names to align with the subwoofer
-- `min_freq`: Minimum frequency for optimization (default: 30 Hz)
-- `max_freq`: Maximum frequency for optimization (default: 120 Hz)
-
-The optimizer searches for the optimal delay (±30ms range) that minimizes group delay variation in the specified frequency range. Positive delays are applied to speakers; negative delays indicate the subwoofer should be delayed (a warning is shown in this case).
-
 ## Advanced Audio Corrections
 
 RoomEQ provides advanced audio correction features for optimizing room acoustics in two scenarios:
@@ -456,15 +423,7 @@ For multi-seat optimization, you need measurements of each subwoofer at each sea
       "optimize_polarity": true,
       "max_delay_ms": 30
     }
-  },
-  "group_delay": [
-    {
-      "subwoofer": "sub",
-      "speakers": ["left", "right"],
-      "min_freq": 30,
-      "max_freq": 120
-    }
-  ]
+  }
 }
 ```
 
@@ -641,7 +600,6 @@ The roomeq binary uses autoeq's proven optimization infrastructure:
   - `load.rs`: CSV measurement loading
   - `eq_optim.rs`: EQ optimization using autoeq workflow
   - `crossover_optim.rs`: Multi-driver crossover optimization
-  - `group_delay_optim.rs`: Group delay alignment between subwoofer and speakers
   - `output.rs`: DSP chain JSON generation
 
 - **Dependencies**:

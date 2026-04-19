@@ -13,7 +13,6 @@ use std::sync::{Arc, Mutex};
 
 use super::config::validate_room_config;
 use super::fir;
-use super::group_delay;
 use super::output;
 use super::phase_alignment;
 use super::types::{
@@ -669,11 +668,7 @@ fn optimize_room_impl(
     output_dir: Option<&Path>,
     probe_arrival_overrides: Option<&HashMap<String, f64>>,
 ) -> Result<RoomOptimizationResult> {
-    // Ensure legacy target_tilt/broadband fields are migrated.
-    // load_config() does this already, but callers building RoomConfig in memory
-    // (tests, GPUI) may not have called it.
     let mut config = config.clone();
-    config.optimizer.migrate_target_config();
 
     // Pre-fetch CEA2034 data for all speakers when speaker pre-correction is enabled
     if config
@@ -1681,93 +1676,9 @@ fn optimize_room_impl(
         }
     }
 
-    // ========================================================================
-    // Group Delay Optimization (v2) - IIR Mode
-    // ========================================================================
-    // Align Main speakers to Subwoofer using All-Pass filters to match phase slope
-    if let Some(gd_opt) = &config.optimizer.gd_opt
-        && gd_opt.enabled
-        && config.optimizer.processing_mode == ProcessingMode::LowLatency
-    {
-        info!("Running Group Delay Optimization (IIR Mode)...");
-
-        let pairings = find_sub_main_pairings(config, &curves);
-
-        if pairings.is_empty() {
-            warn!("GD-Opt enabled but no valid sub-main pairings found.");
-        } else {
-            send_progress(
-                &mut callback_shared.lock().unwrap(),
-                &RoomOptimizationProgress {
-                    current_speaker: String::new(),
-                    speaker_index: 0,
-                    total_speakers: pairings.len(),
-                    iteration: 0,
-                    max_iterations: 0,
-                    loss: 0.0,
-                    overall_progress: 0.0,
-                    message: Some("Running group delay optimization...".to_string()),
-                    epa_preference: None,
-                },
-            );
-        }
-
-        let min_freq = config.optimizer.min_freq;
-        let max_freq = 200.0;
-
-        for (sub_name, main_name) in pairings {
-            if let (Some(sub_curve), Some(main_curve)) =
-                (curves.get(&sub_name), curves.get(&main_name))
-            {
-                info!("  Optimizing GD for '{}' vs '{}'", main_name, sub_name);
-                send_progress(
-                    &mut callback_shared.lock().unwrap(),
-                    &RoomOptimizationProgress {
-                        current_speaker: format!("GD {}", main_name),
-                        speaker_index: 0,
-                        total_speakers: 1,
-                        iteration: 0,
-                        max_iterations: 0,
-                        loss: 0.0,
-                        overall_progress: 0.0,
-                        message: Some(format!("Optimizing GD for '{}'", main_name)),
-                        epa_preference: None,
-                    },
-                );
-
-                match group_delay::optimize_gd_iir(
-                    sub_curve,
-                    main_curve,
-                    min_freq,
-                    max_freq,
-                    sample_rate,
-                ) {
-                    Ok(filters) => {
-                        if !filters.is_empty() {
-                            info!(
-                                "    Generated {} All-Pass filters for GD alignment",
-                                filters.len()
-                            );
-                            if let Some(chain) = channel_chains.get_mut(&main_name) {
-                                let plugin = output::create_eq_plugin(&filters);
-                                chain.plugins.push(plugin);
-                            }
-                        } else {
-                            info!("    No AP filters needed");
-                        }
-                    }
-                    Err(e) => {
-                        warn!("    GD optimization failed for '{}': {}", main_name, e);
-                    }
-                }
-            } else {
-                warn!(
-                    "GD-Opt: Channel '{}' or '{}' not found in results",
-                    sub_name, main_name
-                );
-            }
-        }
-    }
+    // Group Delay Optimization (GD-Opt v1) was removed in the 2.0 simplification
+    // pass. A redesigned v2 lives in docs/gd_opt_v2_plan.md and is scheduled for a
+    // future release; it will plug in here.
 
     // Standalone phase correction (rePhase-style)
     if config.optimizer.phase_correction.is_some() {
@@ -2100,12 +2011,7 @@ pub fn optimize_speaker(
     sample_rate: f64,
     _callback: Option<SpeakerOptimizationCallback>,
 ) -> Result<SpeakerOptimizationResult> {
-    // Migrate legacy `target_tilt` + `broadband_target_matching` into `target_response`
-    // to match the behaviour of `optimize_room_impl`. Without this, in-memory callers
-    // that go through `optimize_speaker` with a legacy config silently take a divergent
-    // path in `speaker_eq.rs`. Idempotent — safe to call even on already-migrated configs.
-    let mut optimizer_config = optimizer_config.clone();
-    optimizer_config.migrate_target_config();
+    let optimizer_config = optimizer_config.clone();
 
     // Create a minimal RoomConfig for internal processing
     let room_config = RoomConfig {

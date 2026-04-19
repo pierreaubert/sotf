@@ -2,9 +2,7 @@
 //!
 //! Performs comprehensive validation of RoomConfig before optimization.
 
-use super::types::{
-    OptimizerConfig, ProcessingMode, RoomConfig, SpeakerConfig, TargetShape, TiltType,
-};
+use super::types::{OptimizerConfig, ProcessingMode, RoomConfig, SpeakerConfig, TargetShape};
 use crate::{MeasurementRef, MeasurementSource};
 use std::collections::HashMap;
 
@@ -82,34 +80,20 @@ pub fn validate_room_config(config: &RoomConfig) -> ValidationResult {
     // optimization; when both are present, `target_curve` is silently
     // ignored to prevent double-application. Users often don't realise
     // that setting both means only one takes effect.
-    //
-    // The pre-existing legacy-path variant (target_curve + target_tilt
-    // with non-Flat tilt) is preserved too so that stale configs that
-    // skip `migrate_target_config` still surface the conflict.
-    if config.target_curve.is_some() {
-        if let Some(ref tr) = config.optimizer.target_response {
-            let has_shape = tr.shape != TargetShape::Flat
-                || tr.slope_db_per_octave.abs() > 1e-6
-                || tr.preference.bass_shelf_db.abs() > 1e-6
-                || tr.preference.treble_shelf_db.abs() > 1e-6
-                || tr.broadband_precorrection;
-            if has_shape {
-                result.add_warning(
-                    "Both target_curve and target_response are configured. \
-                     target_response takes precedence — it is baked into the \
-                     measurement before EQ optimization, and target_curve is \
-                     ignored to avoid double-application. Set only one."
-                        .to_string(),
-                );
-            }
-        }
-        if let Some(ref tilt) = config.optimizer.target_tilt
-            && tilt.tilt_type != TiltType::Flat
-        {
+    if config.target_curve.is_some()
+        && let Some(ref tr) = config.optimizer.target_response
+    {
+        let has_shape = tr.shape != TargetShape::Flat
+            || tr.slope_db_per_octave.abs() > 1e-6
+            || tr.preference.bass_shelf_db.abs() > 1e-6
+            || tr.preference.treble_shelf_db.abs() > 1e-6
+            || tr.broadband_precorrection;
+        if has_shape {
             result.add_warning(
-                "Both target_curve and target_tilt are configured. \
-                 target_tilt will be baked into the measurement and target_curve \
-                 will be ignored to avoid double-application."
+                "Both target_curve and target_response are configured. \
+                 target_response takes precedence — it is baked into the \
+                 measurement before EQ optimization, and target_curve is \
+                 ignored to avoid double-application. Set only one."
                     .to_string(),
             );
         }
@@ -248,53 +232,6 @@ fn validate_optimizer_config(opt: &OptimizerConfig, result: &mut ValidationResul
         }
     }
 
-    // Validate mode
-    let valid_modes = ["iir", "fir", "mixed", "mixed_phase"];
-    if !valid_modes.contains(&opt.mode.as_str()) {
-        result.add_error(format!(
-            "Unknown mode '{}', must be one of {:?}",
-            opt.mode, valid_modes
-        ));
-    }
-
-    // B4 — deprecate the legacy `mode` string in favour of `processing_mode`.
-    // `mode` only models `[iir, fir, mixed, mixed_phase]` and cannot express
-    // newer values (`warped_iir`, `kautz_modal`). The code branches on
-    // `processing_mode` throughout, so a config that sets `mode` but leaves
-    // `processing_mode` at the default silently gets `LowLatency` behaviour
-    // regardless of what `mode` says.
-    //
-    // Heuristic: emit a deprecation warning when the user's `mode` string
-    // does not align with their `processing_mode` enum. The alignment map
-    // is: iir↔LowLatency, fir↔PhaseLinear, mixed↔Hybrid, mixed_phase↔MixedPhase.
-    // `warped_iir` / `kautz_modal` have no legacy equivalent — configs that
-    // select those via `processing_mode` must either leave `mode` at its
-    // default "iir" or accept the warning.
-    let expected_mode_for_processing = match opt.processing_mode {
-        ProcessingMode::LowLatency => Some("iir"),
-        ProcessingMode::PhaseLinear => Some("fir"),
-        ProcessingMode::Hybrid => Some("mixed"),
-        ProcessingMode::MixedPhase => Some("mixed_phase"),
-        ProcessingMode::WarpedIir | ProcessingMode::KautzModal => None,
-    };
-    if let Some(expected) = expected_mode_for_processing {
-        if opt.mode != expected {
-            result.add_warning(format!(
-                "Legacy `mode` field is \"{}\" but `processing_mode` is {:?} (expected \"{}\"). \
-                 `mode` is deprecated — `processing_mode` is authoritative. Remove `mode` \
-                 from your config, or align it with `processing_mode`.",
-                opt.mode, opt.processing_mode, expected,
-            ));
-        }
-    } else if opt.mode != "iir" {
-        // WarpedIir / KautzModal: `mode` must be left at default or removed.
-        result.add_warning(format!(
-            "`processing_mode={:?}` has no equivalent `mode` string. The legacy `mode` \
-             field is deprecated; remove it from your config to avoid confusion.",
-            opt.processing_mode,
-        ));
-    }
-
     // I5 — PhaseLinear FIR at a wide frequency range silently under-resolves HF.
     // With default tap counts (≤4096), a linear-phase FIR designed for
     // [min_freq .. 20 kHz] lacks the resolution to represent high-frequency
@@ -322,28 +259,27 @@ fn validate_optimizer_config(opt: &OptimizerConfig, result: &mut ValidationResul
             .target_response
             .as_ref()
             .map(|t| t.slope_db_per_octave.abs() > f64::EPSILON)
-            .unwrap_or(false)
-            || opt
-                .target_tilt
-                .as_ref()
-                .map(|t| t.tilt_type != TiltType::Flat || t.slope_db_per_octave.abs() > 1e-6)
-                .unwrap_or(false);
+            .unwrap_or(false);
         if has_slope {
             result.add_warning(
                 "schroeder_split is enabled together with a non-zero target slope \
-                 (target_response.slope_db_per_octave or target_tilt). The modal and \
-                 diffuse regions are optimized independently, so the requested slope \
-                 will be approximated rather than matched exactly across the crossover."
+                 (target_response.slope_db_per_octave). The modal and diffuse regions \
+                 are optimized independently, so the requested slope will be \
+                 approximated rather than matched exactly across the crossover."
                     .to_string(),
             );
         }
     }
 
-    // Validate FIR config if mode requires it
-    if (opt.mode == "fir" || opt.mode == "mixed") && opt.fir.is_none() {
+    // Validate FIR config if processing_mode requires it
+    if matches!(
+        opt.processing_mode,
+        ProcessingMode::PhaseLinear | ProcessingMode::Hybrid | ProcessingMode::MixedPhase
+    ) && opt.fir.is_none()
+    {
         result.add_warning(format!(
-            "mode '{}' specified but no FIR configuration provided, using defaults",
-            opt.mode
+            "processing_mode={:?} requires FIR configuration; using defaults",
+            opt.processing_mode
         ));
     }
 
@@ -368,10 +304,10 @@ fn validate_optimizer_config(opt: &OptimizerConfig, result: &mut ValidationResul
 
     // Validate mixed mode configuration
     if let Some(ref mixed_config) = opt.mixed_config {
-        // mixed_config is only relevant when mode == "mixed"
-        if opt.mode != "mixed" {
+        // mixed_config is only relevant when processing_mode == Hybrid
+        if opt.processing_mode != ProcessingMode::Hybrid {
             result.add_warning(
-                "mixed_config specified but mode is not 'mixed', configuration will be ignored"
+                "mixed_config specified but processing_mode is not Hybrid, configuration will be ignored"
                     .to_string(),
             );
         }

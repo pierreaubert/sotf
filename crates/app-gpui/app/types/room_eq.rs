@@ -12,7 +12,7 @@ use autoeq::roomeq::{
     OptimizerConfig as BackendOptimizerConfig, PhaseAlignmentConfig as BackendPhaseAlignmentConfig,
     PreRingingSerdeConfig as BackendPreRingingConfig, ProcessingMode as BackendProcessingMode,
     RoomConfig, SchroederSplitConfig as BackendSchroederSplitConfig, SpeakerConfig, SpeakerGroup,
-    TargetTiltConfig as BackendTargetTiltConfig, TiltType,
+    TargetResponseConfig as BackendTargetResponseConfig, TargetShape, UserPreference,
 };
 use std::collections::HashMap;
 
@@ -53,15 +53,15 @@ impl InteractiveChartStateWrapper {
 // Domain types shared via sotf-player crate — single source of truth for all apps.
 pub use sotf_audio_player::room_eq_types::RoomEqWizardMode;
 pub use sotf_audio_player::room_eq_types::{
-    BroadbandTargetMatchingConfig, ChannelDspChain, ChannelMatchingUiConfig, ChannelMeasurement,
+    ChannelDspChain, ChannelMatchingUiConfig, ChannelMeasurement,
     ChannelOptResult, CustomTargetCurve, DelayDetectionState, DelayDetectionStatus, DriverDspChain,
     DspChainMetadata, DspChainOutput, DspPluginConfig, EqFilterConfig, ExcursionProtectionConfig,
-    GroupDelayOptConfig, MixedModeUiConfig, MixedPhaseUiConfig, MultiMeasurementUiConfig,
+    MixedModeUiConfig, MixedPhaseUiConfig, MultiMeasurementUiConfig,
     MultiSeatConfig, MultiSpeakerMode, PhaseAlignmentConfig, PreRingingConfig,
     RecordingConfiguration, RoomEqDataSource, RoomEqFirConfig, RoomEqMeasurementsFile,
     RoomEqOptimizationMode, RoomEqSpeakerConfig, RoomEqStep, SchroederSplitConfig,
     SimplePresetConfig, SpeakerConfigType, SubOptimizerUiConfig, TargetCurveControlPoint,
-    TargetTiltConfig, VoGConfig,
+    TargetResponseUiConfig, VoGConfig,
 };
 pub type CrossoverType = sotf_audio_player::room_eq_types::RoomEqCrossoverType;
 pub use sotf_audio_player::room_eq_types::AutoEqField;
@@ -388,8 +388,8 @@ impl RoomEqState {
         // When imported, the file's feature state is authoritative
         // (None = disabled, Some = enabled with those params).
         if !config.imported_from_file {
-            config.target_tilt.enabled = true;
-            config.target_tilt.tilt_type = "harman".to_string();
+            config.target_response.enabled = true;
+            config.target_response.shape = "harman".to_string();
             config.excursion_protection.enabled = true;
             // Schroeder split only makes sense with a subwoofer: the modal
             // crossover separates bass (sub) from mid/treble (mains). For a
@@ -397,8 +397,7 @@ impl RoomEqState {
             // a single-pass optimizer is more effective.
             config.schroeder_split.enabled = has_subwoofer;
             config.allow_delay = true;
-            config.broadband_target_matching.enabled = true;
-            config.gd_opt.enabled = has_subwoofer;
+            config.target_response.broadband_precorrection = true;
             config.vog.enabled = has_height;
             config.vog.reference_channel = if is_cinema {
                 "C".to_string()
@@ -704,7 +703,6 @@ impl RoomEqState {
             max_iter: self.optimizer_config.max_iter,
             population: self.optimizer_config.population,
             peq_model: self.optimizer_config.peq_model.clone(),
-            mode: self.optimizer_config.mode.to_code().to_string(),
             processing_mode,
             fir: Some(BackendFirConfig {
                 taps: self.optimizer_config.fir.taps,
@@ -751,23 +749,6 @@ impl RoomEqState {
             tolerance: self.optimizer_config.tolerance,
             atolerance: self.optimizer_config.atolerance,
             allow_delay: Some(self.optimizer_config.allow_delay),
-            target_tilt: if self.optimizer_config.target_tilt.enabled {
-                let tilt_type = match self.optimizer_config.target_tilt.tilt_type.as_str() {
-                    "harman" => TiltType::Harman,
-                    "custom" => TiltType::Custom,
-                    "from_measurement" => TiltType::FromMeasurement,
-                    _ => TiltType::Custom,
-                };
-                Some(BackendTargetTiltConfig {
-                    tilt_type,
-                    slope_db_per_octave: self.optimizer_config.target_tilt.slope,
-                    reference_freq: self.optimizer_config.target_tilt.reference_freq,
-                    bass_shelf_db: self.optimizer_config.target_tilt.bass_shelf_db,
-                    bass_shelf_freq: self.optimizer_config.target_tilt.bass_shelf_freq,
-                })
-            } else {
-                None
-            },
             excursion_protection: if self.optimizer_config.excursion_protection.enabled {
                 let filter_type = if self.optimizer_config.excursion_protection.filter_type == "bw"
                 {
@@ -834,24 +815,11 @@ impl RoomEqState {
             } else {
                 None
             },
-            gd_opt: if self.optimizer_config.gd_opt.enabled {
-                Some(autoeq::roomeq::GroupDelayOptimizationConfig {
-                    enabled: true,
-                    target_ms: self.optimizer_config.gd_opt.target_ms,
-                })
-            } else {
-                None
-            },
             vog: if self.optimizer_config.vog.enabled {
                 Some(autoeq::roomeq::VoiceOfGodConfig {
                     enabled: true,
                     reference_channel: self.optimizer_config.vog.reference_channel.clone(),
                 })
-            } else {
-                None
-            },
-            broadband_target_matching: if self.optimizer_config.broadband_target_matching.enabled {
-                Some(autoeq::roomeq::BroadbandTargetMatchingConfig { enabled: true })
             } else {
                 None
             },
@@ -880,7 +848,32 @@ impl RoomEqState {
             },
             smooth_n: self.optimizer_config.smooth_n,
             decomposed_correction: Some(autoeq::roomeq::DecomposedCorrectionSerdeConfig::default()),
-            target_response: None,
+            target_response: if self.optimizer_config.target_response.enabled {
+                let tr = &self.optimizer_config.target_response;
+                let shape = match tr.shape.as_str() {
+                    "flat" => TargetShape::Flat,
+                    "harman" => TargetShape::Harman,
+                    "custom" => TargetShape::Custom,
+                    "file" => TargetShape::File,
+                    "from_measurement" => TargetShape::FromMeasurement,
+                    _ => TargetShape::Custom,
+                };
+                Some(BackendTargetResponseConfig {
+                    shape,
+                    slope_db_per_octave: tr.slope_db_per_octave,
+                    reference_freq: tr.reference_freq,
+                    curve_path: tr.curve_path.clone(),
+                    preference: UserPreference {
+                        bass_shelf_db: tr.bass_shelf_db,
+                        bass_shelf_freq: tr.bass_shelf_freq,
+                        treble_shelf_db: tr.treble_shelf_db,
+                        treble_shelf_freq: tr.treble_shelf_freq,
+                    },
+                    broadband_precorrection: tr.broadband_precorrection,
+                })
+            } else {
+                None
+            },
             cea2034_correction: None,
             sub_config: if self.optimizer_config.sub_config.enabled {
                 Some(autoeq::roomeq::SubOptimizerConfig {
@@ -912,14 +905,17 @@ impl RoomEqState {
         };
 
         log::info!(
-            "RoomConfig: filters={}, max_q={}, max_freq={}, schroeder={}, target_tilt={}, excursion={}, broadband={}, imported={}",
+            "RoomConfig: filters={}, max_q={}, max_freq={}, schroeder={}, target_response={}, excursion={}, broadband={}, imported={}",
             optimizer.num_filters,
             optimizer.max_q,
             optimizer.max_freq,
             optimizer.schroeder_split.is_some(),
-            optimizer.target_tilt.is_some(),
+            optimizer.target_response.is_some(),
             optimizer.excursion_protection.is_some(),
-            optimizer.broadband_target_matching.is_some(),
+            optimizer
+                .target_response
+                .as_ref()
+                .is_some_and(|tr| tr.broadband_precorrection),
             self.optimizer_config.imported_from_file,
         );
 

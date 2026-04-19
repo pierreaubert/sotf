@@ -6,10 +6,9 @@
 //! - **I4** `cea2034_correction.enabled` without a CEA2034/spinorama source → warning
 
 use autoeq::roomeq::{
-    BroadbandTargetMatchingConfig, Cea2034CorrectionConfig, MultiMeasurementConfig,
-    MultiMeasurementStrategy, OptimizerConfig, ProcessingMode, RoomConfig, SchroederSplitConfig,
-    SpeakerConfig, SpeakerGroup, TargetResponseConfig, TargetShape, TargetTiltConfig, TiltType,
-    UserPreference, default_config_version, validate_room_config,
+    Cea2034CorrectionConfig, MultiMeasurementConfig, MultiMeasurementStrategy, OptimizerConfig,
+    ProcessingMode, RoomConfig, SchroederSplitConfig, SpeakerConfig, SpeakerGroup,
+    TargetResponseConfig, TargetShape, default_config_version, validate_room_config,
 };
 use autoeq::{MeasurementMultiple, MeasurementRef, MeasurementSingle, MeasurementSource};
 use std::collections::HashMap;
@@ -79,31 +78,6 @@ fn i2_schroeder_split_with_target_response_slope_warns() {
 }
 
 #[test]
-fn i2_schroeder_split_with_legacy_tilt_warns() {
-    // Even before migration (validator should see raw config), schroeder_split
-    // combined with a non-flat target_tilt should emit the same warning.
-    let mut opt = OptimizerConfig::default();
-    opt.schroeder_split = Some(SchroederSplitConfig {
-        enabled: true,
-        ..SchroederSplitConfig::default()
-    });
-    opt.target_tilt = Some(TargetTiltConfig {
-        tilt_type: TiltType::Harman,
-        slope_db_per_octave: -0.8,
-        ..TargetTiltConfig::default()
-    });
-
-    let config = base_config(one_speaker("L", single_speaker("l.csv", None)), opt);
-    let result = validate_room_config(&config);
-
-    assert!(
-        result.warnings.iter().any(|w| w.contains("schroeder_split")),
-        "expected schroeder_split warning, got: {:?}",
-        result.warnings
-    );
-}
-
-#[test]
 fn i2_schroeder_split_with_flat_slope_no_warning() {
     // If both legs are flat, there's no slope to approximate, so no warning.
     let mut opt = OptimizerConfig::default();
@@ -111,7 +85,7 @@ fn i2_schroeder_split_with_flat_slope_no_warning() {
         enabled: true,
         ..SchroederSplitConfig::default()
     });
-    // Default target_response is absent; target_tilt absent too.
+    // Default target_response is absent.
 
     let config = base_config(one_speaker("L", single_speaker("l.csv", None)), opt);
     let result = validate_room_config(&config);
@@ -407,10 +381,3 @@ fn b10_weights_mismatch_inside_speaker_group() {
     );
 }
 
-// Unused-imports silencer: pull in remaining symbols used only in some tests.
-#[allow(dead_code)]
-fn _compile_imports(
-    _bb: BroadbandTargetMatchingConfig,
-    _up: UserPreference,
-) {
-}

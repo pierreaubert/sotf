@@ -11,7 +11,7 @@ use crate::MeasurementSource;
 
 /// Configuration version (semantic versioning)
 pub fn default_config_version() -> String {
-    "1.3.0".to_string()
+    "2.0.0".to_string()
 }
 
 // ============================================================================
@@ -178,22 +178,6 @@ pub enum SystemModel {
     HomeCinema,
     #[default]
     Custom,
-}
-
-/// Target curve tilt type for room correction
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum TiltType {
-    /// Flat target (no tilt)
-    #[default]
-    Flat,
-    /// Harman-style tilt (-0.8 dB/octave with bass shelf)
-    Harman,
-    /// Custom tilt with user-specified parameters
-    Custom,
-    /// Derive slope from the input measurement curve at optimization time
-    #[serde(alias = "from_measurement")]
-    FromMeasurement,
 }
 
 /// Target response shape preset
@@ -467,26 +451,6 @@ pub enum TargetCurveConfig {
     Path(PathBuf),
 }
 
-/// Target curve tilt configuration
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct TargetTiltConfig {
-    /// Tilt type: flat, harman, or custom
-    #[serde(default)]
-    pub tilt_type: TiltType,
-    /// Slope in dB per octave (negative = downward tilt towards high frequencies)
-    #[serde(default = "default_tilt_slope")]
-    pub slope_db_per_octave: f64,
-    /// Reference frequency where tilt equals 0 dB (Hz)
-    #[serde(default = "default_tilt_reference_freq")]
-    pub reference_freq: f64,
-    /// Bass shelf boost in dB (applied below bass_shelf_freq)
-    #[serde(default)]
-    pub bass_shelf_db: f64,
-    /// Bass shelf frequency in Hz
-    #[serde(default = "default_bass_shelf_freq")]
-    pub bass_shelf_freq: f64,
-}
-
 fn default_tilt_slope() -> f64 {
     -0.8
 }
@@ -495,18 +459,6 @@ fn default_tilt_reference_freq() -> f64 {
 }
 fn default_bass_shelf_freq() -> f64 {
     200.0
-}
-
-impl Default for TargetTiltConfig {
-    fn default() -> Self {
-        Self {
-            tilt_type: TiltType::Flat,
-            slope_db_per_octave: 0.0,
-            reference_freq: default_tilt_reference_freq(),
-            bass_shelf_db: 0.0,
-            bass_shelf_freq: default_bass_shelf_freq(),
-        }
-    }
 }
 
 /// User preference adjustments layered on top of the target shape
@@ -1072,20 +1024,6 @@ pub struct InterChannelDeviation {
 // Additional Configs (Broadband, Multi-Measurement, Spatial, Decomposed, CEA2034)
 // ============================================================================
 
-/// Configuration for broadband target matching
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct BroadbandTargetMatchingConfig {
-    /// Enable broadband target matching
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-}
-
-impl Default for BroadbandTargetMatchingConfig {
-    fn default() -> Self {
-        Self { enabled: true }
-    }
-}
-
 /// Serializable spatial robustness configuration for JSON config files
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SpatialRobustnessSerdeConfig {
@@ -1317,43 +1255,16 @@ pub struct VoiceOfGodConfig {
 }
 
 // ============================================================================
-// Configuration for Group Delay Optimization (GD-Opt)
-// ============================================================================
-
-/// Configuration for Group Delay Optimization (GD-Opt)
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct GroupDelayOptimizationConfig {
-    /// Enable Group Delay Optimization
-    #[serde(default)]
-    pub enabled: bool,
-    /// Target group delay at crossover (ms)
-    #[serde(default)]
-    pub target_ms: f64,
-}
-
-impl Default for GroupDelayOptimizationConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            target_ms: 0.0,
-        }
-    }
-}
-
-// ============================================================================
 // Main OptimizerConfig
 // ============================================================================
 
 /// Optimizer configuration
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct OptimizerConfig {
-    /// Optimization mode: "iir" (default), "fir", "mixed"
-    #[serde(default = "default_opt_mode")]
-    pub mode: String,
-    /// Processing mode for RoomEQ v2
+    /// Processing mode — selects the filter class used for correction.
     #[serde(default)]
     pub processing_mode: ProcessingMode,
-    /// FIR configuration (if mode is "fir" or "mixed")
+    /// FIR configuration (used when `processing_mode` requires FIR filters)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fir: Option<FirConfig>,
     /// Mixed mode configuration (frequency-based crossover)
@@ -1451,12 +1362,9 @@ pub struct OptimizerConfig {
     /// Allow inter-speaker delay optimization
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allow_delay: Option<bool>,
-    /// Unified target response configuration (preferred over legacy target_tilt + broadband)
+    /// Unified target response configuration (shape + preference shelves + broadband pre-correction)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_response: Option<TargetResponseConfig>,
-    /// Legacy target curve tilt configuration — migrated to `target_response` at load time
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target_tilt: Option<TargetTiltConfig>,
     /// Excursion protection configuration
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub excursion_protection: Option<ExcursionProtectionConfig>,
@@ -1469,15 +1377,9 @@ pub struct OptimizerConfig {
     /// Multi-seat optimization configuration
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub multi_seat: Option<MultiSeatConfig>,
-    /// Group Delay Optimization configuration (v2)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gd_opt: Option<GroupDelayOptimizationConfig>,
     /// Voice of God optimization configuration (v2)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vog: Option<VoiceOfGodConfig>,
-    /// Broadband target matching configuration (v2.1)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub broadband_target_matching: Option<BroadbandTargetMatchingConfig>,
     /// Multi-measurement optimization configuration
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub multi_measurement: Option<MultiMeasurementConfig>,
@@ -1524,9 +1426,6 @@ fn default_strategy() -> String {
 }
 fn default_peq_model() -> String {
     "pk".to_string()
-}
-fn default_opt_mode() -> String {
-    "iir".to_string()
 }
 fn default_num_filters() -> usize {
     7
@@ -1601,7 +1500,6 @@ impl Default for OptimizerConfig {
             max_iter: default_max_iter(),
             population: default_population(),
             peq_model: default_peq_model(),
-            mode: default_opt_mode(),
             processing_mode: ProcessingMode::LowLatency,
             fir: None,
             mixed_config: None,
@@ -1617,14 +1515,11 @@ impl Default for OptimizerConfig {
             atolerance: default_atolerance(),
             allow_delay: None,
             target_response: None,
-            target_tilt: None,
             excursion_protection: None,
             schroeder_split: None,
             phase_alignment: None,
             multi_seat: None,
-            gd_opt: None,
             vog: None,
-            broadband_target_matching: None,
             multi_measurement: None,
             decomposed_correction: Some(DecomposedCorrectionSerdeConfig {
                 enabled: true,
@@ -1642,9 +1537,14 @@ impl Default for OptimizerConfig {
 }
 
 impl OptimizerConfig {
-    /// Resolve the effective `allow_delay` value based on the mode
+    /// Resolve the effective `allow_delay` value.
+    ///
+    /// Defaults to `true` whenever `processing_mode` introduces any non-zero
+    /// base latency (everything except `LowLatency`). Callers can override
+    /// explicitly via the `allow_delay` field.
     pub fn allow_delay(&self) -> bool {
-        self.allow_delay.unwrap_or(self.mode != "iir")
+        self.allow_delay
+            .unwrap_or(self.processing_mode != ProcessingMode::LowLatency)
     }
 
     /// Get the maximum allowed boost at a given frequency.
@@ -1676,66 +1576,6 @@ impl OptimizerConfig {
         self.max_db
     }
 
-    /// Migrate legacy `target_tilt` + `broadband_target_matching` into `target_response`
-    pub fn migrate_target_config(&mut self) {
-        if self.target_response.is_some() {
-            if self.target_tilt.is_some() {
-                log::warn!(
-                    "Both target_response and target_tilt are set; target_tilt is ignored. Use target_response exclusively."
-                );
-            }
-            if self
-                .broadband_target_matching
-                .as_ref()
-                .is_some_and(|b| b.enabled)
-            {
-                log::warn!(
-                    "Both target_response and broadband_target_matching are set; broadband_target_matching is ignored. Set target_response.broadband_precorrection instead."
-                );
-            }
-            self.target_tilt = None;
-            self.broadband_target_matching = None;
-            return;
-        }
-
-        if self.target_tilt.is_none() && self.broadband_target_matching.is_none() {
-            return;
-        }
-
-        let tilt = self.target_tilt.take();
-        let bb = self.broadband_target_matching.take();
-
-        let (shape, slope) = match tilt.as_ref() {
-            Some(t) if t.tilt_type == TiltType::Harman => (TargetShape::Harman, -0.8),
-            Some(t) if t.tilt_type == TiltType::Custom => {
-                (TargetShape::Custom, t.slope_db_per_octave)
-            }
-            Some(t) if t.tilt_type == TiltType::FromMeasurement => {
-                (TargetShape::FromMeasurement, 0.0)
-            }
-            Some(t)
-                if t.tilt_type == TiltType::Flat
-                    && (t.slope_db_per_octave.abs() > 1e-6 || t.bass_shelf_db.abs() > 1e-6) =>
-            {
-                (TargetShape::Custom, t.slope_db_per_octave)
-            }
-            _ => (TargetShape::Flat, 0.0),
-        };
-
-        self.target_response = Some(TargetResponseConfig {
-            shape,
-            slope_db_per_octave: slope,
-            reference_freq: tilt.as_ref().map(|t| t.reference_freq).unwrap_or(1000.0),
-            curve_path: None,
-            preference: UserPreference {
-                bass_shelf_db: tilt.as_ref().map(|t| t.bass_shelf_db).unwrap_or(0.0),
-                bass_shelf_freq: tilt.as_ref().map(|t| t.bass_shelf_freq).unwrap_or(200.0),
-                treble_shelf_db: 0.0,
-                treble_shelf_freq: 8000.0,
-            },
-            broadband_precorrection: bb.as_ref().map(|b| b.enabled).unwrap_or(false),
-        });
-    }
 }
 
 // ============================================================================

@@ -71,7 +71,7 @@ impl PlayerView {
         let param_local_algo = opt_config.local_algo.clone();
         let param_psychoacoustic = opt_config.psychoacoustic;
         let param_asymmetric_loss = opt_config.asymmetric_loss;
-        let param_target_tilt = opt_config.target_tilt.enabled;
+        let param_target_tilt = opt_config.target_response.enabled;
         let param_excursion = opt_config.excursion_protection.enabled;
         let param_schroeder = opt_config.schroeder_split.enabled;
         let param_phase_alignment = opt_config.phase_alignment.enabled;
@@ -401,7 +401,7 @@ impl PlayerView {
                                     .when(param_asymmetric_loss, |h| {
                                         h.child(chip("Asymmetric Loss"))
                                     })
-                                    .when(param_target_tilt, |h| h.child(chip("Target Tilt")))
+                                    .when(param_target_tilt, |h| h.child(chip("Target Response")))
                                     .when(param_excursion, |h| {
                                         h.child(chip("Excursion Protection"))
                                     })

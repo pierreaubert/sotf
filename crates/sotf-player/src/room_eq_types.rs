@@ -228,13 +228,13 @@ impl SimplePresetConfig {
             SimpleLossChoice::Epa => "epa".to_string(),
         };
 
-        // --- Target tilt derived from measurement ---
+        // --- Target response derived from measurement ---
         // All tiers use the measurement's own broadband slope as the
         // optimization target. This preserves the speaker's natural
         // response characteristic while correcting room anomalies.
-        config.target_tilt.enabled = true;
-        config.target_tilt.tilt_type = "from_measurement".to_string();
-        config.target_tilt.slope = 0.0; // resolved at optimization time
+        config.target_response.enabled = true;
+        config.target_response.shape = "from_measurement".to_string();
+        config.target_response.slope_db_per_octave = 0.0; // resolved at optimization time
 
         // --- Crossover (2.1+ only) ---
         if !self.bass_management.is_empty() || matches!(self.crossover, SimpleCrossoverChoice::Lr48)
@@ -927,26 +927,52 @@ impl Default for MixedPhaseUiConfig {
     }
 }
 
-/// Target curve tilt configuration
+/// Target response configuration (UI-facing).
+///
+/// Mirrors the backend `autoeq::roomeq::TargetResponseConfig` but flattened
+/// into a single struct for simpler binding in UI widgets. Covers the target
+/// shape (flat / Harman / custom slope / file / derived-from-measurement),
+/// the preference shelves (bass / treble), and the broadband pre-correction
+/// toggle.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TargetTiltConfig {
+pub struct TargetResponseUiConfig {
+    /// Whether any target shaping is applied. When `false` the optimiser
+    /// sees a flat target regardless of the other fields.
     pub enabled: bool,
-    pub tilt_type: String,
-    pub slope: f64,
+    /// Target shape: "flat" | "harman" | "custom" | "file" | "from_measurement".
+    pub shape: String,
+    /// Slope in dB/octave (used when `shape == "custom"`).
+    pub slope_db_per_octave: f64,
+    /// Reference frequency where the slope passes through 0 dB.
     pub reference_freq: f64,
+    /// Path to CSV target file (used when `shape == "file"`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub curve_path: Option<std::path::PathBuf>,
+    /// Bass shelf preference in dB (layered on top of the target shape).
     pub bass_shelf_db: f64,
+    /// Bass shelf frequency in Hz.
     pub bass_shelf_freq: f64,
+    /// Treble shelf preference in dB.
+    pub treble_shelf_db: f64,
+    /// Treble shelf frequency in Hz.
+    pub treble_shelf_freq: f64,
+    /// Enable broadband pre-correction (shelf+gain fit before fine EQ).
+    pub broadband_precorrection: bool,
 }
 
-impl Default for TargetTiltConfig {
+impl Default for TargetResponseUiConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            tilt_type: "harman".to_string(),
-            slope: -0.8,
+            shape: "harman".to_string(),
+            slope_db_per_octave: -0.8,
             reference_freq: 1000.0,
+            curve_path: None,
             bass_shelf_db: 0.0,
             bass_shelf_freq: 200.0,
+            treble_shelf_db: 0.0,
+            treble_shelf_freq: 8000.0,
+            broadband_precorrection: false,
         }
     }
 }
@@ -1087,13 +1113,6 @@ impl Default for MultiSeatConfig {
     }
 }
 
-/// Group Delay Optimization configuration
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct GroupDelayOptConfig {
-    pub enabled: bool,
-    pub target_ms: f64,
-}
-
 /// Voice of God (timbre matching) configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoGConfig {
@@ -1108,12 +1127,6 @@ impl Default for VoGConfig {
             reference_channel: "C".to_string(),
         }
     }
-}
-
-/// Broadband target matching configuration
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct BroadbandTargetMatchingConfig {
-    pub enabled: bool,
 }
 
 /// Mixed mode (IIR+FIR) configuration
@@ -1271,17 +1284,14 @@ pub struct RoomEqOptimizerConfig {
     #[serde(default)]
     pub seed: Option<u64>,
     #[serde(default)]
-    pub gd_opt: GroupDelayOptConfig,
-    #[serde(default)]
     pub vog: VoGConfig,
-    #[serde(default)]
-    pub broadband_target_matching: BroadbandTargetMatchingConfig,
     #[serde(default)]
     pub mixed_config: MixedModeUiConfig,
     #[serde(default)]
     pub mixed_phase: MixedPhaseUiConfig,
+    /// Unified target response (shape + preference shelves + broadband pre-correction).
     #[serde(default)]
-    pub target_tilt: TargetTiltConfig,
+    pub target_response: TargetResponseUiConfig,
     #[serde(default)]
     pub excursion_protection: ExcursionProtectionConfig,
     #[serde(default)]
@@ -1340,12 +1350,10 @@ impl Default for RoomEqOptimizerConfig {
             system_type: "stereo".to_string(),
             allow_delay: false,
             seed: None,
-            gd_opt: GroupDelayOptConfig::default(),
             vog: VoGConfig::default(),
-            broadband_target_matching: BroadbandTargetMatchingConfig::default(),
             mixed_config: MixedModeUiConfig::default(),
             mixed_phase: MixedPhaseUiConfig::default(),
-            target_tilt: TargetTiltConfig::default(),
+            target_response: TargetResponseUiConfig::default(),
             excursion_protection: ExcursionProtectionConfig::default(),
             schroeder_split: SchroederSplitConfig::default(),
             phase_alignment: PhaseAlignmentConfig::default(),
@@ -1422,20 +1430,25 @@ impl RoomEqOptimizerConfig {
         };
 
         // Feature toggles: only override from backend when explicitly present.
-        if let Some(ref tilt) = backend.target_tilt {
-            self.target_tilt.enabled = true;
-            self.target_tilt.tilt_type = match tilt.tilt_type {
-                autoeq::roomeq::TiltType::Harman => "harman".to_string(),
-                autoeq::roomeq::TiltType::Custom => "custom".to_string(),
-                autoeq::roomeq::TiltType::Flat => "custom".to_string(),
-                autoeq::roomeq::TiltType::FromMeasurement => "from_measurement".to_string(),
+        if let Some(ref tr) = backend.target_response {
+            self.target_response.enabled = true;
+            self.target_response.shape = match tr.shape {
+                autoeq::roomeq::TargetShape::Flat => "flat".to_string(),
+                autoeq::roomeq::TargetShape::Harman => "harman".to_string(),
+                autoeq::roomeq::TargetShape::Custom => "custom".to_string(),
+                autoeq::roomeq::TargetShape::File => "file".to_string(),
+                autoeq::roomeq::TargetShape::FromMeasurement => "from_measurement".to_string(),
             };
-            self.target_tilt.slope = tilt.slope_db_per_octave;
-            self.target_tilt.reference_freq = tilt.reference_freq;
-            self.target_tilt.bass_shelf_db = tilt.bass_shelf_db;
-            self.target_tilt.bass_shelf_freq = tilt.bass_shelf_freq;
+            self.target_response.slope_db_per_octave = tr.slope_db_per_octave;
+            self.target_response.reference_freq = tr.reference_freq;
+            self.target_response.curve_path = tr.curve_path.clone();
+            self.target_response.bass_shelf_db = tr.preference.bass_shelf_db;
+            self.target_response.bass_shelf_freq = tr.preference.bass_shelf_freq;
+            self.target_response.treble_shelf_db = tr.preference.treble_shelf_db;
+            self.target_response.treble_shelf_freq = tr.preference.treble_shelf_freq;
+            self.target_response.broadband_precorrection = tr.broadband_precorrection;
         } else {
-            self.target_tilt.enabled = false;
+            self.target_response.enabled = false;
         }
 
         self.excursion_protection.enabled = backend
@@ -1463,17 +1476,7 @@ impl RoomEqOptimizerConfig {
             self.schroeder_split.high_freq_shelving_only = ss.high_freq_config.shelving_only;
         }
 
-        self.broadband_target_matching.enabled = backend
-            .broadband_target_matching
-            .as_ref()
-            .is_some_and(|b| b.enabled);
-
         self.allow_delay = backend.allow_delay.unwrap_or(false);
-
-        self.gd_opt.enabled = backend.gd_opt.as_ref().is_some_and(|g| g.enabled);
-        if let Some(ref gd) = backend.gd_opt {
-            self.gd_opt.target_ms = gd.target_ms;
-        }
 
         self.vog.enabled = backend.vog.as_ref().is_some_and(|v| v.enabled);
         if let Some(ref vog) = backend.vog {

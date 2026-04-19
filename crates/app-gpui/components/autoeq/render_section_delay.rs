@@ -1,4 +1,4 @@
-// Section 5: Delay Correction — delay and group delay optimization
+// Section 5: Delay Correction — inter-speaker time alignment
 // This file is include!()'d from render_body.rs, sharing its scope.
 {
     let mut section = VStack::new().spacing(StackSpacing::Sm);
@@ -41,52 +41,6 @@
             )
             .child(delay_toggle),
     );
-
-    if config.allow_delay {
-        // Group Delay optimization
-        let mut gd_toggle = Toggle::new((base_id.clone(), "dc-gd-enabled"))
-            .size(ToggleSize::Sm)
-            .checked(config.gd_opt_enabled)
-            .theme(toggle_theme.clone());
-
-        if let Some(ref h) = on_gd_opt_enabled_change_rc {
-            let h = h.clone();
-            gd_toggle = gd_toggle.on_change(move |v, w, cx| h(v, w, cx));
-        }
-
-        section = section.child(
-            HStack::new()
-                .justify(StackJustify::SpaceBetween)
-                .child(
-                    VStack::new()
-                        .spacing(StackSpacing::None)
-                        .child(Text::new("Group Delay Correction").size(TextSize::Xs).color(theme.label_color))
-                        .child(Text::new("Align group delay at crossover").size(TextSize::Xs).color(theme.description_color)),
-                )
-                .child(gd_toggle),
-        );
-
-        if config.gd_opt_enabled {
-            let mut gd_target_input = NumberInput::new((base_id.clone(), "dc-gd-target-ms"))
-                .value(config.gd_opt_target_ms)
-                .min(ParamLimits::GD_TARGET_MS.min)
-                .max(ParamLimits::GD_TARGET_MS.max)
-                .step(ParamLimits::GD_TARGET_MS.step)
-                .decimals(1)
-                .label("Target (ms)")
-                .size(NumberInputSize::Sm)
-                .width(120.0)
-                .disabled(disabled)
-                .theme(theme.number_input_theme.clone());
-
-            if let Some(ref h) = on_gd_opt_target_ms_change_rc {
-                let h = h.clone();
-                gd_target_input = gd_target_input.on_change(move |v, w, cx| h(v, w, cx));
-            }
-
-            section = section.child(gd_target_input);
-        }
-    }
 
     Card::new().content(section)
 }

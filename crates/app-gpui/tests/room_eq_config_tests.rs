@@ -54,7 +54,10 @@ fn test_room_eq_to_room_config_simple() {
 
     // Check optimizer config
     assert_eq!(config.optimizer.num_filters, 7);
-    assert_eq!(config.optimizer.mode, "iir");
+    assert_eq!(
+        config.optimizer.processing_mode,
+        autoeq::roomeq::ProcessingMode::LowLatency
+    );
 }
 
 #[test]
@@ -62,9 +65,9 @@ fn test_room_eq_to_room_config_advanced() {
     let mut state = RoomEqState::default();
 
     // Set advanced parameters
-    state.optimizer_config.target_tilt.enabled = true;
-    state.optimizer_config.target_tilt.tilt_type = "harman".to_string();
-    state.optimizer_config.target_tilt.slope = -1.0;
+    state.optimizer_config.target_response.enabled = true;
+    state.optimizer_config.target_response.shape = "harman".to_string();
+    state.optimizer_config.target_response.slope_db_per_octave = -1.0;
 
     state.optimizer_config.excursion_protection.enabled = true;
     state.optimizer_config.excursion_protection.manual_f3_hz = 45.0;
@@ -107,8 +110,8 @@ fn test_room_eq_to_room_config_advanced() {
     let config = state.to_room_config();
 
     // Verify advanced sections are present
-    assert!(config.optimizer.target_tilt.is_some());
-    let tilt = config.optimizer.target_tilt.as_ref().unwrap();
+    assert!(config.optimizer.target_response.is_some());
+    let tilt = config.optimizer.target_response.as_ref().unwrap();
     assert_eq!(tilt.slope_db_per_octave, -1.0);
 
     assert!(config.optimizer.excursion_protection.is_some());
@@ -217,7 +220,6 @@ fn test_normalization_alignment() {
 /// are specified in the JSON config.
 fn make_bare_backend_config() -> autoeq::roomeq::OptimizerConfig {
     autoeq::roomeq::OptimizerConfig {
-        mode: "iir".to_string(),
         processing_mode: autoeq::roomeq::ProcessingMode::LowLatency,
         fir: None,
         mixed_config: None,
@@ -244,14 +246,11 @@ fn make_bare_backend_config() -> autoeq::roomeq::OptimizerConfig {
         atolerance: 1e-5,
         allow_delay: None,
         // All feature flags None = disabled
-        target_tilt: None,
         excursion_protection: None,
         schroeder_split: None,
         phase_alignment: None,
         multi_seat: None,
-        gd_opt: None,
         vog: None,
-        broadband_target_matching: None,
         multi_measurement: None,
         decomposed_correction: None,
         cea2034_correction: None,
@@ -309,11 +308,10 @@ fn test_import_from_backend_preserves_disabled_features() {
     assert!(config.imported_from_file);
 
     // All features that were None in backend must be disabled
-    assert!(!config.target_tilt.enabled);
+    assert!(!config.target_response.enabled);
     assert!(!config.excursion_protection.enabled);
     assert!(!config.schroeder_split.enabled);
-    assert!(!config.broadband_target_matching.enabled);
-    assert!(!config.gd_opt.enabled);
+    assert!(!config.target_response.broadband_precorrection);
     assert!(!config.vog.enabled);
     assert!(!config.phase_alignment.enabled);
     assert!(!config.multi_seat.enabled);
@@ -345,7 +343,10 @@ fn test_import_then_smart_defaults_matches_backend() {
     let opt = &room_config.optimizer;
 
     // Features that were None in backend must remain None after smart defaults
-    assert!(opt.target_tilt.is_none(), "target_tilt should be None");
+    assert!(
+        opt.target_response.is_none(),
+        "target_response should be None"
+    );
     assert!(
         opt.excursion_protection.is_none(),
         "excursion_protection should be None"
@@ -353,10 +354,6 @@ fn test_import_then_smart_defaults_matches_backend() {
     assert!(
         opt.schroeder_split.is_none(),
         "schroeder_split should be None"
-    );
-    assert!(
-        opt.broadband_target_matching.is_none(),
-        "broadband_target_matching should be None"
     );
 
     // Core params must match
@@ -386,7 +383,10 @@ fn test_fresh_measurement_gets_smart_defaults() {
     let opt = &room_config.optimizer;
 
     // Smart defaults should enable features for fresh measurements
-    assert!(opt.target_tilt.is_some(), "target_tilt should be enabled");
+    assert!(
+        opt.target_response.is_some(),
+        "target_response should be enabled"
+    );
     assert!(
         opt.excursion_protection.is_some(),
         "excursion_protection should be enabled"
@@ -398,8 +398,10 @@ fn test_fresh_measurement_gets_smart_defaults() {
         "schroeder_split should be disabled for stereo without subwoofer"
     );
     assert!(
-        opt.broadband_target_matching.is_some(),
-        "broadband_target_matching should be enabled"
+        opt.target_response
+            .as_ref()
+            .is_some_and(|tr| tr.broadband_precorrection),
+        "broadband pre-correction should be enabled"
     );
 }
 
@@ -407,12 +409,18 @@ fn test_fresh_measurement_gets_smart_defaults() {
 #[test]
 fn test_import_with_features_enabled_preserves_them() {
     let mut backend = make_bare_backend_config();
-    backend.target_tilt = Some(autoeq::roomeq::TargetTiltConfig {
-        tilt_type: autoeq::roomeq::TiltType::Harman,
+    backend.target_response = Some(autoeq::roomeq::TargetResponseConfig {
+        shape: autoeq::roomeq::TargetShape::Harman,
         slope_db_per_octave: -1.0,
         reference_freq: 1000.0,
-        bass_shelf_db: 2.0,
-        bass_shelf_freq: 200.0,
+        curve_path: None,
+        preference: autoeq::roomeq::UserPreference {
+            bass_shelf_db: 2.0,
+            bass_shelf_freq: 200.0,
+            treble_shelf_db: 0.0,
+            treble_shelf_freq: 8000.0,
+        },
+        broadband_precorrection: false,
     });
     backend.schroeder_split = Some(autoeq::roomeq::SchroederSplitConfig {
         enabled: true,
@@ -440,13 +448,13 @@ fn test_import_with_features_enabled_preserves_them() {
     let room_config = state.to_room_config();
     let opt = &room_config.optimizer;
 
-    // target_tilt was enabled in backend
+    // target_response was enabled in backend
     let tilt = opt
-        .target_tilt
+        .target_response
         .as_ref()
-        .expect("target_tilt should be Some");
+        .expect("target_response should be Some");
     assert_eq!(tilt.slope_db_per_octave, -1.0);
-    assert_eq!(tilt.bass_shelf_db, 2.0);
+    assert_eq!(tilt.preference.bass_shelf_db, 2.0);
 
     // schroeder_split was enabled in backend
     let ss = opt
@@ -462,19 +470,25 @@ fn test_import_with_features_enabled_preserves_them() {
     assert!(opt.excursion_protection.is_none());
 }
 
-/// Regression: broadband_target_matching has an inner `enabled` field.
-/// If backend has `Some(BroadbandTargetMatchingConfig { enabled: false })`,
+/// Regression: broadband pre-correction now lives inside `target_response`.
+/// When backend has `target_response.broadband_precorrection = false`,
 /// the GPUI must treat it as disabled.
 #[test]
 fn test_import_broadband_with_enabled_false() {
     let mut backend = make_bare_backend_config();
-    backend.broadband_target_matching =
-        Some(autoeq::roomeq::BroadbandTargetMatchingConfig { enabled: false });
+    backend.target_response = Some(autoeq::roomeq::TargetResponseConfig {
+        shape: autoeq::roomeq::TargetShape::Flat,
+        slope_db_per_octave: 0.0,
+        reference_freq: 1000.0,
+        curve_path: None,
+        preference: autoeq::roomeq::UserPreference::default(),
+        broadband_precorrection: false,
+    });
 
     let mut config = RoomEqOptimizerConfig::default();
     config.import_from_backend(&backend);
 
-    assert!(!config.broadband_target_matching.enabled);
+    assert!(!config.target_response.broadband_precorrection);
 }
 
 // ============================================================================

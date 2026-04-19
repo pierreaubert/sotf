@@ -19,8 +19,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use autoeq::loss::regression_slope_per_octave_in_range;
 use autoeq::roomeq::{
-    BroadbandTargetMatchingConfig, CallbackAction, ExcursionProtectionConfig, RoomConfig,
-    RoomOptimizationResult, SchroederSplitConfig, TargetTiltConfig, TiltType, load_config,
+    CallbackAction, ExcursionProtectionConfig, RoomConfig, RoomOptimizationResult,
+    SchroederSplitConfig, TargetResponseConfig, TargetShape, load_config,
 };
 
 // ---------------------------------------------------------------------------
@@ -85,8 +85,11 @@ fn feature_steps() -> Vec<FeatureStep> {
             name: "+ broadband",
             changes_loss: true,
             apply: |c| {
-                c.optimizer.broadband_target_matching =
-                    Some(BroadbandTargetMatchingConfig { enabled: true });
+                let tr = c
+                    .optimizer
+                    .target_response
+                    .get_or_insert_with(TargetResponseConfig::default);
+                tr.broadband_precorrection = true;
             },
         },
         FeatureStep {
@@ -124,10 +127,9 @@ fn make_baseline(config: &RoomConfig, with_tilt: bool) -> RoomConfig {
     // Disable all features
     c.optimizer.psychoacoustic = false;
     c.optimizer.asymmetric_loss = false;
-    c.optimizer.broadband_target_matching = None;
+    c.optimizer.target_response = None;
     c.optimizer.excursion_protection = None;
     c.optimizer.schroeder_split = None;
-    c.optimizer.target_tilt = None;
 
     // QA optimizer overrides
     c.optimizer.algorithm = "autoeq:de".to_string();
@@ -138,10 +140,10 @@ fn make_baseline(config: &RoomConfig, with_tilt: bool) -> RoomConfig {
     c.optimizer.num_filters = QA_NUM_FILTERS;
 
     if with_tilt {
-        c.optimizer.target_tilt = Some(TargetTiltConfig {
-            tilt_type: TiltType::Custom,
+        c.optimizer.target_response = Some(TargetResponseConfig {
+            shape: TargetShape::Custom,
             slope_db_per_octave: -0.8,
-            ..TargetTiltConfig::default()
+            ..TargetResponseConfig::default()
         });
     }
 

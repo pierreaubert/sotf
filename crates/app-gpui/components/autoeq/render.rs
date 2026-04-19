@@ -174,8 +174,6 @@ impl RenderOnce for AutoEqForm {
         let on_allow_delay_change_rc = self.on_allow_delay_change.map(std::rc::Rc::new);
         let on_seed_enabled_change_rc = self.on_seed_enabled_change.map(std::rc::Rc::new);
         let on_seed_change_rc = self.on_seed_change.map(std::rc::Rc::new);
-        let on_gd_opt_enabled_change_rc = self.on_gd_opt_enabled_change.map(std::rc::Rc::new);
-        let on_gd_opt_target_ms_change_rc = self.on_gd_opt_target_ms_change.map(std::rc::Rc::new);
         let on_vog_enabled_change_rc = self.on_vog_enabled_change.map(std::rc::Rc::new);
         let on_vog_reference_channel_change_rc =
             self.on_vog_reference_channel_change.map(std::rc::Rc::new);

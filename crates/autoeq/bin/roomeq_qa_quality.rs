@@ -27,10 +27,10 @@ use autoeq::loss::phase_aware::{compute_group_delay, unwrap_phase_degrees};
 use autoeq::loss::{calculate_standard_deviation_in_range, regression_slope_per_octave_in_range};
 use autoeq::roomeq::{
     CallbackAction, DecomposedCorrectionSerdeConfig, ExcursionProtectionConfig,
-    GroupDelayOptimizationConfig, MixedPhaseSerdeConfig, MultiMeasurementConfig,
-    MultiMeasurementStrategy, PhaseAlignmentConfig, PreRingingSerdeConfig, ProcessingMode,
-    RoomConfig, RoomOptimizationResult, SchroederSplitConfig, SpatialRobustnessSerdeConfig,
-    TargetTiltConfig, TiltType, VoiceOfGodConfig, load_config, merge_json_objects, optimize_room,
+    MixedPhaseSerdeConfig, MultiMeasurementConfig, MultiMeasurementStrategy, PhaseAlignmentConfig,
+    PreRingingSerdeConfig, ProcessingMode, RoomConfig, RoomOptimizationResult,
+    SchroederSplitConfig, SpatialRobustnessSerdeConfig, TargetResponseConfig, TargetShape,
+    VoiceOfGodConfig, load_config, merge_json_objects, optimize_room,
 };
 use autoeq::{MeasurementMultiple, MeasurementRef, MeasurementSource};
 
@@ -413,7 +413,6 @@ enum OptionOverride {
     PhaseAlignment,
     MultiMeasurementMinimax,
     MultiMeasurementVariancePenalized,
-    GroupDelayOpt,
     VoiceOfGod {
         reference_channel: String,
     },
@@ -443,7 +442,6 @@ impl std::fmt::Display for OptionOverride {
             OptionOverride::MultiMeasurementVariancePenalized => {
                 write!(f, "multi_measurement_variance")
             }
-            OptionOverride::GroupDelayOpt => write!(f, "group_delay_opt"),
             OptionOverride::VoiceOfGod { reference_channel } => {
                 write!(f, "voice_of_god(ref={})", reference_channel)
             }
@@ -527,12 +525,6 @@ fn apply_option_override(config: &mut RoomConfig, option: &OptionOverride) {
                 ..Default::default()
             });
         }
-        OptionOverride::GroupDelayOpt => {
-            config.optimizer.gd_opt = Some(GroupDelayOptimizationConfig {
-                enabled: true,
-                target_ms: 0.0,
-            });
-        }
         OptionOverride::VoiceOfGod { reference_channel } => {
             config.optimizer.vog = Some(VoiceOfGodConfig {
                 enabled: true,
@@ -601,7 +593,6 @@ fn disable_option(config: &mut RoomConfig, option: &OptionOverride) {
     match option {
         OptionOverride::TargetTilt { .. } => {
             config.optimizer.target_response = None;
-            config.optimizer.target_tilt = None;
         }
         OptionOverride::ExcursionProtection => {
             config.optimizer.excursion_protection = None;
@@ -619,7 +610,6 @@ fn disable_option(config: &mut RoomConfig, option: &OptionOverride) {
             if let Some(ref mut tr) = config.optimizer.target_response {
                 tr.broadband_precorrection = false;
             }
-            config.optimizer.broadband_target_matching = None;
         }
         OptionOverride::PhaseAlignment => {
             config.optimizer.phase_alignment = None;
@@ -631,9 +621,6 @@ fn disable_option(config: &mut RoomConfig, option: &OptionOverride) {
                 strategy: MultiMeasurementStrategy::Average,
                 ..Default::default()
             });
-        }
-        OptionOverride::GroupDelayOpt => {
-            config.optimizer.gd_opt = None;
         }
         OptionOverride::VoiceOfGod { .. } => {
             config.optimizer.vog = None;
@@ -848,12 +835,6 @@ fn all_test_cases() -> Vec<TestCase> {
             fem_subdir: "medium_surround_5_1",
             optim_subdir: "medium_surround_5_1",
             options: vec![OptionOverride::PhaseAlignment],
-        },
-        TestCase::OptionEffect {
-            name: "OE group_delay_opt",
-            fem_subdir: "small_stereo_2_1",
-            optim_subdir: "small_stereo_2_1",
-            options: vec![OptionOverride::GroupDelayOpt],
         },
         TestCase::OptionEffect {
             name: "OE voice_of_god",
@@ -1621,11 +1602,11 @@ fn run_option_effect_test(
     let has_tilt = options
         .iter()
         .any(|o| matches!(o, OptionOverride::TargetTilt { .. }));
-    let default_tilt = if has_broadband && !has_tilt {
-        Some(TargetTiltConfig {
-            tilt_type: TiltType::Custom,
+    let default_target_response = if has_broadband && !has_tilt {
+        Some(TargetResponseConfig {
+            shape: TargetShape::Custom,
             slope_db_per_octave: -0.8,
-            ..TargetTiltConfig::default()
+            ..TargetResponseConfig::default()
         })
     } else {
         None
@@ -1637,8 +1618,8 @@ fn run_option_effect_test(
     for option in options {
         disable_option(&mut baseline_config, option);
     }
-    if let Some(ref tilt) = default_tilt {
-        baseline_config.optimizer.target_tilt = Some(tilt.clone());
+    if let Some(ref tr) = default_target_response {
+        baseline_config.optimizer.target_response = Some(tr.clone());
     }
     if needs_multi_measurement {
         enable_multi_measurement_paths(&mut baseline_config, fem_dir, fem_subdir);
@@ -1660,8 +1641,8 @@ fn run_option_effect_test(
     for option in options {
         apply_option_override(&mut option_config, option);
     }
-    if let Some(ref tilt) = default_tilt {
-        option_config.optimizer.target_tilt = Some(tilt.clone());
+    if let Some(ref tr) = default_target_response {
+        option_config.optimizer.target_response = Some(tr.clone());
     }
     if needs_multi_measurement {
         enable_multi_measurement_paths(&mut option_config, fem_dir, fem_subdir);
@@ -1807,56 +1788,6 @@ fn validate_option_effect(
         }
         OptionOverride::MultiMeasurementVariancePenalized => {
             validate_multi_measurement_variance(baseline_result, option_result, num_options)
-        }
-        OptionOverride::GroupDelayOpt => {
-            // GD-Opt: check that AllPass plugins appear in at least one channel's DSP chain
-            // and combined score is not significantly worse than baseline
-            let has_allpass = option_result.channels.values().any(|ch| {
-                ch.plugins.iter().any(|p| {
-                    p.plugin_type == "eq"
-                        && p.parameters
-                            .get("filters")
-                            .and_then(|f| f.as_array())
-                            .map(|filters| {
-                                filters.iter().any(|f| {
-                                    f.get("filter_type")
-                                        .and_then(|ft| ft.as_str())
-                                        .is_some_and(|ft| ft == "allpass")
-                                })
-                            })
-                            .unwrap_or(false)
-                })
-            });
-
-            let score_ok = option_result.combined_post_score
-                <= OPTION_SCORE_TOLERANCE * baseline_result.combined_post_score;
-
-            if !score_ok {
-                (
-                    false,
-                    format!(
-                        "GD-Opt score {:.3} > {:.1}x baseline {:.3}",
-                        option_result.combined_post_score,
-                        OPTION_SCORE_TOLERANCE,
-                        baseline_result.combined_post_score,
-                    ),
-                )
-            } else if !has_allpass {
-                // Not having allpass filters is acceptable (e.g., no sub-main pairings)
-                (
-                    true,
-                    "GD-Opt active but no AllPass filters generated (no sub-main pairing)"
-                        .to_string(),
-                )
-            } else {
-                (
-                    true,
-                    format!(
-                        "GD-Opt OK: AllPass filters present, score {:.3} vs baseline {:.3}",
-                        option_result.combined_post_score, baseline_result.combined_post_score,
-                    ),
-                )
-            }
         }
         OptionOverride::VoiceOfGod { .. } => {
             // VoG: combined score should not be significantly worse than baseline

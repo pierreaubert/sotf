@@ -284,16 +284,16 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     "Multi-Speaker",
                     c.multi_speaker_mode.as_str().to_string(),
                 ),
-                (None, "── Target Tilt ──", String::new()),
+                (None, "── Target Response ──", String::new()),
                 (
                     Some(17),
-                    "Target Tilt",
-                    bool_str(c.target_tilt.enabled).to_string(),
+                    "Target Response",
+                    bool_str(c.target_response.enabled).to_string(),
                 ),
                 (
                     Some(18),
                     "Slope (dB/oct)",
-                    format!("{:.1}", c.target_tilt.slope),
+                    format!("{:.1}", c.target_response.slope_db_per_octave),
                 ),
                 (None, "── Excursion ──", String::new()),
                 (

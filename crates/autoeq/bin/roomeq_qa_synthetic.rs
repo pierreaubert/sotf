@@ -22,9 +22,9 @@ use autoeq::roomeq::synthetic::{
     generate_speaker_rolloff_curve, generate_subwoofer_rolloff_curve,
 };
 use autoeq::roomeq::{
-    BroadbandTargetMatchingConfig, CallbackAction, DecomposedCorrectionSerdeConfig,
-    ExcursionProtectionConfig, MultiMeasurementConfig, MultiMeasurementStrategy, MultiSubGroup,
-    ProcessingMode, RoomConfig, SchroederSplitConfig, SpatialRobustnessSerdeConfig, optimize_room,
+    CallbackAction, DecomposedCorrectionSerdeConfig, ExcursionProtectionConfig,
+    MultiMeasurementConfig, MultiMeasurementStrategy, MultiSubGroup, ProcessingMode, RoomConfig,
+    SchroederSplitConfig, SpatialRobustnessSerdeConfig, TargetResponseConfig, optimize_room,
 };
 use autoeq::roomeq::{
     CardioidConfig, DBAConfig, SubwooferStrategy, SubwooferSystemConfig, SystemConfig, SystemModel,
@@ -300,8 +300,11 @@ fn option_asymmetric(config: &mut RoomConfig) {
     config.optimizer.asymmetric_loss = true;
 }
 fn option_broadband(config: &mut RoomConfig) {
-    config.optimizer.broadband_target_matching =
-        Some(BroadbandTargetMatchingConfig { enabled: true });
+    let tr = config
+        .optimizer
+        .target_response
+        .get_or_insert_with(TargetResponseConfig::default);
+    tr.broadband_precorrection = true;
 }
 fn option_excursion(config: &mut RoomConfig) {
     config.optimizer.excursion_protection = Some(ExcursionProtectionConfig {

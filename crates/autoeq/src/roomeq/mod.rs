@@ -61,7 +61,6 @@ mod crossover;
 mod dba;
 mod eq;
 mod fir;
-mod group_delay;
 pub mod multisub;
 pub mod workflows; // Make public to access from optimize.rs or tests
 
@@ -150,7 +149,4 @@ pub use multiseat::{MultiSeatMeasurements, MultiSeatOptimizationResult, optimize
 pub use phase_alignment::{
     PhaseAlignmentResult, optimize_phase_alignment, optimize_phase_alignment_batch,
 };
-pub use target_tilt::{
-    build_harman_target_curve, build_harman_target_curve_with_bass_boost,
-    build_target_curve_with_tilt,
-};
+pub use target_tilt::build_complete_target_curve;

@@ -64,9 +64,6 @@ pub fn load_config(
     let mut room_config: RoomConfig = serde_json::from_value(config_value)
         .with_context(|| "Failed to deserialize merged config into RoomConfig")?;
 
-    // Migrate legacy target_tilt + broadband_target_matching → target_response
-    room_config.optimizer.migrate_target_config();
-
     room_config.resolve_paths(&config_dir);
 
     Ok((room_config, config_dir))

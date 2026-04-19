@@ -446,7 +446,6 @@ Controls the optimization algorithm, constraints, and advanced features.
 | `phase_alignment` | object | - | Phase alignment for subwoofer integration |
 | `multi_seat` | object | - | Multi-seat variance optimization |
 | `broadband_target_matching` | object | - | Preliminary broadband shelf alignment |
-| `gd_opt` | object | - | Group Delay Optimization |
 | `vog` | object | - | Voice of God (timbre matching) |
 | `multi_measurement` | object | - | Multi-measurement optimization strategy |
 | `decomposed_correction` | object | - | Decomposed correction |
@@ -928,28 +927,6 @@ This ensures the overall tonal balance is correct even when the main optimizer f
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `enabled` | boolean | `true` | Enable broadband target matching |
-
----
-
-## Group Delay Optimization
-
-Optimizes crossover group delay alignment between drivers.
-
-```json
-{
-  "optimizer": {
-    "gd_opt": {
-      "enabled": true,
-      "target_ms": 0.0
-    }
-  }
-}
-```
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `enabled` | boolean | `false` | Enable Group Delay Optimization |
-| `target_ms` | number | `0.0` | Target group delay at crossover (ms). 0.0 = perfect alignment. |
 
 ---
 

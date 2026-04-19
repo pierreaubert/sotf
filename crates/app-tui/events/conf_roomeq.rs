@@ -419,7 +419,7 @@ fn room_eq_field_value_string(app: &App, field: usize) -> String {
         6 => format!("{:.1}", c.max_q),
         9 => c.max_iter.to_string(),
         10 => c.population.to_string(),
-        18 => format!("{:.1}", c.target_tilt.slope),
+        18 => format!("{:.1}", c.target_response.slope_db_per_octave),
         20 => format!("{:.0}", c.excursion_protection.manual_f3_hz),
         22 => format!("{:.0}", c.schroeder_split.schroeder_freq),
         _ => String::new(),
@@ -477,7 +477,7 @@ fn set_room_eq_field_from_string(app: &mut App) {
         }
         18 => {
             if let Ok(v) = buf.parse::<f64>() {
-                c.target_tilt.slope = v.clamp(-3.0, 0.0);
+                c.target_response.slope_db_per_octave = v.clamp(-3.0, 0.0);
             }
         }
         20 => {
@@ -560,9 +560,12 @@ fn adjust_room_eq_field(app: &mut App, delta: i32) {
             };
             c.multi_speaker_mode = modes[new_idx];
         }
-        // Target Tilt
-        17 => c.target_tilt.enabled = !c.target_tilt.enabled,
-        18 => c.target_tilt.slope = (c.target_tilt.slope + delta as f64 * 0.1).clamp(-3.0, 0.0),
+        // Target Response
+        17 => c.target_response.enabled = !c.target_response.enabled,
+        18 => {
+            c.target_response.slope_db_per_octave =
+                (c.target_response.slope_db_per_octave + delta as f64 * 0.1).clamp(-3.0, 0.0)
+        }
         // Excursion Protection
         19 => c.excursion_protection.enabled = !c.excursion_protection.enabled,
         20 => {
@@ -798,15 +801,15 @@ fn spawn_room_eq_optimization(app: &mut App) {
     std::thread::spawn(move || {
         use autoeq::MeasurementSource;
         use autoeq::roomeq::{
-            BroadbandTargetMatchingConfig as BackendBroadbandTargetMatchingConfig, CallbackAction,
-            ExcursionProtectionConfig as BackendExcursionProtectionConfig,
-            FirConfig as BackendFirConfig, GroupDelayOptimizationConfig, HighFreqFilterConfig,
-            HighpassType, LowFreqFilterConfig, MixedPhaseSerdeConfig as BackendMixedPhaseConfig,
+            CallbackAction, ExcursionProtectionConfig as BackendExcursionProtectionConfig,
+            FirConfig as BackendFirConfig, HighFreqFilterConfig, HighpassType,
+            LowFreqFilterConfig, MixedPhaseSerdeConfig as BackendMixedPhaseConfig,
             MultiSeatConfig as BackendMultiSeatConfig, MultiSeatStrategy, OptimizerConfig,
             PhaseAlignmentConfig as BackendPhaseAlignmentConfig,
             PreRingingSerdeConfig as BackendPreRingingConfig, ProcessingMode, RoomConfig,
             SchroederSplitConfig as BackendSchroederSplitConfig, SpeakerConfig,
-            TargetTiltConfig as BackendTargetTiltConfig, TiltType, VoiceOfGodConfig,
+            TargetResponseConfig as BackendTargetResponseConfig, TargetShape,
+            UserPreference as BackendUserPreference, VoiceOfGodConfig,
         };
         use sotf_audio_player::autoeq::{
             run_room_optimization, run_room_optimization_with_probe_arrivals,
@@ -862,7 +865,6 @@ fn spawn_room_eq_optimization(app: &mut App) {
                 max_iter: config.max_iter,
                 population: config.population,
                 peq_model: config.peq_model.clone(),
-                mode: config.mode.to_code().to_string(),
                 processing_mode,
                 fir: Some(BackendFirConfig {
                     taps: config.fir.taps,
@@ -903,23 +905,6 @@ fn spawn_room_eq_optimization(app: &mut App) {
                 tolerance: config.tolerance,
                 atolerance: config.atolerance,
                 allow_delay: Some(config.allow_delay),
-                target_tilt: if config.target_tilt.enabled {
-                    let tilt_type = match config.target_tilt.tilt_type.as_str() {
-                        "harman" => TiltType::Harman,
-                        "custom" => TiltType::Custom,
-                        "from_measurement" => TiltType::FromMeasurement,
-                        _ => TiltType::Custom,
-                    };
-                    Some(BackendTargetTiltConfig {
-                        tilt_type,
-                        slope_db_per_octave: config.target_tilt.slope,
-                        reference_freq: config.target_tilt.reference_freq,
-                        bass_shelf_db: config.target_tilt.bass_shelf_db,
-                        bass_shelf_freq: config.target_tilt.bass_shelf_freq,
-                    })
-                } else {
-                    None
-                },
                 excursion_protection: if config.excursion_protection.enabled {
                     let filter_type = if config.excursion_protection.filter_type == "bw" {
                         HighpassType::Butterworth
@@ -982,14 +967,6 @@ fn spawn_room_eq_optimization(app: &mut App) {
                 } else {
                     None
                 },
-                gd_opt: if config.gd_opt.enabled {
-                    Some(GroupDelayOptimizationConfig {
-                        enabled: true,
-                        target_ms: config.gd_opt.target_ms,
-                    })
-                } else {
-                    None
-                },
                 vog: if config.vog.enabled {
                     Some(VoiceOfGodConfig {
                         enabled: true,
@@ -998,16 +975,36 @@ fn spawn_room_eq_optimization(app: &mut App) {
                 } else {
                     None
                 },
-                broadband_target_matching: if config.broadband_target_matching.enabled {
-                    Some(BackendBroadbandTargetMatchingConfig { enabled: true })
-                } else {
-                    None
-                },
                 multi_measurement: None,
                 smooth_n: config.smooth_n,
                 decomposed_correction: None,
                 strategy: "lshade".to_string(),
-                target_response: None,
+                target_response: if config.target_response.enabled {
+                    let tr = &config.target_response;
+                    let shape = match tr.shape.as_str() {
+                        "flat" => TargetShape::Flat,
+                        "harman" => TargetShape::Harman,
+                        "custom" => TargetShape::Custom,
+                        "file" => TargetShape::File,
+                        "from_measurement" => TargetShape::FromMeasurement,
+                        _ => TargetShape::Custom,
+                    };
+                    Some(BackendTargetResponseConfig {
+                        shape,
+                        slope_db_per_octave: tr.slope_db_per_octave,
+                        reference_freq: tr.reference_freq,
+                        curve_path: tr.curve_path.clone(),
+                        preference: BackendUserPreference {
+                            bass_shelf_db: tr.bass_shelf_db,
+                            bass_shelf_freq: tr.bass_shelf_freq,
+                            treble_shelf_db: tr.treble_shelf_db,
+                            treble_shelf_freq: tr.treble_shelf_freq,
+                        },
+                        broadband_precorrection: tr.broadband_precorrection,
+                    })
+                } else {
+                    None
+                },
                 cea2034_correction: None,
                 sub_config: if config.sub_config.enabled {
                     Some(autoeq::roomeq::SubOptimizerConfig {

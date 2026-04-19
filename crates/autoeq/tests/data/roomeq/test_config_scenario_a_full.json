@@ -20,9 +20,11 @@
     "refine": true,
     "psychoacoustic": true,
     "asymmetric_loss": true,
-    "target_tilt": {
-      "tilt_type": "harman",
-      "bass_shelf_db": 2
+    "target_response": {
+      "shape": "harman",
+      "preference": {
+        "bass_shelf_db": 2
+      }
     },
     "phase_alignment": {
       "enabled": true,
