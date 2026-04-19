@@ -17,28 +17,236 @@ use std::f64::consts::PI;
 ///
 /// where H{} is the Hilbert transform.
 ///
+/// # GD-1d.1 fix: log-aware resampling
+///
+/// An FFT-based Hilbert transform assumes its input is a real-valued
+/// spectrum uniformly sampled in **linear frequency** from DC to
+/// Nyquist. The input here (`freq`, `spl`) is typically:
+/// - log-spaced over 20 Hz – 20 kHz (spinorama API, most measurement
+///   CSVs), or
+/// - linspace over 20 Hz – 20 kHz (starts far from DC).
+///
+/// Running the Hilbert directly on such an `spl` sequence treats
+/// adjacent samples as linearly-spaced FFT bins, which silently
+/// aliases log-spacing and moves "DC" to `freq[0]`. Empirically this
+/// gave ~80° residual error for a 1st-order lowpass on real
+/// measurements (see `docs/gd_opt_v2_plan.md` §2.10 row **GD-1d.1**
+/// for the preceding analysis).
+///
+/// This implementation:
+/// 1. Resamples `ln|H|` onto a DC-anchored uniform linear grid
+///    `[0, f_max]` of `n_linear` samples, with flat extrapolation
+///    below `freq[0]`.
+/// 2. Applies the existing `hilbert_transform` on that grid.
+/// 3. Linearly interpolates the resulting phase back onto the
+///    caller-supplied `freq` grid.
+///
 /// # Arguments
-/// * `freq` - Frequency points in Hz
-/// * `spl` - SPL values in dB
+/// * `freq` - Frequency points in Hz, monotonically increasing,
+///            strictly positive.
+/// * `spl`  - SPL values in dB at those frequencies.
 ///
 /// # Returns
-/// * Phase values in degrees corresponding to minimum phase response
-pub fn reconstruct_minimum_phase(_freq: &Array1<f64>, spl: &Array1<f64>) -> Array1<f64> {
-    let _n = spl.len();
+/// Phase values in degrees corresponding to the minimum-phase
+/// response at each input frequency. Sign: minimum phase is
+/// **negative** for lowpass-like responses (consistent with the
+/// `-arctan(ω/ω₀)` convention).
+pub fn reconstruct_minimum_phase(freq: &Array1<f64>, spl: &Array1<f64>) -> Array1<f64> {
+    let n = spl.len();
+    if n == 0 {
+        return Array1::from_vec(Vec::new());
+    }
+    if n == 1 || freq.len() != n {
+        // Can't resample a single point; bail with zeros.
+        return Array1::from_vec(vec![0.0; n]);
+    }
 
-    // Convert dB to natural log of magnitude
-    // SPL = 20 * log10(|H|)
-    // ln(|H|) = SPL / 20 * ln(10)
-    let ln_mag: Vec<f64> = spl.iter().map(|&s| s / 20.0 * 10.0_f64.ln()).collect();
+    // Convert dB to natural log of magnitude.
+    // SPL = 20·log₁₀|H|  ⇒  ln|H| = SPL · ln(10) / 20
+    let ln10 = 10.0_f64.ln();
+    let ln_mag_input: Vec<f64> = spl.iter().map(|&s| s * ln10 / 20.0).collect();
 
-    // Compute Hilbert transform of ln|H|
-    // This gives us the minimum phase
-    let phase_rad = hilbert_transform(&ln_mag);
+    let f_max = freq[n - 1];
+    if !(f_max.is_finite() && f_max > 0.0) {
+        return Array1::from_vec(vec![0.0; n]);
+    }
 
-    // Convert to degrees
-    let phase_deg: Vec<f64> = phase_rad.iter().map(|&p| -p.to_degrees()).collect();
+    // Build the linear grid. Extending past `f_max` pushes Hilbert edge
+    // artefacts out of the physical range we care about — measured ~30°
+    // residual at the top bin with an f_max-only grid drops to <1° when
+    // the grid extends to 4·f_max with a smooth log-linear extrapolation
+    // of ln|H| (below).
+    //
+    // Linear-grid sizing.
+    //
+    // Two knobs:
+    //   n_linear    — total bin count, rounded up to a power of two
+    //                 for FFT efficiency.
+    //   f_grid_max  — top of the linear grid; must exceed f_max so
+    //                 that Hilbert edge artefacts fall past the
+    //                 physical range we return.
+    //
+    // Empirical tuning on a log-spaced 256-point 1st-order lowpass at
+    // fc = 1 kHz (see §2.10 row GD-1d.1 of `docs/gd_opt_v2_plan.md`):
+    //
+    //   n_linear ×  f_grid_max   mid80 mean  mid80 max  full max
+    //       4096 ×  1·f_max          110°       230°        500°  (pre-fix)
+    //       4096 ×  1·f_max           6°         35°         87°  (even-extend only)
+    //      16384 ×  4·f_max         1.5°        8.6°       17.2°  (+log-linear tail)
+    //      65536 ×  8·f_max         0.76°       4.4°        8.7°
+    //     131072 × 16·f_max         0.39°       2.2°        4.4°
+    //
+    // Default: 131072 × 16·f_max → a ~2 MB extended-FFT buffer (even
+    // extension doubles the length). Cheap enough for load-time
+    // decomposition once per channel per recording.
+    //
+    // For very dense input curves (headphone sweeps with 10k+ points),
+    // `n_linear` is capped at 524288 to keep the peak buffer under
+    // ~8 MB. The physical-range residual stays well under a few
+    // degrees regardless.
+    let n_linear = (512 * n).next_power_of_two().clamp(131072, 524288);
+    let f_grid_max = 16.0 * f_max;
+    let df = f_grid_max / (n_linear as f64 - 1.0);
 
-    Array1::from_vec(phase_deg)
+    // Estimate the final-octave log-frequency slope of ln|H| so we can
+    // extrapolate smoothly past `f_max` rather than clamping to a step.
+    // The slope is computed in the (ln f, ln|H|) plane via ordinary
+    // least-squares on the last ~octave of input data. Holding this
+    // slope as ln|H|(f) = ln|H|(f_max) + slope · ln(f / f_max) gives a
+    // smooth tail that matches any order of analytic rolloff exactly in
+    // the asymptotic limit (−6 dB/oct for 1st-order lowpass, etc.).
+    let freq_slice = freq.as_slice().expect("freq must be contiguous");
+    let high_slope = final_octave_log_slope(freq_slice, &ln_mag_input);
+
+    // Interpolate ln|H| onto the linear grid:
+    //   f ≤ freq[0]:        flat extrapolation at ln_mag_input[0]
+    //   freq[0] < f ≤ f_max: piecewise linear interp over input
+    //   f > f_max:          log-linear extrapolation with `high_slope`
+    let linear_ln_mag: Vec<f64> = (0..n_linear)
+        .map(|k| {
+            let f = k as f64 * df;
+            if f <= freq[0] {
+                ln_mag_input[0]
+            } else if f <= f_max {
+                interp_linear_flat_edges(freq_slice, &ln_mag_input, f)
+            } else {
+                // Log-linear extrapolation: ln|H| = ln|H|(f_max) + slope·ln(f/f_max)
+                ln_mag_input[n - 1] + high_slope * (f / f_max).ln()
+            }
+        })
+        .collect();
+
+    // Even-extend the log-magnitude to remove the FFT seam.
+    //
+    // `hilbert_transform` computes an FFT-based Hilbert on a signal it
+    // implicitly treats as periodic. On a raw half-spectrum `[0, f_grid_max]`
+    // with large dynamic range, the periodic wrap introduces a large
+    // discontinuity at the seam that leaks several hundred degrees of
+    // error across the entire output. Mirroring the sequence across
+    // `f_grid_max` makes it continuous at the seam, so the Hilbert
+    // output is well-defined.
+    //
+    // We use the full-endpoint-duplication mirror so that the extended
+    // length is exactly `2 * n_linear`. Since `n_linear` is a power
+    // of two, `2 * n_linear` is also a power of two — there is no
+    // zero-padding inside `hilbert_transform`, and a constant input
+    // stays a constant on the extended grid. (Under the N+N-2 mirror
+    // the FFT zero-pads by 2 samples, which is enough discontinuity
+    // to produce ~6 units of ringing in the first bin on a constant
+    // input — see `probe_flat_failure` history in the GD-1d.1 notes.)
+    //
+    // We then take the Hilbert output over the first `n_linear` bins —
+    // these correspond to the physical positive frequencies — and
+    // discard the mirror half.
+    let mut extended = Vec::with_capacity(2 * n_linear);
+    extended.extend_from_slice(&linear_ln_mag);
+    for k in (0..n_linear).rev() {
+        extended.push(linear_ln_mag[k]);
+    }
+
+    let linear_hilbert_full = hilbert_transform(&extended);
+    let linear_hilbert = &linear_hilbert_full[..n_linear];
+
+    // Interpolate the Hilbert output back onto the caller's frequency
+    // grid. Input frequencies always lie within `[0, f_max] ⊂
+    // [0, f_grid_max]`, so interior interpolation applies.
+    let linear_freqs: Vec<f64> = (0..n_linear).map(|k| k as f64 * df).collect();
+    let phase_rad: Vec<f64> = freq
+        .iter()
+        .map(|&f| interp_linear_flat_edges(&linear_freqs, linear_hilbert, f))
+        .collect();
+
+    // Convert to degrees and apply the -H{ln|H|} sign.
+    Array1::from_vec(phase_rad.iter().map(|&p| -p.to_degrees()).collect())
+}
+
+/// Return the best-fit slope of `ln|H|` vs `ln f` over the last octave
+/// of the input data. Used for log-linear extrapolation past `f_max`.
+///
+/// Falls back to 0 (flat tail) when fewer than 4 samples fall inside
+/// the final octave.
+fn final_octave_log_slope(freq: &[f64], ln_mag: &[f64]) -> f64 {
+    let n = freq.len();
+    if n < 4 {
+        return 0.0;
+    }
+    let f_max = freq[n - 1];
+    let f_start = f_max * 0.5;
+    // Collect (ln f, ln_mag) pairs for samples in the last octave.
+    let mut xs: Vec<f64> = Vec::with_capacity(n);
+    let mut ys: Vec<f64> = Vec::with_capacity(n);
+    for (f, m) in freq.iter().zip(ln_mag.iter()) {
+        if *f >= f_start && *f <= f_max && f.is_finite() && *f > 0.0 {
+            xs.push(f.ln());
+            ys.push(*m);
+        }
+    }
+    if xs.len() < 4 {
+        return 0.0;
+    }
+    let k = xs.len() as f64;
+    let mean_x = xs.iter().sum::<f64>() / k;
+    let mean_y = ys.iter().sum::<f64>() / k;
+    let mut num = 0.0;
+    let mut den = 0.0;
+    for (x, y) in xs.iter().zip(ys.iter()) {
+        let dx = x - mean_x;
+        num += dx * (y - mean_y);
+        den += dx * dx;
+    }
+    if den.abs() < 1e-12 {
+        0.0
+    } else {
+        num / den
+    }
+}
+
+/// Linear interpolation with flat (clamp) extrapolation at both ends.
+///
+/// `xs` must be strictly increasing and the same length as `ys`.
+fn interp_linear_flat_edges(xs: &[f64], ys: &[f64], x: f64) -> f64 {
+    debug_assert_eq!(xs.len(), ys.len());
+    let n = xs.len();
+    if n == 0 {
+        return 0.0;
+    }
+    if x <= xs[0] {
+        return ys[0];
+    }
+    if x >= xs[n - 1] {
+        return ys[n - 1];
+    }
+    // Binary search: find i such that xs[i-1] < x <= xs[i].
+    let i = xs.partition_point(|&xi| xi < x);
+    // i is in [1, n-1] thanks to the edge guards above.
+    let x0 = xs[i - 1];
+    let x1 = xs[i];
+    let dx = x1 - x0;
+    if dx.abs() < f64::EPSILON {
+        return ys[i];
+    }
+    let t = (x - x0) / dx;
+    ys[i - 1] * (1.0 - t) + ys[i] * t
 }
 
 /// Compute the Hilbert transform of a signal using FFT.
@@ -270,20 +478,20 @@ mod tests {
 
     #[test]
     fn test_reconstruct_minimum_phase_flat() {
-        // Flat magnitude response should have zero phase
-        // Note: Due to FFT edge effects and the Hilbert transform implementation,
-        // we expect the mean phase to be close to zero, not necessarily the max
+        // Flat magnitude → minimum phase must be essentially zero.
+        // Post GD-1d.1 the log-aware reconstruction holds the
+        // Hilbert-of-a-constant at < 0.1° across the entire physical
+        // band.
         let freq = Array1::linspace(20.0, 20000.0, 100);
-        let spl = Array1::from_elem(100, 85.0); // Flat 85 dB
+        let spl = Array1::from_elem(100, 85.0);
 
         let phase = reconstruct_minimum_phase(&freq, &spl);
 
-        // Mean phase should be close to 0 for flat response (edge effects may cause larger values)
-        let mean_phase = phase.iter().sum::<f64>() / phase.len() as f64;
+        let max_abs = phase.iter().map(|&p| p.abs()).fold(0.0_f64, f64::max);
         assert!(
-            mean_phase.abs() < 100.0,
-            "Flat response mean phase should be near 0, got {}",
-            mean_phase
+            max_abs < 0.5,
+            "flat-magnitude max |phase| should be < 0.5°, got {:.4}°",
+            max_abs
         );
     }
 
@@ -313,39 +521,41 @@ mod tests {
 
     #[test]
     fn test_reconstruct_minimum_phase_lowpass() {
-        // 1st-order lowpass: magnitude rolls off at 6dB/octave above cutoff.
-        // Minimum phase for a lowpass should be non-zero and show a transition
-        // around the cutoff frequency. Due to FFT edge effects and the discrete
-        // Hilbert transform, we only check that the phase is non-trivial
-        // (not all zeros) and that the phase changes significantly across the spectrum.
+        // 1st-order lowpass on a LINEAR grid: check that the
+        // reconstructed phase matches the analytical -arctan(f/fc)
+        // within a tight tolerance. Linear-grid inputs are typical for
+        // REW-style exports; log-spaced inputs are covered by
+        // `reconstruct_minimum_phase_lowpass_log_spaced_accurate`.
         let n = 256;
         let freq = Array1::linspace(20.0, 20000.0, n);
-        let fc = 1000.0;
-        let spl: Array1<f64> = freq.map(|&f| {
-            let ratio: f64 = f / fc;
-            -10.0 * (1.0 + ratio.powi(2)).log10()
-        });
+        let fc = 1000.0_f64;
+        let spl: Array1<f64> = freq.map(|&f| -10.0 * (1.0 + (f / fc).powi(2)).log10());
 
         let phase = reconstruct_minimum_phase(&freq, &spl);
 
-        // Phase should be non-trivial (not all zeros for a lowpass rolloff)
-        let phase_range = phase.iter().cloned().fold(f64::NEG_INFINITY, f64::max)
-            - phase.iter().cloned().fold(f64::INFINITY, f64::min);
+        let expected: Vec<f64> = freq.iter().map(|&f| -(f / fc).atan().to_degrees()).collect();
+        let residuals: Vec<f64> = expected
+            .iter()
+            .zip(phase.iter())
+            .map(|(&e, &p)| (e - p).abs())
+            .collect();
+        let edge = n / 10;
+        let mid_max = residuals
+            .iter()
+            .skip(edge)
+            .take(n - 2 * edge)
+            .cloned()
+            .fold(0.0_f64, f64::max);
+        // Linear-grid inputs push samples much closer to `f_max` than
+        // log-grid inputs do, where the residual from the Hilbert's
+        // far-side wrap is larger. The log-grid case is the one that
+        // matters for GD-Opt (see
+        // `reconstruct_minimum_phase_lowpass_log_spaced_accurate`);
+        // linear-grid mid80 max is loosened to reflect that reality.
         assert!(
-            phase_range > 10.0,
-            "Phase should have significant variation for lowpass, got range {:.1}°",
-            phase_range
-        );
-
-        // The mid-band phase (around cutoff) should differ from both ends
-        let mid_idx = n / 2;
-        let mid_phase = phase[mid_idx];
-        let edge_avg = (phase[5] + phase[n - 5]) / 2.0;
-        assert!(
-            (mid_phase - edge_avg).abs() > 1.0,
-            "Phase near cutoff ({:.1}°) should differ from edge average ({:.1}°)",
-            mid_phase,
-            edge_avg
+            mid_max < 5.0,
+            "mid80 max residual on linear-grid lowpass should be < 5°, got {:.2}°",
+            mid_max
         );
     }
 
@@ -417,37 +627,37 @@ mod tests {
 
     #[test]
     fn test_reconstruct_minimum_phase_flat_128() {
-        // Flat magnitude → minimum phase should be near zero
+        // Flat magnitude → min phase is exactly zero in theory. Post
+        // GD-1d.1 the reconstruction holds under 0.5° for all bins.
         let n = 128;
         let freq = Array1::linspace(20.0, 20000.0, n);
         let spl = Array1::from_elem(n, 80.0);
 
         let phase = reconstruct_minimum_phase(&freq, &spl);
 
-        // All values should be finite
         assert!(
             phase.iter().all(|p| p.is_finite()),
             "all phase values should be finite"
         );
-        // Mean should be near zero (edge effects may push individual values higher)
-        let mean = phase.iter().sum::<f64>() / phase.len() as f64;
+        let max_abs = phase.iter().map(|&p| p.abs()).fold(0.0_f64, f64::max);
         assert!(
-            mean.abs() < 50.0,
-            "Flat response mean phase should be near 0, got {:.1}°",
-            mean
+            max_abs < 0.5,
+            "flat-magnitude max |phase| should be < 0.5°, got {:.4}°",
+            max_abs
         );
     }
 
     #[test]
     fn test_reconstruct_minimum_phase_lowpass_256() {
-        // 1st-order lowpass: minimum phase should have significant variation
+        // Pin the sign and approximate range of the reconstructed
+        // minimum phase against the analytical `-arctan(f/fc)`.
+        // Covers the linear-grid case; the log-grid case is in
+        // `reconstruct_minimum_phase_lowpass_log_spaced_accurate`.
         let n = 256;
         let freq = Array1::linspace(20.0, 20000.0, n);
         let fc: f64 = 1000.0;
-        let spl: Array1<f64> = freq.map(|&f| {
-            let ratio: f64 = f / fc;
-            -10.0 * (1.0 + ratio * ratio).log10()
-        });
+        let spl: Array1<f64> =
+            freq.map(|&f| -10.0 * (1.0 + (f / fc).powi(2)).log10());
 
         let phase = reconstruct_minimum_phase(&freq, &spl);
 
@@ -455,12 +665,13 @@ mod tests {
             phase.iter().all(|p| p.is_finite()),
             "all phase values should be finite"
         );
-        let range = phase.iter().cloned().fold(f64::NEG_INFINITY, f64::max)
-            - phase.iter().cloned().fold(f64::INFINITY, f64::min);
+        // Signs: phase should be negative (lowpass leads to negative
+        // min-phase under the `-arctan` convention).
+        let mid = phase[n / 2];
         assert!(
-            range > 5.0,
-            "phase should have significant variation for lowpass, got {:.1}°",
-            range
+            mid < -30.0,
+            "midband phase on 1st-order lowpass should be ~-45° (got {:.1}°)",
+            mid
         );
     }
 
@@ -488,5 +699,86 @@ mod tests {
         let phase = Array1::from_vec(vec![]);
         let unwrapped = unwrap_phase_degrees(&phase);
         assert!(unwrapped.is_empty());
+    }
+
+    // GD-1d.1: log-aware reconstruction should recover the analytical
+    // 1st-order lowpass minimum phase to within a few degrees across
+    // the full physical range, and under ~1° over the lower-mid band
+    // where typical optimisation problems live.
+    #[test]
+    fn reconstruct_minimum_phase_lowpass_log_spaced_accurate() {
+        use std::f64::consts::PI;
+        fn log_grid(n: usize, lo: f64, hi: f64) -> Array1<f64> {
+            Array1::from_vec(
+                (0..n)
+                    .map(|i| lo * (hi / lo).powf(i as f64 / (n - 1) as f64))
+                    .collect(),
+            )
+        }
+        let n = 256;
+        let freq = log_grid(n, 20.0, 20000.0);
+        let fc = 1000.0_f64;
+        let omega_c = 2.0 * PI * fc;
+        let spl = Array1::from_vec(
+            freq.iter()
+                .map(|&f| {
+                    let omega = 2.0 * PI * f;
+                    let mag = omega_c / (omega_c * omega_c + omega * omega).sqrt();
+                    20.0 * mag.log10()
+                })
+                .collect::<Vec<f64>>(),
+        );
+        let expected: Vec<f64> = freq
+            .iter()
+            .map(|&f| {
+                let omega = 2.0 * PI * f;
+                -((omega / omega_c).atan()).to_degrees()
+            })
+            .collect();
+
+        let recon = reconstruct_minimum_phase(&freq, &spl);
+        let residuals: Vec<f64> = expected
+            .iter()
+            .zip(recon.iter())
+            .map(|(&e, &r)| (e - r).abs())
+            .collect();
+
+        // Full-range max: pinned to the worst bin near f_max seen on
+        // this setup (~4.4°) with a small margin.
+        let full_max = residuals.iter().cloned().fold(0.0_f64, f64::max);
+        assert!(
+            full_max < 5.0,
+            "full-range max residual should be < 5°, got {:.2}°",
+            full_max
+        );
+
+        // Mid-80% (exclude outer 10% on each side) where GD-Opt
+        // actually operates — tighter tolerance applies here.
+        let edge = n / 10;
+        let mid_max = residuals
+            .iter()
+            .skip(edge)
+            .take(n - 2 * edge)
+            .cloned()
+            .fold(0.0_f64, f64::max);
+        assert!(
+            mid_max < 2.5,
+            "mid80 max residual should be < 2.5°, got {:.2}°",
+            mid_max
+        );
+
+        // Low-mid (up to ~600 Hz) must be sub-degree — this is where
+        // room modes live and the GD objective is most sensitive.
+        let low_mid_max = freq
+            .iter()
+            .zip(residuals.iter())
+            .filter(|&(f, _)| *f < 600.0)
+            .map(|(_, r)| *r)
+            .fold(0.0_f64, f64::max);
+        assert!(
+            low_mid_max < 1.0,
+            "residual below 600 Hz should be < 1°, got {:.3}°",
+            low_mid_max
+        );
     }
 }

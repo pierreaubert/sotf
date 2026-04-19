@@ -1125,17 +1125,17 @@ mod decompose_cache_tests {
     // Magnitude: |H| = ω₀ / √(ω₀²+ω²)   → magnitude_db = 20·log₁₀|H|
     // Analytical minimum phase: φ_min = −arctan(ω/ω₀) [degrees]
     //
-    // `reconstruct_minimum_phase` applies a Hilbert transform to SPL samples
-    // as an index-domain sequence. This is an approximation valid for slowly-
-    // varying responses on dense uniform grids; on log-spaced data it is
-    // approximate and the residual (excess) can be large. We only assert
-    // structural correctness: all three cache fields are Some and contain
-    // finite values of the correct length.
+    // Post GD-1d.1 the log-aware Hilbert reconstruction recovers the
+    // analytical minimum phase with mid80 max < 2.5° and low-mid
+    // (< 600 Hz) max < 1°. This test asserts those tolerances on the
+    // decomposition output — both that `min_phase` tracks the
+    // analytical target and that `excess_phase` (the residual) is
+    // small across the band.
     #[test]
-    fn minimum_phase_input_cache_fields_are_populated_and_finite() {
+    fn minimum_phase_input_is_recovered_accurately() {
         let n = 256;
         let freq = log_freq_grid(n, 20.0, 20000.0);
-        let fc = 1000.0; // cutoff Hz
+        let fc = 1000.0_f64;
         let omega_c = 2.0 * PI * fc;
 
         let spl: Vec<f64> = freq
@@ -1158,7 +1158,7 @@ mod decompose_cache_tests {
         let mut curve = Curve {
             freq: freq.clone(),
             spl: Array1::from_vec(spl),
-            phase: Some(Array1::from_vec(phase)),
+            phase: Some(Array1::from_vec(phase.clone())),
             ..Default::default()
         };
 
@@ -1170,13 +1170,47 @@ mod decompose_cache_tests {
 
         assert_eq!(min_ph.len(), n, "min_phase length must match freq length");
         assert_eq!(excess.len(), n, "excess_phase length must match freq length");
+        assert!(min_ph.iter().all(|v| v.is_finite()), "finite min_phase");
+        assert!(excess.iter().all(|v| v.is_finite()), "finite excess_phase");
+
+        // Residual vs analytical min phase.
+        let residuals: Vec<f64> = phase
+            .iter()
+            .zip(min_ph.iter())
+            .map(|(&exp, &got)| (exp - got).abs())
+            .collect();
+        let edge = n / 10;
+        let mid_max = residuals
+            .iter()
+            .skip(edge)
+            .take(n - 2 * edge)
+            .cloned()
+            .fold(0.0_f64, f64::max);
         assert!(
-            min_ph.iter().all(|v| v.is_finite()),
-            "all min_phase values must be finite"
+            mid_max < 2.5,
+            "mid80 max residual vs analytical min-phase should be < 2.5°, got {:.2}°",
+            mid_max
         );
+        let low_mid_max = freq
+            .iter()
+            .zip(residuals.iter())
+            .filter(|&(f, _)| *f < 600.0)
+            .map(|(_, r)| *r)
+            .fold(0.0_f64, f64::max);
         assert!(
-            excess.iter().all(|v| v.is_finite()),
-            "all excess_phase values must be finite"
+            low_mid_max < 1.0,
+            "low-mid (< 600 Hz) residual should be < 1°, got {:.3}°",
+            low_mid_max
+        );
+
+        // For a pure minimum-phase input the excess phase must be
+        // vanishingly small — everything the measurement carries is
+        // minimum-phase, so there's no "excess" to extract.
+        let max_abs_excess = excess.iter().map(|v| v.abs()).fold(0.0_f64, f64::max);
+        assert!(
+            max_abs_excess < 5.0,
+            "excess phase should be tiny for min-phase input, got max |excess| = {:.2}°",
+            max_abs_excess
         );
     }
 
@@ -1186,11 +1220,9 @@ mod decompose_cache_tests {
     // |H| = 1 (flat magnitude) → magnitude_db = 0 dB everywhere
     // Phase φ = π − 2·arctan(ω/ω₀) [degrees]
     //
-    // For flat magnitude the Hilbert of constant zero SPL gives zero min-phase
-    // (modulo edge artefacts).  We verify:
-    //   (a) min_phase is populated and finite
-    //   (b) the mean of |min_phase| across the inner 80 % of bins is < 5°
-    //   (c) excess ≈ measured phase in the midband
+    // For flat magnitude the Hilbert of constant log-magnitude is zero,
+    // so minimum phase is zero everywhere. Post GD-1d.1 this holds to
+    // < 0.5° across the whole grid.
     #[test]
     fn allpass_flat_magnitude_has_near_zero_min_phase() {
         let n = 256;
@@ -1225,21 +1257,20 @@ mod decompose_cache_tests {
             "all min_phase values must be finite"
         );
 
-        // (b) midband mean of |min_phase| < 5° (edge artefacts excluded)
-        let edge = n / 10;
-        let mean_abs_min: f64 = min_ph
-            .iter()
-            .skip(edge)
-            .take(n - 2 * edge)
-            .map(|v| v.abs())
-            .sum::<f64>()
-            / (n - 2 * edge) as f64;
-
+        // Full-range max — must be near zero for flat magnitude.
+        let max_abs_min = min_ph.iter().map(|v| v.abs()).fold(0.0_f64, f64::max);
         assert!(
-            mean_abs_min < 5.0,
-            "mean |min_phase| for flat-magnitude input should be < 5°, got {:.2}°",
-            mean_abs_min
+            max_abs_min < 0.5,
+            "max |min_phase| for flat-magnitude input should be < 0.5°, got {:.4}°",
+            max_abs_min
         );
+
+        // Unused: `phase` is the analytical all-pass phase; since
+        // min_phase ≈ 0, excess_phase ≈ the analytical all-pass
+        // phase. We cross-check this implicitly via the
+        // `excess_phase.is_some()` guard + the residual constraint on
+        // min_phase.
+        let _ = phase;
     }
 
     // Test 3 — pure delay: flat magnitude, linear phase −360·f·τ
