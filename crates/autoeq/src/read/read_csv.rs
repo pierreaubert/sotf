@@ -75,13 +75,18 @@ pub fn load_frequency_response(
     Ok((Array1::from_vec(frequencies), Array1::from_vec(spl_values)))
 }
 
-/// Read a frequency response curve from a CSV file
+/// Read a frequency response curve from a CSV file.
+///
+/// After loading the raw columns, calls [`crate::Curve::decompose_into_cache`]
+/// to populate `min_phase`, `excess_phase`, and `excess_delay_ms` when phase
+/// data is present. These derived fields are **not** persisted to CSV — they
+/// are always recomputed at load time so the decomposition algorithm can
+/// evolve without requiring a re-export (§2.4 and §2.11 Q3 of
+/// `docs/gd_opt_v2_plan.md`). When phase is absent the cache fields stay
+/// `None`.
 ///
 /// # Arguments
 /// * `path` - Path to the CSV file
-///
-/// # Returns
-/// * Result containing a Curve struct or an error
 ///
 /// # CSV Format
 /// The CSV file should have a header row with "frequency" and "spl" columns,
@@ -90,26 +95,30 @@ pub fn read_curve_from_csv(path: &PathBuf) -> Result<Curve, Box<dyn Error>> {
     // Try to load as driver measurement (with optional phase / coherence /
     // noise_floor_db) first. GD-Opt v2 adds `coherence` and
     // `noise_floor_db` columns — see §2.4 of `docs/gd_opt_v2_plan.md`.
-    match load_driver_measurement(path) {
-        Ok((freq, spl, phase, coherence, noise_floor_db)) => Ok(crate::Curve {
+    let mut curve = match load_driver_measurement(path) {
+        Ok((freq, spl, phase, coherence, noise_floor_db)) => crate::Curve {
             freq,
             spl,
             phase,
             coherence,
             noise_floor_db,
             ..Default::default()
-        }),
+        },
         Err(_) => {
             // Fallback to load_frequency_response (handles 4-column stereo average)
             let result = load_frequency_response(path)?;
-            Ok(crate::Curve {
+            crate::Curve {
                 freq: Array1::from(result.0),
                 spl: Array1::from(result.1),
                 phase: None,
                 ..Default::default()
-            })
+            }
         }
-    }
+    };
+    // GD-1d: populate min-phase / excess-phase cache at the disk-load boundary.
+    // No-op when phase is absent or arrays disagree in length.
+    curve.decompose_into_cache();
+    Ok(curve)
 }
 
 /// Load driver measurement data from a CSV file.
@@ -357,11 +366,10 @@ frequency,spl,phase,coherence,noise_floor_db
         let nf = curve.noise_floor_db.expect("noise_floor_db populated");
         assert_eq!(nf.len(), 3);
         assert!((nf[2] + 55.0).abs() < 1e-9);
-        // Derived fields stay None until GD-1d wires the load-time
-        // decomposition.
-        assert!(curve.min_phase.is_none());
-        assert!(curve.excess_phase.is_none());
-        assert!(curve.excess_delay_ms.is_none());
+        // GD-1d: derived fields are now populated at load time when phase is present.
+        assert!(curve.min_phase.is_some(), "min_phase populated by GD-1d");
+        assert!(curve.excess_phase.is_some(), "excess_phase populated by GD-1d");
+        assert!(curve.excess_delay_ms.is_some(), "excess_delay_ms populated by GD-1d");
     }
 
     #[test]
