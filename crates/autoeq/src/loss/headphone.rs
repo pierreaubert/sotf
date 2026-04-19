@@ -85,6 +85,7 @@ pub fn headphone_loss_with_target(
         freq: freqs.clone(),
         spl: &target_curve.spl - &input_curve.spl,
         phase: None,
+        ..Default::default()
     };
     let smooth_deviation = if data.smooth {
         read::smooth_one_over_n_octave(&deviation, data.smooth_n)
@@ -110,6 +111,7 @@ mod tests {
             freq: freq.clone(),
             spl: deviation,
             phase: None,
+            ..Default::default()
         };
         let score = headphone_loss(&curve);
 
@@ -134,6 +136,7 @@ mod tests {
             freq: freq.clone(),
             spl: deviation,
             phase: None,
+            ..Default::default()
         };
         let score = headphone_loss(&curve);
 
@@ -163,6 +166,7 @@ mod tests {
             freq: freq.clone(),
             spl: deviation,
             phase: None,
+            ..Default::default()
         };
         let score = headphone_loss(&curve);
 
@@ -188,11 +192,13 @@ mod tests {
             freq: freq.clone(),
             spl: response,
             phase: None,
+            ..Default::default()
         };
         let target_curve = Curve {
             freq: freq.clone(),
             spl: target,
             phase: None,
+            ..Default::default()
         };
         let data = HeadphoneLossData::new(false, 2);
         let score = headphone_loss_with_target(&data, &response_curve, &target_curve);
@@ -217,6 +223,7 @@ mod tests {
             freq: freq.clone(),
             spl: zero_deviation,
             phase: None,
+            ..Default::default()
         };
         let score = headphone_loss(&curve);
 
@@ -244,11 +251,13 @@ mod tests {
             freq: freq.clone(),
             spl: deviation_positive,
             phase: None,
+            ..Default::default()
         };
         let curve_neg = Curve {
             freq: freq.clone(),
             spl: deviation_negative,
             phase: None,
+            ..Default::default()
         };
 
         let score_pos = headphone_loss(&curve_pos);
@@ -274,11 +283,13 @@ mod tests {
             freq: freq.clone(),
             spl: zero_deviation,
             phase: None,
+            ..Default::default()
         };
         let imperfect_curve = Curve {
             freq: freq.clone(),
             spl: nonzero_deviation,
             phase: None,
+            ..Default::default()
         };
 
         let perfect_score = headphone_loss(&perfect_curve);

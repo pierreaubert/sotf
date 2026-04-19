@@ -137,6 +137,7 @@ mod tests {
             freq: Array1::from(freq),
             spl: Array1::from(spl),
             phase: None,
+            ..Default::default()
         }
     }
 

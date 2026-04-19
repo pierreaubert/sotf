@@ -194,6 +194,7 @@ mod tests {
             freq: Array1::from(freqs.to_vec()),
             spl: Array1::from(spl_values.to_vec()),
             phase: None,
+            ..Default::default()
         }
     }
 

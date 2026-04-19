@@ -453,6 +453,7 @@ mod tests {
             freq: freqs.clone(),
             spl,
             phase: None,
+            ..Default::default()
         };
 
         let target_curve = autoeq::workflow::build_target_curve(&args, &freqs, &curve)

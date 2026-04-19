@@ -141,6 +141,7 @@ pub fn optimize_dba(
         freq: drivers_data.freq_grid.clone(),
         spl: combined_response,
         phase: None,
+        ..Default::default()
     };
 
     Ok((
@@ -222,6 +223,7 @@ pub fn sum_array_response(
         freq: ref_freq,
         spl,
         phase: Some(phase),
+        ..Default::default()
     })
 }
 
@@ -251,6 +253,7 @@ mod tests {
             freq: freq.clone(),
             spl: spl.clone(),
             phase: Some(phase.clone()),
+            ..Default::default()
         };
 
         let inverted = invert_polarity(&curve);

@@ -504,6 +504,7 @@ fn optimize_from_curve(
         freq: target_curve.freq.clone(),
         spl: &target_curve.spl - &input_normalized.spl,
         phase: None,
+        ..Default::default()
     };
 
     // Setup objective data (no spin data for CSV/curve input)
@@ -1066,6 +1067,7 @@ mod tests {
             freq: ndarray::Array1::from_vec(vec![20.0, 100.0, 1000.0, 10000.0]),
             spl: ndarray::Array1::from_vec(vec![80.0, 85.0, 90.0, 85.0]),
             phase: None,
+            ..Default::default()
         };
         let input = MeasurementInput::Curve(curve);
         let result = load_measurement_as_driver(&input);
@@ -1081,6 +1083,7 @@ mod tests {
             freq: ndarray::Array1::from_vec(vec![20.0, 100.0, 1000.0]),
             spl: ndarray::Array1::from_vec(vec![80.0, 85.0, 90.0]),
             phase: Some(ndarray::Array1::from_vec(vec![0.0, 45.0, 90.0])),
+            ..Default::default()
         };
         let input = MeasurementInput::Curve(curve);
         let result = load_measurement_as_driver(&input);
@@ -1160,6 +1163,7 @@ mod tests {
             freq: ndarray::Array1::from_vec(vec![20.0, 100.0]),
             spl: ndarray::Array1::from_vec(vec![80.0, 85.0]),
             phase: None,
+            ..Default::default()
         };
         let config = SpeakerOptimizationConfigExt {
             config_type: SpeakerConfigTypeExt::Dba,
@@ -1178,6 +1182,7 @@ mod tests {
             freq: ndarray::Array1::from_vec(vec![20.0, 100.0]),
             spl: ndarray::Array1::from_vec(vec![80.0, 85.0]),
             phase: None,
+            ..Default::default()
         };
         let config = SpeakerOptimizationConfigExt {
             config_type: SpeakerConfigTypeExt::Dba,

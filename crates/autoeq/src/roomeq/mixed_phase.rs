@@ -428,6 +428,7 @@ mod tests {
             freq: Array1::from_vec(freq),
             spl: Array1::from_vec(spl),
             phase: Some(Array1::from_vec(phase)),
+            ..Default::default()
         }
     }
 
@@ -437,6 +438,7 @@ mod tests {
             freq: Array1::from_vec(vec![100.0, 1000.0]),
             spl: Array1::from_vec(vec![80.0, 80.0]),
             phase: None,
+            ..Default::default()
         };
         let config = MixedPhaseConfig::default();
         let result = decompose_phase(&curve, &config);

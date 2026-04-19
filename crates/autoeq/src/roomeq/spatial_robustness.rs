@@ -83,6 +83,7 @@ pub fn rms_average(curves: &[Curve]) -> Curve {
         freq: curves[0].freq.clone(),
         spl: avg_spl,
         phase: None,
+        ..Default::default()
     }
 }
 
@@ -212,6 +213,7 @@ mod tests {
             freq: Array1::from_vec(freq),
             spl: Array1::from_vec(spl),
             phase: None,
+            ..Default::default()
         }
     }
 

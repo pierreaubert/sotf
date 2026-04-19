@@ -232,9 +232,9 @@ Each phase is independently mergeable. Phases touching
 
 | Phase | Scope | Files touched |
 |---|---|---|
-| **GD-1a** | Config types only — `RecordingConfiguration` extensions, `SplCalibration`, schema regen | autoeq (config types + schema), tests |
+| **GD-1a** ✅ | Config types only — `RecordingConfiguration` extensions, `SplCalibration`, schema regen | autoeq (config types + schema), tests |
 | **GD-1a.1** | Delete `migrate_legacy_recording`; introduce `AutoeqError::UnsupportedRecordingFormat` | sotf-engine (engine PR) |
-| **GD-1a.2** | `Curve` extensions (`coherence`, `noise_floor_db`, `min_phase`, `excess_phase`, `excess_delay_ms`) + `..Default::default()` spread across ~11 call sites; CSV reader tolerance for the new columns | autoeq + sotf-player + app-gpui + app-tui + gpui-toolkit demos (~11 files, one mechanical sweep per crate) |
+| **GD-1a.2** ✅ | `Curve` extensions (`coherence`, `noise_floor_db`, `min_phase`, `excess_phase`, `excess_delay_ms`) + `impl Default` + `..Default::default()` spread across ~72 call sites; CSV reader header-driven tolerance for the new columns | autoeq + sotf-player + app-gpui + app-tui + gpui-toolkit demos |
 | **GD-1b** | Sweep shape (A): octave-scaled generator + pre/post silence | math-dsp, sotf-engine, Config UI |
 | **GD-1c** | Multi-sweep (B): `record_multi_sweep`, `compute_coherence`, session-directory layout, Capture UI | sotf-engine (engine PR), Capture UI |
 | **GD-1d** | Load-time min-phase decomposition (Q3): `Curve::decompose_into_cache()` called by CSV loader and by `Curve::from_measurement` | autoeq |

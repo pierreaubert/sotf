@@ -18,6 +18,7 @@ mod tests {
             freq: ndarray::Array1::from_vec(freq),
             spl: ndarray::Array1::from_vec(spl),
             phase: None,
+            ..Default::default()
         }
     }
 
@@ -268,6 +269,7 @@ mod tests {
                 freq: ndarray::Array1::from_vec(freq),
                 spl: ndarray::Array1::from_vec(spl),
                 phase: None,
+                ..Default::default()
             }
         }
 

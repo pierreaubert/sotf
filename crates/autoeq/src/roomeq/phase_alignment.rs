@@ -432,6 +432,7 @@ mod tests {
             freq: Array1::from(freqs),
             spl: Array1::from(spl),
             phase: Some(Array1::from(phase)),
+            ..Default::default()
         }
     }
 
@@ -447,6 +448,7 @@ mod tests {
             freq: Array1::from(freqs),
             spl: Array1::from(spl),
             phase: Some(Array1::from(phase)),
+            ..Default::default()
         }
     }
 
@@ -468,6 +470,7 @@ mod tests {
             freq: Array1::from(vec![50.0, 80.0, 100.0]),
             spl: Array1::from(vec![90.0, 90.0, 90.0]),
             phase: None,
+            ..Default::default()
         };
         let speaker = create_test_speaker_curve();
         let config = PhaseAlignmentConfig::default();
@@ -490,6 +493,7 @@ mod tests {
             freq: Array1::from(freqs),
             spl: Array1::from(spl),
             phase: Some(Array1::from(phase)),
+            ..Default::default()
         };
 
         let config = PhaseAlignmentConfig {

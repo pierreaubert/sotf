@@ -27,12 +27,14 @@ mod tests {
             freq: freqs.clone(),
             spl: target_spl.clone(),
             phase: None,
+            ..Default::default()
         };
 
         let input_curve = Curve {
             freq: freqs.clone(),
             spl: input_spl.clone(),
             phase: None,
+            ..Default::default()
         };
 
         let objective_data = autoeq::optim::ObjectiveData {

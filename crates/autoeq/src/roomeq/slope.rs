@@ -66,6 +66,7 @@ mod tests {
             freq: Array1::from_vec(freqs.to_vec()),
             spl: Array1::from_vec(spl.to_vec()),
             phase: None,
+            ..Default::default()
         }
     }
 

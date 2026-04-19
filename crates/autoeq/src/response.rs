@@ -149,6 +149,7 @@ pub fn apply_complex_response(curve: &Curve, response: &[Complex64]) -> Curve {
         freq: curve.freq.clone(),
         spl: new_spl,
         phase: Some(new_phase),
+        ..Default::default()
     }
 }
 

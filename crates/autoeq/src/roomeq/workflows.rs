@@ -188,6 +188,7 @@ fn complex_sum_mains(curves: &[&Curve]) -> Curve {
         freq,
         spl,
         phase: Some(phase),
+        ..Default::default()
     }
 }
 
@@ -383,6 +384,7 @@ fn preprocess_multisub_independent(ms: &MultiSubGroup) -> Result<SubPreprocessRe
         freq: ref_freq,
         spl: avg_spl,
         phase: None,
+        ..Default::default()
     };
 
     let drivers: Vec<SubDriverInfo> = curves
@@ -454,6 +456,7 @@ fn preprocess_cardioid(c: &CardioidConfig) -> Result<SubPreprocessResult> {
         freq: front_curve.freq.clone(),
         spl: combined_spl,
         phase: None,
+        ..Default::default()
     };
 
     let drivers = vec![

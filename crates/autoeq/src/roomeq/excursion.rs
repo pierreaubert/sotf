@@ -129,6 +129,7 @@ fn smooth_curve_simple(curve: &Curve, window_size: usize) -> Curve {
         freq: curve.freq.clone(),
         spl: smoothed_spl,
         phase: curve.phase.clone(),
+        ..Default::default()
     }
 }
 
@@ -276,6 +277,7 @@ mod tests {
             freq: Array1::from(freqs),
             spl: Array1::from(spl),
             phase: None,
+            ..Default::default()
         }
     }
 

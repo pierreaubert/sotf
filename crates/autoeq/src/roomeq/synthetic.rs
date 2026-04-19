@@ -27,6 +27,7 @@ pub fn generate_flat_curve(min_freq: f64, max_freq: f64, n_points: usize) -> Cur
         freq: Array1::from(freq),
         spl: Array1::zeros(n_points),
         phase: None,
+        ..Default::default()
     }
 }
 
@@ -58,6 +59,7 @@ pub fn generate_harman_tilt_curve(min_freq: f64, max_freq: f64, n_points: usize)
         freq: Array1::from(freq),
         spl: Array1::from(spl),
         phase: None,
+        ..Default::default()
     }
 }
 
@@ -96,6 +98,7 @@ pub fn generate_speaker_rolloff_curve(
         freq: Array1::from(freq),
         spl: Array1::from(spl),
         phase: None,
+        ..Default::default()
     }
 }
 
@@ -134,6 +137,7 @@ pub fn generate_subwoofer_rolloff_curve(
         freq: Array1::from(freq),
         spl: Array1::from(spl),
         phase: None,
+        ..Default::default()
     }
 }
 
@@ -149,6 +153,7 @@ pub fn add_noise(curve: &Curve, noise_db_rms: f64, seed: u64) -> Curve {
         freq: curve.freq.clone(),
         spl,
         phase: curve.phase.clone(),
+        ..Default::default()
     }
 }
 
@@ -168,6 +173,7 @@ pub fn apply_known_eq(curve: &Curve, filters: &[Biquad], _sample_rate: f64) -> C
         freq: curve.freq.clone(),
         spl,
         phase: curve.phase.clone(),
+        ..Default::default()
     }
 }
 
@@ -269,6 +275,7 @@ pub fn generate_sub_curve_with_phase(
         freq: base.freq,
         spl: base.spl,
         phase: Some(Array1::from(phase)),
+        ..Default::default()
     }
 }
 
@@ -526,6 +533,7 @@ pub fn generate_channel_curve(
         freq: base.freq.clone(),
         spl: base.spl.clone(),
         phase: Some(Array1::from(phase)),
+        ..Default::default()
     };
 
     // Apply room modes

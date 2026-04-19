@@ -41,6 +41,7 @@ fn validate_slope_calculation() {
         freq: freq.clone(),
         spl: flat_response,
         phase: None,
+        ..Default::default()
     };
     let flat_score = headphone_loss(&flat_curve);
     println!("  Flat response (0 dB/oct) score: {:.3}", flat_score);
@@ -51,6 +52,7 @@ fn validate_slope_calculation() {
         freq: freq.clone(),
         spl: ideal_response,
         phase: None,
+        ..Default::default()
     };
     let ideal_score = headphone_loss(&ideal_curve);
     println!("  Ideal -1 dB/oct response score: {:.3}", ideal_score);
@@ -61,6 +63,7 @@ fn validate_slope_calculation() {
         freq: freq.clone(),
         spl: steep_response,
         phase: None,
+        ..Default::default()
     };
     let steep_score = headphone_loss(&steep_curve);
     println!("  Steep -2 dB/oct response score: {:.3}", steep_score);
@@ -94,6 +97,7 @@ fn validate_band_rms_calculation() {
         freq: freq.clone(),
         spl: peak_response,
         phase: None,
+        ..Default::default()
     };
     let peak_score = headphone_loss(&peak_curve);
 
@@ -103,6 +107,7 @@ fn validate_band_rms_calculation() {
         freq: freq.clone(),
         spl: flat_response,
         phase: None,
+        ..Default::default()
     };
     let flat_score = headphone_loss(&flat_curve);
 
@@ -126,6 +131,7 @@ fn test_band_specific_penalties() {
         freq: freq.clone(),
         spl: flat_response,
         phase: None,
+        ..Default::default()
     };
     let baseline_score = headphone_loss(&flat_curve);
 
@@ -154,6 +160,7 @@ fn test_band_specific_penalties() {
             freq: freq.clone(),
             spl: test_response,
             phase: None,
+            ..Default::default()
         };
         let test_score = headphone_loss(&test_curve);
         let penalty = test_score - baseline_score;
@@ -175,6 +182,7 @@ fn validate_edge_cases() {
         freq: empty_freq,
         spl: empty_response,
         phase: None,
+        ..Default::default()
     };
     let empty_score = headphone_loss(&empty_curve);
     println!("  Empty curve score: {:.3}", empty_score);
@@ -185,6 +193,7 @@ fn validate_edge_cases() {
         freq: freq.clone(),
         spl: extreme_response,
         phase: None,
+        ..Default::default()
     };
     let extreme_score = headphone_loss(&extreme_curve);
     println!("  Extreme +20dB response score: {:.3}", extreme_score);
@@ -195,6 +204,7 @@ fn validate_edge_cases() {
         freq: freq.clone(),
         spl: negative_response,
         phase: None,
+        ..Default::default()
     };
     let negative_score = headphone_loss(&negative_curve);
     println!("  Extreme -20dB response score: {:.3}", negative_score);
@@ -228,16 +238,19 @@ fn validate_reference_behavior() {
         freq: freq.clone(),
         spl: bass_deviation,
         phase: None,
+        ..Default::default()
     };
     let treble_curve = Curve {
         freq: freq.clone(),
         spl: treble_deviation,
         phase: None,
+        ..Default::default()
     };
     let flat_curve = Curve {
         freq: freq.clone(),
         spl: Array1::zeros(200),
         phase: None,
+        ..Default::default()
     };
 
     let bass_score = headphone_loss(&bass_curve);
@@ -288,6 +301,7 @@ fn test_component_impacts() {
         freq: freq.clone(),
         spl: flat_response,
         phase: None,
+        ..Default::default()
     };
     let baseline = headphone_loss(&flat_curve);
 
@@ -299,6 +313,7 @@ fn test_component_impacts() {
         freq: freq.clone(),
         spl: slope_test,
         phase: None,
+        ..Default::default()
     };
     let slope_impact = headphone_loss(&slope_curve) - baseline;
     println!("    0.5 dB/oct slope deviation impact: {:.3}", slope_impact);
@@ -314,6 +329,7 @@ fn test_component_impacts() {
         freq: freq.clone(),
         spl: rms_test,
         phase: None,
+        ..Default::default()
     };
     let rms_impact = headphone_loss(&rms_curve) - baseline;
     println!("    1 dB RMS midrange deviation impact: {:.3}", rms_impact);
@@ -334,6 +350,7 @@ fn test_component_impacts() {
         freq: freq.clone(),
         spl: pp_test,
         phase: None,
+        ..Default::default()
     };
     let pp_impact = headphone_loss(&pp_curve) - baseline;
     println!("    8 dB peak-to-peak variation impact: {:.3}", pp_impact);

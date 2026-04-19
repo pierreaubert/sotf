@@ -835,6 +835,7 @@ fn spawn_room_eq_optimization(app: &mut App) {
                 freq: ndarray::Array1::from(freq),
                 spl: ndarray::Array1::from(spl),
                 phase: None,
+                ..Default::default()
             };
             speakers.insert(
                 m.channel_name.clone(),

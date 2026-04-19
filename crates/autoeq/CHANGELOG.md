@@ -1,3 +1,42 @@
+# 0.4.32
+
+## GD-Opt v2 — Phase GD-1a.2: Curve extensions + CSV reader
+
+Follow-on to 0.4.31's Phase GD-1a. Adds the five optional `Curve`
+fields from §2.3 of [`docs/gd_opt_v2_plan.md`](docs/gd_opt_v2_plan.md)
+and extends the CSV reader to populate the two that are persisted.
+
+- `Curve` now carries `coherence`, `noise_floor_db`, `min_phase`,
+  `excess_phase`, and `excess_delay_ms` (all `Option<_>`). The first
+  two are persisted to CSV; the remaining three are computed at load
+  time by GD-1d and tagged `#[serde(skip_serializing)]`.
+- `impl Default for Curve` lets every existing literal migrate with a
+  single `..Default::default()` spread. A mechanical sweep applied
+  that spread across ~72 call sites in `autoeq`, `sotf-player`,
+  `app-gpui`, `app-tui`, and `gpui-toolkit` demos.
+- `load_driver_measurement` now returns a 5-tuple
+  `(freq, spl, phase, coherence, noise_floor_db)`. Column discovery
+  keys off header names, so `coherence` and `noise_floor_db` can appear
+  anywhere in the CSV. Legacy 3-column `frequency, spl, phase` files
+  still parse identically.
+- `read_curve_from_csv` populates the new `Curve` fields when the CSV
+  supplies them; downstream consumers that don't need them ignore the
+  fields (everything is `Option<_>`).
+
+Tests (`cargo test -p autoeq --lib` → 422 passed, +4 from 418):
+- `legacy_three_column_csv_still_loads`: pre-GD-v2 CSV → new fields None.
+- `gd_v2_extended_csv_populates_coherence_and_noise_floor`: extended
+  CSV round-trips; derived fields remain None until GD-1d.
+- `column_order_is_header_driven`: header names — not positions —
+  select the right column even when the CSV puts `coherence` first.
+- `mismatched_extended_row_count_drops_column`: a partially-parseable
+  column is silently dropped; core columns still load.
+
+Downstream verified clean: `cargo check -p sotf-player --lib`,
+`cargo check -p gpui-d3rs --bin d3rs-spinorama --features …`.
+Only out-of-scope blocker is `gpui-px::px-spinorama`'s pre-existing
+missing `Colormap` / `Surface3DState` imports (predates this branch).
+
 # 0.4.31
 
 ## GD-Opt v2 — Phase GD-1a: recording-config types

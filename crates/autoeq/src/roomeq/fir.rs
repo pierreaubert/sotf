@@ -71,6 +71,7 @@ pub fn generate_fir_correction(
                 freq: measurement.freq.clone(),
                 spl: Array1::from_elem(measurement.freq.len(), mean_level),
                 phase: None,
+                ..Default::default()
             }
         }
     };
@@ -98,6 +99,7 @@ pub fn generate_fir_correction(
             freq: measurement.freq.clone(),
             spl: correction_spl,
             phase: None,
+            ..Default::default()
         };
 
         let phase_type = match fir_config.phase.to_lowercase().as_str() {
@@ -162,6 +164,7 @@ mod tests {
             freq: Array1::from(freqs.to_vec()),
             spl: Array1::from(spl_values.to_vec()),
             phase: None,
+            ..Default::default()
         }
     }
 
@@ -171,6 +174,7 @@ mod tests {
             freq: Array1::from(freqs.to_vec()),
             spl: Array1::from(spl_values.to_vec()),
             phase: Some(Array1::from(phase_deg.to_vec())),
+            ..Default::default()
         }
     }
 

@@ -783,6 +783,7 @@ fn split_curve_at_frequency(curve: &Curve, crossover_freq: f64) -> (Curve, Curve
             .phase
             .as_ref()
             .map(|p| p.slice(ndarray::s![..low_end]).to_owned()),
+        ..Default::default()
     };
 
     let high_curve = Curve {
@@ -792,6 +793,7 @@ fn split_curve_at_frequency(curve: &Curve, crossover_freq: f64) -> (Curve, Curve
             .phase
             .as_ref()
             .map(|p| p.slice(ndarray::s![high_start..]).to_owned()),
+        ..Default::default()
     };
 
     (low_curve, high_curve)
@@ -1036,6 +1038,7 @@ pub(super) fn process_cardioid(
         freq: front_curve.freq.clone(),
         spl: combined_spl,
         phase: None, // Optimized for magnitude
+        ..Default::default()
     };
 
     // 4. Optimize EQ

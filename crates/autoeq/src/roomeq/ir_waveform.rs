@@ -187,6 +187,7 @@ mod tests {
             freq: Array1::from(freqs.to_vec()),
             spl: Array1::from(spl),
             phase: Some(Array1::from(phase)),
+            ..Default::default()
         }
     }
 
@@ -274,6 +275,7 @@ mod tests {
             freq: Array1::from(freqs),
             spl: Array1::zeros(200),
             phase: None, // no phase
+            ..Default::default()
         };
 
         let result = compute_channel_ir_waveforms(&curve, &[], None, 0.0, 48000.0);

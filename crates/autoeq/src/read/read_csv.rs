@@ -87,9 +87,18 @@ pub fn load_frequency_response(
 /// The CSV file should have a header row with "frequency" and "spl" columns,
 /// followed by rows of frequency (Hz) and SPL (dB) values.
 pub fn read_curve_from_csv(path: &PathBuf) -> Result<Curve, Box<dyn Error>> {
-    // Try to load as driver measurement (with optional phase) first
+    // Try to load as driver measurement (with optional phase / coherence /
+    // noise_floor_db) first. GD-Opt v2 adds `coherence` and
+    // `noise_floor_db` columns — see §2.4 of `docs/gd_opt_v2_plan.md`.
     match load_driver_measurement(path) {
-        Ok((freq, spl, phase)) => Ok(crate::Curve { freq, spl, phase }),
+        Ok((freq, spl, phase, coherence, noise_floor_db)) => Ok(crate::Curve {
+            freq,
+            spl,
+            phase,
+            coherence,
+            noise_floor_db,
+            ..Default::default()
+        }),
         Err(_) => {
             // Fallback to load_frequency_response (handles 4-column stereo average)
             let result = load_frequency_response(path)?;
@@ -97,39 +106,64 @@ pub fn read_curve_from_csv(path: &PathBuf) -> Result<Curve, Box<dyn Error>> {
                 freq: Array1::from(result.0),
                 spl: Array1::from(result.1),
                 phase: None,
+                ..Default::default()
             })
         }
     }
 }
 
-/// Load driver measurement data from a CSV file with freq, spl, and optionally phase
+/// Load driver measurement data from a CSV file.
 ///
 /// # Arguments
 /// * `path` - Path to the CSV file
 ///
 /// # Returns
-/// * Tuple of (frequencies, spl_values, optional phase_values)
+/// * `(frequencies, spl_values, phase?, coherence?, noise_floor_db?)`.
+///   The three optional columns are populated when the matching
+///   header is present and every row parses cleanly; otherwise `None`.
 ///
 /// # CSV Format
-/// Expected formats:
-/// - 2 columns: frequency, spl
-/// - 3 columns: frequency, spl, phase
-/// - Multi-column with headers: frequency_hz/freq, spl_db/spl, phase_deg/phase (extracts relevant columns)
+/// Column discovery is header-name driven, so column order doesn't matter.
+/// Recognised column names (case-insensitive):
+/// - **freq**: `frequency_hz`, `frequency`, `freq`, or `hz`.
+/// - **spl**: `spl`, `spl_db`, `magnitude`, or `db`.
+/// - **phase**: `phase_deg` or any column name containing `phase`.
+/// - **coherence**: `coherence` (γ² from the multi-sweep average,
+///   added by GD-Opt v2 — see `docs/gd_opt_v2_plan.md` §2.4).
+/// - **noise_floor_db**: `noise_floor_db` (per-bin noise-floor
+///   estimate in dB, added by GD-Opt v2 §2.4).
+///
+/// Headerless CSVs default to positional columns: col 0 = freq,
+/// col 1 = spl, col 2 = phase (if present). Coherence and noise-floor
+/// columns require explicit headers.
 #[allow(clippy::type_complexity)]
 pub fn load_driver_measurement(
     path: &PathBuf,
-) -> Result<(Array1<f64>, Array1<f64>, Option<Array1<f64>>), Box<dyn std::error::Error>> {
+) -> Result<
+    (
+        Array1<f64>,
+        Array1<f64>,
+        Option<Array1<f64>>,
+        Option<Array1<f64>>,
+        Option<Array1<f64>>,
+    ),
+    Box<dyn std::error::Error>,
+> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
 
     let mut frequencies = Vec::new();
     let mut spl_values = Vec::new();
     let mut phase_values = Vec::new();
+    let mut coherence_values = Vec::new();
+    let mut noise_floor_values = Vec::new();
 
     // Column indices (default to first 2-3 columns)
     let mut freq_col: Option<usize> = None;
     let mut spl_col: Option<usize> = None;
     let mut phase_col: Option<usize> = None;
+    let mut coherence_col: Option<usize> = None;
+    let mut noise_floor_col: Option<usize> = None;
     let mut header_parsed = false;
 
     for (line_num, line) in reader.lines().enumerate() {
@@ -157,16 +191,31 @@ pub fn load_driver_measurement(
                     || lower.contains("spl")
                     || lower.contains("phase")
                     || lower.contains("db")
+                    || lower.contains("coherence")
+                    || lower.contains("noise_floor")
             });
 
             if is_header {
                 // Parse header to find column indices
                 for (idx, col_name) in parts.iter().enumerate() {
                     let lower = col_name.to_lowercase();
-                    if freq_col.is_none()
+                    // Order matters — check the most specific names first.
+                    // `noise_floor_db` contains `db`, so it must be checked
+                    // before `spl_col`'s `db` fallback, otherwise `spl`
+                    // would hijack it. Same for `coherence` vs any
+                    // generic check.
+                    if noise_floor_col.is_none() && lower.contains("noise_floor") {
+                        noise_floor_col = Some(idx);
+                    } else if coherence_col.is_none() && lower == "coherence" {
+                        coherence_col = Some(idx);
+                    } else if freq_col.is_none()
                         && (lower.contains("freq") || lower == "hz" || lower == "frequency_hz")
                     {
                         freq_col = Some(idx);
+                    } else if phase_col.is_none()
+                        && (lower.contains("phase") || lower == "phase_deg")
+                    {
+                        phase_col = Some(idx);
                     } else if spl_col.is_none()
                         && (lower.contains("spl")
                             || lower.contains("magnitude")
@@ -174,10 +223,6 @@ pub fn load_driver_measurement(
                             || lower == "spl_db")
                     {
                         spl_col = Some(idx);
-                    } else if phase_col.is_none()
-                        && (lower.contains("phase") || lower == "phase_deg")
-                    {
-                        phase_col = Some(idx);
                     }
                 }
                 header_parsed = true;
@@ -217,6 +262,20 @@ pub fn load_driver_measurement(
             {
                 phase_values.push(phase);
             }
+            // Parse coherence if available
+            if let Some(coh_idx) = coherence_col
+                && parts.len() > coh_idx
+                && let Ok(coh) = parts[coh_idx].parse::<f64>()
+            {
+                coherence_values.push(coh);
+            }
+            // Parse noise_floor_db if available
+            if let Some(nf_idx) = noise_floor_col
+                && parts.len() > nf_idx
+                && let Ok(nf) = parts[nf_idx].parse::<f64>()
+            {
+                noise_floor_values.push(nf);
+            }
         }
     }
 
@@ -229,10 +288,118 @@ pub fn load_driver_measurement(
     } else {
         None
     };
+    let coherence = if !coherence_values.is_empty()
+        && coherence_values.len() == frequencies.len()
+    {
+        Some(Array1::from_vec(coherence_values))
+    } else {
+        None
+    };
+    let noise_floor_db = if !noise_floor_values.is_empty()
+        && noise_floor_values.len() == frequencies.len()
+    {
+        Some(Array1::from_vec(noise_floor_values))
+    } else {
+        None
+    };
 
     Ok((
         Array1::from_vec(frequencies),
         Array1::from_vec(spl_values),
         phase,
+        coherence,
+        noise_floor_db,
     ))
+}
+
+#[cfg(test)]
+mod gd_v2_tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    fn write_tmp(csv: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(csv.as_bytes()).unwrap();
+        f.flush().unwrap();
+        f
+    }
+
+    #[test]
+    fn legacy_three_column_csv_still_loads() {
+        let csv = "frequency,spl,phase\n20,0.0,10\n200,1.0,20\n2000,2.0,30\n";
+        let f = write_tmp(csv);
+        let curve = read_curve_from_csv(&f.path().to_path_buf()).unwrap();
+        assert_eq!(curve.freq.len(), 3);
+        assert_eq!(curve.spl.len(), 3);
+        assert!(curve.phase.is_some());
+        assert_eq!(curve.phase.as_ref().unwrap().len(), 3);
+        assert!(curve.coherence.is_none());
+        assert!(curve.noise_floor_db.is_none());
+    }
+
+    #[test]
+    fn gd_v2_extended_csv_populates_coherence_and_noise_floor() {
+        let csv = "\
+frequency,spl,phase,coherence,noise_floor_db
+20,0.0,10,0.95,-45
+200,1.0,20,0.98,-50
+2000,2.0,30,0.99,-55
+";
+        let f = write_tmp(csv);
+        let curve = read_curve_from_csv(&f.path().to_path_buf()).unwrap();
+        assert_eq!(curve.freq.len(), 3);
+        assert_eq!(curve.spl.len(), 3);
+        assert_eq!(curve.phase.as_ref().unwrap().len(), 3);
+        let coh = curve.coherence.expect("coherence populated");
+        assert_eq!(coh.len(), 3);
+        assert!((coh[0] - 0.95).abs() < 1e-9);
+        let nf = curve.noise_floor_db.expect("noise_floor_db populated");
+        assert_eq!(nf.len(), 3);
+        assert!((nf[2] + 55.0).abs() < 1e-9);
+        // Derived fields stay None until GD-1d wires the load-time
+        // decomposition.
+        assert!(curve.min_phase.is_none());
+        assert!(curve.excess_phase.is_none());
+        assert!(curve.excess_delay_ms.is_none());
+    }
+
+    #[test]
+    fn column_order_is_header_driven() {
+        // Coherence before freq; noise_floor_db before phase. The parser
+        // must key off names, not positions.
+        let csv = "\
+coherence,frequency,noise_floor_db,phase,spl
+0.9,20,-45,10,0.0
+0.95,200,-50,20,1.0
+";
+        let f = write_tmp(csv);
+        let curve = read_curve_from_csv(&f.path().to_path_buf()).unwrap();
+        assert_eq!(curve.freq.len(), 2);
+        assert!((curve.freq[0] - 20.0).abs() < 1e-9);
+        assert!((curve.freq[1] - 200.0).abs() < 1e-9);
+        assert!((curve.spl[0]).abs() < 1e-9);
+        assert!((curve.spl[1] - 1.0).abs() < 1e-9);
+        let coh = curve.coherence.expect("coherence populated");
+        assert!((coh[0] - 0.9).abs() < 1e-9);
+        let nf = curve.noise_floor_db.expect("noise_floor_db populated");
+        assert!((nf[0] + 45.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn mismatched_extended_row_count_drops_column() {
+        // noise_floor_db column has one unparseable row ("nan-ish"); the
+        // parser must keep the other columns but drop noise_floor_db.
+        let csv = "\
+frequency,spl,noise_floor_db
+20,0.0,-45
+200,1.0,not-a-number
+2000,2.0,-55
+";
+        let f = write_tmp(csv);
+        let curve = read_curve_from_csv(&f.path().to_path_buf()).unwrap();
+        assert_eq!(curve.freq.len(), 3);
+        assert_eq!(curve.spl.len(), 3);
+        assert!(curve.noise_floor_db.is_none());
+    }
 }

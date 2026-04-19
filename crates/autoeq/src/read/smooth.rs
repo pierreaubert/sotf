@@ -52,7 +52,7 @@ impl Default for PsychoacousticSmoothingConfig {
 /// // Create a dummy curve
 /// let freqs = Array1::from(vec![20.0, 100.0, 1000.0, 10000.0]);
 /// let spl = Array1::from(vec![80.0, 82.0, 78.0, 75.0]);
-/// let curve = Curve { freq: freqs, spl, phase: None };
+/// let curve = Curve { freq: freqs, spl, phase: None, ..Default::default() };
 ///
 /// let config = PsychoacousticSmoothingConfig::default();
 /// let smoothed = smooth_psychoacoustic(&curve, &config);
@@ -90,6 +90,7 @@ pub fn smooth_psychoacoustic(curve: &Curve, config: &PsychoacousticSmoothingConf
         freq: curve.freq.clone(),
         spl: out,
         phase: None,
+        ..Default::default()
     }
 }
 
@@ -153,6 +154,7 @@ pub fn smooth_one_over_n_octave(curve: &Curve, n: usize) -> Curve {
         freq: curve.freq.clone(),
         spl: out,
         phase: None,
+        ..Default::default()
     }
 }
 
@@ -239,6 +241,7 @@ mod tests {
             freq: freqs,
             spl: vals.clone(),
             phase: None,
+            ..Default::default()
         };
         let out = smooth_one_over_n_octave(&curve, 24);
         // Expect no drastic change
@@ -283,6 +286,7 @@ mod tests {
             freq: freqs,
             spl: vals,
             phase: None,
+            ..Default::default()
         };
         let config = PsychoacousticSmoothingConfig::default();
         let out = smooth_psychoacoustic(&curve, &config);
@@ -302,6 +306,7 @@ mod tests {
             freq: freqs,
             spl: vals,
             phase: None,
+            ..Default::default()
         };
         let config = PsychoacousticSmoothingConfig::default();
         let out = smooth_psychoacoustic(&curve, &config);

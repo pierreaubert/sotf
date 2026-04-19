@@ -29,6 +29,7 @@ pub(super) fn split_curve_at_frequency(curve: &Curve, crossover_freq: f64) -> (C
             .phase
             .as_ref()
             .map(|p| p.slice(ndarray::s![..low_end]).to_owned()),
+        ..Default::default()
     };
 
     let high_curve = Curve {
@@ -38,6 +39,7 @@ pub(super) fn split_curve_at_frequency(curve: &Curve, crossover_freq: f64) -> (C
             .phase
             .as_ref()
             .map(|p| p.slice(ndarray::s![high_start..]).to_owned()),
+        ..Default::default()
     };
 
     (low_curve, high_curve)

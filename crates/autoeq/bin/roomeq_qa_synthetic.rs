@@ -1227,6 +1227,7 @@ fn main() -> Result<()> {
                 freq: target.freq.clone(),
                 spl: &target.spl + &speaker_rolloff.spl,
                 phase: None,
+                ..Default::default()
             };
             let scenario = generate_scenario(
                 &format!("{}/{}", difficulty.name, target_name),

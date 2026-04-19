@@ -257,6 +257,7 @@ fn load_source_individual_single() {
         freq: Array1::from(vec![20.0, 200.0, 2000.0]),
         spl: Array1::from(vec![80.0, 85.0, 82.0]),
         phase: None,
+        ..Default::default()
     };
 
     let source = MeasurementSource::InMemory(curve.clone());

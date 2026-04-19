@@ -188,5 +188,6 @@ pub fn parse_csv_curve(csv_data: &str) -> Result<autoeq::Curve, String> {
         freq: Array1::from(freq),
         spl: Array1::from(spl),
         phase: None,
+        ..Default::default()
     })
 }

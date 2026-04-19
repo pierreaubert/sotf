@@ -89,6 +89,7 @@ pub fn interpolate_log_space(freq_out: &Array1<f64>, curve: &Curve) -> Curve {
         freq: freq_out.clone(),
         spl: spl_out,
         phase: phase_out,
+        ..Default::default()
     }
 }
 
@@ -168,6 +169,7 @@ pub fn interpolate(freqs: &Array1<f64>, curve: &Curve) -> Curve {
         freq: freqs.clone(),
         spl: result_spl,
         phase: result_phase,
+        ..Default::default()
     }
 }
 
@@ -181,6 +183,7 @@ mod tests {
             freq: Array1::from_vec(vec![0.0, 100.0, 1000.0, 10000.0]),
             spl: Array1::from_vec(vec![80.0, 85.0, 90.0, 88.0]),
             phase: None,
+            ..Default::default()
         };
         let freq_out = Array1::from_vec(vec![50.0, 500.0, 5000.0]);
         let result = interpolate_log_space(&freq_out, &curve);

@@ -366,6 +366,7 @@ mod tests {
             freq: Array1::from_vec(freqs),
             spl: Array1::zeros(phase_deg.len()),
             phase: Some(Array1::from_vec(phase_deg)),
+            ..Default::default()
         };
 
         let estimated = estimate_arrival_from_phase(&curve, 200.0, 2000.0);
@@ -390,6 +391,7 @@ mod tests {
             freq: Array1::linspace(20.0, 2000.0, 100),
             spl: Array1::zeros(100),
             phase: None,
+            ..Default::default()
         };
         assert!(estimate_arrival_from_phase(&curve, 200.0, 2000.0).is_none());
     }
@@ -442,6 +444,7 @@ mod tests {
             freq: Array1::from_vec(freqs),
             spl: Array1::zeros(phase_deg.len()),
             phase: Some(Array1::from_vec(phase_deg)),
+            ..Default::default()
         };
 
         let estimated = estimate_arrival_from_phase(&curve, 200.0, 4000.0);
