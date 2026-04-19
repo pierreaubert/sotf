@@ -1,3 +1,39 @@
+# 1.0.22
+
+## GD-Opt v2 — Phase GD-1e dedup: shared playback scaffolding
+
+Refactor-only, no behaviour change. The ~400-line device-discovery +
+playback + mic-capture block that `probe_channel_delays_core` and
+`run_bass_anchor_core` had each been carrying is now a single
+`play_per_channel_and_record_mono` helper.
+
+- New private helper: `play_per_channel_and_record_mono(channel_indices,
+  sample_rate, signal, silence_duration_ms, output_device_name,
+  input_device_name, input_channel, log_tag)` returns a
+  `PlayPerChannelOutput` with `recorded`, `input_sr`, per-channel
+  `analysis_offsets` at `input_sr`, plus `analysis_signal_samples` and
+  `analysis_silence_samples`. `log_tag` prefixes log lines so probe and
+  bass-anchor captures stay distinguishable in logs.
+- `probe_channel_delays_core` now delegates everything up to the
+  cross-correlation analysis to the helper. Went from ~440 lines to
+  ~170 lines. Regenerates the narrowband probe at `input_sr` when cpal
+  negotiated a different rate — same logic, same behaviour, just
+  relocated below the helper call.
+- `run_bass_anchor_core` is similarly thinned. Went from ~265 lines
+  to ~90 lines. Feeds the helper output straight into
+  `analyze_bass_anchor_recording`.
+- Net: `signal_recorder.rs` drops 142 lines (354 insertions, 496
+  deletions for a single commit).
+
+Verified:
+- `cargo test -p sotf-engine --lib -- bass_anchor` — 3 passed.
+- `cargo test -p sotf-engine --lib` — 165 passed (only the pre-existing
+  `preflight::tests::test_get_username` sandbox env failure remains,
+  present on master).
+- `cargo check -p sotf-gpui -p sotf-tui` clean.
+
+Cargo version 1.0.21 → 1.0.22.
+
 # 1.0.21
 
 ## GD-Opt v2 — Phase GD-1e: bass anchor capture
