@@ -1709,6 +1709,469 @@ fn probe_channel_delays_core(
     ))
 }
 
+// ---------------------------------------------------------------------------
+// GD-Opt v2 Phase GD-1e — bass anchor capture
+//
+// Plays a low-frequency tone burst (default 20 Hz × 5 cycles) on one
+// channel at a time, records from the mic, and extracts the per-channel
+// phase + stability of the burst's fundamental. The result anchors the
+// sweep-derived phase at the lowest bin — see `docs/gd_opt_v2_plan.md`
+// §2.6 (BassAnchor wizard step) and §3.5 (confidence gate).
+//
+// Playback scaffolding is a scoped duplication of
+// `probe_channel_delays_core`. A future refactor could extract a
+// shared `play_signals_record_mono` helper; for GD-1e the priority is
+// landing a working BassAnchor step without rewiring the existing probe.
+// ---------------------------------------------------------------------------
+
+/// Result of a bass-anchor capture across all channels.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BassAnchorResults {
+    /// Per-channel phase + quality.
+    pub channels: Vec<BassAnchorChannelResult>,
+    /// Input sample rate used for the analysis (may differ from
+    /// `requested_sample_rate` if cpal negotiated a different rate).
+    pub sample_rate: u32,
+    /// Centre frequency of the tone burst in Hz.
+    pub bass_freq_hz: f32,
+    /// Number of cycles in the burst.
+    pub bass_cycles: u16,
+}
+
+/// Per-channel bass-anchor result.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BassAnchorChannelResult {
+    pub channel_name: String,
+    pub channel_index: usize,
+    /// Phase of the bass tone at the mic, sin-referenced, in degrees.
+    pub bass_anchor_phase_deg: f64,
+    /// Linear magnitude of the DFT bin at `bass_freq_hz` — SNR proxy.
+    pub bass_anchor_magnitude: f64,
+    /// Half-split phase difference in degrees — advisory threshold is
+    /// 20° (§2.8 of `docs/gd_opt_v2_plan.md`).
+    pub bass_anchor_stability_deg: f64,
+}
+
+/// Run the bass-anchor capture across all output channels.
+///
+/// # Arguments
+/// * `channel_indices` - Output channel indices to probe (0-based)
+/// * `channel_names` - Human-readable name for each channel
+/// * `sample_rate` - Desired playback / capture sample rate in Hz
+/// * `bass_freq_hz` - Tone-burst centre frequency (default 20 Hz)
+/// * `bass_cycles` - Number of cycles per burst (default 5)
+/// * `silence_duration_ms` - Silence gap between channels in ms
+/// * `output_device_name` - Playback device (None = default)
+/// * `input_device_name` - Recording device (None = default)
+/// * `input_channel` - Mic input channel index
+#[cfg(not(target_os = "ios"))]
+#[allow(clippy::too_many_arguments)]
+pub fn run_bass_anchor(
+    channel_indices: &[u16],
+    channel_names: &[String],
+    sample_rate: u32,
+    bass_freq_hz: f32,
+    bass_cycles: u16,
+    silence_duration_ms: f32,
+    output_device_name: Option<&str>,
+    input_device_name: Option<&str>,
+    input_channel: u16,
+) -> Result<BassAnchorResults, String> {
+    let (results, _recorded, _input_sr) = run_bass_anchor_core(
+        channel_indices,
+        channel_names,
+        sample_rate,
+        bass_freq_hz,
+        bass_cycles,
+        silence_duration_ms,
+        output_device_name,
+        input_device_name,
+        input_channel,
+    )?;
+    Ok(results)
+}
+
+/// Run the bass-anchor capture and persist the raw mono mic recording.
+///
+/// Behaves like [`run_bass_anchor`] otherwise. The recording is a
+/// single-channel `f32` WAV at the negotiated input sample rate; the
+/// same `channel_offsets` layout as `probe_channel_delays_with_recording`
+/// applies so callers can re-analyse offline with
+/// [`analyze_bass_anchor_recording`].
+#[cfg(not(target_os = "ios"))]
+#[allow(clippy::too_many_arguments)]
+pub fn run_bass_anchor_with_recording(
+    channel_indices: &[u16],
+    channel_names: &[String],
+    sample_rate: u32,
+    bass_freq_hz: f32,
+    bass_cycles: u16,
+    silence_duration_ms: f32,
+    output_device_name: Option<&str>,
+    input_device_name: Option<&str>,
+    input_channel: u16,
+    recording_wav_path: &std::path::Path,
+) -> Result<BassAnchorResults, String> {
+    let (results, recorded, input_sr) = run_bass_anchor_core(
+        channel_indices,
+        channel_names,
+        sample_rate,
+        bass_freq_hz,
+        bass_cycles,
+        silence_duration_ms,
+        output_device_name,
+        input_device_name,
+        input_channel,
+    )?;
+
+    let spec = WavSpec {
+        channels: 1,
+        sample_rate: input_sr,
+        bits_per_sample: 32,
+        sample_format: SampleFormat::Float,
+    };
+    let mut writer = WavWriter::create(recording_wav_path, spec)
+        .map_err(|e| format!("Failed to create bass-anchor recording WAV: {}", e))?;
+    for &s in &recorded {
+        writer
+            .write_sample(s)
+            .map_err(|e| format!("Failed to write bass-anchor sample: {}", e))?;
+    }
+    writer
+        .finalize()
+        .map_err(|e| format!("Failed to finalize bass-anchor WAV: {}", e))?;
+    log::info!(
+        "[run_bass_anchor_with_recording] Saved {} samples ({:.2}s) to {}",
+        recorded.len(),
+        recorded.len() as f64 / input_sr as f64,
+        recording_wav_path.display()
+    );
+    Ok(results)
+}
+
+/// Pure analysis: given the mono recording from a bass-anchor session
+/// and its layout, return per-channel phase results without touching
+/// cpal. Used by the replay-driven tests and by any future offline
+/// re-analysis tool.
+///
+/// `channel_starts` lists the sample index in `recorded` where each
+/// channel's burst begins (mic-side). `burst_samples` is the burst
+/// length at the mic's sample rate.
+pub fn analyze_bass_anchor_recording(
+    recorded: &[f32],
+    channel_names: &[String],
+    channel_indices: &[u16],
+    sample_rate: u32,
+    bass_freq_hz: f32,
+    bass_cycles: u16,
+    channel_starts: &[usize],
+    burst_samples: usize,
+) -> Result<BassAnchorResults, String> {
+    if channel_names.len() != channel_starts.len() || channel_names.len() != channel_indices.len() {
+        return Err("channel_names / channel_indices / channel_starts length mismatch".to_string());
+    }
+
+    let mut channels = Vec::with_capacity(channel_names.len());
+    for (i, (&start, name)) in channel_starts.iter().zip(channel_names.iter()).enumerate() {
+        let end = (start + burst_samples).min(recorded.len());
+        if start >= recorded.len() {
+            return Err(format!(
+                "Channel {} start {} exceeds recording length {}",
+                name,
+                start,
+                recorded.len()
+            ));
+        }
+        let segment = &recorded[start..end];
+        let r =
+            math_audio_dsp::signals::extract_tone_phase(segment, bass_freq_hz, sample_rate);
+        channels.push(BassAnchorChannelResult {
+            channel_name: name.clone(),
+            channel_index: channel_indices[i] as usize,
+            bass_anchor_phase_deg: r.phase_deg,
+            bass_anchor_magnitude: r.magnitude,
+            bass_anchor_stability_deg: r.stability_deg,
+        });
+    }
+
+    Ok(BassAnchorResults {
+        channels,
+        sample_rate,
+        bass_freq_hz,
+        bass_cycles,
+    })
+}
+
+#[cfg(not(target_os = "ios"))]
+#[allow(clippy::too_many_arguments)]
+fn run_bass_anchor_core(
+    channel_indices: &[u16],
+    channel_names: &[String],
+    sample_rate: u32,
+    bass_freq_hz: f32,
+    bass_cycles: u16,
+    silence_duration_ms: f32,
+    output_device_name: Option<&str>,
+    input_device_name: Option<&str>,
+    input_channel: u16,
+) -> Result<(BassAnchorResults, Vec<f32>, u32), String> {
+    use crate::AudioEngineManager;
+    use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+    use std::sync::{Arc, Mutex};
+    use std::thread::sleep;
+    use std::time::Duration;
+
+    let num_channels = channel_indices.len();
+    if num_channels == 0 {
+        return Err("No channels for bass anchor".to_string());
+    }
+    if channel_names.len() != num_channels {
+        return Err("channel_indices and channel_names must have the same length".to_string());
+    }
+    if bass_freq_hz <= 0.0 || bass_cycles == 0 {
+        return Err(format!(
+            "Invalid bass-anchor params: freq={bass_freq_hz}, cycles={bass_cycles}"
+        ));
+    }
+
+    // Generate the tone burst at the playback sample rate.
+    let burst = math_audio_dsp::signals::gen_bass_tone_burst(
+        bass_freq_hz,
+        bass_cycles,
+        sample_rate,
+        0.5,
+    );
+    if burst.is_empty() {
+        return Err("gen_bass_tone_burst returned empty".to_string());
+    }
+    let burst_samples = burst.len();
+    let silence_samples = (silence_duration_ms / 1000.0 * sample_rate as f32) as usize;
+
+    log::info!(
+        "[run_bass_anchor] Generated {:.0} Hz × {} cycles ({:.0} ms / {} samples) at {} Hz",
+        bass_freq_hz,
+        bass_cycles,
+        1000.0 * burst_samples as f64 / sample_rate as f64,
+        burst_samples,
+        sample_rate
+    );
+
+    // Device discovery + hardware channel probe.
+    let host = cpal::default_host();
+    let output_device = if let Some(dev_name) = output_device_name {
+        crate::devices::find_device(&host, dev_name, false)?
+    } else {
+        host.default_output_device()
+            .ok_or_else(|| "No default output device available".to_string())?
+    };
+    let hardware_channels = output_device
+        .supported_output_configs()
+        .map_err(|e| format!("Failed to get supported output configs: {}", e))?
+        .map(|c| c.channels() as usize)
+        .max()
+        .unwrap_or(2);
+    for &ch in channel_indices {
+        if ch as usize >= hardware_channels {
+            return Err(format!(
+                "Channel {} exceeds hardware output count {}",
+                ch, hardware_channels
+            ));
+        }
+    }
+
+    // Build playback buffer: [silence][ch0_burst][silence][ch1_burst]...[silence]
+    let segment_len = silence_samples + burst_samples;
+    let total_frames = silence_samples + num_channels * segment_len;
+    let mut per_channel: Vec<Vec<f32>> = (0..hardware_channels)
+        .map(|_| vec![0.0_f32; total_frames])
+        .collect();
+    let mut playback_offsets = Vec::with_capacity(num_channels);
+    for (i, &ch_idx) in channel_indices.iter().enumerate() {
+        let frame_offset = silence_samples + i * segment_len;
+        playback_offsets.push(frame_offset);
+        for (j, &s) in burst.iter().enumerate() {
+            per_channel[ch_idx as usize][frame_offset + j] = s;
+        }
+    }
+    let interleaved = interleave_per_channel(&per_channel);
+
+    // Write to temp WAV and load via the engine — same pattern as probe.
+    let temp_file = NamedTempFile::with_suffix(".wav")
+        .map_err(|e| format!("Failed to create temp WAV: {}", e))?;
+    let temp_path = temp_file.path().to_path_buf();
+    let spec = WavSpec {
+        channels: hardware_channels as u16,
+        sample_rate,
+        bits_per_sample: 32,
+        sample_format: SampleFormat::Float,
+    };
+    let mut writer = WavWriter::create(&temp_path, spec)
+        .map_err(|e| format!("Failed to create WAV writer: {}", e))?;
+    for &s in &interleaved {
+        writer
+            .write_sample(s)
+            .map_err(|e| format!("Failed to write sample: {}", e))?;
+    }
+    writer
+        .finalize()
+        .map_err(|e| format!("Failed to finalize WAV: {}", e))?;
+
+    // Input device + stream setup.
+    let input_device = if let Some(dev_name) = input_device_name {
+        crate::devices::find_device(&host, dev_name, true)?
+    } else {
+        host.default_input_device()
+            .ok_or_else(|| "No default input device available".to_string())?
+    };
+    let min_input_ch = (input_channel as usize) + 1;
+    let default_input_config = input_device
+        .default_input_config()
+        .map_err(|e| format!("Failed to get default input config: {}", e))?;
+    let best_config = input_device
+        .supported_input_configs()
+        .ok()
+        .and_then(|configs| {
+            configs
+                .filter(|c| {
+                    let ch = c.channels() as usize;
+                    ch >= min_input_ch
+                        && c.min_sample_rate() <= sample_rate
+                        && c.max_sample_rate() >= sample_rate
+                })
+                .min_by_key(|c| c.channels())
+        });
+    let (hw_input_ch, input_sr) = if let Some(config) = best_config {
+        (config.channels() as usize, sample_rate)
+    } else {
+        (
+            default_input_config.channels() as usize,
+            default_input_config.sample_rate(),
+        )
+    };
+
+    // When the mic rate differs from the playback rate, re-derive the
+    // analysis offsets and regenerate the burst at that rate so the
+    // analysis sits on the same time grid as the recording.
+    let analysis_silence = (silence_duration_ms / 1000.0 * input_sr as f32) as usize;
+    let analysis_burst_samples = ((bass_cycles as f32 / bass_freq_hz) * input_sr as f32).round() as usize;
+    let analysis_segment_len = analysis_silence + analysis_burst_samples;
+    let analysis_offsets: Vec<usize> = (0..num_channels)
+        .map(|i| analysis_silence + i * analysis_segment_len)
+        .collect();
+
+    let input_config = cpal::StreamConfig {
+        channels: hw_input_ch as u16,
+        sample_rate: input_sr,
+        buffer_size: cpal::BufferSize::Default,
+    };
+    let recorded_samples: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
+    let recorded_clone = Arc::clone(&recorded_samples);
+    let input_ch_idx = input_channel as usize;
+    let hw_ch = hw_input_ch;
+    let input_stream = input_device
+        .build_input_stream(
+            &input_config,
+            move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                let mut recorded = recorded_clone.lock().unwrap();
+                for frame in data.chunks(hw_ch) {
+                    if input_ch_idx < frame.len() {
+                        recorded.push(frame[input_ch_idx]);
+                    }
+                }
+            },
+            |err| log::debug!("[run_bass_anchor] Input stream error: {}", err),
+            None,
+        )
+        .map_err(|e| format!("Failed to build input stream: {}", e))?;
+    input_stream
+        .play()
+        .map_err(|e| format!("Failed to start input stream: {}", e))?;
+    sleep(Duration::from_millis(100));
+
+    // Play the burst sequence.
+    let mut manager = AudioEngineManager::new();
+    manager.set_allow_virtual_output(true);
+    manager
+        .load_file(&temp_path)
+        .map_err(|e| format!("Failed to load bass-anchor WAV: {}", e))?;
+    let plugins = vec![];
+    manager
+        .start_playback(
+            output_device_name.map(|s| s.to_string()),
+            plugins,
+            hardware_channels,
+        )
+        .map_err(|e| format!("Failed to start playback: {}", e))?;
+
+    let expected_duration = total_frames as f64 / sample_rate as f64;
+    let total_wait = Duration::from_secs_f64(expected_duration + 3.0);
+    let check_interval = Duration::from_millis(50);
+    let mut elapsed = Duration::ZERO;
+    let mut last_count = 0_usize;
+    let mut stable = 0_u32;
+    while elapsed < total_wait {
+        sleep(check_interval);
+        elapsed += check_interval;
+        let count = recorded_samples.lock().unwrap().len();
+        if count == last_count && count > 0 {
+            stable += 1;
+            if stable >= 3 {
+                break;
+            }
+        } else {
+            stable = 0;
+        }
+        last_count = count;
+        if manager.get_state() == crate::StreamingState::Idle {
+            break;
+        }
+    }
+    sleep(Duration::from_millis(500));
+    manager.stop().ok();
+    std::mem::drop(manager);
+    std::mem::drop(input_stream);
+    sleep(Duration::from_millis(500));
+
+    let recorded = recorded_samples.lock().unwrap().clone();
+    log::info!(
+        "[run_bass_anchor] Recorded {} samples ({:.2}s)",
+        recorded.len(),
+        recorded.len() as f64 / input_sr as f64
+    );
+
+    let rec_peak = recorded.iter().map(|s| s.abs()).fold(0.0_f32, f32::max);
+    if rec_peak < 1e-4 {
+        return Err(format!(
+            "Bass-anchor recording appears silent (peak {:.6}). Check mic, input channel, and device availability.",
+            rec_peak
+        ));
+    }
+
+    // Per-channel analysis using the shared helper.
+    let results = analyze_bass_anchor_recording(
+        &recorded,
+        channel_names,
+        channel_indices,
+        input_sr,
+        bass_freq_hz,
+        bass_cycles,
+        &analysis_offsets,
+        analysis_burst_samples,
+    )?;
+
+    for cr in &results.channels {
+        log::info!(
+            "[run_bass_anchor] {}: phase={:.2}°  mag={:.4}  stability={:.2}°",
+            cr.channel_name,
+            cr.bass_anchor_phase_deg,
+            cr.bass_anchor_magnitude,
+            cr.bass_anchor_stability_deg
+        );
+    }
+
+    Ok((results, recorded, input_sr))
+}
+
 /// Parse comma-separated channel list (0-based indices)
 pub fn parse_channel_list(s: &str) -> Result<Vec<u16>, String> {
     let mut channels = Vec::new();
@@ -2866,5 +3329,135 @@ mod tests {
         // 1.0 explicit.
         let out_min = build_octave_sweep_with_silence(20.0, 20_000.0, 0.5, 1.0, 0.0, 0.0, sr);
         assert_eq!(out_clamped.len(), out_min.len(), "Clamped and min-1.0 lengths differ");
+    }
+
+    // ------------------------------------------------------------------
+    // GD-Opt v2 Phase GD-1e: bass-anchor replay tests
+    // ------------------------------------------------------------------
+
+    /// Synthesise a multi-channel bass-anchor recording with KNOWN
+    /// per-channel phase shifts, then run the same analysis path that
+    /// `run_bass_anchor_core` uses and assert the phases are recovered.
+    #[test]
+    fn bass_anchor_replay_recovers_known_phase_shifts() {
+        use math_audio_dsp::signals::gen_bass_tone_burst;
+        use std::f32::consts::PI;
+
+        let sample_rate = 48_000_u32;
+        let bass_freq = 20.0_f32;
+        let bass_cycles = 5_u16;
+        let silence_ms = 500.0_f32;
+
+        let channel_indices = vec![0_u16, 1, 2];
+        let channel_names = vec!["L".to_string(), "R".to_string(), "Sub".to_string()];
+        // Inject a known phase shift per channel (degrees).
+        let injected_phases_deg = [0.0_f32, 30.0, -45.0];
+
+        let burst_samples = ((bass_cycles as f32 / bass_freq) * sample_rate as f32).round() as usize;
+        let silence_samples = (silence_ms / 1000.0 * sample_rate as f32) as usize;
+        let segment_len = silence_samples + burst_samples;
+        let total_frames = silence_samples + channel_indices.len() * segment_len;
+
+        let mut recorded = vec![0.0_f32; total_frames];
+        let offsets: Vec<usize> = (0..channel_indices.len())
+            .map(|i| silence_samples + i * segment_len)
+            .collect();
+
+        // Build each channel's phase-shifted burst by directly
+        // synthesising the windowed sinusoid at `bass_freq + phase_shift`
+        // instead of time-shifting the burst from `gen_bass_tone_burst`.
+        let n_f = burst_samples as f32;
+        let omega = 2.0 * PI * bass_freq / sample_rate as f32;
+        let _unused = gen_bass_tone_burst(bass_freq, bass_cycles, sample_rate, 0.5); // sanity
+        for (ch_i, &start) in offsets.iter().enumerate() {
+            let phase_shift = injected_phases_deg[ch_i].to_radians();
+            for k in 0..burst_samples {
+                let t = k as f32;
+                let w = 0.5 * (1.0 - (2.0 * PI * t / (n_f - 1.0)).cos());
+                recorded[start + k] = 0.5 * w * (omega * t + phase_shift).sin();
+            }
+        }
+
+        // Run the same analysis path the live capture uses.
+        let results = analyze_bass_anchor_recording(
+            &recorded,
+            &channel_names,
+            &channel_indices,
+            sample_rate,
+            bass_freq,
+            bass_cycles,
+            &offsets,
+            burst_samples,
+        )
+        .expect("analysis should succeed");
+
+        assert_eq!(results.channels.len(), 3);
+        assert_eq!(results.sample_rate, sample_rate);
+        assert_eq!(results.bass_freq_hz, bass_freq);
+        assert_eq!(results.bass_cycles, bass_cycles);
+
+        for (i, cr) in results.channels.iter().enumerate() {
+            let expected = injected_phases_deg[i] as f64;
+            let got = cr.bass_anchor_phase_deg;
+            // Wrap difference to (−180°, 180°] for robust comparison.
+            let mut diff = got - expected;
+            while diff > 180.0 { diff -= 360.0; }
+            while diff <= -180.0 { diff += 360.0; }
+            assert!(
+                diff.abs() < 2.0,
+                "Channel {} ({}): expected {:+.1}°, got {:+.2}° (error {:+.2}°)",
+                i,
+                cr.channel_name,
+                expected,
+                got,
+                diff
+            );
+            assert!(cr.bass_anchor_magnitude > 0.0);
+            // Stable synthetic burst — stability should fall under the
+            // 20° advisory threshold (clear margin).
+            assert!(
+                cr.bass_anchor_stability_deg < 15.0,
+                "Channel {} stability {:.2}° should be well under 20°",
+                cr.channel_name,
+                cr.bass_anchor_stability_deg
+            );
+        }
+    }
+
+    #[test]
+    fn bass_anchor_replay_rejects_length_mismatch() {
+        let recorded = vec![0.0_f32; 100];
+        let err = analyze_bass_anchor_recording(
+            &recorded,
+            &["L".to_string()],
+            &[0_u16],
+            48_000,
+            20.0,
+            5,
+            &[0_usize, 50],
+            48,
+        )
+        .expect_err("length mismatch must fail");
+        assert!(
+            err.contains("length mismatch"),
+            "error should mention length mismatch, got: {err}"
+        );
+    }
+
+    #[test]
+    fn bass_anchor_replay_errors_when_start_past_eof() {
+        let recorded = vec![0.0_f32; 10];
+        let err = analyze_bass_anchor_recording(
+            &recorded,
+            &["L".to_string()],
+            &[0_u16],
+            48_000,
+            20.0,
+            5,
+            &[100_usize],
+            48,
+        )
+        .expect_err("start past EOF must fail");
+        assert!(err.contains("exceeds recording length"));
     }
 }

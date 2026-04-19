@@ -15,9 +15,15 @@ pub enum RecordingStep {
     /// the arrival times can flow directly into the Room EQ optimizer
     /// without a separate measurement session.
     Probe,
-    /// Step 4: Evaluate recordings and view frequency response
+    /// Step 4: Bass anchor — plays a low-frequency tone burst (20 Hz ×
+    /// 5 cycles by default) per channel and records the fundamental's
+    /// phase. GD-Opt v2 feeds the per-channel anchor into the sweep
+    /// unwrap as a hard constraint on the first bass bin
+    /// (`docs/gd_opt_v2_plan.md` §2.6).
+    BassAnchor,
+    /// Step 5: Evaluate recordings and view frequency response
     Evaluating,
-    /// Step 5: Save recordings to disk
+    /// Step 6: Save recordings to disk
     Saving,
 }
 
@@ -29,6 +35,7 @@ impl RecordingStep {
             RecordingStep::Config,
             RecordingStep::Capture,
             RecordingStep::Probe,
+            RecordingStep::BassAnchor,
             RecordingStep::Evaluating,
             RecordingStep::Saving,
         ]
@@ -39,6 +46,7 @@ impl RecordingStep {
             RecordingStep::Config => "Config",
             RecordingStep::Capture => "Capture",
             RecordingStep::Probe => "Probe",
+            RecordingStep::BassAnchor => "Bass Anchor",
             RecordingStep::Evaluating => "Evaluate",
             RecordingStep::Saving => "Save",
         }
@@ -48,7 +56,8 @@ impl RecordingStep {
         match self {
             RecordingStep::Config => Some(RecordingStep::Capture),
             RecordingStep::Capture => Some(RecordingStep::Probe),
-            RecordingStep::Probe => Some(RecordingStep::Evaluating),
+            RecordingStep::Probe => Some(RecordingStep::BassAnchor),
+            RecordingStep::BassAnchor => Some(RecordingStep::Evaluating),
             RecordingStep::Evaluating => Some(RecordingStep::Saving),
             RecordingStep::Saving => None,
         }
@@ -59,7 +68,8 @@ impl RecordingStep {
             RecordingStep::Config => None,
             RecordingStep::Capture => Some(RecordingStep::Config),
             RecordingStep::Probe => Some(RecordingStep::Capture),
-            RecordingStep::Evaluating => Some(RecordingStep::Probe),
+            RecordingStep::BassAnchor => Some(RecordingStep::Probe),
+            RecordingStep::Evaluating => Some(RecordingStep::BassAnchor),
             RecordingStep::Saving => Some(RecordingStep::Evaluating),
         }
     }
@@ -170,6 +180,93 @@ impl ProbeCaptureState {
             }
         }
         if map.is_empty() { None } else { Some(map) }
+    }
+}
+
+/// Status of the BassAnchor capture (Recording wizard Step 4).
+///
+/// Mirrors [`ProbeCaptureStatus`] — wall-clock progress via
+/// `started_at_ms`, `Failed(String)` for error reporting. Used by
+/// the GD-1e BassAnchor wizard step (`docs/gd_opt_v2_plan.md` §2.6).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum BassAnchorCaptureStatus {
+    #[default]
+    Idle,
+    Running { started_at_ms: u64 },
+    Complete,
+    Failed(String),
+}
+
+impl BassAnchorCaptureStatus {
+    /// Estimated fraction of the bass-anchor capture completed.
+    pub fn progress(&self, estimated_total_ms: u64, now_ms: u64) -> Option<f32> {
+        match self {
+            Self::Running { started_at_ms } if estimated_total_ms > 0 => {
+                let elapsed = now_ms.saturating_sub(*started_at_ms);
+                Some((elapsed as f32 / estimated_total_ms as f32).clamp(0.0, 1.0))
+            }
+            _ => None,
+        }
+    }
+}
+
+/// Shared business state for the Recording wizard "BassAnchor" step.
+///
+/// Lives alongside [`ProbeCaptureState`]. The raw results come from
+/// the engine (`BassAnchorResults`) and flow at save time into
+/// `RecordingConfiguration.bass_anchor_results`.
+#[derive(Debug, Clone)]
+pub struct BassAnchorCaptureState {
+    /// Tone-burst centre frequency in Hz. Default 20.0.
+    pub bass_freq_hz: f32,
+    /// Number of cycles in the burst. Default 5.
+    pub bass_cycles: u16,
+    /// Silence gap between channels in ms. Default 500.
+    pub silence_duration_ms: f32,
+    /// Sample rate used for the capture (Hz).
+    pub sample_rate: u32,
+    /// Microphone input channel (0-based).
+    pub input_channel: u16,
+    /// Background-measurement status.
+    pub status: BassAnchorCaptureStatus,
+    /// Raw analysis results. Cleared on Reset / new run.
+    pub results: Option<BassAnchorResults>,
+    /// Absolute path to the persisted bass-anchor WAV once captured.
+    pub wav_path: Option<String>,
+}
+
+impl Default for BassAnchorCaptureState {
+    fn default() -> Self {
+        Self {
+            bass_freq_hz: 20.0,
+            bass_cycles: 5,
+            silence_duration_ms: 500.0,
+            sample_rate: 48_000,
+            input_channel: 0,
+            status: BassAnchorCaptureStatus::Idle,
+            results: None,
+            wav_path: None,
+        }
+    }
+}
+
+impl BassAnchorCaptureState {
+    pub fn apply_results(&mut self, results: BassAnchorResults, wav_path: Option<String>) {
+        self.results = Some(results);
+        self.wav_path = wav_path;
+        self.status = BassAnchorCaptureStatus::Complete;
+    }
+
+    /// `true` when every channel's stability metric is under the 20°
+    /// advisory threshold from `docs/gd_opt_v2_plan.md` §2.8.
+    pub fn all_channels_reliable(&self) -> bool {
+        match (&self.status, &self.results) {
+            (BassAnchorCaptureStatus::Complete, Some(r)) => r
+                .channels
+                .iter()
+                .all(|c| c.bass_anchor_stability_deg < 20.0),
+            _ => false,
+        }
     }
 }
 
@@ -561,6 +658,7 @@ impl RecordingSignalType {
 // implemented. Re-export them under player-layer names so UI code only
 // has to depend on `sotf_audio_player` types.
 pub use sotf_audio::signal_recorder::{
+    BassAnchorChannelResult, BassAnchorResults,
     ProbeDelayChannelResult as DelayProbeChannelResult, ProbeDelayResults as DelayProbeResults,
 };
 

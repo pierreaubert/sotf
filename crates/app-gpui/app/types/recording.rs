@@ -8,9 +8,10 @@ use super::calibration::CalibrationData;
 
 // Re-export shared domain types from player crate
 pub use sotf_audio_player::recording_types::{
-    ChannelMapping, ChannelRecording, ChannelRecordingState, PlaybackDeviceConfig, PlotSmoothing,
-    ProbeCaptureState, ProbeCaptureStatus, RecordingDeviceConfig, RecordingResult,
-    RecordingSignalType, RecordingStep, SpeakerConfiguration,
+    BassAnchorCaptureState, BassAnchorCaptureStatus, ChannelMapping, ChannelRecording,
+    ChannelRecordingState, PlaybackDeviceConfig, PlotSmoothing, ProbeCaptureState,
+    ProbeCaptureStatus, RecordingDeviceConfig, RecordingResult, RecordingSignalType,
+    RecordingStep, SpeakerConfiguration,
 };
 
 /// Measurement-unit preference for the room-dimensions inputs on the
@@ -92,6 +93,12 @@ pub struct RecordingState {
     /// Populated by `start_probe_capture` on success; consumed by
     /// `save_recordings` to embed results in the session JSON.
     pub probe_capture: ProbeCaptureState,
+
+    // === BassAnchor Step State (GD-Opt v2 Phase GD-1e) ===
+    /// Shared business state for the bass anchor step. Populated by
+    /// the BassAnchor wizard step on success; consumed by
+    /// `save_recordings` to embed results in the session JSON.
+    pub bass_anchor_capture: BassAnchorCaptureState,
 
     // === UI State ===
     pub playback_device_dropdown_open: bool,
@@ -198,6 +205,7 @@ impl Default for RecordingState {
             recording_directory: None,
             recording_base_directory: None,
             probe_capture: ProbeCaptureState::default(),
+            bass_anchor_capture: BassAnchorCaptureState::default(),
             playback_device_dropdown_open: false,
             recording_device_dropdown_open: false,
             playback_sample_rate_dropdown_open: false,

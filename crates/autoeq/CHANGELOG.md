@@ -1,3 +1,21 @@
+# 0.4.34
+
+## GD-Opt v2 — Phase GD-1e: bass anchor types (autoeq side)
+
+Follows the BassAnchor wizard step design from
+`docs/gd_opt_v2_plan.md` §2.6 and §2.11 Q1. Purely additive.
+
+- New `BassAnchorResultsLegacy` / `BassAnchorChannelResultLegacy`
+  structs mirror the engine's `BassAnchorResults` 1:1 so the
+  autoeq-side loader stays lean.
+- `RecordingConfiguration` gains two new optional fields:
+  `bass_anchor_results: Option<BassAnchorResultsLegacy>` and
+  `bass_anchor_wav_relative: Option<String>`. Both default to `None`;
+  pre-GD-1e session files still load via serde defaults.
+
+No behaviour change in autoeq — the fields are consumed by the
+GD confidence gate + optimiser in later phases (GD-1g, GD-3).
+
 # 0.4.33
 
 ## GD-Opt v2 — Phase GD-1a.1: `AutoeqError::UnsupportedRecordingFormat`

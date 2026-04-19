@@ -765,6 +765,150 @@ pub fn gen_narrowband_probe(
         .collect()
 }
 
+// ---------------------------------------------------------------------------
+// GD-Opt v2 Phase GD-1e — bass tone burst + phase extraction
+// ---------------------------------------------------------------------------
+
+/// Generate a Hann-windowed sinusoidal tone burst at a single frequency.
+///
+/// Used by the recording wizard's BassAnchor step to capture a
+/// per-channel phase reference at the bottom of the bass band, where
+/// sweep SNR is marginal. At 20 Hz × 5 cycles @ 48 kHz the burst is
+/// 250 ms / 12 000 samples — long enough to resolve phase, short enough
+/// to keep modal ringing bounded.
+///
+/// # Arguments
+/// * `freq_hz`    - Fundamental frequency of the burst in Hz.
+/// * `num_cycles` - Number of cycles (tone-length in periods of `freq_hz`).
+/// * `sample_rate` - Sample rate in Hz.
+/// * `amp`        - Peak amplitude after windowing (≤ 1.0).
+///
+/// # Returns
+/// The burst as a vector of `f32` samples. An empty vector if any input
+/// is zero / sub-sample-length.
+pub fn gen_bass_tone_burst(freq_hz: f32, num_cycles: u16, sample_rate: u32, amp: f32) -> Vec<f32> {
+    if freq_hz <= 0.0 || num_cycles == 0 || sample_rate == 0 || amp <= 0.0 {
+        return Vec::new();
+    }
+    let n = ((num_cycles as f32 / freq_hz) * sample_rate as f32).round() as usize;
+    if n < 2 {
+        return Vec::new();
+    }
+    let omega = 2.0 * PI * freq_hz / sample_rate as f32;
+    let n_f = n as f32;
+    (0..n)
+        .map(|k| {
+            let t = k as f32;
+            // Hann envelope: (1 - cos(2π k / (n-1))) / 2
+            let w = 0.5 * (1.0 - (2.0 * PI * t / (n_f - 1.0)).cos());
+            clip(amp * w * (omega * t).sin())
+        })
+        .collect()
+}
+
+/// Result of a single-bin DFT-based phase extraction at a target
+/// frequency, together with a stability metric that flags modally
+/// contaminated bursts.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TonePhaseResult {
+    /// Phase of the fundamental at `freq_hz` in degrees, wrapped to
+    /// `(−180°, 180°]`. Relative to a reference `sin(ω·t)` emitted at
+    /// the start of the analysis window.
+    pub phase_deg: f64,
+    /// Magnitude of the bin at `freq_hz` (linear, same units as the
+    /// input signal). Zero when the signal contains no tone.
+    pub magnitude: f64,
+    /// |phase_half1 − phase_half2| in degrees. A stable,
+    /// single-sinusoid burst has `stability_deg ≈ 0`. Modal ringing,
+    /// low SNR, or time-varying phase drive this above 20°, which is
+    /// the GD-Opt v2 advisory threshold for `"bass_anchor_unreliable"`.
+    pub stability_deg: f64,
+}
+
+/// Extract the phase of a single frequency bin from a time-domain
+/// signal using a direct DFT sum, plus a half-split stability metric.
+///
+/// For `len(signal) = N`, the complex bin at `freq_hz` is:
+///
+/// ```text
+/// c = Σ_{k=0..N} s[k] · exp(−j·ω·k), ω = 2π·freq_hz/sample_rate
+/// phase = atan2(Im(c), Re(c))
+/// magnitude = |c| / N
+/// ```
+///
+/// The stability metric runs the same extraction over the first and
+/// second halves independently and reports the wrapped phase
+/// difference in degrees. A clean stationary tone gives ≈ 0;
+/// modally-ringing or noisy bursts show ≫ 0.
+pub fn extract_tone_phase(signal: &[f32], freq_hz: f32, sample_rate: u32) -> TonePhaseResult {
+    if signal.len() < 4 || freq_hz <= 0.0 || sample_rate == 0 {
+        return TonePhaseResult {
+            phase_deg: 0.0,
+            magnitude: 0.0,
+            stability_deg: 0.0,
+        };
+    }
+    let (re_full, im_full) = single_bin_dft(signal, freq_hz, sample_rate, 0);
+    let magnitude_raw = (re_full * re_full + im_full * im_full).sqrt();
+    let magnitude = magnitude_raw / signal.len() as f64;
+    let phase_rad = im_full.atan2(re_full);
+
+    let mid = signal.len() / 2;
+    let (re_a, im_a) = single_bin_dft(&signal[..mid], freq_hz, sample_rate, 0);
+    // The second half keeps the global time reference (k_offset = mid)
+    // so both halves measure phase against the same t = 0 — otherwise
+    // the split induces a spurious `mid·ω` phase jump on a stable tone.
+    let (re_b, im_b) = single_bin_dft(&signal[mid..], freq_hz, sample_rate, mid);
+    let phase_a = im_a.atan2(re_a);
+    let phase_b = im_b.atan2(re_b);
+    // Wrap (phase_b − phase_a) to (−π, π] before taking |·|.
+    let mut diff = phase_b - phase_a;
+    while diff > PI as f64 {
+        diff -= 2.0 * PI as f64;
+    }
+    while diff <= -(PI as f64) {
+        diff += 2.0 * PI as f64;
+    }
+
+    TonePhaseResult {
+        phase_deg: phase_rad.to_degrees(),
+        magnitude,
+        stability_deg: diff.abs().to_degrees(),
+    }
+}
+
+/// Direct single-bin DFT evaluated with the `sin` convention:
+///   `s[k] ≈ A · sin(ωk + φ)` → `phase = atan2(imag, real)`.
+///
+/// Returns the raw `(real, imag)` accumulators so callers can either
+/// compute magnitude themselves or average across windows without
+/// extra trigonometry.
+///
+/// The `k_offset` argument lets sub-slices of a larger signal share a
+/// common time reference. When analysing `signal[mid..]`, pass
+/// `k_offset = mid` so the projection basis stays anchored at the
+/// original `t = 0`; otherwise the two halves' phase measurements
+/// acquire a synthetic offset proportional to `mid · ω`.
+#[inline]
+fn single_bin_dft(signal: &[f32], freq_hz: f32, sample_rate: u32, k_offset: usize) -> (f64, f64) {
+    let omega = 2.0 * std::f64::consts::PI * freq_hz as f64 / sample_rate as f64;
+    let mut re = 0.0_f64;
+    let mut im = 0.0_f64;
+    // Reference convention: the emitted burst is `sin(ω·t)`. A pure
+    // sin-phase signal should produce `phase = 0`. Projecting onto
+    // `sin(ω·t)` (real part) and `+cos(ω·t)` (imag part) makes
+    // `atan2(imag, real)` return the phase of a sin-referenced tone:
+    //   sin(ωt) → phase = 0°
+    //   cos(ωt) → phase = +90°
+    //   −sin(ωt) → phase = ±180°
+    for (i, &s) in signal.iter().enumerate() {
+        let theta = omega * (i + k_offset) as f64;
+        re += s as f64 * theta.sin();
+        im += s as f64 * theta.cos();
+    }
+    (re, im)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1273,5 +1417,127 @@ mod tests {
                 k
             );
         }
+    }
+
+    // ----- GD-Opt v2 Phase GD-1e — bass tone burst + phase extraction ----
+
+    #[test]
+    fn bass_tone_burst_length_and_envelope() {
+        // 20 Hz × 5 cycles at 48 kHz → exactly 12 000 samples (250 ms)
+        let b = gen_bass_tone_burst(20.0, 5, 48_000, 0.5);
+        assert_eq!(b.len(), 12_000);
+        // Peak after Hann windowing at amp=0.5 → ≤ 0.5
+        let peak = b.iter().map(|s| s.abs()).fold(0.0_f32, f32::max);
+        assert!(peak <= 0.5 + 1e-6, "burst peak {peak} exceeds amp");
+        // Hann envelope: first and last samples are near-zero.
+        assert!(b[0].abs() < 1e-4);
+        assert!(b[b.len() - 1].abs() < 1e-4);
+        // The integer-cycle burst places a zero crossing exactly at
+        // the midpoint (2.5 cycles). Peak around the midpoint — scan
+        // a ¼-cycle window on either side to find it.
+        let quarter_cycle = (48_000 / 20 / 4) as usize; // 600 samples
+        let mid = b.len() / 2;
+        let peak_near_mid = b[mid - quarter_cycle..=mid + quarter_cycle]
+            .iter()
+            .map(|s| s.abs())
+            .fold(0.0_f32, f32::max);
+        assert!(
+            peak_near_mid > 0.3,
+            "burst centre region should hit peak, got {peak_near_mid}"
+        );
+    }
+
+    #[test]
+    fn bass_tone_burst_rejects_invalid() {
+        assert!(gen_bass_tone_burst(0.0, 5, 48_000, 0.5).is_empty());
+        assert!(gen_bass_tone_burst(20.0, 0, 48_000, 0.5).is_empty());
+        assert!(gen_bass_tone_burst(20.0, 5, 0, 0.5).is_empty());
+        assert!(gen_bass_tone_burst(20.0, 5, 48_000, 0.0).is_empty());
+    }
+
+    #[test]
+    fn tone_phase_recovers_sin_reference_zero() {
+        // Reference: pure sin(ωt) at 20 Hz. Phase should be ≈ 0°.
+        let burst = gen_bass_tone_burst(20.0, 5, 48_000, 0.5);
+        let r = extract_tone_phase(&burst, 20.0, 48_000);
+        assert!(
+            r.phase_deg.abs() < 1.0,
+            "pure sin burst should give phase ≈ 0°, got {:.3}°",
+            r.phase_deg
+        );
+        assert!(r.magnitude > 0.0);
+        // A stable-but-Hann-windowed burst has a small residual
+        // stability reading (~7°) because the two halves have
+        // different envelope profiles. The advisory threshold for
+        // `"bass_anchor_unreliable"` is 20° (plan §2.8), so anything
+        // below that is considered reliable. Test with a safety
+        // margin of 15°.
+        assert!(
+            r.stability_deg < 15.0,
+            "stable tone stability should stay under the 20° advisory threshold, got {:.3}°",
+            r.stability_deg
+        );
+    }
+
+    #[test]
+    fn tone_phase_recovers_synthetic_90_degree_shift() {
+        // Synthesize a cos-phase burst (= 90° phase shift relative to sin).
+        let freq = 20.0_f32;
+        let sr = 48_000_u32;
+        let n = 12_000;
+        let omega = 2.0 * PI * freq / sr as f32;
+        let n_f = n as f32;
+        let burst: Vec<f32> = (0..n)
+            .map(|k| {
+                let t = k as f32;
+                let w = 0.5 * (1.0 - (2.0 * PI * t / (n_f - 1.0)).cos());
+                0.5 * w * (omega * t).cos() // cos(ωt) → 90° relative to sin(ωt)
+            })
+            .collect();
+        let r = extract_tone_phase(&burst, freq, sr);
+        // Expected phase is 90° (cos = sin shifted forward by 90°).
+        let err = (r.phase_deg - 90.0).abs();
+        assert!(
+            err < 1.0,
+            "cos burst should give phase ≈ 90°, got {:.3}° (error {:.3}°)",
+            r.phase_deg,
+            err
+        );
+        // Stable-but-Hann-windowed — see note on the sin-reference
+        // test for why the stability reading is non-zero.
+        assert!(r.stability_deg < 15.0);
+    }
+
+    #[test]
+    fn tone_phase_detects_unstable_burst() {
+        // Concatenate two half-bursts with a 90° jump in the middle.
+        // The stability metric must flag this > 20°.
+        let freq = 20.0_f32;
+        let sr = 48_000_u32;
+        let n_half = 6_000;
+        let omega = 2.0 * PI * freq / sr as f32;
+        let n_f = (2 * n_half) as f32;
+        let burst: Vec<f32> = (0..2 * n_half)
+            .map(|k| {
+                let t = k as f32;
+                let w = 0.5 * (1.0 - (2.0 * PI * t / (n_f - 1.0)).cos());
+                let phase_shift = if k < n_half { 0.0 } else { PI / 2.0 };
+                0.5 * w * (omega * t + phase_shift).sin()
+            })
+            .collect();
+        let r = extract_tone_phase(&burst, freq, sr);
+        assert!(
+            r.stability_deg > 20.0,
+            "phase-jump burst should be flagged unstable, got stability = {:.1}°",
+            r.stability_deg
+        );
+    }
+
+    #[test]
+    fn tone_phase_rejects_short_signal() {
+        let r = extract_tone_phase(&[0.1, 0.2], 20.0, 48_000);
+        assert_eq!(r.magnitude, 0.0);
+        assert_eq!(r.phase_deg, 0.0);
+        assert_eq!(r.stability_deg, 0.0);
     }
 }
