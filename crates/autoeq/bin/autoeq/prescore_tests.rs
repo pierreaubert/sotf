@@ -56,6 +56,7 @@ mod tests {
             freq: objective_data.freqs.clone(),
             spl: objective_data.deviation.clone(),
             phase: None,
+            ..Default::default()
         };
 
         let result =
@@ -80,6 +81,7 @@ mod tests {
             freq: objective_data.freqs.clone(),
             spl: objective_data.deviation.clone(),
             phase: None,
+            ..Default::default()
         };
 
         let result = compute_pre_optimization_metrics(

@@ -225,6 +225,7 @@ pub fn optimize_crossover(
         freq: drivers_data.freq_grid.clone(),
         spl: combined_response,
         phase: None,
+        ..Default::default()
     };
 
     eprintln!(

@@ -209,6 +209,7 @@ fn prepare_driver_curves(data: &DriversLossData, crossover_freqs: &[f64]) -> Vec
                 freq: driver.freq.clone(),
                 spl: driver.spl.clone(),
                 phase: driver.phase.clone(),
+                ..Default::default()
             },
             passband_low,
             passband_high,

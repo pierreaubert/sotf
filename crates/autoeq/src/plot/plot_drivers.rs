@@ -44,6 +44,7 @@ pub fn plot_drivers(
                 freq: driver.freq.clone(),
                 spl: driver.spl.clone(),
                 phase: driver.phase.clone(),
+                ..Default::default()
             },
         );
 

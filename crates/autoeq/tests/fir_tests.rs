@@ -21,6 +21,7 @@ fn create_test_curve(freqs: &[f64], spl_values: &[f64]) -> Curve {
         freq: Array1::from(freqs.to_vec()),
         spl: Array1::from(spl_values.to_vec()),
         phase: None,
+        ..Default::default()
     }
 }
 
@@ -199,6 +200,7 @@ fn test_fir_round_trip_correction() {
         freq: measurement.freq.clone(),
         spl: Array1::from(correction_spl),
         phase: None,
+        ..Default::default()
     };
 
     let coeffs =
@@ -264,6 +266,7 @@ fn test_fir_handles_room_null_gracefully() {
         freq: measurement.freq.clone(),
         spl: Array1::from(correction_spl),
         phase: None,
+        ..Default::default()
     };
 
     let sample_rate = 48000.0;
@@ -448,6 +451,7 @@ fn test_fir_from_fixture_data() {
         freq: measurement.freq.clone(),
         spl: Array1::from(correction_spl),
         phase: None,
+        ..Default::default()
     };
 
     let coeffs =

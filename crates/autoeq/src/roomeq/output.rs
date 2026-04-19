@@ -103,6 +103,7 @@ pub fn extend_curve_to_full_range(curve: &crate::Curve) -> crate::Curve {
         freq: Array1::from(freq_vec),
         spl: Array1::from(spl_vec),
         phase: None,
+        ..Default::default()
     }
 }
 
@@ -1219,6 +1220,7 @@ mod tests {
             freq: Array1::from(vec![20.0, 100.0, 1000.0, 10000.0, 20000.0]),
             spl: Array1::from(vec![0.0, 1.0, 2.0, 1.0, 0.0]),
             phase: None,
+            ..Default::default()
         };
         let extended = extend_curve_to_full_range(&curve);
         assert_eq!(extended.freq.len(), curve.freq.len());
@@ -1231,6 +1233,7 @@ mod tests {
             freq: Array1::from(vec![100.0, 200.0, 300.0, 400.0, 500.0]),
             spl: Array1::from(vec![-5.0, -3.0, 0.0, -2.0, -4.0]),
             phase: None,
+            ..Default::default()
         };
         let extended = extend_curve_to_full_range(&curve);
 
@@ -1263,6 +1266,7 @@ mod tests {
             freq: Array1::from(vec![]),
             spl: Array1::from(vec![]),
             phase: None,
+            ..Default::default()
         };
         let extended = extend_curve_to_full_range(&curve);
         assert!(extended.freq.is_empty());

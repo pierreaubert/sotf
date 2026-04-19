@@ -257,6 +257,7 @@ pub fn extract_curve_by_name(
         } else {
             None
         },
+        ..Default::default()
     })
 }
 
@@ -500,6 +501,7 @@ pub fn extract_cea2034_curves_original(
             freq: freq.clone(),
             spl: pir,
             phase: None,
+            ..Default::default()
         },
     );
 
@@ -548,6 +550,7 @@ pub fn extract_cea2034_curves(
                         freq: freq.clone(),
                         spl: interpolated.spl,
                         phase: None,
+                        ..Default::default()
                     },
                 );
             }
@@ -583,6 +586,7 @@ pub fn extract_cea2034_curves(
             freq: freq.clone(),
             spl: pir,
             phase: None,
+            ..Default::default()
         },
     );
 
@@ -889,11 +893,13 @@ pub fn build_cea2034_data(curves: HashMap<String, Curve>) -> Result<Cea2034Data,
         freq: on_axis.freq.clone(),
         spl: &on_axis.spl - &early_reflections.spl,
         phase: None,
+        ..Default::default()
     };
     let sp_di = Curve {
         freq: on_axis.freq.clone(),
         spl: &on_axis.spl - &sound_power.spl,
         phase: None,
+        ..Default::default()
     };
 
     Ok(Cea2034Data {
@@ -1143,5 +1149,6 @@ fn parse_headphone_csv(csv_text: &str) -> Result<crate::Curve, Box<dyn Error>> {
         freq: Array1::from(frequencies),
         spl: Array1::from(spl_values),
         phase: None,
+        ..Default::default()
     })
 }

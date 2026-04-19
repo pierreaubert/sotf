@@ -1,3 +1,22 @@
+# 0.5.19
+
+## Room EQ wizard: rename `target_tilt` → `target_response` (breaking)
+
+- Step 3 ("Configure") and the AutoEQ form/render components now
+  read and write the unified `target_response` field on
+  `sotf_audio_player::RoomEqConfig` instead of the removed
+  `target_tilt` / `broadband_target_matching` pair. This matches
+  autoeq 0.4.30 and sotf-player 0.5.122.
+- `app/types/room_eq.rs`, `components/autoeq/{config,form,render,
+  render_body_room_eq,render_section_delay}.rs`, and
+  `components/room_eq/step_{3_configure,4_optimise}.rs` were
+  updated accordingly. The standalone broadband-matching render
+  panel was removed — it is now a single checkbox under the
+  target-response section.
+- `tests/room_eq_config_tests.rs` was reshaped to drive the new
+  field; tests that relied on legacy field names no longer
+  compile against older sotf-player.
+
 # 0.5.18
 
 ## Tests: enable `sotf-player/testing` feature in dev-dependencies

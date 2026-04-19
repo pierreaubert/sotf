@@ -679,6 +679,7 @@ fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
                     freq: data.freqs.clone(),
                     spl: error,
                     phase: None,
+                    ..Default::default()
                 };
                 let smoothed = crate::read::smooth_one_over_n_octave(&curve, data.smooth_n);
                 flat_loss(&data.freqs, &smoothed.spl, data.min_freq, data.max_freq)
@@ -695,6 +696,7 @@ fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
                     freq: data.freqs.clone(),
                     spl: error,
                     phase: None,
+                    ..Default::default()
                 };
                 let smoothed = crate::read::smooth_one_over_n_octave(&curve, data.smooth_n);
                 flat_loss_asymmetric(
@@ -731,6 +733,7 @@ fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
                     freq: data.freqs.clone(),
                     spl: error.clone(),
                     phase: None,
+                    ..Default::default()
                 };
                 let s = headphone_loss(&error_curve);
                 let p = flat_loss(&data.freqs, &error, data.min_freq, data.max_freq);
@@ -850,6 +853,7 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
                     freq: data.freqs.clone(),
                     spl: error,
                     phase: None,
+                    ..Default::default()
                 };
                 let smoothed = crate::read::smooth_one_over_n_octave(&curve, data.smooth_n);
                 flat_loss(&data.freqs, &smoothed.spl, data.min_freq, data.max_freq)
@@ -866,6 +870,7 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
                     freq: data.freqs.clone(),
                     spl: error,
                     phase: None,
+                    ..Default::default()
                 };
                 let smoothed = crate::read::smooth_one_over_n_octave(&curve, data.smooth_n);
                 flat_loss_asymmetric(
@@ -906,6 +911,7 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
                     freq: data.freqs.clone(),
                     spl: error.clone(),
                     phase: None,
+                    ..Default::default()
                 };
                 let s = headphone_loss(&error_curve);
                 let p = flat_loss(&data.freqs, &error, data.min_freq, data.max_freq);

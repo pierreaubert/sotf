@@ -73,6 +73,7 @@ pub fn build_complete_target_curve(freqs: &Array1<f64>, config: &TargetResponseC
         freq: freqs.clone(),
         spl,
         phase: None,
+        ..Default::default()
     }
 }
 

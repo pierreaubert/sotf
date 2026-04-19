@@ -95,6 +95,7 @@ pub fn optimize_multisub(
         freq: drivers_data.freq_grid.clone(),
         spl: combined_response,
         phase: None,
+        ..Default::default()
     };
 
     Ok((result, combined_curve))
@@ -264,6 +265,7 @@ pub fn optimize_multisub_with_allpass(
         freq: drivers_data.freq_grid.clone(),
         spl: combined_spl,
         phase: None,
+        ..Default::default()
     };
 
     Ok(MultiSubAllPassResult {
@@ -341,6 +343,7 @@ fn compute_combined_with_allpass(
                     freq: d.freq.clone(),
                     spl: d.spl.clone(),
                     phase: d.phase.clone(),
+                    ..Default::default()
                 },
                 20.0,
                 20000.0,

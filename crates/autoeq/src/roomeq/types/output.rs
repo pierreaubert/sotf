@@ -60,6 +60,7 @@ impl From<CurveData> for Curve {
             freq: ndarray::Array1::from(data.freq),
             spl: ndarray::Array1::from(data.spl),
             phase: data.phase.map(ndarray::Array1::from),
+            ..Default::default()
         }
     }
 }

@@ -62,6 +62,7 @@ pub fn normalize_and_interpolate_response(
             freq: curve.freq.clone(),
             spl: spl_norm,
             phase: curve.phase.clone(),
+            ..Default::default()
         },
     )
 }
@@ -102,6 +103,7 @@ pub fn normalize_and_interpolate_response_with_range(
             freq: curve.freq.clone(),
             spl: spl_norm,
             phase: curve.phase.clone(),
+            ..Default::default()
         },
     )
 }

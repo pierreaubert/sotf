@@ -87,6 +87,7 @@ pub(super) async fn load_and_prepare(
         freq: standard_freq.clone(),
         spl: &target_curve.spl - &input_curve.spl,
         phase: None,
+        ..Default::default()
     };
     let spin_data = spin_data_res?;
 

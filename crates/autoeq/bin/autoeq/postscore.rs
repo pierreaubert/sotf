@@ -86,6 +86,7 @@ pub(super) async fn compute_post_optimization_metrics(
                 freq: standard_freq.clone(),
                 spl: &target_curve.spl - &input_curve.spl - &peq_after,
                 phase: None,
+                ..Default::default()
             };
             headphone_loss_val = Some(loss::headphone_loss(&deviation_after));
         }

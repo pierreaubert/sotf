@@ -165,21 +165,26 @@ freq,spl
 RoomEQ provides advanced audio correction features for optimizing room acoustics in two scenarios:
 
 - **Scenario A (WITH Subwoofers)**: Phase alignment and multi-seat variance minimization
-- **Scenario B (WITHOUT Subwoofers)**: Schroeder split, excursion protection, and target tilt
+- **Scenario B (WITHOUT Subwoofers)**: Schroeder split, excursion protection, and target response shaping
 
-### Target Curve Tilt
+### Target Response
 
-Instead of optimizing to a flat target, many listeners prefer a gently downward-sloping target curve. Research by Harman International shows that a **-0.8 dB/octave** tilt is psychoacoustically preferred for in-room listening.
+Instead of optimizing to a flat target, many listeners prefer a gently downward-sloping target curve. Research by Harman International shows that a **-0.8 dB/octave** tilt is psychoacoustically preferred for in-room listening. Target shaping is configured via the unified `target_response` object, which covers the base shape, optional user-preference shelves layered on top, and the broadband pre-correction toggle.
 
 ```json
 {
   "optimizer": {
-    "target_tilt": {
-      "tilt_type": "harman",
+    "target_response": {
+      "shape": "harman",
       "slope_db_per_octave": -0.8,
       "reference_freq": 1000,
-      "bass_shelf_db": 0,
-      "bass_shelf_freq": 200
+      "preference": {
+        "bass_shelf_db": 0,
+        "bass_shelf_freq": 200,
+        "treble_shelf_db": 0,
+        "treble_shelf_freq": 8000
+      },
+      "broadband_precorrection": false
     }
   }
 }
@@ -187,28 +192,36 @@ Instead of optimizing to a flat target, many listeners prefer a gently downward-
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `tilt_type` | string | `"flat"` | Target type: `"flat"`, `"harman"`, or `"custom"` |
-| `slope_db_per_octave` | number | -0.8 | Slope in dB/octave (negative = downward tilt). Used when `tilt_type` is `"custom"` |
-| `reference_freq` | number | 1000 | Frequency where tilt equals 0 dB (Hz) |
-| `bass_shelf_db` | number | 0 | Additional bass shelf boost (dB) |
-| `bass_shelf_freq` | number | 200 | Bass shelf transition frequency (Hz) |
+| `shape` | string | `"flat"` | Target shape: `"flat"`, `"harman"`, `"custom"`, `"file"`, `"from_measurement"` |
+| `slope_db_per_octave` | number | -0.8 | Slope in dB/octave (negative = downward tilt). Used when `shape == "custom"` |
+| `reference_freq` | number | 1000 | Frequency where the target slope passes through 0 dB (Hz) |
+| `curve_path` | string (path) | - | CSV target file path (used when `shape == "file"`) |
+| `preference.bass_shelf_db` | number | 0 | Bass shelf preference layered on top of the target shape (dB) |
+| `preference.bass_shelf_freq` | number | 200 | Bass shelf transition frequency (Hz) |
+| `preference.treble_shelf_db` | number | 0 | Treble shelf preference layered on top of the target shape (dB) |
+| `preference.treble_shelf_freq` | number | 8000 | Treble shelf transition frequency (Hz) |
+| `broadband_precorrection` | boolean | false | Run a preliminary broadband shelf + gain fit before the fine-grained PEQ pass |
 
 The target curve is computed as:
 ```
-target_db(f) = slope * log2(f / reference_freq) + bass_shelf(f)
+target_db(f) = slope * log2(f / reference_freq)
+             + preference_bass_shelf(f)
+             + preference_treble_shelf(f)
 ```
 
-Where `bass_shelf(f)` applies a smooth 2nd-order shelf transition below `bass_shelf_freq`.
+Where the preference shelf terms apply smooth 2nd-order shelf transitions around `bass_shelf_freq` and `treble_shelf_freq`.
 
 **Example: Harman with Bass Boost**
 
 ```json
 {
   "optimizer": {
-    "target_tilt": {
-      "tilt_type": "harman",
-      "bass_shelf_db": 3,
-      "bass_shelf_freq": 200
+    "target_response": {
+      "shape": "harman",
+      "preference": {
+        "bass_shelf_db": 3,
+        "bass_shelf_freq": 200
+      }
     }
   }
 }
@@ -411,9 +424,11 @@ For multi-seat optimization, you need measurements of each subwoofer at each sea
     "num_filters": 10,
     "refine": true,
 
-    "target_tilt": {
-      "tilt_type": "harman",
-      "bass_shelf_db": 2
+    "target_response": {
+      "shape": "harman",
+      "preference": {
+        "bass_shelf_db": 2
+      }
     },
 
     "phase_alignment": {
@@ -440,8 +455,8 @@ For multi-seat optimization, you need measurements of each subwoofer at each sea
     "num_filters": 12,
     "refine": true,
 
-    "target_tilt": {
-      "tilt_type": "harman"
+    "target_response": {
+      "shape": "harman"
     },
 
     "excursion_protection": {
@@ -472,7 +487,7 @@ When multiple features are enabled, the optimization follows this order:
 
 ```
 1. Load measurement(s)
-2. Build target curve (with tilt if configured)
+2. Build target curve from `target_response` (shape + preference shelves)
 3. [IF excursion_protection] Detect F3, generate protection HPF
 4. [IF has_subwoofer && phase_alignment] Optimize delay/polarity for energy max
 5. [IF multi_seat] Optimize sub gains/delays for variance minimization
@@ -487,10 +502,9 @@ The features are also available programmatically:
 
 ```rust
 use autoeq::roomeq::{
-    // Target Tilt
-    build_target_curve_with_tilt,
-    build_harman_target_curve,
-    TargetTiltConfig, TiltType,
+    // Target Response
+    build_complete_target_curve,
+    TargetResponseConfig, TargetShape, UserPreference,
 
     // Excursion Protection
     detect_f3, generate_excursion_protection,

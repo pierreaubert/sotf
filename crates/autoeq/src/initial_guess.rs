@@ -78,6 +78,7 @@ fn smooth_problem_response(freq_grid: &Array1<f64>, data: &Array1<f64>, sigma: f
         freq: freq_grid.clone(),
         spl: data.clone(),
         phase: None,
+        ..Default::default()
     };
     let bands_per_octave = sigma.max(1.0).round() as usize;
     crate::read::smooth_one_over_n_octave(&curve, bands_per_octave).spl

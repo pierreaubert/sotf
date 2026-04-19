@@ -105,6 +105,107 @@ pub struct RecordingConfiguration {
     /// `None` for sessions that skipped the Probe step.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub probe_wav_relative: Option<String>,
+
+    // ------------------------------------------------------------------
+    // GD-Opt v2 recording extensions (see `docs/gd_opt_v2_plan.md` §2).
+    // All optional; absent values degrade the GD confidence gate but
+    // do not break the wider recording pipeline.
+    // ------------------------------------------------------------------
+    /// Per-octave bass sweep duration in seconds. Defaults to 3.0; the
+    /// sweep generator scales total duration so that the band below
+    /// 100 Hz receives `bass_octave_duration_s` seconds per octave.
+    /// Clamped to `[1.0 .. 10.0]` at load time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bass_octave_duration_s: Option<f32>,
+    /// Pre-sweep silence window in seconds. Used by the coherence
+    /// averager to estimate the noise-floor. Default 2.0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pre_silence_s: Option<f32>,
+    /// Post-sweep silence window in seconds. Default
+    /// `schroeder_rt60 + 1.0`; falls back to `2.0` if no RT60 estimate
+    /// is available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub post_silence_s: Option<f32>,
+    /// Target sweep level at the listening position in dBSPL. Requires
+    /// [`spl_calibration`](Self::spl_calibration) to be populated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sweep_level_db_spl: Option<f32>,
+    /// Number of sweeps recorded back-to-back for coherence averaging.
+    /// Default 4. Clamped to `[1 .. 8]` at load time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub num_sweeps: Option<u8>,
+    /// Coherence threshold below which the GD confidence gate declares
+    /// bass phase untrustworthy. Default 0.9. Clamped to `[0.5 .. 0.99]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coherence_threshold: Option<f32>,
+    /// Centre frequency of the bass tone burst captured by the
+    /// BassAnchor wizard step. Default 20.0 Hz (or
+    /// `1.25 * min_freq`, whichever is higher).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bass_probe_freq_hz: Option<f32>,
+    /// Number of cycles in the bass tone burst. Default 5.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bass_probe_cycles: Option<u16>,
+    /// Path to the microphone phase calibration CSV (4 columns:
+    /// `freq, mag_db, phase_deg, coherence`). Magnitude calibration
+    /// already lives under [`mic_calibration_path`](Self::mic_calibration_path).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mic_phase_calibration_path: Option<String>,
+    /// Per-channel mic phase calibration files, aligned with
+    /// [`mic_calibration_paths`](Self::mic_calibration_paths).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mic_phase_calibration_paths: Option<Vec<Option<String>>>,
+    /// SPL calibration anchor captured from a pre-sweep reference tone.
+    /// Required on new recordings by the SplCalibration wizard step;
+    /// stored here so that replayed recordings can re-derive
+    /// `sweep_level_db_spl`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spl_calibration: Option<SplCalibration>,
+    /// Deterministic seed for the sweep / probe generators. QA sets it;
+    /// the UI hides it. When `None`, the generators use their internal
+    /// fixed seed constants.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recording_seed: Option<u64>,
+}
+
+/// SPL calibration anchor captured from a pre-sweep reference tone.
+///
+/// Maps the peak sample value observed on the recording ADC during a
+/// reference tone to a dBSPL reading taken by the user at the listening
+/// position with an external meter. Once captured, the sweep playback
+/// level is chosen so the in-band energy at the listening position hits
+/// [`RecordingConfiguration::sweep_level_db_spl`](RecordingConfiguration::sweep_level_db_spl)
+/// deterministically — avoiding the subwoofer driver over-excursion
+/// that would otherwise contaminate bass phase with harmonic distortion.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
+pub struct SplCalibration {
+    /// User-reported dBSPL at the listening position during calibration.
+    pub reported_db_spl: f32,
+    /// Frequency of the calibration tone in Hz (default 1000).
+    pub reference_freq_hz: f32,
+    /// Peak sample value observed on the recording ADC during the tone,
+    /// in the range `[0.0 .. 1.0]`.
+    pub peak_sample_level: f32,
+    /// Offset mapping ADC peak level to dBSPL at the mic:
+    /// `dbspl_at_mic = 20 * log10(peak_sample_value) + spl_offset_db`.
+    pub spl_offset_db: f32,
+}
+
+impl SplCalibration {
+    /// Convenience: compute the expected dBSPL at the mic for a given
+    /// peak sample value, using this calibration's offset.
+    pub fn dbspl_for_peak_level(&self, peak_sample_value: f32) -> f32 {
+        20.0 * peak_sample_value.max(f32::EPSILON).log10() + self.spl_offset_db
+    }
+
+    /// Convenience: compute the peak sample value required to hit a
+    /// target dBSPL at the mic. Returns `0.0` if the target is below
+    /// the representable range.
+    pub fn peak_level_for_dbspl(&self, target_db_spl: f32) -> f32 {
+        10.0f32
+            .powf((target_db_spl - self.spl_offset_db) / 20.0)
+            .clamp(0.0, 1.0)
+    }
 }
 
 /// Serializable mirror of the engine's `ProbeDelayResults`. Kept
@@ -182,7 +283,7 @@ pub enum SystemModel {
 
 /// Target response shape preset
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default, PartialEq)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum TargetShape {
     /// Flat in-room response (no tilt)
     #[default]
@@ -194,7 +295,6 @@ pub enum TargetShape {
     /// Load target curve from external CSV file (`curve_path` must be set)
     File,
     /// Derive slope from the input measurement curve at optimization time
-    #[serde(alias = "from_measurement")]
     FromMeasurement,
 }
 
@@ -1628,6 +1728,115 @@ impl RoomConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn spl_calibration_roundtrip_and_helpers() {
+        let cal = SplCalibration {
+            reported_db_spl: 85.0,
+            reference_freq_hz: 1000.0,
+            peak_sample_level: 0.5,
+            spl_offset_db: 85.0 - 20.0 * 0.5_f32.log10(),
+        };
+        // Round-trip through JSON.
+        let json = serde_json::to_string(&cal).unwrap();
+        let back: SplCalibration = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, cal);
+        // `dbspl_for_peak_level` at the calibration peak must return the
+        // reported dBSPL (within f32 rounding).
+        let recovered = cal.dbspl_for_peak_level(cal.peak_sample_level);
+        assert!((recovered - cal.reported_db_spl).abs() < 1e-3);
+        // `peak_level_for_dbspl` is the inverse.
+        let peak = cal.peak_level_for_dbspl(cal.reported_db_spl);
+        assert!((peak - cal.peak_sample_level).abs() < 1e-5);
+        // Clamp: asking for a dBSPL below the representable range
+        // should return 0.0 rather than a negative peak level.
+        assert_eq!(cal.peak_level_for_dbspl(-1000.0), 0.0);
+    }
+
+    #[test]
+    fn recording_configuration_accepts_gd_v2_fields() {
+        let cfg_json = serde_json::json!({
+            "bass_octave_duration_s": 3.0,
+            "pre_silence_s": 2.0,
+            "post_silence_s": 4.0,
+            "sweep_level_db_spl": 85.0,
+            "num_sweeps": 4,
+            "coherence_threshold": 0.9,
+            "bass_probe_freq_hz": 20.0,
+            "bass_probe_cycles": 5,
+            "mic_phase_calibration_path": "/tmp/mic_phase.csv",
+            "spl_calibration": {
+                "reported_db_spl": 85.0,
+                "reference_freq_hz": 1000.0,
+                "peak_sample_level": 0.5,
+                "spl_offset_db": 91.02
+            },
+            "recording_seed": 42
+        });
+        let cfg: RecordingConfiguration = serde_json::from_value(cfg_json).unwrap();
+        assert_eq!(cfg.bass_octave_duration_s, Some(3.0));
+        assert_eq!(cfg.num_sweeps, Some(4));
+        assert_eq!(cfg.coherence_threshold, Some(0.9));
+        assert_eq!(cfg.bass_probe_freq_hz, Some(20.0));
+        assert_eq!(cfg.bass_probe_cycles, Some(5));
+        assert_eq!(
+            cfg.mic_phase_calibration_path.as_deref(),
+            Some("/tmp/mic_phase.csv")
+        );
+        let cal = cfg.spl_calibration.expect("spl_calibration populated");
+        assert!((cal.reported_db_spl - 85.0).abs() < 1e-6);
+        assert_eq!(cfg.recording_seed, Some(42));
+    }
+
+    #[test]
+    fn recording_configuration_legacy_json_still_loads() {
+        // A session written before GD-1a only knows the pre-existing
+        // fields. GD-Opt v2 metadata must default to `None` rather
+        // than failing deserialization — the confidence gate is what
+        // converts `None` into `Advisory::GdOptDegradedPhase` at
+        // optimization time.
+        let legacy_json = serde_json::json!({
+            "signal_type": "Sweep",
+            "signal_duration_secs": 10.0,
+            "sweep_start_freq": 20.0,
+            "sweep_end_freq": 20000.0
+        });
+        let cfg: RecordingConfiguration = serde_json::from_value(legacy_json).unwrap();
+        assert!(cfg.bass_octave_duration_s.is_none());
+        assert!(cfg.num_sweeps.is_none());
+        assert!(cfg.coherence_threshold.is_none());
+        assert!(cfg.bass_probe_freq_hz.is_none());
+        assert!(cfg.bass_probe_cycles.is_none());
+        assert!(cfg.mic_phase_calibration_path.is_none());
+        assert!(cfg.mic_phase_calibration_paths.is_none());
+        assert!(cfg.spl_calibration.is_none());
+        assert!(cfg.recording_seed.is_none());
+    }
+
+    #[test]
+    fn target_shape_canonical_wire_format() {
+        // Pins the on-the-wire string for every TargetShape variant.
+        // `from_measurement` (underscore) is the sole canonical form,
+        // matching bin/roomeq/input_schema.json and INPUT_FORMAT.md.
+        let cases = [
+            (TargetShape::Flat, "\"flat\""),
+            (TargetShape::Harman, "\"harman\""),
+            (TargetShape::Custom, "\"custom\""),
+            (TargetShape::File, "\"file\""),
+            (TargetShape::FromMeasurement, "\"from_measurement\""),
+        ];
+        for (variant, expected) in cases {
+            let serialized = serde_json::to_string(&variant).unwrap();
+            assert_eq!(serialized, expected, "serialize {variant:?}");
+            let round_tripped: TargetShape = serde_json::from_str(&serialized).unwrap();
+            assert_eq!(round_tripped, variant, "round-trip {variant:?}");
+        }
+        // Old canonical form used before the snake_case switch must no
+        // longer deserialize — a paranoid guard against accidental
+        // reintroduction of the `#[serde(alias = "from_measurement")]`
+        // back-compat shim.
+        assert!(serde_json::from_str::<TargetShape>("\"frommeasurement\"").is_err());
+    }
 
     #[test]
     fn test_optimizer_config_default_has_decomposed_correction_enabled() {

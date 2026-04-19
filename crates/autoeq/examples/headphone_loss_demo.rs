@@ -94,6 +94,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         freq: freqs.clone(),
         spl: deviation_spl,
         phase: None,
+        ..Default::default()
     };
     let smooth_deviation = if args.smooth {
         smooth_one_over_n_octave(&deviation, args.smooth_n)

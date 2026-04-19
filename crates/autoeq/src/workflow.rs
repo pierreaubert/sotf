@@ -132,6 +132,7 @@ pub fn build_target_curve(
                     freq: freqs.clone(),
                     spl,
                     phase: None,
+                    ..Default::default()
                 })
             }
             "Sound Power" | "Early Reflections" | "Estimated In-Room Response" => {
@@ -156,6 +157,7 @@ pub fn build_target_curve(
                     freq: freqs.clone(),
                     spl,
                     phase: None,
+                    ..Default::default()
                 })
             }
             _ => {
@@ -164,6 +166,7 @@ pub fn build_target_curve(
                     freq: freqs.clone(),
                     spl,
                     phase: None,
+                    ..Default::default()
                 })
             }
         }
@@ -1171,6 +1174,7 @@ where
         freq: target_curve.freq.clone(),
         spl: &target_curve.spl - &input_normalized.spl,
         phase: None,
+        ..Default::default()
     };
 
     // 5. Setup objective - normalize spin data to same frequency grid
@@ -1283,6 +1287,7 @@ where
         freq: target_normalized.freq.clone(),
         spl: &target_normalized.spl - &input_normalized.spl,
         phase: None,
+        ..Default::default()
     };
 
     // 4. Setup objective
@@ -1579,7 +1584,7 @@ pub fn load_driver_measurements_from_files(
 
     for (i, path) in driver_paths.iter().enumerate() {
         match load_driver_measurement(path) {
-            Ok((freq, spl, phase)) => {
+            Ok((freq, spl, phase, _coherence, _noise_floor_db)) => {
                 measurements.push(DriverMeasurement::new(freq, spl, phase));
                 log::debug!("✓ Loaded driver {} from {}", i + 1, path.display());
             }
@@ -1773,6 +1778,7 @@ mod tests {
             freq: Array1::from(freqs),
             spl: Array1::zeros(n),
             phase: None,
+            ..Default::default()
         }
     }
 
@@ -1814,11 +1820,13 @@ mod tests {
             freq: input_curve.freq.clone(),
             spl: Array1::zeros(input_curve.freq.len()),
             phase: None,
+            ..Default::default()
         };
         let deviation = Curve {
             freq: input_curve.freq.clone(),
             spl: Array1::zeros(input_curve.freq.len()),
             phase: None,
+            ..Default::default()
         };
 
         // Build minimal spin data with required keys
@@ -1909,11 +1917,13 @@ mod tests {
             freq: Array1::from(frequencies.clone()),
             spl: Array1::from(vec![80.0, 85.0, 82.0]),
             phase: None,
+            ..Default::default()
         };
         let target_curve = Curve {
             freq: Array1::from(frequencies.clone()),
             spl: Array1::from(vec![80.0, 80.0, 80.0]),
             phase: None,
+            ..Default::default()
         };
 
         // Create a simple peak filter
@@ -1953,11 +1963,13 @@ mod tests {
             freq: Array1::from(frequencies.clone()),
             spl: Array1::from(vec![80.0, 85.0, 82.0]),
             phase: None,
+            ..Default::default()
         };
         let target_curve = Curve {
             freq: Array1::from(frequencies.clone()),
             spl: Array1::from(vec![80.0, 80.0, 80.0]),
             phase: None,
+            ..Default::default()
         };
 
         let biquads: Vec<Biquad> = vec![];

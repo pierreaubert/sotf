@@ -81,6 +81,7 @@ pub(super) fn optimize_eq_maybe_multi(
                     freq: c.freq.clone(),
                     spl: &c.spl - &tilt.spl,
                     phase: c.phase.clone(),
+                    ..Default::default()
                 })
                 .collect()
         } else {
@@ -568,12 +569,14 @@ pub(super) fn process_single_speaker(
                     freq: curve.freq.clone(),
                     spl: &tilt_curve.spl + mean_spl,
                     phase: None,
+                    ..Default::default()
                 }
             } else {
                 Curve {
                     freq: curve.freq.clone(),
                     spl: Array1::from_elem(curve.freq.len(), mean_spl),
                     phase: None,
+                    ..Default::default()
                 }
             };
 
@@ -754,6 +757,7 @@ pub(super) fn process_single_speaker(
                     freq: curve_for_optim.freq.clone(),
                     spl: &curve_for_optim.spl - &tilt_curve.spl,
                     phase: curve_for_optim.phase.clone(),
+                    ..Default::default()
                 }
             } else {
                 curve_for_optim.clone()
@@ -887,6 +891,7 @@ pub(super) fn process_single_speaker(
                     freq: curve_for_optim.freq.clone(),
                     spl: &curve_for_optim.spl - &tilt_curve.spl,
                     phase: curve_for_optim.phase.clone(),
+                    ..Default::default()
                 }
             } else {
                 curve_for_optim.clone()
@@ -1025,6 +1030,7 @@ pub(super) fn process_single_speaker(
                     freq: curve_for_optim.freq.clone(),
                     spl: &curve_for_optim.spl - &tilt_curve.spl,
                     phase: curve_for_optim.phase.clone(),
+                    ..Default::default()
                 }
             } else {
                 curve_for_optim.clone()
@@ -1235,6 +1241,7 @@ pub(super) fn process_single_speaker(
                     freq: curve_for_optim.freq.clone(),
                     spl: &curve_for_optim.spl - &tilt_curve.spl,
                     phase: curve_for_optim.phase.clone(),
+                    ..Default::default()
                 }
             } else {
                 curve_for_optim.clone()
@@ -1393,6 +1400,7 @@ pub(super) fn process_single_speaker(
                     freq: final_curve.freq.clone(),
                     spl: &final_curve.spl - &tilt_curve.spl,
                     phase: final_curve.phase.clone(),
+                    ..Default::default()
                 }
             } else {
                 final_curve.clone()
@@ -1495,6 +1503,7 @@ pub(super) fn process_single_speaker(
                     freq: curve_for_optim.freq.clone(),
                     spl: &curve_for_optim.spl - &tilt_curve.spl,
                     phase: curve_for_optim.phase.clone(),
+                    ..Default::default()
                 }
             } else {
                 curve_for_optim.clone()
@@ -1646,6 +1655,7 @@ pub(super) fn process_single_speaker(
                     freq: final_curve.freq.clone(),
                     spl: &final_curve.spl - &tilt_curve.spl,
                     phase: final_curve.phase.clone(),
+                    ..Default::default()
                 }
             } else {
                 final_curve.clone()

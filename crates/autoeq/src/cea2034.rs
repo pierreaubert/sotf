@@ -9,7 +9,24 @@ use ndarray::{Array1, Array2, Axis};
 use serde::{Deserialize, Serialize};
 
 /// A struct to hold frequency and SPL data.
-/// Re-exported from the main autoeq crate for compatibility
+/// Re-exported from the main autoeq crate for compatibility.
+///
+/// Optional fields added for GD-Opt v2 (§2.3 of
+/// `docs/gd_opt_v2_plan.md`):
+/// - `coherence`, `noise_floor_db` come from the extended CSVs.
+/// - `min_phase`, `excess_phase`, `excess_delay_ms` are derived at
+///   load time and cached; never persisted.
+///
+/// Construct curves with struct-update syntax — the `Default` impl
+/// sets every optional field to `None`:
+///
+/// ```
+/// # use autoeq::Curve;
+/// # use ndarray::Array1;
+/// let freq = Array1::from_vec(vec![20.0, 200.0, 2000.0]);
+/// let spl = Array1::from_vec(vec![0.0, 0.0, 0.0]);
+/// let curve = Curve { freq, spl, ..Default::default() };
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Curve {
     /// Frequency points in Hz
@@ -19,6 +36,43 @@ pub struct Curve {
     /// Phase in degrees (optional)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub phase: Option<Array1<f64>>,
+    /// Magnitude-squared coherence γ²(f) from the multi-sweep average.
+    /// Persisted to CSV as `coherence`; consumed by the GD confidence
+    /// gate and the optimiser objective weight in GD-Opt v2.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coherence: Option<Array1<f64>>,
+    /// Per-bin noise-floor estimate in dB, derived from the
+    /// pre-silence window. Persisted to CSV as `noise_floor_db`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub noise_floor_db: Option<Array1<f64>>,
+    /// Minimum-phase component in degrees. Recomputed at load time
+    /// via Hilbert-on-log-magnitude; never persisted.
+    #[serde(default, skip_serializing)]
+    pub min_phase: Option<Array1<f64>>,
+    /// Excess-phase residual in degrees after removing the
+    /// minimum-phase component and the linear-delay term. Never
+    /// persisted.
+    #[serde(default, skip_serializing)]
+    pub excess_phase: Option<Array1<f64>>,
+    /// Linear-delay term extracted during decomposition, in
+    /// milliseconds. Never persisted.
+    #[serde(default, skip_serializing)]
+    pub excess_delay_ms: Option<f64>,
+}
+
+impl Default for Curve {
+    fn default() -> Self {
+        Self {
+            freq: Array1::from_vec(Vec::new()),
+            spl: Array1::from_vec(Vec::new()),
+            phase: None,
+            coherence: None,
+            noise_floor_db: None,
+            min_phase: None,
+            excess_phase: None,
+            excess_delay_ms: None,
+        }
+    }
 }
 
 /// A single directivity measurement at a specific angle
@@ -846,6 +900,7 @@ mod pir_helpers_tests {
                 freq: freq.clone(),
                 spl: on_vals.clone(),
                 phase: None,
+                ..Default::default()
             },
         );
         cea2034_data.insert(
@@ -854,6 +909,7 @@ mod pir_helpers_tests {
                 freq: freq.clone(),
                 spl: lw_vals.clone(),
                 phase: None,
+                ..Default::default()
             },
         );
         cea2034_data.insert(
@@ -862,6 +918,7 @@ mod pir_helpers_tests {
                 freq: freq.clone(),
                 spl: sp_vals.clone(),
                 phase: None,
+                ..Default::default()
             },
         );
         cea2034_data.insert(
@@ -870,6 +927,7 @@ mod pir_helpers_tests {
                 freq: freq.clone(),
                 spl: pir_vals.clone(),
                 phase: None,
+                ..Default::default()
             },
         );
 
@@ -919,6 +977,7 @@ mod pir_helpers_tests {
                 freq: freq.clone(),
                 spl: on_vals.clone(),
                 phase: None,
+                ..Default::default()
             },
         );
         cea2034_data.insert(
@@ -927,6 +986,7 @@ mod pir_helpers_tests {
                 freq: freq.clone(),
                 spl: lw_vals.clone(),
                 phase: None,
+                ..Default::default()
             },
         );
         cea2034_data.insert(
@@ -935,6 +995,7 @@ mod pir_helpers_tests {
                 freq: freq.clone(),
                 spl: sp_vals.clone(),
                 phase: None,
+                ..Default::default()
             },
         );
         cea2034_data.insert(
@@ -943,6 +1004,7 @@ mod pir_helpers_tests {
                 freq: freq.clone(),
                 spl: pir_vals.clone(),
                 phase: None,
+                ..Default::default()
             },
         );
 

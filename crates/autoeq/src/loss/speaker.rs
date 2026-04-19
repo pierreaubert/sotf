@@ -82,6 +82,7 @@ mod tests {
                 freq: freq.clone(),
                 spl: on.clone(),
                 phase: None,
+                ..Default::default()
             },
         );
         spin.insert(
@@ -90,6 +91,7 @@ mod tests {
                 freq: freq.clone(),
                 spl: lw.clone(),
                 phase: None,
+                ..Default::default()
             },
         );
         spin.insert(
@@ -98,6 +100,7 @@ mod tests {
                 freq: freq.clone(),
                 spl: sp.clone(),
                 phase: None,
+                ..Default::default()
             },
         );
         spin.insert(
@@ -106,6 +109,7 @@ mod tests {
                 freq: freq.clone(),
                 spl: pir.clone(),
                 phase: None,
+                ..Default::default()
             },
         );
 
@@ -143,6 +147,7 @@ mod tests {
                 freq: freq.clone(),
                 spl: on,
                 phase: None,
+                ..Default::default()
             },
         );
         spin.insert(
@@ -151,6 +156,7 @@ mod tests {
                 freq: freq.clone(),
                 spl: lw,
                 phase: None,
+                ..Default::default()
             },
         );
         spin.insert(
@@ -159,6 +165,7 @@ mod tests {
                 freq: freq.clone(),
                 spl: sp,
                 phase: None,
+                ..Default::default()
             },
         );
         spin.insert(
@@ -167,6 +174,7 @@ mod tests {
                 freq: freq.clone(),
                 spl: pir,
                 phase: None,
+                ..Default::default()
             },
         );
 

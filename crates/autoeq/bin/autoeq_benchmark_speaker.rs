@@ -422,6 +422,7 @@ async fn run_one(
         freq: target_curve.freq.clone(),
         spl: &target_curve.spl - &input_curve_normalized.spl,
         phase: None,
+        ..Default::default()
     };
     let spin_data = spin_data_raw.map(|spin_data| {
         spin_data

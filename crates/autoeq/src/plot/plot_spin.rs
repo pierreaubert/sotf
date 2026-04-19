@@ -586,6 +586,7 @@ mod tests {
                 freq: freq.clone(),
                 spl: spl.clone(),
                 phase: None,
+                ..Default::default()
             },
         );
         curves.insert(
@@ -594,6 +595,7 @@ mod tests {
                 freq: freq.clone(),
                 spl: spl.clone(),
                 phase: None,
+                ..Default::default()
             },
         );
         curves.insert(
@@ -602,6 +604,7 @@ mod tests {
                 freq: freq.clone(),
                 spl: spl.clone(),
                 phase: None,
+                ..Default::default()
             },
         );
         curves.insert(
@@ -610,6 +613,7 @@ mod tests {
                 freq: freq.clone(),
                 spl: spl.clone(),
                 phase: None,
+                ..Default::default()
             },
         );
 
@@ -654,6 +658,7 @@ mod tests {
                 freq: freq.clone(),
                 spl: spl_primary.clone(),
                 phase: None,
+                ..Default::default()
             },
         );
         curves.insert(
@@ -662,6 +667,7 @@ mod tests {
                 freq: freq.clone(),
                 spl: spl_primary.clone(),
                 phase: None,
+                ..Default::default()
             },
         );
         curves.insert(
@@ -670,6 +676,7 @@ mod tests {
                 freq: freq.clone(),
                 spl: spl_primary.clone(),
                 phase: None,
+                ..Default::default()
             },
         );
         curves.insert(
@@ -678,6 +685,7 @@ mod tests {
                 freq: freq.clone(),
                 spl: spl_primary.clone(),
                 phase: None,
+                ..Default::default()
             },
         );
 
@@ -688,6 +696,7 @@ mod tests {
                 freq: freq.clone(),
                 spl: spl_di.clone(),
                 phase: None,
+                ..Default::default()
             },
         );
         curves.insert(
@@ -696,6 +705,7 @@ mod tests {
                 freq: freq.clone(),
                 spl: spl_di.clone(),
                 phase: None,
+                ..Default::default()
             },
         );
 
@@ -736,6 +746,7 @@ mod tests {
                 freq: freq.clone(),
                 spl: spl_primary.clone(),
                 phase: None,
+                ..Default::default()
             },
         );
         curves.insert(
@@ -744,6 +755,7 @@ mod tests {
                 freq: freq.clone(),
                 spl: spl_primary.clone(),
                 phase: None,
+                ..Default::default()
             },
         );
         curves.insert(
@@ -752,6 +764,7 @@ mod tests {
                 freq: freq.clone(),
                 spl: spl_primary.clone(),
                 phase: None,
+                ..Default::default()
             },
         );
         curves.insert(
@@ -760,6 +773,7 @@ mod tests {
                 freq: freq.clone(),
                 spl: spl_primary.clone(),
                 phase: None,
+                ..Default::default()
             },
         );
         // DI
@@ -769,6 +783,7 @@ mod tests {
                 freq: freq.clone(),
                 spl: spl_di.clone(),
                 phase: None,
+                ..Default::default()
             },
         );
         curves.insert(
@@ -777,6 +792,7 @@ mod tests {
                 freq: freq.clone(),
                 spl: spl_di.clone(),
                 phase: None,
+                ..Default::default()
             },
         );
 

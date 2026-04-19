@@ -1,3 +1,131 @@
+# 0.4.32
+
+## GD-Opt v2 — Phase GD-1a.2: Curve extensions + CSV reader
+
+Follow-on to 0.4.31's Phase GD-1a. Adds the five optional `Curve`
+fields from §2.3 of [`docs/gd_opt_v2_plan.md`](docs/gd_opt_v2_plan.md)
+and extends the CSV reader to populate the two that are persisted.
+
+- `Curve` now carries `coherence`, `noise_floor_db`, `min_phase`,
+  `excess_phase`, and `excess_delay_ms` (all `Option<_>`). The first
+  two are persisted to CSV; the remaining three are computed at load
+  time by GD-1d and tagged `#[serde(skip_serializing)]`.
+- `impl Default for Curve` lets every existing literal migrate with a
+  single `..Default::default()` spread. A mechanical sweep applied
+  that spread across ~72 call sites in `autoeq`, `sotf-player`,
+  `app-gpui`, `app-tui`, and `gpui-toolkit` demos.
+- `load_driver_measurement` now returns a 5-tuple
+  `(freq, spl, phase, coherence, noise_floor_db)`. Column discovery
+  keys off header names, so `coherence` and `noise_floor_db` can appear
+  anywhere in the CSV. Legacy 3-column `frequency, spl, phase` files
+  still parse identically.
+- `read_curve_from_csv` populates the new `Curve` fields when the CSV
+  supplies them; downstream consumers that don't need them ignore the
+  fields (everything is `Option<_>`).
+
+Tests (`cargo test -p autoeq --lib` → 422 passed, +4 from 418):
+- `legacy_three_column_csv_still_loads`: pre-GD-v2 CSV → new fields None.
+- `gd_v2_extended_csv_populates_coherence_and_noise_floor`: extended
+  CSV round-trips; derived fields remain None until GD-1d.
+- `column_order_is_header_driven`: header names — not positions —
+  select the right column even when the CSV puts `coherence` first.
+- `mismatched_extended_row_count_drops_column`: a partially-parseable
+  column is silently dropped; core columns still load.
+
+Downstream verified clean: `cargo check -p sotf-player --lib`,
+`cargo check -p gpui-d3rs --bin d3rs-spinorama --features …`.
+Only out-of-scope blocker is `gpui-px::px-spinorama`'s pre-existing
+missing `Colormap` / `Surface3DState` imports (predates this branch).
+
+# 0.4.31
+
+## GD-Opt v2 — Phase GD-1a: recording-config types
+
+Types-only slice of Phase GD-1 from
+[`docs/gd_opt_v2_plan.md`](docs/gd_opt_v2_plan.md). Purely additive:
+no existing behaviour changes, no call sites touched outside this
+phase.
+
+- `RecordingConfiguration` gains ten new optional fields documented
+  in §2.2 of the plan: `bass_octave_duration_s`, `pre_silence_s`,
+  `post_silence_s`, `sweep_level_db_spl`, `num_sweeps`,
+  `coherence_threshold`, `bass_probe_freq_hz`, `bass_probe_cycles`,
+  `mic_phase_calibration_path`, `mic_phase_calibration_paths`,
+  `spl_calibration`, and `recording_seed`. All default to `None`;
+  session files written before this release continue to load via
+  serde defaults.
+- New `SplCalibration` struct with `reported_db_spl`,
+  `reference_freq_hz`, `peak_sample_level`, `spl_offset_db` and the
+  convenience helpers `dbspl_for_peak_level` /
+  `peak_level_for_dbspl`. Populated by the SplCalibration wizard
+  step landing later in Phase GD-1.
+- `bin/roomeq/input_schema.json` regenerated. Net changes: adds the
+  `SplCalibration` definition and the twelve new
+  `RecordingConfiguration` properties; drops the vestigial `"mode"`
+  property from `OptimizerConfig` (already removed from the Rust
+  struct in 0.4.29); bumps `version.default` from `"1.3.0"` to
+  `"2.0.0"` to match `default_config_version`.
+
+Tests added in `roomeq::types::config::tests`:
+- `spl_calibration_roundtrip_and_helpers`
+- `recording_configuration_accepts_gd_v2_fields`
+- `recording_configuration_legacy_json_still_loads`
+
+No behaviour change; downstream consumers see the new fields as
+`Option<_>` on `RecordingConfiguration` and can ignore them until
+the later phases wire them through.
+
+# 0.4.30
+
+## Removed
+
+### Legacy target-tilt / broadband-matching / mode config knobs — breaking API change
+
+- `OptimizerConfig` no longer carries `mode: String`, `target_tilt:
+  Option<TargetTiltConfig>`, or `broadband_target_matching:
+  Option<BroadbandTargetMatchingConfig>`. The unified
+  `target_response: Option<TargetResponseConfig>` field (shape +
+  preference shelves + broadband pre-correction toggle) replaces
+  all three. Configs that still set any of the removed fields will
+  fail validation.
+- `OptimizerConfig::migrate_target_config()` is removed along with
+  its call sites. There is no more legacy → unified migration pass:
+  the canonical schema is the only input shape accepted by the
+  loader.
+- `TargetTiltConfig`, `TiltType`, and
+  `BroadbandTargetMatchingConfig` are deleted. The curve-building
+  helpers that were tied to them —
+  `build_harman_target_curve`,
+  `build_harman_target_curve_with_bass_boost`, and
+  `build_target_curve_with_tilt` — are also gone. Callers should
+  go through the unified `target_response` path
+  (`build_complete_target_curve` and helpers in
+  `roomeq/target_tilt.rs` are the kept surface).
+- `allow_delay()` now reads `processing_mode != ProcessingMode::LowLatency`
+  instead of the removed `mode != "iir"` sentinel.
+- Config schema version bumped **1.3.0 → 2.0.0**
+  (`default_config_version`). JSON configs authored against the
+  old schema will no longer round-trip.
+- Documentation, JSON examples, and the optimizer-config JSON
+  schema entries for `target_tilt` /
+  `broadband_target_matching` / `TargetTiltConfig` /
+  `BroadbandTargetMatchingConfig` / `TiltType` have been deleted
+  from `bin/roomeq/INPUT_FORMAT.md`, `bin/roomeq/README.md`, and
+  `bin/roomeq/input_schema.json`. The `target_response` field is
+  now the documented entry point for target shaping.
+
+### `TargetShape` canonical wire format
+
+- `TargetShape` now serializes with `#[serde(rename_all =
+  "snake_case")]` instead of `lowercase`. The only practical
+  difference is that the `FromMeasurement` variant serializes as
+  `"from_measurement"` (previously `"frommeasurement"`). The
+  `#[serde(alias = "from_measurement")]` attribute that papered
+  over this has been removed — the underscore form is now the
+  single canonical value on both the serialization and
+  deserialization sides. `input_schema.json` has been updated to
+  match.
+
 # 0.4.29
 
 ## Removed

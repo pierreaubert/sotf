@@ -393,6 +393,7 @@ fn prepare_single_channel_eq(
         freq: curve.freq.clone(),
         spl: &curve.spl - mean_spl,
         phase: curve.phase.clone(),
+        ..Default::default()
     };
 
     // Compute decomposed correction weights BEFORE psychoacoustic smoothing.
@@ -596,6 +597,7 @@ fn prepare_single_channel_eq(
             freq: normalized_curve.freq.clone(),
             spl: Array1::zeros(normalized_curve.freq.len()),
             phase: None,
+            ..Default::default()
         },
     };
 
@@ -635,6 +637,7 @@ fn prepare_single_channel_eq(
         freq: normalized_curve.freq.clone(),
         spl: final_deviation,
         phase: None,
+        ..Default::default()
     };
 
     // Log deviation at key frequencies for diagnostics
@@ -1133,6 +1136,7 @@ fn optimize_channel_eq_multi_inner(
             freq: curve.freq.clone(),
             spl: &curve.spl - mean_spl,
             phase: curve.phase.clone(),
+            ..Default::default()
         };
 
         // Apply psychoacoustic smoothing if enabled
@@ -1176,6 +1180,7 @@ fn optimize_channel_eq_multi_inner(
                 freq: normalized_curve.freq.clone(),
                 spl: Array1::zeros(normalized_curve.freq.len()),
                 phase: None,
+                ..Default::default()
             },
         };
 
@@ -1183,6 +1188,7 @@ fn optimize_channel_eq_multi_inner(
             freq: normalized_curve.freq.clone(),
             spl: &target_curve.spl - &normalized_curve.spl,
             phase: None,
+            ..Default::default()
         };
 
         let (mut objective_data, _use_cea) = crate::workflow::setup_objective_data(
@@ -1483,6 +1489,7 @@ fn optimize_spatial_robustness(
         freq: averaged_curve.freq.clone(),
         spl: &averaged_curve.spl - mean_spl,
         phase: averaged_curve.phase.clone(),
+        ..Default::default()
     };
 
     // Apply psychoacoustic smoothing if enabled
@@ -1534,6 +1541,7 @@ fn optimize_spatial_robustness(
             freq: normalized_curve.freq.clone(),
             spl: Array1::zeros(normalized_curve.freq.len()),
             phase: None,
+            ..Default::default()
         },
     };
 
@@ -1550,6 +1558,7 @@ fn optimize_spatial_robustness(
         freq: normalized_curve.freq.clone(),
         spl: masked_deviation,
         phase: None,
+        ..Default::default()
     };
 
     let args = build_args(
@@ -1644,6 +1653,7 @@ mod tests {
             freq: Array1::from_vec(freqs),
             spl: Array1::from_vec(spl),
             phase: None,
+            ..Default::default()
         }
     }
 
@@ -1960,6 +1970,7 @@ mod processing_mode_tests {
             freq: Array1::from_vec(freqs),
             spl: Array1::from_vec(spl),
             phase: None,
+            ..Default::default()
         }
     }
 
@@ -1983,6 +1994,7 @@ mod processing_mode_tests {
             freq: Array1::from_vec(freqs),
             spl: Array1::from_vec(spl),
             phase: Some(Array1::from_vec(phase)),
+            ..Default::default()
         }
     }
 
@@ -2137,6 +2149,7 @@ mod harman_regression_tests {
             freq: Array1::from_vec(freqs),
             spl: Array1::from_vec(spl),
             phase: None,
+            ..Default::default()
         }
     }
 

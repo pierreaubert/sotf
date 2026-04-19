@@ -47,6 +47,7 @@ fn log_sweep_curve(base_db: f64, bass_bump_db: f64) -> autoeq::Curve {
         freq: ndarray::Array1::from_vec(freq),
         spl: ndarray::Array1::from_vec(spl),
         phase: None,
+        ..Default::default()
     }
 }
 

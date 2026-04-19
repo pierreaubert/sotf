@@ -322,6 +322,7 @@ pub fn load_measurement(measurement: &MeasurementRef) -> Result<Curve, Box<dyn E
                 freq: Array1::from(inline.frequencies.clone()),
                 spl: Array1::from(inline.magnitude_db.clone()),
                 phase,
+                ..Default::default()
             })
         }
     }
@@ -403,6 +404,7 @@ pub fn load_source(source: &MeasurementSource) -> Result<Curve, Box<dyn Error>> 
                 freq: freqs,
                 spl: avg_spl,
                 phase,
+                ..Default::default()
             })
         }
         MeasurementSource::Multiple(m) => {
@@ -458,6 +460,7 @@ pub fn load_source(source: &MeasurementSource) -> Result<Curve, Box<dyn Error>> 
                 freq: freqs,
                 spl: avg_spl,
                 phase,
+                ..Default::default()
             })
         }
     }

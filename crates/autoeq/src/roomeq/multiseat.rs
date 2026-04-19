@@ -483,6 +483,7 @@ mod tests {
             freq: Array1::from(freqs),
             spl: Array1::from(spl),
             phase: Some(Array1::from(phase)),
+            ..Default::default()
         }
     }
 

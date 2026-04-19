@@ -440,12 +440,11 @@ Controls the optimization algorithm, constraints, and advanced features.
 | `tolerance` | number | `1e-5` | Optimization convergence tolerance (relative) |
 | `atolerance` | number | `1e-5` | Optimization convergence tolerance (absolute) |
 | `allow_delay` | boolean | - | Allow inter-speaker delay optimization. Default: false for IIR, true for FIR/mixed. |
-| `target_tilt` | object | - | Target curve tilt configuration |
+| `target_response` | object | - | Unified target response configuration (shape, preference shelves, broadband pre-correction) |
 | `excursion_protection` | object | - | Excursion protection for bookshelf speakers |
 | `schroeder_split` | object | - | Different Q constraints above/below Schroeder frequency |
 | `phase_alignment` | object | - | Phase alignment for subwoofer integration |
 | `multi_seat` | object | - | Multi-seat variance optimization |
-| `broadband_target_matching` | object | - | Preliminary broadband shelf alignment |
 | `vog` | object | - | Voice of God (timbre matching) |
 | `multi_measurement` | object | - | Multi-measurement optimization strategy |
 | `decomposed_correction` | object | - | Decomposed correction |
@@ -663,30 +662,40 @@ When `processing_mode` is `"mixed_phase"`, decomposes the measurement into minim
 
 ---
 
-## Target Tilt Configuration
+## Target Response Configuration
 
-Applies a frequency-dependent tilt to the target curve. The Harman-style tilt (-0.8 dB/octave) is psychoacoustically preferred for in-room listening.
+`target_response` is the unified entry point for target shaping. It
+bundles the target curve shape, the user-preference shelves that layer
+on top of it, and the broadband pre-correction toggle (see the
+[Broadband Pre-correction](#broadband-pre-correction) section below).
+The Harman-style tilt (-0.8 dB/octave referenced at 1 kHz) is
+psychoacoustically preferred for in-room listening.
 
 ```json
 {
   "optimizer": {
-    "target_tilt": {
-      "tilt_type": "harman"
+    "target_response": {
+      "shape": "harman"
     }
   }
 }
 ```
 
-With custom tilt and bass shelf:
+With a custom slope, bass preference shelf, and broadband pre-correction:
 ```json
 {
   "optimizer": {
-    "target_tilt": {
-      "tilt_type": "custom",
+    "target_response": {
+      "shape": "custom",
       "slope_db_per_octave": -1.0,
       "reference_freq": 1000,
-      "bass_shelf_db": 3.0,
-      "bass_shelf_freq": 150
+      "preference": {
+        "bass_shelf_db": 3.0,
+        "bass_shelf_freq": 150,
+        "treble_shelf_db": 0.0,
+        "treble_shelf_freq": 8000
+      },
+      "broadband_precorrection": true
     }
   }
 }
@@ -694,22 +703,40 @@ With custom tilt and bass shelf:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `tilt_type` | string | `"flat"` | Tilt type: `"flat"` (no tilt), `"harman"` (-0.8 dB/oct), `"custom"`, `"from_measurement"` (auto-derive slope from input curve) |
-| `slope_db_per_octave` | number | `-0.8` | Slope in dB/octave (negative = downward tilt). Used with `"custom"`. Ignored when `"from_measurement"`. |
-| `reference_freq` | number (Hz) | `1000` | Reference frequency where tilt equals 0 dB |
-| `bass_shelf_db` | number (dB) | `0.0` | Bass shelf boost in dB (applied below `bass_shelf_freq`) |
-| `bass_shelf_freq` | number (Hz) | `200` | Bass shelf frequency |
+| `shape` | string | `"flat"` | Target shape: `"flat"`, `"harman"` (-0.8 dB/oct at 1 kHz), `"custom"`, `"file"` (load CSV from `curve_path`), `"from_measurement"` (auto-derive slope from input curve) |
+| `slope_db_per_octave` | number | `-0.8` | Slope in dB/octave (negative = downward tilt). Used when `shape == "custom"`. Ignored for `"flat"`, `"harman"`, `"file"`, `"from_measurement"`. |
+| `reference_freq` | number (Hz) | `1000` | Frequency where the target slope passes through 0 dB |
+| `curve_path` | string (path) | - | Path to a target-curve CSV (required when `shape == "file"`) |
+| `preference.bass_shelf_db` | number (dB) | `0.0` | Bass shelf preference layered on top of the target shape |
+| `preference.bass_shelf_freq` | number (Hz) | `200` | Bass shelf transition frequency |
+| `preference.treble_shelf_db` | number (dB) | `0.0` | Treble shelf preference layered on top of the target shape |
+| `preference.treble_shelf_freq` | number (Hz) | `8000` | Treble shelf transition frequency |
+| `broadband_precorrection` | boolean | `false` | Enable a preliminary broadband shelf + gain fit before fine-grained PEQ optimization. Useful when `min_freq`/`max_freq` restrict the main pass and overall tonal balance would otherwise drift. |
 
-**Auto-derive from measurement** (`"from_measurement"`): The optimizer fits
-a least-squares line through the input measurement curve (200–10 kHz by
-default) and uses the resulting slope as the target tilt. This preserves
-the speaker's natural broadband response while correcting room anomalies.
+**Auto-derive from measurement** (`"from_measurement"`): the optimizer fits
+a least-squares line through the input measurement curve (200 Hz – 10 kHz
+by default) and uses the resulting slope as the target. This preserves
+the speaker's natural broadband character while correcting room anomalies.
 
 ```json
 {
   "optimizer": {
-    "target_tilt": {
-      "tilt_type": "from_measurement"
+    "target_response": {
+      "shape": "from_measurement"
+    }
+  }
+}
+```
+
+**Load from file** (`"file"`): load a target curve directly from a CSV on
+disk. `curve_path` must point at a two-column (frequency, magnitude) CSV.
+
+```json
+{
+  "optimizer": {
+    "target_response": {
+      "shape": "file",
+      "curve_path": "targets/harman-in-room.csv"
     }
   }
 }
@@ -904,29 +931,32 @@ With primary seat constraints:
 
 ---
 
-## Broadband Target Matching
+## Broadband Pre-correction
 
-Using `min_freq` / `max_freq` limits the optimization range, which can leave spectral imbalances outside that band. Broadband Target Matching solves this with a preliminary alignment pass:
+Using `min_freq` / `max_freq` limits the optimization range, which can
+leave spectral imbalances outside that band. Broadband pre-correction
+solves this with a preliminary alignment pass:
 
-1. Analyzes the full 20 Hz-20 kHz spectrum.
-2. Fits Low Shelf (200 Hz), High Shelf (4 kHz), and Gain filters to match the target curve.
+1. Analyzes the full 20 Hz – 20 kHz spectrum.
+2. Fits Low Shelf (200 Hz), High Shelf (4 kHz), and Gain filters to
+   match the target curve.
 3. Applies this correction *before* the fine-grained PEQ optimization.
 
-This ensures the overall tonal balance is correct even when the main optimizer focuses only on modal correction below 1 kHz.
+This ensures the overall tonal balance is correct even when the main
+optimizer focuses only on modal correction below 1 kHz. It is controlled
+by the `broadband_precorrection` boolean inside
+[`target_response`](#target-response-configuration):
 
 ```json
 {
   "optimizer": {
-    "broadband_target_matching": {
-      "enabled": true
+    "target_response": {
+      "shape": "harman",
+      "broadband_precorrection": true
     }
   }
 }
 ```
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `enabled` | boolean | `true` | Enable broadband target matching |
 
 ---
 

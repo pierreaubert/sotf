@@ -584,6 +584,7 @@ impl RoomEqState {
                 freq: ndarray::Array1::from_vec(frequencies),
                 spl: ndarray::Array1::from_vec(magnitude_db),
                 phase,
+                ..Default::default()
             }
         };
 
@@ -603,6 +604,7 @@ impl RoomEqState {
                 freq: ndarray::Array1::from_vec(frequencies),
                 spl: ndarray::Array1::from_vec(magnitude_db),
                 phase,
+                ..Default::default()
             }
         };
 

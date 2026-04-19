@@ -400,6 +400,7 @@ mod tests {
             freq: Array1::logspace(10.0, f64::log10(20.0), f64::log10(20000.0), num_points),
             spl: Array1::from_elem(num_points, 85.0),
             phase: None,
+            ..Default::default()
         }
     }
 
@@ -524,6 +525,7 @@ mod tests {
             freq: Array1::zeros(0),
             spl: Array1::zeros(0),
             phase: None,
+            ..Default::default()
         };
         let cea_data = Cea2034Data {
             on_axis: make_flat_curve(100),

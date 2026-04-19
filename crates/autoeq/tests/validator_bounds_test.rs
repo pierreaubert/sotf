@@ -16,6 +16,7 @@ fn curve(freqs: Vec<f64>) -> autoeq::Curve {
         freq: ndarray::Array1::from(freqs),
         spl: ndarray::Array1::zeros(n),
         phase: None,
+        ..Default::default()
     }
 }
 
