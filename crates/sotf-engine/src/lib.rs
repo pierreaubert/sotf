@@ -33,8 +33,7 @@ pub use preflight::{PreflightError, run_preflight_checks};
 pub mod replaygain;
 pub mod signal_recorder;
 pub use signal_recorder::{
-    ChannelRecordingInfo, DeviceInfo, LegacyChannelRecording, LegacyRecordingResult,
-    LegacyRecordingSession, RecordingSession, migrate_legacy_recording, reprocess_recordings,
+    ChannelRecordingInfo, DeviceInfo, RecordingSession, reprocess_recordings,
 };
 pub mod waveform;
 
