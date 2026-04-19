@@ -1733,6 +1733,23 @@ impl PlayerView {
                     .as_ref()
                     .and_then(|p| std::path::Path::new(p).file_name())
                     .map(|f| f.to_string_lossy().to_string()),
+                // GD-Opt v2 Phase GD-1b fields — wired from RecordingState UI knobs.
+                // bass_octave_duration_s of 3.0 is the default; the UI allows 1×/2×/4×
+                // presets (1.5/3.0/5.0). pre_silence_s defaults to 2.0.
+                // post_silence_s is None here (derived from RT60 at record time).
+                bass_octave_duration_s: Some(rec_state.bass_octave_duration_s),
+                pre_silence_s: Some(rec_state.pre_silence_s),
+                post_silence_s: rec_state.post_silence_s,
+                // Remaining GD-Opt v2 fields (later phases): leave as None for now.
+                sweep_level_db_spl: None,
+                num_sweeps: None,
+                coherence_threshold: None,
+                bass_probe_freq_hz: None,
+                bass_probe_cycles: None,
+                mic_phase_calibration_path: None,
+                mic_phase_calibration_paths: None,
+                spl_calibration: None,
+                recording_seed: None,
             };
 
             // Convert ChannelRecording to speakers HashMap with inline measurements

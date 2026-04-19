@@ -144,6 +144,18 @@ pub struct RecordingState {
     /// are currently visible, or `None` when no dropdown is open.
     pub channel_speaker_autocomplete_open: Option<usize>,
 
+    // === GD-Opt v2 Phase GD-1b: Advanced measurement quality settings ===
+    // These are surfaced in the "Advanced: measurement quality" accordion
+    // section on the Config step. They map directly to the same-named fields
+    // in `autoeq::RecordingConfiguration`.
+    //
+    // Default 3.0 s/octave below 100 Hz (see docs/gd_opt_v2_plan.md §2.7).
+    pub bass_octave_duration_s: f32,
+    // Default 2.0 s noise-floor window before the sweep.
+    pub pre_silence_s: f32,
+    // `None` = derive from RT60 estimate; `Some(x)` = user-specified.
+    pub post_silence_s: Option<f32>,
+
     // === Noise Floor Warning ===
     /// Warning message when recording level is close to noise floor
     pub noise_floor_warning: Option<String>,
@@ -208,6 +220,9 @@ impl Default for RecordingState {
             setup_description: String::new(),
             channel_speakers: Vec::new(),
             channel_speaker_autocomplete_open: None,
+            bass_octave_duration_s: 3.0,
+            pre_silence_s: 2.0,
+            post_silence_s: None,
             noise_floor_warning: None,
             migration_modal_open: false,
             migration_file_path: None,

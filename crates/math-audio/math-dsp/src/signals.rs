@@ -137,6 +137,147 @@ pub fn gen_log_sweep(
     signal
 }
 
+/// Generate an octave-scaled logarithmic frequency sweep.
+///
+/// Unlike [`gen_log_sweep`] (fixed duration uniform across octaves), this
+/// function gives the sub-100 Hz region more time so modal energy can settle
+/// and be measured accurately.
+///
+/// ## Time allocation
+///
+/// Three zones:
+/// - **Bass** (f_start → 100 Hz): `bass_octave_duration_s` seconds per octave.
+/// - **Mid** (100 Hz → 1 kHz): half the bass per-octave rate.
+/// - **High** (1 kHz → f_end): quarter the bass per-octave rate.
+///
+/// If the computed total < `min_total_duration_s`, the sweep is stretched
+/// proportionally so all zones receive a fair share.
+///
+/// ## Phase accuracy
+///
+/// Phase accumulation uses `f64` (same as [`gen_log_sweep`]).  Phase at t=0
+/// is zero, so even 5–10 Hz sweeps start correctly.
+///
+/// # Arguments
+/// * `f_start` - Starting frequency in Hz (clamped to ≥ 1 Hz)
+/// * `f_end` - Ending frequency in Hz
+/// * `amp` - Amplitude (0.0 to 1.0)
+/// * `sample_rate` - Sample rate in Hz
+/// * `bass_octave_duration_s` - Seconds per octave below 100 Hz
+/// * `min_total_duration_s` - Lower bound on total sweep duration
+pub fn gen_log_sweep_octave_scaled(
+    f_start: f32,
+    f_end: f32,
+    amp: f32,
+    sample_rate: u32,
+    bass_octave_duration_s: f32,
+    min_total_duration_s: f32,
+) -> Vec<f32> {
+    let f_start = f_start.max(1.0) as f64;
+    let f_end = (f_end as f64).max(f_start * 1.001);
+    let sr = sample_rate as f64;
+
+    const BASS_BOUNDARY: f64 = 100.0;
+    const MID_BOUNDARY: f64 = 1000.0;
+
+    let bass_s_oct = bass_octave_duration_s as f64;
+    let mid_s_oct = bass_s_oct * 0.5;
+    let high_s_oct = bass_s_oct * 0.25;
+
+    let octaves_bass = {
+        let lo = f_start;
+        let hi = BASS_BOUNDARY.min(f_end);
+        if hi > lo { (hi / lo).log2() } else { 0.0 }
+    };
+    let octaves_mid = {
+        let lo = BASS_BOUNDARY.max(f_start);
+        let hi = MID_BOUNDARY.min(f_end);
+        if hi > lo { (hi / lo).log2() } else { 0.0 }
+    };
+    let octaves_high = {
+        let lo = MID_BOUNDARY.max(f_start);
+        let hi = f_end;
+        if hi > lo { (hi / lo).log2() } else { 0.0 }
+    };
+
+    let raw_duration =
+        octaves_bass * bass_s_oct + octaves_mid * mid_s_oct + octaves_high * high_s_oct;
+
+    let total_duration = raw_duration.max(min_total_duration_s as f64);
+    let scale = if raw_duration > 1e-9 { total_duration / raw_duration } else { 1.0 };
+
+    let n_frames = (total_duration * sr).round() as usize;
+
+    // Zone end-times (absolute, after scale).
+    let t_bass = octaves_bass * bass_s_oct * scale;
+    let t_mid  = t_bass + octaves_mid * mid_s_oct * scale;
+
+    // Phase offset accumulated through each zone transition.
+    //   φ_zone = coeff * (r - 1)   where r = f_hi / f_lo
+    let phase_offset_bass: f64 = if octaves_bass > 1e-9 && t_bass > 1e-9 {
+        let hi = BASS_BOUNDARY.min(f_end);
+        let c = 2.0 * std::f64::consts::PI * f_start * t_bass / (hi / f_start).ln();
+        c * (hi / f_start - 1.0)
+    } else {
+        0.0
+    };
+
+    let phase_offset_mid: f64 = phase_offset_bass + if octaves_mid > 1e-9 {
+        let lo = BASS_BOUNDARY.max(f_start);
+        let hi = MID_BOUNDARY.min(f_end);
+        let dur = t_mid - t_bass;
+        let c = 2.0 * std::f64::consts::PI * lo * dur / (hi / lo).ln();
+        c * (hi / lo - 1.0)
+    } else {
+        0.0
+    };
+
+    let mut signal = Vec::with_capacity(n_frames);
+
+    for n in 0..n_frames {
+        let t = n as f64 / sr;
+
+        let phase = if t <= t_bass && t_bass > 1e-9 {
+            // Bass zone.
+            let hi = BASS_BOUNDARY.min(f_end);
+            let c = 2.0 * std::f64::consts::PI * f_start * t_bass / (hi / f_start).ln();
+            let k = (hi / f_start).ln() / t_bass;
+            c * ((k * t).exp() - 1.0)
+        } else if t <= t_mid && octaves_mid > 1e-9 {
+            // Mid zone.
+            let lo = BASS_BOUNDARY.max(f_start);
+            let hi = MID_BOUNDARY.min(f_end);
+            let dur = t_mid - t_bass;
+            let c = 2.0 * std::f64::consts::PI * lo * dur / (hi / lo).ln();
+            let k = (hi / lo).ln() / dur;
+            let t_local = t - t_bass;
+            phase_offset_bass + c * ((k * t_local).exp() - 1.0)
+        } else if octaves_high > 1e-9 {
+            // High zone.
+            let lo = MID_BOUNDARY.max(f_start);
+            let dur = total_duration - t_mid;
+            if dur > 1e-9 {
+                let c = 2.0 * std::f64::consts::PI * lo * dur / (f_end / lo).ln();
+                let k = (f_end / lo).ln() / dur;
+                let t_local = t - t_mid;
+                phase_offset_mid + c * ((k * t_local).exp() - 1.0)
+            } else {
+                phase_offset_mid
+            }
+        } else if octaves_mid > 1e-9 {
+            // Entire sweep is in a single zone (mid or bass already handled above).
+            phase_offset_mid
+        } else {
+            // Degenerate: f_start >= f_end or single frequency.
+            2.0 * std::f64::consts::PI * f_start * t
+        };
+
+        signal.push(clip(amp * phase.sin() as f32));
+    }
+
+    signal
+}
+
 /// Generate white noise
 ///
 /// Produces noise with a flat frequency spectrum.
@@ -779,6 +920,137 @@ mod tests {
             variation,
             100.0 * variation / target_peak
         );
+    }
+
+    // ------------------------------------------------------------------
+    // gen_log_sweep_octave_scaled tests
+    // ------------------------------------------------------------------
+
+    fn rms_of(samples: &[f32]) -> f32 {
+        if samples.is_empty() {
+            return 0.0;
+        }
+        let sum_sq: f64 = samples.iter().map(|&x| (x as f64) * (x as f64)).sum();
+        (sum_sq / samples.len() as f64).sqrt() as f32
+    }
+
+    #[test]
+    fn test_octave_sweep_length_within_one_sample() {
+        // Returned length must equal round(total_duration * sr) ±1.
+        let sr = 48000_u32;
+        let bass_dur = 3.0_f32;
+        let min_dur = 5.0_f32;
+
+        let signal = gen_log_sweep_octave_scaled(10.0, 20_000.0, 0.5, sr, bass_dur, min_dur);
+
+        let oct_bass = (100.0_f64 / 10.0_f64).log2();
+        let oct_mid  = (1000.0_f64 / 100.0_f64).log2();
+        let oct_high = (20000.0_f64 / 1000.0_f64).log2();
+        let raw = oct_bass * bass_dur as f64
+            + oct_mid  * (bass_dur as f64 * 0.5)
+            + oct_high * (bass_dur as f64 * 0.25);
+        let expected_dur = raw.max(min_dur as f64);
+        let expected_n = (expected_dur * sr as f64).round() as usize;
+
+        let diff = (signal.len() as isize - expected_n as isize).unsigned_abs();
+        assert!(
+            diff <= 1,
+            "Length {} differs from expected {} by {} samples (> 1)",
+            signal.len(), expected_n, diff
+        );
+    }
+
+    #[test]
+    fn test_octave_sweep_min_duration_floor() {
+        // Narrow sweep -> raw duration < min_total; output must reach the floor.
+        let sr = 48000_u32;
+        let signal = gen_log_sweep_octave_scaled(1000.0, 2000.0, 0.5, sr, 0.5, 10.0);
+        let min_expected = (10.0_f64 * sr as f64).round() as usize - 1;
+        assert!(
+            signal.len() >= min_expected,
+            "Length {} is below the 10s floor (expected >= {})",
+            signal.len(), min_expected
+        );
+    }
+
+    #[test]
+    fn test_octave_sweep_bass_energy_duration() {
+        // The 20–40 Hz band (one octave) must contain at least
+        // bass_octave_duration_s seconds of energy at a consistent level.
+        let sr = 48000_u32;
+        let bass_dur = 3.0_f32;
+        let signal = gen_log_sweep_octave_scaled(10.0, 20_000.0, 0.5, sr, bass_dur, 5.0);
+
+        // Compute time bounds for the 20–40 Hz band inside the bass zone.
+        let oct_bass = (100.0_f64 / 10.0_f64).log2();
+        let oct_mid  = (1000.0_f64 / 100.0_f64).log2();
+        let oct_high = (20_000.0_f64 / 1000.0_f64).log2();
+        let raw = oct_bass * bass_dur as f64
+            + oct_mid  * (bass_dur as f64 * 0.5)
+            + oct_high * (bass_dur as f64 * 0.25);
+        let total = raw.max(5.0_f64);
+        let scale = total / raw;
+        let t_bass = oct_bass * bass_dur as f64 * scale;
+
+        // Within bass zone: t(f) = t_bass * ln(f / f_start) / ln(f_bass_hi / f_start)
+        let f_start = 10.0_f64;
+        let t_at_20 = t_bass * (20.0_f64 / f_start).ln() / (100.0_f64 / f_start).ln();
+        let t_at_40 = t_bass * (40.0_f64 / f_start).ln() / (100.0_f64 / f_start).ln();
+
+        // Collect 200 ms window RMS values whose centre falls in [t_at_20, t_at_40].
+        let win = (0.2 * sr as f64).round() as usize;
+        let hop = win / 4;
+        let mut band_rms: Vec<f32> = Vec::new();
+        let mut n = 0;
+        while n + win <= signal.len() {
+            let t_c = (n + win / 2) as f64 / sr as f64;
+            if t_c >= t_at_20 && t_c <= t_at_40 {
+                band_rms.push(rms_of(&signal[n..n + win]));
+            }
+            n += hop;
+        }
+
+        assert!(!band_rms.is_empty(), "No windows found in the 20–40 Hz band");
+
+        let avg: f32 = band_rms.iter().sum::<f32>() / band_rms.len() as f32;
+
+        // All in-band windows must be within ±3 dB of the band average.
+        for (i, &w) in band_rms.iter().enumerate() {
+            let ratio = if avg > 1e-9 { w / avg } else { 1.0 };
+            assert!(
+                ratio >= 0.5 && ratio <= 2.0,
+                "Window {i} RMS {w:.4} is outside ±3 dB of band avg {avg:.4}"
+            );
+        }
+
+        // Total time in band >= bass_octave_duration_s (with 10% tolerance).
+        let time_in_band = band_rms.len() as f64 * hop as f64 / sr as f64;
+        assert!(
+            time_in_band >= bass_dur as f64 * 0.9,
+            "Time in 20–40 Hz band ({time_in_band:.2}s) < bass_dur ({bass_dur}s)"
+        );
+    }
+
+    #[test]
+    fn test_octave_sweep_phase_zero_at_start() {
+        // sin(0) = 0 so the first sample must be ~0 for any f_start.
+        for &f_start in &[5.0_f32, 10.0, 20.0, 50.0] {
+            let signal = gen_log_sweep_octave_scaled(f_start, 20_000.0, 1.0, 48000, 3.0, 5.0);
+            assert!(!signal.is_empty(), "Empty signal for f_start={f_start}");
+            assert!(
+                signal[0].abs() < 1e-6,
+                "First sample {:.2e} != 0 for f_start={f_start}",
+                signal[0]
+            );
+        }
+    }
+
+    #[test]
+    fn test_octave_sweep_does_not_change_gen_log_sweep() {
+        // The old gen_log_sweep must be unaffected.
+        let signal = gen_log_sweep(20.0, 20000.0, 0.5, 48000, 1.0);
+        assert_eq!(signal.len(), 48000);
+        assert!(signal.iter().any(|&x| x.abs() > 0.1));
     }
 
     #[test]

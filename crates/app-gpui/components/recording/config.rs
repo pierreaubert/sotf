@@ -52,6 +52,8 @@ impl PlayerView {
         let recording_content = self.render_recording_device_content(cx).into_any_element();
         let calibration_content = self.render_mic_calibration_content(cx).into_any_element();
         let output_dir_content = self.render_output_directory_content(cx).into_any_element();
+        let advanced_sweep_content =
+            self.render_advanced_sweep_quality_content(cx).into_any_element();
 
         VStack::new()
             .spacing(StackSpacing::Md)
@@ -70,7 +72,7 @@ impl PlayerView {
                     ),
             )
             .child(
-                // Accordion with four sections
+                // Accordion with five sections
                 Accordion::new()
                     .mode(AccordionMode::Multiple)
                     .expanded(expanded_sections)
@@ -89,6 +91,13 @@ impl PlayerView {
                     .item(
                         AccordionItem::new("output_dir", "Output Directory")
                             .content(output_dir_content),
+                    )
+                    .item(
+                        AccordionItem::new(
+                            "advanced_sweep",
+                            "Advanced: Measurement Quality",
+                        )
+                        .content(advanced_sweep_content),
                     )
                     .on_change({
                         let view = view.clone();
@@ -481,6 +490,189 @@ impl PlayerView {
                         ),
                 )
             })
+    }
+
+    /// Render the "Advanced: Measurement Quality" accordion section (GD-Opt v2 §2.7).
+    ///
+    /// Three knobs:
+    /// - Bass precision: 1×/2×/4× segmented control → `bass_octave_duration_s` ∈ {1.5, 3.0, 5.0}
+    /// - Pre-silence: numeric input in seconds (default 2.0)
+    /// - Post-silence: numeric input in seconds (blank = derived from RT60 estimate)
+    ///
+    /// The estimated capture time for the whole session is also shown.
+    fn render_advanced_sweep_quality_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let rec_state = &state.app.measurement_state.recording_state;
+        let bass_dur = rec_state.bass_octave_duration_s;
+        let pre_s = rec_state.pre_silence_s;
+        let post_s_opt = rec_state.post_silence_s;
+        let view = cx.weak_entity();
+
+        // Bass precision presets: (label, value in s/octave)
+        // 1× = 1.5 s/oct, 2× (default) = 3.0 s/oct, 4× = 5.0 s/oct
+        let presets: &[(&str, f32)] = &[("1×", 1.5), ("2×", 3.0), ("4×", 5.0)];
+
+        let mut bass_row = HStack::new()
+            .spacing(StackSpacing::Sm)
+            .align(StackAlign::Center)
+            .child(
+                Text::new("Bass precision:")
+                    .size(TextSize::Xs)
+                    .color(theme.text_secondary),
+            );
+
+        for &(label, value) in presets {
+            let is_active = (bass_dur - value).abs() < 0.1;
+            let view = view.clone();
+            let btn_theme = theme.clone();
+            bass_row = bass_row.child(
+                Button::new(
+                    gpui::SharedString::from(format!("bass_preset_{label}")),
+                    label,
+                )
+                .variant(if is_active {
+                    ButtonVariant::Primary
+                } else {
+                    ButtonVariant::Secondary
+                })
+                .size(ButtonSize::Xs)
+                .theme(btn_theme.to_button_theme())
+                .on_click(move |_, cx| {
+                    let _ = view.update(cx, |this, cx| {
+                        this.state.update(cx, |state, _| {
+                            state
+                                .app
+                                .measurement_state
+                                .recording_state
+                                .bass_octave_duration_s = value;
+                        });
+                        cx.notify();
+                    });
+                }),
+            );
+        }
+
+        // Pre-silence numeric input.
+        let pre_row = {
+            let view = view.clone();
+            HStack::new()
+                .spacing(StackSpacing::Sm)
+                .align(StackAlign::Center)
+                .child(
+                    Text::new("Pre-silence (s):")
+                        .size(TextSize::Xs)
+                        .color(theme.text_secondary),
+                )
+                .child(
+                    NumberInput::new("pre_silence_s")
+                        .value(pre_s as f64)
+                        .min(0.0)
+                        .max(10.0)
+                        .step(0.5)
+                        .size(NumberInputSize::Xs)
+                        .on_change(move |value, _window, cx| {
+                            let _ = view.update(cx, |this, cx| {
+                                this.state.update(cx, |state, _| {
+                                    state
+                                        .app
+                                        .measurement_state
+                                        .recording_state
+                                        .pre_silence_s = value as f32;
+                                });
+                                cx.notify();
+                            });
+                        }),
+                )
+        };
+
+        // Post-silence numeric input (blank = auto-derive from RT60).
+        let post_row = {
+            let view = view.clone();
+            HStack::new()
+                .spacing(StackSpacing::Sm)
+                .align(StackAlign::Center)
+                .child(
+                    Text::new("Post-silence (s):")
+                        .size(TextSize::Xs)
+                        .color(theme.text_secondary),
+                )
+                .child(
+                    NumberInput::new("post_silence_s")
+                        .value(post_s_opt.unwrap_or(0.0) as f64)
+                        .min(0.0)
+                        .max(30.0)
+                        .step(0.5)
+                        .size(NumberInputSize::Xs)
+                        .on_change(move |value, _window, cx| {
+                            let _ = view.update(cx, |this, cx| {
+                                this.state.update(cx, |state, _| {
+                                    state
+                                        .app
+                                        .measurement_state
+                                        .recording_state
+                                        .post_silence_s = if value < 0.001 {
+                                        None // 0 = auto-derive from RT60
+                                    } else {
+                                        Some(value as f32)
+                                    };
+                                });
+                                cx.notify();
+                            });
+                        }),
+                )
+                .child(
+                    Text::new(if post_s_opt.is_none() {
+                        "(auto: RT60 + 1 s)"
+                    } else {
+                        ""
+                    })
+                    .size(TextSize::Xs)
+                    .color(theme.text_muted),
+                )
+        };
+
+        // Estimated capture-time hint (§2.7 default: ~14 min for 5 channels).
+        // This is a rough estimate computed from bass_octave_duration_s only.
+        // At the defaults (3 s/oct, 10 Hz → 20 kHz, 5 channels):
+        //   bass: log2(100/10)*3.0 = ~9.97 s, mid: log2(10)*1.5 ≈ 4.98 s,
+        //   high: log2(20)*1.15 ≈ 5.05 s → ~20 s/ch → 100 s per sweep pass.
+        // Add pre+post: ~4 s → ~104 s per channel → 5 ch ≈ 520 s ≈ 9 min.
+        // With 4 sweeps (§2.7 multi-sweep default) ≈ 36 min — but GD-1c adds
+        // that; here we show single-sweep. §2.7 says ~14 min so that's the
+        // expected rough value.
+        let estimated_min = {
+            let oct_bass = (100.0_f64 / 10.0_f64).log2();
+            let oct_mid  = (1000.0_f64 / 100.0_f64).log2();
+            let oct_high = (20_000.0_f64 / 1000.0_f64).log2();
+            let sweep_s = oct_bass * bass_dur as f64
+                + oct_mid  * (bass_dur as f64 * 0.5)
+                + oct_high * (bass_dur as f64 * 0.25);
+            let total_per_ch = sweep_s + pre_s as f64 + post_s_opt.unwrap_or(2.0) as f64;
+            let channels = 5.0; // show for typical 5-channel system
+            (total_per_ch * channels / 60.0).round() as u32
+        };
+
+        VStack::new()
+            .spacing(StackSpacing::Sm)
+            .child(
+                Text::new(
+                    "Increase bass precision to improve group delay accuracy below 100 Hz. \
+                     Higher settings require longer recordings.",
+                )
+                .size(TextSize::Xs)
+                .color(theme.text_muted),
+            )
+            .child(bass_row)
+            .child(pre_row)
+            .child(post_row)
+            .child(
+                Text::new(format!(
+                    "Estimated capture time (5 channels, 10 Hz–20 kHz): ~{estimated_min} min"
+                ))
+                .size(TextSize::Xs)
+                .color(theme.text_muted),
+            )
     }
 
     /// Open directory dialog to select recording output directory
