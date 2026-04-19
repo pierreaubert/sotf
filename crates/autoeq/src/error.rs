@@ -86,6 +86,17 @@ pub enum AutoeqError {
         message: String,
     },
 
+    /// Reserved: the recording on disk predates the GD-Opt v2 format and
+    /// cannot be loaded. The migration path was removed in Phase GD-1a.1;
+    /// users must re-record.
+    #[error("unsupported recording format at '{}': {detail}", path.display())]
+    UnsupportedRecordingFormat {
+        /// Path to the recording file that cannot be loaded.
+        path: std::path::PathBuf,
+        /// Human-readable detail about why the recording is unsupported.
+        detail: String,
+    },
+
     /// NLopt-specific error.
     #[cfg(feature = "nlopt")]
     #[error("NLopt error: {message}")]
@@ -133,5 +144,37 @@ impl AutoeqError {
             return true;
         }
         matches!(self, AutoeqError::OptimizationFailed { .. })
+    }
+
+    /// Returns true if this error is non-retriable because the recording
+    /// file on disk predates GD-Opt v2. Callers must ask the user to
+    /// re-record rather than surfacing a generic I/O failure.
+    pub fn is_unsupported_recording_format(&self) -> bool {
+        matches!(self, AutoeqError::UnsupportedRecordingFormat { .. })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unsupported_recording_format_display_and_classification() {
+        let err = AutoeqError::UnsupportedRecordingFormat {
+            path: std::path::PathBuf::from("/tmp/recordings/session.json"),
+            detail: "missing v2 fields".to_string(),
+        };
+
+        // Display stringifies path + detail sensibly.
+        let msg = format!("{err}");
+        assert!(msg.contains("/tmp/recordings/session.json"), "got: {msg}");
+        assert!(msg.contains("missing v2 fields"), "got: {msg}");
+        assert!(msg.contains("unsupported recording format"), "got: {msg}");
+
+        // Classification helper matches only this variant.
+        assert!(err.is_unsupported_recording_format());
+        assert!(!err.is_io_error());
+        assert!(!err.is_cea2034_error());
+        assert!(!err.is_optimization_error());
     }
 }

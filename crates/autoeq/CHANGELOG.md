@@ -1,3 +1,29 @@
+# 0.4.33
+
+## GD-Opt v2 — Phase GD-1a.1: `AutoeqError::UnsupportedRecordingFormat`
+
+Sibling to the sotf-engine 1.0.20 bump, which removes
+`migrate_legacy_recording`. See `docs/gd_opt_v2_plan.md` §2.10 (row
+**GD-1a.1**) and §2.11 Q6.
+
+- New `AutoeqError::UnsupportedRecordingFormat { path, detail }`
+  variant is **reserved for future use** by the recording loader
+  (a later GD-Opt v2 phase wires it up). It is added now so
+  downstream consumers can start matching on it without a
+  back-compat churn later.
+- New classification helper
+  `AutoeqError::is_unsupported_recording_format()` joins the
+  existing `is_io_error` / `is_cea2034_error` /
+  `is_optimization_error` family.
+- One new unit test
+  (`unsupported_recording_format_display_and_classification`)
+  round-trips the variant through `Display` and confirms the
+  classification helper matches only this variant.
+
+No call sites in `autoeq` construct the variant yet — that wiring
+belongs to the loader rework that lands alongside GD-1c (multi-sweep
+session-directory layout).
+
 # 0.4.32
 
 ## GD-Opt v2 — Phase GD-1a.2: Curve extensions + CSV reader
