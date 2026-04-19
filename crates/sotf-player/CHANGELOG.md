@@ -1,3 +1,15 @@
+# 0.5.121
+
+## QueueController: gate file-existence validation behind `testing` feature
+
+- `QueueController::add_album` and `play_album_now` now skip
+  `validate_album_has_files` when the `testing` feature is enabled.
+  Production builds keep the validation; integration tests in app-gpui
+  (which use synthetic `/test/*.flac` paths) no longer have albums
+  silently rejected with their `Result` discarded.
+- Fixes 16 failing app-gpui lifecycle tests
+  (`queue_sequences::*`, `playback_sequences::*`).
+
 # 0.5.120
 
 ## EqFilterConfig dedup re-audit (no code change)

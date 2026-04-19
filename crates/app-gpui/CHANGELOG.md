@@ -1,3 +1,39 @@
+# 0.5.18
+
+## Tests: enable `sotf-player/testing` feature in dev-dependencies
+
+- Pulls `sotf-player` into `[dev-dependencies]` with the `testing`
+  feature so `QueueController::add_album` skips the on-disk file
+  check during integration tests. Without this, all 16
+  `lifecycle::queue_sequences::*` and `lifecycle::playback_sequences::*`
+  tests using synthetic `/test/*.flac` paths failed because
+  `add_album` returned `Err` (silently discarded) and the queue
+  stayed empty.
+- Annotated all `queue.add_album(...)` and `app.add_album_to_queue()`
+  test call sites with `let _ = ...` to silence the
+  `unused_must_use` warnings now that the result is meaningful.
+
+# 0.5.17
+
+## Diagnostics
+
+### Room EQ: multi-speaker regression tracing (no behavior change)
+
+- Added diagnostic `log::info!` / `log::error!` entries in
+  `step_4_optimise.rs::start_room_eq_optimization` around:
+  - **pre-build**: `channel_measurements.len()`,
+    `speaker_configs.len()`, and the `channel_names` /
+    `speaker_config_names` lists.
+  - **post-build**: `RoomConfig.speakers.keys()` and
+    `RoomConfig.system.is_some()`.
+  - **post-run**: `room_result.channel_results.keys()` vs
+    `channel_names`, plus an `error!` when any expected channel is
+    missing from `channel_results` — this is the UI-side silent-drop
+    point identified while hunting the "second speaker never runs"
+    regression reported against app-gpui roomeq.
+- Purely additive; no behaviour changed. The logs surface the actual
+  mismatch for user-side repro collection.
+
 # 0.5.16
 
 ## Code changes

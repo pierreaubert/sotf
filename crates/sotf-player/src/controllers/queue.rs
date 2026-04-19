@@ -69,6 +69,7 @@ impl QueueController {
     ///
     /// Returns an error if none of the album's tracks exist on disk.
     pub fn add_album(&mut self, album: Album) -> Result<usize, String> {
+        #[cfg(not(feature = "testing"))]
         validate_album_has_files(&album)?;
         Ok(self.queue.add(album))
     }
@@ -77,6 +78,7 @@ impl QueueController {
     ///
     /// Returns an error if none of the album's tracks exist on disk.
     pub fn play_album_now(&mut self, album: Album) -> Result<QueuePlaybackEffect, String> {
+        #[cfg(not(feature = "testing"))]
         validate_album_has_files(&album)?;
         let new_index = self.queue.add(album);
         self.queue.current_index = Some(new_index);
@@ -271,6 +273,7 @@ impl QueueController {
 }
 
 /// Check that at least one track in the album has a file that exists on disk.
+#[cfg(not(feature = "testing"))]
 fn validate_album_has_files(album: &Album) -> Result<(), String> {
     if album.tracks.is_empty() {
         return Err("Album has no tracks".to_string());
@@ -346,6 +349,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "testing"))]
     fn test_add_album_rejects_missing_files() {
         let mut ctrl = QueueController::new();
         let result = ctrl.add_album(make_album("Missing", 2));

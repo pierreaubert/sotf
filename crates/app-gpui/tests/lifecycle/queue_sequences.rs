@@ -19,14 +19,14 @@ fn test_build_queue_from_empty() {
     assert!(queue.current_index().is_none());
 
     // Add first album
-    queue.add_album(album_with_tracks("Album1", "Artist1", 5));
+    let _ = queue.add_album(album_with_tracks("Album1", "Artist1", 5));
     assert_eq!(queue.len(), 1);
     // current_index is still None until start() is called
     assert!(queue.current_index().is_none());
 
     // Add more albums
-    queue.add_album(album_with_tracks("Album2", "Artist2", 3));
-    queue.add_album(album_with_tracks("Album3", "Artist3", 4));
+    let _ = queue.add_album(album_with_tracks("Album2", "Artist2", 3));
+    let _ = queue.add_album(album_with_tracks("Album3", "Artist3", 4));
     assert_eq!(queue.len(), 3);
 
     // Start playback
@@ -39,10 +39,10 @@ fn test_build_queue_from_empty() {
 #[test]
 fn test_queue_diverse_albums() {
     let mut queue = QueueController::new();
-    queue.add_album(album_with_tracks("Single", "Artist", 1));
-    queue.add_album(album_with_tracks("EP", "Artist", 4));
-    queue.add_album(album_with_tracks("Album", "Artist", 12));
-    queue.add_album(album_with_tracks("Double", "Artist", 24));
+    let _ = queue.add_album(album_with_tracks("Single", "Artist", 1));
+    let _ = queue.add_album(album_with_tracks("EP", "Artist", 4));
+    let _ = queue.add_album(album_with_tracks("Album", "Artist", 12));
+    let _ = queue.add_album(album_with_tracks("Double", "Artist", 24));
     queue.start();
 
     let mut total_next_calls = 0;
@@ -70,9 +70,9 @@ fn test_queue_diverse_albums() {
 #[test]
 fn test_navigate_forward_through_queue() {
     let mut queue = QueueController::new();
-    queue.add_album(album_with_tracks("Album1", "Artist1", 3));
-    queue.add_album(album_with_tracks("Album2", "Artist2", 2));
-    queue.add_album(album_with_tracks("Album3", "Artist3", 4));
+    let _ = queue.add_album(album_with_tracks("Album1", "Artist1", 3));
+    let _ = queue.add_album(album_with_tracks("Album2", "Artist2", 2));
+    let _ = queue.add_album(album_with_tracks("Album3", "Artist3", 4));
     queue.start();
 
     // Verify starting position
@@ -116,7 +116,7 @@ fn test_navigate_forward_through_queue() {
 #[test]
 fn test_current_track_updates_on_navigation() {
     let mut queue = QueueController::new();
-    queue.add_album(album_with_tracks("Album", "Artist", 3));
+    let _ = queue.add_album(album_with_tracks("Album", "Artist", 3));
     queue.start();
 
     let first_track = queue.current_track().unwrap().title.clone();
@@ -134,7 +134,7 @@ fn test_current_track_updates_on_navigation() {
 #[test]
 fn test_single_track_queue() {
     let mut queue = QueueController::new();
-    queue.add_album(album_with_tracks("Single", "Artist", 1));
+    let _ = queue.add_album(album_with_tracks("Single", "Artist", 1));
     queue.start();
 
     // Next should return Stop immediately
@@ -163,7 +163,7 @@ fn test_empty_queue_safety() {
 fn test_single_track_albums_navigation() {
     let mut queue = QueueController::new();
     for i in 0..5 {
-        queue.add_album(album_with_tracks(&format!("Album{}", i), "Artist", 1));
+        let _ = queue.add_album(album_with_tracks(&format!("Album{}", i), "Artist", 1));
     }
     queue.start();
     assert_eq!(queue.current_index(), Some(0));
@@ -185,14 +185,14 @@ fn test_single_track_albums_navigation() {
 #[test]
 fn test_dynamic_queue_addition() {
     let mut queue = QueueController::new();
-    queue.add_album(album_with_tracks("Initial", "Artist", 3));
+    let _ = queue.add_album(album_with_tracks("Initial", "Artist", 3));
     queue.start();
 
     // Listen to first track, then add more
     queue.next_track();
 
     // Add another album
-    queue.add_album(album_with_tracks("Added", "Artist", 2));
+    let _ = queue.add_album(album_with_tracks("Added", "Artist", 2));
     assert_eq!(queue.len(), 2);
 
     // Continue through original album
@@ -208,14 +208,14 @@ fn test_dynamic_queue_addition() {
 #[test]
 fn test_add_album_after_exhaustion() {
     let mut queue = QueueController::new();
-    queue.add_album(album_with_tracks("First", "Artist", 1));
+    let _ = queue.add_album(album_with_tracks("First", "Artist", 1));
     queue.start();
 
     // Exhaust the queue
     assert_eq!(queue.next_track(), QueuePlaybackEffect::Stop);
 
     // Add new album and jump to it
-    queue.add_album(album_with_tracks("Second", "Artist", 2));
+    let _ = queue.add_album(album_with_tracks("Second", "Artist", 2));
     let effect = queue.jump_to(1);
     assert!(matches!(effect, QueuePlaybackEffect::Play(_)));
     assert_eq!(queue.current_index(), Some(1));
@@ -231,7 +231,7 @@ fn test_queue_with_duplicates() {
     let mut queue = QueueController::new();
     // Add same album structure 3 times
     for _ in 0..3 {
-        queue.add_album(album_with_tracks("Repeat", "Artist", 3));
+        let _ = queue.add_album(album_with_tracks("Repeat", "Artist", 3));
     }
     queue.start();
 
@@ -266,7 +266,7 @@ fn test_queue_with_duplicates() {
 fn test_long_queue() {
     let mut queue = QueueController::new();
     for i in 0..100 {
-        queue.add_album(album_with_tracks(&format!("Album{}", i), "Artist", 1));
+        let _ = queue.add_album(album_with_tracks(&format!("Album{}", i), "Artist", 1));
     }
     queue.start();
 
@@ -295,9 +295,9 @@ fn test_long_queue() {
 #[test]
 fn test_queue_remove_during_playback() {
     let mut queue = QueueController::new();
-    queue.add_album(album_with_tracks("A", "Artist", 2));
-    queue.add_album(album_with_tracks("B", "Artist", 2));
-    queue.add_album(album_with_tracks("C", "Artist", 2));
+    let _ = queue.add_album(album_with_tracks("A", "Artist", 2));
+    let _ = queue.add_album(album_with_tracks("B", "Artist", 2));
+    let _ = queue.add_album(album_with_tracks("C", "Artist", 2));
     queue.start();
 
     // Remove a non-current album (C)
@@ -314,8 +314,8 @@ fn test_queue_remove_during_playback() {
 #[test]
 fn test_queue_clear() {
     let mut queue = QueueController::new();
-    queue.add_album(album_with_tracks("A", "Artist", 3));
-    queue.add_album(album_with_tracks("B", "Artist", 3));
+    let _ = queue.add_album(album_with_tracks("A", "Artist", 3));
+    let _ = queue.add_album(album_with_tracks("B", "Artist", 3));
     queue.start();
 
     queue.clear();
@@ -328,9 +328,9 @@ fn test_queue_clear() {
 #[test]
 fn test_queue_jump_to() {
     let mut queue = QueueController::new();
-    queue.add_album(album_with_tracks("A", "Artist", 3));
-    queue.add_album(album_with_tracks("B", "Artist", 3));
-    queue.add_album(album_with_tracks("C", "Artist", 3));
+    let _ = queue.add_album(album_with_tracks("A", "Artist", 3));
+    let _ = queue.add_album(album_with_tracks("B", "Artist", 3));
+    let _ = queue.add_album(album_with_tracks("C", "Artist", 3));
     queue.start();
 
     // Jump to album C (index 2)
@@ -347,7 +347,7 @@ fn test_queue_jump_to() {
 #[test]
 fn test_queue_jump_to_invalid() {
     let mut queue = QueueController::new();
-    queue.add_album(album_with_tracks("A", "Artist", 2));
+    let _ = queue.add_album(album_with_tracks("A", "Artist", 2));
     queue.start();
 
     let effect = queue.jump_to(99);
@@ -364,9 +364,9 @@ fn test_queue_jump_to_invalid() {
 #[test]
 fn test_realistic_queue_session() {
     let mut queue = QueueController::new();
-    queue.add_album(album_with_tracks("Morning Jazz", "Various", 8));
-    queue.add_album(album_with_tracks("Focus Music", "Study Beats", 12));
-    queue.add_album(album_with_tracks("Evening Chill", "Lo-Fi", 6));
+    let _ = queue.add_album(album_with_tracks("Morning Jazz", "Various", 8));
+    let _ = queue.add_album(album_with_tracks("Focus Music", "Study Beats", 12));
+    let _ = queue.add_album(album_with_tracks("Evening Chill", "Lo-Fi", 6));
     queue.start();
 
     // Morning: listen to a few tracks
@@ -390,7 +390,7 @@ fn test_realistic_queue_session() {
     }
 
     // Add a bonus album mid-session
-    queue.add_album(album_with_tracks("Bonus", "Surprise", 3));
+    let _ = queue.add_album(album_with_tracks("Bonus", "Surprise", 3));
     assert_eq!(queue.len(), 4);
 
     // Continue through remaining tracks

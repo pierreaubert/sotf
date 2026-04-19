@@ -386,7 +386,7 @@ fn render_choice_buttons(
                 .text_color(accent)
                 .cursor_pointer()
                 .on_click(move |_, window, cx| on_prev(window, cx))
-                .child("◄"),
+                .child("<"),
         )
         .child(
             div()
@@ -406,6 +406,6 @@ fn render_choice_buttons(
                 .text_color(accent)
                 .cursor_pointer()
                 .on_click(move |_, window, cx| on_next(window, cx))
-                .child("►"),
+                .child(">"),
         )
 }

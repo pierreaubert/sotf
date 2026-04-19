@@ -847,8 +847,36 @@ impl PlayerView {
                 .map(|m| m.channel_name.clone())
                 .collect();
 
+            // Diagnostic: surface input-side state used to build the RoomConfig.
+            // Multi-speaker regression hunt — log the UI's declared channel
+            // list vs the speaker_configs / channel_measurements that
+            // `to_room_config` iterates over. A mismatch here means the
+            // RoomConfig will silently carry fewer speakers than the UI
+            // thinks it asked for.
+            let speaker_config_names: Vec<String> = room_eq
+                .speaker_configs
+                .iter()
+                .map(|sc| sc.channel_name.clone())
+                .collect();
+            log::info!(
+                "Room EQ pre-build: channel_measurements={}, speaker_configs={}, \
+                 channel_names={:?}, speaker_config_names={:?}",
+                room_eq.channel_measurements.len(),
+                room_eq.speaker_configs.len(),
+                channel_names,
+                speaker_config_names,
+            );
+
+            let built_config = room_eq.to_room_config();
+            log::info!(
+                "Room EQ built RoomConfig: speakers.len()={}, speaker keys={:?}, system={:?}",
+                built_config.speakers.len(),
+                built_config.speakers.keys().collect::<Vec<_>>(),
+                built_config.system.as_ref().map(|_| "Some(System)"),
+            );
+
             (
-                room_eq.to_room_config(),
+                built_config,
                 channel_names,
                 room_eq.optimizer_config.max_iter,
                 room_eq.delay_detection.probe_arrival_map(),
@@ -1040,6 +1068,33 @@ impl PlayerView {
                         room_result.combined_pre_score,
                         room_result.combined_post_score
                     );
+
+                    // Diagnostic: surface the channel_results keys against
+                    // the UI's channel_names list. If any name from
+                    // channel_names is missing from channel_results, the
+                    // filter_map below will silently drop it and the UI
+                    // will show "only the first speaker" even though the
+                    // backend may have completed all of them.
+                    let result_keys: Vec<&String> = room_result.channel_results.keys().collect();
+                    log::info!(
+                        "Room EQ result keys: channel_names={:?}, channel_results={:?}, channels={:?}",
+                        channel_names,
+                        result_keys,
+                        room_result.channels.keys().collect::<Vec<_>>(),
+                    );
+                    let missing: Vec<&String> = channel_names
+                        .iter()
+                        .filter(|n| !room_result.channel_results.contains_key(n.as_str()))
+                        .collect();
+                    if !missing.is_empty() {
+                        log::error!(
+                            "Room EQ regression signal — {} channel(s) in channel_names have no \
+                             entry in room_result.channel_results and will be dropped by \
+                             filter_map: {:?}",
+                            missing.len(),
+                            missing,
+                        );
+                    }
 
                     // Build UI results from RoomOptimizationResult
                     let all_results: Vec<ChannelOptResult> = channel_names

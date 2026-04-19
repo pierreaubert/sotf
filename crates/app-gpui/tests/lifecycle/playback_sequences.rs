@@ -20,7 +20,7 @@ fn test_full_album_playback_preserves_volume() {
     playback.set_volume(0.42);
 
     let mut queue = QueueController::new();
-    queue.add_album(album_with_tracks("TestAlbum", "Artist", 5));
+    let _ = queue.add_album(album_with_tracks("TestAlbum", "Artist", 5));
     queue.start();
 
     for i in 0..4 {
@@ -48,9 +48,9 @@ fn test_multi_album_playback_preserves_state() {
     playback.set_volume(0.75);
 
     let mut queue = QueueController::new();
-    queue.add_album(album_with_tracks("Album1", "Artist", 3));
-    queue.add_album(album_with_tracks("Album2", "Artist", 2));
-    queue.add_album(album_with_tracks("Album3", "Artist", 4));
+    let _ = queue.add_album(album_with_tracks("Album1", "Artist", 3));
+    let _ = queue.add_album(album_with_tracks("Album2", "Artist", 2));
+    let _ = queue.add_album(album_with_tracks("Album3", "Artist", 4));
     queue.start();
 
     let expected_total_tracks = 3 + 2 + 4;
@@ -93,7 +93,7 @@ fn test_pause_resume_preserves_volume() {
     playback.is_playing = true;
 
     let mut queue = QueueController::new();
-    queue.add_album(album_with_tracks("Album", "Artist", 3));
+    let _ = queue.add_album(album_with_tracks("Album", "Artist", 3));
     queue.start();
 
     // Pause
@@ -120,8 +120,8 @@ fn test_volume_adjustments_persist_across_tracks() {
     playback.set_volume(0.5);
 
     let mut queue = QueueController::new();
-    queue.add_album(album_with_tracks("Album1", "Artist", 2));
-    queue.add_album(album_with_tracks("Album2", "Artist", 2));
+    let _ = queue.add_album(album_with_tracks("Album1", "Artist", 2));
+    let _ = queue.add_album(album_with_tracks("Album2", "Artist", 2));
     queue.start();
 
     // Change volume
@@ -147,7 +147,7 @@ fn test_volume_adjustments_persist_across_tracks() {
 fn test_edge_volume_values_persist() {
     let mut playback = PlaybackController::new();
     let mut queue = QueueController::new();
-    queue.add_album(album_with_tracks("Album", "Artist", 5));
+    let _ = queue.add_album(album_with_tracks("Album", "Artist", 5));
     queue.start();
 
     // Volume = 0.0
@@ -181,7 +181,7 @@ fn test_mute_persists_through_playback() {
     playback.muted = true;
 
     let mut queue = QueueController::new();
-    queue.add_album(album_with_tracks("Album", "Artist", 4));
+    let _ = queue.add_album(album_with_tracks("Album", "Artist", 4));
     queue.start();
 
     for _ in 0..3 {
@@ -222,8 +222,8 @@ fn test_rapid_track_skipping() {
     playback.set_volume(0.55);
 
     let mut queue = QueueController::new();
-    queue.add_album(album_with_tracks("Album1", "Artist", 10));
-    queue.add_album(album_with_tracks("Album2", "Artist", 10));
+    let _ = queue.add_album(album_with_tracks("Album1", "Artist", 10));
+    let _ = queue.add_album(album_with_tracks("Album2", "Artist", 10));
     queue.start();
 
     for i in 0..15 {
@@ -242,7 +242,7 @@ fn test_alternating_play_pause_next() {
     playback.set_volume(0.7);
 
     let mut queue = QueueController::new();
-    queue.add_album(album_with_tracks("Album", "Artist", 5));
+    let _ = queue.add_album(album_with_tracks("Album", "Artist", 5));
     queue.start();
 
     for _ in 0..3 {
@@ -301,9 +301,9 @@ fn test_realistic_listening_session() {
     playback.set_volume(0.4);
 
     let mut queue = QueueController::new();
-    queue.add_album(album_with_tracks("Morning Jazz", "Various", 6));
-    queue.add_album(album_with_tracks("Work Focus", "Study Beats", 8));
-    queue.add_album(album_with_tracks("Evening Chill", "Lo-Fi", 5));
+    let _ = queue.add_album(album_with_tracks("Morning Jazz", "Various", 6));
+    let _ = queue.add_album(album_with_tracks("Work Focus", "Study Beats", 8));
+    let _ = queue.add_album(album_with_tracks("Evening Chill", "Lo-Fi", 5));
     queue.start();
     playback.is_playing = true;
 

@@ -254,7 +254,7 @@ impl TestScenario for AlbumNoDuplicateScenario {
         // Add album to queue first time
         driver.update_app(|app, _| {
             app.library_state.selected_index = 0;
-            app.add_album_to_queue();
+            let _ = app.add_album_to_queue();
         });
         driver.run_until_parked();
 
@@ -266,7 +266,7 @@ impl TestScenario for AlbumNoDuplicateScenario {
         // Try to add the same album again via add_album_to_queue
         driver.update_app(|app, _| {
             app.library_state.selected_index = 0;
-            app.add_album_to_queue();
+            let _ = app.add_album_to_queue();
         });
         driver.run_until_parked();
 
