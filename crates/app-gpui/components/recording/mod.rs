@@ -15,6 +15,7 @@ mod config;
 mod evaluating;
 mod probe;
 mod saving;
+mod spl_calibration;
 
 use crate::app::types::{RecordingStep, Screen};
 use crate::components::icons::{Icon, IconName};
@@ -40,6 +41,9 @@ impl PlayerView {
 
         let step_content = match current_step {
             RecordingStep::Config => self.render_recording_config_step(cx).into_any_element(),
+            RecordingStep::SplCalibration => self
+                .render_recording_spl_calibration_step(cx)
+                .into_any_element(),
             RecordingStep::Capture => self.render_recording_capture_step(cx).into_any_element(),
             RecordingStep::Probe => self.render_recording_probe_step(cx).into_any_element(),
             RecordingStep::BassAnchor => {
@@ -110,6 +114,7 @@ impl PlayerView {
             .map(|s| {
                 let id = match s {
                     RecordingStep::Config => "config",
+                    RecordingStep::SplCalibration => "spl_calibration",
                     RecordingStep::Capture => "capture",
                     RecordingStep::Probe => "probe",
                     RecordingStep::BassAnchor => "bass_anchor",
@@ -134,6 +139,10 @@ impl PlayerView {
         // Determine if next button should be disabled
         let next_disabled = match current_step {
             RecordingStep::Config => !has_output_dir,
+            // SplCalibration is optional — users without an external
+            // SPL meter can skip it and GD-Opt v2 degrades the
+            // `"no_spl_calibration"` advisory rather than refusing.
+            RecordingStep::SplCalibration => false,
             RecordingStep::Capture => !all_recorded || is_recording,
             // Probe is optional; always allow advancing past it.
             RecordingStep::Probe => false,

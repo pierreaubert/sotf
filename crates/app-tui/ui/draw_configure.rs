@@ -627,6 +627,19 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
             f.render_widget(para, content);
         }
 
+        RecordingStep::SplCalibration => {
+            // GD-Opt v2 Phase GD-1e.5 — placeholder; the GPUI wizard
+            // carries the full step. TUI support lands alongside the
+            // reading-entry widget redesign.
+            use ratatui::widgets::Paragraph;
+            let para = Paragraph::new(
+                "SPL Calibration (GD-Opt v2) — optional but recommended. Displayed in the \
+                 GPUI wizard; TUI support arrives with the meter-reading input widget.",
+            )
+            .wrap(ratatui::widgets::Wrap { trim: true });
+            f.render_widget(para, content);
+        }
+
         RecordingStep::Evaluating => {
             let inner = Layout::default()
                 .direction(Direction::Vertical)
