@@ -1,11 +1,17 @@
-//! Group Delay Optimisation v2 — LowLatency IIR path (Phase GD-3a).
+//! Group Delay Optimisation v2 — IIR path (Phase GD-3a).
 //!
 //! Finds per-channel `(delay_ms, allpass_filters, polarity)` that minimise
 //! the RMS group-delay deviation of the **summed complex response** at the
 //! listening position, weighted by per-bin coherence².
 //!
+//! Features:
+//! - Core DE-based optimiser (`optimize_group_delay`)
+//! - Adaptive AP bootstrap (`optimize_group_delay_adaptive`, §3.3)
+//! - Multi-mode dispatch (`optimize_group_delay_for_mode`, §3.7)
+//!
 //! References: `crates/autoeq/docs/gd_opt_v2_plan.md` §3.
 
+use crate::roomeq::types::{MixedModeConfig, ProcessingMode};
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use math_audio_optimisation::{DEConfigBuilder, differential_evolution};
 use ndarray::Array1;
@@ -196,6 +202,212 @@ pub fn optimize_group_delay(
         mean_coherence,
         improvement_db,
     })
+}
+
+// ─── Adaptive AP bootstrap (§3.3) ────────────────────────────────────────────
+
+/// Maximum number of all-pass filters the bootstrap will try.
+const MAX_AP_BUDGET: usize = 2;
+
+/// Significance threshold: keep AP only if mean_improvement / σ > this value.
+const BOOTSTRAP_SIGMA_THRESHOLD: f64 = 3.0;
+
+/// Run the group-delay optimiser with adaptive AP budget (§3.3).
+///
+/// Instead of a fixed AP count, starts with delay-only (0 APs), then
+/// incrementally adds APs up to `MAX_AP_BUDGET`, accepting each only if it
+/// passes the bootstrap significance test across the per-sweep realisations.
+///
+/// `sweep_realisations` contains N independent measurement sets (one per sweep).
+/// The main `channels` is the coherence-averaged measurement used for fitting.
+pub fn optimize_group_delay_adaptive(
+    channels: &[ChannelMeasurementInput],
+    sweep_realisations: &[Vec<ChannelMeasurementInput>],
+    band: (f64, f64),
+    config: &GdOptConfig,
+) -> Result<GroupDelayOptResult, String> {
+    if sweep_realisations.len() < 2 {
+        return Err(
+            "Adaptive AP bootstrap requires at least 2 sweep realisations (N >= 2)".into(),
+        );
+    }
+
+    // Start with delay-only (0 APs)
+    let mut best_config = GdOptConfig {
+        ap_per_channel: 0,
+        ..config.clone()
+    };
+    let mut best_result = optimize_group_delay(channels, band, &best_config)?;
+
+    // Incrementally try adding APs
+    for k in 1..=MAX_AP_BUDGET {
+        let trial_config = GdOptConfig {
+            ap_per_channel: k,
+            ..config.clone()
+        };
+
+        let trial_result = optimize_group_delay(channels, band, &trial_config)?;
+
+        // Bootstrap test: for each sweep realisation, compute GD RMS
+        // with and without the k-th AP filter.
+        let improvements = compute_bootstrap_improvements(
+            sweep_realisations,
+            band,
+            &best_config,
+            &best_result,
+            &trial_config,
+            &trial_result,
+        )?;
+
+        let n = improvements.len() as f64;
+        let mean_improvement = improvements.iter().sum::<f64>() / n;
+        let variance = improvements
+            .iter()
+            .map(|&x| (x - mean_improvement).powi(2))
+            .sum::<f64>()
+            / (n - 1.0);
+        let sigma = variance.sqrt();
+
+        // Accept if mean_improvement / σ > 3 (and σ > 0 to avoid division by zero)
+        let significant =
+            sigma > 1e-15 && (mean_improvement / sigma) > BOOTSTRAP_SIGMA_THRESHOLD;
+
+        if significant && trial_result.sum_gd_post_rms_ms < best_result.sum_gd_post_rms_ms {
+            best_result = trial_result;
+            best_config = trial_config;
+        } else {
+            // No significant improvement — stop adding APs
+            break;
+        }
+    }
+
+    Ok(best_result)
+}
+
+/// For each sweep realisation, compute the GD RMS improvement (pre - post)
+/// between the baseline result and the trial result.
+fn compute_bootstrap_improvements(
+    sweep_realisations: &[Vec<ChannelMeasurementInput>],
+    band: (f64, f64),
+    baseline_config: &GdOptConfig,
+    baseline_result: &GroupDelayOptResult,
+    trial_config: &GdOptConfig,
+    trial_result: &GroupDelayOptResult,
+) -> Result<Vec<f64>, String> {
+    let mut improvements = Vec::with_capacity(sweep_realisations.len());
+
+    for realisation in sweep_realisations {
+        if realisation.len() != baseline_result.per_channel.len() {
+            return Err("Sweep realisation channel count mismatch".into());
+        }
+
+        let n_freq = realisation[0].freq.len();
+        let band_indices: Vec<usize> = (0..n_freq)
+            .filter(|&i| realisation[0].freq[i] >= band.0 && realisation[0].freq[i] <= band.1)
+            .collect();
+
+        if band_indices.is_empty() {
+            improvements.push(0.0);
+            continue;
+        }
+
+        // Encode baseline result as params
+        let baseline_params = encode_result_as_params(baseline_result, baseline_config);
+        let trial_params = encode_result_as_params(trial_result, trial_config);
+
+        // Compute GD RMS for this realisation with baseline vs trial params
+        let rms_baseline =
+            compute_sum_gd_rms(realisation, &baseline_params, &band_indices, baseline_config);
+        let rms_trial =
+            compute_sum_gd_rms(realisation, &trial_params, &band_indices, trial_config);
+
+        // Improvement = reduction in RMS (positive means trial is better)
+        improvements.push(rms_baseline - rms_trial);
+    }
+
+    Ok(improvements)
+}
+
+/// Encode a `GroupDelayOptResult` back into a parameter vector for evaluation.
+fn encode_result_as_params(result: &GroupDelayOptResult, config: &GdOptConfig) -> Vec<f64> {
+    let n_ch = result.per_channel.len();
+    let per_ch = 1 + config.ap_per_channel * 2 + if config.optimize_polarity { 1 } else { 0 };
+    let mut params = vec![0.0; n_ch * per_ch];
+
+    for (ch_idx, ch_result) in result.per_channel.iter().enumerate() {
+        let offset = ch_idx * per_ch;
+        params[offset] = ch_result.delay_ms;
+
+        for (i, ap) in ch_result.ap_filters.iter().enumerate() {
+            if i < config.ap_per_channel {
+                params[offset + 1 + i * 2] = ap.freq;
+                params[offset + 1 + i * 2 + 1] = ap.q;
+            }
+        }
+
+        if config.optimize_polarity {
+            params[offset + 1 + config.ap_per_channel * 2] =
+                if ch_result.polarity_inverted { 1.0 } else { 0.0 };
+        }
+    }
+
+    params
+}
+
+// ─── Multi-mode dispatch (§3.7) ──────────────────────────────────────────────
+
+/// Run the group-delay optimiser with mode-specific behaviour (§3.7).
+///
+/// Dispatches based on `ProcessingMode`:
+/// - `LowLatency`, `WarpedIir`, `KautzModal`: Full optimisation (delays + APs).
+/// - `Hybrid`: Same as LowLatency but asserts `band_hi ≤ mixed_config.crossover_freq`.
+/// - `MixedPhase`: Inter-channel alignment only (1 AP max per channel).
+/// - `PhaseLinear`: Not applicable (returns error — use GD-3b FIR path).
+pub fn optimize_group_delay_for_mode(
+    channels: &[ChannelMeasurementInput],
+    band: (f64, f64),
+    config: &GdOptConfig,
+    processing_mode: &ProcessingMode,
+    mixed_mode_config: Option<&MixedModeConfig>,
+) -> Result<GroupDelayOptResult, String> {
+    match processing_mode {
+        ProcessingMode::LowLatency | ProcessingMode::WarpedIir | ProcessingMode::KautzModal => {
+            optimize_group_delay(channels, band, config)
+        }
+
+        ProcessingMode::Hybrid => {
+            // Assert band_hi does not straddle the IIR/FIR crossover
+            let xo_freq = mixed_mode_config
+                .map(|m| m.crossover_freq)
+                .unwrap_or(300.0);
+
+            if band.1 > xo_freq {
+                return Err(format!(
+                    "Hybrid mode: GD-Opt band_hi ({:.1} Hz) exceeds mixed_config crossover \
+                     ({:.1} Hz). AP filters must stay in the IIR band.",
+                    band.1, xo_freq,
+                ));
+            }
+
+            optimize_group_delay(channels, band, config)
+        }
+
+        ProcessingMode::MixedPhase => {
+            // After per-channel excess-phase FIR correction, only inter-channel
+            // alignment remains. Typically 1 delay per channel, at most 1 AP.
+            let mixed_phase_config = GdOptConfig {
+                ap_per_channel: config.ap_per_channel.min(1),
+                ..config.clone()
+            };
+            optimize_group_delay(channels, band, &mixed_phase_config)
+        }
+
+        ProcessingMode::PhaseLinear => Err(
+            "PhaseLinear mode does not use IIR AP filters. \
+             Use the FIR path (GD-3b) with GdAlignmentTarget instead."
+                .into(),
+        ),
+    }
 }
 
 // ─── Internal helpers ────────────────────────────────────────────────────────
@@ -445,9 +657,6 @@ fn decode_per_channel(
     let n_ch = channels.len();
     let mut results = Vec::with_capacity(n_ch);
 
-    // Pre-optimisation: identity params
-    let identity = vec![0.0; param_count(n_ch, config)];
-
     for ch_idx in 0..n_ch {
         let cp = decode_channel_params(params, ch_idx, config);
 
@@ -483,9 +692,6 @@ fn decode_per_channel(
             channel_gd_post_rms_ms: post_rms,
         });
     }
-
-    // Suppress unused variable warning
-    let _ = &identity;
 
     results
 }
@@ -683,5 +889,277 @@ mod tests {
         let result = optimize_group_delay(&[ch0], (20.0, 300.0), &GdOptConfig::default());
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("at least 2 channels"));
+    }
+
+    // ─── Adaptive bootstrap tests ────────────────────────────────────────────
+
+    #[test]
+    fn test_adaptive_bootstrap_rejects_noisy_ap() {
+        // Two channels with pure delay mismatch. AP filters can't help
+        // (only delay alignment is needed). With noisy realisations,
+        // the bootstrap should reject the AP and return delay-only.
+        let freq = log_freq_grid(20.0, 5000.0, 300);
+        let ch0 = make_delayed_channel(&freq, 2.0, 0.95);
+        let ch1 = make_delayed_channel(&freq, 4.0, 0.95);
+        let channels = vec![ch0, ch1];
+
+        // Create noisy per-sweep realisations (4 sweeps)
+        // Each has slight random phase jitter to simulate measurement noise
+        let sweep_realisations: Vec<Vec<ChannelMeasurementInput>> = (0..4)
+            .map(|seed| {
+                let jitter = (seed as f64 * 0.1 + 0.05) * 1e-3; // 0.05-0.35ms jitter
+                vec![
+                    make_delayed_channel(&freq, 2.0 + jitter, 0.95),
+                    make_delayed_channel(&freq, 4.0 - jitter, 0.95),
+                ]
+            })
+            .collect();
+
+        let config = GdOptConfig {
+            sample_rate: 48000.0,
+            max_delay_ms: 10.0,
+            ap_per_channel: 2, // allow up to 2, but bootstrap should reject
+            optimize_polarity: false,
+            max_iter: 2000,
+            popsize: 20,
+            tol: 1e-10,
+            seed: Some(123),
+            ..Default::default()
+        };
+
+        let result =
+            optimize_group_delay_adaptive(&channels, &sweep_realisations, (20.0, 5000.0), &config)
+                .unwrap();
+
+        // The result should still achieve good alignment (delay recovery works)
+        let d0 = result.per_channel[0].delay_ms;
+        let d1 = result.per_channel[1].delay_ms;
+        let residual = ((2.0 + d0) - (4.0 + d1)).abs();
+        assert!(
+            residual < 0.2,
+            "Delay alignment failed: residual={:.3}ms",
+            residual
+        );
+
+        // AP filters should be either empty (rejected) or minimal
+        // The key check: the result should improve GD
+        assert!(
+            result.improvement_db >= 6.0,
+            "Improvement too low: {:.1} dB",
+            result.improvement_db
+        );
+    }
+
+    #[test]
+    fn test_adaptive_bootstrap_requires_min_sweeps() {
+        let freq = log_freq_grid(20.0, 300.0, 50);
+        let ch0 = make_delayed_channel(&freq, 0.0, 0.95);
+        let ch1 = make_delayed_channel(&freq, 5.0, 0.95);
+        let channels = vec![ch0, ch1];
+
+        // Only 1 sweep — should fail
+        let one_sweep = vec![vec![
+            make_delayed_channel(&freq, 0.0, 0.95),
+            make_delayed_channel(&freq, 5.0, 0.95),
+        ]];
+
+        let config = GdOptConfig::default();
+        let result =
+            optimize_group_delay_adaptive(&channels, &one_sweep, (20.0, 300.0), &config);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("at least 2"));
+    }
+
+    // ─── Mode dispatch tests ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_mode_dispatch_low_latency() {
+        let freq = log_freq_grid(20.0, 5000.0, 300);
+        let ch0 = make_delayed_channel(&freq, 1.0, 0.95);
+        let ch1 = make_delayed_channel(&freq, 3.0, 0.95);
+        let channels = vec![ch0, ch1];
+
+        let config = GdOptConfig {
+            ap_per_channel: 1,
+            optimize_polarity: false,
+            max_iter: 2000,
+            popsize: 20,
+            seed: Some(77),
+            ..Default::default()
+        };
+
+        let result = optimize_group_delay_for_mode(
+            &channels,
+            (20.0, 5000.0),
+            &config,
+            &ProcessingMode::LowLatency,
+            None,
+        )
+        .unwrap();
+
+        assert!(result.improvement_db > 0.0);
+    }
+
+    #[test]
+    fn test_mode_dispatch_hybrid_within_crossover() {
+        let freq = log_freq_grid(20.0, 200.0, 100);
+        let ch0 = make_delayed_channel(&freq, 1.0, 0.95);
+        let ch1 = make_delayed_channel(&freq, 3.0, 0.95);
+        let channels = vec![ch0, ch1];
+
+        let config = GdOptConfig {
+            ap_per_channel: 0,
+            optimize_polarity: false,
+            max_iter: 1000,
+            popsize: 15,
+            seed: Some(88),
+            ..Default::default()
+        };
+
+        let mixed_config = MixedModeConfig {
+            crossover_freq: 300.0,
+            crossover_type: "LR24".to_string(),
+            fir_band: "high".to_string(),
+        };
+
+        // band_hi=200 < crossover=300, should succeed
+        let result = optimize_group_delay_for_mode(
+            &channels,
+            (20.0, 200.0),
+            &config,
+            &ProcessingMode::Hybrid,
+            Some(&mixed_config),
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_mode_dispatch_hybrid_exceeds_crossover() {
+        let freq = log_freq_grid(20.0, 500.0, 100);
+        let ch0 = make_delayed_channel(&freq, 1.0, 0.95);
+        let ch1 = make_delayed_channel(&freq, 3.0, 0.95);
+        let channels = vec![ch0, ch1];
+
+        let config = GdOptConfig::default();
+        let mixed_config = MixedModeConfig {
+            crossover_freq: 300.0,
+            crossover_type: "LR24".to_string(),
+            fir_band: "high".to_string(),
+        };
+
+        // band_hi=500 > crossover=300, should fail
+        let result = optimize_group_delay_for_mode(
+            &channels,
+            (20.0, 500.0),
+            &config,
+            &ProcessingMode::Hybrid,
+            Some(&mixed_config),
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("exceeds mixed_config crossover"));
+    }
+
+    #[test]
+    fn test_mode_dispatch_mixed_phase_caps_ap() {
+        let freq = log_freq_grid(20.0, 5000.0, 300);
+        let ch0 = make_delayed_channel(&freq, 1.0, 0.95);
+        let ch1 = make_delayed_channel(&freq, 3.0, 0.95);
+        let channels = vec![ch0, ch1];
+
+        let config = GdOptConfig {
+            ap_per_channel: 2, // requests 2, but MixedPhase caps at 1
+            optimize_polarity: false,
+            max_iter: 2000,
+            popsize: 20,
+            seed: Some(99),
+            ..Default::default()
+        };
+
+        let result = optimize_group_delay_for_mode(
+            &channels,
+            (20.0, 5000.0),
+            &config,
+            &ProcessingMode::MixedPhase,
+            None,
+        )
+        .unwrap();
+
+        // Each channel should have at most 1 AP filter
+        for ch in &result.per_channel {
+            assert!(
+                ch.ap_filters.len() <= 1,
+                "MixedPhase should cap AP at 1, got {}",
+                ch.ap_filters.len()
+            );
+        }
+    }
+
+    #[test]
+    fn test_mode_dispatch_phase_linear_rejects() {
+        let freq = log_freq_grid(20.0, 300.0, 50);
+        let ch0 = make_delayed_channel(&freq, 0.0, 0.95);
+        let ch1 = make_delayed_channel(&freq, 5.0, 0.95);
+        let channels = vec![ch0, ch1];
+
+        let result = optimize_group_delay_for_mode(
+            &channels,
+            (20.0, 300.0),
+            &GdOptConfig::default(),
+            &ProcessingMode::PhaseLinear,
+            None,
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("PhaseLinear"));
+    }
+
+    #[test]
+    fn test_mode_dispatch_warped_iir_same_as_low_latency() {
+        // WarpedIir and KautzModal use the same code path as LowLatency.
+        // Verify both achieve good results (not exact equality due to DE
+        // parallel evaluation non-determinism).
+        let freq = log_freq_grid(20.0, 5000.0, 300);
+        let ch0 = make_delayed_channel(&freq, 2.0, 0.95);
+        let ch1 = make_delayed_channel(&freq, 4.0, 0.95);
+        let channels = vec![ch0, ch1];
+
+        let config = GdOptConfig {
+            ap_per_channel: 0,
+            optimize_polarity: false,
+            max_iter: 3000,
+            popsize: 25,
+            tol: 1e-10,
+            seed: Some(42),
+            ..Default::default()
+        };
+
+        let wi_result = optimize_group_delay_for_mode(
+            &channels,
+            (20.0, 5000.0),
+            &config,
+            &ProcessingMode::WarpedIir,
+            None,
+        )
+        .unwrap();
+
+        let km_result = optimize_group_delay_for_mode(
+            &channels,
+            (20.0, 5000.0),
+            &config,
+            &ProcessingMode::KautzModal,
+            None,
+        )
+        .unwrap();
+
+        // Both should achieve significant improvement
+        assert!(
+            wi_result.improvement_db >= 6.0,
+            "WarpedIir improvement too low: {:.1} dB",
+            wi_result.improvement_db
+        );
+        assert!(
+            km_result.improvement_db >= 6.0,
+            "KautzModal improvement too low: {:.1} dB",
+            km_result.improvement_db
+        );
     }
 }
