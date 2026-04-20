@@ -1,5 +1,49 @@
 # 0.4.35
 
+## GD-Opt v2 — Phase GD-1g: BassPhaseConfidence gate
+
+New read-only gate that decides whether measured phase below the
+Schroeder frequency is trustworthy enough for GD-Opt v2's bass-band
+optimiser to consume. See `docs/gd_opt_v2_plan.md` §3.5 and §2.8.
+
+- New module `crates/autoeq/src/roomeq/bass_phase_confidence.rs`
+  with the public `bass_phase_confidence(curves, band, recording)
+  -> BassPhaseConfidence` function (re-exported at
+  `autoeq::roomeq::compute_bass_phase_confidence`).
+- `BassPhaseConfidence` enum: `Trustworthy { mean_coherence: f64 }`
+  or `Degraded { reason: &'static str }`. Reason strings map 1:1 to
+  the §2.8 advisory identifiers:
+  - `"no_curves"` / `"invalid_band"` (caller error guards)
+  - `"no_phase_data"` — any `Curve` missing `phase`
+  - `"no_coherence_data"` — any `Curve` missing `coherence`
+  - `"insufficient_bass_duration"` — `num_sweeps < 4` or
+    `bass_octave_duration_s < 2.0` (when a `RecordingConfiguration`
+    is provided)
+  - `"coherence_below_threshold"` — mean γ² across the band falls
+    below `coherence_threshold` (defaults to 0.9; overridable via
+    the recording config)
+  - `"snr_below_10db"` — evaluated only when every curve carries
+    `noise_floor_db`; trips if any in-band bin has
+    `spl - noise_floor_db < 10 dB`.
+- Public constants exposed for callers tuning their own thresholds:
+  `DEFAULT_COHERENCE_THRESHOLD` (0.9), `MIN_SNR_DB` (10.0),
+  `MIN_BASS_OCTAVE_DURATION_S` (2.0), `MIN_NUM_SWEEPS` (4).
+- Gate is deliberately **read-only** — it emits no logs and mutates
+  no state. Advisory surfacing (logs, `RoomEqReport`) lands in the
+  optimiser integration (GD-2+).
+- Soft-warning advisories from §2.8
+  (`"mic_phase_uncalibrated"`, `"bass_anchor_unreliable"`,
+  `"no_spl_calibration"`) are intentionally **not** emitted by this
+  gate; they are "warn, proceed" cases the optimiser surfaces
+  alongside a Trustworthy verdict.
+
+Tests (13 new, `cargo test -p autoeq --lib bass_phase_confidence`):
+empty-curves / invalid-band / missing-phase / missing-coherence /
+low-coherence / low-SNR / trustworthy happy path (with and without
+recording config) / missing noise_floor skips SNR check / override
+coherence threshold via recording config / priority order.
+
+`cargo test -p autoeq --lib` — 444 passing (was 431, +13).
 ## GD-Opt v2 — Phase GD-1f: microphone phase calibration loader
 
 Adds the 4-column mic phase calibration loader and per-curve
