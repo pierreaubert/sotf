@@ -158,13 +158,13 @@ pub fn generate_fir_correction_with_gd_target(
 
     // If a GD alignment target is provided, apply the per-channel delay
     // as a time-domain shift of the FIR coefficients.
-    if let Some(target) = gd_target {
-        if let Some(&delay_ms) = target.per_channel_delay_ms.get(channel_index) {
-            if delay_ms.abs() > 1e-6 {
-                let delay_samples = (delay_ms * 1e-3 * sample_rate).round() as isize;
-                coeffs = apply_sample_shift(&coeffs, delay_samples);
-            }
-        }
+    if let Some(delay_ms) = gd_target
+        .and_then(|t| t.per_channel_delay_ms.get(channel_index))
+        .copied()
+        .filter(|d| d.abs() > 1e-6)
+    {
+        let delay_samples = (delay_ms * 1e-3 * sample_rate).round() as isize;
+        coeffs = apply_sample_shift(&coeffs, delay_samples);
     }
 
     Ok(coeffs)
@@ -178,13 +178,14 @@ fn apply_sample_shift(coeffs: &[f64], shift: isize) -> Vec<f64> {
 
     if shift >= 0 {
         let s = shift as usize;
-        for i in s..n {
-            shifted[i] = coeffs[i - s];
+        if s < n {
+            shifted[s..n].copy_from_slice(&coeffs[..(n - s)]);
         }
     } else {
         let s = (-shift) as usize;
-        for i in 0..n.saturating_sub(s) {
-            shifted[i] = coeffs[i + s];
+        let len = n.saturating_sub(s);
+        if len > 0 {
+            shifted[..len].copy_from_slice(&coeffs[s..s + len]);
         }
     }
 

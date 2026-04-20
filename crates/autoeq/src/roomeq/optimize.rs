@@ -2128,12 +2128,19 @@ fn try_run_gd_opt(
 ) -> Option<super::gd_opt::GroupDelayOptSummary> {
     use super::gd_opt::*;
 
-    // Collect channels with phase data from initial measurements
-    let mut gd_channels: Vec<ChannelMeasurementInput> = Vec::new();
+    // Collect channels with phase data from initial measurements.
+    // Sort by name for deterministic ordering (HashMap iteration is arbitrary).
+    let mut sorted_channels: Vec<(&String, &ChannelOptimizationResult)> =
+        channel_results.iter().collect();
+    sorted_channels.sort_by_key(|(name, _)| (*name).clone());
 
-    for (_name, ch) in channel_results {
+    let mut gd_channels: Vec<ChannelMeasurementInput> = Vec::new();
+    let mut gd_channel_names: Vec<String> = Vec::new();
+
+    for (name, ch) in &sorted_channels {
+        // Curve.phase is in degrees — convert to radians for GD computation
         let phase = match ch.initial_curve.phase.as_ref() {
-            Some(p) => p.clone(),
+            Some(p) => p.mapv(|deg| deg.to_radians()),
             None => continue, // skip channels without phase
         };
 
@@ -2150,6 +2157,7 @@ fn try_run_gd_opt(
             phase,
             coherence,
         });
+        gd_channel_names.push((*name).clone());
     }
 
     // Need at least 2 channels with phase
@@ -2176,8 +2184,16 @@ fn try_run_gd_opt(
 
     let band = derive_band(config.optimizer.min_freq, crossover_freq);
 
-    // Check that band is non-empty in the data
+    // Validate consistent grid lengths across channels
     let n_freq = gd_channels[0].freq.len();
+    for ch in &gd_channels[1..] {
+        if ch.freq.len() != n_freq {
+            info!("GD-Opt: skipped — inconsistent frequency grid lengths across channels");
+            return None;
+        }
+    }
+
+    // Check that band is non-empty in the data
     let band_count = (0..n_freq)
         .filter(|&i| gd_channels[0].freq[i] >= band.0 && gd_channels[0].freq[i] <= band.1)
         .count();
@@ -2253,7 +2269,10 @@ fn try_run_gd_opt(
                     band.0,
                     band.1,
                 );
-                Some(GroupDelayOptSummary::from_result(&gd_result))
+                Some(GroupDelayOptSummary::from_result_with_names(
+                    &gd_result,
+                    gd_channel_names.clone(),
+                ))
             }
         }
         Err(e) => {

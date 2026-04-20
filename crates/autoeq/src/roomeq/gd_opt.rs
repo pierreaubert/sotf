@@ -175,6 +175,9 @@ pub enum GdOptAdvisory {
 pub struct GroupDelayOptSummary {
     /// Optimisation band (Hz).
     pub band: (f64, f64),
+    /// Channel names in the same order as the per-channel vectors.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub channel_names: Vec<String>,
     /// Per-channel delays applied (ms).
     pub per_channel_delay_ms: Vec<f64>,
     /// Per-channel polarity inversions.
@@ -195,9 +198,10 @@ pub struct GroupDelayOptSummary {
 
 impl GroupDelayOptSummary {
     /// Create a summary from a successful optimisation result.
-    pub fn from_result(result: &GroupDelayOptResult) -> Self {
+    pub fn from_result_with_names(result: &GroupDelayOptResult, names: Vec<String>) -> Self {
         Self {
             band: result.band,
+            channel_names: names,
             per_channel_delay_ms: result.per_channel.iter().map(|ch| ch.delay_ms).collect(),
             per_channel_polarity_inverted: result
                 .per_channel
@@ -237,6 +241,7 @@ impl GroupDelayOptSummary {
 
         Self {
             band: (0.0, 0.0),
+            channel_names: vec![],
             per_channel_delay_ms: vec![],
             per_channel_polarity_inverted: vec![],
             per_channel_ap_count: vec![],
@@ -332,10 +337,12 @@ pub fn optimize_group_delay(
     let sum_gd_post_rms_ms =
         compute_sum_gd_rms(channels, best_params, &band_indices, config);
 
-    let improvement_db = if sum_gd_post_rms_ms > 0.0 {
+    let improvement_db = if sum_gd_pre_rms_ms < 1e-15 {
+        0.0 // Already aligned, no improvement possible
+    } else if sum_gd_post_rms_ms > 1e-15 {
         20.0 * (sum_gd_pre_rms_ms / sum_gd_post_rms_ms).log10()
     } else {
-        f64::INFINITY
+        120.0 // Cap at a large but finite value
     };
 
     // Decode per-channel results
@@ -660,6 +667,11 @@ fn compute_sum_gd(
     band_indices: &[usize],
     config: &GdOptConfig,
 ) -> Vec<f64> {
+    // Decode channel params once (avoid per-bin allocation in hot path)
+    let ch_params: Vec<ChannelParams> = (0..channels.len())
+        .map(|ch_idx| decode_channel_params(params, ch_idx, config))
+        .collect();
+
     // We need adjacent bins for finite-difference GD computation.
     // For each band index, compute sum phase at that bin and the next.
     let mut gd_ms = Vec::with_capacity(band_indices.len());
@@ -689,10 +701,9 @@ fn compute_sum_gd(
         let mut sum0 = Complex64::new(0.0, 0.0);
         let mut sum1 = Complex64::new(0.0, 0.0);
 
-        for (ch_idx, ch) in channels.iter().enumerate() {
-            let cp = decode_channel_params(params, ch_idx, config);
-            sum0 += channel_complex_at(ch, idx, &cp, config);
-            sum1 += channel_complex_at(ch, idx_next, &cp, config);
+        for (ch, cp) in channels.iter().zip(ch_params.iter()) {
+            sum0 += channel_complex_at(ch, idx, cp, config);
+            sum1 += channel_complex_at(ch, idx_next, cp, config);
         }
 
         // GD = -dφ/dω
