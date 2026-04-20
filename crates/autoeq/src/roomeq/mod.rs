@@ -125,6 +125,14 @@ pub mod synthetic;
 mod time_align;
 mod weighted_loss;
 
+// GD-Opt v2 Phase GD-1g — bass phase confidence gate. See
+// `docs/gd_opt_v2_plan.md` §3.5.
+pub mod bass_phase_confidence;
+pub use bass_phase_confidence::{
+    BassPhaseConfidence, DEFAULT_COHERENCE_THRESHOLD, MIN_BASS_OCTAVE_DURATION_S, MIN_NUM_SWEEPS,
+    MIN_SNR_DB, bass_phase_confidence as compute_bass_phase_confidence,
+};
+
 pub use time_align::{
     ArrivalTimeResult, ProbeDelayResult, calculate_alignment_delays, detect_delay_with_probe,
     detect_delays_multi_channel, find_arrival_time,
