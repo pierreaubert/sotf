@@ -1180,6 +1180,7 @@ mod tests {
             timestamp: "2025-01-01T00:00:00Z".to_string(),
             inter_channel_deviation: None,
             epa_per_channel: None,
+            group_delay: None,
         };
 
         let output = create_dsp_chain_output(channels, Some(metadata));

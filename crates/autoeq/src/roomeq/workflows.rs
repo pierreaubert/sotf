@@ -620,6 +620,7 @@ pub fn optimize_stereo_2_0(
             timestamp: chrono::Utc::now().to_rfc3339(),
             inter_channel_deviation: None,
             epa_per_channel,
+            group_delay: None,
         },
     })
 }
@@ -1310,6 +1311,7 @@ pub fn optimize_stereo_2_1(
             timestamp: chrono::Utc::now().to_rfc3339(),
             inter_channel_deviation: None,
             epa_per_channel,
+            group_delay: None,
         },
     })
 }
@@ -1501,6 +1503,7 @@ fn optimize_home_cinema_no_sub(
             timestamp: chrono::Utc::now().to_rfc3339(),
             inter_channel_deviation: None,
             epa_per_channel,
+            group_delay: None,
         },
     })
 }
@@ -2071,6 +2074,7 @@ fn optimize_home_cinema_with_sub(
             timestamp: chrono::Utc::now().to_rfc3339(),
             inter_channel_deviation: None,
             epa_per_channel,
+            group_delay: None,
         },
     })
 }

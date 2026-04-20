@@ -102,6 +102,153 @@ pub struct ChannelMeasurementInput {
     pub coherence: Array1<f64>,
 }
 
+// ─── GD-3b: FIR-path alignment target ────────────────────────────────────────
+
+/// Alignment target for the PhaseLinear FIR path (§3.7, GD-3b).
+///
+/// When `PhaseLinear` mode is used, the FIR designer receives this struct
+/// so it can incorporate inter-channel GD alignment into the filter design
+/// via Kirkeby mixed-phase inversion. When absent, the FIR falls back to
+/// pure magnitude correction.
+#[derive(Debug, Clone)]
+pub struct GdAlignmentTarget {
+    /// Per-channel delay in ms (channel index → delay).
+    pub per_channel_delay_ms: Vec<f64>,
+    /// Reference sum GD curve (the target flat GD the FIR should approach).
+    pub sum_gd_reference_ms: Vec<f64>,
+    /// Frequency grid for `sum_gd_reference_ms`.
+    pub freq: Array1<f64>,
+}
+
+/// Build a `GdAlignmentTarget` from a `GroupDelayOptResult`.
+///
+/// This extracts the per-channel delays and computes the reference GD
+/// (post-optimisation sum GD) that the FIR designer should target.
+/// Used by `PhaseLinear` mode to pass delay information to the FIR path.
+pub fn build_gd_alignment_target(
+    channels: &[ChannelMeasurementInput],
+    result: &GroupDelayOptResult,
+    config: &GdOptConfig,
+) -> GdAlignmentTarget {
+    let n_freq = channels[0].freq.len();
+    let band_indices: Vec<usize> = (0..n_freq)
+        .filter(|&i| channels[0].freq[i] >= result.band.0 && channels[0].freq[i] <= result.band.1)
+        .collect();
+
+    // Encode the optimised result as params to compute post-GD
+    let params = encode_result_as_params(result, config);
+    let sum_gd = compute_sum_gd(channels, &params, &band_indices, config);
+
+    let per_channel_delay_ms = result.per_channel.iter().map(|ch| ch.delay_ms).collect();
+
+    // Build frequency sub-grid for the band
+    let freq = Array1::from_iter(band_indices.iter().map(|&i| channels[0].freq[i]));
+
+    GdAlignmentTarget {
+        per_channel_delay_ms,
+        sum_gd_reference_ms: sum_gd,
+        freq,
+    }
+}
+
+/// Advisory reasons for GD-Opt outcomes (§3.5, GD-4).
+#[derive(Debug, Clone, PartialEq)]
+pub enum GdOptAdvisory {
+    /// GD-Opt completed successfully with the given improvement.
+    Success { improvement_db: f64 },
+    /// GD-Opt skipped: no phase data available.
+    NoPhaseData,
+    /// GD-Opt skipped: coherence below threshold.
+    CoherenceBelowThreshold { mean_coherence: f64 },
+    /// GD-Opt skipped: PhaseLinear mode without FIR GD target.
+    PhaseLinearNoTarget,
+    /// GD-Opt skipped: insufficient channels (need ≥ 2).
+    InsufficientChannels,
+    /// GD-Opt skipped: band derivation produced empty range.
+    EmptyBand,
+    /// GD-Opt degraded: optimiser ran but improvement was minimal.
+    MinimalImprovement { improvement_db: f64 },
+}
+
+/// Serialisable summary of GD-Opt results for report plumbing (GD-4).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+pub struct GroupDelayOptSummary {
+    /// Optimisation band (Hz).
+    pub band: (f64, f64),
+    /// Per-channel delays applied (ms).
+    pub per_channel_delay_ms: Vec<f64>,
+    /// Per-channel polarity inversions.
+    pub per_channel_polarity_inverted: Vec<bool>,
+    /// Number of all-pass filters per channel.
+    pub per_channel_ap_count: Vec<usize>,
+    /// Sum GD RMS before optimisation (ms).
+    pub sum_gd_pre_rms_ms: f64,
+    /// Sum GD RMS after optimisation (ms).
+    pub sum_gd_post_rms_ms: f64,
+    /// Mean coherence in-band.
+    pub mean_coherence: f64,
+    /// Improvement in dB: 20*log10(pre/post).
+    pub improvement_db: f64,
+    /// Advisory outcome.
+    pub advisory: String,
+}
+
+impl GroupDelayOptSummary {
+    /// Create a summary from a successful optimisation result.
+    pub fn from_result(result: &GroupDelayOptResult) -> Self {
+        Self {
+            band: result.band,
+            per_channel_delay_ms: result.per_channel.iter().map(|ch| ch.delay_ms).collect(),
+            per_channel_polarity_inverted: result
+                .per_channel
+                .iter()
+                .map(|ch| ch.polarity_inverted)
+                .collect(),
+            per_channel_ap_count: result
+                .per_channel
+                .iter()
+                .map(|ch| ch.ap_filters.len())
+                .collect(),
+            sum_gd_pre_rms_ms: result.sum_gd_pre_rms_ms,
+            sum_gd_post_rms_ms: result.sum_gd_post_rms_ms,
+            mean_coherence: result.mean_coherence,
+            improvement_db: result.improvement_db,
+            advisory: "success".to_string(),
+        }
+    }
+
+    /// Create a summary for a skipped/failed case.
+    pub fn from_advisory(advisory: &GdOptAdvisory) -> Self {
+        let reason = match advisory {
+            GdOptAdvisory::Success { improvement_db } => {
+                format!("success:{improvement_db:.1}dB")
+            }
+            GdOptAdvisory::NoPhaseData => "no_phase_data".to_string(),
+            GdOptAdvisory::CoherenceBelowThreshold { mean_coherence } => {
+                format!("coherence_below_threshold:{mean_coherence:.2}")
+            }
+            GdOptAdvisory::PhaseLinearNoTarget => "phase_linear_no_target".to_string(),
+            GdOptAdvisory::InsufficientChannels => "insufficient_channels".to_string(),
+            GdOptAdvisory::EmptyBand => "empty_band".to_string(),
+            GdOptAdvisory::MinimalImprovement { improvement_db } => {
+                format!("minimal_improvement:{improvement_db:.1}dB")
+            }
+        };
+
+        Self {
+            band: (0.0, 0.0),
+            per_channel_delay_ms: vec![],
+            per_channel_polarity_inverted: vec![],
+            per_channel_ap_count: vec![],
+            sum_gd_pre_rms_ms: 0.0,
+            sum_gd_post_rms_ms: 0.0,
+            mean_coherence: 0.0,
+            improvement_db: 0.0,
+            advisory: reason,
+        }
+    }
+}
+
 // ─── Band derivation (§3.4) ──────────────────────────────────────────────────
 
 /// Derive the optimisation frequency band from a crossover frequency.

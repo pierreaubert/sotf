@@ -192,4 +192,8 @@ pub struct OptimizationMetadata {
     /// using the configured `EpaConfig` (or defaults when unset).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub epa_per_channel: Option<HashMap<String, EpaChannelMetrics>>,
+    /// Group delay optimisation summary (GD-Opt v2, Phase GD-4).
+    /// Present when GD-Opt was attempted (success or skip with advisory).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_delay: Option<crate::roomeq::gd_opt::GroupDelayOptSummary>,
 }

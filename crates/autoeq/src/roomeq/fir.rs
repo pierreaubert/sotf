@@ -137,6 +137,60 @@ pub fn generate_fir_correction(
     }
 }
 
+/// Generate an FIR correction filter with optional GD alignment target (GD-3b).
+///
+/// When `gd_target` is `Some`, the per-channel delay from the GD-Opt result is
+/// incorporated into the FIR design as additional phase correction. This allows
+/// `PhaseLinear` mode to achieve inter-channel GD alignment without IIR AP filters.
+///
+/// When `gd_target` is `None`, this is equivalent to `generate_fir_correction`.
+#[allow(dead_code)] // Called once optimize_room integrates GD-Opt (Phase GD-5)
+pub fn generate_fir_correction_with_gd_target(
+    measurement: &Curve,
+    config: &OptimizerConfig,
+    target_config: Option<&TargetCurveConfig>,
+    sample_rate: f64,
+    gd_target: Option<&super::gd_opt::GdAlignmentTarget>,
+    channel_index: usize,
+) -> Result<Vec<f64>, Box<dyn Error>> {
+    // Generate base FIR correction
+    let mut coeffs = generate_fir_correction(measurement, config, target_config, sample_rate)?;
+
+    // If a GD alignment target is provided, apply the per-channel delay
+    // as a time-domain shift of the FIR coefficients.
+    if let Some(target) = gd_target {
+        if let Some(&delay_ms) = target.per_channel_delay_ms.get(channel_index) {
+            if delay_ms.abs() > 1e-6 {
+                let delay_samples = (delay_ms * 1e-3 * sample_rate).round() as isize;
+                coeffs = apply_sample_shift(&coeffs, delay_samples);
+            }
+        }
+    }
+
+    Ok(coeffs)
+}
+
+/// Shift FIR coefficients by a given number of samples (positive = later).
+/// Pads with zeros on the appropriate side and truncates to maintain length.
+fn apply_sample_shift(coeffs: &[f64], shift: isize) -> Vec<f64> {
+    let n = coeffs.len();
+    let mut shifted = vec![0.0; n];
+
+    if shift >= 0 {
+        let s = shift as usize;
+        for i in s..n {
+            shifted[i] = coeffs[i - s];
+        }
+    } else {
+        let s = (-shift) as usize;
+        for i in 0..n.saturating_sub(s) {
+            shifted[i] = coeffs[i + s];
+        }
+    }
+
+    shifted
+}
+
 #[cfg(test)]
 pub use math_audio_iir_fir::{WindowType, generate_window};
 #[cfg(test)]

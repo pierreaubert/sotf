@@ -1783,6 +1783,7 @@ fn optimize_room_impl(
         timestamp: chrono::Utc::now().to_rfc3339(),
         inter_channel_deviation: None,
         epa_per_channel,
+        group_delay: None,
     };
 
     let mut result = RoomOptimizationResult {
