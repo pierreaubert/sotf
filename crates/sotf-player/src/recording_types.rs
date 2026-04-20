@@ -8,22 +8,27 @@ pub enum RecordingStep {
     /// Step 1: Configure devices and channel mapping
     #[default]
     Config,
-    /// Step 2: Record frequency response for each channel
+    /// Step 2: SPL calibration — plays a 1 kHz reference tone; user
+    /// enters the dBSPL their external meter reads at the listening
+    /// position. GD-Opt v2 uses the captured offset to target sweep
+    /// levels deterministically (`docs/gd_opt_v2_plan.md` §2.6, §2.11 Q4).
+    SplCalibration,
+    /// Step 3: Record frequency response for each channel
     Capture,
-    /// Step 3: Tone-burst probe for per-channel acoustic delay detection.
+    /// Step 4: Tone-burst probe for per-channel acoustic delay detection.
     /// Runs once across all channels while the mic is still set up so
     /// the arrival times can flow directly into the Room EQ optimizer
     /// without a separate measurement session.
     Probe,
-    /// Step 4: Bass anchor — plays a low-frequency tone burst (20 Hz ×
+    /// Step 5: Bass anchor — plays a low-frequency tone burst (20 Hz ×
     /// 5 cycles by default) per channel and records the fundamental's
     /// phase. GD-Opt v2 feeds the per-channel anchor into the sweep
     /// unwrap as a hard constraint on the first bass bin
     /// (`docs/gd_opt_v2_plan.md` §2.6).
     BassAnchor,
-    /// Step 5: Evaluate recordings and view frequency response
+    /// Step 6: Evaluate recordings and view frequency response
     Evaluating,
-    /// Step 6: Save recordings to disk
+    /// Step 7: Save recordings to disk
     Saving,
 }
 
@@ -33,6 +38,7 @@ impl RecordingStep {
     pub fn all() -> &'static [RecordingStep] {
         &[
             RecordingStep::Config,
+            RecordingStep::SplCalibration,
             RecordingStep::Capture,
             RecordingStep::Probe,
             RecordingStep::BassAnchor,
@@ -44,6 +50,7 @@ impl RecordingStep {
     pub fn label(&self) -> &'static str {
         match self {
             RecordingStep::Config => "Config",
+            RecordingStep::SplCalibration => "SPL Cal",
             RecordingStep::Capture => "Capture",
             RecordingStep::Probe => "Probe",
             RecordingStep::BassAnchor => "Bass Anchor",
@@ -54,7 +61,8 @@ impl RecordingStep {
 
     pub fn next(&self) -> Option<RecordingStep> {
         match self {
-            RecordingStep::Config => Some(RecordingStep::Capture),
+            RecordingStep::Config => Some(RecordingStep::SplCalibration),
+            RecordingStep::SplCalibration => Some(RecordingStep::Capture),
             RecordingStep::Capture => Some(RecordingStep::Probe),
             RecordingStep::Probe => Some(RecordingStep::BassAnchor),
             RecordingStep::BassAnchor => Some(RecordingStep::Evaluating),
@@ -66,7 +74,8 @@ impl RecordingStep {
     pub fn previous(&self) -> Option<RecordingStep> {
         match self {
             RecordingStep::Config => None,
-            RecordingStep::Capture => Some(RecordingStep::Config),
+            RecordingStep::SplCalibration => Some(RecordingStep::Config),
+            RecordingStep::Capture => Some(RecordingStep::SplCalibration),
             RecordingStep::Probe => Some(RecordingStep::Capture),
             RecordingStep::BassAnchor => Some(RecordingStep::Probe),
             RecordingStep::Evaluating => Some(RecordingStep::BassAnchor),
@@ -267,6 +276,126 @@ impl BassAnchorCaptureState {
                 .all(|c| c.bass_anchor_stability_deg < 20.0),
             _ => false,
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// GD-Opt v2 Phase GD-1e.5 — SPL calibration step
+// ---------------------------------------------------------------------------
+
+/// Status of the SPL Calibration step (Recording wizard Step 2).
+///
+/// Mirrors the other capture-status enums. `started_at_ms` is
+/// wall-clock; `Failed(String)` carries the engine's reason for the
+/// UI to surface.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum SplCalibrationCaptureStatus {
+    #[default]
+    Idle,
+    Running { started_at_ms: u64 },
+    Complete,
+    Failed(String),
+}
+
+impl SplCalibrationCaptureStatus {
+    pub fn progress(&self, estimated_total_ms: u64, now_ms: u64) -> Option<f32> {
+        match self {
+            Self::Running { started_at_ms } if estimated_total_ms > 0 => {
+                let elapsed = now_ms.saturating_sub(*started_at_ms);
+                Some((elapsed as f32 / estimated_total_ms as f32).clamp(0.0, 1.0))
+            }
+            _ => None,
+        }
+    }
+}
+
+/// Shared business state for the SplCalibration step.
+///
+/// Collected from the user across two stages:
+/// 1. Engine plays a reference tone and returns a `SplCalibrationResult`
+///    (peak + RMS sample levels on the mic).
+/// 2. User types the dBSPL their external meter reads while the tone
+///    plays; that becomes `reported_db_spl`. `spl_offset_db` is
+///    derived via
+///    `reported_db_spl − 20 · log10(rms_sample_level)` so that a later
+///    capture at the same digital gain predicts its own dBSPL without
+///    needing the meter.
+///
+/// On save, this state is converted to the `SplCalibration` struct
+/// the autoeq `RecordingConfiguration` carries.
+#[derive(Debug, Clone)]
+pub struct SplCalibrationCaptureState {
+    /// Reference tone frequency (Hz). Default 1000.
+    pub reference_freq_hz: f32,
+    /// Digital amplitude of the reference tone (0.0..=1.0). Default 0.25
+    /// — leaves ~12 dB headroom and reliably hits 75-85 dBSPL on typical
+    /// home systems at normal volume.
+    pub tone_amp: f32,
+    /// Tone duration in seconds. Default 3.0.
+    pub duration_s: f32,
+    /// Sample rate used for the capture (Hz).
+    pub sample_rate: u32,
+    /// Playback output channel (0-based). Default 0 (left / mono).
+    pub output_channel: u16,
+    /// Microphone input channel (0-based).
+    pub input_channel: u16,
+    /// Capture status.
+    pub status: SplCalibrationCaptureStatus,
+    /// Raw engine capture result — `None` until a successful run.
+    pub engine_result: Option<SplCalibrationResult>,
+    /// dBSPL the user read from their external meter. `None` until
+    /// the user has entered a value. Combines with
+    /// `engine_result.rms_sample_level` to compute `spl_offset_db`.
+    pub reported_db_spl: Option<f32>,
+}
+
+impl Default for SplCalibrationCaptureState {
+    fn default() -> Self {
+        Self {
+            reference_freq_hz: 1000.0,
+            tone_amp: 0.25,
+            duration_s: 3.0,
+            sample_rate: 48_000,
+            output_channel: 0,
+            input_channel: 0,
+            status: SplCalibrationCaptureStatus::Idle,
+            engine_result: None,
+            reported_db_spl: None,
+        }
+    }
+}
+
+impl SplCalibrationCaptureState {
+    pub fn apply_engine_result(&mut self, result: SplCalibrationResult) {
+        self.engine_result = Some(result);
+        self.status = SplCalibrationCaptureStatus::Complete;
+    }
+
+    /// `true` once the engine has captured a tone AND the user has
+    /// typed the dBSPL their meter read. Consumers gate the Save /
+    /// Continue action on this.
+    pub fn is_ready(&self) -> bool {
+        matches!(self.status, SplCalibrationCaptureStatus::Complete)
+            && self.engine_result.is_some()
+            && self.reported_db_spl.is_some()
+    }
+
+    /// Derive the final `SplCalibration` once both the engine capture
+    /// and the user-entered meter reading are present.
+    pub fn to_spl_calibration(&self) -> Option<SplCalibration> {
+        let er = self.engine_result.as_ref()?;
+        let reported = self.reported_db_spl?;
+        // Use RMS for the cal anchor because peak is noise-sensitive;
+        // the `peak_sample_level` field on SplCalibration still gets
+        // filled from the engine result for future SPL-level targeting.
+        let level = er.rms_sample_level.max(f32::EPSILON);
+        let spl_offset_db = reported - 20.0 * level.log10();
+        Some(SplCalibration {
+            reported_db_spl: reported,
+            reference_freq_hz: er.reference_freq_hz,
+            peak_sample_level: er.peak_sample_level,
+            spl_offset_db,
+        })
     }
 }
 
@@ -660,7 +789,9 @@ impl RecordingSignalType {
 pub use sotf_audio::signal_recorder::{
     BassAnchorChannelResult, BassAnchorResults,
     ProbeDelayChannelResult as DelayProbeChannelResult, ProbeDelayResults as DelayProbeResults,
+    SplCalibrationResult,
 };
+pub use autoeq::roomeq::SplCalibration;
 
 /// Speaker configuration presets
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

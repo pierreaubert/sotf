@@ -1,3 +1,93 @@
+# 0.4.35
+
+## GD-Opt v2 — Phase GD-1g: BassPhaseConfidence gate
+
+New read-only gate that decides whether measured phase below the
+Schroeder frequency is trustworthy enough for GD-Opt v2's bass-band
+optimiser to consume. See `docs/gd_opt_v2_plan.md` §3.5 and §2.8.
+
+- New module `crates/autoeq/src/roomeq/bass_phase_confidence.rs`
+  with the public `bass_phase_confidence(curves, band, recording)
+  -> BassPhaseConfidence` function (re-exported at
+  `autoeq::roomeq::compute_bass_phase_confidence`).
+- `BassPhaseConfidence` enum: `Trustworthy { mean_coherence: f64 }`
+  or `Degraded { reason: &'static str }`. Reason strings map 1:1 to
+  the §2.8 advisory identifiers:
+  - `"no_curves"` / `"invalid_band"` (caller error guards)
+  - `"no_phase_data"` — any `Curve` missing `phase`
+  - `"no_coherence_data"` — any `Curve` missing `coherence`
+  - `"insufficient_bass_duration"` — `num_sweeps < 4` or
+    `bass_octave_duration_s < 2.0` (when a `RecordingConfiguration`
+    is provided)
+  - `"coherence_below_threshold"` — mean γ² across the band falls
+    below `coherence_threshold` (defaults to 0.9; overridable via
+    the recording config)
+  - `"snr_below_10db"` — evaluated only when every curve carries
+    `noise_floor_db`; trips if any in-band bin has
+    `spl - noise_floor_db < 10 dB`.
+- Public constants exposed for callers tuning their own thresholds:
+  `DEFAULT_COHERENCE_THRESHOLD` (0.9), `MIN_SNR_DB` (10.0),
+  `MIN_BASS_OCTAVE_DURATION_S` (2.0), `MIN_NUM_SWEEPS` (4).
+- Gate is deliberately **read-only** — it emits no logs and mutates
+  no state. Advisory surfacing (logs, `RoomEqReport`) lands in the
+  optimiser integration (GD-2+).
+- Soft-warning advisories from §2.8
+  (`"mic_phase_uncalibrated"`, `"bass_anchor_unreliable"`,
+  `"no_spl_calibration"`) are intentionally **not** emitted by this
+  gate; they are "warn, proceed" cases the optimiser surfaces
+  alongside a Trustworthy verdict.
+
+Tests (13 new, `cargo test -p autoeq --lib bass_phase_confidence`):
+empty-curves / invalid-band / missing-phase / missing-coherence /
+low-coherence / low-SNR / trustworthy happy path (with and without
+recording config) / missing noise_floor skips SNR check / override
+coherence threshold via recording config / priority order.
+
+`cargo test -p autoeq --lib` — 444 passing (was 431, +13).
+## GD-Opt v2 — Phase GD-1f: microphone phase calibration loader
+
+Adds the 4-column mic phase calibration loader and per-curve
+correction path described in `docs/gd_opt_v2_plan.md` §2.6 and
+referenced by the `"mic_phase_uncalibrated"` advisory from §2.8.
+
+- New `MicPhaseCalibration` struct in
+  `crates/autoeq/src/roomeq/mic_phase_calibration.rs` carrying
+  `freq / mag_db / phase_deg / coherence` arrays.
+- New public loader
+  `load_mic_phase_calibration(path: &Path) -> Result<MicPhaseCalibration, _>`
+  with header-driven column discovery: recognises
+  `frequency_hz`/`frequency`/`freq`/`hz` for freq,
+  `mag_db`/`magnitude_db`/`magnitude`/`spl`/`spl_db`/`db` for
+  magnitude, `phase_deg`/`phase` for phase, and `coherence` for the
+  coherence column. All four names must be present — this is a
+  **strict** 4-column loader; magnitude-only calibrations belong to
+  the pre-existing `math_audio_dsp::analysis::MicrophoneCompensation`.
+- `MicPhaseCalibration::apply_to_curve(&mut Curve)` subtracts the
+  mic's magnitude (`spl -= mag_db`) and phase
+  (`phase_deg -= cal.phase_deg`) from the measured curve in place,
+  and multiplies `coherence` by the cal's own coherence so the
+  GD-1g confidence gate automatically down-weights corrections
+  built on noisy calibration bins.
+- `MicPhaseCalibration::sample_at(freq_hz)` exposes linear
+  interpolation with flat extrapolation beyond the cal's range.
+- `MicPhaseCalibration::identity(freq)` builds a no-op cal on a
+  given frequency grid, primarily for tests.
+- Frequencies must be strictly increasing; non-monotonic or
+  all-malformed input rejects at load time. Malformed rows inside
+  an otherwise valid file are silently dropped.
+
+Tests (12 new in `mic_phase_calibration::tests`):
+canonical 4-column CSV round-trip / header-driven column order /
+missing column rejection / non-monotonic rejection / malformed row
+drop / exact-node `sample_at` / midpoint interpolation / below-min
+flat extrapolation / above-max flat extrapolation / identity cal
+is transparent / apply subtracts mag and phase / apply skips
+phase+coherence when absent from the curve.
+
+`cargo test -p autoeq --lib` — 443 passed (was 431, +12).
+
+Cargo version 0.4.34 → 0.4.35.
+
 # 0.4.34
 
 ## GD-Opt v2 — Phase GD-1e: bass anchor types (autoeq side)

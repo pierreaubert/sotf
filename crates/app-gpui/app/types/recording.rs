@@ -11,7 +11,7 @@ pub use sotf_audio_player::recording_types::{
     BassAnchorCaptureState, BassAnchorCaptureStatus, ChannelMapping, ChannelRecording,
     ChannelRecordingState, PlaybackDeviceConfig, PlotSmoothing, ProbeCaptureState,
     ProbeCaptureStatus, RecordingDeviceConfig, RecordingResult, RecordingSignalType,
-    RecordingStep, SpeakerConfiguration,
+    RecordingStep, SpeakerConfiguration, SplCalibrationCaptureState, SplCalibrationCaptureStatus,
 };
 
 /// Measurement-unit preference for the room-dimensions inputs on the
@@ -99,6 +99,10 @@ pub struct RecordingState {
     /// the BassAnchor wizard step on success; consumed by
     /// `save_recordings` to embed results in the session JSON.
     pub bass_anchor_capture: BassAnchorCaptureState,
+
+    // === SPL Calibration Step State (GD-Opt v2 Phase GD-1e.5) ===
+    /// Shared business state for the SPL calibration step.
+    pub spl_calibration_capture: SplCalibrationCaptureState,
 
     // === UI State ===
     pub playback_device_dropdown_open: bool,
@@ -206,6 +210,7 @@ impl Default for RecordingState {
             recording_base_directory: None,
             probe_capture: ProbeCaptureState::default(),
             bass_anchor_capture: BassAnchorCaptureState::default(),
+            spl_calibration_capture: SplCalibrationCaptureState::default(),
             playback_device_dropdown_open: false,
             recording_device_dropdown_open: false,
             playback_sample_rate_dropdown_open: false,

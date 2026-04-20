@@ -1773,7 +1773,11 @@ impl PlayerView {
                 bass_probe_cycles: None,
                 mic_phase_calibration_path: None,
                 mic_phase_calibration_paths: None,
-                spl_calibration: None,
+                // GD-Opt v2 Phase GD-1e.5 — SPL calibration, when captured
+                // and the user has entered their meter reading.
+                spl_calibration: rec_state
+                    .spl_calibration_capture
+                    .to_spl_calibration(),
                 recording_seed: None,
             };
 
