@@ -6071,7 +6071,7 @@ dependencies = [
 
 [[package]]
 name = "math-dsp"
-version = "0.5.11"
+version = "0.5.12"
 dependencies = [
  "approx",
  "clap",
@@ -10347,7 +10347,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-engine"
-version = "1.0.21"
+version = "1.0.22"
 dependencies = [
  "arc-swap",
  "chrono",
