@@ -1774,6 +1774,9 @@ fn optimize_room_impl(
     let epa_cfg = config.optimizer.epa_config.clone().unwrap_or_default();
     let epa_per_channel = crate::roomeq::output::compute_epa_per_channel(&channel_chains, &epa_cfg);
 
+    // ─── GD-Opt v2 integration (Phase GD-5) ──────────────────────────────
+    let group_delay_summary = try_run_gd_opt(config, &channel_results, sample_rate);
+
     let metadata = OptimizationMetadata {
         pre_score: avg_pre_score,
         post_score: avg_post_score,
@@ -1783,7 +1786,7 @@ fn optimize_room_impl(
         timestamp: chrono::Utc::now().to_rfc3339(),
         inter_channel_deviation: None,
         epa_per_channel,
-        group_delay: None,
+        group_delay: group_delay_summary,
     };
 
     let mut result = RoomOptimizationResult {
@@ -2108,6 +2111,161 @@ fn process_speaker_internal(
         }
         SpeakerConfig::Cardioid(config) => {
             process_cardioid(channel_name, config, room_config, sample_rate, output_dir)
+        }
+    }
+}
+
+// ─── GD-Opt v2 integration (Phase GD-5) ──────────────────────────────────────
+
+/// Attempt to run GD-Opt v2 on the channel results.
+///
+/// Returns `Some(GroupDelayOptSummary)` if GD-Opt was attempted (success or
+/// advisory skip), `None` if fewer than 2 channels have phase data.
+fn try_run_gd_opt(
+    config: &RoomConfig,
+    channel_results: &HashMap<String, ChannelOptimizationResult>,
+    sample_rate: f64,
+) -> Option<super::gd_opt::GroupDelayOptSummary> {
+    use super::gd_opt::*;
+
+    // Collect channels with phase data from initial measurements
+    let mut gd_channels: Vec<ChannelMeasurementInput> = Vec::new();
+
+    for (_name, ch) in channel_results {
+        let phase = match ch.initial_curve.phase.as_ref() {
+            Some(p) => p.clone(),
+            None => continue, // skip channels without phase
+        };
+
+        // Use coherence if available, otherwise default to 1.0
+        let coherence = ch
+            .initial_curve
+            .coherence
+            .clone()
+            .unwrap_or_else(|| ndarray::Array1::from_elem(ch.initial_curve.freq.len(), 1.0));
+
+        gd_channels.push(ChannelMeasurementInput {
+            freq: ch.initial_curve.freq.clone(),
+            spl: ch.initial_curve.spl.clone(),
+            phase,
+            coherence,
+        });
+    }
+
+    // Need at least 2 channels with phase
+    if gd_channels.len() < 2 {
+        if !channel_results.is_empty() && channel_results.len() >= 2 {
+            // Had enough channels but not enough phase data
+            return Some(GroupDelayOptSummary::from_advisory(
+                &GdOptAdvisory::NoPhaseData,
+            ));
+        }
+        return None;
+    }
+
+    // Derive band from crossover config or use default (80 Hz XO assumption)
+    let crossover_freq = config
+        .crossovers
+        .as_ref()
+        .and_then(|xos| {
+            xos.values()
+                .filter_map(|xo| xo.frequency)
+                .reduce(f64::min)
+        })
+        .unwrap_or(80.0);
+
+    let band = derive_band(config.optimizer.min_freq, crossover_freq);
+
+    // Check that band is non-empty in the data
+    let n_freq = gd_channels[0].freq.len();
+    let band_count = (0..n_freq)
+        .filter(|&i| gd_channels[0].freq[i] >= band.0 && gd_channels[0].freq[i] <= band.1)
+        .count();
+
+    if band_count < 3 {
+        return Some(GroupDelayOptSummary::from_advisory(&GdOptAdvisory::EmptyBand));
+    }
+
+    // Check mean coherence
+    let mean_coh: f64 = gd_channels
+        .iter()
+        .flat_map(|ch| {
+            (0..n_freq)
+                .filter(|&i| ch.freq[i] >= band.0 && ch.freq[i] <= band.1)
+                .map(|i| ch.coherence[i])
+        })
+        .sum::<f64>()
+        / (gd_channels.len() * band_count) as f64;
+
+    if mean_coh < 0.8 {
+        return Some(GroupDelayOptSummary::from_advisory(
+            &GdOptAdvisory::CoherenceBelowThreshold {
+                mean_coherence: mean_coh,
+            },
+        ));
+    }
+
+    // Configure and run
+    let gd_config = GdOptConfig {
+        sample_rate,
+        max_delay_ms: 20.0,
+        ap_per_channel: 2,
+        ap_min_freq: band.0.max(20.0),
+        ap_max_freq: band.1.min(500.0),
+        optimize_polarity: config
+            .optimizer
+            .phase_alignment
+            .as_ref()
+            .is_some_and(|pa| pa.optimize_polarity),
+        max_iter: 2000,
+        popsize: 20,
+        tol: 1e-8,
+        seed: None,
+        ..Default::default()
+    };
+
+    let result = optimize_group_delay_for_mode(
+        &gd_channels,
+        band,
+        &gd_config,
+        &config.optimizer.processing_mode,
+        config.optimizer.mixed_config.as_ref(),
+    );
+
+    match result {
+        Ok(gd_result) => {
+            if gd_result.improvement_db < 1.0 {
+                info!(
+                    "GD-Opt: minimal improvement ({:.1} dB), skipping",
+                    gd_result.improvement_db
+                );
+                Some(GroupDelayOptSummary::from_advisory(
+                    &GdOptAdvisory::MinimalImprovement {
+                        improvement_db: gd_result.improvement_db,
+                    },
+                ))
+            } else {
+                info!(
+                    "GD-Opt: improvement {:.1} dB (pre={:.2}ms, post={:.2}ms) in band [{:.0}, {:.0}] Hz",
+                    gd_result.improvement_db,
+                    gd_result.sum_gd_pre_rms_ms,
+                    gd_result.sum_gd_post_rms_ms,
+                    band.0,
+                    band.1,
+                );
+                Some(GroupDelayOptSummary::from_result(&gd_result))
+            }
+        }
+        Err(e) => {
+            info!("GD-Opt: skipped — {}", e);
+            // Map known error messages to advisories
+            if e.contains("PhaseLinear") {
+                Some(GroupDelayOptSummary::from_advisory(
+                    &GdOptAdvisory::PhaseLinearNoTarget,
+                ))
+            } else {
+                None
+            }
         }
     }
 }
