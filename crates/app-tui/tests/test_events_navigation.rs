@@ -1126,11 +1126,20 @@ mod tests {
         app.recording.output_directory = "/tmp/test".to_string();
         app.recording.step_tab_focused = true;
 
+        // Cycle order matches `RecordingStep::all()` —
+        // Config → SplCalibration → Capture → Probe → BassAnchor →
+        // Evaluating → Saving → Config.
+        send_keys(&mut app, &[KeyCode::Right]);
+        assert_eq!(app.recording.step, RecordingStep::SplCalibration);
+
         send_keys(&mut app, &[KeyCode::Right]);
         assert_eq!(app.recording.step, RecordingStep::Capture);
 
         send_keys(&mut app, &[KeyCode::Right]);
         assert_eq!(app.recording.step, RecordingStep::Probe);
+
+        send_keys(&mut app, &[KeyCode::Right]);
+        assert_eq!(app.recording.step, RecordingStep::BassAnchor);
 
         send_keys(&mut app, &[KeyCode::Right]);
         assert_eq!(app.recording.step, RecordingStep::Evaluating);

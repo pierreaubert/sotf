@@ -2029,6 +2029,128 @@ fn run_bass_anchor_core(
     Ok((results, capture.recorded, capture.input_sr))
 }
 
+// ---------------------------------------------------------------------------
+// GD-Opt v2 Phase GD-1e.5 — SPL calibration capture
+//
+// Plays a single-frequency tone (1 kHz by default) through one output
+// channel while the user reads the dBSPL off an external meter at the
+// listening position. The captured peak / RMS level on the mic gives
+// the `peak_sample_level` that anchors `SplCalibration::spl_offset_db`
+// later on the UI side. See `docs/gd_opt_v2_plan.md` §2.6, §2.11 Q4.
+// ---------------------------------------------------------------------------
+
+/// Result of a single SPL-calibration capture.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SplCalibrationResult {
+    /// Sample rate the mic captured at (Hz).
+    pub sample_rate: u32,
+    /// Peak absolute sample value observed on the mic during the tone
+    /// (the stable window — excludes attack/release).
+    pub peak_sample_level: f32,
+    /// RMS sample value over the stable window. More noise-robust
+    /// than the peak and preferred when authoring SplCalibration.
+    pub rms_sample_level: f32,
+    /// Frequency of the tone that was played, echoed back for audit.
+    pub reference_freq_hz: f32,
+    /// Playback output channel index used during the capture.
+    pub output_channel: u16,
+}
+
+/// Play a single-frequency sine wave through `output_channel` while
+/// recording the mic. Returns the mic peak / RMS sample level over
+/// the stable portion of the tone (skipping the first 200 ms of
+/// attack and the last 200 ms of release).
+#[cfg(not(target_os = "ios"))]
+#[allow(clippy::too_many_arguments)]
+pub fn run_spl_calibration(
+    output_channel: u16,
+    sample_rate: u32,
+    reference_freq_hz: f32,
+    amp: f32,
+    duration_s: f32,
+    output_device_name: Option<&str>,
+    input_device_name: Option<&str>,
+    input_channel: u16,
+) -> Result<SplCalibrationResult, String> {
+    if !reference_freq_hz.is_finite() || reference_freq_hz <= 0.0 {
+        return Err(format!(
+            "Invalid SPL cal reference frequency: {reference_freq_hz}"
+        ));
+    }
+    if !duration_s.is_finite() || duration_s <= 0.3 {
+        return Err(format!("SPL cal duration must be > 0.3 s, got {duration_s}"));
+    }
+    if !amp.is_finite() || !(0.0..=1.0).contains(&amp) {
+        return Err(format!("SPL cal amplitude must be in (0, 1], got {amp}"));
+    }
+
+    // Generate a Hann-windowed tone so the start/end don't click.
+    // The 200 ms skirt on each end is ignored during analysis, so the
+    // Hann just avoids hardware popping during attack/release; it
+    // doesn't affect the measured level in the stable window.
+    let tone = gen_tone(reference_freq_hz, amp, sample_rate, duration_s);
+    if tone.is_empty() {
+        return Err("gen_tone returned empty".to_string());
+    }
+
+    log::info!(
+        "[run_spl_calibration] Generated {:.0} Hz tone @ amp={:.3}, {:.1}s ({} samples)",
+        reference_freq_hz,
+        amp,
+        duration_s,
+        tone.len()
+    );
+
+    let capture = play_per_channel_and_record_mono(
+        &[output_channel],
+        sample_rate,
+        &tone,
+        // Short silence so the tone starts cleanly but the whole
+        // capture finishes in a couple of seconds. The stability
+        // window analysis below excludes the first 200 ms anyway.
+        200.0,
+        output_device_name,
+        input_device_name,
+        input_channel,
+        "run_spl_calibration",
+    )?;
+
+    // Slice the mic recording to the stable portion of the tone.
+    // `analysis_offsets[0]` is the first sample of the tone at the
+    // mic's rate; skip an additional 200 ms to let any DAC+mic
+    // transient die and stop 200 ms before the tone ends.
+    let skirt = (0.2 * capture.input_sr as f32) as usize;
+    let start = capture.analysis_offsets[0] + skirt;
+    let end = (capture.analysis_offsets[0] + capture.analysis_signal_samples)
+        .saturating_sub(skirt)
+        .min(capture.recorded.len());
+    if end <= start + skirt {
+        return Err(format!(
+            "[run_spl_calibration] capture too short for stable-window analysis \
+             (start={start}, end={end}, recording={})",
+            capture.recorded.len()
+        ));
+    }
+    let stable = &capture.recorded[start..end];
+
+    let peak = stable.iter().map(|s| s.abs()).fold(0.0_f32, f32::max);
+    let rms = {
+        let sum_sq: f64 = stable.iter().map(|&s| (s as f64) * (s as f64)).sum();
+        ((sum_sq / stable.len() as f64).sqrt()) as f32
+    };
+
+    log::info!(
+        "[run_spl_calibration] Stable window [{start}..{end}) → peak={peak:.4}, rms={rms:.4}"
+    );
+
+    Ok(SplCalibrationResult {
+        sample_rate: capture.input_sr,
+        peak_sample_level: peak,
+        rms_sample_level: rms,
+        reference_freq_hz,
+        output_channel,
+    })
+}
 
 /// Parse comma-separated channel list (0-based indices)
 pub fn parse_channel_list(s: &str) -> Result<Vec<u16>, String> {

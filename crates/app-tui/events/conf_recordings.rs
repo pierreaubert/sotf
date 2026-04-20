@@ -11,7 +11,8 @@ fn recording_step_prev_wrap(
     use sotf_audio_player::recording_types::RecordingStep;
     match s {
         RecordingStep::Config => RecordingStep::Saving,
-        RecordingStep::Capture => RecordingStep::Config,
+        RecordingStep::SplCalibration => RecordingStep::Config,
+        RecordingStep::Capture => RecordingStep::SplCalibration,
         RecordingStep::Probe => RecordingStep::Capture,
         RecordingStep::BassAnchor => RecordingStep::Probe,
         RecordingStep::Evaluating => RecordingStep::BassAnchor,
@@ -24,7 +25,8 @@ fn recording_step_next_wrap(
 ) -> sotf_audio_player::recording_types::RecordingStep {
     use sotf_audio_player::recording_types::RecordingStep;
     match s {
-        RecordingStep::Config => RecordingStep::Capture,
+        RecordingStep::Config => RecordingStep::SplCalibration,
+        RecordingStep::SplCalibration => RecordingStep::Capture,
         RecordingStep::Capture => RecordingStep::Probe,
         RecordingStep::Probe => RecordingStep::BassAnchor,
         RecordingStep::BassAnchor => RecordingStep::Evaluating,
@@ -370,6 +372,14 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
             // GD-Opt v2 Phase GD-1e — display-only in the TUI for now.
             // Navigation keys fall through to the wizard-level handler
             // via the outer loop; no step-specific actions yet.
+            None
+        }
+
+        RecordingStep::SplCalibration => {
+            // GD-Opt v2 Phase GD-1e.5 — display-only in the TUI for
+            // now. The GPUI wizard carries the full step; the TUI
+            // surface will catch up in a follow-up once the meter-
+            // reading input widget is designed.
             None
         }
 

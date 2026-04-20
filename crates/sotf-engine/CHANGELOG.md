@@ -1,3 +1,34 @@
+# 1.0.23
+
+## GD-Opt v2 — Phase GD-1e.5: SPL calibration capture
+
+Adds `run_spl_calibration` — plays a single-frequency reference tone
+(1 kHz default) on one output channel while recording the mic, then
+returns peak + RMS sample levels over the stable portion of the
+tone. The UI uses the paired `(rms_sample_level, reported_db_spl)`
+to derive `SplCalibration::spl_offset_db`, the GD-Opt v2 anchor for
+the `sweep_level_db_spl` target (see `docs/gd_opt_v2_plan.md` §2.6
+and §2.11 Q4).
+
+- New public API `run_spl_calibration(output_channel, sample_rate,
+  reference_freq_hz, amp, duration_s, out_dev, in_dev, input_channel)
+  -> Result<SplCalibrationResult, _>`.
+- New public type `SplCalibrationResult { sample_rate,
+  peak_sample_level, rms_sample_level, reference_freq_hz,
+  output_channel }`. Derives Debug/Clone/Serialize/Deserialize so
+  sotf-player can re-export and carry it on the TUI+GPUI state
+  structs.
+- Reuses the existing `play_per_channel_and_record_mono` helper
+  (from 1.0.22's dedup) so all device-discovery + cpal logic stays
+  single-source. The calibration-specific logic is just (a) gen a
+  pure tone via `gen_tone`, (b) after capture, slice a stable
+  analysis window skipping 200 ms of attack/release on each end,
+  (c) compute peak+RMS over that window.
+- Input validation: rejects non-finite / non-positive freq, too-
+  short duration (< 0.3 s), amplitude outside (0, 1].
+
+Cargo version 1.0.22 → 1.0.23.
+
 # 1.0.22
 
 ## GD-Opt v2 — Phase GD-1e dedup: shared playback scaffolding
