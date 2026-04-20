@@ -118,6 +118,9 @@ pub use reflection_cancel::{
     ReflectionCancellationConfig, ReflectionCancellationResult, compute_reflection_cancellation,
 };
 
+// Group delay optimisation v2 (LowLatency IIR path)
+pub mod gd_opt;
+
 // Utility modules
 mod ir_waveform;
 pub(crate) mod phase_utils;

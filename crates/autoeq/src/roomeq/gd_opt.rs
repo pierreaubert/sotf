@@ -1,0 +1,687 @@
+//! Group Delay Optimisation v2 — LowLatency IIR path (Phase GD-3a).
+//!
+//! Finds per-channel `(delay_ms, allpass_filters, polarity)` that minimise
+//! the RMS group-delay deviation of the **summed complex response** at the
+//! listening position, weighted by per-bin coherence².
+//!
+//! References: `crates/autoeq/docs/gd_opt_v2_plan.md` §3.
+
+use math_audio_iir_fir::{Biquad, BiquadFilterType};
+use math_audio_optimisation::{DEConfigBuilder, differential_evolution};
+use ndarray::Array1;
+use num_complex::Complex64;
+use std::f64::consts::PI;
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+/// Configuration for the group-delay optimiser.
+#[derive(Debug, Clone)]
+pub struct GdOptConfig {
+    /// Sample rate in Hz.
+    pub sample_rate: f64,
+    /// Maximum per-channel delay in ms.
+    pub max_delay_ms: f64,
+    /// Number of all-pass filters per channel (fixed budget, no bootstrap).
+    pub ap_per_channel: usize,
+    /// Minimum all-pass centre frequency in Hz.
+    pub ap_min_freq: f64,
+    /// Maximum all-pass centre frequency in Hz.
+    pub ap_max_freq: f64,
+    /// Minimum all-pass Q.
+    pub ap_min_q: f64,
+    /// Maximum all-pass Q.
+    pub ap_max_q: f64,
+    /// Whether to optimise polarity per channel.
+    pub optimize_polarity: bool,
+    /// DE maximum iterations.
+    pub max_iter: usize,
+    /// DE population size multiplier.
+    pub popsize: usize,
+    /// DE convergence tolerance.
+    pub tol: f64,
+    /// Optional seed for reproducibility.
+    pub seed: Option<u64>,
+}
+
+impl Default for GdOptConfig {
+    fn default() -> Self {
+        Self {
+            sample_rate: 48000.0,
+            max_delay_ms: 20.0,
+            ap_per_channel: 2,
+            ap_min_freq: 20.0,
+            ap_max_freq: 300.0,
+            ap_min_q: 0.3,
+            ap_max_q: 10.0,
+            optimize_polarity: true,
+            max_iter: 2000,
+            popsize: 20,
+            tol: 1e-8,
+            seed: None,
+        }
+    }
+}
+
+/// Per-channel result.
+#[derive(Debug, Clone)]
+pub struct ChannelGdResult {
+    pub delay_ms: f64,
+    pub polarity_inverted: bool,
+    pub ap_filters: Vec<Biquad>,
+    pub channel_gd_pre_rms_ms: f64,
+    pub channel_gd_post_rms_ms: f64,
+}
+
+/// Overall optimisation result.
+#[derive(Debug, Clone)]
+pub struct GroupDelayOptResult {
+    pub band: (f64, f64),
+    pub per_channel: Vec<ChannelGdResult>,
+    pub sum_gd_pre_rms_ms: f64,
+    pub sum_gd_post_rms_ms: f64,
+    pub mean_coherence: f64,
+    pub improvement_db: f64,
+}
+
+/// Per-channel measurement input.
+#[derive(Debug, Clone)]
+pub struct ChannelMeasurementInput {
+    /// Frequency grid (Hz), shared across spl/phase/coherence.
+    pub freq: Array1<f64>,
+    /// SPL in dB.
+    pub spl: Array1<f64>,
+    /// Unwrapped phase in radians.
+    pub phase: Array1<f64>,
+    /// Coherence (γ²) per bin, range [0, 1].
+    pub coherence: Array1<f64>,
+}
+
+// ─── Band derivation (§3.4) ──────────────────────────────────────────────────
+
+/// Derive the optimisation frequency band from a crossover frequency.
+/// Returns `(band_lo, band_hi)`.
+pub fn derive_band(min_freq: f64, crossover_freq: f64) -> (f64, f64) {
+    let band_lo = min_freq.max(crossover_freq * 0.25);
+    let band_hi = crossover_freq * 2.0;
+    (band_lo, band_hi)
+}
+
+// ─── Core optimiser ──────────────────────────────────────────────────────────
+
+/// Run the group-delay optimiser on a set of channel measurements.
+///
+/// Returns `Err` if fewer than 2 channels are provided or measurements are
+/// incompatible.
+pub fn optimize_group_delay(
+    channels: &[ChannelMeasurementInput],
+    band: (f64, f64),
+    config: &GdOptConfig,
+) -> Result<GroupDelayOptResult, String> {
+    let n_ch = channels.len();
+    if n_ch < 2 {
+        return Err("GD-Opt requires at least 2 channels".into());
+    }
+
+    // Validate all channels share the same frequency grid length
+    let n_freq = channels[0].freq.len();
+    for (i, ch) in channels.iter().enumerate() {
+        if ch.freq.len() != n_freq || ch.spl.len() != n_freq || ch.phase.len() != n_freq {
+            return Err(format!("Channel {} has inconsistent array lengths", i));
+        }
+    }
+
+    // Find indices within band
+    let band_indices: Vec<usize> = (0..n_freq)
+        .filter(|&i| channels[0].freq[i] >= band.0 && channels[0].freq[i] <= band.1)
+        .collect();
+
+    if band_indices.is_empty() {
+        return Err("No frequency bins within the specified band".into());
+    }
+
+    // Compute mean coherence (weighted across all channels)
+    let mean_coherence = compute_mean_coherence(channels, &band_indices);
+
+    // Compute pre-optimisation sum GD RMS
+    let identity_params = vec![0.0; param_count(n_ch, config)];
+    let sum_gd_pre_rms_ms =
+        compute_sum_gd_rms(channels, &identity_params, &band_indices, config);
+
+    // Build bounds for DE
+    let bounds = build_bounds(n_ch, config);
+
+    // Run DE
+    let de_config = {
+        let mut builder = DEConfigBuilder::new()
+            .maxiter(config.max_iter)
+            .popsize(config.popsize)
+            .tol(config.tol);
+        if let Some(seed) = config.seed {
+            builder = builder.seed(seed);
+        }
+        builder.build().map_err(|e| format!("DE config error: {e}"))?
+    };
+
+    let channels_ref = channels;
+    let band_indices_ref = &band_indices;
+    let config_ref = config;
+
+    let loss_fn = |x: &Array1<f64>| -> f64 {
+        gd_loss(channels_ref, x.as_slice().unwrap(), band_indices_ref, config_ref)
+    };
+
+    let report = differential_evolution(&loss_fn, &bounds, de_config)
+        .map_err(|e| format!("DE failed: {e}"))?;
+
+    let best_params = report.x.as_slice().unwrap();
+
+    // Compute post-optimisation sum GD RMS
+    let sum_gd_post_rms_ms =
+        compute_sum_gd_rms(channels, best_params, &band_indices, config);
+
+    let improvement_db = if sum_gd_post_rms_ms > 0.0 {
+        20.0 * (sum_gd_pre_rms_ms / sum_gd_post_rms_ms).log10()
+    } else {
+        f64::INFINITY
+    };
+
+    // Decode per-channel results
+    let per_channel = decode_per_channel(channels, best_params, &band_indices, config);
+
+    Ok(GroupDelayOptResult {
+        band,
+        per_channel,
+        sum_gd_pre_rms_ms,
+        sum_gd_post_rms_ms,
+        mean_coherence,
+        improvement_db,
+    })
+}
+
+// ─── Internal helpers ────────────────────────────────────────────────────────
+
+/// Number of parameters in the optimisation vector.
+fn param_count(n_ch: usize, config: &GdOptConfig) -> usize {
+    // Per channel: 1 delay + ap_per_channel * 2 (freq, q) + 1 polarity (if enabled)
+    let per_ch = 1 + config.ap_per_channel * 2 + if config.optimize_polarity { 1 } else { 0 };
+    n_ch * per_ch
+}
+
+/// Build DE bounds for all parameters.
+fn build_bounds(n_ch: usize, config: &GdOptConfig) -> Vec<(f64, f64)> {
+    let mut bounds = Vec::new();
+    for _ in 0..n_ch {
+        // delay_ms
+        bounds.push((0.0, config.max_delay_ms));
+        // AP filters: (freq, q) pairs
+        for _ in 0..config.ap_per_channel {
+            bounds.push((config.ap_min_freq, config.ap_max_freq));
+            bounds.push((config.ap_min_q, config.ap_max_q));
+        }
+        // polarity: [0, 1] — decoded as inverted if > 0.5
+        if config.optimize_polarity {
+            bounds.push((0.0, 1.0));
+        }
+    }
+    bounds
+}
+
+/// Decode parameters for a single channel from the flat parameter vector.
+struct ChannelParams {
+    delay_ms: f64,
+    ap_filters: Vec<(f64, f64)>, // (freq, q)
+    polarity_inverted: bool,
+}
+
+fn decode_channel_params(params: &[f64], ch: usize, config: &GdOptConfig) -> ChannelParams {
+    let per_ch = 1 + config.ap_per_channel * 2 + if config.optimize_polarity { 1 } else { 0 };
+    let offset = ch * per_ch;
+
+    let delay_ms = params[offset];
+
+    let mut ap_filters = Vec::with_capacity(config.ap_per_channel);
+    for i in 0..config.ap_per_channel {
+        let freq = params[offset + 1 + i * 2];
+        let q = params[offset + 1 + i * 2 + 1];
+        ap_filters.push((freq, q));
+    }
+
+    let polarity_inverted = if config.optimize_polarity {
+        params[offset + 1 + config.ap_per_channel * 2] > 0.5
+    } else {
+        false
+    };
+
+    ChannelParams {
+        delay_ms,
+        ap_filters,
+        polarity_inverted,
+    }
+}
+
+/// Compute the complex response of a channel at frequency `f` with applied
+/// delay, all-pass filters, and polarity.
+fn channel_complex_at(
+    ch: &ChannelMeasurementInput,
+    freq_idx: usize,
+    ch_params: &ChannelParams,
+    config: &GdOptConfig,
+) -> Complex64 {
+    let f = ch.freq[freq_idx];
+    let omega = 2.0 * PI * f;
+
+    // Original channel response as complex
+    let mag = 10.0_f64.powf(ch.spl[freq_idx] / 20.0);
+    let phase = ch.phase[freq_idx];
+    let mut h = Complex64::from_polar(mag, phase);
+
+    // Apply delay: e^(-jωτ)
+    let delay_s = ch_params.delay_ms * 1e-3;
+    h *= Complex64::from_polar(1.0, -omega * delay_s);
+
+    // Apply all-pass filters
+    for &(ap_freq, ap_q) in &ch_params.ap_filters {
+        let ap = Biquad::new(BiquadFilterType::AllPass, ap_freq, config.sample_rate, ap_q, 0.0);
+        h *= ap.complex_response(f);
+    }
+
+    // Apply polarity inversion
+    if ch_params.polarity_inverted {
+        h = -h;
+    }
+
+    h
+}
+
+/// Compute group delay of the summed complex response via finite differences.
+/// Returns GD in ms at each band frequency.
+fn compute_sum_gd(
+    channels: &[ChannelMeasurementInput],
+    params: &[f64],
+    band_indices: &[usize],
+    config: &GdOptConfig,
+) -> Vec<f64> {
+    // We need adjacent bins for finite-difference GD computation.
+    // For each band index, compute sum phase at that bin and the next.
+    let mut gd_ms = Vec::with_capacity(band_indices.len());
+
+    for (bi, &idx) in band_indices.iter().enumerate() {
+        // Need idx+1 for forward difference
+        let idx_next = if bi + 1 < band_indices.len() {
+            band_indices[bi + 1]
+        } else if idx + 1 < channels[0].freq.len() {
+            idx + 1
+        } else {
+            // Can't compute GD at last bin
+            if !gd_ms.is_empty() {
+                gd_ms.push(*gd_ms.last().unwrap());
+            } else {
+                gd_ms.push(0.0);
+            }
+            continue;
+        };
+
+        let f0 = channels[0].freq[idx];
+        let f1 = channels[0].freq[idx_next];
+        let omega0 = 2.0 * PI * f0;
+        let omega1 = 2.0 * PI * f1;
+
+        // Sum complex responses at f0 and f1
+        let mut sum0 = Complex64::new(0.0, 0.0);
+        let mut sum1 = Complex64::new(0.0, 0.0);
+
+        for (ch_idx, ch) in channels.iter().enumerate() {
+            let cp = decode_channel_params(params, ch_idx, config);
+            sum0 += channel_complex_at(ch, idx, &cp, config);
+            sum1 += channel_complex_at(ch, idx_next, &cp, config);
+        }
+
+        // GD = -dφ/dω
+        let phase0 = sum0.arg();
+        let phase1 = sum1.arg();
+        let d_phase = unwrap_phase_diff(phase1 - phase0);
+        let d_omega = omega1 - omega0;
+
+        let gd_s = if d_omega.abs() > 1e-15 {
+            -d_phase / d_omega
+        } else {
+            0.0
+        };
+
+        gd_ms.push(gd_s * 1000.0);
+    }
+
+    gd_ms
+}
+
+/// Coherence-weighted RMS of the summed group delay (deviation from median).
+fn compute_sum_gd_rms(
+    channels: &[ChannelMeasurementInput],
+    params: &[f64],
+    band_indices: &[usize],
+    config: &GdOptConfig,
+) -> f64 {
+    let gd = compute_sum_gd(channels, params, band_indices, config);
+    if gd.is_empty() {
+        return 0.0;
+    }
+
+    // Compute coherence weights (mean across channels per bin)
+    let weights: Vec<f64> = band_indices
+        .iter()
+        .map(|&idx| {
+            let mean_coh: f64 = channels.iter().map(|ch| ch.coherence[idx]).sum::<f64>()
+                / channels.len() as f64;
+            mean_coh * mean_coh // coherence²
+        })
+        .collect();
+
+    // Target: median GD (flattest achievable reference per §3.1)
+    let mut gd_sorted = gd.clone();
+    gd_sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let target = gd_sorted[gd_sorted.len() / 2];
+
+    // Weighted RMS deviation from target
+    let mut weighted_sum = 0.0;
+    let mut weight_total = 0.0;
+    for (i, &g) in gd.iter().enumerate() {
+        let w = weights[i];
+        let dev = g - target;
+        weighted_sum += w * dev * dev;
+        weight_total += w;
+    }
+
+    if weight_total > 0.0 {
+        (weighted_sum / weight_total).sqrt()
+    } else {
+        0.0
+    }
+}
+
+/// The objective function for DE: coherence-weighted RMS GD of the sum.
+fn gd_loss(
+    channels: &[ChannelMeasurementInput],
+    params: &[f64],
+    band_indices: &[usize],
+    config: &GdOptConfig,
+) -> f64 {
+    compute_sum_gd_rms(channels, params, band_indices, config)
+}
+
+/// Compute mean coherence across all channels in-band.
+fn compute_mean_coherence(channels: &[ChannelMeasurementInput], band_indices: &[usize]) -> f64 {
+    if band_indices.is_empty() || channels.is_empty() {
+        return 0.0;
+    }
+    let mut sum = 0.0;
+    let mut count = 0;
+    for ch in channels {
+        for &idx in band_indices {
+            sum += ch.coherence[idx];
+            count += 1;
+        }
+    }
+    sum / count as f64
+}
+
+/// Unwrap a phase difference to [-π, π].
+fn unwrap_phase_diff(mut d: f64) -> f64 {
+    while d > PI {
+        d -= 2.0 * PI;
+    }
+    while d < -PI {
+        d += 2.0 * PI;
+    }
+    d
+}
+
+/// Decode the DE solution into per-channel results with pre/post GD RMS.
+fn decode_per_channel(
+    channels: &[ChannelMeasurementInput],
+    params: &[f64],
+    band_indices: &[usize],
+    config: &GdOptConfig,
+) -> Vec<ChannelGdResult> {
+    let n_ch = channels.len();
+    let mut results = Vec::with_capacity(n_ch);
+
+    // Pre-optimisation: identity params
+    let identity = vec![0.0; param_count(n_ch, config)];
+
+    for ch_idx in 0..n_ch {
+        let cp = decode_channel_params(params, ch_idx, config);
+
+        // Build Biquad AP filters
+        let ap_filters: Vec<Biquad> = cp
+            .ap_filters
+            .iter()
+            .map(|&(freq, q)| {
+                Biquad::new(BiquadFilterType::AllPass, freq, config.sample_rate, q, 0.0)
+            })
+            .collect();
+
+        // Per-channel GD RMS: compute as if this channel were the only one
+        // (use single-channel slice for pre/post comparison)
+        let single_ch = &channels[ch_idx..ch_idx + 1];
+
+        // Pre: identity params for 1 channel
+        let id_1ch = vec![0.0; param_count(1, config)];
+        let pre_rms = compute_sum_gd_rms(single_ch, &id_1ch, band_indices, config);
+
+        // Post: this channel's params, re-encoded for 1 channel
+        let per_ch_size =
+            1 + config.ap_per_channel * 2 + if config.optimize_polarity { 1 } else { 0 };
+        let ch_offset = ch_idx * per_ch_size;
+        let post_params_1ch = params[ch_offset..ch_offset + per_ch_size].to_vec();
+        let post_rms = compute_sum_gd_rms(single_ch, &post_params_1ch, band_indices, config);
+
+        results.push(ChannelGdResult {
+            delay_ms: cp.delay_ms,
+            polarity_inverted: cp.polarity_inverted,
+            ap_filters,
+            channel_gd_pre_rms_ms: pre_rms,
+            channel_gd_post_rms_ms: post_rms,
+        });
+    }
+
+    // Suppress unused variable warning
+    let _ = &identity;
+
+    results
+}
+
+// ─── Tests ───────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Create a synthetic channel measurement with a known pure delay.
+    /// The channel has flat magnitude (0 dB) and linear phase corresponding
+    /// to the given delay.
+    fn make_delayed_channel(
+        freq_grid: &Array1<f64>,
+        delay_ms: f64,
+        coherence: f64,
+    ) -> ChannelMeasurementInput {
+        let n = freq_grid.len();
+        let spl = Array1::zeros(n); // 0 dB flat
+        let delay_s = delay_ms * 1e-3;
+
+        // Phase = -ω * delay (linear phase from pure delay)
+        let phase = freq_grid.mapv(|f| -2.0 * PI * f * delay_s);
+
+        let coherence = Array1::from_elem(n, coherence);
+
+        ChannelMeasurementInput {
+            freq: freq_grid.clone(),
+            spl,
+            phase,
+            coherence,
+        }
+    }
+
+    /// Generate a log-spaced frequency grid.
+    fn log_freq_grid(f_min: f64, f_max: f64, n_points: usize) -> Array1<f64> {
+        let log_min = f_min.ln();
+        let log_max = f_max.ln();
+        Array1::from_iter((0..n_points).map(|i| {
+            let t = i as f64 / (n_points - 1) as f64;
+            (log_min + t * (log_max - log_min)).exp()
+        }))
+    }
+
+    #[test]
+    fn test_derive_band() {
+        let (lo, hi) = derive_band(20.0, 80.0);
+        assert!((lo - 20.0).abs() < 1e-10);
+        assert!((hi - 160.0).abs() < 1e-10);
+
+        let (lo2, hi2) = derive_band(30.0, 80.0);
+        assert!((lo2 - 30.0).abs() < 1e-10); // max(30, 80*0.25=20) = 30
+        assert!((hi2 - 160.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_two_channel_delay_recovery() {
+        // Synthetic test: two channels with known delays (2 ms and 4 ms).
+        // Wide band [20, 5000] Hz forces the optimiser to align tightly:
+        // for GD to be flat across this band, the first comb-filter null
+        // (at 1/(2Δτ)) must be above 5000 Hz, i.e. Δτ < 0.1 ms.
+        let freq = log_freq_grid(20.0, 5000.0, 500);
+
+        let ch0 = make_delayed_channel(&freq, 2.0, 0.98);
+        let ch1 = make_delayed_channel(&freq, 4.0, 0.98);
+
+        let channels = vec![ch0, ch1];
+        let band = (20.0, 5000.0);
+
+        let config = GdOptConfig {
+            sample_rate: 48000.0,
+            max_delay_ms: 10.0,
+            ap_per_channel: 0, // no AP filters for this test
+            optimize_polarity: false,
+            max_iter: 5000,
+            popsize: 30,
+            tol: 1e-12,
+            seed: Some(42),
+            ..Default::default()
+        };
+
+        let result = optimize_group_delay(&channels, band, &config).unwrap();
+
+        // The optimiser should align the channels by finding delays that
+        // equalise their contribution. The relative delay difference should
+        // be recovered: |τ0 - τ1| ≈ 2 ms (or the complement within max_delay).
+        let d0 = result.per_channel[0].delay_ms;
+        let d1 = result.per_channel[1].delay_ms;
+
+        // After optimisation, the effective delays should be equal:
+        // Original: ch0 has 2ms, ch1 has 4ms → difference = 2ms.
+        // Optimiser adds ~2ms to ch0 (d0 ≈ 2ms, d1 ≈ 0ms).
+        let effective_delay_0 = 2.0 + d0;
+        let effective_delay_1 = 4.0 + d1;
+        let residual_diff = (effective_delay_0 - effective_delay_1).abs();
+
+        assert!(
+            residual_diff < 0.1,
+            "Delay recovery failed: residual difference = {:.3} ms (expected < 0.1 ms). \
+             d0={:.3}, d1={:.3}, effective: {:.3} vs {:.3}",
+            residual_diff,
+            d0,
+            d1,
+            effective_delay_0,
+            effective_delay_1,
+        );
+
+        // Improvement should be >= 6 dB
+        assert!(
+            result.improvement_db >= 6.0,
+            "Improvement too low: {:.1} dB (expected >= 6.0 dB). \
+             pre_rms={:.3} ms, post_rms={:.3} ms",
+            result.improvement_db,
+            result.sum_gd_pre_rms_ms,
+            result.sum_gd_post_rms_ms,
+        );
+    }
+
+    #[test]
+    fn test_band_derivation_respects_min_freq() {
+        // When min_freq > crossover*0.25, band_lo should be min_freq
+        let (lo, _) = derive_band(50.0, 100.0);
+        assert!((lo - 50.0).abs() < 1e-10);
+
+        // When min_freq < crossover*0.25, band_lo should be crossover*0.25
+        let (lo2, _) = derive_band(10.0, 100.0);
+        assert!((lo2 - 25.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_coherence_weighting() {
+        // Two channels with same delay mismatch but different coherence.
+        // Low-coherence bins should contribute less to the loss.
+        let freq = log_freq_grid(20.0, 300.0, 100);
+
+        // Channel 0: flat, no delay
+        let ch0 = make_delayed_channel(&freq, 0.0, 0.95);
+
+        // Channel 1: 10ms delay, but with low coherence in the first half
+        let n = freq.len();
+        let spl = Array1::zeros(n);
+        let delay_s = 10.0e-3;
+        let phase = freq.mapv(|f| -2.0 * PI * f * delay_s);
+        let mut coherence = Array1::from_elem(n, 0.95);
+        // Set low coherence for first half of band
+        for i in 0..n / 2 {
+            coherence[i] = 0.1;
+        }
+        let ch1 = ChannelMeasurementInput {
+            freq: freq.clone(),
+            spl,
+            phase,
+            coherence,
+        };
+
+        let channels = vec![ch0, ch1];
+        let band_indices: Vec<usize> = (0..n).collect();
+
+        // Compute loss with coherence weighting
+        let identity = vec![0.0; param_count(2, &GdOptConfig::default())];
+        let rms = compute_sum_gd_rms(
+            &channels,
+            &identity,
+            &band_indices,
+            &GdOptConfig::default(),
+        );
+
+        // RMS should be non-zero (there's a delay mismatch)
+        assert!(rms > 0.0, "RMS should be non-zero with delay mismatch");
+
+        // Now make all coherence high and verify RMS is larger
+        // (low coherence was suppressing contribution from misaligned bins)
+        let ch1_high_coh = make_delayed_channel(&freq, 10.0, 0.95);
+        let channels_high_coh = vec![make_delayed_channel(&freq, 0.0, 0.95), ch1_high_coh];
+        let rms_high = compute_sum_gd_rms(
+            &channels_high_coh,
+            &identity,
+            &band_indices,
+            &GdOptConfig::default(),
+        );
+
+        assert!(
+            rms_high > rms,
+            "High-coherence RMS ({:.3}) should exceed low-coherence RMS ({:.3})",
+            rms_high,
+            rms,
+        );
+    }
+
+    #[test]
+    fn test_minimum_channels() {
+        let freq = log_freq_grid(20.0, 300.0, 50);
+        let ch0 = make_delayed_channel(&freq, 0.0, 0.95);
+        let result = optimize_group_delay(&[ch0], (20.0, 300.0), &GdOptConfig::default());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("at least 2 channels"));
+    }
+}
