@@ -125,6 +125,11 @@ pub mod synthetic;
 mod time_align;
 mod weighted_loss;
 
+// GD-Opt v2 Phase GD-1f — microphone phase calibration loader. See
+// `docs/gd_opt_v2_plan.md` §2.6 and §2.8.
+pub mod mic_phase_calibration;
+pub use mic_phase_calibration::{MicPhaseCalibration, load_mic_phase_calibration};
+
 pub use time_align::{
     ArrivalTimeResult, ProbeDelayResult, calculate_alignment_delays, detect_delay_with_probe,
     detect_delays_multi_channel, find_arrival_time,
