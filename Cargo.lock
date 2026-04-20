@@ -6071,7 +6071,7 @@ dependencies = [
 
 [[package]]
 name = "math-dsp"
-version = "0.5.11"
+version = "0.5.12"
 dependencies = [
  "approx",
  "clap",

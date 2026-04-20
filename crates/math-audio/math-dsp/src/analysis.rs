@@ -2741,6 +2741,364 @@ pub fn compute_average_response(
     }
 }
 
+// ---------------------------------------------------------------------------
+// GD-Opt v2 Phase GD-1c — multi-sweep coherence + noise-floor primitives
+//
+// These three pure functions let callers (sotf-engine's
+// `record_multi_sweep`) turn a batch of N recorded sweeps + a
+// pre-silence noise-floor window into the extended `Curve` columns
+// `coherence` and `noise_floor_db` documented in §2.3 / §2.4 of
+// `docs/gd_opt_v2_plan.md`.
+// ---------------------------------------------------------------------------
+
+/// Magnitude-squared coherence γ²(f) across N complex spectra that
+/// should be measurements of the same deterministic transfer
+/// function. Per `docs/gd_opt_v2_plan.md` §2.2:
+///
+/// ```text
+///    γ²(f) = |H̄(f)|² / ⟨|H(f)|²⟩
+///    H̄(f) = (1/N) Σ_i H_i(f)              (complex average)
+///    ⟨|H(f)|²⟩ = (1/N) Σ_i |H_i(f)|²       (power average)
+/// ```
+///
+/// Returns a vector of per-bin γ² in `[0, 1]`. For N = 1 γ² ≡ 1 by
+/// construction — a single measurement is trivially "consistent with
+/// itself" so callers must enforce the "at least 4 sweeps" rule at
+/// a higher level (the `"insufficient_bass_duration"` advisory in
+/// GD-1g).
+///
+/// Returns `Err` iff `realizations` is empty or any realization has
+/// a different length than the first.
+pub fn compute_coherence_from_realizations(
+    realizations: &[Vec<Complex<f32>>],
+) -> Result<Vec<f32>, String> {
+    let n = realizations.len();
+    if n == 0 {
+        return Err("compute_coherence: empty realizations".to_string());
+    }
+    let bins = realizations[0].len();
+    if bins == 0 {
+        return Ok(Vec::new());
+    }
+    for (i, r) in realizations.iter().enumerate() {
+        if r.len() != bins {
+            return Err(format!(
+                "compute_coherence: realization {i} has {} bins, expected {bins}",
+                r.len()
+            ));
+        }
+    }
+
+    let mut coherence = Vec::with_capacity(bins);
+    for k in 0..bins {
+        let mut sum = Complex::new(0.0_f64, 0.0_f64);
+        let mut sum_sq = 0.0_f64;
+        for r in realizations {
+            let h = Complex::new(r[k].re as f64, r[k].im as f64);
+            sum += h;
+            sum_sq += h.re * h.re + h.im * h.im;
+        }
+        let mean = sum / (n as f64);
+        let mean_sq = sum_sq / (n as f64);
+        if mean_sq <= f64::EPSILON {
+            // Dead bin — report as zero-confidence rather than NaN so
+            // downstream thresholds just drop it.
+            coherence.push(0.0);
+        } else {
+            let coh = (mean.norm_sqr() / mean_sq).clamp(0.0, 1.0);
+            coherence.push(coh as f32);
+        }
+    }
+
+    Ok(coherence)
+}
+
+/// Deconvolve a single recorded log sweep by dividing the recording's
+/// spectrum by the emitted sweep's spectrum, producing a complex
+/// frequency response on the FFT grid `[0, Nyquist]`.
+///
+/// The inverse-filter approach is the standard log-sweep
+/// deconvolution:
+///
+/// ```text
+///    H(f) = Y(f) / X(f)
+/// ```
+///
+/// where Y is the recording and X is the emitted sweep. A small
+/// regularisation term ε is added to the denominator to keep out-
+/// of-band bins from blowing up — 60 dB below the sweep's peak is a
+/// safe default.
+///
+/// The returned spectrum has `recording.len().next_power_of_two() / 2 + 1`
+/// complex bins, indexed so bin k corresponds to frequency
+/// `k * sample_rate / fft_size`.
+///
+/// Callers that want multiple realisations pass each captured sweep
+/// through this function in turn and feed the collected `Vec<Vec<_>>`
+/// to [`compute_coherence_from_realizations`].
+pub fn deconvolve_sweep(
+    recording: &[f32],
+    reference: &[f32],
+    sample_rate: u32,
+) -> Result<Vec<Complex<f32>>, String> {
+    if recording.len() != reference.len() {
+        return Err(format!(
+            "deconvolve_sweep: recording len {} != reference len {}",
+            recording.len(),
+            reference.len()
+        ));
+    }
+    if recording.is_empty() {
+        return Err("deconvolve_sweep: empty input".to_string());
+    }
+    if sample_rate == 0 {
+        return Err("deconvolve_sweep: zero sample_rate".to_string());
+    }
+
+    let n = recording.len();
+    let fft_size = n.next_power_of_two();
+
+    let mut y: Vec<Complex<f32>> = recording.iter().map(|&s| Complex::new(s, 0.0)).collect();
+    y.resize(fft_size, Complex::new(0.0, 0.0));
+    let mut x: Vec<Complex<f32>> = reference.iter().map(|&s| Complex::new(s, 0.0)).collect();
+    x.resize(fft_size, Complex::new(0.0, 0.0));
+
+    let fft = plan_fft_forward(fft_size);
+    fft.process(&mut y);
+    fft.process(&mut x);
+
+    // Regularisation: 60 dB below the sweep's peak bin magnitude.
+    let x_peak = x
+        .iter()
+        .map(|c| c.norm())
+        .fold(0.0_f32, f32::max)
+        .max(1e-20);
+    let epsilon = x_peak * 1e-3; // 60 dB below peak
+    let eps_sq = epsilon * epsilon;
+
+    let spectrum_size = fft_size / 2 + 1;
+    let mut h = Vec::with_capacity(spectrum_size);
+    for k in 0..spectrum_size {
+        // H = Y / X with Tikhonov-style regularisation:
+        //   H = (Y · conj(X)) / (|X|² + ε²)
+        let yk = y[k];
+        let xk = x[k];
+        let num = yk * xk.conj();
+        let den = xk.norm_sqr() + eps_sq;
+        h.push(num / den);
+    }
+    Ok(h)
+}
+
+/// Estimate per-bin noise floor in dB from a silence window.
+///
+/// Takes the pre-silence samples captured before the sweep starts,
+/// windows the FFT the same way the sweep analysis does, and returns
+/// one dB value per positive-frequency bin (including DC and Nyquist,
+/// i.e. `fft_size / 2 + 1` values). Result is reference-to-full-scale
+/// (i.e., a silence bin at 0.001 linear amplitude maps to -60 dB).
+///
+/// The FFT size is taken as `silence.len().next_power_of_two()` so
+/// the bin grid matches [`deconvolve_sweep`] when the silence window
+/// is the same length as the sweep.
+///
+/// A Hann window is applied before the FFT to reduce spectral
+/// leakage that would otherwise push DC noise into every other bin
+/// and make bass SNR look healthier than it is.
+pub fn estimate_noise_floor_db_from_silence(silence: &[f32], _sample_rate: u32) -> Vec<f32> {
+    if silence.is_empty() {
+        return Vec::new();
+    }
+    let n = silence.len();
+    let fft_size = n.next_power_of_two();
+    let spectrum_size = fft_size / 2 + 1;
+
+    // Hann-window the silence before FFT.
+    let mut buf: Vec<Complex<f32>> = silence
+        .iter()
+        .enumerate()
+        .map(|(k, &s)| {
+            let w =
+                0.5 * (1.0 - (2.0 * std::f32::consts::PI * k as f32 / (n as f32 - 1.0)).cos());
+            Complex::new(s * w, 0.0)
+        })
+        .collect();
+    buf.resize(fft_size, Complex::new(0.0, 0.0));
+
+    let fft = plan_fft_forward(fft_size);
+    fft.process(&mut buf);
+
+    // Windowed amplitude normalisation for a real sinusoid on a bin
+    // centre. The FFT of `sin(2π·m·k/N)` has magnitude `N/2` at bin
+    // `m`, and Hann windowing multiplies that by its coherent gain
+    // of `0.5` — so the windowed peak is `N/4`. Multiply by `4/N` to
+    // recover the underlying sinusoid amplitude (and let
+    // `20·log10(mag)` match the tone's dBFS).
+    let norm = 4.0 / n as f32;
+
+    buf.into_iter()
+        .take(spectrum_size)
+        .map(|c| {
+            let mag = c.norm() * norm;
+            if mag > 1e-20 {
+                20.0 * mag.log10()
+            } else {
+                -400.0 // effectively "nothing"; avoids -inf leaking downstream
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod gd_1c_tests {
+    use super::*;
+    use std::f32::consts::PI;
+
+    #[test]
+    fn coherence_single_realization_is_unity() {
+        let h = vec![
+            Complex::new(1.0, 0.0),
+            Complex::new(0.5, 0.5),
+            Complex::new(0.0, 1.0),
+        ];
+        let coh = compute_coherence_from_realizations(&[h]).unwrap();
+        assert_eq!(coh.len(), 3);
+        for c in coh {
+            // A single realization is trivially "coherent with itself"
+            // — γ² = 1 by construction. Callers must enforce N ≥ 4
+            // at a higher level.
+            assert!((c - 1.0).abs() < 1e-6, "single-realization γ² should be 1, got {c}");
+        }
+    }
+
+    #[test]
+    fn coherence_identical_realizations_is_unity() {
+        let r = vec![
+            Complex::new(0.8, 0.2),
+            Complex::new(0.0, 1.0),
+            Complex::new(-0.5, 0.5),
+        ];
+        let realizations = vec![r.clone(), r.clone(), r.clone(), r];
+        let coh = compute_coherence_from_realizations(&realizations).unwrap();
+        for c in coh {
+            assert!((c - 1.0).abs() < 1e-6, "identical realizations → γ² = 1, got {c}");
+        }
+    }
+
+    #[test]
+    fn coherence_random_realizations_is_zero() {
+        // Four realizations whose phases cancel out on average:
+        // ±1 and ±i. The complex mean is 0, so γ² = 0.
+        let bins = 3;
+        let r0: Vec<Complex<f32>> = (0..bins).map(|_| Complex::new(1.0, 0.0)).collect();
+        let r1: Vec<Complex<f32>> = (0..bins).map(|_| Complex::new(-1.0, 0.0)).collect();
+        let r2: Vec<Complex<f32>> = (0..bins).map(|_| Complex::new(0.0, 1.0)).collect();
+        let r3: Vec<Complex<f32>> = (0..bins).map(|_| Complex::new(0.0, -1.0)).collect();
+        let coh = compute_coherence_from_realizations(&[r0, r1, r2, r3]).unwrap();
+        for c in coh {
+            assert!(c < 1e-6, "canceling-phase realizations → γ² ≈ 0, got {c}");
+        }
+    }
+
+    #[test]
+    fn coherence_rejects_mismatched_lengths() {
+        let r0 = vec![Complex::new(1.0_f32, 0.0); 3];
+        let r1 = vec![Complex::new(1.0_f32, 0.0); 4];
+        let err = compute_coherence_from_realizations(&[r0, r1]).unwrap_err();
+        assert!(err.contains("has 4 bins, expected 3"), "got: {err}");
+    }
+
+    #[test]
+    fn coherence_empty_input_errors() {
+        let err = compute_coherence_from_realizations(&[]).unwrap_err();
+        assert!(err.contains("empty"), "got: {err}");
+    }
+
+    #[test]
+    fn deconvolve_matches_unity_system() {
+        // If the recorded signal IS the emitted sweep, H should be
+        // approximately 1 across the passband.
+        let n: usize = 1024;
+        let sr = 48_000_u32;
+        let sweep: Vec<f32> = (0..n)
+            .map(|k| {
+                let t = k as f32 / sr as f32;
+                let f = 100.0 * (10.0_f32).powf(3.0 * t / (n as f32 / sr as f32));
+                (2.0 * PI * f * t).sin() * 0.5
+            })
+            .collect();
+        let recording = sweep.clone();
+        let h = deconvolve_sweep(&recording, &sweep, sr).unwrap();
+        assert_eq!(h.len(), n.next_power_of_two() / 2 + 1);
+        // Mid-band bins should be ≈ 1 (within the regularisation
+        // floor). Check bins 10..50 — avoids DC where the sweep has
+        // no energy and the Nyquist edge where the log sweep dies out.
+        let mid_slice = &h[10..50];
+        for (i, c) in mid_slice.iter().enumerate() {
+            let mag = c.norm();
+            assert!(
+                mag > 0.1 && mag < 10.0,
+                "bin {} magnitude {mag} out of expected range",
+                i + 10
+            );
+        }
+    }
+
+    #[test]
+    fn deconvolve_rejects_length_mismatch() {
+        let a = vec![0.0_f32; 10];
+        let b = vec![0.0_f32; 11];
+        let err = deconvolve_sweep(&a, &b, 48_000).unwrap_err();
+        assert!(err.contains("!="), "got: {err}");
+    }
+
+    #[test]
+    fn noise_floor_pure_silence_is_very_low() {
+        let silence = vec![0.0_f32; 4096];
+        let nf = estimate_noise_floor_db_from_silence(&silence, 48_000);
+        assert_eq!(nf.len(), 4096 / 2 + 1);
+        for (i, v) in nf.iter().enumerate() {
+            assert!(
+                *v < -200.0,
+                "pure silence bin {i} should report extremely low dB, got {v}",
+            );
+        }
+    }
+
+    #[test]
+    fn noise_floor_tone_peaks_at_exact_bin() {
+        // Pick a frequency that lands exactly on an FFT bin centre
+        // so there's no inter-bin leakage. Hann windowing still
+        // splits ~half the peak energy into the two adjacent bins by
+        // design; at the exact centre the main-lobe peak returns
+        // within ~1 dB of the target.
+        let sr = 48_000_u32;
+        let n: usize = 4096;
+        let target_bin = 100_usize;
+        let freq = (target_bin as f32 * sr as f32) / n as f32; // 1171.875 Hz
+        let amp_db = -40.0_f32;
+        let amp = 10.0_f32.powf(amp_db / 20.0);
+        let tone: Vec<f32> = (0..n)
+            .map(|k| amp * (2.0 * PI * freq * k as f32 / sr as f32).sin())
+            .collect();
+        let nf = estimate_noise_floor_db_from_silence(&tone, sr);
+        // Find the peak bin in a small bracket around the target.
+        let mut peak_db = f32::NEG_INFINITY;
+        let mut peak_bin = 0;
+        for (k, v) in nf.iter().enumerate().take(target_bin + 3).skip(target_bin - 2) {
+            if *v > peak_db {
+                peak_db = *v;
+                peak_bin = k;
+            }
+        }
+        assert_eq!(peak_bin, target_bin, "peak bin should be at the tone frequency");
+        assert!(
+            (peak_db - amp_db).abs() < 1.5,
+            "peak dB {peak_db} should be within ±1.5 dB of target {amp_db}"
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
