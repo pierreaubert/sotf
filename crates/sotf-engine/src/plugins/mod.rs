@@ -1217,6 +1217,8 @@ pub enum PluginSettings {
         #[serde(default = "default_mb_expander_detection_mode")]
         detection_mode: String,
         #[serde(default)]
+        lookahead_ms: f64,
+        #[serde(default)]
         bands: Vec<BandExpanderParams>,
     },
     LoudnessCompensation {
@@ -2569,6 +2571,7 @@ impl PluginSettings {
                 mix,
                 link_channels,
                 detection_mode,
+                lookahead_ms,
                 bands,
             } => PluginConfig::new(
                 "multiband_expander",
@@ -2591,6 +2594,7 @@ impl PluginSettings {
                     "mix": mix,
                     "link_channels": link_channels,
                     "detection_mode": detection_mode,
+                    "lookahead_ms": lookahead_ms,
                     "bands": bands,
                 }),
             ),
@@ -3294,6 +3298,7 @@ impl PluginSettings {
                     mix: p(me, "mix").default_f64(),
                     link_channels: p(me, "link_channels").default_bool(),
                     detection_mode: default_mb_expander_detection_mode(),
+                    lookahead_ms: p(me, "lookahead_ms").default_f64(),
                     bands: Vec::new(),
                 }
             }

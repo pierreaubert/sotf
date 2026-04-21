@@ -649,6 +649,7 @@ impl_param_accessors! {
             range_db: f64, knee_db: f64, hysteresis_db: f64, hold_ms: f64,
             mix: f64, link_channels: bool,
             detection_mode: [str detection_mode_to_index, index_to_detection_mode],
+            lookahead_ms: f64,
         ]
     },
     ChannelMuteSolo {
@@ -847,195 +848,22 @@ impl PluginSettings {
 
 #[cfg(test)]
 mod tests {
-    use sotf_plugins::param_specs;
+    use crate::plugins::{PluginSettings, PluginType};
 
     /// Validate that every plugin's LAYOUT indices are within bounds of its PARAMS.
     ///
+    /// Iterates all plugin types dynamically so new plugins are automatically covered.
     /// This prevents the class of bug where a layout built for one param set
     /// (e.g., multiband GLOBAL_PARAMS with crossover entries at 0-5) is accidentally
     /// paired with a different param set (e.g., single-band PARAMS starting at threshold=0).
     #[test]
     fn validate_all_plugin_layout_indices() {
-        let plugins: Vec<(
-            &str,
-            &[param_specs::ParamSpec],
-            Option<&sotf_plugins::plugin_layout::PluginLayout>,
-        )> = vec![
-            (
-                "gain",
-                param_specs::gain::PARAMS,
-                Some(&param_specs::gain::LAYOUT),
-            ),
-            (
-                "compressor",
-                param_specs::compressor::PARAMS,
-                Some(&param_specs::compressor::SINGLE_BAND_LAYOUT),
-            ),
-            (
-                "gate",
-                param_specs::gate::PARAMS,
-                Some(&param_specs::gate::LAYOUT),
-            ),
-            (
-                "expander",
-                param_specs::expander::PARAMS,
-                Some(&param_specs::expander::SINGLE_BAND_LAYOUT),
-            ),
-            (
-                "limiter",
-                param_specs::limiter::PARAMS,
-                Some(&param_specs::limiter::LAYOUT),
-            ),
-            (
-                "loudness_compensation",
-                param_specs::loudness_compensation::PARAMS,
-                Some(&param_specs::loudness_compensation::LAYOUT),
-            ),
-            (
-                "upmixer",
-                param_specs::upmixer::PARAMS,
-                Some(&param_specs::upmixer::LAYOUT),
-            ),
-            (
-                "convolution",
-                param_specs::convolution::PARAMS,
-                Some(&param_specs::convolution::LAYOUT),
-            ),
-            (
-                "binaural",
-                param_specs::binaural::PARAMS,
-                Some(&param_specs::binaural::LAYOUT),
-            ),
-            (
-                "xtc",
-                param_specs::xtc::PARAMS,
-                Some(&param_specs::xtc::LAYOUT),
-            ),
-            (
-                "denoiser",
-                param_specs::denoiser::PARAMS,
-                Some(&param_specs::denoiser::LAYOUT),
-            ),
-            (
-                "pnd",
-                param_specs::pnd::PARAMS,
-                Some(&param_specs::pnd::LAYOUT),
-            ),
-            (
-                "ab_compare",
-                param_specs::ab_compare::PARAMS,
-                Some(&param_specs::ab_compare::LAYOUT),
-            ),
-            (
-                "band_split",
-                param_specs::band_split::PARAMS,
-                Some(&param_specs::band_split::LAYOUT),
-            ),
-            (
-                "band_merge",
-                param_specs::band_merge::PARAMS,
-                Some(&param_specs::band_merge::LAYOUT),
-            ),
-            (
-                "downmix",
-                param_specs::downmix::PARAMS,
-                Some(&param_specs::downmix::LAYOUT),
-            ),
-            (
-                "mono_to_stereo",
-                param_specs::mono_to_stereo::PARAMS,
-                Some(&param_specs::mono_to_stereo::LAYOUT),
-            ),
-            (
-                "crossfeed",
-                param_specs::crossfeed::PARAMS,
-                Some(&param_specs::crossfeed::LAYOUT),
-            ),
-            (
-                "delay",
-                param_specs::delay::PARAMS,
-                Some(&param_specs::delay::LAYOUT),
-            ),
-            (
-                "aec",
-                param_specs::aec::PARAMS,
-                Some(&param_specs::aec::LAYOUT),
-            ),
-            (
-                "beamformer",
-                param_specs::beamformer::PARAMS,
-                Some(&param_specs::beamformer::LAYOUT),
-            ),
-            (
-                "ambisonics",
-                param_specs::ambisonics::PARAMS,
-                Some(&param_specs::ambisonics::LAYOUT),
-            ),
-            (
-                "multiband_compressor",
-                param_specs::multiband_compressor::GLOBAL_PARAMS,
-                Some(&param_specs::multiband_compressor::LAYOUT),
-            ),
-            (
-                "multiband_expander",
-                param_specs::multiband_expander::GLOBAL_PARAMS,
-                Some(&param_specs::multiband_expander::LAYOUT),
-            ),
-            (
-                "stereo_imager",
-                param_specs::stereo_imager::PARAMS,
-                Some(&param_specs::stereo_imager::LAYOUT),
-            ),
-            (
-                "de_esser",
-                param_specs::de_esser::PARAMS,
-                Some(&param_specs::de_esser::LAYOUT),
-            ),
-            (
-                "transient_shaper",
-                param_specs::transient_shaper::PARAMS,
-                Some(&param_specs::transient_shaper::LAYOUT),
-            ),
-            (
-                "saturation",
-                param_specs::saturation::PARAMS,
-                Some(&param_specs::saturation::LAYOUT),
-            ),
-            (
-                "dynamic_eq",
-                param_specs::dynamic_eq::PARAMS,
-                Some(&param_specs::dynamic_eq::LAYOUT),
-            ),
-            (
-                "spectral_compressor",
-                param_specs::spectral_compressor::PARAMS,
-                Some(&param_specs::spectral_compressor::LAYOUT),
-            ),
-            (
-                "linear_phase_eq",
-                param_specs::linear_phase_eq::PARAMS,
-                Some(&param_specs::linear_phase_eq::LAYOUT),
-            ),
-            (
-                "matrix",
-                param_specs::matrix::PARAMS,
-                Some(&param_specs::matrix::LAYOUT),
-            ),
-            (
-                "channel_mute_solo",
-                param_specs::channel_mute_solo::PARAMS,
-                Some(&param_specs::channel_mute_solo::LAYOUT),
-            ),
-            (
-                "dither",
-                param_specs::dither::PARAMS,
-                Some(&param_specs::dither::LAYOUT),
-            ),
-        ];
-
         let mut all_errors = Vec::new();
-        for (name, params, layout) in &plugins {
-            if let Some(layout) = layout {
+        for pt in PluginType::all() {
+            let name = pt.name();
+            let settings = PluginSettings::default_for(&pt);
+            let params = settings.param_specs();
+            if let Some(layout) = settings.layout() {
                 let errors = layout.validate(params.len(), name);
                 all_errors.extend(errors);
             }
@@ -1052,188 +880,16 @@ mod tests {
     /// Validate that every PARAMS index appears somewhere in the LAYOUT.
     /// Catches the bug where new params are added to PARAMS but not to LAYOUT,
     /// making them invisible in the UI view (while still showing in table view).
+    ///
+    /// Iterates all plugin types dynamically so new plugins are automatically covered.
     #[test]
     fn validate_all_params_have_layout_coverage() {
-        let plugins: Vec<(
-            &str,
-            &[param_specs::ParamSpec],
-            Option<&sotf_plugins::plugin_layout::PluginLayout>,
-        )> = vec![
-            (
-                "gain",
-                param_specs::gain::PARAMS,
-                Some(&param_specs::gain::LAYOUT),
-            ),
-            (
-                "compressor",
-                param_specs::compressor::PARAMS,
-                Some(&param_specs::compressor::SINGLE_BAND_LAYOUT),
-            ),
-            (
-                "gate",
-                param_specs::gate::PARAMS,
-                Some(&param_specs::gate::LAYOUT),
-            ),
-            (
-                "expander",
-                param_specs::expander::PARAMS,
-                Some(&param_specs::expander::SINGLE_BAND_LAYOUT),
-            ),
-            (
-                "limiter",
-                param_specs::limiter::PARAMS,
-                Some(&param_specs::limiter::LAYOUT),
-            ),
-            (
-                "loudness_compensation",
-                param_specs::loudness_compensation::PARAMS,
-                Some(&param_specs::loudness_compensation::LAYOUT),
-            ),
-            (
-                "upmixer",
-                param_specs::upmixer::PARAMS,
-                Some(&param_specs::upmixer::LAYOUT),
-            ),
-            (
-                "convolution",
-                param_specs::convolution::PARAMS,
-                Some(&param_specs::convolution::LAYOUT),
-            ),
-            (
-                "binaural",
-                param_specs::binaural::PARAMS,
-                Some(&param_specs::binaural::LAYOUT),
-            ),
-            (
-                "xtc",
-                param_specs::xtc::PARAMS,
-                Some(&param_specs::xtc::LAYOUT),
-            ),
-            (
-                "denoiser",
-                param_specs::denoiser::PARAMS,
-                Some(&param_specs::denoiser::LAYOUT),
-            ),
-            (
-                "pnd",
-                param_specs::pnd::PARAMS,
-                Some(&param_specs::pnd::LAYOUT),
-            ),
-            (
-                "ab_compare",
-                param_specs::ab_compare::PARAMS,
-                Some(&param_specs::ab_compare::LAYOUT),
-            ),
-            (
-                "band_split",
-                param_specs::band_split::PARAMS,
-                Some(&param_specs::band_split::LAYOUT),
-            ),
-            (
-                "band_merge",
-                param_specs::band_merge::PARAMS,
-                Some(&param_specs::band_merge::LAYOUT),
-            ),
-            (
-                "downmix",
-                param_specs::downmix::PARAMS,
-                Some(&param_specs::downmix::LAYOUT),
-            ),
-            (
-                "mono_to_stereo",
-                param_specs::mono_to_stereo::PARAMS,
-                Some(&param_specs::mono_to_stereo::LAYOUT),
-            ),
-            (
-                "crossfeed",
-                param_specs::crossfeed::PARAMS,
-                Some(&param_specs::crossfeed::LAYOUT),
-            ),
-            (
-                "delay",
-                param_specs::delay::PARAMS,
-                Some(&param_specs::delay::LAYOUT),
-            ),
-            (
-                "aec",
-                param_specs::aec::PARAMS,
-                Some(&param_specs::aec::LAYOUT),
-            ),
-            (
-                "beamformer",
-                param_specs::beamformer::PARAMS,
-                Some(&param_specs::beamformer::LAYOUT),
-            ),
-            (
-                "ambisonics",
-                param_specs::ambisonics::PARAMS,
-                Some(&param_specs::ambisonics::LAYOUT),
-            ),
-            (
-                "multiband_compressor",
-                param_specs::multiband_compressor::GLOBAL_PARAMS,
-                Some(&param_specs::multiband_compressor::LAYOUT),
-            ),
-            (
-                "multiband_expander",
-                param_specs::multiband_expander::GLOBAL_PARAMS,
-                Some(&param_specs::multiband_expander::LAYOUT),
-            ),
-            (
-                "stereo_imager",
-                param_specs::stereo_imager::PARAMS,
-                Some(&param_specs::stereo_imager::LAYOUT),
-            ),
-            (
-                "de_esser",
-                param_specs::de_esser::PARAMS,
-                Some(&param_specs::de_esser::LAYOUT),
-            ),
-            (
-                "transient_shaper",
-                param_specs::transient_shaper::PARAMS,
-                Some(&param_specs::transient_shaper::LAYOUT),
-            ),
-            (
-                "saturation",
-                param_specs::saturation::PARAMS,
-                Some(&param_specs::saturation::LAYOUT),
-            ),
-            (
-                "dynamic_eq",
-                param_specs::dynamic_eq::PARAMS,
-                Some(&param_specs::dynamic_eq::LAYOUT),
-            ),
-            (
-                "spectral_compressor",
-                param_specs::spectral_compressor::PARAMS,
-                Some(&param_specs::spectral_compressor::LAYOUT),
-            ),
-            (
-                "linear_phase_eq",
-                param_specs::linear_phase_eq::PARAMS,
-                Some(&param_specs::linear_phase_eq::LAYOUT),
-            ),
-            (
-                "matrix",
-                param_specs::matrix::PARAMS,
-                Some(&param_specs::matrix::LAYOUT),
-            ),
-            (
-                "channel_mute_solo",
-                param_specs::channel_mute_solo::PARAMS,
-                Some(&param_specs::channel_mute_solo::LAYOUT),
-            ),
-            (
-                "dither",
-                param_specs::dither::PARAMS,
-                Some(&param_specs::dither::LAYOUT),
-            ),
-        ];
-
         let mut all_errors = Vec::new();
-        for (name, params, layout) in &plugins {
-            if let Some(layout) = layout {
+        for pt in PluginType::all() {
+            let name = pt.name();
+            let settings = PluginSettings::default_for(&pt);
+            let params = settings.param_specs();
+            if let Some(layout) = settings.layout() {
                 let errors = layout.validate_coverage(params, name);
                 all_errors.extend(errors);
             }
@@ -1242,6 +898,93 @@ mod tests {
         if !all_errors.is_empty() {
             panic!(
                 "PARAMS entries missing from LAYOUT ({} total):\n  {}",
+                all_errors.len(),
+                all_errors.join("\n  ")
+            );
+        }
+    }
+
+    /// Validate that every non-structural PARAMS engine_key that `engine_param_at()`
+    /// can emit actually exists in the DSP plugin's parameter list.
+    ///
+    /// This catches the bug where a parameter is declared in PARAMS (so the UI
+    /// shows it and `engine_param_at()` can send it) but the DSP plugin never
+    /// registered it in `parameters()` / `set_parameter()`, causing silent drops.
+    #[test]
+    fn validate_engine_keys_exist_in_dsp_plugin() {
+        use sotf_plugins::param_specs::{ParamType, UpdateMode};
+
+        // Pre-existing gaps: single-band Compressor/Expander PARAMS include
+        // parameters that the multiband DSP plugin only handles per-band, not
+        // as global parameters. These are tracked and should be fixed separately.
+        let known_gaps: std::collections::HashSet<(&str, &str)> = [
+            ("Compressor", "makeup_gain"),
+            ("Compressor", "auto_makeup"),
+            ("Compressor", "sidechain_hpf_hz"),
+            ("Compressor", "sidechain_hpf_order"),
+            ("Compressor", "detection_mode"),
+            ("Compressor", "lookahead_ms"),
+            ("Compressor", "program_dependent_release"),
+            ("Compressor", "measured_auto_makeup"),
+            ("Compressor", "sidechain_external"),
+            ("Expander", "auto_makeup"),
+            ("Expander", "sidechain_hpf_hz"),
+            ("Expander", "measured_auto_makeup"),
+        ]
+        .into_iter()
+        .collect();
+
+        let mut all_errors = Vec::new();
+        for pt in PluginType::all() {
+            let name = pt.name();
+            let settings = PluginSettings::default_for(&pt);
+            let specs = settings.param_specs();
+
+            if specs.is_empty() {
+                continue;
+            }
+
+            // Create the DSP plugin via the factory
+            let config = settings.to_plugin_config(44100.0);
+            let plugin = match sotf_plugins::create_plugin(
+                &config.plugin_type,
+                &config.parameters,
+                2,
+                44100,
+            ) {
+                Ok(p) => p,
+                Err(e) => {
+                    all_errors.push(format!("{}: failed to create DSP plugin: {}", name, e));
+                    continue;
+                }
+            };
+
+            let dsp_params = plugin.parameters();
+            let dsp_keys: std::collections::HashSet<&str> =
+                dsp_params.iter().map(|p| p.id.0.as_str()).collect();
+
+            for (i, spec) in specs.iter().enumerate() {
+                if spec.update_mode == UpdateMode::Structural {
+                    continue;
+                }
+                if matches!(spec.param_type, ParamType::FilePath) {
+                    continue;
+                }
+                if known_gaps.contains(&(name, spec.engine_key)) {
+                    continue;
+                }
+                if !dsp_keys.contains(spec.engine_key) {
+                    all_errors.push(format!(
+                        "{} param {} ({}): engine_key '{}' not found in DSP plugin parameters",
+                        name, i, spec.name, spec.engine_key
+                    ));
+                }
+            }
+        }
+
+        if !all_errors.is_empty() {
+            panic!(
+                "Engine keys missing from DSP plugin ({} total):\n  {}",
                 all_errors.len(),
                 all_errors.join("\n  ")
             );
