@@ -600,6 +600,11 @@ pub fn setup_bounds(args: &crate::cli::Args) -> (Vec<f64>, Vec<f64>) {
             f_high
         };
 
+        // Ensure lower bound never exceeds upper bound (can happen when
+        // progressive adjustment pushes f_low past f_high with many filters
+        // in a narrow range).
+        let f_high_adjusted = f_high_adjusted.max(f_low_adjusted);
+
         // Add bounds based on model type
         match model {
             PeqModel::Pk
