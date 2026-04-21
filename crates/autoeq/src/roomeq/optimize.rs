@@ -2221,13 +2221,24 @@ fn try_run_gd_opt(
         ));
     }
 
-    // Configure and run
+    // Configure and run.
+    // AP frequency range is clamped to [20, 500] intersected with the band.
+    // If the range is degenerate (min >= max), disable AP filters.
+    let ap_min_freq = band.0.max(20.0);
+    let ap_max_freq = band.1.min(500.0);
+    let (ap_per_channel, ap_min_freq, ap_max_freq) = if ap_min_freq < ap_max_freq {
+        (2, ap_min_freq, ap_max_freq)
+    } else {
+        // AP range is empty — run delay-only
+        (0, 20.0, 300.0)
+    };
+
     let gd_config = GdOptConfig {
         sample_rate,
         max_delay_ms: 20.0,
-        ap_per_channel: 2,
-        ap_min_freq: band.0.max(20.0),
-        ap_max_freq: band.1.min(500.0),
+        ap_per_channel,
+        ap_min_freq,
+        ap_max_freq,
         optimize_polarity: config
             .optimizer
             .phase_alignment
