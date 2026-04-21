@@ -170,6 +170,7 @@ pub fn optimize_crossover(
             sample_rate,
             &config.algorithm,
             config.max_iter,
+            config.population,
             config.min_db,
             config.max_db,
             fixed_freqs.clone(),

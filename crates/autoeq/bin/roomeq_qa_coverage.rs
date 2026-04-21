@@ -39,7 +39,7 @@ use autoeq::roomeq::{
 const SAMPLE_RATE: f64 = 48000.0;
 const SEED: u64 = 42;
 
-const QA_MAXEVAL: usize = 500; // Fast mode for QA
+const QA_MAXEVAL: usize = 15000; // Fast mode for QA
 
 const FEM_DIR: &str = "data_tests/roomeq/generated/fem";
 const BEM_DIR: &str = "data_tests/roomeq/generated/bem";
@@ -429,8 +429,10 @@ fn load_config_for_test(tc: &TestCase) -> Result<(RoomConfig, PathBuf)> {
 fn apply_qa_overrides(config: &mut RoomConfig, maxeval: usize) {
     config.optimizer.algorithm = "cobyla".to_string();
     config.optimizer.max_iter = maxeval;
+    config.optimizer.population = 50;
     config.optimizer.refine = false;
     config.optimizer.seed = Some(SEED);
+    config.optimizer.num_filters = 3;
 
     // Ensure FIR config exists when processing mode requires it
     match config.optimizer.processing_mode {

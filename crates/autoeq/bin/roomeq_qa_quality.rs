@@ -50,7 +50,7 @@ const SEED: u64 = 42;
 
 /// DE maxeval for QA. LSHADE with tolerance=1e-3 converges in ~100-300 generations,
 /// so we don't need many evaluations. The tolerance does the early stopping.
-const QA_MAXEVAL: usize = 50_000;
+const QA_MAXEVAL: usize = 15_000;
 
 /// Base config directories
 const FEM_DIR: &str = "data_tests/roomeq/generated/fem";
@@ -93,6 +93,8 @@ fn apply_qa_overrides(config: &mut RoomConfig) {
     config.optimizer.algorithm = "autoeq:de".to_string();
     config.optimizer.strategy = "lshade".to_string();
     config.optimizer.max_iter = QA_MAXEVAL;
+    config.optimizer.population = 50;
+    config.optimizer.num_filters = 3;
     config.optimizer.tolerance = 1e-3;
     config.optimizer.atolerance = 1e-3;
     config.optimizer.refine = true;

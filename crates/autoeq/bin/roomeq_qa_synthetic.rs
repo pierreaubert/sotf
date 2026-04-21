@@ -37,7 +37,7 @@ use autoeq::{Curve, MeasurementSource};
 
 const SAMPLE_RATE: f64 = 48000.0;
 const SEED: u64 = 42;
-const QA_MAXEVAL: usize = 1000;
+const QA_MAXEVAL: usize = 15000;
 
 /// Global counter for unique temp dir names across threads
 static TEMP_DIR_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -433,10 +433,11 @@ fn build_config(degraded: &Curve, mode: ProcessingMode) -> RoomConfig {
 
     config.optimizer.algorithm = "autoeq:de".to_string();
     config.optimizer.max_iter = QA_MAXEVAL;
+    config.optimizer.population = 50;
     config.optimizer.refine = false;
     config.optimizer.seed = Some(SEED);
     config.optimizer.processing_mode = mode;
-    config.optimizer.num_filters = 5;
+    config.optimizer.num_filters = 3;
     config.optimizer.min_freq = 20.0;
     config.optimizer.max_freq = 20000.0;
 
@@ -661,6 +662,7 @@ fn build_multisub_config(sub_curves: &[Curve], allpass: bool) -> RoomConfig {
 
     config.optimizer.algorithm = "autoeq:de".to_string();
     config.optimizer.max_iter = QA_MAXEVAL;
+    config.optimizer.population = 50;
     config.optimizer.refine = false;
     config.optimizer.seed = Some(SEED);
     config.optimizer.processing_mode = ProcessingMode::LowLatency;
@@ -985,10 +987,11 @@ fn build_multichannel_config(
 
     config.optimizer.algorithm = "autoeq:de".to_string();
     config.optimizer.max_iter = QA_MAXEVAL;
+    config.optimizer.population = 50;
     config.optimizer.refine = false;
     config.optimizer.seed = Some(SEED);
     config.optimizer.processing_mode = ProcessingMode::LowLatency;
-    config.optimizer.num_filters = 5;
+    config.optimizer.num_filters = 3;
     config.optimizer.min_freq = 20.0;
     config.optimizer.max_freq = 20000.0;
 

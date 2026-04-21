@@ -77,6 +77,7 @@ pub fn optimize_multisub(
         sample_rate,
         &config.algorithm,
         config.max_iter,
+        config.population,
         config.min_db,
         config.max_db,
         config.seed,

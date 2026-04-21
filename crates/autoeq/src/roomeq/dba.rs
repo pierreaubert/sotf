@@ -88,6 +88,7 @@ pub fn optimize_dba(
     args.min_freq = config.min_freq;
     args.max_freq = config.max_freq;
     args.maxeval = config.max_iter;
+    args.population = config.population;
     args.algo = config.algorithm.clone();
     args.seed = config.seed;
     args.loss = crate::LossType::MultiSubFlat;

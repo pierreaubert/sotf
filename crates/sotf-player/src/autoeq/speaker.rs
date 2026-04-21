@@ -668,6 +668,7 @@ fn optimize_multidriver(
         sample_rate,
         algorithm,
         max_iter,
+        config.args.population,
         min_db,
         max_db,
         None, // Optional: initial crossover frequencies
@@ -747,6 +748,7 @@ fn optimize_multisub(
         sample_rate,
         algorithm,
         max_iter,
+        config.args.population,
         min_db,
         max_db,
         config.args.seed,
@@ -836,6 +838,7 @@ fn optimize_dba(
         sample_rate,
         algorithm,
         max_iter,
+        config.args.population,
         min_db,
         max_db,
         config.args.seed,

@@ -324,6 +324,7 @@ async fn run_multi_driver_optimization(args: &autoeq::cli::Args) -> Result<()> {
         args.sample_rate,
         &args.algo,
         args.maxeval,
+        args.population,
         args.min_db,
         args.max_db,
         None, // No fixed crossover frequencies - optimize them

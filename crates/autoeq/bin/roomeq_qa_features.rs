@@ -29,9 +29,9 @@ use autoeq::roomeq::{
 
 const SAMPLE_RATE: f64 = 48000.0;
 const SEED: u64 = 42;
-const QA_MAX_ITER: usize = 5000;
-const QA_POPULATION: usize = 150;
-const QA_NUM_FILTERS: usize = 7;
+const QA_MAX_ITER: usize = 15000;
+const QA_POPULATION: usize = 50;
+const QA_NUM_FILTERS: usize = 3;
 
 /// Step-over-step regression tolerance: 30%
 const STEP_REGRESSION_TOLERANCE: f64 = 1.30;
