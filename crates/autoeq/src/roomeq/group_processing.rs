@@ -127,10 +127,10 @@ pub(super) fn process_speaker_group(
     }
 
     // 5. Setup Crossover Optimization
-    let crossover_type = crossover::parse_crossover_type(&crossover_config.crossover_type)
-        .map_err(|e| AutoeqError::InvalidConfiguration {
-            message: e.to_string(),
-        })?;
+    let crossover_type: crate::loss::CrossoverType = crossover_config
+        .crossover_type
+        .parse()
+        .map_err(|e: String| AutoeqError::InvalidConfiguration { message: e })?;
 
     let fixed_freqs: Option<Vec<f64>> = if let Some(ref freqs) = crossover_config.frequencies {
         Some(freqs.clone())
@@ -231,7 +231,7 @@ pub(super) fn process_speaker_group(
         &delays,
         Some(&inversions),
         &crossover_freqs,
-        crossover::crossover_type_to_string(&crossover_type),
+        crossover_type.to_plugin_string(),
         &global_eq_filters,
         Some(&per_driver_filters), // Pass the per-driver EQ filters here!
         None,

@@ -3,6 +3,7 @@
 use autoeq::cli::{Args, PeqModel};
 use autoeq::param_utils::{self};
 use autoeq::x2peq::{peq2x, x2peq};
+use autoeq::OptimParams;
 use clap::Parser;
 
 #[test]
@@ -151,7 +152,7 @@ fn test_bounds_with_free_filters() {
     args.min_db = 1.0;
     args.max_db = 12.0;
 
-    let (lower_bounds, upper_bounds) = autoeq::workflow::setup_bounds(&args);
+    let (lower_bounds, upper_bounds) = autoeq::workflow::setup_bounds(&OptimParams::from(&args));
 
     // Should have 4 params per filter for Free model
     assert_eq!(lower_bounds.len(), 12);

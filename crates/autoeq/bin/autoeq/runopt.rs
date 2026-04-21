@@ -22,15 +22,16 @@ pub(super) fn perform_optimization_with_bounds(
     objective_data: &ObjectiveData,
     bounds: Option<(Vec<f64>, Vec<f64>)>,
 ) -> Result<OptimizationResult, Box<dyn Error>> {
+    let params = autoeq::OptimParams::from(args);
     let (lower_bounds, upper_bounds) =
-        bounds.unwrap_or_else(|| autoeq::workflow::setup_bounds(args));
+        bounds.unwrap_or_else(|| autoeq::workflow::setup_bounds(&params));
 
     // Generate initial guess based on loss type
     let mut x = if objective_data.loss_type == autoeq::LossType::DriversFlat {
         let n_drivers = objective_data.drivers_data.as_ref().unwrap().drivers.len();
         autoeq::workflow::drivers_initial_guess(&lower_bounds, &upper_bounds, n_drivers)
     } else {
-        autoeq::workflow::initial_guess(args, &lower_bounds, &upper_bounds)
+        autoeq::workflow::initial_guess(&params, &lower_bounds, &upper_bounds)
     };
 
     // Calculate pre-optimization objective value
@@ -44,7 +45,7 @@ pub(super) fn perform_optimization_with_bounds(
         &lower_bounds,
         &upper_bounds,
         objective_data.clone(),
-        args,
+        &params,
     );
 
     let mut converged: bool;
@@ -77,8 +78,8 @@ pub(super) fn perform_optimization_with_bounds(
             &lower_bounds,
             &upper_bounds,
             objective_data.clone(),
-            args,
-            Some(&args.local_algo),
+            &params,
+            Some(&params.local_algo),
         );
         match result {
             Ok((local_status, local_val)) => {

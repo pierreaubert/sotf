@@ -492,8 +492,9 @@ fn setup_objective_data(
     deviation_curve: &autoeq::Curve,
     spin_data: &Option<HashMap<String, autoeq::Curve>>,
 ) -> Result<(ObjectiveData, bool), autoeq::AutoeqError> {
+    let params = autoeq::OptimParams::from(args);
     autoeq::workflow::setup_objective_data(
-        args,
+        &params,
         input_curve,
         target_curve,
         deviation_curve,

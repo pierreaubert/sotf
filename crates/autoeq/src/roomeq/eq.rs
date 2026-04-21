@@ -3,10 +3,10 @@
 //! Provides per-channel PEQ optimization using autoeq's workflow.
 
 use crate::Curve;
-use crate::cli::{Args, PeqModel};
+use crate::cli::PeqModel;
 use crate::loss::LossType;
 use crate::workflow::setup_objective_data;
-use clap::{Parser, ValueEnum};
+use clap::ValueEnum;
 use log::debug;
 use math_audio_iir_fir::Biquad;
 use ndarray::Array1;
@@ -56,7 +56,7 @@ pub fn optimize_channel_eq_with_callback(
 /// Contains all pre-processed data that is independent of filter count.
 struct PreparedSingleChannelEq {
     objective_data: crate::optim::ObjectiveData,
-    args_template: Args,
+    args_template: crate::OptimParams,
     peq_model: PeqModel,
     sample_rate: f64,
     /// Schroeder frequency in Hz above which the room stops being
@@ -576,9 +576,8 @@ fn prepare_single_channel_eq(
             crate::read::normalize_and_interpolate_response(&normalized_curve.freq, &target)
         }
         Some(TargetCurveConfig::Predefined(name)) => {
-            let dummy_args = Args::parse_from(["autoeq", "--curve-name", name]);
-            match crate::workflow::build_target_curve(
-                &dummy_args,
+            match crate::workflow::build_target_curve_by_name(
+                name,
                 &normalized_curve.freq,
                 &normalized_curve,
             ) {
@@ -616,8 +615,8 @@ fn prepare_single_channel_eq(
         _ => return Err(format!("Unknown loss type: {}", config.loss_type).into()),
     };
 
-    // Build Args template (num_filters and maxeval will be overridden per pass)
-    let args_template = build_args(
+    // Build OptimParams template (num_filters and maxeval will be overridden per pass)
+    let args_template = build_optim_params(
         config,
         effective_min_freq,
         effective_max_freq,
@@ -715,11 +714,11 @@ fn run_optimization_pass(
     config: &OptimizerConfig,
     callback: Option<crate::optim::OptimProgressCallback>,
 ) -> Result<(Vec<Biquad>, f64, Vec<f64>), Box<dyn Error>> {
-    let mut args = prep.args_template.clone();
-    args.num_filters = num_filters;
-    args.maxeval = max_iter;
+    let mut optim_params = prep.args_template.clone();
+    optim_params.num_filters = num_filters;
+    optim_params.maxeval = max_iter;
 
-    let (lower_bounds, mut upper_bounds) = crate::workflow::setup_bounds(&args);
+    let (lower_bounds, mut upper_bounds) = crate::workflow::setup_bounds(&optim_params);
 
     // Log per-filter frequency bounds for diagnostics
     {
@@ -748,10 +747,10 @@ fn run_optimization_pass(
     // to 0 dB (cuts only). Skipped when decomposed-correction is
     // disabled (no trustworthy Schroeder value available).
     if let Some(sf) = prep.schroeder_hz {
-        crate::workflow::restrict_boost_above_schroeder(&mut upper_bounds, &args, sf);
+        crate::workflow::restrict_boost_above_schroeder(&mut upper_bounds, &optim_params, sf);
     }
 
-    let mut x = crate::workflow::initial_guess(&args, &lower_bounds, &upper_bounds);
+    let mut x = crate::workflow::initial_guess(&optim_params, &lower_bounds, &upper_bounds);
 
     // Global optimization
     let opt_result = if let Some(cb) = callback {
@@ -760,7 +759,7 @@ fn run_optimization_pass(
             &lower_bounds,
             &upper_bounds,
             prep.objective_data.clone(),
-            &args,
+            &optim_params,
             cb,
         )
     } else {
@@ -769,7 +768,7 @@ fn run_optimization_pass(
             &lower_bounds,
             &upper_bounds,
             prep.objective_data.clone(),
-            &args,
+            &optim_params,
         )
     };
 
@@ -799,8 +798,8 @@ fn run_optimization_pass(
             &lower_bounds,
             &upper_bounds,
             prep.objective_data.clone(),
-            &args,
-            Some(&config.local_algo),
+            &optim_params,
+            Some(&optim_params.local_algo),
         );
         let local_loss = match local_result {
             Ok((_msg, loss)) => loss,
@@ -1159,9 +1158,8 @@ fn optimize_channel_eq_multi_inner(
                 crate::read::normalize_and_interpolate_response(&normalized_curve.freq, &target)
             }
             Some(TargetCurveConfig::Predefined(name)) => {
-                let dummy_args = Args::parse_from(["autoeq", "--curve-name", name]);
-                match crate::workflow::build_target_curve(
-                    &dummy_args,
+                match crate::workflow::build_target_curve_by_name(
+                    name,
                     &normalized_curve.freq,
                     &normalized_curve,
                 ) {
@@ -1191,15 +1189,16 @@ fn optimize_channel_eq_multi_inner(
             ..Default::default()
         };
 
+        let optim_params_multi = build_optim_params(
+            config,
+            effective_min_freq,
+            effective_max_freq,
+            sample_rate,
+            loss_type,
+            peq_model,
+        );
         let (mut objective_data, _use_cea) = crate::workflow::setup_objective_data(
-            &build_args(
-                config,
-                effective_min_freq,
-                effective_max_freq,
-                sample_rate,
-                loss_type,
-                peq_model,
-            ),
+            &optim_params_multi,
             &normalized_curve,
             &target_curve,
             &deviation_curve,
@@ -1243,7 +1242,7 @@ fn optimize_channel_eq_multi_inner(
     let mut primary = primary_objective.unwrap();
     primary.multi_objective = Some(multi_data);
 
-    let args = build_args(
+    let optim_params = build_optim_params(
         config,
         effective_min_freq,
         effective_max_freq,
@@ -1253,8 +1252,8 @@ fn optimize_channel_eq_multi_inner(
     );
 
     // Setup bounds and initial guess
-    let (lower_bounds, upper_bounds) = crate::workflow::setup_bounds(&args);
-    let mut x = crate::workflow::initial_guess(&args, &lower_bounds, &upper_bounds);
+    let (lower_bounds, upper_bounds) = crate::workflow::setup_bounds(&optim_params);
+    let mut x = crate::workflow::initial_guess(&optim_params, &lower_bounds, &upper_bounds);
 
     // Clone objective data for potential local refinement
     let primary_for_refine = if config.refine {
@@ -1270,11 +1269,11 @@ fn optimize_channel_eq_multi_inner(
             &lower_bounds,
             &upper_bounds,
             primary,
-            &args,
+            &optim_params,
             cb,
         )
     } else {
-        crate::optim::optimize_filters(&mut x, &lower_bounds, &upper_bounds, primary, &args)
+        crate::optim::optimize_filters(&mut x, &lower_bounds, &upper_bounds, primary, &optim_params)
     };
 
     let (_converged_msg, global_loss) = match opt_result {
@@ -1300,8 +1299,8 @@ fn optimize_channel_eq_multi_inner(
             &lower_bounds,
             &upper_bounds,
             refine_data,
-            &args,
-            Some(&config.local_algo),
+            &optim_params,
+            Some(&optim_params.local_algo),
         );
         match local_result {
             Ok((_msg, loss)) => {
@@ -1322,7 +1321,7 @@ fn optimize_channel_eq_multi_inner(
         global_loss
     };
 
-    let peq = crate::x2peq::x2peq(&x, sample_rate, args.peq_model);
+    let peq = crate::x2peq::x2peq(&x, sample_rate, optim_params.peq_model);
     let filters: Vec<Biquad> = peq
         .into_iter()
         .map(|(_weight, biquad)| biquad)
@@ -1339,62 +1338,22 @@ fn optimize_channel_eq_multi_inner(
     Ok((filters, final_loss))
 }
 
-/// Helper to build Args from OptimizerConfig for optimization
-fn build_args(
+/// Helper to build OptimParams from OptimizerConfig for optimization
+fn build_optim_params(
     config: &OptimizerConfig,
     effective_min_freq: f64,
     effective_max_freq: f64,
     sample_rate: f64,
     loss_type: LossType,
     peq_model: PeqModel,
-) -> Args {
-    Args {
-        num_filters: config.num_filters,
-        curve: None,
-        target: None,
-        speaker: None,
-        version: None,
-        measurement: None,
-        curve_name: "On Axis".to_string(),
-        sample_rate,
-        min_freq: effective_min_freq,
-        max_freq: effective_max_freq,
-        min_q: config.min_q,
-        max_q: config.max_q,
-        min_db: config.min_db,
-        max_db: config.max_db,
-        algo: config.algorithm.clone(),
-        strategy: config.strategy.clone(),
-        algo_list: false,
-        strategy_list: false,
-        peq_model,
-        peq_model_list: false,
-        population: config.population,
-        maxeval: config.max_iter,
-        refine: config.refine,
-        local_algo: config.local_algo.clone(),
-        min_spacing_oct: 0.2,
-        spacing_weight: 20.0,
-        smooth: true,
-        smooth_n: config.smooth_n,
-        loss: loss_type,
-        tolerance: config.tolerance,
-        atolerance: config.atolerance,
-        recombination: 0.9,
-        adaptive_weight_f: 0.9,
-        adaptive_weight_cr: 0.9,
-        no_parallel: false,
-        output: None,
-        driver1: None,
-        driver2: None,
-        driver3: None,
-        driver4: None,
-        crossover_type: "linkwitzriley4".to_string(),
-        parallel_threads: num_cpus::get(),
-        seed: config.seed,
-        qa: None,
-        preset: None,
-    }
+) -> crate::OptimParams {
+    let mut params = crate::OptimParams::from(config);
+    params.min_freq = effective_min_freq;
+    params.max_freq = effective_max_freq;
+    params.sample_rate = sample_rate;
+    params.loss = loss_type;
+    params.peq_model = peq_model;
+    params
 }
 
 /// Spatial robustness optimization.
@@ -1524,9 +1483,8 @@ fn optimize_spatial_robustness(
             crate::read::normalize_and_interpolate_response(&normalized_curve.freq, &target)
         }
         Some(TargetCurveConfig::Predefined(name)) => {
-            let dummy_args = Args::parse_from(["autoeq", "--curve-name", name]);
-            match crate::workflow::build_target_curve(
-                &dummy_args,
+            match crate::workflow::build_target_curve_by_name(
+                name,
                 &normalized_curve.freq,
                 &normalized_curve,
             ) {
@@ -1561,7 +1519,7 @@ fn optimize_spatial_robustness(
         ..Default::default()
     };
 
-    let args = build_args(
+    let optim_params = build_optim_params(
         config,
         effective_min_freq,
         effective_max_freq,
@@ -1572,7 +1530,7 @@ fn optimize_spatial_robustness(
 
     // Setup objective data with the masked deviation
     let (mut objective_data, _use_cea) = setup_objective_data(
-        &args,
+        &optim_params,
         &normalized_curve,
         &target_curve,
         &deviation_curve,
@@ -1584,8 +1542,8 @@ fn optimize_spatial_robustness(
     // weights when loss_type == LossType::Epa.
     objective_data.epa_config = config.epa_config.clone();
 
-    let (lower_bounds, upper_bounds) = crate::workflow::setup_bounds(&args);
-    let mut x = crate::workflow::initial_guess(&args, &lower_bounds, &upper_bounds);
+    let (lower_bounds, upper_bounds) = crate::workflow::setup_bounds(&optim_params);
+    let mut x = crate::workflow::initial_guess(&optim_params, &lower_bounds, &upper_bounds);
 
     let opt_result = if let Some(cb) = callback {
         crate::optim::optimize_filters_with_callback(
@@ -1593,11 +1551,11 @@ fn optimize_spatial_robustness(
             &lower_bounds,
             &upper_bounds,
             objective_data,
-            &args,
+            &optim_params,
             cb,
         )
     } else {
-        crate::optim::optimize_filters(&mut x, &lower_bounds, &upper_bounds, objective_data, &args)
+        crate::optim::optimize_filters(&mut x, &lower_bounds, &upper_bounds, objective_data, &optim_params)
     };
 
     let (_converged_msg, final_loss) = match opt_result {
@@ -1611,7 +1569,7 @@ fn optimize_spatial_robustness(
         }
     };
 
-    let peq = crate::x2peq::x2peq(&x, sample_rate, args.peq_model);
+    let peq = crate::x2peq::x2peq(&x, sample_rate, optim_params.peq_model);
     let filters: Vec<Biquad> = peq
         .into_iter()
         .map(|(_weight, biquad)| biquad)

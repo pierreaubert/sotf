@@ -13,20 +13,6 @@ use crate::loss::{CrossoverType, DriverMeasurement, DriversLossData};
 use log::warn;
 use std::error::Error;
 
-/// Parse crossover type from string.
-///
-/// Delegates to [`CrossoverType::from_str`]. Kept for backward compatibility.
-pub fn parse_crossover_type(type_str: &str) -> Result<CrossoverType, Box<dyn Error>> {
-    type_str.parse::<CrossoverType>().map_err(|e| e.into())
-}
-
-/// Convert CrossoverType enum to plugin string format.
-///
-/// Delegates to [`CrossoverType::to_plugin_string`]. Kept for backward compatibility.
-pub fn crossover_type_to_string(ct: &CrossoverType) -> &'static str {
-    ct.to_plugin_string()
-}
-
 use super::types::OptimizerConfig;
 
 /// Optimize crossover for a group of driver measurements using autoeq's workflow
@@ -277,21 +263,21 @@ mod tests {
     #[test]
     fn test_parse_crossover_type() {
         assert!(matches!(
-            parse_crossover_type("lr24"),
+            "lr24".parse::<CrossoverType>(),
             Ok(CrossoverType::LinkwitzRiley4)
         ));
         assert!(matches!(
-            parse_crossover_type("LR4"),
+            "LR4".parse::<CrossoverType>(),
             Ok(CrossoverType::LinkwitzRiley4)
         ));
         assert!(matches!(
-            parse_crossover_type("butterworth2"),
+            "butterworth2".parse::<CrossoverType>(),
             Ok(CrossoverType::Butterworth2)
         ));
         assert!(matches!(
-            parse_crossover_type("lr48"),
+            "lr48".parse::<CrossoverType>(),
             Ok(CrossoverType::LinkwitzRiley8)
         ));
-        assert!(parse_crossover_type("invalid").is_err());
+        assert!("invalid".parse::<CrossoverType>().is_err());
     }
 }

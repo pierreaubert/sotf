@@ -1,6 +1,7 @@
 //! Test metaheuristics callback support
 
 use autoeq::LossType;
+use autoeq::OptimParams;
 use autoeq::cli::{Args, PeqModel};
 use autoeq::de::CallbackAction;
 use autoeq::optim_mh::{MHIntermediate, create_mh_callback, optimize_filters_mh_with_callback};
@@ -64,8 +65,8 @@ fn test_mh_callback_is_invoked() {
     args.population = 20; // Small population
 
     let objective_data = create_test_objective_data();
-    let (lower_bounds, upper_bounds) = setup_bounds(&args);
-    let mut x = initial_guess(&args, &lower_bounds, &upper_bounds);
+    let (lower_bounds, upper_bounds) = setup_bounds(&OptimParams::from(&args));
+    let mut x = initial_guess(&OptimParams::from(&args), &lower_bounds, &upper_bounds);
 
     // Track callback invocations
     let callback_count = Arc::new(Mutex::new(0));
@@ -122,8 +123,8 @@ fn test_mh_callback_receives_progress_data() {
     args.population = 15;
 
     let objective_data = create_test_objective_data();
-    let (lower_bounds, upper_bounds) = setup_bounds(&args);
-    let mut x = initial_guess(&args, &lower_bounds, &upper_bounds);
+    let (lower_bounds, upper_bounds) = setup_bounds(&OptimParams::from(&args));
+    let mut x = initial_guess(&OptimParams::from(&args), &lower_bounds, &upper_bounds);
 
     // Track best fitness seen in callback
     let best_fitness = Arc::new(Mutex::new(f64::INFINITY));

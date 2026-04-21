@@ -21,17 +21,31 @@ use super::loss::{
     DriversLossData, HeadphoneLossData, LossType, SpeakerLossData, drivers_flat_loss, flat_loss,
     flat_loss_asymmetric, headphone_loss, speaker_score_loss,
 };
-use super::optim_de::{optimize_filters_autoeq, optimize_filters_autoeq_with_callback};
-use super::optim_mh::{optimize_filters_mh, optimize_filters_mh_with_callback};
+use self::de::{optimize_filters_autoeq, optimize_filters_autoeq_with_callback};
+use self::mh::{optimize_filters_mh, optimize_filters_mh_with_callback};
 #[cfg(feature = "nlopt")]
-use super::optim_nlopt::optimize_filters_nlopt;
+use self::nlopt::optimize_filters_nlopt;
 use super::x2peq::x2spl;
 use crate::Curve;
 use ndarray::Array1;
 #[cfg(feature = "nlopt")]
-use nlopt::Algorithm;
+use ::nlopt::Algorithm;
 
+/// Shared callback utilities for optimization
+pub mod callback;
+/// AutoEQ DE-specific optimization code
+pub mod de;
+/// Metaheuristics-specific optimization code
+pub mod mh;
+/// NLOPT-specific optimization code
+#[cfg(feature = "nlopt")]
+pub mod nlopt;
+/// Shared optimization parameters (decoupled from CLI args)
+pub mod params;
+/// Pareto front analysis
 pub mod pareto;
+/// Shared optimization setup (bounds, initial guess, objective data)
+pub mod setup;
 
 /// Algorithm metadata structure
 #[derive(Debug, Clone)]
@@ -1029,14 +1043,14 @@ pub fn optimize_filters(
     lower_bounds: &[f64],
     upper_bounds: &[f64],
     objective_data: ObjectiveData,
-    cli_args: &crate::cli::Args,
+    params: &crate::OptimParams,
 ) -> Result<(String, f64), (String, f64)> {
     optimize_filters_with_algo_override(
         x,
         lower_bounds,
         upper_bounds,
         objective_data,
-        cli_args,
+        params,
         None,
     )
 }
@@ -1058,13 +1072,13 @@ pub fn optimize_filters_with_algo_override(
     lower_bounds: &[f64],
     upper_bounds: &[f64],
     objective_data: ObjectiveData,
-    cli_args: &crate::cli::Args,
+    params: &crate::OptimParams,
     algo_override: Option<&str>,
 ) -> Result<(String, f64), (String, f64)> {
-    // Extract parameters from args
-    let algo = algo_override.unwrap_or(&cli_args.algo);
-    let population = cli_args.population;
-    let maxeval = cli_args.maxeval;
+    // Extract parameters from params
+    let algo = algo_override.unwrap_or(&params.algo);
+    let population = params.population;
+    let maxeval = params.maxeval;
 
     // Parse algorithm and dispatch to appropriate function
     match parse_algorithm_name(algo) {
@@ -1093,7 +1107,7 @@ pub fn optimize_filters_with_algo_override(
             upper_bounds,
             objective_data,
             &autoeq_name,
-            cli_args,
+            params,
         ),
         None => Err((format!("Unknown algorithm: {}", algo), f64::INFINITY)),
     }
@@ -1117,12 +1131,12 @@ pub fn optimize_filters_with_callback(
     lower_bounds: &[f64],
     upper_bounds: &[f64],
     objective_data: ObjectiveData,
-    cli_args: &crate::cli::Args,
+    params: &crate::OptimParams,
     mut callback: OptimProgressCallback,
 ) -> Result<(String, f64), (String, f64)> {
-    let algo = &cli_args.algo;
-    let population = cli_args.population;
-    let maxeval = cli_args.maxeval;
+    let algo = &params.algo;
+    let population = params.population;
+    let maxeval = params.maxeval;
 
     match parse_algorithm_name(algo) {
         #[cfg(feature = "nlopt")]
@@ -1209,7 +1223,7 @@ pub fn optimize_filters_with_callback(
                 upper_bounds,
                 objective_data,
                 &autoeq_name,
-                cli_args,
+                params,
                 de_cb,
             )
         }

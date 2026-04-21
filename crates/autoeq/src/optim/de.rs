@@ -3,13 +3,13 @@
 use ndarray::Array1;
 use std::sync::Arc;
 
-use super::constraints::{
+use crate::constraints::{
     CeilingConstraintData, MinGainConstraintData, SpacingConstraintData, constraint_ceiling,
     constraint_min_gain, constraint_spacing,
 };
-use super::initial_guess::{SmartInitConfig, create_smart_initial_guesses};
-use super::optim::{ObjectiveData, PenaltyMode, compute_fitness_penalties_ref};
-use super::optim_callback::{ProgressTracker, format_param_summary};
+use crate::initial_guess::{SmartInitConfig, create_smart_initial_guesses};
+use super::{ObjectiveData, PenaltyMode, compute_fitness_penalties_ref};
+use super::callback::{ProgressTracker, format_param_summary};
 use crate::de::init_sobol::init_sobol;
 use crate::de::{
     CallbackAction, DEConfig, DEConfigBuilder, DEIntermediate, DEReport, Init, Mutation,
@@ -296,10 +296,10 @@ pub fn optimize_filters_autoeq(
     upper_bounds: &[f64],
     objective_data: ObjectiveData,
     autoeq_name: &str,
-    cli_args: &crate::cli::Args,
+    params: &crate::OptimParams,
 ) -> Result<(String, f64), (String, f64)> {
     // Create the callback with all the logging and user feedback
-    let callback = create_de_callback("autoeq::DE", cli_args.qa.is_some());
+    let callback = create_de_callback("autoeq::DE", params.quiet);
 
     // Delegate to the callback-based version
     optimize_filters_autoeq_with_callback(
@@ -308,7 +308,7 @@ pub fn optimize_filters_autoeq(
         upper_bounds,
         objective_data,
         autoeq_name,
-        cli_args,
+        params,
         callback,
     )
 }
@@ -320,12 +320,12 @@ pub fn optimize_filters_autoeq_with_callback(
     upper_bounds: &[f64],
     objective_data: ObjectiveData,
     _autoeq_name: &str,
-    cli_args: &crate::cli::Args,
+    params: &crate::OptimParams,
     mut callback: Box<dyn FnMut(&DEIntermediate) -> CallbackAction + Send>,
 ) -> Result<(String, f64), (String, f64)> {
     // Extract parameters from args
-    let population = cli_args.population;
-    let maxeval = cli_args.maxeval;
+    let population = params.population;
+    let maxeval = params.maxeval;
 
     // Reuse same setup as standard AutoEQ DE
     let setup = setup_de_common(
@@ -334,7 +334,7 @@ pub fn optimize_filters_autoeq_with_callback(
         objective_data.clone(),
         population,
         maxeval,
-        cli_args.qa.is_some(),
+        params.quiet,
     );
     let base_objective_fn = create_de_objective(setup.penalty_data.clone());
 
@@ -347,7 +347,7 @@ pub fn optimize_filters_autoeq_with_callback(
         Vec::new()
     } else {
         let params_per_filter =
-            crate::param_utils::params_per_filter(cli_args.effective_peq_model());
+            crate::param_utils::params_per_filter(params.peq_model);
         let num_filters = x.len() / params_per_filter;
         // If the caller (typically roomeq's `prepare_single_channel_eq`)
         // already detected high-quality room-mode problems via SSIR /
@@ -356,14 +356,14 @@ pub fn optimize_filters_autoeq_with_callback(
         // find_peaks over the smoothed deviation. Empty list → fall
         // back to the legacy auto-detection.
         let pre_detected_problems = setup.penalty_data.detected_problems.clone();
-        if !pre_detected_problems.is_empty() && cli_args.qa.is_none() {
+        if !pre_detected_problems.is_empty() && !params.quiet {
             log::debug!(
                 "🎯 Seeding smart initial guesses with {} pre-detected problem(s) from upstream analysis",
                 pre_detected_problems.len()
             );
         }
         let smart_config = SmartInitConfig {
-            seed: cli_args.seed, // Pass seed for deterministic initialization
+            seed: params.seed, // Pass seed for deterministic initialization
             pre_detected_problems,
             ..SmartInitConfig::default()
         };
@@ -373,7 +373,7 @@ pub fn optimize_filters_autoeq_with_callback(
         let target_response = &setup.penalty_data.deviation;
         let freq_grid = &setup.penalty_data.freqs;
 
-        if cli_args.qa.is_none() {
+        if !params.quiet {
             log::debug!(
                 "🧠 Generating smart initial guesses based on frequency response analysis..."
             );
@@ -384,10 +384,10 @@ pub fn optimize_filters_autoeq_with_callback(
             num_filters,
             &setup.bounds,
             &smart_config,
-            cli_args.effective_peq_model(),
+            params.peq_model,
         );
 
-        if cli_args.qa.is_none() {
+        if !params.quiet {
             log::debug!("📊 Generated {} smart initial guesses", guesses.len());
         }
         guesses
@@ -400,7 +400,7 @@ pub fn optimize_filters_autoeq_with_callback(
         &setup.bounds,
     );
 
-    if cli_args.qa.is_none() {
+    if !params.quiet {
         log::debug!(
             "🎯 Generated {} Sobol quasi-random samples",
             sobol_samples.len()
@@ -419,17 +419,17 @@ pub fn optimize_filters_autoeq_with_callback(
         Array1::from(x.to_vec())
     };
 
-    if cli_args.qa.is_none() {
+    if !params.quiet {
         log::debug!("🚀 Using smart initial guess with Sobol population initialization");
     }
 
     // Parse strategy from CLI args
     use std::str::FromStr;
-    let strategy = Strategy::from_str(&cli_args.strategy).unwrap_or_else(|_| {
-        if cli_args.qa.is_none() {
+    let strategy = Strategy::from_str(&params.strategy).unwrap_or_else(|_| {
+        if !params.quiet {
             log::debug!(
                 "⚠️ Warning: Invalid strategy '{}', falling back to CurrentToBest1Bin",
-                cli_args.strategy
+                params.strategy
             );
         }
         Strategy::CurrentToBest1Bin
@@ -442,8 +442,8 @@ pub fn optimize_filters_autoeq_with_callback(
             wls_enabled: false,                      // Disable WLS for stability
             w_max: 0.8,                              // Reduce max weight for more stability
             w_min: 0.2,                              // Increase min weight for more stability
-            w_f: cli_args.adaptive_weight_f * 0.5,   // Make adaptation even more conservative
-            w_cr: cli_args.adaptive_weight_cr * 0.5, // Make adaptation even more conservative
+            w_f: params.adaptive_weight_f * 0.5,   // Make adaptation even more conservative
+            w_cr: params.adaptive_weight_cr * 0.5, // Make adaptation even more conservative
             f_m: 0.6,                                // Start with slightly higher F
             cr_m: 0.5,                               // Start with slightly lower CR
             wls_prob: 0.0,                           // Completely disable WLS
@@ -457,9 +457,9 @@ pub fn optimize_filters_autoeq_with_callback(
     let (tolerance, atolerance) =
         if matches!(strategy, Strategy::AdaptiveBin | Strategy::AdaptiveExp) {
             // Use much more relaxed tolerances for adaptive strategies - they converge differently
-            (cli_args.tolerance * 10.0, cli_args.atolerance * 10.0)
+            (params.tolerance * 10.0, params.atolerance * 10.0)
         } else {
-            (cli_args.tolerance, cli_args.atolerance)
+            (params.tolerance, params.atolerance)
         };
 
     // Use constraint helpers for nonlinear constraints
@@ -470,16 +470,16 @@ pub fn optimize_filters_autoeq_with_callback(
         .atol(atolerance)
         .strategy(strategy)
         .mutation(Mutation::Range { min: 0.4, max: 1.2 })
-        .recombination(cli_args.recombination)
+        .recombination(params.recombination)
         .init(Init::LatinHypercube) // Use Latin Hypercube sampling for population
         .x0(best_initial_guess) // Use smart guess as initial best individual
         .disp(false)
         .callback(Box::new(move |intermediate| callback(intermediate)));
 
     // Add seed if provided for deterministic results
-    if let Some(seed_value) = cli_args.seed {
+    if let Some(seed_value) = params.seed {
         config_builder = config_builder.seed(seed_value);
-        if cli_args.qa.is_none() {
+        if !params.quiet {
             log::debug!("🎲 Using deterministic seed: {}", seed_value);
         }
     }
@@ -491,22 +491,22 @@ pub fn optimize_filters_autoeq_with_callback(
 
     // Configure parallel evaluation
     let parallel_config = ParallelConfig {
-        enabled: !cli_args.no_parallel,
-        num_threads: if cli_args.parallel_threads == 0 {
+        enabled: !params.no_parallel,
+        num_threads: if params.parallel_threads == 0 {
             None // Use all available cores
         } else {
-            Some(cli_args.parallel_threads)
+            Some(params.parallel_threads)
         },
     };
     config_builder = config_builder.parallel(parallel_config);
 
-    if !cli_args.no_parallel && cli_args.qa.is_none() {
+    if !params.no_parallel && !params.quiet {
         log::debug!(
             "🚄 Parallel evaluation enabled with {} threads",
-            if cli_args.parallel_threads.eq(&0) {
+            if params.parallel_threads.eq(&0) {
                 "all available".to_string()
             } else {
-                cli_args.parallel_threads.to_string()
+                params.parallel_threads.to_string()
             }
         );
     }

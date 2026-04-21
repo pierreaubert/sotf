@@ -82,7 +82,7 @@ pub fn optimize_dba(
 
     // We'll reuse the workflow helpers but supply custom bounds.
 
-    // Create Args
+    // Build Args to derive OptimParams (DBA needs custom bounds, not OptimizerConfig defaults)
     let mut args = crate::cli::Args::parse_from(["autoeq"]); // defaults
     args.sample_rate = sample_rate;
     args.min_freq = config.min_freq;
@@ -93,8 +93,9 @@ pub fn optimize_dba(
     args.seed = config.seed;
     args.loss = crate::LossType::MultiSubFlat;
 
+    let optim_params = crate::OptimParams::from(&args);
     let objective_data =
-        crate::workflow::setup_multisub_objective_data(&args, drivers_data.clone());
+        crate::workflow::setup_multisub_objective_data(&optim_params, drivers_data.clone());
 
     // Custom bounds: [Gain1, Gain2, Delay1, Delay2]
     // Index 0: Front Gain -> 0 (Locked)
@@ -116,7 +117,7 @@ pub fn optimize_dba(
 
     // Optimize
     let opt_result =
-        crate::optim::optimize_filters(&mut x, &lower_bounds, &upper_bounds, objective_data, &args);
+        crate::optim::optimize_filters(&mut x, &lower_bounds, &upper_bounds, objective_data, &optim_params);
 
     let converged = opt_result.is_ok();
 

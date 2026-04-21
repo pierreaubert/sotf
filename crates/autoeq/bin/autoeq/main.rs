@@ -96,8 +96,9 @@ async fn run(args: autoeq::cli::Args) -> Result<()> {
             .context("Failed to load and prepare input data")?;
 
     // Objective data
+    let optim_params = autoeq::OptimParams::from(&args);
     let (objective_data, use_cea) = autoeq::workflow::setup_objective_data(
-        &args,
+        &optim_params,
         &input_curve,
         &target_curve,
         &deviation_curve,
@@ -417,7 +418,7 @@ mod tests {
         args.max_db = 12.0;
         args.peq_model = PeqModel::HpPk;
 
-        let (lb, ub) = autoeq::workflow::setup_bounds(&args);
+        let (lb, ub) = autoeq::workflow::setup_bounds(&autoeq::OptimParams::from(&args));
         assert_eq!(lb.len(), args.num_filters * 3);
         assert_eq!(ub.len(), args.num_filters * 3);
 

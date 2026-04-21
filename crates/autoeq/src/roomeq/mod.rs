@@ -130,7 +130,6 @@ mod ir_waveform;
 pub(crate) mod phase_utils;
 pub mod synthetic;
 mod time_align;
-mod weighted_loss;
 
 // GD-Opt v2 Phase GD-1g — bass phase confidence gate. See
 // `docs/gd_opt_v2_plan.md` §3.5.

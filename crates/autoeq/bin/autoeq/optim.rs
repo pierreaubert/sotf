@@ -14,8 +14,9 @@ pub(super) fn perform_optimization(
     args: &autoeq::cli::Args,
     objective_data: &ObjectiveData,
 ) -> Result<OptimizationResult, Box<dyn Error>> {
-    let (lower_bounds, upper_bounds) = autoeq::workflow::setup_bounds(args);
-    let mut x = autoeq::workflow::initial_guess(args, &lower_bounds, &upper_bounds);
+    let params = autoeq::OptimParams::from(args);
+    let (lower_bounds, upper_bounds) = autoeq::workflow::setup_bounds(&params);
+    let mut x = autoeq::workflow::initial_guess(&params, &lower_bounds, &upper_bounds);
 
     // Calculate pre-optimization objective value
     let pre_objective = Some(autoeq::optim::compute_fitness_penalties_ref(&x, &objective_data));
@@ -25,7 +26,7 @@ pub(super) fn perform_optimization(
         &lower_bounds,
         &upper_bounds,
         objective_data.clone(),
-        args,
+        &params,
     );
 
     let mut converged: bool;
@@ -58,8 +59,8 @@ eprintln!("   - Final Mean Squared Error: {:.6}", final_value);
             &lower_bounds,
             &upper_bounds,
             objective_data.clone(),
-            args,
-            Some(&args.local_algo),
+            &params,
+            Some(&params.local_algo),
         );
         match result {
             Ok((local_status, local_val)) => {

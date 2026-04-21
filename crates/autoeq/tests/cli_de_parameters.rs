@@ -4,6 +4,7 @@
 //! the behavior of the differential evolution algorithm.
 
 use autoeq::LossType;
+use autoeq::OptimParams;
 use autoeq::cli::{Args, PeqModel};
 use autoeq::de::Strategy;
 use autoeq::optim::optimize_filters;
@@ -89,27 +90,29 @@ fn test_tolerance_parameter_affects_optimization() {
     args_low_tol.population = 20;
 
     let objective_data = create_test_objective_data();
-    let (lower_bounds, upper_bounds) = setup_bounds(&args_high_tol);
+    let (lower_bounds, upper_bounds) = setup_bounds(&OptimParams::from(&args_high_tol));
 
     // Test that both configurations can create valid DE configs
-    let mut x1 = initial_guess(&args_high_tol, &lower_bounds, &upper_bounds);
-    let mut x2 = initial_guess(&args_low_tol, &lower_bounds, &upper_bounds);
+    let mut x1 = initial_guess(&OptimParams::from(&args_high_tol), &lower_bounds, &upper_bounds);
+    let mut x2 = initial_guess(&OptimParams::from(&args_low_tol), &lower_bounds, &upper_bounds);
 
     // The optimization should handle different tolerance values without crashing
+    let params_high_tol = OptimParams::from(&args_high_tol);
     let result1 = optimize_filters(
         &mut x1,
         &lower_bounds,
         &upper_bounds,
         objective_data.clone(),
-        &args_high_tol,
+        &params_high_tol,
     );
 
+    let params_low_tol = OptimParams::from(&args_low_tol);
     let result2 = optimize_filters(
         &mut x2,
         &lower_bounds,
         &upper_bounds,
         objective_data,
-        &args_low_tol,
+        &params_low_tol,
     );
 
     // Both optimizations should succeed
@@ -156,10 +159,11 @@ fn test_strategy_parameter_affects_optimization() {
 
         // Test that optimization works with this strategy
         let objective_data = create_test_objective_data();
-        let (lower_bounds, upper_bounds) = setup_bounds(&args);
-        let mut x = initial_guess(&args, &lower_bounds, &upper_bounds);
+        let (lower_bounds, upper_bounds) = setup_bounds(&OptimParams::from(&args));
+        let mut x = initial_guess(&OptimParams::from(&args), &lower_bounds, &upper_bounds);
 
-        let result = optimize_filters(&mut x, &lower_bounds, &upper_bounds, objective_data, &args);
+        let params = OptimParams::from(&args);
+        let result = optimize_filters(&mut x, &lower_bounds, &upper_bounds, objective_data, &params);
 
         assert!(
             result.is_ok(),
@@ -191,10 +195,11 @@ fn test_recombination_parameter_affects_optimization() {
         assert_eq!(args.recombination, *recomb);
 
         let objective_data = create_test_objective_data();
-        let (lower_bounds, upper_bounds) = setup_bounds(&args);
-        let mut x = initial_guess(&args, &lower_bounds, &upper_bounds);
+        let (lower_bounds, upper_bounds) = setup_bounds(&OptimParams::from(&args));
+        let mut x = initial_guess(&OptimParams::from(&args), &lower_bounds, &upper_bounds);
 
-        let result = optimize_filters(&mut x, &lower_bounds, &upper_bounds, objective_data, &args);
+        let params = OptimParams::from(&args);
+        let result = optimize_filters(&mut x, &lower_bounds, &upper_bounds, objective_data, &params);
 
         assert!(
             result.is_ok(),
@@ -229,10 +234,11 @@ fn test_adaptive_strategy_with_weights() {
     assert_eq!(args.adaptive_weight_cr, 0.7);
 
     let objective_data = create_test_objective_data();
-    let (lower_bounds, upper_bounds) = setup_bounds(&args);
-    let mut x = initial_guess(&args, &lower_bounds, &upper_bounds);
+    let (lower_bounds, upper_bounds) = setup_bounds(&OptimParams::from(&args));
+    let mut x = initial_guess(&OptimParams::from(&args), &lower_bounds, &upper_bounds);
 
-    let result = optimize_filters(&mut x, &lower_bounds, &upper_bounds, objective_data, &args);
+    let params = OptimParams::from(&args);
+    let result = optimize_filters(&mut x, &lower_bounds, &upper_bounds, objective_data, &params);
 
     assert!(
         result.is_ok(),

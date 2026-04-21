@@ -5,6 +5,7 @@
 
 use autoeq::cli::{Args, PeqModel};
 use autoeq::workflow::setup_bounds;
+use autoeq::OptimParams;
 use clap::Parser;
 
 /// Helper to create test args with specific PEQ model
@@ -25,7 +26,7 @@ fn create_test_args(model: PeqModel, num_filters: usize) -> Args {
 fn test_pk_model_bounds() {
     // All filters should be peak filters with normal bounds
     let args = create_test_args(PeqModel::Pk, 3);
-    let (lower, upper) = setup_bounds(&args);
+    let (lower, upper) = setup_bounds(&OptimParams::from(&args));
 
     // Check that all filters have gain bounds
     for i in 0..3 {
@@ -52,7 +53,7 @@ fn test_pk_model_bounds() {
 fn test_hp_pk_model_bounds() {
     // First filter should be highpass (zero gain), rest peak
     let args = create_test_args(PeqModel::HpPk, 3);
-    let (lower, upper) = setup_bounds(&args);
+    let (lower, upper) = setup_bounds(&OptimParams::from(&args));
 
     // First filter (highpass)
     assert_eq!(lower[2], 0.0, "First filter (HP) lower gain should be 0");
@@ -83,7 +84,7 @@ fn test_hp_pk_model_bounds() {
 fn test_hp_pk_lp_model_bounds() {
     // First filter highpass, last lowpass, middle peak
     let args = create_test_args(PeqModel::HpPkLp, 4);
-    let (lower, upper) = setup_bounds(&args);
+    let (lower, upper) = setup_bounds(&OptimParams::from(&args));
 
     // First filter (highpass)
     assert_eq!(lower[2], 0.0, "First filter (HP) lower gain should be 0");
@@ -130,7 +131,7 @@ fn test_hp_pk_lp_model_bounds() {
 fn test_hp_pk_lp_model_with_insufficient_filters() {
     // With only 1 filter, hp-pk-lp should degrade gracefully
     let args = create_test_args(PeqModel::HpPkLp, 1);
-    let (lower, upper) = setup_bounds(&args);
+    let (lower, upper) = setup_bounds(&OptimParams::from(&args));
 
     // Should still apply HP constraints to the single filter
     assert_eq!(lower[2], 0.0, "Single filter (HP) lower gain should be 0");
@@ -141,7 +142,7 @@ fn test_hp_pk_lp_model_with_insufficient_filters() {
 fn test_frequency_bounds_progression() {
     // Test that frequency bounds progress correctly (no backward movement)
     let args = create_test_args(PeqModel::Pk, 5);
-    let (lower, _upper) = setup_bounds(&args);
+    let (lower, _upper) = setup_bounds(&OptimParams::from(&args));
 
     for i in 1..5 {
         let prev_lower = lower[(i - 1) * 3];
@@ -159,7 +160,7 @@ fn test_q_bounds_consistency() {
     // Test that Q bounds are consistent across all models
     for model in PeqModel::all() {
         let args = create_test_args(model, 3);
-        let (lower, upper) = setup_bounds(&args);
+        let (lower, upper) = setup_bounds(&OptimParams::from(&args));
 
         for i in 0..3 {
             // Calculate Q index based on model (3 vs 4 parameters per filter)
@@ -222,7 +223,7 @@ fn test_gain_bounds_for_special_filters() {
 
     for (model, num_filters, zero_gain_indices) in test_cases {
         let args = create_test_args(model, num_filters);
-        let (lower, upper) = setup_bounds(&args);
+        let (lower, upper) = setup_bounds(&OptimParams::from(&args));
 
         for i in 0..num_filters {
             // Calculate gain index based on model (3 vs 4 parameters per filter)

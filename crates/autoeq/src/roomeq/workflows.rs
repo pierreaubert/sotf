@@ -856,11 +856,10 @@ pub fn optimize_stereo_2_1(
     // [VirtualMain, Sub]
 
     // We need to parse crossover type for the optimizer
-    let crossover_type_enum = crossover::parse_crossover_type(xover_type_str).map_err(|e| {
-        AutoeqError::InvalidConfiguration {
-            message: e.to_string(),
-        }
-    })?;
+    let crossover_type_enum: crate::loss::CrossoverType =
+        xover_type_str.parse().map_err(|e: String| {
+            AutoeqError::InvalidConfiguration { message: e }
+        })?;
 
     // Determine fixed freqs vs range for optimizer
     let (fixed_freqs, range_opt) = if xover_config.frequency.is_some() {
@@ -1654,11 +1653,10 @@ fn optimize_home_cinema_with_sub(
     // 4. Crossover optimization between Virtual Main and LFE
     let sub_curve = &aligned_pre_eq_curves[sub_role];
 
-    let crossover_type_enum = crossover::parse_crossover_type(xover_type_str).map_err(|e| {
-        AutoeqError::InvalidConfiguration {
-            message: e.to_string(),
-        }
-    })?;
+    let crossover_type_enum: crate::loss::CrossoverType =
+        xover_type_str.parse().map_err(|e: String| {
+            AutoeqError::InvalidConfiguration { message: e }
+        })?;
 
     let (fixed_freqs, range_opt) = if xover_config.frequency.is_some() {
         (Some(vec![est_xo]), None)

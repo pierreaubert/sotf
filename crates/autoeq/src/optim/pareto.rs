@@ -37,19 +37,20 @@ pub fn pareto_optimization(
 
         // Run optimization
         // We need to initialize x (params), lower_bounds, upper_bounds
-        let (lower_bounds, upper_bounds) = crate::workflow::setup_bounds(&args_with_filters);
+        let params_with_filters = crate::OptimParams::from(&args_with_filters);
+        let (lower_bounds, upper_bounds) = crate::workflow::setup_bounds(&params_with_filters);
         // Initialize x with random/initial values or let optimizer handle it
         // The optimizer expects x to be initialized.
         // We can use setup_initial_guess from workflow
         let mut x =
-            crate::workflow::initial_guess(&args_with_filters, &lower_bounds, &upper_bounds);
+            crate::workflow::initial_guess(&params_with_filters, &lower_bounds, &upper_bounds);
 
         let result = crate::optim::optimize_filters(
             &mut x, // Will be filled by optimizer
             &lower_bounds,
             &upper_bounds,
             objective_data.clone(),
-            &args_with_filters,
+            &params_with_filters,
         );
 
         match result {

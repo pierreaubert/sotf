@@ -48,17 +48,8 @@ pub mod fir;
 pub mod initial_guess;
 /// Loss functions for optimization
 pub mod loss;
-/// Optimization algorithms and objective functions
+/// Optimization algorithms, objective functions, and shared setup
 pub mod optim;
-/// Shared callback utilities for optimization
-pub mod optim_callback;
-/// AutoEQ DE-specific optimization code
-pub mod optim_de;
-/// Metaheuristics-specific optimization code
-pub mod optim_mh;
-/// NLOPT-specific optimization code
-#[cfg(feature = "nlopt")]
-pub mod optim_nlopt;
 /// Parameter vector utilities for different PEQ models
 pub mod param_utils;
 /// Plotting and visualization functions
@@ -67,8 +58,6 @@ pub mod plot;
 pub mod read;
 /// Frequency response utilities
 pub mod response;
-/// Signal processing utilities
-pub mod signal;
 /// Shared workflow steps used by binaries
 pub mod workflow;
 /// Mapping
@@ -77,10 +66,19 @@ pub mod x2peq;
 /// Room EQ multi-channel optimization
 pub mod roomeq;
 
+// Backward-compatible re-exports for moved modules
+pub use optim::callback as optim_callback;
+pub use optim::de as optim_de;
+pub use optim::mh as optim_mh;
+#[cfg(feature = "nlopt")]
+pub use optim::nlopt as optim_nlopt;
+pub use optim::params as optim_params;
+
 // Re-export commonly used items
 pub use cli::*;
 pub use loss::{CrossoverType, HeadphoneLossData, LossType, SpeakerLossData};
 pub use optim::*;
+pub use optim::params::OptimParams;
 pub use plot::*;
 pub use read::*;
 pub use workflow::*;
