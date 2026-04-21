@@ -236,6 +236,17 @@ pub const GLOBAL_PARAMS: &[ParamSpec] = multiband_global_params![
     )
     .setup()
     .doc("Peak or RMS level detection"),
+    ParamSpec::float(
+        "Lookahead",
+        "lookahead_ms",
+        0.0,
+        0.0,
+        20.0,
+        0.5,
+        "ms",
+        "Timing",
+    )
+    .doc("Pre-delay for transient catching"),
 ];
 
 // ============================================================================
@@ -290,7 +301,8 @@ pub const BAND_TEMPLATE: &[ParamSpec] = &[
 
 /// Multiband Expander: GLOBAL_PARAMS idx 0=bands, 1=preset, 2-5=crossovers,
 /// 6=threshold, 7=ratio, 8=attack, 9=release, 10=range, 11=knee,
-/// 12=hysteresis, 13=hold, 14=mix, 15=link_channels
+/// 12=hysteresis, 13=hold, 14=mix, 15=link_channels, 16=detection_mode,
+/// 17=lookahead_ms
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[
         ControlSpec::selector(0),  // num_bands
@@ -324,6 +336,7 @@ pub const LAYOUT: PluginLayout = PluginLayout {
                 ControlSpec::slider(9),  // release
                 ControlSpec::slider(13), // hold
                 ControlSpec::slider(12), // hysteresis
+                ControlSpec::knob(17),   // lookahead_ms
             ],
         },
     ],

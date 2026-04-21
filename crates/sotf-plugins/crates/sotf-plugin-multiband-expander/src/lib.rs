@@ -10,6 +10,7 @@ use math_audio_dsp::stft::{RealFftProcessor, generate_hann_window};
 use realfft::RealFftPlanner;
 use rustfft::num_complex::Complex;
 use serde::{Deserialize, Serialize};
+use sotf_host::LookaheadBuffer;
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_makeup::MeasuredMakeup;
 use sotf_host::detector::{DetectionMode, LevelDetector};
@@ -95,6 +96,8 @@ pub struct MultibandExpanderPluginParams {
     pub mix: f32,
     #[serde(default = "default_detection_mode")]
     pub detection_mode: String,
+    #[serde(default)]
+    pub lookahead_ms: f32,
     pub bands: Vec<BandExpanderParams>,
     /// Processing mode: "time_domain" (default) or "spectral"
     #[serde(default = "default_processing_mode")]
@@ -440,6 +443,8 @@ impl SpectralState {
     }
 }
 
+const MAX_LOOKAHEAD_MS: f32 = 20.0;
+
 pub struct MultibandExpanderPlugin {
     channels: usize,
     sample_rate: u32,
@@ -457,6 +462,9 @@ pub struct MultibandExpanderPlugin {
     link_channels: bool,
     mix: f32,
     detection_mode: String,
+    lookahead_ms: f32,
+    /// Per-band, per-channel lookahead delay buffers.
+    lookahead_buffers: Vec<Vec<LookaheadBuffer>>,
     /// Processing mode: "time_domain" or "spectral"
     processing_mode: String,
     band_params: Vec<BandExpanderParams>,
@@ -572,6 +580,14 @@ impl MultibandExpanderPlugin {
             link_channels: params.link_channels,
             mix: params.mix,
             detection_mode: det_mode_str.to_string(),
+            lookahead_ms: params.lookahead_ms.clamp(0.0, MAX_LOOKAHEAD_MS),
+            lookahead_buffers: (0..nb)
+                .map(|_| {
+                    (0..channels)
+                        .map(|_| LookaheadBuffer::from_ms(MAX_LOOKAHEAD_MS, sr, 1))
+                        .collect()
+                })
+                .collect(),
             processing_mode: mode_str.to_string(),
             band_params,
             crossover_points: Vec::new(),
@@ -593,6 +609,7 @@ impl MultibandExpanderPlugin {
         };
         p.build_crossovers();
         p.update_coefficients();
+        p.update_lookahead_delay();
         p.rebuild_cached_parameters();
         p
     }
@@ -622,6 +639,7 @@ impl MultibandExpanderPlugin {
                 let idx = if self.detection_mode == "rms" { 1 } else { 0 };
                 Some(idx as f64)
             }
+            17 => Some(self.lookahead_ms as f64),                     // lookahead_ms
             _ => None,
         }
     }
@@ -654,6 +672,7 @@ impl MultibandExpanderPlugin {
                     "peak".to_string()
                 };
             }
+            17 => self.lookahead_ms = (value as f32).clamp(0.0, MAX_LOOKAHEAD_MS), // lookahead_ms
             _ => {}
         }
     }
@@ -830,6 +849,14 @@ impl MultibandExpanderPlugin {
                 self.release_ms,
                 self.sample_rate,
             );
+        }
+    }
+
+    fn update_lookahead_delay(&mut self) {
+        for band_bufs in &mut self.lookahead_buffers {
+            for buf in band_bufs {
+                buf.set_delay_ms(self.lookahead_ms, self.sample_rate);
+            }
         }
     }
 
@@ -1243,6 +1270,20 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                             release_coeff: 0.0,
                         });
                     }
+                    while self.lookahead_buffers.len() < nb {
+                        self.lookahead_buffers.push(
+                            (0..self.channels)
+                                .map(|_| {
+                                    LookaheadBuffer::from_ms(
+                                        MAX_LOOKAHEAD_MS,
+                                        self.sample_rate,
+                                        1,
+                                    )
+                                })
+                                .collect(),
+                        );
+                    }
+                    self.update_lookahead_delay();
                     while self.measured_makeups.len() < nb {
                         self.measured_makeups
                             .push(MeasuredMakeup::new(1000.0, self.sample_rate));
@@ -1311,6 +1352,10 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                             det.set_mode(det_mode);
                         }
                     }
+                }
+                17 => {
+                    // lookahead_ms changed
+                    self.update_lookahead_delay();
                 }
                 _ => {}
             }
@@ -1515,6 +1560,15 @@ impl InPlacePlugin for MultibandExpanderPlugin {
             }
         }
 
+        // Resize lookahead buffers for new sample rate
+        let max_la_samples = (MAX_LOOKAHEAD_MS * 0.001 * sr as f32).round() as usize;
+        for band_bufs in &mut self.lookahead_buffers {
+            for buf in band_bufs {
+                buf.resize(max_la_samples, 1);
+            }
+        }
+        self.update_lookahead_delay();
+
         // Pre-allocate buffers for real-time safety
         let max_frames = 4096; // Standard max block size
         let stride = max_frames * self.channels;
@@ -1555,6 +1609,11 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                 det.reset();
             }
         }
+        for band_bufs in &mut self.lookahead_buffers {
+            for buf in band_bufs {
+                buf.reset();
+            }
+        }
         self.band_buffers.fill(0.0);
         self.dry_buffer.fill(0.0);
 
@@ -1566,6 +1625,8 @@ impl InPlacePlugin for MultibandExpanderPlugin {
     fn latency_samples(&self) -> usize {
         if let Some(ss) = &self.spectral {
             ss.fft_size
+        } else if self.lookahead_ms > 0.0 {
+            (self.lookahead_ms * 0.001 * self.sample_rate as f32).round() as usize
         } else {
             0
         }
@@ -1627,6 +1688,8 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                 break;
             }
         }
+
+        let use_lookahead = self.lookahead_ms > 0.0;
 
         // 3. Dynamic Processing per Band
         for b in 0..self.num_bands {
@@ -1773,7 +1836,12 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                     } else {
                         auto_makeup_gain
                     };
-                    self.band_buffers[idx] *= gain_linear * makeup;
+                    let sample = if use_lookahead {
+                        self.lookahead_buffers[b][ch].push(self.band_buffers[idx])
+                    } else {
+                        self.band_buffers[idx]
+                    };
+                    self.band_buffers[idx] = sample * gain_linear * makeup;
                 }
             }
             self.band_levels_db[b] = 20.0 * fast_log10(band_max_abs.max(1e-10));
