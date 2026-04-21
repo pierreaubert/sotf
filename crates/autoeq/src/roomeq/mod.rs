@@ -121,6 +121,10 @@ pub use reflection_cancel::{
 // Group delay optimisation v2 (LowLatency IIR path)
 pub mod gd_opt;
 
+// Bass-phase confidence gate for GD-Opt v2 (§3.5)
+pub mod bass_phase_confidence;
+pub use bass_phase_confidence::{BassPhaseConfidence, bass_phase_confidence};
+
 // Utility modules
 mod ir_waveform;
 pub(crate) mod phase_utils;
