@@ -1320,4 +1320,294 @@ mod tests {
             km_result.improvement_db
         );
     }
+
+    // ─── QA integration tests (GD-5) ─────────────────────────────────────────
+
+    /// Create a channel with pure linear-phase delay plus the phase contribution
+    /// of an allpass biquad. Magnitude stays flat (0 dB).
+    fn make_delayed_channel_with_allpass(
+        freq_grid: &Array1<f64>,
+        delay_ms: f64,
+        ap_freq: f64,
+        ap_q: f64,
+        sample_rate: f64,
+        coherence: f64,
+    ) -> ChannelMeasurementInput {
+        let n = freq_grid.len();
+        let spl = Array1::zeros(n); // 0 dB flat
+        let delay_s = delay_ms * 1e-3;
+
+        let ap = Biquad::new(BiquadFilterType::AllPass, ap_freq, sample_rate, ap_q, 0.0);
+
+        // Phase = linear delay phase + allpass phase
+        let phase = freq_grid.mapv(|f| {
+            let linear_phase = -2.0 * PI * f * delay_s;
+            let ap_phase = ap.complex_response(f).arg();
+            linear_phase + ap_phase
+        });
+
+        let coherence = Array1::from_elem(n, coherence);
+
+        ChannelMeasurementInput {
+            freq: freq_grid.clone(),
+            spl,
+            phase,
+            coherence,
+        }
+    }
+
+    #[test]
+    fn test_qa_three_channel_lrsub_delay_recovery() {
+        // Synthetic L/R/Sub with known delays: L=1ms, R=3ms, Sub=8ms.
+        // The optimiser must align all three pairwise by adding correction
+        // delays. After alignment, every pairwise effective-delay difference
+        // should be < 0.15 ms.
+        let freq = log_freq_grid(20.0, 5000.0, 500);
+
+        let ch_l = make_delayed_channel(&freq, 1.0, 0.98);
+        let ch_r = make_delayed_channel(&freq, 3.0, 0.98);
+        let ch_sub = make_delayed_channel(&freq, 8.0, 0.98);
+
+        let channels = vec![ch_l, ch_r, ch_sub];
+        let band = (20.0, 5000.0);
+
+        let config = GdOptConfig {
+            sample_rate: 48000.0,
+            max_delay_ms: 15.0,
+            ap_per_channel: 0,
+            optimize_polarity: false,
+            max_iter: 5000,
+            popsize: 30,
+            tol: 1e-12,
+            seed: Some(42),
+            ..Default::default()
+        };
+
+        let result = optimize_group_delay(&channels, band, &config).unwrap();
+
+        // Known measurement delays for each channel
+        let meas_delays = [1.0_f64, 3.0, 8.0];
+        let opt_delays: Vec<f64> = result.per_channel.iter().map(|ch| ch.delay_ms).collect();
+
+        // All pairwise effective delay differences must be < 0.15 ms
+        for i in 0..3 {
+            for j in (i + 1)..3 {
+                let eff_i = meas_delays[i] + opt_delays[i];
+                let eff_j = meas_delays[j] + opt_delays[j];
+                let diff = (eff_i - eff_j).abs();
+                assert!(
+                    diff < 0.15,
+                    "Pairwise effective delay difference (ch{i} vs ch{j}) = {diff:.3} ms \
+                     (expected < 0.15 ms). opt_delays = {opt_delays:?}",
+                );
+            }
+        }
+
+        // Overall improvement must be >= 6 dB
+        assert!(
+            result.improvement_db >= 6.0,
+            "Improvement too low: {:.1} dB (expected >= 6 dB). \
+             pre_rms={:.3} ms, post_rms={:.3} ms",
+            result.improvement_db,
+            result.sum_gd_pre_rms_ms,
+            result.sum_gd_post_rms_ms,
+        );
+    }
+
+    #[test]
+    fn test_qa_two_channel_with_allpass_distortion() {
+        // Channel 0: pure 2 ms delay (reference).
+        // Channel 1: pure 2 ms delay plus an allpass GD bump at 60 Hz Q=2.
+        // The optimiser should use AP filters to cancel the GD distortion and
+        // achieve >= 6 dB improvement with ap_per_channel=2.
+        let freq = log_freq_grid(20.0, 300.0, 400);
+        let sample_rate = 48000.0;
+
+        let ch0 = make_delayed_channel(&freq, 2.0, 0.98);
+        let ch1 = make_delayed_channel_with_allpass(&freq, 2.0, 60.0, 2.0, sample_rate, 0.98);
+
+        let channels = vec![ch0, ch1];
+        let band = (20.0, 300.0);
+
+        let config = GdOptConfig {
+            sample_rate,
+            max_delay_ms: 10.0,
+            ap_per_channel: 2,
+            ap_min_freq: 20.0,
+            ap_max_freq: 300.0,
+            ap_min_q: 0.3,
+            ap_max_q: 10.0,
+            optimize_polarity: false,
+            max_iter: 5000,
+            popsize: 30,
+            tol: 1e-12,
+            seed: Some(7),
+        };
+
+        let result = optimize_group_delay(&channels, band, &config).unwrap();
+
+        // Improvement must be >= 6 dB
+        assert!(
+            result.improvement_db >= 6.0,
+            "Improvement too low: {:.1} dB (expected >= 6 dB). \
+             pre_rms={:.3} ms, post_rms={:.3} ms",
+            result.improvement_db,
+            result.sum_gd_pre_rms_ms,
+            result.sum_gd_post_rms_ms,
+        );
+
+        // At least one channel should have non-empty AP filters in the result
+        let any_ap = result.per_channel.iter().any(|ch| !ch.ap_filters.is_empty());
+        assert!(
+            any_ap,
+            "Expected at least one channel to have AP filters; got none. \
+             ap counts: {:?}",
+            result
+                .per_channel
+                .iter()
+                .map(|ch| ch.ap_filters.len())
+                .collect::<Vec<_>>(),
+        );
+    }
+
+    #[test]
+    fn test_qa_adaptive_bootstrap_accepts_real_ap() {
+        // Two channels where one has a genuine allpass GD distortion (not noise).
+        // Channel 0: pure 2 ms delay.
+        // Channel 1: 2 ms delay + allpass at 60 Hz Q=2.
+        // Four sweep realisations have small delay jitter but all carry the real
+        // allpass distortion, so the bootstrap should accept at least 1 AP filter.
+        let freq = log_freq_grid(20.0, 300.0, 300);
+        let sample_rate = 48000.0;
+
+        let channels = vec![
+            make_delayed_channel(&freq, 2.0, 0.98),
+            make_delayed_channel_with_allpass(&freq, 2.0, 60.0, 2.0, sample_rate, 0.98),
+        ];
+
+        // Four sweep realisations: each has a tiny jitter but preserves the
+        // allpass distortion on channel 1 (real, not noise → bootstrap accepts AP).
+        let sweep_realisations: Vec<Vec<ChannelMeasurementInput>> = (0..4)
+            .map(|seed| {
+                let jitter = seed as f64 * 0.02e-3; // 0–0.06 ms jitter (tiny)
+                vec![
+                    make_delayed_channel(&freq, 2.0 + jitter, 0.98),
+                    make_delayed_channel_with_allpass(
+                        &freq,
+                        2.0 + jitter,
+                        60.0,
+                        2.0,
+                        sample_rate,
+                        0.98,
+                    ),
+                ]
+            })
+            .collect();
+
+        let config = GdOptConfig {
+            sample_rate,
+            max_delay_ms: 10.0,
+            ap_per_channel: 2,
+            ap_min_freq: 20.0,
+            ap_max_freq: 300.0,
+            ap_min_q: 0.3,
+            ap_max_q: 10.0,
+            optimize_polarity: false,
+            max_iter: 4000,
+            popsize: 25,
+            tol: 1e-10,
+            seed: Some(11),
+        };
+
+        let result = optimize_group_delay_adaptive(
+            &channels,
+            &sweep_realisations,
+            (20.0, 300.0),
+            &config,
+        )
+        .unwrap();
+
+        // The bootstrap should accept at least 1 AP filter across all channels
+        let total_ap: usize = result
+            .per_channel
+            .iter()
+            .map(|ch| ch.ap_filters.len())
+            .sum();
+        assert!(
+            total_ap >= 1,
+            "Expected adaptive bootstrap to accept at least 1 AP filter; got 0. \
+             improvement_db={:.1}",
+            result.improvement_db,
+        );
+
+        // And overall improvement must be >= 4 dB
+        assert!(
+            result.improvement_db >= 4.0,
+            "Improvement too low: {:.1} dB (expected >= 4 dB). \
+             pre_rms={:.3} ms, post_rms={:.3} ms",
+            result.improvement_db,
+            result.sum_gd_pre_rms_ms,
+            result.sum_gd_post_rms_ms,
+        );
+    }
+
+    #[test]
+    fn test_qa_build_gd_alignment_target() {
+        // Run a 2-channel optimisation, then check build_gd_alignment_target
+        // produces a structurally valid GdAlignmentTarget.
+        let freq = log_freq_grid(20.0, 5000.0, 300);
+        let ch0 = make_delayed_channel(&freq, 1.0, 0.95);
+        let ch1 = make_delayed_channel(&freq, 4.0, 0.95);
+        let channels = vec![ch0, ch1];
+        let band = (20.0, 5000.0);
+
+        let config = GdOptConfig {
+            ap_per_channel: 0,
+            optimize_polarity: false,
+            max_iter: 3000,
+            popsize: 20,
+            tol: 1e-10,
+            seed: Some(55),
+            ..Default::default()
+        };
+
+        let result = optimize_group_delay(&channels, band, &config).unwrap();
+        let target = build_gd_alignment_target(&channels, &result, &config);
+
+        // per_channel_delay_ms must have one entry per channel
+        assert_eq!(
+            target.per_channel_delay_ms.len(),
+            channels.len(),
+            "per_channel_delay_ms length mismatch: got {}, expected {}",
+            target.per_channel_delay_ms.len(),
+            channels.len(),
+        );
+
+        // freq grid must be non-empty and within the band
+        assert!(
+            !target.freq.is_empty(),
+            "GdAlignmentTarget freq grid is empty"
+        );
+        assert!(
+            target.freq[0] >= band.0 - 1e-6,
+            "freq[0]={} below band_lo={}",
+            target.freq[0],
+            band.0,
+        );
+        assert!(
+            *target.freq.last().unwrap() <= band.1 + 1e-6,
+            "freq[last]={} above band_hi={}",
+            target.freq.last().unwrap(),
+            band.1,
+        );
+
+        // sum_gd_reference_ms must have the same length as freq
+        assert_eq!(
+            target.sum_gd_reference_ms.len(),
+            target.freq.len(),
+            "sum_gd_reference_ms and freq length mismatch: {} vs {}",
+            target.sum_gd_reference_ms.len(),
+            target.freq.len(),
+        );
+    }
 }
