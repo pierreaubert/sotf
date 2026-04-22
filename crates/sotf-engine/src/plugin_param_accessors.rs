@@ -914,25 +914,8 @@ mod tests {
     fn validate_engine_keys_exist_in_dsp_plugin() {
         use sotf_plugins::param_specs::{ParamType, UpdateMode};
 
-        // Pre-existing gaps: single-band Compressor/Expander PARAMS include
-        // parameters that the multiband DSP plugin only handles per-band, not
-        // as global parameters. These are tracked and should be fixed separately.
-        let known_gaps: std::collections::HashSet<(&str, &str)> = [
-            ("Compressor", "makeup_gain"),
-            ("Compressor", "auto_makeup"),
-            ("Compressor", "sidechain_hpf_hz"),
-            ("Compressor", "sidechain_hpf_order"),
-            ("Compressor", "detection_mode"),
-            ("Compressor", "lookahead_ms"),
-            ("Compressor", "program_dependent_release"),
-            ("Compressor", "measured_auto_makeup"),
-            ("Compressor", "sidechain_external"),
-            ("Expander", "auto_makeup"),
-            ("Expander", "sidechain_hpf_hz"),
-            ("Expander", "measured_auto_makeup"),
-        ]
-        .into_iter()
-        .collect();
+        let known_gaps: std::collections::HashSet<(&str, &str)> =
+            std::collections::HashSet::new();
 
         let mut all_errors = Vec::new();
         for pt in PluginType::all() {

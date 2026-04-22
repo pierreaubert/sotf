@@ -102,6 +102,15 @@ pub struct MultibandExpanderPluginParams {
     /// Processing mode: "time_domain" (default) or "spectral"
     #[serde(default = "default_processing_mode")]
     pub processing_mode: String,
+    /// Single-band alias: auto-compensate for gain reduction (applied to band 0)
+    #[serde(default)]
+    pub auto_makeup: Option<bool>,
+    /// Single-band alias: measured auto-makeup (applied to band 0)
+    #[serde(default)]
+    pub measured_auto_makeup: Option<bool>,
+    /// Sidechain high-pass frequency (single-band compatibility)
+    #[serde(default)]
+    pub sidechain_hpf_hz: Option<f32>,
 }
 
 #[derive(Debug, Clone)]
@@ -463,6 +472,8 @@ pub struct MultibandExpanderPlugin {
     mix: f32,
     detection_mode: String,
     lookahead_ms: f32,
+    /// Sidechain high-pass frequency (single-band compatibility, not yet applied to DSP)
+    sidechain_hpf_hz: f32,
     /// Per-band, per-channel lookahead delay buffers.
     lookahead_buffers: Vec<Vec<LookaheadBuffer>>,
     /// Processing mode: "time_domain" or "spectral"
@@ -532,6 +543,18 @@ impl MultibandExpanderPlugin {
             band_params.push(BandExpanderParams::default());
         }
 
+        // Apply single-band aliases to band 0
+        if let Some(am) = params.auto_makeup
+            && let Some(bp) = band_params.first_mut()
+        {
+            bp.auto_makeup = am;
+        }
+        if let Some(mam) = params.measured_auto_makeup
+            && let Some(bp) = band_params.first_mut()
+        {
+            bp.measured_auto_makeup = mam;
+        }
+
         let measured_makeups = (0..nb).map(|_| MeasuredMakeup::new(1000.0, sr)).collect();
 
         let det_mode_str = if params.detection_mode.is_empty() {
@@ -581,6 +604,7 @@ impl MultibandExpanderPlugin {
             mix: params.mix,
             detection_mode: det_mode_str.to_string(),
             lookahead_ms: params.lookahead_ms.clamp(0.0, MAX_LOOKAHEAD_MS),
+            sidechain_hpf_hz: params.sidechain_hpf_hz.unwrap_or(80.0),
             lookahead_buffers: (0..nb)
                 .map(|_| {
                     (0..channels)
@@ -689,6 +713,35 @@ impl MultibandExpanderPlugin {
         params.push(
             Parameter::new_int("processing_mode", "Processing Mode", proc_mode_idx, 0, 1)
                 .with_group("General"),
+        );
+
+        // Single-band aliases (not in GLOBAL_PARAMS, but needed for Expander PluginSettings)
+        let bp0 = self.band_params.first();
+        params.push(
+            Parameter::new_bool(
+                "auto_makeup",
+                "Auto Makeup",
+                bp0.is_some_and(|bp| bp.auto_makeup),
+            )
+            .with_group("Output"),
+        );
+        params.push(
+            Parameter::new_bool(
+                "measured_auto_makeup",
+                "Measured Auto Makeup",
+                bp0.is_some_and(|bp| bp.measured_auto_makeup),
+            )
+            .with_group("Output"),
+        );
+        params.push(
+            Parameter::new_float(
+                "sidechain_hpf_hz",
+                "Sidechain HPF",
+                self.sidechain_hpf_hz,
+                0.0,
+                500.0,
+            )
+            .with_group("Sidechain"),
         );
 
         // Per-band dynamics (not covered by GLOBAL_PARAMS)
@@ -1363,8 +1416,41 @@ impl InPlacePlugin for MultibandExpanderPlugin {
             return Ok(());
         }
 
-        // Fall through to band-level param handling
+        // Single-band aliases: map unprefixed names to band_params[0]
         let name = &id.0;
+        match name.as_str() {
+            "auto_makeup" => {
+                let v = value
+                    .as_bool()
+                    .ok_or_else(|| "auto_makeup must be a boolean".to_string())?;
+                if let Some(bp) = self.band_params.first_mut() {
+                    bp.auto_makeup = v;
+                }
+                self.rebuild_cached_parameters();
+                return Ok(());
+            }
+            "measured_auto_makeup" => {
+                let v = value
+                    .as_bool()
+                    .ok_or_else(|| "measured_auto_makeup must be a boolean".to_string())?;
+                if let Some(bp) = self.band_params.first_mut() {
+                    bp.measured_auto_makeup = v;
+                }
+                self.rebuild_cached_parameters();
+                return Ok(());
+            }
+            "sidechain_hpf_hz" => {
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "sidechain_hpf_hz must be a float".to_string())?;
+                self.sidechain_hpf_hz = v;
+                self.rebuild_cached_parameters();
+                return Ok(());
+            }
+            _ => {}
+        }
+
+        // Fall through to band-level param handling
         if name.starts_with("band_") {
             let parts: Vec<&str> = name.split('_').collect();
             if parts.len() >= 3 {
@@ -1491,6 +1577,25 @@ impl InPlacePlugin for MultibandExpanderPlugin {
         // Try global params first
         if let Some(v) = param_bridge::get_parameter(ME, id, |i| self.param_value(i)) {
             return Some(v);
+        }
+        // Single-band aliases: map unprefixed names to band_params[0]
+        match id.0.as_str() {
+            "auto_makeup" => {
+                return Some(ParameterValue::Bool(
+                    self.band_params.first().is_some_and(|bp| bp.auto_makeup),
+                ));
+            }
+            "measured_auto_makeup" => {
+                return Some(ParameterValue::Bool(
+                    self.band_params
+                        .first()
+                        .is_some_and(|bp| bp.measured_auto_makeup),
+                ));
+            }
+            "sidechain_hpf_hz" => {
+                return Some(ParameterValue::Float(self.sidechain_hpf_hz));
+            }
+            _ => {}
         }
         // Fall through to band-level params
         let name = &id.0;

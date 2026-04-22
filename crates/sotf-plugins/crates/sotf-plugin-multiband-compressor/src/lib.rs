@@ -85,6 +85,33 @@ pub struct MultibandCompressorPluginParams {
     pub sidechain_tilt_db: f32,
     #[serde(default = "default_link_amount")]
     pub link_amount: f32,
+    /// Single-band alias: makeup gain applied to band 0
+    #[serde(default)]
+    pub makeup_gain: Option<f32>,
+    /// Single-band alias: auto-compensate for gain reduction (applied to band 0)
+    #[serde(default)]
+    pub auto_makeup: Option<bool>,
+    /// Single-band alias: measured auto-makeup (applied to band 0)
+    #[serde(default)]
+    pub measured_auto_makeup: Option<bool>,
+    /// Sidechain high-pass frequency (single-band compatibility)
+    #[serde(default)]
+    pub sidechain_hpf_hz: Option<f32>,
+    /// Sidechain HPF order (single-band compatibility): "2nd" or "4th"
+    #[serde(default)]
+    pub sidechain_hpf_order: Option<String>,
+    /// Detection mode (single-band compatibility): "peak" or "rms"
+    #[serde(default)]
+    pub detection_mode: Option<String>,
+    /// Lookahead alias (single-band uses "lookahead_ms", multiband uses "per_band_lookahead_ms")
+    #[serde(default)]
+    pub lookahead_ms: Option<f32>,
+    /// Program-dependent release (single-band compatibility)
+    #[serde(default)]
+    pub program_dependent_release: Option<bool>,
+    /// External sidechain (single-band compatibility)
+    #[serde(default)]
+    pub sidechain_external: Option<bool>,
 }
 
 fn default_link_amount() -> f32 {
@@ -160,6 +187,16 @@ pub struct MultibandCompressorPlugin {
     ms_mode: bool,
     sidechain_tilt_db: f32,
     link_amount: f32,
+    /// Sidechain high-pass frequency (single-band compatibility, not yet applied to DSP)
+    sidechain_hpf_hz: f32,
+    /// Sidechain HPF order (single-band compatibility, not yet applied to DSP)
+    sidechain_hpf_order: String,
+    /// Detection mode (single-band compatibility, not yet applied to DSP)
+    detection_mode: String,
+    /// Program-dependent release (single-band compatibility, not yet applied to DSP)
+    program_dependent_release: bool,
+    /// External sidechain (single-band compatibility, not yet applied to DSP)
+    sidechain_external: bool,
     /// Per-band, per-channel high-shelf biquad for sidechain tilt.
     /// Layout: [band][channel]. Empty when tilt_db ≈ 0.
     sidechain_tilt_biquads: Vec<Vec<Biquad>>,
@@ -215,7 +252,26 @@ impl MultibandCompressorPlugin {
             band_params.push(BandCompressorParams::default());
         }
 
-        let la_ms = params.per_band_lookahead_ms.clamp(0.0, 10.0);
+        // Apply single-band aliases to band 0
+        if let Some(mg) = params.makeup_gain
+            && let Some(bp) = band_params.first_mut()
+        {
+            bp.makeup_gain_db = mg;
+        }
+        if let Some(am) = params.auto_makeup
+            && let Some(bp) = band_params.first_mut()
+        {
+            bp.auto_makeup = am;
+        }
+        if let Some(mam) = params.measured_auto_makeup
+            && let Some(bp) = band_params.first_mut()
+        {
+            bp.measured_auto_makeup = mam;
+        }
+
+        // lookahead_ms alias overrides per_band_lookahead_ms
+        let la_ms_raw = params.lookahead_ms.unwrap_or(params.per_band_lookahead_ms);
+        let la_ms = la_ms_raw.clamp(0.0, 10.0);
         let lookahead_buffers = (0..nb)
             .map(|_| {
                 if la_ms > 0.0 {
@@ -244,6 +300,11 @@ impl MultibandCompressorPlugin {
             ms_mode: params.ms_mode,
             sidechain_tilt_db: params.sidechain_tilt_db,
             link_amount: params.link_amount.clamp(0.0, 1.0),
+            sidechain_hpf_hz: params.sidechain_hpf_hz.unwrap_or(80.0),
+            sidechain_hpf_order: params.sidechain_hpf_order.unwrap_or_else(|| "2nd".to_string()),
+            detection_mode: params.detection_mode.unwrap_or_else(|| "peak".to_string()),
+            program_dependent_release: params.program_dependent_release.unwrap_or(false),
+            sidechain_external: params.sidechain_external.unwrap_or(false),
             sidechain_tilt_biquads: Vec::new(),
             band_params,
             crossover_points: Vec::new(),
@@ -320,6 +381,85 @@ impl MultibandCompressorPlugin {
 
     fn rebuild_cached_parameters(&mut self) {
         let mut params = param_bridge::build_parameters(MC, |i| self.param_value(i));
+
+        // Single-band aliases (not in GLOBAL_PARAMS, but needed for Compressor PluginSettings)
+        let bp0 = self.band_params.first();
+        params.push(
+            Parameter::new_float(
+                "makeup_gain",
+                "Makeup Gain",
+                bp0.map_or(0.0, |bp| bp.makeup_gain_db),
+                -24.0,
+                24.0,
+            )
+            .with_group("Output"),
+        );
+        params.push(
+            Parameter::new_bool(
+                "auto_makeup",
+                "Auto Makeup",
+                bp0.is_some_and(|bp| bp.auto_makeup),
+            )
+            .with_group("Output"),
+        );
+        params.push(
+            Parameter::new_bool(
+                "measured_auto_makeup",
+                "Measured Auto Makeup",
+                bp0.is_some_and(|bp| bp.measured_auto_makeup),
+            )
+            .with_group("Output"),
+        );
+        params.push(
+            Parameter::new_float(
+                "sidechain_hpf_hz",
+                "Sidechain HPF",
+                self.sidechain_hpf_hz,
+                0.0,
+                200.0,
+            )
+            .with_group("Sidechain"),
+        );
+        {
+            let idx = if self.sidechain_hpf_order == "4th" { 1 } else { 0 };
+            params.push(
+                Parameter::new_int("sidechain_hpf_order", "Sidechain HPF Order", idx, 0, 1)
+                    .with_group("Sidechain"),
+            );
+        }
+        {
+            let idx = if self.detection_mode == "rms" { 1 } else { 0 };
+            params.push(
+                Parameter::new_int("detection_mode", "Detection Mode", idx, 0, 1)
+                    .with_group("Sidechain"),
+            );
+        }
+        params.push(
+            Parameter::new_float(
+                "lookahead_ms",
+                "Lookahead",
+                self.per_band_lookahead_ms,
+                0.0,
+                20.0,
+            )
+            .with_group("Timing"),
+        );
+        params.push(
+            Parameter::new_bool(
+                "program_dependent_release",
+                "Program Dependent Release",
+                self.program_dependent_release,
+            )
+            .with_group("Timing"),
+        );
+        params.push(
+            Parameter::new_bool(
+                "sidechain_external",
+                "External Sidechain",
+                self.sidechain_external,
+            )
+            .with_group("Sidechain"),
+        );
 
         // Per-band dynamics (not covered by GLOBAL_PARAMS)
         for i in 0..self.num_bands {
@@ -571,8 +711,96 @@ impl InPlacePlugin for MultibandCompressorPlugin {
             return Ok(());
         }
 
-        // Fall through to band-level param handling
+        // Single-band aliases: map unprefixed names to band_params[0] or stub fields
         let name = &id.0;
+        match name.as_str() {
+            "makeup_gain" => {
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "makeup_gain must be a float".to_string())?;
+                if let Some(bp) = self.band_params.first_mut() {
+                    bp.makeup_gain_db = v;
+                }
+                self.rebuild_cached_parameters();
+                return Ok(());
+            }
+            "auto_makeup" => {
+                let v = value
+                    .as_bool()
+                    .ok_or_else(|| "auto_makeup must be a boolean".to_string())?;
+                if let Some(bp) = self.band_params.first_mut() {
+                    bp.auto_makeup = v;
+                }
+                self.rebuild_cached_parameters();
+                return Ok(());
+            }
+            "measured_auto_makeup" => {
+                let v = value
+                    .as_bool()
+                    .ok_or_else(|| "measured_auto_makeup must be a boolean".to_string())?;
+                if let Some(bp) = self.band_params.first_mut() {
+                    bp.measured_auto_makeup = v;
+                }
+                self.rebuild_cached_parameters();
+                return Ok(());
+            }
+            "sidechain_hpf_hz" => {
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "sidechain_hpf_hz must be a float".to_string())?;
+                self.sidechain_hpf_hz = v;
+                self.rebuild_cached_parameters();
+                return Ok(());
+            }
+            "sidechain_hpf_order" => {
+                let idx = value
+                    .as_int()
+                    .ok_or_else(|| "sidechain_hpf_order must be an integer".to_string())?;
+                self.sidechain_hpf_order = if idx == 1 { "4th" } else { "2nd" }.to_string();
+                self.rebuild_cached_parameters();
+                return Ok(());
+            }
+            "detection_mode" => {
+                let idx = value
+                    .as_int()
+                    .ok_or_else(|| "detection_mode must be an integer".to_string())?;
+                self.detection_mode = if idx == 1 { "rms" } else { "peak" }.to_string();
+                self.rebuild_cached_parameters();
+                return Ok(());
+            }
+            "lookahead_ms" => {
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "lookahead_ms must be a float".to_string())?;
+                self.per_band_lookahead_ms = v;
+                for buf in &mut self.lookahead_buffers {
+                    if self.per_band_lookahead_ms > 0.0 {
+                        buf.set_delay_ms(self.per_band_lookahead_ms, self.sample_rate);
+                    }
+                }
+                self.rebuild_cached_parameters();
+                return Ok(());
+            }
+            "program_dependent_release" => {
+                let v = value
+                    .as_bool()
+                    .ok_or_else(|| "program_dependent_release must be a boolean".to_string())?;
+                self.program_dependent_release = v;
+                self.rebuild_cached_parameters();
+                return Ok(());
+            }
+            "sidechain_external" => {
+                let v = value
+                    .as_bool()
+                    .ok_or_else(|| "sidechain_external must be a boolean".to_string())?;
+                self.sidechain_external = v;
+                self.rebuild_cached_parameters();
+                return Ok(());
+            }
+            _ => {}
+        }
+
+        // Fall through to band-level param handling
         if name.starts_with("band_") {
             let parts: Vec<&str> = name.split('_').collect();
             if parts.len() >= 3 {
@@ -667,8 +895,49 @@ impl InPlacePlugin for MultibandCompressorPlugin {
         if let Some(v) = param_bridge::get_parameter(MC, id, |i| self.param_value(i)) {
             return Some(v);
         }
-        // Fall through to band-level params
+        // Single-band aliases: map unprefixed names to band_params[0] or stub fields
         let name = &id.0;
+        match name.as_str() {
+            "makeup_gain" => {
+                return Some(ParameterValue::Float(
+                    self.band_params.first().map_or(0.0, |bp| bp.makeup_gain_db),
+                ));
+            }
+            "auto_makeup" => {
+                return Some(ParameterValue::Bool(
+                    self.band_params.first().is_some_and(|bp| bp.auto_makeup),
+                ));
+            }
+            "measured_auto_makeup" => {
+                return Some(ParameterValue::Bool(
+                    self.band_params
+                        .first()
+                        .is_some_and(|bp| bp.measured_auto_makeup),
+                ));
+            }
+            "sidechain_hpf_hz" => {
+                return Some(ParameterValue::Float(self.sidechain_hpf_hz));
+            }
+            "sidechain_hpf_order" => {
+                let idx = if self.sidechain_hpf_order == "4th" { 1 } else { 0 };
+                return Some(ParameterValue::Int(idx));
+            }
+            "detection_mode" => {
+                let idx = if self.detection_mode == "rms" { 1 } else { 0 };
+                return Some(ParameterValue::Int(idx));
+            }
+            "lookahead_ms" => {
+                return Some(ParameterValue::Float(self.per_band_lookahead_ms));
+            }
+            "program_dependent_release" => {
+                return Some(ParameterValue::Bool(self.program_dependent_release));
+            }
+            "sidechain_external" => {
+                return Some(ParameterValue::Bool(self.sidechain_external));
+            }
+            _ => {}
+        }
+        // Fall through to band-level params
         if name.starts_with("band_") {
             let parts: Vec<&str> = name.split('_').collect();
             if parts.len() >= 3 {
