@@ -123,21 +123,16 @@ pub mod gd_opt;
 
 // Bass-phase confidence gate for GD-Opt v2 (§3.5)
 pub mod bass_phase_confidence;
-pub use bass_phase_confidence::{BassPhaseConfidence, bass_phase_confidence};
+pub use bass_phase_confidence::{
+    BassPhaseConfidence, DEFAULT_COHERENCE_THRESHOLD, MIN_BASS_OCTAVE_DURATION_S, MIN_NUM_SWEEPS,
+    MIN_SNR_DB, bass_phase_confidence as compute_bass_phase_confidence,
+};
 
 // Utility modules
 mod ir_waveform;
 pub(crate) mod phase_utils;
 pub mod synthetic;
 mod time_align;
-
-// GD-Opt v2 Phase GD-1g — bass phase confidence gate. See
-// `docs/gd_opt_v2_plan.md` §3.5.
-pub mod bass_phase_confidence;
-pub use bass_phase_confidence::{
-    BassPhaseConfidence, DEFAULT_COHERENCE_THRESHOLD, MIN_BASS_OCTAVE_DURATION_S, MIN_NUM_SWEEPS,
-    MIN_SNR_DB, bass_phase_confidence as compute_bass_phase_confidence,
-};
 // GD-Opt v2 Phase GD-1f — microphone phase calibration loader. See
 // `docs/gd_opt_v2_plan.md` §2.6 and §2.8.
 pub mod mic_phase_calibration;
