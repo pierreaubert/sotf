@@ -6,9 +6,9 @@ ENV TZ=Etc/UTC
 RUN apt-get update && rm -rf /var/lib/apt/lists/*
 
 # Pre-install the exact Rust version required by rust-toolchain.toml with all components
-RUN rustup toolchain install 1.90.0-aarch64-unknown-linux-gnu --component cargo,clippy,llvm-tools-preview,rust-analyzer,rust-src,rust-std,rustc,rustc-dev,rustfmt && \
-    rustup target add --toolchain 1.90.0-aarch64-unknown-linux-gnu aarch64-unknown-linux-musl && \
-    rustup default 1.90.0-aarch64-unknown-linux-gnu
+RUN rustup toolchain install 1.95.0-aarch64-unknown-linux-gnu --component cargo,clippy,llvm-tools-preview,rust-analyzer,rust-src,rust-std,rustc,rustc-dev,rustfmt && \
+    rustup target add --toolchain 1.95.0-aarch64-unknown-linux-gnu aarch64-unknown-linux-musl && \
+    rustup default 1.95.0-aarch64-unknown-linux-gnu
 
 RUN mkdir -p /root/.rustup/tmp /root/.rustup/downloads && \
     chmod -R 777 /root/.rustup/tmp /root/.rustup/downloads

@@ -27,7 +27,7 @@ just qa
 just qa-autoeq
 just qa-roomeq-quick
 just qa-roomeq-multi-measurement
-just qa-plugins
+just qa-plugin
 ```
 
 ## Building with the magic script

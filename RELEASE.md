@@ -1,4 +1,4 @@
-# 0.5.14 - beta
+# 0.5.15 - beta
 
 Your room, your headphones, your sound — scientifically optimized. SotF is a free, privacy centric, open source code application that runs everywhere.
 
