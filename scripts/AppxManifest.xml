@@ -9,7 +9,7 @@
   <Identity
     Name="org.spinorama.sotf"
     Publisher="CN=Pierre Aubert, O=Spinorama, C=FR"
-    Version="0.5.11.0"
+    Version="0.5.15.0"
     ProcessorArchitecture="x64" />
 
   <Properties>

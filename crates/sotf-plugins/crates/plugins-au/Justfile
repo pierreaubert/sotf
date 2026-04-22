@@ -31,14 +31,21 @@ sync-au-versions:
 	AU_NAMES=(  EQAudioUnit         CompressorAudioUnit                LimiterAudioUnit     GateAudioUnit     GainAudioUnit     DelayAudioUnit     AAEAudioUnit       BandSplitAudioUnit     BandMergeAudioUnit     AECAudioUnit     BeamformerAudioUnit     LinearPhaseEQAudioUnit     SpectralCompressorAudioUnit     LoudnessMonitorAudioUnit  SpectrumAnalyzerAudioUnit  AmbisonicsAudioUnit)
 	CRATE_NAMES=(sotf-plugin-eq     sotf-plugin-multiband-compressor  sotf-plugin-limiter  sotf-plugin-gate  sotf-plugin-gain  sotf-plugin-delay  sotf-plugin-aae    sotf-plugin-band-split sotf-plugin-band-merge sotf-plugin-aec  sotf-plugin-beamformer  sotf-plugin-linear-phase-eq  sotf-plugin-spectral-compressor  sotf-host                 sotf-host                  sotf-plugin-ambisonics)
 
+	# Apple requires all extensions to match the parent app's CFBundleShortVersionString,
+	# so use the workspace version for everything (not individual crate versions).
 	for i in "${!AU_NAMES[@]}"; do
 		au="${AU_NAMES[$i]}"
-		crate="${CRATE_NAMES[$i]}"
-		version=$(cargo_version "$CRATES/$crate")
 		plist="$AU_DIR/$au/Info.plist"
 		if [ -f "$plist" ]; then
-			plutil -replace CFBundleShortVersionString -string "$version" "$plist"
-			echo "  $au → $version"
+			plutil -replace CFBundleShortVersionString -string "$WS_VERSION" "$plist"
+			echo "  $au → $WS_VERSION"
+		fi
+	done
+
+	# Also update any AU extensions not in the mapping above
+	for plist in "$AU_DIR"/*AudioUnit/Info.plist; do
+		if [ -f "$plist" ]; then
+			plutil -replace CFBundleShortVersionString -string "$WS_VERSION" "$plist"
 		fi
 	done
 
@@ -96,7 +103,7 @@ build-au-xcode: sync-au-versions build-au-ffi
 
 # Build complete AU pipeline (FFI + Xcode)
 [group('build-macos')]
-build-au-all: build-au-xcode
+build-au-all: build-au-xcode sync-au-versions
 
 # Install Audio Units to system
 [group('build-macos')]
