@@ -890,6 +890,7 @@ impl PluginFuzzer for MultibandExpanderFuzzer {
             hold_ms,
             link_channels,
             mix,
+            lookahead_ms: 0.0,
             detection_mode: "peak".to_string(),
             bands: vec![], // Use defaults for per-band params
             processing_mode: "time_domain".to_string(),
