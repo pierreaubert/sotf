@@ -508,8 +508,9 @@ fn optimize_from_curve(
     };
 
     // Setup objective data (no spin data for CSV/curve input)
+    let optim_params = autoeq::OptimParams::from(&config.args);
     let (objective_data, _) = autoeq::workflow::setup_objective_data(
-        &config.args,
+        &optim_params,
         &input_normalized,
         &target_curve,
         &deviation_curve,

@@ -807,7 +807,10 @@ impl PlayerView {
                 self.state.update(cx, |state, _| {
                     let room_eq = &mut state.app.measurement_state.room_eq_state;
                     let preset = room_eq.simple_preset.clone();
-                    preset.apply(&mut room_eq.optimizer_config);
+                    sotf_audio_player::room_eq_types::apply_simple_preset(
+                        &preset,
+                        &mut room_eq.optimizer_config,
+                    );
                 });
             }
         }

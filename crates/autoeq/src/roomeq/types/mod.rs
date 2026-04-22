@@ -7,6 +7,10 @@
 mod config;
 pub use config::*;
 
+// Simple wizard preset types
+mod preset;
+pub use preset::*;
+
 // Output types
 mod output;
 pub use output::*;

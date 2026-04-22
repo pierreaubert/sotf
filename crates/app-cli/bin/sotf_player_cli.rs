@@ -3295,6 +3295,7 @@ fn build_rack_mode_plugins(
                         mix: plugins.multiband_expander.mix as f64,
                         link_channels: !plugins.multiband_expander.unlink_channels,
                         detection_mode: "peak".to_string(),
+                        lookahead_ms: 0.0,
                         bands: vec![],
                     };
                 }

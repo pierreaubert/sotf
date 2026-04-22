@@ -116,159 +116,66 @@ pub enum RoomEqWizardMode {
     Full,
 }
 
-/// Listening distance tier used by the Simple Wizard to set the
-/// target curve family. Near-field (<1.5m, desktop), Mid-field
-/// (1.5–3m, typical couch), Far-field (>3m, theater/large room).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
-pub enum SpeakerTier {
-    NearField,
-    #[default]
-    MidField,
-    FarField,
-}
+// Simple Wizard types — canonical definitions live in autoeq, re-exported here.
+pub use autoeq::roomeq::{
+    SimpleCrossoverChoice, SimpleLossChoice, SimplePresetConfig, SimpleProcessingChoice,
+    SpeakerTier,
+};
 
-impl SpeakerTier {
-    pub fn label(&self) -> &'static str {
-        match self {
-            Self::NearField => "Near-field (<1.5m)",
-            Self::MidField => "Mid-field (1.5–3m)",
-            Self::FarField => "Far-field (>3m)",
-        }
-    }
-
-    pub fn all() -> &'static [SpeakerTier] {
-        &[Self::NearField, Self::MidField, Self::FarField]
-    }
-}
-
-/// Simple-mode loss function choice.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
-pub enum SimpleLossChoice {
-    #[default]
-    Flat,
-    Epa,
-}
-
-impl SimpleLossChoice {
-    pub fn label(&self) -> &'static str {
-        match self {
-            Self::Flat => "Flat (minimize deviation)",
-            Self::Epa => "EPA (perceptual quality)",
-        }
-    }
-}
-
-/// Simple-mode processing capability choice.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
-pub enum SimpleProcessingChoice {
-    #[default]
-    Iir,
-    MixedPhase,
-}
-
-impl SimpleProcessingChoice {
-    pub fn label(&self) -> &'static str {
-        match self {
-            Self::Iir => "IIR (low latency)",
-            Self::MixedPhase => "Mixed Phase (best quality)",
-        }
-    }
-}
-
-/// Simple-mode crossover choice (shown for 2.1+ configs).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
-pub enum SimpleCrossoverChoice {
-    #[default]
-    Lr24,
-    Lr48,
-}
-
-impl SimpleCrossoverChoice {
-    pub fn label(&self) -> &'static str {
-        match self {
-            Self::Lr24 => "Linkwitz-Riley 24 dB/oct",
-            Self::Lr48 => "Linkwitz-Riley 48 dB/oct",
-        }
-    }
-}
-
-/// Collected choices from the Simple Wizard's Configure step.
+/// Apply the user's Simple Wizard choices to a flat UI optimizer config.
 ///
-/// [`apply_simple_preset`] translates these into the full
-/// `RoomEqOptimizerConfig` so the optimizer sees the same field
-/// structure regardless of which wizard path the user took.
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub struct SimplePresetConfig {
-    pub target: SpeakerTier,
-    pub loss: SimpleLossChoice,
-    pub processing: SimpleProcessingChoice,
-    /// Only meaningful for 2.1+ configs.
-    pub crossover: SimpleCrossoverChoice,
-    /// Only meaningful for 5.0+ or >2 subs.
-    pub bass_management: String,
-    /// Multi-position strategy (only when multi-position data detected).
-    pub multi_position_strategy: String,
-}
+/// Fields not controlled by the preset keep their current values so the
+/// user doesn't lose any manual tuning done in a previous Full Wizard
+/// session.  This is the "mutate in place" path used when the full wizard
+/// needs to incorporate simple-mode choices into an existing config.
+pub fn apply_simple_preset(preset: &SimplePresetConfig, config: &mut RoomEqOptimizerConfig) {
+    // Processing mode
+    config.mode = match preset.processing {
+        SimpleProcessingChoice::Iir => RoomEqOptimizationMode::Iir,
+        SimpleProcessingChoice::MixedPhase => RoomEqOptimizationMode::MixedPhase,
+    };
 
-impl SimplePresetConfig {
-    /// Apply the user's Simple Wizard choices to a full optimizer
-    /// config. Fields not controlled by the preset keep their current
-    /// values so the user doesn't lose any manual tuning done in a
-    /// previous Full Wizard session.
-    pub fn apply(&self, config: &mut RoomEqOptimizerConfig) {
-        // --- Processing mode ---
-        config.mode = match self.processing {
-            SimpleProcessingChoice::Iir => RoomEqOptimizationMode::Iir,
-            SimpleProcessingChoice::MixedPhase => RoomEqOptimizationMode::MixedPhase,
-        };
+    // Loss function
+    config.loss_type = match preset.loss {
+        SimpleLossChoice::Flat => "flat".to_string(),
+        SimpleLossChoice::Epa => "epa".to_string(),
+    };
 
-        // --- Loss function ---
-        config.loss_type = match self.loss {
-            SimpleLossChoice::Flat => "flat".to_string(),
-            SimpleLossChoice::Epa => "epa".to_string(),
-        };
+    // Target response derived from measurement
+    config.target_response.enabled = true;
+    config.target_response.shape = "from_measurement".to_string();
+    config.target_response.slope_db_per_octave = 0.0;
 
-        // --- Target response derived from measurement ---
-        // All tiers use the measurement's own broadband slope as the
-        // optimization target. This preserves the speaker's natural
-        // response characteristic while correcting room anomalies.
-        config.target_response.enabled = true;
-        config.target_response.shape = "from_measurement".to_string();
-        config.target_response.slope_db_per_octave = 0.0; // resolved at optimization time
+    // Crossover (2.1+ only)
+    if !preset.bass_management.is_empty()
+        || matches!(preset.crossover, SimpleCrossoverChoice::Lr48)
+    {
+        config.schroeder_split.enabled = true;
+    }
 
-        // --- Crossover (2.1+ only) ---
-        if !self.bass_management.is_empty() || matches!(self.crossover, SimpleCrossoverChoice::Lr48)
-        {
-            config.schroeder_split.enabled = true;
-        }
+    // Sane defaults for params not exposed in Simple mode
+    config.num_filters = 7;
+    config.algorithm = "autoeq:de".to_string();
+    config.population = 300;
+    config.max_iter = 50_000;
+    config.min_freq = 20.0;
+    config.max_freq = 1600.0;
+    config.min_db = -12.0;
+    config.max_db = 4.0;
+    config.min_q = 0.5;
+    config.max_q = 6.0;
+    config.peq_model = "pk".to_string();
+    config.tolerance = 1e-5;
+    config.atolerance = 1e-5;
+    config.psychoacoustic = true;
+    config.asymmetric_loss = true;
+    config.refine = true;
+    config.local_algo = "cobyla".to_string();
 
-        // --- Sane defaults for params not exposed in Simple mode ---
-        // These cover all the fields the Simple Wizard doesn't surface
-        // so the optimizer always runs with reasonable values even if
-        // the user never visited the Full Wizard.
-        config.num_filters = 7;
-        config.algorithm = "autoeq:de".to_string();
-        config.population = 300;
-        config.max_iter = 50_000;
-        config.min_freq = 20.0;
-        config.max_freq = 1600.0;
-        config.min_db = -12.0;
-        config.max_db = 4.0;
-        config.min_q = 0.5;
-        config.max_q = 6.0;
-        config.peq_model = "pk".to_string();
-        config.tolerance = 1e-5;
-        config.atolerance = 1e-5;
-        config.psychoacoustic = true;
-        config.asymmetric_loss = true;
-        config.refine = true;
-        config.local_algo = "cobyla".to_string();
-
-        // --- Multi-position strategy ---
-        if !self.multi_position_strategy.is_empty() {
-            config.multi_measurement.enabled = true;
-            config.multi_measurement.strategy = self.multi_position_strategy.clone();
-        }
+    // Multi-position strategy
+    if !preset.multi_position_strategy.is_empty() {
+        config.multi_measurement.enabled = true;
+        config.multi_measurement.strategy = preset.multi_position_strategy.clone();
     }
 }
 
@@ -1229,6 +1136,60 @@ fn default_room_atolerance() -> f64 {
     1e-5
 }
 
+// ---------------------------------------------------------------------------
+// Channel metadata for smart defaults
+// ---------------------------------------------------------------------------
+
+/// Metadata about measurement channels, decoupled from UI state.
+///
+/// Used by [`RoomEqOptimizerConfig::apply_smart_defaults`] to infer system
+/// configuration (stereo vs surround, subwoofer presence, height channels).
+#[derive(Debug, Clone, Default)]
+pub struct ChannelMetadata {
+    pub channel_names: Vec<String>,
+    pub playback_sample_rate: Option<u32>,
+}
+
+impl ChannelMetadata {
+    /// Sub/LFE channel names.
+    fn is_sub_name(name: &str) -> bool {
+        let upper = name.to_uppercase();
+        upper == "LFE" || upper == "SUB" || upper == "SW" || upper.starts_with("SUB")
+    }
+
+    /// Height channel names used for Voice of God detection.
+    const HEIGHT_CHANNELS: &[&str] = &[
+        "TFL", "TFR", "TSL", "TSR", "TBL", "TBR", "VOG", "TFC", "TBC", "TSC",
+    ];
+
+    /// Count of non-subwoofer channels.
+    fn non_sub_count(&self) -> usize {
+        self.channel_names
+            .iter()
+            .filter(|n| !Self::is_sub_name(n))
+            .count()
+    }
+
+    pub fn has_subwoofer(&self) -> bool {
+        self.channel_names.iter().any(|n| Self::is_sub_name(n))
+    }
+
+    pub fn is_surround(&self) -> bool {
+        self.non_sub_count() >= 3
+    }
+
+    pub fn has_height_channels(&self) -> bool {
+        self.channel_names.iter().any(|name| {
+            let upper = name.to_uppercase();
+            Self::HEIGHT_CHANNELS.iter().any(|&h| upper == h)
+        })
+    }
+
+    pub fn is_home_cinema(&self) -> bool {
+        self.non_sub_count() >= 5
+    }
+}
+
 /// Optimizer configuration for Room EQ
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoomEqOptimizerConfig {
@@ -1540,6 +1501,304 @@ impl RoomEqOptimizerConfig {
         }
 
         self.imported_from_file = true;
+    }
+
+    /// Convert the flat UI optimizer config to a backend
+    /// [`OptimizerConfig`](autoeq::roomeq::OptimizerConfig).
+    ///
+    /// This is the single canonical conversion used by both GPUI and TUI
+    /// when building a `RoomConfig` for the optimizer.
+    pub fn to_optimizer_config(&self) -> autoeq::roomeq::OptimizerConfig {
+        use autoeq::roomeq::{
+            ChannelMatchingConfig as BackendChannelMatchingConfig,
+            DecomposedCorrectionSerdeConfig, ExcursionProtectionConfig as BackendExcursionProtectionConfig,
+            FirConfig as BackendFirConfig, HighFreqFilterConfig, HighpassType, LowFreqFilterConfig,
+            MixedModeConfig, MixedPhaseSerdeConfig as BackendMixedPhaseConfig,
+            MultiMeasurementConfig, MultiMeasurementStrategy,
+            MultiSeatConfig as BackendMultiSeatConfig, MultiSeatStrategy,
+            OptimizerConfig as BackendOptimizerConfig,
+            PhaseAlignmentConfig as BackendPhaseAlignmentConfig,
+            PreRingingSerdeConfig as BackendPreRingingConfig, ProcessingMode,
+            SchroederSplitConfig as BackendSchroederSplitConfig, SubOptimizerConfig,
+            TargetResponseConfig as BackendTargetResponseConfig, TargetShape, UserPreference,
+            VoiceOfGodConfig,
+        };
+
+        let processing_mode = match self.mode {
+            RoomEqOptimizationMode::Iir => ProcessingMode::LowLatency,
+            RoomEqOptimizationMode::Fir => ProcessingMode::PhaseLinear,
+            RoomEqOptimizationMode::Mixed => ProcessingMode::Hybrid,
+            RoomEqOptimizationMode::MixedPhase => ProcessingMode::MixedPhase,
+        };
+
+        let fir = Some(BackendFirConfig {
+            taps: self.fir.taps,
+            phase: self.fir.phase.clone(),
+            correct_excess_phase: self.fir.correct_excess_phase,
+            phase_smoothing: self.fir.phase_smoothing,
+            pre_ringing: self.fir.pre_ringing.as_ref().map(|pr| BackendPreRingingConfig {
+                threshold_db: pr.threshold_db,
+                max_time_s: pr.max_time_s,
+            }),
+        });
+
+        let mixed_phase = if self.mode == RoomEqOptimizationMode::MixedPhase {
+            Some(BackendMixedPhaseConfig {
+                max_fir_length_ms: self.mixed_phase.max_fir_length_ms,
+                pre_ringing_threshold_db: self.mixed_phase.pre_ringing_threshold_db,
+                min_spatial_depth: self.mixed_phase.min_spatial_depth,
+                phase_smoothing_octaves: self.mixed_phase.phase_smoothing_octaves,
+            })
+        } else {
+            None
+        };
+
+        let mixed_config = if self.mode == RoomEqOptimizationMode::Mixed {
+            Some(MixedModeConfig {
+                crossover_freq: self.mixed_config.crossover_freq,
+                crossover_type: self.mixed_config.crossover_type.clone(),
+                fir_band: self.mixed_config.fir_band.clone(),
+            })
+        } else {
+            None
+        };
+
+        let target_response = if self.target_response.enabled {
+            let tr = &self.target_response;
+            let shape = match tr.shape.as_str() {
+                "flat" => TargetShape::Flat,
+                "harman" => TargetShape::Harman,
+                "custom" => TargetShape::Custom,
+                "file" => TargetShape::File,
+                "from_measurement" => TargetShape::FromMeasurement,
+                _ => TargetShape::Custom,
+            };
+            Some(BackendTargetResponseConfig {
+                shape,
+                slope_db_per_octave: tr.slope_db_per_octave,
+                reference_freq: tr.reference_freq,
+                curve_path: tr.curve_path.clone(),
+                preference: UserPreference {
+                    bass_shelf_db: tr.bass_shelf_db,
+                    bass_shelf_freq: tr.bass_shelf_freq,
+                    treble_shelf_db: tr.treble_shelf_db,
+                    treble_shelf_freq: tr.treble_shelf_freq,
+                },
+                broadband_precorrection: tr.broadband_precorrection,
+            })
+        } else {
+            None
+        };
+
+        let excursion_protection = if self.excursion_protection.enabled {
+            let filter_type = if self.excursion_protection.filter_type == "bw" {
+                HighpassType::Butterworth
+            } else {
+                HighpassType::LinkwitzRiley
+            };
+            Some(BackendExcursionProtectionConfig {
+                enabled: true,
+                auto_detect_f3: self.excursion_protection.auto_detect_f3,
+                manual_f3_hz: Some(self.excursion_protection.manual_f3_hz),
+                filter_order: self.excursion_protection.filter_order,
+                filter_type,
+                margin_octaves: self.excursion_protection.margin_octaves,
+            })
+        } else {
+            None
+        };
+
+        let schroeder_split = if self.schroeder_split.enabled {
+            Some(BackendSchroederSplitConfig {
+                enabled: true,
+                schroeder_freq: self.schroeder_split.schroeder_freq,
+                room_dimensions: None,
+                low_freq_config: LowFreqFilterConfig {
+                    max_q: self.schroeder_split.low_freq_max_q,
+                    min_q: 0.5,
+                    allow_boost: self.schroeder_split.low_freq_allow_boost,
+                    max_db: self.schroeder_split.low_freq_max_db,
+                },
+                high_freq_config: HighFreqFilterConfig {
+                    max_q: self.schroeder_split.high_freq_max_q,
+                    shelving_only: self.schroeder_split.high_freq_shelving_only,
+                },
+            })
+        } else {
+            None
+        };
+
+        let phase_alignment = if self.phase_alignment.enabled {
+            Some(BackendPhaseAlignmentConfig {
+                enabled: true,
+                min_freq: self.phase_alignment.min_freq,
+                max_freq: self.phase_alignment.max_freq,
+                optimize_polarity: self.phase_alignment.optimize_polarity,
+                max_delay_ms: self.phase_alignment.max_delay_ms,
+            })
+        } else {
+            None
+        };
+
+        let multi_seat = if self.multi_seat.enabled {
+            let strategy = match self.multi_seat.strategy.as_str() {
+                "primary" => MultiSeatStrategy::PrimaryWithConstraints,
+                "average" => MultiSeatStrategy::Average,
+                _ => MultiSeatStrategy::MinimizeVariance,
+            };
+            Some(BackendMultiSeatConfig {
+                enabled: true,
+                strategy,
+                primary_seat: self.multi_seat.primary_seat,
+                max_deviation_db: self.multi_seat.max_deviation_db,
+            })
+        } else {
+            None
+        };
+
+        let vog = if self.vog.enabled {
+            Some(VoiceOfGodConfig {
+                enabled: true,
+                reference_channel: self.vog.reference_channel.clone(),
+            })
+        } else {
+            None
+        };
+
+        let multi_measurement = if self.multi_measurement.enabled {
+            let strategy = match self.multi_measurement.strategy.as_str() {
+                "average" => MultiMeasurementStrategy::Average,
+                "weighted_sum" => MultiMeasurementStrategy::WeightedSum,
+                "minimax" => MultiMeasurementStrategy::Minimax,
+                "variance_penalized" => MultiMeasurementStrategy::VariancePenalized,
+                "spatial_robustness" => MultiMeasurementStrategy::SpatialRobustness,
+                s => panic!("Unknown multi_measurement strategy: {s}"),
+            };
+            let weights = if self.multi_measurement.weights.is_empty() {
+                None
+            } else {
+                Some(self.multi_measurement.weights.clone())
+            };
+            Some(MultiMeasurementConfig {
+                strategy,
+                weights,
+                variance_lambda: self.multi_measurement.variance_lambda,
+                spatial_robustness: None,
+            })
+        } else {
+            None
+        };
+
+        let sub_config = if self.sub_config.enabled {
+            Some(SubOptimizerConfig {
+                num_filters: self.sub_config.num_filters,
+                max_db: self.sub_config.max_db,
+                min_db: self.sub_config.min_db,
+                min_q: self.sub_config.min_q,
+                max_q: self.sub_config.max_q,
+            })
+        } else {
+            None
+        };
+
+        let channel_matching = if self.channel_matching.enabled {
+            Some(BackendChannelMatchingConfig {
+                enabled: true,
+                threshold_db: self.channel_matching.threshold_db,
+                max_filters: self.channel_matching.max_filters,
+            })
+        } else {
+            None
+        };
+
+        BackendOptimizerConfig {
+            loss_type: self.loss_type.clone(),
+            algorithm: self.algorithm.clone(),
+            strategy: self.strategy.clone(),
+            num_filters: self.num_filters,
+            min_q: self.min_q,
+            max_q: self.max_q,
+            min_db: self.min_db,
+            max_db: self.max_db,
+            min_freq: self.min_freq,
+            max_freq: self.max_freq,
+            max_iter: self.max_iter,
+            population: self.population,
+            peq_model: self.peq_model.clone(),
+            processing_mode,
+            fir,
+            mixed_phase,
+            mixed_config,
+            seed: self.seed,
+            refine: self.refine,
+            local_algo: self.local_algo.clone(),
+            psychoacoustic: self.psychoacoustic,
+            asymmetric_loss: self.asymmetric_loss,
+            tolerance: self.tolerance,
+            atolerance: self.atolerance,
+            allow_delay: Some(self.allow_delay),
+            smooth_n: self.smooth_n,
+            target_response,
+            excursion_protection,
+            schroeder_split,
+            phase_alignment,
+            multi_seat,
+            vog,
+            multi_measurement,
+            sub_config,
+            channel_matching,
+            decomposed_correction: Some(DecomposedCorrectionSerdeConfig::default()),
+            ..BackendOptimizerConfig::default()
+        }
+    }
+
+    /// Apply smart defaults based on measurement channel metadata.
+    ///
+    /// Called after loading measurements to set sensible initial values.
+    /// When `imported_from_file` is true, feature toggles are preserved.
+    pub fn apply_smart_defaults(&mut self, meta: &ChannelMetadata) {
+        // Seed sample rate from playback device when still at default
+        if let Some(sr) = meta.playback_sample_rate
+            && self.sample_rate == 48000
+        {
+            self.sample_rate = sr as usize;
+        }
+
+        // Loss type is always flat for room EQ
+        self.loss_type = "flat".to_string();
+
+        // Only override algorithm/seed defaults when not imported from file
+        if !self.imported_from_file {
+            self.local_algo = "cobyla".to_string();
+            self.refine = true;
+            self.seed = None;
+        }
+
+        // System type: auto-detect from channel count
+        self.system_type = if meta.is_surround() {
+            "multichannel".to_string()
+        } else {
+            "stereo".to_string()
+        };
+
+        // Feature flags: only auto-enable when NOT imported from file.
+        // When imported, the file's feature state is authoritative
+        // (None = disabled, Some = enabled with those params).
+        if !self.imported_from_file {
+            self.target_response.enabled = true;
+            self.target_response.shape = "harman".to_string();
+            self.excursion_protection.enabled = true;
+            // Schroeder split only makes sense with a subwoofer
+            self.schroeder_split.enabled = meta.has_subwoofer();
+            self.allow_delay = true;
+            self.target_response.broadband_precorrection = true;
+            self.vog.enabled = meta.has_height_channels();
+            self.vog.reference_channel = if meta.is_home_cinema() {
+                "C".to_string()
+            } else {
+                "L".to_string()
+            };
+        }
     }
 }
 

@@ -150,17 +150,22 @@ pub fn render_plugin_content(
     }
 
     // Fallback: generic layout renderer for plugins with PluginLayout definitions
-    let d = Ds::from_cx(cx);
-    ui_layout_renderer::render_from_layout(
-        &d,
-        entity.clone(),
-        plugin_idx,
-        settings,
-        is_editing,
-        selected_param,
-        auto_tab,
-        plugin_data.as_ref(),
-        available_width,
-        theme,
-    )
+    if settings.layout().is_some() {
+        let d = Ds::from_cx(cx);
+        return ui_layout_renderer::render_from_layout(
+            &d,
+            entity.clone(),
+            plugin_idx,
+            settings,
+            is_editing,
+            selected_param,
+            auto_tab,
+            plugin_data.as_ref(),
+            available_width,
+            theme,
+        );
+    }
+
+    // Plugin has neither a custom view nor a layout — render empty placeholder
+    gpui::div().into_any_element()
 }

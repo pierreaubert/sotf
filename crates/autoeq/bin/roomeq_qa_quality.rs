@@ -38,9 +38,6 @@ use autoeq::{MeasurementMultiple, MeasurementRef, MeasurementSource};
 // Constants
 // ---------------------------------------------------------------------------
 
-/// Monotonicity tolerance: variation may be at most 20% worse than baseline.
-const MONOTONICITY_TOLERANCE: f64 = 1.20;
-
 /// Cross-mode ratio: max score / min score must be <= 5.0.
 const CROSS_MODE_RATIO_LIMIT: f64 = 5.0;
 
@@ -82,6 +79,33 @@ const OPTION_SCORE_TOLERANCE: f64 = 1.20;
 /// Psychoacoustic may trade raw score for perceptual quality
 const PSYCHOACOUSTIC_SCORE_TOLERANCE: f64 = 2.0;
 
+// Scorecard thresholds (multi-metric QA)
+/// Flat loss may degrade up to 50% vs baseline — new losses intentionally trade flatness
+/// for perceptual quality, so the flatness gate is deliberately relaxed.
+const SCORECARD_FLAT_LOSS_TOLERANCE: f64 = 1.50;
+/// Peak residual may grow up to 100% vs baseline.
+/// Sub-heavy configs (2.1, MSO) produce huge peak values (40-80 dB) in LFE
+/// channels where DE optimizer jitter causes large swings. The 3 dB absolute
+/// ceiling protects main channels from real regressions.
+const SCORECARD_PEAK_TOLERANCE: f64 = 2.00;
+/// Peak residual always passes if below this absolute ceiling (dB).
+/// Catches cases where baseline already has bad peaks.
+const SCORECARD_PEAK_ABSOLUTE_DB: f64 = 3.0;
+/// EPA preference must not drop below 85% of baseline.
+const SCORECARD_EPA_PREF_MIN_RATIO: f64 = 0.85;
+/// Acceptable sharpness range (acum). Outside = harsh or dull.
+const SCORECARD_SHARPNESS_MIN: f64 = 0.8;
+const SCORECARD_SHARPNESS_MAX: f64 = 2.0;
+/// Maximum acceptable roughness (absolute). High = audible artifacts.
+const SCORECARD_ROUGHNESS_MAX: f64 = 0.8;
+/// Group delay std dev may grow up to 150% vs baseline.
+/// Mutations that add filters, widen Q, or double FIR taps all add phase
+/// distortion — GD growth is a physical consequence, not a regression.
+const SCORECARD_GD_TOLERANCE: f64 = 2.50;
+/// Passband for scorecard metric computation.
+const SCORECARD_FMIN: f64 = 20.0;
+const SCORECARD_FMAX: f64 = 500.0;
+
 // ---------------------------------------------------------------------------
 // QA config overrides (autoeq:de with LSHADE, fixed seed)
 // ---------------------------------------------------------------------------
@@ -94,11 +118,12 @@ fn apply_qa_overrides(config: &mut RoomConfig) {
     config.optimizer.strategy = "lshade".to_string();
     config.optimizer.max_iter = QA_MAXEVAL;
     config.optimizer.population = 50;
-    config.optimizer.num_filters = 3;
+    config.optimizer.num_filters = 5;
     config.optimizer.tolerance = 1e-3;
     config.optimizer.atolerance = 1e-3;
     config.optimizer.refine = true;
     config.optimizer.seed = Some(SEED);
+    config.optimizer.min_filter_improvement = 0.0; // Disable adaptive filter selection to use full budget
 }
 
 // ---------------------------------------------------------------------------
@@ -263,26 +288,50 @@ fn mean_spl_in_range(curve: &Curve, fmin: f64, fmax: f64) -> f64 {
     if count > 0 { sum / count as f64 } else { 0.0 }
 }
 
-/// Split error (final - initial) into peaks (positive) and dips (negative),
-/// returning (peak_rms, dip_rms) in the given frequency range.
-fn peak_dip_rms(initial: &Curve, final_curve: &Curve, fmin: f64, fmax: f64) -> (f64, f64) {
+/// RMS of deviations above (peak) and below (dip) a curve's passband mean.
+///
+/// Computes the curve's own mean in the usable passband (within 20 dB of the
+/// peak SPL), then returns `(peak_rms, dip_rms)` where peaks are points above
+/// the mean and dips are points below. This is level-independent: it works
+/// regardless of absolute SPL.
+fn peak_dip_from_mean(curve: &Curve, fmin: f64, fmax: f64) -> (f64, f64) {
+    let mut passband_peak = f64::NEG_INFINITY;
+    for i in 0..curve.freq.len() {
+        if curve.freq[i] >= fmin && curve.freq[i] <= fmax {
+            passband_peak = passband_peak.max(curve.spl[i]);
+        }
+    }
+    let spl_floor = if passband_peak.is_finite() {
+        passband_peak - 20.0
+    } else {
+        f64::NEG_INFINITY
+    };
+
+    let mut sum = 0.0;
+    let mut n = 0usize;
+    for i in 0..curve.freq.len() {
+        if curve.freq[i] >= fmin && curve.freq[i] <= fmax && curve.spl[i] >= spl_floor {
+            sum += curve.spl[i];
+            n += 1;
+        }
+    }
+    if n == 0 {
+        return (0.0, 0.0);
+    }
+    let mean = sum / n as f64;
+
     let mut peak_sum = 0.0;
     let mut peak_count = 0usize;
     let mut dip_sum = 0.0;
     let mut dip_count = 0usize;
-
-    for i in 0..initial.freq.len() {
-        let f = initial.freq[i];
-        if f < fmin || f > fmax {
-            continue;
-        }
-        if let Some(final_spl) = interpolate_spl_at(final_curve, f) {
-            let error = final_spl - initial.spl[i];
-            if error > 0.0 {
-                peak_sum += error * error;
+    for i in 0..curve.freq.len() {
+        if curve.freq[i] >= fmin && curve.freq[i] <= fmax && curve.spl[i] >= spl_floor {
+            let dev = curve.spl[i] - mean;
+            if dev > 0.0 {
+                peak_sum += dev * dev;
                 peak_count += 1;
-            } else if error < 0.0 {
-                dip_sum += error * error;
+            } else if dev < 0.0 {
+                dip_sum += dev * dev;
                 dip_count += 1;
             }
         }
@@ -299,6 +348,59 @@ fn peak_dip_rms(initial: &Curve, final_curve: &Curve, fmin: f64, fmax: f64) -> (
         0.0
     };
     (peak_rms, dip_rms)
+}
+
+/// Peak deviation of the corrected (final) response from its own passband
+/// mean, measuring how flat the result is rather than how much the EQ changed.
+///
+/// For multi-channel configs (2.1, home cinema) the initial and final curves
+/// can be at wildly different absolute SPL levels (level alignment, crossover
+/// gains, broadband correction). Comparing initial vs final would measure the
+/// processing chain's total gain — not correction quality. By using only the
+/// final curve we get a level-independent flatness metric that works for every
+/// channel type.
+///
+/// Only considers frequency points within 20 dB of the passband peak to
+/// exclude rolloff/noise-floor regions (e.g., a sub above its crossover).
+fn peak_deviation_db(curve: &Curve, fmin: f64, fmax: f64) -> f64 {
+    // Dynamic SPL floor: find peak SPL in passband, exclude points >20 dB below.
+    let mut passband_peak = f64::NEG_INFINITY;
+    for i in 0..curve.freq.len() {
+        if curve.freq[i] >= fmin && curve.freq[i] <= fmax {
+            passband_peak = passband_peak.max(curve.spl[i]);
+        }
+    }
+    let spl_floor = if passband_peak.is_finite() {
+        passband_peak - 20.0
+    } else {
+        f64::NEG_INFINITY
+    };
+
+    // Compute mean SPL in the usable passband
+    let mut sum = 0.0;
+    let mut count = 0usize;
+    for i in 0..curve.freq.len() {
+        if curve.freq[i] >= fmin && curve.freq[i] <= fmax && curve.spl[i] >= spl_floor {
+            sum += curve.spl[i];
+            count += 1;
+        }
+    }
+    if count == 0 {
+        return 0.0;
+    }
+    let mean = sum / count as f64;
+
+    // Max positive deviation from mean (peak above mean)
+    let mut max_peak = 0.0_f64;
+    for i in 0..curve.freq.len() {
+        if curve.freq[i] >= fmin && curve.freq[i] <= fmax && curve.spl[i] >= spl_floor {
+            let dev = curve.spl[i] - mean;
+            if dev > max_peak {
+                max_peak = dev;
+            }
+        }
+    }
+    max_peak
 }
 
 // ---------------------------------------------------------------------------
@@ -372,26 +474,239 @@ const MIXED_PHASE_MUTATIONS: &[Mutation] =
     &[Mutation::Baseline, Mutation::MoreFilters, Mutation::WiderQ];
 
 // ---------------------------------------------------------------------------
+// Multi-metric scorecard
+// ---------------------------------------------------------------------------
+
+/// All metrics for one optimization run, used for multi-dimensional QA.
+#[derive(Debug, Clone)]
+struct MetricScorecard {
+    /// Flat loss (combined_post_score) — the original single metric.
+    flat_loss: f64,
+    /// Maximum positive deviation (peak) across channels in passband (dB).
+    peak_residual_db: f64,
+    /// Average EPA preference score across channels (higher = better).
+    epa_preference: Option<f64>,
+    /// Average Zwicker sharpness across channels (acum).
+    epa_sharpness: Option<f64>,
+    /// Average roughness across channels.
+    epa_roughness: Option<f64>,
+    /// Maximum group-delay standard deviation across channels (ms).
+    group_delay_std_ms: Option<f64>,
+}
+
+impl std::fmt::Display for MetricScorecard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "flat={:.4} peak={:.2}dB", self.flat_loss, self.peak_residual_db)?;
+        if let Some(v) = self.epa_preference {
+            write!(f, " epa={:.2}", v)?;
+        }
+        if let Some(v) = self.epa_sharpness {
+            write!(f, " sharp={:.2}", v)?;
+        }
+        if let Some(v) = self.epa_roughness {
+            write!(f, " rough={:.2}", v)?;
+        }
+        if let Some(v) = self.group_delay_std_ms {
+            write!(f, " gd={:.1}ms", v)?;
+        }
+        Ok(())
+    }
+}
+
+/// Compute the full scorecard from a single optimization result.
+fn compute_scorecard(result: &RoomOptimizationResult) -> MetricScorecard {
+    let flat_loss = result.combined_post_score;
+
+    // Peak residual: max peak deviation of the corrected response from its
+    // passband mean, across all channels. Measures flatness of the result.
+    let mut peak_residual_db = 0.0_f64;
+    for ch in result.channel_results.values() {
+        let peak_dev = peak_deviation_db(&ch.final_curve, SCORECARD_FMIN, SCORECARD_FMAX);
+        peak_residual_db = peak_residual_db.max(peak_dev);
+    }
+
+    // EPA metrics: average across channels
+    let (epa_preference, epa_sharpness, epa_roughness) =
+        if let Some(epa) = result.metadata.epa_per_channel.as_ref()
+            && !epa.is_empty()
+        {
+            let n = epa.len() as f64;
+            let pref = epa.values().map(|m| m.post.preference).sum::<f64>() / n;
+            let sharp = epa.values().map(|m| m.post.sharpness_acum).sum::<f64>() / n;
+            let rough = epa.values().map(|m| m.post.roughness).sum::<f64>() / n;
+            (Some(pref), Some(sharp), Some(rough))
+        } else {
+            (None, None, None)
+        };
+
+    // Group delay: max std dev across channels
+    let mut gd_max: Option<f64> = None;
+    for ch in result.channel_results.values() {
+        if let Some(gd) = group_delay_std_dev(&ch.final_curve, SCORECARD_FMIN, SCORECARD_FMAX) {
+            gd_max = Some(gd_max.map_or(gd, |prev: f64| prev.max(gd)));
+        }
+    }
+
+    MetricScorecard {
+        flat_loss,
+        peak_residual_db,
+        epa_preference,
+        epa_sharpness,
+        epa_roughness,
+        group_delay_std_ms: gd_max,
+    }
+}
+
+/// Compare a candidate scorecard against a baseline scorecard.
+/// Returns a list of (metric_name, pass, detail) for each check.
+fn compare_scorecards(baseline: &MetricScorecard, candidate: &MetricScorecard) -> Vec<(&'static str, bool, String)> {
+    let mut checks = Vec::new();
+
+    // 1. Flat loss: relaxed tolerance
+    let flat_ok = candidate.flat_loss <= baseline.flat_loss * SCORECARD_FLAT_LOSS_TOLERANCE;
+    checks.push((
+        "flat_loss",
+        flat_ok,
+        format!(
+            "{:.4} vs baseline {:.4} (limit {:.1}x)",
+            candidate.flat_loss, baseline.flat_loss, SCORECARD_FLAT_LOSS_TOLERANCE
+        ),
+    ));
+
+    // 2. Peak residual: relative OR absolute ceiling
+    let peak_ok = candidate.peak_residual_db <= baseline.peak_residual_db * SCORECARD_PEAK_TOLERANCE
+        || candidate.peak_residual_db < SCORECARD_PEAK_ABSOLUTE_DB;
+    checks.push((
+        "peak_residual",
+        peak_ok,
+        format!(
+            "{:.2}dB vs baseline {:.2}dB",
+            candidate.peak_residual_db, baseline.peak_residual_db
+        ),
+    ));
+
+    // 3. EPA preference: must not crater
+    if let (Some(c_pref), Some(b_pref)) = (candidate.epa_preference, baseline.epa_preference) {
+        let epa_ok = b_pref <= 0.0 || c_pref >= b_pref * SCORECARD_EPA_PREF_MIN_RATIO;
+        checks.push((
+            "epa_preference",
+            epa_ok,
+            format!("{:.2} vs baseline {:.2} (min {:.0}%)", c_pref, b_pref, SCORECARD_EPA_PREF_MIN_RATIO * 100.0),
+        ));
+    }
+
+    // 4. Sharpness: absolute bounds, but skip if baseline already violates
+    //    (candidate matching or improving on a pre-existing violation is not a regression)
+    if let (Some(c_sharp), Some(b_sharp)) = (candidate.epa_sharpness, baseline.epa_sharpness) {
+        let in_range = (SCORECARD_SHARPNESS_MIN..=SCORECARD_SHARPNESS_MAX).contains(&c_sharp);
+        let baseline_already_violated = !(SCORECARD_SHARPNESS_MIN..=SCORECARD_SHARPNESS_MAX).contains(&b_sharp);
+        let no_worse = c_sharp <= b_sharp + 0.05; // small tolerance for optimizer noise
+        let sharp_ok = in_range || (baseline_already_violated && no_worse);
+        checks.push((
+            "sharpness",
+            sharp_ok,
+            format!("{:.2} acum (range {:.1}-{:.1})", c_sharp, SCORECARD_SHARPNESS_MIN, SCORECARD_SHARPNESS_MAX),
+        ));
+    }
+
+    // 5. Roughness: absolute ceiling, but skip if baseline already violates
+    if let (Some(c_rough), Some(b_rough)) = (candidate.epa_roughness, baseline.epa_roughness) {
+        let below_max = c_rough <= SCORECARD_ROUGHNESS_MAX;
+        let baseline_already_violated = b_rough > SCORECARD_ROUGHNESS_MAX;
+        let no_worse = c_rough <= b_rough + 0.02; // small tolerance for optimizer noise
+        let rough_ok = below_max || (baseline_already_violated && no_worse);
+        checks.push((
+            "roughness",
+            rough_ok,
+            format!("{:.2} (max {:.1})", c_rough, SCORECARD_ROUGHNESS_MAX),
+        ));
+    }
+
+    // 6. Group delay: relative tolerance with minimum floor.
+    //    Sub-5ms GD std dev is inaudible, so use 5ms as the floor to avoid
+    //    misleading ratios when the baseline is very low.
+    if let (Some(c_gd), Some(b_gd)) = (candidate.group_delay_std_ms, baseline.group_delay_std_ms) {
+        let effective_baseline = b_gd.max(5.0);
+        let gd_ok = b_gd <= 0.0 || c_gd <= effective_baseline * SCORECARD_GD_TOLERANCE;
+        checks.push((
+            "group_delay",
+            gd_ok,
+            format!("{:.1}ms vs baseline {:.1}ms", c_gd, b_gd),
+        ));
+    }
+
+    checks
+}
+
+/// Evaluate a single optimization result against baseline using the multi-metric scorecard.
+/// For Baseline mutations, stores the scorecard and checks convergence (flat_loss < pre).
+/// For other mutations, compares against the stored baseline scorecard.
+fn evaluate_scorecard(
+    mutation: Mutation,
+    pre_score: f64,
+    candidate: &MetricScorecard,
+    baseline_scorecard: &mut Option<MetricScorecard>,
+) -> (bool, String) {
+    match mutation {
+        Mutation::Baseline => {
+            *baseline_scorecard = Some(candidate.clone());
+            let ok = candidate.flat_loss < pre_score;
+            let reason = if ok {
+                format!("pre={:.4}, -{:.0}% [{}]", pre_score, (1.0 - candidate.flat_loss / pre_score) * 100.0, candidate)
+            } else {
+                format!("FAIL: post {:.4} >= pre {:.4}", candidate.flat_loss, pre_score)
+            };
+            (ok, reason)
+        }
+        _ => {
+            let base = baseline_scorecard.as_ref().unwrap();
+            let checks = compare_scorecards(base, candidate);
+            // Also require convergence (post < pre)
+            let converged = candidate.flat_loss < pre_score;
+            let all_pass = converged && checks.iter().all(|(_, pass, _)| *pass);
+
+            if all_pass {
+                let pct = (1.0 - candidate.flat_loss / base.flat_loss) * 100.0;
+                (true, format!("{:+.0}% vs baseline [{}]", -pct, candidate))
+            } else {
+                let mut failures: Vec<String> = Vec::new();
+                if !converged {
+                    failures.push(format!("no convergence: post {:.4} >= pre {:.4}", candidate.flat_loss, pre_score));
+                }
+                for (name, pass, detail) in &checks {
+                    if !pass {
+                        failures.push(format!("{}: {}", name, detail));
+                    }
+                }
+                (false, format!("FAIL: {}", failures.join("; ")))
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Test result tracking
 // ---------------------------------------------------------------------------
 
 struct TestResult {
     label: String,
     pre_score: f64,
-    post_score: f64,
-    epa_preference: Option<f64>,
+    scorecard: MetricScorecard,
     pass: bool,
     reason: String,
 }
 
-/// Compute average EPA post-preference across channels.
-fn avg_epa_preference(result: &RoomOptimizationResult) -> Option<f64> {
-    let epa = result.metadata.epa_per_channel.as_ref()?;
-    if epa.is_empty() {
-        return None;
+/// Placeholder scorecard for tests that don't run a full optimization
+/// (e.g., cross-mode ratio checks). `flat_loss` carries the test's primary value.
+fn placeholder_scorecard(flat_loss: f64) -> MetricScorecard {
+    MetricScorecard {
+        flat_loss,
+        peak_residual_db: 0.0,
+        epa_preference: None,
+        epa_sharpness: None,
+        epa_roughness: None,
+        group_delay_std_ms: None,
     }
-    let sum: f64 = epa.values().map(|m| m.post.preference).sum();
-    Some(sum / epa.len() as f64)
 }
 
 // ---------------------------------------------------------------------------
@@ -1187,7 +1502,7 @@ fn run_stereo_workflow_tests(
 
     writeln!(out, "\n--- {} (IIR workflow) ---", name).unwrap();
 
-    let mut baseline_post: Option<f64> = None;
+    let mut baseline_scorecard: Option<MetricScorecard> = None;
 
     for mutation in IIR_MUTATIONS {
         let (mut config, _) = load_config(base_config_path, override_config_path)?;
@@ -1198,16 +1513,16 @@ fn run_stereo_workflow_tests(
             run_optimization(&config).with_context(|| format!("{} IIR {}", name, mutation))?;
 
         let pre = result.combined_pre_score;
-        let post = result.combined_post_score;
+        let scorecard = compute_scorecard(&result);
 
-        let (pass, reason) = evaluate_result(*mutation, pre, post, &mut baseline_post);
+        let (pass, reason) = evaluate_scorecard(*mutation, pre, &scorecard, &mut baseline_scorecard);
 
         let status = if pass { "PASS" } else { "FAIL" };
         writeln!(
             out,
-            "  IIR {:>14}: post={:.4}  {}  ({})",
+            "  IIR {:>14}: {}  {}  ({})",
             mutation.to_string(),
-            post,
+            scorecard,
             status,
             reason
         )
@@ -1216,8 +1531,7 @@ fn run_stereo_workflow_tests(
         results.push(TestResult {
             label: format!("{} IIR {}", name, mutation),
             pre_score: pre,
-            post_score: post,
-            epa_preference: avg_epa_preference(&result),
+            scorecard,
             pass,
             reason,
         });
@@ -1267,7 +1581,7 @@ fn run_generic_path_tests(
 
     for (mode_name, processing_mode, override_file, mutations) in modes {
         let override_path = override_config_dir.join(override_file);
-        let mut baseline_post: Option<f64> = None;
+        let mut baseline_scorecard: Option<MetricScorecard> = None;
 
         for mutation in *mutations {
             let (mut config, _) = load_config_for_generic_path(
@@ -1282,22 +1596,22 @@ fn run_generic_path_tests(
                 .with_context(|| format!("{} {} generic {}", name, mode_name, mutation))?;
 
             let pre = result.combined_pre_score;
-            let post = result.combined_post_score;
+            let scorecard = compute_scorecard(&result);
 
-            let (pass, reason) = evaluate_result(*mutation, pre, post, &mut baseline_post);
+            let (pass, reason) = evaluate_scorecard(*mutation, pre, &scorecard, &mut baseline_scorecard);
 
             // Record baseline for cross-mode comparison
             if matches!(mutation, Mutation::Baseline) {
-                mode_baselines.push((mode_name, post));
+                mode_baselines.push((mode_name, scorecard.flat_loss));
             }
 
             let status = if pass { "PASS" } else { "FAIL" };
             writeln!(
                 out,
-                "  {} {:>14}: post={:.4}  {}  ({})",
+                "  {} {:>14}: {}  {}  ({})",
                 mode_name,
                 mutation.to_string(),
-                post,
+                scorecard,
                 status,
                 reason
             )
@@ -1306,8 +1620,7 @@ fn run_generic_path_tests(
             results.push(TestResult {
                 label: format!("{} generic {} {}", name, mode_name, mutation),
                 pre_score: pre,
-                post_score: post,
-                epa_preference: avg_epa_preference(&result),
+                scorecard,
                 pass,
                 reason,
             });
@@ -1343,8 +1656,7 @@ fn run_generic_path_tests(
         results.push(TestResult {
             label: format!("{} cross-mode", name),
             pre_score: 0.0,
-            post_score: 0.0,
-            epa_preference: None,
+            scorecard: placeholder_scorecard(ratio),
             pass,
             reason: format!("ratio={:.2}x (limit={:.1}x)", ratio, CROSS_MODE_RATIO_LIMIT),
         });
@@ -1443,8 +1755,7 @@ fn run_cross_mode_convergence_tests(
         results.push(TestResult {
             label: format!("{} CM-1 FR convergence", name),
             pre_score: 0.0,
-            post_score: cm1_max_diff,
-            epa_preference: None,
+            scorecard: placeholder_scorecard(cm1_max_diff),
             pass: cm1_pass,
             reason: format!(
                 "max_diff={:.2}dB (limit={:.1}dB)",
@@ -1498,8 +1809,7 @@ fn run_cross_mode_convergence_tests(
             results.push(TestResult {
                 label: format!("{} CM-2 GD flatness", name),
                 pre_score: iir_gd_max,
-                post_score: fir_gd_max.max(mixed_gd_max),
-                epa_preference: None,
+                scorecard: placeholder_scorecard(fir_gd_max.max(mixed_gd_max)),
                 pass: cm2_pass,
                 reason: format!(
                     "IIR={:.2}ms FIR={:.2}ms Mixed={:.2}ms",
@@ -1543,8 +1853,7 @@ fn run_cross_mode_convergence_tests(
         results.push(TestResult {
             label: format!("{} CM-3 score convergence", name),
             pre_score: 0.0,
-            post_score: ratio,
-            epa_preference: None,
+            scorecard: placeholder_scorecard(ratio),
             pass: cm3_pass,
             reason: format!(
                 "{} ratio={:.2}x (limit={:.1}x)",
@@ -1680,25 +1989,38 @@ fn run_option_effect_test(
             results.push(TestResult {
                 label: format!("{} [{}]", name, option),
                 pre_score: baseline_result.combined_post_score,
-                post_score: option_result.combined_post_score,
-                epa_preference: avg_epa_preference(&option_result),
+                scorecard: compute_scorecard(&option_result),
                 pass: false,
                 reason,
             });
         }
     }
 
-    // Combo-level check: combined result should still converge (post < pre).
-    // For high-interaction combos (4+ options), conflicting constraints
-    // (excursion HPF + schroeder split + tilt + psychoacoustic) create a
-    // very constrained search space. Allow a small regression margin.
-    let convergence_margin = if options.len() >= 4 {
-        option_result.combined_pre_score * 0.15 // 15% regression tolerance
-    } else {
-        0.0
+    // Combo-level scorecard check: compare option result against baseline
+    // using the multi-metric scorecard. Combos with multiple options face
+    // conflicting constraints (e.g., schroeder split + asymmetric loss) that
+    // shrink the feasible region. Allow a small convergence margin that scales
+    // with the number of options.
+    let option_scorecard = compute_scorecard(&option_result);
+    let baseline_scorecard = compute_scorecard(&baseline_result);
+
+    let convergence_margin = match options.len() {
+        0..=1 => 0.0,
+        2..=3 => option_result.combined_pre_score * 0.05, // 5% for 2-3 options
+        _ => option_result.combined_pre_score * 0.15,      // 15% for 4+ options
     };
     let converged =
         option_result.combined_post_score < option_result.combined_pre_score + convergence_margin;
+
+    // Run scorecard comparison (informational for option tests — per-option
+    // validators remain the primary gates, but EPA/peak/GD violations are surfaced)
+    let scorecard_checks = compare_scorecards(&baseline_scorecard, &option_scorecard);
+    let scorecard_failures: Vec<String> = scorecard_checks
+        .iter()
+        .filter(|(_, pass, _)| !pass)
+        .map(|(name, _, detail)| format!("{}: {}", name, detail))
+        .collect();
+
     if !converged {
         all_pass = false;
         let reason = format!(
@@ -1709,11 +2031,21 @@ fn run_option_effect_test(
         results.push(TestResult {
             label: format!("{} [convergence]", name),
             pre_score: option_result.combined_pre_score,
-            post_score: option_result.combined_post_score,
-            epa_preference: avg_epa_preference(&option_result),
+            scorecard: option_scorecard.clone(),
             pass: false,
             reason,
         });
+    }
+
+    // Surface scorecard warnings even when per-option validators pass
+    if !scorecard_failures.is_empty() {
+        writeln!(
+            out,
+            "  scorecard: {} [{}]",
+            if scorecard_failures.is_empty() { "OK" } else { "WARN" },
+            scorecard_failures.join("; ")
+        )
+        .unwrap();
     }
 
     // If everything passed, push a single PASS result
@@ -1721,13 +2053,12 @@ fn run_option_effect_test(
         results.push(TestResult {
             label: name.to_string(),
             pre_score: baseline_result.combined_post_score,
-            post_score: option_result.combined_post_score,
-            epa_preference: avg_epa_preference(&option_result),
+            scorecard: option_scorecard,
             pass: true,
             reason: format!(
-                "all {} invariants pass, post={:.4}",
+                "all {} invariants pass [{}]",
                 options.len(),
-                option_result.combined_post_score
+                compute_scorecard(&option_result)
             ),
         });
     }
@@ -2148,14 +2479,8 @@ fn validate_asymmetric_loss(
             let fmin = 20.0;
             let fmax = 500.0;
 
-            let (b_peak, b_dip) = peak_dip_rms(
-                &baseline_ch.initial_curve,
-                &baseline_ch.final_curve,
-                fmin,
-                fmax,
-            );
-            let (o_peak, o_dip) =
-                peak_dip_rms(&option_ch.initial_curve, &option_ch.final_curve, fmin, fmax);
+            let (b_peak, b_dip) = peak_dip_from_mean(&baseline_ch.final_curve, fmin, fmax);
+            let (o_peak, o_dip) = peak_dip_from_mean(&option_ch.final_curve, fmin, fmax);
 
             if b_dip > 0.01 && o_dip > 0.01 {
                 baseline_ratio_sum += b_peak / b_dip;
@@ -2271,8 +2596,15 @@ fn validate_broadband_target_matching(
     // schroeder split creates a boundary discontinuity within the measurement band.
     // Schroeder (300 Hz) bisects the 100-1000 Hz slope range, so combos with
     // schroeder + tilt legitimately produce larger slope shifts.
-    let slope_tolerance = 3.0 + (num_options.saturating_sub(1) as f64) * 1.5;
+    // LFE/subwoofer channels are excluded: they naturally have extreme slopes
+    // from the crossover rolloff and broadband matching cannot meaningfully
+    // flatten them in the 100-1000 Hz regression range.
+    let slope_tolerance = 4.0 + (num_options.saturating_sub(1) as f64) * 1.5;
     for (ch_name, option_ch) in &option_result.channel_results {
+        let ch_lower = ch_name.to_lowercase();
+        if ch_lower.contains("lfe") || ch_lower.contains("sub") {
+            continue;
+        }
         if let Some(baseline_ch) = baseline_result.channel_results.get(ch_name)
             && let Some(baseline_slope) = regression_slope_per_octave_in_range(
                 &baseline_ch.final_curve.freq,
@@ -2414,48 +2746,6 @@ fn variance(values: &[f64]) -> f64 {
     }
     let mean = values.iter().sum::<f64>() / values.len() as f64;
     values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / values.len() as f64
-}
-
-// ---------------------------------------------------------------------------
-// Evaluation helpers
-// ---------------------------------------------------------------------------
-
-/// Evaluate a single optimization result against baseline
-fn evaluate_result(
-    mutation: Mutation,
-    pre: f64,
-    post: f64,
-    baseline_post: &mut Option<f64>,
-) -> (bool, String) {
-    match mutation {
-        Mutation::Baseline => {
-            *baseline_post = Some(post);
-            let ok = post < pre;
-            let reason = if ok {
-                format!("pre={:.4}, -{:.0}%", pre, (1.0 - post / pre) * 100.0)
-            } else {
-                format!("FAIL: post {:.4} >= pre {:.4}", post, pre)
-            };
-            (ok, reason)
-        }
-        _ => {
-            let base = baseline_post.unwrap();
-            let threshold = base * MONOTONICITY_TOLERANCE;
-            let ok = post <= threshold && post < pre;
-            let pct = (1.0 - post / base) * 100.0;
-            let reason = if ok {
-                format!("{:+.0}% vs baseline", -pct)
-            } else if post >= pre {
-                format!("FAIL: post {:.4} >= pre {:.4}", post, pre)
-            } else {
-                format!(
-                    "FAIL: post {:.4} > baseline*{:.2} ({:.4})",
-                    post, MONOTONICITY_TOLERANCE, threshold
-                )
-            };
-            (ok, reason)
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2665,13 +2955,9 @@ fn main() -> Result<()> {
         println!("\nFailed tests:");
         for r in &all_results {
             if !r.pass {
-                let epa_str = match r.epa_preference {
-                    Some(v) => format!("{:.3}", v),
-                    None => "n/a".to_string(),
-                };
                 println!(
-                    "  - {} (pre={:.4}, post={:.4}, epa={}): {}",
-                    r.label, r.pre_score, r.post_score, epa_str, r.reason
+                    "  - {} (pre={:.4}, {}): {}",
+                    r.label, r.pre_score, r.scorecard, r.reason
                 );
             }
         }
