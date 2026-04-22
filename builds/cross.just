@@ -38,7 +38,7 @@ cross-base-linux-arm64:
 [group('cross')]
 cross-base-linux-x86:
 	@echo "Building base Docker image for Linux x86_64..."
-	docker build -t sotf-base-linux-x86 \
+	docker build --platform linux/amd64 -t sotf-base-linux-x86 \
 		-f ./builds/from_macos_arm/Dockerfile.base.x86_64-unknown-linux-musl .
 
 [group('cross')]
@@ -62,7 +62,7 @@ cross-base-win-arm64:
 [group('cross')]
 cross-base-win-x86:
 	@echo "Building base Docker image for Windows x86_64..."
-	docker build -t sotf-base-win-x86 \
+	docker build --platform linux/amd64 -t sotf-base-win-x86 \
 		-f ./builds/from_macos_arm/Dockerfile.base.x86_64-pc-windows-gnullvm .
 
 # ----------------------------------------------------------------------
@@ -81,15 +81,27 @@ cross-linux-arm64: cross-base-linux-arm64
 	@echo "Done! Output in: dist/"
 
 # Linux x86_64: AppImage + tarball → dist/
+# On native x86_64: full build with AppImage. On ARM (macOS): TUI-only tarball via QEMU.
 [group('cross')]
 cross-linux-x86: cross-base-linux-x86
-	@echo "Building Docker image..."
-	docker build -t sotf-linux-x86 -f ./builds/from_macos_arm/Dockerfile.x86_64-unknown-linux-musl .
-	@echo "Building in Docker container..."
-	docker run --rm --platform linux/amd64 -v "$(pwd)":/project -v sotf-target-linux-x86:/build-target -w /project \
-		-e CARGO_TARGET_DIR=/build-target \
-		sotf-linux-x86 ./scripts/build-linux.sh --appimage
-	@echo "Done! Output in: dist/"
+	#!/usr/bin/env bash
+	set -euo pipefail
+	host_arch=$(uname -m)
+	echo "Building Docker image..."
+	if [ "$host_arch" = "x86_64" ]; then
+		docker build -t sotf-linux-x86 -f ./builds/from_macos_arm/Dockerfile.x86_64-unknown-linux-musl .
+		echo "Building in Docker container..."
+		docker run --rm -v "$(pwd)":/project -v sotf-target-linux-x86:/build-target -w /project \
+			-e CARGO_TARGET_DIR=/build-target \
+			sotf-linux-x86 ./scripts/build-linux.sh --appimage
+	else
+		docker build --platform linux/amd64 -t sotf-linux-x86 -f ./builds/from_macos_arm/Dockerfile.x86_64-unknown-linux-musl .
+		echo "Building in Docker container (QEMU)..."
+		docker run --rm --platform linux/amd64 -v "$(pwd)":/project -v sotf-target-linux-x86:/build-target -w /project \
+			-e CARGO_TARGET_DIR=/build-target \
+			sotf-linux-x86 ./scripts/build-linux.sh --tui-only
+	fi
+	echo "Done! Output in: dist/"
 
 # Debug: open interactive shell in Linux x86 container
 [group('cross')]
@@ -133,7 +145,7 @@ cross-windows-x86: cross-base-win-x86
 	set -euo pipefail
 	VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
 	echo "Building Docker image..."
-	docker build -t sotf-win-x86 -f ./builds/from_macos_arm/Dockerfile.x86_64-pc-windows-gnullvm .
+	docker build --platform linux/amd64 -t sotf-win-x86 -f ./builds/from_macos_arm/Dockerfile.x86_64-pc-windows-gnullvm .
 	echo "Building in Docker container..."
 	mkdir -p dist
 	docker_env=(-e CARGO_TARGET_DIR=/build-target)
@@ -142,7 +154,7 @@ cross-windows-x86: cross-base-win-x86
 		docker_env+=(-e WINDOWS_CERT_FILE -e WINDOWS_CERT_PASSWORD)
 		[ -n "${WINDOWS_TIMESTAMP_URL:-}" ] && docker_env+=(-e WINDOWS_TIMESTAMP_URL)
 	fi
-	docker run --rm -v "$(pwd)":/project -v sotf-target-win-x86:/build-target -w /project "${docker_env[@]}" sotf-win-x86 \
+	docker run --rm --platform linux/amd64 -v "$(pwd)":/project -v sotf-target-win-x86:/build-target -w /project "${docker_env[@]}" sotf-win-x86 \
 		bash -c 'cargo build --release --target x86_64-pc-windows-gnullvm -p sotf-tui --bin sotf-tui && ./scripts/build-msix.sh --sign --build-dir /build-target/x86_64-pc-windows-gnullvm/release --arch x64 && cp /build-target/x86_64-pc-windows-gnullvm/release/sotf-tui.exe dist/'
 	mv "dist/sotf-tui.exe" "dist/sotf-tui-windows-x86_64-${VERSION}.exe"
 	echo "Done! dist/sotf-tui-windows-x86_64-${VERSION}.exe + MSIX in dist/"

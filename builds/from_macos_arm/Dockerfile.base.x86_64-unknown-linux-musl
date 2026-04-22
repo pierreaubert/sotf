@@ -28,17 +28,18 @@ RUN just install-linux-root
 RUN just install-ubuntu-common
 RUN apt-get update && apt-get install -y imagemagick && rm -rf /var/lib/apt/lists/*
 
-# Install linuxdeploy for AppImage packaging
-# Extract with unsquashfs instead of running the AppImage (which fails under QEMU emulation)
-RUN apt-get update && apt-get install -y squashfs-tools && rm -rf /var/lib/apt/lists/*
+# Install linuxdeploy for AppImage packaging (extracted — FUSE not available in Docker)
+# NOTE: --appimage-extract fails under QEMU emulation (from macOS ARM).
+# When building on native x86_64, this works; from ARM, use --tui-only to skip AppImage.
 RUN cd /tmp && \
     curl -L -o linuxdeploy.AppImage \
         https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage && \
-    offset=$(grep -aobP '\x68\x73\x71\x73' linuxdeploy.AppImage | head -1 | cut -d: -f1) && \
-    tail -c +$((offset + 1)) linuxdeploy.AppImage > linuxdeploy.squashfs && \
-    unsquashfs -d /opt/linuxdeploy linuxdeploy.squashfs && \
-    ln -sf /opt/linuxdeploy/AppRun /usr/local/bin/linuxdeploy && \
-    rm -f /tmp/linuxdeploy.*
+    chmod +x linuxdeploy.AppImage && \
+    (./linuxdeploy.AppImage --appimage-extract && \
+     mv squashfs-root /opt/linuxdeploy && \
+     ln -sf /opt/linuxdeploy/AppRun /usr/local/bin/linuxdeploy || \
+     echo "WARN: linuxdeploy extraction failed (QEMU?), AppImage creation will be unavailable") && \
+    rm -f /tmp/linuxdeploy.AppImage
 
 # Remove stale stable toolchain from base image (its clippy manifest is broken)
 # and repair the default toolchain's clippy state
