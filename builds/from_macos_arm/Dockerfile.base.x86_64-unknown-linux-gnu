@@ -42,6 +42,9 @@ RUN apt-get update && \
 
 WORKDIR /project
 
+# Repair rustup state (cached layers may have stale component manifests)
+RUN rustup component remove clippy 2>/dev/null; rustup component add clippy
+
 # Pre-fetch cargo dependencies (cached per Cargo.lock)
 COPY . /project/
 RUN cargo fetch --locked --target x86_64-unknown-linux-gnu

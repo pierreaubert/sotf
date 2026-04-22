@@ -41,6 +41,9 @@ ENV PATH="/opt/llvm-mingw/bin:${PATH}"
 
 RUN cargo install just --locked
 
+# Repair rustup state (cached layers may have stale component manifests)
+RUN rustup component remove clippy 2>/dev/null; rustup component add clippy
+
 # Pre-fetch cargo dependencies (cached per Cargo.lock)
 WORKDIR /project
 COPY . /project/

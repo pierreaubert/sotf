@@ -10,6 +10,9 @@ RUN rustup toolchain install 1.95.0-aarch64-unknown-linux-gnu --component cargo,
     rustup target add --toolchain 1.95.0-aarch64-unknown-linux-gnu aarch64-unknown-linux-musl && \
     rustup default 1.95.0-aarch64-unknown-linux-gnu
 
+# Pin toolchain to override rust-toolchain.toml (which requests "stable" and triggers broken syncs)
+ENV RUSTUP_TOOLCHAIN=1.95.0-aarch64-unknown-linux-gnu
+
 RUN mkdir -p /root/.rustup/tmp /root/.rustup/downloads && \
     chmod -R 777 /root/.rustup/tmp /root/.rustup/downloads
 
@@ -34,6 +37,11 @@ RUN cd /tmp && \
     mv squashfs-root /opt/linuxdeploy && \
     ln -sf /opt/linuxdeploy/AppRun /usr/local/bin/linuxdeploy && \
     rm -f /tmp/linuxdeploy.AppImage
+
+# Remove stale stable toolchain from base image (its clippy manifest is broken)
+# and repair the default toolchain's clippy state
+RUN rustup toolchain uninstall stable 2>/dev/null; \
+    rustup component remove clippy 2>/dev/null; rustup component add clippy
 
 # Pre-fetch cargo dependencies (cached per Cargo.lock)
 COPY . /project/

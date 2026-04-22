@@ -1,4 +1,4 @@
-FROM messense/rust-musl-cross:x86_64-musl
+FROM --platform=linux/amd64 messense/rust-musl-cross:x86_64-musl
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Etc/UTC
@@ -9,6 +9,9 @@ RUN apt-get update && rm -rf /var/lib/apt/lists/*
 RUN rustup toolchain install 1.95.0-x86_64-unknown-linux-gnu --component cargo,clippy,llvm-tools-preview,rust-analyzer,rust-src,rust-std,rustc,rustc-dev,rustfmt && \
     rustup target add --toolchain 1.95.0-x86_64-unknown-linux-gnu x86_64-unknown-linux-musl && \
     rustup default 1.95.0-x86_64-unknown-linux-gnu
+
+# Pin toolchain to override rust-toolchain.toml (which requests "stable" and triggers broken syncs)
+ENV RUSTUP_TOOLCHAIN=1.95.0-x86_64-unknown-linux-gnu
 
 RUN mkdir -p /root/.rustup/tmp /root/.rustup/downloads && \
     chmod -R 777 /root/.rustup/tmp /root/.rustup/downloads
@@ -25,15 +28,22 @@ RUN just install-linux-root
 RUN just install-ubuntu-common
 RUN apt-get update && apt-get install -y imagemagick && rm -rf /var/lib/apt/lists/*
 
-# Install linuxdeploy for AppImage packaging (extracted — FUSE not available in Docker)
+# Install linuxdeploy for AppImage packaging
+# Extract with unsquashfs instead of running the AppImage (which fails under QEMU emulation)
+RUN apt-get update && apt-get install -y squashfs-tools && rm -rf /var/lib/apt/lists/*
 RUN cd /tmp && \
     curl -L -o linuxdeploy.AppImage \
         https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage && \
-    chmod +x linuxdeploy.AppImage && \
-    ./linuxdeploy.AppImage --appimage-extract && \
-    mv squashfs-root /opt/linuxdeploy && \
+    offset=$(grep -aobP '\x68\x73\x71\x73' linuxdeploy.AppImage | head -1 | cut -d: -f1) && \
+    tail -c +$((offset + 1)) linuxdeploy.AppImage > linuxdeploy.squashfs && \
+    unsquashfs -d /opt/linuxdeploy linuxdeploy.squashfs && \
     ln -sf /opt/linuxdeploy/AppRun /usr/local/bin/linuxdeploy && \
-    rm -f /tmp/linuxdeploy.AppImage
+    rm -f /tmp/linuxdeploy.*
+
+# Remove stale stable toolchain from base image (its clippy manifest is broken)
+# and repair the default toolchain's clippy state
+RUN rustup toolchain uninstall stable 2>/dev/null; \
+    rustup component remove clippy 2>/dev/null; rustup component add clippy
 
 # Pre-fetch cargo dependencies (cached per Cargo.lock)
 COPY . /project/

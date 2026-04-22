@@ -47,6 +47,7 @@ CREATE_DEB=false
 INSTALL_TOOLS=false
 SIGN=false
 CLEAN=false
+TUI_ONLY=false
 TARGET=""
 BUILD_DIR=""
 DIST_DIR="$PROJECT_ROOT/dist"
@@ -84,6 +85,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --clean)
             CLEAN=true
+            shift
+            ;;
+        --tui-only)
+            TUI_ONLY=true
             shift
             ;;
         --help|-h)
@@ -257,20 +262,24 @@ build_binary() {
 
     # onnx disabled: ort prebuilt binaries require glibc 2.38+ (__isoc23_strtol)
     # which is newer than the Docker build containers provide
-    if $CROSS_COMPILE; then
-        log_info "Cross-compiling for $TARGET..."
-        CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --package "$PACKAGE_NAME" --target "$TARGET"
+    if ! $TUI_ONLY; then
+        if $CROSS_COMPILE; then
+            log_info "Cross-compiling for $TARGET..."
+            CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --package "$PACKAGE_NAME" --target "$TARGET"
+        else
+            log_info "Building native Linux binary..."
+            cargo build --release --package "$PACKAGE_NAME"
+        fi
+
+        if [ ! -f "$BUILD_DIR/$BINARY_NAME" ]; then
+            log_error "Binary not found at $BUILD_DIR/$BINARY_NAME"
+            exit 1
+        fi
+
+        log_success "GPUI binary built successfully"
     else
-        log_info "Building native Linux binary..."
-        cargo build --release --package "$PACKAGE_NAME"
+        log_info "Skipping GPUI binary (--tui-only mode)"
     fi
-
-    if [ ! -f "$BUILD_DIR/$BINARY_NAME" ]; then
-        log_error "Binary not found at $BUILD_DIR/$BINARY_NAME"
-        exit 1
-    fi
-
-    log_success "GPUI binary built successfully"
 
     # Build TUI binary
     log_info "Building TUI binary..."
@@ -320,8 +329,10 @@ create_tarball() {
     mkdir -p "$staging_dir"
 
     # Copy binaries
-    cp "$BUILD_DIR/$BINARY_NAME" "$staging_dir/"
-    chmod +x "$staging_dir/$BINARY_NAME"
+    if ! $TUI_ONLY && [ -f "$BUILD_DIR/$BINARY_NAME" ]; then
+        cp "$BUILD_DIR/$BINARY_NAME" "$staging_dir/"
+        chmod +x "$staging_dir/$BINARY_NAME"
+    fi
     cp "$BUILD_DIR/$TUI_BINARY_NAME" "$staging_dir/"
     chmod +x "$staging_dir/$TUI_BINARY_NAME"
 
@@ -436,6 +447,11 @@ EOF
 # Create AppImage (native Linux only)
 create_appimage() {
     if ! $CREATE_APPIMAGE; then
+        return
+    fi
+
+    if $TUI_ONLY; then
+        log_info "Skipping AppImage (--tui-only mode, no GPUI binary)"
         return
     fi
 
