@@ -14,14 +14,28 @@ pub struct GpuiMediaControls {
 }
 
 impl GpuiMediaControls {
-    pub fn new() -> Result<Self, souvlaki::Error> {
-        let config = PlatformConfig {
-            dbus_name: "sotf_player",
-            display_name: "SotF Player",
-            hwnd: get_hwnd(),
-        };
+    pub fn new() -> anyhow::Result<Self> {
+        // On Windows, souvlaki panics (instead of returning Err) if no HWND is
+        // provided. Catch the panic so the app starts without media controls
+        // rather than crashing.
+        let result = std::panic::catch_unwind(|| {
+            let config = PlatformConfig {
+                dbus_name: "sotf_player",
+                display_name: "SotF Player",
+                hwnd: get_hwnd(),
+            };
+            MediaControls::new(config)
+        });
 
-        let mut controls = MediaControls::new(config)?;
+        let mut controls = match result {
+            Ok(Ok(c)) => c,
+            Ok(Err(e)) => return Err(anyhow::anyhow!("media controls init failed: {e}")),
+            Err(_) => {
+                return Err(anyhow::anyhow!(
+                    "media controls panicked during init (no HWND on Windows?)"
+                ));
+            }
+        };
 
         let (tx, rx) = mpsc::channel();
         controls.attach(move |event: MediaControlEvent| {
@@ -127,8 +141,9 @@ pub fn update_media_controls(
 /// On Windows, souvlaki requires a valid HWND.
 #[cfg(target_os = "windows")]
 fn get_hwnd() -> Option<*mut core::ffi::c_void> {
-    // GPUI creates its own window; souvlaki on Windows needs an HWND.
-    // Returning None works — souvlaki will create a hidden message window.
+    // souvlaki on Windows panics if hwnd is None (requires a message window).
+    // We don't have easy access to the GPUI HWND here, so we return None
+    // and let the caller catch the panic via catch_unwind.
     None
 }
 
