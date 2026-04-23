@@ -1,0 +1,103 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # -------------------------------------------------------------------
+  # macOS ARM64 runner
+  # -------------------------------------------------------------------
+  macos:
+    runs-on: macos-arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version
+        id: version
+        run: |
+          VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build macOS ARM64
+        run: just cross-macos-arm64
+
+      - name: Build macOS x86_64
+        run: just cross-macos-x86
+
+      - name: Build and package AU plugins
+        run: |
+          just sync-au-versions
+          just build-au-all
+          just install-au-all
+          just dist-au
+
+      - name: Sign macOS artifacts
+        if: vars.DEVELOPER_ID != ''
+        env:
+          DEVELOPER_ID: ${{ vars.DEVELOPER_ID }}
+        run: ./scripts/sign-macos.sh
+
+      - name: Sign AU plugins
+        if: vars.DEVELOPER_ID != ''
+        env:
+          DEVELOPER_ID: ${{ vars.DEVELOPER_ID }}
+        run: just sign-au
+
+  # -------------------------------------------------------------------
+  # Linux x86_64 runner
+  # -------------------------------------------------------------------
+  linux:
+    runs-on: linux-x64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            build-essential gcc g++ pkg-config cmake ninja-build \
+            libssl-dev ca-certificates patchelf \
+            libglib2.0-dev libxkbcommon-x11-dev libgtk-3-dev \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libasound2-dev libclang-dev \
+            imagemagick fakeroot
+
+      - name: Install just
+        run: |
+          command -v just || cargo install just
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Build Linux x86_64 (native)
+        run: ./scripts/build-linux.sh --appimage
+
+  # -------------------------------------------------------------------
+  # Windows x86_64 runner
+  # -------------------------------------------------------------------
+  windows:
+    runs-on: windows-x64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build Windows x86_64
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          mkdir -p dist
+          cargo build --release -p sotf-tui --bin sotf-tui
+          cp target/release/sotf-tui.exe "dist/sotf-tui-windows-x86_64-${VERSION}.exe"
+
+      - name: Build MSIX package
+        shell: bash
+        run: ./scripts/build-msix.sh --arch x64 --sign
