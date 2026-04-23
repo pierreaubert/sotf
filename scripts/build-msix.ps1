@@ -170,7 +170,7 @@ function New-StagingDirectory {
     }
 
     # Generate AppxManifest.xml with correct version and architecture
-    $manifestTemplate = Get-Content "$ScriptDir\AppxManifest.xml" -Raw
+    $manifestTemplate = Get-Content "$ProjectRoot\builds\windows\AppxManifest.xml" -Raw
     $manifest = $manifestTemplate -replace 'Version="[^"]*"', "Version=`"$MsixVersion`""
     $manifest = $manifest -replace 'ProcessorArchitecture="[^"]*"', "ProcessorArchitecture=`"$Arch`""
     $manifest | Out-File -FilePath "$MsixStaging\AppxManifest.xml" -Encoding UTF8

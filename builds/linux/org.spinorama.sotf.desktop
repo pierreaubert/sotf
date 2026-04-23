@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=SotF Player
+GenericName=Audio Player
+Comment=High-quality audio player with advanced EQ and upmixing
+Exec=SotF %F
+Icon=org.spinorama.sotf
+Categories=Audio;AudioVideo;Player;Music;
+Terminal=false
+MimeType=audio/flac;audio/mpeg;audio/ogg;audio/wav;audio/x-wav;audio/mp4;audio/aac;
+Keywords=audio;music;player;eq;equalizer;
+StartupWMClass=org.spinorama.sotf

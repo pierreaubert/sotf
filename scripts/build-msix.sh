@@ -299,7 +299,7 @@ build_msix() {
     # Generate AppxManifest.xml with correct version and architecture
     sed -e "s/Version=\"[^\"]*\"/Version=\"${MSIX_VERSION}\"/" \
         -e "s/ProcessorArchitecture=\"[^\"]*\"/ProcessorArchitecture=\"${ARCH}\"/" \
-        "$SCRIPT_DIR/AppxManifest.xml" > "$staging/AppxManifest.xml"
+        "$PROJECT_ROOT/builds/windows/AppxManifest.xml" > "$staging/AppxManifest.xml"
 
     # Create MSIX (it's a ZIP with .msix extension)
     rm -f "$output"

@@ -52,6 +52,7 @@ TARGET=""
 BUILD_DIR=""
 DIST_DIR="$PROJECT_ROOT/dist"
 TOOLS_DIR="$PROJECT_ROOT/tools"
+ASSETS_DIR="$PROJECT_ROOT/builds/linux"
 
 # linuxdeploy tool configuration
 LINUXDEPLOY_VERSION="continuous"
@@ -345,9 +346,9 @@ create_tarball() {
     fi
 
     # Include desktop integration files
-    cp "$PROJECT_ROOT/dist/org.spinorama.sotf.desktop" "$staging_dir/"
-    if [ -f "$PROJECT_ROOT/dist/sotf.png" ]; then
-        cp "$PROJECT_ROOT/dist/sotf.png" "$staging_dir/org.spinorama.sotf.png"
+    cp "$ASSETS_DIR/org.spinorama.sotf.desktop" "$staging_dir/"
+    if [ -f "$ASSETS_DIR/sotf.png" ]; then
+        cp "$ASSETS_DIR/sotf.png" "$staging_dir/org.spinorama.sotf.png"
     fi
 
     # Create install script for desktop integration
@@ -460,8 +461,8 @@ create_appimage() {
     local appdir="$DIST_DIR/${APP_NAME}.AppDir"
     rm -rf "$appdir"
 
-    # Use the canonical desktop file from dist/
-    local desktop_file="$DIST_DIR/org.spinorama.sotf.desktop"
+    # Use the canonical desktop file from builds/linux/
+    local desktop_file="$ASSETS_DIR/org.spinorama.sotf.desktop"
     if [ ! -f "$desktop_file" ]; then
         log_error "Desktop file not found: $desktop_file"
         exit 1
@@ -469,17 +470,17 @@ create_appimage() {
 
     # Prepare icon — use org.spinorama.sotf name to match app_id and desktop file
     local icon_file=""
-    if [ -f "$PROJECT_ROOT/dist/sotf.png" ]; then
+    if [ -f "$ASSETS_DIR/sotf.png" ]; then
         local resized_icon="$DIST_DIR/org.spinorama.sotf.png"
         if command -v convert &> /dev/null; then
-            convert "$PROJECT_ROOT/dist/sotf.png" -resize 256x256 "$resized_icon"
+            convert "$ASSETS_DIR/sotf.png" -resize 256x256 "$resized_icon"
             icon_file="$resized_icon"
         elif command -v ffmpeg &> /dev/null; then
-            ffmpeg -y -i "$PROJECT_ROOT/dist/sotf.png" -vf scale=256:256 "$resized_icon" 2>/dev/null
+            ffmpeg -y -i "$ASSETS_DIR/sotf.png" -vf scale=256:256 "$resized_icon" 2>/dev/null
             icon_file="$resized_icon"
         else
             # Use the dist icon as-is
-            cp "$PROJECT_ROOT/dist/sotf.png" "$resized_icon"
+            cp "$ASSETS_DIR/sotf.png" "$resized_icon"
             icon_file="$resized_icon"
         fi
     elif [ -f "$PROJECT_ROOT/crates/app-gpui/assets/sotf.png" ]; then
@@ -579,12 +580,12 @@ create_deb() {
 
     # Install desktop file — filename must match app_id for WM integration
     # Patch Exec to use the deb binary name (sotf, lowercase)
-    sed 's|Exec=SotF|Exec=sotf|' "$PROJECT_ROOT/dist/org.spinorama.sotf.desktop" \
+    sed 's|Exec=SotF|Exec=sotf|' "$ASSETS_DIR/org.spinorama.sotf.desktop" \
         > "$deb_dir/usr/share/applications/org.spinorama.sotf.desktop"
 
     # Install icon — name must match Icon= field in desktop file
-    if [ -f "$PROJECT_ROOT/dist/sotf.png" ]; then
-        cp "$PROJECT_ROOT/dist/sotf.png" "$deb_dir/usr/share/icons/hicolor/256x256/apps/org.spinorama.sotf.png"
+    if [ -f "$ASSETS_DIR/sotf.png" ]; then
+        cp "$ASSETS_DIR/sotf.png" "$deb_dir/usr/share/icons/hicolor/256x256/apps/org.spinorama.sotf.png"
     elif [ -f "$PROJECT_ROOT/crates/app-gpui/assets/sotf.png" ]; then
         if command -v convert &> /dev/null; then
             convert "$PROJECT_ROOT/crates/app-gpui/assets/sotf.png" -resize 256x256 "$deb_dir/usr/share/icons/hicolor/256x256/apps/org.spinorama.sotf.png"

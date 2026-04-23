@@ -184,7 +184,7 @@ create_app_bundle() {
     # Copy Info.plist and update version
     sed -e "s/<string>SOTF_VERSION<\/string>/<string>$VERSION<\/string>/" \
         -e "s/<string>1<\/string>/<string>$BUILD_NUMBER<\/string>/" \
-        "$SCRIPT_DIR/org.spinorama.sotf.plist" > "$APP_BUNDLE/Contents/Info.plist"
+        "$PROJECT_ROOT/builds/macos/org.spinorama.sotf.plist" > "$APP_BUNDLE/Contents/Info.plist"
 
     # Create PkgInfo
     echo -n "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
