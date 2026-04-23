@@ -54,6 +54,30 @@ actions!(sotf_player, [Quit, NextScreen, PrevScreen]);
 struct Assets;
 
 fn main() {
+    // Install a panic hook that writes to a crash log file.
+    // On Windows, #[windows_subsystem = "windows"] detaches the console so
+    // panics are silently lost. This ensures we always have a crash report.
+    std::panic::set_hook(Box::new(|info| {
+        let crash_msg = format!(
+            "SOTF CRASH at {}\n{}\nBacktrace:\n{:?}\n",
+            chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+            info,
+            std::backtrace::Backtrace::force_capture(),
+        );
+        // Write to crash log next to the executable (always writable)
+        if let Ok(exe) = std::env::current_exe() {
+            let crash_path = exe.with_file_name("sotf_crash.log");
+            let _ = std::fs::write(&crash_path, &crash_msg);
+        }
+        // Also try the config dir
+        if let Some(dir) = sotf_audio_player::config::get_app_config_dir() {
+            let crash_path = dir.join("sotf_crash.log");
+            let _ = std::fs::write(&crash_path, &crash_msg);
+        }
+        // Try stderr as last resort (works when run from a console)
+        eprintln!("{}", crash_msg);
+    }));
+
     // Parse command line arguments (handles --version and --help)
     let args = Args::parse();
 
@@ -153,14 +177,39 @@ fn main() {
         });
     }
 
+    // Write breadcrumbs to a startup log so we can diagnose silent crashes
+    // (especially on Windows where #[windows_subsystem] eats all output).
+    let breadcrumb = |msg: &str| {
+        if let Ok(exe) = std::env::current_exe() {
+            let path = exe.with_file_name("sotf_startup.log");
+            use std::io::Write;
+            if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&path) {
+                let _ = writeln!(f, "[{}] {}", chrono::Local::now().format("%H:%M:%S%.3f"), msg);
+            }
+        }
+    };
+
+    breadcrumb("=== SotF starting ===");
+    breadcrumb("Creating platform...");
+
     #[cfg(target_os = "macos")]
     let platform = std::rc::Rc::new(gpui_macos::MacPlatform::new(false));
     #[cfg(target_os = "linux")]
     let platform = gpui_linux::current_platform(false);
     #[cfg(target_os = "windows")]
-    let platform = std::rc::Rc::new(
-        gpui_windows::WindowsPlatform::new(false).expect("failed to create Windows platform"),
-    );
+    let platform = std::rc::Rc::new(match gpui_windows::WindowsPlatform::new(false) {
+        Ok(p) => {
+            breadcrumb("Windows platform created OK");
+            p
+        }
+        Err(e) => {
+            breadcrumb(&format!("FATAL: Windows platform creation failed: {e}"));
+            eprintln!("Failed to create Windows platform: {e}");
+            std::process::exit(1);
+        }
+    });
+
+    breadcrumb("Platform created, initializing GPUI Application...");
 
     log::info!(
         "[startup] pre-GPUI init: {:.1}ms",
@@ -170,6 +219,7 @@ fn main() {
     gpui::Application::with_platform(platform)
         .with_assets(Assets)
         .run(move |cx| {
+            breadcrumb("GPUI Application::run callback entered");
             // Register design system global (platform default initially)
             cx.set_global(gpui_design::DesignSystemState::new());
 
