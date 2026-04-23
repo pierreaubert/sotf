@@ -2,7 +2,7 @@
 Type=Application
 Name=SotF Player
 GenericName=Audio Player
-Comment=High-quality audio player with advanced EQ and upmixing
+Comment=High-quality audio player with advanced plugins and an integrated RoomEQ.
 Exec=SotF %F
 Icon=org.spinorama.sotf
 Categories=Audio;AudioVideo;Player;Music;
