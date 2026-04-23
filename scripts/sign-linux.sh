@@ -8,6 +8,7 @@
 # Usage:
 #   ./sign-linux.sh                          # Sign current-version Linux artifacts in dist/ (keyless via OIDC)
 #   ./sign-linux.sh --key cosign.key         # Sign with a local key
+#   ./sign-linux.sh --key hashivault://sotf  # Sign with a KMS-backed key (Vault/AWS/GCP/Azure)
 #   ./sign-linux.sh dist/SotF-*.tar.gz       # Sign specific files
 #
 # Prerequisites:
@@ -56,8 +57,9 @@ while [[ $# -gt 0 ]]; do
             echo "Only signs artifacts matching the current version ($VERSION) from Cargo.toml."
             echo ""
             echo "Options:"
-            echo "  --key <path>  Sign with a local cosign private key"
-            echo "                Without --key, uses keyless OIDC signing"
+            echo "  --key <path>  Sign with a cosign private key or KMS URI"
+            echo "                Supports: local files, hashivault://, awskms://, gcpkms://, azurekms://"
+            echo "                Without --key, uses keyless OIDC signing (requires browser)"
             echo ""
             echo "Examples:"
             echo "  $0                              # Keyless sign current-version Linux artifacts in dist/"
@@ -92,18 +94,51 @@ log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
 log_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
 log_error()   { echo -e "${RED}[ERROR]${NC} $1"; }
 
-check_prerequisites() {
-    if ! command -v cosign &> /dev/null; then
-        log_error "cosign is not installed"
-        log_info "Install with: brew install cosign"
-        log_info "Or: go install github.com/sigstore/cosign/v2/cmd/cosign@latest"
-        log_info "Docs: https://docs.sigstore.dev/cosign/system_config/installation/"
-        exit 1
+ensure_cosign() {
+    # Check PATH and ~/go/bin
+    if command -v cosign &> /dev/null; then
+        return 0
+    fi
+    if [ -x "$HOME/go/bin/cosign" ]; then
+        export PATH="$HOME/go/bin:$PATH"
+        return 0
     fi
 
-    if [ -n "$COSIGN_KEY_PATH" ] && [ ! -f "$COSIGN_KEY_PATH" ]; then
-        log_error "Key file not found: $COSIGN_KEY_PATH"
-        exit 1
+    # Not found — try to install via go
+    log_warning "cosign not found in PATH or ~/go/bin"
+
+    if command -v go &> /dev/null; then
+        log_info "Installing cosign via: go install github.com/sigstore/cosign/v2/cmd/cosign@latest"
+        go install github.com/sigstore/cosign/v2/cmd/cosign@latest
+        if [ -x "$HOME/go/bin/cosign" ]; then
+            export PATH="$HOME/go/bin:$PATH"
+            log_success "cosign installed to ~/go/bin/cosign"
+            return 0
+        fi
+    fi
+
+    log_error "cosign is not installed and could not be auto-installed"
+    log_info "Install with: brew install cosign"
+    log_info "Or: go install github.com/sigstore/cosign/v2/cmd/cosign@latest"
+    log_info "Docs: https://docs.sigstore.dev/cosign/system_config/installation/"
+    exit 1
+}
+
+check_prerequisites() {
+    ensure_cosign
+
+    if [ -n "$COSIGN_KEY_PATH" ]; then
+        case "$COSIGN_KEY_PATH" in
+            hashivault://*|awskms://*|gcpkms://*|azurekms://*|k8s://*|pkcs11:*)
+                # KMS URI — nothing to check locally
+                ;;
+            *)
+                if [ ! -f "$COSIGN_KEY_PATH" ]; then
+                    log_error "Key file not found: $COSIGN_KEY_PATH"
+                    exit 1
+                fi
+                ;;
+        esac
     fi
 }
 
@@ -162,7 +197,13 @@ main() {
     log_info "=========================================="
 
     if [ -n "$COSIGN_KEY_PATH" ]; then
-        log_info "Mode: key-based ($COSIGN_KEY_PATH)"
+        case "$COSIGN_KEY_PATH" in
+            hashivault://*) log_info "Mode: KMS (HashiCorp Vault) — $COSIGN_KEY_PATH" ;;
+            awskms://*)     log_info "Mode: KMS (AWS) — $COSIGN_KEY_PATH" ;;
+            gcpkms://*)     log_info "Mode: KMS (GCP) — $COSIGN_KEY_PATH" ;;
+            azurekms://*)   log_info "Mode: KMS (Azure) — $COSIGN_KEY_PATH" ;;
+            *)              log_info "Mode: key-based ($COSIGN_KEY_PATH)" ;;
+        esac
     else
         log_info "Mode: keyless (Sigstore OIDC)"
     fi
