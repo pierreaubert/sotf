@@ -206,6 +206,36 @@ sign-au-notarize: sign-au
 	xcrun stapler validate "$APP"
 	echo "AU bundle notarized and stapled"
 
+# Package signed AU bundle into dist/au/ for distribution
+# Creates a zip with the notarization ticket stapled in, ready for direct download.
+[group('build-macos')]
+dist-au:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+	APP="$HOME/Applications/SOTFAudioUnits.app"
+	if [ ! -d "$APP" ]; then
+		echo "No app bundle at $APP — run 'just install-au-all' first"
+		exit 1
+	fi
+	# Verify signing
+	if ! codesign --verify --strict "$APP" 2>/dev/null; then
+		echo "WARNING: App bundle is not signed. Run 'just sign-au' first for distribution."
+		echo "Packaging unsigned bundle anyway..."
+	fi
+	mkdir -p dist/au
+	# Create zip preserving resource forks and extended attributes (required for notarization tickets)
+	ditto -c -k --keepParent "$APP" "dist/au/SOTFAudioUnits-${VERSION}.zip"
+	# Also copy the raw .app for direct use
+	rm -rf "dist/au/SOTFAudioUnits.app"
+	cp -R "$APP" "dist/au/SOTFAudioUnits.app"
+	echo ""
+	echo "Packaged to dist/au/:"
+	ls -lh "dist/au/SOTFAudioUnits-${VERSION}.zip"
+	echo ""
+	echo "Distribution: users download the zip, extract, and move SOTFAudioUnits.app"
+	echo "to /Applications or ~/Applications, then launch it once to register the AUs."
+
 # List registered SOTF Audio Units
 [group('build-macos')]
 list-au:

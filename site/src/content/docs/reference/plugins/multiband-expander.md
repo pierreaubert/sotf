@@ -9,6 +9,9 @@ Per-band dynamic range expansion with 2-5 frequency bands and independent expand
 
 ### Global Parameters
 
+
+### Global
+
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
 | Bands | Int | 2 .. 5 | 3 | - | Number of frequency bands |
@@ -28,6 +31,12 @@ Per-band dynamic range expansion with 2-5 frequency bands and independent expand
 | Mix | Float | 0 .. 1 | 1 | % | Dry/wet blend |
 | Link Channels | Bool | On / Off | Linked | - | Stereo-link detector for L/R |
 | Detection Mode | Choice (Peak, RMS) | 2 options | Peak | - | Peak or RMS level detection |
+
+### Timing
+
+| Parameter | Type | Range | Default | Unit | Description |
+|-----------|------|-------|---------|------|-------------|
+| Lookahead | Float | 0 .. 20 | 0 | ms | Pre-delay for transient catching |
 
 ### Single-Band Parameters
 
