@@ -24,12 +24,7 @@
 
     // --- Smoothing ---
     if !hide_smoothing {
-        section = section.child(
-            Text::new("Smoothing")
-                .size(TextSize::Xs)
-                .weight(TextWeight::Semibold)
-                .color(theme.header_color),
-        );
+        section = section.child(Text::label("Smoothing").color(theme.header_color));
 
         // Psychoacoustic toggle (disabled when curve smoothing is on)
         let mut psycho_toggle = Toggle::new((base_id.clone(), "alg-psychoacoustic"))

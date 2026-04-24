@@ -43,10 +43,7 @@
             .justify(StackJustify::SpaceBetween);
 
         detail_row = detail_row.child(
-            Text::new(format!("Mode: {level_label}"))
-                .size(TextSize::Xs)
-                .weight(TextWeight::Semibold)
-                .color(theme.header_color),
+            Text::label(format!("Mode: {level_label}")).color(theme.header_color),
         );
 
         let mut toggle_btn =
