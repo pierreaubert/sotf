@@ -133,12 +133,7 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(
-                    Text::new("RECORDING NAME")
-                        .size(TextSize::Xs)
-                        .weight(TextWeight::Bold)
-                        .color(theme.accent),
-                )
+                .child(Text::eyebrow("RECORDING NAME").color(theme.accent))
                 .child(
                     HStack::new()
                         .spacing(StackSpacing::Sm)
@@ -176,13 +171,9 @@ impl PlayerView {
                                 ),
                         ),
                 )
-                .child(
-                    Text::new(
-                        "This name will be used for the subdirectory containing your recordings.",
-                    )
-                    .size(TextSize::Xs)
-                    .color(theme.text_muted),
-                ),
+                .child(Text::caption(
+                    "This name will be used for the subdirectory containing your recordings.",
+                )),
         )
     }
 
@@ -206,12 +197,7 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(
-                    Text::new("SAVE LOCATION")
-                        .size(TextSize::Xs)
-                        .weight(TextWeight::Bold)
-                        .color(theme.accent),
-                )
+                .child(Text::eyebrow("SAVE LOCATION").color(theme.accent))
                 .child(
                     HStack::new()
                         .spacing(StackSpacing::Sm)
@@ -317,12 +303,7 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(
-                    Text::new("FILES TO SAVE")
-                        .size(TextSize::Xs)
-                        .weight(TextWeight::Bold)
-                        .color(theme.accent),
-                )
+                .child(Text::eyebrow("FILES TO SAVE").color(theme.accent))
                 .child(
                     VStack::new()
                         .spacing(StackSpacing::Xs)
@@ -338,11 +319,7 @@ impl PlayerView {
                                         .weight(TextWeight::Semibold)
                                         .color(theme.text_primary),
                                 )
-                                .child(
-                                    Text::new("- Configuration and measurement data")
-                                        .size(TextSize::Xs)
-                                        .color(theme.text_muted),
-                                ),
+                                .child(Text::caption("- Configuration and measurement data")),
                         )
                         // Per-channel files
                         .children(
@@ -378,14 +355,10 @@ impl PlayerView {
                                                 .size(TextSize::Xs)
                                                 .color(theme.text_primary),
                                             )
-                                            .child(
-                                                Text::new(format!(
-                                                    "- {} recording",
-                                                    rec.channel_name
-                                                ))
-                                                .size(TextSize::Xs)
-                                                .color(theme.text_muted),
-                                            )
+                                            .child(Text::caption(format!(
+                                                "- {} recording",
+                                                rec.channel_name
+                                            )))
                                             .into_any_element(),
                                         HStack::new()
                                             .spacing(StackSpacing::Xs)
@@ -403,14 +376,10 @@ impl PlayerView {
                                                 .size(TextSize::Xs)
                                                 .color(theme.text_primary),
                                             )
-                                            .child(
-                                                Text::new(format!(
-                                                    "- {} frequency response",
-                                                    rec.channel_name
-                                                ))
-                                                .size(TextSize::Xs)
-                                                .color(theme.text_muted),
-                                            )
+                                            .child(Text::caption(format!(
+                                                "- {} frequency response",
+                                                rec.channel_name
+                                            )))
                                             .into_any_element(),
                                     ]
                                 })
@@ -442,12 +411,7 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(
-                    Text::new("ACTIONS")
-                        .size(TextSize::Xs)
-                        .weight(TextWeight::Bold)
-                        .color(theme.accent),
-                )
+                .child(Text::eyebrow("ACTIONS").color(theme.accent))
                 .child(
                     HStack::new()
                         .spacing(StackSpacing::Sm)
@@ -523,20 +487,11 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(
-                    Text::new("ROOM DIMENSIONS")
-                        .size(TextSize::Xs)
-                        .weight(TextWeight::Bold)
-                        .color(theme.accent),
-                )
-                .child(
-                    Text::new(
-                        "Width × Depth × Height. Optional, but lets the optimizer auto-tune \
-                         the Schroeder frequency from room volume.",
-                    )
-                    .size(TextSize::Xs)
-                    .color(theme.text_muted),
-                )
+                .child(Text::eyebrow("ROOM DIMENSIONS").color(theme.accent))
+                .child(Text::caption(
+                    "Width × Depth × Height. Optional, but lets the optimizer auto-tune \
+                     the Schroeder frequency from room volume.",
+                ))
                 .child(
                     HStack::new()
                         .spacing(StackSpacing::Sm)
@@ -609,20 +564,11 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(
-                    Text::new("SETUP DESCRIPTION")
-                        .size(TextSize::Xs)
-                        .weight(TextWeight::Bold)
-                        .color(theme.accent),
-                )
-                .child(
-                    Text::new(
-                        "Notes about the listening position, acoustic treatment, \
-                         equipment chain, anything worth remembering next session.",
-                    )
-                    .size(TextSize::Xs)
-                    .color(theme.text_muted),
-                )
+                .child(Text::eyebrow("SETUP DESCRIPTION").color(theme.accent))
+                .child(Text::caption(
+                    "Notes about the listening position, acoustic treatment, \
+                     equipment chain, anything worth remembering next session.",
+                ))
                 .child(
                     div()
                         .w(px(560.0)) // intentional: wide description field width
@@ -701,23 +647,14 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(
-                    Text::new("SPEAKERS PER CHANNEL")
-                        .size(TextSize::Xs)
-                        .weight(TextWeight::Bold)
-                        .color(theme.accent),
-                )
-                .child(
-                    Text::new(if is_loading {
-                        "Loading catalog from spinorama.org…"
-                    } else if catalog.is_empty() {
-                        "Catalog unavailable. Type freely — any label is saved as-is."
-                    } else {
-                        "Type to filter the spinorama.org catalog; click a match to fill in."
-                    })
-                    .size(TextSize::Xs)
-                    .color(theme.text_muted),
-                )
+                .child(Text::eyebrow("SPEAKERS PER CHANNEL").color(theme.accent))
+                .child(Text::caption(if is_loading {
+                    "Loading catalog from spinorama.org…"
+                } else if catalog.is_empty() {
+                    "Catalog unavailable. Type freely — any label is saved as-is."
+                } else {
+                    "Type to filter the spinorama.org catalog; click a match to fill in."
+                }))
                 .children(rows.into_iter().map(|(row, channel_name, current)| {
                     let suggestions = if open_row == Some(row) {
                         filter_speakers(&catalog, &current, 8)

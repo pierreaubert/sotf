@@ -71,11 +71,7 @@ impl PlayerView {
                             .into_any_element()
                     })),
             )
-            .footer(
-                Text::new("Press ESC or ? to close")
-                    .size(TextSize::Xs)
-                    .muted(true),
-            )
+            .footer(Text::caption("Press ESC or ? to close"))
     }
 
     pub(crate) fn render_about_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -130,11 +126,7 @@ impl PlayerView {
                                     .size(TextSize::Xs)
                                     .color(theme.text_secondary),
                             )
-                            .child(
-                                Text::new("© 2026 Spinorama")
-                                    .size(TextSize::Xs)
-                                    .color(theme.text_muted),
-                            ),
+                            .child(Text::caption("© 2026 Spinorama")),
                     )
                     .child(div().w_full().h(px(1.0)).bg(theme.border)) // intentional: 1px hairline divider, no matching token
                     .child(
@@ -187,11 +179,7 @@ impl PlayerView {
                 HStack::new()
                     .width(StackSize::Full)
                     .justify(StackJustify::SpaceBetween)
-                    .child(
-                        Text::new("Press ESC to close")
-                            .size(TextSize::Xs)
-                            .muted(true),
-                    )
+                    .child(Text::caption("Press ESC to close"))
                     .child(
                         gpui_ui_kit::Button::new("about-close", "Close")
                             .variant(gpui_ui_kit::ButtonVariant::Primary)
@@ -301,11 +289,7 @@ impl PlayerView {
                             )),
                     ),
             )
-            .footer(
-                Text::new("Press ESC or Shift-? to close")
-                    .size(TextSize::Xs)
-                    .muted(true),
-            )
+            .footer(Text::caption("Press ESC or Shift-? to close"))
     }
 
     /// Render modal for empty library prompt shown on startup
@@ -439,11 +423,7 @@ impl PlayerView {
                             ),
                     ),
             )
-            .footer(
-                Text::new("Press ESC to skip")
-                    .size(TextSize::Xs)
-                    .muted(true),
-            )
+            .footer(Text::caption("Press ESC to skip"))
     }
 
     fn render_keybinding_row(
@@ -732,11 +712,7 @@ impl PlayerView {
             .content(
                 VStack::new()
                     .spacing(StackSpacing::Sm)
-                    .child(
-                        Text::new("Enter path to APO file:")
-                            .size(TextSize::Xs)
-                            .muted(true),
-                    )
+                    .child(Text::caption("Enter path to APO file:"))
                     .child(
                         div()
                             .p(d.pad_y)
@@ -750,11 +726,7 @@ impl PlayerView {
                             ),
                     ),
             )
-            .footer(
-                Text::new("Enter: Load file | ESC: Cancel")
-                    .size(TextSize::Xs)
-                    .muted(true),
-            )
+            .footer(Text::caption("Enter: Load file | ESC: Cancel"))
     }
 
     pub(crate) fn render_sofa_file_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -768,11 +740,7 @@ impl PlayerView {
             .content(
                 VStack::new()
                     .spacing(StackSpacing::Sm)
-                    .child(
-                        Text::new("Enter path to SOFA file:")
-                            .size(TextSize::Xs)
-                            .muted(true),
-                    )
+                    .child(Text::caption("Enter path to SOFA file:"))
                     .child(
                         div()
                             .p(d.pad_y)
@@ -786,11 +754,7 @@ impl PlayerView {
                             ),
                     ),
             )
-            .footer(
-                Text::new("Enter: Load file | ESC: Cancel")
-                    .size(TextSize::Xs)
-                    .muted(true),
-            )
+            .footer(Text::caption("Enter: Load file | ESC: Cancel"))
     }
 
     pub(crate) fn render_save_plugins_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -807,11 +771,9 @@ impl PlayerView {
             .content(
                 VStack::new()
                     .spacing(StackSpacing::Sm)
-                    .child(
-                        Text::new("Enter preset name (or select existing to overwrite):")
-                            .size(TextSize::Xs)
-                            .muted(true),
-                    )
+                    .child(Text::caption(
+                        "Enter preset name (or select existing to overwrite):",
+                    ))
                     .child(
                         div()
                             .p(d.pad_y)
@@ -823,11 +785,7 @@ impl PlayerView {
                     )
                     // Show existing presets if available
                     .when(!presets.is_empty(), |el| {
-                        el.child(
-                            Text::new("Existing presets (↑/↓ to select):")
-                                .size(TextSize::Xs)
-                                .muted(true),
-                        )
+                        el.child(Text::caption("Existing presets (↑/↓ to select):"))
                         .child(
                             div()
                                 .id("save-plugins-presets-list")
@@ -865,13 +823,9 @@ impl PlayerView {
                         )
                     }),
             )
-            .footer(
-                Text::new(
-                    "Enter: Save | Click/↑/↓: Select preset | Tab: Autocomplete | ESC: Cancel",
-                )
-                .size(TextSize::Xs)
-                .muted(true),
-            )
+            .footer(Text::caption(
+                "Enter: Save | Click/↑/↓: Select preset | Tab: Autocomplete | ESC: Cancel",
+            ))
     }
 
     pub(crate) fn render_load_plugins_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -888,11 +842,7 @@ impl PlayerView {
             .content(
                 VStack::new()
                     .spacing(StackSpacing::Sm)
-                    .child(
-                        Text::new("Enter preset name or select from list:")
-                            .size(TextSize::Xs)
-                            .muted(true),
-                    )
+                    .child(Text::caption("Enter preset name or select from list:"))
                     .child(
                         div()
                             .p(d.pad_y)
@@ -904,11 +854,7 @@ impl PlayerView {
                     )
                     // Show existing presets
                     .when(!presets.is_empty(), |el| {
-                        el.child(
-                            Text::new("Available presets (↑/↓ to select):")
-                                .size(TextSize::Xs)
-                                .muted(true),
-                        )
+                        el.child(Text::caption("Available presets (↑/↓ to select):"))
                         .child(
                             div()
                                 .id("load-plugins-presets-list")
@@ -951,19 +897,15 @@ impl PlayerView {
                     })
                     .when(presets.is_empty(), |el| {
                         el.child(
-                            div().p(d.card).text_center().child(
-                                Text::new("No presets found. Save a preset first with 's'.")
-                                    .size(TextSize::Xs)
-                                    .muted(true),
-                            ),
+                            div().p(d.card).text_center().child(Text::caption(
+                                "No presets found. Save a preset first with 's'.",
+                            )),
                         )
                     }),
             )
-            .footer(
-                Text::new("Enter: Load | ↑/↓: Select preset | Tab: Autocomplete | ESC: Cancel")
-                    .size(TextSize::Xs)
-                    .muted(true),
-            )
+            .footer(Text::caption(
+                "Enter: Load | ↑/↓: Select preset | Tab: Autocomplete | ESC: Cancel",
+            ))
     }
 }
 
@@ -1107,11 +1049,7 @@ impl PlayerView {
                 HStack::new()
                     .width(StackSize::Full)
                     .justify(StackJustify::SpaceBetween)
-                    .child(
-                        Text::new("Press ESC or ? to close")
-                            .size(TextSize::Xs)
-                            .muted(true),
-                    )
+                    .child(Text::caption("Press ESC or ? to close"))
                     .child(
                         gpui_ui_kit::Button::new("shortcuts-close", "Close")
                             .variant(gpui_ui_kit::ButtonVariant::Primary)
@@ -1307,11 +1245,7 @@ impl PlayerView {
                             ),
                     )
                     // Status text
-                    .child(
-                        Text::new(status_text)
-                            .size(TextSize::Xs)
-                            .color(theme.text_muted),
-                    )
+                    .child(Text::caption(status_text))
                     // Buttons
                     .child(
                         HStack::new()
