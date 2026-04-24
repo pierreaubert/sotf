@@ -188,6 +188,7 @@ pub fn render_mb_compressor_plugin(
             };
             div()
                 .px(d.card)
+                // intentional: asymmetric underline-tab padding — 4/6 pair is visually tuned
                 .pb(px(6.0))
                 .pt(px(4.0))
                 .text_size(d.text_xs)
