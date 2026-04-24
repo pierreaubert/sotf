@@ -385,6 +385,139 @@ fn convolve(a: &[f64], b: &[f64]) -> Vec<f64> {
     out
 }
 
+fn apply_phase_only_adjustment_to_reported_curve(
+    curve: &mut Curve,
+    delay_ms: f64,
+    invert_polarity: bool,
+) {
+    if curve.freq.is_empty() {
+        return;
+    }
+
+    let base_phase = curve
+        .phase
+        .clone()
+        .unwrap_or_else(|| ndarray::Array1::zeros(curve.freq.len()));
+    let inversion_phase = if invert_polarity { 180.0 } else { 0.0 };
+    let delay_s = delay_ms / 1000.0;
+
+    let phase =
+        ndarray::Array1::from_iter(curve.freq.iter().zip(base_phase.iter()).map(
+            |(&freq_hz, &phase_deg)| phase_deg + inversion_phase - (360.0 * freq_hz * delay_s),
+        ));
+    curve.phase = Some(phase);
+}
+
+fn sync_reported_phase_adjustment(
+    channel_name: &str,
+    channel_results: &mut HashMap<String, ChannelOptimizationResult>,
+    channel_chains: &mut HashMap<String, ChannelDspChain>,
+    delay_ms: f64,
+    invert_polarity: bool,
+) {
+    if let Some(ch_result) = channel_results.get_mut(channel_name) {
+        apply_phase_only_adjustment_to_reported_curve(
+            &mut ch_result.final_curve,
+            delay_ms,
+            invert_polarity,
+        );
+
+        if let Some(chain) = channel_chains.get_mut(channel_name) {
+            chain.final_curve = Some((&ch_result.final_curve).into());
+        }
+    } else if let Some(chain) = channel_chains.get_mut(channel_name)
+        && let Some(final_curve) = chain.final_curve.clone()
+    {
+        let mut curve: Curve = final_curve.into();
+        apply_phase_only_adjustment_to_reported_curve(&mut curve, delay_ms, invert_polarity);
+        chain.final_curve = Some((&curve).into());
+    }
+}
+
+fn total_chain_delay_ms(chain: &ChannelDspChain) -> f64 {
+    chain
+        .plugins
+        .iter()
+        .filter(|plugin| plugin.plugin_type == "delay")
+        .filter_map(|plugin| {
+            plugin
+                .parameters
+                .get("delay_ms")
+                .and_then(|value| value.as_f64())
+        })
+        .sum()
+}
+
+fn compute_phase_alignment_delay_schedule(
+    phase_alignment_results: &HashMap<String, (f64, bool, String)>,
+) -> HashMap<String, f64> {
+    let mut graph: HashMap<String, Vec<(String, f64)>> = HashMap::new();
+
+    for (main_name, (relative_delay_ms, _invert, sub_name)) in phase_alignment_results {
+        // The optimizer's delay means: delay(main) - delay(sub) = relative_delay_ms.
+        graph
+            .entry(sub_name.clone())
+            .or_default()
+            .push((main_name.clone(), *relative_delay_ms));
+        graph
+            .entry(main_name.clone())
+            .or_default()
+            .push((sub_name.clone(), -*relative_delay_ms));
+    }
+
+    let mut raw_offsets: HashMap<String, f64> = HashMap::new();
+    let mut schedule: HashMap<String, f64> = HashMap::new();
+
+    for start in graph.keys() {
+        if raw_offsets.contains_key(start) {
+            continue;
+        }
+
+        raw_offsets.insert(start.clone(), 0.0);
+        let mut stack = vec![start.clone()];
+        let mut component = Vec::new();
+
+        while let Some(channel) = stack.pop() {
+            component.push(channel.clone());
+            let channel_offset = raw_offsets[&channel];
+
+            if let Some(neighbors) = graph.get(&channel) {
+                for (neighbor, delta_ms) in neighbors {
+                    let neighbor_offset = channel_offset + *delta_ms;
+                    if let Some(existing) = raw_offsets.get(neighbor) {
+                        if (existing - neighbor_offset).abs() > 0.05 {
+                            warn!(
+                                "Conflicting phase-alignment delay constraints for '{}': {:.3} ms vs {:.3} ms; keeping first schedule",
+                                neighbor, existing, neighbor_offset
+                            );
+                        }
+                    } else {
+                        raw_offsets.insert(neighbor.clone(), neighbor_offset);
+                        stack.push(neighbor.clone());
+                    }
+                }
+            }
+        }
+
+        let min_offset = component
+            .iter()
+            .filter_map(|name| raw_offsets.get(name))
+            .copied()
+            .fold(f64::INFINITY, f64::min);
+
+        for name in component {
+            if let Some(offset) = raw_offsets.get(&name) {
+                let delay_ms = offset - min_offset;
+                if delay_ms > 0.01 {
+                    schedule.insert(name, delay_ms);
+                }
+            }
+        }
+    }
+
+    schedule
+}
+
 /// Threshold in dB above which to warn about channel level differences
 const LEVEL_DIFFERENCE_WARNING_THRESHOLD: f64 = 6.0;
 
@@ -951,8 +1084,7 @@ fn optimize_room_impl(
                     let delay_ms = result
                         .channels
                         .get(channel_name)
-                        .and_then(|chain| chain.plugins.iter().find(|p| p.plugin_type == "delay"))
-                        .and_then(|p| p.parameters.get("delay_ms").and_then(|v| v.as_f64()))
+                        .map(total_chain_delay_ms)
                         .unwrap_or(0.0);
                     if let Some((pre_ir, post_ir)) =
                         super::ir_waveform::compute_channel_ir_waveforms(
@@ -1657,43 +1789,58 @@ fn optimize_room_impl(
         }
     }
 
-    // Apply phase alignment results (polarity inversion + delay)
-    // Negative delay_ms means "delay the subwoofer" — collect per-sub maximums
-    // since multiple mains may pair with the same sub.
-    let mut sub_phase_delays: HashMap<String, f64> = HashMap::new();
-
+    // Apply phase alignment results. The optimizer returns pairwise relative
+    // delays, so resolve all pairs into one absolute non-negative delay schedule
+    // before inserting DSP plugins.
     for (speaker_name, (delay_ms, invert, sub_name)) in &phase_alignment_results {
-        if let Some(chain) = channel_chains.get_mut(speaker_name) {
-            if *invert {
+        if *invert {
+            let applied = if let Some(chain) = channel_chains.get_mut(speaker_name) {
                 // Insert polarity inversion at the beginning of the chain
                 let invert_plugin = output::create_gain_plugin_with_invert(0.0, true);
                 chain.plugins.insert(0, invert_plugin);
+                true
+            } else {
+                false
+            };
+
+            if applied {
+                sync_reported_phase_adjustment(
+                    speaker_name,
+                    &mut channel_results,
+                    &mut channel_chains,
+                    0.0,
+                    true,
+                );
                 info!("  Applied polarity inversion to '{}'", speaker_name);
             }
         }
-        if *delay_ms > 0.01 {
-            // Positive: delay the main speaker
-            if let Some(chain) = channel_chains.get_mut(speaker_name) {
-                output::add_delay_plugin(chain, *delay_ms);
-                info!(
-                    "  Applied {:.3} ms phase alignment delay to '{}'",
-                    delay_ms, speaker_name
-                );
-            }
-        } else if *delay_ms < -0.01 {
-            // Negative: delay the subwoofer instead
-            let abs_delay = delay_ms.abs();
-            let entry = sub_phase_delays.entry(sub_name.clone()).or_insert(0.0_f64);
-            *entry = entry.max(abs_delay);
-        }
+
+        debug!(
+            "  Phase alignment constraint: delay('{}') - delay('{}') = {:.3} ms",
+            speaker_name, sub_name, delay_ms
+        );
     }
 
-    for (sub_name, delay_ms) in &sub_phase_delays {
-        if let Some(chain) = channel_chains.get_mut(sub_name.as_str()) {
+    let phase_delay_schedule = compute_phase_alignment_delay_schedule(&phase_alignment_results);
+    for (channel_name, delay_ms) in &phase_delay_schedule {
+        let applied = if let Some(chain) = channel_chains.get_mut(channel_name.as_str()) {
             output::add_delay_plugin(chain, *delay_ms);
+            true
+        } else {
+            false
+        };
+
+        if applied {
+            sync_reported_phase_adjustment(
+                channel_name,
+                &mut channel_results,
+                &mut channel_chains,
+                *delay_ms,
+                false,
+            );
             info!(
-                "  Applied {:.3} ms phase alignment delay to subwoofer '{}'",
-                delay_ms, sub_name
+                "  Applied {:.3} ms phase alignment delay to '{}'",
+                delay_ms, channel_name
             );
         }
     }
@@ -1748,8 +1895,7 @@ fn optimize_room_impl(
     for (channel_name, result) in &channel_results {
         let delay_ms = channel_chains
             .get(channel_name)
-            .and_then(|chain| chain.plugins.iter().find(|p| p.plugin_type == "delay"))
-            .and_then(|p| p.parameters.get("delay_ms").and_then(|v| v.as_f64()))
+            .map(total_chain_delay_ms)
             .unwrap_or(0.0);
 
         if let Some((pre_ir, post_ir)) = super::ir_waveform::compute_channel_ir_waveforms(
@@ -2343,5 +2489,150 @@ pub(super) fn extract_wav_path(source: &MeasurementSource) -> Option<String> {
             })
         }
         MeasurementSource::InMemory(_) | MeasurementSource::InMemoryMultiple(_) => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ndarray::array;
+
+    fn assert_close(actual: f64, expected: f64) {
+        assert!(
+            (actual - expected).abs() < 1e-9,
+            "expected {expected}, got {actual}"
+        );
+    }
+
+    fn test_chain(channel: &str, final_curve: &Curve) -> ChannelDspChain {
+        ChannelDspChain {
+            channel: channel.to_string(),
+            plugins: Vec::new(),
+            drivers: None,
+            initial_curve: None,
+            final_curve: Some(final_curve.into()),
+            eq_response: None,
+            target_curve: None,
+            pre_ir: None,
+            post_ir: None,
+        }
+    }
+
+    #[test]
+    fn phase_alignment_reporting_adjusts_phase_without_touching_magnitude() {
+        let mut curve = Curve {
+            freq: array![50.0, 100.0],
+            spl: array![1.0, 2.0],
+            phase: Some(array![10.0, -20.0]),
+            ..Default::default()
+        };
+
+        apply_phase_only_adjustment_to_reported_curve(&mut curve, 2.0, true);
+
+        assert_eq!(curve.spl, array![1.0, 2.0]);
+        let phase = curve.phase.as_ref().unwrap();
+        assert_close(phase[0], 154.0);
+        assert_close(phase[1], 88.0);
+    }
+
+    #[test]
+    fn phase_alignment_reporting_creates_phase_when_missing() {
+        let mut curve = Curve {
+            freq: array![100.0],
+            spl: array![0.0],
+            phase: None,
+            ..Default::default()
+        };
+
+        apply_phase_only_adjustment_to_reported_curve(&mut curve, 1.0, false);
+
+        let phase = curve.phase.as_ref().unwrap();
+        assert_close(phase[0], -36.0);
+    }
+
+    #[test]
+    fn reported_phase_sync_updates_channel_result_and_chain_curve() {
+        let curve = Curve {
+            freq: array![100.0],
+            spl: array![0.0],
+            phase: Some(array![0.0]),
+            ..Default::default()
+        };
+        let mut channel_results = HashMap::from([(
+            "L".to_string(),
+            ChannelOptimizationResult {
+                name: "L".to_string(),
+                pre_score: 0.0,
+                post_score: 0.0,
+                initial_curve: curve.clone(),
+                final_curve: curve.clone(),
+                biquads: Vec::new(),
+                fir_coeffs: None,
+            },
+        )]);
+        let mut channel_chains = HashMap::from([("L".to_string(), test_chain("L", &curve))]);
+
+        sync_reported_phase_adjustment("L", &mut channel_results, &mut channel_chains, 1.0, true);
+
+        let result_phase = channel_results["L"].final_curve.phase.as_ref().unwrap()[0];
+        let chain_phase = channel_chains["L"]
+            .final_curve
+            .as_ref()
+            .unwrap()
+            .phase
+            .as_ref()
+            .unwrap()[0];
+        assert_close(result_phase, 144.0);
+        assert_close(chain_phase, 144.0);
+    }
+
+    #[test]
+    fn total_chain_delay_sums_stacked_delay_plugins() {
+        let curve = Curve {
+            freq: array![100.0],
+            spl: array![0.0],
+            phase: None,
+            ..Default::default()
+        };
+        let mut chain = test_chain("L", &curve);
+        chain.plugins.push(output::create_delay_plugin(2.0));
+        chain.plugins.push(output::create_gain_plugin(1.5));
+        chain.plugins.push(output::create_delay_plugin(3.5));
+
+        assert_close(total_chain_delay_ms(&chain), 5.5);
+    }
+
+    #[test]
+    fn phase_alignment_delay_schedule_preserves_shared_sub_constraints() {
+        let phase_results = HashMap::from([
+            ("L".to_string(), (-5.0, false, "LFE".to_string())),
+            ("R".to_string(), (2.0, false, "LFE".to_string())),
+        ]);
+
+        let schedule = compute_phase_alignment_delay_schedule(&phase_results);
+
+        assert_close(*schedule.get("L").unwrap_or(&0.0), 0.0);
+        assert_close(schedule["LFE"], 5.0);
+        assert_close(schedule["R"], 7.0);
+        assert_close(
+            schedule.get("L").unwrap_or(&0.0) - schedule.get("LFE").unwrap_or(&0.0),
+            -5.0,
+        );
+        assert_close(schedule["R"] - schedule["LFE"], 2.0);
+    }
+
+    #[test]
+    fn phase_alignment_delay_schedule_normalizes_independent_components() {
+        let phase_results = HashMap::from([
+            ("L".to_string(), (-3.0, false, "SubL".to_string())),
+            ("R".to_string(), (4.0, false, "SubR".to_string())),
+        ]);
+
+        let schedule = compute_phase_alignment_delay_schedule(&phase_results);
+
+        assert_close(*schedule.get("L").unwrap_or(&0.0), 0.0);
+        assert_close(schedule["SubL"], 3.0);
+        assert_close(*schedule.get("SubR").unwrap_or(&0.0), 0.0);
+        assert_close(schedule["R"], 4.0);
     }
 }

@@ -19,11 +19,23 @@ pub struct MultiSeatOptimizationResult {
     pub gains: Vec<f64>,
     /// Optimal delays for each subwoofer (ms)
     pub delays: Vec<f64>,
+    /// Strategy used for optimization
+    pub strategy: MultiSeatStrategy,
+    /// Name of the objective metric optimized by the selected strategy
+    pub objective_name: String,
+    /// Optimized objective value before optimization
+    pub objective_before: f64,
+    /// Optimized objective value after optimization
+    pub objective_after: f64,
+    /// Improvement in the selected objective metric
+    pub objective_improvement_db: f64,
     /// Standard deviation across seats before optimization (dB)
     pub variance_before: f64,
     /// Standard deviation across seats after optimization (dB)
     pub variance_after: f64,
-    /// Improvement in variance (dB)
+    /// Improvement in variance (dB), reported even for non-variance strategies
+    pub variance_improvement_db: f64,
+    /// Improvement in the selected objective metric
     pub improvement_db: f64,
 }
 
@@ -126,13 +138,20 @@ pub fn optimize_multiseat(
     let initial_gains = vec![0.0; measurements.num_subs];
     let initial_delays = vec![0.0; measurements.num_subs];
 
-    let variance_before = compute_seat_variance(
+    let initial_responses = compute_combined_responses(
         &interpolated,
         &freqs,
         &initial_gains,
         &initial_delays,
         min_freq,
         max_freq,
+    );
+    let variance_before = variance_from_responses(&initial_responses);
+    let objective_before = objective_from_responses(
+        &initial_responses,
+        config.strategy.clone(),
+        config.primary_seat,
+        config.max_deviation_db,
     );
 
     info!(
@@ -167,7 +186,7 @@ pub fn optimize_multiseat(
         ),
     };
 
-    let variance_after = compute_seat_variance(
+    let final_responses = compute_combined_responses(
         &interpolated,
         &freqs,
         &optimal_gains,
@@ -175,20 +194,41 @@ pub fn optimize_multiseat(
         min_freq,
         max_freq,
     );
+    let variance_after = variance_from_responses(&final_responses);
+    let objective_after = objective_from_responses(
+        &final_responses,
+        config.strategy.clone(),
+        config.primary_seat,
+        config.max_deviation_db,
+    );
 
-    let improvement_db = variance_before - variance_after;
+    let objective_improvement_db = objective_before - objective_after;
+    let variance_improvement_db = variance_before - variance_after;
+    let objective_name = objective_name(config.strategy.clone()).to_string();
 
     info!(
-        "  Optimized variance: {:.2} dB (improvement: {:.2} dB)",
-        variance_after, improvement_db
+        "  Optimized {}: {:.2} -> {:.2} dB (improvement: {:.2} dB); variance: {:.2} -> {:.2} dB ({:.2} dB)",
+        objective_name,
+        objective_before,
+        objective_after,
+        objective_improvement_db,
+        variance_before,
+        variance_after,
+        variance_improvement_db
     );
 
     Ok(MultiSeatOptimizationResult {
         gains: optimal_gains,
         delays: optimal_delays,
+        strategy: config.strategy.clone(),
+        objective_name,
+        objective_before,
+        objective_after,
+        objective_improvement_db,
         variance_before,
         variance_after,
-        improvement_db,
+        variance_improvement_db,
+        improvement_db: objective_improvement_db,
     })
 }
 
@@ -241,13 +281,12 @@ fn interpolate_all_measurements(
 
 /// Interpolate a single curve to the common frequency grid
 fn interpolate_curve_to_grid(curve: &Curve, freqs: &Array1<f64>) -> Result<Vec<Complex64>> {
-    if curve.phase.is_none() {
-        warn!(
-            "Curve has no phase data; assuming 0° phase. Complex summation will \
-             overstate coherent combination — provide phase measurements for \
-             accurate multi-seat optimization."
-        );
-    }
+    let phase = curve
+        .phase
+        .as_ref()
+        .ok_or_else(|| AutoeqError::InvalidMeasurement {
+            message: "Multi-seat subwoofer optimization requires phase data for every sub/seat measurement; refusing to assume 0° phase for complex summation".to_string(),
+        })?;
 
     let mut result = Vec::with_capacity(freqs.len());
 
@@ -267,13 +306,9 @@ fn interpolate_curve_to_grid(curve: &Curve, freqs: &Array1<f64>) -> Result<Vec<C
         let spl_interp = curve.spl[lower_idx] + t * (curve.spl[upper_idx] - curve.spl[lower_idx]);
 
         // Interpolate phase with wrap handling (shortest arc through ±180°)
-        let phase_rad = if let Some(phase) = &curve.phase {
-            let mut diff = phase[upper_idx] - phase[lower_idx];
-            diff -= 360.0 * (diff / 360.0).round();
-            (phase[lower_idx] + t * diff).to_radians()
-        } else {
-            0.0
-        };
+        let mut diff = phase[upper_idx] - phase[lower_idx];
+        diff -= 360.0 * (diff / 360.0).round();
+        let phase_rad = (phase[lower_idx] + t * diff).to_radians();
 
         let magnitude = 10.0_f64.powf(spl_interp / 20.0);
         result.push(Complex64::from_polar(magnitude, phase_rad));
@@ -354,11 +389,12 @@ fn variance_from_responses(responses: &[Vec<f64>]) -> f64 {
     let mut total_std = 0.0;
 
     for freq_idx in 0..num_freqs {
-        let mean: f64 =
-            responses.iter().map(|s| s[freq_idx]).sum::<f64>() / responses.len() as f64;
-        let variance =
-            responses.iter().map(|s| (s[freq_idx] - mean).powi(2)).sum::<f64>()
-                / responses.len() as f64;
+        let mean: f64 = responses.iter().map(|s| s[freq_idx]).sum::<f64>() / responses.len() as f64;
+        let variance = responses
+            .iter()
+            .map(|s| (s[freq_idx] - mean).powi(2))
+            .sum::<f64>()
+            / responses.len() as f64;
         total_std += variance.sqrt();
     }
 
@@ -423,8 +459,32 @@ fn primary_constrained_from_responses(
     primary_flatness + 10.0 * penalty
 }
 
+fn objective_name(strategy: MultiSeatStrategy) -> &'static str {
+    match strategy {
+        MultiSeatStrategy::MinimizeVariance => "seat_variance",
+        MultiSeatStrategy::Average => "average_flatness",
+        MultiSeatStrategy::PrimaryWithConstraints => "primary_constrained",
+    }
+}
+
+fn objective_from_responses(
+    responses: &[Vec<f64>],
+    strategy: MultiSeatStrategy,
+    primary_seat: usize,
+    max_deviation_db: f64,
+) -> f64 {
+    match strategy {
+        MultiSeatStrategy::MinimizeVariance => variance_from_responses(responses),
+        MultiSeatStrategy::Average => average_flatness_from_responses(responses),
+        MultiSeatStrategy::PrimaryWithConstraints => {
+            primary_constrained_from_responses(responses, primary_seat, max_deviation_db)
+        }
+    }
+}
+
 /// Compute variance of SPL across all seats for given gains and delays.
 /// Used for before/after reporting regardless of which strategy was chosen.
+#[cfg(test)]
 fn compute_seat_variance(
     interpolated: &[Vec<Vec<Complex64>>],
     freqs: &Array1<f64>,
@@ -453,10 +513,7 @@ fn build_range(min: f64, max: f64, step: f64) -> Vec<f64> {
 ///
 /// For 2 subs the coarse pass is a full 2-D grid; for >2 subs it uses
 /// coordinate descent with 5 passes at each resolution.
-fn two_pass_search(
-    num_subs: usize,
-    eval: &dyn Fn(&[f64], &[f64]) -> f64,
-) -> (Vec<f64>, Vec<f64>) {
+fn two_pass_search(num_subs: usize, eval: &dyn Fn(&[f64], &[f64]) -> f64) -> (Vec<f64>, Vec<f64>) {
     let mut best_gains = vec![0.0; num_subs];
     let mut best_delays = vec![0.0; num_subs];
     let mut best_loss = eval(&best_gains, &best_delays);
@@ -512,16 +569,10 @@ fn two_pass_search(
         for sub_idx in 1..num_subs {
             let g_center = best_gains[sub_idx];
             let d_center = best_delays[sub_idx];
-            let fine_gains = build_range(
-                (g_center - 2.0).max(-6.0),
-                (g_center + 2.0).min(6.0),
-                0.1,
-            );
-            let fine_delays = build_range(
-                (d_center - 2.0).max(0.0),
-                (d_center + 2.0).min(20.0),
-                0.1,
-            );
+            let fine_gains =
+                build_range((g_center - 2.0).max(-6.0), (g_center + 2.0).min(6.0), 0.1);
+            let fine_delays =
+                build_range((d_center - 2.0).max(0.0), (d_center + 2.0).min(20.0), 0.1);
 
             if num_subs == 2 {
                 // 2-D fine grid
@@ -627,6 +678,13 @@ fn optimize_primary_with_constraints(
 mod tests {
     use super::*;
 
+    fn assert_close(actual: f64, expected: f64) {
+        assert!(
+            (actual - expected).abs() < 1e-9,
+            "expected {expected}, got {actual}"
+        );
+    }
+
     fn create_test_curve(spl_offset: f64, phase_offset: f64) -> Curve {
         let freqs: Vec<f64> = (0..50)
             .map(|i| 20.0 * (200.0 / 20.0_f64).powf(i as f64 / 49.0))
@@ -713,6 +771,10 @@ mod tests {
         // First sub should be reference (no adjustment)
         assert_eq!(result.gains[0], 0.0);
         assert_eq!(result.delays[0], 0.0);
+        assert_eq!(result.strategy, MultiSeatStrategy::MinimizeVariance);
+        assert_eq!(result.objective_name, "seat_variance");
+        assert_close(result.improvement_db, result.objective_improvement_db);
+        assert_close(result.improvement_db, result.variance_improvement_db);
     }
 
     #[test]
@@ -782,10 +844,8 @@ mod tests {
             ..var_config.clone()
         };
 
-        let var_result =
-            optimize_multiseat(&ms, &var_config, (20.0, 120.0), 48000.0).expect("var");
-        let avg_result =
-            optimize_multiseat(&ms, &avg_config, (20.0, 120.0), 48000.0).expect("avg");
+        let var_result = optimize_multiseat(&ms, &var_config, (20.0, 120.0), 48000.0).expect("var");
+        let avg_result = optimize_multiseat(&ms, &avg_config, (20.0, 120.0), 48000.0).expect("avg");
 
         // The two strategies should (generally) produce different gain/delay solutions.
         // At minimum, the Average strategy should run its own loss — we verify it
@@ -795,9 +855,14 @@ mod tests {
         assert_eq!(avg_result.gains[0], 0.0);
         assert_eq!(avg_result.delays[0], 0.0);
 
-        // Both should improve (or at least not worsen) variance
+        assert_eq!(avg_result.strategy, MultiSeatStrategy::Average);
+        assert_eq!(avg_result.objective_name, "average_flatness");
+        assert_close(avg_result.improvement_db, avg_result.objective_improvement_db);
+        assert!(avg_result.objective_improvement_db >= -0.01);
+
+        // Variance is still reported as a diagnostic, but Average optimizes
+        // average flatness, so it is no longer the success metric.
         assert!(var_result.improvement_db >= -0.01);
-        assert!(avg_result.improvement_db >= -1.0); // avg optimizes a different metric
     }
 
     #[test]
@@ -841,6 +906,10 @@ mod tests {
         assert_eq!(result.delays.len(), 2);
         assert_eq!(result.gains[0], 0.0);
         assert_eq!(result.delays[0], 0.0);
+        assert_eq!(result.strategy, MultiSeatStrategy::PrimaryWithConstraints);
+        assert_eq!(result.objective_name, "primary_constrained");
+        assert_close(result.improvement_db, result.objective_improvement_db);
+        assert!(result.objective_improvement_db >= -0.01);
     }
 
     #[test]
@@ -882,8 +951,7 @@ mod tests {
         let freqs = create_eval_frequency_grid(&ms, 20.0, 120.0);
         let interpolated = interpolate_all_measurements(&ms, &freqs).expect("Should interpolate");
 
-        let (gains, delays) =
-            optimize_minimize_variance(&interpolated, &freqs, 2, 20.0, 120.0);
+        let (gains, delays) = optimize_minimize_variance(&interpolated, &freqs, 2, 20.0, 120.0);
 
         // With fine resolution, at least one parameter should land on a
         // non-integer value (0.1 step grid), demonstrating the refinement pass.
