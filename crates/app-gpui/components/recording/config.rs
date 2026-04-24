@@ -893,7 +893,7 @@ impl PlayerView {
                     .color(theme.text_secondary),
             )
             .child(
-                div().w(px(100.0)).child(
+                div().w(px(100.0)).child( // intentional: sample-rate dropdown width
                     Select::new("playback_sample_rate")
                         .options(options)
                         .selected(selected_value)
@@ -986,7 +986,7 @@ impl PlayerView {
                     .color(theme.text_secondary),
             )
             .child(
-                div().w(px(100.0)).child(
+                div().w(px(100.0)).child( // intentional: speaker-config dropdown width
                     Select::new("speaker_config")
                         .options(options)
                         .selected(selected_value)
@@ -1085,7 +1085,7 @@ impl PlayerView {
                 ),
             )
             // Spacer to separate dropdown from badges
-            .child(div().w(px(20.0)))
+            .child(div().w(px(20.0))) // intentional: fixed spacer gap
             .child(
                 Text::new("Channels:")
                     .size(TextSize::Xs)
@@ -1137,7 +1137,7 @@ impl PlayerView {
                     // For custom config, show text input; otherwise show dropdown
                     let name_widget = if is_custom {
                         div()
-                            .w(px(NAME_WIDTH))
+                            .w(px(NAME_WIDTH)) // intentional: fixed channel-name column width
                             .child(self.render_channel_name_input_raw(cx, speaker_idx, &group_name))
                             .into_any_element()
                     } else {
@@ -1157,7 +1157,7 @@ impl PlayerView {
                                     .spacing(StackSpacing::Xs)
                                     .align(StackAlign::Center)
                                     .child(
-                                        div().w(px(LABEL_WIDTH)).child(
+                                        div().w(px(LABEL_WIDTH)).child( // intentional: speaker-label column
                                             Text::new(format!("Speaker {}:", speaker_idx + 1))
                                                 .size(TextSize::Xs)
                                                 .color(theme.text_secondary),
@@ -1187,7 +1187,7 @@ impl PlayerView {
                             .spacing(StackSpacing::Xs)
                             .align(StackAlign::Center)
                             .child(
-                                div().w(px(LABEL_WIDTH)).child(
+                                div().w(px(LABEL_WIDTH)).child( // intentional: speaker-label column
                                     Text::new(format!("Speaker {}:", speaker_idx + 1))
                                         .size(TextSize::Xs)
                                         .color(theme.text_secondary),
@@ -1198,9 +1198,9 @@ impl PlayerView {
                                 self.render_speaker_mode_toggle(cx, speaker_idx, is_multi)
                                     .into_any_element(),
                             )
-                            .child(div().w(px(70.0)))
+                            .child(div().w(px(70.0))) // intentional: align with ch-number input column
                             .child(Text::new("Ch").size(TextSize::Xs).color(theme.text_muted))
-                            .child(div().w(px(30.0)))
+                            .child(div().w(px(30.0))) // intentional: spacer before ch number
                             .child({
                                 let view = view.clone();
                                 NumberInput::new(SharedString::from(format!(
@@ -1273,7 +1273,7 @@ impl PlayerView {
 
         let selected = if is_multi { "multi" } else { "single" };
 
-        div().w(px(80.0)).child(
+        div().w(px(80.0)).child( // intentional: speaker-mode dropdown width
             Select::new(SharedString::from(format!("speaker_mode_{}", speaker_idx)))
                 .options(options)
                 .selected(selected)
@@ -1372,15 +1372,15 @@ impl PlayerView {
                             .spacing(StackSpacing::Xs)
                             .align(StackAlign::Center)
                             // Indent to align under the name column
-                            .child(div().w(px(LABEL_WIDTH)))
+                            .child(div().w(px(LABEL_WIDTH))) // intentional: indent spacer matches header
                             .child(
-                                div().w(px(CH_LABEL_WIDTH)).child(
+                                div().w(px(CH_LABEL_WIDTH)).child( // intentional: fixed ch-label column
                                     Text::new(format!("Ch {}:", ch_idx + 1))
                                         .size(TextSize::Xs)
                                         .color(theme.text_muted),
                                 ),
                             )
-                            .child(div().w(px(70.0)).child({
+                            .child(div().w(px(70.0)).child({ // intentional: fixed ch-number input column
                                 let view = view.clone();
                                 NumberInput::new(SharedString::from(format!(
                                     "speaker_{}_ch_{}",
@@ -1471,7 +1471,7 @@ impl PlayerView {
                 let theme = theme.clone();
                 HStack::new()
                     .spacing(StackSpacing::Xs)
-                    .child(div().w(px(LABEL_WIDTH)))
+                    .child(div().w(px(LABEL_WIDTH))) // intentional: indent spacer matches header
                     .child(
                         Button::new(
                             SharedString::from(format!("add_ch_{}", speaker_idx)),
@@ -1581,7 +1581,7 @@ impl PlayerView {
             .map(|(_, name)| SharedString::from(*name))
             .unwrap_or_else(|| SharedString::from(current_group.clone()));
 
-        div().w(px(140.0)).child(
+        div().w(px(140.0)).child( // intentional: channel-name dropdown width
             Select::new(SharedString::from(format!("channel_name_{}", channel_idx)))
                 .options(options)
                 .selected(current_group.clone())
@@ -1793,7 +1793,7 @@ impl PlayerView {
                     .color(theme.text_secondary),
             )
             .child(
-                div().w(px(100.0)).child(
+                div().w(px(100.0)).child( // intentional: sample-rate dropdown width
                     Select::new("recording_sample_rate")
                         .options(options)
                         .selected(selected_value)
@@ -1998,7 +1998,7 @@ impl PlayerView {
             .child(match chart_element {
                 Ok(chart) => chart.into_any_element(),
                 Err(_) => div()
-                    .w(px(chart_width))
+                    .w(px(chart_width)) // intentional: match chart canvas dimensions
                     .h(px(chart_height))
                     .flex()
                     .items_center()

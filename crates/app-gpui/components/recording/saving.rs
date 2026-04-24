@@ -4,6 +4,7 @@
 
 use crate::app::types::ChannelRecordingState;
 use crate::app::types::recording::RoomDimensionUnit;
+use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -149,7 +150,7 @@ impl PlayerView {
                         )
                         .child(
                             div()
-                                .w(px(300.0))
+                                .w(px(300.0)) // intentional: fixed name input field width
                                 .on_mouse_down(MouseButton::Left, |_event, _window, cx| {
                                     cx.stop_propagation();
                                 })
@@ -624,7 +625,7 @@ impl PlayerView {
                 )
                 .child(
                     div()
-                        .w(px(560.0))
+                        .w(px(560.0)) // intentional: wide description field width
                         .on_mouse_down(MouseButton::Left, |_event, _window, cx| {
                             cx.stop_propagation();
                         })
@@ -664,6 +665,7 @@ impl PlayerView {
     /// populated the first time the save step renders — see
     /// [`render_recording_saving_step`].
     fn render_channel_speakers_card(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let rec = &state.app.measurement_state.recording_state;
@@ -732,7 +734,7 @@ impl PlayerView {
                                 .spacing(StackSpacing::Sm)
                                 .align(StackAlign::Center)
                                 .child(
-                                    div().w(px(80.0)).child(
+                                    div().w(px(80.0)).child( // intentional: channel label column
                                         Text::new(channel_name.clone())
                                             .size(TextSize::Xs)
                                             .weight(TextWeight::Semibold)
@@ -741,7 +743,7 @@ impl PlayerView {
                                 )
                                 .child(
                                     div()
-                                        .w(px(380.0))
+                                        .w(px(380.0)) // intentional: speaker input field width
                                         .on_mouse_down(MouseButton::Left, |_event, _window, cx| {
                                             cx.stop_propagation();
                                         })
@@ -784,12 +786,12 @@ impl PlayerView {
                                         "channel_speaker_suggestions_{}",
                                         row
                                     )))
-                                    .ml(px(88.0)) // align under the input
-                                    .w(px(380.0))
-                                    .max_h(px(220.0))
+                                    .ml(px(88.0)) // intentional: align under the input (label col + gap)
+                                    .w(px(380.0)) // intentional: match input field width
+                                    .max_h(px(220.0)) // intentional: dropdown scroll viewport
                                     .overflow_y_scroll()
                                     .bg(theme.surface)
-                                    .rounded(px(4.0))
+                                    .rounded(d.r_md)
                                     .border_1()
                                     .border_color(theme.border)
                                     .children(suggestions.into_iter().map(|s| {
@@ -799,8 +801,8 @@ impl PlayerView {
                                                 "channel_speaker_opt_{}_{}",
                                                 row, suggestion
                                             )))
-                                            .px(px(8.0))
-                                            .py(px(4.0))
+                                            .px(d.pad_y)
+                                            .py(d.pad_y_half)
                                             .cursor_pointer()
                                             .hover(|s| s.bg(theme.surface_hover))
                                             .child(Text::new(suggestion.clone()).size(TextSize::Xs))
@@ -861,7 +863,7 @@ fn dimension_field(
         )
         .child(
             div()
-                .w(px(100.0))
+                .w(px(100.0)) // intentional: dimension numeric-input column width
                 .on_mouse_down(MouseButton::Left, |_event, _window, cx| {
                     cx.stop_propagation();
                 })

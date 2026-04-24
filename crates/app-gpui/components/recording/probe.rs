@@ -209,7 +209,7 @@ impl PlayerView {
                 Table::new("probe-results-table", table_rows)
                     .column(
                         Column::new("channel", "Channel")
-                            .width(px(100.0))
+                            .width(px(100.0)) // intentional: fixed probe-results column
                             .sortable(false)
                             .resizable(false)
                             .cell_render(move |row: &ProbeResultRow, _, _, _| {
@@ -221,7 +221,7 @@ impl PlayerView {
                     )
                     .column(
                         Column::new("arrival", "Arrival (ms)")
-                            .width(px(110.0))
+                            .width(px(110.0)) // intentional: fixed probe-results column
                             .sortable(false)
                             .resizable(false)
                             .cell_render(move |row: &ProbeResultRow, _, _, _| {
@@ -232,7 +232,7 @@ impl PlayerView {
                     )
                     .column(
                         Column::new("gain", "Gain (dB)")
-                            .width(px(100.0))
+                            .width(px(100.0)) // intentional: fixed probe-results column
                             .sortable(false)
                             .resizable(false)
                             .cell_render(move |row: &ProbeResultRow, _, _, _| {
@@ -243,7 +243,7 @@ impl PlayerView {
                     )
                     .column(
                         Column::new("snr", "SNR (dB)")
-                            .width(px(100.0))
+                            .width(px(100.0)) // intentional: fixed probe-results column
                             .sortable(false)
                             .resizable(false)
                             .cell_render(move |row: &ProbeResultRow, _, _, _| {
@@ -262,7 +262,7 @@ impl PlayerView {
                     )
                     .column(
                         Column::new("align", "Align (ms)")
-                            .width(px(110.0))
+                            .width(px(110.0)) // intentional: fixed probe-results column
                             .sortable(false)
                             .resizable(false)
                             .cell_render(move |row: &ProbeResultRow, _, _, _| {

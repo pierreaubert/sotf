@@ -122,7 +122,7 @@ impl PlayerView {
                                 .color(theme.text_secondary),
                         )
                         .child(
-                            div().w(px(160.0)).child(
+                            div().w(px(160.0)).child( // intentional: channel-select dropdown width
                                 Select::new("plot_channel_select")
                                     .options(channel_options)
                                     .selected(selected_channel_value)
@@ -181,7 +181,7 @@ impl PlayerView {
                                 .color(theme.text_secondary),
                         )
                         .child(
-                            div().w(px(140.0)).child(
+                            div().w(px(140.0)).child( // intentional: smoothing-select dropdown width
                                 Select::new("plot_smoothing_select")
                                     .options(smoothing_options)
                                     .selected(selected_smoothing_value)
@@ -524,7 +524,7 @@ impl PlayerView {
         }
 
         div()
-            .h(px(300.0))
+            .h(px(300.0)) // intentional: spectrogram placeholder chart height
             .w_full()
             .bg(theme.surface)
             .rounded(d.r_md)
@@ -646,7 +646,7 @@ impl PlayerView {
 
     fn render_no_data_placeholder(&self, d: &Ds, theme: &crate::theme::Theme) -> impl IntoElement {
         div()
-            .h(px(200.0))
+            .h(px(200.0)) // intentional: empty-state placeholder height
             .w_full()
             .rounded(d.r_md)
             .bg(theme.surface)
@@ -921,7 +921,7 @@ impl PlayerView {
 
         if series.is_empty() {
             return div()
-                .h(px(250.0))
+                .h(px(250.0)) // intentional: distortion placeholder chart height
                 .w_full()
                 .bg(theme.surface)
                 .rounded(d.r_md)
@@ -1250,7 +1250,7 @@ impl PlayerView {
                                         .color(theme.text_primary),
                                 ),
                         )
-                        .child(div().w(px(1.0)).h(px(40.0)).bg(theme.border))
+                        .child(div().w(px(1.0)).h(px(40.0)).bg(theme.border)) // intentional: vertical divider line
                         .child(
                             VStack::new()
                                 .spacing(StackSpacing::Xs)
