@@ -46,7 +46,10 @@ impl PlayerView {
             let live_align = dd.edited_alignment_delays_ms();
             let mut has_low_delay = false;
 
-            // Header row
+            // Header row.
+            // intentional: fixed pixel column widths below (80/90/120) form a
+            // tabular layout for the per-channel delay table and should not
+            // scale with font zoom.
             let header = HStack::new()
                 .spacing(StackSpacing::Md)
                 .align(StackAlign::Center)

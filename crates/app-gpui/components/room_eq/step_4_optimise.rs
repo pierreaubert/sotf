@@ -698,7 +698,7 @@ impl PlayerView {
                         )
                         .content(
                             div()
-                                .w(px(700.0))
+                                .w(px(700.0)) // intentional: fixed chart container width
                                 .flex()
                                 .flex_col()
                                 .when_some(chart_element, |el, c| el.child(c)),
@@ -744,12 +744,12 @@ impl PlayerView {
                         div()
                             .id("room-config-params")
                             .overflow_y_scroll()
-                            .max_h(px(400.0))
+                            .max_h(px(400.0)) // intentional: fixed params table max height
                             .child(
                                 Table::new("optimizer-params-table", pairs)
                                     .column(
                                         Column::new("key", "Parameter")
-                                            .width(px(380.0))
+                                            .width(px(380.0)) // intentional: fixed table column width
                                             .sortable(false)
                                             .resizable(true)
                                             .cell_render(
