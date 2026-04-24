@@ -124,9 +124,7 @@ impl PlayerView {
                         .align(StackAlign::Center)
                         .child(
                             div().w(px(80.0)).child(
-                                Text::new(ch.channel_name.clone())
-                                    .size(TextSize::Xs)
-                                    .weight(TextWeight::Semibold)
+                                Text::label(ch.channel_name.clone())
                                     .color(theme.text_primary),
                             ),
                         )
@@ -146,10 +144,7 @@ impl PlayerView {
                         )
                         .child(
                             div().w(px(80.0)).child(
-                                Text::new(format!("{:+.1}", ch.snr_db))
-                                    .size(TextSize::Xs)
-                                    .weight(TextWeight::Semibold)
-                                    .color(snr_color),
+                                Text::label(format!("{:+.1}", ch.snr_db)).color(snr_color),
                             ),
                         )
                         .child(

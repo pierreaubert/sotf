@@ -274,10 +274,7 @@ impl PlayerView {
                                     VStack::new()
                                         .spacing(StackSpacing::Xs)
                                         .child(
-                                            Text::new("Origin / Version")
-                                                .size(TextSize::Xs)
-                                                .weight(TextWeight::Semibold)
-                                                .color(theme.text_primary),
+                                            Text::label("Origin / Version").color(theme.text_primary),
                                         )
                                         .when(loading_versions, |vs| {
                                             vs.child(Text::caption("Loading versions..."))

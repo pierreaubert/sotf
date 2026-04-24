@@ -11,7 +11,7 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Badge, BadgeVariant, Dialog, DialogSize, HStack, StackAlign, StackJustify, StackSize,
+    Badge, BadgeVariant, Dialog, DialogSize, HStack, Heading, StackAlign, StackJustify, StackSize,
     StackSpacing, Text, TextSize, TextWeight, ToastVariant, VStack,
 };
 
@@ -229,12 +229,7 @@ impl PlayerView {
             .child(
                 VStack::new()
                     .spacing(StackSpacing::Xs)
-                    .child(
-                        Text::new(title.to_string())
-                            .size(TextSize::Xs)
-                            .weight(TextWeight::Semibold)
-                            .color(theme.text_primary),
-                    )
+                    .child(Text::label(title.to_string()).color(theme.text_primary))
                     .child(
                         Text::new(subtitle.to_string())
                             .size(TextSize::Xs)
@@ -1074,12 +1069,7 @@ impl PlayerView {
     ) -> impl IntoElement {
         VStack::new()
             .spacing(StackSpacing::Xs)
-            .child(
-                Text::new(title.to_string())
-                    .size(TextSize::Xs)
-                    .weight(TextWeight::Semibold)
-                    .color(theme.accent),
-            )
+            .child(Text::label(title.to_string()).color(theme.accent))
             .children(shortcuts.iter().map(|(key, desc)| {
                 HStack::new()
                     .spacing(StackSpacing::Sm)
@@ -1214,12 +1204,7 @@ impl PlayerView {
                     .flex_col()
                     .gap(d.section)
                     // Title
-                    .child(
-                        Text::new(scan_type.title())
-                            .size(TextSize::Md)
-                            .weight(TextWeight::Bold)
-                            .color(theme.text_primary),
-                    )
+                    .child(Heading::h4(scan_type.title()))
                     // Description
                     .child(
                         Text::new(scan_type.description())

@@ -149,9 +149,7 @@ impl PlayerView {
                                         .color(theme.text_secondary),
                                 )
                                 .child(
-                                    Text::new("Click Next to review the results.")
-                                        .size(TextSize::Xs)
-                                        .weight(TextWeight::Semibold)
+                                    Text::label("Click Next to review the results.")
                                         .color(theme.text_secondary),
                                 ),
                         )
@@ -308,22 +306,12 @@ impl PlayerView {
                                         .size(TextSize::Xs)
                                         .color(label_color),
                                 )
-                                .child(
-                                    Text::new(value)
-                                        .size(TextSize::Xs)
-                                        .weight(TextWeight::Semibold)
-                                        .color(value_color),
-                                )
+                                .child(Text::label(value).color(value_color))
                         };
 
                         // Show only enabled toggles as accent-tinted chips —
                         // disabled flags add noise, not signal.
-                        let chip = |label: &'static str| {
-                            Text::new(label)
-                                .size(TextSize::Xs)
-                                .weight(TextWeight::Semibold)
-                                .color(accent)
-                        };
+                        let chip = |label: &'static str| Text::label(label).color(accent);
 
                         // Collapse channel list to a single compact line:
                         // "3: FL, FR, C" rather than "3 (FL, FR, C)".
@@ -766,10 +754,7 @@ impl PlayerView {
                                             .resizable(false)
                                             .cell_render(
                                                 move |pair: &(String, String), _, _, _| {
-                                                    Text::new(pair.1.clone())
-                                                        .size(TextSize::Xs)
-                                                        .weight(TextWeight::Semibold)
-                                                        .color(value_color)
+                                                    Text::label(pair.1.clone()).color(value_color)
                                                 },
                                             ),
                                     )

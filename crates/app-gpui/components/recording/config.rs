@@ -11,8 +11,8 @@ use gpui::*;
 use gpui_px::{ScaleType, line};
 use gpui_ui_kit::{
     Accordion, AccordionItem, AccordionMode, Badge, BadgeVariant, Button, ButtonSize,
-    ButtonVariant, HStack, Input, InputSize, NumberInput, NumberInputSize, Select, SelectOption,
-    StackAlign, StackSpacing, Text, TextSize, TextWeight, VStack,
+    ButtonVariant, HStack, Heading, Input, InputSize, NumberInput, NumberInputSize, Select,
+    SelectOption, StackAlign, StackSpacing, Text, TextSize, VStack,
 };
 
 /// Standard channel group definitions
@@ -61,11 +61,7 @@ impl PlayerView {
                 // Header
                 VStack::new()
                     .spacing(StackSpacing::Xs)
-                    .child(
-                        Text::new("Audio Device Configuration")
-                            .size(TextSize::Md)
-                            .weight(TextWeight::Bold),
-                    )
+                    .child(Heading::h4("Audio Device Configuration"))
                     .child(
                         Text::new("Configure your playback and recording devices, set up channel routing, and load microphone calibration.")
                             .size(TextSize::Xs),
@@ -123,11 +119,9 @@ impl PlayerView {
 
     /// Render playback device content for accordion
     fn render_playback_device_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let device_label = VStack::new().spacing(StackSpacing::Xs).child(
-            Text::new("Output Device")
-                .size(TextSize::Xs)
-                .weight(TextWeight::Semibold),
-        );
+        let device_label = VStack::new()
+            .spacing(StackSpacing::Xs)
+            .child(Text::label("Output Device"));
 
         // Sample rate dropdown row
         let sample_rate_row = self
@@ -174,12 +168,9 @@ impl PlayerView {
         };
         let view = cx.weak_entity();
 
-        let device_label = VStack::new().spacing(StackSpacing::Xs).child(
-            Text::new("Input Device")
-                .size(TextSize::Xs)
-                .weight(TextWeight::Semibold)
-                .color(theme.text_secondary),
-        );
+        let device_label = VStack::new()
+            .spacing(StackSpacing::Xs)
+            .child(Text::label("Input Device").color(theme.text_secondary));
 
         // Sample rate dropdown row
         let sample_rate_row = self
@@ -410,16 +401,11 @@ impl PlayerView {
                             .size(TextSize::Xs)
                             .color(theme.text_secondary),
                     )
-                    .child(
-                        Text::new(display_path)
-                            .size(TextSize::Xs)
-                            .weight(TextWeight::Semibold)
-                            .color(if has_directory {
-                                theme.text_primary
-                            } else {
-                                theme.warning
-                            }),
-                    ),
+                    .child(Text::label(display_path).color(if has_directory {
+                        theme.text_primary
+                    } else {
+                        theme.warning
+                    })),
             )
             .child(
                 HStack::new()
