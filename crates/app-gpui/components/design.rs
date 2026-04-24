@@ -12,17 +12,35 @@
 //! with font zoom produces visually "bubbly" zoomed UI, so the convention is
 //! that radii track the design language (Apple HIG / Material 3 / Fluent)
 //! rather than the text scale.
+//!
+//! # Typography unification (Typography Phase 2)
+//!
+//! The text-sized fields (`text_sm`, `text_base`, `text_lg`, `text_xl`,
+//! `text_xxl`) delegate to [`gpui_ui_kit::TextSize::to_rems`] so that both
+//! styling APIs resolve to identical rem values. A call to `Text::new(...)
+//! .size(TextSize::Sm)` and a call to `div().text_size(d.text_sm)` now render
+//! at the same size, whereas previously they could drift (e.g. 14 px vs 11 px
+//! at 1× zoom with the neutral platform rules).
+//!
+//! The exception is `text_xs`: it stays a specialized "caption / axis tick"
+//! size, smaller than [`TextSize::Xs`] by design. Use `text_xs` for chart axis
+//! labels, badges, and other micro-type; use `TextSize::Xs` / `d.text_sm` for
+//! body-small labels.
 
 use gpui::{Pixels, Rems, px, rems};
 use gpui_design::DesignExt;
+use gpui_ui_kit::TextSize;
 
 /// GPUI's default root rem size, matching the baseline used when
 /// `window.set_rem_size` has not been adjusted. Design-token pixel values are
 /// divided by this constant to produce rem-relative sizes.
 const BASE_REM_PX: f32 = 16.0;
 
-/// Scale factor for extra-small text (axis ticks, badges) relative to `small_size`.
-const TEXT_XS_SCALE: f32 = 0.85;
+/// Rem value for the caption-sized `text_xs` field. Intentionally smaller than
+/// [`TextSize::Xs`] (0.75 rem) so chart axis ticks, badges, and other
+/// micro-type can shrink below body-small without callers reaching for raw
+/// `rems()` values. Equivalent to roughly 10 px at the 16 px rem baseline.
+const TEXT_XS_CAPTION_REMS: f32 = 0.625;
 
 /// Pre-computed design system values for direct use in GPUI method chains.
 ///
@@ -64,14 +82,19 @@ pub struct Ds {
     pub r_lg: Pixels,
     /// Corner radius: extra-large. Fixed in pixels — does not scale.
     pub r_xl: Pixels,
-    /// Text size: extra-small (~10px). Scales with font zoom.
+    /// Text size: caption (~10 px at baseline). Intentionally smaller than
+    /// [`TextSize::Xs`] (12 px) for chart axis ticks, badges, and micro-type.
     pub text_xs: Rems,
-    /// Text size: small (~12px). Scales with font zoom.
+    /// Text size: small. Matches [`TextSize::Sm`] — 0.875 rem (~14 px).
     pub text_sm: Rems,
-    /// Text size: base (~14px). Scales with font zoom.
+    /// Text size: base. Matches [`TextSize::Md`] — 1.0 rem (~16 px).
     pub text_base: Rems,
-    /// Text size: large (~16px). Scales with font zoom.
+    /// Text size: large. Matches [`TextSize::Lg`] — 1.125 rem (~18 px).
     pub text_lg: Rems,
+    /// Text size: extra-large. Matches [`TextSize::Xl`] — 1.25 rem (~20 px).
+    pub text_xl: Rems,
+    /// Text size: 2× large. Matches [`TextSize::Xxl`] — 1.5 rem (~24 px).
+    pub text_xxl: Rems,
 }
 
 impl Ds {
@@ -93,11 +116,16 @@ impl Ds {
             r_md: px(ds.corners.md),
             r_lg: px(ds.corners.lg),
             r_xl: px(ds.corners.xl),
-            // 85% of small_size for extra-small labels (axis ticks, badges)
-            text_xs: to_rems(ds.typography.small_size * TEXT_XS_SCALE),
-            text_sm: to_rems(ds.typography.small_size),
-            text_base: to_rems(ds.typography.base_size),
-            text_lg: to_rems(ds.typography.large_size),
+            // Typography fields delegate to `TextSize::to_rems()` so both APIs
+            // (`Text::new(...).size(TextSize::Sm)` and `.text_size(d.text_sm)`)
+            // resolve to identical values — see module docs. `text_xs` stays
+            // smaller than `TextSize::Xs` by design (chart tick / caption use).
+            text_xs: rems(TEXT_XS_CAPTION_REMS),
+            text_sm: TextSize::Sm.to_rems(),
+            text_base: TextSize::Md.to_rems(),
+            text_lg: TextSize::Lg.to_rems(),
+            text_xl: TextSize::Xl.to_rems(),
+            text_xxl: TextSize::Xxl.to_rems(),
         }
     }
 }
