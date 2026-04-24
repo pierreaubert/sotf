@@ -1849,11 +1849,9 @@ impl PlayerView {
         if speaker_configs.is_empty() {
             return VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(
-                    Text::new("No channels configured. Load measurement data first.")
-                        .size(TextSize::Xs)
-                        .color(theme.text_muted),
-                )
+                .child(Text::caption(
+                    "No channels configured. Load measurement data first.",
+                ))
                 .into_any_element();
         }
 
@@ -1947,21 +1945,9 @@ impl PlayerView {
                 .child(
                     VStack::new()
                         .spacing(StackSpacing::Xs)
-                        .child(
-                            Text::new("Near-field: <1.5m (desktop)")
-                                .size(TextSize::Xs)
-                                .color(theme.text_muted),
-                        )
-                        .child(
-                            Text::new("Mid-field:  1.5–3m (couch)")
-                                .size(TextSize::Xs)
-                                .color(theme.text_muted),
-                        )
-                        .child(
-                            Text::new("Far-field:  >3m (theater)")
-                                .size(TextSize::Xs)
-                                .color(theme.text_muted),
-                        ),
+                        .child(Text::caption("Near-field: <1.5m (desktop)"))
+                        .child(Text::caption("Mid-field:  1.5–3m (couch)"))
+                        .child(Text::caption("Far-field:  >3m (theater)")),
                 )
                 .child(
                     HStack::new().child(
@@ -2020,16 +2006,12 @@ impl PlayerView {
                 .child(
                     VStack::new()
                         .spacing(StackSpacing::Xs)
-                        .child(
-                            Text::new("Flat: minimize frequency response deviation")
-                                .size(TextSize::Xs)
-                                .color(theme.text_muted),
-                        )
-                        .child(
-                            Text::new("EPA: optimize perceived quality (psychoacoustic)")
-                                .size(TextSize::Xs)
-                                .color(theme.text_muted),
-                        ),
+                        .child(Text::caption(
+                            "Flat: minimize frequency response deviation",
+                        ))
+                        .child(Text::caption(
+                            "EPA: optimize perceived quality (psychoacoustic)",
+                        )),
                 ),
         );
 
@@ -2069,16 +2051,8 @@ impl PlayerView {
                 .child(
                     VStack::new()
                         .spacing(StackSpacing::Xs)
-                        .child(
-                            Text::new("IIR: low latency (<5ms)")
-                                .size(TextSize::Xs)
-                                .color(theme.text_muted),
-                        )
-                        .child(
-                            Text::new("Mixed Phase: best quality")
-                                .size(TextSize::Xs)
-                                .color(theme.text_muted),
-                        ),
+                        .child(Text::caption("IIR: low latency (<5ms)"))
+                        .child(Text::caption("Mixed Phase: best quality")),
                 ),
         );
 

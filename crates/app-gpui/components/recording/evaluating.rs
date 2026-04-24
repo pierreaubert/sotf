@@ -282,12 +282,7 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(
-                    Text::new("MAGNITUDE (dB)")
-                        .size(TextSize::Xs)
-                        .weight(TextWeight::Bold)
-                        .color(theme.accent),
-                )
+                .child(Text::eyebrow("MAGNITUDE (dB)").color(theme.accent))
                 .child(if has_results {
                     self.render_magnitude_chart(&results, smoothing, &theme)
                         .into_any_element()
@@ -311,12 +306,7 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(
-                    Text::new("PHASE (degrees)")
-                        .size(TextSize::Xs)
-                        .weight(TextWeight::Bold)
-                        .color(theme.accent),
-                )
+                .child(Text::eyebrow("PHASE (degrees)").color(theme.accent))
                 .child(if has_results {
                     self.render_phase_chart(&results, smoothing, &theme)
                         .into_any_element()
@@ -340,12 +330,7 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(
-                    Text::new("GROUP DELAY (ms)")
-                        .size(TextSize::Xs)
-                        .weight(TextWeight::Bold)
-                        .color(theme.accent),
-                )
+                .child(Text::eyebrow("GROUP DELAY (ms)").color(theme.accent))
                 .child(if has_results {
                     self.render_group_delay_chart(&results, smoothing, &theme)
                         .into_any_element()
@@ -368,12 +353,7 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(
-                    Text::new("IMPULSE RESPONSE")
-                        .size(TextSize::Xs)
-                        .weight(TextWeight::Bold)
-                        .color(theme.accent),
-                )
+                .child(Text::eyebrow("IMPULSE RESPONSE").color(theme.accent))
                 .child(if has_results {
                     self.render_impulse_response_chart(&results, &theme)
                         .into_any_element()
@@ -397,12 +377,7 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(
-                    Text::new("DISTORTION (THD+N %)")
-                        .size(TextSize::Xs)
-                        .weight(TextWeight::Bold)
-                        .color(theme.accent),
-                )
+                .child(Text::eyebrow("DISTORTION (THD+N %)").color(theme.accent))
                 .child(if has_results {
                     self.render_distortion_chart(&d, &results, smoothing, &theme)
                         .into_any_element()
@@ -426,12 +401,7 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(
-                    Text::new("RT60 DECAY (ms)")
-                        .size(TextSize::Xs)
-                        .weight(TextWeight::Bold)
-                        .color(theme.accent),
-                )
+                .child(Text::eyebrow("RT60 DECAY (ms)").color(theme.accent))
                 .child(if has_results {
                     self.render_rt60_chart(&results, smoothing, &theme)
                         .into_any_element()
@@ -455,12 +425,7 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(
-                    Text::new("CLARITY (C50/C80 dB)")
-                        .size(TextSize::Xs)
-                        .weight(TextWeight::Bold)
-                        .color(theme.accent),
-                )
+                .child(Text::eyebrow("CLARITY (C50/C80 dB)").color(theme.accent))
                 .child(if has_results {
                     self.render_clarity_chart(&results, smoothing, &theme)
                         .into_any_element()
@@ -489,12 +454,7 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(
-                    Text::new("SPECTROGRAM")
-                        .size(TextSize::Xs)
-                        .weight(TextWeight::Bold)
-                        .color(theme.accent),
-                )
+                .child(Text::eyebrow("SPECTROGRAM").color(theme.accent))
                 .child(if has_results {
                     self.render_spectrogram_chart(&d, &results, &theme, sample_rate)
                         .into_any_element()
@@ -531,11 +491,7 @@ impl PlayerView {
             .flex()
             .items_center()
             .justify_center()
-            .child(
-                Text::new("Spectrogram not available")
-                    .size(TextSize::Xs)
-                    .color(theme.text_muted),
-            )
+            .child(Text::caption("Spectrogram not available"))
             .into_any_element()
     }
 
@@ -661,11 +617,9 @@ impl PlayerView {
                     .weight(TextWeight::Semibold)
                     .color(theme.text_secondary),
             )
-            .child(
-                Text::new("Go back to the Capture step to record frequency responses")
-                    .size(TextSize::Xs)
-                    .color(theme.text_muted),
-            )
+            .child(Text::caption(
+                "Go back to the Capture step to record frequency responses",
+            ))
     }
 
     /// Compute average SPL in the 100 Hz - 10 kHz range.
@@ -928,11 +882,9 @@ impl PlayerView {
                 .flex()
                 .items_center()
                 .justify_center()
-                .child(
-                    Text::new("Distortion data not available (use Sweep signal)")
-                        .size(TextSize::Xs)
-                        .color(theme.text_muted),
-                )
+                .child(Text::caption(
+                    "Distortion data not available (use Sweep signal)",
+                ))
                 .into_any_element();
         }
 
@@ -1225,12 +1177,7 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(
-                    Text::new("RECORDING SUMMARY")
-                        .size(TextSize::Xs)
-                        .weight(TextWeight::Bold)
-                        .color(theme.accent),
-                )
+                .child(Text::eyebrow("RECORDING SUMMARY").color(theme.accent))
                 .child(
                     HStack::new()
                         .spacing(StackSpacing::Md)
