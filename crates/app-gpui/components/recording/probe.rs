@@ -213,10 +213,7 @@ impl PlayerView {
                             .sortable(false)
                             .resizable(false)
                             .cell_render(move |row: &ProbeResultRow, _, _, _| {
-                                Text::new(row.channel.clone())
-                                    .size(TextSize::Xs)
-                                    .weight(TextWeight::Semibold)
-                                    .color(text_color)
+                                Text::label(row.channel.clone()).color(text_color)
                             }),
                     )
                     .column(
@@ -254,10 +251,7 @@ impl PlayerView {
                                 } else {
                                     error_color
                                 };
-                                Text::new(row.snr_text.clone())
-                                    .size(TextSize::Xs)
-                                    .weight(TextWeight::Semibold)
-                                    .color(color)
+                                Text::label(row.snr_text.clone()).color(color)
                             }),
                     )
                     .column(

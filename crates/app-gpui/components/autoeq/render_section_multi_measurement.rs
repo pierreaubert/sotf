@@ -86,10 +86,7 @@
         // Per-measurement weights (for weighted_sum strategy)
         if config.multi_measurement_strategy == "weighted_sum" && !config.multi_measurement_weights.is_empty() {
             section = section.child(
-                Text::new("Measurement Weights")
-                    .size(TextSize::Xs)
-                    .weight(TextWeight::Semibold)
-                    .color(theme.header_color),
+                Text::label("Measurement Weights").color(theme.header_color),
             );
 
             for (i, weight) in config.multi_measurement_weights.iter().enumerate() {
