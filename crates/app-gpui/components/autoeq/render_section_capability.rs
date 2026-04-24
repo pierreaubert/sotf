@@ -8,12 +8,7 @@
     section = section.child(
         VStack::new()
             .spacing(StackSpacing::None)
-            .child(
-                Text::new("Capability")
-                    .size(TextSize::Sm)
-                    .weight(TextWeight::Semibold)
-                    .color(theme.header_color),
-            )
+            .child(Text::section_header("Capability").color(theme.header_color))
             .child(
                 Text::new("Select the filter engine for your correction")
                     .size(TextSize::Xs)

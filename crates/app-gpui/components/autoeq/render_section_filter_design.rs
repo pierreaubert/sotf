@@ -7,12 +7,7 @@
     section = section.child(
         VStack::new()
             .spacing(StackSpacing::None)
-            .child(
-                Text::new("Filter Design")
-                    .size(TextSize::Sm)
-                    .weight(TextWeight::Semibold)
-                    .color(theme.header_color),
-            )
+            .child(Text::section_header("Filter Design").color(theme.header_color))
             .child(
                 Text::new("Configure filter characteristics and frequency ranges")
                     .size(TextSize::Xs)

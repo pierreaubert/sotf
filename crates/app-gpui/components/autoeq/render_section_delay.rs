@@ -6,12 +6,7 @@
     section = section.child(
         VStack::new()
             .spacing(StackSpacing::None)
-            .child(
-                Text::new("Delay Correction")
-                    .size(TextSize::Sm)
-                    .weight(TextWeight::Semibold)
-                    .color(theme.header_color),
-            )
+            .child(Text::section_header("Delay Correction").color(theme.header_color))
             .child(
                 Text::new("Requires a computer or HW interface that supports delay")
                     .size(TextSize::Xs)

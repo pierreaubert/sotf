@@ -6,12 +6,7 @@
     section = section.child(
         VStack::new()
             .spacing(StackSpacing::None)
-            .child(
-                Text::new("Home Cinema Specific")
-                    .size(TextSize::Sm)
-                    .weight(TextWeight::Semibold)
-                    .color(theme.header_color),
-            )
+            .child(Text::section_header("Home Cinema Specific").color(theme.header_color))
             .child(
                 Text::new("Multi-speaker alignment, timbre matching, and seat optimization")
                     .size(TextSize::Xs)
