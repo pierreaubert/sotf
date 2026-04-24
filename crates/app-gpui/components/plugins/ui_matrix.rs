@@ -6,6 +6,8 @@
 //! - Click to toggle, scroll to adjust
 //! - Preset buttons (Identity, Swap L/R, Mono Mix)
 
+// intentional-file: matrix cell grid driven by named pixel constants
+
 use super::common::ParamSectionStyle;
 use crate::app::AppState;
 use crate::app::types::PluginUpdateType;

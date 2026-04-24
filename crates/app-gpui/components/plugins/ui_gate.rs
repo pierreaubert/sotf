@@ -12,6 +12,8 @@
 //! |                  | └──────────────────────────────────┘       |                  |
 //! +------------------+--------------------------------------------+------------------+
 
+// intentional-file: gate level meter with pixel-exact threshold marker
+
 use super::common::{
     render_knob, render_section_title, render_toggle, render_vertical_slider_with_ticks,
 };

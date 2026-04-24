@@ -38,6 +38,9 @@ jobs:
           sudo AUTOEQ_DIR="$GITHUB_WORKSPACE" just install-ubuntu-x86
           just post-install-npm
 
+      - name: Check design-token drift (app-gpui)
+        run: python3 scripts/check-design-tokens.py
+
       - name: Build
         run: just build
 

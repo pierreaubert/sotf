@@ -6,6 +6,8 @@
 //! - Level meter panel rendering (for queue screen)
 //! - App methods for level meter group management (mute/solo/dim)
 
+// intentional-file: pixel-exact meter bars, dividers, and peak-hold markers
+
 use gpui::prelude::*;
 use gpui::*;
 use sotf_audio_player::PluginSettings;

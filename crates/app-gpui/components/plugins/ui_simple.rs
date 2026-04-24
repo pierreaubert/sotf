@@ -160,7 +160,7 @@ pub fn render_simple_plugin_view(
         )
         .column(
             Column::new("name", "Parameter")
-                .width(px(220.0))
+                .width(px(220.0)) // intentional: fixed plugin-control layout width
                 .sortable(false)
                 .resizable(false)
                 .cell_render(move |row: &ParamRow, row_idx, _, _| {

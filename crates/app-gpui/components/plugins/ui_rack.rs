@@ -1,5 +1,7 @@
 //! Plugin screen rendering functions - Professional DAW-style interface
 
+// intentional-file: rack with embedded meters and pixel-exact dividers
+
 use super::actions::ToggleUpmixerConfig;
 use super::level_meters::{db_to_position, render_gradient_meter};
 use super::render_plugin_content;

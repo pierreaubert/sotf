@@ -6,6 +6,8 @@
 //! measurement stored in `DelayDetectionState`. The user can override
 //! any delay value before advancing to Configure.
 
+// intentional-file: per-channel delay table with fixed column widths
+
 use crate::app::types::room_eq::DelayDetectionStatus;
 use crate::ui::PlayerView;
 use gpui::prelude::*;

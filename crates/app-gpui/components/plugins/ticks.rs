@@ -5,6 +5,8 @@
 //! - Quadratic: emphasizes values near the maximum (good for dB scales near 0)
 //! - Logarithmic: true logarithmic spacing
 
+// intentional-file: chart axis tick rendering
+
 use gpui::prelude::*;
 use gpui::*;
 

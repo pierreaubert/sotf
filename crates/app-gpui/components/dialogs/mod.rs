@@ -1301,7 +1301,7 @@ impl PlayerView {
                                     .h_full()
                                     // Calculate width as a fraction of the container
                                     // 400px modal - 48px padding (24px each side) = 352px container
-                                    .w(px(352.0 * (progress_width / 100.0)))
+                                    .w(px(352.0 * (progress_width / 100.0))) // intentional: progress-bar width computed from runtime percentage
                                     .bg(theme.accent)
                                     .rounded_full(),
                             ),

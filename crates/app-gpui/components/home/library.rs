@@ -1579,7 +1579,7 @@ impl PlayerView {
                     .text_color(theme.text_primary)
                     .child(label.to_string()),
             )
-            .child(div().flex_1().h(px(1.0)).bg(theme.border))
+            .child(div().flex_1().h(px(1.0)).bg(theme.border)) // intentional: 1px hairline divider
             .into_any_element()
     }
 

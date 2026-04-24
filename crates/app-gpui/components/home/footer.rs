@@ -148,7 +148,7 @@ impl Element for WaveformElement {
                     origin: point(x, center_y - px(bar_height)),
                     size: size(px(BAR_WIDTH - 1.0), px(bar_height * 2.0)),
                 },
-                corner_radii: Corners::all(px(1.0)),
+                corner_radii: Corners::all(px(1.0)), // intentional: 1px paint-math rounding inside Element::paint
                 background: bar_color.into(),
                 border_widths: Edges::default(),
                 border_color: Hsla::transparent_black(),

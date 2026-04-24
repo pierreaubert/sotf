@@ -3,6 +3,8 @@
 //! Provides a modal dialog for defining custom target curves via draggable control points.
 //! The curve is defined by control points connected by lines, displayed on a log-frequency graph.
 
+// intentional-file: custom target curve editor with chart-coordinate geometry
+
 use crate::app::AppState;
 use crate::app::types::{CustomTargetCurve, TargetCurveControlPoint};
 use crate::components::design::Ds;
