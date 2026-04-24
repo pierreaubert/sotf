@@ -20,6 +20,7 @@ use super::common::{
 };
 use super::level_meters::render_gr_meter;
 use crate::app::AppState;
+use crate::app::constants::spacing;
 use crate::components::design::Ds;
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
@@ -272,8 +273,9 @@ fn render_main_column(
                 div()
                     .text_size(d.text_xs)
                     .px(d.card)
+                    // intentional: asymmetric 6px bottom / 4px top for tab underline spacing
                     .pb(px(6.0))
-                    .pt(px(4.0))
+                    .pt(spacing::SM)
                     .cursor_pointer()
                     .id(SharedString::from(format!("layout-tab-{plugin_idx}-{i}")))
                     .font_weight(if is_active {

@@ -1,6 +1,7 @@
 //! Common utilities for plugin UI components
 
 use crate::app::AppState;
+use crate::app::constants::spacing;
 use crate::app::state::app::KnobDragState;
 use crate::components::design::Ds;
 use crate::components::plugins::editing::PluginEditingManager;
@@ -201,8 +202,9 @@ pub fn render_midi_badge(d: &Ds, assignment: &ParamAssignment, theme: &Theme) ->
     div()
         .flex()
         .items_center()
-        .gap(px(2.0))
-        .px(px(4.0))
+        .gap(spacing::XS)
+        .px(spacing::SM)
+        // intentional: 1px vertical inset for compact badge — do not scale
         .py(px(1.0))
         .rounded(d.r_sm)
         .bg(Theme::with_opacity(badge_color, 0.2))

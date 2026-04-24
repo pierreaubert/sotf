@@ -211,6 +211,7 @@ pub fn render_plugin_shell(
         .border_color(theme.border)
         .overflow_hidden()
         // Accent color strip at top
+        // intentional: 3px accent strip — visual element, not spacing
         .child(div().h(px(3.0)).w_full().bg(accent))
         // Header bar
         .child(
@@ -256,9 +257,11 @@ pub fn render_plugin_shell(
                         .items_center()
                         .gap(d.grid)
                         .px(d.pad_y)
+                        // intentional: compact header pill padding
                         .py(px(2.0))
                         .rounded(d.r_md)
                         .hover(move |s| s.bg(Theme::opacity_20pct(bypass_color)))
+                        // intentional: 8px status dot — visual indicator, not spacing
                         .child(div().w(px(8.0)).h(px(8.0)).rounded_full().bg(bypass_color))
                         .child(
                             div()
