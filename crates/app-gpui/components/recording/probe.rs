@@ -275,11 +275,7 @@ impl PlayerView {
                     .theme(table_theme),
             );
             if let Some(wav) = pc.wav_path.clone() {
-                content = content.child(
-                    Text::new(format!("Recording saved to: {}", wav))
-                        .size(TextSize::Xs)
-                        .color(theme.text_muted),
-                );
+                content = content.child(Text::caption(format!("Recording saved to: {}", wav)));
             }
             Card::new()
                 .background(theme.surface)
