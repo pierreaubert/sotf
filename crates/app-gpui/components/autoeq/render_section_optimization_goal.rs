@@ -7,12 +7,7 @@
     section = section.child(
         VStack::new()
             .spacing(StackSpacing::None)
-            .child(
-                Text::new("Optimisation Goal")
-                    .size(TextSize::Sm)
-                    .weight(TextWeight::Semibold)
-                    .color(theme.header_color),
-            )
+            .child(Text::section_header("Optimisation Goal").color(theme.header_color))
             .child(
                 Text::new("How the optimizer evaluates correction quality")
                     .size(TextSize::Xs)

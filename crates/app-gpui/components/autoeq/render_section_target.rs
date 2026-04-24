@@ -8,12 +8,7 @@
     section = section.child(
         VStack::new()
             .spacing(StackSpacing::None)
-            .child(
-                Text::new("Target")
-                    .size(TextSize::Sm)
-                    .weight(TextWeight::Semibold)
-                    .color(theme.header_color),
-            )
+            .child(Text::section_header("Target").color(theme.header_color))
             .child(
                 Text::new("Listening distance and target slope")
                     .size(TextSize::Xs)
