@@ -1,6 +1,7 @@
 // Section 1: Capability — select filter mode (IIR / FIR / Mixed / Mixed Phase)
 // This file is include!()'d from render_body.rs, sharing its scope.
 {
+    let d = crate::components::design::Ds::from_cx(cx);
     let mut section = VStack::new().spacing(StackSpacing::Sm);
 
     // Header
@@ -54,9 +55,9 @@
             .child(
                 div()
                     .flex_shrink_0()
-                    .w(px(16.0))
-                    .h(px(16.0))
-                    .rounded(px(8.0))
+                    .w(rems(1.0))
+                    .h(rems(1.0))
+                    .rounded(d.r_lg)
                     .border_1()
                     .border_color(if is_selected { theme.accent } else { theme.border })
                     .when(is_selected, |el| el.bg(theme.accent)),
@@ -80,9 +81,9 @@
 
         section = section.child(
             div()
-                .px(px(8.0))
-                .py(px(6.0))
-                .rounded(px(6.0))
+                .px(d.gap)
+                .py(d.pad_y_half)
+                .rounded(d.r_md)
                 .border_1()
                 .border_color(if is_selected { theme.accent } else { theme.border })
                 .cursor_pointer()

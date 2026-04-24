@@ -184,6 +184,7 @@ impl PlayerView {
                             .flex()
                             .flex_col()
                             .gap(d.grid)
+                            // intentional: fixed scroll container height (not a spacing token)
                             .max_h(px(300.0))
                             .overflow_y_scroll()
                             .when(suggestions.is_empty() && is_loading, |el| {
@@ -192,8 +193,8 @@ impl PlayerView {
                                         .flex()
                                         .items_center()
                                         .justify_center()
-                                        .gap(px(8.0))
-                                        .py(px(16.0))
+                                        .gap(d.gap)
+                                        .py(d.section)
                                         .child(Spinner::new().size(SpinnerSize::Md))
                                         .child(
                                             Text::new("Loading speakers from spinorama.org...")
