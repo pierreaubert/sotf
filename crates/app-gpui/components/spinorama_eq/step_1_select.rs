@@ -136,23 +136,15 @@ impl PlayerView {
                                     .when(is_loading, |hstack| {
                                         hstack
                                             .child(Spinner::new().size(SpinnerSize::Sm))
-                                            .child(
-                                                Text::new("Loading...")
-                                                    .size(TextSize::Xs)
-                                                    .color(theme.text_muted),
-                                            )
+                                            .child(Text::caption("Loading..."))
                                     })
                                     .when(
                                         !is_loading && !spinorama.available_speakers.is_empty(),
                                         |hstack| {
-                                            hstack.child(
-                                                Text::new(format!(
-                                                    "{} speakers",
-                                                    spinorama.available_speakers.len()
-                                                ))
-                                                .size(TextSize::Xs)
-                                                .color(theme.text_muted),
-                                            )
+                                            hstack.child(Text::caption(format!(
+                                                "{} speakers",
+                                                spinorama.available_speakers.len()
+                                            )))
                                         },
                                     ),
                             ),
@@ -172,11 +164,10 @@ impl PlayerView {
                                     .color(theme.text_primary)
                                     .weight(TextWeight::Semibold),
                             )
-                            .child(
-                                Text::new(format!("({} matches)", suggestions.len()))
-                                    .size(TextSize::Xs)
-                                    .color(theme.text_muted),
-                            ),
+                            .child(Text::caption(format!(
+                                "({} matches)",
+                                suggestions.len()
+                            ))),
                     )
                     .content(
                         div()
@@ -196,23 +187,17 @@ impl PlayerView {
                                         .gap(d.gap)
                                         .py(d.section)
                                         .child(Spinner::new().size(SpinnerSize::Md))
-                                        .child(
-                                            Text::new("Loading speakers from spinorama.org...")
-                                                .size(TextSize::Xs)
-                                                .color(theme.text_muted),
-                                        ),
+                                        .child(Text::caption(
+                                            "Loading speakers from spinorama.org...",
+                                        )),
                                 )
                             })
                             .when(suggestions.is_empty() && !is_loading, |el| {
-                                el.child(
-                                    Text::new(if search_query.is_empty() {
-                                        "No speakers loaded. Click Refresh to load."
-                                    } else {
-                                        "No matching speakers found."
-                                    })
-                                    .size(TextSize::Xs)
-                                    .color(theme.text_muted),
-                                )
+                                el.child(Text::caption(if search_query.is_empty() {
+                                    "No speakers loaded. Click Refresh to load."
+                                } else {
+                                    "No matching speakers found."
+                                }))
                             })
                             .children(suggestions.iter().map(|speaker| {
                                 let is_selected = selected_speaker.as_ref() == Some(speaker);
@@ -295,20 +280,12 @@ impl PlayerView {
                                                 .color(theme.text_primary),
                                         )
                                         .when(loading_versions, |vs| {
-                                            vs.child(
-                                                Text::new("Loading versions...")
-                                                    .size(TextSize::Xs)
-                                                    .color(theme.text_muted),
-                                            )
+                                            vs.child(Text::caption("Loading versions..."))
                                         })
                                         .when(
                                             !loading_versions && available_versions.is_empty(),
                                             |vs| {
-                                                vs.child(
-                                                    Text::new("No versions available")
-                                                        .size(TextSize::Xs)
-                                                        .color(theme.text_muted),
-                                                )
+                                                vs.child(Text::caption("No versions available"))
                                             },
                                         )
                                         .when(
@@ -388,11 +365,7 @@ impl PlayerView {
                                 .child(
                                     HStack::new()
                                         .spacing(StackSpacing::Xs)
-                                        .child(
-                                            Text::new("Phase Data:")
-                                                .size(TextSize::Xs)
-                                                .color(theme.text_muted),
-                                        )
+                                        .child(Text::caption("Phase Data:"))
                                         .child(
                                             Text::new(if has_phase_data {
                                                 "Available"
@@ -455,11 +428,7 @@ impl PlayerView {
                                             .size(TextSize::Xs)
                                             .color(theme.error),
                                     )
-                                    .child(
-                                        Text::new(err)
-                                            .size(TextSize::Xs)
-                                            .color(theme.text_muted),
-                                    ),
+                                    .child(Text::caption(err)),
                             )
                             .into_any_element()
                     } else if has_spinorama_curves {
@@ -585,11 +554,9 @@ impl PlayerView {
                                     .color(theme.text_primary)
                                     .weight(TextWeight::Semibold),
                             )
-                            .content(
-                                Text::new("Spinorama data will appear after selecting a speaker with CEA2034 measurement")
-                                    .size(TextSize::Xs)
-                                    .color(theme.text_muted),
-                            )
+                            .content(Text::caption(
+                                "Spinorama data will appear after selecting a speaker with CEA2034 measurement",
+                            ))
                             .into_any_element()
                     },
                 )

@@ -363,13 +363,9 @@ impl PlayerView {
             container = container.child(row);
         }
 
-        container = container.child(
-            Text::new(
-                "Load a microphone calibration file (CSV) to compensate for microphone frequency response",
-            )
-            .size(TextSize::Xs)
-            .color(theme.text_muted),
-        );
+        container = container.child(Text::caption(
+            "Load a microphone calibration file (CSV) to compensate for microphone frequency response",
+        ));
 
         // Add calibration graph when any channel has data
         let cal_entries: Vec<(usize, CalibrationData)> = channel_data
@@ -473,9 +469,9 @@ impl PlayerView {
                     }),
             )
             .child(
-                Text::new("A timestamped subdirectory will be created for each recording session.")
-                    .size(TextSize::Xs)
-                    .color(theme.text_muted),
+                Text::caption(
+                    "A timestamped subdirectory will be created for each recording session.",
+                ),
             )
             .when(!has_directory, |stack| {
                 stack.child(
@@ -621,15 +617,11 @@ impl PlayerView {
                             });
                         }),
                 )
-                .child(
-                    Text::new(if post_s_opt.is_none() {
-                        "(auto: RT60 + 1 s)"
-                    } else {
-                        ""
-                    })
-                    .size(TextSize::Xs)
-                    .color(theme.text_muted),
-                )
+                .child(Text::caption(if post_s_opt.is_none() {
+                    "(auto: RT60 + 1 s)"
+                } else {
+                    ""
+                }))
         };
 
         // Estimated capture-time hint (§2.7 default: ~14 min for 5 channels).
@@ -655,24 +647,16 @@ impl PlayerView {
 
         VStack::new()
             .spacing(StackSpacing::Sm)
-            .child(
-                Text::new(
-                    "Increase bass precision to improve group delay accuracy below 100 Hz. \
-                     Higher settings require longer recordings.",
-                )
-                .size(TextSize::Xs)
-                .color(theme.text_muted),
-            )
+            .child(Text::caption(
+                "Increase bass precision to improve group delay accuracy below 100 Hz. \
+                 Higher settings require longer recordings.",
+            ))
             .child(bass_row)
             .child(pre_row)
             .child(post_row)
-            .child(
-                Text::new(format!(
-                    "Estimated capture time (5 channels, 10 Hz–20 kHz): ~{estimated_min} min"
-                ))
-                .size(TextSize::Xs)
-                .color(theme.text_muted),
-            )
+            .child(Text::caption(format!(
+                "Estimated capture time (5 channels, 10 Hz–20 kHz): ~{estimated_min} min"
+            )))
     }
 
     /// Open directory dialog to select recording output directory
@@ -1199,7 +1183,7 @@ impl PlayerView {
                                     .into_any_element(),
                             )
                             .child(div().w(px(70.0))) // intentional: align with ch-number input column
-                            .child(Text::new("Ch").size(TextSize::Xs).color(theme.text_muted))
+                            .child(Text::caption("Ch"))
                             .child(div().w(px(30.0))) // intentional: spacer before ch number
                             .child({
                                 let view = view.clone();
@@ -1375,9 +1359,7 @@ impl PlayerView {
                             .child(div().w(px(LABEL_WIDTH))) // intentional: indent spacer matches header
                             .child(
                                 div().w(px(CH_LABEL_WIDTH)).child( // intentional: fixed ch-label column
-                                    Text::new(format!("Ch {}:", ch_idx + 1))
-                                        .size(TextSize::Xs)
-                                        .color(theme.text_muted),
+                                    Text::caption(format!("Ch {}:", ch_idx + 1)),
                                 ),
                             )
                             .child(div().w(px(70.0)).child({ // intentional: fixed ch-number input column
@@ -1873,11 +1855,7 @@ impl PlayerView {
                                 HStack::new()
                                     .spacing(StackSpacing::Xs)
                                     .align(StackAlign::Center)
-                                    .child(
-                                        Text::new("Interface")
-                                            .size(TextSize::Xs)
-                                            .color(theme.text_muted),
-                                    )
+                                    .child(Text::caption("Interface"))
                                     .child({
                                         let view = view.clone();
                                         NumberInput::new(SharedString::from(format!(
