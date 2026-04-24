@@ -1,5 +1,64 @@
 # 0.4.36
 
+## Fix negative phase-alignment delays silently discarded
+
+`optimize_phase_alignment` returns negative `delay_ms` to mean "delay
+the subwoofer", but the apply loop in `optimize_room_impl` only acted
+when `delay_ms > 0.01`, silently dropping the physically-correct fix.
+
+- Store the originating `sub_name` alongside each phase-alignment
+  result so the subwoofer chain is reachable at apply time.
+- When `delay_ms < -0.01`, apply `abs(delay_ms)` to the sub's
+  `ChannelDspChain`.  When multiple mains pair with the same sub,
+  take the maximum absolute delay.
+
+## Multi-seat strategy, phase interpolation, and search resolution fixes
+
+Three bugs in `roomeq/multiseat.rs`:
+
+**Strategies now have distinct implementations.**
+`Average` and `PrimaryWithConstraints` previously called
+`optimize_minimize_variance` unchanged.
+
+- `Average` now minimises spectral standard deviation of the *mean*
+  SPL across seats (tonal flatness of the average listener), via
+  `average_flatness_from_responses`.
+- `PrimaryWithConstraints` now minimises primary-seat spectral
+  flatness with a 10x quadratic penalty when any other seat exceeds
+  `max_deviation_db`, via `primary_constrained_from_responses`.
+
+**Phase interpolation is wrap-aware.**  Linear interpolation of phase
+in degrees near +/-180 deg previously swung through 0 deg.  Now uses
+shortest-arc interpolation (`diff -= 360 * round(diff/360)`).  A
+warning is logged when a curve has no phase data.
+
+**Two-pass search replaces single coarse grid.**  Resolution was 1 dB
+gain / 1 ms delay with only 3 coordinate-descent passes for >2 subs.
+Now: coarse sweep (1 dB / 1 ms) followed by fine refinement (0.1 dB /
+0.1 ms, +/-2 window around coarse optimum).  2-sub case uses full 2-D
+grid at both resolutions; >2 subs uses 5 coordinate-descent passes per
+resolution.
+
+Shared infrastructure extracted: `compute_combined_responses`,
+`variance_from_responses`, `average_flatness_from_responses`,
+`primary_constrained_from_responses`, `two_pass_search`, `build_range`.
+
+Tests: 4 new (`test_average_strategy_differs_from_minimize_variance`,
+`test_primary_with_constraints_favors_primary_seat`,
+`test_phase_wrap_interpolation`,
+`test_fine_resolution_finds_better_solution`).
+`cargo test -p autoeq --lib` — 469 passing (was 465, +4).
+
+## Bounds-check `primary_seat` in multi-seat optimization
+
+`optimize_multiseat` now returns `Err(InvalidConfiguration)` when
+`primary_seat >= num_seats` and the strategy is
+`PrimaryWithConstraints`.  Previously this would panic with an
+out-of-bounds index inside `primary_constrained_from_responses`.
+
+Tests: 1 new (`test_primary_seat_out_of_range`).
+`cargo test -p autoeq --lib` — 470 passing (was 469, +1).
+
 ## Switch to oxiblas-ndarray for BLAS operations
 
 Replaced ndarray's built-in dot product with oxiblas-ndarray's pure-Rust
@@ -58,6 +117,7 @@ recording config) / missing noise_floor skips SNR check / override
 coherence threshold via recording config / priority order.
 
 `cargo test -p autoeq --lib` — 444 passing (was 431, +13).
+
 ## GD-Opt v2 — Phase GD-1f: microphone phase calibration loader
 
 Adds the 4-column mic phase calibration loader and per-curve
