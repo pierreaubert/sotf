@@ -795,7 +795,7 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "autoeq"
-version = "0.4.35"
+version = "0.4.36"
 dependencies = [
  "anyhow",
  "assert_fs",
@@ -815,6 +815,7 @@ dependencies = [
  "nlopt",
  "num-complex 0.4.6",
  "num_cpus",
+ "oxiblas-ndarray",
  "plotly",
  "plotly_static",
  "rand 0.9.2",
@@ -6071,7 +6072,7 @@ dependencies = [
 
 [[package]]
 name = "math-dsp"
-version = "0.5.12"
+version = "0.5.13"
 dependencies = [
  "approx",
  "clap",
@@ -6081,6 +6082,7 @@ dependencies = [
  "nalgebra",
  "ndarray",
  "num-complex 0.4.6",
+ "oxiblas-ndarray",
  "rand 0.9.2",
  "realfft",
  "rustfft 6.4.1",
@@ -6106,12 +6108,13 @@ dependencies = [
 
 [[package]]
 name = "math-optimisation"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "clap",
  "directories",
  "math-test-functions",
  "ndarray",
+ "oxiblas-ndarray",
  "plotly",
  "plotly_static",
  "rand 0.9.2",
@@ -6871,6 +6874,7 @@ version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73f88a1307638156682bada9d7604135552957b7818057dcef22705b4d509495"
 dependencies = [
+ "bytemuck",
  "num-traits",
 ]
 
@@ -7451,6 +7455,72 @@ name = "outref"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a80800c0488c3a21695ea981a54918fbb37abf04f4d0720c453632255e2ff0e"
+
+[[package]]
+name = "oxiblas-blas"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b20733edf8bd497233628af75afdb7c5f29157d8dc82e9fdc6c0e862e6e6957"
+dependencies = [
+ "bytemuck",
+ "num-complex 0.4.6",
+ "num-traits",
+ "oxiblas-core",
+ "oxiblas-matrix",
+]
+
+[[package]]
+name = "oxiblas-core"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2d36abb8c720acdb430c810434582b558f0dfdfcc34b73b64e7cd4f641b1ea1"
+dependencies = [
+ "bytemuck",
+ "libc",
+ "num-complex 0.4.6",
+ "num-traits",
+]
+
+[[package]]
+name = "oxiblas-lapack"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d69ba187daaf0d0e38d331c6fba35f5584296160e78d832b8e39c8e6c93b46f"
+dependencies = [
+ "bytemuck",
+ "num-complex 0.4.6",
+ "num-traits",
+ "oxiblas-blas",
+ "oxiblas-core",
+ "oxiblas-matrix",
+]
+
+[[package]]
+name = "oxiblas-matrix"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75bf5ed8ca26065e07b83f98009447302cd01926c88e829d7b5bc50e97d0ff19"
+dependencies = [
+ "bytemuck",
+ "num-complex 0.4.6",
+ "num-traits",
+ "oxiblas-core",
+]
+
+[[package]]
+name = "oxiblas-ndarray"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ee20cc93be5eefffa6ee2ba283047cf0558ee1fdf5c73507859a9a6dc36df70f"
+dependencies = [
+ "bytemuck",
+ "ndarray",
+ "num-complex 0.4.6",
+ "oxiblas-blas",
+ "oxiblas-core",
+ "oxiblas-lapack",
+ "oxiblas-matrix",
+]
 
 [[package]]
 name = "page_size"
