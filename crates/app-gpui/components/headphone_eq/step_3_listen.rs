@@ -118,6 +118,7 @@ impl PlayerView {
                                     .p(d.pad_y)
                                     .rounded(d.r_md)
                                     .bg(theme.surface)
+                                    // intentional: fixed scroll container height (not a spacing token)
                                     .max_h(px(200.0))
                                     .overflow_y_scroll()
                                     .children(biquads.iter().enumerate().map(|(i, biquad)| {
@@ -132,7 +133,7 @@ impl PlayerView {
                                             .items_center()
                                             .px(d.pad_y)
                                             .py(d.pad_y_half)
-                                            .rounded(px(4.0))
+                                            .rounded(d.r_md)
                                             .bg(theme.background)
                                             .child(
                                                 div()
