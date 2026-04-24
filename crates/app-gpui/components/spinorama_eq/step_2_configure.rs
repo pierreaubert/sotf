@@ -1139,7 +1139,7 @@ impl PlayerView {
                         )
                         .content(
                             div()
-                                .w(px(700.0))
+                                .w(px(700.0)) // intentional: fixed chart canvas width
                                 .flex()
                                 .flex_col()
                                 .when_some(chart.ok(), |el, c| el.child(c)),

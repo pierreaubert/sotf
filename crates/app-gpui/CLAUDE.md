@@ -39,3 +39,26 @@ Extensive testing: e2e, negative, proptest, component, lifecycle, event_integrat
 ```bash
 cargo run --bin SotF --release
 ```
+
+## Design-token drift guard
+
+Spacing, text size, corner radius, and icon size must flow through the design
+system (`components/design.rs` → `Ds::from_cx(cx)`, or `spacing::*`/`radius::*`
+in `app/constants.rs`). This keeps fonts, icons, and layout scaling together
+when the user invokes the font-zoom actions.
+
+`scripts/check-design-tokens.py` fails CI when raw `px(N.0)` appears in
+`components/` or `ui/` outside the allowlist or without justification. Run it
+locally before committing UI changes:
+
+```bash
+python3 scripts/check-design-tokens.py
+```
+
+Legitimate exceptions:
+- Same-line `// intentional: <reason>` trailing comment.
+- `// intentional: <reason>` comment within 8 lines above (not crossing a
+  blank line).
+- File-level `// intentional-file: <reason>` marker anywhere in the file —
+  use this for chart/meter/table code where pixel dimensions are
+  intrinsically layout-driven.

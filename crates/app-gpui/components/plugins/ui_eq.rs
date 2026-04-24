@@ -5,6 +5,8 @@
 //! - Band controls with color coding
 //! - Interactive editing
 
+// intentional-file: EQ chart with pixel-exact control-point geometry
+
 use super::common::{render_knob_sized, render_midi_badge, render_midi_page_indicator};
 use crate::components::graphs::common::rgba_to_u32;
 use crate::app::AppState;

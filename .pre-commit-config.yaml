@@ -31,3 +31,11 @@ repos:
     rev: v0.19.1
     hooks:
       - id: markdownlint-cli2
+  - repo: local
+    hooks:
+      - id: check-design-tokens
+        name: Check design-token drift (app-gpui)
+        entry: python3 scripts/check-design-tokens.py
+        language: system
+        pass_filenames: false
+        files: '^crates/app-gpui/(components|ui)/.*\.rs$'

@@ -1,3 +1,5 @@
+// intentional-file: shared chart-rendering primitives
+
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::theme::Theme;
 use gpui::Rgba;

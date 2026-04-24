@@ -2,6 +2,8 @@
 //!
 //! Extracted from ui_rack.rs for maintainability.
 
+// intentional-file: rack detail view with embedded meters and dividers
+
 use super::level_meters::{db_to_position, render_gradient_meter};
 use super::render_plugin_content;
 use super::ui_plugin_shell::{plugin_accent_color as plugin_color, plugin_icon};

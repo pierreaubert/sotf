@@ -309,7 +309,7 @@ impl PlayerView {
                                         .flex()
                                         .flex_col()
                                         .gap(d.grid)
-                                        .max_h(px(300.0))
+                                        .max_h(px(300.0)) // intentional: fixed scroll container max-height
                                         .overflow_y_scroll()
                                         .when(suggestions.is_empty() && is_loading, |el| {
                                             el.child(

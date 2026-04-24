@@ -1,5 +1,7 @@
 //! Spectrum Analyzer UI Components
 
+// intentional-file: spectrum analyzer with chart-internal pixel dimensions
+
 use std::panic;
 use std::sync::Arc;
 

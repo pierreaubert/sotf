@@ -7,6 +7,8 @@
 //! | [Enabled] toggle | [Ch1: M S] [Ch2: M S] [Ch3: M S] ...      |                  |
 //! +------------------+--------------------------------------------+------------------+
 
+// intentional-file: channel strip with embedded level meter geometry
+
 use super::common::{render_section_title, render_toggle};
 use crate::app::AppState;
 use crate::components::design::Ds;

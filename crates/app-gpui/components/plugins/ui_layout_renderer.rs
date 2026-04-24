@@ -1094,7 +1094,7 @@ fn render_file_picker(
                         .text_color(text_color)
                         .overflow_hidden()
                         .text_ellipsis()
-                        .max_w(px(120.0))
+                        .max_w(px(120.0)) // intentional: fixed label column max-width
                         .child(display_name.to_string()),
                 ),
         )

@@ -1,5 +1,7 @@
 //! Common utilities for plugin UI components
 
+// intentional-file: chart curve rendering uses pixel-exact widths
+
 use crate::app::AppState;
 use crate::app::constants::spacing;
 use crate::app::state::app::KnobDragState;
