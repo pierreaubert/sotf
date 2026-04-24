@@ -193,6 +193,7 @@ fn render_tab_button(
         .id(id)
         .cursor_pointer()
         .px(d.card)
+        // intentional: asymmetric underline-tab padding — 4/6 pair is visually tuned
         .pb(px(6.0))
         .pt(px(4.0))
         .text_size(d.text_xs)
@@ -505,6 +506,7 @@ fn render_config_lfe(
                 .items_center()
                 .gap(d.gap_md)
                 .child(render_section_header(d, "LFE & Bass", theme))
+                // intentional: pixel-exact 1px vertical divider — do not scale
                 .child(div().w(px(1.0)).h(px(14.0)).bg(theme.border))
                 .child(render_section_header(d, "SubHarmonic", theme))
                 .child(
@@ -561,6 +563,7 @@ fn render_config_lfe(
                     theme,
                 ))
                 // Separator
+                // intentional: pixel-exact 1px vertical divider — do not scale
                 .child(div().w(px(1.0)).h(px(80.0)).bg(theme.border))
                 // SubHarmonic knobs (dimmed when disabled)
                 .child(
@@ -687,6 +690,7 @@ fn render_config_dialogue(
                     theme,
                 ))
                 // Separator
+                // intentional: pixel-exact 1px vertical divider — do not scale
                 .child(div().w(px(1.0)).h(px(40.0)).bg(theme.border))
                 .child(render_knob(
                     entity.clone(),
@@ -1049,6 +1053,7 @@ fn render_config_analysis(
                 .items_center()
                 .gap(d.gap_md)
                 .child(render_section_header(d, "Analysis", theme))
+                // intentional: pixel-exact 1px vertical divider — do not scale
                 .child(div().w(px(1.0)).h(px(14.0)).bg(theme.border))
                 .child(render_section_header(d, "Source Extraction", theme))
                 .child(
@@ -1128,6 +1133,7 @@ fn render_config_analysis(
                         }))
                 })
                 // Separator
+                // intentional: pixel-exact 1px vertical divider — do not scale
                 .child(div().w(px(1.0)).h(px(40.0)).bg(theme.border))
                 // Source Extraction threshold (dimmed when disabled)
                 .child(
