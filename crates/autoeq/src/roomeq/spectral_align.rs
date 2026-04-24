@@ -526,7 +526,10 @@ pub fn create_alignment_plugins(
     let eq_plugin = if shelf_filters.is_empty() {
         None
     } else {
-        Some(output::create_labeled_eq_plugin(&shelf_filters, "broadband"))
+        Some(output::create_labeled_eq_plugin(
+            &shelf_filters,
+            "broadband",
+        ))
     };
 
     let gain_plugin = if result.flat_gain_db.abs() >= MIN_CORRECTION_DB {

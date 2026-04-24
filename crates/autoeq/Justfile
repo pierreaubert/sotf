@@ -148,6 +148,7 @@ qa-roomeq: qa-roomeq-small-stereo-20 \
 	qa-roomeq-convergence \
 	qa-roomeq-coverage \
 	qa-roomeq-synthetic \
+	qa-roomeq-gd \
 	qa-roomeq-features
 
 # Memory-capped convergence run. The `--jobs` default in
@@ -302,6 +303,14 @@ qa-roomeq-synthetic:
 	cargo run --bin roomeq-qa-synthetic --no-default-features --release
 
 [group('qa-roomeq')]
+qa-roomeq-multiseat-guards:
+	cargo run --bin roomeq-qa-synthetic --no-default-features --release -- --multiseat-guards-only
+
+[group('qa-roomeq')]
+qa-roomeq-gd:
+	cargo test -p autoeq gd_opt -- --nocapture
+
+[group('qa-roomeq')]
 qa-roomeq-features:
 	cargo run --bin roomeq-qa-features --no-default-features --release
 
@@ -323,4 +332,3 @@ qa-roomeq-ci:
 [group('qa-roomeq')]
 test-autoeq threads="2":
 	RUST_TEST_THREADS={{threads}} cargo test -p autoeq --tests --release
-

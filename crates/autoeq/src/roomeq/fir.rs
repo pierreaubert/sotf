@@ -40,7 +40,8 @@ pub fn generate_fir_correction(
             crate::read::normalize_and_interpolate_response(&measurement.freq, &target)
         }
         Some(TargetCurveConfig::Predefined(name)) => {
-            match crate::workflow::build_target_curve_by_name(name, &measurement.freq, measurement) {
+            match crate::workflow::build_target_curve_by_name(name, &measurement.freq, measurement)
+            {
                 Ok(curve) => curve,
                 Err(_) => {
                     // Fallback to file path

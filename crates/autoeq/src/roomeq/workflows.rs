@@ -102,7 +102,13 @@ fn run_channel_via_generic_path(
     alignment_gain_db: f64,
     sample_rate: f64,
     output_dir: &Path,
-) -> Result<(ChannelDspChain, ChannelOptimizationResult, f64, f64, Option<Vec<f64>>)> {
+) -> Result<(
+    ChannelDspChain,
+    ChannelOptimizationResult,
+    f64,
+    f64,
+    Option<Vec<f64>>,
+)> {
     let (
         raw_chain,
         pre_score,
@@ -114,7 +120,14 @@ fn run_channel_via_generic_path(
         _arrival_ms,
         fir_coeffs,
     ) = super::speaker_eq::process_single_speaker(
-        role, source, config, sample_rate, output_dir, None, None, None,
+        role,
+        source,
+        config,
+        sample_rate,
+        output_dir,
+        None,
+        None,
+        None,
     )?;
 
     // Prepend the alignment gain plugin without touching the inner chain's
@@ -570,19 +583,10 @@ pub fn optimize_stereo_2_0(
         let gain = *gains.get(role).unwrap_or(&0.0);
         let source = resolve_single_source(role, config, sys)?;
 
-        info!(
-            "  Optimizing '{}' with alignment gain {:.2} dB",
-            role, gain
-        );
+        info!("  Optimizing '{}' with alignment gain {:.2} dB", role, gain);
 
-        let (chain, ch_result, pre_score, post_score, _fir) = run_channel_via_generic_path(
-            role,
-            source,
-            config,
-            gain,
-            sample_rate,
-            output_dir,
-        )?;
+        let (chain, ch_result, pre_score, post_score, _fir) =
+            run_channel_via_generic_path(role, source, config, gain, sample_rate, output_dir)?;
 
         info!(
             "  '{}' pre_score={:.4} post_score={:.4}",
@@ -782,37 +786,28 @@ pub fn optimize_stereo_2_1(
             role, min_xo
         );
         let (chain, ch_result, _pre_score, _post_score, _fir) =
-            run_channel_via_generic_path(
-                role,
-                source,
-                &per_config,
-                0.0,
-                sample_rate,
-                output_dir,
-            )?;
+            run_channel_via_generic_path(role, source, &per_config, 0.0, sample_rate, output_dir)?;
         pre_eq_plugins.insert(role.to_string(), chain.plugins);
         linearized_curves.insert(role.to_string(), ch_result.final_curve);
     }
 
     // Sub Pre-EQ: inline source with no speaker_name → CEA2034 skipped.
     {
-        let sub_source =
-            crate::MeasurementSource::InMemory(sub_preprocess.combined_curve.clone());
+        let sub_source = crate::MeasurementSource::InMemory(sub_preprocess.combined_curve.clone());
         let mut sub_config = config.clone();
         sub_config.optimizer.max_freq = max_xo;
         info!(
             "  Pre-EQ via generic path for '{}' (max_freq={:.1} Hz)",
             sub_role, max_xo
         );
-        let (chain, ch_result, _pre_score, _post_score, _fir) =
-            run_channel_via_generic_path(
-                sub_role,
-                &sub_source,
-                &sub_config,
-                0.0,
-                sample_rate,
-                output_dir,
-            )?;
+        let (chain, ch_result, _pre_score, _post_score, _fir) = run_channel_via_generic_path(
+            sub_role,
+            &sub_source,
+            &sub_config,
+            0.0,
+            sample_rate,
+            output_dir,
+        )?;
         pre_eq_plugins.insert(sub_role.to_string(), chain.plugins);
         linearized_curves.insert(sub_role.to_string(), ch_result.final_curve);
     }
@@ -856,10 +851,9 @@ pub fn optimize_stereo_2_1(
     // [VirtualMain, Sub]
 
     // We need to parse crossover type for the optimizer
-    let crossover_type_enum: crate::loss::CrossoverType =
-        xover_type_str.parse().map_err(|e: String| {
-            AutoeqError::InvalidConfiguration { message: e }
-        })?;
+    let crossover_type_enum: crate::loss::CrossoverType = xover_type_str
+        .parse()
+        .map_err(|e: String| AutoeqError::InvalidConfiguration { message: e })?;
 
     // Determine fixed freqs vs range for optimizer
     let (fixed_freqs, range_opt) = if xover_config.frequency.is_some() {
@@ -1014,11 +1008,7 @@ pub fn optimize_stereo_2_1(
         let eq_resp =
             response::compute_peq_complex_response(&filters, &post_curve.freq, sample_rate);
         let post_curve_after = response::apply_complex_response(post_curve, &eq_resp);
-        let post = compute_flat_loss(
-            &post_curve_after,
-            opt_config.min_freq,
-            main_post_max_freq,
-        );
+        let post = compute_flat_loss(&post_curve_after, opt_config.min_freq, main_post_max_freq);
         if post < pre {
             post_eq_filters.insert(role.to_string(), filters);
         } else {
@@ -1452,19 +1442,10 @@ fn optimize_home_cinema_no_sub(
         let gain = *gains.get(role).unwrap_or(&0.0);
         let source = resolve_single_source(role, config, sys)?;
 
-        info!(
-            "  Optimizing '{}' with alignment gain {:.2} dB",
-            role, gain
-        );
+        info!("  Optimizing '{}' with alignment gain {:.2} dB", role, gain);
 
-        let (chain, ch_result, pre_score, post_score, _fir) = run_channel_via_generic_path(
-            role,
-            source,
-            config,
-            gain,
-            sample_rate,
-            output_dir,
-        )?;
+        let (chain, ch_result, pre_score, post_score, _fir) =
+            run_channel_via_generic_path(role, source, config, gain, sample_rate, output_dir)?;
 
         info!(
             "  '{}' pre_score={:.4} post_score={:.4}",
@@ -1589,22 +1570,15 @@ fn optimize_home_cinema_with_sub(
             "  Pre-EQ via generic path for '{}' (min_freq={:.1} Hz)",
             role, min_xo
         );
-        let (chain, ch_result, _pre, _post, _fir) = run_channel_via_generic_path(
-            role,
-            source,
-            &per_config,
-            0.0,
-            sample_rate,
-            output_dir,
-        )?;
+        let (chain, ch_result, _pre, _post, _fir) =
+            run_channel_via_generic_path(role, source, &per_config, 0.0, sample_rate, output_dir)?;
         pre_eq_plugins.insert(role.clone(), chain.plugins);
         linearized_curves.insert(role.clone(), ch_result.final_curve);
     }
 
     // Sub Pre-EQ
     {
-        let sub_source =
-            crate::MeasurementSource::InMemory(sub_preprocess.combined_curve.clone());
+        let sub_source = crate::MeasurementSource::InMemory(sub_preprocess.combined_curve.clone());
         let mut sub_config = config.clone();
         sub_config.optimizer.max_freq = max_xo;
         info!(
@@ -1653,10 +1627,9 @@ fn optimize_home_cinema_with_sub(
     // 4. Crossover optimization between Virtual Main and LFE
     let sub_curve = &aligned_pre_eq_curves[sub_role];
 
-    let crossover_type_enum: crate::loss::CrossoverType =
-        xover_type_str.parse().map_err(|e: String| {
-            AutoeqError::InvalidConfiguration { message: e }
-        })?;
+    let crossover_type_enum: crate::loss::CrossoverType = xover_type_str
+        .parse()
+        .map_err(|e: String| AutoeqError::InvalidConfiguration { message: e })?;
 
     let (fixed_freqs, range_opt) = if xover_config.frequency.is_some() {
         (Some(vec![est_xo]), None)
@@ -1775,11 +1748,7 @@ fn optimize_home_cinema_with_sub(
         let eq_resp =
             response::compute_peq_complex_response(&filters, &post_curve.freq, sample_rate);
         let post_curve_after = response::apply_complex_response(post_curve, &eq_resp);
-        let post = compute_flat_loss(
-            &post_curve_after,
-            opt_config.min_freq,
-            main_post_max_freq,
-        );
+        let post = compute_flat_loss(&post_curve_after, opt_config.min_freq, main_post_max_freq);
         if post < pre {
             post_eq_filters.insert(role.clone(), filters);
         } else {

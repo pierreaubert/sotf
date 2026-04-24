@@ -135,7 +135,11 @@ fn stereo_2_0_runs_with_excursion_protection_enabled() {
 
     for role in ["L", "R"] {
         let chain = &result.channels[role];
-        assert!(!chain.plugins.is_empty(), "{} chain must not be empty", role);
+        assert!(
+            !chain.plugins.is_empty(),
+            "{} chain must not be empty",
+            role
+        );
         let hp_count = highpass_count_in_chain(&result.channels[role]);
         assert!(
             hp_count >= 1,
@@ -172,7 +176,8 @@ fn stereo_2_0_baseline_has_no_excursion_highpass() {
     for role in ["L", "R"] {
         let hp_count = highpass_count_in_chain(&result.channels[role]);
         assert_eq!(
-            hp_count, 0,
+            hp_count,
+            0,
             "{}: baseline (no excursion_protection) must have 0 Highpass biquads, got {} \
              (biquads={:?})",
             role,

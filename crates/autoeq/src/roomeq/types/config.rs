@@ -1058,6 +1058,12 @@ pub struct MultiSeatConfig {
     /// Maximum allowed deviation at non-primary seats (dB)
     #[serde(default = "default_max_deviation_db")]
     pub max_deviation_db: f64,
+    /// Enable per-sub polarity search for MSO.
+    #[serde(default)]
+    pub optimize_polarity: bool,
+    /// Number of per-sub all-pass filters allowed during MSO.
+    #[serde(default)]
+    pub allpass_filters_per_sub: usize,
 }
 
 fn default_max_deviation_db() -> f64 {
@@ -1071,6 +1077,8 @@ impl Default for MultiSeatConfig {
             strategy: MultiSeatStrategy::MinimizeVariance,
             primary_seat: 0,
             max_deviation_db: default_max_deviation_db(),
+            optimize_polarity: false,
+            allpass_filters_per_sub: 0,
         }
     }
 }
@@ -1102,6 +1110,95 @@ impl Default for ChannelMatchingConfig {
             enabled: true,
             threshold_db: default_channel_matching_threshold(),
             max_filters: default_channel_matching_max_filters(),
+        }
+    }
+}
+
+/// Group-delay optimization configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct GroupDelayOptimizationConfig {
+    /// Enable GD optimization and apply the resulting phase-only DSP.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Maximum per-channel delay in ms.
+    #[serde(default = "default_gd_max_delay_ms")]
+    pub max_delay_ms: f64,
+    /// Maximum all-pass filters per channel. Production may downgrade this to
+    /// zero when bootstrap evidence is unavailable.
+    #[serde(default = "default_gd_ap_per_channel")]
+    pub ap_per_channel: usize,
+    /// Minimum all-pass Q.
+    #[serde(default = "default_gd_ap_min_q")]
+    pub ap_min_q: f64,
+    /// Maximum all-pass Q.
+    #[serde(default = "default_gd_ap_max_q")]
+    pub ap_max_q: f64,
+    /// Whether polarity may be optimized when coherence is present.
+    #[serde(default = "default_true")]
+    pub optimize_polarity: bool,
+    /// Minimum in-band mean coherence for polarity/AP optimization.
+    #[serde(default = "default_gd_coherence_threshold")]
+    pub coherence_threshold: f64,
+    /// Minimum improvement required before applying GD DSP.
+    #[serde(default = "default_gd_min_improvement_db")]
+    pub min_improvement_db: f64,
+    /// DE maximum iterations.
+    #[serde(default = "default_gd_max_iter")]
+    pub max_iter: usize,
+    /// DE population size multiplier.
+    #[serde(default = "default_gd_popsize")]
+    pub popsize: usize,
+    /// DE convergence tolerance.
+    #[serde(default = "default_gd_tol")]
+    pub tol: f64,
+    /// Require adaptive AP bootstrap before emitting all-pass filters.
+    #[serde(default = "default_true")]
+    pub adaptive_allpass: bool,
+}
+
+fn default_gd_max_delay_ms() -> f64 {
+    20.0
+}
+fn default_gd_ap_per_channel() -> usize {
+    2
+}
+fn default_gd_ap_min_q() -> f64 {
+    0.3
+}
+fn default_gd_ap_max_q() -> f64 {
+    10.0
+}
+fn default_gd_coherence_threshold() -> f64 {
+    0.8
+}
+fn default_gd_min_improvement_db() -> f64 {
+    1.0
+}
+fn default_gd_max_iter() -> usize {
+    2000
+}
+fn default_gd_popsize() -> usize {
+    20
+}
+fn default_gd_tol() -> f64 {
+    1e-8
+}
+
+impl Default for GroupDelayOptimizationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            max_delay_ms: default_gd_max_delay_ms(),
+            ap_per_channel: default_gd_ap_per_channel(),
+            ap_min_q: default_gd_ap_min_q(),
+            ap_max_q: default_gd_ap_max_q(),
+            optimize_polarity: true,
+            coherence_threshold: default_gd_coherence_threshold(),
+            min_improvement_db: default_gd_min_improvement_db(),
+            max_iter: default_gd_max_iter(),
+            popsize: default_gd_popsize(),
+            tol: default_gd_tol(),
+            adaptive_allpass: true,
         }
     }
 }
@@ -1524,6 +1621,9 @@ pub struct OptimizerConfig {
     /// Phase alignment configuration for subwoofer integration
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub phase_alignment: Option<PhaseAlignmentConfig>,
+    /// Group-delay optimization configuration. Disabled by default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_delay: Option<GroupDelayOptimizationConfig>,
     /// Multi-seat optimization configuration
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub multi_seat: Option<MultiSeatConfig>,
@@ -1668,6 +1768,7 @@ impl Default for OptimizerConfig {
             excursion_protection: None,
             schroeder_split: None,
             phase_alignment: None,
+            group_delay: None,
             multi_seat: None,
             vog: None,
             multi_measurement: None,
@@ -1725,7 +1826,6 @@ impl OptimizerConfig {
 
         self.max_db
     }
-
 }
 
 // ============================================================================

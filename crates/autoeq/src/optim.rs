@@ -15,21 +15,21 @@
 //! You should have received a copy of the GNU General Public License
 //! along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use self::de::{optimize_filters_autoeq, optimize_filters_autoeq_with_callback};
+use self::mh::{optimize_filters_mh, optimize_filters_mh_with_callback};
+#[cfg(feature = "nlopt")]
+use self::nlopt::optimize_filters_nlopt;
 use super::cli::PeqModel;
 use super::constraints::{viol_ceiling_from_spl, viol_min_gain_from_xs, viol_spacing_from_xs};
 use super::loss::{
     DriversLossData, HeadphoneLossData, LossType, SpeakerLossData, drivers_flat_loss, flat_loss,
     flat_loss_asymmetric, headphone_loss, speaker_score_loss,
 };
-use self::de::{optimize_filters_autoeq, optimize_filters_autoeq_with_callback};
-use self::mh::{optimize_filters_mh, optimize_filters_mh_with_callback};
-#[cfg(feature = "nlopt")]
-use self::nlopt::optimize_filters_nlopt;
 use super::x2peq::x2spl;
 use crate::Curve;
-use ndarray::Array1;
 #[cfg(feature = "nlopt")]
 use ::nlopt::Algorithm;
+use ndarray::Array1;
 
 /// Shared callback utilities for optimization
 pub mod callback;
@@ -1045,14 +1045,7 @@ pub fn optimize_filters(
     objective_data: ObjectiveData,
     params: &crate::OptimParams,
 ) -> Result<(String, f64), (String, f64)> {
-    optimize_filters_with_algo_override(
-        x,
-        lower_bounds,
-        upper_bounds,
-        objective_data,
-        params,
-        None,
-    )
+    optimize_filters_with_algo_override(x, lower_bounds, upper_bounds, objective_data, params, None)
 }
 
 /// Optimize filter parameters with optional algorithm override
@@ -1170,9 +1163,8 @@ pub fn optimize_filters_with_callback(
         Some(AlgorithmCategory::AutoEQ(autoeq_name)) => {
             // Clone data needed for EPA computation inside the DE callback.
             let epa_config = objective_data.epa_config.clone();
-            let epa_freqs = ndarray::Array1::from(
-                objective_data.freqs.iter().copied().collect::<Vec<f64>>(),
-            );
+            let epa_freqs =
+                ndarray::Array1::from(objective_data.freqs.iter().copied().collect::<Vec<f64>>());
             // The normalized measurement is: target - deviation
             // (since deviation = target - normalized_measurement).
             // The corrected response after applying PEQ is:

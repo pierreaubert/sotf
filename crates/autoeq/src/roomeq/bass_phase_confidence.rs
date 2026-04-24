@@ -180,11 +180,7 @@ fn mean_coherence_in_band(curves: &[Curve], band_lo: f64, band_hi: f64) -> f64 {
             }
         }
     }
-    if count == 0 {
-        0.0
-    } else {
-        sum / count as f64
-    }
+    if count == 0 { 0.0 } else { sum / count as f64 }
 }
 
 fn has_snr_data(curves: &[Curve]) -> bool {

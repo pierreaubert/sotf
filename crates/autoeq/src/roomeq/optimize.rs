@@ -7,7 +7,9 @@ use crate::error::{AutoeqError, Result};
 use log::{debug, info, warn};
 use math_audio_dsp::analysis::compute_average_response;
 use math_audio_iir_fir::Biquad;
+use num_complex::Complex64;
 use std::collections::HashMap;
+use std::f64::consts::PI;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -1271,11 +1273,7 @@ fn optimize_room_impl(
     };
     info!(
         "DE budget: {} params, population_size={}, max_generations={} (from max_iter={}, floor={} when budget allows)",
-        n_params,
-        population_size,
-        max_iterations,
-        config.optimizer.max_iter,
-        DE_GENERATIONS_FLOOR,
+        n_params, population_size, max_iterations, config.optimizer.max_iter, DE_GENERATIONS_FLOOR,
     );
     let callback_shared: Arc<Mutex<Option<RoomOptimizationCallback>>> =
         Arc::new(Mutex::new(callback));
@@ -1877,6 +1875,16 @@ fn optimize_room_impl(
         }
     }
 
+    // ─── GD-Opt v2 integration (Phase GD-5) ──────────────────────────────
+    // Run after all earlier phase/EQ stages have updated final_curve, but
+    // before IR/EPA/metadata so exported reports reflect the audible chain.
+    let group_delay_summary = try_run_gd_opt(
+        config,
+        &mut channel_results,
+        &mut channel_chains,
+        sample_rate,
+    );
+
     // Compute IR waveforms (pre- and post-correction) for each channel
     send_progress(
         &mut callback_shared.lock().unwrap(),
@@ -1941,9 +1949,6 @@ fn optimize_room_impl(
 
     let epa_cfg = config.optimizer.epa_config.clone().unwrap_or_default();
     let epa_per_channel = crate::roomeq::output::compute_epa_per_channel(&channel_chains, &epa_cfg);
-
-    // ─── GD-Opt v2 integration (Phase GD-5) ──────────────────────────────
-    let group_delay_summary = try_run_gd_opt(config, &channel_results, sample_rate);
 
     let metadata = OptimizationMetadata {
         pre_score: avg_pre_score,
@@ -2291,12 +2296,18 @@ fn process_speaker_internal(
 /// advisory skip), `None` if fewer than 2 channels have phase data.
 fn try_run_gd_opt(
     config: &RoomConfig,
-    channel_results: &HashMap<String, ChannelOptimizationResult>,
+    channel_results: &mut HashMap<String, ChannelOptimizationResult>,
+    channel_chains: &mut HashMap<String, ChannelDspChain>,
     sample_rate: f64,
 ) -> Option<super::gd_opt::GroupDelayOptSummary> {
     use super::gd_opt::*;
 
-    // Collect channels with phase data from initial measurements.
+    let gd_user_config = config.optimizer.group_delay.as_ref()?;
+    if !gd_user_config.enabled {
+        return None;
+    }
+
+    // Collect channels with phase data from the current post-DSP curves.
     // Sort by name for deterministic ordering (HashMap iteration is arbitrary).
     let mut sorted_channels: Vec<(&String, &ChannelOptimizationResult)> =
         channel_results.iter().collect();
@@ -2304,24 +2315,30 @@ fn try_run_gd_opt(
 
     let mut gd_channels: Vec<ChannelMeasurementInput> = Vec::new();
     let mut gd_channel_names: Vec<String> = Vec::new();
+    let mut missing_coherence = false;
 
     for (name, ch) in &sorted_channels {
         // Curve.phase is in degrees — convert to radians for GD computation
-        let phase = match ch.initial_curve.phase.as_ref() {
+        let phase = match ch.final_curve.phase.as_ref() {
             Some(p) => p.mapv(|deg| deg.to_radians()),
             None => continue, // skip channels without phase
         };
 
-        // Use coherence if available, otherwise default to 1.0
+        // Coherence is a measurement-confidence signal, so carry it forward
+        // from the measurement when the final curve lost metadata during DSP.
         let coherence = ch
-            .initial_curve
+            .final_curve
             .coherence
             .clone()
-            .unwrap_or_else(|| ndarray::Array1::from_elem(ch.initial_curve.freq.len(), 1.0));
+            .or_else(|| ch.initial_curve.coherence.clone())
+            .unwrap_or_else(|| {
+                missing_coherence = true;
+                ndarray::Array1::from_elem(ch.final_curve.freq.len(), 1.0)
+            });
 
         gd_channels.push(ChannelMeasurementInput {
-            freq: ch.initial_curve.freq.clone(),
-            spl: ch.initial_curve.spl.clone(),
+            freq: ch.final_curve.freq.clone(),
+            spl: ch.final_curve.spl.clone(),
             phase,
             coherence,
         });
@@ -2343,21 +2360,25 @@ fn try_run_gd_opt(
     let crossover_freq = config
         .crossovers
         .as_ref()
-        .and_then(|xos| {
-            xos.values()
-                .filter_map(|xo| xo.frequency)
-                .reduce(f64::min)
-        })
+        .and_then(|xos| xos.values().filter_map(|xo| xo.frequency).reduce(f64::min))
         .unwrap_or(80.0);
 
     let band = derive_band(config.optimizer.min_freq, crossover_freq);
 
-    // Validate consistent grid lengths across channels
+    // Validate consistent grid lengths and values across channels
     let n_freq = gd_channels[0].freq.len();
     for ch in &gd_channels[1..] {
         if ch.freq.len() != n_freq {
             info!("GD-Opt: skipped — inconsistent frequency grid lengths across channels");
-            return None;
+            return Some(GroupDelayOptSummary::from_advisory(
+                &GdOptAdvisory::FrequencyGridMismatch,
+            ));
+        }
+        if !same_frequency_grid(&gd_channels[0].freq, &ch.freq) {
+            info!("GD-Opt: skipped — inconsistent frequency grid values across channels");
+            return Some(GroupDelayOptSummary::from_advisory(
+                &GdOptAdvisory::FrequencyGridMismatch,
+            ));
         }
     }
 
@@ -2367,7 +2388,9 @@ fn try_run_gd_opt(
         .count();
 
     if band_count < 3 {
-        return Some(GroupDelayOptSummary::from_advisory(&GdOptAdvisory::EmptyBand));
+        return Some(GroupDelayOptSummary::from_advisory(
+            &GdOptAdvisory::EmptyBand,
+        ));
     }
 
     // Check mean coherence
@@ -2381,7 +2404,7 @@ fn try_run_gd_opt(
         .sum::<f64>()
         / (gd_channels.len() * band_count) as f64;
 
-    if mean_coh < 0.8 {
+    if !missing_coherence && mean_coh < gd_user_config.coherence_threshold {
         return Some(GroupDelayOptSummary::from_advisory(
             &GdOptAdvisory::CoherenceBelowThreshold {
                 mean_coherence: mean_coh,
@@ -2394,29 +2417,39 @@ fn try_run_gd_opt(
     // If the range is degenerate (min >= max), disable AP filters.
     let ap_min_freq = band.0.max(20.0);
     let ap_max_freq = band.1.min(500.0);
-    let (ap_per_channel, ap_min_freq, ap_max_freq) = if ap_min_freq < ap_max_freq {
-        (2, ap_min_freq, ap_max_freq)
+    let (mut ap_per_channel, ap_min_freq, ap_max_freq) = if ap_min_freq < ap_max_freq {
+        (gd_user_config.ap_per_channel, ap_min_freq, ap_max_freq)
     } else {
         // AP range is empty — run delay-only
         (0, 20.0, 300.0)
     };
+    let mut advisory_override: Option<GdOptAdvisory> = None;
+    let mut optimize_polarity = gd_user_config.optimize_polarity;
+
+    if missing_coherence {
+        ap_per_channel = 0;
+        optimize_polarity = false;
+        advisory_override = Some(GdOptAdvisory::MissingCoherenceDelayOnly);
+    } else if gd_user_config.adaptive_allpass && ap_per_channel > 0 {
+        // Production currently has only the averaged measurement, not
+        // independent sweep realisations. Avoid single-measurement AP overfit.
+        ap_per_channel = 0;
+        advisory_override = Some(GdOptAdvisory::AllPassDisabledNoBootstrapRealisations);
+    }
 
     let gd_config = GdOptConfig {
         sample_rate,
-        max_delay_ms: 20.0,
+        max_delay_ms: gd_user_config.max_delay_ms,
         ap_per_channel,
         ap_min_freq,
         ap_max_freq,
-        optimize_polarity: config
-            .optimizer
-            .phase_alignment
-            .as_ref()
-            .is_some_and(|pa| pa.optimize_polarity),
-        max_iter: 2000,
-        popsize: 20,
-        tol: 1e-8,
-        seed: None,
-        ..Default::default()
+        ap_min_q: gd_user_config.ap_min_q,
+        ap_max_q: gd_user_config.ap_max_q,
+        optimize_polarity,
+        max_iter: gd_user_config.max_iter,
+        popsize: gd_user_config.popsize,
+        tol: gd_user_config.tol,
+        seed: config.optimizer.seed,
     };
 
     let result = optimize_group_delay_for_mode(
@@ -2429,7 +2462,7 @@ fn try_run_gd_opt(
 
     match result {
         Ok(gd_result) => {
-            if gd_result.improvement_db < 1.0 {
+            if gd_result.improvement_db < gd_user_config.min_improvement_db {
                 info!(
                     "GD-Opt: minimal improvement ({:.1} dB), skipping",
                     gd_result.improvement_db
@@ -2440,18 +2473,34 @@ fn try_run_gd_opt(
                     },
                 ))
             } else {
+                let applied = apply_gd_opt_result(
+                    &gd_result,
+                    &gd_channel_names,
+                    channel_results,
+                    channel_chains,
+                    sample_rate,
+                );
                 info!(
-                    "GD-Opt: improvement {:.1} dB (pre={:.2}ms, post={:.2}ms) in band [{:.0}, {:.0}] Hz",
+                    "GD-Opt: improvement {:.1} dB (pre={:.2}ms, post={:.2}ms) in band [{:.0}, {:.0}] Hz; applied={}",
                     gd_result.improvement_db,
                     gd_result.sum_gd_pre_rms_ms,
                     gd_result.sum_gd_post_rms_ms,
                     band.0,
                     band.1,
+                    applied,
                 );
-                Some(GroupDelayOptSummary::from_result_with_names(
+                let mut summary = GroupDelayOptSummary::from_result_with_names(
                     &gd_result,
                     gd_channel_names.clone(),
-                ))
+                )
+                .with_applied(applied);
+                if let Some(advisory) = advisory_override {
+                    summary.advisory = GroupDelayOptSummary::from_advisory(&advisory).advisory;
+                    if matches!(advisory, GdOptAdvisory::MissingCoherenceDelayOnly) {
+                        summary.mean_coherence = 0.0;
+                    }
+                }
+                Some(summary)
             }
         }
         Err(e) => {
@@ -2466,6 +2515,94 @@ fn try_run_gd_opt(
             }
         }
     }
+}
+
+fn same_frequency_grid(reference: &ndarray::Array1<f64>, candidate: &ndarray::Array1<f64>) -> bool {
+    reference.len() == candidate.len()
+        && reference.iter().zip(candidate.iter()).all(|(&a, &b)| {
+            let tol = 1e-6_f64.max(1e-6 * a.abs().max(b.abs()));
+            (a - b).abs() <= tol
+        })
+}
+
+fn apply_gd_opt_result(
+    result: &super::gd_opt::GroupDelayOptResult,
+    channel_names: &[String],
+    channel_results: &mut HashMap<String, ChannelOptimizationResult>,
+    channel_chains: &mut HashMap<String, ChannelDspChain>,
+    sample_rate: f64,
+) -> bool {
+    let mut applied_any = false;
+
+    for (name, ch_result) in channel_names.iter().zip(result.per_channel.iter()) {
+        let mut inserted_for_channel = false;
+        if let Some(chain) = channel_chains.get_mut(name.as_str()) {
+            if ch_result.polarity_inverted {
+                chain
+                    .plugins
+                    .push(output::create_gain_plugin_with_invert(0.0, true));
+                inserted_for_channel = true;
+            }
+            if ch_result.delay_ms > 0.01 {
+                chain
+                    .plugins
+                    .push(output::create_delay_plugin(ch_result.delay_ms));
+                inserted_for_channel = true;
+            }
+            if !ch_result.ap_filters.is_empty() {
+                chain
+                    .plugins
+                    .push(output::create_eq_plugin(&ch_result.ap_filters));
+                inserted_for_channel = true;
+            }
+        }
+
+        if let Some(ch) = channel_results.get_mut(name.as_str()) {
+            let response = gd_phase_response_for_curve(
+                &ch.final_curve.freq,
+                ch_result.delay_ms,
+                ch_result.polarity_inverted,
+                &ch_result.ap_filters,
+                sample_rate,
+            );
+            ch.final_curve = crate::response::apply_complex_response(&ch.final_curve, &response);
+            if let Some(chain) = channel_chains.get_mut(name.as_str()) {
+                chain.final_curve = Some((&ch.final_curve).into());
+            }
+        }
+
+        applied_any |= inserted_for_channel;
+    }
+
+    applied_any
+}
+
+fn gd_phase_response_for_curve(
+    freqs: &ndarray::Array1<f64>,
+    delay_ms: f64,
+    polarity_inverted: bool,
+    ap_filters: &[Biquad],
+    sample_rate: f64,
+) -> Vec<Complex64> {
+    freqs
+        .iter()
+        .map(|&f| {
+            let mut h = Complex64::new(1.0, 0.0);
+            if delay_ms.abs() > 1e-12 {
+                h *= Complex64::from_polar(1.0, -2.0 * PI * f * delay_ms * 1e-3);
+            }
+            for ap in ap_filters {
+                // Rebuild with the active sample rate so persisted filter
+                // metadata and phase-curve reporting stay aligned.
+                let ap = Biquad::new(ap.filter_type, ap.freq, sample_rate, ap.q, ap.db_gain);
+                h *= ap.complex_response(f);
+            }
+            if polarity_inverted {
+                h = -h;
+            }
+            h
+        })
+        .collect()
 }
 
 /// Extract wav_path from a MeasurementSource if available
@@ -2495,6 +2632,7 @@ pub(super) fn extract_wav_path(source: &MeasurementSource) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use math_audio_iir_fir::BiquadFilterType;
     use ndarray::array;
 
     fn assert_close(actual: f64, expected: f64) {
@@ -2634,5 +2772,227 @@ mod tests {
         assert_close(schedule["SubL"], 3.0);
         assert_close(*schedule.get("SubR").unwrap_or(&0.0), 0.0);
         assert_close(schedule["R"], 4.0);
+    }
+
+    #[test]
+    fn gd_result_application_inserts_dsp_and_updates_reported_phase() {
+        let curve = Curve {
+            freq: array![100.0, 200.0],
+            spl: array![0.0, 0.0],
+            phase: Some(array![0.0, 0.0]),
+            ..Default::default()
+        };
+        let mut channel_results = HashMap::from([(
+            "L".to_string(),
+            ChannelOptimizationResult {
+                name: "L".to_string(),
+                pre_score: 0.0,
+                post_score: 0.0,
+                initial_curve: curve.clone(),
+                final_curve: curve.clone(),
+                biquads: Vec::new(),
+                fir_coeffs: None,
+            },
+        )]);
+        let mut channel_chains = HashMap::from([("L".to_string(), test_chain("L", &curve))]);
+        let result = super::super::gd_opt::GroupDelayOptResult {
+            band: (20.0, 160.0),
+            per_channel: vec![super::super::gd_opt::ChannelGdResult {
+                delay_ms: 1.0,
+                polarity_inverted: true,
+                ap_filters: vec![Biquad::new(
+                    BiquadFilterType::AllPass,
+                    80.0,
+                    48000.0,
+                    1.0,
+                    0.0,
+                )],
+                channel_gd_pre_rms_ms: 0.0,
+                channel_gd_post_rms_ms: 0.0,
+            }],
+            sum_gd_pre_rms_ms: 1.0,
+            sum_gd_post_rms_ms: 0.1,
+            mean_coherence: 1.0,
+            improvement_db: 20.0,
+        };
+
+        let applied = apply_gd_opt_result(
+            &result,
+            &["L".to_string()],
+            &mut channel_results,
+            &mut channel_chains,
+            48000.0,
+        );
+
+        assert!(applied);
+        let plugins = &channel_chains["L"].plugins;
+        assert_eq!(plugins.len(), 3);
+        assert_eq!(plugins[0].plugin_type, "gain");
+        assert_eq!(plugins[1].plugin_type, "delay");
+        assert_eq!(plugins[2].plugin_type, "eq");
+
+        let result_phase = channel_results["L"].final_curve.phase.as_ref().unwrap()[0];
+        let chain_phase = channel_chains["L"]
+            .final_curve
+            .as_ref()
+            .unwrap()
+            .phase
+            .as_ref()
+            .unwrap()[0];
+        assert!(
+            result_phase.abs() > 1.0,
+            "GD DSP must be reflected in final_curve phase"
+        );
+        assert_close(result_phase, chain_phase);
+    }
+
+    #[test]
+    fn gd_opt_rejects_same_length_mismatched_frequency_grids() {
+        let curve_l = Curve {
+            freq: array![20.0, 40.0, 80.0, 160.0],
+            spl: array![0.0, 0.0, 0.0, 0.0],
+            phase: Some(array![0.0, 0.0, 0.0, 0.0]),
+            coherence: Some(array![0.95, 0.95, 0.95, 0.95]),
+            ..Default::default()
+        };
+        let curve_r = Curve {
+            freq: array![20.0, 41.0, 80.0, 160.0],
+            spl: array![0.0, 0.0, 0.0, 0.0],
+            phase: Some(array![0.0, 0.0, 0.0, 0.0]),
+            coherence: Some(array![0.95, 0.95, 0.95, 0.95]),
+            ..Default::default()
+        };
+        let mut channel_results = HashMap::from([
+            ("L".to_string(), test_channel_result("L", &curve_l)),
+            ("R".to_string(), test_channel_result("R", &curve_r)),
+        ]);
+        let mut channel_chains = HashMap::from([
+            ("L".to_string(), test_chain("L", &curve_l)),
+            ("R".to_string(), test_chain("R", &curve_r)),
+        ]);
+        let config = test_room_config_with_gd(super::super::types::GroupDelayOptimizationConfig {
+            enabled: true,
+            ..Default::default()
+        });
+
+        let summary = try_run_gd_opt(&config, &mut channel_results, &mut channel_chains, 48000.0)
+            .expect("GD summary should explain the skip");
+
+        assert_eq!(summary.advisory, "frequency_grid_mismatch");
+        assert!(!summary.applied);
+        assert!(channel_chains["L"].plugins.is_empty());
+        assert!(channel_chains["R"].plugins.is_empty());
+    }
+
+    #[test]
+    fn gd_opt_missing_coherence_downgrades_to_delay_only() {
+        let curve_l = gd_test_curve(0.0, None);
+        let curve_r = gd_test_curve(2.0, None);
+        let mut channel_results = HashMap::from([
+            ("L".to_string(), test_channel_result("L", &curve_l)),
+            ("R".to_string(), test_channel_result("R", &curve_r)),
+        ]);
+        let mut channel_chains = HashMap::from([
+            ("L".to_string(), test_chain("L", &curve_l)),
+            ("R".to_string(), test_chain("R", &curve_r)),
+        ]);
+        let config = test_room_config_with_gd(super::super::types::GroupDelayOptimizationConfig {
+            enabled: true,
+            min_improvement_db: -100.0,
+            max_iter: 300,
+            popsize: 10,
+            adaptive_allpass: false,
+            ap_per_channel: 2,
+            optimize_polarity: true,
+            ..Default::default()
+        });
+
+        let summary = try_run_gd_opt(&config, &mut channel_results, &mut channel_chains, 48000.0)
+            .expect("GD summary");
+
+        assert_eq!(summary.advisory, "missing_coherence_delay_only");
+        assert!(summary.per_channel_ap_count.iter().all(|&n| n == 0));
+        assert!(
+            summary
+                .per_channel_polarity_inverted
+                .iter()
+                .all(|&inverted| !inverted)
+        );
+    }
+
+    #[test]
+    fn gd_opt_disables_allpass_without_bootstrap_realisations() {
+        let coherence = Some(array![0.95, 0.95, 0.95, 0.95, 0.95, 0.95]);
+        let curve_l = gd_test_curve(0.0, coherence.clone());
+        let curve_r = gd_test_curve(2.0, coherence);
+        let mut channel_results = HashMap::from([
+            ("L".to_string(), test_channel_result("L", &curve_l)),
+            ("R".to_string(), test_channel_result("R", &curve_r)),
+        ]);
+        let mut channel_chains = HashMap::from([
+            ("L".to_string(), test_chain("L", &curve_l)),
+            ("R".to_string(), test_chain("R", &curve_r)),
+        ]);
+        let config = test_room_config_with_gd(super::super::types::GroupDelayOptimizationConfig {
+            enabled: true,
+            min_improvement_db: -100.0,
+            max_iter: 300,
+            popsize: 10,
+            adaptive_allpass: true,
+            ap_per_channel: 2,
+            ..Default::default()
+        });
+
+        let summary = try_run_gd_opt(&config, &mut channel_results, &mut channel_chains, 48000.0)
+            .expect("GD summary");
+
+        assert_eq!(
+            summary.advisory,
+            "allpass_disabled_no_bootstrap_realisations"
+        );
+        assert!(summary.per_channel_ap_count.iter().all(|&n| n == 0));
+    }
+
+    fn gd_test_curve(delay_ms: f64, coherence: Option<ndarray::Array1<f64>>) -> Curve {
+        let freq = array![20.0, 40.0, 80.0, 120.0, 160.0, 200.0];
+        let phase = freq.mapv(|f| -360.0 * f * delay_ms * 1e-3);
+        Curve {
+            freq,
+            spl: array![0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            phase: Some(phase),
+            coherence,
+            ..Default::default()
+        }
+    }
+
+    fn test_channel_result(name: &str, curve: &Curve) -> ChannelOptimizationResult {
+        ChannelOptimizationResult {
+            name: name.to_string(),
+            pre_score: 0.0,
+            post_score: 0.0,
+            initial_curve: curve.clone(),
+            final_curve: curve.clone(),
+            biquads: Vec::new(),
+            fir_coeffs: None,
+        }
+    }
+
+    fn test_room_config_with_gd(
+        group_delay: super::super::types::GroupDelayOptimizationConfig,
+    ) -> RoomConfig {
+        RoomConfig {
+            version: super::super::types::default_config_version(),
+            system: None,
+            speakers: HashMap::new(),
+            crossovers: None,
+            target_curve: None,
+            optimizer: OptimizerConfig {
+                group_delay: Some(group_delay),
+                seed: Some(11),
+                ..Default::default()
+            },
+            recording_config: None,
+            cea2034_cache: None,
+        }
     }
 }

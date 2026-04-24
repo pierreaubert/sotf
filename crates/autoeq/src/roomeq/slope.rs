@@ -73,7 +73,9 @@ mod tests {
     #[test]
     fn flat_curve_has_zero_slope() {
         // 200 Hz – 10 kHz, flat at 80 dB
-        let freqs: Vec<f64> = (0..100).map(|i| 200.0 * (50.0_f64).powf(i as f64 / 99.0)).collect();
+        let freqs: Vec<f64> = (0..100)
+            .map(|i| 200.0 * (50.0_f64).powf(i as f64 / 99.0))
+            .collect();
         let spl: Vec<f64> = vec![80.0; 100];
         let curve = make_curve(&freqs, &spl);
 
@@ -88,7 +90,9 @@ mod tests {
         let ref_spl = 80.0;
         let slope_target = -1.0;
 
-        let freqs: Vec<f64> = (0..100).map(|i| 200.0 * (50.0_f64).powf(i as f64 / 99.0)).collect();
+        let freqs: Vec<f64> = (0..100)
+            .map(|i| 200.0 * (50.0_f64).powf(i as f64 / 99.0))
+            .collect();
         let spl: Vec<f64> = freqs
             .iter()
             .map(|f| ref_spl + slope_target * (f / ref_freq).log2())
@@ -108,7 +112,9 @@ mod tests {
         let ref_spl = 70.0;
         let slope_target = 0.5;
 
-        let freqs: Vec<f64> = (0..100).map(|i| 200.0 * (50.0_f64).powf(i as f64 / 99.0)).collect();
+        let freqs: Vec<f64> = (0..100)
+            .map(|i| 200.0 * (50.0_f64).powf(i as f64 / 99.0))
+            .collect();
         let spl: Vec<f64> = freqs
             .iter()
             .map(|f| ref_spl + slope_target * (f / ref_freq).log2())

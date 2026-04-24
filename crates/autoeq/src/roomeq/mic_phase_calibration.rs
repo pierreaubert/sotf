@@ -210,9 +210,7 @@ pub fn load_mic_phase_calibration(path: &Path) -> Result<MicPhaseCalibration, Bo
                 let lower = col_name.to_lowercase();
                 if coh_col.is_none() && lower == "coherence" {
                     coh_col = Some(idx);
-                } else if phase_col.is_none()
-                    && (lower.contains("phase") || lower == "phase_deg")
-                {
+                } else if phase_col.is_none() && (lower.contains("phase") || lower == "phase_deg") {
                     phase_col = Some(idx);
                 } else if freq_col.is_none()
                     && (lower.contains("freq") || lower == "hz" || lower == "frequency_hz")
@@ -228,11 +226,7 @@ pub fn load_mic_phase_calibration(path: &Path) -> Result<MicPhaseCalibration, Bo
                     mag_col = Some(idx);
                 }
             }
-            if freq_col.is_none()
-                || mag_col.is_none()
-                || phase_col.is_none()
-                || coh_col.is_none()
-            {
+            if freq_col.is_none() || mag_col.is_none() || phase_col.is_none() || coh_col.is_none() {
                 return Err(format!(
                     "mic phase calibration at {path:?} must have named columns for \
                      frequency / magnitude_db / phase_deg / coherence; got header {parts:?}"
@@ -275,10 +269,9 @@ pub fn load_mic_phase_calibration(path: &Path) -> Result<MicPhaseCalibration, Bo
     }
 
     if freqs.is_empty() {
-        return Err(format!(
-            "mic phase calibration at {path:?} contained no valid data rows"
-        )
-        .into());
+        return Err(
+            format!("mic phase calibration at {path:?} contained no valid data rows").into(),
+        );
     }
 
     for pair in freqs.windows(2) {
@@ -411,7 +404,10 @@ frequency_hz,mag_db,phase_deg,coherence
         // At 150 Hz we're halfway between 100 and 200 → all three
         // values should interpolate linearly.
         let (m, p, c) = cal.sample_at(150.0).unwrap();
-        assert!((m - 2.0).abs() < 1e-9, "mag @ 150 Hz should be 2 dB, got {m}");
+        assert!(
+            (m - 2.0).abs() < 1e-9,
+            "mag @ 150 Hz should be 2 dB, got {m}"
+        );
         assert!(
             (p - 10.0).abs() < 1e-9,
             "phase @ 150 Hz should be 10°, got {p}"

@@ -1555,7 +1555,13 @@ fn optimize_spatial_robustness(
             cb,
         )
     } else {
-        crate::optim::optimize_filters(&mut x, &lower_bounds, &upper_bounds, objective_data, &optim_params)
+        crate::optim::optimize_filters(
+            &mut x,
+            &lower_bounds,
+            &upper_bounds,
+            objective_data,
+            &optim_params,
+        )
     };
 
     let (_converged_msg, final_loss) = match opt_result {

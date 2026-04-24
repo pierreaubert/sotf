@@ -3,9 +3,9 @@
 //! This module tests that each PEQ model correctly sets up bounds
 //! for the filter parameters according to its specification.
 
+use autoeq::OptimParams;
 use autoeq::cli::{Args, PeqModel};
 use autoeq::workflow::setup_bounds;
-use autoeq::OptimParams;
 use clap::Parser;
 
 /// Helper to create test args with specific PEQ model

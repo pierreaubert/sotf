@@ -5,7 +5,8 @@
 
 use crate::Curve;
 use crate::error::{AutoeqError, Result};
-use log::{debug, info, warn};
+use log::{debug, info};
+use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use ndarray::Array1;
 use num_complex::Complex64;
 use std::f64::consts::PI;
@@ -19,6 +20,10 @@ pub struct MultiSeatOptimizationResult {
     pub gains: Vec<f64>,
     /// Optimal delays for each subwoofer (ms)
     pub delays: Vec<f64>,
+    /// Per-subwoofer polarity inversion flags
+    pub polarities: Vec<bool>,
+    /// Per-subwoofer all-pass filter parameters `(frequency_hz, q)`
+    pub allpass_filters: Vec<Vec<(f64, f64)>>,
     /// Strategy used for optimization
     pub strategy: MultiSeatStrategy,
     /// Name of the objective metric optimized by the selected strategy
@@ -113,7 +118,7 @@ pub fn optimize_multiseat(
     measurements: &MultiSeatMeasurements,
     config: &MultiSeatConfig,
     freq_range: (f64, f64),
-    _sample_rate: f64,
+    sample_rate: f64,
 ) -> Result<MultiSeatOptimizationResult> {
     let (min_freq, max_freq) = freq_range;
 
@@ -137,12 +142,17 @@ pub fn optimize_multiseat(
     // Initial state: no gain adjustment, no delay
     let initial_gains = vec![0.0; measurements.num_subs];
     let initial_delays = vec![0.0; measurements.num_subs];
+    let initial_polarities = vec![false; measurements.num_subs];
+    let initial_allpass_filters = vec![Vec::new(); measurements.num_subs];
 
     let initial_responses = compute_combined_responses(
         &interpolated,
         &freqs,
         &initial_gains,
         &initial_delays,
+        &initial_polarities,
+        &initial_allpass_filters,
+        sample_rate,
         min_freq,
         max_freq,
     );
@@ -160,37 +170,47 @@ pub fn optimize_multiseat(
     );
 
     // Optimize based on strategy
-    let (optimal_gains, optimal_delays) = match config.strategy {
-        MultiSeatStrategy::MinimizeVariance => optimize_minimize_variance(
-            &interpolated,
-            &freqs,
-            measurements.num_subs,
-            min_freq,
-            max_freq,
-        ),
-        MultiSeatStrategy::Average => optimize_average_response(
-            &interpolated,
-            &freqs,
-            measurements.num_subs,
-            min_freq,
-            max_freq,
-        ),
-        MultiSeatStrategy::PrimaryWithConstraints => optimize_primary_with_constraints(
-            &interpolated,
-            &freqs,
-            measurements.num_subs,
-            config.primary_seat,
-            config.max_deviation_db,
-            min_freq,
-            max_freq,
-        ),
-    };
+    let (optimal_gains, optimal_delays, optimal_polarities, optimal_allpass_filters) =
+        match config.strategy {
+            MultiSeatStrategy::MinimizeVariance => optimize_minimize_variance(
+                &interpolated,
+                &freqs,
+                measurements.num_subs,
+                config,
+                sample_rate,
+                min_freq,
+                max_freq,
+            ),
+            MultiSeatStrategy::Average => optimize_average_response(
+                &interpolated,
+                &freqs,
+                measurements.num_subs,
+                config,
+                sample_rate,
+                min_freq,
+                max_freq,
+            ),
+            MultiSeatStrategy::PrimaryWithConstraints => optimize_primary_with_constraints(
+                &interpolated,
+                &freqs,
+                measurements.num_subs,
+                config,
+                sample_rate,
+                config.primary_seat,
+                config.max_deviation_db,
+                min_freq,
+                max_freq,
+            ),
+        };
 
     let final_responses = compute_combined_responses(
         &interpolated,
         &freqs,
         &optimal_gains,
         &optimal_delays,
+        &optimal_polarities,
+        &optimal_allpass_filters,
+        sample_rate,
         min_freq,
         max_freq,
     );
@@ -220,6 +240,8 @@ pub fn optimize_multiseat(
     Ok(MultiSeatOptimizationResult {
         gains: optimal_gains,
         delays: optimal_delays,
+        polarities: optimal_polarities,
+        allpass_filters: optimal_allpass_filters,
         strategy: config.strategy.clone(),
         objective_name,
         objective_before,
@@ -345,11 +367,23 @@ fn compute_combined_responses(
     freqs: &Array1<f64>,
     gains: &[f64],
     delays: &[f64],
+    polarities: &[bool],
+    allpass_filters: &[Vec<(f64, f64)>],
+    sample_rate: f64,
     min_freq: f64,
     max_freq: f64,
 ) -> Vec<Vec<f64>> {
     let num_seats = interpolated[0].len();
     let mut seat_responses: Vec<Vec<f64>> = Vec::with_capacity(num_seats);
+    let allpass_biquads: Vec<Vec<Biquad>> = allpass_filters
+        .iter()
+        .map(|filters| {
+            filters
+                .iter()
+                .map(|&(freq, q)| Biquad::new(BiquadFilterType::AllPass, freq, sample_rate, q, 0.0))
+                .collect()
+        })
+        .collect();
 
     for seat_idx in 0..num_seats {
         let mut combined_spl = Vec::new();
@@ -363,11 +397,30 @@ fn compute_combined_responses(
 
             for (sub_idx, sub_data) in interpolated.iter().enumerate() {
                 let gain_linear = 10.0_f64.powf(gains[sub_idx] / 20.0);
+                let polarity = if polarities.get(sub_idx).copied().unwrap_or(false) {
+                    -1.0
+                } else {
+                    1.0
+                };
                 let delay_s = delays[sub_idx] / 1000.0;
                 let omega = 2.0 * PI * f;
                 let delay_phase = Complex64::from_polar(1.0, -omega * delay_s);
+                let allpass_phase = allpass_biquads
+                    .get(sub_idx)
+                    .map(|filters| {
+                        filters
+                            .iter()
+                            .fold(Complex64::new(1.0, 0.0), |acc, allpass| {
+                                acc * allpass_complex_response(allpass, f)
+                            })
+                    })
+                    .unwrap_or_else(|| Complex64::new(1.0, 0.0));
 
-                combined += sub_data[seat_idx][freq_idx] * gain_linear * delay_phase;
+                combined += sub_data[seat_idx][freq_idx]
+                    * gain_linear
+                    * polarity
+                    * delay_phase
+                    * allpass_phase;
             }
 
             combined_spl.push(20.0 * combined.norm().max(1e-12).log10());
@@ -377,6 +430,18 @@ fn compute_combined_responses(
     }
 
     seat_responses
+}
+
+fn allpass_complex_response(biquad: &Biquad, freq_hz: f64) -> Complex64 {
+    let (a1, a2, b0, b1, b2) = biquad.constants();
+    let omega = 2.0 * PI * freq_hz / biquad.srate;
+    let z_inv = Complex64::from_polar(1.0, -omega);
+    let z_inv2 = z_inv * z_inv;
+
+    let numerator = b0 + b1 * z_inv + b2 * z_inv2;
+    let denominator = 1.0 + a1 * z_inv + a2 * z_inv2;
+
+    numerator / denominator
 }
 
 // ============================================================================
@@ -493,131 +558,254 @@ fn compute_seat_variance(
     min_freq: f64,
     max_freq: f64,
 ) -> f64 {
-    let responses =
-        compute_combined_responses(interpolated, freqs, gains, delays, min_freq, max_freq);
+    let polarities = vec![false; gains.len()];
+    let allpass_filters = vec![Vec::new(); gains.len()];
+    let responses = compute_combined_responses(
+        interpolated,
+        freqs,
+        gains,
+        delays,
+        &polarities,
+        &allpass_filters,
+        48000.0,
+        min_freq,
+        max_freq,
+    );
     variance_from_responses(&responses)
 }
 
 // ============================================================================
-// Two-pass search (shared by all strategies)
+// Continuous MSO search (shared by all strategies)
 // ============================================================================
 
-/// Build a Vec of evenly-spaced values from `min` to `max` inclusive.
-fn build_range(min: f64, max: f64, step: f64) -> Vec<f64> {
-    let n = ((max - min) / step).round() as usize + 1;
-    (0..n).map(|i| min + i as f64 * step).collect()
+const MSO_GAIN_MIN_DB: f64 = -6.0;
+const MSO_GAIN_MAX_DB: f64 = 6.0;
+const MSO_DELAY_MIN_MS: f64 = 0.0;
+const MSO_DELAY_MAX_MS: f64 = 20.0;
+const MSO_ALLPASS_Q_MIN: f64 = 0.3;
+const MSO_ALLPASS_Q_MAX: f64 = 5.0;
+const MSO_DE_SEED: u64 = 0x5eed_5eed_d15e_a5e5;
+
+type MsoSolution = (Vec<f64>, Vec<f64>, Vec<bool>, Vec<Vec<(f64, f64)>>);
+
+#[derive(Debug, Clone, Copy)]
+struct MsoSearchOptions {
+    optimize_polarity: bool,
+    allpass_filters_per_sub: usize,
+    allpass_min_freq: f64,
+    allpass_max_freq: f64,
 }
 
-/// Two-pass search: coarse sweep (1 dB / 1 ms) then fine refinement
-/// (0.1 dB / 0.1 ms in a ±2 window around the coarse optimum).
-///
-/// For 2 subs the coarse pass is a full 2-D grid; for >2 subs it uses
-/// coordinate descent with 5 passes at each resolution.
-fn two_pass_search(num_subs: usize, eval: &dyn Fn(&[f64], &[f64]) -> f64) -> (Vec<f64>, Vec<f64>) {
-    let mut best_gains = vec![0.0; num_subs];
-    let mut best_delays = vec![0.0; num_subs];
-    let mut best_loss = eval(&best_gains, &best_delays);
+impl MsoSearchOptions {
+    fn from_config(config: &MultiSeatConfig, min_freq: f64, max_freq: f64) -> Self {
+        let allpass_min_freq = min_freq.max(20.0);
+        let allpass_max_freq = max_freq.min(200.0).max(allpass_min_freq);
+        Self {
+            optimize_polarity: config.optimize_polarity,
+            allpass_filters_per_sub: config.allpass_filters_per_sub,
+            allpass_min_freq,
+            allpass_max_freq,
+        }
+    }
+}
 
-    // --- Phase 1: coarse sweep (1 dB gain, 1 ms delay) ---
-    let gain_range = build_range(-6.0, 6.0, 1.0);
-    let delay_range = build_range(0.0, 20.0, 1.0);
+#[derive(Clone)]
+struct SimpleRng {
+    state: u64,
+}
 
-    if num_subs == 2 {
-        // Full 2-D grid for sub 1 (sub 0 is reference)
-        for &g in &gain_range {
-            for &d in &delay_range {
-                let gains = vec![0.0, g];
-                let delays = vec![0.0, d];
-                let loss = eval(&gains, &delays);
-                if loss < best_loss {
-                    best_loss = loss;
-                    best_gains = gains;
-                    best_delays = delays;
+impl SimpleRng {
+    fn new(seed: u64) -> Self {
+        Self { state: seed }
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        let mut x = self.state;
+        x ^= x >> 12;
+        x ^= x << 25;
+        x ^= x >> 27;
+        self.state = x;
+        x.wrapping_mul(0x2545_f491_4f6c_dd1d)
+    }
+
+    fn next_f64(&mut self) -> f64 {
+        let value = self.next_u64() >> 11;
+        value as f64 / ((1_u64 << 53) as f64)
+    }
+
+    fn range_f64(&mut self, min: f64, max: f64) -> f64 {
+        min + self.next_f64() * (max - min)
+    }
+
+    fn index(&mut self, len: usize) -> usize {
+        (self.next_u64() as usize) % len
+    }
+}
+
+fn mso_params_per_optimized_sub(options: MsoSearchOptions) -> usize {
+    2 + usize::from(options.optimize_polarity) + options.allpass_filters_per_sub * 2
+}
+
+fn mso_bounds(num_subs: usize, options: MsoSearchOptions) -> (Vec<f64>, Vec<f64>) {
+    let dims = num_subs.saturating_sub(1) * mso_params_per_optimized_sub(options);
+    let mut lower = Vec::with_capacity(dims);
+    let mut upper = Vec::with_capacity(dims);
+
+    for _ in 1..num_subs {
+        lower.push(MSO_GAIN_MIN_DB);
+        upper.push(MSO_GAIN_MAX_DB);
+        lower.push(MSO_DELAY_MIN_MS);
+        upper.push(MSO_DELAY_MAX_MS);
+        if options.optimize_polarity {
+            lower.push(0.0);
+            upper.push(1.0);
+        }
+        for _ in 0..options.allpass_filters_per_sub {
+            lower.push(options.allpass_min_freq);
+            upper.push(options.allpass_max_freq);
+            lower.push(MSO_ALLPASS_Q_MIN);
+            upper.push(MSO_ALLPASS_Q_MAX);
+        }
+    }
+
+    (lower, upper)
+}
+
+fn decode_mso_params(params: &[f64], num_subs: usize, options: MsoSearchOptions) -> MsoSolution {
+    let mut gains = vec![0.0; num_subs];
+    let mut delays = vec![0.0; num_subs];
+    let mut polarities = vec![false; num_subs];
+    let mut allpass_filters = vec![Vec::new(); num_subs];
+    let per_sub = mso_params_per_optimized_sub(options);
+
+    for sub_idx in 1..num_subs {
+        let mut offset = (sub_idx - 1) * per_sub;
+        gains[sub_idx] = params[offset];
+        offset += 1;
+        delays[sub_idx] = params[offset];
+        offset += 1;
+
+        if options.optimize_polarity {
+            polarities[sub_idx] = params[offset] >= 0.5;
+            offset += 1;
+        }
+
+        for _ in 0..options.allpass_filters_per_sub {
+            let freq = params[offset];
+            let q = params[offset + 1];
+            allpass_filters[sub_idx].push((freq, q));
+            offset += 2;
+        }
+    }
+
+    (gains, delays, polarities, allpass_filters)
+}
+
+fn optimize_continuous_mso(
+    num_subs: usize,
+    options: MsoSearchOptions,
+    eval: &dyn Fn(&[f64], &[f64], &[bool], &[Vec<(f64, f64)>]) -> f64,
+) -> MsoSolution {
+    if num_subs <= 1 {
+        return (
+            vec![0.0; num_subs],
+            vec![0.0; num_subs],
+            vec![false; num_subs],
+            vec![Vec::new(); num_subs],
+        );
+    }
+
+    let (lower, upper) = mso_bounds(num_subs, options);
+    let dims = lower.len();
+    let population_size = (dims * 24).max(48);
+    let generations = (120 + dims * 30).max(200);
+    let mutation = 0.7;
+    let crossover = 0.9;
+    let mut rng = SimpleRng::new(MSO_DE_SEED ^ (num_subs as u64));
+
+    let mut population = vec![vec![0.0; dims]; population_size];
+    for dim in 0..dims {
+        population[0][dim] = f64::clamp(population[0][dim], lower[dim], upper[dim]);
+    }
+    for individual in population.iter_mut().skip(1) {
+        for dim in 0..dims {
+            individual[dim] = rng.range_f64(lower[dim], upper[dim]);
+        }
+    }
+
+    let mut scores: Vec<f64> = population
+        .iter()
+        .map(|params| {
+            let (gains, delays, polarities, allpass_filters) =
+                decode_mso_params(params, num_subs, options);
+            eval(&gains, &delays, &polarities, &allpass_filters)
+        })
+        .collect();
+
+    for _ in 0..generations {
+        for target_idx in 0..population_size {
+            let mut a;
+            let mut b;
+            let mut c;
+            loop {
+                a = rng.index(population_size);
+                if a != target_idx {
+                    break;
                 }
             }
-        }
-    } else {
-        // Coordinate descent for >2 subs (5 coarse passes)
-        for _ in 0..5 {
-            for sub_idx in 1..num_subs {
-                for &g in &gain_range {
-                    let mut test_gains = best_gains.clone();
-                    test_gains[sub_idx] = g;
-                    let loss = eval(&test_gains, &best_delays);
-                    if loss < best_loss {
-                        best_loss = loss;
-                        best_gains = test_gains;
-                    }
+            loop {
+                b = rng.index(population_size);
+                if b != target_idx && b != a {
+                    break;
                 }
-                for &d in &delay_range {
-                    let mut test_delays = best_delays.clone();
-                    test_delays[sub_idx] = d;
-                    let loss = eval(&best_gains, &test_delays);
-                    if loss < best_loss {
-                        best_loss = loss;
-                        best_delays = test_delays;
-                    }
+            }
+            loop {
+                c = rng.index(population_size);
+                if c != target_idx && c != a && c != b {
+                    break;
                 }
+            }
+
+            let forced_dim = rng.index(dims);
+            let mut trial = population[target_idx].clone();
+            for dim in 0..dims {
+                if dim == forced_dim || rng.next_f64() < crossover {
+                    let value =
+                        population[a][dim] + mutation * (population[b][dim] - population[c][dim]);
+                    trial[dim] = value.clamp(lower[dim], upper[dim]);
+                }
+            }
+
+            let (gains, delays, polarities, allpass_filters) =
+                decode_mso_params(&trial, num_subs, options);
+            let trial_score = eval(&gains, &delays, &polarities, &allpass_filters);
+            if trial_score < scores[target_idx] {
+                population[target_idx] = trial;
+                scores[target_idx] = trial_score;
             }
         }
     }
 
-    // --- Phase 2: fine refinement (0.1 dB gain, 0.1 ms delay, ±2 window) ---
-    let fine_passes = if num_subs == 2 { 1 } else { 5 };
+    let (best_idx, best_loss) = scores
+        .iter()
+        .enumerate()
+        .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|(idx, score)| (idx, *score))
+        .unwrap_or((0, f64::INFINITY));
 
-    for _ in 0..fine_passes {
-        for sub_idx in 1..num_subs {
-            let g_center = best_gains[sub_idx];
-            let d_center = best_delays[sub_idx];
-            let fine_gains =
-                build_range((g_center - 2.0).max(-6.0), (g_center + 2.0).min(6.0), 0.1);
-            let fine_delays =
-                build_range((d_center - 2.0).max(0.0), (d_center + 2.0).min(20.0), 0.1);
-
-            if num_subs == 2 {
-                // 2-D fine grid
-                for &g in &fine_gains {
-                    for &d in &fine_delays {
-                        let gains = vec![0.0, g];
-                        let delays = vec![0.0, d];
-                        let loss = eval(&gains, &delays);
-                        if loss < best_loss {
-                            best_loss = loss;
-                            best_gains = gains;
-                            best_delays = delays;
-                        }
-                    }
-                }
-            } else {
-                // Fine coordinate descent
-                for &g in &fine_gains {
-                    let mut test_gains = best_gains.clone();
-                    test_gains[sub_idx] = g;
-                    let loss = eval(&test_gains, &best_delays);
-                    if loss < best_loss {
-                        best_loss = loss;
-                        best_gains = test_gains;
-                    }
-                }
-                for &d in &fine_delays {
-                    let mut test_delays = best_delays.clone();
-                    test_delays[sub_idx] = d;
-                    let loss = eval(&best_gains, &test_delays);
-                    if loss < best_loss {
-                        best_loss = loss;
-                        best_delays = test_delays;
-                    }
-                }
-            }
-        }
-    }
-
+    let (best_gains, best_delays, best_polarities, best_allpass_filters) =
+        decode_mso_params(&population[best_idx], num_subs, options);
     debug!(
-        "  Search result: gains={:?}, delays={:?}, loss={:.4}",
-        best_gains, best_delays, best_loss
+        "  Continuous MSO result: gains={:?}, delays={:?}, polarities={:?}, allpass={:?}, loss={:.4}",
+        best_gains, best_delays, best_polarities, best_allpass_filters, best_loss
     );
 
-    (best_gains, best_delays)
+    (
+        best_gains,
+        best_delays,
+        best_polarities,
+        best_allpass_filters,
+    )
 }
 
 // ============================================================================
@@ -629,13 +817,30 @@ fn optimize_minimize_variance(
     interpolated: &[Vec<Vec<Complex64>>],
     freqs: &Array1<f64>,
     num_subs: usize,
+    config: &MultiSeatConfig,
+    sample_rate: f64,
     min_freq: f64,
     max_freq: f64,
-) -> (Vec<f64>, Vec<f64>) {
-    two_pass_search(num_subs, &|gains, delays| {
-        let r = compute_combined_responses(interpolated, freqs, gains, delays, min_freq, max_freq);
-        variance_from_responses(&r)
-    })
+) -> MsoSolution {
+    let options = MsoSearchOptions::from_config(config, min_freq, max_freq);
+    optimize_continuous_mso(
+        num_subs,
+        options,
+        &|gains, delays, polarities, allpass_filters| {
+            let r = compute_combined_responses(
+                interpolated,
+                freqs,
+                gains,
+                delays,
+                polarities,
+                allpass_filters,
+                sample_rate,
+                min_freq,
+                max_freq,
+            );
+            variance_from_responses(&r)
+        },
+    )
 }
 
 /// Optimize for flattest average response across seats.
@@ -646,13 +851,30 @@ fn optimize_average_response(
     interpolated: &[Vec<Vec<Complex64>>],
     freqs: &Array1<f64>,
     num_subs: usize,
+    config: &MultiSeatConfig,
+    sample_rate: f64,
     min_freq: f64,
     max_freq: f64,
-) -> (Vec<f64>, Vec<f64>) {
-    two_pass_search(num_subs, &|gains, delays| {
-        let r = compute_combined_responses(interpolated, freqs, gains, delays, min_freq, max_freq);
-        average_flatness_from_responses(&r)
-    })
+) -> MsoSolution {
+    let options = MsoSearchOptions::from_config(config, min_freq, max_freq);
+    optimize_continuous_mso(
+        num_subs,
+        options,
+        &|gains, delays, polarities, allpass_filters| {
+            let r = compute_combined_responses(
+                interpolated,
+                freqs,
+                gains,
+                delays,
+                polarities,
+                allpass_filters,
+                sample_rate,
+                min_freq,
+                max_freq,
+            );
+            average_flatness_from_responses(&r)
+        },
+    )
 }
 
 /// Optimize for primary seat with constraints on other seats.
@@ -663,15 +885,32 @@ fn optimize_primary_with_constraints(
     interpolated: &[Vec<Vec<Complex64>>],
     freqs: &Array1<f64>,
     num_subs: usize,
+    config: &MultiSeatConfig,
+    sample_rate: f64,
     primary_seat: usize,
     max_deviation_db: f64,
     min_freq: f64,
     max_freq: f64,
-) -> (Vec<f64>, Vec<f64>) {
-    two_pass_search(num_subs, &|gains, delays| {
-        let r = compute_combined_responses(interpolated, freqs, gains, delays, min_freq, max_freq);
-        primary_constrained_from_responses(&r, primary_seat, max_deviation_db)
-    })
+) -> MsoSolution {
+    let options = MsoSearchOptions::from_config(config, min_freq, max_freq);
+    optimize_continuous_mso(
+        num_subs,
+        options,
+        &|gains, delays, polarities, allpass_filters| {
+            let r = compute_combined_responses(
+                interpolated,
+                freqs,
+                gains,
+                delays,
+                polarities,
+                allpass_filters,
+                sample_rate,
+                min_freq,
+                max_freq,
+            );
+            primary_constrained_from_responses(&r, primary_seat, max_deviation_db)
+        },
+    )
 }
 
 #[cfg(test)]
@@ -741,6 +980,7 @@ mod tests {
             strategy: MultiSeatStrategy::PrimaryWithConstraints,
             primary_seat: 5, // only 2 seats
             max_deviation_db: 6.0,
+            ..Default::default()
         };
 
         let result = optimize_multiseat(&ms, &config, (20.0, 120.0), 48000.0);
@@ -761,6 +1001,7 @@ mod tests {
             strategy: MultiSeatStrategy::MinimizeVariance,
             primary_seat: 0,
             max_deviation_db: 6.0,
+            ..Default::default()
         };
 
         let result =
@@ -838,6 +1079,7 @@ mod tests {
             strategy: MultiSeatStrategy::MinimizeVariance,
             primary_seat: 0,
             max_deviation_db: 6.0,
+            ..Default::default()
         };
         let avg_config = MultiSeatConfig {
             strategy: MultiSeatStrategy::Average,
@@ -857,7 +1099,10 @@ mod tests {
 
         assert_eq!(avg_result.strategy, MultiSeatStrategy::Average);
         assert_eq!(avg_result.objective_name, "average_flatness");
-        assert_close(avg_result.improvement_db, avg_result.objective_improvement_db);
+        assert_close(
+            avg_result.improvement_db,
+            avg_result.objective_improvement_db,
+        );
         assert!(avg_result.objective_improvement_db >= -0.01);
 
         // Variance is still reported as a diagnostic, but Average optimizes
@@ -897,6 +1142,7 @@ mod tests {
             strategy: MultiSeatStrategy::PrimaryWithConstraints,
             primary_seat: 0,
             max_deviation_db: 6.0,
+            ..Default::default()
         };
 
         let result =
@@ -940,9 +1186,27 @@ mod tests {
     }
 
     #[test]
-    fn test_fine_resolution_finds_better_solution() {
-        // Verify that the two-pass search (with 0.1 resolution) finds
-        // solutions at non-integer gain/delay values.
+    fn test_missing_phase_is_rejected() {
+        let curve = Curve {
+            freq: Array1::from(vec![50.0, 60.0, 70.0]),
+            spl: Array1::from(vec![90.0, 91.0, 90.5]),
+            phase: None,
+            ..Default::default()
+        };
+        let grid = Array1::from(vec![55.0, 65.0]);
+
+        let err = interpolate_curve_to_grid(&curve, &grid).unwrap_err();
+
+        assert!(
+            err.to_string().contains("requires phase data"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_continuous_mso_returns_valid_solution() {
+        // Verify that the continuous optimizer returns bounded, non-degenerate
+        // gain/delay values without quantizing the search to a coarse grid.
         let measurements = vec![
             vec![create_test_curve(0.0, 0.0), create_test_curve(3.0, 20.0)],
             vec![create_test_curve(0.0, 10.0), create_test_curve(-2.0, 30.0)],
@@ -951,7 +1215,9 @@ mod tests {
         let freqs = create_eval_frequency_grid(&ms, 20.0, 120.0);
         let interpolated = interpolate_all_measurements(&ms, &freqs).expect("Should interpolate");
 
-        let (gains, delays) = optimize_minimize_variance(&interpolated, &freqs, 2, 20.0, 120.0);
+        let config = MultiSeatConfig::default();
+        let (gains, delays, polarities, allpass_filters) =
+            optimize_minimize_variance(&interpolated, &freqs, 2, &config, 48000.0, 20.0, 120.0);
 
         // With fine resolution, at least one parameter should land on a
         // non-integer value (0.1 step grid), demonstrating the refinement pass.
@@ -961,6 +1227,87 @@ mod tests {
         // the result is valid and non-degenerate
         assert_eq!(gains[0], 0.0);
         assert_eq!(delays[0], 0.0);
-        let _ = (has_fractional_gain, has_fractional_delay); // suppress unused warnings
+        assert!(!polarities[0]);
+        assert!(allpass_filters[0].is_empty());
+        assert!(gains[1] >= MSO_GAIN_MIN_DB && gains[1] <= MSO_GAIN_MAX_DB);
+        assert!(delays[1] >= MSO_DELAY_MIN_MS && delays[1] <= MSO_DELAY_MAX_MS);
+        let _ = (has_fractional_gain, has_fractional_delay);
+    }
+
+    #[test]
+    fn test_continuous_mso_can_recover_fractional_optimum() {
+        let options = MsoSearchOptions {
+            optimize_polarity: false,
+            allpass_filters_per_sub: 0,
+            allpass_min_freq: 20.0,
+            allpass_max_freq: 120.0,
+        };
+        let (gains, delays, polarities, allpass_filters) =
+            optimize_continuous_mso(2, options, &|gains, delays, _, _| {
+                (gains[1] - 1.23).powi(2) + (delays[1] - 4.56).powi(2)
+            });
+
+        assert_eq!(gains[0], 0.0);
+        assert_eq!(delays[0], 0.0);
+        assert!(!polarities[0]);
+        assert!(allpass_filters[0].is_empty());
+        assert!(
+            (gains[1] - 1.23).abs() < 0.05,
+            "gain should recover fractional optimum, got {:.3}",
+            gains[1]
+        );
+        assert!(
+            (delays[1] - 4.56).abs() < 0.05,
+            "delay should recover fractional optimum, got {:.3}",
+            delays[1]
+        );
+    }
+
+    #[test]
+    fn test_continuous_mso_can_optimize_polarity() {
+        let options = MsoSearchOptions {
+            optimize_polarity: true,
+            allpass_filters_per_sub: 0,
+            allpass_min_freq: 20.0,
+            allpass_max_freq: 120.0,
+        };
+        let (_gains, _delays, polarities, allpass_filters) =
+            optimize_continuous_mso(2, options, &|_, _, polarities, _| {
+                if polarities[1] { 0.0 } else { 10.0 }
+            });
+
+        assert!(!polarities[0], "reference sub polarity should stay fixed");
+        assert!(polarities[1], "second sub polarity should be optimized");
+        assert!(allpass_filters.iter().all(Vec::is_empty));
+    }
+
+    #[test]
+    fn test_continuous_mso_can_optimize_allpass_filter() {
+        let options = MsoSearchOptions {
+            optimize_polarity: false,
+            allpass_filters_per_sub: 1,
+            allpass_min_freq: 20.0,
+            allpass_max_freq: 120.0,
+        };
+        let (_gains, _delays, polarities, allpass_filters) =
+            optimize_continuous_mso(2, options, &|_, _, _, allpass_filters| {
+                let (freq, q) = allpass_filters[1][0];
+                ((freq - 73.4) / 10.0).powi(2) + (q - 1.7).powi(2)
+            });
+
+        assert!(!polarities[0]);
+        assert!(allpass_filters[0].is_empty());
+        assert_eq!(allpass_filters[1].len(), 1);
+        let (freq, q) = allpass_filters[1][0];
+        assert!(
+            (freq - 73.4).abs() < 1.0,
+            "all-pass frequency should recover target, got {:.3}",
+            freq
+        );
+        assert!(
+            (q - 1.7).abs() < 0.05,
+            "all-pass Q should recover target, got {:.3}",
+            q
+        );
     }
 }

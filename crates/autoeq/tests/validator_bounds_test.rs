@@ -52,7 +52,10 @@ fn bounds_helper_triggers_when_min_freq_below_data() {
     // min_freq = 50 Hz is well below 100 Hz → should trigger.
     let (below, above) = reference_check(&c, 50.0, 5000.0);
     assert!(below, "min_freq=50 should trigger below-data warning");
-    assert!(!above, "max_freq=5000 should not trigger above-data warning");
+    assert!(
+        !above,
+        "max_freq=5000 should not trigger above-data warning"
+    );
 
     // max_freq = 20 kHz is well above 10 kHz → should trigger.
     let (below, above) = reference_check(&c, 200.0, 20_000.0);

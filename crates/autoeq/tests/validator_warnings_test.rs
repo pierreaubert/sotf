@@ -71,7 +71,10 @@ fn i2_schroeder_split_with_target_response_slope_warns() {
     let result = validate_room_config(&config);
 
     assert!(
-        result.warnings.iter().any(|w| w.contains("schroeder_split")),
+        result
+            .warnings
+            .iter()
+            .any(|w| w.contains("schroeder_split")),
         "expected schroeder_split warning, got: {:?}",
         result.warnings
     );
@@ -91,7 +94,10 @@ fn i2_schroeder_split_with_flat_slope_no_warning() {
     let result = validate_room_config(&config);
 
     assert!(
-        !result.warnings.iter().any(|w| w.contains("schroeder_split")),
+        !result
+            .warnings
+            .iter()
+            .any(|w| w.contains("schroeder_split")),
         "unexpected schroeder_split warning on flat config: {:?}",
         result.warnings
     );
@@ -302,10 +308,7 @@ fn i4_cea2034_with_path_hint_no_warning() {
     });
 
     let config = base_config(
-        one_speaker(
-            "L",
-            single_speaker("speakers/KEF_R3_cea2034_asr.csv", None),
-        ),
+        one_speaker("L", single_speaker("speakers/KEF_R3_cea2034_asr.csv", None)),
         opt,
     );
     let result = validate_room_config(&config);
@@ -380,4 +383,3 @@ fn b10_weights_mismatch_inside_speaker_group() {
         result.errors
     );
 }
-

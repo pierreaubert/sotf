@@ -150,10 +150,9 @@ pub fn build_target_curve_by_name(
             })
         }
         "Sound Power" | "Early Reflections" | "Estimated In-Room Response" => {
-            let slope =
-                crate::loss::curve_slope_per_octave_in_range(input_curve, 100.0, 10000.0)
-                    .unwrap_or(-1.2)
-                    - 0.2;
+            let slope = crate::loss::curve_slope_per_octave_in_range(input_curve, 100.0, 10000.0)
+                .unwrap_or(-1.2)
+                - 0.2;
             let lo = 100.0_f64;
             let hi = 20000.0_f64;
             let hi_val = slope * (hi / lo).log2();

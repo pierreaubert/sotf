@@ -214,11 +214,7 @@ fn final_octave_log_slope(freq: &[f64], ln_mag: &[f64]) -> f64 {
         num += dx * (y - mean_y);
         den += dx * dx;
     }
-    if den.abs() < 1e-12 {
-        0.0
-    } else {
-        num / den
-    }
+    if den.abs() < 1e-12 { 0.0 } else { num / den }
 }
 
 /// Linear interpolation with flat (clamp) extrapolation at both ends.
@@ -533,7 +529,10 @@ mod tests {
 
         let phase = reconstruct_minimum_phase(&freq, &spl);
 
-        let expected: Vec<f64> = freq.iter().map(|&f| -(f / fc).atan().to_degrees()).collect();
+        let expected: Vec<f64> = freq
+            .iter()
+            .map(|&f| -(f / fc).atan().to_degrees())
+            .collect();
         let residuals: Vec<f64> = expected
             .iter()
             .zip(phase.iter())
@@ -656,8 +655,7 @@ mod tests {
         let n = 256;
         let freq = Array1::linspace(20.0, 20000.0, n);
         let fc: f64 = 1000.0;
-        let spl: Array1<f64> =
-            freq.map(|&f| -10.0 * (1.0 + (f / fc).powi(2)).log10());
+        let spl: Array1<f64> = freq.map(|&f| -10.0 * (1.0 + (f / fc).powi(2)).log10());
 
         let phase = reconstruct_minimum_phase(&freq, &spl);
 

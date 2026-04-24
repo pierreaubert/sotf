@@ -93,8 +93,16 @@ fn test_tolerance_parameter_affects_optimization() {
     let (lower_bounds, upper_bounds) = setup_bounds(&OptimParams::from(&args_high_tol));
 
     // Test that both configurations can create valid DE configs
-    let mut x1 = initial_guess(&OptimParams::from(&args_high_tol), &lower_bounds, &upper_bounds);
-    let mut x2 = initial_guess(&OptimParams::from(&args_low_tol), &lower_bounds, &upper_bounds);
+    let mut x1 = initial_guess(
+        &OptimParams::from(&args_high_tol),
+        &lower_bounds,
+        &upper_bounds,
+    );
+    let mut x2 = initial_guess(
+        &OptimParams::from(&args_low_tol),
+        &lower_bounds,
+        &upper_bounds,
+    );
 
     // The optimization should handle different tolerance values without crashing
     let params_high_tol = OptimParams::from(&args_high_tol);
@@ -163,7 +171,13 @@ fn test_strategy_parameter_affects_optimization() {
         let mut x = initial_guess(&OptimParams::from(&args), &lower_bounds, &upper_bounds);
 
         let params = OptimParams::from(&args);
-        let result = optimize_filters(&mut x, &lower_bounds, &upper_bounds, objective_data, &params);
+        let result = optimize_filters(
+            &mut x,
+            &lower_bounds,
+            &upper_bounds,
+            objective_data,
+            &params,
+        );
 
         assert!(
             result.is_ok(),
@@ -199,7 +213,13 @@ fn test_recombination_parameter_affects_optimization() {
         let mut x = initial_guess(&OptimParams::from(&args), &lower_bounds, &upper_bounds);
 
         let params = OptimParams::from(&args);
-        let result = optimize_filters(&mut x, &lower_bounds, &upper_bounds, objective_data, &params);
+        let result = optimize_filters(
+            &mut x,
+            &lower_bounds,
+            &upper_bounds,
+            objective_data,
+            &params,
+        );
 
         assert!(
             result.is_ok(),
@@ -238,7 +258,13 @@ fn test_adaptive_strategy_with_weights() {
     let mut x = initial_guess(&OptimParams::from(&args), &lower_bounds, &upper_bounds);
 
     let params = OptimParams::from(&args);
-    let result = optimize_filters(&mut x, &lower_bounds, &upper_bounds, objective_data, &params);
+    let result = optimize_filters(
+        &mut x,
+        &lower_bounds,
+        &upper_bounds,
+        objective_data,
+        &params,
+    );
 
     assert!(
         result.is_ok(),

@@ -297,20 +297,17 @@ pub fn load_driver_measurement(
     } else {
         None
     };
-    let coherence = if !coherence_values.is_empty()
-        && coherence_values.len() == frequencies.len()
-    {
+    let coherence = if !coherence_values.is_empty() && coherence_values.len() == frequencies.len() {
         Some(Array1::from_vec(coherence_values))
     } else {
         None
     };
-    let noise_floor_db = if !noise_floor_values.is_empty()
-        && noise_floor_values.len() == frequencies.len()
-    {
-        Some(Array1::from_vec(noise_floor_values))
-    } else {
-        None
-    };
+    let noise_floor_db =
+        if !noise_floor_values.is_empty() && noise_floor_values.len() == frequencies.len() {
+            Some(Array1::from_vec(noise_floor_values))
+        } else {
+            None
+        };
 
     Ok((
         Array1::from_vec(frequencies),
@@ -368,8 +365,14 @@ frequency,spl,phase,coherence,noise_floor_db
         assert!((nf[2] + 55.0).abs() < 1e-9);
         // GD-1d: derived fields are now populated at load time when phase is present.
         assert!(curve.min_phase.is_some(), "min_phase populated by GD-1d");
-        assert!(curve.excess_phase.is_some(), "excess_phase populated by GD-1d");
-        assert!(curve.excess_delay_ms.is_some(), "excess_delay_ms populated by GD-1d");
+        assert!(
+            curve.excess_phase.is_some(),
+            "excess_phase populated by GD-1d"
+        );
+        assert!(
+            curve.excess_delay_ms.is_some(),
+            "excess_delay_ms populated by GD-1d"
+        );
     }
 
     #[test]

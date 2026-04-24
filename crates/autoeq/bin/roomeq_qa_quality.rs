@@ -497,7 +497,11 @@ struct MetricScorecard {
 
 impl std::fmt::Display for MetricScorecard {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "flat={:.4} peak={:.2}dB", self.flat_loss, self.peak_residual_db)?;
+        write!(
+            f,
+            "flat={:.4} peak={:.2}dB",
+            self.flat_loss, self.peak_residual_db
+        )?;
         if let Some(v) = self.epa_preference {
             write!(f, " epa={:.2}", v)?;
         }
@@ -527,18 +531,18 @@ fn compute_scorecard(result: &RoomOptimizationResult) -> MetricScorecard {
     }
 
     // EPA metrics: average across channels
-    let (epa_preference, epa_sharpness, epa_roughness) =
-        if let Some(epa) = result.metadata.epa_per_channel.as_ref()
-            && !epa.is_empty()
-        {
-            let n = epa.len() as f64;
-            let pref = epa.values().map(|m| m.post.preference).sum::<f64>() / n;
-            let sharp = epa.values().map(|m| m.post.sharpness_acum).sum::<f64>() / n;
-            let rough = epa.values().map(|m| m.post.roughness).sum::<f64>() / n;
-            (Some(pref), Some(sharp), Some(rough))
-        } else {
-            (None, None, None)
-        };
+    let (epa_preference, epa_sharpness, epa_roughness) = if let Some(epa) =
+        result.metadata.epa_per_channel.as_ref()
+        && !epa.is_empty()
+    {
+        let n = epa.len() as f64;
+        let pref = epa.values().map(|m| m.post.preference).sum::<f64>() / n;
+        let sharp = epa.values().map(|m| m.post.sharpness_acum).sum::<f64>() / n;
+        let rough = epa.values().map(|m| m.post.roughness).sum::<f64>() / n;
+        (Some(pref), Some(sharp), Some(rough))
+    } else {
+        (None, None, None)
+    };
 
     // Group delay: max std dev across channels
     let mut gd_max: Option<f64> = None;
@@ -560,7 +564,10 @@ fn compute_scorecard(result: &RoomOptimizationResult) -> MetricScorecard {
 
 /// Compare a candidate scorecard against a baseline scorecard.
 /// Returns a list of (metric_name, pass, detail) for each check.
-fn compare_scorecards(baseline: &MetricScorecard, candidate: &MetricScorecard) -> Vec<(&'static str, bool, String)> {
+fn compare_scorecards(
+    baseline: &MetricScorecard,
+    candidate: &MetricScorecard,
+) -> Vec<(&'static str, bool, String)> {
     let mut checks = Vec::new();
 
     // 1. Flat loss: relaxed tolerance
@@ -575,7 +582,8 @@ fn compare_scorecards(baseline: &MetricScorecard, candidate: &MetricScorecard) -
     ));
 
     // 2. Peak residual: relative OR absolute ceiling
-    let peak_ok = candidate.peak_residual_db <= baseline.peak_residual_db * SCORECARD_PEAK_TOLERANCE
+    let peak_ok = candidate.peak_residual_db
+        <= baseline.peak_residual_db * SCORECARD_PEAK_TOLERANCE
         || candidate.peak_residual_db < SCORECARD_PEAK_ABSOLUTE_DB;
     checks.push((
         "peak_residual",
@@ -592,7 +600,12 @@ fn compare_scorecards(baseline: &MetricScorecard, candidate: &MetricScorecard) -
         checks.push((
             "epa_preference",
             epa_ok,
-            format!("{:.2} vs baseline {:.2} (min {:.0}%)", c_pref, b_pref, SCORECARD_EPA_PREF_MIN_RATIO * 100.0),
+            format!(
+                "{:.2} vs baseline {:.2} (min {:.0}%)",
+                c_pref,
+                b_pref,
+                SCORECARD_EPA_PREF_MIN_RATIO * 100.0
+            ),
         ));
     }
 
@@ -600,13 +613,17 @@ fn compare_scorecards(baseline: &MetricScorecard, candidate: &MetricScorecard) -
     //    (candidate matching or improving on a pre-existing violation is not a regression)
     if let (Some(c_sharp), Some(b_sharp)) = (candidate.epa_sharpness, baseline.epa_sharpness) {
         let in_range = (SCORECARD_SHARPNESS_MIN..=SCORECARD_SHARPNESS_MAX).contains(&c_sharp);
-        let baseline_already_violated = !(SCORECARD_SHARPNESS_MIN..=SCORECARD_SHARPNESS_MAX).contains(&b_sharp);
+        let baseline_already_violated =
+            !(SCORECARD_SHARPNESS_MIN..=SCORECARD_SHARPNESS_MAX).contains(&b_sharp);
         let no_worse = c_sharp <= b_sharp + 0.05; // small tolerance for optimizer noise
         let sharp_ok = in_range || (baseline_already_violated && no_worse);
         checks.push((
             "sharpness",
             sharp_ok,
-            format!("{:.2} acum (range {:.1}-{:.1})", c_sharp, SCORECARD_SHARPNESS_MIN, SCORECARD_SHARPNESS_MAX),
+            format!(
+                "{:.2} acum (range {:.1}-{:.1})",
+                c_sharp, SCORECARD_SHARPNESS_MIN, SCORECARD_SHARPNESS_MAX
+            ),
         ));
     }
 
@@ -653,9 +670,17 @@ fn evaluate_scorecard(
             *baseline_scorecard = Some(candidate.clone());
             let ok = candidate.flat_loss < pre_score;
             let reason = if ok {
-                format!("pre={:.4}, -{:.0}% [{}]", pre_score, (1.0 - candidate.flat_loss / pre_score) * 100.0, candidate)
+                format!(
+                    "pre={:.4}, -{:.0}% [{}]",
+                    pre_score,
+                    (1.0 - candidate.flat_loss / pre_score) * 100.0,
+                    candidate
+                )
             } else {
-                format!("FAIL: post {:.4} >= pre {:.4}", candidate.flat_loss, pre_score)
+                format!(
+                    "FAIL: post {:.4} >= pre {:.4}",
+                    candidate.flat_loss, pre_score
+                )
             };
             (ok, reason)
         }
@@ -672,7 +697,10 @@ fn evaluate_scorecard(
             } else {
                 let mut failures: Vec<String> = Vec::new();
                 if !converged {
-                    failures.push(format!("no convergence: post {:.4} >= pre {:.4}", candidate.flat_loss, pre_score));
+                    failures.push(format!(
+                        "no convergence: post {:.4} >= pre {:.4}",
+                        candidate.flat_loss, pre_score
+                    ));
                 }
                 for (name, pass, detail) in &checks {
                     if !pass {
@@ -1516,7 +1544,8 @@ fn run_stereo_workflow_tests(
         let pre = result.combined_pre_score;
         let scorecard = compute_scorecard(&result);
 
-        let (pass, reason) = evaluate_scorecard(*mutation, pre, &scorecard, &mut baseline_scorecard);
+        let (pass, reason) =
+            evaluate_scorecard(*mutation, pre, &scorecard, &mut baseline_scorecard);
 
         let status = if pass { "PASS" } else { "FAIL" };
         writeln!(
@@ -1599,7 +1628,8 @@ fn run_generic_path_tests(
             let pre = result.combined_pre_score;
             let scorecard = compute_scorecard(&result);
 
-            let (pass, reason) = evaluate_scorecard(*mutation, pre, &scorecard, &mut baseline_scorecard);
+            let (pass, reason) =
+                evaluate_scorecard(*mutation, pre, &scorecard, &mut baseline_scorecard);
 
             // Record baseline for cross-mode comparison
             if matches!(mutation, Mutation::Baseline) {
@@ -2043,7 +2073,11 @@ fn run_option_effect_test(
         writeln!(
             out,
             "  scorecard: {} [{}]",
-            if scorecard_failures.is_empty() { "OK" } else { "WARN" },
+            if scorecard_failures.is_empty() {
+                "OK"
+            } else {
+                "WARN"
+            },
             scorecard_failures.join("; ")
         )
         .unwrap();
@@ -2865,10 +2899,7 @@ fn main() -> Result<()> {
         all_cases
     };
 
-    println!(
-        "Using {} parallel job(s) (override with --jobs N).",
-        jobs
-    );
+    println!("Using {} parallel job(s) (override with --jobs N).", jobs);
 
     // Run all test cases with a bounded permit pool. The outer thread is
     // spawned immediately but `sem.acquire()` gates entry to the actual
