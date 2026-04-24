@@ -768,11 +768,7 @@ impl PlayerView {
                         .size(TextSize::Md)
                         .color(theme.text_muted),
                 )
-                .child(
-                    Text::new(translations.queue_select_album)
-                        .size(TextSize::Xs)
-                        .color(theme.text_muted),
-                )
+                .child(Text::caption(translations.queue_select_album))
                 .build()
                 .flex_1()
                 .flex()

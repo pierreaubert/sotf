@@ -321,11 +321,9 @@ impl PlayerView {
                                 .color(theme.text_primary)
                                 .weight(TextWeight::Semibold),
                         )
-                        .content(
-                            Text::new("No optimization results yet. Run optimization first.")
-                                .size(TextSize::Xs)
-                                .color(theme.text_muted),
-                        ),
+                        .content(Text::caption(
+                            "No optimization results yet. Run optimization first.",
+                        )),
                 )
                 .into_any_element();
         }
