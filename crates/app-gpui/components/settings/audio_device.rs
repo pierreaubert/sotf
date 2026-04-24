@@ -8,9 +8,7 @@ use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{
-    Badge, BadgeVariant, HStack, StackAlign, StackSpacing, Text, TextSize, TextWeight, VStack,
-};
+use gpui_ui_kit::{Badge, BadgeVariant, HStack, StackAlign, StackSpacing, Text, VStack};
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use gpui_ui_kit::{ButtonSet, ButtonSetOption, Select, SelectOption};
 
@@ -35,11 +33,7 @@ impl PlayerView {
             let theme_for_source = theme.clone();
 
             content = content
-                .child(
-                    Text::new("Audio Source")
-                        .size(TextSize::Xs)
-                        .weight(TextWeight::Semibold),
-                )
+                .child(Text::label("Audio Source"))
                 .child({
                     let state_clone = state_entity.clone();
                     let selected = if is_hal_mode { "hal" } else { "file" };
@@ -102,11 +96,7 @@ impl PlayerView {
                     .collect();
 
                 content = content
-                    .child(
-                        Text::new("HAL Configuration")
-                            .size(TextSize::Xs)
-                            .weight(TextWeight::Semibold),
-                    )
+                    .child(Text::label("HAL Configuration"))
                     .child(
                         HStack::new()
                             .spacing(StackSpacing::Md)
@@ -235,11 +225,7 @@ impl PlayerView {
             }
         }
 
-        content = content.child(
-            Text::new(translations.devices_title)
-                .size(TextSize::Xs)
-                .weight(TextWeight::Semibold),
-        );
+        content = content.child(Text::label(translations.devices_title));
 
         content.child(
             // Grid layout with 2 equal-width columns
@@ -307,16 +293,11 @@ impl PlayerView {
                                     .child(
                                         VStack::new()
                                             .spacing(StackSpacing::Xs)
-                                            .child(
-                                                Text::new(device_name)
-                                                    .size(TextSize::Xs)
-                                                    .weight(TextWeight::Semibold)
-                                                    .color(if is_selected {
-                                                        theme.text_on_accent
-                                                    } else {
-                                                        theme.text_primary
-                                                    }),
-                                            )
+                                            .child(Text::label(device_name).color(if is_selected {
+                                                theme.text_on_accent
+                                            } else {
+                                                theme.text_primary
+                                            }))
                                             .child(
                                                 HStack::new()
                                                     .spacing(StackSpacing::Sm)
