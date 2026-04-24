@@ -151,9 +151,7 @@ impl PlayerView {
                                             }),
                                         )
                                         .child(
-                                            Text::new(format!("{} (.{})", format_name, format_ext))
-                                                .size(TextSize::Xs)
-                                                .weight(TextWeight::Semibold)
+                                            Text::label(format!("{} (.{})", format_name, format_ext))
                                                 .color(theme.text_primary),
                                         ),
                                 )

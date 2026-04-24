@@ -2223,11 +2223,6 @@ fn simple_dropdown_row(
                 .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
                     on_click(cx);
                 })
-                .child(
-                    Text::new(current_value)
-                        .size(TextSize::Xs)
-                        .weight(TextWeight::Semibold)
-                        .color(value_color),
-                ),
+                .child(Text::label(current_value).color(value_color)),
         )
 }
