@@ -16,12 +16,7 @@
             let mut options_col = VStack::new().spacing(StackSpacing::Sm);
 
             // --- Target sub-section ---
-            target_col = target_col.child(
-                Text::new("TARGET")
-                    .size(TextSize::Xs)
-                    .weight(TextWeight::Semibold)
-                    .color(theme.accent),
-            );
+            target_col = target_col.child(Text::eyebrow("TARGET").color(theme.accent));
 
             // Target Tilt
             let mut tilt_toggle = Toggle::new((base_id.clone(), "tilt-enabled"))
@@ -207,12 +202,7 @@
             }
 
             // --- Smoothing sub-section ---
-            options_col = options_col.child(
-                Text::new("SMOOTHING")
-                    .size(TextSize::Xs)
-                    .weight(TextWeight::Semibold)
-                    .color(theme.accent),
-            );
+            options_col = options_col.child(Text::eyebrow("SMOOTHING").color(theme.accent));
 
             // Psychoacoustic Smoothing
             let mut psycho_toggle = Toggle::new((base_id.clone(), "psychoacoustic"))
@@ -303,10 +293,7 @@
 
             // --- Recommended sub-section ---
             options_col = options_col.child(
-                Text::new("RECOMMENDED")
-                    .size(TextSize::Xs)
-                    .weight(TextWeight::Semibold)
-                    .color(theme.accent),
+                Text::eyebrow("RECOMMENDED").color(theme.accent),
             );
 
             // Asymmetric Loss
@@ -596,10 +583,7 @@
 
             // --- Delay sub-section ---
             options_col = options_col.child(
-                Text::new("DELAY")
-                    .size(TextSize::Xs)
-                    .weight(TextWeight::Semibold)
-                    .color(theme.accent),
+                Text::eyebrow("DELAY").color(theme.accent),
             );
 
             // Allow Delay
@@ -657,10 +641,7 @@
 
             // --- Home Cinema sub-section ---
             options_col = options_col.child(
-                Text::new("HOME CINEMA")
-                    .size(TextSize::Xs)
-                    .weight(TextWeight::Semibold)
-                    .color(theme.accent),
+                Text::eyebrow("HOME CINEMA").color(theme.accent),
             );
 
             // Voice of God
@@ -988,12 +969,8 @@
                     if config.multi_measurement_strategy == "weighted_sum"
                         && !config.multi_measurement_weights.is_empty()
                     {
-                        options_col = options_col.child(
-                            Text::new("Weights")
-                                .size(TextSize::Xs)
-                                .weight(TextWeight::Semibold)
-                                .color(theme.text_muted),
-                        );
+                        options_col =
+                            options_col.child(Text::label("Weights").color(theme.text_muted));
                         for (i, &weight) in config.multi_measurement_weights.iter().enumerate() {
                             let label = config
                                 .multi_measurement_labels
@@ -1094,12 +1071,7 @@
             let mut right_col = VStack::new().spacing(StackSpacing::Sm);
 
             // Left column: EQ Design params via shared block
-            left_col = left_col.child(
-                Text::new("EQ DESIGN")
-                    .size(TextSize::Xs)
-                    .weight(TextWeight::Semibold)
-                    .color(theme.accent),
-            );
+            left_col = left_col.child(Text::eyebrow("EQ DESIGN").color(theme.accent));
             {
                 let eq_design_iir_before_fir = true; // room EQ: IIR shown before FIR
                 let mut block_out = left_col;
@@ -1108,12 +1080,7 @@
             }
 
             // Right column: Optimisation params via shared block
-            right_col = right_col.child(
-                Text::new("OPTIMISATION")
-                    .size(TextSize::Xs)
-                    .weight(TextWeight::Semibold)
-                    .color(theme.accent),
-            );
+            right_col = right_col.child(Text::eyebrow("OPTIMISATION").color(theme.accent));
             {
                 let mut block_out = right_col;
                 include!("render_block_optimizer.rs");

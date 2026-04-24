@@ -9,8 +9,8 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, Card, HStack, Input, StackAlign, StackSpacing, Text,
-    TextSize, TextWeight, VStack,
+    Button, ButtonSize, ButtonVariant, Card, HStack, Heading, Input, StackAlign, StackSpacing,
+    Text, TextSize, VStack,
 };
 
 /// Filter the available-speakers list to the top matches for a query.
@@ -97,12 +97,7 @@ impl PlayerView {
                 // Header
                 VStack::new()
                     .spacing(StackSpacing::Xs)
-                    .child(
-                        Text::new("Save Recordings")
-                            .size(TextSize::Md)
-                            .weight(TextWeight::Bold)
-                            .color(theme.text_primary),
-                    )
+                    .child(Heading::h4("Save Recordings"))
                     .child(
                         Text::new("Save your recordings and configuration to disk. Files will be saved to the directory you selected during setup.")
                             .size(TextSize::Xs)
@@ -265,12 +260,7 @@ impl PlayerView {
                                 .size(TextSize::Xs)
                                 .color(theme.text_secondary),
                         )
-                        .child(
-                            Text::new(full_path)
-                                .size(TextSize::Xs)
-                                .weight(TextWeight::Semibold)
-                                .color(theme.text_primary),
-                        ),
+                        .child(Text::label(full_path).color(theme.text_primary)),
                 ),
         )
     }
@@ -314,9 +304,7 @@ impl PlayerView {
                                 .align(StackAlign::Center)
                                 .child(Text::new("+").size(TextSize::Xs).color(theme.success))
                                 .child(
-                                    Text::new(format!("{}.json", safe_save_name))
-                                        .size(TextSize::Xs)
-                                        .weight(TextWeight::Semibold)
+                                    Text::label(format!("{}.json", safe_save_name))
                                         .color(theme.text_primary),
                                 )
                                 .child(Text::caption("- Configuration and measurement data")),
@@ -672,10 +660,7 @@ impl PlayerView {
                                 .align(StackAlign::Center)
                                 .child(
                                     div().w(px(80.0)).child( // intentional: channel label column
-                                        Text::new(channel_name.clone())
-                                            .size(TextSize::Xs)
-                                            .weight(TextWeight::Semibold)
-                                            .color(theme.text_primary),
+                                        Text::label(channel_name.clone()).color(theme.text_primary),
                                     ),
                                 )
                                 .child(

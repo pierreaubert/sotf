@@ -22,12 +22,7 @@
 
     // --- IIR Subsection ---
     if is_iir {
-        section = section.child(
-            Text::new("IIR Parameters")
-                .size(TextSize::Xs)
-                .weight(TextWeight::Semibold)
-                .color(theme.header_color),
-        );
+        section = section.child(Text::label("IIR Parameters").color(theme.header_color));
 
         // Sample rate + Num filters (side by side)
         let mut sr_input = NumberInput::new((base_id.clone(), "fd-sample-rate"))
@@ -258,12 +253,7 @@
 
     // --- FIR Subsection ---
     if is_fir {
-        section = section.child(
-            Text::new("FIR Parameters")
-                .size(TextSize::Xs)
-                .weight(TextWeight::Semibold)
-                .color(theme.header_color),
-        );
+        section = section.child(Text::label("FIR Parameters").color(theme.header_color));
 
         let mut taps_input = NumberInput::new((base_id.clone(), "fd-fir-taps"))
             .value(config.fir_taps as f64)
@@ -312,12 +302,8 @@
 
     // --- Crossover Subsection ---
     if is_mixed {
-        section = section.child(
-            Text::new("Crossover Configuration")
-                .size(TextSize::Xs)
-                .weight(TextWeight::Semibold)
-                .color(theme.header_color),
-        );
+        section =
+            section.child(Text::label("Crossover Configuration").color(theme.header_color));
 
         let mut xo_freq_input = NumberInput::new((base_id.clone(), "fd-xo-freq"))
             .value(config.mixed_crossover_freq)
@@ -392,12 +378,7 @@
 
     // --- Bass Management Subsection ---
     if !hide_bass_management {
-        section = section.child(
-            Text::new("Bass Management")
-                .size(TextSize::Xs)
-                .weight(TextWeight::Semibold)
-                .color(theme.header_color),
-        );
+        section = section.child(Text::label("Bass Management").color(theme.header_color));
 
         // Excursion Protection
         {
