@@ -31,30 +31,7 @@ private func getSharedMemoryPath() -> String {
     var gid: gid_t = 0
 
     if SCDynamicStoreCopyConsoleUser(nil, &uid, &gid) != nil {
-        let dirPath = "/tmp/sotf-\(uid)"
-        let filePath = "\(dirPath)/audio.shm"
-
-        // Create the directory if it doesn't exist
-        var isDir: ObjCBool = false
-        if !FileManager.default.fileExists(atPath: dirPath, isDirectory: &isDir) {
-            do {
-                // Create directory with permissions that allow both _coreaudiod and user access
-                // 0777 allows anyone to read/write/execute (files inside will have restricted perms)
-                try FileManager.default.createDirectory(atPath: dirPath, withIntermediateDirectories: true, attributes: [
-                    .posixPermissions: 0o777
-                ])
-            } catch {
-                halLog("Failed to create shared memory directory: \(error)")
-            }
-        } else {
-            // Directory exists, ensure permissions are correct (0777)
-            do {
-                try FileManager.default.setAttributes([.posixPermissions: 0o777], ofItemAtPath: dirPath)
-            } catch {
-                halLog("Failed to update directory permissions: \(error)")
-            }
-        }
-
+        let filePath = "/tmp/sotf-\(uid)/audio.shm"
         return filePath
     }
 
@@ -173,28 +150,29 @@ final class SharedAudioBuffer {
         currentPath = getSharedMemoryPath()
         halLog("SharedMemory: initializing \(memorySize) bytes at \(currentPath)")
 
-        // Open or create the file with permissions for user and coreaudiod group
-        // Mode 0666 = rw-rw-rw- (allow all users to read/write)
-        // REQUIRED because _coreaudiod creates the file (owner=_coreaudiod) but the daemon
-        // runs as the user (who is not in _coreaudiod group).
-        // The directory itself is already protected by being in /tmp/sotf-{uid}/
-        fileDescriptor = Darwin.open(currentPath, O_RDWR | O_CREAT, 0666)
+        // Open the daemon-owned file. The HAL plugin runs inside coreaudiod's
+        // restricted environment, so creation/sizing/permissions are handled by
+        // the daemon before IO starts.
+        fileDescriptor = Darwin.open(currentPath, O_RDWR)
         if fileDescriptor < 0 {
             halLog("SharedMemory: open failed: \(String(cString: strerror(errno)))")
             return false
         }
 
-        // Set size
-        if ftruncate(fileDescriptor, off_t(memorySize)) != 0 {
-            halLog("SharedMemory: ftruncate failed: \(String(cString: strerror(errno)))")
+        var statBuf = stat()
+        if fstat(fileDescriptor, &statBuf) != 0 {
+            halLog("SharedMemory: fstat failed: \(String(cString: strerror(errno)))")
             Darwin.close(fileDescriptor)
             fileDescriptor = -1
             return false
         }
 
-        // Ensure permissions are correct (override umask)
-        // Mode 0666 = rw-rw-rw- allows owner (_coreaudiod) and user to read/write
-        chmod(currentPath, 0o666)
+        if statBuf.st_size < memorySize {
+            halLog("SharedMemory: file too small: \(statBuf.st_size), need \(memorySize)")
+            Darwin.close(fileDescriptor)
+            fileDescriptor = -1
+            return false
+        }
 
         // Map memory
         sharedMemory = mmap(nil, memorySize, PROT_READ | PROT_WRITE, MAP_SHARED, fileDescriptor, 0)
@@ -216,30 +194,16 @@ final class SharedAudioBuffer {
         // and stops the audio path. Only fresh memory should be zeroed.
         let alreadyInitialized = (header.pointee.magic == kSharedMemoryMagic)
 
-        if alreadyInitialized {
-            halLog("SharedMemory: already initialized, preserving daemon state")
-        } else {
-            // Fresh memory — clear everything, then write the full header.
-            memset(sharedMemory!, 0, memorySize)
-
-            header.pointee.writePosition = 0
-            header.pointee.readPosition = 0
-            header.pointee.active = 0
-            header.pointee.configChanged = 0
-            header.pointee.engineReady = 0
-
-            // Encryption fields (version 2+)
-            header.pointee.encrypted = 0
-            header.pointee.keyFingerprint = (0, 0, 0, 0, 0, 0, 0, 0)
-            header.pointee.frameCounter = 0
-
-            // Config negotiation fields (version 3+)
-            header.pointee.requestedSampleRate = 0
-            header.pointee.requestedBufferFrames = 0
-            header.pointee.configStatus = 0
-            header.pointee.configSource = 0
-            header.pointee.configErrorCode = 0
+        if !alreadyInitialized {
+            halLog("SharedMemory: existing file is not daemon-initialized")
+            munmap(sharedMemory!, memorySize)
+            sharedMemory = nil
+            Darwin.close(fileDescriptor)
+            fileDescriptor = -1
+            return false
         }
+
+        halLog("SharedMemory: already initialized, preserving daemon state")
 
         // Always set: identifying fields and structural geometry.
         // Geometry can legitimately change across coreaudiod re-spawns even
@@ -631,6 +595,18 @@ final class SharedAudioBuffer {
         return header?.pointee.configErrorCode ?? 0
     }
 
+    /// Get requested sample rate (set by the config requester)
+    func getRequestedSampleRate() -> UInt32 {
+        OSMemoryBarrier()
+        return header?.pointee.requestedSampleRate ?? 0
+    }
+
+    /// Get requested buffer frames (set by the config requester)
+    func getRequestedBufferFrames() -> UInt32 {
+        OSMemoryBarrier()
+        return header?.pointee.requestedBufferFrames ?? 0
+    }
+
     /// Request a configuration change (called by HAL when client changes sample rate)
     /// Sets configSource=1 (HAL initiated) and configChanged=1
     ///
@@ -671,6 +647,17 @@ final class SharedAudioBuffer {
         guard let header = header else { return }
         header.pointee.configStatus = status
         OSMemoryBarrier()
+    }
+
+    /// Acknowledge a daemon-initiated config change.
+    func acknowledgeConfigChange(actualSampleRate: UInt32, actualBufferFrames: UInt32, status: UInt32, errorCode: UInt32) {
+        guard let header = header else { return }
+        header.pointee.actualSampleRate = actualSampleRate
+        header.pointee.actualBufferFrames = actualBufferFrames
+        header.pointee.configErrorCode = errorCode
+        OSMemoryBarrier()
+        header.pointee.configStatus = status
+        header.pointee.configChanged = 0
     }
 
     /// Clear config changed flag (called after handling daemon-initiated change)

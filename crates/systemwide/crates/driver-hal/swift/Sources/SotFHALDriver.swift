@@ -188,7 +188,8 @@ final class DriverState {
     // Loopback mode (when Rust engine not connected)
     var loopbackEnabled: Bool = true
 
-    // Shared-memory init retry cooldown.
+    // Shared-memory/config maintenance. This runs on a private dispatch queue,
+    // not from the CoreAudio IO callback.
     //
     // The daemon creates /tmp/sotf-{uid}/audio.shm on its first launch.
     // coreaudiod starts at boot (before the user logs in), so the initial
@@ -196,9 +197,11 @@ final class DriverState {
     // directory doesn't exist yet. Without retry, isConnected stays false
     // forever and no audio reaches the daemon — user must killall coreaudiod
     // after the daemon comes up. This cooldown lets us retry at most once
-    // per second from the IO callback.
+    // per second without doing filesystem/mmap work on the audio thread.
     private var _lastInitRetry: Double = 0  // monotonic seconds
     private let initRetryLock = NSLock()
+    private let maintenanceQueue = DispatchQueue(label: "org.spinorama.sotf-hal.maintenance")
+    private var maintenanceTimer: DispatchSourceTimer?
 
     /// Attempt to re-initialise shared memory if we're not connected.
     /// Throttled to one call per second. Safe to call from any thread.
@@ -223,6 +226,76 @@ final class DriverState {
             channelCount: channelCount
         )
         halLog("[RETRY] sharedAudio.initialize -> \(ok), isConnected=\(sharedAudio.isConnected)")
+    }
+
+    func startMaintenanceTasks() {
+        maintenanceQueue.async {
+            if self.maintenanceTimer != nil {
+                return
+            }
+
+            let timer = DispatchSource.makeTimerSource(queue: self.maintenanceQueue)
+            timer.schedule(deadline: .now(), repeating: .milliseconds(100), leeway: .milliseconds(25))
+            timer.setEventHandler { [weak self] in
+                self?.runMaintenanceTick()
+            }
+            self.maintenanceTimer = timer
+            timer.resume()
+            halLog("[MAINT] started shared-memory maintenance timer")
+        }
+    }
+
+    private func runMaintenanceTick() {
+        if isDisposed {
+            maintenanceTimer?.cancel()
+            maintenanceTimer = nil
+            return
+        }
+
+        attemptInitRetryIfNeeded()
+
+        if sharedAudio.isConnected {
+            sharedAudio.setActive(isRunning)
+            handleDaemonConfigRequestIfNeeded()
+        }
+    }
+
+    private func handleDaemonConfigRequestIfNeeded() {
+        guard sharedAudio.configChanged(), sharedAudio.configSource() == 2 else {
+            return
+        }
+
+        let requestedRate = sharedAudio.getRequestedSampleRate()
+        let requestedFrames = sharedAudio.getRequestedBufferFrames()
+
+        guard kSupportedSampleRates.contains(Float64(requestedRate)),
+              requestedFrames >= 64 && requestedFrames <= 4096 else {
+            halLog("[CONFIG] Rejected daemon config request: \(requestedRate)Hz, \(requestedFrames) frames")
+            sharedAudio.acknowledgeConfigChange(
+                actualSampleRate: UInt32(sampleRate),
+                actualBufferFrames: bufferFrameSize,
+                status: 3,
+                errorCode: 1
+            )
+            return
+        }
+
+        sampleRate = Float64(requestedRate)
+        bufferFrameSize = requestedFrames
+        clock.setSampleRate(sampleRate)
+        resetBuffers()
+        sharedAudio.acknowledgeConfigChange(
+            actualSampleRate: requestedRate,
+            actualBufferFrames: requestedFrames,
+            status: 1,
+            errorCode: 0
+        )
+        halLog("[CONFIG] Applied daemon config: \(requestedRate)Hz, \(requestedFrames) frames")
+
+        notifyPropertyChanged(objectID: kDeviceObjectID, selector: kSelector_NominalSampleRate)
+        notifyPropertyChanged(objectID: kDeviceObjectID, selector: kSelector_BufferFrameSize)
+        notifyPropertyChanged(objectID: kOutputStreamObjectID, selector: kSelector_VirtualFormat)
+        notifyPropertyChanged(objectID: kOutputStreamObjectID, selector: kSelector_PhysicalFormat)
     }
 
     // Flag to indicate driver is being disposed (prevents race conditions in StartIO)
@@ -295,6 +368,7 @@ private func driverInitialize(
         halLog("ERROR: Shared memory init failed, using loopback mode only")
     }
 
+    state.startMaintenanceTasks()
     halLog("Initialize complete - isConnected=\(state.sharedAudio.isConnected), engineReady=\(state.sharedAudio.engineReady)")
     return noErr
 }
@@ -893,6 +967,7 @@ private func driverStartIO(_ driver: AudioServerPlugInDriverRef, _ deviceObjectI
         state.clock.start(sampleRate: state.sampleRate)
         state.inputRingBuffer?.reset()
         state.outputRingBuffer?.reset()
+        state.startMaintenanceTasks()
         state.sharedAudio.setActive(true)
         halLog("IO started, clock running")
 
@@ -1012,16 +1087,10 @@ private func driverDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ deviceO
 
     switch operationID {
     case kIOOperation_ReadInput:
-        // Provide audio to clients (recording from virtual device)
-        if state.sharedAudio.isConnected && state.sharedAudio.engineReady {
-            // Read processed audio from Rust engine (this goes to hardware output)
-            let framesRead = state.sharedAudio.readAudio(floatBuffer, frameCount: frameCount, channelCount: channelCount)
-            // TRACE: Log frames consumed from shared memory and sent to hardware
-            if framesRead > 0 {
-                // Use os_log for real-time safe logging (halLog uses NSLog which can block)
-                os_log("[AUDIO FLOW] HAL ReadInput: %d frames from shm -> hw output", log: logger, type: .debug, framesRead)
-            }
-        } else if state.loopbackEnabled, let outputBuffer = state.outputRingBuffer {
+        // Provide audio to clients recording from the virtual device. The shared
+        // memory ring is currently the capture path (WriteMix -> daemon), so
+        // ReadInput must not consume it.
+        if state.loopbackEnabled, let outputBuffer = state.outputRingBuffer {
             // Loopback mode: return what was written to output
             _ = outputBuffer.readInterleaved(floatBuffer, frameCount: frameCount)
         } else {
@@ -1051,12 +1120,6 @@ private func driverDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ deviceO
         }
 
         let shouldLogDiag = (DiagCounter.count % 200) == 0
-
-        // If shared memory failed to initialise at coreaudiod startup (boot-time
-        // race: daemon hasn't yet created /tmp/sotf-{uid}/), retry now. The
-        // helper is internally throttled to at most one attempt per second so
-        // this check is cheap when we're already connected (the common path).
-        state.attemptInitRetryIfNeeded()
 
         let isConnected = state.sharedAudio.isConnected
         let engineReady = state.sharedAudio.engineReady

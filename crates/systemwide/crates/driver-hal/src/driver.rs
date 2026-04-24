@@ -4,8 +4,12 @@
 //! [`HalInputReader`] and [`SharedAudioBuffer`] types.
 
 use driver_common::{AudioDriver, ConfigResult, DriverConfig, DriverStatus};
+use std::time::{Duration, Instant};
 
 use crate::shared_memory::{HalInputReader, SharedAudioBuffer};
+
+const DAEMON_CONFIG_ACK_TIMEOUT: Duration = Duration::from_millis(750);
+const DAEMON_CONFIG_ACK_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 /// macOS CoreAudio HAL driver.
 ///
@@ -38,6 +42,33 @@ impl HalDriver {
             self.config_buffer = Some(buf);
         }
     }
+
+    fn wait_for_daemon_config_ack(buf: &SharedAudioBuffer) -> ConfigResult {
+        let deadline = Instant::now() + DAEMON_CONFIG_ACK_TIMEOUT;
+        loop {
+            match buf.config_status() {
+                1 => return ConfigResult::Accepted,
+                2 => {
+                    return ConfigResult::Negotiated {
+                        actual_rate: buf.actual_sample_rate(),
+                        actual_frames: buf.actual_buffer_frames(),
+                    };
+                }
+                3 => {
+                    return ConfigResult::Error(format!(
+                        "HAL rejected config request (error code {})",
+                        buf.config_error_code()
+                    ));
+                }
+                _ if Instant::now() >= deadline => {
+                    return ConfigResult::Error(
+                        "Timed out waiting for HAL to apply config request".to_string(),
+                    );
+                }
+                _ => std::thread::sleep(DAEMON_CONFIG_ACK_POLL_INTERVAL),
+            }
+        }
+    }
 }
 
 impl Default for HalDriver {
@@ -60,11 +91,13 @@ impl AudioDriver for HalDriver {
 
         log::info!("[HalDriver] HAL driver is installed");
 
-        // Try to connect to shared memory
-        match SharedAudioBuffer::open_default() {
+        // The daemon owns shared-memory creation. The HAL plugin runs inside
+        // coreaudiod, so it should only have to open an already-sized file from
+        // its realtime paths.
+        match SharedAudioBuffer::create_or_open_default(48_000, 512, 2) {
             Ok(buffer) => {
                 log::info!(
-                    "[HalDriver] Connected to shared memory: {}Hz, {}ch, {} frames",
+                    "[HalDriver] Prepared shared memory: {}Hz, {}ch, {} frames",
                     buffer.sample_rate(),
                     buffer.channel_count(),
                     buffer.buffer_frames()
@@ -169,25 +202,24 @@ impl AudioDriver for HalDriver {
             // Use 0 as sentinel for "keep current" — don't write zero to shared memory
             let current_rate = buf.sample_rate();
             let current_frames = buf.buffer_frames();
-            buf.set_actual_sample_rate(if config.sample_rate > 0 {
+            let requested_rate = if config.sample_rate > 0 {
                 config.sample_rate
             } else {
                 current_rate
-            });
-            buf.set_actual_buffer_frames(if config.buffer_frames > 0 {
+            };
+            let requested_frames = if config.buffer_frames > 0 {
                 config.buffer_frames
             } else {
                 current_frames
-            });
-            buf.set_config_source(2); // Daemon initiated
-            buf.set_config_changed();
+            };
+            buf.request_config_change(requested_rate, requested_frames, 2); // Daemon initiated
 
             log::info!(
                 "[HalDriver] Config request: {}Hz, {} frames",
-                config.sample_rate,
-                config.buffer_frames
+                requested_rate,
+                requested_frames
             );
-            ConfigResult::Accepted
+            Self::wait_for_daemon_config_ack(buf)
         } else {
             ConfigResult::Error("Shared memory not available".to_string())
         }
@@ -262,6 +294,34 @@ fn check_hal_driver_installed() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::Ordering;
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    use tempfile::NamedTempFile;
+
+    fn spawn_config_ack(path: std::path::PathBuf, status: u32) -> thread::JoinHandle<()> {
+        thread::spawn(move || {
+            let mut buffer = SharedAudioBuffer::open(&path).expect("Failed to open shared memory");
+            let deadline = Instant::now() + Duration::from_secs(1);
+            while Instant::now() < deadline {
+                if buffer.config_changed() && buffer.config_source() == 2 {
+                    let requested_rate = buffer.requested_sample_rate();
+                    let requested_frames = buffer.requested_buffer_frames();
+                    let error_code = if status == 3 { 1 } else { 0 };
+                    buffer.acknowledge_config_change(
+                        requested_rate,
+                        requested_frames,
+                        status,
+                        error_code,
+                    );
+                    return;
+                }
+                thread::sleep(Duration::from_millis(1));
+            }
+            panic!("Timed out waiting for daemon config request");
+        })
+    }
 
     #[test]
     fn test_hal_driver_creation() {
@@ -291,5 +351,83 @@ mod tests {
         let status = driver.status();
         assert!(status.platform_supported);
         assert_eq!(&status.driver_name, "macOS CoreAudio HAL");
+    }
+
+    #[test]
+    fn test_request_config_writes_daemon_request_fields() {
+        let temp_file = NamedTempFile::new().expect("Failed to create temp file");
+        let buffer = SharedAudioBuffer::create_or_open(temp_file.path(), 48_000, 512, 2)
+            .expect("Failed to create shared memory");
+        let ack = spawn_config_ack(temp_file.path().to_path_buf(), 1);
+
+        let mut driver = HalDriver::new();
+        driver.config_buffer = Some(buffer);
+
+        let result = driver.request_config(DriverConfig {
+            sample_rate: 96_000,
+            buffer_frames: 256,
+        });
+
+        assert!(matches!(result, ConfigResult::Accepted));
+        ack.join().expect("Config ack thread failed");
+
+        let buffer = driver
+            .config_buffer
+            .as_ref()
+            .expect("Expected config buffer");
+        assert!(!buffer.config_changed());
+        assert_eq!(buffer.config_source(), 2);
+        assert_eq!(buffer.requested_sample_rate(), 96_000);
+        assert_eq!(buffer.requested_buffer_frames(), 256);
+        assert_eq!(buffer.actual_sample_rate(), 96_000);
+        assert_eq!(buffer.actual_buffer_frames(), 256);
+        assert_eq!(buffer.config_status(), 1);
+    }
+
+    #[test]
+    fn test_request_config_zero_values_keep_current_geometry() {
+        let temp_file = NamedTempFile::new().expect("Failed to create temp file");
+        let buffer = SharedAudioBuffer::create_or_open(temp_file.path(), 44_100, 1_024, 2)
+            .expect("Failed to create shared memory");
+        let ack = spawn_config_ack(temp_file.path().to_path_buf(), 1);
+
+        let mut driver = HalDriver::new();
+        driver.config_buffer = Some(buffer);
+
+        let result = driver.request_config(DriverConfig {
+            sample_rate: 0,
+            buffer_frames: 0,
+        });
+
+        assert!(matches!(result, ConfigResult::Accepted));
+        ack.join().expect("Config ack thread failed");
+
+        let header = driver
+            .config_buffer
+            .as_ref()
+            .expect("Expected config buffer")
+            .header();
+        assert_eq!(header.requested_sample_rate, 44_100);
+        assert_eq!(header.requested_buffer_frames, 1_024);
+        assert_eq!(header.config_source.load(Ordering::Acquire), 2);
+        assert_eq!(header.config_changed.load(Ordering::Acquire), 0);
+        assert_eq!(header.config_status.load(Ordering::Acquire), 1);
+    }
+
+    #[test]
+    fn test_request_config_times_out_without_hal_ack() {
+        let temp_file = NamedTempFile::new().expect("Failed to create temp file");
+        let buffer = SharedAudioBuffer::create_or_open(temp_file.path(), 48_000, 512, 2)
+            .expect("Failed to create shared memory");
+
+        let mut driver = HalDriver::new();
+        driver.config_buffer = Some(buffer);
+
+        let result = driver.request_config(DriverConfig {
+            sample_rate: 96_000,
+            buffer_frames: 256,
+        });
+
+        assert!(matches!(result, ConfigResult::Error(_)));
     }
 }

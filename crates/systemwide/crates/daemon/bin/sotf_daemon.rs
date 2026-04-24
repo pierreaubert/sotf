@@ -387,6 +387,18 @@ impl AudioDaemon {
         *self.current_plugins.lock() = plugins.clone();
         *self.current_output_channels.lock() = output_channels;
 
+        let driver_status = self.driver_manager.lock().status();
+        let driver_sample_rate = if driver_status.sample_rate > 0 {
+            driver_status.sample_rate
+        } else {
+            48_000
+        };
+        let driver_input_channels = if driver_status.channel_count > 0 {
+            driver_status.channel_count as usize
+        } else {
+            2
+        };
+
         let mut manager = self.manager.lock();
         let mut output_device = self.selected_device.lock().clone();
 
@@ -431,9 +443,11 @@ impl AudioDaemon {
         *self.output_loudness_index.lock() = Some(output_monitor_index);
 
         log::info!(
-            "Loading driver plugin chain: {} user plugins + 2 monitors = {} total, {} output channels, device: {:?}",
+            "Loading driver plugin chain: {} user plugins + 2 monitors = {} total, {}Hz {}ch input, {} output channels, device: {:?}",
             final_plugins.len() - 2,
             final_plugins.len(),
+            driver_sample_rate,
+            driver_input_channels,
             output_channels,
             output_device
         );
@@ -442,7 +456,13 @@ impl AudioDaemon {
         manager.set_loudness_plugin_index(output_monitor_index);
 
         // Start driver playback (no file source needed)
-        let result = manager.start_hal_playback(output_device, final_plugins, output_channels);
+        let result = manager.start_hal_playback_with_driver_config(
+            output_device,
+            final_plugins,
+            output_channels,
+            driver_sample_rate,
+            driver_input_channels,
+        );
 
         // Drop manager lock BEFORE acquiring driver_manager to avoid
         // lock-order inversion with the config watcher thread
@@ -1130,7 +1150,7 @@ fn handle_driver_config_change(
 /// Reconfigure the audio pipeline with new sample rate and buffer size
 fn reconfigure_audio_pipeline(
     audio_manager: &Arc<Mutex<AudioEngineManager>>,
-    _hal_sample_rate: u32,
+    hal_sample_rate: u32,
     _buffer_frames: u32,
     current_plugins: &Arc<Mutex<Vec<PluginConfig>>>,
     current_output_channels: &Arc<Mutex<usize>>,
@@ -1186,7 +1206,15 @@ fn reconfigure_audio_pipeline(
 
     manager.set_loudness_plugin_index(output_monitor_index);
 
-    match manager.start_hal_playback(output_device, final_plugins, output_channels) {
+    let input_channels = driver_hal_input_channels().unwrap_or(2);
+
+    match manager.start_hal_playback_with_driver_config(
+        output_device,
+        final_plugins,
+        output_channels,
+        hal_sample_rate,
+        input_channels,
+    ) {
         Ok(_) => {
             log::info!("Driver playback restarted successfully");
             Ok(())
@@ -1195,6 +1223,22 @@ fn reconfigure_audio_pipeline(
             log::error!("Failed to restart driver playback: {}", e);
             Err(format!("Failed to restart driver playback: {}", e))
         }
+    }
+}
+
+fn driver_hal_input_channels() -> Option<usize> {
+    #[cfg(all(target_os = "macos", feature = "hal"))]
+    {
+        driver_hal::SharedAudioBuffer::open_default()
+            .ok()
+            .and_then(|buffer| {
+                let channels = buffer.channel_count() as usize;
+                (channels > 0).then_some(channels)
+            })
+    }
+    #[cfg(not(all(target_os = "macos", feature = "hal")))]
+    {
+        None
     }
 }
 
