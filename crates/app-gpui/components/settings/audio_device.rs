@@ -69,7 +69,7 @@ impl PlayerView {
                             });
                         })
                 })
-                .child(div().h(px(8.0))); // Spacer between sections
+                .child(div().h(d.gap)); // Spacer between sections
 
             // HAL Configuration section (only show when in HAL mode)
             if is_hal_mode {
@@ -231,7 +231,7 @@ impl PlayerView {
                                     })
                             }),
                     )
-                    .child(div().h(px(8.0))); // Spacer
+                    .child(div().h(d.gap)); // Spacer
             }
         }
 
@@ -291,8 +291,8 @@ impl PlayerView {
                                     .when_some(brand_image, |stack, image_path| {
                                         stack.child(
                                             div()
-                                                .w(px(60.0))
-                                                .h(px(60.0))
+                                                .w(rems(3.75))
+                                                .h(rems(3.75))
                                                 .rounded(d.r_md)
                                                 .bg(theme.background)
                                                 .overflow_hidden()

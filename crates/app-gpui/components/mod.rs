@@ -51,7 +51,7 @@ impl Render for ThemedTooltip {
             .bg(self.bg)
             .border_1()
             .border_color(self.border)
-            .rounded(px(4.0))
+            .rounded(d.r_md)
             .shadow_md()
             .text_size(d.text_xs)
             .text_color(self.text_color)
@@ -236,6 +236,7 @@ impl PlayerView {
                                 )
                                 .child(
                                     div()
+                                        // intentional: 1/2px tab underline hairlines convey selection state, no matching tokens
                                         .h(if is_selected { px(2.0) } else { px(1.0) })
                                         .w_full()
                                         .bg(if is_selected { accent } else { border }),

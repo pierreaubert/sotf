@@ -126,6 +126,9 @@ impl Element for WaveformElement {
         // Calculate total width to center the bars
         let total_width = NUM_BARS as f32 * BAR_WIDTH;
         let start_x = bounds.origin.x + (bounds.size.width - px(total_width)) / 2.0;
+        // intentional: paint-space baseline nudge aligning bar midpoint with
+        // label baseline in the waveform row (matches the integer pixel grid
+        // used by BAR_WIDTH / MAX_HEIGHT above).
         let center_y = bounds.origin.y + bounds.size.height / 2.0 + px(6.0);
 
         for (idx, amplitude) in bar_samples.iter().enumerate() {
@@ -1005,7 +1008,7 @@ impl PlayerView {
                     .px(d.pad_x)
                     .py(d.pad_y_half)
                     .mx(d.grid)
-                    .my(px(1.0))
+                    .my(px(1.0)) // intentional: hairline gap between list rows, no matching token
                     .rounded(d.r_sm)
                     .cursor_pointer()
                     .text_size(d.text_sm)
@@ -1106,7 +1109,7 @@ impl PlayerView {
                             .px(d.pad_x)
                             .py(d.pad_y_half)
                             .mx(d.grid)
-                            .my(px(1.0))
+                            .my(px(1.0)) // intentional: hairline gap between list rows, no matching token
                             .rounded(d.r_sm)
                             .cursor_pointer()
                             .text_size(d.text_sm)

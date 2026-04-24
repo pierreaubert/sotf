@@ -1,6 +1,7 @@
 //! Federation Sources settings content
 
 use crate::app::federation::test_federation_connection;
+use crate::app::constants::spacing;
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -203,7 +204,7 @@ impl PlayerView {
                     .child(
                         div()
                             .px(d.pad_y)
-                            .py(px(2.0))
+                            .py(spacing::XS)
                             .bg(theme.background)
                             .rounded(d.r_sm)
                             .text_size(d.text_xs)
@@ -363,14 +364,14 @@ impl PlayerView {
                                         .text_size(d.text_xs)
                                         .font_weight(FontWeight::BOLD)
                                         .text_color(color)
-                                        .w(px(36.0))
+                                        .w(rems(2.25))
                                         .child(icon),
                                 )
                                 .child(
                                     div()
                                         .text_size(d.text_xs)
                                         .text_color(theme.text_secondary)
-                                        .w(px(100.0))
+                                        .w(rems(6.25))
                                         .child(label),
                                 )
                                 .child(
@@ -406,7 +407,7 @@ impl PlayerView {
                                         .gap(d.gap)
                                         .child(
                                             div()
-                                                .w(px(120.0))
+                                                .w(rems(7.5))
                                                 .text_size(d.text_xs)
                                                 .text_color(theme.text_secondary)
                                                 .child(field_name),
@@ -452,7 +453,7 @@ impl PlayerView {
                                         .gap(d.gap)
                                         .child(
                                             div()
-                                                .w(px(120.0))
+                                                .w(rems(7.5))
                                                 .text_size(d.text_xs)
                                                 .text_color(theme.text_secondary)
                                                 .child(field_name),
@@ -522,7 +523,7 @@ impl PlayerView {
             .items_center()
             .gap(d.gap)
             .px(d.card)
-            .h(px(28.0))
+            .h(rems(1.75))
             .bg(theme.background_secondary)
             .border_t_1()
             .border_color(theme.border)
@@ -536,8 +537,8 @@ impl PlayerView {
                     // Thin progress bar
                     .child(
                         div()
-                            .w(px(120.0))
-                            .h(px(4.0))
+                            .w(rems(7.5))
+                            .h(rems(0.25))
                             .bg(theme.background)
                             .rounded(d.r_sm)
                             .child(

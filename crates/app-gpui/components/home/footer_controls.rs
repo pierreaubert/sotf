@@ -285,7 +285,7 @@ impl PlayerView {
                     .px(d.pad_x)
                     .py(d.pad_y_half)
                     .mx(d.grid)
-                    .my(px(1.0))
+                    .my(px(1.0)) // intentional: hairline gap between list rows, no matching token
                     .rounded(d.r_sm)
                     .cursor_pointer()
                     .text_size(d.text_sm)
@@ -388,7 +388,7 @@ impl PlayerView {
                             .px(d.pad_x)
                             .py(d.pad_y_half)
                             .mx(d.grid)
-                            .my(px(1.0))
+                            .my(px(1.0)) // intentional: hairline gap between list rows, no matching token
                             .rounded(d.r_sm)
                             .cursor_pointer()
                             .text_size(d.text_sm)

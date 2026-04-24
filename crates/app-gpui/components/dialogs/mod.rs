@@ -136,7 +136,7 @@ impl PlayerView {
                                     .color(theme.text_muted),
                             ),
                     )
-                    .child(div().w_full().h(px(1.0)).bg(theme.border))
+                    .child(div().w_full().h(px(1.0)).bg(theme.border)) // intentional: 1px hairline divider, no matching token
                     .child(
                         VStack::new()
                             .spacing(StackSpacing::Xs)
@@ -1292,7 +1292,7 @@ impl PlayerView {
                     .child(
                         div()
                             .w_full()
-                            .h(px(8.0))
+                            .h(rems(0.5))
                             .bg(theme.background_secondary)
                             .rounded_full()
                             .overflow_hidden()
