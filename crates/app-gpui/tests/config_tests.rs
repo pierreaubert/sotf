@@ -361,6 +361,7 @@ fn test_icon_paths() {
 }
 
 #[test]
+#[allow(deprecated)] // `IconSize::px()` is retained for APIs that require Pixels; this pins its legacy contract.
 fn test_icon_sizes() {
     use gpui::px;
     assert_eq!(IconSize::Xs.px(), px(12.0));
@@ -368,6 +369,21 @@ fn test_icon_sizes() {
     assert_eq!(IconSize::Md.px(), px(20.0));
     assert_eq!(IconSize::Lg.px(), px(24.0));
     assert_eq!(IconSize::Xl.px(), px(32.0));
+}
+
+#[test]
+fn test_icon_sizes_to_rems() {
+    use gpui::rems;
+    // Rem-based sizing is the primary API — it scales with `window.rem_size`
+    // driven by IncreaseFontSize / DecreaseFontSize. Values are chosen so that
+    // at the default 16px rem baseline they match the absolute-pixel contract
+    // above (0.75 rem * 16 = 12px, etc.).
+    assert_eq!(IconSize::Xs.to_rems(), rems(0.75));
+    assert_eq!(IconSize::Sm.to_rems(), rems(1.0));
+    assert_eq!(IconSize::Md.to_rems(), rems(1.25));
+    assert_eq!(IconSize::Lg.to_rems(), rems(1.5));
+    assert_eq!(IconSize::Xl.to_rems(), rems(2.0));
+    assert_eq!(IconSize::Xxl.to_rems(), rems(2.25));
 }
 
 // ============================================================================
@@ -423,6 +439,7 @@ fn test_pagination_4k_window() {
 }
 
 #[test]
+#[allow(deprecated)] // Cross-checks the legacy `px()` contract against `to_rems()` at the base rem size.
 fn test_icon_size_to_rems_matches_px_at_base_rem() {
     let base_rem = 16.0_f32;
     let variants = [

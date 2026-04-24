@@ -593,8 +593,8 @@ impl PlayerView {
                                 .flex()
                                 .items_center()
                                 .justify_center()
-                                .w(px(24.0))
-                                .h(px(24.0))
+                                .w(rems(1.5))
+                                .h(rems(1.5))
                                 .rounded(d.r_md)
                                 .hover(move |s| s.bg(Theme::with_opacity(text_color, 0.15)))
                                 .on_mouse_up(
