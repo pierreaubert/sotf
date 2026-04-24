@@ -3,6 +3,7 @@
 use super::actions::ToggleUpmixerConfig;
 use super::level_meters::{db_to_position, render_gradient_meter};
 use super::render_plugin_content;
+use crate::app::constants::spacing;
 use crate::app::state::plugin::{PluginUiView, available_controllers};
 use crate::app::state::{DividerDragState, DividerType};
 use crate::app::types::{PluginUpdateType, Screen};
@@ -650,7 +651,7 @@ impl PlayerView {
                                         .items_center()
                                         .justify_between()
                                         .py(d.pad_y_half)
-                                        .px(px(4.0))
+                                        .px(spacing::SM)
                                         .gap(d.grid)
                                         .h_full()
                                         .border_r_1()
@@ -858,7 +859,8 @@ impl PlayerView {
                                         right_panel
                                             .bg(theme_p.surface)
                                             .px(d.grid)
-                                            .py(px(2.0))
+                                            .py(spacing::XS)
+                                            // intentional: 1px divider between preset items
                                             .gap(px(1.0))
                                             .children(preset_list.iter().enumerate().map(
                                                 |(pi, name)| {
@@ -869,8 +871,9 @@ impl PlayerView {
                                                         .id(("preset-item", pi))
                                                         .flex()
                                                         .items_center()
-                                                        .gap(px(2.0))
+                                                        .gap(spacing::XS)
                                                         .px(d.grid)
+                                                        // intentional: 1px compact preset-item inset — do not scale
                                                         .py(px(1.0))
                                                         .rounded(d.r_sm)
                                                         .cursor_pointer()
@@ -954,8 +957,8 @@ impl PlayerView {
                                                     div()
                                                         .flex()
                                                         .items_center()
-                                                        .gap(px(2.0))
-                                                        .mt(px(2.0))
+                                                        .gap(spacing::XS)
+                                                        .mt(spacing::XS)
                                                         .child({
                                                             let state_for_text = self.state.clone();
                                                             div()
@@ -977,7 +980,7 @@ impl PlayerView {
                                                             div()
                                                                 .id(("preset-confirm", idx))
                                                                 .px(d.grid)
-                                                                .py(px(2.0))
+                                                                .py(spacing::XS)
                                                                 .rounded(d.r_sm)
                                                                 .cursor_pointer()
                                                                 .text_size(d.text_xs)
@@ -1022,8 +1025,8 @@ impl PlayerView {
                                                         .items_center()
                                                         .justify_center()
                                                         .px(d.grid)
-                                                        .py(px(2.0))
-                                                        .mt(px(2.0))
+                                                        .py(spacing::XS)
+                                                        .mt(spacing::XS)
                                                         .rounded(d.r_sm)
                                                         .cursor_pointer()
                                                         .text_size(d.text_xs)
@@ -1078,7 +1081,7 @@ impl PlayerView {
                                                         .flex()
                                                         .justify_end()
                                                         .px(d.grid)
-                                                        .pb(px(2.0))
+                                                        .pb(spacing::XS)
                                                         .text_size(rems(0.5))
                                                         .text_color(theme_c.text_muted)
                                                         .child(":::"),
@@ -1232,7 +1235,8 @@ impl PlayerView {
                                         .flex()
                                         .flex_col()
                                         .items_center()
-                                        .gap(px(2.0))
+                                        .gap(spacing::XS)
+                                        // intentional: 3px asymmetric inset to fit permanent tail module — do not scale
                                         .p(px(3.0))
                                         .border_r_1()
                                         .border_color(theme_c.border)
@@ -1476,7 +1480,7 @@ impl PlayerView {
             .child(
                 div()
                     .flex()
-                    .gap(px(0.0))
+                    .gap(spacing::NONE)
                     .flex_1()
                     // Legend on left side if requested
                     .when(legend_on_left, |el| {
@@ -1486,9 +1490,10 @@ impl PlayerView {
                     .child(
                         div()
                             .flex()
+                            // intentional: pixel-exact meter divider — do not scale
                             .gap(px(1.0))
                             .flex_1()
-                            .p(px(2.0))
+                            .p(spacing::XS)
                             .bg(theme_c.background_secondary)
                             .children(channel_data.into_iter().map(
                                 |(fill_ratio, yellow_threshold, red_threshold, name)| {
@@ -1525,7 +1530,7 @@ impl PlayerView {
             .flex()
             .flex_col()
             .flex_1()
-            .p(px(2.0))
+            .p(spacing::XS)
             // Ticks area (matches meter_bar flex_1)
             .child(
                 div()
@@ -1755,8 +1760,10 @@ impl PlayerView {
                                 .text_size(rems(0.625))
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .text_color(theme.text_muted)
+                                // intentional: fixed 60px label column width for category labels
                                 .w(px(60.0))
                                 .flex_shrink_0()
+                                // intentional: 3px top offset to align with adjacent buttons
                                 .pt(px(3.0))
                                 .child(*cat_name),
                         )
@@ -2404,7 +2411,7 @@ impl PlayerView {
                 .flex()
                 .items_center()
                 .justify_center()
-                .py(px(4.0))
+                .py(spacing::SM)
                 .cursor_pointer()
                 .text_size(d.text_xs)
                 .font_weight(FontWeight::SEMIBOLD)
@@ -2421,7 +2428,7 @@ impl PlayerView {
         div()
             .flex()
             .flex_col()
-            .gap(px(2.0))
+            .gap(spacing::XS)
             .p(d.pad_y)
             .bg(theme.background_secondary)
             .border_l_1()
@@ -2431,7 +2438,7 @@ impl PlayerView {
             .child(
                 div()
                     .flex()
-                    .gap(px(2.0))
+                    .gap(spacing::XS)
                     .child(
                         make_button(
                             "chain-bypass",
@@ -2480,7 +2487,7 @@ impl PlayerView {
             .child(
                 div()
                     .flex()
-                    .gap(px(2.0))
+                    .gap(spacing::XS)
                     .child(
                         make_button(
                             "chain-mono",

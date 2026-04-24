@@ -273,6 +273,7 @@ pub fn render_gate_plugin(
                                     .left(relative(threshold_normalized))
                                     .top_0()
                                     .bottom_0()
+                                    // intentional: pixel-exact threshold marker — do not scale
                                     .w(px(2.0))
                                     .bg(theme.warning),
                             ),

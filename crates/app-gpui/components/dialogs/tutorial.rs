@@ -264,9 +264,9 @@ impl PlayerView {
                             .spacing(StackSpacing::Xs)
                             .children((0..TUTORIAL_SCREEN_COUNT).map(|i| {
                                 div()
-                                    .w(px(8.0))
-                                    .h(px(8.0))
-                                    .rounded(px(4.0))
+                                    .w(rems(0.5))
+                                    .h(rems(0.5))
+                                    .rounded(d.r_md)
                                     .bg(if i == screen_idx {
                                         theme.accent
                                     } else {

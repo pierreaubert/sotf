@@ -157,7 +157,7 @@ impl PlayerView {
                             .gap(d.gap)
                             .child(
                                 div()
-                                    .w(px(120.0))
+                                    .w(rems(7.5))
                                     .text_size(d.text_xs)
                                     .text_color(theme.text_secondary)
                                     .child("TLS"),
@@ -196,7 +196,7 @@ impl PlayerView {
                             .gap(d.gap)
                             .child(
                                 div()
-                                    .w(px(120.0))
+                                    .w(rems(7.5))
                                     .text_size(d.text_xs)
                                     .text_color(theme.text_secondary)
                                     .child("Auth"),
@@ -279,7 +279,7 @@ impl PlayerView {
                                 .gap(d.gap)
                                 .child(
                                     div()
-                                        .w(px(120.0))
+                                        .w(rems(7.5))
                                         .text_size(d.text_xs)
                                         .text_color(theme.text_secondary)
                                         .child(""),
@@ -406,7 +406,7 @@ impl PlayerView {
                             .gap(d.gap)
                             .child(
                                 div()
-                                    .w(px(120.0))
+                                    .w(rems(7.5))
                                     .text_size(d.text_xs)
                                     .text_color(theme.text_secondary)
                                     .child("Protocol"),
@@ -438,7 +438,7 @@ fn server_editable_field(
         .gap(d.gap)
         .child(
             div()
-                .w(px(120.0))
+                .w(rems(7.5))
                 .text_size(d.text_xs)
                 .text_color(theme.text_secondary)
                 .child(label.to_string()),

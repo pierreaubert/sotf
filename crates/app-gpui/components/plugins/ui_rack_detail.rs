@@ -5,6 +5,7 @@
 use super::level_meters::{db_to_position, render_gradient_meter};
 use super::render_plugin_content;
 use super::ui_plugin_shell::{plugin_accent_color as plugin_color, plugin_icon};
+use crate::app::constants::spacing;
 use crate::app::state::plugin::{PluginUiView, available_controllers};
 use crate::app::state::{DividerDragState, DividerType};
 use crate::components::design::Ds;
@@ -114,7 +115,7 @@ impl PlayerView {
             .child(
                 div()
                     .flex()
-                    .gap(px(0.0))
+                    .gap(spacing::NONE)
                     .flex_1()
                     // Legend on left side if requested
                     .when(legend_on_left, |el| {
@@ -124,9 +125,10 @@ impl PlayerView {
                     .child(
                         div()
                             .flex()
+                            // intentional: pixel-exact meter divider — do not scale
                             .gap(px(1.0))
                             .flex_1()
-                            .p(px(2.0))
+                            .p(spacing::XS)
                             .bg(theme_c.background_secondary)
                             .children(channel_data.into_iter().map(
                                 |(fill_ratio, yellow_threshold, red_threshold, name)| {
@@ -163,7 +165,7 @@ impl PlayerView {
             .flex()
             .flex_col()
             .flex_1()
-            .p(px(2.0))
+            .p(spacing::XS)
             // Ticks area (matches meter_bar flex_1)
             .child(
                 div()
@@ -395,8 +397,10 @@ impl PlayerView {
                                 .text_size(rems(0.625))
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .text_color(theme.text_muted)
+                                // intentional: fixed 60px label column width for category labels
                                 .w(px(60.0))
                                 .flex_shrink_0()
+                                // intentional: 3px top offset to align with adjacent buttons
                                 .pt(px(3.0))
                                 .child(*cat_name),
                         )

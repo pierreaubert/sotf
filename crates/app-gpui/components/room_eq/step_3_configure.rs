@@ -1694,7 +1694,7 @@ impl PlayerView {
                     .size(ButtonSize::Xs)
                     .theme(theme.to_button_theme())
                     .build()
-                    .w(px(75.0))
+                    .w(px(75.0)) // intentional: fixed segmented-button width for mode selector
                     .on_mouse_up(
                         MouseButton::Left,
                         cx.listener(move |view, _, _, cx| {
@@ -2214,12 +2214,13 @@ impl PlayerView {
 /// Used by the Simple Wizard to present each preset choice as a
 /// compact label + "button-like" current-value display.
 fn simple_dropdown_row(
-    _cx: &mut Context<PlayerView>,
+    cx: &mut Context<PlayerView>,
     theme: &crate::app::theme::Theme,
     label: &str,
     current_value: &str,
     on_click: impl Fn(&mut gpui::App) + Send + 'static,
 ) -> impl IntoElement {
+    let d = Ds::from_cx(cx);
     let label_color = theme.text_secondary;
     let value_color = theme.text_primary;
     let accent = theme.accent;
@@ -2232,15 +2233,15 @@ fn simple_dropdown_row(
         .align(gpui_ui_kit::StackAlign::Center)
         .child(
             gpui::div()
-                .w(px(160.0))
+                .w(px(160.0)) // intentional: fixed label column width
                 .child(Text::new(label).size(TextSize::Xs).color(label_color)),
         )
         .child(
             gpui::div()
                 .id(SharedString::from(format!("simple-cfg-{}", current_value)))
-                .px(px(12.0))
-                .py(px(6.0))
-                .rounded(px(6.0))
+                .px(d.pad_x)
+                .py(px(6.0)) // intentional: between pad_y_half (4) and pad_y (8), matches selector pill
+                .rounded(d.r_md)
                 .border_1()
                 .border_color(accent)
                 .cursor_pointer()

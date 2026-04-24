@@ -1,3 +1,4 @@
+use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -21,6 +22,7 @@ const EXPORT_FORMATS: &[(&str, &str)] = &[
 
 impl PlayerView {
     pub(crate) fn render_room_eq_export(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let has_eq_in_rack = state
@@ -126,9 +128,9 @@ impl PlayerView {
                                 .child(
                                     div()
                                         .id("export-format-selector")
-                                        .px(px(12.0))
-                                        .py(px(6.0))
-                                        .rounded(px(6.0))
+                                        .px(d.pad_x)
+                                        .py(px(6.0)) // intentional: between pad_y_half (4) and pad_y (8), matches rounded(6) selector pill
+                                        .rounded(d.r_md)
                                         .border_1()
                                         .border_color(theme.accent)
                                         .cursor_pointer()
@@ -175,11 +177,11 @@ impl PlayerView {
                             export_content = export_content.child(
                                 div()
                                     .id("export-format-dropdown")
-                                    .w(px(300.0))
-                                    .max_h(px(250.0))
+                                    .w(px(300.0)) // intentional: dropdown layout width
+                                    .max_h(px(250.0)) // intentional: dropdown layout height
                                     .overflow_y_scroll()
                                     .bg(theme.surface)
-                                    .rounded(px(4.0))
+                                    .rounded(d.r_md)
                                     .border_1()
                                     .border_color(theme.border)
                                     .children(EXPORT_FORMATS.iter().enumerate().map(
@@ -192,8 +194,8 @@ impl PlayerView {
                                                     "export-fmt-{}",
                                                     i
                                                 )))
-                                                .px(px(10.0))
-                                                .py(px(5.0))
+                                                .px(px(10.0)) // intentional: compact dropdown item padding, no matching token
+                                                .py(px(5.0)) // intentional: compact dropdown item padding, no matching token
                                                 .cursor_pointer()
                                                 .bg(if is_selected {
                                                     theme.accent_muted

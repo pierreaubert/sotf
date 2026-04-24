@@ -461,6 +461,7 @@ fn render_frequency_axis(d: &Ds, min_freq: f32, max_freq: f32, theme: &Theme) ->
 
     div()
         .w_full()
+        // intentional: axis label row height — chart-internal layout
         .h(px(20.0))
         .relative()
         .children(freq_labels.into_iter().map(|(label, pos)| {
@@ -472,7 +473,8 @@ fn render_frequency_axis(d: &Ds, min_freq: f32, max_freq: f32, theme: &Theme) ->
                 .text_color(theme.text_muted)
                 .child(
                     div()
-                        .ml(px(-12.0)) // Center the label
+                        // intentional: pixel-exact label centering offset
+                        .ml(px(-12.0))
                         .child(label),
                 )
         }))
@@ -491,6 +493,7 @@ fn render_db_axis(d: &Ds, theme: &Theme) -> impl IntoElement {
     ];
 
     div()
+        // intentional: dB axis column width — chart-internal layout
         .w(px(32.0))
         .h_full()
         .flex()
@@ -506,7 +509,8 @@ fn render_db_axis(d: &Ds, theme: &Theme) -> impl IntoElement {
                 .pr(d.grid)
                 .child(
                     div()
-                        .mt(px(-6.0)) // Center vertically
+                        // intentional: pixel-exact label centering offset
+                        .mt(px(-6.0))
                         .child(*label),
                 )
         }))
