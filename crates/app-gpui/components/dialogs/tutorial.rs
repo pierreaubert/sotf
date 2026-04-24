@@ -498,11 +498,7 @@ impl PlayerView {
                             .into_any_element()
                     })),
             )
-            .footer(
-                Text::new("Press ESC or F1 to close")
-                    .size(TextSize::Xs)
-                    .muted(true),
-            )
+            .footer(Text::caption("Press ESC or F1 to close"))
     }
 }
 
