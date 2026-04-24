@@ -97,6 +97,61 @@ impl Text {
         }
     }
 
+    /// Eyebrow label — small, bold, uppercase-convention accent text used above
+    /// cards and sections (e.g. "RECORDING NAME", "SAVE LOCATION").
+    ///
+    /// Produces `Xs + Bold`. Callers typically pair it with
+    /// `.color(theme.accent)` and pass content in uppercase. Having a single
+    /// constructor prevents the eyebrow pattern from drifting into
+    /// compressed-header territory (where similar `Xs + Bold` usage should
+    /// instead be `section_header`).
+    pub fn eyebrow(content: impl Into<SharedString>) -> Self {
+        Self::new(content)
+            .size(TextSize::Xs)
+            .weight(TextWeight::Bold)
+    }
+
+    /// Section header inside a panel, card, or dialog — the standard
+    /// body-prominence heading one level below a screen/dialog title.
+    ///
+    /// Produces `Md + Semibold`. Use this instead of building the same
+    /// combination by hand so the whole app stays aligned if the convention
+    /// later shifts (e.g. to `Lg`).
+    pub fn section_header(content: impl Into<SharedString>) -> Self {
+        Self::new(content)
+            .size(TextSize::Md)
+            .weight(TextWeight::Semibold)
+    }
+
+    /// Body text — the default paragraph / description size.
+    ///
+    /// Produces `Md + Normal`. Equivalent to `Text::new(..)` today (since
+    /// `Md` is the default size and `Normal` the default weight) but named
+    /// explicitly so intent is legible in call sites.
+    pub fn body(content: impl Into<SharedString>) -> Self {
+        Self::new(content).size(TextSize::Md)
+    }
+
+    /// Inline form-field label or table-column header.
+    ///
+    /// Produces `Sm + Medium`. Smaller than body so labels read as secondary
+    /// to the value they describe; medium weight keeps them distinguishable
+    /// from surrounding body text.
+    pub fn label(content: impl Into<SharedString>) -> Self {
+        Self::new(content)
+            .size(TextSize::Sm)
+            .weight(TextWeight::Medium)
+    }
+
+    /// Caption / helper text — field hints, timestamps, unit suffixes, and
+    /// other tertiary info.
+    ///
+    /// Produces `Xs + Normal + muted`. The muted color comes from
+    /// `theme.text_muted`, so callers don't need to pass a theme.
+    pub fn caption(content: impl Into<SharedString>) -> Self {
+        Self::new(content).size(TextSize::Xs).muted(true)
+    }
+
     /// Set theme
     pub fn with_theme(mut self, theme: Theme) -> Self {
         self.theme = Some(theme);
@@ -131,6 +186,16 @@ impl Text {
     pub fn truncate(mut self, truncate: bool) -> Self {
         self.truncate = truncate;
         self
+    }
+
+    /// Read-only view of the current size / weight / muted flag.
+    ///
+    /// Intended primarily for tests that pin the state produced by the
+    /// semantic constructors (`eyebrow`, `section_header`, `body`, `label`,
+    /// `caption`). Existence of a value-returning accessor avoids collision
+    /// with the `size(...)` / `weight(...)` / `muted(...)` builder setters.
+    pub fn preset_style(&self) -> (TextSize, TextWeight, bool) {
+        (self.size, self.weight, self.muted)
     }
 
     /// Build into element with theme from App context

@@ -85,3 +85,45 @@ fn test_code_uses_theme_code_text_color() {
         "Code text color should come from theme.code_text, not be hardcoded"
     );
 }
+
+// ----------------------------------------------------------------------------
+// Semantic `Text::*` constructor state tests
+//
+// Pin the role → size/weight/muted mapping so the typography conventions
+// documented in app-gpui/CLAUDE.md can't drift silently. If one of these
+// values changes, every caller migrating to the semantic constructor will
+// shift with it — audit usage before updating the expectations here.
+// ----------------------------------------------------------------------------
+
+#[test]
+fn test_text_eyebrow_is_xs_bold() {
+    let t = Text::eyebrow("RECORDING NAME");
+    assert_eq!(t.preset_style(), (TextSize::Xs, TextWeight::Bold, false));
+}
+
+#[test]
+fn test_text_section_header_is_md_semibold() {
+    let t = Text::section_header("Playback");
+    assert_eq!(
+        t.preset_style(),
+        (TextSize::Md, TextWeight::Semibold, false)
+    );
+}
+
+#[test]
+fn test_text_body_is_md_normal() {
+    let t = Text::body("Description paragraph.");
+    assert_eq!(t.preset_style(), (TextSize::Md, TextWeight::Normal, false));
+}
+
+#[test]
+fn test_text_label_is_sm_medium() {
+    let t = Text::label("Speaker");
+    assert_eq!(t.preset_style(), (TextSize::Sm, TextWeight::Medium, false));
+}
+
+#[test]
+fn test_text_caption_is_xs_normal_muted() {
+    let t = Text::caption("seconds");
+    assert_eq!(t.preset_style(), (TextSize::Xs, TextWeight::Normal, true));
+}
