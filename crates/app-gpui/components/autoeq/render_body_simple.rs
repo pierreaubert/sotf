@@ -90,12 +90,7 @@
             form = form.child(
                 VStack::new()
                     .spacing(StackSpacing::Xs)
-                    .child(
-                        Text::new("Preset")
-                            .size(TextSize::Sm)
-                            .weight(TextWeight::Semibold)
-                            .color(theme.header_color),
-                    )
+                    .child(Text::section_header("Preset").color(theme.header_color))
                     .child(
                         Text::new(preset.description)
                             .size(TextSize::Xs)
@@ -185,12 +180,7 @@
         form = form.child(
             VStack::new()
                 .spacing(StackSpacing::None)
-                .child(
-                    Text::new("Optimization Goal")
-                        .size(TextSize::Sm)
-                        .weight(TextWeight::Semibold)
-                        .color(theme.header_color),
-                )
+                .child(Text::section_header("Optimization Goal").color(theme.header_color))
                 .child(
                     Text::new("What should the EQ optimize for?")
                         .size(TextSize::Xs)
@@ -246,12 +236,7 @@
         form = form.child(
             VStack::new()
                 .spacing(StackSpacing::None)
-                .child(
-                    Text::new("Filter Design")
-                        .size(TextSize::Sm)
-                        .weight(TextWeight::Semibold)
-                        .color(theme.header_color),
-                )
+                .child(Text::section_header("Filter Design").color(theme.header_color))
                 .child(
                     Text::new("How many filters and what kind?")
                         .size(TextSize::Xs)
@@ -387,12 +372,7 @@
         form = form.child(
             VStack::new()
                 .spacing(StackSpacing::None)
-                .child(
-                    Text::new("Optimization Quality")
-                        .size(TextSize::Sm)
-                        .weight(TextWeight::Semibold)
-                        .color(theme.header_color),
-                )
+                .child(Text::section_header("Optimization Quality").color(theme.header_color))
                 .child(
                     Text::new("Higher quality takes longer but finds better corrections")
                         .size(TextSize::Xs)

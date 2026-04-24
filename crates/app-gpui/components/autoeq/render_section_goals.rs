@@ -6,12 +6,7 @@
     section = section.child(
         VStack::new()
             .spacing(StackSpacing::None)
-            .child(
-                Text::new("Goals & Configuration")
-                    .size(TextSize::Sm)
-                    .weight(TextWeight::Semibold)
-                    .color(theme.header_color),
-            )
+            .child(Text::section_header("Goals & Configuration").color(theme.header_color))
             .child(
                 Text::new("Optimization goals and target curve")
                     .size(TextSize::Xs)

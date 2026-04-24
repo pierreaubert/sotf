@@ -7,9 +7,7 @@
         VStack::new()
             .spacing(StackSpacing::None)
             .child(
-                Text::new("Multiple Measurements Per Speaker")
-                    .size(TextSize::Sm)
-                    .weight(TextWeight::Semibold)
+                Text::section_header("Multiple Measurements Per Speaker")
                     .color(theme.header_color),
             )
             .child(

@@ -7,9 +7,7 @@
         VStack::new()
             .spacing(StackSpacing::None)
             .child(
-                Text::new("Optimisation Algorithm Configuration")
-                    .size(TextSize::Sm)
-                    .weight(TextWeight::Semibold)
+                Text::section_header("Optimisation Algorithm Configuration")
                     .color(theme.header_color),
             )
             .child(

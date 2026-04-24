@@ -1051,10 +1051,7 @@
                 VStack::new()
                     .spacing(StackSpacing::None)
                     .child(
-                        Text::new("Room Configuration")
-                            .size(TextSize::Sm)
-                            .weight(TextWeight::Semibold)
-                            .color(theme.header_color),
+                        Text::section_header("Room Configuration").color(theme.header_color),
                     )
                     .child(
                         Text::new("Target curve and room correction options")
@@ -1083,10 +1080,7 @@
                 VStack::new()
                     .spacing(StackSpacing::None)
                     .child(
-                        Text::new("Optimiser Configuration")
-                            .size(TextSize::Sm)
-                            .weight(TextWeight::Semibold)
-                            .color(theme.header_color),
+                        Text::section_header("Optimiser Configuration").color(theme.header_color),
                     )
                     .child(
                         Text::new("EQ design and optimisation algorithm settings")
