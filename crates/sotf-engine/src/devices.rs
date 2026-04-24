@@ -522,6 +522,22 @@ pub fn get_audio_devices() -> Result<HashMap<String, Vec<AudioDevice>>, String> 
         }
     }
 
+    // On Linux/ALSA, cpal exposes many virtual device nodes per physical card
+    // (hw:0, plughw:0, default, sysdefault, front:*, surround*:*, etc.).
+    // Group them by hardware name so the user sees one entry per physical device.
+    #[cfg(target_os = "linux")]
+    let input_devices = deduplicate_linux_devices(input_devices);
+    #[cfg(target_os = "linux")]
+    let output_devices = deduplicate_linux_devices(output_devices);
+
+    // On Windows, WASAPI reports names like "Speakers (RME Fireface UCX)".
+    // When multiple devices share the same prefix, strip it so only the
+    // distinguishing part remains.
+    #[cfg(target_os = "windows")]
+    let input_devices = strip_duplicate_prefixes_windows(input_devices);
+    #[cfg(target_os = "windows")]
+    let output_devices = strip_duplicate_prefixes_windows(output_devices);
+
     devices_map.insert("input".to_string(), input_devices);
     devices_map.insert("output".to_string(), output_devices);
 
@@ -1327,6 +1343,223 @@ pub fn find_device(
     }
 }
 
+/// On Windows, WASAPI reports device names like "Speakers (RME Fireface UCX)" or
+/// "Microphone (Realtek Audio)". When multiple devices share the same prefix
+/// (e.g. two "Speakers (...)" entries), strip the prefix so the user sees just
+/// the distinguishing device name.
+#[cfg(target_os = "windows")]
+fn strip_duplicate_prefixes_windows(devices: Vec<AudioDevice>) -> Vec<AudioDevice> {
+    if devices.is_empty() {
+        return devices;
+    }
+
+    fn extract_prefix(name: &str) -> Option<&str> {
+        let paren_pos = name.find('(')?;
+        let prefix = name[..paren_pos].trim();
+        if prefix.is_empty() {
+            return None;
+        }
+        Some(prefix)
+    }
+
+    fn extract_paren_content(name: &str) -> Option<&str> {
+        let start = name.find('(')? + 1;
+        let end = name.rfind(')')?;
+        if start >= end {
+            return None;
+        }
+        Some(name[start..end].trim())
+    }
+
+    // Count how many devices share each prefix (case-insensitive)
+    let mut prefix_counts: HashMap<String, usize> = HashMap::new();
+    for device in &devices {
+        if let Some(prefix) = extract_prefix(&device.name) {
+            *prefix_counts.entry(prefix.to_uppercase()).or_insert(0) += 1;
+        }
+    }
+
+    devices
+        .into_iter()
+        .map(|mut device| {
+            if let Some(prefix) = extract_prefix(&device.name) {
+                let count = prefix_counts.get(&prefix.to_uppercase()).copied().unwrap_or(0);
+                if count > 1 {
+                    if let Some(content) = extract_paren_content(&device.name) {
+                        log::debug!(
+                            "[AUDIO] Stripping duplicate prefix '{}' from device '{}' -> '{}'",
+                            prefix,
+                            device.name,
+                            content,
+                        );
+                        device.name = content.to_string();
+                    }
+                }
+            }
+            device
+        })
+        .collect()
+}
+
+/// Deduplicate Linux ALSA device nodes that map to the same physical hardware.
+///
+/// On ALSA, a single sound card (e.g. "HDA Intel PCH") appears as many device nodes:
+///   - "front:CARD=PCH,DEV=0"
+///   - "surround51:CARD=PCH,DEV=0"
+///   - "surround71:CARD=PCH,DEV=0"
+///   - "sysdefault:CARD=PCH"
+///   - "default:CARD=PCH"
+///   - "hw:CARD=PCH,DEV=0"
+///   - "plughw:CARD=PCH,DEV=0"
+///   - etc.
+///
+/// We group by the CARD name and keep the best representative (highest channel count,
+/// widest sample rate range), merging supported configs and sample rates.
+#[cfg(target_os = "linux")]
+fn deduplicate_linux_devices(devices: Vec<AudioDevice>) -> Vec<AudioDevice> {
+    use std::collections::BTreeMap;
+
+    if devices.is_empty() {
+        return devices;
+    }
+
+    // Extract the CARD name from ALSA device IDs/names like "front:CARD=PCH,DEV=0"
+    fn extract_card_key(device: &AudioDevice) -> String {
+        // Try the device_id first, then the name
+        let source = device
+            .device_id
+            .as_deref()
+            .unwrap_or(&device.name);
+
+        // Look for "CARD=<name>" pattern
+        if let Some(card_start) = source.find("CARD=") {
+            let after_card = &source[card_start + 5..];
+            let card_name = after_card
+                .split(|c: char| c == ',' || c == ' ' || c == ':')
+                .next()
+                .unwrap_or(after_card);
+            if !card_name.is_empty() {
+                return card_name.to_string();
+            }
+        }
+
+        // For "hw:0,0" style, extract the card number
+        if let Some(rest) = source.strip_prefix("hw:") {
+            let card_num = rest
+                .split(|c: char| c == ',' || c == ' ')
+                .next()
+                .unwrap_or(rest);
+            if !card_num.is_empty() {
+                return format!("hw:{}", card_num);
+            }
+        }
+
+        // For "default", "pipewire", or other non-ALSA names, keep as-is
+        device.name.clone()
+    }
+
+    // Group devices by card key, preserving insertion order
+    let mut groups: BTreeMap<String, Vec<AudioDevice>> = BTreeMap::new();
+    let mut key_order: Vec<String> = Vec::new();
+
+    for device in devices {
+        let key = extract_card_key(&device);
+        if !groups.contains_key(&key) {
+            key_order.push(key.clone());
+        }
+        groups.entry(key).or_default().push(device);
+    }
+
+    let mut result = Vec::new();
+
+    for key in &key_order {
+        let group = groups.remove(key).unwrap();
+
+        if group.len() == 1 {
+            result.push(group.into_iter().next().unwrap());
+            continue;
+        }
+
+        // Pick the best representative: prefer default, then highest channel count
+        let best_idx = group
+            .iter()
+            .enumerate()
+            .max_by_key(|(_, d)| {
+                let ch = d
+                    .default_config
+                    .as_ref()
+                    .map(|c| c.channels as u32)
+                    .unwrap_or(0);
+                let is_default = if d.is_default { 1000u32 } else { 0 };
+                is_default + ch
+            })
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+
+        let mut merged = group[best_idx].clone();
+
+        // Merge supported configs and sample rates from all variants
+        let mut all_sample_rates = std::collections::HashSet::new();
+        for rate in &merged.available_sample_rates {
+            all_sample_rates.insert(*rate);
+        }
+
+        for (i, variant) in group.iter().enumerate() {
+            if i == best_idx {
+                continue;
+            }
+
+            // Merge sample rates
+            for rate in &variant.available_sample_rates {
+                all_sample_rates.insert(*rate);
+            }
+
+            // Merge supported configs (deduplicate)
+            for cfg in &variant.supported_configs {
+                let already_exists = merged.supported_configs.iter().any(|c| {
+                    c.sample_rate == cfg.sample_rate
+                        && c.channels == cfg.channels
+                        && c.sample_format == cfg.sample_format
+                });
+                if !already_exists {
+                    merged.supported_configs.push(cfg.clone());
+                }
+            }
+
+            // Take the highest channel default config
+            if let Some(ref variant_cfg) = variant.default_config {
+                if let Some(ref merged_cfg) = merged.default_config {
+                    if variant_cfg.channels > merged_cfg.channels {
+                        merged.default_config = Some(variant_cfg.clone());
+                    }
+                } else {
+                    merged.default_config = variant.default_config.clone();
+                }
+            }
+
+            // Inherit is_default from any variant
+            if variant.is_default {
+                merged.is_default = true;
+            }
+        }
+
+        let mut rates: Vec<u32> = all_sample_rates.into_iter().collect();
+        rates.sort_unstable();
+        merged.available_sample_rates = rates;
+
+        let variant_count = group.len();
+        log::info!(
+            "[AUDIO] Grouped {} ALSA device nodes under '{}'",
+            variant_count,
+            merged.name,
+        );
+
+        result.push(merged);
+    }
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1379,6 +1612,179 @@ mod tests {
     #[test]
     fn test_probe_channel_order_deduplicates_matching_default() {
         assert_eq!(probe_channel_order(2, 2), vec![2]);
+    }
+
+    fn make_device(name: &str) -> AudioDevice {
+        AudioDevice {
+            device_id: None,
+            name: name.to_string(),
+            display_info: None,
+            is_input: false,
+            is_default: false,
+            supported_configs: vec![],
+            default_config: None,
+            available_sample_rates: vec![],
+        }
+    }
+
+    #[test]
+    fn test_strip_duplicate_prefixes_windows() {
+        // Import the function for testing (it's cfg(windows) only, so we test the logic directly)
+        fn extract_prefix(name: &str) -> Option<&str> {
+            let paren_pos = name.find('(')?;
+            let prefix = name[..paren_pos].trim();
+            if prefix.is_empty() {
+                return None;
+            }
+            Some(prefix)
+        }
+
+        fn extract_paren_content(name: &str) -> Option<&str> {
+            let start = name.find('(')? + 1;
+            let end = name.rfind(')')?;
+            if start >= end {
+                return None;
+            }
+            Some(name[start..end].trim())
+        }
+
+        // Test prefix extraction
+        assert_eq!(extract_prefix("Speakers (RME Fireface)"), Some("Speakers"));
+        assert_eq!(extract_prefix("SPEAKERS (RME Fireface)"), Some("SPEAKERS"));
+        assert_eq!(extract_prefix("RME Fireface"), None);
+        assert_eq!(extract_prefix("(RME Fireface)"), None);
+
+        // Test paren content extraction
+        assert_eq!(
+            extract_paren_content("Speakers (RME Fireface UCX)"),
+            Some("RME Fireface UCX")
+        );
+        assert_eq!(
+            extract_paren_content("SPEAKERS (Realtek High Definition Audio)"),
+            Some("Realtek High Definition Audio")
+        );
+        assert_eq!(extract_paren_content("No Parens"), None);
+        assert_eq!(extract_paren_content("()"), None);
+
+        // Test the full stripping logic inline
+        let devices = vec![
+            make_device("Speakers (RME Fireface UCX)"),
+            make_device("Speakers (Realtek High Definition Audio)"),
+            make_device("Microphone (RME Fireface UCX)"),
+        ];
+
+        // Count prefixes
+        let mut prefix_counts: HashMap<String, usize> = HashMap::new();
+        for device in &devices {
+            if let Some(prefix) = extract_prefix(&device.name) {
+                *prefix_counts.entry(prefix.to_uppercase()).or_insert(0) += 1;
+            }
+        }
+
+        // "SPEAKERS" appears 2x, "MICROPHONE" appears 1x
+        assert_eq!(prefix_counts.get("SPEAKERS"), Some(&2));
+        assert_eq!(prefix_counts.get("MICROPHONE"), Some(&1));
+
+        // Apply stripping
+        let result: Vec<String> = devices
+            .into_iter()
+            .map(|mut device| {
+                if let Some(prefix) = extract_prefix(&device.name) {
+                    let count = prefix_counts
+                        .get(&prefix.to_uppercase())
+                        .copied()
+                        .unwrap_or(0);
+                    if count > 1 {
+                        if let Some(content) = extract_paren_content(&device.name) {
+                            device.name = content.to_string();
+                        }
+                    }
+                }
+                device.name
+            })
+            .collect();
+
+        assert_eq!(result[0], "RME Fireface UCX");
+        assert_eq!(result[1], "Realtek High Definition Audio");
+        assert_eq!(result[2], "Microphone (RME Fireface UCX)"); // Kept — only 1 "Microphone"
+    }
+
+    #[test]
+    fn test_strip_duplicate_prefixes_case_insensitive() {
+        fn extract_prefix(name: &str) -> Option<&str> {
+            let paren_pos = name.find('(')?;
+            let prefix = name[..paren_pos].trim();
+            if prefix.is_empty() {
+                return None;
+            }
+            Some(prefix)
+        }
+
+        // "Speakers" and "SPEAKERS" should be treated as the same prefix
+        let devices = vec![
+            make_device("Speakers (Device A)"),
+            make_device("SPEAKERS (Device B)"),
+        ];
+
+        let mut prefix_counts: HashMap<String, usize> = HashMap::new();
+        for device in &devices {
+            if let Some(prefix) = extract_prefix(&device.name) {
+                *prefix_counts.entry(prefix.to_uppercase()).or_insert(0) += 1;
+            }
+        }
+
+        assert_eq!(prefix_counts.get("SPEAKERS"), Some(&2));
+    }
+
+    #[test]
+    fn test_strip_duplicate_prefixes_single_device_unchanged() {
+        fn extract_prefix(name: &str) -> Option<&str> {
+            let paren_pos = name.find('(')?;
+            let prefix = name[..paren_pos].trim();
+            if prefix.is_empty() {
+                return None;
+            }
+            Some(prefix)
+        }
+
+        fn extract_paren_content(name: &str) -> Option<&str> {
+            let start = name.find('(')? + 1;
+            let end = name.rfind(')')?;
+            if start >= end {
+                return None;
+            }
+            Some(name[start..end].trim())
+        }
+
+        // Single device with prefix — name should stay unchanged
+        let devices = vec![make_device("Speakers (RME Fireface UCX)")];
+
+        let mut prefix_counts: HashMap<String, usize> = HashMap::new();
+        for device in &devices {
+            if let Some(prefix) = extract_prefix(&device.name) {
+                *prefix_counts.entry(prefix.to_uppercase()).or_insert(0) += 1;
+            }
+        }
+
+        let result: Vec<String> = devices
+            .into_iter()
+            .map(|mut device| {
+                if let Some(prefix) = extract_prefix(&device.name) {
+                    let count = prefix_counts
+                        .get(&prefix.to_uppercase())
+                        .copied()
+                        .unwrap_or(0);
+                    if count > 1 {
+                        if let Some(content) = extract_paren_content(&device.name) {
+                            device.name = content.to_string();
+                        }
+                    }
+                }
+                device.name
+            })
+            .collect();
+
+        assert_eq!(result[0], "Speakers (RME Fireface UCX)");
     }
 
     #[test]
