@@ -16,6 +16,8 @@ use std::time::{Duration, Instant};
 use driver_hal::HalInputReader;
 
 const SPIN_MS_SLEEP_DECODER: u64 = 1;
+#[cfg(all(target_os = "macos", feature = "hal"))]
+const HAL_RECONNECT_INTERVAL: Duration = Duration::from_secs(1);
 /// Maximum size of resample staging buffer to prevent unbounded growth.
 /// This limits memory usage while ensuring we can handle typical resampling
 /// ratios (e.g., 48kHz→44.1kHz produces ~940-frame blocks, so we allow ~4x that).
@@ -173,6 +175,8 @@ struct DecoderState {
     #[cfg(all(target_os = "macos", feature = "hal"))]
     hal_reader: Option<HalInputReader>,
     #[cfg(all(target_os = "macos", feature = "hal"))]
+    last_hal_reconnect_attempt: Option<Instant>,
+    #[cfg(all(target_os = "macos", feature = "hal"))]
     last_hal_sample_rate: Option<u32>,
     #[cfg(all(target_os = "macos", feature = "hal"))]
     last_hal_channels: Option<usize>,
@@ -200,6 +204,8 @@ impl DecoderState {
             hal_input_buffer: Vec::new(),
             #[cfg(all(target_os = "macos", feature = "hal"))]
             hal_reader: None,
+            #[cfg(all(target_os = "macos", feature = "hal"))]
+            last_hal_reconnect_attempt: None,
             #[cfg(all(target_os = "macos", feature = "hal"))]
             last_hal_sample_rate: None,
             #[cfg(all(target_os = "macos", feature = "hal"))]
@@ -633,6 +639,35 @@ impl DecoderState {
         #[cfg(all(target_os = "macos", feature = "hal"))]
         {
             self.hal_reader = None;
+            self.last_hal_reconnect_attempt = None;
+        }
+    }
+
+    #[cfg(all(target_os = "macos", feature = "hal"))]
+    fn try_reconnect_hal_reader(&mut self, force: bool) {
+        if self.hal_reader.as_ref().is_some_and(|r| r.is_connected()) {
+            return;
+        }
+
+        let now = Instant::now();
+        if !force
+            && self
+                .last_hal_reconnect_attempt
+                .is_some_and(|last| now.duration_since(last) < HAL_RECONNECT_INTERVAL)
+        {
+            return;
+        }
+
+        self.last_hal_reconnect_attempt = Some(now);
+        match HalInputReader::new() {
+            Some(reader) => {
+                log::info!("[Decoder Thread] Connected HAL input reader");
+                self.hal_reader = Some(reader);
+            }
+            None => {
+                log::debug!("[Decoder Thread] HAL input reader still unavailable");
+                self.hal_reader = None;
+            }
         }
     }
 
@@ -643,12 +678,7 @@ impl DecoderState {
 
         #[cfg(all(target_os = "macos", feature = "hal"))]
         {
-            self.hal_reader = HalInputReader::new();
-            if self.hal_reader.is_some() {
-                log::info!("[Decoder Thread] Started HAL input reader");
-            } else {
-                log::warn!("[Decoder Thread] Failed to initialize HAL input reader");
-            }
+            self.try_reconnect_hal_reader(true);
         }
         #[cfg(not(all(target_os = "macos", feature = "hal")))]
         log::info!("[Decoder Thread] Started silent source mode (HAL input not supported)");
@@ -673,6 +703,9 @@ impl DecoderState {
         // Static counter for periodic logging (avoid log spam)
         static LOG_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let count = LOG_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        #[cfg(all(target_os = "macos", feature = "hal"))]
+        self.try_reconnect_hal_reader(false);
 
         #[cfg(all(target_os = "macos", feature = "hal"))]
         if let Some(reader) = &mut self.hal_reader {
