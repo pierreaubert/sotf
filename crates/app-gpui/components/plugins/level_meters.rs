@@ -16,6 +16,7 @@ use sotf_plugins::speaker_config::{
 use std::panic;
 
 use super::{MeterTheme, TickConfig, render_tick_row};
+use crate::app::constants::spacing;
 use crate::app::types::PluginUpdateType;
 use crate::app::{App as AppState, ChannelGroup, ChannelInfo};
 use crate::components::design::Ds;
@@ -490,6 +491,7 @@ pub fn render_peak_meter(d: &Ds, peak_db: f64, ceiling_db: f64, theme: &Theme) -
                         .left_0()
                         .right_0()
                         .bottom(relative(ceiling_normalized))
+                        // intentional: 2px ceiling marker line — visual indicator, not spacing
                         .h(px(2.0))
                         .bg(theme.meter_clip),
                 ),
@@ -604,6 +606,7 @@ pub fn render_gradient_meter(
                             .bottom(gpui::Length::Definite(gpui::DefiniteLength::Fraction(
                                 peak_pos,
                             )))
+                            // intentional: 2px peak-hold indicator line — visual, not spacing
                             .h(px(2.0))
                             .bg(peak_color),
                     )
@@ -706,6 +709,7 @@ pub fn render_lufs_with_true_peak(
                 .child(
                     div()
                         .flex()
+                        // intentional: pixel-exact meter divider — do not scale
                         .gap(px(1.0))
                         // Label spacer
                         .child(div().w(px(meter_theme.label_width)))
@@ -781,7 +785,7 @@ pub fn render_lufs_with_true_peak(
                 .child(
                     div()
                         .flex()
-                        .gap(px(4.0))
+                        .gap(spacing::SM)
                         // Label spacer
                         .child(div().w(px(meter_theme.label_width)))
                         // Legend area (flex-1, justify_between for labels)
@@ -835,7 +839,7 @@ pub fn render_lufs_with_true_peak(
                 .child(
                     div()
                         .flex()
-                        .gap(px(4.0))
+                        .gap(spacing::SM)
                         // Label spacer
                         .child(div().w(px(meter_theme.label_width)))
                         // Legend area (flex-1, justify_between for labels)
@@ -951,14 +955,15 @@ impl PlayerView {
                 div()
                     .flex()
                     .flex_col()
+                    // intentional: 1px divider mirrors real MSD column below — do not scale
                     .gap(px(1.0))
                     .mt(grid)
                     .items_center()
                     .justify_center()
                     .opacity(0.0) // Invisible, just for spacing
-                    .child(div().px(px(2.0)).py(px(2.0)).text_size(text_xs).child("M"))
-                    .child(div().px(px(2.0)).py(px(2.0)).text_size(text_xs).child("S"))
-                    .child(div().px(px(2.0)).py(px(2.0)).text_size(text_xs).child("D")),
+                    .child(div().px(spacing::XS).py(spacing::XS).text_size(text_xs).child("M"))
+                    .child(div().px(spacing::XS).py(spacing::XS).text_size(text_xs).child("S"))
+                    .child(div().px(spacing::XS).py(spacing::XS).text_size(text_xs).child("D")),
             )
     }
 
@@ -1051,6 +1056,7 @@ impl PlayerView {
                 div()
                     .flex()
                     .flex_col()
+                    // intentional: pixel-exact MSD divider — do not scale
                     .gap(px(1.0))
                     .mt(d.grid)
                     .items_center()
@@ -1100,9 +1106,9 @@ impl PlayerView {
         let theme_c = theme.clone();
         div()
             .id((button_type, group_idx))
-            .px(px(2.0))
-            .py(px(2.0))
-            .rounded(px(2.0))
+            .px(spacing::XS)
+            .py(spacing::XS)
+            .rounded(d.r_sm)
             .text_size(d.text_xs)
             .cursor_pointer()
             .when(active, |d| {
@@ -1231,7 +1237,7 @@ impl PlayerView {
         div()
             .flex()
             .items_center()
-            .gap(px(4.0)) // Tighter gap for more bar space
+            .gap(spacing::SM) // Tighter gap for more bar space
             // Label
             .child(
                 div()
@@ -1280,7 +1286,7 @@ impl PlayerView {
         div()
             .flex()
             .items_center()
-            .gap(px(4.0))
+            .gap(spacing::SM)
             // Label
             .child(
                 div()
