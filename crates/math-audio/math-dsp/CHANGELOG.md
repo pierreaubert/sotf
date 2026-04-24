@@ -1,3 +1,18 @@
+# 0.5.13
+
+## Switch to oxiblas-ndarray for BLAS operations
+
+Replaced ndarray's built-in dot product and matrix multiplication with
+oxiblas-ndarray's pure-Rust BLAS implementation for better performance
+on all platforms without requiring external BLAS libraries (OpenBLAS,
+Accelerate, MKL).
+
+- `chroma.rs`: vector dot products now use `dot_view()`, matrix
+  multiplication uses `matmul()` from oxiblas-ndarray.
+- Added `oxiblas-ndarray` dependency.
+
+Cargo version 0.5.12 -> 0.5.13.
+
 # 0.5.12
 
 ## GD-Opt v2 — Phase GD-1c primitives: multi-sweep coherence + noise-floor

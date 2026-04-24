@@ -16,6 +16,7 @@ use log::info;
 use math_audio_iir_fir::{Biquad, BiquadFilterType, DEFAULT_Q_HIGH_LOW_SHELF};
 use math_audio_optimisation::{LMConfigBuilder, levenberg_marquardt};
 use ndarray::Array1;
+use oxiblas_ndarray::blas::dot_ndarray;
 use std::collections::HashMap;
 
 use super::output;
@@ -864,18 +865,18 @@ fn solve_3x3_wls(
     let whs = weights * hs_basis;
     let w1 = weights * flat_basis;
 
-    let a00 = ls_basis.dot(&wls);
-    let a01 = ls_basis.dot(&whs);
-    let a02 = ls_basis.dot(&w1);
-    let a11 = hs_basis.dot(&whs);
-    let a12 = hs_basis.dot(&w1);
-    let a22 = flat_basis.dot(&w1);
+    let a00 = dot_ndarray(ls_basis, &wls);
+    let a01 = dot_ndarray(ls_basis, &whs);
+    let a02 = dot_ndarray(ls_basis, &w1);
+    let a11 = dot_ndarray(hs_basis, &whs);
+    let a12 = dot_ndarray(hs_basis, &w1);
+    let a22 = dot_ndarray(flat_basis, &w1);
 
     // B^T W d  (3-vector)
     let wd = weights * diff;
-    let b0 = ls_basis.dot(&wd);
-    let b1 = hs_basis.dot(&wd);
-    let b2 = flat_basis.dot(&wd);
+    let b0 = dot_ndarray(ls_basis, &wd);
+    let b1 = dot_ndarray(hs_basis, &wd);
+    let b2 = dot_ndarray(flat_basis, &wd);
 
     // Solve 3×3 symmetric system via Cramer's rule
     // A = [[a00 a01 a02], [a01 a11 a12], [a02 a12 a22]]

@@ -1,6 +1,6 @@
 [package]
 name = "math-dsp"
-version = "0.5.12"
+version = "0.5.13"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "DSP utilities: signal generation, FFT analysis, and audio analysis tools"
@@ -27,6 +27,7 @@ rustfft = { workspace = true }
 realfft = { workspace = true }
 num-complex = { workspace = true }
 ndarray = { workspace = true }
+oxiblas-ndarray = { workspace = true }
 nalgebra = { workspace = true }
 
 # Audio file I/O

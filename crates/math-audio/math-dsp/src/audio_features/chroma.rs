@@ -5,6 +5,7 @@
 
 use super::utils::{hz_to_octs_inplace, normalize, stft};
 use ndarray::{Array, Array1, Array2, Axis, Zip, arr1, arr2, s};
+use oxiblas_ndarray::blas::{dot_view, matmul};
 
 const WINDOW_SIZE: usize = 8192;
 const MAX_VALUE: f32 = 1.0;
@@ -40,8 +41,9 @@ pub fn compute_chroma_features(samples: &[f32], sample_rate: u32) -> Result<Vec<
     let (mut interval_class, mut interval_class_mode) =
         raw_features.view_mut().split_at(Axis(0), 6);
 
-    let l2_norm_interval_class = interval_class.dot(&interval_class).sqrt();
-    let l2_norm_interval_class_mode = interval_class_mode.dot(&interval_class_mode).sqrt();
+    let l2_norm_interval_class = dot_view(&interval_class.view(), &interval_class.view()).sqrt();
+    let l2_norm_interval_class_mode =
+        dot_view(&interval_class_mode.view(), &interval_class_mode.view()).sqrt();
 
     if l2_norm_interval_class > 0. {
         interval_class /= l2_norm_interval_class;
@@ -317,7 +319,7 @@ fn chroma_stft(
     spectrum.par_mapv_inplace(|x| x * x);
     let mut raw_chroma = chroma_filter(sample_rate, n_fft, n_chroma, tuning)?;
 
-    raw_chroma = raw_chroma.dot(spectrum);
+    raw_chroma = matmul(&raw_chroma, spectrum);
     for mut row in raw_chroma.columns_mut() {
         let mut sum = row.mapv(|x| x.abs()).sum();
         if sum < f64::MIN_POSITIVE {

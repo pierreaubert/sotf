@@ -86,6 +86,7 @@ use std::sync::Arc;
 use std::sync::RwLock;
 
 use ndarray::{Array1, Array2, Zip};
+use oxiblas_ndarray::blas::matvec;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::time::Instant;
@@ -1126,7 +1127,7 @@ where
                 p += w * v * v;
             }
             if let Some(ref lp) = linear_penalty {
-                let ax = lp.a.dot(&x.view());
+                let ax = matvec(&lp.a, &x.to_owned());
                 Zip::from(&ax)
                     .and(&lp.lb)
                     .and(&lp.ub)

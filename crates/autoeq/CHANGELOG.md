@@ -1,3 +1,17 @@
+# 0.4.36
+
+## Switch to oxiblas-ndarray for BLAS operations
+
+Replaced ndarray's built-in dot product with oxiblas-ndarray's pure-Rust
+BLAS implementation in the spectral alignment weighted least-squares
+solver.
+
+- `roomeq/spectral_align.rs`: 9 vector dot products in `solve_3x3_wls()`
+  now use `dot_ndarray()` from oxiblas-ndarray.
+- Added `oxiblas-ndarray` dependency.
+
+Cargo version 0.4.35 -> 0.4.36.
+
 # 0.4.35
 
 ## GD-Opt v2 — Phase GD-1g: BassPhaseConfidence gate
