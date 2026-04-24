@@ -5,7 +5,7 @@ use crate::theme::Theme;
 use gpui::Rgba;
 use gpui::prelude::*;
 use gpui_px::ChartTheme;
-use gpui_ui_kit::{Text, TextSize};
+use gpui_ui_kit::Text;
 
 /// Create a new Rgba with modified alpha
 fn with_alpha(rgba: Rgba, alpha: f32) -> Rgba {
@@ -39,11 +39,7 @@ pub fn render_empty_state(
         .gap(gpui::px(8.0))
         .py(gpui::px(24.0))
         .child(Icon::new(icon).size(IconSize::Xl).color(theme.text_muted))
-        .child(
-            Text::new(message.to_string())
-                .size(TextSize::Xs)
-                .color(theme.text_muted),
-        )
+        .child(Text::caption(message.to_string()))
         .into_any_element()
 }
 
