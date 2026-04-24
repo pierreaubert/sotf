@@ -1580,7 +1580,8 @@ fn optimize_room_impl(
     // Phase alignment maximizes energy sum in the crossover region by optimizing
     // delay and polarity. This runs BEFORE group delay optimization.
     // Uses the same sub-main pairing logic as GD-Opt v2 (system config or heuristic).
-    let mut phase_alignment_results: HashMap<String, (f64, bool)> = HashMap::new();
+    // (delay_ms, invert_polarity, sub_name) keyed by main speaker name
+    let mut phase_alignment_results: HashMap<String, (f64, bool, String)> = HashMap::new();
 
     if config.optimizer.allow_delay()
         && let Some(phase_config) = &config.optimizer.phase_alignment
@@ -1638,7 +1639,7 @@ fn optimize_room_impl(
                                 );
                                 phase_alignment_results.insert(
                                     main_name.clone(),
-                                    (result.delay_ms, result.invert_polarity),
+                                    (result.delay_ms, result.invert_polarity, sub_name.clone()),
                                 );
                             }
                             Err(e) => {
@@ -1657,7 +1658,11 @@ fn optimize_room_impl(
     }
 
     // Apply phase alignment results (polarity inversion + delay)
-    for (speaker_name, (delay_ms, invert)) in &phase_alignment_results {
+    // Negative delay_ms means "delay the subwoofer" — collect per-sub maximums
+    // since multiple mains may pair with the same sub.
+    let mut sub_phase_delays: HashMap<String, f64> = HashMap::new();
+
+    for (speaker_name, (delay_ms, invert, sub_name)) in &phase_alignment_results {
         if let Some(chain) = channel_chains.get_mut(speaker_name) {
             if *invert {
                 // Insert polarity inversion at the beginning of the chain
@@ -1665,14 +1670,31 @@ fn optimize_room_impl(
                 chain.plugins.insert(0, invert_plugin);
                 info!("  Applied polarity inversion to '{}'", speaker_name);
             }
-            if *delay_ms > 0.01 {
-                // Apply phase alignment delay (additive with any existing time-alignment delay)
+        }
+        if *delay_ms > 0.01 {
+            // Positive: delay the main speaker
+            if let Some(chain) = channel_chains.get_mut(speaker_name) {
                 output::add_delay_plugin(chain, *delay_ms);
                 info!(
                     "  Applied {:.3} ms phase alignment delay to '{}'",
                     delay_ms, speaker_name
                 );
             }
+        } else if *delay_ms < -0.01 {
+            // Negative: delay the subwoofer instead
+            let abs_delay = delay_ms.abs();
+            let entry = sub_phase_delays.entry(sub_name.clone()).or_insert(0.0_f64);
+            *entry = entry.max(abs_delay);
+        }
+    }
+
+    for (sub_name, delay_ms) in &sub_phase_delays {
+        if let Some(chain) = channel_chains.get_mut(sub_name.as_str()) {
+            output::add_delay_plugin(chain, *delay_ms);
+            info!(
+                "  Applied {:.3} ms phase alignment delay to subwoofer '{}'",
+                delay_ms, sub_name
+            );
         }
     }
 
