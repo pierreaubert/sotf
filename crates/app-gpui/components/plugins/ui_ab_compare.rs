@@ -93,15 +93,11 @@ fn render_path_section(
                     .weight(TextWeight::Bold)
                     .color(theme.text_primary),
             )
-            .child(
-                Text::new(format!(
-                    "{} plugin{}",
-                    plugins.len(),
-                    if plugins.len() == 1 { "" } else { "s" }
-                ))
-                .size(TextSize::Xs)
-                .color(theme.text_muted),
-            )
+            .child(Text::caption(format!(
+                "{} plugin{}",
+                plugins.len(),
+                if plugins.len() == 1 { "" } else { "s" }
+            )))
             .child(
                 Button::new(SharedString::from(format!("ab-add-{path}")), "+")
                     .aria_label("Add plugin for comparison")
@@ -132,11 +128,7 @@ fn render_path_section(
     // Plugin list
     if plugins.is_empty() {
         section = section.child(
-            div().py(d.pad_y).child(
-                Text::new("Empty (pass-through)")
-                    .size(TextSize::Xs)
-                    .color(theme.text_muted),
-            ),
+            div().py(d.pad_y).child(Text::caption("Empty (pass-through)")),
         );
     } else {
         let len = plugins.len();

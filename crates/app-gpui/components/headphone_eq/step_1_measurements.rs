@@ -260,24 +260,16 @@ impl PlayerView {
                                                         ),
                                                 )
                                                 .when(is_loading, |hstack| {
-                                                    hstack.child(
-                                                        Text::new("Loading...")
-                                                            .size(TextSize::Xs)
-                                                            .color(theme.text_muted),
-                                                    )
+                                                    hstack.child(Text::caption("Loading..."))
                                                 })
                                                 .when(
                                                     !is_loading
                                                         && available_headphones_count > 0,
                                                     |hstack| {
-                                                        hstack.child(
-                                                            Text::new(format!(
-                                                                "{} headphones",
-                                                                available_headphones_count
-                                                            ))
-                                                            .size(TextSize::Xs)
-                                                            .color(theme.text_muted),
-                                                        )
+                                                        hstack.child(Text::caption(format!(
+                                                            "{} headphones",
+                                                            available_headphones_count
+                                                        )))
                                                     },
                                                 ),
                                         ),
@@ -297,11 +289,10 @@ impl PlayerView {
                                                 .color(theme.text_primary)
                                                 .weight(TextWeight::Semibold),
                                         )
-                                        .child(
-                                            Text::new(format!("({} matches)", suggestions.len()))
-                                                .size(TextSize::Xs)
-                                                .color(theme.text_muted),
-                                        ),
+                                        .child(Text::caption(format!(
+                                            "({} matches)",
+                                            suggestions.len()
+                                        ))),
                                 )
                                 .content(
                                     div()
@@ -312,24 +303,16 @@ impl PlayerView {
                                         .max_h(px(300.0)) // intentional: fixed scroll container max-height
                                         .overflow_y_scroll()
                                         .when(suggestions.is_empty() && is_loading, |el| {
-                                            el.child(
-                                                Text::new(
-                                                    "Loading headphones from spinorama.org...",
-                                                )
-                                                .size(TextSize::Xs)
-                                                .color(theme.text_muted),
-                                            )
+                                            el.child(Text::caption(
+                                                "Loading headphones from spinorama.org...",
+                                            ))
                                         })
                                         .when(suggestions.is_empty() && !is_loading, |el| {
-                                            el.child(
-                                                Text::new(if search_query.is_empty() {
-                                                    "No headphones loaded. Click Refresh to load."
-                                                } else {
-                                                    "No matching headphones found."
-                                                })
-                                                .size(TextSize::Xs)
-                                                .color(theme.text_muted),
-                                            )
+                                            el.child(Text::caption(if search_query.is_empty() {
+                                                "No headphones loaded. Click Refresh to load."
+                                            } else {
+                                                "No matching headphones found."
+                                            }))
                                         })
                                         .children(suggestions.iter().map(|headphone| {
                                             let is_selected =
@@ -389,11 +372,7 @@ impl PlayerView {
                             vstack.child(
                                 HStack::new()
                                     .spacing(StackSpacing::Xs)
-                                    .child(
-                                        Text::new("Downloading measurement...")
-                                            .size(TextSize::Xs)
-                                            .color(theme.text_muted),
-                                    ),
+                                    .child(Text::caption("Downloading measurement...")),
                             )
                         })
                         // Frequency response graph + Next button after download

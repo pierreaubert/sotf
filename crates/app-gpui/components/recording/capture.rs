@@ -230,11 +230,9 @@ impl PlayerView {
 
         if !is_sweep || recording_state.channel_recordings.is_empty() {
             return Card::new()
-                .content(
-                    Text::new("Frequency range configuration is only available for sweep signals")
-                        .size(TextSize::Xs)
-                        .color(theme.text_muted),
-                )
+                .content(Text::caption(
+                    "Frequency range configuration is only available for sweep signals",
+                ))
                 .into_any_element();
         }
 
@@ -267,12 +265,7 @@ impl PlayerView {
             .content(
                 VStack::new()
                     .spacing(StackSpacing::Sm)
-                    .child(
-                        Text::new("CHANNEL FREQUENCY RANGE")
-                            .size(TextSize::Xs)
-                            .weight(TextWeight::Bold)
-                            .color(theme.accent),
-                    )
+                    .child(Text::eyebrow("CHANNEL FREQUENCY RANGE").color(theme.accent))
                     .children(
                         channel_data
                             .iter()
@@ -464,12 +457,7 @@ impl PlayerView {
             .content(
                 VStack::new()
                     .spacing(StackSpacing::Sm)
-                    .child(
-                        Text::new("CHANNEL METRICS")
-                            .size(TextSize::Xs)
-                            .weight(TextWeight::Bold)
-                            .color(theme.accent),
-                    )
+                    .child(Text::eyebrow("CHANNEL METRICS").color(theme.accent))
                     // Header row
                     .child(
                         HStack::new()
@@ -541,9 +529,7 @@ impl PlayerView {
                             )
                             .child(
                                 div().w(px(80.0)).child( // intentional: metrics-table column width
-                                    Text::new(format!("{:.1} dB", noise_floor))
-                                        .size(TextSize::Xs)
-                                        .color(theme.text_muted),
+                                    Text::caption(format!("{:.1} dB", noise_floor)),
                                 ),
                             )
                             .into_any_element()
@@ -587,12 +573,7 @@ impl PlayerView {
                         .spacing(StackSpacing::Sm)
                         .justify(StackJustify::SpaceBetween)
                         .align(StackAlign::Center)
-                        .child(
-                            Text::new("CHANNEL STATUS")
-                                .size(TextSize::Xs)
-                                .weight(TextWeight::Bold)
-                                .color(theme.accent),
-                        )
+                        .child(Text::eyebrow("CHANNEL STATUS").color(theme.accent))
                         .child(
                             HStack::new()
                                 .spacing(StackSpacing::Xs)
@@ -692,13 +673,9 @@ impl PlayerView {
             return VStack::new()
                 .spacing(StackSpacing::Sm)
                 .child(
-                    div().p(d.card).rounded(d.r_md).bg(theme.surface).child(
-                        Text::new(
-                            "No channels configured. Please go back and configure your devices.",
-                        )
-                        .size(TextSize::Xs)
-                        .color(theme.text_muted),
-                    ),
+                    div().p(d.card).rounded(d.r_md).bg(theme.surface).child(Text::caption(
+                        "No channels configured. Please go back and configure your devices.",
+                    )),
                 )
                 .into_any_element();
         }
