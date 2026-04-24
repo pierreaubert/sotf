@@ -168,6 +168,12 @@ pub enum GdOptAdvisory {
     EmptyBand,
     /// GD-Opt degraded: optimiser ran but improvement was minimal.
     MinimalImprovement { improvement_db: f64 },
+    /// GD-Opt skipped: channels are sampled on different frequency grids.
+    FrequencyGridMismatch,
+    /// GD-Opt degraded: coherence was absent, so only delay was optimized.
+    MissingCoherenceDelayOnly,
+    /// GD-Opt degraded: all-pass was requested but bootstrap data was absent.
+    AllPassDisabledNoBootstrapRealisations,
 }
 
 /// Serialisable summary of GD-Opt results for report plumbing (GD-4).
@@ -194,6 +200,9 @@ pub struct GroupDelayOptSummary {
     pub improvement_db: f64,
     /// Advisory outcome.
     pub advisory: String,
+    /// Whether the reported GD controls were inserted into the exported DSP.
+    #[serde(default)]
+    pub applied: bool,
 }
 
 impl GroupDelayOptSummary {
@@ -218,7 +227,14 @@ impl GroupDelayOptSummary {
             mean_coherence: result.mean_coherence,
             improvement_db: result.improvement_db,
             advisory: "success".to_string(),
+            applied: false,
         }
+    }
+
+    /// Mark a summary as reflected in the exported DSP chain.
+    pub fn with_applied(mut self, applied: bool) -> Self {
+        self.applied = applied;
+        self
     }
 
     /// Create a summary for a skipped/failed case.
@@ -237,6 +253,11 @@ impl GroupDelayOptSummary {
             GdOptAdvisory::MinimalImprovement { improvement_db } => {
                 format!("minimal_improvement:{improvement_db:.1}dB")
             }
+            GdOptAdvisory::FrequencyGridMismatch => "frequency_grid_mismatch".to_string(),
+            GdOptAdvisory::MissingCoherenceDelayOnly => "missing_coherence_delay_only".to_string(),
+            GdOptAdvisory::AllPassDisabledNoBootstrapRealisations => {
+                "allpass_disabled_no_bootstrap_realisations".to_string()
+            }
         };
 
         Self {
@@ -250,6 +271,7 @@ impl GroupDelayOptSummary {
             mean_coherence: 0.0,
             improvement_db: 0.0,
             advisory: reason,
+            applied: false,
         }
     }
 }
@@ -280,11 +302,21 @@ pub fn optimize_group_delay(
         return Err("GD-Opt requires at least 2 channels".into());
     }
 
-    // Validate all channels share the same frequency grid length
+    // Validate all channels share the same frequency grid values.
     let n_freq = channels[0].freq.len();
     for (i, ch) in channels.iter().enumerate() {
-        if ch.freq.len() != n_freq || ch.spl.len() != n_freq || ch.phase.len() != n_freq {
+        if ch.freq.len() != n_freq
+            || ch.spl.len() != n_freq
+            || ch.phase.len() != n_freq
+            || ch.coherence.len() != n_freq
+        {
             return Err(format!("Channel {} has inconsistent array lengths", i));
+        }
+        if i > 0 && !same_frequency_grid(&channels[0].freq, &ch.freq) {
+            return Err(format!(
+                "Channel {} frequency grid does not match the reference channel",
+                i
+            ));
         }
     }
 
@@ -302,8 +334,7 @@ pub fn optimize_group_delay(
 
     // Compute pre-optimisation sum GD RMS
     let identity_params = vec![0.0; param_count(n_ch, config)];
-    let sum_gd_pre_rms_ms =
-        compute_sum_gd_rms(channels, &identity_params, &band_indices, config);
+    let sum_gd_pre_rms_ms = compute_sum_gd_rms(channels, &identity_params, &band_indices, config);
 
     // Build bounds for DE
     let bounds = build_bounds(n_ch, config);
@@ -317,7 +348,9 @@ pub fn optimize_group_delay(
         if let Some(seed) = config.seed {
             builder = builder.seed(seed);
         }
-        builder.build().map_err(|e| format!("DE config error: {e}"))?
+        builder
+            .build()
+            .map_err(|e| format!("DE config error: {e}"))?
     };
 
     let channels_ref = channels;
@@ -325,7 +358,12 @@ pub fn optimize_group_delay(
     let config_ref = config;
 
     let loss_fn = |x: &Array1<f64>| -> f64 {
-        gd_loss(channels_ref, x.as_slice().unwrap(), band_indices_ref, config_ref)
+        gd_loss(
+            channels_ref,
+            x.as_slice().unwrap(),
+            band_indices_ref,
+            config_ref,
+        )
     };
 
     let report = differential_evolution(&loss_fn, &bounds, de_config)
@@ -334,8 +372,7 @@ pub fn optimize_group_delay(
     let best_params = report.x.as_slice().unwrap();
 
     // Compute post-optimisation sum GD RMS
-    let sum_gd_post_rms_ms =
-        compute_sum_gd_rms(channels, best_params, &band_indices, config);
+    let sum_gd_post_rms_ms = compute_sum_gd_rms(channels, best_params, &band_indices, config);
 
     let improvement_db = if sum_gd_pre_rms_ms < 1e-15 {
         0.0 // Already aligned, no improvement possible
@@ -345,8 +382,10 @@ pub fn optimize_group_delay(
         120.0 // Cap at a large but finite value
     };
 
-    // Decode per-channel results
-    let per_channel = decode_per_channel(channels, best_params, &band_indices, config);
+    // Decode per-channel results and normalize unidentifiable common controls
+    // before reporting/applying them.
+    let mut per_channel = decode_per_channel(channels, best_params, &band_indices, config);
+    normalize_per_channel_controls(&mut per_channel);
 
     Ok(GroupDelayOptResult {
         band,
@@ -381,9 +420,7 @@ pub fn optimize_group_delay_adaptive(
     config: &GdOptConfig,
 ) -> Result<GroupDelayOptResult, String> {
     if sweep_realisations.len() < 2 {
-        return Err(
-            "Adaptive AP bootstrap requires at least 2 sweep realisations (N >= 2)".into(),
-        );
+        return Err("Adaptive AP bootstrap requires at least 2 sweep realisations (N >= 2)".into());
     }
 
     // Start with delay-only (0 APs)
@@ -423,8 +460,7 @@ pub fn optimize_group_delay_adaptive(
         let sigma = variance.sqrt();
 
         // Accept if mean_improvement / σ > 3 (and σ > 0 to avoid division by zero)
-        let significant =
-            sigma > 1e-15 && (mean_improvement / sigma) > BOOTSTRAP_SIGMA_THRESHOLD;
+        let significant = sigma > 1e-15 && (mean_improvement / sigma) > BOOTSTRAP_SIGMA_THRESHOLD;
 
         if significant && trial_result.sum_gd_post_rms_ms < best_result.sum_gd_post_rms_ms {
             best_result = trial_result;
@@ -470,10 +506,13 @@ fn compute_bootstrap_improvements(
         let trial_params = encode_result_as_params(trial_result, trial_config);
 
         // Compute GD RMS for this realisation with baseline vs trial params
-        let rms_baseline =
-            compute_sum_gd_rms(realisation, &baseline_params, &band_indices, baseline_config);
-        let rms_trial =
-            compute_sum_gd_rms(realisation, &trial_params, &band_indices, trial_config);
+        let rms_baseline = compute_sum_gd_rms(
+            realisation,
+            &baseline_params,
+            &band_indices,
+            baseline_config,
+        );
+        let rms_trial = compute_sum_gd_rms(realisation, &trial_params, &band_indices, trial_config);
 
         // Improvement = reduction in RMS (positive means trial is better)
         improvements.push(rms_baseline - rms_trial);
@@ -500,8 +539,11 @@ fn encode_result_as_params(result: &GroupDelayOptResult, config: &GdOptConfig) -
         }
 
         if config.optimize_polarity {
-            params[offset + 1 + config.ap_per_channel * 2] =
-                if ch_result.polarity_inverted { 1.0 } else { 0.0 };
+            params[offset + 1 + config.ap_per_channel * 2] = if ch_result.polarity_inverted {
+                1.0
+            } else {
+                0.0
+            };
         }
     }
 
@@ -531,9 +573,7 @@ pub fn optimize_group_delay_for_mode(
 
         ProcessingMode::Hybrid => {
             // Assert band_hi does not straddle the IIR/FIR crossover
-            let xo_freq = mixed_mode_config
-                .map(|m| m.crossover_freq)
-                .unwrap_or(300.0);
+            let xo_freq = mixed_mode_config.map(|m| m.crossover_freq).unwrap_or(300.0);
 
             if band.1 > xo_freq {
                 return Err(format!(
@@ -556,11 +596,9 @@ pub fn optimize_group_delay_for_mode(
             optimize_group_delay(channels, band, &mixed_phase_config)
         }
 
-        ProcessingMode::PhaseLinear => Err(
-            "PhaseLinear mode does not use IIR AP filters. \
+        ProcessingMode::PhaseLinear => Err("PhaseLinear mode does not use IIR AP filters. \
              Use the FIR path (GD-3b) with GdAlignmentTarget instead."
-                .into(),
-        ),
+            .into()),
     }
 }
 
@@ -577,8 +615,9 @@ fn param_count(n_ch: usize, config: &GdOptConfig) -> usize {
 fn build_bounds(n_ch: usize, config: &GdOptConfig) -> Vec<(f64, f64)> {
     let mut bounds = Vec::new();
     for _ in 0..n_ch {
-        // delay_ms
-        bounds.push((0.0, config.max_delay_ms));
+        // Delay is optimized as a relative control and normalized after DE so
+        // the exported DSP never adds arbitrary common latency.
+        bounds.push((-config.max_delay_ms, config.max_delay_ms));
         // AP filters: (freq, q) pairs
         for _ in 0..config.ap_per_channel {
             bounds.push((config.ap_min_freq, config.ap_max_freq));
@@ -625,6 +664,44 @@ fn decode_channel_params(params: &[f64], ch: usize, config: &GdOptConfig) -> Cha
     }
 }
 
+fn same_frequency_grid(reference: &Array1<f64>, candidate: &Array1<f64>) -> bool {
+    reference.len() == candidate.len()
+        && reference.iter().zip(candidate.iter()).all(|(&a, &b)| {
+            let tol = 1e-6_f64.max(1e-6 * a.abs().max(b.abs()));
+            (a - b).abs() <= tol
+        })
+}
+
+fn normalize_per_channel_controls(results: &mut [ChannelGdResult]) {
+    if results.is_empty() {
+        return;
+    }
+
+    let min_delay = results
+        .iter()
+        .map(|ch| ch.delay_ms)
+        .fold(f64::INFINITY, f64::min);
+    if min_delay.is_finite() {
+        for ch in results.iter_mut() {
+            ch.delay_ms = (ch.delay_ms - min_delay).max(0.0);
+            if ch.delay_ms < 1e-9 {
+                ch.delay_ms = 0.0;
+            }
+        }
+    }
+
+    // Global polarity inversion is not identifiable in the summed response.
+    // Use channel 0 as the deterministic reference and express all other
+    // inversions relative to it.
+    let reference_inverted = results[0].polarity_inverted;
+    if reference_inverted {
+        for ch in results.iter_mut() {
+            ch.polarity_inverted = !ch.polarity_inverted;
+        }
+    }
+    results[0].polarity_inverted = false;
+}
+
 /// Compute the complex response of a channel at frequency `f` with applied
 /// delay, all-pass filters, and polarity.
 fn channel_complex_at(
@@ -647,7 +724,13 @@ fn channel_complex_at(
 
     // Apply all-pass filters
     for &(ap_freq, ap_q) in &ch_params.ap_filters {
-        let ap = Biquad::new(BiquadFilterType::AllPass, ap_freq, config.sample_rate, ap_q, 0.0);
+        let ap = Biquad::new(
+            BiquadFilterType::AllPass,
+            ap_freq,
+            config.sample_rate,
+            ap_q,
+            0.0,
+        );
         h *= ap.complex_response(f);
     }
 
@@ -740,8 +823,8 @@ fn compute_sum_gd_rms(
     let weights: Vec<f64> = band_indices
         .iter()
         .map(|&idx| {
-            let mean_coh: f64 = channels.iter().map(|ch| ch.coherence[idx]).sum::<f64>()
-                / channels.len() as f64;
+            let mean_coh: f64 =
+                channels.iter().map(|ch| ch.coherence[idx]).sum::<f64>() / channels.len() as f64;
             mean_coh * mean_coh // coherence²
         })
         .collect();
@@ -1011,12 +1094,7 @@ mod tests {
 
         // Compute loss with coherence weighting
         let identity = vec![0.0; param_count(2, &GdOptConfig::default())];
-        let rms = compute_sum_gd_rms(
-            &channels,
-            &identity,
-            &band_indices,
-            &GdOptConfig::default(),
-        );
+        let rms = compute_sum_gd_rms(&channels, &identity, &band_indices, &GdOptConfig::default());
 
         // RMS should be non-zero (there's a delay mismatch)
         assert!(rms > 0.0, "RMS should be non-zero with delay mismatch");
@@ -1047,6 +1125,72 @@ mod tests {
         let result = optimize_group_delay(&[ch0], (20.0, 300.0), &GdOptConfig::default());
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("at least 2 channels"));
+    }
+
+    #[test]
+    fn test_frequency_grid_values_must_match() {
+        let freq0 = Array1::from(vec![20.0, 40.0, 80.0, 160.0]);
+        let freq1 = Array1::from(vec![20.0, 41.0, 80.0, 160.0]);
+        let ch0 = make_delayed_channel(&freq0, 0.0, 0.95);
+        let ch1 = make_delayed_channel(&freq1, 1.0, 0.95);
+
+        let result = optimize_group_delay(
+            &[ch0, ch1],
+            (20.0, 160.0),
+            &GdOptConfig {
+                ap_per_channel: 0,
+                optimize_polarity: false,
+                max_iter: 10,
+                popsize: 4,
+                seed: Some(1),
+                ..Default::default()
+            },
+        );
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("frequency grid"));
+    }
+
+    #[test]
+    fn test_reported_delays_are_normalized_no_common_latency() {
+        let freq = log_freq_grid(20.0, 5000.0, 300);
+        let ch0 = make_delayed_channel(&freq, 2.0, 0.98);
+        let ch1 = make_delayed_channel(&freq, 4.0, 0.98);
+
+        let result = optimize_group_delay(
+            &[ch0, ch1],
+            (20.0, 5000.0),
+            &GdOptConfig {
+                max_delay_ms: 10.0,
+                ap_per_channel: 0,
+                optimize_polarity: false,
+                max_iter: 3000,
+                popsize: 20,
+                tol: 1e-10,
+                seed: Some(43),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let min_delay = result
+            .per_channel
+            .iter()
+            .map(|ch| ch.delay_ms)
+            .fold(f64::INFINITY, f64::min);
+        assert!(
+            min_delay.abs() < 1e-6,
+            "normalized controls must leave one channel at 0ms, got {min_delay:.6}ms"
+        );
+        assert!(
+            result.per_channel.iter().all(|ch| ch.delay_ms >= -1e-9),
+            "exported delays must be non-negative: {:?}",
+            result
+                .per_channel
+                .iter()
+                .map(|ch| ch.delay_ms)
+                .collect::<Vec<_>>()
+        );
     }
 
     // ─── Adaptive bootstrap tests ────────────────────────────────────────────
@@ -1122,8 +1266,7 @@ mod tests {
         ]];
 
         let config = GdOptConfig::default();
-        let result =
-            optimize_group_delay_adaptive(&channels, &one_sweep, (20.0, 300.0), &config);
+        let result = optimize_group_delay_adaptive(&channels, &one_sweep, (20.0, 300.0), &config);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("at least 2"));
     }
@@ -1214,7 +1357,11 @@ mod tests {
             Some(&mixed_config),
         );
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("exceeds mixed_config crossover"));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("exceeds mixed_config crossover")
+        );
     }
 
     #[test]
@@ -1457,7 +1604,10 @@ mod tests {
         );
 
         // At least one channel should have non-empty AP filters in the result
-        let any_ap = result.per_channel.iter().any(|ch| !ch.ap_filters.is_empty());
+        let any_ap = result
+            .per_channel
+            .iter()
+            .any(|ch| !ch.ap_filters.is_empty());
         assert!(
             any_ap,
             "Expected at least one channel to have AP filters; got none. \
@@ -1519,13 +1669,9 @@ mod tests {
             seed: Some(11),
         };
 
-        let result = optimize_group_delay_adaptive(
-            &channels,
-            &sweep_realisations,
-            (20.0, 300.0),
-            &config,
-        )
-        .unwrap();
+        let result =
+            optimize_group_delay_adaptive(&channels, &sweep_realisations, (20.0, 300.0), &config)
+                .unwrap();
 
         // The bootstrap should accept at least 1 AP filter across all channels
         let total_ap: usize = result

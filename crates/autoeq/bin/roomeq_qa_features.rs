@@ -502,7 +502,9 @@ fn print_pass_results(results: &[StepResult]) {
             };
 
             let epa_vs_baseline = match (baseline_epa, step.epa_preference) {
-                (Some(b), Some(c)) if b > 0.0 => format!("  epa vs baseline: {:+.1}%", (c - b) / b * 100.0),
+                (Some(b), Some(c)) if b > 0.0 => {
+                    format!("  epa vs baseline: {:+.1}%", (c - b) / b * 100.0)
+                }
                 _ => String::new(),
             };
 

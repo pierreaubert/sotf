@@ -1,7 +1,7 @@
 // Metaheuristics-specific optimization code
 
-use super::{ObjectiveData, PenaltyMode, compute_fitness_penalties_ref};
 use super::callback::{ProgressTracker, format_param_summary};
+use super::{ObjectiveData, PenaltyMode, compute_fitness_penalties_ref};
 use ndarray::Array1;
 
 #[allow(unused_imports)]

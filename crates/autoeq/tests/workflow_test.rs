@@ -241,9 +241,7 @@ mod tests {
     /// optimization silently fails or hangs, both assertions below fail.
     #[test]
     fn test_generic_loop_gpui_simple_wizard_style_two_speakers() {
-        use autoeq::roomeq::{
-            TargetResponseConfig, TargetShape,
-        };
+        use autoeq::roomeq::{TargetResponseConfig, TargetShape};
 
         // Build curves with a mild bass bump so the optimizer has
         // something to work on. Three different curves so speaker 2 is

@@ -117,10 +117,7 @@ mod tests {
             .map(|&f| 75.0 - 0.5 * (f / 1000.0).log2())
             .collect();
         let r = spectral_roughness(&freqs, &spl);
-        assert!(
-            r < 0.15,
-            "Smooth tilt should have low roughness, got {r}"
-        );
+        assert!(r < 0.15, "Smooth tilt should have low roughness, got {r}");
     }
 
     #[test]
@@ -181,12 +178,11 @@ mod tests {
             .map(|i| 20.0 + (16000.0 - 20.0) * i as f64 / n as f64)
             .collect();
         // Alternating +-15 dB every other sample
-        let spl: Vec<f64> = (0..n).map(|i| if i % 2 == 0 { 90.0 } else { 60.0 }).collect();
+        let spl: Vec<f64> = (0..n)
+            .map(|i| if i % 2 == 0 { 90.0 } else { 60.0 })
+            .collect();
         let r = spectral_roughness(&freqs, &spl);
-        assert!(
-            r <= 2.0,
-            "Roughness should be clamped to <= 2.0, got {r}"
-        );
+        assert!(r <= 2.0, "Roughness should be clamped to <= 2.0, got {r}");
         assert!(
             r > 0.5,
             "Severely irregular spectrum should have high roughness, got {r}"

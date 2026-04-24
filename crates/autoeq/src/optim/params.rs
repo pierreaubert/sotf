@@ -98,10 +98,7 @@ impl From<&Args> for OptimParams {
 impl From<&crate::roomeq::OptimizerConfig> for OptimParams {
     fn from(config: &crate::roomeq::OptimizerConfig) -> Self {
         // Parse peq_model string to enum, defaulting to Pk
-        let peq_model = config
-            .peq_model
-            .parse::<PeqModel>()
-            .unwrap_or(PeqModel::Pk);
+        let peq_model = config.peq_model.parse::<PeqModel>().unwrap_or(PeqModel::Pk);
 
         // Parse loss_type string to enum, defaulting to SpeakerFlat
         let loss = match config.loss_type.as_str() {
@@ -115,7 +112,10 @@ impl From<&crate::roomeq::OptimizerConfig> for OptimParams {
             "score" => LossType::SpeakerScore,
             "epa" => LossType::Epa,
             other => {
-                log::warn!("Unknown loss_type '{}' in OptimizerConfig, defaulting to SpeakerFlat", other);
+                log::warn!(
+                    "Unknown loss_type '{}' in OptimizerConfig, defaulting to SpeakerFlat",
+                    other
+                );
                 LossType::SpeakerFlat
             }
         };

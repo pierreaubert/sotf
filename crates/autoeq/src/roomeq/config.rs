@@ -614,7 +614,10 @@ fn source_is_cea2034_shaped(source: &MeasurementSource) -> bool {
             path_hints(path)
                 || name
                     .as_deref()
-                    .map(|n| n.to_lowercase().contains("cea2034") || n.to_lowercase().contains("spinorama"))
+                    .map(|n| {
+                        n.to_lowercase().contains("cea2034")
+                            || n.to_lowercase().contains("spinorama")
+                    })
                     .unwrap_or(false)
         }
         MeasurementRef::Inline(_) => false,

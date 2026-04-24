@@ -78,10 +78,8 @@ fn i1_target_curve_plus_flat_target_response_silent() {
     let mut opt = OptimizerConfig::default();
     opt.target_response = Some(TargetResponseConfig::default());
 
-    let config = single_speaker_config(
-        opt,
-        Some(TargetCurveConfig::Predefined("flat".to_string())),
-    );
+    let config =
+        single_speaker_config(opt, Some(TargetCurveConfig::Predefined("flat".to_string())));
     let result = validate_room_config(&config);
 
     assert!(

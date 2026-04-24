@@ -458,7 +458,11 @@ pub(super) fn process_single_speaker(
     let system_has_subwoofer = room_config
         .system
         .as_ref()
-        .map(|sys| sys.subwoofers.as_ref().is_some_and(|s| !s.mapping.is_empty()))
+        .map(|sys| {
+            sys.subwoofers
+                .as_ref()
+                .is_some_and(|s| !s.mapping.is_empty())
+        })
         .unwrap_or_else(|| {
             // Legacy: check if any speaker name looks like a sub
             room_config

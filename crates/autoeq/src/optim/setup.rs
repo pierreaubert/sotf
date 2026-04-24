@@ -4,6 +4,8 @@
 //! initial guesses, and orchestrating optimization runs. These are used by both
 //! the CLI workflows in [`crate::workflow`] and by the room EQ subsystem.
 
+use super::de::optimize_filters_autoeq_with_callback;
+use super::{ObjectiveData, optimize_filters_with_algo_override};
 use crate::AutoeqError;
 use crate::Curve;
 use crate::HeadphoneLossData;
@@ -11,8 +13,6 @@ use crate::PeqModel;
 use crate::SpeakerLossData;
 use crate::iir::Biquad;
 use crate::loss::DriversLossData;
-use super::{ObjectiveData, optimize_filters_with_algo_override};
-use super::de::optimize_filters_autoeq_with_callback;
 use crate::read;
 use crate::x2peq;
 use ndarray::Array1;
@@ -905,7 +905,10 @@ pub fn setup_multisub_objective_data(
 /// # Returns
 ///
 /// Tuple of (lower_bounds, upper_bounds) vectors.
-pub fn setup_multisub_bounds(params: &crate::OptimParams, n_drivers: usize) -> (Vec<f64>, Vec<f64>) {
+pub fn setup_multisub_bounds(
+    params: &crate::OptimParams,
+    n_drivers: usize,
+) -> (Vec<f64>, Vec<f64>) {
     let n_params = n_drivers * 2; // gains + delays
     let mut lower_bounds = Vec::with_capacity(n_params);
     let mut upper_bounds = Vec::with_capacity(n_params);

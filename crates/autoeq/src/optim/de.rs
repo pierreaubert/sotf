@@ -3,18 +3,18 @@
 use ndarray::Array1;
 use std::sync::Arc;
 
+use super::callback::{ProgressTracker, format_param_summary};
+use super::{ObjectiveData, PenaltyMode, compute_fitness_penalties_ref};
 use crate::constraints::{
     CeilingConstraintData, MinGainConstraintData, SpacingConstraintData, constraint_ceiling,
     constraint_min_gain, constraint_spacing,
 };
-use crate::initial_guess::{SmartInitConfig, create_smart_initial_guesses};
-use super::{ObjectiveData, PenaltyMode, compute_fitness_penalties_ref};
-use super::callback::{ProgressTracker, format_param_summary};
 use crate::de::init_sobol::init_sobol;
 use crate::de::{
     CallbackAction, DEConfig, DEConfigBuilder, DEIntermediate, DEReport, Init, Mutation,
     NonlinearConstraintHelper, ParallelConfig, Strategy, differential_evolution,
 };
+use crate::initial_guess::{SmartInitConfig, create_smart_initial_guesses};
 
 /// Common setup for DE-based optimization
 ///
@@ -84,7 +84,9 @@ fn derive_de_budget(
             population_size,
             MIN_DE_GENERATIONS.saturating_mul(population_size),
             capped,
-            capped.saturating_mul(population_size).saturating_add(population_size),
+            capped
+                .saturating_mul(population_size)
+                .saturating_add(population_size),
             MIN_DE_GENERATIONS,
             MIN_DE_GENERATIONS.saturating_mul(population_size),
         );
@@ -346,8 +348,7 @@ pub fn optimize_filters_autoeq_with_callback(
     ) {
         Vec::new()
     } else {
-        let params_per_filter =
-            crate::param_utils::params_per_filter(params.peq_model);
+        let params_per_filter = crate::param_utils::params_per_filter(params.peq_model);
         let num_filters = x.len() / params_per_filter;
         // If the caller (typically roomeq's `prepare_single_channel_eq`)
         // already detected high-quality room-mode problems via SSIR /
@@ -439,15 +440,15 @@ pub fn optimize_filters_autoeq_with_callback(
     let adaptive_config = if matches!(strategy, Strategy::AdaptiveBin | Strategy::AdaptiveExp) {
         Some(crate::de::AdaptiveConfig {
             adaptive_mutation: true,
-            wls_enabled: false,                      // Disable WLS for stability
-            w_max: 0.8,                              // Reduce max weight for more stability
-            w_min: 0.2,                              // Increase min weight for more stability
+            wls_enabled: false,                    // Disable WLS for stability
+            w_max: 0.8,                            // Reduce max weight for more stability
+            w_min: 0.2,                            // Increase min weight for more stability
             w_f: params.adaptive_weight_f * 0.5,   // Make adaptation even more conservative
             w_cr: params.adaptive_weight_cr * 0.5, // Make adaptation even more conservative
-            f_m: 0.6,                                // Start with slightly higher F
-            cr_m: 0.5,                               // Start with slightly lower CR
-            wls_prob: 0.0,                           // Completely disable WLS
-            wls_scale: 0.0,                          // Completely disable WLS
+            f_m: 0.6,                              // Start with slightly higher F
+            cr_m: 0.5,                             // Start with slightly lower CR
+            wls_prob: 0.0,                         // Completely disable WLS
+            wls_scale: 0.0,                        // Completely disable WLS
         })
     } else {
         None

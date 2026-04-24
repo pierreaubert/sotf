@@ -1165,11 +1165,18 @@ mod decompose_cache_tests {
         curve.decompose_into_cache();
 
         let min_ph = curve.min_phase.as_ref().expect("min_phase must be Some");
-        let excess = curve.excess_phase.as_ref().expect("excess_phase must be Some");
+        let excess = curve
+            .excess_phase
+            .as_ref()
+            .expect("excess_phase must be Some");
         let _delay = curve.excess_delay_ms.expect("excess_delay_ms must be Some");
 
         assert_eq!(min_ph.len(), n, "min_phase length must match freq length");
-        assert_eq!(excess.len(), n, "excess_phase length must match freq length");
+        assert_eq!(
+            excess.len(),
+            n,
+            "excess_phase length must match freq length"
+        );
         assert!(min_ph.iter().all(|v| v.is_finite()), "finite min_phase");
         assert!(excess.iter().all(|v| v.is_finite()), "finite excess_phase");
 
@@ -1285,10 +1292,7 @@ mod decompose_cache_tests {
         let tau_s = tau_ms / 1000.0;
 
         let spl = Array1::from_elem(n, 0.0_f64);
-        let phase: Vec<f64> = freq
-            .iter()
-            .map(|&f| -360.0 * f * tau_s)
-            .collect();
+        let phase: Vec<f64> = freq.iter().map(|&f| -360.0 * f * tau_s).collect();
 
         let mut curve = Curve {
             freq,
@@ -1336,7 +1340,10 @@ mod decompose_cache_tests {
             ..Default::default()
         };
         curve.decompose_into_cache(); // must not panic
-        assert!(curve.min_phase.is_none(), "min_phase must stay None on mismatch");
+        assert!(
+            curve.min_phase.is_none(),
+            "min_phase must stay None on mismatch"
+        );
         assert!(
             curve.excess_phase.is_none(),
             "excess_phase must stay None on mismatch"
@@ -1354,15 +1361,21 @@ mod decompose_cache_tests {
         let freq = log_freq_grid(n, 100.0, 10000.0);
         let fc = 1000.0;
         let omega_c = 2.0 * PI * fc;
-        let spl: Vec<f64> = freq.iter().map(|&f| {
-            let omega = 2.0 * PI * f;
-            let mag = omega_c / (omega_c * omega_c + omega * omega).sqrt();
-            20.0 * mag.log10()
-        }).collect();
-        let phase: Vec<f64> = freq.iter().map(|&f| {
-            let omega = 2.0 * PI * f;
-            -((omega / omega_c).atan()).to_degrees()
-        }).collect();
+        let spl: Vec<f64> = freq
+            .iter()
+            .map(|&f| {
+                let omega = 2.0 * PI * f;
+                let mag = omega_c / (omega_c * omega_c + omega * omega).sqrt();
+                20.0 * mag.log10()
+            })
+            .collect();
+        let phase: Vec<f64> = freq
+            .iter()
+            .map(|&f| {
+                let omega = 2.0 * PI * f;
+                -((omega / omega_c).atan()).to_degrees()
+            })
+            .collect();
 
         let mut curve = Curve {
             freq: freq.clone(),
@@ -1383,7 +1396,10 @@ mod decompose_cache_tests {
 
         assert_eq!(min1, *min2, "min_phase must be identical on second call");
         assert_eq!(exc1, *exc2, "excess_phase must be identical on second call");
-        assert_eq!(del1, del2, "excess_delay_ms must be identical on second call");
+        assert_eq!(
+            del1, del2,
+            "excess_delay_ms must be identical on second call"
+        );
     }
 
     // Test 7 — load-time integration: CSV round-trip populates min_phase

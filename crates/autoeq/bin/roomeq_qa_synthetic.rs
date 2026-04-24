@@ -8,8 +8,10 @@
 //!   cargo run --bin roomeq-qa-synthetic --no-default-features --release
 //!   cargo run --bin roomeq-qa-synthetic --no-default-features --release -- --list
 //!   cargo run --bin roomeq-qa-synthetic --no-default-features --release -- --difficulty easy
+//!   cargo run --bin roomeq-qa-synthetic --no-default-features --release -- --multiseat-guards-only
 
 use anyhow::{Result, anyhow};
+use ndarray::Array1;
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -23,8 +25,9 @@ use autoeq::roomeq::synthetic::{
 };
 use autoeq::roomeq::{
     CallbackAction, DecomposedCorrectionSerdeConfig, ExcursionProtectionConfig,
-    MultiMeasurementConfig, MultiMeasurementStrategy, MultiSubGroup, ProcessingMode, RoomConfig,
-    SchroederSplitConfig, SpatialRobustnessSerdeConfig, TargetResponseConfig, optimize_room,
+    MultiMeasurementConfig, MultiMeasurementStrategy, MultiSeatConfig, MultiSeatMeasurements,
+    MultiSeatStrategy, MultiSubGroup, ProcessingMode, RoomConfig, SchroederSplitConfig,
+    SpatialRobustnessSerdeConfig, TargetResponseConfig, optimize_multiseat, optimize_room,
 };
 use autoeq::roomeq::{
     CardioidConfig, DBAConfig, SubwooferStrategy, SubwooferSystemConfig, SystemConfig, SystemModel,
@@ -757,6 +760,339 @@ fn run_multisub_test(
 }
 
 // ---------------------------------------------------------------------------
+// Multi-seat public API guard tests
+// ---------------------------------------------------------------------------
+
+fn make_multiseat_qa_curve(
+    spl_fn: impl Fn(f64) -> f64,
+    phase_offset_deg: f64,
+    include_phase: bool,
+) -> Curve {
+    let freqs: Vec<f64> = (0..64)
+        .map(|i| 20.0 * (200.0 / 20.0_f64).powf(i as f64 / 63.0))
+        .collect();
+    let spl: Vec<f64> = freqs.iter().map(|&f| spl_fn(f)).collect();
+    let phase = include_phase.then(|| {
+        Array1::from(
+            freqs
+                .iter()
+                .map(|&f| -180.0 * f / 100.0 + phase_offset_deg)
+                .collect::<Vec<_>>(),
+        )
+    });
+
+    Curve {
+        freq: Array1::from(freqs),
+        spl: Array1::from(spl),
+        phase,
+        ..Default::default()
+    }
+}
+
+fn run_multiseat_missing_phase_guard() -> TestResult {
+    let test_name = "multiseat/api/missing_phase_rejected".to_string();
+    let flat = |_: f64| 90.0;
+    let measurements = vec![
+        vec![
+            make_multiseat_qa_curve(flat, 0.0, true),
+            make_multiseat_qa_curve(flat, 12.0, false),
+        ],
+        vec![
+            make_multiseat_qa_curve(flat, 24.0, true),
+            make_multiseat_qa_curve(flat, 36.0, true),
+        ],
+    ];
+    let ms = match MultiSeatMeasurements::new(measurements) {
+        Ok(ms) => ms,
+        Err(e) => {
+            return TestResult {
+                name: test_name,
+                passed: false,
+                pre_score: 0.0,
+                post_score: 0.0,
+                epa_preference: None,
+                reason: format!("Failed to build measurements: {}", e),
+            };
+        }
+    };
+    let config = MultiSeatConfig {
+        enabled: true,
+        strategy: MultiSeatStrategy::MinimizeVariance,
+        primary_seat: 0,
+        max_deviation_db: 6.0,
+        ..Default::default()
+    };
+
+    match optimize_multiseat(&ms, &config, (20.0, 120.0), SAMPLE_RATE) {
+        Ok(result) => TestResult {
+            name: test_name,
+            passed: false,
+            pre_score: result.objective_before,
+            post_score: result.objective_after,
+            epa_preference: None,
+            reason: "MSO accepted a missing phase trace".to_string(),
+        },
+        Err(e) if e.to_string().contains("requires phase data") => TestResult {
+            name: test_name,
+            passed: true,
+            pre_score: 0.0,
+            post_score: 0.0,
+            epa_preference: None,
+            reason: "OK: missing phase rejected".to_string(),
+        },
+        Err(e) => TestResult {
+            name: test_name,
+            passed: false,
+            pre_score: 0.0,
+            post_score: 0.0,
+            epa_preference: None,
+            reason: format!("Unexpected rejection: {}", e),
+        },
+    }
+}
+
+fn run_multiseat_strategy_metric_guard(strategy: MultiSeatStrategy) -> TestResult {
+    let expected_name = match strategy {
+        MultiSeatStrategy::MinimizeVariance => "seat_variance",
+        MultiSeatStrategy::Average => "average_flatness",
+        MultiSeatStrategy::PrimaryWithConstraints => "primary_constrained",
+    };
+    let test_name = format!("multiseat/api/{}_metrics", expected_name);
+
+    let flat = |_: f64| 90.0;
+    let dipped = |f: f64| if f < 60.0 { 84.0 } else { 90.0 };
+    let peaked = |f: f64| if f < 60.0 { 96.0 } else { 90.0 };
+    let measurements = vec![
+        vec![
+            make_multiseat_qa_curve(flat, 0.0, true),
+            make_multiseat_qa_curve(dipped, 12.0, true),
+        ],
+        vec![
+            make_multiseat_qa_curve(peaked, 24.0, true),
+            make_multiseat_qa_curve(flat, 36.0, true),
+        ],
+    ];
+    let ms = match MultiSeatMeasurements::new(measurements) {
+        Ok(ms) => ms,
+        Err(e) => {
+            return TestResult {
+                name: test_name,
+                passed: false,
+                pre_score: 0.0,
+                post_score: 0.0,
+                epa_preference: None,
+                reason: format!("Failed to build measurements: {}", e),
+            };
+        }
+    };
+    let config = MultiSeatConfig {
+        enabled: true,
+        strategy: strategy.clone(),
+        primary_seat: 0,
+        max_deviation_db: 6.0,
+        ..Default::default()
+    };
+
+    let result = match optimize_multiseat(&ms, &config, (20.0, 120.0), SAMPLE_RATE) {
+        Ok(result) => result,
+        Err(e) => {
+            return TestResult {
+                name: test_name,
+                passed: false,
+                pre_score: 0.0,
+                post_score: 0.0,
+                epa_preference: None,
+                reason: format!("Optimization failed: {}", e),
+            };
+        }
+    };
+
+    let objective_metric_matches = result.objective_name == expected_name;
+    let improvement_matches_objective =
+        (result.improvement_db - result.objective_improvement_db).abs() < 1e-9;
+    let objective_not_worse = result.objective_after <= result.objective_before + 0.05;
+    let reference_sub_fixed =
+        result.gains.first() == Some(&0.0) && result.delays.first() == Some(&0.0);
+    let finite_solution = result
+        .gains
+        .iter()
+        .chain(result.delays.iter())
+        .all(|value| value.is_finite());
+
+    if !objective_metric_matches
+        || !improvement_matches_objective
+        || !objective_not_worse
+        || !reference_sub_fixed
+        || !finite_solution
+    {
+        return TestResult {
+            name: test_name,
+            passed: false,
+            pre_score: result.objective_before,
+            post_score: result.objective_after,
+            epa_preference: None,
+            reason: format!(
+                "Bad MSO result: objective_name={} expected={}, objective {:.3}->{:.3}, improvement={:.3}, objective_improvement={:.3}, gains={:?}, delays={:?}",
+                result.objective_name,
+                expected_name,
+                result.objective_before,
+                result.objective_after,
+                result.improvement_db,
+                result.objective_improvement_db,
+                result.gains,
+                result.delays,
+            ),
+        };
+    }
+
+    TestResult {
+        name: test_name,
+        passed: true,
+        pre_score: result.objective_before,
+        post_score: result.objective_after,
+        epa_preference: None,
+        reason: format!(
+            "OK: {} {:.3} -> {:.3} ({:+.3} dB); variance diagnostic {:+.3} dB",
+            result.objective_name,
+            result.objective_before,
+            result.objective_after,
+            result.objective_improvement_db,
+            result.variance_improvement_db,
+        ),
+    }
+}
+
+fn run_multiseat_phase_control_guard() -> TestResult {
+    let test_name = "multiseat/api/polarity_allpass_controls".to_string();
+    let flat = |_: f64| 90.0;
+    let dipped = |f: f64| if f < 70.0 { 86.0 } else { 90.0 };
+    let peaked = |f: f64| if f < 70.0 { 94.0 } else { 90.0 };
+    let measurements = vec![
+        vec![
+            make_multiseat_qa_curve(flat, 0.0, true),
+            make_multiseat_qa_curve(dipped, 15.0, true),
+        ],
+        vec![
+            make_multiseat_qa_curve(peaked, 170.0, true),
+            make_multiseat_qa_curve(flat, -170.0, true),
+        ],
+    ];
+    let ms = match MultiSeatMeasurements::new(measurements) {
+        Ok(ms) => ms,
+        Err(e) => {
+            return TestResult {
+                name: test_name,
+                passed: false,
+                pre_score: 0.0,
+                post_score: 0.0,
+                epa_preference: None,
+                reason: format!("Failed to build measurements: {}", e),
+            };
+        }
+    };
+    let config = MultiSeatConfig {
+        enabled: true,
+        strategy: MultiSeatStrategy::MinimizeVariance,
+        optimize_polarity: true,
+        allpass_filters_per_sub: 1,
+        primary_seat: 0,
+        max_deviation_db: 6.0,
+    };
+
+    let result = match optimize_multiseat(&ms, &config, (20.0, 120.0), SAMPLE_RATE) {
+        Ok(result) => result,
+        Err(e) => {
+            return TestResult {
+                name: test_name,
+                passed: false,
+                pre_score: 0.0,
+                post_score: 0.0,
+                epa_preference: None,
+                reason: format!("Optimization failed: {}", e),
+            };
+        }
+    };
+
+    let phase_controls_present = result.polarities.len() == 2
+        && result.allpass_filters.len() == 2
+        && !result.polarities[0]
+        && result.allpass_filters[0].is_empty()
+        && result.allpass_filters[1].len() == 1;
+    let allpass_in_bounds = result
+        .allpass_filters
+        .get(1)
+        .and_then(|filters| filters.first())
+        .is_some_and(|&(freq, q)| (20.0..=120.0).contains(&freq) && (0.3..=5.0).contains(&q));
+    let objective_not_worse = result.objective_after <= result.objective_before + 0.05;
+
+    if !phase_controls_present || !allpass_in_bounds || !objective_not_worse {
+        return TestResult {
+            name: test_name,
+            passed: false,
+            pre_score: result.objective_before,
+            post_score: result.objective_after,
+            epa_preference: None,
+            reason: format!(
+                "Bad phase-control result: objective {:.3}->{:.3}, polarities={:?}, allpass={:?}",
+                result.objective_before,
+                result.objective_after,
+                result.polarities,
+                result.allpass_filters,
+            ),
+        };
+    }
+
+    TestResult {
+        name: test_name,
+        passed: true,
+        pre_score: result.objective_before,
+        post_score: result.objective_after,
+        epa_preference: None,
+        reason: format!(
+            "OK: polarity/all-pass controls optimized; objective {:.3} -> {:.3}",
+            result.objective_before, result.objective_after
+        ),
+    }
+}
+
+fn run_multiseat_api_guard_tests() -> Vec<TestResult> {
+    vec![
+        run_multiseat_missing_phase_guard(),
+        run_multiseat_strategy_metric_guard(MultiSeatStrategy::Average),
+        run_multiseat_strategy_metric_guard(MultiSeatStrategy::PrimaryWithConstraints),
+        run_multiseat_phase_control_guard(),
+    ]
+}
+
+fn report_multiseat_api_guard_tests() -> Result<()> {
+    println!("RoomEQ Synthetic QA -- multi-seat API guards");
+    println!("============================================================");
+
+    let results = run_multiseat_api_guard_tests();
+    let passed = results.iter().filter(|r| r.passed).count();
+    let failed = results.len() - passed;
+
+    for result in &results {
+        let status = if result.passed { "PASS" } else { "FAIL" };
+        println!("  {}: {} -- {}", status, result.name, result.reason);
+    }
+
+    println!();
+    println!(
+        "Results: {} passed, {} failed, {} total",
+        passed,
+        failed,
+        results.len()
+    );
+
+    if failed > 0 {
+        std::process::exit(1);
+    }
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Multi-channel config builder and test runner
 // ---------------------------------------------------------------------------
 
@@ -1071,10 +1407,15 @@ fn main() -> Result<()> {
 
     let args: Vec<String> = std::env::args().collect();
     let list_only = args.iter().any(|a| a == "--list");
+    let multiseat_guards_only = args.iter().any(|a| a == "--multiseat-guards-only");
     let difficulty_filter = args
         .windows(2)
         .find(|w| w[0] == "--difficulty")
         .map(|w| w[1].clone());
+
+    if multiseat_guards_only {
+        return report_multiseat_api_guard_tests();
+    }
 
     let difficulties: Vec<&DifficultyLevel> = if let Some(ref filter) = difficulty_filter {
         ALL_DIFFICULTIES
@@ -1114,6 +1455,7 @@ fn main() -> Result<()> {
     // Count total tests
     let single_total = difficulties.len() * modes.len() * targets.len() * option_combos.len();
     let ms_total = ms_difficulties.len() * MS_TOPOLOGIES.len() * ms_option_combos.len();
+    let multiseat_guard_total = 4;
     let mc_total: usize = ALL_LAYOUTS
         .iter()
         .map(|layout| {
@@ -1125,7 +1467,7 @@ fn main() -> Result<()> {
             }
         })
         .sum();
-    let total = single_total + ms_total + mc_total;
+    let total = single_total + ms_total + multiseat_guard_total + mc_total;
 
     if list_only {
         println!("Synthetic QA Test Matrix:");
@@ -1173,6 +1515,12 @@ fn main() -> Result<()> {
         );
         println!("    Subtotal: {}", ms_total);
         println!();
+        println!("  Multi-seat API guards:");
+        println!(
+            "    Checks: missing phase rejection, Average metrics, PrimaryWithConstraints metrics, polarity/all-pass controls"
+        );
+        println!("    Subtotal: {}", multiseat_guard_total);
+        println!();
         println!("  Multi-channel:");
         println!(
             "    Layouts: {}",
@@ -1205,8 +1553,8 @@ fn main() -> Result<()> {
     }
 
     println!(
-        "RoomEQ Synthetic QA -- {} tests ({} single + {} multi-sub + {} multi-channel)",
-        total, single_total, ms_total, mc_total
+        "RoomEQ Synthetic QA -- {} tests ({} single + {} multi-sub + {} multi-seat guards + {} multi-channel)",
+        total, single_total, ms_total, multiseat_guard_total, mc_total
     );
     println!("============================================================");
 
@@ -1256,7 +1604,12 @@ fn main() -> Result<()> {
                         passed += 1;
                     } else {
                         failed += 1;
-                        println!("  FAIL: {} -- {} (epa={})", result.name, result.reason, fmt_epa(result.epa_preference));
+                        println!(
+                            "  FAIL: {} -- {} (epa={})",
+                            result.name,
+                            result.reason,
+                            fmt_epa(result.epa_preference)
+                        );
                     }
 
                     all_results.push(result);
@@ -1305,12 +1658,30 @@ fn main() -> Result<()> {
                     passed += 1;
                 } else {
                     failed += 1;
-                    println!("  FAIL: {} -- {} (epa={})", result.name, result.reason, fmt_epa(result.epa_preference));
+                    println!(
+                        "  FAIL: {} -- {} (epa={})",
+                        result.name,
+                        result.reason,
+                        fmt_epa(result.epa_preference)
+                    );
                 }
 
                 all_results.push(result);
             }
         }
+    }
+
+    // ====================================================================
+    // Multi-seat public API guard tests
+    // ====================================================================
+    for result in run_multiseat_api_guard_tests() {
+        if result.passed {
+            passed += 1;
+        } else {
+            failed += 1;
+            println!("  FAIL: {} -- {}", result.name, result.reason);
+        }
+        all_results.push(result);
     }
 
     // ====================================================================
@@ -1330,7 +1701,12 @@ fn main() -> Result<()> {
                     passed += 1;
                 } else {
                     failed += 1;
-                    println!("  FAIL: {} -- {} (epa={})", result.name, result.reason, fmt_epa(result.epa_preference));
+                    println!(
+                        "  FAIL: {} -- {} (epa={})",
+                        result.name,
+                        result.reason,
+                        fmt_epa(result.epa_preference)
+                    );
                 }
                 all_results.push(result);
             }
@@ -1349,7 +1725,12 @@ fn main() -> Result<()> {
                         passed += 1;
                     } else {
                         failed += 1;
-                        println!("  FAIL: {} -- {} (epa={})", result.name, result.reason, fmt_epa(result.epa_preference));
+                        println!(
+                            "  FAIL: {} -- {} (epa={})",
+                            result.name,
+                            result.reason,
+                            fmt_epa(result.epa_preference)
+                        );
                     }
                     all_results.push(result);
                 }
@@ -1405,6 +1786,24 @@ fn main() -> Result<()> {
         .ok();
     }
 
+    // Multi-seat API guard summary
+    let multiseat_results: Vec<&TestResult> = all_results
+        .iter()
+        .filter(|r| r.name.starts_with("multiseat/"))
+        .collect();
+    if !multiseat_results.is_empty() {
+        let multiseat_pass = multiseat_results.iter().filter(|r| r.passed).count();
+        let multiseat_total_count = multiseat_results.len();
+        writeln!(
+            &mut summary,
+            "  multi-seat API guards: {}/{} passed ({:.1}%)",
+            multiseat_pass,
+            multiseat_total_count,
+            multiseat_pass as f64 / multiseat_total_count as f64 * 100.0
+        )
+        .ok();
+    }
+
     // Multi-channel summary
     let mc_results: Vec<&TestResult> = all_results
         .iter()
@@ -1430,7 +1829,12 @@ fn main() -> Result<()> {
         println!("\nFailed tests:");
         for r in &all_results {
             if !r.passed {
-                println!("  {} -- {} (epa={})", r.name, r.reason, fmt_epa(r.epa_preference));
+                println!(
+                    "  {} -- {} (epa={})",
+                    r.name,
+                    r.reason,
+                    fmt_epa(r.epa_preference)
+                );
             }
         }
         std::process::exit(1);
