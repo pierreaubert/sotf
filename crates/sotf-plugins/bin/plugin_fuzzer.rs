@@ -830,6 +830,7 @@ impl PluginFuzzer for MultibandCompressorFuzzer {
             bands: vec![], // Use defaults for per-band params
             sidechain_tilt_db: 0.0,
             link_amount: 1.0,
+            ..Default::default()
         };
         let plugin = MultibandCompressorPlugin::from_params(channels, params);
 
@@ -894,6 +895,7 @@ impl PluginFuzzer for MultibandExpanderFuzzer {
             detection_mode: "peak".to_string(),
             bands: vec![], // Use defaults for per-band params
             processing_mode: "time_domain".to_string(),
+            ..Default::default()
         };
         let plugin = MultibandExpanderPlugin::from_params(channels, params);
 

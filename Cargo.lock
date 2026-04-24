@@ -10409,7 +10409,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-docs-gen"
-version = "0.5.15"
+version = "0.5.16"
 dependencies = [
  "sotf-host",
  "sotf-plugins",
@@ -10492,7 +10492,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-gpui"
-version = "0.5.15"
+version = "0.5.16"
 dependencies = [
  "anyhow",
  "autoeq",
@@ -11150,7 +11150,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugins"
-version = "0.5.15"
+version = "0.5.16"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -11276,7 +11276,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-tls"
-version = "0.5.15"
+version = "0.5.16"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -11400,7 +11400,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-types"
-version = "0.5.15"
+version = "0.5.16"
 dependencies = [
  "log",
  "serde",
