@@ -1,7 +1,32 @@
 //! Text/Typography component tests
 
+use gpui::rems;
 use gpui_ui_kit::text::{Code, Heading, Link, Text, TextSize, TextWeight, code_text_color};
 use gpui_ui_kit::theme::Theme;
+
+#[test]
+fn test_text_size_to_rems_matches_gpui_tailwind_scale() {
+    // These values must match GPUI's `text_xs`/`text_sm`/`text_base`/...
+    // exactly so font-zoom (via `window.set_rem_size`) scales Text uniformly
+    // with everything else. `Md` must resolve to `text_base` (1.0 rem); a prior
+    // bug aliased it to `text_sm` (0.875 rem), making default-sized text one
+    // step smaller than intended. If you change these values, audit every
+    // caller — they're load-bearing for cross-component consistency.
+    assert_eq!(TextSize::Xs.to_rems(), rems(0.75));
+    assert_eq!(TextSize::Sm.to_rems(), rems(0.875));
+    assert_eq!(TextSize::Md.to_rems(), rems(1.0));
+    assert_eq!(TextSize::Lg.to_rems(), rems(1.125));
+    assert_eq!(TextSize::Xl.to_rems(), rems(1.25));
+    assert_eq!(TextSize::Xxl.to_rems(), rems(1.5));
+}
+
+#[test]
+fn test_text_size_default_is_medium() {
+    // Default-sized text should be `Md` → `rems(1.0)` — the base, not one step
+    // smaller. This pairs with the mapping test above.
+    assert_eq!(TextSize::default(), TextSize::Md);
+    assert_eq!(TextSize::default().to_rems(), rems(1.0));
+}
 
 #[test]
 fn test_text_styling() {

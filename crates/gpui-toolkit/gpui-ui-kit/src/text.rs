@@ -24,6 +24,25 @@ pub enum TextSize {
     Xxl,
 }
 
+impl TextSize {
+    /// Resolve this variant to a rem value matching GPUI / Tailwind conventions.
+    ///
+    /// The values are identical to what GPUI's `text_xs()` / `text_sm()` /
+    /// `text_base()` / `text_lg()` / `text_xl()` / `text_2xl()` helpers apply,
+    /// and scale with `window.set_rem_size()` so font-zoom actions propagate
+    /// uniformly.
+    pub fn to_rems(self) -> Rems {
+        match self {
+            TextSize::Xs => rems(0.75),
+            TextSize::Sm => rems(0.875),
+            TextSize::Md => rems(1.0),
+            TextSize::Lg => rems(1.125),
+            TextSize::Xl => rems(1.25),
+            TextSize::Xxl => rems(1.5),
+        }
+    }
+}
+
 /// Text weight
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TextWeight {
@@ -135,15 +154,11 @@ impl Text {
             .text_color(text_color)
             .font_weight(self.weight.to_font_weight());
 
-        // Apply size
-        text = match self.size {
-            TextSize::Xs => text.text_xs(),
-            TextSize::Sm => text.text_sm(),
-            TextSize::Md => text.text_sm(),
-            TextSize::Lg => text.text_lg(),
-            TextSize::Xl => text.text_xl(),
-            TextSize::Xxl => text.text_2xl(),
-        };
+        // Apply size via the canonical `TextSize::to_rems()` mapping. Keeping a
+        // single source of truth avoids the earlier bug where `Md` silently
+        // aliased `text_sm()` instead of `text_base()`, making default-sized
+        // text one step smaller than intended across the app.
+        text = text.text_size(self.size.to_rems());
 
         if self.truncate {
             text = text.overflow_hidden().whitespace_nowrap();
