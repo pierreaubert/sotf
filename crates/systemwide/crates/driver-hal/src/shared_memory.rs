@@ -103,6 +103,165 @@ pub struct SharedAudioBuffer {
 }
 
 impl SharedAudioBuffer {
+    fn audio_layout(buffer_frames: u32, channel_count: u32) -> io::Result<(usize, usize, usize)> {
+        let header_size = std::mem::size_of::<SharedAudioHeader>();
+        let audio_offset = (header_size + 63) & !63;
+        let buffer_frames = buffer_frames as usize;
+        let channel_count = channel_count as usize;
+
+        if buffer_frames == 0 || channel_count == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "Invalid shared memory configuration: buffer_frames={}, channel_count={}",
+                    buffer_frames, channel_count
+                ),
+            ));
+        }
+
+        if channel_count > 128 || buffer_frames > 65536 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "Shared memory configuration out of range: buffer_frames={}, channel_count={}",
+                    buffer_frames, channel_count
+                ),
+            ));
+        }
+
+        let audio_capacity = buffer_frames
+            .checked_mul(channel_count)
+            .and_then(|v| v.checked_mul(8))
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "Shared memory audio capacity overflow",
+                )
+            })?;
+        let total_size = audio_offset
+            .checked_add(
+                audio_capacity
+                    .checked_mul(std::mem::size_of::<f32>())
+                    .ok_or_else(|| {
+                        io::Error::new(
+                            io::ErrorKind::InvalidInput,
+                            "Shared memory byte size overflow",
+                        )
+                    })?,
+            )
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "Shared memory total size overflow",
+                )
+            })?;
+
+        Ok((audio_offset, audio_capacity, total_size))
+    }
+
+    fn initialize_header(&mut self, sample_rate: u32, buffer_frames: u32, channel_count: u32) {
+        let header = self.header_mut();
+        header.magic = SHARED_MEMORY_MAGIC;
+        header.version = SHARED_MEMORY_VERSION;
+        header.sample_rate = sample_rate;
+        header.buffer_frames = buffer_frames;
+        header.channel_count = channel_count;
+        header.write_position.store(0, Ordering::Release);
+        header.read_position.store(0, Ordering::Release);
+        header.active.store(0, Ordering::Release);
+        header.config_changed.store(0, Ordering::Release);
+        header.driver_ready.store(0, Ordering::Release);
+        header.engine_ready.store(0, Ordering::Release);
+        header.encrypted.store(0, Ordering::Release);
+        header.key_fingerprint = [0; 8];
+        header.frame_counter.store(0, Ordering::Release);
+        header.requested_sample_rate = 0;
+        header.requested_buffer_frames = 0;
+        header.actual_sample_rate = sample_rate;
+        header.actual_buffer_frames = buffer_frames;
+        header.config_status.store(0, Ordering::Release);
+        header.config_source.store(0, Ordering::Release);
+        header.config_error_code = 0;
+        header.encryption_overflow_count.store(0, Ordering::Release);
+    }
+
+    /// Create or open the shared memory file and initialize it when needed.
+    ///
+    /// This is intended for the daemon side. The HAL process runs inside
+    /// coreaudiod and should avoid creating, truncating, or mmap-ing files from
+    /// the realtime IO path.
+    pub fn create_or_open<P: AsRef<Path>>(
+        path: P,
+        sample_rate: u32,
+        buffer_frames: u32,
+        channel_count: u32,
+    ) -> io::Result<Self> {
+        let path = path.as_ref();
+        let (audio_offset, audio_capacity, total_size) =
+            Self::audio_layout(buffer_frames, channel_count)?;
+
+        if let Some(parent) = path.parent() {
+            if !parent.exists() {
+                std::fs::create_dir_all(parent)?;
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o777))?;
+                }
+            }
+        }
+
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(path)?;
+        file.set_len(total_size as u64)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            file.set_permissions(std::fs::Permissions::from_mode(0o666))?;
+        }
+
+        let mmap = unsafe { MmapMut::map_mut(&file)? };
+        let mut buffer = Self {
+            mmap,
+            audio_offset,
+            audio_capacity,
+            max_audio_capacity: audio_capacity,
+        };
+
+        let needs_init = {
+            let header = buffer.header();
+            header.magic != SHARED_MEMORY_MAGIC
+                || header.version != SHARED_MEMORY_VERSION
+                || header.buffer_frames != buffer_frames
+                || header.channel_count != channel_count
+                || header.sample_rate != sample_rate
+        };
+
+        if needs_init {
+            buffer.initialize_header(sample_rate, buffer_frames, channel_count);
+        }
+
+        Ok(buffer)
+    }
+
+    /// Create or open the default per-user shared memory file.
+    pub fn create_or_open_default(
+        sample_rate: u32,
+        buffer_frames: u32,
+        channel_count: u32,
+    ) -> io::Result<Self> {
+        Self::create_or_open(
+            get_shared_memory_path(),
+            sample_rate,
+            buffer_frames,
+            channel_count,
+        )
+    }
+
     /// Open an existing shared memory region created by the Swift HAL driver
     pub fn open<P: AsRef<Path>>(path: P) -> io::Result<Self> {
         let file = OpenOptions::new().read(true).write(true).open(path)?;
@@ -1525,6 +1684,44 @@ mod tests {
         file.flush().expect("Failed to flush file");
 
         file
+    }
+
+    #[test]
+    fn test_create_or_open_initializes_daemon_owned_file() {
+        let temp_file = NamedTempFile::new().expect("Failed to create temp file");
+        let buffer = SharedAudioBuffer::create_or_open(temp_file.path(), 48_000, 512, 2)
+            .expect("Failed to create shared memory");
+
+        assert_eq!(buffer.sample_rate(), 48_000);
+        assert_eq!(buffer.buffer_frames(), 512);
+        assert_eq!(buffer.channel_count(), 2);
+        assert!(!buffer.driver_ready());
+        assert!(!buffer.is_active());
+
+        let reopened = SharedAudioBuffer::open(temp_file.path()).expect("Failed to reopen buffer");
+        assert_eq!(reopened.sample_rate(), 48_000);
+        assert_eq!(reopened.buffer_frames(), 512);
+        assert_eq!(reopened.channel_count(), 2);
+    }
+
+    #[test]
+    fn test_create_or_open_preserves_runtime_state_for_same_geometry() {
+        let temp_file = NamedTempFile::new().expect("Failed to create temp file");
+        let buffer = SharedAudioBuffer::create_or_open(temp_file.path(), 48_000, 512, 2)
+            .expect("Failed to create shared memory");
+        buffer.set_engine_ready(true);
+        buffer.header().driver_ready.store(1, Ordering::Release);
+        buffer.header().write_position.store(64, Ordering::Release);
+        buffer.header().read_position.store(32, Ordering::Release);
+        drop(buffer);
+
+        let reopened = SharedAudioBuffer::create_or_open(temp_file.path(), 48_000, 512, 2)
+            .expect("Failed to reopen shared memory");
+
+        assert!(reopened.driver_ready());
+        assert_eq!(reopened.header().engine_ready.load(Ordering::Acquire), 1);
+        assert_eq!(reopened.header().write_position.load(Ordering::Acquire), 64);
+        assert_eq!(reopened.header().read_position.load(Ordering::Acquire), 32);
     }
 
     #[test]
