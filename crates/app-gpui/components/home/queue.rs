@@ -8,8 +8,8 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui::{InteractiveElement, Styled};
 use gpui_ui_kit::{
-    Button, CollapseDirection, PaneDivider, PaneDividerTheme, StackSpacing, Text, TextSize,
-    TextWeight, VStack,
+    Button, CollapseDirection, Heading, PaneDivider, PaneDividerTheme, StackSpacing, Text,
+    TextSize, VStack,
 };
 
 use crate::app::types::{MeterDisplayMode, Screen};
@@ -123,17 +123,12 @@ impl PlayerView {
                         .border_r_1()
                         .border_color(theme.border)
                         .child(
-                            Text::new(format!(
+                            div().mb(d.gap).child(Heading::h4(format!(
                                 "{} ({} {})",
                                 translations.queue_title,
                                 state.app.queue_state.len(),
                                 translations.queue_albums
-                            ))
-                            .size(TextSize::Md)
-                            .weight(TextWeight::Bold)
-                            .color(theme.text_primary)
-                            .build()
-                            .mb(d.gap),
+                            ))),
                         )
                         .child(
                             div()
@@ -595,14 +590,7 @@ impl PlayerView {
                 .flex()
                 .flex_col()
                 .flex_1()
-                .child(
-                    div().mb(d.gap_md).child(
-                        Text::new(translations.queue_now_playing)
-                            .size(TextSize::Md)
-                            .weight(TextWeight::Bold)
-                            .color(theme.text_primary),
-                    ),
-                )
+                .child(div().mb(d.gap_md).child(Heading::h4(translations.queue_now_playing)))
                 // Top row: Album art (left) + Album info (right)
                 .child(
                     div()

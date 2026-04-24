@@ -18,8 +18,8 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_px::ScaleType;
 use gpui_ui_kit::{
-    Card, HStack, Select, SelectOption, StackAlign, StackSpacing, Text, TextSize, TextWeight,
-    VStack,
+    Card, HStack, Heading, Select, SelectOption, StackAlign, StackSpacing, Text, TextSize,
+    TextWeight, VStack,
 };
 use sotf_audio::signal_analysis as dsp;
 
@@ -38,12 +38,7 @@ impl PlayerView {
                 // Header
                 VStack::new()
                     .spacing(StackSpacing::Xs)
-                    .child(
-                        Text::new("Evaluate Recordings")
-                            .size(TextSize::Md)
-                            .weight(TextWeight::Bold)
-                            .color(theme.text_primary),
-                    )
+                    .child(Heading::h4("Evaluate Recordings"))
                     .child(
                         Text::new("Review frequency response, phase, group delay, and impulse response measurements.")
                             .size(TextSize::Xs)
@@ -1207,20 +1202,16 @@ impl PlayerView {
                                         .color(theme.text_secondary),
                                 )
                                 .child(
-                                    Text::new(if recorded_count == total_count {
+                                    Text::label(if recorded_count == total_count {
                                         "All channels recorded"
                                     } else {
                                         "Some channels missing"
                                     })
-                                    .size(TextSize::Xs)
-                                    .weight(TextWeight::Semibold)
-                                    .color(
-                                        if recorded_count == total_count {
-                                            theme.success
-                                        } else {
-                                            theme.warning
-                                        },
-                                    ),
+                                    .color(if recorded_count == total_count {
+                                        theme.success
+                                    } else {
+                                        theme.warning
+                                    }),
                                 ),
                         ),
                 )

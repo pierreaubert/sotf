@@ -9,9 +9,9 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, Card, HStack, NumberInput, NumberInputSize, Progress,
-    ProgressSize, ProgressVariant, Select, SelectOption, StackAlign, StackJustify, StackSpacing,
-    Text, TextSize, TextWeight, VStack,
+    Button, ButtonSize, ButtonVariant, Card, HStack, Heading, NumberInput, NumberInputSize,
+    Progress, ProgressSize, ProgressVariant, Select, SelectOption, StackAlign, StackJustify,
+    StackSpacing, Text, TextSize, VStack,
 };
 
 impl PlayerView {
@@ -23,11 +23,7 @@ impl PlayerView {
                 // Header
                 VStack::new()
                     .spacing(StackSpacing::Xs)
-                    .child(
-                        Text::new("Signal Recording")
-                            .size(TextSize::Md)
-                            .weight(TextWeight::Bold),
-                    )
+                    .child(Heading::h4("Signal Recording"))
                     .child(
                         Text::new("Test each channel individually. Signals will play sequentially with a 1-second pause between channels.")
                             .size(TextSize::Xs),
@@ -54,22 +50,14 @@ impl PlayerView {
                     HStack::new()
                         .spacing(StackSpacing::Sm)
                         .align(StackAlign::Center)
-                        .child(
-                            Text::new("Signal Type:")
-                                .size(TextSize::Xs)
-                                .weight(TextWeight::Semibold),
-                        )
+                        .child(Text::label("Signal Type:"))
                         .child(self.render_signal_type_dropdown(cx)),
                 )
                 .child(
                     HStack::new()
                         .spacing(StackSpacing::Sm)
                         .align(StackAlign::Center)
-                        .child(
-                            Text::new("Duration:")
-                                .size(TextSize::Xs)
-                                .weight(TextWeight::Semibold),
-                        )
+                        .child(Text::label("Duration:"))
                         .child(self.render_duration_dropdown(cx)),
                 )
                 .child(
@@ -278,9 +266,7 @@ impl PlayerView {
                                     .align(StackAlign::Center)
                                     .child(
                                         div().w(px(100.0)).child( // intentional: channel-label column
-                                            Text::new(format!("{}:", name))
-                                                .size(TextSize::Xs)
-                                                .weight(TextWeight::Semibold)
+                                            Text::label(format!("{}:", name))
                                                 .color(theme.text_primary),
                                         ),
                                     )
@@ -465,34 +451,22 @@ impl PlayerView {
                             .align(StackAlign::Center)
                             .child(
                                 div().w(px(100.0)).child( // intentional: metrics-table column width
-                                    Text::new("Channel")
-                                        .size(TextSize::Xs)
-                                        .weight(TextWeight::Semibold)
-                                        .color(theme.text_secondary),
+                                    Text::label("Channel").color(theme.text_secondary),
                                 ),
                             )
                             .child(
                                 div().w(px(60.0)).child( // intentional: metrics-table column width
-                                    Text::new("Mic In")
-                                        .size(TextSize::Xs)
-                                        .weight(TextWeight::Semibold)
-                                        .color(theme.text_secondary),
+                                    Text::label("Mic In").color(theme.text_secondary),
                                 ),
                             )
                             .child(
                                 div().w(px(80.0)).child( // intentional: metrics-table column width
-                                    Text::new("Avg SPL")
-                                        .size(TextSize::Xs)
-                                        .weight(TextWeight::Semibold)
-                                        .color(theme.text_secondary),
+                                    Text::label("Avg SPL").color(theme.text_secondary),
                                 ),
                             )
                             .child(
                                 div().w(px(80.0)).child( // intentional: metrics-table column width
-                                    Text::new("Noise Floor")
-                                        .size(TextSize::Xs)
-                                        .weight(TextWeight::Semibold)
-                                        .color(theme.text_secondary),
+                                    Text::label("Noise Floor").color(theme.text_secondary),
                                 ),
                             ),
                     )
@@ -760,9 +734,7 @@ impl PlayerView {
                                 .gap(d.gap_md)
                                 .child(
                                     div().w(px(100.0)).child( // intentional: speaker-label column
-                                        Text::new(format!("{}:", speaker_name))
-                                            .size(TextSize::Xs)
-                                            .weight(TextWeight::Semibold)
+                                        Text::label(format!("{}:", speaker_name))
                                             .color(theme.text_primary),
                                     ),
                                 )
