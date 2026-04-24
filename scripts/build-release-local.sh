@@ -303,6 +303,47 @@ win_ssh_cmd() {
         "\"$WIN_BASH_PATH\"" -lc "'$cmd'"
 }
 
+# Common rsync excludes — mirrors .gitignore for build/generated dirs.
+# Using an array avoids repeating between rsync_to and rsync_to_win.
+RSYNC_EXCLUDES=(
+    # Build artifacts
+    --exclude='/target/'
+    --exclude='/target-static/'
+    --exclude='/.docker-target/'
+    --exclude='/dist/'
+    --exclude='/tools/'
+    --exclude='/certs/'
+    --exclude='/coverage/'
+    --exclude='/mutants.out/'
+    --exclude='/appimage-builder-*'
+    # Python
+    --exclude='/venv/'
+    --exclude='/.venv/'
+    --exclude='__pycache__'
+    # Generated data
+    --exclude='/data/'
+    --exclude='/data_cached/'
+    --exclude='/data_generated/'
+    # Node
+    --exclude='node_modules/'
+    # Git and editor
+    --exclude='.git/'
+    --exclude='.DS_Store'
+    --exclude='/.vs/'
+    --exclude='/.vscode/'
+    --exclude='/.zed/'
+    --exclude='/.idea/'
+    --exclude='/.fleet/'
+    --exclude='/.qwen/'
+    --exclude='/.worktrees/'
+    --exclude='/.tokensave/'
+    # Object files
+    --exclude='*.o'
+    --exclude='*.d'
+    # Product/marketing docs
+    --exclude='/product/'
+)
+
 rsync_to() {
     local host="$1"
     local port="$2"
@@ -310,14 +351,14 @@ rsync_to() {
     local remote_dir="$4"
     build_ssh_transport "$port" "$key"
     rsync -avz --delete \
-        --exclude target/ --exclude node_modules/ --exclude dist/ \
-        --exclude .git/ --exclude '*.o' --exclude '*.d' \
-        --exclude target-static/ --exclude venv/ \
+        "${RSYNC_EXCLUDES[@]}" \
         -e "${SSH_TRANSPORT_CMD[*]}" \
         "$PROJECT_ROOT/" "${host}:${remote_dir}/"
 }
 
-# rsync to a Windows host — tells the remote side to use the detected rsync
+# rsync to a Windows host — tells the remote side to use the detected rsync.
+# The path is double-quoted for cmd.exe (the remote SSH shell) because
+# Windows paths contain spaces (e.g. "C:\Program Files\...").
 rsync_to_win() {
     local host="$1"
     local port="$2"
@@ -325,11 +366,9 @@ rsync_to_win() {
     local remote_dir="$4"
     build_ssh_transport "$port" "$key"
     rsync -avz --delete \
-        --exclude target/ --exclude node_modules/ --exclude dist/ \
-        --exclude .git/ --exclude '*.o' --exclude '*.d' \
-        --exclude target-static/ --exclude venv/ \
+        "${RSYNC_EXCLUDES[@]}" \
         -e "${SSH_TRANSPORT_CMD[*]}" \
-        --rsync-path="$WIN_RSYNC_PATH" \
+        --rsync-path="\"$WIN_RSYNC_PATH\"" \
         "$PROJECT_ROOT/" "${host}:${remote_dir}/"
 }
 
@@ -355,7 +394,7 @@ rsync_from_win() {
     build_ssh_transport "$port" "$key"
     rsync -avz \
         -e "${SSH_TRANSPORT_CMD[*]}" \
-        --rsync-path="$WIN_RSYNC_PATH" \
+        --rsync-path="\"$WIN_RSYNC_PATH\"" \
         "${host}:${remote_path}" "$local_path"
 }
 
@@ -804,6 +843,14 @@ sign_with_cosign() {
         case "$name" in
             *"$VERSION"*) ;;
             *) continue ;;
+        esac
+
+        # Respect --skip-* flags: only sign artifacts for platforms we built
+        case "$name" in
+            *linux*|*aarch64*|*x86_64*.AppImage)
+                if $SKIP_LINUX; then continue; fi ;;
+            *windows*|*.exe|*.msix)
+                if $SKIP_WINDOWS; then continue; fi ;;
         esac
 
         if $DRY_RUN; then
