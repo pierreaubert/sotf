@@ -481,11 +481,31 @@ impl AudioEngineManager {
         output_channels: usize,
         sample_rate: u32,
     ) -> AudioDecoderResult<()> {
+        self.start_driver_playback_with_driver_config(
+            output_device,
+            plugins,
+            output_channels,
+            sample_rate,
+            2,
+        )
+    }
+
+    /// Start driver playback with explicit driver format.
+    pub fn start_driver_playback_with_driver_config(
+        &mut self,
+        output_device: Option<String>,
+        plugins: Vec<PluginConfig>,
+        output_channels: usize,
+        sample_rate: u32,
+        input_channels: usize,
+    ) -> AudioDecoderResult<()> {
         let _guard = self.cmd_mutex.lock().unwrap();
+        let input_channels = input_channels.max(1);
 
         log::debug!(
-            "[AudioEngineManager] Starting driver playback at {}Hz",
-            sample_rate
+            "[AudioEngineManager] Starting driver playback at {}Hz, {} input channels",
+            sample_rate,
+            input_channels
         );
 
         // Create engine config for driver mode (no file source) with preserved volume
@@ -496,7 +516,7 @@ impl AudioEngineManager {
             frame_size: 1024,
             buffer_ms: 200, // 200ms latency
             output_sample_rate: sample_rate,
-            input_channels: 2, // Driver typically provides stereo
+            input_channels,
             output_channels,
             output_device,
             plugins,
@@ -550,6 +570,24 @@ impl AudioEngineManager {
         sample_rate: u32,
     ) -> AudioDecoderResult<()> {
         self.start_driver_playback_with_config(output_device, plugins, output_channels, sample_rate)
+    }
+
+    /// Start HAL playback with explicit HAL format.
+    pub fn start_hal_playback_with_driver_config(
+        &mut self,
+        output_device: Option<String>,
+        plugins: Vec<PluginConfig>,
+        output_channels: usize,
+        sample_rate: u32,
+        input_channels: usize,
+    ) -> AudioDecoderResult<()> {
+        self.start_driver_playback_with_driver_config(
+            output_device,
+            plugins,
+            output_channels,
+            sample_rate,
+            input_channels,
+        )
     }
 
     /// Pause streaming

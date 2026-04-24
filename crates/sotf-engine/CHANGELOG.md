@@ -1,3 +1,16 @@
+# 1.0.24
+
+## Driver HAL streaming reliability
+
+- Driver-mode playback now retries `HalInputReader` setup after startup so a
+  late-created HAL shared-memory file no longer leaves the engine permanently
+  streaming silence.
+- Added explicit driver-format startup helpers so HAL playback can use the
+  daemon-provided sample rate and input channel count instead of assuming
+  stereo 48 kHz input.
+- Added regression coverage through `driver-hal`'s streaming guard tests for
+  the late-HAL-reader reconnect path.
+
 # 1.0.23
 
 ## GD-Opt v2 — Phase GD-1e.5: SPL calibration capture
@@ -27,8 +40,6 @@ and §2.11 Q4).
 - Input validation: rejects non-finite / non-positive freq, too-
   short duration (< 0.3 s), amplitude outside (0, 1].
 
-Cargo version 1.0.22 → 1.0.23.
-
 # 1.0.22
 
 ## GD-Opt v2 — Phase GD-1e dedup: shared playback scaffolding
@@ -55,15 +66,6 @@ playback + mic-capture block that `probe_channel_delays_core` and
   `analyze_bass_anchor_recording`.
 - Net: `signal_recorder.rs` drops 142 lines (354 insertions, 496
   deletions for a single commit).
-
-Verified:
-- `cargo test -p sotf-engine --lib -- bass_anchor` — 3 passed.
-- `cargo test -p sotf-engine --lib` — 165 passed (only the pre-existing
-  `preflight::tests::test_get_username` sandbox env failure remains,
-  present on master).
-- `cargo check -p sotf-gpui -p sotf-tui` clean.
-
-Cargo version 1.0.21 → 1.0.22.
 
 # 1.0.21
 
@@ -129,5 +131,3 @@ callers outside sotf-engine itself. The local struct of the same
 name in `crates/autoeq/bin/convert_recording.rs` is unrelated — it
 defines its own `LegacyRecordingResult` in the converter binary and
 never imported the engine's version.
-
-Verified clean: `cargo check -p sotf-engine --all-targets`.
