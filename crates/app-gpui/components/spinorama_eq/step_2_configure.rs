@@ -817,11 +817,9 @@ impl PlayerView {
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
-            .child(
-                Text::new("Spinorama EQ currently supports PEQ/IIR output in this workflow.")
-                    .size(TextSize::Xs)
-                    .color(theme.text_muted),
-            )
+            .child(Text::caption(
+                "Spinorama EQ currently supports PEQ/IIR output in this workflow.",
+            ))
             .child(
                 Card::new()
                     .background(theme.surface)
@@ -873,11 +871,7 @@ impl PlayerView {
                                     )
                                 }),
                             ))
-                            .child(
-                                Text::new(current_mode.description())
-                                    .size(TextSize::Xs)
-                                    .color(theme.text_muted),
-                            ),
+                            .child(Text::caption(current_mode.description())),
                     ),
             )
             // Target curve selection (only shown when mode is FlatOnPir/Target)
@@ -943,11 +937,7 @@ impl PlayerView {
                                             },
                                         ),
                                     ))
-                                    .child(
-                                        Text::new(current_curve.as_str())
-                                            .size(TextSize::Xs)
-                                            .color(theme.text_muted),
-                                    ),
+                                    .child(Text::caption(current_curve.as_str())),
                             ),
                     )
                 },

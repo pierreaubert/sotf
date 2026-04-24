@@ -830,11 +830,7 @@ fn render_filter_plot(
 
     if frequencies.is_empty() || (eq_filters.is_empty() && broadband_filters.is_empty()) {
         return div()
-            .child(
-                Text::new("No filter data available")
-                    .size(TextSize::Xs)
-                    .color(theme.text_muted),
-            )
+            .child(Text::caption("No filter data available"))
             .into_any_element();
     }
 
@@ -1360,11 +1356,7 @@ fn render_filter_table(
 
     if filters.is_empty() {
         return div()
-            .child(
-                Text::new("No filters")
-                    .size(TextSize::Xs)
-                    .color(theme.text_muted),
-            )
+            .child(Text::caption("No filters"))
             .into_any_element();
     }
 
@@ -1429,11 +1421,7 @@ fn render_filter_table(
                                 .size(TextSize::Xs)
                                 .color(gain_color),
                         )
-                        .child(
-                            Text::new(format!("Q:{:.1}", f.q))
-                                .size(TextSize::Xs)
-                                .color(theme.text_muted),
-                        ),
+                        .child(Text::caption(format!("Q:{:.1}", f.q))),
                 )
         }))
         .into_any_element()

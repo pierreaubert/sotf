@@ -263,15 +263,11 @@ impl PlayerView {
                                     .size(TextSize::Sm)
                                     .color(theme.text_secondary),
                             )
-                            .child(
-                                Text::new(
-                                    "Run the Probe step in the Recording wizard to \
-                                     capture per-channel delays, or enter values manually \
-                                     after loading a file that contains probe results.",
-                                )
-                                .size(TextSize::Xs)
-                                .color(theme.text_muted),
-                            ),
+                            .child(Text::caption(
+                                "Run the Probe step in the Recording wizard to \
+                                 capture per-channel delays, or enter values manually \
+                                 after loading a file that contains probe results.",
+                            )),
                     ),
             );
         }
