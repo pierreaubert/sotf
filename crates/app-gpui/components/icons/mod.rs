@@ -120,7 +120,17 @@ pub enum IconSize {
 }
 
 impl IconSize {
-    /// Get the pixel size (for APIs that require Pixels)
+    /// Get the pixel size (for APIs that require Pixels).
+    ///
+    /// Prefer [`IconSize::to_rems`] so sizes scale with `window.rem_size`
+    /// (driven by the `IncreaseFontSize` / `DecreaseFontSize` actions). This
+    /// absolute-pixel variant is retained for the few APIs that require
+    /// `Pixels` and for legacy tests; new call sites should render an
+    /// [`Icon`] or use `.to_rems()` directly.
+    #[deprecated(
+        note = "Use `IconSize::to_rems()` (or the `Icon` component) so icons scale with font zoom. \
+                Raw pixel sizes bypass `window.rem_size` and break zoom consistency."
+    )]
     pub fn px(&self) -> Pixels {
         match self {
             IconSize::Xs => px(12.0),
