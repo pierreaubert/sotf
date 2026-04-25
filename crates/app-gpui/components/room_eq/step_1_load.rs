@@ -81,16 +81,12 @@ impl PlayerView {
                                         .variant(ButtonVariant::Secondary)
                                         .size(ButtonSize::Xs)
                                         .theme(theme.to_button_theme())
-                                        .build()
-                                        .on_mouse_up(
-                                            MouseButton::Left,
-                                            cx.listener(|view, _, _, cx| {
+                                        .on_click_event(cx.listener(|view, _, _, cx| {
                                                 view.state.update(cx, |state, _| {
                                                     state.app.measurement_state.room_eq_state.error_message = None;
                                                 });
                                                 cx.notify();
-                                            }),
-                                        ),
+                                            })),
                                 ),
                         )
                         .into_any_element()
@@ -129,25 +125,17 @@ impl PlayerView {
                                                 .variant(ButtonVariant::Primary)
                                                 .size(ButtonSize::Sm)
                                                 .theme(theme.to_button_theme())
-                                                .build()
-                                                .on_mouse_up(
-                                                    MouseButton::Left,
-                                                    cx.listener(|view, _, _, cx| {
+                                                .on_click_event(cx.listener(|view, _, _, cx| {
                                                         view.load_room_eq_from_recording(cx);
-                                                    }),
-                                                )
+                                                    }))
                                         } else {
                                             Button::new("go_to_recording", "Go to Recording")
                                                 .variant(ButtonVariant::Primary)
                                                 .size(ButtonSize::Sm)
                                                 .theme(theme.to_button_theme())
-                                                .build()
-                                                .on_mouse_up(
-                                                    MouseButton::Left,
-                                                    cx.listener(|view, _, _, cx| {
+                                                .on_click_event(cx.listener(|view, _, _, cx| {
                                                         view.switch_screen(crate::app::Screen::Recording, cx);
-                                                    }),
-                                                )
+                                                    }))
                                         }),
                                 ),
                         ),
@@ -176,13 +164,9 @@ impl PlayerView {
                                                 .variant(ButtonVariant::Primary)
                                                 .size(ButtonSize::Sm)
                                                 .theme(theme.to_button_theme())
-                                                .build()
-                                                .on_mouse_up(
-                                                    MouseButton::Left,
-                                                    cx.listener(|view, _, _, cx| {
+                                                .on_click_event(cx.listener(|view, _, _, cx| {
                                                         view.load_room_eq_from_file(cx);
-                                                    }),
-                                                ),
+                                                    })),
                                         ),
                                 ),
                         ),
@@ -223,10 +207,7 @@ impl PlayerView {
                                 .variant(ButtonVariant::Primary)
                                 .size(ButtonSize::Md)
                                 .theme(theme.to_button_theme())
-                                .build()
-                                .on_mouse_up(
-                                    MouseButton::Left,
-                                    cx.listener(|view, _, _, cx| {
+                                .on_click_event(cx.listener(|view, _, _, cx| {
                                         view.state.update(cx, |state, _| {
                                             if let Some(next) = state
                                                 .app
@@ -243,8 +224,7 @@ impl PlayerView {
                                             }
                                         });
                                         cx.notify();
-                                    }),
-                                ),
+                                    })),
                         ),
                     )
             })
