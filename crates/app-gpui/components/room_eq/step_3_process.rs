@@ -17,6 +17,7 @@ impl PlayerView {
     pub(crate) fn render_room_eq_process(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let current_mode = state.app.measurement_state.room_eq_state.wizard_mode;
 
         let simple_selected = current_mode == RoomEqWizardMode::Simple;

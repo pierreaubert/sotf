@@ -17,6 +17,7 @@ use gpui_ui_kit::{
 impl PlayerView {
     /// Render the capture step UI
     pub(crate) fn render_recording_capture_step(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let translations = self.state.read(cx).app.ui_state.translations.clone();
         VStack::new()
             .spacing(StackSpacing::Md)
             .child(
@@ -97,8 +98,8 @@ impl PlayerView {
     /// Render signal type dropdown
     fn render_signal_type_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
 
@@ -154,8 +155,8 @@ impl PlayerView {
     /// Render duration dropdown
     fn render_duration_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
 
@@ -215,8 +216,8 @@ impl PlayerView {
     /// Render per-channel sweep frequency configuration
     fn render_channel_config_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let is_sweep = recording_state.signal_type == RecordingSignalType::Sweep;
 
@@ -386,8 +387,8 @@ impl PlayerView {
     /// Render per-channel recording metrics (avg SPL and noise floor)
     fn render_channel_metrics_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
 
         // Collect metrics for channels that have results
@@ -521,8 +522,8 @@ impl PlayerView {
     fn render_channel_status_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let is_recording = state.app.measurement_state.recording_state.is_recording();
         let status_message = state
             .app
@@ -639,8 +640,8 @@ impl PlayerView {
     fn render_channel_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = crate::components::design::Ds::from_cx(cx);
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
         let is_recording = recording_state.is_recording();
@@ -830,8 +831,8 @@ impl PlayerView {
     /// Render capture action buttons (redo and load from file)
     fn render_capture_redo_actions(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let is_recording = recording_state.is_recording();
         let view = cx.entity().clone();
@@ -2198,8 +2199,8 @@ impl PlayerView {
     pub(crate) fn render_migration_modal(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let rec_state = &state.app.measurement_state.recording_state;
 
         let file_path = rec_state.migration_file_path.clone().unwrap_or_default();
