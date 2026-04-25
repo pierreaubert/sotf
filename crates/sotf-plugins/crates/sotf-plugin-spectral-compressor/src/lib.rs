@@ -293,9 +293,6 @@ pub struct SpectralCompressorPlugin {
     // STFT state
     stft: StftState,
 
-    // Dry buffer for mix
-    dry_buffer: Vec<f32>,
-
     // Smoothers
     threshold_smoother: Smoother,
     mix_smoother: Smoother,
@@ -337,8 +334,6 @@ impl SpectralCompressorPlugin {
             adaptive_offset_db: 0.0,
 
             stft: StftState::new(fft_size, channels),
-
-            dry_buffer: Vec::new(),
 
             threshold_smoother: Smoother::new(params.threshold_db, 20.0, sample_rate),
             mix_smoother: Smoother::new(params.mix, 20.0, sample_rate),
@@ -383,7 +378,7 @@ impl SpectralCompressorPlugin {
         let scale = self.stft.output_scale;
         let mask = self.stft.output_accumulator_mask;
 
-        let threshold = self.threshold_smoother.current();
+        let threshold = self.threshold_smoother.next_n(self.stft.hop_size);
         let ratio = self.ratio;
         let knee = self.knee_db;
         let attack_coeff = self.attack_coeff;
@@ -653,6 +648,12 @@ impl SpectralCompressorPlugin {
             .with_importance(ParameterImportance::Useful),
         ];
     }
+
+    #[inline]
+    fn mix_output_sample(dry: f32, wet: f32, mix: f32, delta_enabled: bool) -> f32 {
+        let mixed = dry * (1.0 - mix) + wet * mix;
+        if delta_enabled { mixed - dry } else { mixed }
+    }
 }
 
 // ============================================================================
@@ -779,11 +780,6 @@ impl InPlacePlugin for SpectralCompressorPlugin {
         self.recompute_coefficients();
         self.threshold_smoother = Smoother::new(self.threshold_db, 20.0, sample_rate);
         self.mix_smoother = Smoother::new(self.mix, 20.0, sample_rate);
-        // Pre-allocate dry buffer for max expected block size
-        let buf_size = 8192 * self.channels;
-        if self.dry_buffer.len() < buf_size {
-            self.dry_buffer.resize(buf_size, 0.0);
-        }
         Ok(())
     }
 
@@ -807,20 +803,19 @@ impl InPlacePlugin for SpectralCompressorPlugin {
         let nf = context.num_frames;
         let channels = self.channels;
         let fft_size = self.stft.fft_size;
+        let total = nf
+            .checked_mul(channels)
+            .ok_or_else(|| "Frame/channel count overflow".to_string())?;
+        if buffer.len() != total {
+            return Err(format!(
+                "Buffer size mismatch: expected {}, got {}",
+                total,
+                buffer.len()
+            ));
+        }
 
         let g_mix = self.mix_smoother.next_n(nf);
-        let _ = self.threshold_smoother.next_n(nf);
-
-        // Ensure dry buffer large enough (no allocation after first call)
-        if self.dry_buffer.len() < buffer.len() {
-            // Grow to fit — this allocates but only on the first oversized block.
-            // Subsequent calls reuse the grown buffer.
-            self.dry_buffer.resize(buffer.len(), 0.0);
-        }
-        self.dry_buffer[..buffer.len()].copy_from_slice(buffer);
-
-        // Zero the output portion of the buffer — we'll drain OLA into it
-        buffer[..nf * channels].fill(0.0);
+        let delta_enabled = self.delta_monitor.enabled();
 
         let mut input_pos = 0; // frame index into the caller's buffer
         let mut output_pos = 0; // frame index into the caller's output
@@ -838,7 +833,7 @@ impl InPlacePlugin for SpectralCompressorPlugin {
                     for ch in 0..channels {
                         for i in 0..to_copy {
                             self.stft.input_buffers[ch][self.stft.input_fill + i] =
-                                self.dry_buffer[(input_pos + i) * channels + ch];
+                                buffer[(input_pos + i) * channels + ch];
                         }
                     }
                     self.stft.input_fill += to_copy;
@@ -866,8 +861,10 @@ impl InPlacePlugin for SpectralCompressorPlugin {
                     let read_idx = (self.stft.output_read_position + i) & mask;
                     let out_base = (output_pos + i) * channels;
                     for ch in 0..channels {
-                        buffer[out_base + ch] +=
-                            self.stft.output_accumulator[read_idx * channels + ch];
+                        let idx = out_base + ch;
+                        let dry = buffer[idx];
+                        let wet = self.stft.output_accumulator[read_idx * channels + ch];
+                        buffer[idx] = Self::mix_output_sample(dry, wet, g_mix, delta_enabled);
                     }
                 }
                 // Clear drained frames
@@ -882,23 +879,18 @@ impl InPlacePlugin for SpectralCompressorPlugin {
                 self.stft.output_accumulator_fill -= frames_to_drain;
                 output_pos += frames_to_drain;
             } else {
-                // No output ready: output silence (during initial latency fill)
+                // No output ready: output silence for the wet path during initial latency fill.
+                for i in output_pos..nf {
+                    let out_base = i * channels;
+                    for ch in 0..channels {
+                        let idx = out_base + ch;
+                        let dry = buffer[idx];
+                        buffer[idx] = Self::mix_output_sample(dry, 0.0, g_mix, delta_enabled);
+                    }
+                }
                 output_pos = nf;
             }
         }
-
-        // Apply wet/dry mix
-        let total = nf * channels;
-        for i in 0..nf {
-            for ch in 0..channels {
-                let idx = i * channels + ch;
-                buffer[idx] = self.dry_buffer[idx] * (1.0 - g_mix) + buffer[idx] * g_mix;
-            }
-        }
-
-        // Phase 4A: Delta monitoring — replace output with wet-dry difference
-        self.delta_monitor
-            .apply_if_enabled(&self.dry_buffer[..total], &mut buffer[..total]);
 
         flush_denormals_inplace(buffer);
         Ok(nf)
@@ -1093,6 +1085,43 @@ mod tests {
         };
         let plugin_4096 = SpectralCompressorPlugin::from_params(2, params_4096);
         assert_eq!(plugin_4096.latency_samples(), 4096);
+    }
+
+    #[test]
+    fn test_process_rejects_buffer_size_mismatch() {
+        let mut plugin = make_plugin(-20.0, 2.0);
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: 64,
+        };
+        let mut short = vec![0.0f32; ctx.num_frames * plugin.channels() - 1];
+        let err = plugin.process_in_place(&mut short, &ctx).unwrap_err();
+        assert!(err.contains("Buffer size mismatch"));
+    }
+
+    #[test]
+    fn test_mix_zero_passthrough_during_latency_fill() {
+        let params = SpectralCompressorPluginParams {
+            mix: 0.0,
+            ..Default::default()
+        };
+        let mut plugin = SpectralCompressorPlugin::from_params(2, params);
+        plugin.initialize(48000).unwrap();
+
+        let frames = 128;
+        let mut buffer = vec![0.0f32; frames * 2];
+        for i in 0..frames {
+            buffer[i * 2] = i as f32 * 0.001;
+            buffer[i * 2 + 1] = -(i as f32) * 0.001;
+        }
+        let original = buffer.clone();
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: frames,
+        };
+
+        plugin.process_in_place(&mut buffer, &ctx).unwrap();
+        assert_eq!(buffer, original);
     }
 
     #[test]

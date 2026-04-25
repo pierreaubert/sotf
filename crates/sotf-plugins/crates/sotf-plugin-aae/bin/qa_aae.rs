@@ -1,6 +1,6 @@
 use sotf_host::{CountingAlloc, run_standard_tests};
 use sotf_host::{ParameterValue, Plugin, ProcessContext};
-use sotf_plugin_aae::{params::AaePluginParams, AaePlugin};
+use sotf_plugin_aae::{AaePlugin, params::AaePluginParams};
 use std::f32::consts::PI;
 
 #[global_allocator]
@@ -233,10 +233,7 @@ fn test_rt60_parameter(plugin: &mut AaePlugin, sample_rate: u32) {
     let mut tail_long = vec![0.0_f32; tail_frames * out_ch];
     process_blocks(plugin, &silence, &mut tail_long, sample_rate, block);
 
-    let energy_long: f32 = tail_long[late_start * out_ch..]
-        .iter()
-        .map(|v| v * v)
-        .sum();
+    let energy_long: f32 = tail_long[late_start * out_ch..].iter().map(|v| v * v).sum();
 
     println!("  RT60=0.5s late energy: {:.8}", energy_short);
     println!("  RT60=4.0s late energy: {:.8}", energy_long);
@@ -262,7 +259,11 @@ fn test_speaker_config_change(plugin: &mut AaePlugin, sample_rate: u32) {
             ParameterValue::String("7.1.4".to_string()),
         )
         .unwrap();
-    assert_eq!(plugin.output_channels(), 12, "7.1.4 should have 12 channels");
+    assert_eq!(
+        plugin.output_channels(),
+        12,
+        "7.1.4 should have 12 channels"
+    );
 
     let num_frames = 4096;
     let block = 1024;
@@ -368,10 +369,16 @@ fn test_no_nan_inf(plugin: &mut AaePlugin, sample_rate: u32) {
     for i in 0..num_frames {
         let t = i as f32 / sample_rate as f32;
         let s = match i / 12000 {
-            0 => (2.0 * PI * 440.0 * t).sin() * 0.8,  // sine
-            1 => 0.0,                                    // silence
-            2 => if i % 12000 == 0 { 1.0 } else { 0.0 }, // impulse
-            _ => (2.0 * PI * 100.0 * t).sin() * 0.99,   // near-clipping bass
+            0 => (2.0 * PI * 440.0 * t).sin() * 0.8, // sine
+            1 => 0.0,                                // silence
+            2 => {
+                if i % 12000 == 0 {
+                    1.0
+                } else {
+                    0.0
+                }
+            } // impulse
+            _ => (2.0 * PI * 100.0 * t).sin() * 0.99, // near-clipping bass
         };
         input[i * 2] = s;
         input[i * 2 + 1] = s * 0.9;
@@ -424,10 +431,7 @@ fn test_energy_bounded(plugin: &mut AaePlugin, sample_rate: u32) {
     );
 
     // Check no individual sample exceeds ±2.0 (with default conservative levels)
-    let max_sample = output
-        .iter()
-        .map(|v| v.abs())
-        .fold(0.0_f32, f32::max);
+    let max_sample = output.iter().map(|v| v.abs()).fold(0.0_f32, f32::max);
     println!("  Max output sample: {:.4}", max_sample);
     assert!(
         max_sample < 2.0,

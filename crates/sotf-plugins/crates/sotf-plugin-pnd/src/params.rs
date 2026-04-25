@@ -41,6 +41,8 @@ pub const PARAMS: &[ParamSpec] = &[
         "ms",
         "General",
     )
+    .structural()
+    .setup()
     .doc("FFT analysis window size"),
     ParamSpec::float(
         "Drift Smoothing",
@@ -55,6 +57,8 @@ pub const PARAMS: &[ParamSpec] = &[
     .scaled(1000.0)
     .doc("Pitch drift low-pass smoothing"),
     ParamSpec::bool_param("Multi-Channel", "multi_channel_analysis", true, "Analysis")
+        .structural()
+        .setup()
         .doc("Analyze all channels together"),
     ParamSpec::float(
         "Confidence Threshold",
@@ -68,6 +72,8 @@ pub const PARAMS: &[ParamSpec] = &[
     )
     .doc("Min detection confidence to apply"),
     ParamSpec::bool_param("Phase Vocoder", "phase_vocoder", false, "Correction")
+        .structural()
+        .setup()
         .doc("Use phase vocoder for correction"),
 ];
 

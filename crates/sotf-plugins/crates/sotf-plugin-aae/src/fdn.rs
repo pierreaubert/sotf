@@ -6,7 +6,6 @@
 /// - Per-line tone correction filters (frequency-dependent RT60)
 /// - Time-variant delay modulation (Griesinger's key innovation)
 /// - Safety limiter in the feedback path
-
 use crate::delay_line::DelayLine;
 use crate::hadamard::hadamard8;
 use crate::tone_filter::ToneFilter;
@@ -17,6 +16,7 @@ pub const FDN_SIZE: usize = 8;
 /// Base delay lengths in samples at 48 kHz, room_size=1.0.
 /// All prime to maximize echo density and minimize repetition patterns.
 const BASE_DELAYS_48K: [usize; FDN_SIZE] = [1553, 1907, 2311, 2719, 3187, 3557, 4001, 4507];
+const MAX_ROOM_SIZE: f32 = 3.0;
 
 /// Per-line modulation frequencies in Hz (all different to avoid beating).
 const MOD_FREQUENCIES: [f32; FDN_SIZE] = [0.07, 0.11, 0.13, 0.17, 0.19, 0.23, 0.29, 0.31];
@@ -65,16 +65,19 @@ impl Fdn {
         let scale = room_size * sr / 48000.0;
 
         let mut delay_lengths = [0usize; FDN_SIZE];
-        let mut max_delay = 0usize;
         for i in 0..FDN_SIZE {
             delay_lengths[i] = (BASE_DELAYS_48K[i] as f32 * scale).round() as usize;
             delay_lengths[i] = delay_lengths[i].max(1);
-            if delay_lengths[i] > max_delay {
-                max_delay = delay_lengths[i];
-            }
         }
 
-        // Allocate delay lines with extra headroom for modulation
+        // Allocate for the maximum supported room size so room_size changes can
+        // update delay lengths without reallocating on the audio/control path.
+        let max_scale = MAX_ROOM_SIZE * sr / 48000.0;
+        let max_delay = BASE_DELAYS_48K
+            .iter()
+            .map(|delay| (*delay as f32 * max_scale).ceil() as usize)
+            .max()
+            .unwrap_or(1);
         let alloc_size = max_delay + 16;
         let delay_lines = std::array::from_fn(|_| DelayLine::new(alloc_size));
 
@@ -89,8 +92,7 @@ impl Fdn {
         });
 
         // Modulation phase increments
-        let mod_phase_incs =
-            std::array::from_fn(|i| MOD_FREQUENCIES[i] / sr);
+        let mod_phase_incs = std::array::from_fn(|i| MOD_FREQUENCIES[i] / sr);
 
         let mod_depth_samples = mod_depth * 8.0;
         let limiter_threshold = 10.0_f32.powf(-safety_limit_db / 20.0);
@@ -171,6 +173,19 @@ impl Fdn {
             let g_ny = 10.0_f32.powf(-3.0 * m / (rt60_treble * self.sample_rate));
             self.tone_filters[i].set_gains(g_dc, g_ny);
         }
+    }
+
+    /// Update room size without reallocating.
+    pub fn set_room_size(&mut self, room_size: f32, rt60: f32, bass_ratio: f32, treble_ratio: f32) {
+        let scale = room_size.clamp(0.2, MAX_ROOM_SIZE) * self.sample_rate / 48000.0;
+        for i in 0..FDN_SIZE {
+            self.delay_lengths[i] = (BASE_DELAYS_48K[i] as f32 * scale).round() as usize;
+            self.delay_lengths[i] = self.delay_lengths[i]
+                .max(1)
+                .min(self.delay_lines[i].max_delay_samples());
+        }
+        self.set_rt60(rt60, bass_ratio, treble_ratio);
+        self.reset();
     }
 
     /// Update modulation depth (0.0–1.0).

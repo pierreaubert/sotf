@@ -1874,6 +1874,38 @@ mod upmixer_tests {
         }
     }
 
+    #[test]
+    fn test_bypass_all_processing_validates_buffer_sizes() {
+        let mut plugin = UpmixerPlugin::new(
+            2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+        plugin.initialize(44100).unwrap();
+        plugin
+            .set_parameter(
+                ParameterId::from("bypass_all_processing"),
+                ParameterValue::Bool(true),
+            )
+            .unwrap();
+
+        let context = ProcessContext {
+            sample_rate: 44100,
+            num_frames: 64,
+        };
+        let short_input = vec![0.0_f32; context.num_frames * 2 - 1];
+        let mut output = vec![0.0_f32; context.num_frames * plugin.output_channels()];
+        let err = plugin
+            .process(&short_input, &mut output, &context)
+            .unwrap_err();
+        assert!(err.contains("Input size mismatch"));
+
+        let input = vec![0.0_f32; context.num_frames * 2];
+        let mut short_output = vec![0.0_f32; context.num_frames * plugin.output_channels() - 1];
+        let err = plugin
+            .process(&input, &mut short_output, &context)
+            .unwrap_err();
+        assert!(err.contains("Output size mismatch"));
+    }
+
     /// Bug 1 regression: `direct[i]` was never zeroed for bins in the LFE and
     /// pass-through bands, so stale data from a previous FFT frame would bleed
     /// into the center channel via `d_val * p_direct_c` in the panning stage.

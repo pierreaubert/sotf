@@ -249,6 +249,8 @@ pub const PARAMS: &[ParamSpec] = &[
         "Decorrelation",
     )
     .secondary("Decorrelation")
+    .structural()
+    .setup()
     .doc("Channel decorrelation method"),
     // 19: decorrelation_lfo_rate_hz
     ParamSpec::float(
@@ -275,6 +277,8 @@ pub const PARAMS: &[ParamSpec] = &[
         "Decorrelation",
     )
     .secondary("Decorrelation")
+    .structural()
+    .setup()
     .doc("Velvet noise impulse length"),
     // 21: velvet_noise_density
     ParamSpec::float(
@@ -288,6 +292,8 @@ pub const PARAMS: &[ParamSpec] = &[
         "Decorrelation",
     )
     .secondary("Decorrelation")
+    .structural()
+    .setup()
     .doc("Velvet noise pulses per second"),
     // Height
     // 22: height_hf_cap_hz
@@ -466,6 +472,8 @@ pub const PARAMS: &[ParamSpec] = &[
     // 35: low_latency
     ParamSpec::bool_param("Low Latency", "low_latency", false, "Analysis")
         .secondary("Analysis")
+        .structural()
+        .setup()
         .doc("Smaller FFT for lower latency"),
     // 36: frequency_resolution
     ParamSpec::choice(
@@ -482,6 +490,8 @@ pub const PARAMS: &[ParamSpec] = &[
     // 37: bypass_decorrelation
     ParamSpec::bool_param("Bypass Decor", "bypass_decorrelation", false, "Diagnostics")
         .diagnostic()
+        .structural()
+        .setup()
         .doc("Skip channel decorrelation"),
     // 38: bypass_transient_detection
     ParamSpec::bool_param(

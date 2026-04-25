@@ -26,7 +26,7 @@ pub const LEARN_FRAMES: usize = 50; // ~1s at typical hop rates
 // Choice label constants
 // ============================================================================
 
-pub const ALGORITHMS: &[&str] = &["Classical", "RNNoise", "DeepFilter", "HybridNeural"];
+pub const ALGORITHMS: &[&str] = &["Classical", "RNNoise"];
 
 // ============================================================================
 // Parameter Specifications
@@ -307,6 +307,7 @@ pub const PARAMS: &[ParamSpec] = &[
     // 29: algorithm
     ParamSpec::choice("Algorithm", "algorithm", 0, ALGORITHMS, "General")
         .structural()
+        .setup()
         .doc("Denoising algorithm selection"),
     // 30: formant_preservation
     ParamSpec::bool_param("Formant Preserve", "formant_preservation", false, "Formant")
@@ -329,6 +330,7 @@ pub const PARAMS: &[ParamSpec] = &[
     // 32: multi_resolution
     ParamSpec::bool_param("Multi-Res", "multi_resolution", false, "General")
         .structural()
+        .setup()
         .secondary("General")
         .doc("Multi-resolution FFT analysis"),
     // --- Phase 4B: SOTA additions ---

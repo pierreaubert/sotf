@@ -366,11 +366,11 @@ fn compute_xtc_filters_asymmetric_with_cache(
         let h_ll_ipsi = Complex::new(1.0, 0.0) * pinna_ipsi;
         let pinna_left_contra = pinna_left_contra_lut.as_deref().map_or(1.0, |lut| lut[bin]);
         let delta_t_left = delay_left_contra - delay_left_ipsi;
-        let g_ll = head_shadowing(freq, asym.angle_left_contra, a, params.head_model)
+        let shadow_ll = head_shadowing_complex(freq, asym.angle_left_contra, a, params.head_model)
             * asym.amplitude_ratio_left;
         let phase_ll_contra = -2.0 * PI * freq * delta_t_left;
-        let h_ll_contra = Complex::new(g_ll * phase_ll_contra.cos(), g_ll * phase_ll_contra.sin())
-            * pinna_left_contra;
+        let path_ll = Complex::new(phase_ll_contra.cos(), phase_ll_contra.sin());
+        let h_ll_contra = shadow_ll * path_ll * pinna_left_contra;
 
         // Right ear: ipsi speaker is right speaker, contra is left speaker
         let h_rr_ipsi = Complex::new(1.0, 0.0) * pinna_ipsi;
@@ -378,11 +378,11 @@ fn compute_xtc_filters_asymmetric_with_cache(
             .as_deref()
             .map_or(1.0, |lut| lut[bin]);
         let delta_t_right = delay_right_contra - delay_right_ipsi;
-        let g_rr = head_shadowing(freq, asym.angle_right_contra, a, params.head_model)
+        let shadow_rr = head_shadowing_complex(freq, asym.angle_right_contra, a, params.head_model)
             * asym.amplitude_ratio_right;
         let phase_rr_contra = -2.0 * PI * freq * delta_t_right;
-        let h_rr_contra = Complex::new(g_rr * phase_rr_contra.cos(), g_rr * phase_rr_contra.sin())
-            * pinna_right_contra;
+        let path_rr = Complex::new(phase_rr_contra.cos(), phase_rr_contra.sin());
+        let h_rr_contra = shadow_rr * path_rr * pinna_right_contra;
 
         // Integrate room reflections: add reflection contributions to transfer functions
         let (h_ll_ipsi_final, h_ll_contra_final, h_rr_ipsi_final, h_rr_contra_final) =
@@ -684,11 +684,12 @@ fn compute_xtc_filters_symmetric_with_cache(
         let h_ipsi = Complex::new(1.0, 0.0);
 
         // Contralateral path is relative to ipsilateral.
-        // The head-shadowing magnitude `g` is the same for both modes; only the phase differs.
         let delta_t = sym.delay_contra - sym.delay_ipsi;
-        let g = head_shadowing(freq, sym.contra_angle, a, params.head_model) * sym.amplitude_ratio;
+        let shadow = head_shadowing_complex(freq, sym.contra_angle, a, params.head_model)
+            * sym.amplitude_ratio;
         let phase_contra = -2.0 * PI * freq * delta_t;
-        let h_contra_phase_only = Complex::new(g * phase_contra.cos(), g * phase_contra.sin());
+        let path_phase = Complex::new(phase_contra.cos(), phase_contra.sin());
+        let h_contra_phase_only = shadow * path_phase;
 
         let h_contra = if use_explicit_delay {
             // Explicit delay mode: model the contralateral path at LF as a pure
@@ -1103,6 +1104,7 @@ pub(crate) fn head_shadowing_woodworth(freq: f32, angle_rad: f32, head_radius: f
 /// Dispatch head shadowing based on the configured model.
 /// Returns magnitude-only shadow gain (0..1) for API compatibility.
 /// head_model: 0 = Woodworth, 1 = Brown-Duda
+#[allow(dead_code)]
 pub(crate) fn head_shadowing(
     freq: f32,
     angle_rad: f32,
@@ -1112,6 +1114,23 @@ pub(crate) fn head_shadowing(
     match head_model {
         1 => head_shadowing_brown_duda(freq, angle_rad, head_radius).0,
         _ => head_shadowing_woodworth(freq, angle_rad, head_radius),
+    }
+}
+
+/// Dispatch head shadowing as a complex gain.
+/// head_model: 0 = Woodworth magnitude only, 1 = Brown-Duda magnitude + phase.
+pub(crate) fn head_shadowing_complex(
+    freq: f32,
+    angle_rad: f32,
+    head_radius: f32,
+    head_model: usize,
+) -> Complex<f32> {
+    match head_model {
+        1 => {
+            let (magnitude, phase) = head_shadowing_brown_duda(freq, angle_rad, head_radius);
+            Complex::new(magnitude * phase.cos(), magnitude * phase.sin())
+        }
+        _ => Complex::new(head_shadowing_woodworth(freq, angle_rad, head_radius), 0.0),
     }
 }
 

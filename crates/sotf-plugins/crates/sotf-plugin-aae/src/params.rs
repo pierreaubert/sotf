@@ -31,10 +31,16 @@ pub const ROOM_PRESETS: &[&str] = &["small", "medium", "large", "cathedral"];
 
 pub const PARAMS: &[ParamSpec] = &[
     // 0: speaker_config
-    ParamSpec::choice("Speaker Config", "speaker_config", 1, SPEAKER_CONFIGS, "Spatial")
-        .structural()
-        .setup()
-        .doc("Output speaker layout"),
+    ParamSpec::choice(
+        "Speaker Config",
+        "speaker_config",
+        1,
+        SPEAKER_CONFIGS,
+        "Spatial",
+    )
+    .structural()
+    .setup()
+    .doc("Output speaker layout"),
     // 1: room_size
     ParamSpec::float("Room Size", "room_size", 1.0, 0.2, 3.0, 0.1, "x", "Room")
         .doc("Scales all delay line lengths"),
@@ -45,11 +51,29 @@ pub const PARAMS: &[ParamSpec] = &[
     ParamSpec::float("Bass Ratio", "bass_ratio", 1.2, 0.8, 2.0, 0.05, "x", "Room")
         .doc("RT60_bass / RT60_mid ratio"),
     // 4: treble_ratio
-    ParamSpec::float("Treble Ratio", "treble_ratio", 0.5, 0.2, 1.0, 0.05, "x", "Room")
-        .doc("RT60_treble / RT60_mid ratio"),
+    ParamSpec::float(
+        "Treble Ratio",
+        "treble_ratio",
+        0.5,
+        0.2,
+        1.0,
+        0.05,
+        "x",
+        "Room",
+    )
+    .doc("RT60_treble / RT60_mid ratio"),
     // 5: pre_delay_ms
-    ParamSpec::float("Pre-delay", "pre_delay_ms", 20.0, 0.0, 100.0, 1.0, "ms", "Room")
-        .doc("Gap before first reflection"),
+    ParamSpec::float(
+        "Pre-delay",
+        "pre_delay_ms",
+        20.0,
+        0.0,
+        100.0,
+        1.0,
+        "ms",
+        "Room",
+    )
+    .doc("Gap before first reflection"),
     // 6: room_preset
     ParamSpec::choice("Room Preset", "room_preset", 1, ROOM_PRESETS, "Room")
         .doc("Early reflection tap configuration"),
@@ -60,38 +84,109 @@ pub const PARAMS: &[ParamSpec] = &[
     ParamSpec::float("ER Level", "er_level", 0.3, 0.0, 1.0, 0.01, "x", "Levels")
         .doc("Early reflection level"),
     // 9: late_level
-    ParamSpec::float("Late Level", "late_level", 0.2, 0.0, 1.0, 0.01, "x", "Levels")
-        .doc("Late reverb (FDN) level"),
+    ParamSpec::float(
+        "Late Level",
+        "late_level",
+        0.2,
+        0.0,
+        1.0,
+        0.01,
+        "x",
+        "Levels",
+    )
+    .doc("Late reverb (FDN) level"),
     // 10: lfe_level
     ParamSpec::float("LFE Level", "lfe_level", 0.2, 0.0, 1.0, 0.01, "x", "Levels")
         .doc("Bass sent to LFE channel"),
     // 11: mod_depth
-    ParamSpec::float("Mod Depth", "mod_depth", 0.5, 0.0, 1.0, 0.01, "x", "Modulation")
-        .doc("FDN time-variant delay modulation (Griesinger)"),
+    ParamSpec::float(
+        "Mod Depth",
+        "mod_depth",
+        0.5,
+        0.0,
+        1.0,
+        0.01,
+        "x",
+        "Modulation",
+    )
+    .doc("FDN time-variant delay modulation (Griesinger)"),
     // 12: er_mod_depth
-    ParamSpec::float("ER Mod Depth", "er_mod_depth", 0.3, 0.0, 1.0, 0.01, "x", "Modulation")
-        .doc("Early reflection tap modulation"),
+    ParamSpec::float(
+        "ER Mod Depth",
+        "er_mod_depth",
+        0.3,
+        0.0,
+        1.0,
+        0.01,
+        "x",
+        "Modulation",
+    )
+    .doc("Early reflection tap modulation"),
     // 13: input_diffusion
-    ParamSpec::float("Input Diffusion", "input_diffusion", 0.7, 0.0, 1.0, 0.01, "x", "Character")
-        .doc("Pre-FDN allpass diffusion"),
+    ParamSpec::float(
+        "Input Diffusion",
+        "input_diffusion",
+        0.7,
+        0.0,
+        1.0,
+        0.01,
+        "x",
+        "Character",
+    )
+    .doc("Pre-FDN allpass diffusion"),
     // 14: envelopment
-    ParamSpec::float("Envelopment", "envelopment", 0.7, 0.0, 1.0, 0.01, "x", "Spatial")
-        .doc("Rear/surround vs front reverb balance"),
+    ParamSpec::float(
+        "Envelopment",
+        "envelopment",
+        0.7,
+        0.0,
+        1.0,
+        0.01,
+        "x",
+        "Spatial",
+    )
+    .doc("Rear/surround vs front reverb balance"),
     // 15: height_amount
-    ParamSpec::float("Height Amount", "height_amount", 0.5, 0.0, 1.0, 0.01, "x", "Spatial")
-        .doc("Height channel contribution"),
+    ParamSpec::float(
+        "Height Amount",
+        "height_amount",
+        0.5,
+        0.0,
+        1.0,
+        0.01,
+        "x",
+        "Spatial",
+    )
+    .doc("Height channel contribution"),
     // 16: content_aware
     ParamSpec::bool_param("Content Aware", "content_aware", true, "Intelligence")
         .doc("Enable speech detection for reverb ducking"),
     // 17: dialogue_attenuation_db
-    ParamSpec::float("Dialogue Atten.", "dialogue_attenuation_db", 6.0, 0.0, 12.0, 0.5, "dB", "Intelligence")
-        .doc("Reverb reduction during detected speech"),
+    ParamSpec::float(
+        "Dialogue Atten.",
+        "dialogue_attenuation_db",
+        6.0,
+        0.0,
+        12.0,
+        0.5,
+        "dB",
+        "Intelligence",
+    )
+    .doc("Reverb reduction during detected speech"),
     // 18: safety_limit_db
-    ParamSpec::float("Safety Limit", "safety_limit_db", 6.0, 0.0, 12.0, 0.5, "dB", "Intelligence")
-        .doc("FDN feedback limiter threshold"),
+    ParamSpec::float(
+        "Safety Limit",
+        "safety_limit_db",
+        6.0,
+        0.0,
+        12.0,
+        0.5,
+        "dB",
+        "Intelligence",
+    )
+    .doc("FDN feedback limiter threshold"),
     // 19: bypass
-    ParamSpec::bool_param("Bypass", "bypass", false, "Diagnostic")
-        .doc("Pass-through mode"),
+    ParamSpec::bool_param("Bypass", "bypass", false, "Diagnostic").doc("Pass-through mode"),
     // 20: solo_early
     ParamSpec::bool_param("Solo Early", "solo_early", false, "Diagnostic")
         .doc("Hear only early reflections"),
@@ -195,8 +290,12 @@ sotf_host::serde_param_default! {
     fn default_safety_limit_db() -> f32 = "safety_limit_db";
 }
 
-fn default_speaker_config() -> String { "5.1".to_string() }
-fn default_room_preset() -> String { "medium".to_string() }
+fn default_speaker_config() -> String {
+    "5.1".to_string()
+}
+fn default_room_preset() -> String {
+    "medium".to_string()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AaePluginParams {
@@ -269,23 +368,77 @@ pub fn build_parameters(params: &AaePluginParams) -> Vec<Parameter> {
         Parameter::new_float("room_size", "Room Size", params.room_size, 0.2, 3.0),
         Parameter::new_float("rt60", "RT60", params.rt60, 0.3, 6.0).with_unit("s"),
         Parameter::new_float("bass_ratio", "Bass Ratio", params.bass_ratio, 0.8, 2.0),
-        Parameter::new_float("treble_ratio", "Treble Ratio", params.treble_ratio, 0.2, 1.0),
+        Parameter::new_float(
+            "treble_ratio",
+            "Treble Ratio",
+            params.treble_ratio,
+            0.2,
+            1.0,
+        ),
         Parameter::new_float("pre_delay_ms", "Pre-delay", params.pre_delay_ms, 0.0, 100.0)
             .with_unit("ms"),
         Parameter::new_string("room_preset", "Room Preset", params.room_preset.clone()),
         Parameter::new_float("dry_level", "Dry Level", params.dry_level, 0.0, 1.0),
-        Parameter::new_float("er_level", "Early Reflection Level", params.er_level, 0.0, 1.0),
-        Parameter::new_float("late_level", "Late Reverb Level", params.late_level, 0.0, 1.0),
+        Parameter::new_float(
+            "er_level",
+            "Early Reflection Level",
+            params.er_level,
+            0.0,
+            1.0,
+        ),
+        Parameter::new_float(
+            "late_level",
+            "Late Reverb Level",
+            params.late_level,
+            0.0,
+            1.0,
+        ),
         Parameter::new_float("lfe_level", "LFE Reverb Level", params.lfe_level, 0.0, 1.0),
         Parameter::new_float("mod_depth", "Mod Depth", params.mod_depth, 0.0, 1.0),
-        Parameter::new_float("er_mod_depth", "ER Mod Depth", params.er_mod_depth, 0.0, 1.0),
-        Parameter::new_float("input_diffusion", "Input Diffusion", params.input_diffusion, 0.0, 1.0),
-        Parameter::new_string("speaker_config", "Speaker Config", params.speaker_config.clone()),
+        Parameter::new_float(
+            "er_mod_depth",
+            "ER Mod Depth",
+            params.er_mod_depth,
+            0.0,
+            1.0,
+        ),
+        Parameter::new_float(
+            "input_diffusion",
+            "Input Diffusion",
+            params.input_diffusion,
+            0.0,
+            1.0,
+        ),
+        Parameter::new_string(
+            "speaker_config",
+            "Speaker Config",
+            params.speaker_config.clone(),
+        ),
         Parameter::new_float("envelopment", "Envelopment", params.envelopment, 0.0, 1.0),
-        Parameter::new_float("height_amount", "Height Amount", params.height_amount, 0.0, 1.0),
+        Parameter::new_float(
+            "height_amount",
+            "Height Amount",
+            params.height_amount,
+            0.0,
+            1.0,
+        ),
         Parameter::new_bool("content_aware", "Content Aware", params.content_aware),
-        Parameter::new_float("dialogue_attenuation_db", "Dialogue Attenuation", params.dialogue_attenuation_db, 0.0, 12.0).with_unit("dB"),
-        Parameter::new_float("safety_limit_db", "Safety Limit", params.safety_limit_db, 0.0, 12.0).with_unit("dB"),
+        Parameter::new_float(
+            "dialogue_attenuation_db",
+            "Dialogue Attenuation",
+            params.dialogue_attenuation_db,
+            0.0,
+            12.0,
+        )
+        .with_unit("dB"),
+        Parameter::new_float(
+            "safety_limit_db",
+            "Safety Limit",
+            params.safety_limit_db,
+            0.0,
+            12.0,
+        )
+        .with_unit("dB"),
         Parameter::new_bool("bypass", "Bypass", params.bypass),
         Parameter::new_bool("solo_early", "Solo Early", params.solo_early),
         Parameter::new_bool("solo_late", "Solo Late", params.solo_late),

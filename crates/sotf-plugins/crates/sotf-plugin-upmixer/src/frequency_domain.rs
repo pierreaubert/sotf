@@ -110,7 +110,7 @@ fn compute_diffuseness_and_doa(
         velocity_energy += v.norm_sqr();
     }
 
-    let intensity_magnitude = intensity_re.abs();
+    let intensity_magnitude = (intensity_re * intensity_re + intensity_im * intensity_im).sqrt();
 
     // DOA angle from intensity vector
     let doa = fast_atan2(intensity_im, intensity_re);
@@ -522,5 +522,33 @@ impl UpmixerPlugin {
         self.compute_height_flux_gate();
 
         self.smooth_height_gains();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn quadrature_intensity_counts_as_directional_energy() {
+        let mut left = vec![Complex::new(0.0, 0.0); 4];
+        let mut right = vec![Complex::new(0.0, 0.0); 4];
+
+        left[1] = Complex::new(1.0, 0.0);
+        right[1] = Complex::new(0.0, 1.0);
+
+        let (diffuseness, doa, direct_gain, ambient_gain) =
+            compute_diffuseness_and_doa(&left, &right, 1, 2);
+
+        assert!(
+            diffuseness < 0.01,
+            "quadrature intensity should remain directional, got diffuseness {diffuseness}"
+        );
+        assert!(
+            doa.abs() > 1.0,
+            "DOA should preserve the imaginary intensity axis, got {doa}"
+        );
+        assert!(direct_gain > 0.99);
+        assert!(ambient_gain < 0.1);
     }
 }
