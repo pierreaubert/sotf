@@ -315,12 +315,7 @@ impl PlayerView {
                             .flex()
                             .justify_between()
                             .items_center()
-                            .child(
-                                Text::new("Custom Target Curve Editor")
-                                    .size(TextSize::Md)
-                                    .weight(TextWeight::Semibold)
-                                    .color(theme.text_primary),
-                            )
+                            .child(Text::section_header("Custom Target Curve Editor"))
                             .child(
                                 div()
                                     .relative()

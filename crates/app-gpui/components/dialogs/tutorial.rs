@@ -8,7 +8,7 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Checkbox, CheckboxSize, Dialog, DialogSize, HStack,
-    StackAlign, StackJustify, StackSize, StackSpacing, Text, TextSize, TextWeight, VStack,
+    StackAlign, StackJustify, StackSize, StackSpacing, Text, TextSize, VStack,
 };
 
 // ============================================================================
