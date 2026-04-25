@@ -11,8 +11,8 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Badge, BadgeVariant, Dialog, DialogSize, HStack, Heading, StackAlign, StackJustify, StackSize,
-    StackSpacing, Text, TextSize, TextWeight, ToastVariant, VStack,
+    Badge, BadgeVariant, Dialog, DialogSize, HStack, Heading, Spinner, SpinnerSize, StackAlign,
+    StackJustify, StackSize, StackSpacing, Text, TextSize, TextWeight, ToastVariant, VStack,
 };
 
 impl PlayerView {
@@ -1146,12 +1146,13 @@ impl PlayerView {
             }
         };
 
-        // Progress bar width (out of 100%)
+        // Library scans don't have an upfront total, so we can't render a
+        // determinate progress bar — show an indeterminate Spinner instead
+        // (see the conditional `.child` on the progress widget below). For
+        // other scan types we have a real fraction; clamp it.
+        let show_indeterminate = !is_complete && is_library_scan;
         let progress_width = if is_complete {
             100.0
-        } else if is_library_scan {
-            // For library scan, show an indeterminate animation-like effect
-            50.0
         } else {
             progress.clamp(0.0, 100.0)
         };
@@ -1201,8 +1202,17 @@ impl PlayerView {
                             .size(TextSize::Xs)
                             .color(theme.text_secondary),
                     )
-                    // Progress bar
-                    .child(
+                    // Progress indicator: an indeterminate Spinner for
+                    // library scans (no upfront total), or a determinate
+                    // bar driven by `progress_width` for the other scan
+                    // types where we have a real fraction.
+                    .child(if show_indeterminate {
+                        div()
+                            .flex()
+                            .justify_center()
+                            .child(Spinner::new().size(SpinnerSize::Md))
+                            .into_any_element()
+                    } else {
                         div()
                             .w_full()
                             .h(rems(0.5))
@@ -1217,8 +1227,9 @@ impl PlayerView {
                                     .w(px(352.0 * (progress_width / 100.0))) // intentional: progress-bar width computed from runtime percentage
                                     .bg(theme.accent)
                                     .rounded_full(),
-                            ),
-                    )
+                            )
+                            .into_any_element()
+                    })
                     // Status text
                     .child(Text::caption(status_text))
                     // Buttons
