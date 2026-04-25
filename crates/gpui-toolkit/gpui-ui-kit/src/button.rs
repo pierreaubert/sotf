@@ -125,7 +125,7 @@ pub struct Button {
     icon_left: Option<SharedString>,
     icon_right: Option<SharedString>,
     theme: Option<ButtonTheme>,
-    on_click: Option<Rc<dyn Fn(&mut Window, &mut App) + 'static>>,
+    on_click: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>>,
     aria_label: Option<SharedString>,
     aria_role: Option<AriaRole>,
 }
@@ -198,8 +198,38 @@ impl Button {
         self
     }
 
-    /// Set the click handler (for standalone use without cx.listener)
+    /// Set the click handler that ignores the event payload.
+    ///
+    /// Use this when the handler doesn't need the `ClickEvent` itself —
+    /// e.g. simple state updates, navigation, dispatching app actions.
+    /// For handlers that integrate with `cx.listener(|view, event, ...|)`,
+    /// use [`Self::on_click_event`] instead, which takes the same 3-arg
+    /// shape that `cx.listener` produces.
     pub fn on_click(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+        let handler = Rc::new(handler);
+        self.on_click = Some(Rc::new(move |_event: &ClickEvent, window, cx| {
+            handler(window, cx);
+        }));
+        self
+    }
+
+    /// Set the click handler with access to the `ClickEvent` payload.
+    ///
+    /// Matches the signature `cx.listener(...)` produces, so call sites
+    /// that previously did `.build().on_click(cx.listener(...))` can drop
+    /// the `.build()` and call this directly:
+    ///
+    /// ```ignore
+    /// Button::new("save", "Save")
+    ///     .theme(theme.to_button_theme())
+    ///     .on_click_event(cx.listener(|view, _: &ClickEvent, _window, cx| {
+    ///         view.save(cx);
+    ///     }))
+    /// ```
+    pub fn on_click_event(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
         self.on_click = Some(Rc::new(handler));
         self
     }
@@ -408,16 +438,18 @@ impl RenderOnce for Button {
             el = el.hover(move |style| style.bg(bg_hover).shadow(glow_shadow(bg_hover)));
             if let Some(handler) = self.on_click {
                 let mouse_handler = handler.clone();
-                el = el.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
-                    mouse_handler(window, cx);
+                el = el.on_click(move |event: &ClickEvent, window, cx| {
+                    mouse_handler(event, window, cx);
                 });
                 // Keyboard activation — Enter and Space mirror the click
-                // handler. Required for WCAG 2.1.1 (Keyboard accessible).
+                // handler with a synthesized `ClickEvent::Keyboard` payload.
+                // Required for WCAG 2.1.1 (Keyboard accessible).
                 let key_handler = handler;
                 el = el.on_key_down(move |event: &KeyDownEvent, window, cx| {
                     let key = event.keystroke.key.as_str();
                     if key == "enter" || key == "space" {
-                        key_handler(window, cx);
+                        let click = ClickEvent::Keyboard(KeyboardClickEvent::default());
+                        key_handler(&click, window, cx);
                         cx.stop_propagation();
                     }
                 });

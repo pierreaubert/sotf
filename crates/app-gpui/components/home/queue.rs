@@ -246,8 +246,7 @@ impl PlayerView {
                                     Button::new("magic-radio-btn", "Magic Radio")
                                         .full_width(true)
                                         .theme(theme.to_button_theme())
-                                        .build()
-                                        .on_click(cx.listener(|view, _event: &ClickEvent, _window, cx| {
+                                        .on_click_event(cx.listener(|view, _event: &ClickEvent, _window, cx| {
                                             log::info!("[Queue] Magic Radio button clicked");
                                             view.state.update(cx, |state, _cx| {
                                                 match state.app.fill_queue_magic() {

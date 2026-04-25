@@ -340,26 +340,18 @@ impl PlayerView {
                                     .variant(ButtonVariant::Primary)
                                     .size(ButtonSize::Sm)
                                     .theme(button_theme.clone())
-                                    .build()
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(move |view, _, _, cx| {
+                                    .on_click_event(cx.listener(move |view, _, _, cx| {
                                             apply_fn(view, cx);
-                                        }),
-                                    ),
+                                        })),
                             )
                             .child(
                                 Button::new(clear_id, "Clear EQ")
                                     .variant(ButtonVariant::Secondary)
                                     .size(ButtonSize::Sm)
                                     .theme(button_theme.clone())
-                                    .build()
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(move |view, _, _, cx| {
+                                    .on_click_event(cx.listener(move |view, _, _, cx| {
                                             clear_fn(view, cx);
-                                        }),
-                                    ),
+                                        })),
                             ),
                     ),
             )

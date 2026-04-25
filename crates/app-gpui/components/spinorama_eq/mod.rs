@@ -438,10 +438,7 @@ impl PlayerView {
                     .size(ButtonSize::Sm)
                     .disabled(is_busy)
                     .theme(button_theme.clone())
-                    .build()
-                    .on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(|view, _, _, cx| {
+                    .on_click_event(cx.listener(|view, _, _, cx| {
                             view.state.update(cx, |state, _| {
                                 match state.app.measurement_state.spinorama_eq_state.step {
                                     SpinoramaStep::SelectSpeaker => {
@@ -463,8 +460,7 @@ impl PlayerView {
                                 }
                             });
                             cx.notify();
-                        }),
-                    ),
+                        })),
             )
             .child(
                 Button::new("next", next_label)
@@ -472,10 +468,7 @@ impl PlayerView {
                     .size(ButtonSize::Sm)
                     .disabled(!can_go_next || is_busy)
                     .theme(button_theme.clone())
-                    .build()
-                    .on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(|view, _, _, cx| {
+                    .on_click_event(cx.listener(|view, _, _, cx| {
                             view.state.update(cx, |state, _| {
                                 match state.app.measurement_state.spinorama_eq_state.step {
                                     SpinoramaStep::Export => {
@@ -497,8 +490,7 @@ impl PlayerView {
                                 }
                             });
                             cx.notify();
-                        }),
-                    ),
+                        })),
             );
 
         // Home button for navigation back to Library
@@ -621,8 +613,15 @@ impl PlayerView {
                                     .measurement_state
                                     .spinorama_eq_state
                                     .loading_speakers = false;
+                                let msg = format!("Failed to fetch speakers: {}", e);
                                 state.app.measurement_state.spinorama_eq_state.error_message =
-                                    Some(format!("Failed to fetch speakers: {}", e));
+                                    Some(msg.clone());
+                                // Surface the error via toast as well — the
+                                // step_1 inline banner only shows when the
+                                // user is actively on the speaker-search
+                                // screen.
+                                state.app.ui_state.toast_message =
+                                    Some(crate::app::ToastMessage::error(msg));
                                 cx.notify();
                             });
                         }
@@ -764,8 +763,11 @@ impl PlayerView {
                                     .measurement_state
                                     .spinorama_eq_state
                                     .loading_versions = false;
+                                let msg = format!("Failed to fetch versions: {}", e);
                                 state.app.measurement_state.spinorama_eq_state.error_message =
-                                    Some(format!("Failed to fetch versions: {}", e));
+                                    Some(msg.clone());
+                                state.app.ui_state.toast_message =
+                                    Some(crate::app::ToastMessage::error(msg));
                                 cx.notify();
                             });
                         }
@@ -989,8 +991,11 @@ impl PlayerView {
                                     .measurement_state
                                     .spinorama_eq_state
                                     .loading_measurements = false;
+                                let msg = format!("Failed to fetch measurements: {}", e);
                                 state.app.measurement_state.spinorama_eq_state.error_message =
-                                    Some(format!("Failed to fetch measurements: {}", e));
+                                    Some(msg.clone());
+                                state.app.ui_state.toast_message =
+                                    Some(crate::app::ToastMessage::error(msg));
                                 cx.notify();
                             });
                         }

@@ -854,10 +854,7 @@ impl PlayerView {
                                     })
                                     .size(ButtonSize::Sm)
                                     .theme(theme.to_button_theme())
-                                    .build()
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(move |view, _, _, cx| {
+                                    .on_click_event(cx.listener(move |view, _, _, cx| {
                                             view.state.update(cx, |state, _cx| {
                                                 state
                                                     .app
@@ -867,8 +864,7 @@ impl PlayerView {
                                                     .mode = mode_value;
                                             });
                                             cx.notify();
-                                        }),
-                                    )
+                                        }))
                                 }),
                             ))
                             .child(Text::caption(current_mode.description())),
@@ -919,10 +915,7 @@ impl PlayerView {
                                                 })
                                                 .size(ButtonSize::Sm)
                                                 .theme(theme.to_button_theme())
-                                                .build()
-                                                .on_mouse_up(
-                                                    MouseButton::Left,
-                                                    cx.listener(move |view, _, _, cx| {
+                                                .on_click_event(cx.listener(move |view, _, _, cx| {
                                                         view.state.update(cx, |state, _cx| {
                                                             state
                                                                 .app
@@ -932,8 +925,7 @@ impl PlayerView {
                                                                 .target_curve = curve_value;
                                                         });
                                                         cx.notify();
-                                                    }),
-                                                )
+                                                    }))
                                             },
                                         ),
                                     ))
@@ -982,14 +974,10 @@ impl PlayerView {
                                 .full_width(true)
                                 .disabled(is_optimizing)
                                 .theme(theme.to_button_theme())
-                                .build()
                                 .when(!is_optimizing, |btn| {
-                                    btn.on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(|view, _, _, cx| {
+                                    btn.on_click_event(cx.listener(|view, _, _, cx| {
                                             view.start_spinorama_optimization(cx);
-                                        }),
-                                    )
+                                        }))
                                 }),
                             )
                             .when(show_progress, |vstack| {

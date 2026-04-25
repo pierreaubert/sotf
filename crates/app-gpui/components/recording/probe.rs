@@ -21,8 +21,8 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, Card, Column, HStack, StackAlign, StackSpacing, Table,
-    TableTheme, Text, TextSize, TextWeight, VStack,
+    Button, ButtonSize, ButtonVariant, Card, Column, HStack, Progress, ProgressSize, Spinner,
+    SpinnerSize, StackAlign, StackSpacing, Table, TableTheme, Text, TextSize, TextWeight, VStack,
 };
 use sotf_audio_player::room_eq_types::estimate_probe_sequence_ms;
 
@@ -115,22 +115,26 @@ impl PlayerView {
                             })
                             .size(ButtonSize::Sm)
                             .theme(theme.to_button_theme())
-                            .build()
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(move |view, _, _, cx| {
+                            .on_click_event(cx.listener(move |view, _, _, cx| {
                                     if running || !has_capture {
                                         return;
                                     }
                                     view.start_probe_capture(cx);
-                                }),
-                            ),
+                                })),
                         ),
                     ),
             );
         let _ = view; // silence unused warning if the closure didn't capture
 
         // --- Status banner -------------------------------------------
+        // For the Running state, capture the elapsed-vs-estimated fraction so
+        // a real Progress bar can be rendered next to the "Running… NN%"
+        // caption. The previous UI showed only the caption — no bar — so
+        // users couldn't tell at a glance how much was left.
+        let running_progress = match &pc.status {
+            ProbeCaptureStatus::Running { .. } => pc.status.progress(estimated_total, now_ms),
+            _ => None,
+        };
         let (status_text, status_color) = match &pc.status {
             ProbeCaptureStatus::Idle => (
                 if has_capture {
@@ -141,9 +145,7 @@ impl PlayerView {
                 theme.text_secondary,
             ),
             ProbeCaptureStatus::Running { .. } => {
-                let pct = pc
-                    .status
-                    .progress(estimated_total, now_ms)
+                let pct = running_progress
                     .map(|p| format!("{:.0}%", p * 100.0))
                     .unwrap_or_else(|| "…".to_string());
                 (format!("Running... {}", pct), theme.accent)
@@ -160,11 +162,30 @@ impl PlayerView {
         let status = Card::new()
             .background(theme.surface)
             .border(theme.border)
-            .content(
-                Text::new(status_text)
-                    .size(TextSize::Sm)
-                    .color(status_color),
-            );
+            .content({
+                let mut content = VStack::new()
+                    .spacing(StackSpacing::Xs)
+                    .child(
+                        Text::new(status_text)
+                            .size(TextSize::Sm)
+                            .color(status_color),
+                    );
+                if let Some(p) = running_progress {
+                    // Determinate Progress — wall-clock fraction. The
+                    // estimate can drift if the probe sequence runs longer
+                    // than predicted, so we clamp to 0..=1.0 in the
+                    // Progress component itself.
+                    content = content.child(
+                        Progress::new(p.clamp(0.0, 1.0) as f32).size(ProgressSize::Sm),
+                    );
+                } else if matches!(pc.status, ProbeCaptureStatus::Running { .. }) {
+                    // No fraction available yet (e.g. estimated_total=0) —
+                    // show an indeterminate Spinner so the user sees the
+                    // probe is still alive.
+                    content = content.child(Spinner::new().size(SpinnerSize::Sm));
+                }
+                content
+            });
 
         // --- Results + persisted WAV path -----------------------------
         // --- Results table -----------------------------------------------
@@ -429,16 +450,12 @@ fn probe_number_row(
                 .variant(ButtonVariant::Secondary)
                 .size(ButtonSize::Xs)
                 .theme(theme.to_button_theme())
-                .build()
-                .on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(move |view, _, _, cx| {
+                .on_click_event(cx.listener(move |view, _, _, cx| {
                         view.state.update(cx, |state, _| {
                             apply_minus(&mut state.app.measurement_state.recording_state, -step);
                         });
                         cx.notify();
-                    }),
-                ),
+                    })),
         )
         .child(
             Button::new(format!("{label}_plus"), "+")
@@ -446,16 +463,12 @@ fn probe_number_row(
                 .variant(ButtonVariant::Secondary)
                 .size(ButtonSize::Xs)
                 .theme(theme.to_button_theme())
-                .build()
-                .on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(move |view, _, _, cx| {
+                .on_click_event(cx.listener(move |view, _, _, cx| {
                         view.state.update(cx, |state, _| {
                             apply_plus(&mut state.app.measurement_state.recording_state, step);
                         });
                         cx.notify();
-                    }),
-                ),
+                    })),
         )
 }
 

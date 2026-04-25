@@ -112,8 +112,7 @@ impl PlayerView {
         .variant(ButtonVariant::Secondary)
         .size(ButtonSize::Xs)
         .theme(theme.to_button_theme())
-        .build()
-        .on_click(cx.listener(move |view, _: &ClickEvent, _window, cx| {
+        .on_click_event(cx.listener(move |view, _: &ClickEvent, _window, cx| {
             view.state.update(cx, |state, _cx| {
                 state.app.add_federation_source(type_name);
             });
@@ -229,8 +228,7 @@ impl PlayerView {
                         })
                         .size(ButtonSize::Xs)
                         .theme(theme.to_button_theme())
-                        .build()
-                        .on_click(cx.listener(
+                        .on_click_event(cx.listener(
                             move |view, _: &ClickEvent, _window, cx| {
                                 view.state.update(cx, |state, _cx| {
                                     state.app.toggle_federation_source(source_idx);
@@ -248,8 +246,7 @@ impl PlayerView {
                         .variant(ButtonVariant::Ghost)
                         .size(ButtonSize::Xs)
                         .theme(theme.to_button_theme())
-                        .build()
-                        .on_click(
+                        .on_click_event(
                             cx.listener(move |view, _: &ClickEvent, _window, cx| {
                                 view.state.update(cx, |state, _cx| {
                                     state.app.remove_federation_source(source_idx);
@@ -267,8 +264,7 @@ impl PlayerView {
                         .variant(ButtonVariant::Secondary)
                         .size(ButtonSize::Xs)
                         .theme(theme.to_button_theme())
-                        .build()
-                        .on_click(cx.listener(move |view, _: &ClickEvent, _window, cx| {
+                        .on_click_event(cx.listener(move |view, _: &ClickEvent, _window, cx| {
                             let source_idx = source_idx;
                             let state_entity = view.state.clone();
 
@@ -297,8 +293,7 @@ impl PlayerView {
                         .variant(ButtonVariant::Secondary)
                         .size(ButtonSize::Xs)
                         .theme(theme.to_button_theme())
-                        .build()
-                        .on_click(cx.listener(move |view, _: &ClickEvent, _window, cx| {
+                        .on_click_event(cx.listener(move |view, _: &ClickEvent, _window, cx| {
                             view.state.update(cx, |state, _cx| {
                                 state.app.scan_federation_source(source_idx);
                             });
@@ -428,8 +423,7 @@ impl PlayerView {
                                                     })
                                                     .size(ButtonSize::Xs)
                                                     .theme(theme.to_button_theme())
-                                                    .build()
-                                                    .on_click(cx.listener({
+                                                    .on_click_event(cx.listener({
                                                         let option = (*option).to_string();
                                                         let state_entity = state_entity.clone();
                                                         move |_, _: &ClickEvent, _window, cx| {
@@ -564,8 +558,7 @@ impl PlayerView {
                     .variant(ButtonVariant::Ghost)
                     .size(ButtonSize::Xs)
                     .theme(theme.to_button_theme())
-                    .build()
-                    .on_click(cx.listener(|view, _: &ClickEvent, _window, cx| {
+                    .on_click_event(cx.listener(|view, _: &ClickEvent, _window, cx| {
                         view.state.update(cx, |state, _cx| {
                             state.app.cancel_federation_scan();
                         });

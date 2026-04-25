@@ -103,8 +103,7 @@ fn render_path_section(
                     })
                     .size(ButtonSize::Xs)
                     .theme(theme.to_button_theme())
-                    .build()
-                    .on_click(cx.listener(move |_view, _: &ClickEvent, window, cx| {
+                    .on_click_event(cx.listener(move |_view, _: &ClickEvent, window, cx| {
                         window.dispatch_action(
                             Box::new(ABPathToggleAddMenu { plugin_idx, path }),
                             cx,
@@ -164,8 +163,7 @@ fn render_add_menu(
             .variant(ButtonVariant::Secondary)
             .size(ButtonSize::Xs)
             .theme(theme.to_button_theme())
-            .build()
-            .on_click(cx.listener(move |_view, _: &ClickEvent, window, cx| {
+            .on_click_event(cx.listener(move |_view, _: &ClickEvent, window, cx| {
                 window.dispatch_action(
                     Box::new(ABPathAddPlugin {
                         plugin_idx,
@@ -226,8 +224,7 @@ fn render_sub_plugin_card(
             .variant(ButtonVariant::Ghost)
             .size(ButtonSize::Xs)
             .theme(theme.to_button_theme())
-            .build()
-            .on_click(cx.listener(move |_view, _: &ClickEvent, window, cx| {
+            .on_click_event(cx.listener(move |_view, _: &ClickEvent, window, cx| {
                 window.dispatch_action(
                     Box::new(ABPathMovePlugin {
                         plugin_idx,
@@ -254,8 +251,7 @@ fn render_sub_plugin_card(
             .variant(ButtonVariant::Ghost)
             .size(ButtonSize::Xs)
             .theme(theme.to_button_theme())
-            .build()
-            .on_click(cx.listener(move |_view, _: &ClickEvent, window, cx| {
+            .on_click_event(cx.listener(move |_view, _: &ClickEvent, window, cx| {
                 window.dispatch_action(
                     Box::new(ABPathMovePlugin {
                         plugin_idx,
@@ -279,8 +275,7 @@ fn render_sub_plugin_card(
         .variant(ButtonVariant::Ghost)
         .size(ButtonSize::Xs)
         .theme(theme.to_button_theme())
-        .build()
-        .on_click(cx.listener(move |_view, _: &ClickEvent, window, cx| {
+        .on_click_event(cx.listener(move |_view, _: &ClickEvent, window, cx| {
             window.dispatch_action(
                 Box::new(ABPathRemovePlugin {
                     plugin_idx,

@@ -116,10 +116,7 @@ impl PlayerView {
                             .variant(ButtonVariant::Secondary)
                             .size(ButtonSize::Xs)
                             .theme(theme.to_button_theme())
-                            .build()
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|_view, _: &MouseUpEvent, _window, cx| {
+                            .on_click_event(cx.listener(|_view, _: &ClickEvent, _window, cx| {
                                     #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
                                     {
                                         cx.spawn(async move |view: WeakEntity<PlayerView>, cx| {
@@ -137,8 +134,7 @@ impl PlayerView {
                                         })
                                         .detach();
                                     }
-                                }),
-                            ),
+                                })),
                     ),
             )
             // Directories Table
@@ -199,8 +195,7 @@ impl PlayerView {
                                     .variant(ButtonVariant::Ghost)
                                     .size(ButtonSize::Xs)
                                     .theme(theme.to_button_theme())
-                                    .build()
-                                    .on_click(cx.listener(
+                                    .on_click_event(cx.listener(
                                         move |view, _: &ClickEvent, _window, cx| {
                                             view.state.update(cx, |state, _cx| {
                                                 // Set selection to this index and remove
@@ -244,8 +239,7 @@ impl PlayerView {
                                 .size(ButtonSize::Sm)
                                 .disabled(scan_in_progress)
                                 .theme(theme.to_button_theme())
-                                .build()
-                                .on_click(cx.listener(
+                                .on_click_event(cx.listener(
                                     |view, _: &ClickEvent, _window, cx| {
                                         view.start_library_scan(cx);
                                     },
@@ -257,8 +251,7 @@ impl PlayerView {
                                     .size(ButtonSize::Sm)
                                     .disabled(scan_in_progress)
                                     .theme(theme.to_button_theme())
-                                    .build()
-                                    .on_click(cx.listener(|view, _: &ClickEvent, _window, cx| {
+                                    .on_click_event(cx.listener(|view, _: &ClickEvent, _window, cx| {
                                         view.state.update(cx, |state, _cx| {
                                             if state.app.rescan_library().is_ok()
                                                 && state.app.library_state.scan_in_progress
@@ -337,8 +330,7 @@ impl PlayerView {
                                         })
                                         .size(ButtonSize::Xs)
                                         .theme(theme.to_button_theme())
-                                        .build()
-                                        .on_click(
+                                        .on_click_event(
                                             cx.listener(|view, _: &ClickEvent, _window, cx| {
                                                 view.state.update(cx, |state, _cx| {
                                                     state.app.playback.replay_gain_enabled =
@@ -390,8 +382,7 @@ impl PlayerView {
                                                 )
                                                 .size(ButtonSize::Xs)
                                                 .theme(theme.to_button_theme())
-                                                .build()
-                                                .on_click(cx.listener(
+                                                .on_click_event(cx.listener(
                                                     |view, _: &ClickEvent, _window, cx| {
                                                         view.state.update(cx, |state, _cx| {
                                                             state.app.playback.replay_gain_mode =
@@ -417,8 +408,7 @@ impl PlayerView {
                                                 )
                                                 .size(ButtonSize::Xs)
                                                 .theme(theme.to_button_theme())
-                                                .build()
-                                                .on_click(cx.listener(
+                                                .on_click_event(cx.listener(
                                                     |view, _: &ClickEvent, _window, cx| {
                                                         view.state.update(cx, |state, _cx| {
                                                             state.app.playback.replay_gain_mode =
@@ -466,8 +456,7 @@ impl PlayerView {
                                         .size(ButtonSize::Xs)
                                         .disabled(scan_in_progress) // Also disable if library scan is running
                                         .theme(theme.to_button_theme())
-                                        .build()
-                                        .on_click(
+                                        .on_click_event(
                                             cx.listener(|view, _: &ClickEvent, _window, cx| {
                                                 view.state.update(cx, |state, _cx| {
                                                     state.app.scan_replay_gain();
@@ -547,8 +536,7 @@ impl PlayerView {
                                         .size(ButtonSize::Xs)
                                         .disabled(scan_in_progress)
                                         .theme(theme.to_button_theme())
-                                        .build()
-                                        .on_click(
+                                        .on_click_event(
                                             cx.listener(|view, _: &ClickEvent, _window, cx| {
                                                 view.state.update(cx, |state, _cx| {
                                                     state.app.scan_bliss();
@@ -600,8 +588,7 @@ impl PlayerView {
                                         .size(ButtonSize::Xs)
                                         .disabled(scan_in_progress)
                                         .theme(theme.to_button_theme())
-                                        .build()
-                                        .on_click(
+                                        .on_click_event(
                                             cx.listener(|view, _: &ClickEvent, _window, cx| {
                                                 view.state.update(cx, |state, _cx| {
                                                     state.app.compute_waveform();
@@ -680,8 +667,7 @@ impl PlayerView {
                                             .size(ButtonSize::Xs)
                                             .disabled(scan_in_progress)
                                             .theme(theme.to_button_theme())
-                                            .build()
-                                            .on_click(cx.listener(
+                                            .on_click_event(cx.listener(
                                                 |view, _: &ClickEvent, _window, cx| {
                                                     view.state.update(cx, |state, _cx| {
                                                         state.app.clean_database();

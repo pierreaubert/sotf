@@ -87,10 +87,7 @@ impl PlayerView {
                                                     })
                                                     .size(ButtonSize::Xs)
                                                     .theme(button_theme.clone())
-                                                    .build()
-                                                    .on_mouse_up(
-                                                        MouseButton::Left,
-                                                        cx.listener(move |view, _, _, cx| {
+                                                    .on_click_event(cx.listener(move |view, _, _, cx| {
                                                             view.state.update(cx, |state, _cx| {
                                                                 state
                                                                     .app
@@ -99,8 +96,7 @@ impl PlayerView {
                                                                     .export_format = value.clone();
                                                             });
                                                             cx.notify();
-                                                        }),
-                                                    )
+                                                        }))
                                                 }),
                                         )
                                     })
@@ -109,13 +105,9 @@ impl PlayerView {
                                             .variant(ButtonVariant::Primary)
                                             .size(ButtonSize::Sm)
                                             .theme(button_theme.clone())
-                                            .build()
-                                            .on_mouse_up(
-                                                MouseButton::Left,
-                                                cx.listener(|view, _, _, cx| {
+                                            .on_click_event(cx.listener(|view, _, _, cx| {
                                                     view.save_headphone_eq_result(cx);
-                                                }),
-                                            ),
+                                                })),
                                     ),
                             ),
                     )

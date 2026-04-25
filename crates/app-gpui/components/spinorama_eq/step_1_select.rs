@@ -7,9 +7,8 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonTheme, ButtonVariant, Card, HStack, Input, InputSize, Progress,
-    ProgressSize, Spinner, SpinnerSize, StackAlign, StackSpacing, Text, TextSize, TextWeight,
-    VStack,
+    Button, ButtonSize, ButtonTheme, ButtonVariant, Card, HStack, Input, InputSize, Spinner,
+    SpinnerSize, StackAlign, StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 
 impl PlayerView {
@@ -33,6 +32,11 @@ impl PlayerView {
         let selected_speaker = spinorama.selected_speaker.clone();
         let suggestions = spinorama.speaker_suggestions.clone();
         let is_loading = spinorama.loading_speakers;
+        // Speaker / version / measurement fetch errors. These are also
+        // dispatched as toast notifications from the fetch handlers
+        // (see spinorama_eq/mod.rs), but keeping an inline banner means
+        // the user can see the failure even after the toast auto-dismisses.
+        let fetch_error_message = spinorama.error_message.clone();
 
         // Spinorama CEA2034 curves data
         let spinorama_curves = spinorama.spinorama_curves.clone();
@@ -50,6 +54,13 @@ impl PlayerView {
                     .weight(TextWeight::Bold)
                     .size(TextSize::Md),
             )
+            // Inline error banner — same render shape as step_2's error
+            // rendering. Surfaces the spinorama fetch errors that previously
+            // populated `error_message` but had no rendering site on this
+            // screen (the user just saw the spinner stop with no result).
+            .when_some(fetch_error_message, |vstack, msg| {
+                vstack.child(Text::new(msg).size(TextSize::Xs).color(theme.error))
+            })
             .child(
                 Text::new("Search for your speaker model from spinorama.org measurements.")
                     .size(TextSize::Xs)
@@ -125,13 +136,9 @@ impl PlayerView {
                                             .size(ButtonSize::Xs)
                                             .disabled(is_loading)
                                             .theme(button_theme.clone())
-                                            .build()
-                                            .on_mouse_up(
-                                                MouseButton::Left,
-                                                cx.listener(|view, _, _, cx| {
+                                            .on_click_event(cx.listener(|view, _, _, cx| {
                                                     view.fetch_spinorama_speakers(cx);
-                                                }),
-                                            ),
+                                                })),
                                     )
                                     .when(is_loading, |hstack| {
                                         hstack
@@ -397,15 +404,19 @@ impl PlayerView {
                                     .weight(TextWeight::Semibold),
                             )
                             .content(
+                                // Indeterminate Spinner — the curves fetch
+                                // doesn't expose a fraction, and the previous
+                                // `Progress::new(0.0)` bar was always frozen
+                                // at 0%.
                                 VStack::new()
                                     .spacing(StackSpacing::Sm)
                                     .align(StackAlign::Center)
+                                    .child(Spinner::new().size(SpinnerSize::Md))
                                     .child(
                                         Text::new("Loading spinorama curves...")
                                             .size(TextSize::Xs)
                                             .color(theme.text_secondary),
-                                    )
-                                    .child(Progress::new(0.0).size(ProgressSize::Sm)),
+                                    ),
                             )
                             .into_any_element()
                     } else if let Some(err) = spinorama_curves_error {
