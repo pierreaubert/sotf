@@ -203,10 +203,7 @@ impl PlayerView {
                     .size(ButtonSize::Sm)
                     .disabled(next_disabled)
                     .theme(button_theme.clone())
-                    .build()
-                    .on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(|view, _, _, cx| {
+                    .on_click_event(cx.listener(|view, _, _, cx| {
                             view.state.update(cx, |state, _| {
                                 let step = state.app.measurement_state.recording_state.step;
                                 // Transitioning out of Config still needs
@@ -227,8 +224,7 @@ impl PlayerView {
                                 }
                             });
                             cx.notify();
-                        }),
-                    ),
+                        })),
             );
 
         // Home button for navigation back to Library

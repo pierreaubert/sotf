@@ -115,16 +115,12 @@ impl PlayerView {
                             })
                             .size(ButtonSize::Sm)
                             .theme(theme.to_button_theme())
-                            .build()
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(move |view, _, _, cx| {
+                            .on_click_event(cx.listener(move |view, _, _, cx| {
                                     if running || !has_capture {
                                         return;
                                     }
                                     view.start_probe_capture(cx);
-                                }),
-                            ),
+                                })),
                         ),
                     ),
             );
@@ -429,16 +425,12 @@ fn probe_number_row(
                 .variant(ButtonVariant::Secondary)
                 .size(ButtonSize::Xs)
                 .theme(theme.to_button_theme())
-                .build()
-                .on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(move |view, _, _, cx| {
+                .on_click_event(cx.listener(move |view, _, _, cx| {
                         view.state.update(cx, |state, _| {
                             apply_minus(&mut state.app.measurement_state.recording_state, -step);
                         });
                         cx.notify();
-                    }),
-                ),
+                    })),
         )
         .child(
             Button::new(format!("{label}_plus"), "+")
@@ -446,16 +438,12 @@ fn probe_number_row(
                 .variant(ButtonVariant::Secondary)
                 .size(ButtonSize::Xs)
                 .theme(theme.to_button_theme())
-                .build()
-                .on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(move |view, _, _, cx| {
+                .on_click_event(cx.listener(move |view, _, _, cx| {
                         view.state.update(cx, |state, _| {
                             apply_plus(&mut state.app.measurement_state.recording_state, step);
                         });
                         cx.notify();
-                    }),
-                ),
+                    })),
         )
 }
 
