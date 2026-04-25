@@ -16,6 +16,7 @@ impl PlayerView {
     pub(crate) fn render_room_eq_optimize(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let room_eq = &state.app.measurement_state.room_eq_state;
 
@@ -79,12 +80,12 @@ impl PlayerView {
         VStack::new()
             .spacing(StackSpacing::Md)
             .child(
-                Text::new("Run Optimization")
+                Text::new(translations.roomeq_run_optimization)
                     .weight(TextWeight::Bold)
                     .size(TextSize::Md),
             )
             .child(
-                Text::new("Run the optimization process for each channel.")
+                Text::new(translations.roomeq_run_optimization_desc)
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
@@ -100,7 +101,7 @@ impl PlayerView {
                             VStack::new()
                                 .spacing(StackSpacing::Xs)
                                 .child(
-                                    Text::new("Delay Detection did not complete")
+                                    Text::new(translations.roomeq_delay_detection_incomplete)
                                         .weight(TextWeight::Bold)
                                         .size(TextSize::Sm)
                                         .color(theme.warning),
@@ -137,7 +138,7 @@ impl PlayerView {
                                                 .color(theme.success),
                                         )
                                         .child(
-                                            Text::new("Optimization Completed")
+                                            Text::new(translations.roomeq_optimization_completed)
                                                 .weight(TextWeight::Bold)
                                                 .size(TextSize::Sm)
                                                 .color(theme.text_primary),
@@ -166,7 +167,7 @@ impl PlayerView {
                         HStack::new()
                             .spacing(StackSpacing::Md)
                             .child(
-                                Text::new("Optimization Progress")
+                                Text::new(translations.roomeq_optimization_progress)
                                     .color(theme.text_primary)
                                     .weight(TextWeight::Semibold),
                             )
@@ -284,7 +285,7 @@ impl PlayerView {
                     .header_background(theme.background_secondary)
                     .border(theme.border)
                     .header(
-                        Text::new("Configuration Summary")
+                        Text::new(translations.roomeq_configuration_summary)
                             .color(theme.text_primary)
                             .weight(TextWeight::Semibold),
                     )
@@ -403,6 +404,7 @@ impl PlayerView {
                 // Initialize interactive chart state if needed
                 {
                     let state = self.state.read(cx);
+                    let translations = state.app.ui_state.translations.clone();
                     if state
                         .app
                         .measurement_state
@@ -439,6 +441,7 @@ impl PlayerView {
                 }
 
                 let state = self.state.read(cx);
+                let translations = state.app.ui_state.translations.clone();
                 let room_eq = &state.app.measurement_state.room_eq_state;
                 let theme = state.app.ui_state.theme.clone();
                 let history = room_eq.progress_history.clone();
@@ -665,7 +668,7 @@ impl PlayerView {
                             HStack::new()
                                 .spacing(StackSpacing::Md)
                                 .child(
-                                    Text::new("Optimization Process")
+                                    Text::new(translations.roomeq_optimization_process)
                                         .color(theme.text_primary)
                                         .weight(TextWeight::Semibold),
                                 )
@@ -697,7 +700,7 @@ impl PlayerView {
                     .header_background(theme.background_secondary)
                     .border(theme.border)
                     .header(
-                        Text::new("Full Parameters (Optimizer)")
+                        Text::new(translations.roomeq_full_parameters)
                             .color(theme.text_primary)
                             .weight(TextWeight::Semibold),
                     )
@@ -802,6 +805,7 @@ impl PlayerView {
         // letting it fall back to WAV-onset detection.
         let (room_config, channel_names, max_iter, probe_arrivals) = {
             let state = self.state.read(cx);
+            let translations = state.app.ui_state.translations.clone();
             let room_eq = &state.app.measurement_state.room_eq_state;
             let cfg = &room_eq.optimizer_config;
             log::info!(

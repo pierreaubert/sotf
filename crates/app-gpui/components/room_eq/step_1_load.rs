@@ -12,6 +12,7 @@ use gpui_ui_kit::{
 impl PlayerView {
     pub(crate) fn render_room_eq_load_data(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let error_message = state
             .app
@@ -39,7 +40,7 @@ impl PlayerView {
         VStack::new()
             .spacing(StackSpacing::Md)
             .child(
-                Text::new("Load Measurement Data")
+                Text::new(translations.roomeq_load_measurement_data)
                     .weight(TextWeight::Bold)
                     .size(TextSize::Md),
             )
@@ -65,7 +66,7 @@ impl PlayerView {
                                         .spacing(StackSpacing::Xs)
                                         .align(StackAlign::Center)
                                         .child(
-                                            Text::new("Error")
+                                            Text::new(translations.roomeq_error)
                                                 .weight(TextWeight::Bold)
                                                 .size(TextSize::Xs)
                                                 .color(theme.error),
@@ -104,7 +105,7 @@ impl PlayerView {
                                 .header_background(theme.background_secondary)
                                 .border(theme.border)
                                 .header(
-                                    Text::new("From Recording Session")
+                                    Text::new(translations.roomeq_from_recording_session)
                                         .color(theme.text_primary)
                                         .weight(TextWeight::Semibold),
                                 )
@@ -147,7 +148,7 @@ impl PlayerView {
                                 .header_background(theme.background_secondary)
                                 .border(theme.border)
                                 .header(
-                                    Text::new("From JSON File")
+                                    Text::new(translations.roomeq_from_json_file)
                                         .color(theme.text_primary)
                                         .weight(TextWeight::Semibold),
                                 )
@@ -155,7 +156,7 @@ impl PlayerView {
                                     VStack::new()
                                         .spacing(StackSpacing::Sm)
                                         .child(
-                                            Text::new("Import measurements from a previously saved JSON file.")
+                                            Text::new(translations.roomeq_import_from_json_desc)
                                                 .size(TextSize::Xs)
                                                 .color(theme.text_secondary),
                                         )

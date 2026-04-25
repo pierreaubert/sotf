@@ -12,6 +12,7 @@ use super::render::render_channel_result_card;
 impl PlayerView {
     pub(crate) fn render_room_eq_review(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let room_eq = &state.app.measurement_state.room_eq_state;
 
@@ -41,12 +42,12 @@ impl PlayerView {
         VStack::new()
             .spacing(StackSpacing::Md)
             .child(
-                Text::new("Review Results")
+                Text::new(translations.roomeq_review_results)
                     .weight(TextWeight::Bold)
                     .size(TextSize::Md),
             )
             .child(
-                Text::new("Review the optimization results before applying.")
+                Text::new(translations.roomeq_review_desc)
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
@@ -58,7 +59,7 @@ impl PlayerView {
                         .header_background(theme.background_secondary)
                         .border(theme.border)
                         .header(
-                            Text::new("Select Channel")
+                            Text::new(translations.roomeq_select_channel)
                                 .color(theme.text_primary)
                                 .weight(TextWeight::Semibold),
                         )
@@ -99,7 +100,7 @@ impl PlayerView {
                     .header_background(theme.background_secondary)
                     .border(theme.border)
                     .header(
-                        Text::new("Graph Settings")
+                        Text::new(translations.roomeq_graph_settings)
                             .color(theme.text_primary)
                             .weight(TextWeight::Semibold),
                     )
@@ -110,7 +111,7 @@ impl PlayerView {
                                 HStack::new()
                                     .spacing(StackSpacing::Xs)
                                     .child(
-                                        Text::new("Smoothing:")
+                                        Text::new(translations.roomeq_smoothing_label)
                                             .size(TextSize::Xs)
                                             .color(theme.text_secondary),
                                     )
@@ -166,7 +167,7 @@ impl PlayerView {
                                 HStack::new()
                                     .spacing(StackSpacing::Xs)
                                     .child(
-                                        Text::new("Y-Axis Auto:")
+                                        Text::new(translations.roomeq_y_axis_auto)
                                             .size(TextSize::Xs)
                                             .color(theme.text_secondary),
                                     )
@@ -195,7 +196,7 @@ impl PlayerView {
                                 HStack::new()
                                     .spacing(StackSpacing::Xs)
                                     .child(
-                                        Text::new("Normalize to Target:")
+                                        Text::new(translations.roomeq_normalize_to_target)
                                             .size(TextSize::Xs)
                                             .color(theme.text_secondary),
                                     )
@@ -229,7 +230,7 @@ impl PlayerView {
                     .header_background(theme.background_secondary)
                     .border(theme.border)
                     .header(
-                        Text::new("Score Summary")
+                        Text::new(translations.roomeq_score_summary)
                             .color(theme.text_primary)
                             .weight(TextWeight::Semibold),
                     )
@@ -273,6 +274,7 @@ impl PlayerView {
         // Initialize interactive chart state if needed
         {
             let state = self.state.read(cx);
+            let translations = state.app.ui_state.translations.clone();
             if state
                 .app
                 .measurement_state
@@ -295,6 +297,7 @@ impl PlayerView {
         }
 
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let room_eq = &state.app.measurement_state.room_eq_state;
         let channel_results = &room_eq.channel_results;
@@ -313,7 +316,7 @@ impl PlayerView {
                         .header_background(theme.background_secondary)
                         .border(theme.border)
                         .header(
-                            Text::new("Channel Result")
+                            Text::new(translations.roomeq_channel_result)
                                 .color(theme.text_primary)
                                 .weight(TextWeight::Semibold),
                         )

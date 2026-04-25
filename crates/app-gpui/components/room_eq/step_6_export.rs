@@ -24,6 +24,7 @@ impl PlayerView {
     pub(crate) fn render_room_eq_export(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let has_eq_in_rack = state
             .app
@@ -58,12 +59,12 @@ impl PlayerView {
         let mut stack = VStack::new()
             .spacing(StackSpacing::Md)
             .child(
-                Text::new("Export & Apply")
+                Text::new(translations.roomeq_export_and_apply)
                     .weight(TextWeight::Bold)
                     .size(TextSize::Md),
             )
             .child(
-                Text::new("Export the DSP chain or apply directly to the player.")
+                Text::new(translations.roomeq_export_desc)
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
@@ -73,7 +74,7 @@ impl PlayerView {
                     .header_background(theme.background_secondary)
                     .border(theme.border)
                     .header(
-                        Text::new("Backup Current Rack")
+                        Text::new(translations.roomeq_backup_current_rack)
                             .color(theme.text_primary)
                             .weight(TextWeight::Semibold),
                     )
@@ -104,7 +105,7 @@ impl PlayerView {
                     .header_background(theme.background_secondary)
                     .border(theme.border)
                     .header(
-                        Text::new("Export Options")
+                        Text::new(translations.roomeq_export_options)
                             .color(theme.text_primary)
                             .weight(TextWeight::Semibold),
                     )
@@ -117,7 +118,7 @@ impl PlayerView {
                                 .spacing(StackSpacing::Md)
                                 .align(StackAlign::Center)
                                 .child(
-                                    Text::new("Format:")
+                                    Text::new(translations.roomeq_format_label)
                                         .size(TextSize::Xs)
                                         .color(theme.text_secondary),
                                 )
@@ -236,7 +237,7 @@ impl PlayerView {
                     .background(theme.surface)
                     .header_background(theme.background_secondary)
                     .border(theme.border)
-                    .header(Text::new("Apply to Rack").color(theme.text_primary).weight(TextWeight::Semibold))
+                    .header(Text::new(translations.roomeq_apply_to_rack).color(theme.text_primary).weight(TextWeight::Semibold))
                     .content(
                         VStack::new()
                             .spacing(StackSpacing::Sm)
@@ -266,7 +267,7 @@ impl PlayerView {
                     .background(theme.surface)
                     .header_background(theme.background_secondary)
                     .border(theme.border)
-                    .header(Text::new("Apply as Graph").color(theme.text_primary).weight(TextWeight::Semibold))
+                    .header(Text::new(translations.roomeq_apply_as_graph).color(theme.text_primary).weight(TextWeight::Semibold))
                     .content(
                         VStack::new()
                             .spacing(StackSpacing::Sm)
@@ -300,6 +301,7 @@ impl PlayerView {
     fn export_room_eq_format(&mut self, cx: &mut Context<Self>) {
         let (dsp_output, format_idx) = {
             let state = self.state.read(cx);
+            let translations = state.app.ui_state.translations.clone();
             (
                 state.app.measurement_state.room_eq_state.dsp_output.clone(),
                 state
@@ -422,6 +424,7 @@ impl PlayerView {
         // Get the DSP output from state
         let dsp_output = {
             let state = self.state.read(cx);
+            let translations = state.app.ui_state.translations.clone();
             state.app.measurement_state.room_eq_state.dsp_output.clone()
         };
 
@@ -489,6 +492,7 @@ impl PlayerView {
             // Get the current plugin graph
             let plugin_graph = {
                 let state = self.state.read(cx);
+                let translations = state.app.ui_state.translations.clone();
                 state.app.plugin_state.graph.clone()
             };
 
@@ -548,6 +552,7 @@ impl PlayerView {
         // because the EQ plugin maps channel_filters[i] to audio channel i.
         let (dsp_output, channel_result_names) = {
             let state = self.state.read(cx);
+            let translations = state.app.ui_state.translations.clone();
             let names: Vec<String> = state
                 .app
                 .measurement_state
@@ -692,6 +697,7 @@ impl PlayerView {
 
         let dsp_output = {
             let state = self.state.read(cx);
+            let translations = state.app.ui_state.translations.clone();
             state.app.measurement_state.room_eq_state.dsp_output.clone()
         };
 
