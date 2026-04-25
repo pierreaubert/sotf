@@ -551,6 +551,7 @@ fn validate_crossovers(
 fn validate_cross_option_interactions(config: &RoomConfig, result: &mut ValidationResult) {
     validate_multi_measurement_weights(config, result);
     validate_cea2034_source_plausibility(config, result);
+    validate_bass_management(config, result);
 }
 
 /// Collect all `MeasurementSource`s referenced by a speaker, so the validator
@@ -653,6 +654,52 @@ fn validate_cea2034_source_plausibility(config: &RoomConfig, result: &mut Valida
              plain in-room responses will produce incorrect results. \
              Either disable cea2034_correction or provide a speaker_name so the pipeline \
              can fetch the matching spinorama data."
+                .to_string(),
+        );
+    }
+}
+
+fn validate_bass_management(config: &RoomConfig, result: &mut ValidationResult) {
+    let Some(system) = config.system.as_ref() else {
+        return;
+    };
+    let Some(bm) = system.bass_management.as_ref() else {
+        return;
+    };
+    if !bm.enabled {
+        return;
+    }
+
+    if system.subwoofers.is_none() {
+        result.add_warning(
+            "bass_management is enabled but system.subwoofers is missing; bass management \
+             will be reported as unavailable."
+                .to_string(),
+        );
+    }
+    if bm.lfe_playback_gain_db.abs() > 24.0 {
+        result.add_error(format!(
+            "bass_management.lfe_playback_gain_db ({}) is outside the safe +/-24 dB range",
+            bm.lfe_playback_gain_db
+        ));
+    }
+    if bm.max_sub_boost_db < 0.0 {
+        result.add_error(format!(
+            "bass_management.max_sub_boost_db ({}) must be non-negative",
+            bm.max_sub_boost_db
+        ));
+    }
+    if bm.headroom_margin_db < 0.0 {
+        result.add_error(format!(
+            "bass_management.headroom_margin_db ({}) must be non-negative",
+            bm.headroom_margin_db
+        ));
+    }
+    if bm.apply_lfe_gain_to_chain && bm.redirect_bass {
+        result.add_warning(
+            "bass_management.apply_lfe_gain_to_chain=true while redirect_bass=true. \
+             The exported RoomEQ chain is per physical sub output, so this also boosts \
+             redirected bass; leave it false unless downstream routing separates LFE."
                 .to_string(),
         );
     }

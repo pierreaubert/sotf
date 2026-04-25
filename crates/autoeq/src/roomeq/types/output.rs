@@ -158,6 +158,24 @@ pub struct EpaChannelMetrics {
     pub post: crate::loss::epa::score::EpaScore,
 }
 
+/// Compact perceptual scorecard for downstream QA and UIs.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct PerceptualMetrics {
+    /// Average EPA preference before correction.
+    pub epa_preference_pre: f64,
+    /// Average EPA preference after correction.
+    pub epa_preference_post: f64,
+    /// EPA preference delta, positive means perceptual improvement.
+    pub epa_preference_delta: f64,
+    /// Midrange inter-channel deviation in dB when more than one comparable
+    /// channel exists.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel_matching_midrange_rms_db: Option<f64>,
+    /// Human-readable timing/GD confidence label.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timing_confidence: Option<String>,
+}
+
 /// Optimization metadata
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct OptimizationMetadata {
@@ -196,4 +214,16 @@ pub struct OptimizationMetadata {
     /// Present when GD-Opt was attempted (success or skip with advisory).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group_delay: Option<crate::roomeq::gd_opt::GroupDelayOptSummary>,
+    /// Perceptual scorecard computed from final exported curves/DSP.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub perceptual_metrics: Option<PerceptualMetrics>,
+    /// Home-cinema role/layout interpretation used by role-aware scoring.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub home_cinema_layout: Option<crate::roomeq::home_cinema::HomeCinemaLayoutReport>,
+    /// Coverage summary for multi-position measurements beyond sub-only MSO.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub multi_seat_coverage: Option<crate::roomeq::home_cinema::MultiSeatCoverageReport>,
+    /// Bass-management policy and applied trim/headroom summary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bass_management: Option<crate::roomeq::home_cinema::BassManagementReport>,
 }

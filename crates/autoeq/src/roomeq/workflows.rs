@@ -625,6 +625,10 @@ pub fn optimize_stereo_2_0(
             inter_channel_deviation: None,
             epa_per_channel,
             group_delay: None,
+            perceptual_metrics: None,
+            home_cinema_layout: None,
+            multi_seat_coverage: None,
+            bass_management: None,
         },
     })
 }
@@ -722,6 +726,7 @@ pub fn optimize_stereo_2_1(
         })?;
 
     let xover_type_str = &xover_config.crossover_type;
+    let bass_management = super::home_cinema::effective_bass_management(config);
 
     // Handle fixed frequency vs range
     let (min_xo, max_xo, est_xo) = if let Some(f) = xover_config.frequency {
@@ -976,7 +981,21 @@ pub fn optimize_stereo_2_1(
         *s += sub_correction;
     }
 
-    let sub_gain_post = sub_gain_post + sub_correction;
+    let lfe_physical_gain = bass_management
+        .as_ref()
+        .filter(|bm| bm.config.apply_lfe_gain_to_chain)
+        .map(|bm| bm.config.lfe_playback_gain_db)
+        .unwrap_or(0.0);
+    let requested_sub_gain = sub_gain_post + sub_correction + lfe_physical_gain;
+    let (sub_gain_post, sub_gain_limited) =
+        super::home_cinema::limited_sub_gain(requested_sub_gain, bass_management.as_ref());
+    if sub_gain_limited {
+        log::warn!(
+            "  Bass management limited sub gain from {:+.2} dB to {:+.2} dB for headroom",
+            requested_sub_gain,
+            sub_gain_post
+        );
+    }
 
     // 7. Post-EQ (Global)
     // L/R: min_freq = xover + 20
@@ -1301,6 +1320,14 @@ pub fn optimize_stereo_2_1(
             inter_channel_deviation: None,
             epa_per_channel,
             group_delay: None,
+            perceptual_metrics: None,
+            home_cinema_layout: None,
+            multi_seat_coverage: None,
+            bass_management: super::home_cinema::bass_management_report(
+                config,
+                Some(sub_gain_post),
+                sub_gain_limited,
+            ),
         },
     })
 }
@@ -1484,6 +1511,10 @@ fn optimize_home_cinema_no_sub(
             inter_channel_deviation: None,
             epa_per_channel,
             group_delay: None,
+            perceptual_metrics: None,
+            home_cinema_layout: None,
+            multi_seat_coverage: None,
+            bass_management: None,
         },
     })
 }
@@ -1521,6 +1552,7 @@ fn optimize_home_cinema_with_sub(
             message: format!("Crossover '{}' not found in crossovers section", xover_key),
         })?;
     let xover_type_str = &xover_config.crossover_type;
+    let bass_management = super::home_cinema::effective_bass_management(config);
 
     let (min_xo, max_xo, est_xo) = if let Some(f) = xover_config.frequency {
         (f, f, f)
@@ -1721,7 +1753,21 @@ fn optimize_home_cinema_with_sub(
     for s in sub_post.spl.iter_mut() {
         *s += sub_correction;
     }
-    let sub_gain_post = sub_gain_post + sub_correction;
+    let lfe_physical_gain = bass_management
+        .as_ref()
+        .filter(|bm| bm.config.apply_lfe_gain_to_chain)
+        .map(|bm| bm.config.lfe_playback_gain_db)
+        .unwrap_or(0.0);
+    let requested_sub_gain = sub_gain_post + sub_correction + lfe_physical_gain;
+    let (sub_gain_post, sub_gain_limited) =
+        super::home_cinema::limited_sub_gain(requested_sub_gain, bass_management.as_ref());
+    if sub_gain_limited {
+        log::warn!(
+            "  Bass management limited sub gain from {:+.2} dB to {:+.2} dB for headroom",
+            requested_sub_gain,
+            sub_gain_post
+        );
+    }
 
     // 6. Post-EQ
     let mut post_eq_filters = HashMap::new();
@@ -2042,6 +2088,14 @@ fn optimize_home_cinema_with_sub(
             inter_channel_deviation: None,
             epa_per_channel,
             group_delay: None,
+            perceptual_metrics: None,
+            home_cinema_layout: None,
+            multi_seat_coverage: None,
+            bass_management: super::home_cinema::bass_management_report(
+                config,
+                Some(sub_gain_post),
+                sub_gain_limited,
+            ),
         },
     })
 }

@@ -243,6 +243,8 @@ pub(super) fn process_single_speaker(
         } else {
             target_resp.clone()
         };
+        effective_target =
+            super::home_cinema::role_adjusted_target_response(channel_name, &effective_target);
 
         // Resolve FromMeasurement: extract slope from input curve
         if effective_target.shape == TargetShape::FromMeasurement {

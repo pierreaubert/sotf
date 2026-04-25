@@ -421,6 +421,77 @@ pub struct SubwooferSystemConfig {
     pub mapping: HashMap<String, String>,
 }
 
+fn default_bass_management_enabled() -> bool {
+    true
+}
+fn default_redirect_bass() -> bool {
+    true
+}
+fn default_lfe_channel() -> String {
+    "LFE".to_string()
+}
+fn default_lfe_playback_gain_db() -> f64 {
+    10.0
+}
+fn default_sub_headroom_margin_db() -> f64 {
+    6.0
+}
+fn default_max_sub_boost_db() -> f64 {
+    6.0
+}
+
+/// Home-cinema bass-management policy.
+///
+/// This describes how RoomEQ should reason about the main high-pass, sub
+/// low-pass, redirected bass, and the LFE programme path. The current DSP
+/// exporter still emits per-output-channel correction chains, so LFE +10 dB
+/// is reported but not inserted by default: applying it to the physical sub
+/// chain would also boost redirected bass.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct BassManagementConfig {
+    /// Enable bass-management semantics for home-cinema workflows.
+    #[serde(default = "default_bass_management_enabled")]
+    pub enabled: bool,
+    /// Whether small-speaker bass is redirected to the subwoofer output.
+    #[serde(default = "default_redirect_bass")]
+    pub redirect_bass: bool,
+    /// Logical LFE programme channel name.
+    #[serde(default = "default_lfe_channel")]
+    pub lfe_channel: String,
+    /// Cinema LFE playback calibration gain. Reported in metadata; not applied
+    /// to the sub correction chain unless `apply_lfe_gain_to_chain` is set.
+    #[serde(default = "default_lfe_playback_gain_db")]
+    pub lfe_playback_gain_db: f64,
+    /// Explicitly insert LFE gain in the exported physical sub chain. This is
+    /// normally false because redirected bass and LFE share the same sub output.
+    #[serde(default)]
+    pub apply_lfe_gain_to_chain: bool,
+    /// User sub trim applied after crossover/alignment optimization.
+    #[serde(default)]
+    pub sub_trim_db: f64,
+    /// Maximum allowed positive sub boost from RoomEQ bass management.
+    #[serde(default = "default_max_sub_boost_db")]
+    pub max_sub_boost_db: f64,
+    /// Headroom reserve expected downstream for bass-managed playback.
+    #[serde(default = "default_sub_headroom_margin_db")]
+    pub headroom_margin_db: f64,
+}
+
+impl Default for BassManagementConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            redirect_bass: true,
+            lfe_channel: default_lfe_channel(),
+            lfe_playback_gain_db: default_lfe_playback_gain_db(),
+            apply_lfe_gain_to_chain: false,
+            sub_trim_db: 0.0,
+            max_sub_boost_db: default_max_sub_boost_db(),
+            headroom_margin_db: default_sub_headroom_margin_db(),
+        }
+    }
+}
+
 /// Explicit system configuration mapping logical roles to measurements
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SystemConfig {
@@ -432,6 +503,9 @@ pub struct SystemConfig {
     /// Subwoofer configuration and mapping
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subwoofers: Option<SubwooferSystemConfig>,
+    /// Home-cinema bass-management policy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bass_management: Option<BassManagementConfig>,
 }
 
 /// Speaker configuration (can be single measurement or group)
@@ -643,6 +717,51 @@ impl Default for UserPreference {
     }
 }
 
+fn default_role_targets_enabled() -> bool {
+    true
+}
+
+/// Optional role-aware target adjustments for home-cinema layouts.
+///
+/// These are deliberately explicit and default to zero change: enabling the
+/// block makes the target semantics role-aware without silently changing
+/// existing RoomEQ output. The adjustments layer on top of
+/// [`TargetResponseConfig::preference`].
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RoleTargetConfig {
+    /// Enable role-aware target adjustment.
+    #[serde(default = "default_role_targets_enabled")]
+    pub enabled: bool,
+    /// Additional treble shelf applied only to the centre channel.
+    #[serde(default)]
+    pub center_treble_shelf_db: f64,
+    /// Additional treble shelf applied to side/rear/wide surrounds.
+    #[serde(default)]
+    pub surround_treble_shelf_db: f64,
+    /// Additional treble shelf applied to height channels.
+    #[serde(default)]
+    pub height_treble_shelf_db: f64,
+    /// Additional bass shelf applied to subwoofer channels.
+    #[serde(default)]
+    pub subwoofer_bass_shelf_db: f64,
+    /// Additional bass shelf applied to LFE channels.
+    #[serde(default)]
+    pub lfe_bass_shelf_db: f64,
+}
+
+impl Default for RoleTargetConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            center_treble_shelf_db: 0.0,
+            surround_treble_shelf_db: 0.0,
+            height_treble_shelf_db: 0.0,
+            subwoofer_bass_shelf_db: 0.0,
+            lfe_bass_shelf_db: 0.0,
+        }
+    }
+}
+
 /// Unified target response configuration for room correction
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct TargetResponseConfig {
@@ -664,6 +783,9 @@ pub struct TargetResponseConfig {
     /// Enable broadband pre-correction (shelf+gain fit before fine EQ)
     #[serde(default)]
     pub broadband_precorrection: bool,
+    /// Optional home-cinema role-aware target adjustments.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role_targets: Option<RoleTargetConfig>,
 }
 
 impl Default for TargetResponseConfig {
@@ -675,6 +797,7 @@ impl Default for TargetResponseConfig {
             curve_path: None,
             preference: UserPreference::default(),
             broadband_precorrection: false,
+            role_targets: None,
         }
     }
 }

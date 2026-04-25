@@ -1097,6 +1097,10 @@ mod tests {
                 inter_channel_deviation: None,
                 epa_per_channel: None,
                 group_delay: None,
+                perceptual_metrics: None,
+                home_cinema_layout: None,
+                multi_seat_coverage: None,
+                bass_management: None,
             }),
         }
     }

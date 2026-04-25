@@ -1,6 +1,139 @@
 # 0.4.37
 
+## RoomEQ DSP/report consistency audit fixes
 
+RoomEQ now keeps exported DSP chains, reported final curves, generated IRs,
+EPA summaries, and aggregate scores in sync after late correction stages.
+
+- Added one canonical post-DSP response update path for phase-only delay/
+  polarity changes, gain changes, IIR/biquad filters, FIR/convolution
+  filters, and GD all-pass filters.
+- Time alignment, phase alignment, spectral alignment, Voice-of-God
+  correction, GD-Opt, post-generated FIR, phase-correction FIR, and ICD
+  correction now update `channel_results.final_curve` and
+  `ChannelDspChain.final_curve` when they insert exported DSP.
+- Final reports are refreshed after the last DSP mutation so post scores,
+  `metadata.pre_score` / `metadata.post_score`, EPA per-channel metrics,
+  final IR waveforms, and perceptual metadata describe the audible chain.
+- Workflow paths preserve their topology-aware score definitions unless a
+  late DSP mutation requires report refresh.
+- X.1 score refresh is crossover-aware: sub/LFE channels are scored in their
+  bass operating band and bass-managed mains are not penalized as if they
+  were full-range below crossover.
+- ICD/channel-matching correction is now role-aware and guarded: L/R,
+  surrounds, rear surrounds, and height pairs are matched independently;
+  center/dialog is not dragged into L/R matching; and candidate matching
+  filters are rolled back if they regress a channel's reported score.
+
+Tests/QA:
+`cargo test -p autoeq roomeq::optimize::tests:: --lib -- --nocapture`,
+`just -f crates/autoeq/Justfile qa-roomeq-quick`.
+
+## GD-Opt v2 is an opt-in DSP stage
+
+Group-delay optimization now runs on the actual post-RoomEQ curves and,
+when successful, inserts audible DSP instead of only reporting metadata.
+
+- Added explicit `optimizer.group_delay` config with `enabled=false` by
+  default and controls for delay, polarity, coherence threshold, all-pass
+  budget, adaptive all-pass behavior, and minimum improvement.
+- GD input is built from current `final_curve` data after EQ, alignment,
+  phase correction, and other earlier stages, not from stale raw
+  `initial_curve` measurements.
+- Successful GD results insert polarity, delay, and all-pass plugins into
+  the exported channel chains and apply the same phase response to reported
+  final curves.
+- Delay/polarity search is anchored deterministically. Reported/applied
+  delays are normalized so no negative delay is emitted and no arbitrary
+  common latency is added.
+- Frequency grids are validated by value, not just by length.
+- Missing coherence is treated as degraded confidence:
+  delay-only optimization may run, polarity and all-pass are disabled, and
+  metadata reports `missing_coherence_delay_only`.
+- Production all-pass fitting is conservative: without bootstrap
+  realizations, AP filters are disabled and metadata reports
+  `allpass_disabled_no_bootstrap_realisations`.
+- `PhaseLinear` remains advisory-only for GD-Opt. Hybrid applies only when
+  the GD band is below the Hybrid FIR/IIR crossover.
+
+Tests/QA:
+`just -f crates/autoeq/Justfile qa-roomeq-gd`.
+
+## Phase-critical RoomEQ safety hardening
+
+Phase-critical algorithms now reject unsafe inputs instead of inventing
+coherence or assuming index-compatible measurements.
+
+- Added shared frequency-grid helpers in
+  `roomeq/frequency_grid.rs` for same-grid-by-value validation, monotonic
+  grid validation, and common-range calculation.
+- DBA complex summation now requires measured phase and preserves phase in
+  the combined DBA curve; missing phase returns an error instead of using
+  `0 deg`.
+- Cardioid sub synthesis now requires measured front/rear phase and
+  resamples the rear measurement onto the front grid before complex
+  summation.
+- Spectral alignment, inter-channel deviation, and ICD correction reject
+  same-length but value-shifted frequency grids instead of indexing curves
+  together blindly.
+- MSO validates phase, SPL/phase lengths, monotonic frequency grids, and
+  common frequency overlap before optimization. Missing phase is rejected at
+  measurement-set construction.
+- MSO phase interpolation is wrap-aware through +/-180 deg and no longer
+  substitutes `0 deg` phase.
+
+Tests/QA:
+`cargo test -p autoeq multiseat --lib -- --nocapture`,
+`just -f crates/autoeq/Justfile qa-roomeq-multiseat-guards`.
+
+## Multi-seat optimization objective and search upgrades
+
+MSO is now closer to a serious room/sub optimizer rather than a coarse
+variance-only heuristic.
+
+- `Average` and `PrimaryWithConstraints` have distinct objectives:
+  average-seat tonal flatness and primary-seat flatness with constraints on
+  other seats.
+- Result metadata now reports the selected objective separately from
+  variance diagnostics: `objective_name`, `objective_before`,
+  `objective_after`, `objective_improvement_db`,
+  `variance_before`, `variance_after`, and `variance_improvement_db`.
+- The objective penalizes broadband output collapse and newly introduced
+  average-response nulls so the optimizer cannot "win" by making bass
+  uniformly quiet or hollow.
+- Delay/gain search is continuous and anchored to the first subwoofer as a
+  deterministic reference; the reference sub keeps zero gain/delay/polarity
+  and no AP filters.
+- Optional polarity and all-pass controls are supported in the continuous
+  search while preserving reference anchoring.
+
+## Perceptual reporting
+
+- `OptimizationMetadata` now includes optional `perceptual_metrics` with
+  average EPA preference before/after, EPA preference delta, channel-matching
+  midrange RMS, and GD/timing confidence.
+- RoomEQ QA was updated so X.1 systems are evaluated against the main bed for
+  broadband improvement while keeping separate sub-system and per-channel
+  sanity checks.
+
+## Home-cinema role model foundations
+
+- Added a RoomEQ-native home-cinema layout/role model covering common bed,
+  LFE/sub, wide, surround, and height channel labels without depending on
+  `sotf-host`.
+- Added explicit `system.bass_management` configuration for home-cinema
+  redirected bass/LFE semantics, including LFE playback gain reporting, sub
+  trim, positive sub-boost limits, and headroom margin metadata.
+- Added optional role-aware target adjustments under
+  `target_response.role_targets` for center, surround, height, subwoofer, and
+  LFE channels.
+- Final metadata now reports detected home-cinema layout and multi-position
+  measurement coverage, including whether non-sub channels have multiple
+  measurements for future all-channel multi-seat correction.
+- X.1 workflows now honor bass-management sub trim and cap positive sub gain
+  so crossover/sub alignment cannot silently consume the configured headroom.
+- Channel matching and final score bands now use the shared role model instead
+  of ad-hoc channel-name parsing.
 
 # 0.4.36
 
@@ -1149,5 +1282,3 @@ No autoeq-specific changes (workspace sync between repositories).
 - Merged autoeq crates into the sotf monorepo
 - Improved roomeq resilience to malformed data input
 - JSON configuration file converter utility for migrating old formats
-
-
