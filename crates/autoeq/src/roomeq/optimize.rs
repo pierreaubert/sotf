@@ -19,7 +19,7 @@ use super::output;
 use super::phase_alignment;
 use super::types::{
     ChannelDspChain, DspChainOutput, MeasurementSource, OptimizationMetadata, OptimizerConfig,
-    ProcessingMode, RoomConfig, SpeakerConfig, SystemModel, TargetCurveConfig,
+    PerceptualMetrics, ProcessingMode, RoomConfig, SpeakerConfig, SystemModel, TargetCurveConfig,
 };
 
 // Private module imports for extracted functions
@@ -367,6 +367,14 @@ fn apply_phase_correction(
         .plugins
         .push(super::output::create_convolution_plugin(&filename));
 
+    let phase_response = crate::response::compute_fir_complex_response(
+        &phase_fir,
+        &ch.final_curve.freq,
+        sample_rate,
+    );
+    ch.final_curve = crate::response::apply_complex_response(&ch.final_curve, &phase_response);
+    chain.final_curve = Some((&ch.final_curve).into());
+
     // Combine with existing FIR for IR computation (convolve the two)
     if let Some(ref existing) = ch.fir_coeffs {
         ch.fir_coeffs = Some(convolve(existing, &phase_fir));
@@ -434,6 +442,111 @@ fn sync_reported_phase_adjustment(
         apply_phase_only_adjustment_to_reported_curve(&mut curve, delay_ms, invert_polarity);
         chain.final_curve = Some((&curve).into());
     }
+}
+
+fn sync_reported_gain_adjustment(
+    channel_name: &str,
+    channel_results: &mut HashMap<String, ChannelOptimizationResult>,
+    channel_chains: &mut HashMap<String, ChannelDspChain>,
+    gain_db: f64,
+    invert_polarity: bool,
+) {
+    if let Some(ch_result) = channel_results.get_mut(channel_name) {
+        ch_result.final_curve.spl = &ch_result.final_curve.spl + gain_db;
+        apply_phase_only_adjustment_to_reported_curve(
+            &mut ch_result.final_curve,
+            0.0,
+            invert_polarity,
+        );
+
+        if let Some(chain) = channel_chains.get_mut(channel_name) {
+            chain.final_curve = Some((&ch_result.final_curve).into());
+        }
+    } else if let Some(chain) = channel_chains.get_mut(channel_name)
+        && let Some(final_curve) = chain.final_curve.clone()
+    {
+        let mut curve: Curve = final_curve.into();
+        curve.spl = &curve.spl + gain_db;
+        apply_phase_only_adjustment_to_reported_curve(&mut curve, 0.0, invert_polarity);
+        chain.final_curve = Some((&curve).into());
+    }
+}
+
+fn sync_reported_biquad_adjustment(
+    channel_name: &str,
+    channel_results: &mut HashMap<String, ChannelOptimizationResult>,
+    channel_chains: &mut HashMap<String, ChannelDspChain>,
+    filters: &[Biquad],
+    sample_rate: f64,
+) {
+    if filters.is_empty() {
+        return;
+    }
+
+    if let Some(ch_result) = channel_results.get_mut(channel_name) {
+        let response = crate::response::compute_peq_complex_response(
+            filters,
+            &ch_result.final_curve.freq,
+            sample_rate,
+        );
+        ch_result.final_curve =
+            crate::response::apply_complex_response(&ch_result.final_curve, &response);
+
+        if let Some(chain) = channel_chains.get_mut(channel_name) {
+            chain.final_curve = Some((&ch_result.final_curve).into());
+        }
+    } else if let Some(chain) = channel_chains.get_mut(channel_name)
+        && let Some(final_curve) = chain.final_curve.clone()
+    {
+        let curve: Curve = final_curve.into();
+        let response =
+            crate::response::compute_peq_complex_response(filters, &curve.freq, sample_rate);
+        let corrected = crate::response::apply_complex_response(&curve, &response);
+        chain.final_curve = Some((&corrected).into());
+    }
+}
+
+fn sync_reported_fir_adjustment(
+    channel_name: &str,
+    channel_results: &mut HashMap<String, ChannelOptimizationResult>,
+    channel_chains: &mut HashMap<String, ChannelDspChain>,
+    coeffs: &[f64],
+    sample_rate: f64,
+) {
+    if coeffs.is_empty() {
+        return;
+    }
+
+    if let Some(ch_result) = channel_results.get_mut(channel_name) {
+        let response = crate::response::compute_fir_complex_response(
+            coeffs,
+            &ch_result.final_curve.freq,
+            sample_rate,
+        );
+        ch_result.final_curve =
+            crate::response::apply_complex_response(&ch_result.final_curve, &response);
+
+        if let Some(chain) = channel_chains.get_mut(channel_name) {
+            chain.final_curve = Some((&ch_result.final_curve).into());
+        }
+    } else if let Some(chain) = channel_chains.get_mut(channel_name)
+        && let Some(final_curve) = chain.final_curve.clone()
+    {
+        let curve: Curve = final_curve.into();
+        let response =
+            crate::response::compute_fir_complex_response(coeffs, &curve.freq, sample_rate);
+        let corrected = crate::response::apply_complex_response(&curve, &response);
+        chain.final_curve = Some((&corrected).into());
+    }
+}
+
+fn collect_current_final_curves(
+    channel_results: &HashMap<String, ChannelOptimizationResult>,
+) -> HashMap<String, Curve> {
+    channel_results
+        .iter()
+        .map(|(name, result)| (name.clone(), result.final_curve.clone()))
+        .collect()
 }
 
 fn total_chain_delay_ms(chain: &ChannelDspChain) -> f64 {
@@ -520,6 +633,39 @@ fn compute_phase_alignment_delay_schedule(
     schedule
 }
 
+fn apply_phase_alignment_delay_schedule(
+    phase_alignment_results: &HashMap<String, (f64, bool, String)>,
+    channel_results: &mut HashMap<String, ChannelOptimizationResult>,
+    channel_chains: &mut HashMap<String, ChannelDspChain>,
+) -> HashMap<String, f64> {
+    let schedule = compute_phase_alignment_delay_schedule(phase_alignment_results);
+
+    for (channel_name, delay_ms) in &schedule {
+        let applied = if let Some(chain) = channel_chains.get_mut(channel_name.as_str()) {
+            output::add_delay_plugin(chain, *delay_ms);
+            true
+        } else {
+            false
+        };
+
+        if applied {
+            sync_reported_phase_adjustment(
+                channel_name,
+                channel_results,
+                channel_chains,
+                *delay_ms,
+                false,
+            );
+            info!(
+                "  Applied {:.3} ms phase alignment delay to '{}'",
+                delay_ms, channel_name
+            );
+        }
+    }
+
+    schedule
+}
+
 /// Threshold in dB above which to warn about channel level differences
 const LEVEL_DIFFERENCE_WARNING_THRESHOLD: f64 = 6.0;
 
@@ -529,6 +675,23 @@ const ARRIVAL_TIME_WARNING_THRESHOLD_MS: f64 = 50.0;
 // ============================================================================
 // Sub-Main Pairing Logic
 // ============================================================================
+
+fn is_subwoofer_channel(config: &RoomConfig, channel_name: &str) -> bool {
+    if let Some(sys) = &config.system
+        && let Some(subs) = &sys.subwoofers
+    {
+        if channel_name.eq_ignore_ascii_case("lfe") {
+            return true;
+        }
+
+        if let Some(measurement_key) = sys.speakers.get(channel_name) {
+            return subs.mapping.contains_key(measurement_key);
+        }
+    }
+
+    let lower = channel_name.to_lowercase();
+    lower == "lfe" || lower == "sub" || lower.starts_with("sub")
+}
 
 /// Find subwoofer-to-main-speaker pairings using system config or heuristic fallback.
 ///
@@ -563,12 +726,12 @@ fn find_sub_main_pairings(
         // Legacy heuristic: find "lfe" or "sub*" channel, pair with all non-sub channels
         let sub_channel = curves
             .keys()
-            .find(|name| *name == "lfe" || name.starts_with("sub"))
+            .find(|name| is_subwoofer_channel(config, name))
             .cloned();
         if let Some(sub_name) = sub_channel {
             let main_channels: Vec<String> = curves
                 .keys()
-                .filter(|name| *name != &sub_name && !name.starts_with("sub"))
+                .filter(|name| *name != &sub_name && !is_subwoofer_channel(config, name))
                 .cloned()
                 .collect();
             for main in main_channels {
@@ -929,6 +1092,7 @@ fn optimize_room_impl(
 
             if let Some(result) = workflow_result {
                 let mut result = result?;
+                let mut workflow_refresh_needed = false;
 
                 // Send post-workflow summary
                 let summary: Vec<String> = result
@@ -977,19 +1141,45 @@ fn optimize_room_impl(
                         },
                     );
                     let out_dir = output_dir.unwrap_or(Path::new("."));
-                    for (name, ch) in result.channel_results.iter_mut() {
-                        if ch.fir_coeffs.is_some() {
+                    let names: Vec<String> = result.channel_results.keys().cloned().collect();
+                    for name in names {
+                        let generated = if let Some(ch) = result.channel_results.get_mut(&name) {
+                            if ch.fir_coeffs.is_some() {
+                                None
+                            } else {
+                                ch.fir_coeffs = post_generate_fir(
+                                    &name,
+                                    &ch.initial_curve,
+                                    &ch.final_curve,
+                                    &config.optimizer,
+                                    config.target_curve.as_ref(),
+                                    sample_rate,
+                                    Some(out_dir),
+                                );
+                                ch.fir_coeffs.clone()
+                            }
+                        } else {
+                            None
+                        };
+
+                        let Some(coeffs) = generated else {
                             continue;
+                        };
+
+                        if let Some(chain) = result.channels.get_mut(&name) {
+                            let filename = format!("{}_fir.wav", name);
+                            chain
+                                .plugins
+                                .push(super::output::create_convolution_plugin(&filename));
                         }
-                        ch.fir_coeffs = post_generate_fir(
-                            name,
-                            &ch.initial_curve,
-                            &ch.final_curve,
-                            &config.optimizer,
-                            config.target_curve.as_ref(),
+                        sync_reported_fir_adjustment(
+                            &name,
+                            &mut result.channel_results,
+                            &mut result.channels,
+                            &coeffs,
                             sample_rate,
-                            Some(out_dir),
                         );
+                        workflow_refresh_needed = true;
                     }
                 }
                 // MixedPhase: post-generate short excess-phase FIR for each channel
@@ -1010,25 +1200,43 @@ fn optimize_room_impl(
                         },
                     );
                     let out_dir = output_dir.unwrap_or(Path::new("."));
-                    for (name, ch) in result.channel_results.iter_mut() {
-                        if ch.fir_coeffs.is_some() {
+                    let names: Vec<String> = result.channel_results.keys().cloned().collect();
+                    for name in names {
+                        let generated = if let Some(ch) = result.channel_results.get_mut(&name) {
+                            if ch.fir_coeffs.is_some() {
+                                None
+                            } else {
+                                ch.fir_coeffs = post_generate_mixed_phase_fir(
+                                    &name,
+                                    &ch.initial_curve,
+                                    &config.optimizer,
+                                    sample_rate,
+                                    Some(out_dir),
+                                );
+                                ch.fir_coeffs.clone()
+                            }
+                        } else {
+                            None
+                        };
+
+                        let Some(coeffs) = generated else {
                             continue;
-                        }
-                        ch.fir_coeffs = post_generate_mixed_phase_fir(
-                            name,
-                            &ch.initial_curve,
-                            &config.optimizer,
-                            sample_rate,
-                            Some(out_dir),
-                        );
-                        if ch.fir_coeffs.is_some()
-                            && let Some(chain) = result.channels.get_mut(name)
-                        {
+                        };
+
+                        if let Some(chain) = result.channels.get_mut(&name) {
                             let filename = format!("{}_excess_phase_fir.wav", name);
                             chain
                                 .plugins
                                 .push(super::output::create_convolution_plugin(&filename));
                         }
+                        sync_reported_fir_adjustment(
+                            &name,
+                            &mut result.channel_results,
+                            &mut result.channels,
+                            &coeffs,
+                            sample_rate,
+                        );
+                        workflow_refresh_needed = true;
                     }
                 }
                 // Standalone phase correction (rePhase-style)
@@ -1055,6 +1263,7 @@ fn optimize_room_impl(
                         if let Some(ch) = result.channel_results.get_mut(name)
                             && let Some(chain) = result.channels.get_mut(name)
                         {
+                            let before_plugins = chain.plugins.len();
                             apply_phase_correction(
                                 name,
                                 ch,
@@ -1063,6 +1272,7 @@ fn optimize_room_impl(
                                 sample_rate,
                                 Some(out_dir),
                             );
+                            workflow_refresh_needed |= chain.plugins.len() != before_plugins;
                         }
                     }
                 }
@@ -1119,8 +1329,23 @@ fn optimize_room_impl(
                             epa_preference: None,
                         },
                     );
+                    let plugin_count_before_icd: usize = result
+                        .channels
+                        .values()
+                        .map(|chain| chain.plugins.len())
+                        .sum();
                     compute_and_correct_icd(&mut result, config, sample_rate);
+                    let plugin_count_after_icd: usize = result
+                        .channels
+                        .values()
+                        .map(|chain| chain.plugins.len())
+                        .sum();
+                    workflow_refresh_needed |= plugin_count_after_icd != plugin_count_before_icd;
                 }
+                if workflow_refresh_needed {
+                    refresh_final_reports(&mut result, config, sample_rate);
+                }
+                update_perceptual_metrics(&mut result.metadata);
 
                 sanity_check_result(&result)?;
                 return Ok(result);
@@ -1439,6 +1664,7 @@ fn optimize_room_impl(
 
         // Post-generate FIR coefficients for channels that need them but don't have them
         // (e.g., speaker groups that only support IIR internally)
+        let mut post_generated_fir: Option<Vec<f64>> = None;
         let fir_coeffs = if fir_coeffs.is_none()
             && !matches!(
                 config.optimizer.processing_mode,
@@ -1461,7 +1687,7 @@ fn optimize_room_impl(
                     epa_preference: None,
                 },
             );
-            post_generate_fir(
+            let generated = post_generate_fir(
                 &channel_name,
                 &initial_curve,
                 &final_curve,
@@ -1469,7 +1695,9 @@ fn optimize_room_impl(
                 config.target_curve.as_ref(),
                 sample_rate,
                 output_dir,
-            )
+            );
+            post_generated_fir = generated.clone();
+            generated
         } else {
             fir_coeffs
         };
@@ -1477,7 +1705,7 @@ fn optimize_room_impl(
         channel_results.insert(
             channel_name.clone(),
             ChannelOptimizationResult {
-                name: channel_name,
+                name: channel_name.clone(),
                 pre_score,
                 post_score,
                 initial_curve,
@@ -1486,7 +1714,25 @@ fn optimize_room_impl(
                 fir_coeffs,
             },
         );
+
+        if let Some(coeffs) = post_generated_fir {
+            if let Some(chain) = channel_chains.get_mut(&channel_name) {
+                let filename = format!("{}_fir.wav", channel_name);
+                chain
+                    .plugins
+                    .push(super::output::create_convolution_plugin(&filename));
+            }
+            sync_reported_fir_adjustment(
+                &channel_name,
+                &mut channel_results,
+                &mut channel_chains,
+                &coeffs,
+                sample_rate,
+            );
+        }
     }
+
+    curves = collect_current_final_curves(&channel_results);
 
     // Auto IR sync: if no WAV-based arrivals were collected, estimate from phase data.
     // Runs unconditionally (does not require allow_delay = true).
@@ -1542,19 +1788,32 @@ fn optimize_room_impl(
         // Add delay plugins at the BEGINNING of the chain (pre-EQ)
         for (channel_name, delay_ms) in &alignment_delays {
             // Only add delay plugin if the adjustment is significant (> 0.01 ms = ~0.5 samples at 48kHz)
-            if *delay_ms > 0.01
+            let applied = if *delay_ms > 0.01
                 && let Some(chain) = channel_chains.get_mut(channel_name)
             {
-                // Insert delay plugin at the beginning (before EQ)
                 chain
                     .plugins
                     .insert(0, output::create_delay_plugin(*delay_ms));
+                true
+            } else {
+                false
+            };
+
+            if applied {
+                sync_reported_phase_adjustment(
+                    channel_name,
+                    &mut channel_results,
+                    &mut channel_chains,
+                    *delay_ms,
+                    false,
+                );
                 info!(
                     "  Channel '{}': added {:.3} ms delay for time alignment",
                     channel_name, delay_ms
                 );
             }
         }
+        curves = collect_current_final_curves(&channel_results);
     } else if channel_arrivals.is_empty() && config.speakers.len() > 1 {
         info!("No arrival time data (WAV or phase) available for time alignment. Skipping.");
     }
@@ -1562,7 +1821,12 @@ fn optimize_room_impl(
     // Spectral channel alignment: fit low-shelf + high-shelf + flat gain to each
     // channel's deviation from the average post-EQ curve. This corrects both broadband
     // level differences and frequency-dependent tilt between channels.
-    if curves.len() > 1 {
+    let spectral_curves: HashMap<String, Curve> = curves
+        .iter()
+        .filter(|(name, _)| !is_subwoofer_channel(config, name))
+        .map(|(name, curve)| (name.clone(), curve.clone()))
+        .collect();
+    if spectral_curves.len() > 1 {
         send_progress(
             &mut callback_shared.lock().unwrap(),
             &RoomOptimizationProgress {
@@ -1587,7 +1851,7 @@ fn optimize_room_impl(
 
         // Compute post-EQ mean SPL per channel for the level spread warning
         let mut post_eq_means: HashMap<String, f64> = HashMap::new();
-        for (channel_name, final_curve) in &curves {
+        for (channel_name, final_curve) in &spectral_curves {
             let freqs_f32: Vec<f32> = final_curve.freq.iter().map(|&f| f as f32).collect();
             let spl_f32: Vec<f32> = final_curve.spl.iter().map(|&s| s as f32).collect();
             let post_mean = compute_average_response(
@@ -1623,7 +1887,7 @@ fn optimize_room_impl(
 
         // Compute spectral alignment (shelf + gain) for each channel
         let alignment_results = super::spectral_align::compute_spectral_alignment(
-            &curves,
+            &spectral_curves,
             sample_rate,
             min_freq,
             max_freq,
@@ -1642,7 +1906,26 @@ fn optimize_room_impl(
                     chain.plugins.push(gain);
                 }
             }
+            let shelf_filters =
+                super::spectral_align::create_alignment_filters(result, sample_rate);
+            sync_reported_biquad_adjustment(
+                channel_name,
+                &mut channel_results,
+                &mut channel_chains,
+                &shelf_filters,
+                sample_rate,
+            );
+            if result.flat_gain_db.abs() >= 0.3 {
+                sync_reported_gain_adjustment(
+                    channel_name,
+                    &mut channel_results,
+                    &mut channel_chains,
+                    result.flat_gain_db,
+                    false,
+                );
+            }
         }
+        curves = collect_current_final_curves(&channel_results);
     }
 
     // ========================================================================
@@ -1696,7 +1979,28 @@ fn optimize_room_impl(
                             chain.plugins.push(plugin);
                         }
                     }
+                    if let Some(alignment) = &vog_result.alignment {
+                        let shelf_filters =
+                            super::spectral_align::create_alignment_filters(alignment, sample_rate);
+                        sync_reported_biquad_adjustment(
+                            channel_name,
+                            &mut channel_results,
+                            &mut channel_chains,
+                            &shelf_filters,
+                            sample_rate,
+                        );
+                        if alignment.flat_gain_db.abs() >= 0.3 {
+                            sync_reported_gain_adjustment(
+                                channel_name,
+                                &mut channel_results,
+                                &mut channel_chains,
+                                alignment.flat_gain_db,
+                                false,
+                            );
+                        }
+                    }
                 }
+                curves = collect_current_final_curves(&channel_results);
             }
             Err(e) => {
                 warn!("Voice of God optimization failed: {}", e);
@@ -1819,28 +2123,13 @@ fn optimize_room_impl(
         );
     }
 
-    let phase_delay_schedule = compute_phase_alignment_delay_schedule(&phase_alignment_results);
-    for (channel_name, delay_ms) in &phase_delay_schedule {
-        let applied = if let Some(chain) = channel_chains.get_mut(channel_name.as_str()) {
-            output::add_delay_plugin(chain, *delay_ms);
-            true
-        } else {
-            false
-        };
-
-        if applied {
-            sync_reported_phase_adjustment(
-                channel_name,
-                &mut channel_results,
-                &mut channel_chains,
-                *delay_ms,
-                false,
-            );
-            info!(
-                "  Applied {:.3} ms phase alignment delay to '{}'",
-                delay_ms, channel_name
-            );
-        }
+    apply_phase_alignment_delay_schedule(
+        &phase_alignment_results,
+        &mut channel_results,
+        &mut channel_chains,
+    );
+    if !phase_alignment_results.is_empty() {
+        curves = collect_current_final_curves(&channel_results);
     }
 
     // Group Delay Optimization (GD-Opt v1) was removed in the 2.0 simplification
@@ -1960,6 +2249,10 @@ fn optimize_room_impl(
         inter_channel_deviation: None,
         epa_per_channel,
         group_delay: group_delay_summary,
+        perceptual_metrics: None,
+        home_cinema_layout: None,
+        multi_seat_coverage: None,
+        bass_management: None,
     };
 
     let mut result = RoomOptimizationResult {
@@ -1988,9 +2281,274 @@ fn optimize_room_impl(
         );
         compute_and_correct_icd(&mut result, config, sample_rate);
     }
+    refresh_final_reports(&mut result, config, sample_rate);
 
     sanity_check_result(&result)?;
     Ok(result)
+}
+
+fn recompute_curve_flatness_score(curve: &Curve, min_freq: f64, max_freq: f64) -> f64 {
+    let freqs_f32: Vec<f32> = curve.freq.iter().map(|&f| f as f32).collect();
+    let spl_f32: Vec<f32> = curve.spl.iter().map(|&s| s as f32).collect();
+    let mean = compute_average_response(
+        &freqs_f32,
+        &spl_f32,
+        Some((min_freq as f32, max_freq as f32)),
+    ) as f64;
+    let normalized_spl = &curve.spl - mean;
+    crate::loss::flat_loss(&curve.freq, &normalized_spl, min_freq, max_freq)
+}
+
+fn final_score_band_for_channel(config: &RoomConfig, channel_name: &str) -> (f64, f64) {
+    let min_freq = config.optimizer.min_freq;
+    let mut max_freq = config.optimizer.max_freq;
+    let crossover_max = config.crossovers.as_ref().and_then(|xos| {
+        xos.values()
+            .filter_map(|xo| xo.frequency)
+            .filter(|freq| freq.is_finite() && *freq > 0.0)
+            .reduce(f64::max)
+    });
+
+    if is_subwoofer_channel(config, channel_name) {
+        let crossover_max = crossover_max.unwrap_or(160.0);
+        max_freq = max_freq.min((crossover_max * 2.0).clamp(120.0, 250.0));
+    } else if config
+        .system
+        .as_ref()
+        .is_some_and(|sys| sys.subwoofers.is_some())
+    {
+        let crossover_max = crossover_max.unwrap_or(80.0);
+        return (
+            min_freq.max(crossover_max),
+            max_freq.max(min_freq.max(crossover_max)),
+        );
+    } else {
+        let (role_min, role_max) = super::home_cinema::role_score_band(config, channel_name);
+        return (role_min, role_max.max(role_min));
+    }
+
+    (min_freq, max_freq.max(min_freq))
+}
+
+fn refresh_final_reports(
+    result: &mut RoomOptimizationResult,
+    config: &RoomConfig,
+    sample_rate: f64,
+) {
+    for ch_result in result.channel_results.values_mut() {
+        let (score_min_freq, score_max_freq) =
+            final_score_band_for_channel(config, &ch_result.name);
+        ch_result.post_score =
+            recompute_curve_flatness_score(&ch_result.final_curve, score_min_freq, score_max_freq);
+        if let Some(chain) = result.channels.get_mut(&ch_result.name) {
+            chain.final_curve = Some((&ch_result.final_curve).into());
+        }
+    }
+
+    let count = result.channel_results.len().max(1) as f64;
+    let avg_pre = result
+        .channel_results
+        .values()
+        .map(|ch| ch.pre_score)
+        .sum::<f64>()
+        / count;
+    let avg_post = result
+        .channel_results
+        .values()
+        .map(|ch| ch.post_score)
+        .sum::<f64>()
+        / count;
+    result.combined_pre_score = avg_pre;
+    result.combined_post_score = avg_post;
+    result.metadata.pre_score = avg_pre;
+    result.metadata.post_score = avg_post;
+    result.metadata.home_cinema_layout = Some(super::home_cinema::analyze_layout(config));
+    result.metadata.multi_seat_coverage = Some(super::home_cinema::multi_seat_coverage(config));
+    result.metadata.bass_management =
+        super::home_cinema::bass_management_report(config, None, false);
+
+    let epa_cfg = config.optimizer.epa_config.clone().unwrap_or_default();
+    result.metadata.epa_per_channel =
+        crate::roomeq::output::compute_epa_per_channel(&result.channels, &epa_cfg);
+    update_perceptual_metrics(&mut result.metadata);
+
+    let ir_inputs: Vec<_> = result
+        .channel_results
+        .iter()
+        .map(|(name, ch)| {
+            let delay_ms = result
+                .channels
+                .get(name)
+                .map(total_chain_delay_ms)
+                .unwrap_or(0.0);
+            (
+                name.clone(),
+                ch.initial_curve.clone(),
+                ch.biquads.clone(),
+                ch.fir_coeffs.clone(),
+                delay_ms,
+            )
+        })
+        .collect();
+
+    for (channel_name, initial_curve, biquads, fir_coeffs, delay_ms) in ir_inputs {
+        if let Some((pre_ir, post_ir)) = super::ir_waveform::compute_channel_ir_waveforms(
+            &initial_curve,
+            &biquads,
+            fir_coeffs.as_deref(),
+            delay_ms,
+            sample_rate,
+        ) && let Some(chain) = result.channels.get_mut(&channel_name)
+        {
+            chain.pre_ir = Some(pre_ir);
+            chain.post_ir = Some(post_ir);
+        }
+    }
+}
+
+fn update_perceptual_metrics(metadata: &mut OptimizationMetadata) {
+    let Some(epa_per_channel) = metadata.epa_per_channel.as_ref() else {
+        metadata.perceptual_metrics = None;
+        return;
+    };
+    if epa_per_channel.is_empty() {
+        metadata.perceptual_metrics = None;
+        return;
+    }
+
+    let count = epa_per_channel.len() as f64;
+    let epa_preference_pre = epa_per_channel
+        .values()
+        .map(|metrics| metrics.pre.preference)
+        .sum::<f64>()
+        / count;
+    let epa_preference_post = epa_per_channel
+        .values()
+        .map(|metrics| metrics.post.preference)
+        .sum::<f64>()
+        / count;
+    let channel_matching_midrange_rms_db = metadata
+        .inter_channel_deviation
+        .as_ref()
+        .map(|icd| icd.midrange_rms_db);
+    let timing_confidence = metadata.group_delay.as_ref().map(|gd| {
+        if gd.applied {
+            "gd_applied".to_string()
+        } else if gd.advisory == "success" {
+            "gd_success_not_applied".to_string()
+        } else {
+            format!("gd_{}", gd.advisory)
+        }
+    });
+
+    metadata.perceptual_metrics = Some(PerceptualMetrics {
+        epa_preference_pre,
+        epa_preference_post,
+        epa_preference_delta: epa_preference_post - epa_preference_pre,
+        channel_matching_midrange_rms_db,
+        timing_confidence,
+    });
+}
+
+fn channel_matching_role_key(channel_name: &str) -> Option<&'static str> {
+    super::home_cinema::matching_group_key(channel_name)
+}
+
+fn role_aware_channel_matching_groups(
+    final_curves: &HashMap<String, crate::Curve>,
+) -> Vec<HashMap<String, crate::Curve>> {
+    let mut grouped: HashMap<&'static str, HashMap<String, crate::Curve>> = HashMap::new();
+
+    for (name, curve) in final_curves {
+        if let Some(key) = channel_matching_role_key(name) {
+            grouped
+                .entry(key)
+                .or_default()
+                .insert(name.clone(), curve.clone());
+        }
+    }
+
+    let order = [
+        "front_lr",
+        "side_surrounds",
+        "rear_surrounds",
+        "wides",
+        "top_front",
+        "top_middle",
+        "top_rear",
+        "generic",
+    ];
+
+    order
+        .iter()
+        .filter_map(|key| grouped.remove(key))
+        .filter(|group| group.len() > 1)
+        .collect()
+}
+
+fn apply_channel_matching_correction(
+    result: &mut RoomOptimizationResult,
+    correction: &super::spectral_align::ChannelMatchingResult,
+    sample_rate: f64,
+) {
+    if let Some(plugin) = &correction.plugin {
+        info!(
+            "  Channel '{}': {} matching filters",
+            correction.channel_name,
+            correction.filters.len(),
+        );
+        for f in &correction.filters {
+            info!(
+                "    PK @ {:.0} Hz, Q={:.2}, gain={:+.1} dB",
+                f.freq, f.q, f.db_gain,
+            );
+        }
+
+        if let Some(chain) = result.channels.get_mut(&correction.channel_name) {
+            chain.plugins.push(plugin.clone());
+        }
+
+        if let Some(ch_result) = result.channel_results.get_mut(&correction.channel_name) {
+            let resp = crate::response::compute_peq_complex_response(
+                &correction.filters,
+                &ch_result.final_curve.freq,
+                sample_rate,
+            );
+            ch_result.final_curve =
+                crate::response::apply_complex_response(&ch_result.final_curve, &resp);
+
+            if let Some(chain) = result.channels.get_mut(&correction.channel_name)
+                && let Some(ref display_final) = chain.final_curve
+            {
+                let display_curve: crate::Curve = display_final.clone().into();
+                let display_resp = crate::response::compute_peq_complex_response(
+                    &correction.filters,
+                    &display_curve.freq,
+                    sample_rate,
+                );
+                let corrected =
+                    crate::response::apply_complex_response(&display_curve, &display_resp);
+                chain.final_curve = Some((&corrected).into());
+            }
+        }
+    }
+}
+
+fn channel_matching_worsens_reported_scores(
+    result: &RoomOptimizationResult,
+    config: &RoomConfig,
+    baseline: &HashMap<String, ChannelOptimizationResult>,
+) -> Option<(String, f64, f64)> {
+    result.channel_results.iter().find_map(|(name, ch)| {
+        let before = baseline.get(name)?.post_score;
+        let (score_min, score_max) = final_score_band_for_channel(config, name);
+        let after = recompute_curve_flatness_score(&ch.final_curve, score_min, score_max);
+        if after > before + 1e-6 {
+            Some((name.clone(), before, after))
+        } else {
+            None
+        }
+    })
 }
 
 /// Compute inter-channel deviation and optionally apply correction filters.
@@ -2006,8 +2564,13 @@ fn compute_and_correct_icd(
     let final_curves: HashMap<String, crate::Curve> = result
         .channel_results
         .iter()
+        .filter(|(name, _)| !is_subwoofer_channel(config, name))
         .map(|(name, ch)| (name.clone(), ch.final_curve.clone()))
         .collect();
+    if final_curves.len() <= 1 {
+        result.metadata.inter_channel_deviation = None;
+        return;
+    }
 
     let f3 = final_curves
         .values()
@@ -2033,70 +2596,77 @@ fn compute_and_correct_icd(
     let threshold = matching_cfg.threshold_db;
     let max_filters = matching_cfg.max_filters;
 
-    if enabled && icd.midrange_rms_db > threshold {
-        info!(
-            "ICD midrange_rms={:.2}dB > threshold={:.1}dB — applying channel matching correction (max {} filters/ch)",
-            icd.midrange_rms_db, threshold, max_filters,
-        );
+    if enabled {
+        let matching_groups = role_aware_channel_matching_groups(&final_curves);
+        let mut applied_any = false;
+        let baseline_channel_results = result.channel_results.clone();
+        let baseline_channels = result.channels.clone();
 
-        let corrections = super::spectral_align::correct_inter_channel_deviation(
-            &final_curves,
-            f3,
-            max_filters,
-            sample_rate,
-        );
+        if matching_groups.is_empty() {
+            info!("No role-compatible channel matching groups found; skipping ICD correction");
+        }
 
-        for correction in &corrections {
-            if let Some(plugin) = &correction.plugin {
+        for group in matching_groups {
+            let mut group_names: Vec<_> = group.keys().cloned().collect();
+            group_names.sort();
+
+            let group_icd = super::spectral_align::compute_inter_channel_deviation(&group, f3);
+            if group_icd.midrange_rms_db <= threshold {
                 info!(
-                    "  Channel '{}': {} matching filters",
-                    correction.channel_name,
-                    correction.filters.len(),
+                    "ICD group [{}] midrange_rms={:.2}dB <= threshold={:.1}dB - no correction needed",
+                    group_names.join(", "),
+                    group_icd.midrange_rms_db,
+                    threshold,
                 );
-                for f in &correction.filters {
-                    info!(
-                        "    PK @ {:.0} Hz, Q={:.2}, gain={:+.1} dB",
-                        f.freq, f.q, f.db_gain,
-                    );
-                }
+                continue;
+            }
 
-                // Add plugin to DSP chain
-                if let Some(chain) = result.channels.get_mut(&correction.channel_name) {
-                    chain.plugins.push(plugin.clone());
-                }
+            info!(
+                "ICD group [{}] midrange_rms={:.2}dB > threshold={:.1}dB - applying role-aware channel matching (max {} filters/ch)",
+                group_names.join(", "),
+                group_icd.midrange_rms_db,
+                threshold,
+                max_filters,
+            );
 
-                // Update the final curve with the correction applied
-                if let Some(ch_result) = result.channel_results.get_mut(&correction.channel_name) {
-                    let resp = crate::response::compute_peq_complex_response(
-                        &correction.filters,
-                        &ch_result.final_curve.freq,
-                        sample_rate,
-                    );
-                    ch_result.final_curve =
-                        crate::response::apply_complex_response(&ch_result.final_curve, &resp);
+            let corrections = super::spectral_align::correct_inter_channel_deviation(
+                &group,
+                f3,
+                max_filters,
+                sample_rate,
+            );
 
-                    // Also update the display final_curve in the chain
-                    if let Some(chain) = result.channels.get_mut(&correction.channel_name)
-                        && let Some(ref display_final) = chain.final_curve
-                    {
-                        let display_curve: crate::Curve = display_final.clone().into();
-                        let display_resp = crate::response::compute_peq_complex_response(
-                            &correction.filters,
-                            &display_curve.freq,
-                            sample_rate,
-                        );
-                        let corrected =
-                            crate::response::apply_complex_response(&display_curve, &display_resp);
-                        chain.final_curve = Some((&corrected).into());
-                    }
+            for correction in &corrections {
+                if correction.plugin.is_some() {
+                    apply_channel_matching_correction(result, correction, sample_rate);
+                    applied_any = true;
                 }
             }
         }
 
-        // Re-compute ICD after correction
+        if !applied_any {
+            result.metadata.inter_channel_deviation = Some(icd);
+            return;
+        }
+
+        if let Some((channel_name, before, after)) =
+            channel_matching_worsens_reported_scores(result, config, &baseline_channel_results)
+        {
+            info!(
+                "ICD correction discarded: channel '{}' score would regress from {:.4} to {:.4}",
+                channel_name, before, after
+            );
+            result.channel_results = baseline_channel_results;
+            result.channels = baseline_channels;
+            result.metadata.inter_channel_deviation = Some(icd);
+            return;
+        }
+
+        // Re-compute global ICD after role-aware correction.
         let corrected_curves: HashMap<String, crate::Curve> = result
             .channel_results
             .iter()
+            .filter(|(name, _)| !is_subwoofer_channel(config, name))
             .map(|(name, ch)| (name.clone(), ch.final_curve.clone()))
             .collect();
         let icd_after =
@@ -2110,12 +2680,6 @@ fn compute_and_correct_icd(
         );
         result.metadata.inter_channel_deviation = Some(icd_after);
     } else {
-        if enabled {
-            info!(
-                "ICD midrange_rms={:.2}dB <= threshold={:.1}dB — no correction needed",
-                icd.midrange_rms_db, threshold,
-            );
-        }
         result.metadata.inter_channel_deviation = Some(icd);
     }
 }
@@ -2374,7 +2938,7 @@ fn try_run_gd_opt(
                 &GdOptAdvisory::FrequencyGridMismatch,
             ));
         }
-        if !same_frequency_grid(&gd_channels[0].freq, &ch.freq) {
+        if !super::frequency_grid::same_frequency_grid(&gd_channels[0].freq, &ch.freq) {
             info!("GD-Opt: skipped — inconsistent frequency grid values across channels");
             return Some(GroupDelayOptSummary::from_advisory(
                 &GdOptAdvisory::FrequencyGridMismatch,
@@ -2515,14 +3079,6 @@ fn try_run_gd_opt(
             }
         }
     }
-}
-
-fn same_frequency_grid(reference: &ndarray::Array1<f64>, candidate: &ndarray::Array1<f64>) -> bool {
-    reference.len() == candidate.len()
-        && reference.iter().zip(candidate.iter()).all(|(&a, &b)| {
-            let tol = 1e-6_f64.max(1e-6 * a.abs().max(b.abs()));
-            (a - b).abs() <= tol
-        })
 }
 
 fn apply_gd_opt_result(
@@ -2725,6 +3281,200 @@ mod tests {
     }
 
     #[test]
+    fn reported_gain_sync_updates_result_and_chain_magnitude() {
+        let curve = Curve {
+            freq: array![100.0],
+            spl: array![1.0],
+            phase: Some(array![0.0]),
+            ..Default::default()
+        };
+        let mut channel_results = HashMap::from([(
+            "L".to_string(),
+            ChannelOptimizationResult {
+                name: "L".to_string(),
+                pre_score: 0.0,
+                post_score: 0.0,
+                initial_curve: curve.clone(),
+                final_curve: curve.clone(),
+                biquads: Vec::new(),
+                fir_coeffs: None,
+            },
+        )]);
+        let mut channel_chains = HashMap::from([("L".to_string(), test_chain("L", &curve))]);
+
+        sync_reported_gain_adjustment("L", &mut channel_results, &mut channel_chains, 2.5, true);
+
+        assert_close(channel_results["L"].final_curve.spl[0], 3.5);
+        assert_close(
+            channel_chains["L"].final_curve.as_ref().unwrap().spl[0],
+            3.5,
+        );
+        assert_close(
+            channel_results["L"].final_curve.phase.as_ref().unwrap()[0],
+            180.0,
+        );
+    }
+
+    #[test]
+    fn reported_biquad_sync_updates_result_and_chain_curve() {
+        let curve = Curve {
+            freq: array![1000.0],
+            spl: array![0.0],
+            phase: Some(array![0.0]),
+            ..Default::default()
+        };
+        let mut channel_results = HashMap::from([(
+            "L".to_string(),
+            ChannelOptimizationResult {
+                name: "L".to_string(),
+                pre_score: 0.0,
+                post_score: 0.0,
+                initial_curve: curve.clone(),
+                final_curve: curve.clone(),
+                biquads: Vec::new(),
+                fir_coeffs: None,
+            },
+        )]);
+        let mut channel_chains = HashMap::from([("L".to_string(), test_chain("L", &curve))]);
+        let filters = vec![Biquad::new(
+            BiquadFilterType::Peak,
+            1000.0,
+            48000.0,
+            1.0,
+            6.0,
+        )];
+
+        sync_reported_biquad_adjustment(
+            "L",
+            &mut channel_results,
+            &mut channel_chains,
+            &filters,
+            48000.0,
+        );
+
+        assert!(
+            channel_results["L"].final_curve.spl[0] > 5.5,
+            "expected PEQ boost in reported result"
+        );
+        assert_close(
+            channel_results["L"].final_curve.spl[0],
+            channel_chains["L"].final_curve.as_ref().unwrap().spl[0],
+        );
+    }
+
+    #[test]
+    fn reported_fir_sync_updates_result_and_chain_curve() {
+        let curve = Curve {
+            freq: array![1000.0],
+            spl: array![0.0],
+            phase: Some(array![0.0]),
+            ..Default::default()
+        };
+        let mut channel_results = HashMap::from([(
+            "L".to_string(),
+            ChannelOptimizationResult {
+                name: "L".to_string(),
+                pre_score: 0.0,
+                post_score: 0.0,
+                initial_curve: curve.clone(),
+                final_curve: curve.clone(),
+                biquads: Vec::new(),
+                fir_coeffs: None,
+            },
+        )]);
+        let mut channel_chains = HashMap::from([("L".to_string(), test_chain("L", &curve))]);
+
+        sync_reported_fir_adjustment(
+            "L",
+            &mut channel_results,
+            &mut channel_chains,
+            &[1.0, -1.0],
+            48000.0,
+        );
+
+        assert!(
+            channel_results["L"].final_curve.spl[0] < -17.0,
+            "expected differentiator FIR attenuation at 1 kHz"
+        );
+        assert_close(
+            channel_results["L"].final_curve.spl[0],
+            channel_chains["L"].final_curve.as_ref().unwrap().spl[0],
+        );
+    }
+
+    #[test]
+    fn perceptual_metrics_report_epa_and_timing_confidence() {
+        let score = |preference| crate::loss::epa::score::EpaScore {
+            evaluation: 0.0,
+            potency: 0.0,
+            activity: 0.0,
+            preference,
+            sharpness_acum: 0.0,
+            roughness: 0.0,
+            total_loudness_sone: 0.0,
+            loudness_balance: 0.0,
+        };
+        let group_delay = super::super::gd_opt::GroupDelayOptSummary {
+            band: (20.0, 120.0),
+            channel_names: Vec::new(),
+            per_channel_delay_ms: Vec::new(),
+            per_channel_polarity_inverted: Vec::new(),
+            per_channel_ap_count: Vec::new(),
+            sum_gd_pre_rms_ms: 1.0,
+            sum_gd_post_rms_ms: 0.5,
+            mean_coherence: 1.0,
+            improvement_db: 0.0,
+            advisory: "success".to_string(),
+            applied: true,
+        };
+        let mut metadata = OptimizationMetadata {
+            pre_score: 0.0,
+            post_score: 0.0,
+            algorithm: "test".to_string(),
+            loss_type: Some("flat".to_string()),
+            iterations: 0,
+            timestamp: "test".to_string(),
+            inter_channel_deviation: Some(super::super::types::InterChannelDeviation {
+                deviation_per_freq: Vec::new(),
+                midrange_rms_db: 1.25,
+                passband_rms_db: 2.0,
+                midrange_peak_db: 3.0,
+                midrange_peak_freq: 1000.0,
+            }),
+            epa_per_channel: Some(HashMap::from([
+                (
+                    "L".to_string(),
+                    super::super::types::EpaChannelMetrics {
+                        pre: score(4.0),
+                        post: score(6.0),
+                    },
+                ),
+                (
+                    "R".to_string(),
+                    super::super::types::EpaChannelMetrics {
+                        pre: score(5.0),
+                        post: score(7.0),
+                    },
+                ),
+            ])),
+            group_delay: Some(group_delay),
+            perceptual_metrics: None,
+            home_cinema_layout: None,
+            multi_seat_coverage: None,
+            bass_management: None,
+        };
+
+        update_perceptual_metrics(&mut metadata);
+
+        let metrics = metadata.perceptual_metrics.expect("metrics");
+        assert_close(metrics.epa_preference_pre, 4.5);
+        assert_close(metrics.epa_preference_post, 6.5);
+        assert_close(metrics.epa_preference_delta, 2.0);
+        assert_close(metrics.channel_matching_midrange_rms_db.unwrap(), 1.25);
+        assert_eq!(metrics.timing_confidence.as_deref(), Some("gd_applied"));
+    }
+
+    #[test]
     fn total_chain_delay_sums_stacked_delay_plugins() {
         let curve = Curve {
             freq: array![100.0],
@@ -2738,6 +3488,59 @@ mod tests {
         chain.plugins.push(output::create_delay_plugin(3.5));
 
         assert_close(total_chain_delay_ms(&chain), 5.5);
+    }
+
+    #[test]
+    fn channel_matching_role_key_groups_like_roles_only() {
+        assert_eq!(channel_matching_role_key("L"), Some("front_lr"));
+        assert_eq!(channel_matching_role_key("front-right"), Some("front_lr"));
+        assert_eq!(channel_matching_role_key("C"), None);
+        assert_eq!(channel_matching_role_key("SL"), Some("side_surrounds"));
+        assert_eq!(
+            channel_matching_role_key("surround right"),
+            Some("side_surrounds")
+        );
+        assert_eq!(channel_matching_role_key("TFL"), Some("top_front"));
+        assert_eq!(
+            channel_matching_role_key("rear.height.right"),
+            Some("top_rear")
+        );
+    }
+
+    #[test]
+    fn role_aware_channel_matching_groups_exclude_center() {
+        let curve = Curve {
+            freq: array![500.0, 1000.0],
+            spl: array![0.0, 0.0],
+            phase: None,
+            ..Default::default()
+        };
+        let curves = HashMap::from([
+            ("L".to_string(), curve.clone()),
+            ("R".to_string(), curve.clone()),
+            ("C".to_string(), curve.clone()),
+            ("SL".to_string(), curve.clone()),
+            ("SR".to_string(), curve),
+        ]);
+
+        let groups = role_aware_channel_matching_groups(&curves);
+        let mut group_names: Vec<Vec<String>> = groups
+            .into_iter()
+            .map(|group| {
+                let mut names: Vec<String> = group.keys().cloned().collect();
+                names.sort();
+                names
+            })
+            .collect();
+        group_names.sort();
+
+        assert_eq!(
+            group_names,
+            vec![
+                vec!["L".to_string(), "R".to_string()],
+                vec!["SL".to_string(), "SR".to_string()],
+            ]
+        );
     }
 
     #[test]
@@ -2772,6 +3575,135 @@ mod tests {
         assert_close(schedule["SubL"], 3.0);
         assert_close(*schedule.get("SubR").unwrap_or(&0.0), 0.0);
         assert_close(schedule["R"], 4.0);
+    }
+
+    #[test]
+    fn negative_phase_alignment_delay_applies_sub_delay_and_reported_phase() {
+        let main_curve = Curve {
+            freq: array![100.0],
+            spl: array![0.0],
+            phase: Some(array![0.0]),
+            ..Default::default()
+        };
+        let sub_curve = Curve {
+            freq: array![100.0],
+            spl: array![0.0],
+            phase: Some(array![0.0]),
+            ..Default::default()
+        };
+        let mut channel_results = HashMap::from([
+            (
+                "L".to_string(),
+                ChannelOptimizationResult {
+                    name: "L".to_string(),
+                    pre_score: 0.0,
+                    post_score: 0.0,
+                    initial_curve: main_curve.clone(),
+                    final_curve: main_curve.clone(),
+                    biquads: Vec::new(),
+                    fir_coeffs: None,
+                },
+            ),
+            (
+                "LFE".to_string(),
+                ChannelOptimizationResult {
+                    name: "LFE".to_string(),
+                    pre_score: 0.0,
+                    post_score: 0.0,
+                    initial_curve: sub_curve.clone(),
+                    final_curve: sub_curve.clone(),
+                    biquads: Vec::new(),
+                    fir_coeffs: None,
+                },
+            ),
+        ]);
+        let mut channel_chains = HashMap::from([
+            ("L".to_string(), test_chain("L", &main_curve)),
+            ("LFE".to_string(), test_chain("LFE", &sub_curve)),
+        ]);
+        let phase_results = HashMap::from([("L".to_string(), (-5.0, false, "LFE".to_string()))]);
+
+        let applied = apply_phase_alignment_delay_schedule(
+            &phase_results,
+            &mut channel_results,
+            &mut channel_chains,
+        );
+
+        assert!(!applied.contains_key("L"));
+        assert_close(applied["LFE"], 5.0);
+        assert_close(total_chain_delay_ms(&channel_chains["LFE"]), 5.0);
+        assert_eq!(total_chain_delay_ms(&channel_chains["L"]), 0.0);
+        assert_close(
+            channel_results["LFE"].final_curve.phase.as_ref().unwrap()[0],
+            -180.0,
+        );
+        assert_close(
+            channel_chains["LFE"]
+                .final_curve
+                .as_ref()
+                .unwrap()
+                .phase
+                .as_ref()
+                .unwrap()[0],
+            -180.0,
+        );
+    }
+
+    #[test]
+    fn phase_alignment_reported_curve_collection_sees_applied_delay() {
+        let main_curve = Curve {
+            freq: array![100.0],
+            spl: array![0.0],
+            phase: Some(array![0.0]),
+            ..Default::default()
+        };
+        let sub_curve = Curve {
+            freq: array![100.0],
+            spl: array![0.0],
+            phase: Some(array![0.0]),
+            ..Default::default()
+        };
+        let mut channel_results = HashMap::from([
+            (
+                "L".to_string(),
+                ChannelOptimizationResult {
+                    name: "L".to_string(),
+                    pre_score: 0.0,
+                    post_score: 0.0,
+                    initial_curve: main_curve.clone(),
+                    final_curve: main_curve.clone(),
+                    biquads: Vec::new(),
+                    fir_coeffs: None,
+                },
+            ),
+            (
+                "LFE".to_string(),
+                ChannelOptimizationResult {
+                    name: "LFE".to_string(),
+                    pre_score: 0.0,
+                    post_score: 0.0,
+                    initial_curve: sub_curve.clone(),
+                    final_curve: sub_curve.clone(),
+                    biquads: Vec::new(),
+                    fir_coeffs: None,
+                },
+            ),
+        ]);
+        let mut channel_chains = HashMap::from([
+            ("L".to_string(), test_chain("L", &main_curve)),
+            ("LFE".to_string(), test_chain("LFE", &sub_curve)),
+        ]);
+        let phase_results = HashMap::from([("L".to_string(), (-2.5, false, "LFE".to_string()))]);
+
+        apply_phase_alignment_delay_schedule(
+            &phase_results,
+            &mut channel_results,
+            &mut channel_chains,
+        );
+        let current_curves = collect_current_final_curves(&channel_results);
+
+        assert_close(current_curves["LFE"].phase.as_ref().unwrap()[0], -90.0);
+        assert_close(current_curves["L"].phase.as_ref().unwrap()[0], 0.0);
     }
 
     #[test]

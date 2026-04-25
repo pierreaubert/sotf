@@ -4,8 +4,8 @@
 //!
 //! DBA optimization relies on complex summation to model the interaction between
 //! front and rear subwoofer arrays. For accurate optimization, measurements should
-//! include phase data. Without phase data, the optimizer assumes 0° phase for all
-//! measurements, which may result in suboptimal delay and gain settings.
+//! include phase data. Missing phase is rejected rather than replaced with an
+//! invented 0° phase response.
 //!
 //! The rear array is automatically inverted (180° phase shift) to create the
 //! pressure wave cancellation pattern characteristic of DBA systems.
@@ -14,7 +14,6 @@ use crate::Curve;
 use crate::loss::{CrossoverType, DriverMeasurement, DriversLossData};
 use crate::workflow::DriverOptimizationResult;
 use clap::Parser;
-use log::warn;
 use ndarray::Array1;
 use std::error::Error;
 
@@ -136,20 +135,14 @@ pub fn optimize_dba(
     let crossover_freqs = vec![];
 
     // Compute combined response
-    let combined_response = crate::loss::compute_drivers_combined_response(
-        &drivers_data,
+    let combined_curve = compute_dba_combined_curve(
+        &front_curve,
+        &rear_curve_inverted,
         &gains,
-        &crossover_freqs,
-        Some(&delays),
+        &delays,
+        &drivers_data.freq_grid,
         sample_rate,
-    );
-
-    let combined_curve = Curve {
-        freq: drivers_data.freq_grid.clone(),
-        spl: combined_response,
-        phase: None,
-        ..Default::default()
-    };
+    )?;
 
     Ok((
         DriverOptimizationResult {
@@ -168,8 +161,9 @@ pub fn optimize_dba(
 ///
 /// # Phase Data
 /// This function uses complex summation to properly model interference patterns.
-/// If any measurement is missing phase data, a warning is logged and 0° phase
-/// is assumed for that measurement.
+/// If any measurement is missing phase data, this returns an error. DBA is a
+/// phase-critical feature and should not invent coherence from magnitude-only
+/// data.
 pub fn sum_array_response(
     sources: &[super::types::MeasurementSource],
 ) -> Result<Curve, Box<dyn Error>> {
@@ -179,25 +173,16 @@ pub fn sum_array_response(
 
     // Load all and check for phase data
     let mut curves = Vec::new();
-    let mut missing_phase_count = 0;
-
     for source in sources {
         let curve = load::load_source(source)?;
         if curve.phase.is_none() {
-            missing_phase_count += 1;
+            return Err(format!(
+                "DBA array summation requires phase data for source {:?}",
+                source
+            )
+            .into());
         }
         curves.push(curve);
-    }
-
-    // Warn if phase data is missing
-    if missing_phase_count > 0 {
-        warn!(
-            "DBA array summation: {} of {} measurements are missing phase data. \
-            Assuming 0° phase for these measurements, which may reduce optimization accuracy. \
-            For best results, include phase data in your measurements.",
-            missing_phase_count,
-            sources.len()
-        );
     }
 
     // Reference freq from first
@@ -215,7 +200,10 @@ pub fn sum_array_response(
 
         for i in 0..ref_freq.len() {
             let spl = interp.spl[i];
-            let phase = interp.phase.as_ref().map(|p| p[i]).unwrap_or(0.0);
+            let phase = interp
+                .phase
+                .as_ref()
+                .ok_or("DBA interpolation lost required phase data")?[i];
             let m = 10.0_f64.powf(spl / 20.0);
             let phi = phase * PI / 180.0;
             sum_complex[i] += Complex64::from_polar(m, phi);
@@ -239,16 +227,59 @@ fn invert_polarity(curve: &Curve) -> Curve {
     let mut new_curve = curve.clone();
     if let Some(ref mut phase) = new_curve.phase {
         *phase = phase.mapv(|p| p + 180.0);
-    } else {
-        // If no phase, assume 0 -> 180
-        new_curve.phase = Some(Array1::from_elem(curve.freq.len(), 180.0));
     }
     new_curve
+}
+
+fn compute_dba_combined_curve(
+    front_curve: &Curve,
+    rear_curve: &Curve,
+    gains: &[f64],
+    delays_ms: &[f64],
+    freq_grid: &Array1<f64>,
+    _sample_rate: f64,
+) -> Result<Curve, Box<dyn Error>> {
+    use num_complex::Complex64;
+    use std::f64::consts::PI;
+
+    let front = crate::read::interpolate_log_space(freq_grid, front_curve);
+    let rear = crate::read::interpolate_log_space(freq_grid, rear_curve);
+    let front_phase = front
+        .phase
+        .as_ref()
+        .ok_or("DBA combined curve requires front phase data")?;
+    let rear_phase = rear
+        .phase
+        .as_ref()
+        .ok_or("DBA combined curve requires rear phase data")?;
+    let front_gain = gains.first().copied().unwrap_or(0.0);
+    let rear_gain = gains.get(1).copied().unwrap_or(0.0);
+    let front_delay_s = delays_ms.first().copied().unwrap_or(0.0) / 1000.0;
+    let rear_delay_s = delays_ms.get(1).copied().unwrap_or(0.0) / 1000.0;
+
+    let mut sum_complex = Array1::<Complex64>::zeros(freq_grid.len());
+    for i in 0..freq_grid.len() {
+        let f = freq_grid[i];
+        let front_mag = 10.0_f64.powf((front.spl[i] + front_gain) / 20.0);
+        let rear_mag = 10.0_f64.powf((rear.spl[i] + rear_gain) / 20.0);
+        let front_phi = front_phase[i].to_radians() - 2.0 * PI * f * front_delay_s;
+        let rear_phi = rear_phase[i].to_radians() - 2.0 * PI * f * rear_delay_s;
+        sum_complex[i] =
+            Complex64::from_polar(front_mag, front_phi) + Complex64::from_polar(rear_mag, rear_phi);
+    }
+
+    Ok(Curve {
+        freq: freq_grid.clone(),
+        spl: sum_complex.mapv(|z| 20.0 * z.norm().max(1e-12).log10()),
+        phase: Some(sum_complex.mapv(|z| z.arg().to_degrees())),
+        ..Default::default()
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::MeasurementSource;
 
     #[test]
     fn test_invert_polarity() {
@@ -268,5 +299,46 @@ mod tests {
         let inv_phase = inverted.phase.unwrap();
         assert!((inv_phase[0] - 180.0).abs() < 1e-6);
         assert!((inv_phase[1] - 90.0).abs() < 1e-6); // -90 + 180 = 90
+    }
+
+    #[test]
+    fn sum_array_response_rejects_missing_phase() {
+        let curve = Curve {
+            freq: Array1::from(vec![50.0, 100.0]),
+            spl: Array1::from(vec![80.0, 80.0]),
+            phase: None,
+            ..Default::default()
+        };
+
+        let err = sum_array_response(&[MeasurementSource::InMemory(curve)]).unwrap_err();
+        assert!(
+            err.to_string().contains("requires phase data"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn sum_array_response_preserves_complex_phase() {
+        let curve_a = Curve {
+            freq: Array1::from(vec![100.0]),
+            spl: Array1::from(vec![80.0]),
+            phase: Some(Array1::from(vec![0.0])),
+            ..Default::default()
+        };
+        let curve_b = Curve {
+            freq: Array1::from(vec![100.0]),
+            spl: Array1::from(vec![80.0]),
+            phase: Some(Array1::from(vec![90.0])),
+            ..Default::default()
+        };
+
+        let summed = sum_array_response(&[
+            MeasurementSource::InMemory(curve_a),
+            MeasurementSource::InMemory(curve_b),
+        ])
+        .unwrap();
+
+        assert!(summed.phase.is_some());
+        assert!((summed.phase.as_ref().unwrap()[0] - 45.0).abs() < 1e-6);
     }
 }

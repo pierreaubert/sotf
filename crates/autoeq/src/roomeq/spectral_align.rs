@@ -12,7 +12,7 @@
 //! using the actual shelf response and a finite-difference Jacobian.
 
 use crate::Curve;
-use log::info;
+use log::{info, warn};
 use math_audio_iir_fir::{Biquad, BiquadFilterType, DEFAULT_Q_HIGH_LOW_SHELF};
 use math_audio_optimisation::{LMConfigBuilder, levenberg_marquardt};
 use ndarray::Array1;
@@ -74,6 +74,13 @@ pub fn compute_spectral_alignment(
     // optimization pipeline). Use the first curve's freq as the canonical grid.
     let first_curve = curves.values().next().unwrap();
     let freq = &first_curve.freq;
+    if curves
+        .values()
+        .any(|curve| !super::frequency_grid::same_frequency_grid(freq, &curve.freq))
+    {
+        warn!("Spectral alignment skipped: channels do not share the same frequency grid");
+        return HashMap::new();
+    }
 
     // Build mask: only consider frequencies within [min_freq, max_freq]
     let mask: Vec<bool> = freq
@@ -196,6 +203,13 @@ pub fn compute_inter_channel_deviation(
     };
     let freq = &first_curve.freq;
     let n = freq.len();
+    if final_curves
+        .values()
+        .any(|curve| !super::frequency_grid::same_frequency_grid(freq, &curve.freq))
+    {
+        warn!("Inter-channel deviation skipped: channels do not share the same frequency grid");
+        return empty;
+    }
 
     // Normalize each curve: subtract its mean in the analysis range (f3..10kHz)
     // so we compare spectral shape, not absolute level
@@ -313,6 +327,13 @@ pub fn correct_inter_channel_deviation(
     };
     let freq = &first_curve.freq;
     let n = freq.len();
+    if final_curves
+        .values()
+        .any(|curve| !super::frequency_grid::same_frequency_grid(freq, &curve.freq))
+    {
+        warn!("Channel matching correction skipped: channels do not share the same frequency grid");
+        return Vec::new();
+    }
 
     // Compute pointwise average (reference) — normalize each to its own passband mean first
     let passband_means: HashMap<String, f64> = final_curves
@@ -492,28 +513,7 @@ pub fn create_alignment_plugins(
     result: &SpectralAlignmentResult,
     sample_rate: f64,
 ) -> (Option<PluginConfigWrapper>, Option<PluginConfigWrapper>) {
-    // Build shelf filters
-    let mut shelf_filters = Vec::new();
-
-    if result.lowshelf_gain_db.abs() >= MIN_CORRECTION_DB {
-        shelf_filters.push(Biquad::new(
-            BiquadFilterType::Lowshelf,
-            LOWSHELF_FREQ,
-            sample_rate,
-            DEFAULT_Q_HIGH_LOW_SHELF,
-            result.lowshelf_gain_db,
-        ));
-    }
-
-    if result.highshelf_gain_db.abs() >= MIN_CORRECTION_DB {
-        shelf_filters.push(Biquad::new(
-            BiquadFilterType::Highshelf,
-            HIGHSHELF_FREQ,
-            sample_rate,
-            DEFAULT_Q_HIGH_LOW_SHELF,
-            result.highshelf_gain_db,
-        ));
-    }
+    let shelf_filters = create_alignment_filters(result, sample_rate);
 
     // Tag this EQ as "broadband" so downstream consumers (Review-step
     // plot, "Apply to Rack") can tell it apart from the main room-EQ.
@@ -539,6 +539,33 @@ pub fn create_alignment_plugins(
     };
 
     (eq_plugin, gain_plugin)
+}
+
+/// Create the biquad shelf filters represented by a spectral alignment result.
+pub fn create_alignment_filters(result: &SpectralAlignmentResult, sample_rate: f64) -> Vec<Biquad> {
+    let mut shelf_filters = Vec::new();
+
+    if result.lowshelf_gain_db.abs() >= MIN_CORRECTION_DB {
+        shelf_filters.push(Biquad::new(
+            BiquadFilterType::Lowshelf,
+            LOWSHELF_FREQ,
+            sample_rate,
+            DEFAULT_Q_HIGH_LOW_SHELF,
+            result.lowshelf_gain_db,
+        ));
+    }
+
+    if result.highshelf_gain_db.abs() >= MIN_CORRECTION_DB {
+        shelf_filters.push(Biquad::new(
+            BiquadFilterType::Highshelf,
+            HIGHSHELF_FREQ,
+            sample_rate,
+            DEFAULT_Q_HIGH_LOW_SHELF,
+            result.highshelf_gain_db,
+        ));
+    }
+
+    shelf_filters
 }
 
 // ============================================================================
@@ -1143,6 +1170,27 @@ mod tests {
             results.is_empty(),
             "Single channel should produce no alignment"
         );
+    }
+
+    #[test]
+    fn test_spectral_alignment_rejects_mismatched_frequency_grids() {
+        let mut left = make_curve(|_| 0.0);
+        let mut right = make_curve(|_| 1.0);
+        right.freq[10] *= 1.01;
+
+        let curves = HashMap::from([
+            ("L".to_string(), left.clone()),
+            ("R".to_string(), right.clone()),
+        ]);
+
+        assert!(compute_spectral_alignment(&curves, SAMPLE_RATE, 20.0, 20000.0).is_empty());
+        let icd = compute_inter_channel_deviation(&curves, 50.0);
+        assert!(icd.deviation_per_freq.is_empty());
+        assert!(correct_inter_channel_deviation(&curves, 50.0, 4, SAMPLE_RATE).is_empty());
+
+        left.freq[10] = right.freq[10];
+        let matched = HashMap::from([("L".to_string(), left), ("R".to_string(), right)]);
+        assert!(!compute_spectral_alignment(&matched, SAMPLE_RATE, 20.0, 20000.0).is_empty());
     }
 
     #[test]

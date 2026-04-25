@@ -804,6 +804,16 @@ fn run_multiseat_missing_phase_guard() -> TestResult {
     ];
     let ms = match MultiSeatMeasurements::new(measurements) {
         Ok(ms) => ms,
+        Err(e) if e.to_string().contains("missing phase") => {
+            return TestResult {
+                name: test_name,
+                passed: true,
+                pre_score: 0.0,
+                post_score: 0.0,
+                epa_preference: None,
+                reason: "OK: missing phase rejected while building measurements".to_string(),
+            };
+        }
         Err(e) => {
             return TestResult {
                 name: test_name,
@@ -1308,6 +1318,7 @@ fn build_multichannel_config(
         model: layout.system_model(),
         speakers: sys_speakers,
         subwoofers: sub_config,
+        bass_management: None,
     };
 
     let mut config = RoomConfig {

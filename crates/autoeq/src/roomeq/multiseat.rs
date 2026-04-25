@@ -13,6 +13,11 @@ use std::f64::consts::PI;
 
 use super::types::{MultiSeatConfig, MultiSeatStrategy};
 
+const MSO_MAX_MEAN_OUTPUT_LOSS_DB: f64 = 1.5;
+const MSO_OUTPUT_LOSS_WEIGHT: f64 = 2.0;
+const MSO_NULL_DEFICIT_ALLOWANCE_DB: f64 = 3.0;
+const MSO_NULL_DEFICIT_WEIGHT: f64 = 0.75;
+
 /// Result of multi-seat optimization
 #[derive(Debug, Clone)]
 pub struct MultiSeatOptimizationResult {
@@ -81,6 +86,44 @@ impl MultiSeatMeasurements {
                     ),
                 });
             }
+
+            for (seat_idx, curve) in sub_measurements.iter().enumerate() {
+                if !super::frequency_grid::is_valid_frequency_grid(&curve.freq) {
+                    return Err(AutoeqError::InvalidMeasurement {
+                        message: format!(
+                            "MSO measurement sub {} seat {} has an invalid frequency grid",
+                            i, seat_idx
+                        ),
+                    });
+                }
+                if curve.spl.len() != curve.freq.len() {
+                    return Err(AutoeqError::InvalidMeasurement {
+                        message: format!(
+                            "MSO measurement sub {} seat {} has mismatched freq/spl lengths",
+                            i, seat_idx
+                        ),
+                    });
+                }
+                match curve.phase.as_ref() {
+                    Some(phase) if phase.len() == curve.freq.len() => {}
+                    Some(_) => {
+                        return Err(AutoeqError::InvalidMeasurement {
+                            message: format!(
+                                "MSO measurement sub {} seat {} has mismatched phase length",
+                                i, seat_idx
+                            ),
+                        });
+                    }
+                    None => {
+                        return Err(AutoeqError::InvalidMeasurement {
+                            message: format!(
+                                "MSO measurement sub {} seat {} is missing phase data",
+                                i, seat_idx
+                            ),
+                        });
+                    }
+                }
+            }
         }
 
         if num_seats < 2 {
@@ -121,6 +164,24 @@ pub fn optimize_multiseat(
     sample_rate: f64,
 ) -> Result<MultiSeatOptimizationResult> {
     let (min_freq, max_freq) = freq_range;
+    let Some((common_min, common_max)) = super::frequency_grid::common_frequency_range(
+        measurements.measurements.iter().flat_map(|sub| sub.iter()),
+    ) else {
+        return Err(AutoeqError::InvalidMeasurement {
+            message: "MSO measurements do not share a valid overlapping frequency range"
+                .to_string(),
+        });
+    };
+    let eval_min = min_freq.max(common_min);
+    let eval_max = max_freq.min(common_max);
+    if eval_min >= eval_max {
+        return Err(AutoeqError::InvalidMeasurement {
+            message: format!(
+                "MSO frequency range [{:.1}, {:.1}] Hz does not overlap all measurements [{:.1}, {:.1}] Hz",
+                min_freq, max_freq, common_min, common_max
+            ),
+        });
+    }
 
     if config.strategy == MultiSeatStrategy::PrimaryWithConstraints
         && config.primary_seat >= measurements.num_seats
@@ -134,7 +195,7 @@ pub fn optimize_multiseat(
     }
 
     // Create common frequency grid
-    let freqs = create_eval_frequency_grid(measurements, min_freq, max_freq);
+    let freqs = create_eval_frequency_grid(measurements, eval_min, eval_max);
 
     // Interpolate all measurements to common grid
     let interpolated = interpolate_all_measurements(measurements, &freqs)?;
@@ -153,15 +214,17 @@ pub fn optimize_multiseat(
         &initial_polarities,
         &initial_allpass_filters,
         sample_rate,
-        min_freq,
-        max_freq,
+        eval_min,
+        eval_max,
     );
     let variance_before = variance_from_responses(&initial_responses);
+    let objective_context = MsoObjectiveContext::from_baseline(&initial_responses);
     let objective_before = objective_from_responses(
         &initial_responses,
         config.strategy.clone(),
         config.primary_seat,
         config.max_deviation_db,
+        Some(&objective_context),
     );
 
     info!(
@@ -178,8 +241,9 @@ pub fn optimize_multiseat(
                 measurements.num_subs,
                 config,
                 sample_rate,
-                min_freq,
-                max_freq,
+                eval_min,
+                eval_max,
+                &objective_context,
             ),
             MultiSeatStrategy::Average => optimize_average_response(
                 &interpolated,
@@ -187,8 +251,9 @@ pub fn optimize_multiseat(
                 measurements.num_subs,
                 config,
                 sample_rate,
-                min_freq,
-                max_freq,
+                eval_min,
+                eval_max,
+                &objective_context,
             ),
             MultiSeatStrategy::PrimaryWithConstraints => optimize_primary_with_constraints(
                 &interpolated,
@@ -198,8 +263,9 @@ pub fn optimize_multiseat(
                 sample_rate,
                 config.primary_seat,
                 config.max_deviation_db,
-                min_freq,
-                max_freq,
+                eval_min,
+                eval_max,
+                &objective_context,
             ),
         };
 
@@ -211,8 +277,8 @@ pub fn optimize_multiseat(
         &optimal_polarities,
         &optimal_allpass_filters,
         sample_rate,
-        min_freq,
-        max_freq,
+        eval_min,
+        eval_max,
     );
     let variance_after = variance_from_responses(&final_responses);
     let objective_after = objective_from_responses(
@@ -220,6 +286,7 @@ pub fn optimize_multiseat(
         config.strategy.clone(),
         config.primary_seat,
         config.max_deviation_db,
+        Some(&objective_context),
     );
 
     let objective_improvement_db = objective_before - objective_after;
@@ -470,18 +537,70 @@ fn variance_from_responses(responses: &[Vec<f64>]) -> f64 {
 /// Minimizing this makes the *average* listener experience tonally flat,
 /// even if individual seats still differ from each other.
 fn average_flatness_from_responses(responses: &[Vec<f64>]) -> f64 {
-    let num_freqs = responses[0].len();
-    let num_seats = responses.len() as f64;
-
-    // Mean SPL at each frequency across seats
-    let avg_spl: Vec<f64> = (0..num_freqs)
-        .map(|fi| responses.iter().map(|s| s[fi]).sum::<f64>() / num_seats)
-        .collect();
+    let avg_spl = mean_response_curve(responses);
 
     // Spectral std-dev of the average
     let mean = avg_spl.iter().sum::<f64>() / avg_spl.len() as f64;
     let variance = avg_spl.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / avg_spl.len() as f64;
     variance.sqrt()
+}
+
+#[derive(Debug, Clone)]
+struct MsoObjectiveContext {
+    baseline_avg_spl: Vec<f64>,
+    baseline_mean_level_db: f64,
+}
+
+impl MsoObjectiveContext {
+    fn from_baseline(responses: &[Vec<f64>]) -> Self {
+        let baseline_avg_spl = mean_response_curve(responses);
+        let baseline_mean_level_db = mean_level(&baseline_avg_spl);
+        Self {
+            baseline_avg_spl,
+            baseline_mean_level_db,
+        }
+    }
+}
+
+fn mean_response_curve(responses: &[Vec<f64>]) -> Vec<f64> {
+    let num_freqs = responses[0].len();
+    let num_seats = responses.len() as f64;
+    (0..num_freqs)
+        .map(|fi| responses.iter().map(|s| s[fi]).sum::<f64>() / num_seats)
+        .collect()
+}
+
+fn mean_level(spl: &[f64]) -> f64 {
+    spl.iter().sum::<f64>() / spl.len().max(1) as f64
+}
+
+fn output_preservation_penalty(responses: &[Vec<f64>], context: &MsoObjectiveContext) -> f64 {
+    let avg_spl = mean_response_curve(responses);
+    let candidate_mean = mean_level(&avg_spl);
+    let mean_loss = context.baseline_mean_level_db - candidate_mean;
+    let broadband_loss_penalty =
+        (mean_loss - MSO_MAX_MEAN_OUTPUT_LOSS_DB).max(0.0) * MSO_OUTPUT_LOSS_WEIGHT;
+
+    let mut deficit_sum = 0.0;
+    let mut deficit_count = 0usize;
+    for (candidate, baseline) in avg_spl.iter().zip(context.baseline_avg_spl.iter()) {
+        let deficit = baseline - candidate - MSO_NULL_DEFICIT_ALLOWANCE_DB;
+        if deficit > 0.0 {
+            deficit_sum += deficit.powi(2);
+        }
+        deficit_count += 1;
+    }
+    let null_deficit_penalty = if deficit_count > 0 {
+        (deficit_sum / deficit_count as f64).sqrt() * MSO_NULL_DEFICIT_WEIGHT
+    } else {
+        0.0
+    };
+
+    broadband_loss_penalty + null_deficit_penalty
+}
+
+fn average_perceptual_from_responses(responses: &[Vec<f64>], context: &MsoObjectiveContext) -> f64 {
+    average_flatness_from_responses(responses) + output_preservation_penalty(responses, context)
 }
 
 /// Primary-seat flatness with a quadratic penalty when other seats
@@ -490,6 +609,7 @@ fn primary_constrained_from_responses(
     responses: &[Vec<f64>],
     primary_seat: usize,
     max_deviation_db: f64,
+    context: Option<&MsoObjectiveContext>,
 ) -> f64 {
     let num_freqs = responses[0].len();
     let primary = &responses[primary_seat];
@@ -521,7 +641,11 @@ fn primary_constrained_from_responses(
     };
 
     // Weight 10× ensures constraint satisfaction dominates marginal flatness gains
-    primary_flatness + 10.0 * penalty
+    let output_penalty = context
+        .map(|ctx| output_preservation_penalty(responses, ctx))
+        .unwrap_or(0.0);
+
+    primary_flatness + 10.0 * penalty + output_penalty
 }
 
 fn objective_name(strategy: MultiSeatStrategy) -> &'static str {
@@ -537,12 +661,15 @@ fn objective_from_responses(
     strategy: MultiSeatStrategy,
     primary_seat: usize,
     max_deviation_db: f64,
+    context: Option<&MsoObjectiveContext>,
 ) -> f64 {
     match strategy {
         MultiSeatStrategy::MinimizeVariance => variance_from_responses(responses),
-        MultiSeatStrategy::Average => average_flatness_from_responses(responses),
+        MultiSeatStrategy::Average => context
+            .map(|ctx| average_perceptual_from_responses(responses, ctx))
+            .unwrap_or_else(|| average_flatness_from_responses(responses)),
         MultiSeatStrategy::PrimaryWithConstraints => {
-            primary_constrained_from_responses(responses, primary_seat, max_deviation_db)
+            primary_constrained_from_responses(responses, primary_seat, max_deviation_db, context)
         }
     }
 }
@@ -821,6 +948,7 @@ fn optimize_minimize_variance(
     sample_rate: f64,
     min_freq: f64,
     max_freq: f64,
+    _objective_context: &MsoObjectiveContext,
 ) -> MsoSolution {
     let options = MsoSearchOptions::from_config(config, min_freq, max_freq);
     optimize_continuous_mso(
@@ -855,6 +983,7 @@ fn optimize_average_response(
     sample_rate: f64,
     min_freq: f64,
     max_freq: f64,
+    objective_context: &MsoObjectiveContext,
 ) -> MsoSolution {
     let options = MsoSearchOptions::from_config(config, min_freq, max_freq);
     optimize_continuous_mso(
@@ -872,7 +1001,7 @@ fn optimize_average_response(
                 min_freq,
                 max_freq,
             );
-            average_flatness_from_responses(&r)
+            average_perceptual_from_responses(&r, objective_context)
         },
     )
 }
@@ -891,6 +1020,7 @@ fn optimize_primary_with_constraints(
     max_deviation_db: f64,
     min_freq: f64,
     max_freq: f64,
+    objective_context: &MsoObjectiveContext,
 ) -> MsoSolution {
     let options = MsoSearchOptions::from_config(config, min_freq, max_freq);
     optimize_continuous_mso(
@@ -908,7 +1038,12 @@ fn optimize_primary_with_constraints(
                 min_freq,
                 max_freq,
             );
-            primary_constrained_from_responses(&r, primary_seat, max_deviation_db)
+            primary_constrained_from_responses(
+                &r,
+                primary_seat,
+                max_deviation_db,
+                Some(objective_context),
+            )
         },
     )
 }
@@ -965,6 +1100,40 @@ mod tests {
 
         let result = MultiSeatMeasurements::new(measurements);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_multiseat_measurements_reject_missing_phase() {
+        let mut missing_phase = create_test_curve(0.0, 0.0);
+        missing_phase.phase = None;
+        let measurements = vec![
+            vec![missing_phase, create_test_curve(2.0, 10.0)],
+            vec![create_test_curve(-1.0, 5.0), create_test_curve(1.0, 15.0)],
+        ];
+
+        let err = MultiSeatMeasurements::new(measurements).unwrap_err();
+
+        assert!(
+            err.to_string().contains("missing phase"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_optimize_multiseat_rejects_non_overlapping_band() {
+        let measurements = vec![
+            vec![create_test_curve(0.0, 0.0), create_test_curve(2.0, 10.0)],
+            vec![create_test_curve(-1.0, 5.0), create_test_curve(1.0, 15.0)],
+        ];
+        let ms = MultiSeatMeasurements::new(measurements).expect("Should create");
+        let config = MultiSeatConfig::default();
+
+        let err = optimize_multiseat(&ms, &config, (300.0, 500.0), 48000.0).unwrap_err();
+
+        assert!(
+            err.to_string().contains("does not overlap"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
@@ -1159,6 +1328,35 @@ mod tests {
     }
 
     #[test]
+    fn test_average_objective_rejects_output_collapse() {
+        let baseline = vec![vec![90.0, 90.0, 90.0], vec![90.0, 90.0, 90.0]];
+        let collapsed_but_flat = vec![vec![78.0, 78.0, 78.0], vec![78.0, 78.0, 78.0]];
+        let slightly_rippled_preserved = vec![vec![89.0, 90.0, 91.0], vec![89.0, 90.0, 91.0]];
+        let context = MsoObjectiveContext::from_baseline(&baseline);
+
+        assert_eq!(average_flatness_from_responses(&collapsed_but_flat), 0.0);
+        assert!(
+            average_perceptual_from_responses(&collapsed_but_flat, &context)
+                > average_perceptual_from_responses(&slightly_rippled_preserved, &context),
+            "MSO average objective should prefer small ripple over large broadband output loss"
+        );
+    }
+
+    #[test]
+    fn test_primary_objective_rejects_new_deep_nulls() {
+        let baseline = vec![vec![90.0, 90.0, 90.0], vec![90.0, 90.0, 90.0]];
+        let null_candidate = vec![vec![90.0, 70.0, 90.0], vec![90.0, 70.0, 90.0]];
+        let safe_candidate = vec![vec![89.0, 90.0, 91.0], vec![89.0, 90.0, 91.0]];
+        let context = MsoObjectiveContext::from_baseline(&baseline);
+
+        assert!(
+            primary_constrained_from_responses(&null_candidate, 0, 6.0, Some(&context))
+                > primary_constrained_from_responses(&safe_candidate, 0, 6.0, Some(&context)),
+            "MSO primary objective should penalize new average-response nulls"
+        );
+    }
+
+    #[test]
     fn test_phase_wrap_interpolation() {
         // Curve with phase crossing ±180° boundary
         let freqs = vec![50.0, 60.0, 70.0, 80.0];
@@ -1214,10 +1412,30 @@ mod tests {
         let ms = MultiSeatMeasurements::new(measurements).expect("Should create");
         let freqs = create_eval_frequency_grid(&ms, 20.0, 120.0);
         let interpolated = interpolate_all_measurements(&ms, &freqs).expect("Should interpolate");
+        let initial = compute_combined_responses(
+            &interpolated,
+            &freqs,
+            &[0.0, 0.0],
+            &[0.0, 0.0],
+            &[false, false],
+            &[Vec::new(), Vec::new()],
+            48000.0,
+            20.0,
+            120.0,
+        );
+        let objective_context = MsoObjectiveContext::from_baseline(&initial);
 
         let config = MultiSeatConfig::default();
-        let (gains, delays, polarities, allpass_filters) =
-            optimize_minimize_variance(&interpolated, &freqs, 2, &config, 48000.0, 20.0, 120.0);
+        let (gains, delays, polarities, allpass_filters) = optimize_minimize_variance(
+            &interpolated,
+            &freqs,
+            2,
+            &config,
+            48000.0,
+            20.0,
+            120.0,
+            &objective_context,
+        );
 
         // With fine resolution, at least one parameter should land on a
         // non-integer value (0.1 step grid), demonstrating the refinement pass.

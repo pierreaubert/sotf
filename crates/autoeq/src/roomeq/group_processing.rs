@@ -292,6 +292,51 @@ pub(super) fn process_speaker_group(
     ))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::MeasurementSource;
+    use ndarray::array;
+    use std::collections::HashMap;
+
+    fn flat_curve_without_phase() -> Curve {
+        Curve {
+            freq: array![40.0, 80.0, 160.0],
+            spl: array![80.0, 80.0, 80.0],
+            phase: None,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn cardioid_rejects_missing_phase() {
+        let cardioid = super::super::types::CardioidConfig {
+            name: "card".to_string(),
+            speaker_name: None,
+            front: MeasurementSource::InMemory(flat_curve_without_phase()),
+            rear: MeasurementSource::InMemory(flat_curve_without_phase()),
+            separation_meters: 0.5,
+        };
+        let room_config = RoomConfig {
+            version: super::super::types::default_config_version(),
+            system: None,
+            speakers: HashMap::new(),
+            crossovers: None,
+            target_curve: None,
+            optimizer: OptimizerConfig::default(),
+            recording_config: None,
+            cea2034_cache: None,
+        };
+
+        let err =
+            process_cardioid("LFE", &cardioid, &room_config, 48000.0, Path::new(".")).unwrap_err();
+        assert!(
+            err.to_string().contains("requires measured phase"),
+            "unexpected error: {err}"
+        );
+    }
+}
+
 /// Process multi-subwoofer group
 ///
 /// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms)
@@ -988,6 +1033,18 @@ pub(super) fn process_cardioid(
         load::load_source(&config.rear).map_err(|e| AutoeqError::InvalidMeasurement {
             message: format!("Failed to load Rear measurement: {}", e),
         })?;
+    if front_curve.phase.is_none() || rear_curve.phase.is_none() {
+        return Err(AutoeqError::InvalidMeasurement {
+            message: "Cardioid processing requires measured phase for front and rear drivers"
+                .to_string(),
+        });
+    }
+    let rear_curve =
+        if super::frequency_grid::same_frequency_grid(&front_curve.freq, &rear_curve.freq) {
+            rear_curve
+        } else {
+            crate::read::interpolate_log_space(&front_curve.freq, &rear_curve)
+        };
 
     // 2. Calculate Delay
     let delay_ms = config.separation_meters / 343.0 * 1000.0;
@@ -999,13 +1056,20 @@ pub(super) fn process_cardioid(
     // 3. Simulate Combined Response
     use num_complex::Complex;
     let n_points = front_curve.freq.len();
-    let mut combined_spl = ndarray::Array1::zeros(n_points);
-
-    // We need phase. If missing, assume 0.
-    let front_phase_zeros = ndarray::Array1::zeros(n_points);
-    let rear_phase_zeros = ndarray::Array1::zeros(n_points);
-    let front_phase = front_curve.phase.as_ref().unwrap_or(&front_phase_zeros);
-    let rear_phase = rear_curve.phase.as_ref().unwrap_or(&rear_phase_zeros);
+    let mut combined_complex = Vec::with_capacity(n_points);
+    let front_phase =
+        front_curve
+            .phase
+            .as_ref()
+            .ok_or_else(|| AutoeqError::InvalidMeasurement {
+                message: "Cardioid front phase missing after validation".to_string(),
+            })?;
+    let rear_phase = rear_curve
+        .phase
+        .as_ref()
+        .ok_or_else(|| AutoeqError::InvalidMeasurement {
+            message: "Cardioid rear phase missing after interpolation".to_string(),
+        })?;
 
     for i in 0..n_points {
         let f = front_curve.freq[i];
@@ -1031,13 +1095,19 @@ pub(super) fn process_cardioid(
         let r_c = Complex::from_polar(r_mag, r_phi_total);
 
         let sum = f_c + r_c;
-        combined_spl[i] = 20.0 * sum.norm().log10();
+        combined_complex.push(sum);
     }
 
     let combined_curve = Curve {
         freq: front_curve.freq.clone(),
-        spl: combined_spl,
-        phase: None, // Optimized for magnitude
+        spl: ndarray::Array1::from_iter(
+            combined_complex
+                .iter()
+                .map(|z| 20.0 * z.norm().max(1e-12).log10()),
+        ),
+        phase: Some(ndarray::Array1::from_iter(
+            combined_complex.iter().map(|z| z.arg().to_degrees()),
+        )),
         ..Default::default()
     };
 
