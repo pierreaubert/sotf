@@ -13,6 +13,7 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let spinorama = &state.app.measurement_state.spinorama_eq_state;
         let result = spinorama.result.as_ref();
         let full_result = spinorama.full_result.as_ref();

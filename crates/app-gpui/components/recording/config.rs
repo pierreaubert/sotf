@@ -240,8 +240,8 @@ impl PlayerView {
     fn render_mic_calibration_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.weak_entity();
         let num_channels = recording_state.recording_config.num_channels;
@@ -381,8 +381,8 @@ impl PlayerView {
     /// Render output directory content for accordion
     fn render_output_directory_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.weak_entity();
 
@@ -489,6 +489,7 @@ impl PlayerView {
     fn render_advanced_sweep_quality_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let rec_state = &state.app.measurement_state.recording_state;
         let bass_dur = rec_state.bass_octave_duration_s;
         let pre_s = rec_state.pre_silence_s;
@@ -706,8 +707,8 @@ impl PlayerView {
     /// Render playback device dropdown
     fn render_playback_device_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.weak_entity();
 
@@ -840,8 +841,8 @@ impl PlayerView {
     /// Render playback sample rate dropdown
     fn render_playback_sample_rate_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.weak_entity();
 
@@ -921,8 +922,8 @@ impl PlayerView {
     /// Render speaker configuration dropdown with channel count and sample rate badges
     fn render_speaker_config_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let num_channels = recording_state.playback_config.num_channels;
         let sample_rate = recording_state.playback_config.sample_rate;
@@ -1236,6 +1237,7 @@ impl PlayerView {
     ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let is_open = state
             .app
             .measurement_state
@@ -1537,6 +1539,7 @@ impl PlayerView {
     ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.weak_entity();
         let current_group = current_group.to_string();
@@ -1611,8 +1614,8 @@ impl PlayerView {
     /// Render recording device dropdown
     fn render_recording_device_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.weak_entity();
 
@@ -1742,8 +1745,8 @@ impl PlayerView {
     /// Render recording sample rate dropdown
     fn render_recording_sample_rate_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.weak_entity();
 
@@ -1823,8 +1826,8 @@ impl PlayerView {
     /// Render recording channel mapping table
     fn render_recording_channel_mapping(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.weak_entity();
 
@@ -1979,7 +1982,12 @@ impl PlayerView {
                     .items_center()
                     .justify_center()
                     .child(
-                        Text::new(translations.recording_calibration_graph_error).color(theme.text_secondary),
+                        // intentional: render_calibration_graph_multi is a pure
+                        // function that doesn't take a `translations` handle —
+                        // restore the English literal to keep the static
+                        // signature compatible. Future i18n pass should thread
+                        // a `Translations` parameter through if needed.
+                        Text::new("Unable to render calibration graph").color(theme.text_secondary),
                     )
                     .into_any_element(),
             })

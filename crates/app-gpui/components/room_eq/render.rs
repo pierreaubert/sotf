@@ -129,7 +129,7 @@ pub(crate) fn render_channel_config_row(
                 .gap(d.gap)
                 .items_center()
                 .child(
-                    Text::new(translations.roomeq_type_label)
+                    Text::new("Type:")
                         .size(TextSize::Xs)
                         .color(theme.text_secondary),
                 )
@@ -200,7 +200,7 @@ pub(crate) fn render_channel_config_row(
                     .gap(d.gap)
                     .items_center()
                     .child(
-                        Text::new(translations.roomeq_crossover_label)
+                        Text::new("Crossover:")
                             .size(TextSize::Xs)
                             .color(theme.text_secondary),
                     )
@@ -429,7 +429,7 @@ pub(crate) fn render_channel_result_card(
                 VStack::new()
                     .spacing(StackSpacing::Xs)
                     .child(
-                        Text::new(translations.roomeq_room_eq_filters)
+                        Text::new("Room EQ Filters")
                             .weight(TextWeight::Semibold)
                             .size(TextSize::Xs)
                             .color(theme.text_primary),
@@ -442,7 +442,7 @@ pub(crate) fn render_channel_result_card(
                 VStack::new()
                     .spacing(StackSpacing::Xs)
                     .child(
-                        Text::new(translations.roomeq_broadband_precorrection)
+                        Text::new("Broadband Pre-correction Filters")
                             .weight(TextWeight::Semibold)
                             .size(TextSize::Xs)
                             .color(theme.text_primary),
@@ -456,7 +456,7 @@ pub(crate) fn render_channel_result_card(
                 VStack::new()
                     .spacing(StackSpacing::Xs)
                     .child(
-                        Text::new(translations.roomeq_crossover_frequencies)
+                        Text::new("Crossover Frequencies")
                             .weight(TextWeight::Semibold)
                             .size(TextSize::Xs)
                             .color(theme.text_primary),
@@ -1007,7 +1007,7 @@ fn render_filter_plot(
     VStack::new()
         .spacing(StackSpacing::Xs)
         .child(
-            Text::new(translations.roomeq_eq_filters)
+            Text::new("EQ Filters")
                 .weight(TextWeight::Semibold)
                 .size(TextSize::Xs)
                 .color(theme.text_primary),
@@ -1163,7 +1163,7 @@ fn render_tonal_histogram(
     VStack::new()
         .spacing(StackSpacing::Xs)
         .child(
-            Text::new(translations.roomeq_tonal_balance)
+            Text::new("Tonal Balance")
                 .weight(TextWeight::Semibold)
                 .size(TextSize::Xs)
                 .color(theme.text_primary),
@@ -1273,7 +1273,7 @@ fn render_phase_graph(
     VStack::new()
         .spacing(StackSpacing::Xs)
         .child(
-            Text::new(translations.roomeq_phase_response)
+            Text::new("Phase Response")
                 .weight(TextWeight::Semibold)
                 .size(TextSize::Xs)
                 .color(theme.text_primary),
@@ -1341,7 +1341,7 @@ fn render_impulse_response_graph(
     VStack::new()
         .spacing(StackSpacing::Xs)
         .child(
-            Text::new(translations.roomeq_impulse_response)
+            Text::new("Impulse Response")
                 .weight(TextWeight::Semibold)
                 .size(TextSize::Xs)
                 .color(theme.text_primary),
@@ -1542,7 +1542,7 @@ fn render_group_delay_graph(
     VStack::new()
         .spacing(StackSpacing::Xs)
         .child(
-            Text::new(translations.roomeq_group_delay)
+            Text::new("Group Delay")
                 .weight(TextWeight::Semibold)
                 .size(TextSize::Xs)
                 .color(theme.text_primary),

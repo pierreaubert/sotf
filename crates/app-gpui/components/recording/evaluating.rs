@@ -32,6 +32,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
 
+        let translations = state.app.ui_state.translations.clone();
         VStack::new()
             .spacing(StackSpacing::Md)
             .child(
@@ -60,8 +61,8 @@ impl PlayerView {
     /// Render plot controls (channel selector, smoothing)
     fn render_plot_controls(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
 
         let selected_channel = recording_state.plot_selected_channel;
@@ -269,8 +270,8 @@ impl PlayerView {
     fn render_magnitude_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
         let results = self.get_filtered_results(cx);
@@ -294,8 +295,8 @@ impl PlayerView {
     fn render_phase_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
         let results = self.get_filtered_results(cx);
@@ -319,8 +320,8 @@ impl PlayerView {
     fn render_group_delay_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
         let results = self.get_filtered_results(cx);
@@ -344,9 +345,9 @@ impl PlayerView {
     fn render_impulse_response_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
 
+        let translations = state.app.ui_state.translations.clone();
         let results = self.get_filtered_results(cx);
         let has_results = !results.is_empty();
 
@@ -368,8 +369,8 @@ impl PlayerView {
     fn render_distortion_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
         let results = self.get_filtered_results(cx);
@@ -393,8 +394,8 @@ impl PlayerView {
     fn render_rt60_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
         let results = self.get_filtered_results(cx);
@@ -418,8 +419,8 @@ impl PlayerView {
     fn render_clarity_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
         let results = self.get_filtered_results(cx);
@@ -443,8 +444,8 @@ impl PlayerView {
     fn render_spectrogram_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let sample_rate = state
             .app
             .measurement_state
@@ -1168,8 +1169,8 @@ impl PlayerView {
     /// Render a summary of recorded channels
     fn render_channel_summary(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
 
         let recorded_count = recording_state

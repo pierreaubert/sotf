@@ -14,6 +14,7 @@ impl PlayerView {
     pub(crate) fn render_spinorama_export(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let theme_id = state.app.ui_state.theme_id;
         let button_theme = ButtonTheme::from(&theme.to_ui_kit_theme(theme_id));
         let spinorama = &state.app.measurement_state.spinorama_eq_state;

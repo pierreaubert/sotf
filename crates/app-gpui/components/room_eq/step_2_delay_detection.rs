@@ -23,6 +23,7 @@ impl PlayerView {
     ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let dd = &state.app.measurement_state.room_eq_state.delay_detection;
         let has_results =
             dd.results.is_some() && matches!(dd.status, DelayDetectionStatus::Complete);

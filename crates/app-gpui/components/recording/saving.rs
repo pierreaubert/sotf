@@ -82,6 +82,7 @@ impl PlayerView {
 
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
 
         let has_recordings = recording_state
@@ -116,8 +117,8 @@ impl PlayerView {
     /// Render the save name input card
     fn render_save_name_card(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let save_name = state
             .app
             .measurement_state
@@ -176,8 +177,8 @@ impl PlayerView {
     /// Render the save location card
     fn render_save_location_card(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
 
@@ -270,8 +271,8 @@ impl PlayerView {
     /// Render the save contents card showing what will be saved
     fn render_save_contents_card(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let save_name = &recording_state.save_name;
 
@@ -389,6 +390,7 @@ impl PlayerView {
     ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let status_message = state
             .app
             .measurement_state
@@ -467,8 +469,8 @@ impl PlayerView {
     /// UI side never carries mixed units.
     fn render_room_info_card(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let rec = &state.app.measurement_state.recording_state;
         let width = rec.room_width_input;
         let depth = rec.room_depth_input;
@@ -544,8 +546,8 @@ impl PlayerView {
     /// Render the free-form "setup description" text card.
     fn render_setup_description_card(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let description = state
             .app
             .measurement_state
@@ -606,8 +608,8 @@ impl PlayerView {
     fn render_channel_speakers_card(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let rec = &state.app.measurement_state.recording_state;
         let catalog = state
             .app
