@@ -66,8 +66,7 @@ fn send_or_interrupt<T>(
                     return Ok(Some(cmd));
                 }
                 msg = returned_msg;
-                // Sleep 5ms instead of 1ms to reduce CPU wakeups
-                std::thread::sleep(Duration::from_millis(5));
+                std::thread::sleep(Duration::from_millis(1));
             }
             Err(e) => return Err(format!("Channel disconnected: {}", e)),
         }
@@ -818,10 +817,13 @@ impl DecoderState {
                     self.last_hal_sample_rate = Some(hal_sample_rate);
                 }
 
-                // Use take/restore pattern for zero-copy where possible
-                let mut frame_data = std::mem::take(&mut self.hal_input_buffer);
-                frame_data.truncate(buffer_len);
-                self.hal_input_buffer = Vec::with_capacity(buffer_len);
+                if self.frame_send_buffer.len() < buffer_len {
+                    self.frame_send_buffer.resize(buffer_len, 0.0);
+                }
+                self.frame_send_buffer[..buffer_len]
+                    .copy_from_slice(&self.hal_input_buffer[..buffer_len]);
+                let frame_data =
+                    take_frame_buffer(&mut self.frame_send_buffer, &self.recycle_rx, buffer_len);
 
                 // Send frame with HAL sample rate (which matches target)
                 let frame = AudioFrame::new(frame_data, frame_size, hal_channels, hal_sample_rate);

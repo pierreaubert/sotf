@@ -45,8 +45,7 @@ fn send_or_interrupt<T>(
                     return Err("Processing queue stuck for >1s".to_string());
                 }
                 msg = returned_msg;
-                // Sleep 5ms instead of 1ms to reduce CPU wakeups (~200/sec vs ~1000/sec)
-                std::thread::sleep(Duration::from_millis(5));
+                std::thread::sleep(Duration::from_millis(1));
             }
             Err(e) => return Err(format!("Channel disconnected: {}", e)),
         }

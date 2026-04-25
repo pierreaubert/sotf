@@ -1,3 +1,18 @@
+# 1.0.25
+
+## Engine threading and low-latency fixes
+
+- Serialized `AudioEngine` command/response round trips so concurrent
+  callers cannot consume each other's manager responses.
+- Fixed plugin graph hot-reload acknowledgements and playback channel
+  reconfiguration when graph output channel counts change.
+- Moved playback underrun event reporting out of the cpal data callback
+  and into the playback feeder thread.
+- Reduced full-queue backoff in decoder/processing handoff paths from
+  5 ms to 1 ms for lower-latency recovery from transient backpressure.
+- Reused recycled buffers for HAL passthrough frames instead of
+  allocating a fresh vector every frame.
+
 # 1.0.24
 
 ## Driver HAL streaming reliability

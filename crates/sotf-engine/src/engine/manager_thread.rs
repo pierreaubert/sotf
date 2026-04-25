@@ -952,6 +952,36 @@ fn wait_for_processing_ack(
     ))
 }
 
+fn wait_for_plugin_chain_update(
+    processing: &ProcessingThread,
+    timeout: std::time::Duration,
+) -> Result<(usize, usize), ConfigError> {
+    let start = std::time::Instant::now();
+
+    while start.elapsed() < timeout {
+        if let Some(response) = processing.try_recv_response() {
+            match response {
+                super::ProcessingResponse::PluginChainUpdated {
+                    output_channels,
+                    latency_samples,
+                } => return Ok((output_channels, latency_samples)),
+                super::ProcessingResponse::Error(reason) => {
+                    return Err(ConfigError::ProcessingError { reason });
+                }
+                super::ProcessingResponse::PluginData(_) | super::ProcessingResponse::Ok => {
+                    continue;
+                }
+            }
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_SLEEP_MANAGER));
+    }
+
+    Err(ConfigError::TimeoutError {
+        waited_ms: timeout.as_millis() as u64,
+    })
+}
+
 fn wait_for_decoder_ack(
     decoder: &DecoderThread,
     timeout: std::time::Duration,
@@ -1183,6 +1213,7 @@ fn apply_plugin_update(
 /// processing thread. This reuses the same host-swap mechanism as `apply_plugin_update`.
 fn apply_plugin_graph_update(
     processing: &mut ProcessingThread,
+    playback: &mut PlaybackThread,
     state: &Arc<ArcSwap<AudioEngineState>>,
     graph_config: super::types::PluginGraphConfig,
     sample_rate: u32,
@@ -1214,23 +1245,26 @@ fn apply_plugin_graph_update(
         state.store(Arc::new(new_state));
     }
 
-    let output_channels = host.output_channels();
-
     processing
         .send_command(ProcessingCommand::UpdateHost(Box::new(host)))
         .map_err(|_| ConfigError::ChannelDisconnected)?;
 
-    // Wait for ACK from processing thread
-    match wait_for_processing_ack(processing, std::time::Duration::from_millis(5000)) {
-        Ok(()) => {
-            // Update state with new channel count
-            let mut new_state = (**state.load()).clone();
-            new_state.num_channels = output_channels;
-            state.store(Arc::new(new_state));
-            Ok(())
-        }
-        Err(e) => Err(ConfigError::ProcessingError { reason: e }),
+    let old_channels = state.load().num_channels;
+    let (output_channels, latency_samples) =
+        wait_for_plugin_chain_update(processing, std::time::Duration::from_millis(5000))?;
+
+    let mut new_state = (**state.load()).clone();
+    new_state.num_channels = output_channels;
+    new_state.plugin_latency_samples = latency_samples;
+    state.store(Arc::new(new_state));
+
+    if output_channels != old_channels {
+        playback
+            .send_command(PlaybackCommand::UpdateChannels(output_channels))
+            .map_err(|_| ConfigError::ChannelDisconnected)?;
     }
+
+    Ok(())
 }
 
 /// Validate plugin configurations before applying
@@ -1705,6 +1739,7 @@ fn handle_command(
 
             match apply_plugin_graph_update(
                 processing,
+                playback,
                 state,
                 graph_config,
                 config.output_sample_rate,
