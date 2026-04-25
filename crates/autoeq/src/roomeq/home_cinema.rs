@@ -11,9 +11,9 @@ use std::collections::{BTreeMap, HashMap};
 
 use super::types::{
     BassManagementConfig, CrossoverConfig, RoleTargetConfig, RoomConfig, SpeakerConfig,
-    TargetResponseConfig, UserPreference,
+    SystemConfig, TargetResponseConfig, TargetShape, UserPreference,
 };
-use crate::MeasurementSource;
+use crate::{Curve, MeasurementSource};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -62,6 +62,8 @@ pub struct HomeCinemaChannelReport {
     pub is_bass_managed: bool,
     pub matching_group: Option<String>,
     pub target_band_hz: (f64, f64),
+    pub target_profile: String,
+    pub target_advisory: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -120,6 +122,8 @@ pub fn analyze_layout(config: &RoomConfig) -> HomeCinemaLayoutReport {
             is_bass_managed: role.is_bass_managed_candidate(),
             matching_group: matching_group_key_for_role(role).map(str::to_string),
             target_band_hz: role.default_target_band_hz(),
+            target_profile: target_profile_for_role(config, role),
+            target_advisory: target_advisory_for_role(config, role),
         });
     }
 
@@ -164,6 +168,28 @@ pub fn effective_bass_management(config: &RoomConfig) -> Option<EffectiveBassMan
         crossover_frequency_hz,
         advisory,
     })
+}
+
+pub fn bass_output_role(_config: &RoomConfig, system: &SystemConfig) -> String {
+    if let Some(bm) = system.bass_management.as_ref()
+        && system.speakers.contains_key(&bm.lfe_channel)
+    {
+        return bm.lfe_channel.clone();
+    }
+    if system.speakers.contains_key("LFE") {
+        return "LFE".to_string();
+    }
+    let mut candidates: Vec<_> = system
+        .speakers
+        .keys()
+        .filter(|role| role_for_channel(role).is_sub_or_lfe())
+        .cloned()
+        .collect();
+    candidates.sort();
+    candidates
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| "LFE".to_string())
 }
 
 pub fn bass_management_report(
@@ -315,6 +341,63 @@ pub fn role_adjusted_target_response(
     adjusted
 }
 
+pub fn apply_role_target_curve_shape(
+    channel_name: &str,
+    target_curve: &mut Curve,
+    target: &TargetResponseConfig,
+) {
+    let Some(role_targets) = target.role_targets.as_ref().filter(|cfg| cfg.enabled) else {
+        return;
+    };
+    let role = role_for_channel(channel_name);
+
+    if role == HomeCinemaRole::Center && role_targets.center_dialog_boost_db.abs() > 0.001 {
+        apply_log_band_emphasis(
+            target_curve,
+            role_targets.center_dialog_low_hz,
+            role_targets.center_dialog_high_hz,
+            role_targets.center_dialog_boost_db,
+        );
+    }
+
+    if role_targets.cinema_x_curve_enabled
+        && role_targets.cinema_x_curve_db_per_octave.abs() > 0.001
+    {
+        apply_high_frequency_slope(
+            target_curve,
+            role_targets.cinema_x_curve_start_hz,
+            role_targets.cinema_x_curve_db_per_octave,
+        );
+    }
+
+    if let Some(distance_m) = role_targets.listening_distance_m {
+        let ref_m = role_targets.cinema_reference_distance_m;
+        if distance_m > ref_m
+            && ref_m > 0.0
+            && role_targets.distance_treble_rolloff_db_per_doubling.abs() > 0.001
+        {
+            let distance_doublings = (distance_m / ref_m).log2();
+            apply_high_frequency_slope(
+                target_curve,
+                role_targets.cinema_x_curve_start_hz,
+                -role_targets.distance_treble_rolloff_db_per_doubling.abs() * distance_doublings,
+            );
+        }
+    }
+}
+
+pub fn role_target_curve_shape_active(channel_name: &str, target: &TargetResponseConfig) -> bool {
+    let Some(role_targets) = target.role_targets.as_ref().filter(|cfg| cfg.enabled) else {
+        return false;
+    };
+    let role = role_for_channel(channel_name);
+    (role == HomeCinemaRole::Center && role_targets.center_dialog_boost_db.abs() > 0.001)
+        || (role_targets.cinema_x_curve_enabled
+            && role_targets.cinema_x_curve_db_per_octave.abs() > 0.001)
+        || (role_targets.listening_distance_m.is_some()
+            && role_targets.distance_treble_rolloff_db_per_doubling.abs() > 0.001)
+}
+
 impl HomeCinemaRole {
     pub fn group(self) -> HomeCinemaRoleGroup {
         match self {
@@ -388,6 +471,11 @@ fn apply_role_target_adjustment(
     role_targets: &RoleTargetConfig,
     target: &mut TargetResponseConfig,
 ) {
+    let slope_offset = role_slope_offset(role, role_targets);
+    if slope_offset.abs() > 0.001 {
+        add_slope_offset(target, slope_offset);
+    }
+
     match role {
         HomeCinemaRole::Center => {
             target.preference.treble_shelf_db += role_targets.center_treble_shelf_db;
@@ -417,6 +505,135 @@ fn apply_role_target_adjustment(
     }
     if target.preference.bass_shelf_freq <= 0.0 {
         target.preference.bass_shelf_freq = UserPreference::default().bass_shelf_freq;
+    }
+}
+
+fn role_slope_offset(role: HomeCinemaRole, role_targets: &RoleTargetConfig) -> f64 {
+    match role {
+        HomeCinemaRole::FrontLeft | HomeCinemaRole::FrontRight => {
+            role_targets.front_slope_offset_db_per_octave
+        }
+        HomeCinemaRole::Center => role_targets.center_slope_offset_db_per_octave,
+        HomeCinemaRole::SideSurroundLeft
+        | HomeCinemaRole::SideSurroundRight
+        | HomeCinemaRole::RearSurroundLeft
+        | HomeCinemaRole::RearSurroundRight
+        | HomeCinemaRole::WideLeft
+        | HomeCinemaRole::WideRight => role_targets.surround_slope_offset_db_per_octave,
+        HomeCinemaRole::TopFrontLeft
+        | HomeCinemaRole::TopFrontRight
+        | HomeCinemaRole::TopMiddleLeft
+        | HomeCinemaRole::TopMiddleRight
+        | HomeCinemaRole::TopRearLeft
+        | HomeCinemaRole::TopRearRight => role_targets.height_slope_offset_db_per_octave,
+        HomeCinemaRole::Subwoofer => role_targets.subwoofer_slope_offset_db_per_octave,
+        HomeCinemaRole::Lfe => role_targets.lfe_slope_offset_db_per_octave,
+        HomeCinemaRole::Unknown => 0.0,
+    }
+}
+
+fn add_slope_offset(target: &mut TargetResponseConfig, slope_offset_db_per_octave: f64) {
+    let base_slope = match target.shape {
+        TargetShape::Flat => 0.0,
+        TargetShape::Harman => -0.8,
+        TargetShape::Custom => target.slope_db_per_octave,
+        TargetShape::File | TargetShape::FromMeasurement => target.slope_db_per_octave,
+    };
+    target.shape = TargetShape::Custom;
+    target.slope_db_per_octave = base_slope + slope_offset_db_per_octave;
+}
+
+fn apply_log_band_emphasis(target_curve: &mut Curve, low_hz: f64, high_hz: f64, gain_db: f64) {
+    if !(low_hz > 0.0 && high_hz > low_hz) {
+        return;
+    }
+    let center_hz = (low_hz * high_hz).sqrt();
+    let half_width_oct = (high_hz / low_hz).log2() / 2.0;
+    if half_width_oct <= 0.0 {
+        return;
+    }
+
+    for (freq, spl) in target_curve.freq.iter().zip(target_curve.spl.iter_mut()) {
+        let distance_oct = (*freq / center_hz).max(1e-9).log2().abs();
+        if distance_oct <= half_width_oct {
+            let weight = 0.5 * (1.0 + (std::f64::consts::PI * distance_oct / half_width_oct).cos());
+            *spl += gain_db * weight;
+        }
+    }
+}
+
+fn apply_high_frequency_slope(target_curve: &mut Curve, start_hz: f64, slope_db_per_octave: f64) {
+    if start_hz <= 0.0 {
+        return;
+    }
+    for (freq, spl) in target_curve.freq.iter().zip(target_curve.spl.iter_mut()) {
+        if *freq > start_hz {
+            *spl += slope_db_per_octave * (*freq / start_hz).log2();
+        }
+    }
+}
+
+fn target_profile_for_role(config: &RoomConfig, role: HomeCinemaRole) -> String {
+    let enabled = config
+        .optimizer
+        .target_response
+        .as_ref()
+        .and_then(|target| target.role_targets.as_ref())
+        .is_some_and(|role_targets| role_targets.enabled);
+    let suffix = if enabled { "_role_target" } else { "_default" };
+    format!("{}{}", role_profile_base(role), suffix)
+}
+
+fn target_advisory_for_role(config: &RoomConfig, role: HomeCinemaRole) -> Option<String> {
+    let role_targets = config
+        .optimizer
+        .target_response
+        .as_ref()
+        .and_then(|target| target.role_targets.as_ref())
+        .filter(|role_targets| role_targets.enabled)?;
+    let mut advisories = Vec::new();
+    if role_slope_offset(role, role_targets).abs() > 0.001 {
+        advisories.push("role_slope_offset");
+    }
+    if role == HomeCinemaRole::Center && role_targets.center_dialog_boost_db.abs() > 0.001 {
+        advisories.push("center_dialog_band");
+    }
+    if role_targets.cinema_x_curve_enabled
+        && role_targets.cinema_x_curve_db_per_octave.abs() > 0.001
+    {
+        advisories.push("cinema_x_curve");
+    }
+    if role_targets.listening_distance_m.is_some()
+        && role_targets.distance_treble_rolloff_db_per_doubling.abs() > 0.001
+    {
+        advisories.push("distance_treble_rolloff");
+    }
+    if advisories.is_empty() {
+        Some("role_targets_enabled_neutral".to_string())
+    } else {
+        Some(advisories.join(";"))
+    }
+}
+
+fn role_profile_base(role: HomeCinemaRole) -> &'static str {
+    match role {
+        HomeCinemaRole::FrontLeft | HomeCinemaRole::FrontRight => "front_lr",
+        HomeCinemaRole::Center => "center_dialog",
+        HomeCinemaRole::Lfe => "lfe",
+        HomeCinemaRole::Subwoofer => "subwoofer",
+        HomeCinemaRole::SideSurroundLeft
+        | HomeCinemaRole::SideSurroundRight
+        | HomeCinemaRole::RearSurroundLeft
+        | HomeCinemaRole::RearSurroundRight
+        | HomeCinemaRole::WideLeft
+        | HomeCinemaRole::WideRight => "surround",
+        HomeCinemaRole::TopFrontLeft
+        | HomeCinemaRole::TopFrontRight
+        | HomeCinemaRole::TopMiddleLeft
+        | HomeCinemaRole::TopMiddleRight
+        | HomeCinemaRole::TopRearLeft
+        | HomeCinemaRole::TopRearRight => "height",
+        HomeCinemaRole::Unknown => "generic",
     }
 }
 
@@ -687,6 +904,121 @@ mod tests {
     }
 
     #[test]
+    fn role_targets_apply_role_specific_slope_offsets() {
+        let base = TargetResponseConfig {
+            shape: super::super::types::TargetShape::Harman,
+            role_targets: Some(RoleTargetConfig {
+                enabled: true,
+                center_slope_offset_db_per_octave: -0.4,
+                height_slope_offset_db_per_octave: -1.0,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let center = role_adjusted_target_response("C", &base);
+        let height = role_adjusted_target_response("TFL", &base);
+        let front = role_adjusted_target_response("L", &base);
+
+        assert_eq!(center.shape, super::super::types::TargetShape::Custom);
+        assert!((center.slope_db_per_octave - (-1.2)).abs() < 1e-9);
+        assert!((height.slope_db_per_octave - (-1.8)).abs() < 1e-9);
+        assert_eq!(front.shape, super::super::types::TargetShape::Harman);
+    }
+
+    #[test]
+    fn role_target_curve_shape_boosts_center_dialog_band() {
+        let mut target_curve = Curve {
+            freq: Array1::from_vec(vec![100.0, 1000.0, 8000.0]),
+            spl: Array1::zeros(3),
+            phase: None,
+            ..Default::default()
+        };
+        let target = TargetResponseConfig {
+            role_targets: Some(RoleTargetConfig {
+                enabled: true,
+                center_dialog_boost_db: 2.0,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        apply_role_target_curve_shape("C", &mut target_curve, &target);
+
+        assert!(target_curve.spl[1] > 1.0);
+        assert!(target_curve.spl[1] > target_curve.spl[0]);
+        assert!(target_curve.spl[1] > target_curve.spl[2]);
+    }
+
+    #[test]
+    fn role_target_curve_shape_applies_cinema_distance_rolloff() {
+        let mut target_curve = Curve {
+            freq: Array1::from_vec(vec![1000.0, 4000.0, 8000.0]),
+            spl: Array1::zeros(3),
+            phase: None,
+            ..Default::default()
+        };
+        let target = TargetResponseConfig {
+            role_targets: Some(RoleTargetConfig {
+                enabled: true,
+                cinema_x_curve_enabled: true,
+                cinema_x_curve_db_per_octave: -0.5,
+                listening_distance_m: Some(6.0),
+                distance_treble_rolloff_db_per_doubling: 1.0,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        apply_role_target_curve_shape("SL", &mut target_curve, &target);
+
+        assert_eq!(target_curve.spl[0], 0.0);
+        assert!(target_curve.spl[2] < target_curve.spl[1]);
+        assert!(target_curve.spl[2] < -2.0);
+    }
+
+    #[test]
+    fn layout_metadata_reports_role_target_profile() {
+        let mut speakers = HashMap::new();
+        speakers.insert(
+            "C".to_string(),
+            SpeakerConfig::Single(MeasurementSource::InMemory(flat_curve())),
+        );
+        let config = RoomConfig {
+            version: "test".to_string(),
+            system: None,
+            speakers,
+            crossovers: None,
+            target_curve: None,
+            optimizer: OptimizerConfig {
+                target_response: Some(TargetResponseConfig {
+                    role_targets: Some(RoleTargetConfig {
+                        enabled: true,
+                        center_dialog_boost_db: 1.5,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            recording_config: None,
+            cea2034_cache: None,
+        };
+
+        let layout = analyze_layout(&config);
+        let center = layout
+            .channels
+            .iter()
+            .find(|channel| channel.role == HomeCinemaRole::Center)
+            .unwrap();
+        assert_eq!(center.target_profile, "center_dialog_role_target");
+        assert_eq!(
+            center.target_advisory.as_deref(),
+            Some("center_dialog_band")
+        );
+    }
+
+    #[test]
     fn reports_non_sub_multiseat_coverage() {
         let mut speakers = HashMap::new();
         speakers.insert(
@@ -787,5 +1119,38 @@ mod tests {
                 .advisory
                 .contains("lfe_gain_reported_not_applied_to_physical_sub_chain")
         );
+    }
+
+    #[test]
+    fn bass_output_role_uses_configured_lfe_channel() {
+        let system = SystemConfig {
+            model: SystemModel::HomeCinema,
+            speakers: HashMap::from([
+                ("L".to_string(), "L".to_string()),
+                ("R".to_string(), "R".to_string()),
+                ("Sub".to_string(), "Sub".to_string()),
+            ]),
+            subwoofers: Some(SubwooferSystemConfig {
+                config: SubwooferStrategy::Single,
+                crossover: Some("xo".to_string()),
+                mapping: HashMap::new(),
+            }),
+            bass_management: Some(BassManagementConfig {
+                lfe_channel: "Sub".to_string(),
+                ..Default::default()
+            }),
+        };
+        let config = RoomConfig {
+            version: "test".to_string(),
+            system: Some(system.clone()),
+            speakers: HashMap::new(),
+            crossovers: None,
+            target_curve: None,
+            optimizer: OptimizerConfig::default(),
+            recording_config: None,
+            cea2034_cache: None,
+        };
+
+        assert_eq!(bass_output_role(&config, &system), "Sub");
     }
 }

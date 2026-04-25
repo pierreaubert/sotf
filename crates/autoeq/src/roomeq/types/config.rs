@@ -720,6 +720,18 @@ impl Default for UserPreference {
 fn default_role_targets_enabled() -> bool {
     true
 }
+fn default_center_dialog_low_hz() -> f64 {
+    300.0
+}
+fn default_center_dialog_high_hz() -> f64 {
+    4_000.0
+}
+fn default_cinema_reference_distance_m() -> f64 {
+    3.0
+}
+fn default_cinema_x_curve_start_hz() -> f64 {
+    2_000.0
+}
 
 /// Optional role-aware target adjustments for home-cinema layouts.
 ///
@@ -732,6 +744,24 @@ pub struct RoleTargetConfig {
     /// Enable role-aware target adjustment.
     #[serde(default = "default_role_targets_enabled")]
     pub enabled: bool,
+    /// Extra broadband slope for front L/R channels, in dB/octave.
+    #[serde(default)]
+    pub front_slope_offset_db_per_octave: f64,
+    /// Extra broadband slope for the center channel, in dB/octave.
+    #[serde(default)]
+    pub center_slope_offset_db_per_octave: f64,
+    /// Extra broadband slope for surround and wide channels, in dB/octave.
+    #[serde(default)]
+    pub surround_slope_offset_db_per_octave: f64,
+    /// Extra broadband slope for height channels, in dB/octave.
+    #[serde(default)]
+    pub height_slope_offset_db_per_octave: f64,
+    /// Extra broadband slope for subwoofer channels, in dB/octave.
+    #[serde(default)]
+    pub subwoofer_slope_offset_db_per_octave: f64,
+    /// Extra broadband slope for LFE channels, in dB/octave.
+    #[serde(default)]
+    pub lfe_slope_offset_db_per_octave: f64,
     /// Additional treble shelf applied only to the centre channel.
     #[serde(default)]
     pub center_treble_shelf_db: f64,
@@ -747,17 +777,59 @@ pub struct RoleTargetConfig {
     /// Additional bass shelf applied to LFE channels.
     #[serde(default)]
     pub lfe_bass_shelf_db: f64,
+    /// Broad, smooth center-channel dialog-band target lift/cut in dB.
+    #[serde(default)]
+    pub center_dialog_boost_db: f64,
+    /// Lower edge of the center dialog emphasis band.
+    #[serde(default = "default_center_dialog_low_hz")]
+    pub center_dialog_low_hz: f64,
+    /// Upper edge of the center dialog emphasis band.
+    #[serde(default = "default_center_dialog_high_hz")]
+    pub center_dialog_high_hz: f64,
+    /// Enable cinema/X-curve style high-frequency rolloff shaping.
+    #[serde(default)]
+    pub cinema_x_curve_enabled: bool,
+    /// Additional high-frequency slope above `cinema_x_curve_start_hz`, in dB/octave.
+    #[serde(default)]
+    pub cinema_x_curve_db_per_octave: f64,
+    /// Frequency where cinema/X-curve high-frequency shaping starts.
+    #[serde(default = "default_cinema_x_curve_start_hz")]
+    pub cinema_x_curve_start_hz: f64,
+    /// Listening distance used for optional distance-compensated treble rolloff.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub listening_distance_m: Option<f64>,
+    /// Reference distance for distance-compensated treble rolloff.
+    #[serde(default = "default_cinema_reference_distance_m")]
+    pub cinema_reference_distance_m: f64,
+    /// Additional HF rolloff per distance doubling beyond the reference distance.
+    #[serde(default)]
+    pub distance_treble_rolloff_db_per_doubling: f64,
 }
 
 impl Default for RoleTargetConfig {
     fn default() -> Self {
         Self {
             enabled: true,
+            front_slope_offset_db_per_octave: 0.0,
+            center_slope_offset_db_per_octave: 0.0,
+            surround_slope_offset_db_per_octave: 0.0,
+            height_slope_offset_db_per_octave: 0.0,
+            subwoofer_slope_offset_db_per_octave: 0.0,
+            lfe_slope_offset_db_per_octave: 0.0,
             center_treble_shelf_db: 0.0,
             surround_treble_shelf_db: 0.0,
             height_treble_shelf_db: 0.0,
             subwoofer_bass_shelf_db: 0.0,
             lfe_bass_shelf_db: 0.0,
+            center_dialog_boost_db: 0.0,
+            center_dialog_low_hz: default_center_dialog_low_hz(),
+            center_dialog_high_hz: default_center_dialog_high_hz(),
+            cinema_x_curve_enabled: false,
+            cinema_x_curve_db_per_octave: 0.0,
+            cinema_x_curve_start_hz: default_cinema_x_curve_start_hz(),
+            listening_distance_m: None,
+            cinema_reference_distance_m: default_cinema_reference_distance_m(),
+            distance_treble_rolloff_db_per_doubling: 0.0,
         }
     }
 }
