@@ -78,10 +78,7 @@ impl PlayerView {
                                 })
                                 .size(ButtonSize::Sm)
                                 .theme(theme.to_button_theme())
-                                .build()
-                                .on_mouse_up(
-                                    MouseButton::Left,
-                                    cx.listener(move |view, _, _, cx| {
+                                .on_click_event(cx.listener(move |view, _, _, cx| {
                                         view.state.update(cx, |state, _| {
                                             state
                                                 .app
@@ -90,8 +87,7 @@ impl PlayerView {
                                                 .review_selected_channel = idx;
                                         });
                                         cx.notify();
-                                    }),
-                                )
+                                    }))
                             }),
                         )),
                 )

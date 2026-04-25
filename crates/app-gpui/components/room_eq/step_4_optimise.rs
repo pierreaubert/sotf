@@ -194,14 +194,10 @@ impl PlayerView {
                                 .full_width(true)
                                 .theme(theme.to_button_theme())
                                 .disabled(is_running)
-                                .build()
                                 .when(!is_running, |btn| {
-                                    btn.on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(|view, _, _, cx| {
+                                    btn.on_click_event(cx.listener(|view, _, _, cx| {
                                             view.start_room_eq_optimization(cx);
-                                        }),
-                                    )
+                                        }))
                                 }),
                             )
                             .when(show_progress, |vstack| {
