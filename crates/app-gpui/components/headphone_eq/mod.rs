@@ -134,10 +134,7 @@ impl PlayerView {
                     .size(ButtonSize::Sm)
                     .disabled(is_busy)
                     .theme(button_theme.clone())
-                    .build()
-                    .on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(|view, _, _, cx| {
+                    .on_click_event(cx.listener(|view, _, _, cx| {
                             view.state.update(cx, |state, _| {
                                 match state.app.measurement_state.headphone_eq_state.step {
                                     HeadphoneEqStep::MeasurementTarget => {
@@ -159,8 +156,7 @@ impl PlayerView {
                                 }
                             });
                             cx.notify();
-                        }),
-                    ),
+                        })),
             )
             .child(
                 Button::new("next", next_label)
@@ -168,10 +164,7 @@ impl PlayerView {
                     .size(ButtonSize::Sm)
                     .disabled(!can_go_next || is_busy)
                     .theme(button_theme.clone())
-                    .build()
-                    .on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(|view, _, _, cx| {
+                    .on_click_event(cx.listener(|view, _, _, cx| {
                             view.state.update(cx, |state, _| {
                                 match state.app.measurement_state.headphone_eq_state.step {
                                     HeadphoneEqStep::Export => {
@@ -193,8 +186,7 @@ impl PlayerView {
                                 }
                             });
                             cx.notify();
-                        }),
-                    ),
+                        })),
             );
 
         // Home button for navigation back to Library

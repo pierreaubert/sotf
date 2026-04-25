@@ -64,10 +64,7 @@ impl PlayerView {
                             })
                             .size(ButtonSize::Sm)
                             .theme(button_theme.clone())
-                            .build()
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|view, _, _, cx| {
+                            .on_click_event(cx.listener(|view, _, _, cx| {
                                     view.state.update(cx, |state, _| {
                                         state
                                             .app
@@ -76,8 +73,7 @@ impl PlayerView {
                                             .measurement_source =
                                             HeadphoneMeasurementSource::File;
                                     });
-                                }),
-                            ),
+                                })),
                     )
                     .child(
                         Button::new("source-spinorama", "Download from spinorama.org")
@@ -90,10 +86,7 @@ impl PlayerView {
                             )
                             .size(ButtonSize::Sm)
                             .theme(button_theme.clone())
-                            .build()
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|view, _, _, cx| {
+                            .on_click_event(cx.listener(|view, _, _, cx| {
                                     view.state.update(cx, |state, _| {
                                         state
                                             .app
@@ -113,8 +106,7 @@ impl PlayerView {
                                     if needs_refresh {
                                         view.fetch_headphone_list(cx);
                                     }
-                                }),
-                            ),
+                                })),
                     ),
             )
             // File mode: Browse for CSV
@@ -166,13 +158,9 @@ impl PlayerView {
                                                     .variant(ButtonVariant::Secondary)
                                                     .size(ButtonSize::Sm)
                                                     .theme(button_theme.clone())
-                                                    .build()
-                                                    .on_mouse_up(
-                                                        MouseButton::Left,
-                                                        cx.listener(|view, _, _, cx| {
+                                                    .on_click_event(cx.listener(|view, _, _, cx| {
                                                             view.browse_headphone_eq_measurement(cx);
-                                                        }),
-                                                    ),
+                                                        })),
                                             ),
                                     ),
                             ),
@@ -251,13 +239,9 @@ impl PlayerView {
                                                         .size(ButtonSize::Xs)
                                                         .disabled(is_loading)
                                                         .theme(button_theme.clone())
-                                                        .build()
-                                                        .on_mouse_up(
-                                                            MouseButton::Left,
-                                                            cx.listener(|view, _, _, cx| {
+                                                        .on_click_event(cx.listener(|view, _, _, cx| {
                                                                 view.fetch_headphone_list(cx);
-                                                            }),
-                                                        ),
+                                                            })),
                                                 )
                                                 .when(is_loading, |hstack| {
                                                     hstack.child(Text::caption("Loading..."))
@@ -398,10 +382,7 @@ impl PlayerView {
                                                 .variant(ButtonVariant::Primary)
                                                 .size(ButtonSize::Sm)
                                                 .theme(button_theme.clone())
-                                                .build()
-                                                .on_mouse_up(
-                                                    MouseButton::Left,
-                                                    cx.listener(|view, _, _, cx| {
+                                                .on_click_event(cx.listener(|view, _, _, cx| {
                                                         view.state.update(cx, |state, _| {
                                                             if let Some(next) = state
                                                                 .app
@@ -418,8 +399,7 @@ impl PlayerView {
                                                             }
                                                         });
                                                         cx.notify();
-                                                    }),
-                                                ),
+                                                    })),
                                             ),
                                     )
                             },
