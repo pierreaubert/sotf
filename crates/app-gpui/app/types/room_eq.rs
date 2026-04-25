@@ -8,6 +8,8 @@ use autoeq::roomeq::{
     SpeakerGroup,
 };
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 /// Wrapper for InteractiveChartState that implements Debug
 #[derive(Clone)]
@@ -169,6 +171,11 @@ pub struct RoomEqState {
     // === Step 3: Optimization ===
     /// Current optimization status
     pub optimization_status: OptimizationStatus,
+    /// Cancel-request flag polled by the optimisation callback. UI sets
+    /// this to true when the user clicks Cancel; the autoeq callback
+    /// returns `CallbackAction::Stop` on the next iteration. Lives behind
+    /// `Arc<AtomicBool>` so the spawn closure can clone it cheaply.
+    pub cancel_requested: Arc<AtomicBool>,
     /// Currently optimizing channel name
     pub current_channel: Option<String>,
     /// Per-channel optimization results
@@ -238,6 +245,7 @@ impl Default for RoomEqState {
             speaker_configs: Vec::new(),
             optimizer_config: RoomEqOptimizerConfig::default(),
             optimization_status: OptimizationStatus::Idle,
+            cancel_requested: Arc::new(AtomicBool::new(false)),
             current_channel: None,
             channel_results: Vec::new(),
             overall_progress: 0.0,
@@ -458,6 +466,8 @@ impl RoomEqState {
     /// Reset optimization state
     pub fn reset_optimization(&mut self) {
         self.optimization_status = OptimizationStatus::Idle;
+        self.cancel_requested
+            .store(false, std::sync::atomic::Ordering::Relaxed);
         self.current_channel = None;
         self.channel_results.clear();
         self.overall_progress = 0.0;

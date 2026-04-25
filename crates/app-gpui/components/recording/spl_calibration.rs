@@ -73,7 +73,7 @@ impl PlayerView {
         let mut column = VStack::new()
             .spacing(StackSpacing::Sm)
             .child(
-                Text::new("SPL Calibration")
+                Text::new(translations.recording_spl_calibration)
                     .weight(TextWeight::Bold)
                     .size(TextSize::Md),
             )

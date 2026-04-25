@@ -25,7 +25,7 @@ impl PlayerView {
                     .spacing(StackSpacing::Xs)
                     .child(Heading::h4("Signal Recording"))
                     .child(
-                        Text::new("Test each channel individually. Signals will play sequentially with a 1-second pause between channels.")
+                        Text::new(translations.recording_capture_desc)
                             .size(TextSize::Xs),
                     ),
             )
@@ -39,6 +39,7 @@ impl PlayerView {
     /// Render signal configuration section
     fn render_signal_config_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let signal_level_db = state.app.measurement_state.recording_state.signal_level_db;
         let _ = state;
 
@@ -64,7 +65,7 @@ impl PlayerView {
                     HStack::new()
                         .spacing(StackSpacing::Sm)
                         .align(StackAlign::Center)
-                        .child(Text::new("Level:").size(TextSize::Xs))
+                        .child(Text::new(translations.recording_level_label).size(TextSize::Xs))
                         .child({
                             let view = cx.entity().clone();
                             NumberInput::new("signal_level")
@@ -96,6 +97,7 @@ impl PlayerView {
     /// Render signal type dropdown
     fn render_signal_type_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
@@ -152,6 +154,7 @@ impl PlayerView {
     /// Render duration dropdown
     fn render_duration_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
@@ -212,6 +215,7 @@ impl PlayerView {
     /// Render per-channel sweep frequency configuration
     fn render_channel_config_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let is_sweep = recording_state.signal_type == RecordingSignalType::Sweep;
@@ -275,7 +279,7 @@ impl PlayerView {
                                             .spacing(StackSpacing::Xs)
                                             .align(StackAlign::Center)
                                             .child(
-                                                Text::new("Start:")
+                                                Text::new(translations.recording_start_label)
                                                     .size(TextSize::Xs)
                                                     .color(theme.text_secondary),
                                             )
@@ -326,7 +330,7 @@ impl PlayerView {
                                             .spacing(StackSpacing::Xs)
                                             .align(StackAlign::Center)
                                             .child(
-                                                Text::new("End:")
+                                                Text::new(translations.recording_end_label)
                                                     .size(TextSize::Xs)
                                                     .color(theme.text_secondary),
                                             )
@@ -382,6 +386,7 @@ impl PlayerView {
     /// Render per-channel recording metrics (avg SPL and noise floor)
     fn render_channel_metrics_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.measurement_state.recording_state;
 
@@ -516,6 +521,7 @@ impl PlayerView {
     fn render_channel_status_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let is_recording = state.app.measurement_state.recording_state.is_recording();
         let status_message = state
@@ -633,6 +639,7 @@ impl PlayerView {
     fn render_channel_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = crate::components::design::Ds::from_cx(cx);
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
@@ -823,6 +830,7 @@ impl PlayerView {
     /// Render capture action buttons (redo and load from file)
     fn render_capture_redo_actions(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let is_recording = recording_state.is_recording();
@@ -2190,6 +2198,7 @@ impl PlayerView {
     pub(crate) fn render_migration_modal(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let rec_state = &state.app.measurement_state.recording_state;
 
@@ -2273,7 +2282,7 @@ impl PlayerView {
                             VStack::new()
                                 .spacing(StackSpacing::Md)
                                 .child(
-                                    Text::new("This recording file uses an older format.")
+                                    Text::new(translations.recording_older_format)
                                         .size(TextSize::Sm)
                                         .color(theme.text_primary),
                                 )
@@ -2284,7 +2293,7 @@ impl PlayerView {
                                             HStack::new()
                                                 .spacing(StackSpacing::Sm)
                                                 .child(
-                                                    Text::new("File:")
+                                                    Text::new(translations.recording_file_label)
                                                         .size(TextSize::Xs)
                                                         .color(theme.text_secondary),
                                                 )
@@ -2298,7 +2307,7 @@ impl PlayerView {
                                             HStack::new()
                                                 .spacing(StackSpacing::Sm)
                                                 .child(
-                                                    Text::new("Size:")
+                                                    Text::new(translations.recording_size_label)
                                                         .size(TextSize::Xs)
                                                         .color(theme.text_secondary),
                                                 )
@@ -2312,7 +2321,7 @@ impl PlayerView {
                                             HStack::new()
                                                 .spacing(StackSpacing::Sm)
                                                 .child(
-                                                    Text::new("Channels:")
+                                                    Text::new(translations.recording_channels_label)
                                                         .size(TextSize::Xs)
                                                         .color(theme.text_secondary),
                                                 )

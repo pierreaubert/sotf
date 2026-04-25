@@ -46,7 +46,7 @@ impl PlayerView {
         let mut column = VStack::new()
             .spacing(StackSpacing::Sm)
             .child(
-                Text::new("Bass Anchor")
+                Text::new(translations.recording_bass_anchor)
                     .weight(TextWeight::Bold)
                     .size(TextSize::Md),
             )
