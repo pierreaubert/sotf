@@ -181,8 +181,7 @@ impl PlayerView {
                             .variant(gpui_ui_kit::ButtonVariant::Primary)
                             .size(gpui_ui_kit::ButtonSize::Xs)
                             .theme(theme.to_button_theme())
-                            .build()
-                            .on_click(cx.listener(|view, _event: &ClickEvent, _window, cx| {
+                            .on_click_event(cx.listener(|view, _event: &ClickEvent, _window, cx| {
                                 // Defer state update to avoid re-entrant update issues
                                 let state = view.state.clone();
                                 cx.defer(move |cx| {
@@ -1042,8 +1041,7 @@ impl PlayerView {
                             .variant(gpui_ui_kit::ButtonVariant::Primary)
                             .size(gpui_ui_kit::ButtonSize::Xs)
                             .theme(theme.to_button_theme())
-                            .build()
-                            .on_click(cx.listener(|view, _event: &ClickEvent, _window, cx| {
+                            .on_click_event(cx.listener(|view, _event: &ClickEvent, _window, cx| {
                                 view.state.update(cx, |state, _cx| {
                                     state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                                 });
@@ -1235,8 +1233,7 @@ impl PlayerView {
                                             .variant(gpui_ui_kit::ButtonVariant::Secondary)
                                             .size(gpui_ui_kit::ButtonSize::Sm)
                                             .theme(theme.to_button_theme())
-                                            .build()
-                                            .on_click(cx.listener(
+                                            .on_click_event(cx.listener(
                                                 move |view, _: &ClickEvent, _window, cx| {
                                                     view.cancel_scan(scan_type, cx);
                                                 },
@@ -1247,8 +1244,7 @@ impl PlayerView {
                                             .variant(gpui_ui_kit::ButtonVariant::Secondary)
                                             .size(gpui_ui_kit::ButtonSize::Sm)
                                             .theme(theme.to_button_theme())
-                                            .build()
-                                            .on_click(cx.listener(
+                                            .on_click_event(cx.listener(
                                                 move |view, _: &ClickEvent, _window, cx| {
                                                     view.dismiss_scan_modal(cx);
                                                 },
@@ -1261,8 +1257,7 @@ impl PlayerView {
                                     .size(gpui_ui_kit::ButtonSize::Sm)
                                     .disabled(!is_complete)
                                     .theme(theme.to_button_theme())
-                                    .build()
-                                    .on_click(cx.listener(
+                                    .on_click_event(cx.listener(
                                         move |view, _: &ClickEvent, _window, cx| {
                                             view.close_scan_modal(cx);
                                         },
