@@ -276,15 +276,17 @@ impl ResamplerPlugin {
     /// Returns the maximum possible output frame count from rubato.
     /// This should be used for buffer allocation to ensure the buffer is always large enough.
     /// The actual output frame count may be less and is returned by process().
-    pub fn output_frames_for_input(&self, _input_frames: usize) -> usize {
+    pub fn output_frames_for_input(&self, input_frames: usize) -> usize {
         // Use rubato's output_frames_max() for safe buffer allocation
         // The actual output varies based on resampler internal state
         if let Some(ref resampler) = self.resampler {
-            resampler.output_frames_max()
+            let pending = self.residual_frames.saturating_add(input_frames);
+            let chunks = pending.div_ceil(self.chunk_size);
+            chunks.saturating_mul(resampler.output_frames_max())
         } else {
             // Fallback estimate if resampler not initialized
             let ratio = self.output_sample_rate as f64 / self.input_sample_rate as f64;
-            (_input_frames as f64 * ratio).ceil() as usize + 1
+            (input_frames as f64 * ratio).ceil() as usize + 1
         }
     }
 
@@ -552,15 +554,17 @@ impl Plugin for ResamplerPlugin {
         self.quality.sinc_len() / 2
     }
 
-    fn output_frames_for_input(&self, _input_frames: usize) -> usize {
+    fn output_frames_for_input(&self, input_frames: usize) -> usize {
         // Use rubato's output_frames_max() for safe buffer allocation
         // The actual output varies based on resampler internal state
         if let Some(ref resampler) = self.resampler {
-            resampler.output_frames_max()
+            let pending = self.residual_frames.saturating_add(input_frames);
+            let chunks = pending.div_ceil(self.chunk_size);
+            chunks.saturating_mul(resampler.output_frames_max())
         } else {
             // Fallback estimate if resampler not initialized
             let ratio = self.output_sample_rate as f64 / self.input_sample_rate as f64;
-            (_input_frames as f64 * ratio).ceil() as usize + 1
+            (input_frames as f64 * ratio).ceil() as usize + 1
         }
     }
 
@@ -629,6 +633,30 @@ mod tests {
         let rms = rms.sqrt();
         log::info!("Output RMS (first {} frames): {:.4}", expected_frames, rms);
         assert!(rms > 0.1, "Output should contain signal");
+    }
+
+    #[test]
+    fn test_output_frame_estimate_covers_multi_chunk_input() {
+        let chunk_size = 1024;
+        let mut resampler = ResamplerPlugin::new(2, 44100, 48000, chunk_size).unwrap();
+        resampler.initialize(44100).unwrap();
+
+        let num_frames = chunk_size * 3;
+        let input = vec![0.25_f32; num_frames * 2];
+        let max_output_frames = resampler.output_frames_for_input(num_frames);
+        let mut output = vec![0.0_f32; max_output_frames * 2];
+        let context = ProcessContext {
+            sample_rate: 44100,
+            num_frames,
+        };
+
+        let produced = resampler.process(&input, &mut output, &context).unwrap();
+
+        assert!(
+            produced <= max_output_frames,
+            "produced {produced} frames, estimate only allowed {max_output_frames}"
+        );
+        assert!(produced > chunk_size);
     }
 
     #[test]
