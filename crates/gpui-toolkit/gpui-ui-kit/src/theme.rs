@@ -192,7 +192,7 @@ impl Theme {
             // Text
             text_primary: rgb(0xffffff),
             text_secondary: rgb(0xcccccc),
-            text_muted: rgb(0x888888),
+            text_muted: rgb(0x9c9c9c),
             text_on_accent: rgb(0xffffff),
             icon_on_accent: rgb(0x1e1e1e),
             // Accent
@@ -202,7 +202,7 @@ impl Theme {
             // Semantic
             success: rgb(0x22c55e),
             warning: rgb(0xf59e0b),
-            error: rgb(0xef4444),
+            error: rgb(0xf87171),
             info: rgb(0x3b82f6),
             // Border
             border: rgb(0x3a3a3a),
@@ -244,7 +244,7 @@ impl Theme {
             // Text
             text_primary: rgb(0x1a1a1a),
             text_secondary: rgb(0x4a4a4a),
-            text_muted: rgb(0x888888),
+            text_muted: rgb(0x666666),
             text_on_accent: rgb(0xffffff),
             icon_on_accent: rgb(0x1a1a1a),
             // Accent
@@ -252,10 +252,10 @@ impl Theme {
             accent_hover: rgb(0x0055aa),
             accent_muted: rgba(0x0066cc22),
             // Semantic
-            success: rgb(0x16a34a),
-            warning: rgb(0xd97706),
-            error: rgb(0xdc2626),
-            info: rgb(0x2563eb),
+            success: rgb(0x15803d),
+            warning: rgb(0xb45309),
+            error: rgb(0xb91c1c),
+            info: rgb(0x1d4ed8),
             // Border
             border: rgb(0xd4d4d4),
             border_hover: rgb(0xaaaaaa),
@@ -296,8 +296,8 @@ impl Theme {
             // Text
             text_primary: rgb(0xc9d1d9),
             text_secondary: rgb(0x8b949e),
-            text_muted: rgb(0x6e7681),
-            text_on_accent: rgb(0xffffff),
+            text_muted: rgb(0x8b949e),
+            text_on_accent: rgb(0x0d1117),
             icon_on_accent: rgb(0x0d1117),
             // Accent
             accent: rgb(0x58a6ff),
@@ -346,8 +346,8 @@ impl Theme {
             // Text
             text_primary: rgb(0xd4e4d1),
             text_secondary: rgb(0xa8c4a2),
-            text_muted: rgb(0x7a9a73),
-            text_on_accent: rgb(0xffffff),
+            text_muted: rgb(0x91ad8a),
+            text_on_accent: rgb(0x1a2418),
             icon_on_accent: rgb(0x1a2418),
             // Accent
             accent: rgb(0x6abf69),
@@ -356,7 +356,7 @@ impl Theme {
             // Semantic
             success: rgb(0x6abf69),
             warning: rgb(0xe0c062),
-            error: rgb(0xd96c6c),
+            error: rgb(0xf08585),
             info: rgb(0x6cb2d9),
             // Border
             border: rgb(0x3a4a35),
@@ -395,8 +395,8 @@ impl Theme {
             overlay_bg: rgba(0x00000088),
             // Text
             text_primary: rgb(0xffffff),
-            text_secondary: rgb(0x888888),
-            text_muted: rgb(0x555555),
+            text_secondary: rgb(0xbbbbbb),
+            text_muted: rgb(0x999999),
             text_on_accent: rgb(0x000000),
             icon_on_accent: rgb(0x000000),
             // Accent (white for high contrast on black background)
