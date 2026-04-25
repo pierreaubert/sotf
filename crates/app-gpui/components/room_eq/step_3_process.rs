@@ -25,7 +25,7 @@ impl PlayerView {
         VStack::new()
             .spacing(StackSpacing::Md)
             .child(
-                Text::new("Choose Your Workflow")
+                Text::new(translations.roomeq_choose_workflow)
                     .weight(TextWeight::Bold)
                     .size(TextSize::Md),
             )
@@ -57,7 +57,7 @@ impl PlayerView {
                                 VStack::new()
                                     .spacing(StackSpacing::Sm)
                                     .child(
-                                        Text::new("Simple Wizard")
+                                        Text::new(translations.roomeq_simple_wizard)
                                             .weight(TextWeight::Bold)
                                             .size(TextSize::Md)
                                             .color(if simple_selected {
@@ -126,7 +126,7 @@ impl PlayerView {
                                 VStack::new()
                                     .spacing(StackSpacing::Sm)
                                     .child(
-                                        Text::new("Full Wizard")
+                                        Text::new(translations.roomeq_full_wizard)
                                             .weight(TextWeight::Bold)
                                             .size(TextSize::Md)
                                             .color(if full_selected {

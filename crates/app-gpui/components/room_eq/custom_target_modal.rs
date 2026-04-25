@@ -397,7 +397,7 @@ impl PlayerView {
                             ),
                     )
                     .child(
-                        Text::new("Click on the graph to add control points. Drag points to adjust. Double-click a point to remove it.")
+                        Text::new(translations.roomeq_graph_help)
                             .size(TextSize::Xs)
                             .color(theme.text_secondary),
                     )
