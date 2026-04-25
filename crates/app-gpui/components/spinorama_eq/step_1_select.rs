@@ -32,6 +32,11 @@ impl PlayerView {
         let selected_speaker = spinorama.selected_speaker.clone();
         let suggestions = spinorama.speaker_suggestions.clone();
         let is_loading = spinorama.loading_speakers;
+        // Speaker / version / measurement fetch errors. These are also
+        // dispatched as toast notifications from the fetch handlers
+        // (see spinorama_eq/mod.rs), but keeping an inline banner means
+        // the user can see the failure even after the toast auto-dismisses.
+        let fetch_error_message = spinorama.error_message.clone();
 
         // Spinorama CEA2034 curves data
         let spinorama_curves = spinorama.spinorama_curves.clone();
@@ -49,6 +54,13 @@ impl PlayerView {
                     .weight(TextWeight::Bold)
                     .size(TextSize::Md),
             )
+            // Inline error banner — same render shape as step_2's error
+            // rendering. Surfaces the spinorama fetch errors that previously
+            // populated `error_message` but had no rendering site on this
+            // screen (the user just saw the spinner stop with no result).
+            .when_some(fetch_error_message, |vstack, msg| {
+                vstack.child(Text::new(msg).size(TextSize::Xs).color(theme.error))
+            })
             .child(
                 Text::new("Search for your speaker model from spinorama.org measurements.")
                     .size(TextSize::Xs)
