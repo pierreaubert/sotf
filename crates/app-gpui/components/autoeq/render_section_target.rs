@@ -51,12 +51,7 @@
                     .border_color(if is_selected { theme.accent } else { theme.border })
                     .when(is_selected, |el| el.bg(theme.accent)),
             )
-            .child(
-                Text::new(label)
-                    .size(TextSize::Xs)
-                    .weight(if is_selected { TextWeight::Semibold } else { TextWeight::Normal })
-                    .color(theme.label_color),
-            )
+            .child(Text::selectable(label, is_selected).color(theme.label_color))
             .child(
                 Text::new(description)
                     .size(TextSize::Xs)

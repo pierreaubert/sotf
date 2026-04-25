@@ -91,6 +91,7 @@ styling later only needs to update one function in `gpui-ui-kit/src/text.rs`.
 | Data value in a table cell or row | `Text::new(content).size(TextSize::Sm)` | `Sm` (~14 px) | `Normal` | Match the paired label size unless the value needs emphasis. |
 | Status / info message (toast, inline alert) | `Text::new(content).size(TextSize::Sm)` | `Sm` (~14 px) | `Normal` or `Medium` | Prominent but not overwhelming; use the theme's semantic color (`theme.error`, `theme.warning`, `theme.success`) not raw accent. |
 | Caption / helper text (field hint, timestamp, unit suffix) | `Text::caption(content)` | `Xs` (~12 px) | `Normal` | `muted(true)` pulls `theme.text_muted`. |
+| Radio-button-style selectable option label (dense list of choices) | `Text::selectable(content, is_selected)` | `Xs` (~12 px) | `Semibold` when selected, `Normal` otherwise | Caller chains `.color(theme.label_color)`. Captures the selection-state pattern; lint stays silent on the equivalent dynamic-weight chain. |
 | Badge content | `Badge::new(content)` (handles its own sizing) | — | — | Don't hand-build; use the `Badge` component. |
 | Chart axis tick, micro-type on a meter, tiny diagnostic readout | `.text_size(d.text_xs)` on a raw `div()` | rems(0.625) (~10 px) | varies | `d.text_xs` is intentionally smaller than `TextSize::Xs`; reserve for chart internals and similar dense micro-type. |
 
