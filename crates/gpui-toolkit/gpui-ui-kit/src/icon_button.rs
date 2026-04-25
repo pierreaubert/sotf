@@ -47,34 +47,44 @@ pub struct IconButtonTheme {
     pub border: Rgba,
 }
 
-/// IconButton size variants
+/// IconButton size variants. Sizes are returned as `Rems` so the click
+/// target scales with `window.set_rem_size` (font zoom). The `Sm`, `Md`,
+/// `Lg`, and `Xl` variants all meet the WCAG 2.5.8 24×24 minimum target
+/// size at 1× zoom; `Xs` (1.0 rem ≈ 16 px) is intentionally below the
+/// floor and reserved for dense chrome / chart-internal use where the
+/// WCAG target rule is informational at small viewports. Prefer `Sm`
+/// (or `Md`) anywhere a user can reasonably hit the button with a mouse
+/// or touch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum IconButtonSize {
-    /// Extra small (16px)
+    /// Extra small (1.0 rem ≈ 16 px) — dense chrome / chart internals.
+    /// Below the WCAG 24×24 floor; do not use for primary controls.
     Xs,
-    /// Small (20px)
+    /// Small (1.5 rem ≈ 24 px) — meets the WCAG floor.
     Sm,
-    /// Medium (24px, default)
+    /// Medium (1.5 rem ≈ 24 px, default) — meets the WCAG floor.
     #[default]
     Md,
-    /// Large (32px)
+    /// Large (2.0 rem ≈ 32 px).
     Lg,
-    /// Extra large (48px)
+    /// Extra large (3.0 rem ≈ 48 px).
     Xl,
-    /// Custom size in pixels
+    /// Custom size, expressed in rems × 16 (i.e. logical px at 1× zoom).
     Custom(u32),
 }
 
 impl IconButtonSize {
-    /// Get the size in pixels
-    pub fn size(&self) -> Pixels {
+    /// Get the click-target size in rems. The default GPUI rem is 16 px,
+    /// so the table maps to 16 / 24 / 24 / 32 / 48 logical px at 1× zoom
+    /// and scales linearly with font zoom.
+    pub fn size(&self) -> Rems {
         match self {
-            IconButtonSize::Xs => px(16.0),
-            IconButtonSize::Sm => px(20.0),
-            IconButtonSize::Md => px(24.0),
-            IconButtonSize::Lg => px(32.0),
-            IconButtonSize::Xl => px(48.0),
-            IconButtonSize::Custom(size) => px(*size as f32),
+            IconButtonSize::Xs => rems(1.0),
+            IconButtonSize::Sm => rems(1.5),
+            IconButtonSize::Md => rems(1.5),
+            IconButtonSize::Lg => rems(2.0),
+            IconButtonSize::Xl => rems(3.0),
+            IconButtonSize::Custom(size) => rems(*size as f32 / 16.0),
         }
     }
 }
