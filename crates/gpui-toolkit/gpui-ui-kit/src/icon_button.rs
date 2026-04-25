@@ -174,7 +174,7 @@ pub struct IconButton {
     rounded_full: bool,
     padding: Option<Pixels>,
     theme: Option<IconButtonTheme>,
-    on_click: Option<Rc<dyn Fn(&mut Window, &mut App) + 'static>>,
+    on_click: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>>,
     aria_label: Option<SharedString>,
     aria_role: Option<AriaRole>,
 }
@@ -240,8 +240,27 @@ impl IconButton {
         self
     }
 
-    /// Set click handler
+    /// Set the click handler that ignores the event payload.
+    ///
+    /// Use this when the handler doesn't need the `ClickEvent` itself.
+    /// For handlers that integrate with `cx.listener(...)`, see
+    /// [`Self::on_click_event`].
     pub fn on_click(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+        let handler = Rc::new(handler);
+        self.on_click = Some(Rc::new(move |_event: &ClickEvent, window, cx| {
+            handler(window, cx);
+        }));
+        self
+    }
+
+    /// Set the click handler with access to the `ClickEvent` payload.
+    /// Matches the signature `cx.listener(...)` produces, so call sites
+    /// that previously did `.build().on_click(cx.listener(...))` can drop
+    /// the `.build()` and call this directly.
+    pub fn on_click_event(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
         self.on_click = Some(Rc::new(handler));
         self
     }
@@ -366,8 +385,8 @@ impl IconButton {
             el = el.hover(move |style| style.bg(bg_hover).shadow(glow_shadow(bg_hover)));
 
             if let Some(handler) = self.on_click {
-                el = el.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
-                    handler(window, cx);
+                el = el.on_click(move |event: &ClickEvent, window, cx| {
+                    handler(event, window, cx);
                 });
             }
         }
@@ -414,15 +433,17 @@ impl RenderOnce for IconButton {
             // 1px outline-variant border.
             .focus_visible(move |style| style.border_2().border_color(focus_ring_color));
 
-        // Keyboard activation — Enter and Space mirror the click handler.
-        // Required for WCAG 2.1.1 (Keyboard accessible).
+        // Keyboard activation — Enter and Space mirror the click handler
+        // with a synthesized `ClickEvent::Keyboard` payload. Required for
+        // WCAG 2.1.1 (Keyboard accessible).
         if !disabled
             && let Some(handler) = on_click_for_kbd
         {
             el = el.on_key_down(move |event: &KeyDownEvent, window, cx| {
                 let key = event.keystroke.key.as_str();
                 if key == "enter" || key == "space" {
-                    handler(window, cx);
+                    let click = ClickEvent::Keyboard(KeyboardClickEvent::default());
+                    handler(&click, window, cx);
                     cx.stop_propagation();
                 }
             });
