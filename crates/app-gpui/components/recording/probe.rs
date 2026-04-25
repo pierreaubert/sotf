@@ -30,6 +30,7 @@ impl PlayerView {
     /// Render the Probe step UI.
     pub(crate) fn render_recording_probe_step(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let rec = &state.app.measurement_state.recording_state;
         let pc = rec.probe_capture.clone();
@@ -55,7 +56,7 @@ impl PlayerView {
                 VStack::new()
                     .spacing(StackSpacing::Sm)
                     .child(
-                        Text::new("Tone-Burst Delay Probe")
+                        Text::new(translations.recording_probe_delay)
                             .weight(TextWeight::Bold)
                             .size(TextSize::Md),
                     )

@@ -40,7 +40,7 @@ impl PlayerView {
                     .spacing(StackSpacing::Xs)
                     .child(Heading::h4("Evaluate Recordings"))
                     .child(
-                        Text::new("Review frequency response, phase, group delay, and impulse response measurements.")
+                        Text::new(translations.recording_evaluating_desc)
                             .size(TextSize::Xs)
                             .color(theme.text_secondary),
                     ),
@@ -60,6 +60,7 @@ impl PlayerView {
     /// Render plot controls (channel selector, smoothing)
     fn render_plot_controls(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.measurement_state.recording_state;
 
@@ -112,7 +113,7 @@ impl PlayerView {
                         .spacing(StackSpacing::Xs)
                         .align(StackAlign::Center)
                         .child(
-                            Text::new("Channel:")
+                            Text::new(translations.recording_channel_label)
                                 .size(TextSize::Xs)
                                 .color(theme.text_secondary),
                         )
@@ -171,7 +172,7 @@ impl PlayerView {
                         .spacing(StackSpacing::Xs)
                         .align(StackAlign::Center)
                         .child(
-                            Text::new("Smoothing:")
+                            Text::new(translations.recording_smoothing_label)
                                 .size(TextSize::Xs)
                                 .color(theme.text_secondary),
                         )
@@ -268,6 +269,7 @@ impl PlayerView {
     fn render_magnitude_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
@@ -292,6 +294,7 @@ impl PlayerView {
     fn render_phase_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
@@ -316,6 +319,7 @@ impl PlayerView {
     fn render_group_delay_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
@@ -340,6 +344,7 @@ impl PlayerView {
     fn render_impulse_response_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
 
         let results = self.get_filtered_results(cx);
@@ -363,6 +368,7 @@ impl PlayerView {
     fn render_distortion_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
@@ -387,6 +393,7 @@ impl PlayerView {
     fn render_rt60_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
@@ -411,6 +418,7 @@ impl PlayerView {
     fn render_clarity_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
@@ -435,6 +443,7 @@ impl PlayerView {
     fn render_spectrogram_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let sample_rate = state
             .app
@@ -1159,6 +1168,7 @@ impl PlayerView {
     /// Render a summary of recorded channels
     fn render_channel_summary(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.measurement_state.recording_state;
 
@@ -1181,7 +1191,7 @@ impl PlayerView {
                             VStack::new()
                                 .spacing(StackSpacing::Xs)
                                 .child(
-                                    Text::new("Channels Recorded")
+                                    Text::new(translations.recording_channels_recorded)
                                         .size(TextSize::Xs)
                                         .color(theme.text_secondary),
                                 )
@@ -1198,7 +1208,7 @@ impl PlayerView {
                             VStack::new()
                                 .spacing(StackSpacing::Xs)
                                 .child(
-                                    Text::new("Status")
+                                    Text::new(translations.recording_status_label)
                                         .size(TextSize::Xs)
                                         .color(theme.text_secondary),
                                 )
