@@ -8,6 +8,35 @@ use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaR
 use crate::theme::{ThemeExt, glow_shadow};
 use gpui::prelude::*;
 use gpui::*;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
+
+// Thread-local FocusHandle registry for IconButton, mirroring the pattern
+// in `button.rs`. See its module-level comment for rationale; in short:
+// `RenderOnce` allocates a fresh handle every render, so we cache by id
+// here to keep IconButton Tab-reachable across re-renders.
+const MAX_ICON_BUTTON_FOCUS_HANDLES: usize = 1024;
+
+thread_local! {
+    static ICON_BUTTON_FOCUS_HANDLES: RefCell<HashMap<ElementId, FocusHandle>> =
+        RefCell::new(HashMap::new());
+}
+
+fn icon_button_focus_handle(id: &ElementId, cx: &mut App) -> FocusHandle {
+    ICON_BUTTON_FOCUS_HANDLES.with(|handles| {
+        let mut handles = handles.borrow_mut();
+        while handles.len() > MAX_ICON_BUTTON_FOCUS_HANDLES {
+            if let Some(key) = handles.keys().next().cloned() {
+                handles.remove(&key);
+            }
+        }
+        handles
+            .entry(id.clone())
+            .or_insert_with(|| cx.focus_handle())
+            .clone()
+    })
+}
 
 /// Theme colors for icon button styling
 #[derive(Debug, Clone, ComponentTheme)]
@@ -145,7 +174,7 @@ pub struct IconButton {
     rounded_full: bool,
     padding: Option<Pixels>,
     theme: Option<IconButtonTheme>,
-    on_click: Option<Box<dyn Fn(&mut Window, &mut App) + 'static>>,
+    on_click: Option<Rc<dyn Fn(&mut Window, &mut App) + 'static>>,
     aria_label: Option<SharedString>,
     aria_role: Option<AriaRole>,
 }
@@ -213,7 +242,7 @@ impl IconButton {
 
     /// Set click handler
     pub fn on_click(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
-        self.on_click = Some(Box::new(handler));
+        self.on_click = Some(Rc::new(handler));
         self
     }
 
@@ -367,7 +396,39 @@ impl RenderOnce for IconButton {
 
         let global_theme = cx.theme();
         let icon_theme = IconButtonTheme::from(&global_theme);
-        self.build_with_theme(&global_theme, &icon_theme)
+        // Capture pieces needed for keyboard activation before `self` is
+        // moved into `build_with_theme`. Same convention as button.rs:
+        // direct `build_with_theme` callers bypass focus registration just
+        // like they bypass accessibility registration today (per
+        // gpui-ui-kit/CLAUDE.md).
+        let focus_handle = icon_button_focus_handle(&self.id, cx);
+        let focus_ring_color = icon_theme.accent;
+        let disabled = self.disabled;
+        let on_click_for_kbd = self.on_click.clone();
+
+        let mut el = self
+            .build_with_theme(&global_theme, &icon_theme)
+            .track_focus(&focus_handle)
+            // CSS `:focus-visible` analogue — only renders when reached via
+            // keyboard. Layered 2px accent border on top of the (optional)
+            // 1px outline-variant border.
+            .focus_visible(move |style| style.border_2().border_color(focus_ring_color));
+
+        // Keyboard activation — Enter and Space mirror the click handler.
+        // Required for WCAG 2.1.1 (Keyboard accessible).
+        if !disabled
+            && let Some(handler) = on_click_for_kbd
+        {
+            el = el.on_key_down(move |event: &KeyDownEvent, window, cx| {
+                let key = event.keystroke.key.as_str();
+                if key == "enter" || key == "space" {
+                    handler(window, cx);
+                    cx.stop_propagation();
+                }
+            });
+        }
+
+        el
     }
 }
 
