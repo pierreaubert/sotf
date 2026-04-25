@@ -393,6 +393,7 @@ impl PndPlugin {
         plugin.multi_channel_analysis = params.multi_channel_analysis;
         plugin.confidence_threshold = params.confidence_threshold;
         plugin.phase_vocoder = params.phase_vocoder;
+        plugin.rebuild_cached_parameters();
         plugin
     }
 
@@ -412,11 +413,30 @@ impl PndPlugin {
             .as_mut()
             .ok_or("Phase vocoder not initialized")?;
 
+        if input.len() != num_frames * self.channels {
+            return Err(format!(
+                "Input size mismatch: expected {}, got {}",
+                num_frames * self.channels,
+                input.len()
+            ));
+        }
+        if output.len() != num_frames * self.channels {
+            return Err(format!(
+                "Output size mismatch: expected {}, got {}",
+                num_frames * self.channels,
+                output.len()
+            ));
+        }
+        if self.planar_input.iter().any(|ch| ch.len() < num_frames) {
+            return Err(format!(
+                "Phase vocoder block too large: {} frames exceeds prepared capacity {}",
+                num_frames,
+                self.planar_input.first().map_or(0, Vec::len)
+            ));
+        }
+
         // Deinterleave input into planar buffers for analysis
         for c in 0..self.channels {
-            if self.planar_input[c].len() < num_frames {
-                self.planar_input[c].resize(num_frames, 0.0);
-            }
             for i in 0..num_frames {
                 self.planar_input[c][i] = input[i * self.channels + c];
             }
@@ -659,10 +679,13 @@ impl PndPlugin {
         // 6. Re-interleave into output ring (Circular)
         let out_samples = out_written * self.channels;
         let cap_out = self.output_ring.len();
-        debug_assert!(
-            self.output_ring_count + out_samples <= cap_out,
-            "output_ring overflow"
-        );
+        if self.output_ring_count + out_samples > cap_out {
+            return Err(format!(
+                "Output ring overflow: need {}, available {}",
+                out_samples,
+                cap_out.saturating_sub(self.output_ring_count)
+            ));
+        }
 
         if self.channels == 2 {
             // Need a contiguous target slice for interleave_stereo
@@ -851,10 +874,35 @@ impl Plugin for PndPlugin {
         if num_frames == 0 {
             return Ok(0);
         }
-        let total_input_samples = num_frames * self.channels;
+        let total_input_samples = num_frames
+            .checked_mul(self.channels)
+            .ok_or_else(|| "Frame/channel count overflow".to_string())?;
+
+        if input.len() != total_input_samples {
+            return Err(format!(
+                "Input size mismatch: expected {}, got {}",
+                total_input_samples,
+                input.len()
+            ));
+        }
+        if output.len() != total_input_samples {
+            return Err(format!(
+                "Output size mismatch: expected {}, got {}",
+                total_input_samples,
+                output.len()
+            ));
+        }
 
         if self.phase_vocoder {
             return self.process_phase_vocoder(input, output, context);
+        }
+
+        let input_space = self.input_ring.len().saturating_sub(self.input_ring_count);
+        if total_input_samples > input_space {
+            return Err(format!(
+                "Input block too large for prepared PND ring: need {}, available {}",
+                total_input_samples, input_space
+            ));
         }
 
         // 1. Accumulate input into input ring (Circular)
@@ -1057,6 +1105,42 @@ mod tests {
 
         let val = p.get_parameter(&ParameterId::from("analysis_window_ms"));
         assert_eq!(val, Some(ParameterValue::Float(75.0)));
+    }
+
+    #[test]
+    fn test_process_rejects_buffer_size_mismatch() {
+        let mut p = PndPlugin::new(2);
+        p.initialize(48000).unwrap();
+
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: 64,
+        };
+        let input = vec![0.0f32; ctx.num_frames * p.input_channels()];
+        let mut short_output = vec![0.0f32; ctx.num_frames * p.output_channels() - 1];
+        let err = p.process(&input, &mut short_output, &ctx).unwrap_err();
+        assert!(err.contains("Output size mismatch"));
+
+        let short_input = vec![0.0f32; ctx.num_frames * p.input_channels() - 1];
+        let mut output = vec![0.0f32; ctx.num_frames * p.output_channels()];
+        let err = p.process(&short_input, &mut output, &ctx).unwrap_err();
+        assert!(err.contains("Input size mismatch"));
+    }
+
+    #[test]
+    fn test_process_rejects_oversized_block_without_panicking() {
+        let mut p = PndPlugin::new(2);
+        p.initialize(48000).unwrap();
+
+        let frames = RESAMPLER_CHUNK_SIZE * 5;
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: frames,
+        };
+        let input = vec![0.0f32; frames * p.input_channels()];
+        let mut output = vec![0.0f32; frames * p.output_channels()];
+        let err = p.process(&input, &mut output, &ctx).unwrap_err();
+        assert!(err.contains("Input block too large"));
     }
 
     /// Verify set_parameter / get_parameter round-trip for drift_smoothing.

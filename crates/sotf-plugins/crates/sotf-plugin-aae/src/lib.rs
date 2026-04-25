@@ -20,7 +20,7 @@ pub mod params;
 pub mod tone_filter;
 
 use crate::early_reflections::EarlyReflections;
-use crate::fdn::{Fdn, FDN_SIZE};
+use crate::fdn::{FDN_SIZE, Fdn};
 use crate::params::{AaePluginParams, build_parameters};
 
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
@@ -37,6 +37,8 @@ const LFE_CROSSOVER_HZ: f32 = 120.0;
 
 /// Maximum pre-delay in milliseconds.
 const MAX_PRE_DELAY_MS: f32 = 100.0;
+const DIALOGUE_ATTACK_MS: f32 = 10.0;
+const DIALOGUE_RELEASE_MS: f32 = 150.0;
 
 pub struct AaePlugin {
     sample_rate: u32,
@@ -69,6 +71,11 @@ pub struct AaePlugin {
 
     // Pre-allocated scratch buffer for ER tap outputs (avoids hot-path allocation)
     er_tap_buffer: Vec<f32>,
+
+    // Content-aware wet ducking state
+    dialogue_duck_gain: f32,
+    dialogue_attack_coeff: f32,
+    dialogue_release_coeff: f32,
 
     // Parameter smoothers
     dry_smoother: Smoother,
@@ -156,11 +163,14 @@ impl AaePlugin {
             ),
             lfe_filter_state: 0.0,
             lfe_filter_coeff: compute_lp_coeff(LFE_CROSSOVER_HZ, sr as f32),
-            er_gains: Vec::new(),
-            fdn_gains: Vec::new(),
-            direct_gains_l: Vec::new(),
-            direct_gains_r: Vec::new(),
+            er_gains: vec![vec![0.0; num_output_channels]; early_reflections::MAX_TAPS],
+            fdn_gains: vec![vec![0.0; num_output_channels]; FDN_SIZE],
+            direct_gains_l: vec![0.0; num_output_channels],
+            direct_gains_r: vec![0.0; num_output_channels],
             er_tap_buffer: vec![0.0; early_reflections::MAX_TAPS],
+            dialogue_duck_gain: 1.0,
+            dialogue_attack_coeff: smoothing_coeff(DIALOGUE_ATTACK_MS, sr as f32),
+            dialogue_release_coeff: smoothing_coeff(DIALOGUE_RELEASE_MS, sr as f32),
             dry_smoother: Smoother::new(params.dry_level, 5.0, sr),
             er_smoother: Smoother::new(params.er_level, 5.0, sr),
             late_smoother: Smoother::new(params.late_level, 5.0, sr),
@@ -180,8 +190,10 @@ impl AaePlugin {
         let n_ch = self.num_output_channels;
 
         // Direct signal: stereo L at +30° az, R at -30° az
-        self.direct_gains_l = vec![0.0; n_ch];
-        self.direct_gains_r = vec![0.0; n_ch];
+        resize_vec(&mut self.direct_gains_l, n_ch);
+        resize_vec(&mut self.direct_gains_r, n_ch);
+        self.direct_gains_l.fill(0.0);
+        self.direct_gains_r.fill(0.0);
         for sp in speakers {
             if sp.is_lfe {
                 continue;
@@ -196,10 +208,13 @@ impl AaePlugin {
 
         // Early reflections: per-tap VBAP gains
         let num_taps = self.early_reflections.num_taps();
-        self.er_gains = Vec::with_capacity(num_taps);
+        resize_gain_matrix(&mut self.er_gains, early_reflections::MAX_TAPS, n_ch);
+        for gains in &mut self.er_gains {
+            gains.fill(0.0);
+        }
         for tap_idx in 0..num_taps {
             let tap = self.early_reflections.tap_info(tap_idx).unwrap();
-            let mut gains = vec![0.0; n_ch];
+            let gains = &mut self.er_gains[tap_idx];
             for sp in speakers {
                 if sp.is_lfe {
                     continue;
@@ -212,8 +227,7 @@ impl AaePlugin {
                     0.5,
                 );
             }
-            normalize_gains(&mut gains);
-            self.er_gains.push(gains);
+            normalize_gains(gains);
         }
 
         // FDN outputs: distributed across speakers with envelopment bias
@@ -225,9 +239,12 @@ impl AaePlugin {
         let fdn_azimuths = [30.0, -30.0, 0.0, 110.0, -110.0, 150.0, -150.0, 0.0];
         let fdn_elevations = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 45.0];
 
-        self.fdn_gains = Vec::with_capacity(FDN_SIZE);
+        resize_gain_matrix(&mut self.fdn_gains, FDN_SIZE, n_ch);
+        for gains in &mut self.fdn_gains {
+            gains.fill(0.0);
+        }
         for i in 0..FDN_SIZE {
-            let mut gains = vec![0.0; n_ch];
+            let gains = &mut self.fdn_gains[i];
             for sp in speakers {
                 if sp.is_lfe {
                     continue;
@@ -257,9 +274,39 @@ impl AaePlugin {
 
                 gains[sp.channel] = g;
             }
-            normalize_gains(&mut gains);
-            self.fdn_gains.push(gains);
+            normalize_gains(gains);
         }
+    }
+
+    fn update_cached_parameter(&mut self, id: &ParameterId, value: &ParameterValue) {
+        if let Some(param) = self.cached_parameters.iter_mut().find(|p| p.id == *id) {
+            param.default_value = value.clone();
+        }
+    }
+
+    #[inline]
+    fn dialogue_duck_for_frame(&mut self, l: f32, r: f32) -> f32 {
+        if !self.params.content_aware {
+            self.dialogue_duck_gain = 1.0;
+            return 1.0;
+        }
+
+        let center = ((l + r) * 0.5).abs();
+        let side = ((l - r) * 0.5).abs();
+        let centeredness = center / (center + side + 1e-6);
+        let speech_like = center > 0.02 && centeredness > 0.75;
+        let target = if speech_like {
+            10.0_f32.powf(-self.params.dialogue_attenuation_db / 20.0)
+        } else {
+            1.0
+        };
+        let coeff = if target < self.dialogue_duck_gain {
+            self.dialogue_attack_coeff
+        } else {
+            self.dialogue_release_coeff
+        };
+        self.dialogue_duck_gain = target + coeff * (self.dialogue_duck_gain - target);
+        self.dialogue_duck_gain
     }
 }
 
@@ -288,15 +335,11 @@ impl Plugin for AaePlugin {
             "room_size" => {
                 if let Some(v) = value.as_float() {
                     self.params.room_size = v;
-                    // FDN needs full rebuild for room size changes
-                    self.fdn = Fdn::new(
-                        self.sample_rate,
+                    self.fdn.set_room_size(
                         v,
                         self.params.rt60,
                         self.params.bass_ratio,
                         self.params.treble_ratio,
-                        self.params.mod_depth,
-                        self.params.safety_limit_db,
                     );
                 }
             }
@@ -324,18 +367,14 @@ impl Plugin for AaePlugin {
             "pre_delay_ms" => {
                 if let Some(v) = value.as_float() {
                     self.params.pre_delay_ms = v;
-                    self.pre_delay_samples =
-                        (v * 0.001 * self.sample_rate as f32).round() as usize;
+                    self.pre_delay_samples = (v * 0.001 * self.sample_rate as f32).round() as usize;
                 }
             }
             "room_preset" => {
                 if let Some(v) = value.as_string() {
                     self.params.room_preset = v.to_string();
-                    self.early_reflections = EarlyReflections::new(
-                        self.sample_rate,
-                        self.params.room_preset_enum(),
-                        self.params.er_mod_depth,
-                    );
+                    self.early_reflections
+                        .set_preset(self.params.room_preset_enum());
                     self.precompute_gains();
                 }
             }
@@ -438,7 +477,7 @@ impl Plugin for AaePlugin {
             _ => {}
         }
 
-        self.cached_parameters = build_parameters(&self.params);
+        self.update_cached_parameter(&id, &value);
         Ok(())
     }
 
@@ -478,8 +517,7 @@ impl Plugin for AaePlugin {
 
         // Rebuild pre-delay
         self.pre_delay = delay_line::DelayLine::new((MAX_PRE_DELAY_MS * 0.001 * sr) as usize + 16);
-        self.pre_delay_samples =
-            (self.params.pre_delay_ms * 0.001 * sr).round() as usize;
+        self.pre_delay_samples = (self.params.pre_delay_ms * 0.001 * sr).round() as usize;
 
         // Rebuild diffusion allpasses (scale delay times by sample rate)
         let diff_delay_1 = (142.0 * sr / 48000.0).round() as usize;
@@ -510,6 +548,9 @@ impl Plugin for AaePlugin {
         // LFE filter
         self.lfe_filter_coeff = compute_lp_coeff(LFE_CROSSOVER_HZ, sr);
         self.lfe_filter_state = 0.0;
+        self.dialogue_duck_gain = 1.0;
+        self.dialogue_attack_coeff = smoothing_coeff(DIALOGUE_ATTACK_MS, sr);
+        self.dialogue_release_coeff = smoothing_coeff(DIALOGUE_RELEASE_MS, sr);
 
         // Smoothers
         self.dry_smoother = Smoother::new(self.params.dry_level, 5.0, sample_rate);
@@ -531,6 +572,7 @@ impl Plugin for AaePlugin {
         self.early_reflections.reset();
         self.fdn.reset();
         self.lfe_filter_state = 0.0;
+        self.dialogue_duck_gain = 1.0;
     }
 
     fn process(
@@ -544,9 +586,26 @@ impl Plugin for AaePlugin {
         let num_frames = context.num_frames;
         let in_ch = 2;
         let out_ch = self.num_output_channels;
+        let expected_input = num_frames * in_ch;
+        let expected_output = num_frames * out_ch;
+
+        if input.len() != expected_input {
+            return Err(format!(
+                "AAE input size mismatch: expected {}, got {}",
+                expected_input,
+                input.len()
+            ));
+        }
+        if output.len() != expected_output {
+            return Err(format!(
+                "AAE output size mismatch: expected {}, got {}",
+                expected_output,
+                output.len()
+            ));
+        }
 
         // Zero output
-        output[..num_frames * out_ch].fill(0.0);
+        output.fill(0.0);
 
         // Bypass: copy L/R to front L/R, silence rest
         if self.params.bypass {
@@ -569,7 +628,7 @@ impl Plugin for AaePlugin {
         let lfe_gain = self.lfe_smoother.next_n(num_frames);
 
         let num_er_taps = self.early_reflections.num_taps();
-        self.er_tap_buffer[..num_er_taps].fill(0.0);
+        self.er_tap_buffer.fill(0.0);
 
         // Find LFE channel index
         let lfe_ch = self
@@ -582,6 +641,7 @@ impl Plugin for AaePlugin {
         for frame in 0..num_frames {
             let l = input[frame * in_ch];
             let r = input[frame * in_ch + 1];
+            let wet_duck = self.dialogue_duck_for_frame(l, r);
 
             // ── Direct path: pan stereo to front speakers ────────────
             if !self.params.solo_early && !self.params.solo_late {
@@ -614,14 +674,15 @@ impl Plugin for AaePlugin {
 
             // ── Early reflections ────────────────────────────────────
             if !self.params.solo_late {
-                self.early_reflections.process(diffused, &mut self.er_tap_buffer);
+                self.early_reflections
+                    .process(diffused, &mut self.er_tap_buffer);
 
-                for (tap_idx, &tap_val) in self.er_tap_buffer.iter().enumerate() {
+                for (tap_idx, &tap_val) in self.er_tap_buffer[..num_er_taps].iter().enumerate() {
                     if tap_val.abs() < 1e-10 || tap_idx >= self.er_gains.len() {
                         continue;
                     }
                     let gains = &self.er_gains[tap_idx];
-                    let scaled = tap_val * er_gain;
+                    let scaled = tap_val * er_gain * wet_duck;
                     for (ch_idx, &g) in gains.iter().enumerate() {
                         output[frame * out_ch + ch_idx] += scaled * g;
                     }
@@ -632,7 +693,7 @@ impl Plugin for AaePlugin {
             if !self.params.solo_early {
                 // Feed the FDN with the sum of diffused input + ER output
                 // (ER feeds into late reverb, creating a natural buildup)
-                let er_sum: f32 = self.er_tap_buffer.iter().sum::<f32>()
+                let er_sum: f32 = self.er_tap_buffer[..num_er_taps].iter().sum::<f32>()
                     / (num_er_taps.max(1) as f32);
                 let fdn_input = diffused + er_sum * 0.3;
 
@@ -643,7 +704,7 @@ impl Plugin for AaePlugin {
                         continue;
                     }
                     let gains = &self.fdn_gains[line_idx];
-                    let scaled = line_val * late_gain;
+                    let scaled = line_val * late_gain * wet_duck;
                     for (ch_idx, &g) in gains.iter().enumerate() {
                         output[frame * out_ch + ch_idx] += scaled * g;
                     }
@@ -656,17 +717,36 @@ impl Plugin for AaePlugin {
                 let lp_coeff = self.lfe_filter_coeff;
                 self.lfe_filter_state =
                     lp_coeff * self.lfe_filter_state + (1.0 - lp_coeff) * diffused;
-                output[frame * out_ch + lfe_idx] += self.lfe_filter_state * lfe_gain;
+                output[frame * out_ch + lfe_idx] += self.lfe_filter_state * lfe_gain * wet_duck;
             }
         }
 
-        flush_denormals_inplace(&mut output[..num_frames * out_ch]);
+        flush_denormals_inplace(output);
         Ok(num_frames)
     }
 
     fn latency_samples(&self) -> usize {
-        self.pre_delay_samples
+        0
     }
+}
+
+fn resize_vec(values: &mut Vec<f32>, len: usize) {
+    if values.len() != len {
+        values.resize(len, 0.0);
+    }
+}
+
+fn resize_gain_matrix(values: &mut Vec<Vec<f32>>, rows: usize, cols: usize) {
+    if values.len() != rows {
+        values.resize_with(rows, Vec::new);
+    }
+    for row in values {
+        resize_vec(row, cols);
+    }
+}
+
+fn smoothing_coeff(time_ms: f32, sample_rate: f32) -> f32 {
+    (-1.0 / (time_ms * 0.001 * sample_rate)).exp()
 }
 
 /// Compute one-pole low-pass filter coefficient from cutoff frequency.
@@ -803,9 +883,7 @@ mod tests {
     fn test_no_nan_inf() {
         let mut p = make_plugin();
         let n = 4096;
-        let input: Vec<f32> = (0..n * 2)
-            .map(|i| (i as f32 * 0.01).sin() * 0.8)
-            .collect();
+        let input: Vec<f32> = (0..n * 2).map(|i| (i as f32 * 0.01).sin() * 0.8).collect();
         let mut output = vec![0.0; n * 6];
         p.process(
             &input,
@@ -845,15 +923,108 @@ mod tests {
     }
 
     #[test]
+    fn test_pre_delay_is_not_reported_as_plugin_latency() {
+        let p = make_plugin();
+        assert_eq!(p.latency_samples(), 0);
+    }
+
+    #[test]
+    fn test_process_rejects_mismatched_buffers() {
+        let mut p = make_plugin();
+        let input = vec![0.0; 1];
+        let mut output = vec![0.0; 6];
+        let err = p
+            .process(
+                &input,
+                &mut output,
+                &ProcessContext {
+                    sample_rate: 48000,
+                    num_frames: 1,
+                },
+            )
+            .unwrap_err();
+        assert!(err.contains("input size mismatch"));
+
+        let input = vec![0.0; 2];
+        let mut output = vec![0.0; 5];
+        let err = p
+            .process(
+                &input,
+                &mut output,
+                &ProcessContext {
+                    sample_rate: 48000,
+                    num_frames: 1,
+                },
+            )
+            .unwrap_err();
+        assert!(err.contains("output size mismatch"));
+    }
+
+    #[test]
+    fn test_content_aware_dialogue_ducks_wet_signal() {
+        let mut p = make_plugin();
+        p.params.content_aware = true;
+        p.params.dialogue_attenuation_db = 12.0;
+
+        for _ in 0..4096 {
+            p.dialogue_duck_for_frame(0.5, 0.5);
+        }
+        assert!(
+            p.dialogue_duck_gain < 0.5,
+            "centered speech-like input should reduce wet gain, got {}",
+            p.dialogue_duck_gain
+        );
+
+        p.params.content_aware = false;
+        assert_eq!(p.dialogue_duck_for_frame(0.5, 0.5), 1.0);
+    }
+
+    #[test]
+    fn test_room_and_routing_parameter_changes_do_not_break_processing() {
+        let mut p = make_plugin();
+        p.set_parameter(ParameterId::from("room_size"), ParameterValue::Float(3.0))
+            .unwrap();
+        p.set_parameter(
+            ParameterId::from("room_preset"),
+            ParameterValue::String("cathedral".to_string()),
+        )
+        .unwrap();
+        p.set_parameter(ParameterId::from("envelopment"), ParameterValue::Float(1.0))
+            .unwrap();
+        p.set_parameter(
+            ParameterId::from("height_amount"),
+            ParameterValue::Float(1.0),
+        )
+        .unwrap();
+        p.set_parameter(
+            ParameterId::from("room_preset"),
+            ParameterValue::String("small".to_string()),
+        )
+        .unwrap();
+
+        let n = 512;
+        let input = vec![0.1; n * 2];
+        let mut output = vec![0.0; n * 6];
+        p.process(
+            &input,
+            &mut output,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: n,
+            },
+        )
+        .unwrap();
+        assert!(output.iter().all(|v| v.is_finite()));
+    }
+
+    #[test]
     fn test_solo_early() {
         let mut p = make_plugin();
         p.set_parameter(ParameterId::from("solo_early"), ParameterValue::Bool(true))
             .unwrap();
 
         let n = 4096;
-        let input: Vec<f32> = (0..n * 2)
-            .map(|i| (i as f32 * 0.01).sin() * 0.5)
-            .collect();
+        let input: Vec<f32> = (0..n * 2).map(|i| (i as f32 * 0.01).sin() * 0.5).collect();
         let mut output = vec![0.0; n * 6];
         p.process(
             &input,
@@ -954,9 +1125,7 @@ mod tests {
         // With default params, output energy should not exceed 2× input energy.
         let mut p = make_plugin();
         let n = 4096;
-        let input: Vec<f32> = (0..n * 2)
-            .map(|i| (i as f32 * 0.01).sin() * 0.5)
-            .collect();
+        let input: Vec<f32> = (0..n * 2).map(|i| (i as f32 * 0.01).sin() * 0.5).collect();
         let mut output = vec![0.0; n * 6];
         p.process(
             &input,

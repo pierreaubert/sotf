@@ -37,12 +37,19 @@ impl DelayLine {
     /// Read at integer delay (no interpolation). `delay` is in samples.
     #[inline]
     pub fn read(&self, delay: usize) -> f32 {
+        let delay = delay.min(self.max_delay_samples());
         let pos = if self.write_pos >= delay + 1 {
             self.write_pos - delay - 1
         } else {
             self.length + self.write_pos - delay - 1
         };
         self.buffer[pos]
+    }
+
+    /// Maximum delay that can be read while still allowing interpolation to read `delay + 1`.
+    #[inline]
+    pub fn max_delay_samples(&self) -> usize {
+        self.length.saturating_sub(2)
     }
 
     /// Read at fractional delay using allpass interpolation.
@@ -55,6 +62,7 @@ impl DelayLine {
     /// to ensure continuity across calls (important for modulated delays).
     #[inline]
     pub fn read_allpass(&self, delay_samples: f32, state: &mut f32) -> f32 {
+        let delay_samples = delay_samples.clamp(0.0, self.max_delay_samples() as f32);
         let int_delay = delay_samples as usize;
         let frac = delay_samples - int_delay as f32;
 
@@ -73,6 +81,7 @@ impl DelayLine {
     /// Simpler but introduces low-pass filtering at high frequencies.
     #[inline]
     pub fn read_linear(&self, delay_samples: f32) -> f32 {
+        let delay_samples = delay_samples.clamp(0.0, self.max_delay_samples() as f32);
         let int_delay = delay_samples as usize;
         let frac = delay_samples - int_delay as f32;
         let s0 = self.read(int_delay);

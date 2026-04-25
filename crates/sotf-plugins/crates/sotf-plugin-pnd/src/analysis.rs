@@ -56,6 +56,9 @@ impl PndAnalyzer {
 
         let drift_history_capacity =
             compute_drift_history_capacity(analysis_window_ms, sample_rate, hop_size);
+        let max_drift_history_capacity =
+            compute_drift_history_capacity(500.0, sample_rate, hop_size);
+        let spectrum_size = fft_size / 2 + 1;
 
         Self {
             fft_size,
@@ -63,17 +66,17 @@ impl PndAnalyzer {
             window,
             fft,
             ring,
-            prev_peaks: Vec::new(),
-            matched_peaks: Vec::new(),
-            peak_scratch: Vec::new(),
-            ratio_scratch: Vec::new(),
+            prev_peaks: Vec::with_capacity(spectrum_size),
+            matched_peaks: Vec::with_capacity(spectrum_size),
+            peak_scratch: Vec::with_capacity(spectrum_size),
+            ratio_scratch: Vec::with_capacity(spectrum_size),
 
-            drift_history: vec![0.0; drift_history_capacity],
+            drift_history: vec![0.0; max_drift_history_capacity],
             drift_write_pos: 0,
             drift_count: 0,
             drift_history_capacity,
 
-            median_scratch: vec![0.0; drift_history_capacity],
+            median_scratch: vec![0.0; max_drift_history_capacity],
 
             cached_drift_estimate: 1.0,
             drift_dirty: false,
@@ -230,11 +233,11 @@ impl PndAnalyzer {
         let new_capacity =
             compute_drift_history_capacity(analysis_window_ms, self.sample_rate, hop_size);
         if new_capacity != self.drift_history_capacity {
-            self.drift_history = vec![0.0; new_capacity];
-            self.median_scratch.resize(new_capacity, 0.0);
+            self.drift_history.fill(0.0);
+            self.median_scratch.fill(0.0);
             self.drift_write_pos = 0;
             self.drift_count = 0;
-            self.drift_history_capacity = new_capacity;
+            self.drift_history_capacity = new_capacity.min(self.drift_history.len()).max(1);
             self.cached_drift_estimate = 1.0;
             self.drift_dirty = false;
         }
@@ -273,7 +276,7 @@ impl PndAnalyzer {
         self.drift_history.fill(0.0);
         self.drift_write_pos = 0;
         self.drift_count = 0;
-        self.median_scratch.clear();
+        self.median_scratch.fill(0.0);
         self.cached_drift_estimate = 1.0;
         self.drift_dirty = false;
 
@@ -377,14 +380,34 @@ mod tests {
     }
 
     #[test]
+    fn test_analyzer_reset_keeps_median_scratch_capacity() {
+        let mut analyzer = PndAnalyzer::new(2048, 44100, 100.0);
+        analyzer.reset();
+
+        analyzer.drift_history[0] = 1.01;
+        analyzer.drift_write_pos = 1;
+        analyzer.drift_count = 1;
+        analyzer.drift_dirty = true;
+
+        let drift = analyzer.current_drift_estimate();
+        assert!((drift - 1.01).abs() < 1e-6);
+    }
+
+    #[test]
     fn test_update_analysis_window() {
         let mut analyzer = PndAnalyzer::new(2048, 44100, 100.0);
         let initial_capacity = analyzer.drift_history_capacity;
+        let initial_storage = analyzer.drift_history.len();
 
         analyzer.update_analysis_window(200.0);
         assert!(
             analyzer.drift_history_capacity > initial_capacity,
             "Doubling window should increase capacity"
+        );
+        assert_eq!(
+            analyzer.drift_history.len(),
+            initial_storage,
+            "Changing analysis window should not reallocate history storage"
         );
         assert_eq!(analyzer.drift_count, 0, "Should reset drift count");
     }

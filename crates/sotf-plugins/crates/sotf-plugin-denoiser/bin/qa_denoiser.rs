@@ -19,11 +19,15 @@ fn main() {
     println!("\n[Test 1] Silence passthrough");
     let num_frames = 48000; // 1 second for MCRA to converge
     let mut buffer = vec![0.0f32; num_frames * channels];
-    let ctx = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
-    inner.process_in_place(&mut buffer, &ctx).unwrap();
+    let block_frames = 2048;
+    for chunk in buffer.chunks_mut(block_frames * channels) {
+        let frames = chunk.len() / channels;
+        let ctx = ProcessContext {
+            sample_rate,
+            num_frames: frames,
+        };
+        inner.process_in_place(chunk, &ctx).unwrap();
+    }
 
     let peak = buffer.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
     println!("  Peak after silence: {:.6}", peak);

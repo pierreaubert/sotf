@@ -1591,6 +1591,25 @@ impl Plugin for UpmixerPlugin {
         context: &ProcessContext,
     ) -> Result<usize, String> {
         let n = context.num_frames;
+
+        let input_samples = context.num_frames * 2;
+        if input.len() != input_samples {
+            return Err(format!(
+                "Input size mismatch: expected {}, got {}",
+                input_samples,
+                input.len()
+            ));
+        }
+
+        let output_samples = context.num_frames * self.num_output_channels;
+        if output.len() != output_samples {
+            return Err(format!(
+                "Output size mismatch: expected {}, got {}",
+                output_samples,
+                output.len()
+            ));
+        }
+
         // Update smoothers by the number of frames in this block
         self.gain_front_direct.next_n(n);
         self.gain_front_ambient.next_n(n);
@@ -1674,25 +1693,6 @@ impl Plugin for UpmixerPlugin {
                 }
             }
             return Ok(context.num_frames);
-        }
-
-        // Verify input size
-        let input_samples = context.num_frames * 2;
-        if input.len() != input_samples {
-            return Err(format!(
-                "Input size mismatch: expected {}, got {}",
-                input_samples,
-                input.len()
-            ));
-        }
-
-        let output_samples = context.num_frames * self.num_output_channels;
-        if output.len() != output_samples {
-            return Err(format!(
-                "Output size mismatch: expected {}, got {}",
-                output_samples,
-                output.len()
-            ));
         }
 
         // Initialize output buffer to zero

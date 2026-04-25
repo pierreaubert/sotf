@@ -1,8 +1,8 @@
 use super::*;
 use filters::{
     compute_beta, compute_beta_smooth, compute_geometry_cache, compute_xtc_filters_full,
-    head_shadowing_filter, head_shadowing_woodworth, sanitize_filter, soft_limit_complex_magnitude,
-    woodworth_diffraction_path,
+    head_shadowing_complex, head_shadowing_filter, head_shadowing_woodworth, sanitize_filter,
+    soft_limit_complex_magnitude, woodworth_diffraction_path,
 };
 use reflections::{air_absorption, compute_image_sources, compute_reflection_beta_boost};
 
@@ -471,6 +471,22 @@ fn test_woodworth_head_shadowing() {
     assert!(
         g_frontal > g_high,
         "Frontal angle should have less shadowing than side"
+    );
+}
+
+#[test]
+fn test_brown_duda_shadowing_applies_phase() {
+    let head_radius = 0.0875;
+    let woodworth = head_shadowing_complex(4000.0, 0.8, head_radius, 0);
+    let brown_duda = head_shadowing_complex(4000.0, 0.8, head_radius, 1);
+
+    assert!(
+        woodworth.im.abs() < 1e-6,
+        "Woodworth compatibility path should remain magnitude-only"
+    );
+    assert!(
+        brown_duda.im.abs() > 1e-3,
+        "Brown-Duda model should include its phase term"
     );
 }
 

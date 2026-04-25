@@ -59,7 +59,12 @@ use sotf_host::simd::{
 };
 use std::any::Any;
 use std::hash::{Hash, Hasher};
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
+
+const MAX_PROCESS_FRAMES: usize = 16_384;
 
 /// Diagnostic data from XTC plugin.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,6 +80,14 @@ impl Default for XtcData {
             limiter_envelope: 1.0,
         }
     }
+}
+
+struct PendingFilterUpdate {
+    generation: u64,
+    filters: Arc<XtcFilters>,
+    hrtf_transfer_functions: Option<HrtfTransferFunctions>,
+    room_reflection_cache: Option<Arc<RoomReflectionData>>,
+    room_params_hash: u64,
 }
 
 // ============================================================================
@@ -299,6 +312,12 @@ pub struct XtcPlugin {
     /// Cached filter snapshot loaded once per process() call (avoids per-frame ArcSwap::load)
     cached_current_filters: Arc<XtcFilters>,
 
+    /// Completed asynchronous filter update waiting to be adopted by the audio thread.
+    pending_filter_update: Arc<ArcSwap<Option<PendingFilterUpdate>>>,
+
+    /// Latest requested asynchronous filter generation; workers use it to drop stale results.
+    filter_update_generation: Arc<AtomicU64>,
+
     /// Previous filter snapshot for crossfading (Block mode)
     prev_filters: Option<Arc<XtcFilters>>,
 
@@ -496,9 +515,8 @@ impl XtcPlugin {
             output_accumulator_fill: 0,
             next_add_position: 0,
             output_read_position: 0,
-            // Temp buffers for block processing (max reasonable block size)
-            temp_input_l: vec![0.0; 4096],
-            temp_input_r: vec![0.0; 4096],
+            temp_input_l: vec![0.0; MAX_PROCESS_FRAMES],
+            temp_input_r: vec![0.0; MAX_PROCESS_FRAMES],
             fft_buffer: vec![0.0; fft_size],
             fft_output_l: vec![Complex::new(0.0, 0.0); num_bins],
             fft_output_r: vec![Complex::new(0.0, 0.0); num_bins],
@@ -507,6 +525,8 @@ impl XtcPlugin {
             prev_ifft_output: vec![0.0; fft_size],
             filters,
             cached_current_filters,
+            pending_filter_update: Arc::new(ArcSwap::from_pointee(None)),
+            filter_update_generation: Arc::new(AtomicU64::new(0)),
             prev_filters: None,
             crossfade_progress: 1.0, // Start fully faded to current
             progress_per_hop: 0.0,
@@ -660,69 +680,125 @@ impl XtcPlugin {
         Self::new(params, sample_rate)
     }
 
+    fn set_crossfade_rate(&mut self) {
+        let smooth_samples = self.params.head_tracking_smooth_s * self.sample_rate as f32;
+        self.progress_per_hop = if smooth_samples > 0.0 {
+            self.hop_size as f32 / smooth_samples
+        } else {
+            1.0
+        };
+    }
+
     /// Recompute filters when parameters change.
-    /// Stores old filters for crossfading to avoid clicks.
     ///
     /// Optimization 3 & 4: Uses geometry cache and room reflection cache to avoid redundant computation.
     fn update_filters(&mut self, sync: bool) {
         let num_bins = self.fft_size / 2 + 1;
         let sample_rate = self.sample_rate;
 
-        // Cache progress_per_hop (only depends on params + sample_rate + hop_size)
-        let smooth_samples = self.params.head_tracking_smooth_s * self.sample_rate as f32;
-        self.progress_per_hop = self.hop_size as f32 / smooth_samples;
-
-        // Store old filters for crossfading (only if not already mid-crossfade)
-        if self.crossfade_progress >= 1.0 {
-            self.prev_filters = Some(self.filters.load_full());
-            self.crossfade_progress = 0.0;
-        }
-
-        // Check if room reflection cache needs updating (Optimization 4)
-        let new_hash = compute_room_params_hash(&self.params);
-        if new_hash != self.room_params_hash {
-            // Reuse the pre-planned FFT to avoid re-creating the planner (Optimization 4)
-            self.room_reflection_cache = compute_room_reflection_data(
-                &self.params,
-                sample_rate,
-                num_bins,
-                Some(self.fft_forward.clone()),
-            );
-            self.room_params_hash = new_hash;
-        }
-
-        // Pre-compute geometry cache (Optimization 3)
-        let cache = compute_geometry_cache(&self.params, sample_rate, num_bins);
-        let room_data = self.room_reflection_cache.clone();
-
-        let shared_filters = self.filters.clone();
-        let hrtf_data = self.hrtf_transfer_functions.clone();
+        self.set_crossfade_rate();
 
         if sync {
+            let new_hash = compute_room_params_hash(&self.params);
+            let room_data = if new_hash != self.room_params_hash {
+                compute_room_reflection_data(
+                    &self.params,
+                    sample_rate,
+                    num_bins,
+                    Some(self.fft_forward.clone()),
+                )
+            } else {
+                self.room_reflection_cache.clone()
+            };
+            self.room_reflection_cache = room_data.clone();
+            self.room_params_hash = new_hash;
+
+            let hrtf_data = if let Some(ref hrtf_path) = self.params.hrtf_file {
+                load_hrtf_for_xtc(hrtf_path, &self.params, sample_rate, num_bins)
+                    .ok()
+                    .flatten()
+            } else {
+                None
+            };
+            self.hrtf_transfer_functions = hrtf_data.clone();
+
+            let cache = compute_geometry_cache(&self.params, sample_rate, num_bins);
             let new_filters = compute_xtc_filters_full_with_cache_and_hrtf(
                 &self.params,
                 sample_rate,
                 num_bins,
                 &cache,
-                room_data,
+                room_data.clone(),
                 hrtf_data.as_ref(),
             );
-            shared_filters.store(Arc::new(new_filters));
+            let new_filters = Arc::new(new_filters);
+            self.filters.store(Arc::clone(&new_filters));
+            self.cached_current_filters = new_filters;
+            self.pending_filter_update.store(Arc::new(None));
         } else {
-            // Asynchronous update using rayon
+            // Asynchronous update using rayon. The audio thread starts the
+            // crossfade only when it adopts a completed update.
+            let generation = self
+                .filter_update_generation
+                .fetch_add(1, Ordering::Relaxed)
+                + 1;
             let params = self.params.clone();
+            let pending_filter_update = self.pending_filter_update.clone();
+            let requested_generation = self.filter_update_generation.clone();
+            let fft_forward = self.fft_forward.clone();
             rayon::spawn(move || {
+                let room_params_hash = compute_room_params_hash(&params);
+                let room_data =
+                    compute_room_reflection_data(&params, sample_rate, num_bins, Some(fft_forward));
+                let hrtf_data = if let Some(ref hrtf_path) = params.hrtf_file {
+                    load_hrtf_for_xtc(hrtf_path, &params, sample_rate, num_bins)
+                        .ok()
+                        .flatten()
+                } else {
+                    None
+                };
+                let cache = compute_geometry_cache(&params, sample_rate, num_bins);
                 let new_filters = compute_xtc_filters_full_with_cache_and_hrtf(
                     &params,
                     sample_rate,
                     num_bins,
                     &cache,
-                    room_data,
+                    room_data.clone(),
                     hrtf_data.as_ref(),
                 );
-                shared_filters.store(Arc::new(new_filters));
+                if requested_generation.load(Ordering::Acquire) == generation {
+                    pending_filter_update.store(Arc::new(Some(PendingFilterUpdate {
+                        generation,
+                        filters: Arc::new(new_filters),
+                        hrtf_transfer_functions: hrtf_data,
+                        room_reflection_cache: room_data,
+                        room_params_hash,
+                    })));
+                }
             });
         }
+    }
+
+    fn adopt_pending_filters(&mut self) {
+        let update = self.pending_filter_update.load_full();
+        let Some(update) = update.as_ref() else {
+            return;
+        };
+
+        if update.generation != self.filter_update_generation.load(Ordering::Acquire) {
+            self.pending_filter_update.store(Arc::new(None));
+            return;
+        }
+
+        let previous = self.filters.load_full();
+        self.filters.store(Arc::clone(&update.filters));
+        self.cached_current_filters = Arc::clone(&update.filters);
+        self.hrtf_transfer_functions = update.hrtf_transfer_functions.clone();
+        self.room_reflection_cache = update.room_reflection_cache.clone();
+        self.room_params_hash = update.room_params_hash;
+        self.prev_filters = Some(previous);
+        self.crossfade_progress = 0.0;
+        self.pending_filter_update.store(Arc::new(None));
     }
 
     /// Process one STFT frame using SIMD-optimized operations.
@@ -974,12 +1050,11 @@ impl Plugin for XtcPlugin {
                 .ok_or_else(|| "hrtf_file must be a string".to_string())?;
             if v.is_empty() {
                 self.params.hrtf_file = None;
-                self.hrtf_transfer_functions = None;
             } else {
-                let num_bins = self.fft_size / 2 + 1;
-                let hrtf = load_hrtf_for_xtc(v, &self.params, self.sample_rate, num_bins)?;
+                if !std::path::Path::new(v).exists() {
+                    return Err(format!("HRTF file not found: {}", v));
+                }
                 self.params.hrtf_file = Some(v.to_string());
-                self.hrtf_transfer_functions = hrtf;
             }
             self.update_filters(false);
             self.rebuild_cached_parameters();
@@ -1092,11 +1167,10 @@ impl Plugin for XtcPlugin {
             math_audio_dsp::fast_math::fast_exp(-1.0 / (50.0 * 0.001 * sample_rate as f32));
         self.update_filters(true); // Synchronous for initialization
 
-        // Pre-allocate temp buffers to max expected frame count.
+        // Pre-allocate temp buffers to the validated maximum XTC block size.
         // After this, the resize() check in process() is a guaranteed no-op.
-        let max_frames = 4096;
-        self.temp_input_l.resize(max_frames, 0.0);
-        self.temp_input_r.resize(max_frames, 0.0);
+        self.temp_input_l.resize(MAX_PROCESS_FRAMES, 0.0);
+        self.temp_input_r.resize(MAX_PROCESS_FRAMES, 0.0);
 
         if let Some(ag) = &mut self.auto_gain {
             ag.set_sample_rate(sample_rate).map_err(|e| e.to_string())?;
@@ -1183,71 +1257,74 @@ impl Plugin for XtcPlugin {
             return Ok(context.num_frames);
         }
 
+        self.adopt_pending_filters();
+
         // Snapshot current filters once per process() call (avoids per-frame ArcSwap::load atomic ops)
         self.cached_current_filters = arc_swap::Guard::into_inner(self.filters.load());
 
-        // Temp buffers are pre-allocated in initialize() to 4096 frames.
-        // This resize is a no-op in normal operation; only allocates for unusually large blocks.
-        if num_frames > self.temp_input_l.len() {
-            self.temp_input_l.resize(num_frames, 0.0);
-            self.temp_input_r.resize(num_frames, 0.0);
-        }
-
-        // Block-based deinterleave using SIMD
-        deinterleave_stereo(
-            &input[..num_frames * 2],
-            &mut self.temp_input_l[..num_frames],
-            &mut self.temp_input_r[..num_frames],
-        );
-
-        let mut input_pos = 0;
         let mut output_pos = 0;
         let mask = self.output_accumulator_mask;
+        let mut block_start = 0;
 
-        while output_pos < num_frames {
-            // Step 1: Fill input buffer from deinterleaved temp buffers
-            if input_pos < num_frames {
-                let samples_needed = self.fft_size - self.input_fill;
-                let samples_available_in = num_frames - input_pos;
-                let to_copy = samples_needed.min(samples_available_in);
+        while block_start < num_frames && output_pos < num_frames {
+            let block_frames = self.temp_input_l.len().min(num_frames - block_start);
+            let input_start = block_start * 2;
+            let input_end = input_start + block_frames * 2;
 
-                if to_copy > 0 {
-                    self.input_buffer_l[self.input_fill..self.input_fill + to_copy]
-                        .copy_from_slice(&self.temp_input_l[input_pos..input_pos + to_copy]);
-                    self.input_buffer_r[self.input_fill..self.input_fill + to_copy]
-                        .copy_from_slice(&self.temp_input_r[input_pos..input_pos + to_copy]);
-                    self.input_fill += to_copy;
-                    input_pos += to_copy;
+            deinterleave_stereo(
+                &input[input_start..input_end],
+                &mut self.temp_input_l[..block_frames],
+                &mut self.temp_input_r[..block_frames],
+            );
+
+            let mut input_pos = 0;
+            while output_pos < num_frames {
+                // Step 1: Fill input buffer from deinterleaved temp buffers
+                if input_pos < block_frames {
+                    let samples_needed = self.fft_size - self.input_fill;
+                    let samples_available_in = block_frames - input_pos;
+                    let to_copy = samples_needed.min(samples_available_in);
+
+                    if to_copy > 0 {
+                        self.input_buffer_l[self.input_fill..self.input_fill + to_copy]
+                            .copy_from_slice(&self.temp_input_l[input_pos..input_pos + to_copy]);
+                        self.input_buffer_r[self.input_fill..self.input_fill + to_copy]
+                            .copy_from_slice(&self.temp_input_r[input_pos..input_pos + to_copy]);
+                        self.input_fill += to_copy;
+                        input_pos += to_copy;
+                    }
+                }
+
+                // Step 2: Process ALL possible STFT frames from current input
+                while self.input_fill >= self.fft_size {
+                    self.process_stft_frame();
+                    self.shift_input_buffer();
+                }
+
+                // Step 3: Copy available output to output buffer
+                let frames_to_drain = self.output_accumulator_fill.min(num_frames - output_pos);
+
+                if frames_to_drain > 0 {
+                    for i in 0..frames_to_drain {
+                        let read_idx = (self.output_read_position + i) & mask;
+                        let acc_base = read_idx * 2;
+                        let out_base = (output_pos + i) * 2;
+                        output[out_base] = self.output_accumulator[acc_base];
+                        output[out_base + 1] = self.output_accumulator[acc_base + 1];
+                        // Clear after reading for next overlap-add cycle
+                        self.output_accumulator[acc_base] = 0.0;
+                        self.output_accumulator[acc_base + 1] = 0.0;
+                    }
+                    self.output_read_position =
+                        (self.output_read_position + frames_to_drain) & mask;
+                    self.output_accumulator_fill -= frames_to_drain;
+                    output_pos += frames_to_drain;
+                } else if input_pos >= block_frames {
+                    break;
                 }
             }
 
-            // Step 2: Process ALL possible STFT frames from current input
-            while self.input_fill >= self.fft_size {
-                self.process_stft_frame();
-                self.shift_input_buffer();
-            }
-
-            // Step 3: Copy available output to output buffer
-            let frames_to_drain = self.output_accumulator_fill.min(num_frames - output_pos);
-
-            if frames_to_drain > 0 {
-                for i in 0..frames_to_drain {
-                    let read_idx = (self.output_read_position + i) & mask;
-                    let acc_base = read_idx * 2;
-                    let out_base = (output_pos + i) * 2;
-                    output[out_base] = self.output_accumulator[acc_base];
-                    output[out_base + 1] = self.output_accumulator[acc_base + 1];
-                    // Clear after reading for next overlap-add cycle
-                    self.output_accumulator[acc_base] = 0.0;
-                    self.output_accumulator[acc_base + 1] = 0.0;
-                }
-                self.output_read_position = (self.output_read_position + frames_to_drain) & mask;
-                self.output_accumulator_fill -= frames_to_drain;
-                output_pos += frames_to_drain;
-            } else {
-                // Break if no progress is possible
-                break;
-            }
+            block_start += block_frames;
         }
 
         // Auto-gain: measure the UNCOMPENSATED output from the plugin filters.
@@ -1298,6 +1375,8 @@ impl Plugin for XtcPlugin {
                 output[idx_r] = output[idx_r].clamp(-1.0, 1.0);
             }
         }
+
+        output[output_pos * 2..].fill(0.0);
 
         // Return actual number of frames produced. DawHost handles silence padding.
         flush_denormals_inplace(output);

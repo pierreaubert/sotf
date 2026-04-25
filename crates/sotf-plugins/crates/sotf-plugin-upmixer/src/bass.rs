@@ -6,8 +6,6 @@ use super::UpmixerPlugin;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use rustfft::num_complex::Complex;
 
-type Complex64 = Complex<f64>;
-
 impl UpmixerPlugin {
     /// Update Linkwitz-Riley crossover gains for mains and LFE separation
     ///
@@ -36,24 +34,8 @@ impl UpmixerPlugin {
         // LR4: cascade two 2nd-order Butterworth sections for low-pass and high-pass
         let q = 1.0 / std::f64::consts::SQRT_2;
 
-        let mut low_sections = Vec::new();
-        let mut high_sections = Vec::new();
-        for _ in 0..2 {
-            low_sections.push(Biquad::new(
-                BiquadFilterType::Lowpass,
-                cutoff,
-                srate,
-                q,
-                0.0,
-            ));
-            high_sections.push(Biquad::new(
-                BiquadFilterType::Highpass,
-                cutoff,
-                srate,
-                q,
-                0.0,
-            ));
-        }
+        let low_section = Biquad::new(BiquadFilterType::Lowpass, cutoff, srate, q, 0.0);
+        let high_section = Biquad::new(BiquadFilterType::Highpass, cutoff, srate, q, 0.0);
 
         let freq_per_bin = srate / self.fft_size as f64;
 
@@ -61,15 +43,10 @@ impl UpmixerPlugin {
             let f = i as f64 * freq_per_bin;
 
             // Use complex response to preserve phase information
-            let mut low_h = Complex64::new(1.0, 0.0);
-            let mut high_h = Complex64::new(1.0, 0.0);
-
-            for sec in &low_sections {
-                low_h *= sec.complex_response(f);
-            }
-            for sec in &high_sections {
-                high_h *= sec.complex_response(f);
-            }
+            let low_response = low_section.complex_response(f);
+            let high_response = high_section.complex_response(f);
+            let mut low_h = low_response * low_response;
+            let mut high_h = high_response * high_response;
 
             // Normalize so that |low|^2 + |high|^2 ≈ 1.0 to avoid level shifts
             let power = low_h.norm_sqr() + high_h.norm_sqr();

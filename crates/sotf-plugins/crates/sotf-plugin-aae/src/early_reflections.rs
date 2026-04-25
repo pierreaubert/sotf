@@ -4,14 +4,14 @@
 /// Each tap has a specific delay, gain, direction (azimuth/elevation), and
 /// HF damping filter. Tap delays are slowly modulated to prevent comb-filter
 /// coloration (Griesinger's time-variant processing).
-
 use crate::delay_line::DelayLine;
 
 /// Maximum number of reflection taps.
 pub const MAX_TAPS: usize = 20;
+const MAX_MOD_DEPTH_MS: f32 = 1.0;
 
 /// A single early reflection tap.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct ReflectionTap {
     /// Base delay in samples
     pub delay_samples: usize,
@@ -37,11 +37,12 @@ pub enum RoomPreset {
 /// Early Reflection Generator.
 pub struct EarlyReflections {
     delay_line: DelayLine,
-    taps: Vec<ReflectionTap>,
+    taps: [ReflectionTap; MAX_TAPS],
+    num_taps: usize,
     /// One-pole LP filter states (one per tap) for HF damping
-    lp_states: Vec<f32>,
+    lp_states: [f32; MAX_TAPS],
     /// LFO phases for time-variant modulation (one per tap)
-    mod_phases: Vec<f32>,
+    mod_phases: [f32; MAX_TAPS],
     /// Modulation depth in samples
     mod_depth_samples: f32,
     sample_rate: f32,
@@ -51,29 +52,32 @@ impl EarlyReflections {
     /// Create an ERG from a room preset.
     pub fn new(sample_rate: u32, preset: RoomPreset, mod_depth: f32) -> Self {
         let sr = sample_rate as f32;
-        let taps = generate_taps(preset, sr);
-        let max_delay = taps.iter().map(|t| t.delay_samples).max().unwrap_or(1);
-        let alloc_size = max_delay + 16; // headroom for modulation
+        let max_delay = max_tap_delay_samples(sr);
+        let max_mod_depth = (MAX_MOD_DEPTH_MS * sr * 0.001).ceil() as usize;
+        let alloc_size = max_delay + max_mod_depth + 2;
 
-        let num_taps = taps.len();
-        Self {
+        let mut this = Self {
             delay_line: DelayLine::new(alloc_size),
-            lp_states: vec![0.0; num_taps],
-            mod_phases: (0..num_taps).map(|i| i as f32 / num_taps as f32).collect(),
-            mod_depth_samples: mod_depth * sr * 0.001, // 0–1 maps to 0–1ms
-            taps,
+            taps: [ReflectionTap::default(); MAX_TAPS],
+            num_taps: 0,
+            lp_states: [0.0; MAX_TAPS],
+            mod_phases: [0.0; MAX_TAPS],
+            mod_depth_samples: 0.0,
             sample_rate: sr,
-        }
+        };
+        this.set_preset(preset);
+        this.set_mod_depth(mod_depth);
+        this
     }
 
     /// Number of active taps.
     pub fn num_taps(&self) -> usize {
-        self.taps.len()
+        self.num_taps
     }
 
     /// Get tap info (for VBAP panning in the routing stage).
     pub fn tap_info(&self, index: usize) -> Option<&ReflectionTap> {
-        self.taps.get(index)
+        (index < self.num_taps).then(|| &self.taps[index])
     }
 
     /// Process one input sample, returning per-tap outputs.
@@ -83,19 +87,19 @@ impl EarlyReflections {
     pub fn process(&mut self, input: f32, output: &mut [f32]) {
         self.delay_line.push(input);
 
-        for (i, tap) in self.taps.iter().enumerate() {
+        for (i, tap) in self.taps[..self.num_taps].iter().enumerate() {
             if i >= output.len() {
                 break;
             }
 
             // Read with optional time-variant modulation
             let sample = if self.mod_depth_samples > 0.01 {
-                let mod_offset = (self.mod_phases[i] * std::f32::consts::TAU).sin()
-                    * self.mod_depth_samples;
+                let mod_offset =
+                    (self.mod_phases[i] * std::f32::consts::TAU).sin() * self.mod_depth_samples;
                 let effective_delay = (tap.delay_samples as f32 + mod_offset).max(1.0);
                 self.delay_line.read_linear(effective_delay)
             } else {
-                self.delay_line.read(tap.delay_samples) as f32
+                self.delay_line.read(tap.delay_samples)
             };
 
             // Apply gain
@@ -115,7 +119,7 @@ impl EarlyReflections {
             // Advance LFO phase
             if self.mod_depth_samples > 0.01 {
                 // Each tap has a unique slow modulation rate (0.05–0.3 Hz)
-                let rate = 0.05 + 0.25 * (i as f32 / self.taps.len() as f32);
+                let rate = 0.05 + 0.25 * (i as f32 / self.num_taps as f32);
                 self.mod_phases[i] += rate / self.sample_rate;
                 if self.mod_phases[i] >= 1.0 {
                     self.mod_phases[i] -= 1.0;
@@ -126,7 +130,22 @@ impl EarlyReflections {
 
     /// Update modulation depth (0.0–1.0).
     pub fn set_mod_depth(&mut self, depth: f32) {
-        self.mod_depth_samples = depth * self.sample_rate * 0.001;
+        self.mod_depth_samples = depth.clamp(0.0, 1.0) * self.sample_rate * 0.001;
+    }
+
+    /// Update room preset without reallocating.
+    pub fn set_preset(&mut self, preset: RoomPreset) {
+        let (taps, num_taps) = generate_taps(preset, self.sample_rate);
+        self.taps = taps;
+        self.num_taps = num_taps;
+        self.lp_states.fill(0.0);
+        for i in 0..MAX_TAPS {
+            self.mod_phases[i] = if num_taps > 0 {
+                i as f32 / num_taps as f32
+            } else {
+                0.0
+            };
+        }
     }
 
     /// Reset all state.
@@ -134,13 +153,13 @@ impl EarlyReflections {
         self.delay_line.reset();
         self.lp_states.fill(0.0);
         for (i, phase) in self.mod_phases.iter_mut().enumerate() {
-            *phase = i as f32 / self.taps.len().max(1) as f32;
+            *phase = i as f32 / self.num_taps.max(1) as f32;
         }
     }
 }
 
 /// Generate tap configurations for a room preset.
-fn generate_taps(preset: RoomPreset, sample_rate: f32) -> Vec<ReflectionTap> {
+fn generate_taps(preset: RoomPreset, sample_rate: f32) -> ([ReflectionTap; MAX_TAPS], usize) {
     let specs: &[(f32, f32, f32, f32, f32)] = match preset {
         // (delay_ms, gain_db, azimuth, elevation, damping)
         RoomPreset::Small => &[
@@ -217,18 +236,34 @@ fn generate_taps(preset: RoomPreset, sample_rate: f32) -> Vec<ReflectionTap> {
         ],
     };
 
-    specs
-        .iter()
-        .map(|&(delay_ms, gain_db, azimuth, elevation, damping)| {
-            ReflectionTap {
-                delay_samples: (delay_ms * 0.001 * sample_rate).round() as usize,
-                gain: 10.0_f32.powf(gain_db / 20.0),
-                azimuth,
-                elevation,
-                damping,
-            }
-        })
-        .collect()
+    let mut taps = [ReflectionTap::default(); MAX_TAPS];
+    for (tap, &(delay_ms, gain_db, azimuth, elevation, damping)) in taps.iter_mut().zip(specs) {
+        *tap = ReflectionTap {
+            delay_samples: (delay_ms * 0.001 * sample_rate).round() as usize,
+            gain: 10.0_f32.powf(gain_db / 20.0),
+            azimuth,
+            elevation,
+            damping,
+        };
+    }
+    (taps, specs.len())
+}
+
+fn max_tap_delay_samples(sample_rate: f32) -> usize {
+    [
+        RoomPreset::Small,
+        RoomPreset::Medium,
+        RoomPreset::Large,
+        RoomPreset::Cathedral,
+    ]
+    .iter()
+    .flat_map(|&preset| {
+        let (taps, num_taps) = generate_taps(preset, sample_rate);
+        taps.into_iter().take(num_taps)
+    })
+    .map(|tap| tap.delay_samples)
+    .max()
+    .unwrap_or(1)
 }
 
 #[cfg(test)]
@@ -257,7 +292,10 @@ mod tests {
         er.process(1.0, &mut output);
 
         // First frame: all taps should be zero (impulse hasn't reached any tap yet)
-        assert!(output.iter().all(|v| v.abs() < 1e-6), "No output on first sample");
+        assert!(
+            output.iter().all(|v| v.abs() < 1e-6),
+            "No output on first sample"
+        );
 
         // Process enough samples for first tap to arrive
         let first_delay = er.tap_info(0).unwrap().delay_samples;
@@ -302,5 +340,17 @@ mod tests {
         // After reset, all output should be silent
         er.process(0.0, &mut output);
         assert!(output.iter().all(|v| v.abs() < 1e-10));
+    }
+
+    #[test]
+    fn test_high_sample_rate_max_modulation_does_not_panic() {
+        let mut er = EarlyReflections::new(96000, RoomPreset::Cathedral, 1.0);
+        let mut output = vec![0.0; er.num_taps()];
+
+        for i in 0..200_000 {
+            let input = if i == 0 { 1.0 } else { 0.0 };
+            er.process(input, &mut output);
+            assert!(output.iter().all(|v| v.is_finite()));
+        }
     }
 }

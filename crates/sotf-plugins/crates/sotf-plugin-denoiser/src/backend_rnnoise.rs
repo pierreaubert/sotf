@@ -56,6 +56,13 @@ impl RnnoiseBackend {
             avg_reduction_db: 0.0,
         }
     }
+
+    pub fn max_in_place_frames(&self) -> usize {
+        self.output_buffers
+            .first()
+            .map(|buffer| buffer.len())
+            .unwrap_or(RNNOISE_FRAME_SIZE * 4)
+    }
 }
 
 impl DenoiserBackend for RnnoiseBackend {
@@ -89,6 +96,7 @@ impl DenoiserBackend for RnnoiseBackend {
 
             if self.accum_fill == RNNOISE_FRAME_SIZE {
                 // Process each channel through RNNoise
+                let mut ch0_output_power = 0.0;
                 for ch in 0..channels.min(self.channels) {
                     let mut input_buf = [0.0f32; RNNOISE_FRAME_SIZE];
                     let mut output_buf = [0.0f32; RNNOISE_FRAME_SIZE];
@@ -107,27 +115,26 @@ impl DenoiserBackend for RnnoiseBackend {
                         *s /= 32767.0;
                     }
 
+                    if ch == 0 {
+                        ch0_output_power = output_buf.iter().map(|x| x * x).sum::<f32>()
+                            / RNNOISE_FRAME_SIZE as f32;
+                    }
+
                     // Write to ring buffer (no allocation)
                     let ring_size = self.output_buffers[ch].len();
-                    for &s in &output_buf {
-                        self.output_buffers[ch][self.output_write_pos % ring_size] = s;
-                        self.output_write_pos += 1;
+                    for (i, &s) in output_buf.iter().enumerate() {
+                        self.output_buffers[ch][(self.output_write_pos + i) % ring_size] = s;
                     }
                 }
+                self.output_write_pos += RNNOISE_FRAME_SIZE;
 
                 // Estimate reduction
                 let input_power: f32 = self.accum_buffers[0].iter().map(|x| x * x).sum::<f32>()
                     / RNNOISE_FRAME_SIZE as f32;
-                let output_power: f32 = self.output_buffers[0]
-                    [self.output_buffers[0].len() - RNNOISE_FRAME_SIZE..]
-                    .iter()
-                    .map(|x| x * x)
-                    .sum::<f32>()
-                    / RNNOISE_FRAME_SIZE as f32;
 
                 if input_power > 1e-10 {
                     self.avg_reduction_db = 0.9 * self.avg_reduction_db
-                        + 0.1 * 10.0 * (input_power / output_power.max(1e-10)).log10();
+                        + 0.1 * 10.0 * (input_power / ch0_output_power.max(1e-10)).log10();
                 }
 
                 self.accum_fill = 0;

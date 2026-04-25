@@ -22,6 +22,7 @@ use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
 pub mod params;
 
+use crate::backend::DenoiserBackend;
 use crate::params::PARAMS as DN;
 use sotf_host::param_bridge;
 use sotf_host::param_specs::find_by_key as pk;
@@ -60,7 +61,7 @@ const NUM_DISPLAY_BANDS: usize = 30;
 // ============================================================================
 
 /// Data exposed by the denoiser for monitoring
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct DenoiserData {
     /// Estimated noise floor per frequency band (in dB)
     /// Averaged across channels, downsampled to ~30 bands for display
@@ -86,6 +87,21 @@ pub struct DenoiserData {
 
     /// Whether using captured profile
     pub using_captured_profile: bool,
+}
+
+impl Clone for DenoiserData {
+    fn clone(&self) -> Self {
+        Self {
+            noise_floor_db: Arc::new((*self.noise_floor_db).clone()),
+            snr_db: Arc::new((*self.snr_db).clone()),
+            avg_reduction_db: self.avg_reduction_db,
+            learning_active: self.learning_active,
+            is_learning_noise: self.is_learning_noise,
+            has_captured_profile: self.has_captured_profile,
+            learning_progress: self.learning_progress,
+            using_captured_profile: self.using_captured_profile,
+        }
+    }
 }
 
 impl Default for DenoiserData {
@@ -268,6 +284,7 @@ pub struct DenoiserPlugin {
 
     // Algorithm selection (Choice param, index 29)
     algorithm: usize,
+    rnnoise_backend: backend_rnnoise::RnnoiseBackend,
 
     // --- Phase 4B: SOTA additions ---
     harmonic_percussive: bool,
@@ -439,6 +456,7 @@ impl DenoiserPlugin {
             multi_resolution: pk(DN, "multi_resolution").default_bool(),
 
             algorithm: pk(DN, "algorithm").default_usize(),
+            rnnoise_backend: backend_rnnoise::RnnoiseBackend::new(),
 
             harmonic_percussive: false,
             spatial_denoise: false,
@@ -659,6 +677,10 @@ impl DenoiserPlugin {
             pk(DN, "formant_strength").max_f64() as f32,
         );
 
+        plugin.algorithm = params
+            .algorithm
+            .min(crate::params::ALGORITHMS.len().saturating_sub(1));
+
         plugin.multi_resolution = params.multi_resolution;
         if plugin.multi_resolution {
             plugin.multi_res_state = Some(multi_resolution::MultiResState::new(
@@ -876,6 +898,18 @@ impl InPlacePlugin for DenoiserPlugin {
                     self.clear_noise_profile();
                 }
             }
+            29 => {
+                if self.algorithm >= crate::params::ALGORITHMS.len() {
+                    return Err(format!(
+                        "Unsupported denoiser algorithm index {}",
+                        self.algorithm
+                    ));
+                }
+                if self.algorithm == 1 {
+                    self.rnnoise_backend
+                        .initialize(self.sample_rate, self.channels);
+                }
+            }
             32 => {
                 // multi_resolution -> allocate/deallocate state
                 if self.multi_resolution && self.multi_res_state.is_none() {
@@ -905,6 +939,8 @@ impl InPlacePlugin for DenoiserPlugin {
         self.update_envelope_coefficients();
         self.precompute_bark_mapping();
         self.update_hiss_cutoff_bin();
+        self.rnnoise_backend
+            .initialize(self.sample_rate, self.channels);
 
         // Update PND analyzers with correct sample rate
         for analyzer in &mut self.pnd_analyzers {
@@ -951,6 +987,7 @@ impl InPlacePlugin for DenoiserPlugin {
         if let Some(ref mut mrs) = self.multi_res_state {
             mrs.reset();
         }
+        self.rnnoise_backend.reset();
 
         self.avg_reduction_db = 0.0;
         self.learning_active = true;
@@ -971,13 +1008,67 @@ impl InPlacePlugin for DenoiserPlugin {
             old
         };
 
+        let num_frames = context.num_frames;
+        let total_samples = match num_frames.checked_mul(self.channels) {
+            Some(total_samples) => total_samples,
+            None => {
+                #[cfg(target_arch = "x86_64")]
+                unsafe {
+                    std::arch::asm!("ldmxcsr [{}]", in(reg) &_old_mxcsr, options(nostack, preserves_flags));
+                }
+                return Err("Frame/channel count overflow".to_string());
+            }
+        };
+        if buffer.len() != total_samples {
+            #[cfg(target_arch = "x86_64")]
+            unsafe {
+                std::arch::asm!("ldmxcsr [{}]", in(reg) &_old_mxcsr, options(nostack, preserves_flags));
+            }
+            return Err(format!(
+                "Buffer size mismatch: expected {}, got {}",
+                total_samples,
+                buffer.len()
+            ));
+        }
+
+        if self.algorithm == 1 {
+            let max_in_place_frames = self.rnnoise_backend.max_in_place_frames();
+            if num_frames > max_in_place_frames {
+                #[cfg(target_arch = "x86_64")]
+                unsafe {
+                    std::arch::asm!("ldmxcsr [{}]", in(reg) &_old_mxcsr, options(nostack, preserves_flags));
+                }
+                return Err(format!(
+                    "Block too large for RNNoise denoiser: {} frames exceeds prepared safe maximum {}",
+                    num_frames, max_in_place_frames
+                ));
+            }
+            self.rnnoise_backend
+                .process(buffer, num_frames, self.channels);
+            #[cfg(target_arch = "x86_64")]
+            unsafe {
+                std::arch::asm!("ldmxcsr [{}]", in(reg) &_old_mxcsr, options(nostack, preserves_flags));
+            }
+            return Ok(num_frames);
+        }
+
+        let max_in_place_frames = self.output_accumulator[0].len();
+        if num_frames > max_in_place_frames {
+            #[cfg(target_arch = "x86_64")]
+            unsafe {
+                std::arch::asm!("ldmxcsr [{}]", in(reg) &_old_mxcsr, options(nostack, preserves_flags));
+            }
+            return Err(format!(
+                "Block too large for in-place denoiser: {} frames exceeds prepared safe maximum {}",
+                num_frames, max_in_place_frames
+            ));
+        }
+
         // Pre-process: Time-domain transient suppression (de-clicking)
         if self.transient_enabled {
             self.transient_suppressor.process(buffer);
         }
 
-        let num_frames = context.num_frames;
-        let total_samples = num_frames * self.channels;
         let block_samples = self.fft_size * self.channels;
 
         // Phase 0: Feed samples to PND analyzers
@@ -1065,6 +1156,9 @@ impl InPlacePlugin for DenoiserPlugin {
     }
 
     fn latency_samples(&self) -> usize {
+        if self.algorithm == 1 {
+            return self.rnnoise_backend.latency_samples();
+        }
         // Latency is fft_size due to overlap-add buffering
         self.fft_size
     }
