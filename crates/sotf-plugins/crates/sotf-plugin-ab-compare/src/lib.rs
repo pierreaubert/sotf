@@ -249,8 +249,8 @@ impl ABComparePlugin {
             band_mask_lp,
             delay_a: DelayLine::new(),
             delay_b: DelayLine::new(),
-            buffer_a: Vec::new(),
-            buffer_b: Vec::new(),
+            buffer_a: vec![0.0; 48000 * num_channels],
+            buffer_b: vec![0.0; 48000 * num_channels],
             last_peak_a: 0.0,
             last_peak_b: 0.0,
             cache: RealTimeCache::new(ABCompareData::default()),
@@ -732,9 +732,9 @@ impl Plugin for ABComparePlugin {
         // Reset band mask filters
         self.rebuild_band_mask_filters();
 
-        // Clear buffers
-        self.buffer_a.clear();
-        self.buffer_b.clear();
+        // Clear contents without dropping pre-allocated capacity/length.
+        self.buffer_a.fill(0.0);
+        self.buffer_b.fill(0.0);
 
         // Update diagnostic cache immediately with reset values
         let data = ABCompareData {
@@ -781,17 +781,22 @@ impl Plugin for ABComparePlugin {
             return Ok(context.num_frames);
         }
 
-        // Resize buffers if needed
-        if self.buffer_a.len() != expected_samples {
-            self.buffer_a.resize(expected_samples, 0.0);
-            self.buffer_b.resize(expected_samples, 0.0);
+        if self.buffer_a.len() < expected_samples || self.buffer_b.len() < expected_samples {
+            return Err(format!(
+                "Internal buffers too small: need {} samples, have A={} B={}. Call initialize() with a suitable block capacity before processing.",
+                expected_samples,
+                self.buffer_a.len(),
+                self.buffer_b.len()
+            ));
         }
 
         // Process path A
-        self.host_a.process(input, &mut self.buffer_a)?;
+        self.host_a
+            .process(input, &mut self.buffer_a[..expected_samples])?;
 
         // Process path B
-        self.host_b.process(input, &mut self.buffer_b)?;
+        self.host_b
+            .process(input, &mut self.buffer_b[..expected_samples])?;
 
         // Apply latency compensation (delays the shorter path)
         self.delay_a.process(&mut self.buffer_a[..expected_samples]);
