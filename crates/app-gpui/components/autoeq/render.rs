@@ -12,7 +12,7 @@ use gpui_ui_kit::number_input::{NumberInput, NumberInputSize};
 use gpui_ui_kit::select::SelectSize;
 use gpui_ui_kit::select::{Select, SelectOption};
 use gpui_ui_kit::stack::{HStack, StackAlign, StackJustify, StackSpacing, VStack};
-use gpui_ui_kit::text::{Text, TextSize, TextWeight};
+use gpui_ui_kit::text::{Text, TextSize};
 use gpui_ui_kit::theme::ThemeExt;
 use gpui_ui_kit::toggle::{Toggle, ToggleSize};
 
