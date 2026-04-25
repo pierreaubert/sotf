@@ -13,8 +13,7 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_px::{ChartTheme, ScaleType, line};
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, Dialog, DialogSize, Text, TextSize, TextWeight,
-    theme::ThemeExt,
+    Button, ButtonSize, ButtonVariant, Dialog, DialogSize, Text, TextSize, theme::ThemeExt,
 };
 use std::cell::RefCell;
 use std::rc::Rc;

@@ -1,18 +1,24 @@
 #!/usr/bin/env python3
 """Design-token drift guard for app-gpui.
 
-Fails when a raw `px(N.0)` call appears in GPUI component or UI code outside
-the design-token source-of-truth files, unless an `// intentional: ...`
-comment appears on the same line or within an 8-line look-back window
-(stopping at the first blank line).
+Two checks run together:
 
-Rationale:
-    Phase 1 migrated the `Ds` design tokens to `Rems` so font zoom propagates
-    to spacing and text. Phase 2 migrated remaining hardcoded `px()` call
-    sites across the component tree to those tokens. This script prevents the
-    migrated call sites from silently regressing: any new raw `px(N.0)` must
-    either use a design token (`d.pad_x`, `spacing::MD`, `radius::MD`, ...) or
-    be explicitly marked intentional with a justification comment.
+1. Hardcoded pixel sizes — fails when a raw `px(N.0)` call appears in
+   GPUI component or UI code outside the design-token source-of-truth
+   files. Migrate to a `Ds` token (`d.pad_x`, `spacing::MD`, ...) or
+   mark `// intentional: <reason>`.
+
+2. Manual `Text::new(..)` builder chains that have a semantic constructor.
+   E.g. `Text::new(x).size(Xs).muted(true)` should be `Text::caption(x)`,
+   `Text::new(x).size(Md).weight(Semibold)` should be
+   `Text::section_header(x)`. The full role → constructor map lives in
+   `crates/app-gpui/CLAUDE.md` ('Typography conventions').
+
+Both checks share the same exception system: an `// intentional: <reason>`
+comment on the same line or within 8 lines above (not crossing a blank
+line) opts out. A file-level `// intentional-file: <reason>` marker
+exempts the whole file (used for chart/meter code with intrinsically
+pixel-driven layout).
 
 Usage:
     scripts/check-design-tokens.py
@@ -54,12 +60,73 @@ INTENTIONAL_RE = re.compile(r"//.*\bintentional\b", re.IGNORECASE)
 FILE_OPT_OUT_RE = re.compile(r"//\s*intentional-file\b", re.IGNORECASE)
 LOOKBACK_LINES = 8
 
+# Pairs of (regex, suggested_constructor, justification_hint).
+# Each regex matches a manual builder chain that has a semantic-Text
+# constructor in `gpui_ui_kit::Text` / `Heading`. Matched chains are
+# behavior-equivalent to the constructor — migrate the call site or mark
+# the line `// intentional: <reason>` to opt out.
+#
+# Dynamic patterns like `weight(if cond { Semibold } else { Normal })` do
+# NOT match these regexes because the literal `(TextWeight::X)` shape is
+# required.
+TEXT_BUILDER_PATTERNS: tuple[tuple[re.Pattern[str], str, str], ...] = (
+    (
+        re.compile(
+            r"\.size\(TextSize::Xs\)\s*\.muted\(true\)"
+            r"|\.muted\(true\)\s*\.size\(TextSize::Xs\)"
+        ),
+        "Text::caption",
+        "Xs + muted(true)",
+    ),
+    (
+        re.compile(r"\.size\(TextSize::Xs\)\s*\.color\(theme\.text_muted\)"),
+        "Text::caption",
+        "Xs + theme.text_muted",
+    ),
+    (
+        re.compile(r"\.size\(TextSize::Xs\)\s*\.weight\(TextWeight::Bold\)"),
+        "Text::eyebrow",
+        "Xs + Bold",
+    ),
+    (
+        re.compile(r"\.size\(TextSize::(?:Md|Sm)\)\s*\.weight\(TextWeight::Semibold\)"),
+        "Text::section_header",
+        "Md/Sm + Semibold",
+    ),
+    (
+        re.compile(r"\.size\(TextSize::Sm\)\s*\.weight\(TextWeight::Medium\)"),
+        "Text::label",
+        "Sm + Medium",
+    ),
+    (
+        re.compile(r"\.size\(TextSize::Md\)\s*\.weight\(TextWeight::Bold\)"),
+        "Heading::h4",
+        "Md + Bold",
+    ),
+)
+
 
 def is_exempt(relative_path: Path) -> bool:
     if relative_path in ALLOWLIST:
         return True
     path_str = relative_path.as_posix()
     return any(fragment in f"/{path_str}" for fragment in EXEMPT_PATH_FRAGMENTS)
+
+
+def _is_justified(lines: list[str], idx: int) -> bool:
+    """True iff the given line is exempted by an `// intentional:` marker on
+    the same line or within LOOKBACK_LINES above (stopping at the first
+    blank line)."""
+    if INTENTIONAL_RE.search(lines[idx]):
+        return True
+    start = max(0, idx - LOOKBACK_LINES)
+    for prev_idx in range(idx - 1, start - 1, -1):
+        prev = lines[prev_idx].rstrip()
+        if prev == "":
+            return False
+        if INTENTIONAL_RE.search(prev):
+            return True
+    return False
 
 
 def check_file(path: Path) -> list[tuple[int, str]]:
@@ -86,26 +153,57 @@ def check_file(path: Path) -> list[tuple[int, str]]:
             continue
         if not PX_RE.search(line):
             continue
-        if INTENTIONAL_RE.search(line):
+        if _is_justified(lines, idx):
             continue
-
-        # Look back up to LOOKBACK_LINES, stopping at the first blank line.
-        justified = False
-        start = max(0, idx - LOOKBACK_LINES)
-        for prev_idx in range(idx - 1, start - 1, -1):
-            prev = lines[prev_idx].rstrip()
-            if prev == "":
-                break
-            if INTENTIONAL_RE.search(prev):
-                justified = True
-                break
-        if not justified:
-            violations.append((idx + 1, line.rstrip()))
+        violations.append((idx + 1, line.rstrip()))
     return violations
 
 
-def collect_violations(repo_root: Path) -> list[tuple[Path, int, str]]:
-    findings: list[tuple[Path, int, str]] = []
+def check_text_builder(path: Path) -> list[tuple[int, str, str]]:
+    """Return a list of (line_number, suggested_constructor, justification_hint)
+    for manual `Text::new(..)` builder chains that have a semantic constructor.
+
+    Matches builder chains across line boundaries (whitespace in regexes
+    spans newlines), so e.g. a chain split across `.size(...)\n.weight(...)`
+    is detected. The first matching line is reported.
+    """
+    violations: list[tuple[int, str, str]] = []
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return violations
+
+    if FILE_OPT_OUT_RE.search(text):
+        return violations
+
+    lines = text.splitlines()
+    seen: set[tuple[int, str]] = set()
+    for pattern, constructor, hint in TEXT_BUILDER_PATTERNS:
+        for match in pattern.finditer(text):
+            line_idx = text.count("\n", 0, match.start())
+            if (line_idx, constructor) in seen:
+                continue
+            # Skip if the line is itself a comment (e.g. doc example).
+            if lines[line_idx].lstrip().startswith("//"):
+                continue
+            if _is_justified(lines, line_idx):
+                continue
+            seen.add((line_idx, constructor))
+            violations.append((line_idx + 1, constructor, hint))
+    violations.sort(key=lambda v: v[0])
+    return violations
+
+
+def collect_violations(
+    repo_root: Path,
+) -> tuple[list[tuple[Path, int, str]], list[tuple[Path, int, str, str]]]:
+    """Return (px_violations, text_builder_violations).
+
+    px_violations:           (path, line, line_content)
+    text_builder_violations: (path, line, suggested_constructor, hint)
+    """
+    px_findings: list[tuple[Path, int, str]] = []
+    tb_findings: list[tuple[Path, int, str, str]] = []
     for search in SEARCH_PATHS:
         search_abs = repo_root / search
         if not search_abs.is_dir():
@@ -115,8 +213,10 @@ def collect_violations(repo_root: Path) -> list[tuple[Path, int, str]]:
             if is_exempt(rel):
                 continue
             for line_no, content in check_file(rs):
-                findings.append((rel, line_no, content))
-    return findings
+                px_findings.append((rel, line_no, content))
+            for line_no, ctor, hint in check_text_builder(rs):
+                tb_findings.append((rel, line_no, ctor, hint))
+    return px_findings, tb_findings
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -134,25 +234,46 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {repo_root} does not look like the sotf repository root", file=sys.stderr)
         return 2
 
-    findings = collect_violations(repo_root)
-    if not findings:
+    px_findings, tb_findings = collect_violations(repo_root)
+    if not px_findings and not tb_findings:
         return 0
 
-    for rel, line_no, content in findings:
+    for rel, line_no, content in px_findings:
         print(f"{rel.as_posix()}:{line_no}: {content.strip()}")
-    print(
-        f"\nerror: {len(findings)} raw px(N.0) call(s) outside the design-token allowlist "
-        "without an `// intentional:` comment.",
-        file=sys.stderr,
-    )
-    print(
-        "Fix by either:\n"
-        "  - migrating to a design token (Ds::from_cx + d.pad_x/d.gap/d.r_md/d.text_sm, "
-        "or spacing::X / radius::X from app/constants.rs)\n"
-        "  - or adding a `// intentional: [reason]` comment on the same line or within "
-        f"{LOOKBACK_LINES} lines above (not crossing a blank line).",
-        file=sys.stderr,
-    )
+    if px_findings:
+        print(
+            f"\nerror: {len(px_findings)} raw px(N.0) call(s) outside the design-token allowlist "
+            "without an `// intentional:` comment.",
+            file=sys.stderr,
+        )
+        print(
+            "Fix by either:\n"
+            "  - migrating to a design token (Ds::from_cx + d.pad_x/d.gap/d.r_md/d.text_sm, "
+            "or spacing::X / radius::X from app/constants.rs)\n"
+            "  - or adding a `// intentional: [reason]` comment on the same line or within "
+            f"{LOOKBACK_LINES} lines above (not crossing a blank line).",
+            file=sys.stderr,
+        )
+
+    for rel, line_no, ctor, hint in tb_findings:
+        print(f"{rel.as_posix()}:{line_no}: manual {hint} chain — use {ctor}(...)")
+    if tb_findings:
+        print(
+            f"\nerror: {len(tb_findings)} manual Text::new(..) builder chain(s) "
+            "match a semantic constructor in `gpui_ui_kit::Text` / `Heading`.",
+            file=sys.stderr,
+        )
+        print(
+            "Fix by either:\n"
+            "  - replacing the chain with the suggested constructor:\n"
+            "      Text::caption / Text::eyebrow / Text::section_header / Text::label / "
+            "Text::body / Heading::h4\n"
+            "  - or adding a `// intentional: [reason]` comment on the same line or within "
+            f"{LOOKBACK_LINES} lines above (not crossing a blank line).\n"
+            "See crates/app-gpui/CLAUDE.md → 'Typography conventions' for the role → "
+            "constructor map.",
+            file=sys.stderr,
+        )
     return 1
 
 
