@@ -7,7 +7,6 @@
 
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Card, HStack, StackAlign, StackSpacing, Text, TextSize,
     TextWeight, VStack,
@@ -85,10 +84,7 @@ impl PlayerView {
                                             })
                                             .size(ButtonSize::Sm)
                                             .theme(theme.to_button_theme())
-                                            .build()
-                                            .on_mouse_up(
-                                                MouseButton::Left,
-                                                cx.listener(|view, _, _, cx| {
+                                            .on_click_event(cx.listener(|view, _, _, cx| {
                                                     view.state.update(cx, |state, _| {
                                                         state
                                                             .app
@@ -110,8 +106,7 @@ impl PlayerView {
                                                         }
                                                     });
                                                     cx.notify();
-                                                }),
-                                            ),
+                                                })),
                                     ),
                             ),
                     )
@@ -158,10 +153,7 @@ impl PlayerView {
                                             })
                                             .size(ButtonSize::Sm)
                                             .theme(theme.to_button_theme())
-                                            .build()
-                                            .on_mouse_up(
-                                                MouseButton::Left,
-                                                cx.listener(|view, _, _, cx| {
+                                            .on_click_event(cx.listener(|view, _, _, cx| {
                                                     view.state.update(cx, |state, _| {
                                                         state
                                                             .app
@@ -183,8 +175,7 @@ impl PlayerView {
                                                         }
                                                     });
                                                     cx.notify();
-                                                }),
-                                            ),
+                                                })),
                                     ),
                             ),
                     ),

@@ -1694,10 +1694,10 @@ impl PlayerView {
                     .size(ButtonSize::Xs)
                     .theme(theme.to_button_theme())
                     .build()
-                    .w(px(75.0)) // intentional: fixed segmented-button width for mode selector
-                    .on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(move |view, _, _, cx| {
+                    // intentional: .w() is a Stateful Div method, not on Button itself —
+                    // keep .build() so the segmented-button mode-selector width applies.
+                    .w(px(75.0))
+                    .on_mouse_up(MouseButton::Left, cx.listener(move |view, _, _, cx| {
                             view.state.update(cx, |state, _| {
                                 state
                                     .app
@@ -1707,8 +1707,7 @@ impl PlayerView {
                                     .mode = mode_val;
                             });
                             cx.notify();
-                        }),
-                    )
+                        }))
                     .into_any_element()
                 }))
         };
@@ -1955,10 +1954,7 @@ impl PlayerView {
                             .variant(ButtonVariant::Secondary)
                             .size(ButtonSize::Xs)
                             .theme(theme.to_button_theme())
-                            .build()
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|view, _, _, cx| {
+                            .on_click_event(cx.listener(|view, _, _, cx| {
                                     view.state.update(cx, |state, _| {
                                         state
                                             .app
@@ -1968,8 +1964,7 @@ impl PlayerView {
                                             .custom_target_modal_open = true;
                                     });
                                     cx.notify();
-                                }),
-                            ),
+                                })),
                     ),
                 ),
         );

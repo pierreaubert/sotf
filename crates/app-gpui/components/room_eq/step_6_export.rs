@@ -91,13 +91,9 @@ impl PlayerView {
                                 Button::new("backup_rack", "Save Rack Backup...")
                                     .variant(ButtonVariant::Secondary)
                                     .theme(theme.to_button_theme())
-                                    .build()
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(|view, _, _, cx| {
+                                    .on_click_event(cx.listener(|view, _, _, cx| {
                                             view.save_rack_backup(cx);
-                                        }),
-                                    ),
+                                        })),
                             ),
                     ),
             )
@@ -160,13 +156,9 @@ impl PlayerView {
                                         .variant(ButtonVariant::Primary)
                                         .size(ButtonSize::Sm)
                                         .theme(theme.to_button_theme())
-                                        .build()
-                                        .on_mouse_up(
-                                            MouseButton::Left,
-                                            cx.listener(|view, _, _, cx| {
+                                        .on_click_event(cx.listener(|view, _, _, cx| {
                                                 view.export_room_eq_format(cx);
-                                            }),
-                                        ),
+                                            })),
                                 ),
                         );
 
@@ -261,13 +253,9 @@ impl PlayerView {
                                 Button::new("apply_to_player", "Apply to Rack")
                                     .variant(ButtonVariant::Secondary)
                                     .theme(theme.to_button_theme())
-                                    .build()
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(|view, _, _, cx| {
+                                    .on_click_event(cx.listener(|view, _, _, cx| {
                                             view.apply_room_eq_to_player(cx);
-                                        }),
-                                    ),
+                                        })),
                             ),
                     ),
             );
@@ -294,13 +282,9 @@ impl PlayerView {
                                 Button::new("apply_as_graph", "Apply as Graph")
                                     .variant(ButtonVariant::Secondary)
                                     .theme(theme.to_button_theme())
-                                    .build()
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(|view, _, _, cx| {
+                                    .on_click_event(cx.listener(|view, _, _, cx| {
                                             view.apply_room_eq_as_graph(cx);
-                                        }),
-                                    ),
+                                        })),
                             ),
                     ),
             );
