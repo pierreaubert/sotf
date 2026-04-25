@@ -720,8 +720,19 @@ impl InPlacePlugin for LinearPhaseEqPlugin {
 
         // Guard: frame count must be less than FFT size for overlap-add to work
         if nf >= self.fft_size {
-            // Process in chunks of (fft_size - 1) if input is too large
-            // For now, pass through unchanged to avoid crash
+            let max_chunk_frames = self.fft_size - 1;
+            let mut frame = 0;
+            while frame < nf {
+                let chunk_frames = (nf - frame).min(max_chunk_frames);
+                let start = frame * nc;
+                let end = start + chunk_frames * nc;
+                let chunk_context = ProcessContext {
+                    sample_rate: context.sample_rate,
+                    num_frames: chunk_frames,
+                };
+                self.process_in_place(&mut buffer[start..end], &chunk_context)?;
+                frame += chunk_frames;
+            }
             return Ok(nf);
         }
 
@@ -982,6 +993,52 @@ mod tests {
             // especially at frequencies near Nyquist. 0.1 corresponds to ~0.8 dB.
             assert!(max_error < 0.1, "Passthrough error too large: {max_error}");
         }
+    }
+
+    #[test]
+    fn test_large_block_is_chunked_not_silently_bypassed() {
+        let channels = 1;
+        let sr = 48000;
+        let params = LinearPhaseEqPluginParams {
+            num_filters: 1,
+            fir_length_index: 1,
+            auto_gain: false,
+            mix: 1.0,
+            filters: vec![BandConfig {
+                filter_type: "Peak".to_string(),
+                frequency: 1000.0,
+                q: 1.0,
+                gain_db: 12.0,
+                active: true,
+            }],
+        };
+        let mut plugin = LinearPhaseEqPlugin::from_params(channels, sr, params).unwrap();
+        let num_frames = plugin.fft_size + 512;
+        let mut buffer = vec![0.0_f32; num_frames];
+        for (i, sample) in buffer.iter_mut().enumerate() {
+            let t = i as f32 / sr as f32;
+            *sample = (2.0 * std::f32::consts::PI * 1000.0 * t).sin() * 0.25;
+        }
+        let input = buffer.clone();
+
+        plugin
+            .process_in_place(
+                &mut buffer,
+                &ProcessContext {
+                    sample_rate: sr,
+                    num_frames,
+                },
+            )
+            .unwrap();
+
+        let changed = buffer
+            .iter()
+            .zip(input.iter())
+            .any(|(&out, &inp)| (out - inp).abs() > 1.0e-5);
+        assert!(
+            changed,
+            "large blocks must be processed, not passed through"
+        );
     }
 
     #[test]
