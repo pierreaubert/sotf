@@ -265,6 +265,7 @@ pub(super) fn process_single_speaker(
         if effective_target.shape != TargetShape::Flat
             || effective_target.preference.bass_shelf_db.abs() > 1e-6
             || effective_target.preference.treble_shelf_db.abs() > 1e-6
+            || super::home_cinema::role_target_curve_shape_active(channel_name, &effective_target)
         {
             info!(
                 "  Building target curve: shape={:?}, slope={:.2} dB/oct, bass={:+.1}dB, treble={:+.1}dB{}",
@@ -282,10 +283,14 @@ pub(super) fn process_single_speaker(
                     ""
                 },
             );
-            Some(target_tilt::build_complete_target_curve(
-                &curve.freq,
+            let mut target_curve =
+                target_tilt::build_complete_target_curve(&curve.freq, &effective_target);
+            super::home_cinema::apply_role_target_curve_shape(
+                channel_name,
+                &mut target_curve,
                 &effective_target,
-            ))
+            );
+            Some(target_curve)
         } else {
             None
         }

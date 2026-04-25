@@ -307,6 +307,11 @@ qa-roomeq-multiseat-guards:
 	cargo run --bin roomeq-qa-synthetic --no-default-features --release -- --multiseat-guards-only
 
 [group('qa-roomeq')]
+qa-roomeq-home-cinema:
+	cargo test -p autoeq home_cinema --lib -- --nocapture
+	cargo test -p autoeq validate_bass_management --lib -- --nocapture
+
+[group('qa-roomeq')]
 qa-roomeq-gd:
 	cargo test -p autoeq gd_opt -- --nocapture
 

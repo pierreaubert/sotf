@@ -552,6 +552,7 @@ fn validate_cross_option_interactions(config: &RoomConfig, result: &mut Validati
     validate_multi_measurement_weights(config, result);
     validate_cea2034_source_plausibility(config, result);
     validate_bass_management(config, result);
+    validate_role_targets(config, result);
 }
 
 /// Collect all `MeasurementSource`s referenced by a speaker, so the validator
@@ -702,6 +703,48 @@ fn validate_bass_management(config: &RoomConfig, result: &mut ValidationResult) 
              redirected bass; leave it false unless downstream routing separates LFE."
                 .to_string(),
         );
+    }
+}
+
+fn validate_role_targets(config: &RoomConfig, result: &mut ValidationResult) {
+    let Some(role_targets) = config
+        .optimizer
+        .target_response
+        .as_ref()
+        .and_then(|target| target.role_targets.as_ref())
+    else {
+        return;
+    };
+    if !role_targets.enabled {
+        return;
+    }
+
+    if role_targets.center_dialog_low_hz <= 0.0
+        || role_targets.center_dialog_high_hz <= role_targets.center_dialog_low_hz
+    {
+        result.add_error(format!(
+            "target_response.role_targets center dialog band must be positive and ordered; got {}..{} Hz",
+            role_targets.center_dialog_low_hz, role_targets.center_dialog_high_hz
+        ));
+    }
+    if role_targets.cinema_x_curve_start_hz <= 0.0 {
+        result.add_error(format!(
+            "target_response.role_targets.cinema_x_curve_start_hz ({}) must be positive",
+            role_targets.cinema_x_curve_start_hz
+        ));
+    }
+    if let Some(distance_m) = role_targets.listening_distance_m
+        && distance_m <= 0.0
+    {
+        result.add_error(format!(
+            "target_response.role_targets.listening_distance_m ({distance_m}) must be positive"
+        ));
+    }
+    if role_targets.cinema_reference_distance_m <= 0.0 {
+        result.add_error(format!(
+            "target_response.role_targets.cinema_reference_distance_m ({}) must be positive",
+            role_targets.cinema_reference_distance_m
+        ));
     }
 }
 
@@ -870,6 +913,59 @@ mod tests {
         );
     }
 
+    #[test]
+    fn validate_bass_management_rejects_negative_headroom_and_boost() {
+        let mut speakers = HashMap::new();
+        speakers.insert(
+            "sub".to_string(),
+            SpeakerConfig::Single(MeasurementSource::Single(MeasurementSingle {
+                measurement: MeasurementRef::Path(PathBuf::from("sub.csv")),
+                speaker_name: None,
+            })),
+        );
+        let config = RoomConfig {
+            version: default_config_version(),
+            system: Some(SystemConfig {
+                model: SystemModel::HomeCinema,
+                speakers: HashMap::from([("Sub".to_string(), "sub".to_string())]),
+                subwoofers: Some(SubwooferSystemConfig {
+                    config: SubwooferStrategy::Single,
+                    crossover: Some("xo".to_string()),
+                    mapping: HashMap::new(),
+                }),
+                bass_management: Some(BassManagementConfig {
+                    max_sub_boost_db: -1.0,
+                    headroom_margin_db: -3.0,
+                    ..Default::default()
+                }),
+            }),
+            speakers,
+            crossovers: Some(HashMap::from([(
+                "xo".to_string(),
+                CrossoverConfig {
+                    crossover_type: "LR24".to_string(),
+                    frequency: Some(80.0),
+                    frequencies: None,
+                    frequency_range: None,
+                },
+            )])),
+            target_curve: None,
+            optimizer: OptimizerConfig::default(),
+            recording_config: None,
+            cea2034_cache: None,
+        };
+
+        let result = validate_room_config(&config);
+        assert!(!result.is_valid);
+        assert!(result.errors.iter().any(|e| e.contains("max_sub_boost_db")));
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("headroom_margin_db"))
+        );
+    }
+
     // ========================================================================
     // Group 4: Algorithm validation
     // ========================================================================
@@ -944,6 +1040,68 @@ mod tests {
                 .any(|w| w.contains("Unknown algorithm")),
             "Unknown algorithm should produce a warning, but warnings: {:?}",
             result.warnings
+        );
+    }
+
+    #[test]
+    fn validate_role_targets_rejects_invalid_bands_and_distances() {
+        let mut speakers = HashMap::new();
+        speakers.insert(
+            "C".to_string(),
+            SpeakerConfig::Single(MeasurementSource::Single(MeasurementSingle {
+                measurement: MeasurementRef::Path(PathBuf::from("center.csv")),
+                speaker_name: None,
+            })),
+        );
+        let config = RoomConfig {
+            version: default_config_version(),
+            system: None,
+            speakers,
+            crossovers: None,
+            target_curve: None,
+            optimizer: OptimizerConfig {
+                target_response: Some(TargetResponseConfig {
+                    role_targets: Some(RoleTargetConfig {
+                        center_dialog_low_hz: 5000.0,
+                        center_dialog_high_hz: 500.0,
+                        cinema_x_curve_start_hz: 0.0,
+                        listening_distance_m: Some(-1.0),
+                        cinema_reference_distance_m: 0.0,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            recording_config: None,
+            cea2034_cache: None,
+        };
+
+        let result = validate_room_config(&config);
+        assert!(!result.is_valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("center dialog band"))
+        );
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("cinema_x_curve_start_hz"))
+        );
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("listening_distance_m"))
+        );
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("cinema_reference_distance_m"))
         );
     }
 }

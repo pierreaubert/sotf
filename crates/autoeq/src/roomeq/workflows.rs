@@ -649,7 +649,7 @@ pub fn optimize_stereo_2_1(
 ) -> Result<RoomOptimizationResult> {
     info!("Running Stereo 2.1 Optimization Workflow");
 
-    let sub_role = "LFE";
+    let sub_role = super::home_cinema::bass_output_role(config, sys);
 
     // Load L and R (must be Single speaker configs)
     let mut curves = HashMap::new();
@@ -688,12 +688,12 @@ pub fn optimize_stereo_2_1(
             message: "Missing subwoofers configuration".to_string(),
         })?;
 
-    let lfe_meas_key = sys
-        .speakers
-        .get(sub_role)
-        .ok_or(AutoeqError::InvalidConfiguration {
-            message: "Missing speaker mapping for 'LFE'".to_string(),
-        })?;
+    let lfe_meas_key =
+        sys.speakers
+            .get(sub_role.as_str())
+            .ok_or(AutoeqError::InvalidConfiguration {
+                message: format!("Missing speaker mapping for '{}'", sub_role),
+            })?;
     let lfe_speaker_config =
         config
             .speakers
@@ -708,7 +708,7 @@ pub fn optimize_stereo_2_1(
         &config.optimizer,
         sample_rate,
     )?;
-    curves.insert(sub_role.to_string(), sub_preprocess.combined_curve.clone());
+    curves.insert(sub_role.clone(), sub_preprocess.combined_curve.clone());
 
     let xover_key = sub_sys
         .crossover
@@ -747,7 +747,7 @@ pub fn optimize_stereo_2_1(
     ranges.insert("L".to_string(), (max_xo, 2000.0));
     ranges.insert("R".to_string(), (max_xo, 2000.0));
     let sub_min_align = config.optimizer.min_freq.max(20.0);
-    ranges.insert(sub_role.to_string(), (sub_min_align, max_xo));
+    ranges.insert(sub_role.clone(), (sub_min_align, max_xo));
 
     let gains = align_channels_to_lowest(&curves, &ranges);
 
@@ -806,15 +806,15 @@ pub fn optimize_stereo_2_1(
             sub_role, max_xo
         );
         let (chain, ch_result, _pre_score, _post_score, _fir) = run_channel_via_generic_path(
-            sub_role,
+            &sub_role,
             &sub_source,
             &sub_config,
             0.0,
             sample_rate,
             output_dir,
         )?;
-        pre_eq_plugins.insert(sub_role.to_string(), chain.plugins);
-        linearized_curves.insert(sub_role.to_string(), ch_result.final_curve);
+        pre_eq_plugins.insert(sub_role.clone(), chain.plugins);
+        linearized_curves.insert(sub_role.clone(), ch_result.final_curve);
     }
 
     // Aligned linearized curves: post-feature curves at the listening level
@@ -823,7 +823,7 @@ pub fn optimize_stereo_2_1(
     // the raw `aligned_curves`) is what makes the Post-EQ step see the
     // same curve the listener will hear after the feature stack.
     let mut aligned_pre_eq_curves: HashMap<String, Curve> = HashMap::new();
-    for role in ["L", "R", sub_role] {
+    for role in ["L", "R", sub_role.as_str()] {
         let mut c = linearized_curves[role].clone();
         let g = *gains.get(role).unwrap_or(&0.0);
         for s in c.spl.iter_mut() {
@@ -836,7 +836,7 @@ pub fn optimize_stereo_2_1(
     // Virtual Main = complex sum of aligned + linearized L and R
     let l_curve = &aligned_pre_eq_curves["L"];
     let r_curve = &aligned_pre_eq_curves["R"];
-    let sub_curve = &aligned_pre_eq_curves[sub_role];
+    let sub_curve = &aligned_pre_eq_curves[&sub_role];
 
     // Virtual Main = complex sum of L and R, divided by 2.
     //
@@ -940,7 +940,7 @@ pub fn optimize_stereo_2_1(
         false,
     );
     let sub_post_initial = apply_chain(
-        &aligned_pre_eq_curves[sub_role],
+        &aligned_pre_eq_curves[&sub_role],
         &lp_biquads,
         sub_gain_post,
         0.0,
@@ -1063,7 +1063,7 @@ pub fn optimize_stereo_2_1(
         let sub_after_eq = response::apply_complex_response(&sub_post, &eq_resp);
         let post = compute_flat_loss(&sub_after_eq, sub_min_score, final_xo_freq);
         if post < pre {
-            post_eq_filters.insert(sub_role.to_string(), filters);
+            post_eq_filters.insert(sub_role.clone(), filters);
         } else {
             log::warn!(
                 "  Sub Post-EQ discarded: score regressed from {:.4} to {:.4}",
@@ -1146,12 +1146,12 @@ pub fn optimize_stereo_2_1(
     //            sub EQ — CEA2034 skipped since no speaker_name on the
     //            inline source] -> Crossover(LP) -> SubGain(Invert) -> PostEQ
     let mut sub_plugins = Vec::new();
-    let sub_align_gain = *gains.get(sub_role).unwrap_or(&0.0);
+    let sub_align_gain = *gains.get(&sub_role).unwrap_or(&0.0);
     if sub_align_gain.abs() > 0.01 {
         sub_plugins.push(output::create_gain_plugin(sub_align_gain));
     }
 
-    if let Some(stack) = pre_eq_plugins.get(sub_role) {
+    if let Some(stack) = pre_eq_plugins.get(&sub_role) {
         sub_plugins.extend(stack.clone());
     }
 
@@ -1174,7 +1174,7 @@ pub fn optimize_stereo_2_1(
         sub_plugins.push(output::create_delay_plugin(sub_delay_post));
     }
 
-    let sub_eqs = post_eq_filters.get(sub_role);
+    let sub_eqs = post_eq_filters.get(&sub_role);
     if let Some(e) = sub_eqs {
         sub_plugins.push(output::create_eq_plugin(e));
     }
@@ -1219,11 +1219,11 @@ pub fn optimize_stereo_2_1(
             .collect()
     });
 
-    let sub_initial_data: super::types::CurveData = (&aligned_curves[sub_role]).into();
+    let sub_initial_data: super::types::CurveData = (&aligned_curves[&sub_role]).into();
     let sub_final_data: super::types::CurveData = (&final_sub_curve).into();
     let sub_eq_resp = super::output::compute_eq_response(&sub_initial_data, &sub_final_data);
     let sub_chain = ChannelDspChain {
-        channel: sub_role.to_string(),
+        channel: sub_role.clone(),
         plugins: sub_plugins,
         drivers: driver_chains,
         initial_curve: Some(sub_initial_data),
@@ -1233,7 +1233,7 @@ pub fn optimize_stereo_2_1(
         post_ir: None,
         target_curve: None,
     };
-    channel_chains.insert(sub_role.to_string(), sub_chain);
+    channel_chains.insert(sub_role.clone(), sub_chain);
 
     // Compute scores per channel
     // Each channel is scored in its operating range:
@@ -1281,14 +1281,14 @@ pub fn optimize_stereo_2_1(
         pre_scores.push(pre_score);
         post_scores.push(post_score);
         channel_results.insert(
-            sub_role.to_string(),
+            sub_role.clone(),
             ChannelOptimizationResult {
-                name: sub_role.to_string(),
+                name: sub_role.clone(),
                 pre_score,
                 post_score,
-                initial_curve: aligned_curves[sub_role].clone(),
+                initial_curve: aligned_curves[&sub_role].clone(),
                 final_curve: final_sub_curve.clone(),
-                biquads: post_eq_filters.get(sub_role).cloned().unwrap_or_default(),
+                biquads: post_eq_filters.get(&sub_role).cloned().unwrap_or_default(),
                 fir_coeffs: None,
             },
         );
@@ -1321,8 +1321,8 @@ pub fn optimize_stereo_2_1(
             epa_per_channel,
             group_delay: None,
             perceptual_metrics: None,
-            home_cinema_layout: None,
-            multi_seat_coverage: None,
+            home_cinema_layout: Some(super::home_cinema::analyze_layout(config)),
+            multi_seat_coverage: Some(super::home_cinema::multi_seat_coverage(config)),
             bass_management: super::home_cinema::bass_management_report(
                 config,
                 Some(sub_gain_post),
@@ -1343,21 +1343,21 @@ pub fn optimize_home_cinema(
     sample_rate: f64,
     _output_dir: &Path,
 ) -> Result<RoomOptimizationResult> {
-    let sub_role = "LFE";
-    let has_sub = sys.speakers.contains_key(sub_role);
+    let sub_role = super::home_cinema::bass_output_role(config, sys);
+    let has_sub = sys.speakers.contains_key(&sub_role);
 
     // Classify channels into main and sub
     let main_roles: Vec<String> = sys
         .speakers
         .keys()
-        .filter(|r| *r != sub_role)
+        .filter(|r| *r != &sub_role)
         .cloned()
         .collect();
 
     info!(
         "Running Home Cinema Optimization Workflow ({} mains{})",
         main_roles.len(),
-        if has_sub { " + LFE" } else { "" }
+        if has_sub { " + bass-managed sub" } else { "" }
     );
 
     // 1. Load main channel measurements
@@ -1392,20 +1392,23 @@ pub fn optimize_home_cinema(
         curves.insert(role.clone(), curve);
     }
 
-    // Load LFE if present (handles Single, MultiSub/MSO, Cardioid, DBA)
+    // Load bass output if present (handles Single, MultiSub/MSO, Cardioid, DBA)
     let sub_preprocess = if has_sub {
         let sub_sys = sys
             .subwoofers
             .as_ref()
             .ok_or(AutoeqError::InvalidConfiguration {
-                message: "Missing subwoofers configuration for home cinema with LFE".to_string(),
+                message: format!(
+                    "Missing subwoofers configuration for home cinema with '{}'",
+                    sub_role
+                ),
             })?;
-        let lfe_meas_key = sys
-            .speakers
-            .get(sub_role)
-            .ok_or(AutoeqError::InvalidConfiguration {
-                message: "Missing speaker mapping for 'LFE'".to_string(),
-            })?;
+        let lfe_meas_key =
+            sys.speakers
+                .get(&sub_role)
+                .ok_or(AutoeqError::InvalidConfiguration {
+                    message: format!("Missing speaker mapping for '{}'", sub_role),
+                })?;
         let lfe_speaker_config =
             config
                 .speakers
@@ -1419,7 +1422,7 @@ pub fn optimize_home_cinema(
             &config.optimizer,
             sample_rate,
         )?;
-        curves.insert(sub_role.to_string(), sp.combined_curve.clone());
+        curves.insert(sub_role.clone(), sp.combined_curve.clone());
         Some(sp)
     } else {
         None
@@ -1512,8 +1515,8 @@ fn optimize_home_cinema_no_sub(
             epa_per_channel,
             group_delay: None,
             perceptual_metrics: None,
-            home_cinema_layout: None,
-            multi_seat_coverage: None,
+            home_cinema_layout: Some(super::home_cinema::analyze_layout(config)),
+            multi_seat_coverage: Some(super::home_cinema::multi_seat_coverage(config)),
             bass_management: None,
         },
     })
@@ -1534,7 +1537,7 @@ fn optimize_home_cinema_with_sub(
     sample_rate: f64,
     output_dir: &Path,
 ) -> Result<RoomOptimizationResult> {
-    let sub_role = "LFE";
+    let sub_role = super::home_cinema::bass_output_role(config, sys);
 
     // Resolve crossover config
     let sub_sys = sys.subwoofers.as_ref().unwrap();
@@ -1570,7 +1573,7 @@ fn optimize_home_cinema_with_sub(
         ranges.insert(role.clone(), (max_xo, 2000.0));
     }
     let sub_min_align = config.optimizer.min_freq.max(20.0);
-    ranges.insert(sub_role.to_string(), (sub_min_align, max_xo));
+    ranges.insert(sub_role.clone(), (sub_min_align, max_xo));
 
     let gains = align_channels_to_lowest(curves, &ranges);
 
@@ -1618,15 +1621,15 @@ fn optimize_home_cinema_with_sub(
             sub_role, max_xo
         );
         let (chain, ch_result, _pre, _post, _fir) = run_channel_via_generic_path(
-            sub_role,
+            &sub_role,
             &sub_source,
             &sub_config,
             0.0,
             sample_rate,
             output_dir,
         )?;
-        pre_eq_plugins.insert(sub_role.to_string(), chain.plugins);
-        linearized_curves.insert(sub_role.to_string(), ch_result.final_curve);
+        pre_eq_plugins.insert(sub_role.clone(), chain.plugins);
+        linearized_curves.insert(sub_role.clone(), ch_result.final_curve);
     }
 
     // Aligned linearized curves (post-feature, at listening level) — used
@@ -1641,12 +1644,12 @@ fn optimize_home_cinema_with_sub(
         aligned_pre_eq_curves.insert(role.clone(), c);
     }
     {
-        let mut c = linearized_curves[sub_role].clone();
-        let g = *gains.get(sub_role).unwrap_or(&0.0);
+        let mut c = linearized_curves[&sub_role].clone();
+        let g = *gains.get(&sub_role).unwrap_or(&0.0);
         for s in c.spl.iter_mut() {
             *s += g;
         }
-        aligned_pre_eq_curves.insert(sub_role.to_string(), c);
+        aligned_pre_eq_curves.insert(sub_role.clone(), c);
     }
 
     // 3. Virtual Main = coherent complex sum of all feature-corrected mains
@@ -1657,7 +1660,7 @@ fn optimize_home_cinema_with_sub(
     let virtual_main = complex_sum_mains(&main_refs);
 
     // 4. Crossover optimization between Virtual Main and LFE
-    let sub_curve = &aligned_pre_eq_curves[sub_role];
+    let sub_curve = &aligned_pre_eq_curves[&sub_role];
 
     let crossover_type_enum: crate::loss::CrossoverType = xover_type_str
         .parse()
@@ -1721,8 +1724,11 @@ fn optimize_home_cinema_with_sub(
         let post = apply_chain(&aligned_pre_eq_curves[role], &hp_biquads, main_gain_post);
         main_post_curves.insert(role.clone(), post);
     }
-    let sub_post_initial =
-        apply_chain(&aligned_pre_eq_curves[sub_role], &lp_biquads, sub_gain_post);
+    let sub_post_initial = apply_chain(
+        &aligned_pre_eq_curves[&sub_role],
+        &lp_biquads,
+        sub_gain_post,
+    );
 
     // Re-align sub level post-crossover (use first main as reference)
     // Each curve has its own frequency grid, so use the correct one for each.
@@ -1829,7 +1835,7 @@ fn optimize_home_cinema_with_sub(
         let sub_after_eq = response::apply_complex_response(&sub_post, &eq_resp);
         let post = compute_flat_loss(&sub_after_eq, sub_min_score, final_xo_freq);
         if post < pre {
-            post_eq_filters.insert(sub_role.to_string(), filters);
+            post_eq_filters.insert(sub_role.clone(), filters);
         } else {
             log::warn!(
                 "  Sub Post-EQ discarded: score regressed from {:.4} to {:.4}",
@@ -1910,12 +1916,12 @@ fn optimize_home_cinema_with_sub(
     // Sub chain: AlignGain -> [Pre-EQ feature stack] -> Crossover(LP)
     //            -> SubGain(Invert) -> Delay -> PostEQ
     let mut sub_plugins = Vec::new();
-    let sub_align_gain = *gains.get(sub_role).unwrap_or(&0.0);
+    let sub_align_gain = *gains.get(&sub_role).unwrap_or(&0.0);
     if sub_align_gain.abs() > 0.01 {
         sub_plugins.push(output::create_gain_plugin(sub_align_gain));
     }
 
-    if let Some(stack) = pre_eq_plugins.get(sub_role) {
+    if let Some(stack) = pre_eq_plugins.get(&sub_role) {
         sub_plugins.extend(stack.clone());
     }
 
@@ -1937,7 +1943,7 @@ fn optimize_home_cinema_with_sub(
         sub_plugins.push(output::create_delay_plugin(sub_delay_post));
     }
 
-    let sub_eqs = post_eq_filters.get(sub_role);
+    let sub_eqs = post_eq_filters.get(&sub_role);
     if let Some(e) = sub_eqs
         && !e.is_empty()
     {
@@ -1987,11 +1993,11 @@ fn optimize_home_cinema_with_sub(
             .collect()
     });
 
-    let sub_initial_data: super::types::CurveData = (&aligned_curves[sub_role]).into();
+    let sub_initial_data: super::types::CurveData = (&aligned_curves[&sub_role]).into();
     let sub_final_data: super::types::CurveData = (&final_sub_curve).into();
     let sub_eq_resp = super::output::compute_eq_response(&sub_initial_data, &sub_final_data);
     let sub_chain = ChannelDspChain {
-        channel: sub_role.to_string(),
+        channel: sub_role.clone(),
         plugins: sub_plugins,
         drivers: driver_chains,
         initial_curve: Some(sub_initial_data),
@@ -2001,7 +2007,7 @@ fn optimize_home_cinema_with_sub(
         post_ir: None,
         target_curve: None,
     };
-    channel_chains.insert(sub_role.to_string(), sub_chain);
+    channel_chains.insert(sub_role.clone(), sub_chain);
 
     // 8. Compute scores
     let max_freq = config.optimizer.max_freq;
@@ -2049,14 +2055,14 @@ fn optimize_home_cinema_with_sub(
         pre_scores.push(pre_score);
         post_scores.push(post_score);
         channel_results.insert(
-            sub_role.to_string(),
+            sub_role.clone(),
             ChannelOptimizationResult {
-                name: sub_role.to_string(),
+                name: sub_role.clone(),
                 pre_score,
                 post_score,
-                initial_curve: aligned_curves[sub_role].clone(),
+                initial_curve: aligned_curves[&sub_role].clone(),
                 final_curve: final_sub_curve.clone(),
-                biquads: post_eq_filters.get(sub_role).cloned().unwrap_or_default(),
+                biquads: post_eq_filters.get(&sub_role).cloned().unwrap_or_default(),
                 fir_coeffs: None,
             },
         );
@@ -2089,8 +2095,8 @@ fn optimize_home_cinema_with_sub(
             epa_per_channel,
             group_delay: None,
             perceptual_metrics: None,
-            home_cinema_layout: None,
-            multi_seat_coverage: None,
+            home_cinema_layout: Some(super::home_cinema::analyze_layout(config)),
+            multi_seat_coverage: Some(super::home_cinema::multi_seat_coverage(config)),
             bass_management: super::home_cinema::bass_management_report(
                 config,
                 Some(sub_gain_post),

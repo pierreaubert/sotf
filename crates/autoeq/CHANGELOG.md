@@ -126,14 +126,24 @@ variance-only heuristic.
   trim, positive sub-boost limits, and headroom margin metadata.
 - Added optional role-aware target adjustments under
   `target_response.role_targets` for center, surround, height, subwoofer, and
-  LFE channels.
+  LFE channels, including role-specific slope offsets, center dialog-band
+  emphasis, cinema/X-curve style treble rolloff, and listening-distance
+  compensation.
+- Home-cinema layout metadata now records the target profile/advisory chosen
+  for each logical channel so QA and downstream UIs can tell which role target
+  was actually used.
 - Final metadata now reports detected home-cinema layout and multi-position
   measurement coverage, including whether non-sub channels have multiple
   measurements for future all-channel multi-seat correction.
 - X.1 workflows now honor bass-management sub trim and cap positive sub gain
   so crossover/sub alignment cannot silently consume the configured headroom.
+- X.1 workflows now resolve the physical bass output from
+  `system.bass_management.lfe_channel` / sub-role labels instead of assuming
+  the channel must literally be named `LFE`.
 - Channel matching and final score bands now use the shared role model instead
   of ad-hoc channel-name parsing.
+- Added `qa-roomeq-home-cinema` for focused home-cinema role and
+  bass-management guards.
 
 # 0.4.36
 
