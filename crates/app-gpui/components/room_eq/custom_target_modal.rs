@@ -13,8 +13,7 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_px::{ChartTheme, ScaleType, line};
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, Dialog, DialogSize, Text, TextSize, TextWeight,
-    theme::ThemeExt,
+    Button, ButtonSize, ButtonVariant, Dialog, DialogSize, Text, TextSize, theme::ThemeExt,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -315,12 +314,7 @@ impl PlayerView {
                             .flex()
                             .justify_between()
                             .items_center()
-                            .child(
-                                Text::new("Custom Target Curve Editor")
-                                    .size(TextSize::Md)
-                                    .weight(TextWeight::Semibold)
-                                    .color(theme.text_primary),
-                            )
+                            .child(Text::section_header("Custom Target Curve Editor"))
                             .child(
                                 div()
                                     .relative()

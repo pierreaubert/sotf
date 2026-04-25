@@ -91,6 +91,7 @@ styling later only needs to update one function in `gpui-ui-kit/src/text.rs`.
 | Data value in a table cell or row | `Text::new(content).size(TextSize::Sm)` | `Sm` (~14 px) | `Normal` | Match the paired label size unless the value needs emphasis. |
 | Status / info message (toast, inline alert) | `Text::new(content).size(TextSize::Sm)` | `Sm` (~14 px) | `Normal` or `Medium` | Prominent but not overwhelming; use the theme's semantic color (`theme.error`, `theme.warning`, `theme.success`) not raw accent. |
 | Caption / helper text (field hint, timestamp, unit suffix) | `Text::caption(content)` | `Xs` (~12 px) | `Normal` | `muted(true)` pulls `theme.text_muted`. |
+| Radio-button-style selectable option label (dense list of choices) | `Text::selectable(content, is_selected)` | `Xs` (~12 px) | `Semibold` when selected, `Normal` otherwise | Caller chains `.color(theme.label_color)`. Captures the selection-state pattern; lint stays silent on the equivalent dynamic-weight chain. |
 | Badge content | `Badge::new(content)` (handles its own sizing) | — | — | Don't hand-build; use the `Badge` component. |
 | Chart axis tick, micro-type on a meter, tiny diagnostic readout | `.text_size(d.text_xs)` on a raw `div()` | rems(0.625) (~10 px) | varies | `d.text_xs` is intentionally smaller than `TextSize::Xs`; reserve for chart internals and similar dense micro-type. |
 
@@ -111,3 +112,27 @@ styling later only needs to update one function in `gpui-ui-kit/src/text.rs`.
 The tests read the constructor's state via `Text::preset_style()` so any
 change surfaces immediately — audit the corresponding call sites before
 updating the expected values.
+
+**Drift guard.** `scripts/check-design-tokens.py` flags new manual
+builder chains that match a semantic constructor. Each pattern is
+behavior-equivalent to the suggested constructor, so the fix is
+mechanical:
+
+| Manual chain | Suggested constructor |
+|---|---|
+| `Text::new(x).size(Xs).muted(true)` (or `.color(theme.text_muted)`) | `Text::caption(x)` |
+| `Text::new(x).size(Xs).weight(Bold)` | `Text::eyebrow(x)` |
+| `Text::new(x).size(Md).weight(Semibold)` (or `Sm+Semibold`) | `Text::section_header(x)` |
+| `Text::new(x).size(Sm).weight(Medium)` | `Text::label(x)` |
+| `Text::new(x).size(Md).weight(Bold)` | `Heading::h4(x)` |
+
+Dynamic weight like `weight(if cond { Semibold } else { Normal })`
+does NOT trigger the lint — the literal `(TextWeight::X)` shape is
+required. Sites that should keep the manual chain (numeric value
+emphasis, button captions, selection-state indicators, etc.) opt out
+with the same `// intentional: <reason>` comment system as the
+existing px drift guard. Run locally with:
+
+```bash
+python3 scripts/check-design-tokens.py
+```

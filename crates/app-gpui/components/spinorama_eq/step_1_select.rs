@@ -264,6 +264,7 @@ impl PlayerView {
                             VStack::new()
                                 .spacing(StackSpacing::Sm)
                                 .child(
+                                    // intentional: selected-speaker accent display, not a heading
                                     Text::new(speaker)
                                         .size(TextSize::Md)
                                         .weight(TextWeight::Bold)

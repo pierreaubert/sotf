@@ -8,7 +8,7 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Checkbox, CheckboxSize, Dialog, DialogSize, HStack,
-    StackAlign, StackJustify, StackSize, StackSpacing, Text, TextSize, TextWeight, VStack,
+    StackAlign, StackJustify, StackSize, StackSpacing, Text, TextSize, VStack,
 };
 
 // ============================================================================
@@ -474,12 +474,7 @@ impl PlayerView {
                         let theme = theme.clone();
                         VStack::new()
                             .spacing(StackSpacing::Xs)
-                            .child(
-                                Text::new(section.heading)
-                                    .size(TextSize::Sm)
-                                    .weight(TextWeight::Semibold)
-                                    .color(theme.accent),
-                            )
+                            .child(Text::section_header(section.heading).color(theme.accent))
                             .children(section.bullets.iter().map(|&bullet| {
                                 HStack::new()
                                     .spacing(StackSpacing::Xs)

@@ -43,12 +43,7 @@ impl PlayerView {
                 VStack::new()
                     .spacing(StackSpacing::Xs)
                     // Global keybindings section
-                    .child(
-                        Text::new("GLOBAL KEYBINDINGS")
-                            .size(TextSize::Md)
-                            .weight(TextWeight::Semibold)
-                            .color(theme.accent),
-                    )
+                    .child(Text::section_header("GLOBAL KEYBINDINGS").color(theme.accent))
                     .child(self.render_keybinding_row(
                         "Shift-L/Q/P/O/D",
                         "Jump to Library/Queue/Plugins/Devices/Directories",
@@ -61,10 +56,11 @@ impl PlayerView {
                     .child(div().h_4()) // Spacer
                     // Screen-specific keybindings section
                     .child(
-                        Text::new(format!("{} KEYBINDINGS", screen_name.to_uppercase()))
-                            .size(TextSize::Md)
-                            .weight(TextWeight::Semibold)
-                            .color(theme.accent),
+                        Text::section_header(format!(
+                            "{} KEYBINDINGS",
+                            screen_name.to_uppercase()
+                        ))
+                        .color(theme.accent),
                     )
                     .children(keybindings.iter().map(|(key, desc)| {
                         self.render_keybinding_row(key, desc, &theme)
@@ -317,12 +313,7 @@ impl PlayerView {
                         VStack::new()
                             .spacing(StackSpacing::Sm)
                             .align(StackAlign::Center)
-                            .child(
-                                Text::new("Your music library is empty")
-                                    .size(TextSize::Md)
-                                    .weight(TextWeight::Semibold)
-                                    .color(theme.text_primary),
-                            )
+                            .child(Text::section_header("Your music library is empty"))
                             .child(
                                 Text::new("Would you like to add music folders or remote sources?")
                                     .size(TextSize::Sm)
@@ -366,6 +357,7 @@ impl PlayerView {
                                     .bg(theme.accent)
                                     .cursor_pointer()
                                     .hover(|s| s.bg(theme.accent_muted))
+                                    // intentional: button caption inside accent-bg div, not a header
                                     .child(
                                         Text::new("Add Music Folders")
                                             .size(TextSize::Sm)

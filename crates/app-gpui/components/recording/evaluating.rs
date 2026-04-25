@@ -606,12 +606,7 @@ impl PlayerView {
             .items_center()
             .justify_center()
             .gap(d.gap)
-            .child(
-                Text::new("No Recordings Available")
-                    .size(TextSize::Sm)
-                    .weight(TextWeight::Semibold)
-                    .color(theme.text_secondary),
-            )
+            .child(Text::section_header("No Recordings Available").color(theme.text_secondary))
             .child(Text::caption(
                 "Go back to the Capture step to record frequency responses",
             ))
@@ -1186,6 +1181,7 @@ impl PlayerView {
                                         .color(theme.text_secondary),
                                 )
                                 .child(
+                                    // intentional: numeric "N / M" count display, not a heading
                                     Text::new(format!("{} / {}", recorded_count, total_count))
                                         .size(TextSize::Md)
                                         .weight(TextWeight::Bold)
