@@ -584,7 +584,6 @@ fn read_ring_buffer(
     scratch: &mut [f32],
     requested: usize,
     state: &CpalPlaybackState,
-    event_tx: &Sender<ThreadEvent>,
     capacity: usize,
 ) -> bool {
     state
@@ -644,12 +643,7 @@ fn read_ring_buffer(
             scratch[available..requested].fill(0.0);
         }
         underrun = true;
-        let current_underruns = state.underrun_count.fetch_add(1, Ordering::Relaxed) + 1;
-        if current_underruns == 1 || current_underruns.is_multiple_of(100) {
-            event_tx
-                .send(ThreadEvent::PlaybackUnderrun(current_underruns))
-                .ok();
-        }
+        state.underrun_count.fetch_add(1, Ordering::Relaxed);
     }
 
     let slots = consumer.slots();
@@ -718,7 +712,6 @@ fn build_output_stream_f32(
     mut consumer: Consumer<f32>,
 ) -> Result<Stream, String> {
     let state_clone = Arc::clone(&state);
-    let event_tx_data = event_tx.clone();
     let capacity = state.capacity;
 
     let stream = device
@@ -726,14 +719,7 @@ fn build_output_stream_f32(
             config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
                 state_clone.callback_count.fetch_add(1, Ordering::Relaxed);
-                read_ring_buffer(
-                    &mut consumer,
-                    data,
-                    data.len(),
-                    &state_clone,
-                    &event_tx_data,
-                    capacity,
-                );
+                read_ring_buffer(&mut consumer, data, data.len(), &state_clone, capacity);
                 apply_volume_clamp(data, &state_clone);
             },
             move |err| {
@@ -763,7 +749,6 @@ where
     T: cpal::SizedSample + cpal::FromSample<f32>,
 {
     let state_clone = Arc::clone(&state);
-    let event_tx_data = event_tx.clone();
     let capacity = state.capacity;
     let mut scratch = vec![0.0f32; 16384];
 
@@ -781,7 +766,6 @@ where
                         &mut scratch[..chunk_len],
                         chunk_len,
                         &state_clone,
-                        &event_tx_data,
                         capacity,
                     );
                     apply_volume_clamp(&mut scratch[..chunk_len], &state_clone);

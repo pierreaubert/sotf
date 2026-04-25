@@ -483,6 +483,7 @@ fn run_playback_thread(
     let mut last_callback_count: u64 = 0;
     let mut last_callback_check = std::time::Instant::now();
     let callback_stall_timeout = std::time::Duration::from_secs(3);
+    let mut last_reported_underruns: u64 = 0;
 
     // Main loop: read from queue and write to ring buffer
     loop {
@@ -876,6 +877,18 @@ fn run_playback_thread(
                 event_tx.send(ThreadEvent::ProcessingError(msg)).ok();
                 break;
             }
+        }
+
+        let current_underruns = state.underrun_count.load(Ordering::Relaxed);
+        if current_underruns != last_reported_underruns
+            && (current_underruns == 1
+                || current_underruns.is_multiple_of(100)
+                || last_reported_underruns == 0)
+        {
+            event_tx
+                .send(ThreadEvent::PlaybackUnderrun(current_underruns))
+                .ok();
+            last_reported_underruns = current_underruns;
         }
 
         // Check if ring buffer has space
@@ -1434,7 +1447,6 @@ fn read_ring_buffer(
     scratch: &mut [f32],
     requested: usize,
     state: &PlaybackState,
-    event_tx: &Sender<ThreadEvent>,
     capacity: usize,
 ) -> bool {
     // Track sample count (callback_count is tracked by callers, once per cpal callback)
@@ -1508,23 +1520,7 @@ fn read_ring_buffer(
         }
 
         underrun = true;
-        let current_underruns = state.underrun_count.fetch_add(1, Ordering::Relaxed) + 1;
-        if current_underruns == 1 || current_underruns.is_multiple_of(100) {
-            event_tx
-                .send(ThreadEvent::PlaybackUnderrun(current_underruns))
-                .ok();
-        }
-        // TEMP DEBUG: REMOVE AFTER DIAGNOSIS — log the shape of the underrun
-        // so we can tell if cpal is asking for more than the producer delivers
-        // (systemic deficit) vs empty queue (scheduling). Log only on the
-        // first ~5 underruns to avoid flooding.
-        if current_underruns <= 5 {
-            log::warn!(
-                "[UNDERRUN_DIAG] underrun #{current_underruns}: requested={requested}, available={available}, deficit={} (missing {:.1}%)",
-                requested - available,
-                (requested - available) as f64 / requested as f64 * 100.0,
-            );
-        }
+        state.underrun_count.fetch_add(1, Ordering::Relaxed);
     }
 
     // Update buffer level metric
@@ -1598,32 +1594,14 @@ fn build_output_stream_f32(
     mut consumer: Consumer<f32>,
 ) -> Result<Stream, String> {
     let state_clone = Arc::clone(&state);
-    let event_tx_data = event_tx.clone();
     let capacity = state.capacity;
 
     let stream = device
         .build_output_stream(
             config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                let cb_idx = state_clone.callback_count.fetch_add(1, Ordering::Relaxed);
-                // TEMP DEBUG: REMOVE AFTER DIAGNOSIS — one-shot log of the
-                // actual cpal chunk size so we can compare against producer
-                // frame size (usually 2048 samples = 1024 stereo frames).
-                if cb_idx == 0 {
-                    log::warn!(
-                        "[CPAL_F32] first callback: data.len()={} samples (= {} stereo frames)",
-                        data.len(),
-                        data.len() / 2,
-                    );
-                }
-                read_ring_buffer(
-                    &mut consumer,
-                    data,
-                    data.len(),
-                    &state_clone,
-                    &event_tx_data,
-                    capacity,
-                );
+                state_clone.callback_count.fetch_add(1, Ordering::Relaxed);
+                read_ring_buffer(&mut consumer, data, data.len(), &state_clone, capacity);
                 apply_volume_clamp(data, &state_clone);
             },
             move |err| {
@@ -1656,7 +1634,6 @@ where
     T: cpal::SizedSample + cpal::FromSample<f32>,
 {
     let state_clone = Arc::clone(&state);
-    let event_tx_data = event_tx.clone();
     let capacity = state.capacity;
 
     // Pre-allocate scratch buffer (captured by closure, no alloc in callback).
@@ -1679,7 +1656,6 @@ where
                         &mut scratch[..chunk_len],
                         chunk_len,
                         &state_clone,
-                        &event_tx_data,
                         capacity,
                     );
                     apply_volume_clamp(&mut scratch[..chunk_len], &state_clone);
@@ -1719,7 +1695,6 @@ mod tests {
     use cpal::SampleFormat;
     use rtrb::RingBuffer;
     use std::sync::atomic::Ordering;
-    use std::sync::mpsc::channel;
 
     #[test]
     fn read_ring_buffer_discards_samples_while_flush_requested() {
@@ -1729,10 +1704,9 @@ mod tests {
 
         let state = PlaybackState::new(8);
         request_flush(&state);
-        let (event_tx, _event_rx) = channel();
         let mut scratch = [1.0; 4];
 
-        let underrun = read_ring_buffer(&mut consumer, &mut scratch, 4, &state, &event_tx, 8);
+        let underrun = read_ring_buffer(&mut consumer, &mut scratch, 4, &state, 8);
 
         assert!(!underrun);
         assert_eq!(scratch, [0.0; 4]);
@@ -1748,15 +1722,14 @@ mod tests {
 
         let state = PlaybackState::new(8);
         request_flush(&state);
-        let (event_tx, _event_rx) = channel();
         let mut scratch = [1.0; 4];
 
-        read_ring_buffer(&mut consumer, &mut scratch, 4, &state, &event_tx, 8);
+        read_ring_buffer(&mut consumer, &mut scratch, 4, &state, 8);
         assert_eq!(scratch, [0.0; 4]);
         assert_eq!(consumer.slots(), 4);
         assert!(state.flush_requested.load(Ordering::Relaxed));
 
-        read_ring_buffer(&mut consumer, &mut scratch, 4, &state, &event_tx, 8);
+        read_ring_buffer(&mut consumer, &mut scratch, 4, &state, 8);
         assert_eq!(scratch, [0.0; 4]);
         assert_eq!(consumer.slots(), 0);
         assert!(!state.flush_requested.load(Ordering::Relaxed));

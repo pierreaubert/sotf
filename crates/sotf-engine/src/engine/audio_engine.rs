@@ -5,6 +5,7 @@
 // Coordinates all threads and provides the main API.
 
 use super::*;
+use std::sync::Mutex;
 use std::time::Duration;
 
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -12,6 +13,7 @@ const RESPONSE_TIMEOUT: Duration = Duration::from_secs(10);
 /// Main audio engine
 pub struct AudioEngine {
     manager: ManagerThread,
+    command_lock: Mutex<()>,
 }
 
 impl AudioEngine {
@@ -42,10 +44,33 @@ impl AudioEngine {
         while self.manager.try_recv_response().is_some() {}
     }
 
+    fn send_expect_ok(&self, command: ManagerCommand) -> Result<(), String> {
+        let _guard = self
+            .command_lock
+            .lock()
+            .map_err(|e| format!("Failed to lock command channel: {}", e))?;
+        self.drain_response();
+        self.manager.send_command(command)?;
+        self.expect_ok_response()
+    }
+
+    fn send_recv(&self, command: ManagerCommand) -> Result<ManagerResponse, String> {
+        let _guard = self
+            .command_lock
+            .lock()
+            .map_err(|e| format!("Failed to lock command channel: {}", e))?;
+        self.drain_response();
+        self.manager.send_command(command)?;
+        self.manager.recv_response_timeout(RESPONSE_TIMEOUT)
+    }
+
     /// Create and start a new audio engine
     pub fn new(config: EngineConfig) -> Result<Self, String> {
         let manager = ManagerThread::new(config)?;
-        Ok(Self { manager })
+        Ok(Self {
+            manager,
+            command_lock: Mutex::new(()),
+        })
     }
 
     /// Create with default configuration
@@ -55,10 +80,7 @@ impl AudioEngine {
 
     /// Play an audio source (file, URL, or service stream).
     pub fn play(&self, source: impl Into<crate::decoder::AudioSource>) -> Result<(), String> {
-        self.drain_response();
-        self.manager
-            .send_command(ManagerCommand::Play(source.into()))?;
-        self.expect_ok_response()
+        self.send_expect_ok(ManagerCommand::Play(source.into()))
     }
 
     /// Play an audio source at a specific position.
@@ -67,10 +89,7 @@ impl AudioEngine {
         source: impl Into<crate::decoder::AudioSource>,
         position: f64,
     ) -> Result<(), String> {
-        self.drain_response();
-        self.manager
-            .send_command(ManagerCommand::PlayAt(source.into(), position))?;
-        self.expect_ok_response()
+        self.send_expect_ok(ManagerCommand::PlayAt(source.into(), position))
     }
 
     /// Queue the next source for gapless playback.
@@ -79,61 +98,49 @@ impl AudioEngine {
     /// to the queued source without any gap in audio output. Only one source can be
     /// queued at a time; calling this again replaces the previous queued source.
     pub fn queue_next(&self, source: impl Into<crate::decoder::AudioSource>) -> Result<(), String> {
-        self.manager
-            .send_command(ManagerCommand::QueueNext(source.into()))?;
-        self.expect_ok_response()
+        self.send_expect_ok(ManagerCommand::QueueNext(source.into()))
     }
 
     /// Cancel a previously queued next source.
     ///
     /// If no source is queued, this is a no-op (still returns Ok).
     pub fn cancel_next(&self) -> Result<(), String> {
-        self.manager.send_command(ManagerCommand::CancelNext)?;
-        self.expect_ok_response()
+        self.send_expect_ok(ManagerCommand::CancelNext)
     }
 
     /// Pause playback
     pub fn pause(&self) -> Result<(), String> {
-        self.manager.send_command(ManagerCommand::Pause)?;
-        self.expect_ok_response()
+        self.send_expect_ok(ManagerCommand::Pause)
     }
 
     /// Resume playback
     pub fn resume(&self) -> Result<(), String> {
-        self.manager.send_command(ManagerCommand::Resume)?;
-        self.expect_ok_response()
+        self.send_expect_ok(ManagerCommand::Resume)
     }
 
     /// Stop playback
     pub fn stop(&self) -> Result<(), String> {
-        self.manager.send_command(ManagerCommand::Stop)?;
-        self.expect_ok_response()
+        self.send_expect_ok(ManagerCommand::Stop)
     }
 
     /// Seek to position in seconds
     pub fn seek(&self, position: f64) -> Result<(), String> {
-        self.manager.send_command(ManagerCommand::Seek(position))?;
-        self.expect_ok_response()
+        self.send_expect_ok(ManagerCommand::Seek(position))
     }
 
     /// Set volume (0.0 = silence, 1.0 = unity gain)
     pub fn set_volume(&self, volume: f32) -> Result<(), String> {
-        self.manager
-            .send_command(ManagerCommand::SetVolume(volume))?;
-        self.expect_ok_response()
+        self.send_expect_ok(ManagerCommand::SetVolume(volume))
     }
 
     /// Mute/unmute
     pub fn set_mute(&self, muted: bool) -> Result<(), String> {
-        self.manager.send_command(ManagerCommand::Mute(muted))?;
-        self.expect_ok_response()
+        self.send_expect_ok(ManagerCommand::Mute(muted))
     }
 
     /// Update the plugin chain (hot-reload with crossfade)
     pub fn update_plugin_chain(&self, plugins: Vec<PluginConfig>) -> Result<(), String> {
-        self.manager
-            .send_command(ManagerCommand::UpdatePluginChain(plugins))?;
-        self.expect_ok_response()
+        self.send_expect_ok(ManagerCommand::UpdatePluginChain(plugins))
     }
 
     /// Update the plugin graph (DAG topology for multi-driver crossovers)
@@ -141,9 +148,7 @@ impl AudioEngine {
         &self,
         config: super::types::PluginGraphConfig,
     ) -> Result<(), String> {
-        self.manager
-            .send_command(ManagerCommand::UpdatePluginGraph(config))?;
-        self.expect_ok_response()
+        self.send_expect_ok(ManagerCommand::UpdatePluginGraph(config))
     }
 
     /// Set a plugin parameter
@@ -157,20 +162,16 @@ impl AudioEngine {
         param_id: String,
         value: String,
     ) -> Result<(), String> {
-        self.manager
-            .send_command(ManagerCommand::SetPluginParameter {
-                plugin_index,
-                param_id,
-                value,
-            })?;
-        self.expect_ok_response()
+        self.send_expect_ok(ManagerCommand::SetPluginParameter {
+            plugin_index,
+            param_id,
+            value,
+        })
     }
 
     /// Bypass all processing
     pub fn set_bypass(&self, bypass: bool) -> Result<(), String> {
-        self.manager
-            .send_command(ManagerCommand::BypassProcessing(bypass))?;
-        self.expect_ok_response()
+        self.send_expect_ok(ManagerCommand::BypassProcessing(bypass))
     }
 
     /// Get current engine state
@@ -180,8 +181,7 @@ impl AudioEngine {
 
     /// Get current position in seconds
     pub fn get_position(&self) -> Result<f64, String> {
-        self.manager.send_command(ManagerCommand::GetPosition)?;
-        match self.manager.recv_response_timeout(RESPONSE_TIMEOUT)? {
+        match self.send_recv(ManagerCommand::GetPosition)? {
             ManagerResponse::Position(pos) => Ok(pos),
             ManagerResponse::Error(e) => Err(e),
             _ => Err("Unexpected response".to_string()),
@@ -194,9 +194,7 @@ impl AudioEngine {
         &self,
         index: usize,
     ) -> Result<std::sync::Arc<dyn std::any::Any + Send + Sync>, String> {
-        self.manager
-            .send_command(ManagerCommand::GetPluginData(index))?;
-        match self.manager.recv_response_timeout(RESPONSE_TIMEOUT)? {
+        match self.send_recv(ManagerCommand::GetPluginData(index))? {
             ManagerResponse::PluginData(data) => Ok(data),
             ManagerResponse::Error(e) => Err(e),
             _ => Err("Unexpected response".to_string()),
@@ -214,12 +212,16 @@ impl AudioEngine {
 
     /// Reload configuration from file
     pub fn reload_config(&self) -> Result<(), String> {
-        self.manager.send_command(ManagerCommand::ReloadConfig)?;
-        self.expect_ok_response()
+        self.send_expect_ok(ManagerCommand::ReloadConfig)
     }
 
     /// Shutdown the engine
     pub fn shutdown(&self) -> Result<(), String> {
+        let _guard = self
+            .command_lock
+            .lock()
+            .map_err(|e| format!("Failed to lock command channel: {}", e))?;
+        self.drain_response();
         self.manager.send_command(ManagerCommand::Shutdown)?;
         // Manager may close channel before we receive response, which is fine
         self.manager.recv_response().ok();
