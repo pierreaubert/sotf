@@ -1,3 +1,11 @@
+# 0.5.3
+
+## Fixes
+
+- Preserve preallocated A/B processing buffers across reset instead of clearing their lengths.
+- Avoid hot-path buffer resizing during processing; blocks beyond the prepared capacity now return a clear error.
+- Pass only the active block slices into the nested A and B hosts.
+
 # 0.5.2
 
 ## Fixes
