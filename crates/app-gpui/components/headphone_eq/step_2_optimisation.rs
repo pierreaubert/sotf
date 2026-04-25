@@ -683,13 +683,9 @@ impl PlayerView {
                                                 .variant(ButtonVariant::Secondary)
                                                 .size(ButtonSize::Sm)
                                                 .theme(button_theme.clone())
-                                                .build()
-                                                .on_mouse_up(
-                                                    MouseButton::Left,
-                                                    cx.listener(|view, _, _, cx| {
+                                                .on_click_event(cx.listener(|view, _, _, cx| {
                                                         view.browse_headphone_eq_target(cx);
-                                                    }),
-                                                ),
+                                                    })),
                                         ),
                                 ),
                         ),
@@ -731,14 +727,10 @@ impl PlayerView {
                                 .full_width(true)
                                 .disabled(is_optimizing)
                                 .theme(button_theme.clone())
-                                .build()
                                 .when(!is_optimizing, |btn| {
-                                    btn.on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(|view, _, _, cx| {
+                                    btn.on_click_event(cx.listener(|view, _, _, cx| {
                                             view.start_headphone_eq_optimization(cx);
-                                        }),
-                                    )
+                                        }))
                                 }),
                             )
                             .when(show_progress, |vstack| {
