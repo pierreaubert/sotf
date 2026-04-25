@@ -105,8 +105,7 @@ impl PlayerView {
                         })
                         .size(ButtonSize::Xs)
                         .theme(theme.to_button_theme())
-                        .build()
-                        .on_click(cx.listener(move |view, _: &ClickEvent, _window, cx| {
+                        .on_click_event(cx.listener(move |view, _: &ClickEvent, _window, cx| {
                             view.state.update(cx, |state, _cx| {
                                 state.app.toggle_mpd_server();
                             });
@@ -178,8 +177,7 @@ impl PlayerView {
                                 })
                                 .size(ButtonSize::Xs)
                                 .theme(theme.to_button_theme())
-                                .build()
-                                .on_click(cx.listener(move |view, _: &ClickEvent, _window, cx| {
+                                .on_click_event(cx.listener(move |view, _: &ClickEvent, _window, cx| {
                                     let new_val = (!tls_enabled).to_string();
                                     view.state.update(cx, |state, _cx| {
                                         state.app.update_mpd_field("tls_enabled", &new_val);
@@ -213,8 +211,7 @@ impl PlayerView {
                                             })
                                             .size(ButtonSize::Xs)
                                             .theme(theme.to_button_theme())
-                                            .build()
-                                            .on_click(cx.listener(
+                                            .on_click_event(cx.listener(
                                                 move |view, _: &ClickEvent, _window, cx| {
                                                     view.state.update(cx, |state, _cx| {
                                                         state
@@ -234,8 +231,7 @@ impl PlayerView {
                                             })
                                             .size(ButtonSize::Xs)
                                             .theme(theme.to_button_theme())
-                                            .build()
-                                            .on_click(cx.listener(
+                                            .on_click_event(cx.listener(
                                                 move |view, _: &ClickEvent, _window, cx| {
                                                     view.state.update(cx, |state, _cx| {
                                                         state
@@ -352,8 +348,7 @@ impl PlayerView {
                         })
                         .size(ButtonSize::Xs)
                         .theme(theme.to_button_theme())
-                        .build()
-                        .on_click(cx.listener(
+                        .on_click_event(cx.listener(
                             move |view, _: &ClickEvent, _window, cx| {
                                 view.state.update(cx, |state, _cx| {
                                     state.app.toggle_dlna_server();
