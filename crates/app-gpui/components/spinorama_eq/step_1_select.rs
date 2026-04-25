@@ -125,13 +125,9 @@ impl PlayerView {
                                             .size(ButtonSize::Xs)
                                             .disabled(is_loading)
                                             .theme(button_theme.clone())
-                                            .build()
-                                            .on_mouse_up(
-                                                MouseButton::Left,
-                                                cx.listener(|view, _, _, cx| {
+                                            .on_click_event(cx.listener(|view, _, _, cx| {
                                                     view.fetch_spinorama_speakers(cx);
-                                                }),
-                                            ),
+                                                })),
                                     )
                                     .when(is_loading, |hstack| {
                                         hstack

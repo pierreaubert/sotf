@@ -116,10 +116,7 @@ impl PlayerView {
                             .variant(ButtonVariant::Secondary)
                             .size(ButtonSize::Xs)
                             .theme(theme.to_button_theme())
-                            .build()
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|_view, _: &MouseUpEvent, _window, cx| {
+                            .on_click_event(cx.listener(|_view, _: &ClickEvent, _window, cx| {
                                     #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
                                     {
                                         cx.spawn(async move |view: WeakEntity<PlayerView>, cx| {
@@ -137,8 +134,7 @@ impl PlayerView {
                                         })
                                         .detach();
                                     }
-                                }),
-                            ),
+                                })),
                     ),
             )
             // Directories Table

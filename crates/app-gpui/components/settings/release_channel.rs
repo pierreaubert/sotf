@@ -113,11 +113,8 @@ impl PlayerView {
                                             .size(ButtonSize::Xs)
                                             .full_width(true)
                                             .theme(theme.to_button_theme())
-                                            .build()
-                                            .on_mouse_up(
-                                                MouseButton::Left,
-                                                cx.listener(
-                                                    move |view, _: &MouseUpEvent, _window, cx| {
+                                            .on_click_event(cx.listener(
+                                                    move |view, _: &ClickEvent, _window, cx| {
                                                         view.state.update(cx, |state, _cx| {
                                                             state
                                                                 .app
@@ -125,8 +122,7 @@ impl PlayerView {
                                                         });
                                                         cx.notify();
                                                     },
-                                                ),
-                                            ),
+                                                )),
                                         ),
                                     ),
                             );
