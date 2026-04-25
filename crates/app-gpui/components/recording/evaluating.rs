@@ -18,8 +18,8 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_px::ScaleType;
 use gpui_ui_kit::{
-    Card, HStack, Heading, Select, SelectOption, StackAlign, StackSpacing, Text, TextSize,
-    TextWeight, VStack,
+    Card, EmptyState, HStack, Heading, Select, SelectOption, StackAlign, StackSpacing, Text,
+    TextSize, TextWeight, VStack,
 };
 use sotf_audio::signal_analysis as dsp;
 
@@ -486,7 +486,11 @@ impl PlayerView {
             .flex()
             .items_center()
             .justify_center()
-            .child(Text::caption("Spectrogram not available"))
+            .child(render_empty_state(
+                IconName::AudioWaveform,
+                "Spectrogram not available",
+                theme,
+            ))
             .into_any_element()
     }
 
@@ -602,14 +606,13 @@ impl PlayerView {
             .rounded(d.r_md)
             .bg(theme.surface)
             .flex()
-            .flex_col()
             .items_center()
             .justify_center()
-            .gap(d.gap)
-            .child(Text::section_header("No Recordings Available").color(theme.text_secondary))
-            .child(Text::caption(
-                "Go back to the Capture step to record frequency responses",
-            ))
+            .child(
+                EmptyState::new("No Recordings Available")
+                    .description("Go back to the Capture step to record frequency responses")
+                    .icon("🎙️"),
+            )
     }
 
     /// Compute average SPL in the 100 Hz - 10 kHz range.
@@ -872,8 +875,10 @@ impl PlayerView {
                 .flex()
                 .items_center()
                 .justify_center()
-                .child(Text::caption(
+                .child(render_empty_state(
+                    IconName::AudioWaveform,
                     "Distortion data not available (use Sweep signal)",
+                    theme,
                 ))
                 .into_any_element();
         }
