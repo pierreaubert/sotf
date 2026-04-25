@@ -7,9 +7,8 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonTheme, ButtonVariant, Card, HStack, Input, InputSize, Progress,
-    ProgressSize, Spinner, SpinnerSize, StackAlign, StackSpacing, Text, TextSize, TextWeight,
-    VStack,
+    Button, ButtonSize, ButtonTheme, ButtonVariant, Card, HStack, Input, InputSize, Spinner,
+    SpinnerSize, StackAlign, StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 
 impl PlayerView {
@@ -393,15 +392,19 @@ impl PlayerView {
                                     .weight(TextWeight::Semibold),
                             )
                             .content(
+                                // Indeterminate Spinner — the curves fetch
+                                // doesn't expose a fraction, and the previous
+                                // `Progress::new(0.0)` bar was always frozen
+                                // at 0%.
                                 VStack::new()
                                     .spacing(StackSpacing::Sm)
                                     .align(StackAlign::Center)
+                                    .child(Spinner::new().size(SpinnerSize::Md))
                                     .child(
                                         Text::new("Loading spinorama curves...")
                                             .size(TextSize::Xs)
                                             .color(theme.text_secondary),
-                                    )
-                                    .child(Progress::new(0.0).size(ProgressSize::Sm)),
+                                    ),
                             )
                             .into_any_element()
                     } else if let Some(err) = spinorama_curves_error {
