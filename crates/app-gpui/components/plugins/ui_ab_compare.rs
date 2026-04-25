@@ -87,12 +87,7 @@ fn render_path_section(
             .flex()
             .items_center()
             .justify_between()
-            .child(
-                Text::new(label.to_string())
-                    .size(TextSize::Xs)
-                    .weight(TextWeight::Bold)
-                    .color(theme.text_primary),
-            )
+            .child(Text::eyebrow(label.to_string()).color(theme.text_primary))
             .child(Text::caption(format!(
                 "{} plugin{}",
                 plugins.len(),

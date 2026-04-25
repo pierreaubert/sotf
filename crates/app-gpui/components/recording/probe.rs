@@ -418,6 +418,7 @@ fn probe_number_row(
         .align(StackAlign::Center)
         .child(Text::new(label).size(TextSize::Xs))
         .child(
+            // intentional: numeric value emphasis in stepper, not a kicker label
             Text::new(format!("{:.0}", current))
                 .size(TextSize::Xs)
                 .weight(TextWeight::Bold),
