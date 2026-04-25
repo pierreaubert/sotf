@@ -13,6 +13,8 @@ use sotf_plugins::{SpectralTiltCorrection, TiltReferenceFreq};
 use super::common::render_knob;
 use crate::app::AppState;
 use crate::components::design::Ds;
+use crate::components::graphs::common::render_empty_state;
+use crate::components::icons::IconName;
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
@@ -858,8 +860,11 @@ impl PlayerView {
                 .items_center()
                 .justify_center()
                 .size_full()
-                .text_color(theme.text_muted)
-                .child("No spectrum data available. Play audio to see visualization.")
+                .child(render_empty_state(
+                    IconName::AudioWaveform,
+                    "No spectrum data available. Play audio to see visualization.",
+                    &theme,
+                ))
         };
 
         div()

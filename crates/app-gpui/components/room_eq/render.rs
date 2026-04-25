@@ -830,7 +830,11 @@ fn render_filter_plot(
 
     if frequencies.is_empty() || (eq_filters.is_empty() && broadband_filters.is_empty()) {
         return div()
-            .child(Text::caption("No filter data available"))
+            .child(render_empty_state(
+                IconName::AudioWaveform,
+                "No filter data available",
+                theme,
+            ))
             .into_any_element();
     }
 
@@ -1356,7 +1360,7 @@ fn render_filter_table(
 
     if filters.is_empty() {
         return div()
-            .child(Text::caption("No filters"))
+            .child(render_empty_state(IconName::AudioWaveform, "No filters", theme))
             .into_any_element();
     }
 
