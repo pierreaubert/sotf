@@ -251,6 +251,14 @@ impl PlayerView {
                             .measurement_state
                             .headphone_eq_state
                             .status_message = format!("Optimization failed: {}", e);
+                        // Toast in case the user is no longer looking at the
+                        // optimisation step's inline banner.
+                        state.app.ui_state.toast_message = Some(
+                            crate::app::types::ToastMessage::error(format!(
+                                "Optimization failed: {}",
+                                e
+                            )),
+                        );
                     }
                 }
                 cx.notify();
@@ -502,8 +510,11 @@ impl PlayerView {
                                     .measurement_state
                                     .headphone_eq_state
                                     .loading_headphones = false;
+                                let msg = format!("Failed to fetch headphones: {}", e);
                                 state.app.measurement_state.headphone_eq_state.error_message =
-                                    Some(format!("Failed to fetch headphones: {}", e));
+                                    Some(msg.clone());
+                                state.app.ui_state.toast_message =
+                                    Some(crate::app::types::ToastMessage::error(msg));
                                 cx.notify();
                             });
                         }
@@ -619,8 +630,11 @@ impl PlayerView {
                                     .measurement_state
                                     .headphone_eq_state
                                     .loading_download = false;
+                                let msg = format!("Headphone download failed: {}", e);
                                 state.app.measurement_state.headphone_eq_state.error_message =
                                     Some(e);
+                                state.app.ui_state.toast_message =
+                                    Some(crate::app::types::ToastMessage::error(msg));
                                 cx.notify();
                             });
                         }
