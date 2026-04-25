@@ -329,7 +329,15 @@ impl<T: InPlacePlugin> Plugin for InPlacePluginAdapter<T> {
             // The output buffer must be sized for input_channels * num_frames.
             // After processing, only the first out_ch channels per frame are meaningful.
             output[..input.len()].copy_from_slice(input);
-            self.plugin.process_in_place(output, context)
+            let frames = self
+                .plugin
+                .process_in_place(&mut output[..input.len()], context)?;
+            for frame in 0..frames {
+                let src = frame * in_ch;
+                let dst = frame * out_ch;
+                output.copy_within(src..src + out_ch, dst);
+            }
+            Ok(frames)
         }
     }
 

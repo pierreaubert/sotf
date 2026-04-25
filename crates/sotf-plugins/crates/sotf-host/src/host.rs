@@ -31,9 +31,7 @@ impl NodeBuffer {
         }
     }
     fn write(&mut self, data: &[f32]) {
-        if self.data.len() < data.len() {
-            self.data.resize(data.len(), 0.0);
-        }
+        ensure_len(&mut self.data, data.len());
         self.data[..data.len()].copy_from_slice(data);
         self.actual_len = data.len();
     }
@@ -49,9 +47,13 @@ impl NodeBuffer {
     }
     fn ensure_capacity(&mut self, num_frames: usize) {
         let required = num_frames * self.num_channels;
-        if self.data.len() < required {
-            self.data.resize(required, 0.0);
-        }
+        ensure_len(&mut self.data, required);
+    }
+}
+
+fn ensure_len(buffer: &mut Vec<f32>, len: usize) {
+    if buffer.len() < len {
+        buffer.resize(len, 0.0);
     }
 }
 
@@ -691,6 +693,7 @@ impl DawHost {
             nb.ensure_capacity(nf.max(max_of));
             nb.clear();
         }
+        ensure_len(&mut bufs.scratch_input, input.len());
         let mut cf = nf;
 
         // Apply automation: evaluate curves at current position and set parameters.
@@ -745,6 +748,7 @@ impl DawHost {
             for &nid in &stage.nodes {
                 let node = &self.nodes[&nid];
                 let in_len = if self.is_input_node[nid] {
+                    ensure_len(&mut bufs.scratch_input, input.len());
                     bufs.scratch_input[..input.len()].copy_from_slice(input);
                     input.len()
                 } else {
@@ -758,6 +762,7 @@ impl DawHost {
                         &mut bufs.delay_scratch,
                         &mut bufs.compensation_delays,
                     )?;
+                    ensure_len(&mut bufs.scratch_input, il);
                     bufs.scratch_input[..il].copy_from_slice(&bufs.merge_buffer[..il]);
                     il
                 };
@@ -776,12 +781,20 @@ impl DawHost {
                     };
                     let mof = p.output_frames_for_input(cf);
                     let ol = mof * node.output_channels();
-                    if bufs.scratch_output.len() < ol {
-                        bufs.scratch_output.resize(ol, 0.0);
-                    }
+                    let needs_extended_in_place_buffer = node.input_channels()
+                        > node.output_channels()
+                        && self.predecessors[nid]
+                            .iter()
+                            .any(|e| e.edge_type == EdgeType::Sidechain);
+                    let process_output_len = if needs_extended_in_place_buffer {
+                        ol.max(in_len)
+                    } else {
+                        ol
+                    };
+                    ensure_len(&mut bufs.scratch_output, process_output_len);
                     let out_frames = p.process(
                         &bufs.scratch_input[..in_len],
-                        &mut bufs.scratch_output[..ol],
+                        &mut bufs.scratch_output[..process_output_len],
                         &context,
                     )?;
                     bufs.node_buffers[nid]
@@ -817,58 +830,94 @@ impl DawHost {
         preds: &[Vec<GraphEdge>],
         nbs: &[Option<NodeBuffer>],
         nf: usize,
-        mb: &mut [f32],
-        cmb: &mut [f32],
+        mb: &mut Vec<f32>,
+        cmb: &mut Vec<f32>,
         delay_scratch: &mut Vec<f32>,
         compensation_delays: &mut HashMap<(NodeId, NodeId), LookaheadBuffer>,
     ) -> Result<usize, String> {
         let is = nf * n.input_channels();
-        if mb.len() < is {
-            return Err(format!("Merge buffer too small: {} < {}", mb.len(), is));
-        }
+        ensure_len(mb, is);
         mb[..is].fill(0.0);
+        let has_sidechain = preds[n.id]
+            .iter()
+            .any(|e| e.edge_type == EdgeType::Sidechain);
+        let primary_channels = if has_sidechain && n.input_channels() > n.output_channels() {
+            n.output_channels()
+        } else {
+            n.input_channels()
+        };
+        let mut sidechain_offset = primary_channels;
         for e in &preds[n.id] {
-            // Skip sidechain edges — they should not be summed into the primary
-            // audio input. Sidechain data is routed separately when plugins
-            // declare extended input channels via input_channels() > channels().
-            if e.edge_type == EdgeType::Sidechain {
-                continue;
-            }
             let sb = nbs[e.from_node].as_ref().unwrap();
             let sd = sb.read();
-            if let Some(ref cm) = e.channel_map {
-                let ms = nf * cm.len();
-                if cmb.len() < ms {
-                    return Err(format!(
-                        "Channel map buffer too small: {} < {}",
-                        cmb.len(),
-                        ms
-                    ));
+            let dest_offset = match e.edge_type {
+                EdgeType::Audio => 0,
+                EdgeType::Sidechain => {
+                    if sidechain_offset >= n.input_channels() {
+                        continue;
+                    }
+                    let offset = sidechain_offset;
+                    let requested = e
+                        .channel_map
+                        .as_ref()
+                        .map_or(sb.num_channels, |cm| cm.len());
+                    sidechain_offset = (sidechain_offset + requested).min(n.input_channels());
+                    offset
                 }
+            };
+            let available_dest_channels = match e.edge_type {
+                EdgeType::Audio => primary_channels,
+                EdgeType::Sidechain => n.input_channels().saturating_sub(dest_offset),
+            };
+            if available_dest_channels == 0 {
+                continue;
+            }
+            if let Some(ref cm) = e.channel_map {
+                let mapped_channels = cm.len().min(available_dest_channels);
+                let ms = nf * mapped_channels;
+                ensure_len(cmb, ms);
                 for f in 0..nf {
-                    for (di, &si) in cm.iter().enumerate() {
-                        cmb[f * cm.len() + di] = sd[f * sb.num_channels + si];
+                    for (di, &si) in cm.iter().take(mapped_channels).enumerate() {
+                        let dst = f * mapped_channels + di;
+                        let src = f * sb.num_channels + si;
+                        cmb[dst] = sd.get(src).copied().unwrap_or(0.0);
                     }
                 }
-                // Apply compensation delay if needed, then sum into merge buffer
-                Self::apply_compensation_and_sum(
+                Self::apply_compensation_and_sum_at(
                     e,
-                    cm.len(),
+                    mapped_channels,
                     nf,
                     &cmb[..ms],
                     mb,
+                    n.input_channels(),
+                    dest_offset,
                     delay_scratch,
                     compensation_delays,
                 );
             } else {
-                let len = is.min(sd.len());
-                // Apply compensation delay if needed, then sum into merge buffer
-                Self::apply_compensation_and_sum(
+                let route_channels = sb.num_channels.min(available_dest_channels);
+                let ms = nf * route_channels;
+                ensure_len(cmb, ms);
+                for f in 0..nf {
+                    let src = f * sb.num_channels;
+                    let dst = f * route_channels;
+                    let src_end = (src + route_channels).min(sd.len());
+                    let copied = src_end.saturating_sub(src);
+                    if copied > 0 {
+                        cmb[dst..dst + copied].copy_from_slice(&sd[src..src_end]);
+                    }
+                    if copied < route_channels {
+                        cmb[dst + copied..dst + route_channels].fill(0.0);
+                    }
+                }
+                Self::apply_compensation_and_sum_at(
                     e,
-                    n.input_channels(),
+                    route_channels,
                     nf,
-                    &sd[..len],
+                    &cmb[..ms],
                     mb,
+                    n.input_channels(),
+                    dest_offset,
                     delay_scratch,
                     compensation_delays,
                 );
@@ -879,12 +928,14 @@ impl DawHost {
 
     /// Apply latency compensation delay (if any) to `src_data` for the given edge,
     /// then sum the result into `dest`. If no compensation is needed, sums directly.
-    fn apply_compensation_and_sum(
+    fn apply_compensation_and_sum_at(
         edge: &GraphEdge,
         channels: usize,
         num_frames: usize,
         src_data: &[f32],
         dest: &mut [f32],
+        dest_channels: usize,
+        dest_offset: usize,
         delay_scratch: &mut Vec<f32>,
         compensation_delays: &mut HashMap<(NodeId, NodeId), LookaheadBuffer>,
     ) {
@@ -914,14 +965,23 @@ impl DawHost {
                     delay_buf.process_frame(&silence_part[..channels], &mut frame_part[start..end]);
                 }
             }
-            for (d, &s) in dest[..total].iter_mut().zip(delay_scratch[..total].iter()) {
-                *d += s;
+            for frame in 0..num_frames {
+                let src = frame * channels;
+                let dst = frame * dest_channels + dest_offset;
+                for ch in 0..channels {
+                    dest[dst + ch] += delay_scratch[src + ch];
+                }
             }
         } else {
             // No compensation, sum directly
-            let len = src_data.len().min(dest.len());
-            for (d, &s) in dest[..len].iter_mut().zip(src_data[..len].iter()) {
-                *d += s;
+            for frame in 0..num_frames {
+                let src = frame * channels;
+                let dst = frame * dest_channels + dest_offset;
+                for ch in 0..channels {
+                    if src + ch < src_data.len() && dst + ch < dest.len() {
+                        dest[dst + ch] += src_data[src + ch];
+                    }
+                }
             }
         }
     }
@@ -1225,7 +1285,7 @@ impl Host for DawHost {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::Plugin;
+    use crate::plugin::{InPlacePlugin, InPlacePluginAdapter, Plugin};
 
     #[test]
     fn test_pluginhost_api_empty_graph() {
@@ -1392,6 +1452,102 @@ mod tests {
             "Downstream received cf={}, expected 100 (min of parallel outputs)",
             recorded_cf,
         );
+    }
+
+    struct SidechainInPlacePlugin {
+        channels: usize,
+    }
+
+    impl InPlacePlugin for SidechainInPlacePlugin {
+        fn info(&self) -> crate::plugin::PluginInfo {
+            crate::plugin::PluginInfo::new("SidechainInPlace", "0.1", "test")
+        }
+
+        fn channels(&self) -> usize {
+            self.channels
+        }
+
+        fn input_channels(&self) -> usize {
+            self.channels * 2
+        }
+
+        fn parameters(&self) -> Vec<crate::parameters::Parameter> {
+            vec![]
+        }
+
+        fn set_parameter(
+            &mut self,
+            _: crate::parameters::ParameterId,
+            _: crate::parameters::ParameterValue,
+        ) -> Result<(), String> {
+            Err("none".into())
+        }
+
+        fn get_parameter(
+            &self,
+            _: &crate::parameters::ParameterId,
+        ) -> Option<crate::parameters::ParameterValue> {
+            None
+        }
+
+        fn process_in_place(
+            &mut self,
+            buffer: &mut [f32],
+            context: &crate::plugin::ProcessContext,
+        ) -> Result<usize, String> {
+            let stride = self.channels * 2;
+            for frame in 0..context.num_frames {
+                let off = frame * stride;
+                for ch in 0..self.channels {
+                    buffer[off + ch] += buffer[off + self.channels + ch] * 10.0;
+                }
+            }
+            Ok(context.num_frames)
+        }
+    }
+
+    #[test]
+    fn test_sidechain_edge_appends_extended_input_for_in_place_adapter() {
+        let mut g = DawHost::new(2, 48000);
+        let audio = g
+            .add_node("audio".into(), Box::new(ScalerPlugin::new(2, 1.0)))
+            .unwrap();
+        let sidechain = g
+            .add_node("sidechain".into(), Box::new(ScalerPlugin::new(2, 2.0)))
+            .unwrap();
+        let processor = g
+            .add_node(
+                "processor".into(),
+                Box::new(InPlacePluginAdapter::new(SidechainInPlacePlugin {
+                    channels: 2,
+                })),
+            )
+            .unwrap();
+
+        g.add_edge(GraphEdge::new(audio, processor)).unwrap();
+        g.add_sidechain_edge(sidechain, processor).unwrap();
+        g.build().unwrap();
+
+        let input = vec![1.0, 2.0, 3.0, 4.0];
+        let mut output = vec![0.0; 4];
+        g.process(&input, &mut output).unwrap();
+
+        assert_eq!(output, vec![21.0, 42.0, 63.0, 84.0]);
+    }
+
+    #[test]
+    fn test_large_input_block_grows_scratch_before_copy() {
+        let mut g = DawHost::new(2, 48000);
+        g.add_plugin(Box::new(ScalerPlugin::new(2, 1.0))).unwrap();
+        g.build().unwrap();
+
+        let frames = 5000;
+        let input = vec![0.25; frames * 2];
+        let mut output = vec![0.0; frames * 2];
+        let processed = g.process(&input, &mut output).unwrap();
+
+        assert_eq!(processed, frames);
+        assert_eq!(output, input);
     }
 
     /// Mock plugin that scales all samples by a factor. Used to detect bypass vs. active processing.
