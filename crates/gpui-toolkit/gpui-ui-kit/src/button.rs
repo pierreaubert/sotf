@@ -7,6 +7,39 @@ use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaR
 use crate::theme::{ThemeExt, glow_shadow};
 use gpui::prelude::*;
 use gpui::*;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
+
+// Thread-local registry mapping each Button's element id to a persistent
+// FocusHandle. Without this Button (a `RenderOnce` component) would allocate
+// a fresh handle every render and never become Tab-reachable. The pattern
+// mirrors the FOCUS_HANDLES registry in `input.rs`.
+//
+// Entries are evicted oldest-first when the map grows past
+// MAX_BUTTON_FOCUS_HANDLES so the registry can't grow unboundedly under
+// dynamic Button ids (e.g. virtualized lists).
+const MAX_BUTTON_FOCUS_HANDLES: usize = 1024;
+
+thread_local! {
+    static BUTTON_FOCUS_HANDLES: RefCell<HashMap<ElementId, FocusHandle>> =
+        RefCell::new(HashMap::new());
+}
+
+fn button_focus_handle(id: &ElementId, cx: &mut App) -> FocusHandle {
+    BUTTON_FOCUS_HANDLES.with(|handles| {
+        let mut handles = handles.borrow_mut();
+        while handles.len() > MAX_BUTTON_FOCUS_HANDLES {
+            if let Some(key) = handles.keys().next().cloned() {
+                handles.remove(&key);
+            }
+        }
+        handles
+            .entry(id.clone())
+            .or_insert_with(|| cx.focus_handle())
+            .clone()
+    })
+}
 
 /// Button visual variant
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -92,7 +125,7 @@ pub struct Button {
     icon_left: Option<SharedString>,
     icon_right: Option<SharedString>,
     theme: Option<ButtonTheme>,
-    on_click: Option<Box<dyn Fn(&mut Window, &mut App) + 'static>>,
+    on_click: Option<Rc<dyn Fn(&mut Window, &mut App) + 'static>>,
     aria_label: Option<SharedString>,
     aria_role: Option<AriaRole>,
 }
@@ -167,7 +200,7 @@ impl Button {
 
     /// Set the click handler (for standalone use without cx.listener)
     pub fn on_click(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
-        self.on_click = Some(Box::new(handler));
+        self.on_click = Some(Rc::new(handler));
         self
     }
 
@@ -328,8 +361,15 @@ impl RenderOnce for Button {
             ButtonSize::Lg => (px(24.0), px(12.0)),
         };
 
+        // Get/create persistent focus handle for this button id so the
+        // element is Tab-reachable across re-renders. See module-level
+        // BUTTON_FOCUS_HANDLES comment for the registry pattern.
+        let focus_handle = button_focus_handle(&self.id, cx);
+        let focus_ring_color = theme.accent;
+
         let mut el = div()
-            .id(self.id)
+            .id(self.id.clone())
+            .track_focus(&focus_handle)
             .font_family(global_theme.font_family.clone())
             .flex()
             .items_center()
@@ -342,7 +382,12 @@ impl RenderOnce for Button {
             .text_color(text_color)
             .border_1()
             .border_color(border_color)
-            .cursor_pointer();
+            .cursor_pointer()
+            // CSS `:focus-visible` analogue — only renders when the user
+            // arrived at the button via keyboard (Tab), not via mouse click.
+            // Layered on top of the base border, so a focused button has a
+            // 2px accent-colored ring distinct from its normal border_color.
+            .focus_visible(|style| style.border_2().border_color(focus_ring_color));
 
         // Apply text size based on button size
         el = match self.size {
@@ -362,8 +407,19 @@ impl RenderOnce for Button {
         } else {
             el = el.hover(move |style| style.bg(bg_hover).shadow(glow_shadow(bg_hover)));
             if let Some(handler) = self.on_click {
+                let mouse_handler = handler.clone();
                 el = el.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
-                    handler(window, cx);
+                    mouse_handler(window, cx);
+                });
+                // Keyboard activation — Enter and Space mirror the click
+                // handler. Required for WCAG 2.1.1 (Keyboard accessible).
+                let key_handler = handler;
+                el = el.on_key_down(move |event: &KeyDownEvent, window, cx| {
+                    let key = event.keystroke.key.as_str();
+                    if key == "enter" || key == "space" {
+                        key_handler(window, cx);
+                        cx.stop_propagation();
+                    }
                 });
             }
         }
