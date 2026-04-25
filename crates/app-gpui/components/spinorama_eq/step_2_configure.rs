@@ -21,6 +21,7 @@ impl PlayerView {
     pub(crate) fn render_spinorama_configure(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let spinorama = &state.app.measurement_state.spinorama_eq_state;
 
@@ -807,13 +808,13 @@ impl PlayerView {
         VStack::new()
             .spacing(StackSpacing::Md)
             .child(
-                Text::new("Configure Optimization")
+                Text::new(translations.spinorama_configure_optimization)
                     .color(theme.text_primary)
                     .weight(TextWeight::Bold)
                     .size(TextSize::Md),
             )
             .child(
-                Text::new("Set the optimization parameters for your speaker EQ.")
+                Text::new(translations.spinorama_set_parameters)
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
@@ -826,7 +827,7 @@ impl PlayerView {
                     .header_background(theme.background_secondary)
                     .border(theme.border)
                     .header(
-                        Text::new("Optimization Mode")
+                        Text::new(translations.spinorama_optimization_mode)
                             .color(theme.text_primary)
                             .weight(TextWeight::Semibold),
                     )
@@ -834,7 +835,7 @@ impl PlayerView {
                         VStack::new()
                             .spacing(StackSpacing::Sm)
                             .child(
-                                Text::new("Choose what the optimizer should optimize for.")
+                                Text::new(translations.spinorama_choose_optimize)
                                     .size(TextSize::Xs)
                                     .color(theme.text_secondary),
                             )
@@ -883,7 +884,7 @@ impl PlayerView {
                             .header_background(theme.background_secondary)
                             .border(theme.border)
                             .header(
-                                Text::new("Target Curve")
+                                Text::new(translations.spinorama_target_curve)
                                     .color(theme.text_primary)
                                     .weight(TextWeight::Semibold),
                             )
@@ -891,7 +892,7 @@ impl PlayerView {
                                 VStack::new()
                                     .spacing(StackSpacing::Sm)
                                     .child(
-                                        Text::new("Select which measurement curve to flatten.")
+                                        Text::new(translations.spinorama_select_curve)
                                             .size(TextSize::Xs)
                                             .color(theme.text_secondary),
                                     )
@@ -945,7 +946,7 @@ impl PlayerView {
                         HStack::new()
                             .spacing(StackSpacing::Md)
                             .child(
-                                Text::new("Generate Speaker EQ")
+                                Text::new(translations.spinorama_generate_speaker_eq)
                                     .color(theme.text_primary)
                                     .weight(TextWeight::Semibold),
                             )
@@ -1100,7 +1101,7 @@ impl PlayerView {
                             HStack::new()
                                 .spacing(StackSpacing::Md)
                                 .child(
-                                    Text::new("Optimization Process")
+                                    Text::new(translations.spinorama_optimization_process)
                                         .color(theme.text_primary)
                                         .weight(TextWeight::Semibold),
                                 )
