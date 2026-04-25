@@ -152,6 +152,25 @@ impl Text {
         Self::new(content).size(TextSize::Xs).muted(true)
     }
 
+    /// Selectable option label — Xs with weight that flips between Semibold
+    /// (when selected) and Normal (when not). Used for radio-button-style
+    /// choice rows in dense lists where the size hierarchy is already
+    /// established by the surrounding layout (e.g. a column of options each
+    /// paired with an Xs description).
+    ///
+    /// Produces `Xs + (Semibold | Normal)`. Caller chains `.color(...)` to
+    /// pick a theme-appropriate color (typically `theme.label_color`).
+    /// Captures the selection-state pattern that the typography drift guard
+    /// otherwise leaves as the explicit
+    /// `weight(if is_selected { Semibold } else { Normal })` form.
+    pub fn selectable(content: impl Into<SharedString>, is_selected: bool) -> Self {
+        Self::new(content).size(TextSize::Xs).weight(if is_selected {
+            TextWeight::Semibold
+        } else {
+            TextWeight::Normal
+        })
+    }
+
     /// Set theme
     pub fn with_theme(mut self, theme: Theme) -> Self {
         self.theme = Some(theme);

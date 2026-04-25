@@ -127,3 +127,18 @@ fn test_text_caption_is_xs_normal_muted() {
     let t = Text::caption("seconds");
     assert_eq!(t.preset_style(), (TextSize::Xs, TextWeight::Normal, true));
 }
+
+#[test]
+fn test_text_selectable_when_selected_is_xs_semibold() {
+    let t = Text::selectable("Near-field", true);
+    assert_eq!(
+        t.preset_style(),
+        (TextSize::Xs, TextWeight::Semibold, false)
+    );
+}
+
+#[test]
+fn test_text_selectable_when_not_selected_is_xs_normal() {
+    let t = Text::selectable("Mid-field", false);
+    assert_eq!(t.preset_style(), (TextSize::Xs, TextWeight::Normal, false));
+}
