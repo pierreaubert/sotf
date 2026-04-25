@@ -23,13 +23,13 @@ impl PlayerView {
         VStack::new()
             .spacing(StackSpacing::Md)
             .child(
-                Text::new("Apply & Export")
+                Text::new(translations.spinorama_apply_export)
                     .color(theme.text_primary)
                     .weight(TextWeight::Bold)
                     .size(TextSize::Md),
             )
             .child(
-                Text::new("Apply the EQ to playback or export to various formats.")
+                Text::new(translations.spinorama_apply_desc)
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
@@ -52,7 +52,7 @@ impl PlayerView {
                             .header_background(theme.background_secondary)
                             .border(theme.border)
                             .header(
-                                Text::new("Export")
+                                Text::new(translations.spinorama_export)
                                     .color(theme.text_primary)
                                     .weight(TextWeight::Semibold),
                             )
@@ -60,7 +60,7 @@ impl PlayerView {
                                 VStack::new()
                                     .spacing(StackSpacing::Sm)
                                     .child(
-                                        Text::new("Select export format and save your EQ.")
+                                        Text::new(translations.spinorama_select_export)
                                             .size(TextSize::Xs)
                                             .color(theme.text_secondary),
                                     )
@@ -119,12 +119,12 @@ impl PlayerView {
                         .header_background(theme.background_secondary)
                         .border(theme.border)
                         .header(
-                            Text::new("No Results")
+                            Text::new(translations.spinorama_no_results)
                                 .color(theme.text_primary)
                                 .weight(TextWeight::Semibold),
                         )
                         .content(
-                            Text::new("Go back and run optimization to generate an EQ curve.")
+                            Text::new(translations.spinorama_go_back_optimize)
                                 .size(TextSize::Xs)
                                 .color(theme.text_secondary),
                         ),

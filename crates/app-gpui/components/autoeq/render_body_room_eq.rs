@@ -33,7 +33,7 @@
                 HStack::new()
                     .justify(StackJustify::SpaceBetween)
                     .child(
-                        Text::new("Target Tilt")
+                        Text::new(translations.autoeq_target_tilt)
                             .size(TextSize::Xs)
                             .color(theme.label_color),
                     )
@@ -171,12 +171,12 @@
                         VStack::new()
                             .spacing(StackSpacing::None)
                             .child(
-                                Text::new("Broadband Target Matching")
+                                Text::new(translations.autoeq_broadband_target)
                                     .size(TextSize::Xs)
                                     .color(theme.label_color),
                             )
                             .child(
-                                Text::new("Shelf filters for broad tonal balance")
+                                Text::new(translations.autoeq_shelf_filters)
                                     .size(TextSize::Xs)
                                     .color(theme.description_color),
                             ),
@@ -224,7 +224,7 @@
                         VStack::new()
                             .spacing(StackSpacing::None)
                             .child(
-                                Text::new("Psychoacoustic Smoothing")
+                                Text::new(translations.autoeq_psychoacoustic_smoothing)
                                     .size(TextSize::Xs)
                                     .color(theme.label_color),
                             )
@@ -257,12 +257,12 @@
                         VStack::new()
                             .spacing(StackSpacing::None)
                             .child(
-                                Text::new("Curve Smoothing")
+                                Text::new(translations.autoeq_curve_smoothing)
                                     .size(TextSize::Xs)
                                     .color(theme.label_color),
                             )
                             .child(
-                                Text::new("Fixed-width octave smoothing")
+                                Text::new(translations.autoeq_fixed_octave_smoothing)
                                     .size(TextSize::Xs)
                                     .color(theme.description_color),
                             ),
@@ -315,12 +315,12 @@
                         VStack::new()
                             .spacing(StackSpacing::None)
                             .child(
-                                Text::new("Asymmetric Loss")
+                                Text::new(translations.autoeq_asymmetric_loss)
                                     .size(TextSize::Xs)
                                     .color(theme.label_color),
                             )
                             .child(
-                                Text::new("Penalize peaks more than dips")
+                                Text::new(translations.autoeq_penalize_peaks)
                                     .size(TextSize::Xs)
                                     .color(theme.description_color),
                             ),
@@ -343,7 +343,7 @@
                 HStack::new()
                     .justify(StackJustify::SpaceBetween)
                     .child(
-                        Text::new("Excursion Protection")
+                        Text::new(translations.autoeq_excursion_protection)
                             .size(TextSize::Xs)
                             .color(theme.label_color),
                     )
@@ -365,7 +365,7 @@
                     HStack::new()
                         .justify(StackJustify::SpaceBetween)
                         .child(
-                            Text::new("Auto-detect F3")
+                            Text::new(translations.autoeq_auto_detect_f3)
                                 .size(TextSize::Xs)
                                 .color(theme.label_color),
                         )
@@ -472,7 +472,7 @@
                 HStack::new()
                     .justify(StackJustify::SpaceBetween)
                     .child(
-                        Text::new("Schroeder Split")
+                        Text::new(translations.autoeq_schroeder_split)
                             .size(TextSize::Xs)
                             .color(theme.label_color),
                     )
@@ -562,7 +562,7 @@
                     HStack::new()
                         .justify(StackJustify::SpaceBetween)
                         .child(
-                            Text::new("Allow LF Boost")
+                            Text::new(translations.autoeq_allow_lf_boost)
                                 .size(TextSize::Xs)
                                 .color(theme.label_color),
                         )
@@ -573,7 +573,7 @@
                     HStack::new()
                         .justify(StackJustify::SpaceBetween)
                         .child(
-                            Text::new("HF Shelving Only")
+                            Text::new(translations.autoeq_hf_shelving)
                                 .size(TextSize::Xs)
                                 .color(theme.label_color),
                         )
@@ -605,12 +605,12 @@
                             VStack::new()
                                 .spacing(StackSpacing::None)
                                 .child(
-                                    Text::new("Allow Delay")
+                                    Text::new(translations.autoeq_allow_delay)
                                         .size(TextSize::Xs)
                                         .color(theme.label_color),
                                 )
                                 .child(
-                                    Text::new("Enable inter-speaker time alignment")
+                                    Text::new(translations.autoeq_enable_time_alignment)
                                         .size(TextSize::Xs)
                                         .color(theme.description_color),
                                 ),
@@ -625,12 +625,12 @@
                             VStack::new()
                                 .spacing(StackSpacing::None)
                                 .child(
-                                    Text::new("Allow Delay")
+                                    Text::new(translations.autoeq_allow_delay)
                                         .size(TextSize::Xs)
                                         .color(theme.label_color),
                                 )
                                 .child(
-                                    Text::new("Enable inter-speaker time alignment")
+                                    Text::new(translations.autoeq_enable_time_alignment)
                                         .size(TextSize::Xs)
                                         .color(theme.description_color),
                                 ),
@@ -663,12 +663,12 @@
                             VStack::new()
                                 .spacing(StackSpacing::None)
                                 .child(
-                                    Text::new("Voice of God")
+                                    Text::new(translations.autoeq_voice_of_god)
                                         .size(TextSize::Xs)
                                         .color(theme.label_color),
                                 )
                                 .child(
-                                    Text::new("Timbre matching across channels")
+                                    Text::new(translations.autoeq_timbre_matching)
                                         .size(TextSize::Xs)
                                         .color(theme.description_color),
                                 ),
@@ -683,12 +683,12 @@
                             VStack::new()
                                 .spacing(StackSpacing::None)
                                 .child(
-                                    Text::new("Voice of God")
+                                    Text::new(translations.autoeq_voice_of_god)
                                         .size(TextSize::Xs)
                                         .color(theme.label_color),
                                 )
                                 .child(
-                                    Text::new("Timbre matching across channels")
+                                    Text::new(translations.autoeq_timbre_matching)
                                         .size(TextSize::Xs)
                                         .color(theme.description_color),
                                 ),
@@ -741,7 +741,7 @@
                     HStack::new()
                         .justify(StackJustify::SpaceBetween)
                         .child(
-                            Text::new("Phase Alignment")
+                            Text::new(translations.autoeq_phase_alignment)
                                 .size(TextSize::Xs)
                                 .color(theme.label_color),
                         )
@@ -804,7 +804,7 @@
                         HStack::new()
                             .justify(StackJustify::SpaceBetween)
                             .child(
-                                Text::new("Optimize Polarity")
+                                Text::new(translations.autoeq_optimize_polarity)
                                     .size(TextSize::Xs)
                                     .color(theme.label_color),
                             )
@@ -845,7 +845,7 @@
                     HStack::new()
                         .justify(StackJustify::SpaceBetween)
                         .child(
-                            Text::new("Multi-Seat Optimization")
+                            Text::new(translations.autoeq_multi_seat)
                                 .size(TextSize::Xs)
                                 .color(theme.label_color),
                         )
@@ -933,7 +933,7 @@
                         .align(StackAlign::Center)
                         .justify(StackJustify::SpaceBetween)
                         .child(
-                            Text::new("Multi-Measurement Optimization")
+                            Text::new(translations.autoeq_multi_measurement)
                                 .size(TextSize::Xs)
                                 .color(theme.label_color),
                         )
@@ -1031,7 +1031,7 @@
                         Text::section_header("Room Configuration").color(theme.header_color),
                     )
                     .child(
-                        Text::new("Target curve and room correction options")
+                        Text::new(translations.autoeq_target_options)
                             .size(TextSize::Xs)
                             .color(theme.description_color),
                     ),
@@ -1060,7 +1060,7 @@
                         Text::section_header("Optimiser Configuration").color(theme.header_color),
                     )
                     .child(
-                        Text::new("EQ design and optimisation algorithm settings")
+                        Text::new(translations.autoeq_eq_design_desc)
                             .size(TextSize::Xs)
                             .color(theme.description_color),
                     ),
