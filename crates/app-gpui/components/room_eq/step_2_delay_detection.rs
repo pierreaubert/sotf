@@ -23,6 +23,7 @@ impl PlayerView {
     ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let dd = &state.app.measurement_state.room_eq_state.delay_detection;
         let has_results =
             dd.results.is_some() && matches!(dd.status, DelayDetectionStatus::Complete);
@@ -30,7 +31,7 @@ impl PlayerView {
         let mut content = VStack::new()
             .spacing(StackSpacing::Md)
             .child(
-                Text::new("Per-Channel Alignment Delays")
+                Text::new(translations.roomeq_per_channel_alignment_delays)
                     .weight(TextWeight::Bold)
                     .size(TextSize::Md),
             )
@@ -57,7 +58,7 @@ impl PlayerView {
                 .align(StackAlign::Center)
                 .child(
                     div().w(px(80.0)).child(
-                        Text::new("Channel")
+                        Text::new(translations.roomeq_channel)
                             .weight(TextWeight::Bold)
                             .size(TextSize::Xs)
                             .color(theme.text_primary),
@@ -65,7 +66,7 @@ impl PlayerView {
                 )
                 .child(
                     div().w(px(90.0)).child(
-                        Text::new("Arrival (ms)")
+                        Text::new(translations.roomeq_arrival_ms)
                             .weight(TextWeight::Bold)
                             .size(TextSize::Xs)
                             .color(theme.text_primary),
@@ -73,7 +74,7 @@ impl PlayerView {
                 )
                 .child(
                     div().w(px(80.0)).child(
-                        Text::new("Gain (dB)")
+                        Text::new(translations.roomeq_gain_db)
                             .weight(TextWeight::Bold)
                             .size(TextSize::Xs)
                             .color(theme.text_primary),
@@ -81,7 +82,7 @@ impl PlayerView {
                 )
                 .child(
                     div().w(px(80.0)).child(
-                        Text::new("SNR (dB)")
+                        Text::new(translations.roomeq_snr_db)
                             .weight(TextWeight::Bold)
                             .size(TextSize::Xs)
                             .color(theme.text_primary),
@@ -89,7 +90,7 @@ impl PlayerView {
                 )
                 .child(
                     div().w(px(120.0)).child(
-                        Text::new("Delay (ms)")
+                        Text::new(translations.roomeq_delay_ms)
                             .weight(TextWeight::Bold)
                             .size(TextSize::Xs)
                             .color(theme.text_primary),
@@ -253,7 +254,7 @@ impl PlayerView {
                         VStack::new()
                             .spacing(StackSpacing::Sm)
                             .child(
-                                Text::new("No delay data available")
+                                Text::new(translations.roomeq_no_delay_data)
                                     .weight(TextWeight::Semibold)
                                     .size(TextSize::Sm)
                                     .color(theme.text_secondary),

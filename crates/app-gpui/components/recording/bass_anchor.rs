@@ -26,6 +26,7 @@ impl PlayerView {
     ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let rec = &state.app.measurement_state.recording_state;
         let bac = rec.bass_anchor_capture.clone();
 
@@ -46,7 +47,7 @@ impl PlayerView {
         let mut column = VStack::new()
             .spacing(StackSpacing::Sm)
             .child(
-                Text::new("Bass Anchor")
+                Text::new(translations.recording_bass_anchor)
                     .weight(TextWeight::Bold)
                     .size(TextSize::Md),
             )

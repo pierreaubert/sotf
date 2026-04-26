@@ -16,6 +16,7 @@ use super::render::render_channel_config_row;
 impl PlayerView {
     pub(crate) fn render_room_eq_configure(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let wizard_mode = state.app.measurement_state.room_eq_state.wizard_mode;
 
         match wizard_mode {
@@ -33,6 +34,7 @@ impl PlayerView {
     /// `wizard_mode == Full`.
     fn render_full_configure(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let room_eq = &state.app.measurement_state.room_eq_state;
         let release_channel = state.app.ui_state.release_channel;
@@ -1719,7 +1721,7 @@ impl PlayerView {
         let mut content = VStack::new()
             .spacing(StackSpacing::Md)
             .child(
-                Text::new("Full Configuration")
+                Text::new(translations.roomeq_full_configuration)
                     .weight(TextWeight::Bold)
                     .size(TextSize::Md),
             )
@@ -1733,7 +1735,7 @@ impl PlayerView {
                     .header_background(theme.background_secondary)
                     .border(theme.border)
                     .header(
-                        Text::new("Channel Configuration")
+                        Text::new(translations.roomeq_channel_configuration)
                             .color(theme.text_primary)
                             .weight(TextWeight::Semibold),
                     )
@@ -1749,6 +1751,7 @@ impl PlayerView {
     #[allow(dead_code)]
     fn render_slope_recommendation(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let room_eq = &state.app.measurement_state.room_eq_state;
 
@@ -1781,6 +1784,7 @@ impl PlayerView {
     /// Render validation summary based on current config
     fn render_room_eq_validation_summary(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let validation = state.app.measurement_state.room_eq_state.validate();
 
@@ -1825,7 +1829,7 @@ impl PlayerView {
                 theme.warning
             })
             .header(
-                Text::new("Configuration Check")
+                Text::new(translations.roomeq_configuration_check)
                     .color(theme.text_primary)
                     .weight(TextWeight::Semibold),
             )
@@ -1837,6 +1841,7 @@ impl PlayerView {
     fn render_channel_config_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let speaker_configs = state
             .app
@@ -1884,6 +1889,7 @@ impl PlayerView {
         };
 
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let room_eq = &state.app.measurement_state.room_eq_state;
         let preset = room_eq.simple_preset.clone();
@@ -2135,7 +2141,7 @@ impl PlayerView {
                     .background(theme.surface)
                     .border(theme.border)
                     .header(
-                        Text::new("MULTI-POSITION")
+                        Text::new(translations.roomeq_multi_position)
                             .color(theme.accent)
                             .weight(TextWeight::Bold),
                     )

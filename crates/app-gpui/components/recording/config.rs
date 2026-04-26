@@ -39,6 +39,7 @@ impl PlayerView {
     /// Render the config step UI
     pub(crate) fn render_recording_config_step(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let expanded_sections = state
             .app
             .measurement_state
@@ -63,7 +64,7 @@ impl PlayerView {
                     .spacing(StackSpacing::Xs)
                     .child(Heading::h4("Audio Device Configuration"))
                     .child(
-                        Text::new("Configure your playback and recording devices, set up channel routing, and load microphone calibration.")
+                        Text::new(translations.recording_config_desc)
                             .size(TextSize::Xs),
                     ),
             )
@@ -146,8 +147,9 @@ impl PlayerView {
 
     /// Render recording device content for accordion
     fn render_recording_device_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let (theme, num_channels, sample_rate, max_input_channels) = {
-            let state = self.state.read(cx);
             let rec_config = &state.app.measurement_state.recording_state.recording_config;
             let input_devices = &state.app.audio_device_state.input_devices;
             // Find selected device, or fall back to first available device
@@ -187,7 +189,7 @@ impl PlayerView {
             .spacing(StackSpacing::Sm)
             .align(StackAlign::Center)
             .child(
-                Text::new("Number of channels:")
+                Text::new(translations.recording_num_channels)
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
@@ -239,6 +241,7 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.weak_entity();
         let num_channels = recording_state.recording_config.num_channels;
@@ -379,6 +382,7 @@ impl PlayerView {
     fn render_output_directory_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.weak_entity();
 
@@ -397,7 +401,7 @@ impl PlayerView {
                     .spacing(StackSpacing::Sm)
                     .align(StackAlign::Center)
                     .child(
-                        Text::new("Recording files will be saved to:")
+                        Text::new(translations.recording_save_location)
                             .size(TextSize::Xs)
                             .color(theme.text_secondary),
                     )
@@ -466,7 +470,7 @@ impl PlayerView {
                         .align(StackAlign::Center)
                         .child(Text::new("⚠").size(TextSize::Xs).color(theme.warning))
                         .child(
-                            Text::new("You must select an output directory before recording.")
+                            Text::new(translations.recording_no_output_dir)
                                 .size(TextSize::Xs)
                                 .color(theme.warning),
                         ),
@@ -485,6 +489,7 @@ impl PlayerView {
     fn render_advanced_sweep_quality_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let rec_state = &state.app.measurement_state.recording_state;
         let bass_dur = rec_state.bass_octave_duration_s;
         let pre_s = rec_state.pre_silence_s;
@@ -499,7 +504,7 @@ impl PlayerView {
             .spacing(StackSpacing::Sm)
             .align(StackAlign::Center)
             .child(
-                Text::new("Bass precision:")
+                Text::new(translations.recording_bass_precision)
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             );
@@ -542,7 +547,7 @@ impl PlayerView {
                 .spacing(StackSpacing::Sm)
                 .align(StackAlign::Center)
                 .child(
-                    Text::new("Pre-silence (s):")
+                    Text::new(translations.recording_pre_silence)
                         .size(TextSize::Xs)
                         .color(theme.text_secondary),
                 )
@@ -575,7 +580,7 @@ impl PlayerView {
                 .spacing(StackSpacing::Sm)
                 .align(StackAlign::Center)
                 .child(
-                    Text::new("Post-silence (s):")
+                    Text::new(translations.recording_post_silence)
                         .size(TextSize::Xs)
                         .color(theme.text_secondary),
                 )
@@ -703,6 +708,7 @@ impl PlayerView {
     fn render_playback_device_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.weak_entity();
 
@@ -836,6 +842,7 @@ impl PlayerView {
     fn render_playback_sample_rate_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.weak_entity();
 
@@ -858,7 +865,7 @@ impl PlayerView {
             .spacing(StackSpacing::Sm)
             .align(StackAlign::Center)
             .child(
-                Text::new("Sample Rate:")
+                Text::new(translations.recording_sample_rate)
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
@@ -916,6 +923,7 @@ impl PlayerView {
     fn render_speaker_config_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let num_channels = recording_state.playback_config.num_channels;
         let sample_rate = recording_state.playback_config.sample_rate;
@@ -951,7 +959,7 @@ impl PlayerView {
             .spacing(StackSpacing::Sm)
             .align(StackAlign::Center)
             .child(
-                Text::new("Speaker Configuration:")
+                Text::new(translations.recording_speaker_config)
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
@@ -1057,7 +1065,7 @@ impl PlayerView {
             // Spacer to separate dropdown from badges
             .child(div().w(px(20.0))) // intentional: fixed spacer gap
             .child(
-                Text::new("Channels:")
+                Text::new(translations.recording_channels_label)
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
@@ -1070,6 +1078,7 @@ impl PlayerView {
         // Extract all needed data upfront, then release the borrow
         let (theme, speaker_data, is_custom) = {
             let state = self.state.read(cx);
+            let translations = state.app.ui_state.translations.clone();
             let mappings: Vec<_> = state
                 .app
                 .measurement_state
@@ -1228,6 +1237,7 @@ impl PlayerView {
     ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let is_open = state
             .app
             .measurement_state
@@ -1529,6 +1539,7 @@ impl PlayerView {
     ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.weak_entity();
         let current_group = current_group.to_string();
@@ -1604,6 +1615,7 @@ impl PlayerView {
     fn render_recording_device_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.weak_entity();
 
@@ -1734,6 +1746,7 @@ impl PlayerView {
     fn render_recording_sample_rate_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.weak_entity();
 
@@ -1756,7 +1769,7 @@ impl PlayerView {
             .spacing(StackSpacing::Sm)
             .align(StackAlign::Center)
             .child(
-                Text::new("Sample Rate:")
+                Text::new(translations.recording_sample_rate)
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
@@ -1814,6 +1827,7 @@ impl PlayerView {
     fn render_recording_channel_mapping(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.weak_entity();
 
@@ -1968,6 +1982,11 @@ impl PlayerView {
                     .items_center()
                     .justify_center()
                     .child(
+                        // intentional: render_calibration_graph_multi is a pure
+                        // function that doesn't take a `translations` handle —
+                        // restore the English literal to keep the static
+                        // signature compatible. Future i18n pass should thread
+                        // a `Translations` parameter through if needed.
                         Text::new("Unable to render calibration graph").color(theme.text_secondary),
                     )
                     .into_any_element(),

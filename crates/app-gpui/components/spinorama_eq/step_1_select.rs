@@ -22,6 +22,7 @@ impl PlayerView {
     ) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let theme_id = state.app.ui_state.theme_id;
         let button_theme = ButtonTheme::from(&theme.to_ui_kit_theme(theme_id));
@@ -49,7 +50,7 @@ impl PlayerView {
         VStack::new()
             .spacing(StackSpacing::Md)
             .child(
-                Text::new("Select Speaker")
+                Text::new(translations.spinorama_select_speaker)
                     .color(theme.text_primary)
                     .weight(TextWeight::Bold)
                     .size(TextSize::Md),
@@ -62,7 +63,7 @@ impl PlayerView {
                 vstack.child(Text::new(msg).size(TextSize::Xs).color(theme.error))
             })
             .child(
-                Text::new("Search for your speaker model from spinorama.org measurements.")
+                Text::new(translations.spinorama_search_desc)
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
@@ -72,7 +73,7 @@ impl PlayerView {
                     .header_background(theme.background_secondary)
                     .border(theme.border)
                     .header(
-                        Text::new("Speaker Search")
+                        Text::new(translations.spinorama_speaker_search)
                             .color(theme.text_primary)
                             .weight(TextWeight::Semibold),
                     )
@@ -167,7 +168,7 @@ impl PlayerView {
                         HStack::new()
                             .spacing(StackSpacing::Xs)
                             .child(
-                                Text::new("Available Speakers")
+                                Text::new(translations.spinorama_available_speakers)
                                     .color(theme.text_primary)
                                     .weight(TextWeight::Semibold),
                             )
@@ -263,7 +264,7 @@ impl PlayerView {
                         .header_background(theme.background_secondary)
                         .border(theme.border)
                         .header(
-                            Text::new("Selected Speaker")
+                            Text::new(translations.spinorama_selected_speaker)
                                 .color(theme.text_primary)
                                 .weight(TextWeight::Semibold),
                         )
@@ -399,7 +400,7 @@ impl PlayerView {
                             .header_background(theme.background_secondary)
                             .border(theme.border)
                             .header(
-                                Text::new("Loading Spinorama Data...")
+                                Text::new(translations.spinorama_loading)
                                     .color(theme.text_primary)
                                     .weight(TextWeight::Semibold),
                             )
@@ -413,7 +414,7 @@ impl PlayerView {
                                     .align(StackAlign::Center)
                                     .child(Spinner::new().size(SpinnerSize::Md))
                                     .child(
-                                        Text::new("Loading spinorama curves...")
+                                        Text::new(translations.spinorama_loading_curves)
                                             .size(TextSize::Xs)
                                             .color(theme.text_secondary),
                                     ),
@@ -425,7 +426,7 @@ impl PlayerView {
                             .header_background(theme.background_secondary)
                             .border(theme.border)
                             .header(
-                                Text::new("Error Loading Data")
+                                Text::new(translations.spinorama_error_loading_data)
                                     .color(theme.error)
                                     .weight(TextWeight::Semibold),
                             )
@@ -433,7 +434,7 @@ impl PlayerView {
                                 VStack::new()
                                     .spacing(StackSpacing::Sm)
                                     .child(
-                                        Text::new("Failed to load spinorama data")
+                                        Text::new(translations.spinorama_failed_load)
                                             .size(TextSize::Xs)
                                             .color(theme.error),
                                     )
@@ -467,7 +468,7 @@ impl PlayerView {
                                                 .header_background(theme.background_secondary)
                                                 .border(theme.border)
                                                 .header(
-                                                    Text::new("Spinorama")
+                                                    Text::new(translations.spinorama_title)
                                                         .color(theme.text_primary)
                                                         .weight(TextWeight::Semibold)
                                                         .size(TextSize::Xs),
@@ -488,7 +489,7 @@ impl PlayerView {
                                                 .header_background(theme.background_secondary)
                                                 .border(theme.border)
                                                 .header(
-                                                    Text::new("PIR (In-Room)")
+                                                    Text::new(translations.spinorama_pir)
                                                         .color(theme.text_primary)
                                                         .weight(TextWeight::Semibold)
                                                         .size(TextSize::Xs),
@@ -517,7 +518,7 @@ impl PlayerView {
                                                 .header_background(theme.background_secondary)
                                                 .border(theme.border)
                                                 .header(
-                                                    Text::new("Horizontal")
+                                                    Text::new(translations.spinorama_horizontal)
                                                         .color(theme.text_primary)
                                                         .weight(TextWeight::Semibold)
                                                         .size(TextSize::Xs),
@@ -538,7 +539,7 @@ impl PlayerView {
                                                 .header_background(theme.background_secondary)
                                                 .border(theme.border)
                                                 .header(
-                                                    Text::new("Vertical")
+                                                    Text::new(translations.spinorama_vertical)
                                                         .color(theme.text_primary)
                                                         .weight(TextWeight::Semibold)
                                                         .size(TextSize::Xs),
@@ -559,7 +560,7 @@ impl PlayerView {
                             .header_background(theme.background_secondary)
                             .border(theme.border)
                             .header(
-                                Text::new("CEA2034 Spinorama")
+                                Text::new(translations.spinorama_cea2034)
                                     .color(theme.text_primary)
                                     .weight(TextWeight::Semibold),
                             )

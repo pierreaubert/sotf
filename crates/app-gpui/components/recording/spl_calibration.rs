@@ -28,6 +28,7 @@ impl PlayerView {
     ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let rec = &state.app.measurement_state.recording_state;
         let cal = rec.spl_calibration_capture.clone();
         let running = matches!(cal.status, SplCalibrationCaptureStatus::Running { .. });
@@ -73,7 +74,7 @@ impl PlayerView {
         let mut column = VStack::new()
             .spacing(StackSpacing::Sm)
             .child(
-                Text::new("SPL Calibration")
+                Text::new(translations.recording_spl_calibration)
                     .weight(TextWeight::Bold)
                     .size(TextSize::Md),
             )

@@ -32,6 +32,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
 
+        let translations = state.app.ui_state.translations.clone();
         VStack::new()
             .spacing(StackSpacing::Md)
             .child(
@@ -40,7 +41,7 @@ impl PlayerView {
                     .spacing(StackSpacing::Xs)
                     .child(Heading::h4("Evaluate Recordings"))
                     .child(
-                        Text::new("Review frequency response, phase, group delay, and impulse response measurements.")
+                        Text::new(translations.recording_evaluating_desc)
                             .size(TextSize::Xs)
                             .color(theme.text_secondary),
                     ),
@@ -61,6 +62,7 @@ impl PlayerView {
     fn render_plot_controls(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
 
         let selected_channel = recording_state.plot_selected_channel;
@@ -112,7 +114,7 @@ impl PlayerView {
                         .spacing(StackSpacing::Xs)
                         .align(StackAlign::Center)
                         .child(
-                            Text::new("Channel:")
+                            Text::new(translations.recording_channel_label)
                                 .size(TextSize::Xs)
                                 .color(theme.text_secondary),
                         )
@@ -171,7 +173,7 @@ impl PlayerView {
                         .spacing(StackSpacing::Xs)
                         .align(StackAlign::Center)
                         .child(
-                            Text::new("Smoothing:")
+                            Text::new(translations.recording_smoothing_label)
                                 .size(TextSize::Xs)
                                 .color(theme.text_secondary),
                         )
@@ -269,6 +271,7 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
         let results = self.get_filtered_results(cx);
@@ -293,6 +296,7 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
         let results = self.get_filtered_results(cx);
@@ -317,6 +321,7 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
         let results = self.get_filtered_results(cx);
@@ -342,6 +347,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
 
+        let translations = state.app.ui_state.translations.clone();
         let results = self.get_filtered_results(cx);
         let has_results = !results.is_empty();
 
@@ -364,6 +370,7 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
         let results = self.get_filtered_results(cx);
@@ -388,6 +395,7 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
         let results = self.get_filtered_results(cx);
@@ -412,6 +420,7 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
         let results = self.get_filtered_results(cx);
@@ -436,6 +445,7 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let sample_rate = state
             .app
             .measurement_state
@@ -1160,6 +1170,7 @@ impl PlayerView {
     fn render_channel_summary(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
 
         let recorded_count = recording_state
@@ -1181,7 +1192,7 @@ impl PlayerView {
                             VStack::new()
                                 .spacing(StackSpacing::Xs)
                                 .child(
-                                    Text::new("Channels Recorded")
+                                    Text::new(translations.recording_channels_recorded)
                                         .size(TextSize::Xs)
                                         .color(theme.text_secondary),
                                 )
@@ -1198,7 +1209,7 @@ impl PlayerView {
                             VStack::new()
                                 .spacing(StackSpacing::Xs)
                                 .child(
-                                    Text::new("Status")
+                                    Text::new(translations.recording_status_label)
                                         .size(TextSize::Xs)
                                         .color(theme.text_secondary),
                                 )

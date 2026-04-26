@@ -247,6 +247,7 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let is_open = state
             .app
             .measurement_state
@@ -397,7 +398,7 @@ impl PlayerView {
                             ),
                     )
                     .child(
-                        Text::new("Click on the graph to add control points. Drag points to adjust. Double-click a point to remove it.")
+                        Text::new(translations.roomeq_graph_help)
                             .size(TextSize::Xs)
                             .color(theme.text_secondary),
                     )

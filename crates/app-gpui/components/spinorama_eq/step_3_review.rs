@@ -13,6 +13,7 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let spinorama = &state.app.measurement_state.spinorama_eq_state;
         let result = spinorama.result.as_ref();
         let full_result = spinorama.full_result.as_ref();
@@ -20,13 +21,13 @@ impl PlayerView {
         VStack::new()
             .spacing(StackSpacing::Md)
             .child(
-                Text::new("Review Results")
+                Text::new(translations.spinorama_review_results)
                     .color(theme.text_primary)
                     .weight(TextWeight::Bold)
                     .size(TextSize::Md),
             )
             .child(
-                Text::new("Review the optimized EQ results and frequency response.")
+                Text::new(translations.spinorama_review_desc)
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
@@ -56,7 +57,7 @@ impl PlayerView {
                             .header_background(theme_for_graphs.background_secondary)
                             .border(theme_for_graphs.border)
                             .header(
-                                Text::new("Optimization Results")
+                                Text::new(translations.spinorama_optimization_results)
                                     .color(theme_for_graphs.text_primary)
                                     .weight(TextWeight::Semibold),
                             )
@@ -148,7 +149,7 @@ impl PlayerView {
                             .header_background(theme_for_graphs.background_secondary)
                             .border(theme_for_graphs.border)
                             .header(
-                                Text::new("Frequency Response")
+                                Text::new(translations.spinorama_frequency_response)
                                     .color(theme_for_graphs.text_primary)
                                     .weight(TextWeight::Semibold),
                             )
@@ -170,7 +171,7 @@ impl PlayerView {
                         .header_background(theme.background_secondary)
                         .border(theme.border)
                         .header(
-                            Text::new("EQ Filters")
+                            Text::new(translations.spinorama_eq_filters)
                                 .color(theme.text_primary)
                                 .weight(TextWeight::Semibold),
                         )
@@ -257,12 +258,12 @@ impl PlayerView {
                         .header_background(theme.background_secondary)
                         .border(theme.border)
                         .header(
-                            Text::new("No Results")
+                            Text::new(translations.spinorama_no_results)
                                 .color(theme.text_primary)
                                 .weight(TextWeight::Semibold),
                         )
                         .content(
-                            Text::new("Go back and run optimization to generate an EQ curve.")
+                            Text::new(translations.spinorama_go_back_optimize)
                                 .size(TextSize::Xs)
                                 .color(theme.text_secondary),
                         ),

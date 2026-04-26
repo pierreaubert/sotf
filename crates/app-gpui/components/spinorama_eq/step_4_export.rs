@@ -14,6 +14,7 @@ impl PlayerView {
     pub(crate) fn render_spinorama_export(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let theme_id = state.app.ui_state.theme_id;
         let button_theme = ButtonTheme::from(&theme.to_ui_kit_theme(theme_id));
         let spinorama = &state.app.measurement_state.spinorama_eq_state;
@@ -23,13 +24,13 @@ impl PlayerView {
         VStack::new()
             .spacing(StackSpacing::Md)
             .child(
-                Text::new("Apply & Export")
+                Text::new(translations.spinorama_apply_export)
                     .color(theme.text_primary)
                     .weight(TextWeight::Bold)
                     .size(TextSize::Md),
             )
             .child(
-                Text::new("Apply the EQ to playback or export to various formats.")
+                Text::new(translations.spinorama_apply_desc)
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
@@ -52,7 +53,7 @@ impl PlayerView {
                             .header_background(theme.background_secondary)
                             .border(theme.border)
                             .header(
-                                Text::new("Export")
+                                Text::new(translations.spinorama_export)
                                     .color(theme.text_primary)
                                     .weight(TextWeight::Semibold),
                             )
@@ -60,7 +61,7 @@ impl PlayerView {
                                 VStack::new()
                                     .spacing(StackSpacing::Sm)
                                     .child(
-                                        Text::new("Select export format and save your EQ.")
+                                        Text::new(translations.spinorama_select_export)
                                             .size(TextSize::Xs)
                                             .color(theme.text_secondary),
                                     )
@@ -119,12 +120,12 @@ impl PlayerView {
                         .header_background(theme.background_secondary)
                         .border(theme.border)
                         .header(
-                            Text::new("No Results")
+                            Text::new(translations.spinorama_no_results)
                                 .color(theme.text_primary)
                                 .weight(TextWeight::Semibold),
                         )
                         .content(
-                            Text::new("Go back and run optimization to generate an EQ curve.")
+                            Text::new(translations.spinorama_go_back_optimize)
                                 .size(TextSize::Xs)
                                 .color(theme.text_secondary),
                         ),

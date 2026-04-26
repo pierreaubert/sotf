@@ -2,6 +2,8 @@
 // Spinorama EQ Screen Types
 // ============================================================================
 
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use strsim::jaro_winkler;
 
 use super::room_eq::{AutoEqField, OptimizationStatus};
@@ -161,6 +163,10 @@ pub struct SpinoramaEqState {
     // === Step 3: Optimization ===
     /// Current optimization status
     pub optimization_status: OptimizationStatus,
+    /// Cancel-request flag polled by the optimisation callback. UI sets
+    /// this to true when the user clicks Cancel; the callback returns
+    /// `CallbackAction::Stop` on the next iteration.
+    pub cancel_requested: Arc<AtomicBool>,
     /// Progress (0.0 - 1.0)
     pub progress: f32,
     /// Progress history for loss/score curves (iteration, loss, optional_score)
@@ -239,6 +245,7 @@ impl Default for SpinoramaEqState {
             available_curves: Vec::new(),
             optimizer_config: SpinoramaOptimizerConfig::default(),
             optimization_status: OptimizationStatus::Idle,
+            cancel_requested: Arc::new(AtomicBool::new(false)),
             progress: 0.0,
             progress_history: Vec::new(),
             status_message: String::new(),
@@ -289,6 +296,8 @@ impl SpinoramaEqState {
     /// Reset optimization state
     pub fn reset_optimization(&mut self) {
         self.optimization_status = OptimizationStatus::Idle;
+        self.cancel_requested
+            .store(false, std::sync::atomic::Ordering::Relaxed);
         self.progress = 0.0;
         self.progress_history.clear();
         self.result = None;
