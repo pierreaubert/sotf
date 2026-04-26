@@ -2,5 +2,4 @@ torch
 onnx
 onnxruntime
 numpy
-scipy
 yt-dlp
