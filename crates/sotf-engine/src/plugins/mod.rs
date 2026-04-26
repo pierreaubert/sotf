@@ -138,6 +138,9 @@ pub enum PluginType {
     Matrix,
     XTC,
     Denoiser,
+    Declick,
+    HissReducer,
+    SpeechDenoiser,
     Pnd,
     ABCompare,
     BandSplit,
@@ -181,6 +184,9 @@ impl PluginType {
             Self::Matrix => "Matrix Mixer",
             Self::XTC => "Crosstalk Cancellation",
             Self::Denoiser => "Denoiser",
+            Self::Declick => "Declick",
+            Self::HissReducer => "Hiss Reducer",
+            Self::SpeechDenoiser => "Speech Denoiser",
             Self::Pnd => "PND Varispeed",
             Self::ABCompare => "A/B Compare",
             Self::BandSplit => "Band Split",
@@ -224,6 +230,9 @@ impl PluginType {
             Self::Matrix => "Channel routing and mixing matrix",
             Self::XTC => "Crosstalk cancellation for speaker playback",
             Self::Denoiser => "Wiener filter denoiser with MCRA noise estimation",
+            Self::Declick => "Time-domain click and transient repair",
+            Self::HissReducer => "Stationary high-frequency hiss reducer",
+            Self::SpeechDenoiser => "RNNoise voice denoiser",
             Self::Pnd => "Polyphonic note detection and varispeed correction",
             Self::ABCompare => "A/B comparison with auto-gain loudness matching",
             Self::BandSplit => "Split audio into low/high frequency bands",
@@ -269,6 +278,9 @@ impl PluginType {
             Self::Matrix,
             Self::XTC,
             Self::Denoiser,
+            Self::Declick,
+            Self::HissReducer,
+            Self::SpeechDenoiser,
             Self::Pnd,
             Self::ABCompare,
             Self::BandSplit,
@@ -356,6 +368,9 @@ impl PluginType {
             | Self::Convolution
             | Self::Pnd
             | Self::Denoiser
+            | Self::Declick
+            | Self::HissReducer
+            | Self::SpeechDenoiser
             | Self::Aec
             | Self::Beamformer
             | Self::AmbisonicsDecoder
@@ -378,7 +393,10 @@ use sotf_plugins::param_specs::convolution as convolution_specs;
 use sotf_plugins::param_specs::crossfeed as crossfeed_specs;
 use sotf_plugins::param_specs::de_esser as de_esser_specs;
 use sotf_plugins::param_specs::delay as delay_specs;
+use sotf_plugins::param_specs::declick as declick_specs;
 use sotf_plugins::param_specs::denoiser as denoiser_specs;
+use sotf_plugins::param_specs::hiss_reducer as hiss_reducer_specs;
+use sotf_plugins::param_specs::speech_denoiser as speech_denoiser_specs;
 use sotf_plugins::param_specs::downmix as downmix_specs;
 use sotf_plugins::param_specs::dynamic_eq as dynamic_eq_specs;
 use sotf_plugins::param_specs::expander as expander_specs;
@@ -691,20 +709,33 @@ sotf_plugins::serde_param_default! {
     fn default_denoiser_mcra_alpha_p() -> f64 = "mcra_alpha_p";
     fn default_denoiser_mcra_l() -> usize = "mcra_l";
     fn default_denoiser_mcra_delta() -> f64 = "mcra_delta";
-    fn default_denoiser_crack_sensitivity() -> f64 = "crack_sensitivity";
-    fn default_denoiser_transient_enabled() -> bool = "transient_enabled";
     fn default_denoiser_spectral_smoothing_enabled() -> bool = "spectral_smoothing_enabled";
     fn default_denoiser_temporal_smoothing_enabled() -> bool = "temporal_smoothing_enabled";
-    fn default_denoiser_hiss_enabled() -> bool = "hiss_enabled";
-    fn default_denoiser_hiss_threshold_db() -> f64 = "hiss_threshold_db";
-    fn default_denoiser_hiss_frequency_hz() -> f64 = "hiss_frequency_hz";
-    fn default_denoiser_hiss_strength() -> f64 = "hiss_strength";
     fn default_denoiser_spectral_sub_enabled() -> bool = "spectral_sub_enabled";
     fn default_denoiser_spectral_sub_alpha() -> f64 = "spectral_sub_alpha";
     fn default_denoiser_spectral_sub_beta() -> f64 = "spectral_sub_beta";
-    fn default_denoiser_algorithm() -> usize = "algorithm";
     fn default_denoiser_formant_strength() -> f64 = "formant_strength";
     fn default_spatial_strength() -> f64 = "spatial_strength";
+}
+
+sotf_plugins::serde_param_default! {
+    declick_specs::PARAMS;
+    fn default_declick_enabled() -> bool = "enabled";
+    fn default_declick_sensitivity() -> f64 = "sensitivity";
+}
+
+sotf_plugins::serde_param_default! {
+    hiss_reducer_specs::PARAMS;
+    fn default_hiss_reducer_enabled() -> bool = "enabled";
+    fn default_hiss_reducer_threshold_db() -> f64 = "threshold_db";
+    fn default_hiss_reducer_frequency_hz() -> f64 = "frequency_hz";
+    fn default_hiss_reducer_strength() -> f64 = "strength";
+    fn default_hiss_reducer_low_latency() -> bool = "low_latency";
+}
+
+sotf_plugins::serde_param_default! {
+    speech_denoiser_specs::PARAMS;
+    fn default_speech_denoiser_enabled() -> bool = "enabled";
 }
 
 sotf_plugins::serde_param_default! {
@@ -1453,8 +1484,6 @@ pub enum PluginSettings {
         low_latency: bool,
         #[serde(default = "default_denoiser_polyphonic_detection")]
         polyphonic_detection: bool,
-        #[serde(default = "default_denoiser_crack_sensitivity")]
-        crack_sensitivity: f64,
         #[serde(default = "default_denoiser_mcra_alpha_s")]
         mcra_alpha_s: f64,
         #[serde(default = "default_denoiser_mcra_alpha_p")]
@@ -1471,20 +1500,10 @@ pub enum PluginSettings {
         dd_alpha: f64,
         #[serde(default = "default_denoiser_psychoacoustic_masking")]
         psychoacoustic_masking: bool,
-        #[serde(default = "default_denoiser_transient_enabled")]
-        transient_enabled: bool,
         #[serde(default = "default_denoiser_spectral_smoothing_enabled")]
         spectral_smoothing_enabled: bool,
         #[serde(default = "default_denoiser_temporal_smoothing_enabled")]
         temporal_smoothing_enabled: bool,
-        #[serde(default = "default_denoiser_hiss_enabled")]
-        hiss_enabled: bool,
-        #[serde(default = "default_denoiser_hiss_threshold_db")]
-        hiss_threshold_db: f64,
-        #[serde(default = "default_denoiser_hiss_frequency_hz")]
-        hiss_frequency_hz: f64,
-        #[serde(default = "default_denoiser_hiss_strength")]
-        hiss_strength: f64,
         #[serde(default = "default_denoiser_spectral_sub_enabled")]
         spectral_sub_enabled: bool,
         #[serde(default = "default_denoiser_spectral_sub_alpha")]
@@ -1497,8 +1516,6 @@ pub enum PluginSettings {
         use_captured_profile: bool,
         #[serde(default)]
         clear_profile: bool,
-        #[serde(default = "default_denoiser_algorithm")]
-        algorithm: usize,
         #[serde(default)]
         formant_preservation: bool,
         #[serde(default = "default_denoiser_formant_strength")]
@@ -1511,6 +1528,28 @@ pub enum PluginSettings {
         spatial_denoise: bool,
         #[serde(default = "default_spatial_strength")]
         spatial_strength: f64,
+    },
+    Declick {
+        #[serde(default = "default_declick_enabled")]
+        enabled: bool,
+        #[serde(default = "default_declick_sensitivity")]
+        sensitivity: f64,
+    },
+    HissReducer {
+        #[serde(default = "default_hiss_reducer_enabled")]
+        enabled: bool,
+        #[serde(default = "default_hiss_reducer_threshold_db")]
+        threshold_db: f64,
+        #[serde(default = "default_hiss_reducer_frequency_hz")]
+        frequency_hz: f64,
+        #[serde(default = "default_hiss_reducer_strength")]
+        strength: f64,
+        #[serde(default = "default_hiss_reducer_low_latency")]
+        low_latency: bool,
+    },
+    SpeechDenoiser {
+        #[serde(default = "default_speech_denoiser_enabled")]
+        enabled: bool,
     },
     Pnd {
         #[serde(default = "default_pnd_correction_strength")]
@@ -1903,6 +1942,9 @@ impl PluginSettings {
             Self::Matrix { .. } => PluginType::Matrix,
             Self::XTC { .. } => PluginType::XTC,
             Self::Denoiser { .. } => PluginType::Denoiser,
+            Self::Declick { .. } => PluginType::Declick,
+            Self::HissReducer { .. } => PluginType::HissReducer,
+            Self::SpeechDenoiser { .. } => PluginType::SpeechDenoiser,
             Self::Pnd { .. } => PluginType::Pnd,
             Self::ABCompare { .. } => PluginType::ABCompare,
             Self::BandSplit { .. } => PluginType::BandSplit,
@@ -2851,7 +2893,6 @@ impl PluginSettings {
                 release_ms,
                 low_latency,
                 polyphonic_detection,
-                crack_sensitivity,
                 mcra_alpha_s,
                 mcra_alpha_p,
                 mcra_l,
@@ -2860,20 +2901,14 @@ impl PluginSettings {
                 dd_enabled,
                 dd_alpha,
                 psychoacoustic_masking,
-                transient_enabled,
                 spectral_smoothing_enabled,
                 temporal_smoothing_enabled,
-                hiss_enabled,
-                hiss_threshold_db,
-                hiss_frequency_hz,
-                hiss_strength,
                 spectral_sub_enabled,
                 spectral_sub_alpha,
                 spectral_sub_beta,
                 learn_noise,
                 use_captured_profile,
                 clear_profile,
-                algorithm,
                 formant_preservation,
                 formant_strength,
                 multi_resolution,
@@ -2890,7 +2925,6 @@ impl PluginSettings {
                     "release_ms": release_ms,
                     "low_latency": low_latency,
                     "polyphonic_detection": polyphonic_detection,
-                    "crack_sensitivity": crack_sensitivity,
                     "mcra_alpha_s": mcra_alpha_s,
                     "mcra_alpha_p": mcra_alpha_p,
                     "mcra_l": mcra_l,
@@ -2899,26 +2933,52 @@ impl PluginSettings {
                     "dd_enabled": dd_enabled,
                     "dd_alpha": dd_alpha,
                     "psychoacoustic_masking": psychoacoustic_masking,
-                    "transient_enabled": transient_enabled,
                     "spectral_smoothing_enabled": spectral_smoothing_enabled,
                     "temporal_smoothing_enabled": temporal_smoothing_enabled,
-                    "hiss_enabled": hiss_enabled,
-                    "hiss_threshold_db": hiss_threshold_db,
-                    "hiss_frequency_hz": hiss_frequency_hz,
-                    "hiss_strength": hiss_strength,
                     "spectral_sub_enabled": spectral_sub_enabled,
                     "spectral_sub_alpha": spectral_sub_alpha,
                     "spectral_sub_beta": spectral_sub_beta,
                     "learn_noise": learn_noise,
                     "use_captured_profile": use_captured_profile,
                     "clear_profile": clear_profile,
-                    "algorithm": algorithm,
                     "formant_preservation": formant_preservation,
                     "formant_strength": formant_strength,
                     "multi_resolution": multi_resolution,
                     "harmonic_percussive": harmonic_percussive,
                     "spatial_denoise": spatial_denoise,
                     "spatial_strength": spatial_strength,
+                }),
+            ),
+            Self::Declick {
+                enabled,
+                sensitivity,
+            } => PluginConfig::new(
+                "declick",
+                json!({
+                    "enabled": enabled,
+                    "sensitivity": sensitivity,
+                }),
+            ),
+            Self::HissReducer {
+                enabled,
+                threshold_db,
+                frequency_hz,
+                strength,
+                low_latency,
+            } => PluginConfig::new(
+                "hiss_reducer",
+                json!({
+                    "enabled": enabled,
+                    "threshold_db": threshold_db,
+                    "frequency_hz": frequency_hz,
+                    "strength": strength,
+                    "low_latency": low_latency,
+                }),
+            ),
+            Self::SpeechDenoiser { enabled } => PluginConfig::new(
+                "speech_denoiser",
+                json!({
+                    "enabled": enabled,
                 }),
             ),
             Self::Pnd {
@@ -3442,7 +3502,6 @@ impl PluginSettings {
                     release_ms: p(d, "release_ms").default_f64(),
                     low_latency: p(d, "low_latency").default_bool(),
                     polyphonic_detection: p(d, "polyphonic_detection").default_bool(),
-                    crack_sensitivity: p(d, "crack_sensitivity").default_f64(),
                     mcra_alpha_s: p(d, "mcra_alpha_s").default_f64(),
                     mcra_alpha_p: p(d, "mcra_alpha_p").default_f64(),
                     mcra_l: p(d, "mcra_l").default_usize(),
@@ -3451,26 +3510,43 @@ impl PluginSettings {
                     dd_enabled: p(d, "dd_enabled").default_bool(),
                     dd_alpha: p(d, "dd_alpha").default_f64(),
                     psychoacoustic_masking: p(d, "psychoacoustic_masking").default_bool(),
-                    transient_enabled: p(d, "transient_enabled").default_bool(),
                     spectral_smoothing_enabled: p(d, "spectral_smoothing_enabled").default_bool(),
                     temporal_smoothing_enabled: p(d, "temporal_smoothing_enabled").default_bool(),
-                    hiss_enabled: p(d, "hiss_enabled").default_bool(),
-                    hiss_threshold_db: p(d, "hiss_threshold_db").default_f64(),
-                    hiss_frequency_hz: p(d, "hiss_frequency_hz").default_f64(),
-                    hiss_strength: p(d, "hiss_strength").default_f64(),
                     spectral_sub_enabled: p(d, "spectral_sub_enabled").default_bool(),
                     spectral_sub_alpha: p(d, "spectral_sub_alpha").default_f64(),
                     spectral_sub_beta: p(d, "spectral_sub_beta").default_f64(),
                     learn_noise: p(d, "learn_noise").default_bool(),
                     use_captured_profile: p(d, "use_captured_profile").default_bool(),
                     clear_profile: p(d, "clear_profile").default_bool(),
-                    algorithm: p(d, "algorithm").default_usize(),
                     formant_preservation: p(d, "formant_preservation").default_bool(),
                     formant_strength: p(d, "formant_strength").default_f64(),
                     multi_resolution: p(d, "multi_resolution").default_bool(),
                     harmonic_percussive: false,
                     spatial_denoise: false,
                     spatial_strength: p(d, "spatial_strength").default_f64(),
+                }
+            }
+            PluginType::Declick => {
+                let dc = declick_specs::PARAMS;
+                Self::Declick {
+                    enabled: p(dc, "enabled").default_bool(),
+                    sensitivity: p(dc, "sensitivity").default_f64(),
+                }
+            }
+            PluginType::HissReducer => {
+                let hr = hiss_reducer_specs::PARAMS;
+                Self::HissReducer {
+                    enabled: p(hr, "enabled").default_bool(),
+                    threshold_db: p(hr, "threshold_db").default_f64(),
+                    frequency_hz: p(hr, "frequency_hz").default_f64(),
+                    strength: p(hr, "strength").default_f64(),
+                    low_latency: p(hr, "low_latency").default_bool(),
+                }
+            }
+            PluginType::SpeechDenoiser => {
+                let sd = speech_denoiser_specs::PARAMS;
+                Self::SpeechDenoiser {
+                    enabled: p(sd, "enabled").default_bool(),
                 }
             }
             PluginType::Pnd => {

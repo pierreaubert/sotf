@@ -1021,7 +1021,6 @@ impl PluginFuzzer for DenoiserFuzzer {
         let release_ms = rng.random_range(10.0..500.0);
         let low_latency = rng.random_bool(0.5);
         let polyphonic_detection = rng.random_bool(0.3);
-        let crack_sensitivity = rng.random_range(1.0..100.0);
 
         let params = DenoiserPluginParams {
             reduction_db,
@@ -1031,22 +1030,20 @@ impl PluginFuzzer for DenoiserFuzzer {
             release_ms,
             low_latency,
             polyphonic_detection,
-            crack_sensitivity,
             ..Default::default()
         };
 
         let plugin = DenoiserPlugin::from_params(channels, params);
 
         let desc = format!(
-            "reduction={:.1}dB floor={:.1}dB smooth={:.2} attack={:.1}ms release={:.0}ms low_lat={} poly={} crack={:.1}",
+            "reduction={:.1}dB floor={:.1}dB smooth={:.2} attack={:.1}ms release={:.0}ms low_lat={} poly={}",
             reduction_db,
             floor_db,
             smoothing,
             attack_ms,
             release_ms,
             low_latency,
-            polyphonic_detection,
-            crack_sensitivity
+            polyphonic_detection
         );
 
         (Box::new(InPlacePluginAdapter::new(plugin)), desc)

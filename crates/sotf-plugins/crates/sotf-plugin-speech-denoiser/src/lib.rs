@@ -1,13 +1,11 @@
 pub mod params;
 
 use crate::params::PARAMS as SP;
+use plugins_denoiser::rnnoise::RnnoiseBackend;
 use serde::{Deserialize, Serialize};
 use sotf_host::param_bridge;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
-use sotf_plugin_denoiser::{DenoiserPlugin, DenoiserPluginParams};
-use std::any::Any;
-use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpeechDenoiserPluginParams {
@@ -30,7 +28,7 @@ impl Default for SpeechDenoiserPluginParams {
 pub struct SpeechDenoiserPlugin {
     channels: usize,
     enabled: bool,
-    inner: DenoiserPlugin,
+    inner: RnnoiseBackend,
     cached_parameters: Vec<Parameter>,
 }
 
@@ -40,16 +38,10 @@ impl SpeechDenoiserPlugin {
     }
 
     pub fn from_params(channels: usize, params: SpeechDenoiserPluginParams) -> Self {
-        let dn = DenoiserPluginParams {
-            algorithm: 1,
-            transient_enabled: false,
-            hiss_enabled: false,
-            ..DenoiserPluginParams::default()
-        };
         let mut plugin = Self {
             channels,
             enabled: params.enabled,
-            inner: DenoiserPlugin::from_params(channels, dn),
+            inner: RnnoiseBackend::new(),
             cached_parameters: Vec::new(),
         };
         plugin.rebuild_cached_parameters();
@@ -97,7 +89,8 @@ impl InPlacePlugin for SpeechDenoiserPlugin {
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
-        self.inner.initialize(sample_rate)
+        self.inner.initialize(sample_rate, self.channels);
+        Ok(())
     }
 
     fn reset(&mut self) {
@@ -110,7 +103,16 @@ impl InPlacePlugin for SpeechDenoiserPlugin {
         context: &ProcessContext,
     ) -> PluginResult<usize> {
         if self.enabled {
-            self.inner.process_in_place(buffer, context)
+            let max_in_place_frames = self.inner.max_in_place_frames();
+            if context.num_frames > max_in_place_frames {
+                return Err(format!(
+                    "Block too large for RNNoise speech denoiser: {} frames exceeds prepared safe maximum {}",
+                    context.num_frames, max_in_place_frames
+                ));
+            }
+            self.inner
+                .process(buffer, context.num_frames, self.channels);
+            Ok(context.num_frames)
         } else {
             Ok(context.num_frames)
         }
@@ -122,9 +124,5 @@ impl InPlacePlugin for SpeechDenoiserPlugin {
         } else {
             0
         }
-    }
-
-    fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
-        self.inner.get_data()
     }
 }

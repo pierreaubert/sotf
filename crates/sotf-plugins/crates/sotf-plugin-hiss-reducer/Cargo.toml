@@ -21,8 +21,8 @@ path = "bin/qa_hiss_reducer.rs"
 required-features = ["qa"]
 
 [dependencies]
+plugins-denoiser = { workspace = true }
 sotf-host = { workspace = true }
-sotf-plugin-denoiser = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 

@@ -147,8 +147,7 @@ pub fn apply_simple_preset(preset: &SimplePresetConfig, config: &mut RoomEqOptim
     config.target_response.slope_db_per_octave = 0.0;
 
     // Crossover (2.1+ only)
-    if !preset.bass_management.is_empty()
-        || matches!(preset.crossover, SimpleCrossoverChoice::Lr48)
+    if !preset.bass_management.is_empty() || matches!(preset.crossover, SimpleCrossoverChoice::Lr48)
     {
         config.schroeder_split.enabled = true;
     }
@@ -1107,9 +1106,8 @@ fn default_room_tolerance() -> f64 {
 }
 
 /// Classical sample rates for audio (44.1k and 48k families, up to 8x).
-pub const CLASSICAL_SAMPLE_RATES: &[usize] = &[
-    44100, 48000, 88200, 96000, 176400, 192000, 352800, 384000,
-];
+pub const CLASSICAL_SAMPLE_RATES: &[usize] =
+    &[44100, 48000, 88200, 96000, 176400, 192000, 352800, 384000];
 
 /// Given a raw sample-rate value, snap to the next classical rate above it.
 /// Returns the highest rate if already at or above the top.
@@ -1510,8 +1508,8 @@ impl RoomEqOptimizerConfig {
     /// when building a `RoomConfig` for the optimizer.
     pub fn to_optimizer_config(&self) -> autoeq::roomeq::OptimizerConfig {
         use autoeq::roomeq::{
-            ChannelMatchingConfig as BackendChannelMatchingConfig,
-            DecomposedCorrectionSerdeConfig, ExcursionProtectionConfig as BackendExcursionProtectionConfig,
+            ChannelMatchingConfig as BackendChannelMatchingConfig, DecomposedCorrectionSerdeConfig,
+            ExcursionProtectionConfig as BackendExcursionProtectionConfig,
             FirConfig as BackendFirConfig, HighFreqFilterConfig, HighpassType, LowFreqFilterConfig,
             MixedModeConfig, MixedPhaseSerdeConfig as BackendMixedPhaseConfig,
             MultiMeasurementConfig, MultiMeasurementStrategy,
@@ -1536,10 +1534,14 @@ impl RoomEqOptimizerConfig {
             phase: self.fir.phase.clone(),
             correct_excess_phase: self.fir.correct_excess_phase,
             phase_smoothing: self.fir.phase_smoothing,
-            pre_ringing: self.fir.pre_ringing.as_ref().map(|pr| BackendPreRingingConfig {
-                threshold_db: pr.threshold_db,
-                max_time_s: pr.max_time_s,
-            }),
+            pre_ringing: self
+                .fir
+                .pre_ringing
+                .as_ref()
+                .map(|pr| BackendPreRingingConfig {
+                    threshold_db: pr.threshold_db,
+                    max_time_s: pr.max_time_s,
+                }),
         });
 
         let mixed_phase = if self.mode == RoomEqOptimizationMode::MixedPhase {
@@ -1585,6 +1587,7 @@ impl RoomEqOptimizerConfig {
                     treble_shelf_freq: tr.treble_shelf_freq,
                 },
                 broadband_precorrection: tr.broadband_precorrection,
+                role_targets: None,
             })
         } else {
             None
@@ -1651,6 +1654,8 @@ impl RoomEqOptimizerConfig {
                 strategy,
                 primary_seat: self.multi_seat.primary_seat,
                 max_deviation_db: self.multi_seat.max_deviation_db,
+                optimize_polarity: false,
+                allpass_filters_per_sub: 0,
             })
         } else {
             None
@@ -2176,7 +2181,8 @@ pub trait DspChainOutputExt {
 
 impl DspChainOutputExt for DspChainOutput {
     fn is_rack_compatible(&self) -> bool {
-        self.channels.values().all(|chain| chain.drivers.is_none())
+        self.global_plugins.is_empty()
+            && self.channels.values().all(|chain| chain.drivers.is_none())
     }
 }
 
@@ -2696,9 +2702,12 @@ mod tests {
 
     #[test]
     fn test_parse_filters_autoeq_format() {
-        let json: Vec<serde_json::Value> = serde_json::from_str(r#"[
+        let json: Vec<serde_json::Value> = serde_json::from_str(
+            r#"[
             {"filter_type": "peak", "freq": 200.0, "q": 2.0, "db_gain": -5.0}
-        ]"#).unwrap();
+        ]"#,
+        )
+        .unwrap();
         let filters = parse_eq_filters_from_json(&json);
         assert_eq!(filters.len(), 1);
         assert_eq!(filters[0].frequency, 200.0);
@@ -2709,9 +2718,12 @@ mod tests {
 
     #[test]
     fn test_parse_filters_engine_format() {
-        let json: Vec<serde_json::Value> = serde_json::from_str(r#"[
+        let json: Vec<serde_json::Value> = serde_json::from_str(
+            r#"[
             {"filter_type": "peak", "frequency": 100.0, "q": 1.5, "gain_db": -3.0}
-        ]"#).unwrap();
+        ]"#,
+        )
+        .unwrap();
         let filters = parse_eq_filters_from_json(&json);
         assert_eq!(filters.len(), 1);
         assert_eq!(filters[0].frequency, 100.0);
@@ -2721,7 +2733,8 @@ mod tests {
 
     #[test]
     fn test_parse_filters_all_filter_types() {
-        let json: Vec<serde_json::Value> = serde_json::from_str(r#"[
+        let json: Vec<serde_json::Value> = serde_json::from_str(
+            r#"[
             {"filter_type": "peak", "freq": 100.0, "q": 1.0, "db_gain": 0.0},
             {"filter_type": "pk", "freq": 200.0, "q": 1.0, "db_gain": 0.0},
             {"filter_type": "lowshelf", "freq": 300.0, "q": 1.0, "db_gain": 0.0},
@@ -2734,7 +2747,9 @@ mod tests {
             {"filter_type": "hp", "freq": 1000.0, "q": 1.0, "db_gain": 0.0},
             {"filter_type": "notch", "freq": 1100.0, "q": 1.0, "db_gain": 0.0},
             {"filter_type": "unknown_type", "freq": 1200.0, "q": 1.0, "db_gain": 0.0}
-        ]"#).unwrap();
+        ]"#,
+        )
+        .unwrap();
         let filters = parse_eq_filters_from_json(&json);
         assert_eq!(filters.len(), 12);
         assert_eq!(filters[0].filter_type, BiquadFilterType::Peak);
@@ -2753,9 +2768,12 @@ mod tests {
 
     #[test]
     fn test_parse_filters_missing_fields_use_defaults() {
-        let json: Vec<serde_json::Value> = serde_json::from_str(r#"[
+        let json: Vec<serde_json::Value> = serde_json::from_str(
+            r#"[
             {"filter_type": "peak"}
-        ]"#).unwrap();
+        ]"#,
+        )
+        .unwrap();
         let filters = parse_eq_filters_from_json(&json);
         assert_eq!(filters.len(), 1);
         assert_eq!(filters[0].frequency, 1000.0);
@@ -2806,6 +2824,7 @@ mod tests {
     fn bare_output(channels: Vec<(String, ChannelDspChain)>) -> DspChainOutput {
         DspChainOutput {
             version: "1.0.0".to_string(),
+            global_plugins: Vec::new(),
             channels: channels.into_iter().collect(),
             metadata: None,
         }

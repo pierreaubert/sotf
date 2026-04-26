@@ -474,7 +474,9 @@ impl PluginController {
         let mut channel_count_changed = false;
 
         if let Some(node) = self.graph.nodes.get_mut(&node_id) {
-            node.plugin.settings.set_param_value(param_idx, default_value);
+            node.plugin
+                .settings
+                .set_param_value(param_idx, default_value);
 
             match &mut node.plugin.settings {
                 PluginSettings::Upmixer { .. } if param_idx == 0 => {

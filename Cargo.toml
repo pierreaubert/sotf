@@ -52,6 +52,7 @@ members = [
     "crates/app-tui",
     "crates/sotf-midi",
     "crates/sotf-plugins/crates/plugins-bridge",
+    "crates/sotf-plugins/crates/plugins-denoiser",
     "crates/sotf-plugins/crates/plugins-ffi",
     "crates/sotf-plugins/crates/plugins-gpui",
     "crates/sotf-plugins/crates/plugins-nih",
@@ -253,6 +254,7 @@ sotf-player = { path = "crates/sotf-player" }
 sotf-midi = { path = "crates/sotf-midi" }
 sotf-plugins = { path = "crates/sotf-plugins", default-features = false }
 plugins-gpui = { path = "crates/sotf-plugins/crates/plugins-gpui" }
+plugins-denoiser = { path = "crates/sotf-plugins/crates/plugins-denoiser" }
 driver-common = { path = "crates/systemwide/crates/driver-common" }
 driver-hal = { path = "crates/systemwide/crates/driver-hal" }  # macOS only
 

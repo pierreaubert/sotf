@@ -1031,10 +1031,6 @@ struct DenoiserArgs {
     #[arg(long = "denoiser-polyphonic-detection", default_value_t = false)]
     polyphonic_detection: bool,
 
-    /// Denoiser crack/pop sensitivity (0-100)
-    #[arg(long = "denoiser-crack-sensitivity", default_value = "10.0")]
-    crack_sensitivity: f32,
-
     /// Denoiser MCRA alpha_s smoothing (0.0-1.0)
     #[arg(long = "denoiser-mcra-alpha-s", default_value = "0.9")]
     mcra_alpha_s: f32,
@@ -1067,10 +1063,6 @@ struct DenoiserArgs {
     #[arg(long = "denoiser-psychoacoustic-masking", default_value_t = true)]
     psychoacoustic_masking: bool,
 
-    /// Enable denoiser transient suppression (de-clicking)
-    #[arg(long = "denoiser-transient", default_value_t = true)]
-    transient_enabled: bool,
-
     /// Enable denoiser spectral (frequency-domain) gain smoothing
     #[arg(long = "denoiser-spectral-smoothing", default_value_t = true)]
     spectral_smoothing_enabled: bool,
@@ -1078,22 +1070,6 @@ struct DenoiserArgs {
     /// Enable denoiser temporal (attack/release) gain smoothing
     #[arg(long = "denoiser-temporal-smoothing", default_value_t = true)]
     temporal_smoothing_enabled: bool,
-
-    /// Enable denoiser hiss remover (high-frequency noise reduction)
-    #[arg(long = "denoiser-hiss", default_value_t = false)]
-    hiss_enabled: bool,
-
-    /// Hiss detection SNR threshold (-60 to -10 dB)
-    #[arg(long = "denoiser-hiss-threshold-db", default_value = "-30.0")]
-    hiss_threshold_db: f32,
-
-    /// Frequency above which hiss removal applies (Hz)
-    #[arg(long = "denoiser-hiss-frequency-hz", default_value = "4000.0")]
-    hiss_frequency_hz: f32,
-
-    /// Hiss removal strength (0.0-1.0)
-    #[arg(long = "denoiser-hiss-strength", default_value = "0.5")]
-    hiss_strength: f32,
 
     /// Enable denoiser spectral subtraction
     #[arg(long = "denoiser-spectral-sub", default_value_t = false)]
@@ -1918,7 +1894,6 @@ fn create_denoiser_plugin_config(args: &DenoiserArgs) -> Result<PluginConfig, St
             "release_ms": args.release_ms,
             "low_latency": args.low_latency,
             "polyphonic_detection": args.polyphonic_detection,
-            "crack_sensitivity": args.crack_sensitivity,
             "mcra_alpha_s": args.mcra_alpha_s,
             "mcra_alpha_p": args.mcra_alpha_p,
             "mcra_l": args.mcra_l,
@@ -1927,13 +1902,8 @@ fn create_denoiser_plugin_config(args: &DenoiserArgs) -> Result<PluginConfig, St
             "dd_enabled": args.dd_enabled,
             "dd_alpha": args.dd_alpha,
             "psychoacoustic_masking": args.psychoacoustic_masking,
-            "transient_enabled": args.transient_enabled,
             "spectral_smoothing_enabled": args.spectral_smoothing_enabled,
             "temporal_smoothing_enabled": args.temporal_smoothing_enabled,
-            "hiss_enabled": args.hiss_enabled,
-            "hiss_threshold_db": args.hiss_threshold_db,
-            "hiss_frequency_hz": args.hiss_frequency_hz,
-            "hiss_strength": args.hiss_strength,
             "spectral_sub_enabled": args.spectral_sub_enabled,
             "spectral_sub_alpha": args.spectral_sub_alpha,
             "spectral_sub_beta": args.spectral_sub_beta,
@@ -3352,7 +3322,6 @@ fn build_rack_mode_plugins(
                         release_ms: plugins.denoiser.release_ms as f64,
                         low_latency: plugins.denoiser.low_latency,
                         polyphonic_detection: plugins.denoiser.polyphonic_detection,
-                        crack_sensitivity: plugins.denoiser.crack_sensitivity as f64,
                         mcra_alpha_s: plugins.denoiser.mcra_alpha_s as f64,
                         mcra_alpha_p: plugins.denoiser.mcra_alpha_p as f64,
                         mcra_l: plugins.denoiser.mcra_l,
@@ -3361,20 +3330,14 @@ fn build_rack_mode_plugins(
                         dd_enabled: plugins.denoiser.dd_enabled,
                         dd_alpha: plugins.denoiser.dd_alpha as f64,
                         psychoacoustic_masking: plugins.denoiser.psychoacoustic_masking,
-                        transient_enabled: plugins.denoiser.transient_enabled,
                         spectral_smoothing_enabled: plugins.denoiser.spectral_smoothing_enabled,
                         temporal_smoothing_enabled: plugins.denoiser.temporal_smoothing_enabled,
-                        hiss_enabled: plugins.denoiser.hiss_enabled,
-                        hiss_threshold_db: plugins.denoiser.hiss_threshold_db as f64,
-                        hiss_frequency_hz: plugins.denoiser.hiss_frequency_hz as f64,
-                        hiss_strength: plugins.denoiser.hiss_strength as f64,
                         spectral_sub_enabled: plugins.denoiser.spectral_sub_enabled,
                         spectral_sub_alpha: plugins.denoiser.spectral_sub_alpha as f64,
                         spectral_sub_beta: plugins.denoiser.spectral_sub_beta as f64,
                         learn_noise: plugins.denoiser.learn_noise,
                         use_captured_profile: plugins.denoiser.use_captured_profile,
                         clear_profile: plugins.denoiser.clear_profile,
-                        algorithm: 0,
                         formant_preservation: false,
                         formant_strength: 0.5,
                         multi_resolution: false,

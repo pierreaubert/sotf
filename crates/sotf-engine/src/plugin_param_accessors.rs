@@ -519,18 +519,34 @@ impl_param_accessors! {
         layout: Some(&param_specs::denoiser::LAYOUT),
         fields: [
             reduction_db: f64, floor_db: f64, smoothing: f64, attack_ms: f64, release_ms: f64,
-            low_latency: bool, polyphonic_detection: bool, crack_sensitivity: f64,
+            low_latency: bool, polyphonic_detection: bool,
             mcra_alpha_s: f64, mcra_alpha_p: f64, mcra_l: usize, mcra_delta: f64,
             transparency: f64, dd_enabled: bool, dd_alpha: f64,
-            psychoacoustic_masking: bool, transient_enabled: bool,
+            psychoacoustic_masking: bool,
             spectral_smoothing_enabled: bool, temporal_smoothing_enabled: bool,
-            hiss_enabled: bool, hiss_threshold_db: f64, hiss_frequency_hz: f64, hiss_strength: f64,
             spectral_sub_enabled: bool, spectral_sub_alpha: f64, spectral_sub_beta: f64,
             learn_noise: bool, use_captured_profile: bool, clear_profile: bool,
-            algorithm: usize,
             formant_preservation: bool, formant_strength: f64, multi_resolution: bool,
             harmonic_percussive: bool, spatial_denoise: bool, spatial_strength: f64,
         ]
+    },
+    Declick {
+        params: param_specs::declick::PARAMS,
+        layout: Some(&param_specs::declick::LAYOUT),
+        fields: [enabled: bool, sensitivity: f64]
+    },
+    HissReducer {
+        params: param_specs::hiss_reducer::PARAMS,
+        layout: Some(&param_specs::hiss_reducer::LAYOUT),
+        fields: [
+            enabled: bool, threshold_db: f64, frequency_hz: f64,
+            strength: f64, low_latency: bool,
+        ]
+    },
+    SpeechDenoiser {
+        params: param_specs::speech_denoiser::PARAMS,
+        layout: Some(&param_specs::speech_denoiser::LAYOUT),
+        fields: [enabled: bool]
     },
     Pnd {
         params: param_specs::pnd::PARAMS,

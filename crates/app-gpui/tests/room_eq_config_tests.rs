@@ -542,6 +542,7 @@ fn output(
 ) -> DspChainOutput {
     DspChainOutput {
         version: "1.0.0".to_string(),
+        global_plugins: Vec::new(),
         channels,
         metadata: None,
     }

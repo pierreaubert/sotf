@@ -3,17 +3,21 @@
 // ============================================================================
 //
 // Takes a mono WAV input (old recording) and produces a restored stereo WAV
-// by chaining three plugins:
+// by chaining the dedicated repair plugins:
 //
-//   1. Denoiser  — removes crackles, hiss, and broadband noise
-//   2. PND       — corrects wow and flutter (pitch drift)
-//   3. Mono→Stereo — widens the mono signal into natural-sounding stereo
+//   1. Declick      — repairs short clicks / pops in the time domain
+//   2. Hiss reducer — attenuates stationary high-frequency hiss
+//   3. Denoiser     — removes broadband noise (Wiener / MCRA)
+//   4. PND          — corrects wow and flutter (pitch drift)
+//   5. Mono→Stereo  — widens the mono signal into natural-sounding stereo
 //
 // Run with:
 //   cargo run -p sotf-plugins --example restore_mono --release -- input.wav output.wav
 
 use sotf_host::plugin::{InPlacePluginAdapter, Plugin, ProcessContext};
+use sotf_plugin_declick::{DeclickPlugin, DeclickPluginParams};
 use sotf_plugin_denoiser::{DenoiserData, DenoiserPlugin, DenoiserPluginParams};
+use sotf_plugin_hiss_reducer::{HissReducerPlugin, HissReducerPluginParams};
 use sotf_plugin_mono_to_stereo::{MonoToStereoPlugin, MonoToStereoPluginParams};
 use sotf_plugin_pnd::{PndData, PndPlugin, PndPluginParams};
 use std::env;
@@ -83,8 +87,49 @@ fn main() {
             .collect()
     };
 
-    // ── Stage 1: Denoiser ───────────────────────────────────────────────
-    println!("--- Stage 1: Denoiser ---");
+    // ── Stage 1: Declick ────────────────────────────────────────────────
+    println!("--- Stage 1: Declick ---");
+    let declick_params = DeclickPluginParams {
+        enabled: true,
+        sensitivity: 5.0,
+    };
+    let declick = DeclickPlugin::from_params(1, declick_params);
+    let mut declick_plugin = InPlacePluginAdapter::new(declick);
+    declick_plugin
+        .initialize(sample_rate)
+        .expect("Failed to initialize declick");
+    let declick_latency = declick_plugin.latency_samples();
+    let declicked = process_plugin_mono(
+        &mut declick_plugin,
+        &mono_samples,
+        total_frames,
+        sample_rate,
+    );
+    let declicked = strip_latency(&declicked, declick_latency, 1);
+    println!("  Output frames: {}", declicked.len());
+
+    // ── Stage 2: Hiss reducer ───────────────────────────────────────────
+    println!("\n--- Stage 2: Hiss reducer ---");
+    let hiss_params = HissReducerPluginParams {
+        enabled: true,
+        threshold_db: -35.0,
+        frequency_hz: 3000.0,
+        strength: 0.7,
+        low_latency: false,
+    };
+    let hiss = HissReducerPlugin::from_params(1, hiss_params);
+    let mut hiss_plugin = InPlacePluginAdapter::new(hiss);
+    hiss_plugin
+        .initialize(sample_rate)
+        .expect("Failed to initialize hiss reducer");
+    let hiss_latency = hiss_plugin.latency_samples();
+    let hiss_frames = declicked.len();
+    let dehissed = process_plugin_mono(&mut hiss_plugin, &declicked, hiss_frames, sample_rate);
+    let dehissed = strip_latency(&dehissed, hiss_latency, 1);
+    println!("  Output frames: {}", dehissed.len());
+
+    // ── Stage 3: Denoiser ───────────────────────────────────────────────
+    println!("\n--- Stage 3: Denoiser ---");
     let denoiser_params = DenoiserPluginParams {
         reduction_db: 18.0,
         floor_db: -50.0,
@@ -92,12 +137,6 @@ fn main() {
         attack_ms: 1.0,
         release_ms: 50.0,
         low_latency: false,
-        transient_enabled: true,
-        crack_sensitivity: 5.0,
-        hiss_enabled: true,
-        hiss_threshold_db: -35.0,
-        hiss_frequency_hz: 3000.0,
-        hiss_strength: 0.7,
         spectral_sub_enabled: true,
         spectral_smoothing_enabled: true,
         temporal_smoothing_enabled: true,
@@ -116,10 +155,11 @@ fn main() {
         denoiser_latency as f64 * 1000.0 / sample_rate as f64
     );
 
+    let denoiser_frames = dehissed.len();
     let denoised = process_plugin_mono(
         &mut denoiser_plugin,
-        &mono_samples,
-        total_frames,
+        &dehissed,
+        denoiser_frames,
         sample_rate,
     );
 
@@ -129,12 +169,11 @@ fn main() {
         println!("  Avg reduction: {:.1} dB", d.avg_reduction_db);
     }
 
-    // Strip denoiser latency.
     let denoised = strip_latency(&denoised, denoiser_latency, 1);
     println!("  Output frames: {}", denoised.len());
 
-    // ── Stage 2: PND (wow/flutter removal) ──────────────────────────────
-    println!("\n--- Stage 2: PND (Wow & Flutter) ---");
+    // ── Stage 4: PND (wow/flutter removal) ──────────────────────────────
+    println!("\n--- Stage 4: PND (Wow & Flutter) ---");
     let pnd_params = PndPluginParams {
         correction_strength: 0.9,
         drift_smoothing: 0.85,
@@ -167,8 +206,8 @@ fn main() {
     let stabilised = strip_latency(&stabilised, pnd_latency, 1);
     println!("  Output frames: {}", stabilised.len());
 
-    // ── Stage 3: Mono → Stereo ──────────────────────────────────────────
-    println!("\n--- Stage 3: Mono to Stereo ---");
+    // ── Stage 5: Mono → Stereo ──────────────────────────────────────────
+    println!("\n--- Stage 5: Mono to Stereo ---");
     let m2s_params = MonoToStereoPluginParams {
         stereo_width: 0.6, // moderate width — natural, not exaggerated
         freq_dependent: true,
@@ -202,7 +241,8 @@ fn main() {
     println!("  Output frames: {output_frames}");
 
     // ── Summary ─────────────────────────────────────────────────────────
-    let total_latency = denoiser_latency + pnd_latency + m2s_latency;
+    let total_latency =
+        declick_latency + hiss_latency + denoiser_latency + pnd_latency + m2s_latency;
     println!("\n--- Summary ---");
     println!(
         "  Total pipeline latency: {total_latency} samples ({:.2} ms)",

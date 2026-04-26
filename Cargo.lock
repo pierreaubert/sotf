@@ -8046,6 +8046,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "plugins-denoiser"
+version = "0.5.4"
+dependencies = [
+ "nnnoiseless",
+]
+
+[[package]]
 name = "plugins-ffi"
 version = "0.5.3"
 dependencies = [
@@ -10863,10 +10870,10 @@ name = "sotf-plugin-declick"
 version = "0.5.4"
 dependencies = [
  "hound",
+ "plugins-denoiser",
  "serde",
  "serde_json",
  "sotf-host",
- "sotf-plugin-denoiser",
 ]
 
 [[package]]
@@ -10884,7 +10891,6 @@ version = "0.5.4"
 dependencies = [
  "hound",
  "math-dsp",
- "nnnoiseless",
  "realfft",
  "rustfft 6.4.1",
  "serde",
@@ -10987,10 +10993,10 @@ name = "sotf-plugin-hiss-reducer"
 version = "0.5.4"
 dependencies = [
  "hound",
+ "plugins-denoiser",
  "serde",
  "serde_json",
  "sotf-host",
- "sotf-plugin-denoiser",
 ]
 
 [[package]]
@@ -11121,10 +11127,10 @@ name = "sotf-plugin-speech-denoiser"
 version = "0.5.4"
 dependencies = [
  "hound",
+ "plugins-denoiser",
  "serde",
  "serde_json",
  "sotf-host",
- "sotf-plugin-denoiser",
 ]
 
 [[package]]

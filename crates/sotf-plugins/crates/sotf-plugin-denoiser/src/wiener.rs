@@ -96,23 +96,18 @@ impl DenoiserPlugin {
                 self.calculate_spectral_subtraction_gains_for_channel(ch);
             }
 
-            // Pass 1c: Hiss removal (additional high-frequency attenuation)
-            if self.hiss_enabled {
-                self.apply_hiss_removal(ch);
-            }
-
-            // Pass 1d: Formant preservation — floor gains at spectral envelope peaks
+            // Pass 1c: Formant preservation — floor gains at spectral envelope peaks
             // so that speech formant structure survives noise reduction.
             if self.formant_preserver.enabled {
                 self.apply_formant_preservation(ch);
             }
 
-            // Pass 1e: 3-bin median filter to suppress isolated musical noise
+            // Pass 1d: 3-bin median filter to suppress isolated musical noise
             // spikes. Applied before spectral/temporal smoothing so that the
             // smoother operates on clean gain curves.
             Self::median_smooth_gains(&mut self.gain[ch], self.spectrum_size);
 
-            // Pass 1f: Harmonic/percussive differential denoising
+            // Pass 1e: Harmonic/percussive differential denoising
             // Tonal bins get stronger denoising (noise is diffuse), transient bins get gentler
             if self.harmonic_percussive {
                 // Compute magnitudes for separator
@@ -130,7 +125,8 @@ impl DenoiserPlugin {
                     // Blend: tonal bins keep current gain, transient bins push gain toward 1.0
                     let transient_weight = self.tt_transient_mask[k];
                     self.gain[ch][k] =
-                        self.gain[ch][k] * (1.0 - 0.5 * transient_weight) + transient_weight * 0.5; // 50% less denoising on transients
+                        self.gain[ch][k] * (1.0 - 0.5 * transient_weight) + transient_weight * 0.5;
+                    // 50% less denoising on transients
                 }
             }
 

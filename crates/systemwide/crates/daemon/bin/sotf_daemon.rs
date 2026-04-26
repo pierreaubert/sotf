@@ -1265,6 +1265,9 @@ fn plugin_type_to_engine_str(pt: &PluginType) -> &'static str {
         PluginType::Matrix => "matrix",
         PluginType::XTC => "xtc",
         PluginType::Denoiser => "denoiser",
+        PluginType::Declick => "declick",
+        PluginType::HissReducer => "hiss_reducer",
+        PluginType::SpeechDenoiser => "speech_denoiser",
         PluginType::Pnd => "pnd",
         PluginType::ABCompare => "ab_compare",
         PluginType::BandSplit => "band_split",
@@ -1305,7 +1308,11 @@ fn plugin_type_category(pt: &PluginType) -> &'static str {
         | PluginType::ChannelMuteSolo => "Spatial & Routing",
         PluginType::BinauralDecoder | PluginType::XTC => "Spatial & Routing",
         PluginType::Convolution => "Effects",
-        PluginType::Denoiser | PluginType::Pnd => "Restoration",
+        PluginType::Denoiser
+        | PluginType::Declick
+        | PluginType::HissReducer
+        | PluginType::SpeechDenoiser
+        | PluginType::Pnd => "Restoration",
         PluginType::LoudnessMonitor | PluginType::SpectrumAnalyzer => "Monitoring",
         PluginType::ABCompare => "Utility",
         PluginType::BandSplit | PluginType::BandMerge | PluginType::Crossfeed => "Utility",

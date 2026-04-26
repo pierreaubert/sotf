@@ -1,0 +1,16 @@
+[package]
+name = "plugins-denoiser"
+description = "Shared denoiser DSP blocks for SOTF plugins"
+version = "0.5.4"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[lib]
+name = "plugins_denoiser"
+path = "src/lib.rs"
+
+[dependencies]
+nnnoiseless = { workspace = true }

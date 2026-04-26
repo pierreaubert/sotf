@@ -201,53 +201,6 @@ fn test_rejects_oversized_classical_in_place_block() {
 }
 
 #[test]
-fn test_rnnoise_algorithm_is_wired() {
-    let mut plugin = DenoiserPlugin::new(2, false);
-    plugin.initialize(SAMPLE_RATE).unwrap();
-    plugin
-        .set_parameter(ParameterId::from("algorithm"), ParameterValue::Int(1))
-        .unwrap();
-
-    assert_eq!(plugin.latency_samples(), 480);
-
-    let num_frames = 960;
-    let mut buffer = make_noisy_signal(num_frames, 2, -12.0, -30.0);
-    let context = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames,
-    };
-
-    assert_eq!(
-        plugin.process_in_place(&mut buffer, &context).unwrap(),
-        num_frames
-    );
-    assert!(buffer.iter().all(|s| s.is_finite()));
-}
-
-#[test]
-fn test_rnnoise_rejects_blocks_larger_than_output_ring() {
-    let mut plugin = DenoiserPlugin::new(2, false);
-    plugin.initialize(SAMPLE_RATE).unwrap();
-    plugin
-        .set_parameter(ParameterId::from("algorithm"), ParameterValue::Int(1))
-        .unwrap();
-
-    let num_frames = plugin.rnnoise_backend.max_in_place_frames() + 1;
-    let mut buffer = make_noisy_signal(num_frames, 2, -12.0, -30.0);
-    let context = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames,
-    };
-
-    let err = plugin.process_in_place(&mut buffer, &context).unwrap_err();
-    assert!(
-        err.contains("Block too large for RNNoise"),
-        "Expected RNNoise oversized block error, got: {}",
-        err
-    );
-}
-
-#[test]
 fn test_denoiser_data_clone_keeps_mutable_cache_slots() {
     let mut cloned = DenoiserData::default().clone();
 
