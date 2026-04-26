@@ -79,9 +79,13 @@ pub struct HomeCinemaLayoutReport {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MultiSeatCoverageReport {
     pub channels_with_multiple_measurements: usize,
+    pub non_sub_channel_count: usize,
     pub non_sub_channels_with_multiple_measurements: usize,
     pub max_seat_count: usize,
     pub by_role_group: BTreeMap<String, usize>,
+    pub all_channel_correction_ready: bool,
+    pub recommended_scope: String,
+    pub advisories: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -98,7 +102,89 @@ pub struct BassManagementReport {
     pub headroom_margin_db: f64,
     pub applied_sub_gain_db: Option<f64>,
     pub gain_limited: bool,
+    pub physical_sub_output: String,
+    pub redirected_bass_channel_count: usize,
+    pub main_high_pass_hz: Option<f64>,
+    pub sub_low_pass_hz: Option<f64>,
+    pub lfe_headroom_required_db: f64,
+    pub signal_flow: Vec<BassManagementSignalFlowEntry>,
+    pub signal_flow_advisories: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub routing_graph: Option<BassManagementRoutingGraph>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub optimization: Option<BassManagementOptimizationReport>,
     pub advisory: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct BassManagementOptimizationReport {
+    pub applied: bool,
+    pub phase_required: bool,
+    pub phase_available: bool,
+    pub configured_crossover_hz: Option<f64>,
+    pub optimized_crossover_hz: Option<f64>,
+    pub crossover_range_hz: Option<(f64, f64)>,
+    pub crossover_type: String,
+    pub main_delay_ms: f64,
+    pub sub_delay_ms: f64,
+    pub relative_sub_delay_ms: f64,
+    pub sub_polarity_inverted: bool,
+    pub requested_sub_gain_db: f64,
+    pub applied_sub_gain_db: f64,
+    pub gain_limited: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimated_bass_bus_peak_gain_db: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub objective_before: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub objective_after: Option<f64>,
+    pub advisories: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct BassManagementSignalFlowEntry {
+    pub source_channel: String,
+    pub role: HomeCinemaRole,
+    pub destination: String,
+    pub high_pass_hz: Option<f64>,
+    pub low_pass_hz: Option<f64>,
+    pub lfe_gain_db: f64,
+    pub redirects_bass: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct BassManagementRoutingGraph {
+    pub physical_sub_output: String,
+    pub input_channels: Vec<String>,
+    pub output_channels: Vec<String>,
+    pub routes: Vec<BassManagementRoute>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub matrix: Option<BassManagementMatrix>,
+    pub advisories: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct BassManagementRoute {
+    pub source_channel: String,
+    pub source_index: usize,
+    pub destination: String,
+    pub destination_index: usize,
+    pub route_kind: String,
+    pub crossover_type: String,
+    pub high_pass_hz: Option<f64>,
+    pub low_pass_hz: Option<f64>,
+    pub gain_db: f64,
+    pub gain_linear: f64,
+    pub delay_ms: f64,
+    pub polarity_inverted: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct BassManagementMatrix {
+    pub input_channel_map: Vec<usize>,
+    pub output_channel_map: Vec<usize>,
+    pub matrix: Vec<f32>,
+    pub route_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -218,7 +304,29 @@ pub fn bass_management_report(
     applied_sub_gain_db: Option<f64>,
     gain_limited: bool,
 ) -> Option<BassManagementReport> {
+    bass_management_report_with_optimization(config, applied_sub_gain_db, gain_limited, None)
+}
+
+pub fn bass_management_report_with_optimization(
+    config: &RoomConfig,
+    applied_sub_gain_db: Option<f64>,
+    gain_limited: bool,
+    optimization: Option<BassManagementOptimizationReport>,
+) -> Option<BassManagementReport> {
     let effective = effective_bass_management(config)?;
+    let routing_graph = bass_management_routing_graph(config, optimization.as_ref());
+    let physical_sub_output = config
+        .system
+        .as_ref()
+        .map(|system| bass_output_role(config, system))
+        .unwrap_or_else(|| effective.config.lfe_channel.clone());
+    let signal_flow = bass_management_signal_flow(config, &effective, &physical_sub_output);
+    let redirected_bass_channel_count = signal_flow
+        .iter()
+        .filter(|entry| entry.redirects_bass)
+        .count();
+    let signal_flow_advisories =
+        bass_management_signal_flow_advisories(&effective, redirected_bass_channel_count);
     let mut advisory = effective.advisory;
     if gain_limited {
         advisory = if advisory == "ok" {
@@ -250,8 +358,192 @@ pub fn bass_management_report(
         headroom_margin_db: effective.config.headroom_margin_db,
         applied_sub_gain_db,
         gain_limited,
+        physical_sub_output,
+        redirected_bass_channel_count,
+        main_high_pass_hz: effective.crossover_frequency_hz,
+        sub_low_pass_hz: effective.crossover_frequency_hz,
+        lfe_headroom_required_db: effective.config.lfe_playback_gain_db.max(0.0)
+            + effective.config.headroom_margin_db,
+        signal_flow,
+        signal_flow_advisories,
+        routing_graph,
+        optimization,
         advisory,
     })
+}
+
+pub fn bass_management_routing_graph(
+    config: &RoomConfig,
+    optimization: Option<&BassManagementOptimizationReport>,
+) -> Option<BassManagementRoutingGraph> {
+    let system = config.system.as_ref()?;
+    let effective = effective_bass_management(config)?;
+    let bass_role = bass_output_role(config, system);
+    let mut channel_order = logical_channel_names(config);
+    channel_order.sort_by(|a, b| {
+        home_cinema_role_sort_index(role_for_channel(a))
+            .cmp(&home_cinema_role_sort_index(role_for_channel(b)))
+            .then_with(|| a.cmp(b))
+    });
+    let destination_index = channel_order
+        .iter()
+        .position(|name| name == &bass_role)
+        .unwrap_or_else(|| {
+            channel_order.push(bass_role.clone());
+            channel_order.len() - 1
+        });
+
+    let main_delay_ms = optimization.map(|o| o.main_delay_ms).unwrap_or(0.0);
+    let sub_delay_ms = optimization.map(|o| o.sub_delay_ms).unwrap_or(0.0);
+    let sub_inverted = optimization
+        .map(|o| o.sub_polarity_inverted)
+        .unwrap_or(false);
+    let crossover_type = optimization
+        .map(|o| o.crossover_type.clone())
+        .unwrap_or_else(|| effective.crossover_type.clone());
+
+    let mut routes = Vec::new();
+    for (source_index, source_channel) in channel_order.iter().enumerate() {
+        let role = role_for_channel(source_channel);
+        let is_lfe = role == HomeCinemaRole::Lfe || source_channel == &effective.config.lfe_channel;
+
+        if role.is_bass_managed_candidate() {
+            routes.push(BassManagementRoute {
+                source_channel: source_channel.clone(),
+                source_index,
+                destination: source_channel.clone(),
+                destination_index: source_index,
+                route_kind: "main_highpass_to_self".to_string(),
+                crossover_type: crossover_type.clone(),
+                high_pass_hz: effective.crossover_frequency_hz,
+                low_pass_hz: None,
+                gain_db: 0.0,
+                gain_linear: 1.0,
+                delay_ms: main_delay_ms,
+                polarity_inverted: false,
+            });
+        }
+
+        if effective.config.redirect_bass && role.is_bass_managed_candidate() {
+            routes.push(BassManagementRoute {
+                source_channel: source_channel.clone(),
+                source_index,
+                destination: bass_role.clone(),
+                destination_index,
+                route_kind: "redirected_bass_lowpass_to_sub".to_string(),
+                crossover_type: crossover_type.clone(),
+                high_pass_hz: None,
+                low_pass_hz: effective.crossover_frequency_hz,
+                gain_db: 0.0,
+                gain_linear: 1.0,
+                delay_ms: sub_delay_ms,
+                polarity_inverted: sub_inverted,
+            });
+        }
+
+        if is_lfe {
+            let route_gain_db = if effective.config.apply_lfe_gain_to_chain {
+                0.0
+            } else {
+                effective.config.lfe_playback_gain_db
+            };
+            routes.push(BassManagementRoute {
+                source_channel: source_channel.clone(),
+                source_index,
+                destination: bass_role.clone(),
+                destination_index,
+                route_kind: "lfe_lowpass_to_sub".to_string(),
+                crossover_type: crossover_type.clone(),
+                high_pass_hz: None,
+                low_pass_hz: effective.crossover_frequency_hz,
+                gain_db: route_gain_db,
+                gain_linear: 10.0_f64.powf(route_gain_db / 20.0),
+                delay_ms: sub_delay_ms,
+                polarity_inverted: sub_inverted,
+            });
+        }
+    }
+
+    let bass_routes: Vec<&BassManagementRoute> = routes
+        .iter()
+        .filter(|route| {
+            route.destination == bass_role && route.destination_index == destination_index
+        })
+        .collect();
+    let matrix = (!bass_routes.is_empty()).then(|| BassManagementMatrix {
+        input_channel_map: bass_routes.iter().map(|route| route.source_index).collect(),
+        output_channel_map: vec![destination_index],
+        matrix: bass_routes
+            .iter()
+            .map(|route| route.gain_linear as f32)
+            .collect(),
+        route_count: bass_routes.len(),
+    });
+
+    let mut advisories = Vec::new();
+    if effective.config.apply_lfe_gain_to_chain {
+        advisories.push("legacy_lfe_gain_applied_to_shared_sub_chain".to_string());
+    }
+    if effective.config.redirect_bass && matrix.is_none() {
+        advisories.push("redirect_bass_enabled_but_no_matrix_routes".to_string());
+    }
+    if advisories.is_empty() {
+        advisories.push("ok".to_string());
+    }
+
+    Some(BassManagementRoutingGraph {
+        physical_sub_output: bass_role,
+        input_channels: channel_order.clone(),
+        output_channels: channel_order,
+        routes,
+        matrix,
+        advisories,
+    })
+}
+
+pub fn bass_management_matrix_metadata(graph: &BassManagementRoutingGraph) -> serde_json::Value {
+    serde_json::json!({
+        "purpose": "home_cinema_bass_management",
+        "physical_sub_output": graph.physical_sub_output,
+        "routes": graph.routes,
+        "advisories": graph.advisories,
+    })
+}
+
+pub fn estimated_bass_bus_peak_gain_db(
+    graph: Option<&BassManagementRoutingGraph>,
+    applied_sub_gain_db: f64,
+) -> Option<f64> {
+    let graph = graph?;
+    let route_sum: f64 = graph
+        .routes
+        .iter()
+        .filter(|route| route.destination == graph.physical_sub_output)
+        .map(|route| route.gain_linear.abs())
+        .sum();
+    (route_sum > 0.0).then(|| 20.0 * route_sum.log10() + applied_sub_gain_db)
+}
+
+fn home_cinema_role_sort_index(role: HomeCinemaRole) -> usize {
+    match role {
+        HomeCinemaRole::FrontLeft => 0,
+        HomeCinemaRole::FrontRight => 1,
+        HomeCinemaRole::Center => 2,
+        HomeCinemaRole::Lfe | HomeCinemaRole::Subwoofer => 3,
+        HomeCinemaRole::SideSurroundLeft => 4,
+        HomeCinemaRole::SideSurroundRight => 5,
+        HomeCinemaRole::RearSurroundLeft => 6,
+        HomeCinemaRole::RearSurroundRight => 7,
+        HomeCinemaRole::WideLeft => 8,
+        HomeCinemaRole::WideRight => 9,
+        HomeCinemaRole::TopFrontLeft => 10,
+        HomeCinemaRole::TopFrontRight => 11,
+        HomeCinemaRole::TopMiddleLeft => 12,
+        HomeCinemaRole::TopMiddleRight => 13,
+        HomeCinemaRole::TopRearLeft => 14,
+        HomeCinemaRole::TopRearRight => 15,
+        HomeCinemaRole::Unknown => 99,
+    }
 }
 
 pub fn limited_sub_gain(
@@ -273,10 +565,16 @@ pub fn limited_sub_gain(
 pub fn multi_seat_coverage(config: &RoomConfig) -> MultiSeatCoverageReport {
     let mut by_role_group: BTreeMap<String, usize> = BTreeMap::new();
     let mut channels_with_multiple_measurements = 0;
+    let mut non_sub_channel_count = 0;
     let mut non_sub_channels_with_multiple_measurements = 0;
     let mut max_seat_count = 0;
 
     for (channel, speaker) in logical_speaker_configs(config) {
+        let role = role_for_channel(&channel);
+        let is_non_sub = !role.is_sub_or_lfe();
+        if is_non_sub {
+            non_sub_channel_count += 1;
+        }
         let Some(seat_count) = speaker_measurement_count(&speaker) else {
             continue;
         };
@@ -286,8 +584,7 @@ pub fn multi_seat_coverage(config: &RoomConfig) -> MultiSeatCoverageReport {
 
         channels_with_multiple_measurements += 1;
         max_seat_count = max_seat_count.max(seat_count);
-        let role = role_for_channel(&channel);
-        if !role.is_sub_or_lfe() {
+        if is_non_sub {
             non_sub_channels_with_multiple_measurements += 1;
         }
         *by_role_group
@@ -297,10 +594,136 @@ pub fn multi_seat_coverage(config: &RoomConfig) -> MultiSeatCoverageReport {
 
     MultiSeatCoverageReport {
         channels_with_multiple_measurements,
+        non_sub_channel_count,
         non_sub_channels_with_multiple_measurements,
         max_seat_count,
         by_role_group,
+        all_channel_correction_ready: non_sub_channel_count > 0
+            && non_sub_channels_with_multiple_measurements == non_sub_channel_count
+            && max_seat_count >= 2,
+        recommended_scope: multi_seat_recommended_scope(
+            channels_with_multiple_measurements,
+            non_sub_channel_count,
+            non_sub_channels_with_multiple_measurements,
+        )
+        .to_string(),
+        advisories: multi_seat_coverage_advisories(
+            channels_with_multiple_measurements,
+            non_sub_channel_count,
+            non_sub_channels_with_multiple_measurements,
+            max_seat_count,
+        ),
     }
+}
+
+fn bass_management_signal_flow(
+    config: &RoomConfig,
+    effective: &EffectiveBassManagement,
+    physical_sub_output: &str,
+) -> Vec<BassManagementSignalFlowEntry> {
+    logical_channel_names(config)
+        .into_iter()
+        .map(|source_channel| {
+            let role = role_for_channel(&source_channel);
+            let is_lfe =
+                role == HomeCinemaRole::Lfe || source_channel == effective.config.lfe_channel;
+            let redirects_bass = effective.config.redirect_bass && role.is_bass_managed_candidate();
+            BassManagementSignalFlowEntry {
+                source_channel,
+                role,
+                destination: if is_lfe || redirects_bass {
+                    physical_sub_output.to_string()
+                } else {
+                    "self".to_string()
+                },
+                high_pass_hz: role
+                    .is_bass_managed_candidate()
+                    .then_some(effective.crossover_frequency_hz)
+                    .flatten(),
+                low_pass_hz: (is_lfe || redirects_bass)
+                    .then_some(effective.crossover_frequency_hz)
+                    .flatten(),
+                lfe_gain_db: if is_lfe {
+                    effective.config.lfe_playback_gain_db
+                } else {
+                    0.0
+                },
+                redirects_bass,
+            }
+        })
+        .collect()
+}
+
+fn bass_management_signal_flow_advisories(
+    effective: &EffectiveBassManagement,
+    redirected_bass_channel_count: usize,
+) -> Vec<String> {
+    let mut advisories = Vec::new();
+    if effective.crossover_frequency_hz.is_none() {
+        advisories.push("missing_crossover_frequency".to_string());
+    }
+    if effective.config.redirect_bass && redirected_bass_channel_count == 0 {
+        advisories.push("redirect_bass_enabled_but_no_eligible_mains".to_string());
+    }
+    if !effective.config.redirect_bass && effective.crossover_frequency_hz.is_some() {
+        advisories.push("main_highpass_without_redirected_bass".to_string());
+    }
+    if effective.config.lfe_playback_gain_db > effective.config.headroom_margin_db {
+        advisories.push("lfe_gain_exceeds_headroom_margin".to_string());
+    }
+    if advisories.is_empty() {
+        advisories.push("ok".to_string());
+    }
+    advisories
+}
+
+fn multi_seat_recommended_scope(
+    channels_with_multiple_measurements: usize,
+    non_sub_channel_count: usize,
+    non_sub_channels_with_multiple_measurements: usize,
+) -> &'static str {
+    if non_sub_channel_count > 0
+        && non_sub_channels_with_multiple_measurements == non_sub_channel_count
+    {
+        "all_channel_reporting_ready"
+    } else if non_sub_channels_with_multiple_measurements > 0 {
+        "partial_non_sub_reporting_only"
+    } else if channels_with_multiple_measurements > 0 {
+        "sub_or_partial_only"
+    } else {
+        "single_seat_only"
+    }
+}
+
+fn multi_seat_coverage_advisories(
+    channels_with_multiple_measurements: usize,
+    non_sub_channel_count: usize,
+    non_sub_channels_with_multiple_measurements: usize,
+    max_seat_count: usize,
+) -> Vec<String> {
+    let mut advisories = Vec::new();
+    if channels_with_multiple_measurements == 0 {
+        advisories.push("no_multi_seat_measurements".to_string());
+    }
+    if max_seat_count < 2 {
+        advisories.push("insufficient_seats".to_string());
+    }
+    if non_sub_channels_with_multiple_measurements == 0 && channels_with_multiple_measurements > 0 {
+        advisories.push("multi_seat_sub_only".to_string());
+    }
+    if non_sub_channel_count > 1 && non_sub_channels_with_multiple_measurements == 1 {
+        advisories.push("only_one_non_sub_channel_has_multi_seat_data".to_string());
+    }
+    if non_sub_channel_count > 0
+        && non_sub_channels_with_multiple_measurements > 0
+        && non_sub_channels_with_multiple_measurements < non_sub_channel_count
+    {
+        advisories.push("partial_non_sub_multi_seat_coverage".to_string());
+    }
+    if advisories.is_empty() {
+        advisories.push("all_channel_multi_seat_reporting_ready".to_string());
+    }
+    advisories
 }
 
 pub fn role_for_channel(channel_name: &str) -> HomeCinemaRole {
@@ -1070,8 +1493,59 @@ mod tests {
 
         let report = multi_seat_coverage(&config);
         assert_eq!(report.channels_with_multiple_measurements, 2);
+        assert_eq!(report.non_sub_channel_count, 1);
         assert_eq!(report.non_sub_channels_with_multiple_measurements, 1);
         assert_eq!(report.max_seat_count, 3);
+        assert!(report.all_channel_correction_ready);
+        assert_eq!(report.recommended_scope, "all_channel_reporting_ready");
+        assert_eq!(
+            report.advisories,
+            vec!["all_channel_multi_seat_reporting_ready".to_string()]
+        );
+    }
+
+    #[test]
+    fn reports_partial_non_sub_multiseat_coverage() {
+        let config = RoomConfig {
+            version: "test".to_string(),
+            system: None,
+            speakers: HashMap::from([
+                (
+                    "L".to_string(),
+                    SpeakerConfig::Single(MeasurementSource::InMemoryMultiple(vec![
+                        flat_curve(),
+                        flat_curve(),
+                    ])),
+                ),
+                (
+                    "R".to_string(),
+                    SpeakerConfig::Single(MeasurementSource::InMemory(flat_curve())),
+                ),
+                (
+                    "Sub".to_string(),
+                    SpeakerConfig::Single(MeasurementSource::InMemoryMultiple(vec![
+                        flat_curve(),
+                        flat_curve(),
+                    ])),
+                ),
+            ]),
+            crossovers: None,
+            target_curve: None,
+            optimizer: OptimizerConfig::default(),
+            recording_config: None,
+            cea2034_cache: None,
+        };
+
+        let report = multi_seat_coverage(&config);
+        assert_eq!(report.non_sub_channel_count, 2);
+        assert_eq!(report.non_sub_channels_with_multiple_measurements, 1);
+        assert!(!report.all_channel_correction_ready);
+        assert_eq!(report.recommended_scope, "partial_non_sub_reporting_only");
+        assert!(
+            report
+                .advisories
+                .contains(&"partial_non_sub_multi_seat_coverage".to_string())
+        );
     }
 
     #[test]
@@ -1134,12 +1608,158 @@ mod tests {
         assert_eq!(report.crossover_type, "LR24");
         assert_eq!(report.crossover_frequency_hz, Some(80.0));
         assert_eq!(report.lfe_playback_gain_db, 10.0);
+        assert!(report.optimization.is_none());
+        assert_eq!(report.physical_sub_output, "LFE");
+        assert_eq!(report.redirected_bass_channel_count, 2);
+        assert_eq!(report.main_high_pass_hz, Some(80.0));
+        assert_eq!(report.sub_low_pass_hz, Some(80.0));
+        assert_eq!(report.lfe_headroom_required_db, 16.0);
+        assert!(
+            report
+                .signal_flow_advisories
+                .contains(&"lfe_gain_exceeds_headroom_margin".to_string())
+        );
+        let left = report
+            .signal_flow
+            .iter()
+            .find(|entry| entry.source_channel == "L")
+            .expect("left signal flow");
+        assert_eq!(left.destination, "LFE");
+        assert_eq!(left.high_pass_hz, Some(80.0));
+        assert_eq!(left.low_pass_hz, Some(80.0));
+        assert!(left.redirects_bass);
+        let lfe = report
+            .signal_flow
+            .iter()
+            .find(|entry| entry.source_channel == "LFE")
+            .expect("lfe signal flow");
+        assert_eq!(lfe.destination, "LFE");
+        assert_eq!(lfe.low_pass_hz, Some(80.0));
+        assert_eq!(lfe.lfe_gain_db, 10.0);
+        assert!(!lfe.redirects_bass);
         assert!(report.advisory.contains("sub_gain_limited_for_headroom"));
         assert!(
             report
                 .advisory
                 .contains("lfe_gain_reported_not_applied_to_physical_sub_chain")
         );
+    }
+
+    #[test]
+    fn bass_management_report_preserves_optimization_metadata() {
+        let config = RoomConfig {
+            version: "test".to_string(),
+            system: Some(SystemConfig {
+                model: SystemModel::HomeCinema,
+                speakers: HashMap::from([
+                    ("L".to_string(), "L".to_string()),
+                    ("Sub".to_string(), "Sub".to_string()),
+                ]),
+                subwoofers: Some(SubwooferSystemConfig {
+                    config: SubwooferStrategy::Single,
+                    crossover: Some("xo".to_string()),
+                    mapping: HashMap::new(),
+                }),
+                bass_management: Some(BassManagementConfig::default()),
+            }),
+            speakers: HashMap::new(),
+            crossovers: Some(HashMap::from([(
+                "xo".to_string(),
+                CrossoverConfig {
+                    crossover_type: "LR24".to_string(),
+                    frequency: Some(80.0),
+                    frequencies: None,
+                    frequency_range: None,
+                },
+            )])),
+            target_curve: None,
+            optimizer: OptimizerConfig::default(),
+            recording_config: None,
+            cea2034_cache: None,
+        };
+        let optimization = BassManagementOptimizationReport {
+            applied: true,
+            phase_required: true,
+            phase_available: true,
+            configured_crossover_hz: Some(80.0),
+            optimized_crossover_hz: Some(90.0),
+            crossover_range_hz: Some((60.0, 120.0)),
+            crossover_type: "LR24".to_string(),
+            main_delay_ms: 0.0,
+            sub_delay_ms: 1.25,
+            relative_sub_delay_ms: 1.25,
+            sub_polarity_inverted: true,
+            requested_sub_gain_db: 5.0,
+            applied_sub_gain_db: 3.0,
+            gain_limited: true,
+            estimated_bass_bus_peak_gain_db: Some(12.0),
+            objective_before: Some(4.0),
+            objective_after: Some(2.0),
+            advisories: vec!["sub_gain_limited_for_headroom".to_string()],
+        };
+
+        let report =
+            bass_management_report_with_optimization(&config, Some(3.0), true, Some(optimization))
+                .expect("report");
+        let reported = report.optimization.expect("optimization");
+        assert!(reported.applied);
+        assert_eq!(reported.optimized_crossover_hz, Some(90.0));
+        assert_eq!(reported.sub_delay_ms, 1.25);
+        assert!(reported.sub_polarity_inverted);
+        assert_eq!(reported.objective_after, Some(2.0));
+    }
+
+    #[test]
+    fn bass_management_report_warns_when_highpass_is_not_redirected() {
+        let config = RoomConfig {
+            version: "test".to_string(),
+            system: Some(SystemConfig {
+                model: SystemModel::HomeCinema,
+                speakers: HashMap::from([
+                    ("L".to_string(), "L".to_string()),
+                    ("Sub".to_string(), "Sub".to_string()),
+                ]),
+                subwoofers: Some(SubwooferSystemConfig {
+                    config: SubwooferStrategy::Single,
+                    crossover: Some("xo".to_string()),
+                    mapping: HashMap::new(),
+                }),
+                bass_management: Some(BassManagementConfig {
+                    redirect_bass: false,
+                    ..Default::default()
+                }),
+            }),
+            speakers: HashMap::new(),
+            crossovers: Some(HashMap::from([(
+                "xo".to_string(),
+                CrossoverConfig {
+                    crossover_type: "LR24".to_string(),
+                    frequency: Some(80.0),
+                    frequencies: None,
+                    frequency_range: None,
+                },
+            )])),
+            target_curve: None,
+            optimizer: OptimizerConfig::default(),
+            recording_config: None,
+            cea2034_cache: None,
+        };
+
+        let report = bass_management_report(&config, None, false).expect("report");
+        assert_eq!(report.main_high_pass_hz, Some(80.0));
+        assert_eq!(report.redirected_bass_channel_count, 0);
+        assert!(
+            report
+                .signal_flow_advisories
+                .contains(&"main_highpass_without_redirected_bass".to_string())
+        );
+        let left = report
+            .signal_flow
+            .iter()
+            .find(|entry| entry.source_channel == "L")
+            .expect("left signal flow");
+        assert_eq!(left.high_pass_hz, Some(80.0));
+        assert!(!left.redirects_bass);
     }
 
     #[test]

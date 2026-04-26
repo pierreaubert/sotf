@@ -312,6 +312,11 @@ qa-roomeq-home-cinema:
 	cargo test -p autoeq validate_bass_management --lib -- --nocapture
 
 [group('qa-roomeq')]
+qa-roomeq-bass-management:
+	cargo test -p autoeq home_cinema_bass_management --lib -- --nocapture
+	cargo test -p autoeq validate_bass_management --lib -- --nocapture
+
+[group('qa-roomeq')]
 qa-roomeq-dsp-consistency:
 	cargo test -p autoeq reported_ --lib -- --nocapture
 	cargo test -p autoeq timing_diagnostics --lib -- --nocapture
@@ -346,6 +351,7 @@ qa-roomeq-ci:
 	cargo test -p autoeq frequency_grid --lib -- --nocapture
 	cargo run --bin roomeq-qa-synthetic --no-default-features --release -- --multiseat-guards-only
 	cargo test -p autoeq home_cinema --lib -- --nocapture
+	cargo test -p autoeq home_cinema_bass_management --lib -- --nocapture
 	cargo test -p autoeq validate_bass_management --lib -- --nocapture
 	cargo test -p autoeq perceptual_metrics --lib -- --nocapture
 

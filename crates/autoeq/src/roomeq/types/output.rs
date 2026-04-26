@@ -88,6 +88,10 @@ pub struct DspChainOutput {
     /// Output version
     #[serde(default = "crate::roomeq::types::default_config_version")]
     pub version: String,
+    /// Global graph-level plugins, e.g. matrix routing that combines several
+    /// programme inputs before per-output correction chains.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub global_plugins: Vec<PluginConfigWrapper>,
     /// Per-channel DSP chains
     pub channels: HashMap<String, ChannelDspChain>,
     /// Metadata about the optimization

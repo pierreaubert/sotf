@@ -147,13 +147,45 @@ variance-only heuristic.
 - Final metadata now reports detected home-cinema layout and multi-position
   measurement coverage, including whether non-sub channels have multiple
   measurements for future all-channel multi-seat correction.
+- Multi-seat coverage metadata now distinguishes complete all-channel
+  readiness from partial/sub-only coverage and emits advisory identifiers
+  that downstream QA and UIs can use before enabling broader correction.
+- Bass-management metadata now reports the resolved physical bass output,
+  per-source signal-flow intent, main/sub crossover filters, redirected-bass
+  channel count, and LFE headroom requirements/advisories.
+- Bass-management crossover optimization now reports an explicit optimization
+  summary with configured/optimized crossover frequency, normalized main/sub
+  delays, polarity, requested vs applied sub gain, headroom limiting, objective
+  diagnostics, and skip advisories.
+- Bass-management delay/polarity optimization now requires measured phase. If
+  phase is missing, RoomEQ keeps configured crossover timing/polarity and
+  records `missing_phase_crossover_alignment_skipped` instead of inventing
+  phase.
+- X.1 crossover delays are normalized before export so no negative delay or
+  arbitrary common latency is emitted, and final reported curves now include
+  crossover delay/polarity phase changes.
 - X.1 workflows now honor bass-management sub trim and cap positive sub gain
   so crossover/sub alignment cannot silently consume the configured headroom.
 - X.1 workflows now resolve the physical bass output from
   `system.bass_management.lfe_channel` / sub-role labels instead of assuming
   the channel must literally be named `LFE`.
+- Bass-management crossover alignment now verifies measured pre-EQ phase
+  before enabling phase-sensitive delay/polarity optimization, so generated
+  EQ phase cannot accidentally make phase-missing measurements look safe.
+- Bass management now emits an explicit routing graph plus a sparse `matrix`
+  plugin for SOTF/JSON outputs, separating redirected bass routes from the LFE
+  programme route instead of representing everything as one shared sub gain.
+- `type: "auto"` bass crossovers now select among LR24/LR48/BW12/BW24 using
+  the bass-management summation objective before delay/polarity optimization.
+- Bass-management metadata now estimates worst-case bass-bus route gain after
+  redirected bass, LFE calibration, and applied sub gain so headroom risk is
+  visible to QA and UIs.
 - Channel matching and final score bands now use the shared role model instead
   of ad-hoc channel-name parsing.
+- Added `qa-roomeq-bass-management` for focused #14 guardrails covering
+  exported crossover DSP, final-curve phase propagation, measured-phase skip
+  behavior, normalized non-negative delays, routed LFE/redirected-bass matrix
+  output, auto crossover-family selection, and sub-headroom gain limiting.
 - Added `qa-roomeq-home-cinema` for focused home-cinema role and
   bass-management guards.
 
