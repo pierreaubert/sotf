@@ -9,10 +9,10 @@ use crate::components::graphs::common::render_empty_state;
 use crate::components::graphs::response_graphs::{
     ChartConfig, Series, channel_color, render_line_chart,
 };
-use crate::components::icons::IconName;
 use crate::components::graphs::spectrum_graphs::{
     SpectrumConfig, SpectrumGrid, render_spectrum_heatmap,
 };
+use crate::components::icons::IconName;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -119,7 +119,8 @@ impl PlayerView {
                                 .color(theme.text_secondary),
                         )
                         .child(
-                            div().w(px(160.0)).child( // intentional: channel-select dropdown width
+                            div().w(px(160.0)).child(
+                                // intentional: channel-select dropdown width
                                 Select::new("plot_channel_select")
                                     .options(channel_options)
                                     .selected(selected_channel_value)
@@ -178,7 +179,8 @@ impl PlayerView {
                                 .color(theme.text_secondary),
                         )
                         .child(
-                            div().w(px(140.0)).child( // intentional: smoothing-select dropdown width
+                            div().w(px(140.0)).child(
+                                // intentional: smoothing-select dropdown width
                                 Select::new("plot_smoothing_select")
                                     .options(smoothing_options)
                                     .selected(selected_smoothing_value)
@@ -962,12 +964,7 @@ impl PlayerView {
                         name.clone()
                     };
 
-                    Series::new(
-                        label,
-                        channel_color(theme, *idx),
-                        freqs_f64,
-                        rt60_f64,
-                    )
+                    Series::new(label, channel_color(theme, *idx), freqs_f64, rt60_f64)
                 })
             })
             .collect();
@@ -1219,11 +1216,13 @@ impl PlayerView {
                                     } else {
                                         "Some channels missing"
                                     })
-                                    .color(if recorded_count == total_count {
-                                        theme.success
-                                    } else {
-                                        theme.warning
-                                    }),
+                                    .color(
+                                        if recorded_count == total_count {
+                                            theme.success
+                                        } else {
+                                            theme.warning
+                                        },
+                                    ),
                                 ),
                         ),
                 )

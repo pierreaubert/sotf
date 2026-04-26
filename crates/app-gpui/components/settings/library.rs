@@ -117,24 +117,24 @@ impl PlayerView {
                             .size(ButtonSize::Xs)
                             .theme(theme.to_button_theme())
                             .on_click_event(cx.listener(|_view, _: &ClickEvent, _window, cx| {
-                                    #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
-                                    {
-                                        cx.spawn(async move |view: WeakEntity<PlayerView>, cx| {
-                                            if let Some(handle) =
-                                                rfd::AsyncFileDialog::new().pick_folder().await
-                                            {
-                                                let path = handle.path().to_path_buf();
-                                                let _ = view.update(cx, |view, cx| {
-                                                    view.state.update(cx, |state, _cx| {
-                                                        state.app.add_directory(path);
-                                                    });
-                                                    cx.notify();
+                                #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+                                {
+                                    cx.spawn(async move |view: WeakEntity<PlayerView>, cx| {
+                                        if let Some(handle) =
+                                            rfd::AsyncFileDialog::new().pick_folder().await
+                                        {
+                                            let path = handle.path().to_path_buf();
+                                            let _ = view.update(cx, |view, cx| {
+                                                view.state.update(cx, |state, _cx| {
+                                                    state.app.add_directory(path);
                                                 });
-                                            }
-                                        })
-                                        .detach();
-                                    }
-                                })),
+                                                cx.notify();
+                                            });
+                                        }
+                                    })
+                                    .detach();
+                                }
+                            })),
                     ),
             )
             // Directories Table
@@ -251,21 +251,23 @@ impl PlayerView {
                                     .size(ButtonSize::Sm)
                                     .disabled(scan_in_progress)
                                     .theme(theme.to_button_theme())
-                                    .on_click_event(cx.listener(|view, _: &ClickEvent, _window, cx| {
-                                        view.state.update(cx, |state, _cx| {
-                                            if state.app.rescan_library().is_ok()
-                                                && state.app.library_state.scan_in_progress
-                                            {
-                                                // Show progress modal
-                                                state.app.scan_progress_modal = Some(
-                                                    crate::app::types::ScanProgressModal::new(
-                                                        crate::app::types::ScanType::Library,
-                                                    ),
-                                                );
-                                            }
-                                        });
-                                        cx.notify();
-                                    })),
+                                    .on_click_event(cx.listener(
+                                        |view, _: &ClickEvent, _window, cx| {
+                                            view.state.update(cx, |state, _cx| {
+                                                if state.app.rescan_library().is_ok()
+                                                    && state.app.library_state.scan_in_progress
+                                                {
+                                                    // Show progress modal
+                                                    state.app.scan_progress_modal = Some(
+                                                        crate::app::types::ScanProgressModal::new(
+                                                            crate::app::types::ScanType::Library,
+                                                        ),
+                                                    );
+                                                }
+                                            });
+                                            cx.notify();
+                                        },
+                                    )),
                             ),
                     ),
             )

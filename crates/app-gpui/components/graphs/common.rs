@@ -26,11 +26,7 @@ pub fn rgba_to_u32(rgba: Rgba) -> u32 {
 }
 
 /// Render an empty-state placeholder with an icon and message.
-pub fn render_empty_state(
-    icon: IconName,
-    message: &str,
-    theme: &Theme,
-) -> gpui::AnyElement {
+pub fn render_empty_state(icon: IconName, message: &str, theme: &Theme) -> gpui::AnyElement {
     gpui::div()
         .flex()
         .flex_col()

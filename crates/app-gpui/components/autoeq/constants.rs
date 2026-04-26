@@ -34,10 +34,8 @@ pub const LOSS_TYPE_OPTIONS: &[(&str, &str)] = &[
 ];
 
 /// Loss Type options for headphones
-pub const HEADPHONE_LOSS_TYPE_OPTIONS: &[(&str, &str)] = &[
-    ("flat", "Target Match"),
-    ("score", "Score"),
-];
+pub const HEADPHONE_LOSS_TYPE_OPTIONS: &[(&str, &str)] =
+    &[("flat", "Target Match"), ("score", "Score")];
 
 /// Short descriptions for loss types (used as tooltips / inline help)
 pub const LOSS_TYPE_DESCRIPTIONS: &[(&str, &str)] = &[
@@ -241,11 +239,8 @@ pub const OPTIMIZATION_GOAL_OPTIONS: &[(&str, &str, &str)] = &[
 ];
 
 /// Loss Type options for spinorama (Target or Score only)
-pub const SPINORAMA_LOSS_TYPE_OPTIONS: &[(&str, &str)] =
-    &[("flat", "Target"), ("score", "Score")];
+pub const SPINORAMA_LOSS_TYPE_OPTIONS: &[(&str, &str)] = &[("flat", "Target"), ("score", "Score")];
 
 /// Smoothing strategy options
-pub const SMOOTHING_STRATEGY_OPTIONS: &[(&str, &str)] = &[
-    ("psychoacoustic", "Psychoacoustic"),
-    ("window", "Window"),
-];
+pub const SMOOTHING_STRATEGY_OPTIONS: &[(&str, &str)] =
+    &[("psychoacoustic", "Psychoacoustic"), ("window", "Window")];

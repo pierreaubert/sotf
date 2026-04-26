@@ -56,11 +56,8 @@ impl PlayerView {
                     .child(div().h_4()) // Spacer
                     // Screen-specific keybindings section
                     .child(
-                        Text::section_header(format!(
-                            "{} KEYBINDINGS",
-                            screen_name.to_uppercase()
-                        ))
-                        .color(theme.accent),
+                        Text::section_header(format!("{} KEYBINDINGS", screen_name.to_uppercase()))
+                            .color(theme.accent),
                     )
                     .children(keybindings.iter().map(|(key, desc)| {
                         self.render_keybinding_row(key, desc, &theme)
@@ -658,7 +655,8 @@ impl PlayerView {
                                     }
                                     (crate::app::ContextMenuType::QueueItem, "play-from-here") => {
                                         state.app.playback.current_queue_index = Some(item_idx);
-                                        if let Some(queue_item) = state.app.queue_state.get(item_idx)
+                                        if let Some(queue_item) =
+                                            state.app.queue_state.get(item_idx)
                                             && let Some(first_track) =
                                                 queue_item.album.tracks.first()
                                         {
@@ -772,41 +770,43 @@ impl PlayerView {
                     // Show existing presets if available
                     .when(!presets.is_empty(), |el| {
                         el.child(Text::caption("Existing presets (↑/↓ to select):"))
-                        .child(
-                            div()
-                                .id("save-plugins-presets-list")
-                                .max_h(Rems(12.0))
-                                .overflow_y_scroll()
-                                .bg(theme.surface)
-                                .rounded(d.r_md)
-                                .p(d.pad_y)
-                                .children(presets.iter().enumerate().map(|(idx, preset)| {
-                                    let is_selected = idx == selected_preset;
-                                    let theme = theme.clone();
-                                    let state_click = self.state.clone();
-                                    let hover_bg = theme.surface_hover;
-                                    div()
-                                        .id(("save-preset-item", idx))
-                                        .p(d.grid)
-                                        .rounded(d.r_md)
-                                        .text_size(d.text_sm)
-                                        .cursor_pointer()
-                                        .when(is_selected, |el| {
-                                            el.bg(theme.accent_muted).text_color(theme.text_primary)
-                                        })
-                                        .when(!is_selected, |el| {
-                                            el.text_color(theme.text_secondary)
-                                                .hover(move |s| s.bg(hover_bg))
-                                        })
-                                        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                                            state_click.update(cx, |state, _cx| {
-                                                state.app.plugin_state.selected_preset_index = idx;
-                                                state.app.input_state.plugin_file_input.clear();
-                                            });
-                                        })
-                                        .child(preset.clone())
-                                })),
-                        )
+                            .child(
+                                div()
+                                    .id("save-plugins-presets-list")
+                                    .max_h(Rems(12.0))
+                                    .overflow_y_scroll()
+                                    .bg(theme.surface)
+                                    .rounded(d.r_md)
+                                    .p(d.pad_y)
+                                    .children(presets.iter().enumerate().map(|(idx, preset)| {
+                                        let is_selected = idx == selected_preset;
+                                        let theme = theme.clone();
+                                        let state_click = self.state.clone();
+                                        let hover_bg = theme.surface_hover;
+                                        div()
+                                            .id(("save-preset-item", idx))
+                                            .p(d.grid)
+                                            .rounded(d.r_md)
+                                            .text_size(d.text_sm)
+                                            .cursor_pointer()
+                                            .when(is_selected, |el| {
+                                                el.bg(theme.accent_muted)
+                                                    .text_color(theme.text_primary)
+                                            })
+                                            .when(!is_selected, |el| {
+                                                el.text_color(theme.text_secondary)
+                                                    .hover(move |s| s.bg(hover_bg))
+                                            })
+                                            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                                                state_click.update(cx, |state, _cx| {
+                                                    state.app.plugin_state.selected_preset_index =
+                                                        idx;
+                                                    state.app.input_state.plugin_file_input.clear();
+                                                });
+                                            })
+                                            .child(preset.clone())
+                                    })),
+                            )
                     }),
             )
             .footer(Text::caption(
@@ -841,52 +841,52 @@ impl PlayerView {
                     // Show existing presets
                     .when(!presets.is_empty(), |el| {
                         el.child(Text::caption("Available presets (↑/↓ to select):"))
-                        .child(
-                            div()
-                                .id("load-plugins-presets-list")
-                                .max_h(Rems(12.0))
-                                .overflow_y_scroll()
-                                .bg(theme.surface)
-                                .rounded(d.r_md)
-                                .p(d.pad_y)
-                                .children(presets.iter().enumerate().map(|(idx, preset)| {
-                                    let is_selected = idx == selected_preset;
-                                    let theme = theme.clone();
-                                    let state_click = self.state.clone();
-                                    let hover_bg = theme.surface_hover;
-                                    div()
-                                        .id(("load-preset-item", idx))
-                                        .p(d.grid)
-                                        .rounded(d.r_md)
-                                        .text_size(d.text_sm)
-                                        .cursor_pointer()
-                                        .when(is_selected, |el| {
-                                            el.bg(theme.accent_muted).text_color(theme.text_primary)
-                                        })
-                                        .when(!is_selected, |el| {
-                                            el.text_color(theme.text_secondary)
-                                                .hover(move |s| s.bg(hover_bg))
-                                        })
-                                        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                                            state_click.update(cx, |state, _cx| {
-                                                state.app.plugin_state.selected_preset_index = idx;
-                                                state.app.input_state.plugin_file_input.clear();
-                                                state.app.load_selected_preset();
-                                                state.app.ui_state.input_mode =
-                                                    crate::app::InputMode::Normal;
-                                                state.app.clear_autocomplete();
-                                            });
-                                        })
-                                        .child(preset.clone())
-                                })),
-                        )
+                            .child(
+                                div()
+                                    .id("load-plugins-presets-list")
+                                    .max_h(Rems(12.0))
+                                    .overflow_y_scroll()
+                                    .bg(theme.surface)
+                                    .rounded(d.r_md)
+                                    .p(d.pad_y)
+                                    .children(presets.iter().enumerate().map(|(idx, preset)| {
+                                        let is_selected = idx == selected_preset;
+                                        let theme = theme.clone();
+                                        let state_click = self.state.clone();
+                                        let hover_bg = theme.surface_hover;
+                                        div()
+                                            .id(("load-preset-item", idx))
+                                            .p(d.grid)
+                                            .rounded(d.r_md)
+                                            .text_size(d.text_sm)
+                                            .cursor_pointer()
+                                            .when(is_selected, |el| {
+                                                el.bg(theme.accent_muted)
+                                                    .text_color(theme.text_primary)
+                                            })
+                                            .when(!is_selected, |el| {
+                                                el.text_color(theme.text_secondary)
+                                                    .hover(move |s| s.bg(hover_bg))
+                                            })
+                                            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                                                state_click.update(cx, |state, _cx| {
+                                                    state.app.plugin_state.selected_preset_index =
+                                                        idx;
+                                                    state.app.input_state.plugin_file_input.clear();
+                                                    state.app.load_selected_preset();
+                                                    state.app.ui_state.input_mode =
+                                                        crate::app::InputMode::Normal;
+                                                    state.app.clear_autocomplete();
+                                                });
+                                            })
+                                            .child(preset.clone())
+                                    })),
+                            )
                     })
                     .when(presets.is_empty(), |el| {
-                        el.child(
-                            div().p(d.card).text_center().child(Text::caption(
-                                "No presets found. Save a preset first with 's'.",
-                            )),
-                        )
+                        el.child(div().p(d.card).text_center().child(Text::caption(
+                            "No presets found. Save a preset first with 's'.",
+                        )))
                     }),
             )
             .footer(Text::caption(
@@ -1041,12 +1041,15 @@ impl PlayerView {
                             .variant(gpui_ui_kit::ButtonVariant::Primary)
                             .size(gpui_ui_kit::ButtonSize::Xs)
                             .theme(theme.to_button_theme())
-                            .on_click_event(cx.listener(|view, _event: &ClickEvent, _window, cx| {
-                                view.state.update(cx, |state, _cx| {
-                                    state.app.ui_state.input_mode = crate::app::InputMode::Normal;
-                                });
-                                cx.notify();
-                            })),
+                            .on_click_event(cx.listener(
+                                |view, _event: &ClickEvent, _window, cx| {
+                                    view.state.update(cx, |state, _cx| {
+                                        state.app.ui_state.input_mode =
+                                            crate::app::InputMode::Normal;
+                                    });
+                                    cx.notify();
+                                },
+                            )),
                     ),
             )
     }

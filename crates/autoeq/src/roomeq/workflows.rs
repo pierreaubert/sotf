@@ -7,7 +7,7 @@ use crate::response;
 use log::info;
 use math_audio_dsp::analysis::compute_average_response;
 use math_audio_iir_fir::Biquad;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
 use super::crossover;
@@ -17,7 +17,7 @@ use super::multisub;
 use super::optimize::{ChannelOptimizationResult, RoomOptimizationResult};
 use super::output;
 use super::types::{
-    CardioidConfig, ChannelDspChain, DBAConfig, DriverDspChain, MultiSubGroup,
+    CardioidConfig, ChannelDspChain, CrossoverConfig, DBAConfig, DriverDspChain, MultiSubGroup,
     OptimizationMetadata, RoomConfig, SpeakerConfig, SubwooferStrategy, SystemConfig,
 };
 
@@ -744,6 +744,306 @@ fn preprocess_dba(
     })
 }
 
+#[derive(Debug, Clone)]
+struct GroupCrossoverPlan {
+    crossover_type: String,
+    frequency_hz: f64,
+    configured_hz: f64,
+    frequency_range: Option<(f64, f64)>,
+}
+
+fn grouped_home_cinema_roles(main_roles: &[String]) -> BTreeMap<String, Vec<String>> {
+    let mut groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for role in main_roles {
+        let role_id =
+            super::home_cinema::group_id_for_role(super::home_cinema::role_for_channel(role));
+        groups
+            .entry(role_id.to_string())
+            .or_default()
+            .push(role.clone());
+    }
+    groups
+}
+
+fn group_crossover_plan(
+    config: &RoomConfig,
+    fallback: &CrossoverConfig,
+    group_id: &str,
+) -> Result<GroupCrossoverPlan> {
+    let selected = config
+        .system
+        .as_ref()
+        .and_then(|system| system.bass_management.as_ref())
+        .and_then(|bm| bm.group_crossovers.get(group_id))
+        .and_then(|key| {
+            config
+                .crossovers
+                .as_ref()
+                .and_then(|crossovers| crossovers.get(key))
+        })
+        .unwrap_or(fallback);
+
+    let (min_hz, max_hz, configured_hz) = if let Some(freq) = selected.frequency {
+        (freq, freq, freq)
+    } else if let Some((min, max)) = selected.frequency_range {
+        (min, max, (min.max(1.0) * max.max(1.0)).sqrt())
+    } else {
+        return Err(AutoeqError::InvalidConfiguration {
+            message: format!(
+                "Bass-management crossover for group '{group_id}' requires 'frequency' or 'frequency_range'"
+            ),
+        });
+    };
+
+    Ok(GroupCrossoverPlan {
+        crossover_type: selected.crossover_type.clone(),
+        frequency_hz: configured_hz,
+        configured_hz,
+        frequency_range: (min_hz != max_hz).then_some((min_hz, max_hz)),
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn optimize_home_cinema_group_crossovers(
+    config: &RoomConfig,
+    main_roles: &[String],
+    aligned_curves: &HashMap<String, Curve>,
+    aligned_pre_eq_curves: &HashMap<String, Curve>,
+    sub_role: &str,
+    fallback_crossover: &CrossoverConfig,
+    sample_rate: f64,
+    bass_management: Option<&super::home_cinema::EffectiveBassManagement>,
+) -> Result<BTreeMap<String, super::home_cinema::BassManagementGroupReport>> {
+    let mut reports = BTreeMap::new();
+    let sub_curve = &aligned_pre_eq_curves[sub_role];
+
+    for (group_id, roles) in grouped_home_cinema_roles(main_roles) {
+        let mut advisories = Vec::new();
+        let plan = group_crossover_plan(config, fallback_crossover, &group_id)?;
+        let main_refs: Vec<&Curve> = roles
+            .iter()
+            .map(|role| &aligned_pre_eq_curves[role])
+            .collect();
+        let mut measured_refs: Vec<&Curve> =
+            roles.iter().map(|role| &aligned_curves[role]).collect();
+        measured_refs.push(&aligned_curves[sub_role]);
+        let mut phase_refs = main_refs.clone();
+        phase_refs.push(sub_curve);
+        let measured_phase_available = all_curves_have_usable_phase(&measured_refs);
+        let shared_grid_available = all_curves_share_frequency_grid(&measured_refs)
+            && all_curves_share_frequency_grid(&phase_refs);
+        let phase_available = measured_phase_available && shared_grid_available;
+
+        if !measured_phase_available {
+            advisories.push("missing_phase_group_crossover_alignment_skipped".to_string());
+        } else if !shared_grid_available {
+            advisories
+                .push("frequency_grid_mismatch_group_crossover_alignment_skipped".to_string());
+        }
+
+        let virtual_main = if phase_available {
+            complex_sum_mains(&main_refs)
+        } else {
+            average_mains_magnitude(&main_refs)
+        };
+        let selected_type = select_bass_management_crossover_type(
+            &plan.crossover_type,
+            &virtual_main,
+            sub_curve,
+            plan.frequency_hz,
+            sample_rate,
+        );
+        let selected_type_str = selected_type.as_str();
+
+        let objective_before_curve = predict_bass_management_sum(
+            &virtual_main,
+            sub_curve,
+            selected_type_str,
+            plan.frequency_hz,
+            sample_rate,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            false,
+        );
+        let objective_before =
+            bass_management_objective(objective_before_curve.as_ref(), plan.frequency_hz);
+
+        let mut final_freq = plan.frequency_hz;
+        let mut main_delay_ms = 0.0;
+        let mut bass_delay_ms = 0.0;
+        let mut polarity_inverted = false;
+        let mut trim_db = 0.0;
+        let mut objective_after = objective_before;
+
+        if phase_available {
+            let crossover_type_enum: crate::loss::CrossoverType = selected_type_str
+                .parse()
+                .map_err(|e: String| AutoeqError::InvalidConfiguration { message: e })?;
+            let fixed_freqs = plan
+                .frequency_range
+                .is_none()
+                .then_some(vec![plan.frequency_hz]);
+            let mut xo_optimizer_config = config.optimizer.clone();
+            xo_optimizer_config.min_db = 0.0;
+            xo_optimizer_config.max_db = 0.0;
+            let (xo_gains, xo_delays, xo_freqs, _, inversions) = crossover::optimize_crossover(
+                vec![virtual_main.clone(), sub_curve.clone()],
+                crossover_type_enum,
+                sample_rate,
+                &xo_optimizer_config,
+                fixed_freqs,
+                plan.frequency_range,
+            )
+            .map_err(|e| AutoeqError::OptimizationFailed {
+                message: e.to_string(),
+            })?;
+
+            final_freq = xo_freqs.first().copied().unwrap_or(plan.frequency_hz);
+            let (main_delay, bass_delay) = normalize_crossover_delays(
+                xo_delays.first().copied().unwrap_or(0.0),
+                xo_delays.get(1).copied().unwrap_or(0.0),
+            );
+            main_delay_ms = main_delay;
+            bass_delay_ms = bass_delay;
+            polarity_inverted = inversions.get(1).copied().unwrap_or(false);
+
+            let hp = create_crossover_filters(selected_type_str, final_freq, sample_rate, false);
+            let lp = create_crossover_filters(selected_type_str, final_freq, sample_rate, true);
+            let apply = |curve: &Curve, filters: &[Biquad], gain: f64, delay: f64, invert: bool| {
+                let resp =
+                    response::compute_peq_complex_response(filters, &curve.freq, sample_rate);
+                let mut c = response::apply_complex_response(curve, &resp);
+                for spl in c.spl.iter_mut() {
+                    *spl += gain;
+                }
+                apply_delay_and_polarity_to_curve(&c, delay, invert)
+            };
+            let main_post = apply(
+                &virtual_main,
+                &hp,
+                xo_gains.first().copied().unwrap_or(0.0),
+                main_delay_ms,
+                false,
+            );
+            let sub_post = apply(
+                sub_curve,
+                &lp,
+                xo_gains.get(1).copied().unwrap_or(0.0),
+                bass_delay_ms,
+                polarity_inverted,
+            );
+            let main_freqs: Vec<f32> = main_post.freq.iter().map(|&f| f as f32).collect();
+            let main_spl: Vec<f32> = main_post.spl.iter().map(|&s| s as f32).collect();
+            let sub_freqs: Vec<f32> = sub_post.freq.iter().map(|&f| f as f32).collect();
+            let sub_spl: Vec<f32> = sub_post.spl.iter().map(|&s| s as f32).collect();
+            let main_mean =
+                compute_average_response(&main_freqs, &main_spl, Some((final_freq as f32, 2000.0)))
+                    as f64;
+            let sub_mean =
+                compute_average_response(&sub_freqs, &sub_spl, Some((20.0, final_freq as f32)))
+                    as f64;
+            let requested_trim = xo_gains.get(1).copied().unwrap_or(0.0) + main_mean - sub_mean;
+            let (limited_trim, gain_limited) =
+                super::home_cinema::limited_sub_gain(requested_trim, bass_management);
+            trim_db = limited_trim;
+            if gain_limited {
+                advisories.push("group_sub_trim_limited_for_headroom".to_string());
+            }
+
+            let objective_after_curve = predict_bass_management_sum(
+                &virtual_main,
+                sub_curve,
+                selected_type_str,
+                final_freq,
+                sample_rate,
+                xo_gains.first().copied().unwrap_or(0.0),
+                trim_db,
+                main_delay_ms,
+                bass_delay_ms,
+                polarity_inverted,
+            );
+            objective_after = bass_management_objective(objective_after_curve.as_ref(), final_freq);
+            if objective_after >= objective_before {
+                advisories.push("group_optimizer_no_improvement".to_string());
+                final_freq = plan.frequency_hz;
+                main_delay_ms = 0.0;
+                bass_delay_ms = 0.0;
+                polarity_inverted = false;
+                trim_db = 0.0;
+                objective_after = objective_before;
+            }
+        }
+
+        if advisories.is_empty() {
+            advisories.push("ok".to_string());
+        }
+        reports.insert(
+            group_id.clone(),
+            super::home_cinema::BassManagementGroupReport {
+                group_id,
+                roles,
+                crossover_type: selected_type_str.to_string(),
+                selected_crossover_hz: Some(final_freq),
+                configured_crossover_hz: Some(plan.configured_hz),
+                main_delay_ms,
+                bass_route_delay_ms: bass_delay_ms,
+                polarity_inverted,
+                trim_db,
+                objective_before,
+                objective_after,
+                advisories,
+            },
+        );
+    }
+
+    Ok(reports)
+}
+
+fn bass_management_sub_output_results(
+    fallback_role: &str,
+    drivers: Option<&[SubDriverInfo]>,
+    shared_gain_db: f64,
+    strategy: &SubwooferStrategy,
+) -> Vec<super::home_cinema::BassManagementSubOutputReport> {
+    let strategy_source = match strategy {
+        SubwooferStrategy::Single => "single",
+        SubwooferStrategy::Mso => "mso",
+        SubwooferStrategy::Dba => "dba",
+    };
+    let Some(drivers) = drivers else {
+        return vec![super::home_cinema::BassManagementSubOutputReport {
+            output_role: fallback_role.to_string(),
+            gain_db: 0.0,
+            delay_ms: 0.0,
+            polarity_inverted: false,
+            strategy_source: strategy_source.to_string(),
+            headroom_contribution_db: shared_gain_db,
+        }];
+    };
+
+    drivers
+        .iter()
+        .map(|driver| super::home_cinema::BassManagementSubOutputReport {
+            output_role: driver.name.clone(),
+            gain_db: driver.gain,
+            delay_ms: driver.delay,
+            polarity_inverted: driver.inverted,
+            strategy_source: if matches!(strategy, SubwooferStrategy::Dba) {
+                if driver.inverted {
+                    "dba_rear".to_string()
+                } else {
+                    "dba_front".to_string()
+                }
+            } else {
+                strategy_source.to_string()
+            },
+            headroom_contribution_db: driver.gain + shared_gain_db,
+        })
+        .collect()
+}
+
 /// Workflow for Stereo 2.0 (No Subwoofer)
 ///
 /// Per-channel EQ is delegated to `process_single_speaker` so that
@@ -1261,6 +1561,8 @@ pub fn optimize_stereo_2_1(
         estimated_bass_bus_peak_gain_db: None,
         objective_before,
         objective_after,
+        group_results: Vec::new(),
+        sub_output_results: Vec::new(),
         advisories: optimization_advisories,
     };
     let bass_routing_graph = super::home_cinema::bass_management_routing_graph(
@@ -2033,8 +2335,26 @@ fn optimize_home_cinema_with_sub(
         final_xo_freq, main_gain_post, sub_gain_post, main_delay_post, sub_delay_post
     );
 
+    let group_results_by_id = if bass_management
+        .as_ref()
+        .map(|bm| bm.config.optimize_groups)
+        .unwrap_or(true)
+    {
+        optimize_home_cinema_group_crossovers(
+            config,
+            main_roles,
+            &aligned_curves,
+            &aligned_pre_eq_curves,
+            &sub_role,
+            xover_config,
+            sample_rate,
+            bass_management.as_ref(),
+        )?
+    } else {
+        BTreeMap::new()
+    };
     // 5. Apply crossover filters
-    let hp_biquads = create_crossover_filters(xover_type_str, final_xo_freq, sample_rate, false);
+    let _hp_biquads = create_crossover_filters(xover_type_str, final_xo_freq, sample_rate, false);
     let lp_biquads = create_crossover_filters(xover_type_str, final_xo_freq, sample_rate, true);
 
     let apply_chain =
@@ -2053,11 +2373,23 @@ fn optimize_home_cinema_with_sub(
     // and crossover.
     let mut main_post_curves = HashMap::new();
     for role in main_roles {
+        let group_id =
+            super::home_cinema::group_id_for_role(super::home_cinema::role_for_channel(role));
+        let group = group_results_by_id.get(group_id);
+        let role_xover_type = group
+            .map(|g| g.crossover_type.as_str())
+            .unwrap_or(xover_type_str);
+        let role_xover_freq = group
+            .and_then(|g| g.selected_crossover_hz)
+            .unwrap_or(final_xo_freq);
+        let role_main_delay = group.map(|g| g.main_delay_ms).unwrap_or(main_delay_post);
+        let role_hp_biquads =
+            create_crossover_filters(role_xover_type, role_xover_freq, sample_rate, false);
         let post = apply_chain(
             &aligned_pre_eq_curves[role],
-            &hp_biquads,
+            &role_hp_biquads,
             main_gain_post,
-            main_delay_post,
+            role_main_delay,
             false,
         );
         main_post_curves.insert(role.clone(), post);
@@ -2149,6 +2481,13 @@ fn optimize_home_cinema_with_sub(
         estimated_bass_bus_peak_gain_db: None,
         objective_before,
         objective_after,
+        group_results: group_results_by_id.values().cloned().collect(),
+        sub_output_results: bass_management_sub_output_results(
+            &sub_role,
+            sub_preprocess.drivers.as_deref(),
+            sub_gain_post,
+            &sub_sys.config,
+        ),
         advisories: optimization_advisories,
     };
     let bass_routing_graph = super::home_cinema::bass_management_routing_graph(
@@ -2167,7 +2506,13 @@ fn optimize_home_cinema_with_sub(
 
     for role in main_roles {
         let mut opt_config = config.optimizer.clone();
-        opt_config.min_freq = final_xo_freq + 20.0;
+        let group_id =
+            super::home_cinema::group_id_for_role(super::home_cinema::role_for_channel(role));
+        let role_xover_freq = group_results_by_id
+            .get(group_id)
+            .and_then(|g| g.selected_crossover_hz)
+            .unwrap_or(final_xo_freq);
+        opt_config.min_freq = role_xover_freq + 20.0;
 
         let post_curve = &main_post_curves[role];
         let (filters, _) = eq::optimize_channel_eq(
@@ -2247,9 +2592,20 @@ fn optimize_home_cinema_with_sub(
             plugins.extend(stack.clone());
         }
 
+        let group_id =
+            super::home_cinema::group_id_for_role(super::home_cinema::role_for_channel(role));
+        let group = group_results_by_id.get(group_id);
+        let role_xover_type = group
+            .map(|g| g.crossover_type.as_str())
+            .unwrap_or(xover_type_str);
+        let role_xover_freq = group
+            .and_then(|g| g.selected_crossover_hz)
+            .unwrap_or(final_xo_freq);
+        let role_main_delay = group.map(|g| g.main_delay_ms).unwrap_or(main_delay_post);
+
         plugins.push(output::create_crossover_plugin(
-            xover_type_str,
-            final_xo_freq,
+            role_xover_type,
+            role_xover_freq,
             "high",
         ));
 
@@ -2258,8 +2614,8 @@ fn optimize_home_cinema_with_sub(
         }
 
         // Main delay from crossover optimizer (sub-main time alignment)
-        if main_delay_post.abs() > 0.01 {
-            plugins.push(output::create_delay_plugin(main_delay_post));
+        if role_main_delay.abs() > 0.01 {
+            plugins.push(output::create_delay_plugin(role_main_delay));
         }
 
         let eqs = post_eq_filters.get(role);
@@ -2404,7 +2760,13 @@ fn optimize_home_cinema_with_sub(
 
     for role in main_roles {
         let intermediate = &main_post_curves[role];
-        let pre_score = compute_flat_loss(intermediate, final_xo_freq, max_freq);
+        let group_id =
+            super::home_cinema::group_id_for_role(super::home_cinema::role_for_channel(role));
+        let role_xover_freq = group_results_by_id
+            .get(group_id)
+            .and_then(|g| g.selected_crossover_hz)
+            .unwrap_or(final_xo_freq);
+        let pre_score = compute_flat_loss(intermediate, role_xover_freq, max_freq);
         let final_curve_obj = if let Some(e) = post_eq_filters.get(role) {
             if !e.is_empty() {
                 let resp =
@@ -2416,7 +2778,7 @@ fn optimize_home_cinema_with_sub(
         } else {
             intermediate.clone()
         };
-        let post_score = compute_flat_loss(&final_curve_obj, final_xo_freq, max_freq);
+        let post_score = compute_flat_loss(&final_curve_obj, role_xover_freq, max_freq);
 
         pre_scores.push(pre_score);
         post_scores.push(post_score);
@@ -2792,7 +3154,12 @@ mod tests {
         for role in ["L", "R"] {
             let chain = result.channels.get(role).expect("main chain");
             assert!(has_crossover_plugin(chain, "high"));
-            assert!((total_delay_ms(chain) - optimization.main_delay_ms).abs() < 1e-6);
+            let group = optimization
+                .group_results
+                .iter()
+                .find(|group| group.group_id == "lcr")
+                .expect("lcr group result");
+            assert!((total_delay_ms(chain) - group.main_delay_ms).abs() < 1e-6);
             let chain_phase = chain
                 .final_curve
                 .as_ref()

@@ -123,7 +123,10 @@ fn test_current_track_updates_on_navigation() {
     queue.next_track();
     let second_track = queue.current_track().unwrap().title.clone();
 
-    assert_ne!(first_track, second_track, "Track should change after next_track");
+    assert_ne!(
+        first_track, second_track,
+        "Track should change after next_track"
+    );
 }
 
 // =============================================================================

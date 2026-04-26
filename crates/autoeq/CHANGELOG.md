@@ -1,5 +1,50 @@
 # 0.4.37
 
+## Home-cinema bass-management routing groundwork
+
+RoomEQ bass management now carries enough lossless metadata for routed
+home-cinema playback instead of collapsing everything into a single opaque
+matrix.
+
+- Extended `BassManagementConfig` with group crossover mapping,
+  group-optimization intent, and a cinema-correlated headroom model.
+- Bass-management metadata now reports role groups, physical sub outputs,
+  route-level DSP details, and a frequency-aware bass-bus headroom
+  simulation while keeping the deprecated peak-gain estimate for
+  compatibility.
+- Route metadata records source, destination, group id, route kind,
+  crossover parameters, gain, delay, polarity, and matrix coefficient.
+- Group crossover mappings now drive the emitted high-pass/low-pass routes
+  and signal-flow metadata, so LCR/surround/height/wide groups can carry
+  distinct configured crossovers.
+- Home-cinema bass management now emits per-role-group optimization results
+  into routing metadata and uses those group crossovers/delays in main output
+  chains instead of collapsing every role onto one global crossover result.
+- Routed bass-management graphs now preserve pre-crossover channel plugins
+  inside each route branch and keep post-crossover correction after route
+  summation, avoiding the previous pre/post crossover reordering.
+- MSO/DBA preprocessed sub drivers are now exported as physical bass route
+  destinations with per-output gain, delay, and polarity, so route graphs can
+  target multiple real sub outputs instead of a single metadata-only sub bus.
+- Bass-bus headroom simulation now evaluates route crossover responses,
+  delay phase, polarity, matrix coefficients, and cinema programme
+  correlations on a log-spaced 20..250 Hz grid.
+- Added player helpers to detect when RoomEQ requires graph playback and
+  to build a branch-based `PluginGraphConfig` from routed bass-management
+  metadata.
+- GPUI "Apply as Graph" now uses the RoomEQ graph builder and renders graph
+  input/output nodes with the real channel count instead of hardcoded
+  stereo.
+- External exports now fail safely when `global_plugins` or routed bass
+  management are present, with guidance to use SotF JSON or Apply as Graph.
+- Added `qa-roomeq-export-routing` to cover external export safety and
+  graph-builder routing invariants.
+
+Tests/QA:
+`just qa-roomeq-bass-management`,
+`just qa-roomeq-export-routing`,
+`cargo check -p sotf-gpui --lib`.
+
 ## RoomEQ DSP/report consistency audit fixes
 
 RoomEQ now keeps exported DSP chains, reported final curves, generated IRs,

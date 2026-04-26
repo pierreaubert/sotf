@@ -341,8 +341,8 @@ impl PlayerView {
                                     .size(ButtonSize::Sm)
                                     .theme(button_theme.clone())
                                     .on_click_event(cx.listener(move |view, _, _, cx| {
-                                            apply_fn(view, cx);
-                                        })),
+                                        apply_fn(view, cx);
+                                    })),
                             )
                             .child(
                                 Button::new(clear_id, "Clear EQ")
@@ -350,8 +350,8 @@ impl PlayerView {
                                     .size(ButtonSize::Sm)
                                     .theme(button_theme.clone())
                                     .on_click_event(cx.listener(move |view, _, _, cx| {
-                                            clear_fn(view, cx);
-                                        })),
+                                        clear_fn(view, cx);
+                                    })),
                             ),
                     ),
             )

@@ -439,6 +439,51 @@ fn default_sub_headroom_margin_db() -> f64 {
 fn default_max_sub_boost_db() -> f64 {
     6.0
 }
+fn default_optimize_bass_groups() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum BassHeadroomModelKind {
+    CinemaCorrelated,
+}
+
+fn default_bass_headroom_model_kind() -> BassHeadroomModelKind {
+    BassHeadroomModelKind::CinemaCorrelated
+}
+fn default_lr_correlation() -> f64 {
+    0.75
+}
+fn default_lcr_correlation() -> f64 {
+    0.5
+}
+fn default_surround_height_correlation() -> f64 {
+    0.35
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
+pub struct BassHeadroomModelConfig {
+    #[serde(default = "default_bass_headroom_model_kind")]
+    pub model: BassHeadroomModelKind,
+    #[serde(default = "default_lr_correlation")]
+    pub lr_correlation: f64,
+    #[serde(default = "default_lcr_correlation")]
+    pub lcr_correlation: f64,
+    #[serde(default = "default_surround_height_correlation")]
+    pub surround_height_correlation: f64,
+}
+
+impl Default for BassHeadroomModelConfig {
+    fn default() -> Self {
+        Self {
+            model: default_bass_headroom_model_kind(),
+            lr_correlation: default_lr_correlation(),
+            lcr_correlation: default_lcr_correlation(),
+            surround_height_correlation: default_surround_height_correlation(),
+        }
+    }
+}
 
 /// Home-cinema bass-management policy.
 ///
@@ -475,6 +520,17 @@ pub struct BassManagementConfig {
     /// Headroom reserve expected downstream for bass-managed playback.
     #[serde(default = "default_sub_headroom_margin_db")]
     pub headroom_margin_db: f64,
+    /// Optional role-group to crossover-key mapping. Supported built-in group
+    /// ids are `lcr`, `surround`, `height`, and `wide`; unknown ids are kept as
+    /// custom metadata groups.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub group_crossovers: HashMap<String, String>,
+    /// Optimize crossover settings independently per speaker group.
+    #[serde(default = "default_optimize_bass_groups")]
+    pub optimize_groups: bool,
+    /// Programme-correlation model used for bass-bus headroom simulation.
+    #[serde(default)]
+    pub headroom_model: BassHeadroomModelConfig,
 }
 
 impl Default for BassManagementConfig {
@@ -488,6 +544,9 @@ impl Default for BassManagementConfig {
             sub_trim_db: 0.0,
             max_sub_boost_db: default_max_sub_boost_db(),
             headroom_margin_db: default_sub_headroom_margin_db(),
+            group_crossovers: HashMap::new(),
+            optimize_groups: true,
+            headroom_model: BassHeadroomModelConfig::default(),
         }
     }
 }

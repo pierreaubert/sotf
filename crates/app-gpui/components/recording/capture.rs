@@ -25,10 +25,7 @@ impl PlayerView {
                 VStack::new()
                     .spacing(StackSpacing::Xs)
                     .child(Heading::h4("Signal Recording"))
-                    .child(
-                        Text::new(translations.recording_capture_desc)
-                            .size(TextSize::Xs),
-                    ),
+                    .child(Text::new(translations.recording_capture_desc).size(TextSize::Xs)),
             )
             .child(self.render_signal_config_section(cx))
             .child(self.render_channel_config_section(cx))
@@ -269,12 +266,10 @@ impl PlayerView {
                                 HStack::new()
                                     .spacing(StackSpacing::Sm)
                                     .align(StackAlign::Center)
-                                    .child(
-                                        div().w(px(100.0)).child( // intentional: channel-label column
-                                            Text::label(format!("{}:", name))
-                                                .color(theme.text_primary),
-                                        ),
-                                    )
+                                    .child(div().w(px(100.0)).child(
+                                        // intentional: channel-label column
+                                        Text::label(format!("{}:", name)).color(theme.text_primary),
+                                    ))
                                     .child(
                                         HStack::new()
                                             .spacing(StackSpacing::Xs)
@@ -455,26 +450,22 @@ impl PlayerView {
                         HStack::new()
                             .spacing(StackSpacing::Sm)
                             .align(StackAlign::Center)
-                            .child(
-                                div().w(px(100.0)).child( // intentional: metrics-table column width
-                                    Text::label("Channel").color(theme.text_secondary),
-                                ),
-                            )
-                            .child(
-                                div().w(px(60.0)).child( // intentional: metrics-table column width
-                                    Text::label("Mic In").color(theme.text_secondary),
-                                ),
-                            )
-                            .child(
-                                div().w(px(80.0)).child( // intentional: metrics-table column width
-                                    Text::label("Avg SPL").color(theme.text_secondary),
-                                ),
-                            )
-                            .child(
-                                div().w(px(80.0)).child( // intentional: metrics-table column width
-                                    Text::label("Noise Floor").color(theme.text_secondary),
-                                ),
-                            ),
+                            .child(div().w(px(100.0)).child(
+                                // intentional: metrics-table column width
+                                Text::label("Channel").color(theme.text_secondary),
+                            ))
+                            .child(div().w(px(60.0)).child(
+                                // intentional: metrics-table column width
+                                Text::label("Mic In").color(theme.text_secondary),
+                            ))
+                            .child(div().w(px(80.0)).child(
+                                // intentional: metrics-table column width
+                                Text::label("Avg SPL").color(theme.text_secondary),
+                            ))
+                            .child(div().w(px(80.0)).child(
+                                // intentional: metrics-table column width
+                                Text::label("Noise Floor").color(theme.text_secondary),
+                            )),
                     )
                     // Data rows
                     .children(metrics.iter().map(|(name, mic_ch, avg_spl, noise_floor)| {
@@ -487,31 +478,33 @@ impl PlayerView {
                             .spacing(StackSpacing::Sm)
                             .align(StackAlign::Center)
                             .child(
-                                div().w(px(100.0)).child( // intentional: metrics-table column width
+                                div().w(px(100.0)).child(
+                                    // intentional: metrics-table column width
                                     Text::new(format!("{}:", name))
                                         .size(TextSize::Xs)
                                         .color(theme.text_primary),
                                 ),
                             )
                             .child(
-                                div().w(px(60.0)).child( // intentional: metrics-table column width
+                                div().w(px(60.0)).child(
+                                    // intentional: metrics-table column width
                                     Text::new(format!("Ch {}", mic_ch + 1))
                                         .size(TextSize::Xs)
                                         .color(theme.text_secondary),
                                 ),
                             )
                             .child(
-                                div().w(px(80.0)).child( // intentional: metrics-table column width
+                                div().w(px(80.0)).child(
+                                    // intentional: metrics-table column width
                                     Text::new(format!("{:.1} dB", avg_spl))
                                         .size(TextSize::Xs)
                                         .color(spl_color),
                                 ),
                             )
-                            .child(
-                                div().w(px(80.0)).child( // intentional: metrics-table column width
-                                    Text::caption(format!("{:.1} dB", noise_floor)),
-                                ),
-                            )
+                            .child(div().w(px(80.0)).child(
+                                // intentional: metrics-table column width
+                                Text::caption(format!("{:.1} dB", noise_floor)),
+                            ))
                             .into_any_element()
                     })),
             )
@@ -655,9 +648,13 @@ impl PlayerView {
             return VStack::new()
                 .spacing(StackSpacing::Sm)
                 .child(
-                    div().p(d.card).rounded(d.r_md).bg(theme.surface).child(Text::caption(
-                        "No channels configured. Please go back and configure your devices.",
-                    )),
+                    div()
+                        .p(d.card)
+                        .rounded(d.r_md)
+                        .bg(theme.surface)
+                        .child(Text::caption(
+                            "No channels configured. Please go back and configure your devices.",
+                        )),
                 )
                 .into_any_element();
         }
@@ -715,14 +712,29 @@ impl PlayerView {
                     };
                     let state_icon: AnyElement = if any_recording {
                         // intentional: 8px dot status indicator, not a scaling icon
-                        div().size(px(8.0)).rounded_full().bg(theme.warning).into_any_element()
+                        div()
+                            .size(px(8.0))
+                            .rounded_full()
+                            .bg(theme.warning)
+                            .into_any_element()
                     } else if all_done {
-                        Icon::new(IconName::Check).size(IconSize::Xs).color(theme.success).into_any_element()
+                        Icon::new(IconName::Check)
+                            .size(IconSize::Xs)
+                            .color(theme.success)
+                            .into_any_element()
                     } else if any_error {
-                        Icon::new(IconName::X).size(IconSize::Xs).color(theme.error).into_any_element()
+                        Icon::new(IconName::X)
+                            .size(IconSize::Xs)
+                            .color(theme.error)
+                            .into_any_element()
                     } else {
                         // intentional: 8px dot status indicator, not a scaling icon
-                        div().size(px(8.0)).rounded_full().border_1().border_color(theme.text_muted).into_any_element()
+                        div()
+                            .size(px(8.0))
+                            .rounded_full()
+                            .border_1()
+                            .border_color(theme.text_muted)
+                            .into_any_element()
                     };
 
                     let button_label = if all_done { "Re-record" } else { "Record" };
@@ -741,7 +753,8 @@ impl PlayerView {
                                 .items_center()
                                 .gap(d.gap_md)
                                 .child(
-                                    div().w(px(100.0)).child( // intentional: speaker-label column
+                                    div().w(px(100.0)).child(
+                                        // intentional: speaker-label column
                                         Text::label(format!("{}:", speaker_name))
                                             .color(theme.text_primary),
                                     ),
@@ -793,18 +806,31 @@ impl PlayerView {
                                         let icon_el: AnyElement = match mic_state {
                                             ChannelRecordingState::Empty => {
                                                 // intentional: 8px dot status indicator
-                                                div().size(px(8.0)).rounded_full().border_1().border_color(theme.text_muted).into_any_element()
+                                                div()
+                                                    .size(px(8.0))
+                                                    .rounded_full()
+                                                    .border_1()
+                                                    .border_color(theme.text_muted)
+                                                    .into_any_element()
                                             }
                                             ChannelRecordingState::Recording => {
                                                 // intentional: 8px dot status indicator
-                                                div().size(px(8.0)).rounded_full().bg(theme.warning).into_any_element()
+                                                div()
+                                                    .size(px(8.0))
+                                                    .rounded_full()
+                                                    .bg(theme.warning)
+                                                    .into_any_element()
                                             }
                                             ChannelRecordingState::Done => {
-                                                Icon::new(IconName::Check).size(IconSize::Xs).color(theme.success).into_any_element()
+                                                Icon::new(IconName::Check)
+                                                    .size(IconSize::Xs)
+                                                    .color(theme.success)
+                                                    .into_any_element()
                                             }
-                                            ChannelRecordingState::Error => {
-                                                Icon::new(IconName::X).size(IconSize::Xs).color(theme.error).into_any_element()
-                                            }
+                                            ChannelRecordingState::Error => Icon::new(IconName::X)
+                                                .size(IconSize::Xs)
+                                                .color(theme.error)
+                                                .into_any_element(),
                                         };
                                         HStack::new()
                                             .spacing(StackSpacing::Xs)
@@ -1737,9 +1763,7 @@ impl PlayerView {
                 mic_phase_calibration_paths: None,
                 // GD-Opt v2 Phase GD-1e.5 — SPL calibration, when captured
                 // and the user has entered their meter reading.
-                spl_calibration: rec_state
-                    .spl_calibration_capture
-                    .to_spl_calibration(),
+                spl_calibration: rec_state.spl_calibration_capture.to_spl_calibration(),
                 recording_seed: None,
             };
 
@@ -2322,9 +2346,11 @@ impl PlayerView {
                                             HStack::new()
                                                 .spacing(StackSpacing::Sm)
                                                 .child(
-                                                    Text::new(translations.recording_channels_label)
-                                                        .size(TextSize::Xs)
-                                                        .color(theme.text_secondary),
+                                                    Text::new(
+                                                        translations.recording_channels_label,
+                                                    )
+                                                    .size(TextSize::Xs)
+                                                    .color(theme.text_secondary),
                                                 )
                                                 .child(
                                                     Text::new(format!("{}", channel_count))

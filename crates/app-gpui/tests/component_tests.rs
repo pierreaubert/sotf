@@ -12,10 +12,10 @@ mod common;
 use std::path::Path;
 
 // Production imports
-use sotf_audio_player_gpui::components::home::album_card::{
-    album_card_height, format_dr, format_sample_info, get_format_from_path, AlbumCardMode,
-};
 use sotf_audio_player_gpui::components::graphs::common::rgba_to_u32;
+use sotf_audio_player_gpui::components::home::album_card::{
+    AlbumCardMode, album_card_height, format_dr, format_sample_info, get_format_from_path,
+};
 use sotf_audio_player_gpui::components::plugins::common::{
     compute_transfer, format_shortcut_label,
 };
@@ -25,8 +25,8 @@ use sotf_audio_player_gpui::{InputMode, Screen, SettingsTab};
 
 // Test-only utilities (not mirrors — pure math helpers and EQ validation)
 use common::{
-    clamp_parameter, denormalize_parameter, denormalize_parameter_log, normalize_parameter,
-    normalize_parameter_log, FilterType, TestEQFilter, add_eq_band, remove_eq_band,
+    FilterType, TestEQFilter, add_eq_band, clamp_parameter, denormalize_parameter,
+    denormalize_parameter_log, normalize_parameter, normalize_parameter_log, remove_eq_band,
     validate_eq_filter,
 };
 
@@ -494,12 +494,7 @@ fn test_log_normalize_denormalize_roundtrip() {
 // ============================================================================
 
 fn rgba(r: f32, g: f32, b: f32) -> gpui::Rgba {
-    gpui::Rgba {
-        r,
-        g,
-        b,
-        a: 1.0,
-    }
+    gpui::Rgba { r, g, b, a: 1.0 }
 }
 
 #[test]
@@ -642,7 +637,11 @@ fn test_compressor_curve_full_range() {
             output,
             input
         );
-        assert!(output.is_finite(), "Output must be finite for input {}", input);
+        assert!(
+            output.is_finite(),
+            "Output must be finite for input {}",
+            input
+        );
     }
 }
 
@@ -782,9 +781,7 @@ fn test_validate_eq_filter_q_at_limits() {
 
 #[test]
 fn test_validate_eq_filter_gain_too_low() {
-    assert!(
-        validate_eq_filter(&TestEQFilter::new(FilterType::Peak, 1000.0, 1.0, -30.0)).is_err()
-    );
+    assert!(validate_eq_filter(&TestEQFilter::new(FilterType::Peak, 1000.0, 1.0, -30.0)).is_err());
 }
 
 #[test]
@@ -794,9 +791,7 @@ fn test_validate_eq_filter_gain_too_high() {
 
 #[test]
 fn test_validate_eq_filter_gain_at_limits() {
-    assert!(
-        validate_eq_filter(&TestEQFilter::new(FilterType::Peak, 1000.0, 1.0, -24.0)).is_ok()
-    );
+    assert!(validate_eq_filter(&TestEQFilter::new(FilterType::Peak, 1000.0, 1.0, -24.0)).is_ok());
     assert!(validate_eq_filter(&TestEQFilter::new(FilterType::Peak, 1000.0, 1.0, 24.0)).is_ok());
 }
 
@@ -812,9 +807,7 @@ fn test_eq_filter_types() {
         FilterType::Notch,
     ];
     for filter_type in types {
-        assert!(
-            validate_eq_filter(&TestEQFilter::new(filter_type, 1000.0, 1.0, 0.0)).is_ok()
-        );
+        assert!(validate_eq_filter(&TestEQFilter::new(filter_type, 1000.0, 1.0, 0.0)).is_ok());
     }
 }
 

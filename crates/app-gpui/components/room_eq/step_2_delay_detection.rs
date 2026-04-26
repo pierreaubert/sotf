@@ -125,8 +125,7 @@ impl PlayerView {
                         .align(StackAlign::Center)
                         .child(
                             div().w(px(80.0)).child(
-                                Text::label(ch.channel_name.clone())
-                                    .color(theme.text_primary),
+                                Text::label(ch.channel_name.clone()).color(theme.text_primary),
                             ),
                         )
                         .child(
@@ -144,9 +143,9 @@ impl PlayerView {
                             ),
                         )
                         .child(
-                            div().w(px(80.0)).child(
-                                Text::label(format!("{:+.1}", ch.snr_db)).color(snr_color),
-                            ),
+                            div()
+                                .w(px(80.0))
+                                .child(Text::label(format!("{:+.1}", ch.snr_db)).color(snr_color)),
                         )
                         .child(
                             HStack::new()

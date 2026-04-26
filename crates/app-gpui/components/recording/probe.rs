@@ -116,12 +116,14 @@ impl PlayerView {
                             })
                             .size(ButtonSize::Sm)
                             .theme(theme.to_button_theme())
-                            .on_click_event(cx.listener(move |view, _, _, cx| {
+                            .on_click_event(cx.listener(
+                                move |view, _, _, cx| {
                                     if running || !has_capture {
                                         return;
                                     }
                                     view.start_probe_capture(cx);
-                                })),
+                                },
+                            )),
                         ),
                     ),
             );
@@ -164,21 +166,18 @@ impl PlayerView {
             .background(theme.surface)
             .border(theme.border)
             .content({
-                let mut content = VStack::new()
-                    .spacing(StackSpacing::Xs)
-                    .child(
-                        Text::new(status_text)
-                            .size(TextSize::Sm)
-                            .color(status_color),
-                    );
+                let mut content = VStack::new().spacing(StackSpacing::Xs).child(
+                    Text::new(status_text)
+                        .size(TextSize::Sm)
+                        .color(status_color),
+                );
                 if let Some(p) = running_progress {
                     // Determinate Progress — wall-clock fraction. The
                     // estimate can drift if the probe sequence runs longer
                     // than predicted, so we clamp to 0..=1.0 in the
                     // Progress component itself.
-                    content = content.child(
-                        Progress::new(p.clamp(0.0, 1.0) as f32).size(ProgressSize::Sm),
-                    );
+                    content = content
+                        .child(Progress::new(p.clamp(0.0, 1.0) as f32).size(ProgressSize::Sm));
                 } else if matches!(pc.status, ProbeCaptureStatus::Running { .. }) {
                     // No fraction available yet (e.g. estimated_total=0) —
                     // show an indeterminate Spinner so the user sees the
@@ -453,11 +452,11 @@ fn probe_number_row(
                 .size(ButtonSize::Xs)
                 .theme(theme.to_button_theme())
                 .on_click_event(cx.listener(move |view, _, _, cx| {
-                        view.state.update(cx, |state, _| {
-                            apply_minus(&mut state.app.measurement_state.recording_state, -step);
-                        });
-                        cx.notify();
-                    })),
+                    view.state.update(cx, |state, _| {
+                        apply_minus(&mut state.app.measurement_state.recording_state, -step);
+                    });
+                    cx.notify();
+                })),
         )
         .child(
             Button::new(format!("{label}_plus"), "+")
@@ -466,11 +465,11 @@ fn probe_number_row(
                 .size(ButtonSize::Xs)
                 .theme(theme.to_button_theme())
                 .on_click_event(cx.listener(move |view, _, _, cx| {
-                        view.state.update(cx, |state, _| {
-                            apply_plus(&mut state.app.measurement_state.recording_state, step);
-                        });
-                        cx.notify();
-                    })),
+                    view.state.update(cx, |state, _| {
+                        apply_plus(&mut state.app.measurement_state.recording_state, step);
+                    });
+                    cx.notify();
+                })),
         )
 }
 

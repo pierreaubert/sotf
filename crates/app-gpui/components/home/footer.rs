@@ -177,10 +177,9 @@ impl PlayerView {
         let border_color = theme.border;
 
         // Compute window width in rems for responsive breakpoints
-        let responsive_scale =
-            crate::ui::compute_responsive_scale(window_width, window_height);
-        let effective_rem = 16.0 * (state.app.ui_state.font_scale * responsive_scale)
-            .clamp(
+        let responsive_scale = crate::ui::compute_responsive_scale(window_width, window_height);
+        let effective_rem = 16.0
+            * (state.app.ui_state.font_scale * responsive_scale).clamp(
                 crate::ui::DEFAULT_MIN_FONT_SIZE_PX / 16.0,
                 crate::ui::DEFAULT_MAX_FONT_SIZE_PX / 16.0,
             );

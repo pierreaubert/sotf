@@ -963,9 +963,27 @@ impl PlayerView {
                     .items_center()
                     .justify_center()
                     .opacity(0.0) // Invisible, just for spacing
-                    .child(div().px(spacing::XS).py(spacing::XS).text_size(text_xs).child("M"))
-                    .child(div().px(spacing::XS).py(spacing::XS).text_size(text_xs).child("S"))
-                    .child(div().px(spacing::XS).py(spacing::XS).text_size(text_xs).child("D")),
+                    .child(
+                        div()
+                            .px(spacing::XS)
+                            .py(spacing::XS)
+                            .text_size(text_xs)
+                            .child("M"),
+                    )
+                    .child(
+                        div()
+                            .px(spacing::XS)
+                            .py(spacing::XS)
+                            .text_size(text_xs)
+                            .child("S"),
+                    )
+                    .child(
+                        div()
+                            .px(spacing::XS)
+                            .py(spacing::XS)
+                            .text_size(text_xs)
+                            .child("D"),
+                    ),
             )
     }
 
@@ -1132,11 +1150,13 @@ impl PlayerView {
                                     state.app.set_level_meter_mute(group_idx, new_state);
                                 }
                                 "solo" => {
-                                    let new_state = !state.app.level_meters.groups[group_idx].soloed;
+                                    let new_state =
+                                        !state.app.level_meters.groups[group_idx].soloed;
                                     state.app.set_level_meter_solo(group_idx, new_state);
                                 }
                                 "dim" => {
-                                    let new_state = !state.app.level_meters.groups[group_idx].dimmed;
+                                    let new_state =
+                                        !state.app.level_meters.groups[group_idx].dimmed;
                                     state.app.set_level_meter_dim(group_idx, new_state);
                                 }
                                 _ => {}
@@ -1425,7 +1445,8 @@ impl LevelMeterManager for AppState {
 
         // Capture previous states to preserve them
         let old_groups: Vec<(String, bool, bool, bool)> = self
-            .level_meters.groups
+            .level_meters
+            .groups
             .iter()
             .map(|g| (g.name.clone(), g.muted, g.soloed, g.dimmed))
             .collect();
@@ -1656,21 +1677,33 @@ impl LevelMeterManager for AppState {
 
     /// Toggle mute for the selected level meter group
     fn toggle_level_meter_mute(&mut self) {
-        if let Some(group) = self.level_meters.groups.get(self.level_meters.selected_group) {
+        if let Some(group) = self
+            .level_meters
+            .groups
+            .get(self.level_meters.selected_group)
+        {
             self.set_level_meter_mute(self.level_meters.selected_group, !group.muted);
         }
     }
 
     /// Toggle solo for the selected level meter group
     fn toggle_level_meter_solo(&mut self) {
-        if let Some(group) = self.level_meters.groups.get(self.level_meters.selected_group) {
+        if let Some(group) = self
+            .level_meters
+            .groups
+            .get(self.level_meters.selected_group)
+        {
             self.set_level_meter_solo(self.level_meters.selected_group, !group.soloed);
         }
     }
 
     /// Toggle dim for the selected level meter group
     fn toggle_level_meter_dim(&mut self) {
-        if let Some(group) = self.level_meters.groups.get(self.level_meters.selected_group) {
+        if let Some(group) = self
+            .level_meters
+            .groups
+            .get(self.level_meters.selected_group)
+        {
             self.set_level_meter_dim(self.level_meters.selected_group, !group.dimmed);
         }
     }
@@ -1679,7 +1712,8 @@ impl LevelMeterManager for AppState {
     fn update_matrix_plugin(&mut self) {
         // Calculate total channel count
         let num_channels: usize = self
-            .level_meters.groups
+            .level_meters
+            .groups
             .iter()
             .map(|g| g.channels.len())
             .sum();

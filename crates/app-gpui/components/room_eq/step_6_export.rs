@@ -424,7 +424,6 @@ impl PlayerView {
         // Get the DSP output from state
         let dsp_output = {
             let state = self.state.read(cx);
-            let translations = state.app.ui_state.translations.clone();
             state.app.measurement_state.room_eq_state.dsp_output.clone()
         };
 
@@ -689,15 +688,11 @@ impl PlayerView {
 
     /// Apply roomeq results as a graph (for multi-driver crossover setups).
     ///
-    /// Builds a `PluginGraphConfig` from the per-channel DSP chains (including
-    /// per-driver crossover, gain, delay, and global EQ) and sends it to the
-    /// engine via the graph update API.
+    /// Builds a routed `PluginGraphConfig` from the DSP output and sends it to
+    /// the engine via the graph update API.
     fn apply_room_eq_as_graph(&mut self, cx: &mut Context<Self>) {
-        use sotf_audio::engine::{PluginGraphConfig, PluginGraphEdgeConfig, PluginGraphNodeConfig};
-
         let dsp_output = {
             let state = self.state.read(cx);
-            let translations = state.app.ui_state.translations.clone();
             state.app.measurement_state.room_eq_state.dsp_output.clone()
         };
 
@@ -710,113 +705,33 @@ impl PlayerView {
             return;
         };
 
-        // Build graph: nodes + edges from the multi-channel, potentially multi-driver chains.
-        //
-        // For each channel's ChannelDspChain:
-        //   - If no drivers: chain global plugins linearly
-        //   - If drivers: each driver's plugins are chained, then all driver outputs
-        //     feed into the global EQ plugins
-        //
-        // All channels share the same graph since they're processed as interleaved audio.
-        // For per-channel processing, we rely on the EQ plugin's per-channel mode
-        // and individual crossover/gain/delay plugins processing all channels.
-        let mut nodes = Vec::new();
-        let mut edges = Vec::new();
-        let mut next_id: usize = 0;
-        let mut prev_node_id: Option<usize> = None;
+        let sample_rate = {
+            let state = self.state.read(cx);
+            let device_name = state
+                .app
+                .audio_device_state
+                .current_output_device_name
+                .as_deref();
+            let track_sr = state.app.playback.sample_rate.unwrap_or(48000);
+            sotf_audio::select_output_sample_rate(track_sr, device_name) as f64
+        };
 
-        // Flatten all channels into a single graph. For multi-driver, we process
-        // the first channel with drivers (they all share the same crossover topology).
-        let representative_chain = dsp_output
-            .channels
-            .values()
-            .find(|ch| ch.drivers.is_some())
-            .or_else(|| dsp_output.channels.values().next());
-
-        if let Some(chain) = representative_chain {
-            if let Some(drivers) = &chain.drivers {
-                // Multi-driver: add per-driver plugin chains
-                let mut driver_last_ids = Vec::new();
-
-                for driver in drivers {
-                    let mut driver_prev: Option<usize> = prev_node_id;
-
-                    for plugin in &driver.plugins {
-                        let id = next_id;
-                        next_id += 1;
-                        nodes.push(PluginGraphNodeConfig {
-                            id,
-                            plugin_type: plugin.plugin_type.clone(),
-                            parameters: plugin.parameters.clone(),
-                            input_channels: 2, // Default stereo
-                        });
-                        if let Some(prev) = driver_prev {
-                            edges.push(PluginGraphEdgeConfig {
-                                from_node: prev,
-                                to_node: id,
-                            });
-                        }
-                        driver_prev = Some(id);
-                    }
-
-                    if let Some(last) = driver_prev {
-                        driver_last_ids.push(last);
-                    }
-                }
-
-                // Global plugins after drivers (e.g., global EQ)
-                let mut global_prev: Option<usize> = None;
-                for plugin in &chain.plugins {
-                    let id = next_id;
-                    next_id += 1;
-                    nodes.push(PluginGraphNodeConfig {
-                        id,
-                        plugin_type: plugin.plugin_type.clone(),
-                        parameters: plugin.parameters.clone(),
-                        input_channels: 2,
-                    });
-
-                    // Connect all driver outputs to the first global plugin
-                    if global_prev.is_none() {
-                        for &driver_last in &driver_last_ids {
-                            edges.push(PluginGraphEdgeConfig {
-                                from_node: driver_last,
-                                to_node: id,
-                            });
-                        }
-                    }
-
-                    if let Some(prev) = global_prev {
-                        edges.push(PluginGraphEdgeConfig {
-                            from_node: prev,
-                            to_node: id,
-                        });
-                    }
-                    global_prev = Some(id);
-                }
-            } else {
-                // No drivers — just chain the plugins linearly
-                for plugin in &chain.plugins {
-                    let id = next_id;
-                    next_id += 1;
-                    nodes.push(PluginGraphNodeConfig {
-                        id,
-                        plugin_type: plugin.plugin_type.clone(),
-                        parameters: plugin.parameters.clone(),
-                        input_channels: 2,
-                    });
-                    if let Some(prev) = prev_node_id {
-                        edges.push(PluginGraphEdgeConfig {
-                            from_node: prev,
-                            to_node: id,
-                        });
-                    }
-                    prev_node_id = Some(id);
-                }
+        let graph_config = match sotf_audio_player::room_eq_types::build_room_eq_plugin_graph_config(
+            &dsp_output,
+            sample_rate,
+        ) {
+            Ok(config) => config,
+            Err(e) => {
+                log::warn!("Failed to build Room EQ graph: {}", e);
+                self.state.update(cx, |state, _| {
+                    state.app.measurement_state.room_eq_state.error_message =
+                        Some(format!("Failed to build Room EQ graph: {e}"));
+                });
+                return;
             }
-        }
+        };
 
-        if nodes.is_empty() {
+        if graph_config.nodes.is_empty() {
             log::warn!("No graph nodes to apply");
             self.state.update(cx, |state, _| {
                 state.app.measurement_state.room_eq_state.error_message =
@@ -824,8 +739,6 @@ impl PlayerView {
             });
             return;
         }
-
-        let graph_config = PluginGraphConfig { nodes, edges };
 
         log::info!(
             "Applying room EQ as graph: {} nodes, {} edges",
@@ -876,10 +789,20 @@ impl PlayerView {
         use sotf_audio_player::{NodePosition, PluginGraph, SpecialNodeType};
 
         let mut graph = PluginGraph::new();
+        let graph_channels = config
+            .nodes
+            .iter()
+            .map(|node| node.input_channels)
+            .max()
+            .unwrap_or(2)
+            .max(1);
 
         // Add Input special node at the left
-        let input_id =
-            graph.add_special_node(SpecialNodeType::Input, NodePosition::new(50.0, 200.0), 2);
+        let input_id = graph.add_special_node(
+            SpecialNodeType::Input,
+            NodePosition::new(50.0, 200.0),
+            graph_channels,
+        );
 
         // Map engine node IDs (usize) to graph node IDs (Uuid)
         let mut id_map = std::collections::HashMap::new();
@@ -930,7 +853,8 @@ impl PlayerView {
             // Derive a user-facing name for EQ plugins from the `label`
             // metadata carried in the DSP params — this is how the optimizer
             // tells us which EQ is which (broadband vs main room correction).
-            let derived_name = derive_plugin_name(&node_config.plugin_type, &node_config.parameters);
+            let derived_name =
+                derive_plugin_name(&node_config.plugin_type, &node_config.parameters);
 
             // Apply actual parameters from the DSP output to the plugin settings
             // so the modal shows the real optimized values, not defaults.
@@ -952,15 +876,17 @@ impl PlayerView {
         let output_id = graph.add_special_node(
             SpecialNodeType::Output,
             NodePosition::new(output_x, 200.0),
-            2,
+            graph_channels,
         );
 
         // Wire connections between plugin nodes
         for edge in &config.edges {
-            if let (Some(&from), Some(&to)) = (id_map.get(&edge.from_node), id_map.get(&edge.to_node))
+            if let (Some(&from), Some(&to)) =
+                (id_map.get(&edge.from_node), id_map.get(&edge.to_node))
             {
-                let _ = graph.add_connection(from, 0, to, 0);
-                let _ = graph.add_connection(from, 1, to, 1);
+                for ch in 0..graph_channels {
+                    let _ = graph.add_connection(from, ch, to, ch);
+                }
             }
         }
 
@@ -970,8 +896,9 @@ impl PlayerView {
         for node_config in &config.nodes {
             if !nodes_with_incoming.contains(&node_config.id) {
                 if let Some(&graph_id) = id_map.get(&node_config.id) {
-                    let _ = graph.add_connection(input_id, 0, graph_id, 0);
-                    let _ = graph.add_connection(input_id, 1, graph_id, 1);
+                    for ch in 0..graph_channels {
+                        let _ = graph.add_connection(input_id, ch, graph_id, ch);
+                    }
                 }
             }
         }
@@ -982,8 +909,9 @@ impl PlayerView {
         for node_config in &config.nodes {
             if !nodes_with_outgoing.contains(&node_config.id) {
                 if let Some(&graph_id) = id_map.get(&node_config.id) {
-                    let _ = graph.add_connection(graph_id, 0, output_id, 0);
-                    let _ = graph.add_connection(graph_id, 1, output_id, 1);
+                    for ch in 0..graph_channels {
+                        let _ = graph.add_connection(graph_id, ch, output_id, ch);
+                    }
                 }
             }
         }
@@ -1100,37 +1028,36 @@ pub fn upsert_named_room_eq_plugins(
     // Step 2: name-keyed upsert helper. Tracks new nodes by stable
     // GraphNodeId so inserts that shift sibling positions don't leave us
     // writing settings into a neighbouring plugin.
-    let upsert_eq = |graph: &mut sotf_audio_player::PluginGraph,
-                     settings: PluginSettings,
-                     name: &str| {
-        if let Some(idx) = graph.find_plugin_index_by_name(name) {
-            if let Some(p) = graph.get_plugin_mut(idx) {
-                p.settings = settings;
-                p.name = Some(name.to_string());
-                log::info!("Updated existing '{}' EQ at index {}", name, idx);
-            }
-            return;
-        }
-
-        let insert_idx = graph.user_plugin_insert_index();
-        match graph.insert_plugin(insert_idx, &PluginType::EQ) {
-            Ok(node_id) => {
-                if let Some(node) = graph.nodes.get_mut(&node_id) {
-                    node.plugin.settings = settings;
-                    node.plugin.name = Some(name.to_string());
+    let upsert_eq =
+        |graph: &mut sotf_audio_player::PluginGraph, settings: PluginSettings, name: &str| {
+            if let Some(idx) = graph.find_plugin_index_by_name(name) {
+                if let Some(p) = graph.get_plugin_mut(idx) {
+                    p.settings = settings;
+                    p.name = Some(name.to_string());
+                    log::info!("Updated existing '{}' EQ at index {}", name, idx);
                 }
-                log::info!(
-                    "Inserted '{}' EQ at linear index {} (node {:?})",
-                    name,
-                    insert_idx,
-                    node_id
-                );
+                return;
             }
-            Err(e) => {
-                log::error!("Failed to insert '{}' EQ: {}", name, e);
+
+            let insert_idx = graph.user_plugin_insert_index();
+            match graph.insert_plugin(insert_idx, &PluginType::EQ) {
+                Ok(node_id) => {
+                    if let Some(node) = graph.nodes.get_mut(&node_id) {
+                        node.plugin.settings = settings;
+                        node.plugin.name = Some(name.to_string());
+                    }
+                    log::info!(
+                        "Inserted '{}' EQ at linear index {} (node {:?})",
+                        name,
+                        insert_idx,
+                        node_id
+                    );
+                }
+                Err(e) => {
+                    log::error!("Failed to insert '{}' EQ: {}", name, e);
+                }
             }
-        }
-    };
+        };
 
     // Step 3: broadband correction EQ (first in chain)
     if total_bb > 0 {

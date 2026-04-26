@@ -158,9 +158,9 @@ impl PluginEditingManager for App {
         // When editing a graph node (non-linear graph), redirect to the
         // node-ID-based path so the update reaches the correct engine plugin.
         if let Some(node_id) = self.plugin_state.editing_graph_node_uuid {
-            let effect =
-                self.plugin_state
-                    .set_plugin_param_by_node_id(node_id, param_idx, value);
+            let effect = self
+                .plugin_state
+                .set_plugin_param_by_node_id(node_id, param_idx, value);
             self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
             return;
         }

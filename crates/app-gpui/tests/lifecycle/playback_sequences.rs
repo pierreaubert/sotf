@@ -204,11 +204,19 @@ fn test_mute_independence_from_volume() {
     playback.set_volume(0.7);
     playback.muted = true;
 
-    assert_eq!(playback.effective_volume(), 0.0, "Effective should be 0 when muted");
+    assert_eq!(
+        playback.effective_volume(),
+        0.0,
+        "Effective should be 0 when muted"
+    );
     assert_eq!(playback.volume, 0.7, "Stored volume should be unchanged");
 
     playback.muted = false;
-    assert_eq!(playback.effective_volume(), 0.7, "Effective should restore after unmute");
+    assert_eq!(
+        playback.effective_volume(),
+        0.7,
+        "Effective should restore after unmute"
+    );
 }
 
 // =============================================================================
@@ -228,7 +236,12 @@ fn test_rapid_track_skipping() {
 
     for i in 0..15 {
         let effect = queue.next_track();
-        assert_eq!(playback.volume, 0.55, "Volume changed after rapid skip {}", i + 1);
+        assert_eq!(
+            playback.volume,
+            0.55,
+            "Volume changed after rapid skip {}",
+            i + 1
+        );
         if matches!(effect, QueuePlaybackEffect::Stop) {
             break;
         }

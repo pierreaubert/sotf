@@ -26,10 +26,11 @@ impl App {
         let selected_album = albums.get(self.library_state.selected_index).copied();
 
         if let Some(album) = selected_album {
-            if album
-                .id
-                .is_some_and(|id| self.queue_state.iter().any(|item| item.album.id == Some(id)))
-            {
+            if album.id.is_some_and(|id| {
+                self.queue_state
+                    .iter()
+                    .any(|item| item.album.id == Some(id))
+            }) {
                 return Ok(None);
             }
 
@@ -48,10 +49,11 @@ impl App {
         let selected_album = albums.get(self.library_state.selected_index).copied();
 
         if let Some(album) = selected_album {
-            if let Some(existing_index) = album
-                .id
-                .and_then(|id| self.queue_state.iter().position(|item| item.album.id == Some(id)))
-            {
+            if let Some(existing_index) = album.id.and_then(|id| {
+                self.queue_state
+                    .iter()
+                    .position(|item| item.album.id == Some(id))
+            }) {
                 self.queue_state.current_index = Some(existing_index);
                 self.queue_state.items[existing_index].current_track_index = 0;
                 self.sync_queue_index();

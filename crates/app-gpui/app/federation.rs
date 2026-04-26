@@ -156,7 +156,9 @@ impl App {
     }
 
     fn save_server_config(&self) {
-        if let Err(e) = sotf_audio_player::config::save_server_config(&self.federation.server_config) {
+        if let Err(e) =
+            sotf_audio_player::config::save_server_config(&self.federation.server_config)
+        {
             log::warn!("Failed to save server config: {e}");
         }
     }
@@ -174,7 +176,8 @@ impl App {
         let source = self.federation.sources[index].clone();
         let source_id = source.source_id.clone();
 
-        self.federation.source_statuses
+        self.federation
+            .source_statuses
             .insert(source_id.clone(), ConnectionStatus::Testing);
 
         Some((source_id, source))
@@ -191,7 +194,8 @@ impl App {
 
         // Update in-memory source
         if let Some(source) = self
-            .federation.sources
+            .federation
+            .sources
             .iter_mut()
             .find(|s| s.source_id == source_id)
         {
@@ -203,7 +207,8 @@ impl App {
             let _ = db.set_source_availability(source_id, available);
         }
 
-        self.federation.source_statuses
+        self.federation
+            .source_statuses
             .insert(source_id.to_string(), status);
     }
 
@@ -228,7 +233,8 @@ impl App {
 
         let (tx, rx) = std::sync::mpsc::channel();
         self.federation.scan_receiver = Some(rx);
-        self.federation.scan_cancel
+        self.federation
+            .scan_cancel
             .store(false, std::sync::atomic::Ordering::Relaxed);
         self.federation.scan_progress = Some(FederationScanProgress {
             source_name: display_name,
@@ -250,7 +256,8 @@ impl App {
 
     /// Cancel the running federation scan.
     pub fn cancel_federation_scan(&mut self) {
-        self.federation.scan_cancel
+        self.federation
+            .scan_cancel
             .store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
@@ -298,7 +305,8 @@ impl App {
         if let Some(ref err) = result.error {
             self.ui_state.toast_message = Some(ToastMessage::error(format!("Scan failed: {err}",)));
             if let Some(source) = self
-                .federation.sources
+                .federation
+                .sources
                 .iter_mut()
                 .find(|s| s.source_id == result.source_id)
             {
@@ -313,7 +321,8 @@ impl App {
                 result.albums, result.tracks
             )));
             if let Some(source) = self
-                .federation.sources
+                .federation
+                .sources
                 .iter_mut()
                 .find(|s| s.source_id == result.source_id)
             {

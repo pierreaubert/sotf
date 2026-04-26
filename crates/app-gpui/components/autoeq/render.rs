@@ -214,8 +214,7 @@ impl RenderOnce for AutoEqForm {
 
         // Complex mode section callbacks Rc
         let on_target_distance_change_rc = self.on_target_distance_change.map(std::rc::Rc::new);
-        let on_optimization_goal_change_rc =
-            self.on_optimization_goal_change.map(std::rc::Rc::new);
+        let on_optimization_goal_change_rc = self.on_optimization_goal_change.map(std::rc::Rc::new);
 
         // Build the form body - branch on detail level
         let detail_level = ui_state.detail_level;

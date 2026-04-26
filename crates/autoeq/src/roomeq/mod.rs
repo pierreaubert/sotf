@@ -68,7 +68,7 @@ pub mod workflows; // Make public to access from optimize.rs or tests
 
 // Export to external formats (CamillaDSP, APO, EasyEffects, Wavelet, PipeWire)
 mod export;
-pub use export::{ExportFormat, export_dsp_chain};
+pub use export::{ExportFormat, export_dsp_chain, external_export_supported};
 
 // DSP chain building
 mod output;
@@ -161,11 +161,12 @@ pub use excursion::{
     ExcursionProtectionResult, F3DetectionResult, detect_f3, generate_excursion_protection,
 };
 pub use home_cinema::{
+    BassBusHeadroomSimulationReport, BassBusOutputHeadroomReport, BassManagementGroupReport,
     BassManagementMatrix, BassManagementOptimizationReport, BassManagementReport,
     BassManagementRoute, BassManagementRoutingGraph, BassManagementSignalFlowEntry,
-    ChannelTimingReport, HomeCinemaChannelReport, HomeCinemaLayoutReport, HomeCinemaRole,
-    HomeCinemaRoleGroup, MultiSeatCoverageReport, TimingDiagnosticsReport,
-    analyze_layout as analyze_home_cinema_layout,
+    BassManagementSubOutputReport, ChannelTimingReport, HomeCinemaChannelReport,
+    HomeCinemaLayoutReport, HomeCinemaRole, HomeCinemaRoleGroup, MultiSeatCoverageReport,
+    TimingDiagnosticsReport, analyze_layout as analyze_home_cinema_layout,
 };
 pub use multiseat::{MultiSeatMeasurements, MultiSeatOptimizationResult, optimize_multiseat};
 pub use phase_alignment::{

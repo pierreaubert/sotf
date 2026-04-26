@@ -86,28 +86,28 @@ impl PlayerView {
                                             .size(ButtonSize::Sm)
                                             .theme(theme.to_button_theme())
                                             .on_click_event(cx.listener(|view, _, _, cx| {
-                                                    view.state.update(cx, |state, _| {
+                                                view.state.update(cx, |state, _| {
+                                                    state
+                                                        .app
+                                                        .measurement_state
+                                                        .room_eq_state
+                                                        .wizard_mode = RoomEqWizardMode::Simple;
+                                                    if let Some(next) = state
+                                                        .app
+                                                        .measurement_state
+                                                        .room_eq_state
+                                                        .step
+                                                        .next()
+                                                    {
                                                         state
                                                             .app
                                                             .measurement_state
                                                             .room_eq_state
-                                                            .wizard_mode = RoomEqWizardMode::Simple;
-                                                        if let Some(next) = state
-                                                            .app
-                                                            .measurement_state
-                                                            .room_eq_state
-                                                            .step
-                                                            .next()
-                                                        {
-                                                            state
-                                                                .app
-                                                                .measurement_state
-                                                                .room_eq_state
-                                                                .step = next;
-                                                        }
-                                                    });
-                                                    cx.notify();
-                                                })),
+                                                            .step = next;
+                                                    }
+                                                });
+                                                cx.notify();
+                                            })),
                                     ),
                             ),
                     )
@@ -155,28 +155,28 @@ impl PlayerView {
                                             .size(ButtonSize::Sm)
                                             .theme(theme.to_button_theme())
                                             .on_click_event(cx.listener(|view, _, _, cx| {
-                                                    view.state.update(cx, |state, _| {
+                                                view.state.update(cx, |state, _| {
+                                                    state
+                                                        .app
+                                                        .measurement_state
+                                                        .room_eq_state
+                                                        .wizard_mode = RoomEqWizardMode::Full;
+                                                    if let Some(next) = state
+                                                        .app
+                                                        .measurement_state
+                                                        .room_eq_state
+                                                        .step
+                                                        .next()
+                                                    {
                                                         state
                                                             .app
                                                             .measurement_state
                                                             .room_eq_state
-                                                            .wizard_mode = RoomEqWizardMode::Full;
-                                                        if let Some(next) = state
-                                                            .app
-                                                            .measurement_state
-                                                            .room_eq_state
-                                                            .step
-                                                            .next()
-                                                        {
-                                                            state
-                                                                .app
-                                                                .measurement_state
-                                                                .room_eq_state
-                                                                .step = next;
-                                                        }
-                                                    });
-                                                    cx.notify();
-                                                })),
+                                                            .step = next;
+                                                    }
+                                                });
+                                                cx.notify();
+                                            })),
                                     ),
                             ),
                     ),

@@ -88,7 +88,8 @@ impl PlayerView {
                                                     })
                                                     .size(ButtonSize::Xs)
                                                     .theme(button_theme.clone())
-                                                    .on_click_event(cx.listener(move |view, _, _, cx| {
+                                                    .on_click_event(cx.listener(
+                                                        move |view, _, _, cx| {
                                                             view.state.update(cx, |state, _cx| {
                                                                 state
                                                                     .app
@@ -97,7 +98,8 @@ impl PlayerView {
                                                                     .export_format = value.clone();
                                                             });
                                                             cx.notify();
-                                                        }))
+                                                        },
+                                                    ))
                                                 }),
                                         )
                                     })
@@ -107,8 +109,8 @@ impl PlayerView {
                                             .size(ButtonSize::Sm)
                                             .theme(button_theme.clone())
                                             .on_click_event(cx.listener(|view, _, _, cx| {
-                                                    view.save_spinorama_eq_result(cx);
-                                                })),
+                                                view.save_spinorama_eq_result(cx);
+                                            })),
                                     ),
                             ),
                     )

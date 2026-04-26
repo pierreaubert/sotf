@@ -1236,8 +1236,10 @@ impl PlayerView {
                                                         crate::app::InputMode::Normal;
                                                     state.app.plugin_state.editing_plugin_node =
                                                         None;
-                                                    state.app.plugin_state.editing_graph_node_uuid =
-                                                        None;
+                                                    state
+                                                        .app
+                                                        .plugin_state
+                                                        .editing_graph_node_uuid = None;
                                                 });
                                             })
                                             .child("Close")
@@ -1411,7 +1413,15 @@ impl PlayerView {
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let (plugin_graph, loudness, selected_eq_band, spectrum_tilt_open, spectrum_ref_open, param_selection, plugin_data) = {
+        let (
+            plugin_graph,
+            loudness,
+            selected_eq_band,
+            spectrum_tilt_open,
+            spectrum_ref_open,
+            param_selection,
+            plugin_data,
+        ) = {
             let state = self.state.read(cx);
             let pd: Option<std::sync::Arc<dyn std::any::Any + Send + Sync>> = match settings {
                 PluginSettings::SpectrumAnalyzer { .. } => {
@@ -1432,7 +1442,11 @@ impl PlayerView {
                 state.app.plugin_state.selected_eq_band,
                 state.app.spectrum_tilt_select_open,
                 state.app.spectrum_reference_select_open,
-                if is_editing { state.app.plugin_state.plugin_param_selection } else { 0 },
+                if is_editing {
+                    state.app.plugin_state.plugin_param_selection
+                } else {
+                    0
+                },
                 pd,
             )
         };

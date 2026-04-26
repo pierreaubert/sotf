@@ -2177,13 +2177,411 @@ pub trait DspChainOutputExt {
     /// Returns true if the DSP output can be applied to a linear rack
     /// (no multi-driver crossovers requiring parallel paths).
     fn is_rack_compatible(&self) -> bool;
+
+    /// Returns true when this output needs graph playback to preserve routing.
+    fn requires_room_eq_graph(&self) -> bool;
 }
 
 impl DspChainOutputExt for DspChainOutput {
     fn is_rack_compatible(&self) -> bool {
-        self.global_plugins.is_empty()
-            && self.channels.values().all(|chain| chain.drivers.is_none())
+        !self.requires_room_eq_graph()
     }
+
+    fn requires_room_eq_graph(&self) -> bool {
+        requires_room_eq_graph(self)
+    }
+}
+
+/// Returns true when a RoomEQ result cannot be represented as a single linear rack.
+pub fn requires_room_eq_graph(output: &DspChainOutput) -> bool {
+    !output.global_plugins.is_empty()
+        || output
+            .channels
+            .values()
+            .any(|chain| chain.drivers.is_some())
+        || output
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.bass_management.as_ref())
+            .and_then(|report| report.routing_graph.as_ref())
+            .is_some_and(|graph| !graph.routes.is_empty())
+}
+
+/// Build an engine graph that preserves RoomEQ routed bass management.
+///
+/// Routed bass management is represented as parallel route branches:
+/// sparse matrix isolation, route crossover, route gain/polarity, and route
+/// delay. Branch outputs are summed by the graph host. Per-output correction
+/// EQ/convolution-style plugins are then isolated per physical output so the
+/// exported RoomEQ curves and graph playback stay aligned.
+pub fn build_room_eq_plugin_graph_config(
+    output: &DspChainOutput,
+    _sample_rate: f64,
+) -> anyhow::Result<sotf_audio::engine::PluginGraphConfig> {
+    let routed_graph = output
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.bass_management.as_ref())
+        .and_then(|report| report.routing_graph.as_ref())
+        .filter(|graph| !graph.routes.is_empty());
+
+    if let Some(graph) = routed_graph {
+        return build_routed_room_eq_graph(output, graph);
+    }
+
+    build_linear_room_eq_graph(output)
+}
+
+fn build_routed_room_eq_graph(
+    output: &DspChainOutput,
+    graph: &autoeq::roomeq::BassManagementRoutingGraph,
+) -> anyhow::Result<sotf_audio::engine::PluginGraphConfig> {
+    use sotf_audio::engine::{PluginGraphConfig, PluginGraphEdgeConfig, PluginGraphNodeConfig};
+
+    let channel_count = routed_graph_channel_count(output, graph);
+    let mut nodes = Vec::new();
+    let mut edges = Vec::new();
+    let mut next_id = 0usize;
+
+    let mut add_node = |plugin_type: String, parameters: serde_json::Value| -> usize {
+        let id = next_id;
+        next_id += 1;
+        nodes.push(PluginGraphNodeConfig {
+            id,
+            plugin_type,
+            parameters,
+            input_channels: channel_count,
+        });
+        id
+    };
+
+    let mut route_tails = Vec::new();
+    for route in &graph.routes {
+        let matrix_gain = route_matrix_gain(route);
+        let mut prev = add_node(
+            "matrix".to_string(),
+            serde_json::json!({
+                "label": format!("room_eq_route_{}_{}_to_{}", route.route_kind, route.source_channel, route.destination),
+                "input_channel_map": [route.source_index],
+                "output_channel_map": [route.destination_index],
+                "matrix": [matrix_gain as f32],
+                "metadata": {
+                    "route_kind": route.route_kind,
+                    "group_id": route.group_id,
+                    "source": route.source_channel,
+                    "destination": route.destination,
+                },
+            }),
+        );
+
+        for plugin in pre_route_plugins_for_route(output, route) {
+            let node = add_node(plugin.plugin_type.clone(), plugin.parameters.clone());
+            edges.push(PluginGraphEdgeConfig {
+                from_node: prev,
+                to_node: node,
+            });
+            prev = node;
+        }
+
+        if let Some(freq) = route.high_pass_hz {
+            let node = add_node(
+                "crossover".to_string(),
+                serde_json::json!({
+                    "type": route.crossover_type,
+                    "frequency": freq,
+                    "output": "high",
+                    "label": "room_eq_route_highpass",
+                }),
+            );
+            edges.push(PluginGraphEdgeConfig {
+                from_node: prev,
+                to_node: node,
+            });
+            prev = node;
+        }
+        if let Some(freq) = route.low_pass_hz {
+            let node = add_node(
+                "crossover".to_string(),
+                serde_json::json!({
+                    "type": route.crossover_type,
+                    "frequency": freq,
+                    "output": "low",
+                    "label": "room_eq_route_lowpass",
+                }),
+            );
+            edges.push(PluginGraphEdgeConfig {
+                from_node: prev,
+                to_node: node,
+            });
+            prev = node;
+        }
+
+        if route.polarity_inverted
+            || (route.gain_db.abs() > 0.01 && (matrix_gain - 1.0).abs() < 1e-6)
+        {
+            let node = add_node(
+                "gain".to_string(),
+                serde_json::json!({
+                    "gain_db": if (matrix_gain - 1.0).abs() < 1e-6 { route.gain_db } else { 0.0 },
+                    "invert": route.polarity_inverted,
+                    "label": "room_eq_route_gain_polarity",
+                }),
+            );
+            edges.push(PluginGraphEdgeConfig {
+                from_node: prev,
+                to_node: node,
+            });
+            prev = node;
+        }
+
+        if route.delay_ms.abs() > 0.001 {
+            let node = add_node(
+                "delay".to_string(),
+                serde_json::json!({
+                    "delay_ms": route.delay_ms,
+                    "label": "room_eq_route_delay",
+                }),
+            );
+            edges.push(PluginGraphEdgeConfig {
+                from_node: prev,
+                to_node: node,
+            });
+            prev = node;
+        }
+        route_tails.push(prev);
+    }
+
+    let sum_anchor = add_node(
+        "matrix".to_string(),
+        identity_matrix_parameters(channel_count, "room_eq_route_sum_anchor"),
+    );
+    for route_tail in route_tails {
+        edges.push(PluginGraphEdgeConfig {
+            from_node: route_tail,
+            to_node: sum_anchor,
+        });
+    }
+
+    let output_order = if graph.output_channels.is_empty() {
+        sorted_channel_names(output)
+    } else {
+        graph.output_channels.clone()
+    };
+    let mut correction_tails = Vec::new();
+    for (channel_index, channel_name) in output_order.iter().enumerate() {
+        let isolate = add_node(
+            "matrix".to_string(),
+            serde_json::json!({
+                "label": format!("room_eq_output_isolate_{channel_name}"),
+                "input_channel_map": [channel_index],
+                "output_channel_map": [channel_index],
+                "matrix": [1.0],
+            }),
+        );
+        edges.push(PluginGraphEdgeConfig {
+            from_node: sum_anchor,
+            to_node: isolate,
+        });
+        let mut prev = isolate;
+        for plugin in post_route_plugins_for_channel(output, channel_name, graph) {
+            let node = add_node(plugin.plugin_type.clone(), plugin.parameters.clone());
+            edges.push(PluginGraphEdgeConfig {
+                from_node: prev,
+                to_node: node,
+            });
+            prev = node;
+        }
+        correction_tails.push(prev);
+    }
+
+    if correction_tails.is_empty() {
+        correction_tails.push(sum_anchor);
+    }
+
+    Ok(PluginGraphConfig { nodes, edges })
+}
+
+fn build_linear_room_eq_graph(
+    output: &DspChainOutput,
+) -> anyhow::Result<sotf_audio::engine::PluginGraphConfig> {
+    use sotf_audio::engine::{PluginGraphConfig, PluginGraphEdgeConfig, PluginGraphNodeConfig};
+
+    let channel_count = output.channels.len().max(2);
+    let mut nodes = Vec::new();
+    let mut edges = Vec::new();
+    let mut next_id = 0usize;
+    let mut prev = None;
+
+    for plugin in output.global_plugins.iter().chain(
+        output
+            .channels
+            .values()
+            .next()
+            .into_iter()
+            .flat_map(|ch| ch.plugins.iter()),
+    ) {
+        let id = next_id;
+        next_id += 1;
+        nodes.push(PluginGraphNodeConfig {
+            id,
+            plugin_type: plugin.plugin_type.clone(),
+            parameters: plugin.parameters.clone(),
+            input_channels: channel_count,
+        });
+        if let Some(from_node) = prev {
+            edges.push(PluginGraphEdgeConfig {
+                from_node,
+                to_node: id,
+            });
+        }
+        prev = Some(id);
+    }
+
+    if nodes.is_empty() {
+        anyhow::bail!("No plugins in DSP output");
+    }
+
+    Ok(PluginGraphConfig { nodes, edges })
+}
+
+fn routed_graph_channel_count(
+    output: &DspChainOutput,
+    graph: &autoeq::roomeq::BassManagementRoutingGraph,
+) -> usize {
+    let route_max = graph
+        .routes
+        .iter()
+        .flat_map(|route| [route.source_index, route.destination_index])
+        .max()
+        .map(|idx| idx + 1)
+        .unwrap_or(0);
+    route_max
+        .max(graph.input_channels.len())
+        .max(graph.output_channels.len())
+        .max(output.channels.len())
+        .max(1)
+}
+
+fn sorted_channel_names(output: &DspChainOutput) -> Vec<String> {
+    let mut names: Vec<_> = output.channels.keys().cloned().collect();
+    names.sort();
+    names
+}
+
+fn route_matrix_gain(route: &autoeq::roomeq::BassManagementRoute) -> f64 {
+    if route.matrix_gain.abs() <= f64::EPSILON && route.gain_linear.abs() > f64::EPSILON {
+        route.gain_linear
+    } else {
+        route.matrix_gain
+    }
+}
+
+fn identity_matrix_parameters(channel_count: usize, label: &str) -> serde_json::Value {
+    serde_json::json!({
+        "label": label,
+        "input_channels": channel_count,
+        "output_channels": channel_count,
+        "matrix": identity_matrix(channel_count),
+    })
+}
+
+fn identity_matrix(channel_count: usize) -> Vec<f32> {
+    let mut matrix = vec![0.0; channel_count * channel_count];
+    for idx in 0..channel_count {
+        matrix[idx * channel_count + idx] = 1.0;
+    }
+    matrix
+}
+
+fn pre_route_plugins_for_route<'a>(
+    output: &'a DspChainOutput,
+    route: &autoeq::roomeq::BassManagementRoute,
+) -> Vec<&'a DspPluginConfig> {
+    let Some(chain) = output.channels.get(&route.source_channel) else {
+        return Vec::new();
+    };
+    chain
+        .plugins
+        .iter()
+        .take_while(|plugin| plugin.plugin_type != "crossover")
+        .collect()
+}
+
+fn post_route_plugins_for_channel<'a>(
+    output: &'a DspChainOutput,
+    channel_name: &str,
+    graph: &autoeq::roomeq::BassManagementRoutingGraph,
+) -> Vec<&'a DspPluginConfig> {
+    let Some(chain) = output.channels.get(channel_name) else {
+        return Vec::new();
+    };
+    let Some(crossover_idx) = chain
+        .plugins
+        .iter()
+        .position(|plugin| plugin.plugin_type == "crossover")
+    else {
+        return chain.plugins.iter().collect();
+    };
+
+    let mut start = crossover_idx + 1;
+    while let Some(plugin) = chain.plugins.get(start) {
+        let route_owned = match plugin.plugin_type.as_str() {
+            "crossover" => true,
+            "gain" => route_owns_gain_plugin(plugin, channel_name, graph),
+            "delay" => route_owns_delay_plugin(plugin, channel_name, graph),
+            _ => false,
+        };
+        if !route_owned {
+            break;
+        }
+        start += 1;
+    }
+
+    chain.plugins[start..].iter().collect()
+}
+
+fn route_owns_gain_plugin(
+    plugin: &DspPluginConfig,
+    channel_name: &str,
+    graph: &autoeq::roomeq::BassManagementRoutingGraph,
+) -> bool {
+    let gain_db = plugin
+        .parameters
+        .get("gain_db")
+        .and_then(|value| value.as_f64())
+        .unwrap_or(0.0);
+    let invert = plugin
+        .parameters
+        .get("invert")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    graph.routes.iter().any(|route| {
+        route.destination == channel_name
+            && ((route.gain_db - gain_db).abs() <= 0.01
+                || route.gain_db.abs() > 0.01
+                || gain_db.abs() > 0.01)
+            && (route.polarity_inverted == invert || route.polarity_inverted || invert)
+    })
+}
+
+fn route_owns_delay_plugin(
+    plugin: &DspPluginConfig,
+    channel_name: &str,
+    graph: &autoeq::roomeq::BassManagementRoutingGraph,
+) -> bool {
+    let Some(delay_ms) = plugin
+        .parameters
+        .get("delay_ms")
+        .and_then(|value| value.as_f64())
+    else {
+        return false;
+    };
+    graph.routes.iter().any(|route| {
+        route.destination == channel_name
+            && ((route.delay_ms - delay_ms).abs() <= 0.001
+                || route.delay_ms.abs() > 0.001
+                || delay_ms.abs() > 0.001)
+    })
 }
 
 /// A control point for custom target curve editing
@@ -2792,7 +3190,11 @@ mod tests {
     // is_rack_compatible tests
     // =========================================================================
 
-    use super::DspChainOutputExt;
+    use super::{DspChainOutputExt, build_room_eq_plugin_graph_config};
+    use autoeq::roomeq::{
+        BassManagementReport, BassManagementRoute, BassManagementRoutingGraph,
+        BassManagementSignalFlowEntry, HomeCinemaRole, OptimizationMetadata, PluginConfigWrapper,
+    };
 
     /// Build a bare `ChannelDspChain` with all optional curve/IR fields
     /// defaulted to `None`. The `is_rack_compatible` check only looks at
@@ -2864,5 +3266,209 @@ mod tests {
     fn test_is_rack_compatible_empty() {
         let output = bare_output(vec![]);
         assert!(output.is_rack_compatible());
+    }
+
+    fn routed_bass_output() -> DspChainOutput {
+        let mut output = bare_output(vec![
+            (
+                "L".to_string(),
+                ChannelDspChain {
+                    plugins: vec![
+                        PluginConfigWrapper {
+                            plugin_type: "gain".to_string(),
+                            parameters: serde_json::json!({"gain_db": -1.0}),
+                        },
+                        PluginConfigWrapper {
+                            plugin_type: "eq".to_string(),
+                            parameters: serde_json::json!({
+                                "label": "pre_room_eq",
+                                "filters": []
+                            }),
+                        },
+                        PluginConfigWrapper {
+                            plugin_type: "crossover".to_string(),
+                            parameters: serde_json::json!({
+                                "type": "LR24",
+                                "frequency": 80.0,
+                                "output": "high"
+                            }),
+                        },
+                        PluginConfigWrapper {
+                            plugin_type: "delay".to_string(),
+                            parameters: serde_json::json!({"delay_ms": 2.0}),
+                        },
+                        PluginConfigWrapper {
+                            plugin_type: "eq".to_string(),
+                            parameters: serde_json::json!({
+                                "label": "post_room_eq",
+                                "filters": []
+                            }),
+                        },
+                    ],
+                    ..bare_chain("L", None)
+                },
+            ),
+            ("Sub".to_string(), bare_chain("Sub", None)),
+        ]);
+        output.metadata = Some(OptimizationMetadata {
+            pre_score: 1.0,
+            post_score: 0.5,
+            algorithm: "test".to_string(),
+            loss_type: None,
+            iterations: 1,
+            timestamp: "test".to_string(),
+            inter_channel_deviation: None,
+            epa_per_channel: None,
+            group_delay: None,
+            perceptual_metrics: None,
+            home_cinema_layout: None,
+            multi_seat_coverage: None,
+            bass_management: Some(BassManagementReport {
+                enabled: true,
+                crossover_type: "LR24".to_string(),
+                crossover_frequency_hz: Some(80.0),
+                redirected_bass_enabled: true,
+                lfe_channel: "LFE".to_string(),
+                lfe_playback_gain_db: 10.0,
+                lfe_gain_applied_to_chain: false,
+                sub_trim_db: 0.0,
+                max_sub_boost_db: 6.0,
+                headroom_margin_db: -3.0,
+                applied_sub_gain_db: Some(0.0),
+                gain_limited: false,
+                physical_sub_output: "Sub".to_string(),
+                redirected_bass_channel_count: 1,
+                main_high_pass_hz: Some(80.0),
+                sub_low_pass_hz: Some(80.0),
+                lfe_headroom_required_db: 10.0,
+                signal_flow: vec![BassManagementSignalFlowEntry {
+                    source_channel: "L".to_string(),
+                    role: HomeCinemaRole::FrontLeft,
+                    destination: "Sub".to_string(),
+                    high_pass_hz: None,
+                    low_pass_hz: Some(80.0),
+                    lfe_gain_db: 0.0,
+                    redirects_bass: true,
+                }],
+                signal_flow_advisories: Vec::new(),
+                routing_graph: Some(BassManagementRoutingGraph {
+                    physical_sub_output: "Sub".to_string(),
+                    input_channels: vec!["L".to_string(), "Sub".to_string()],
+                    output_channels: vec!["L".to_string(), "Sub".to_string()],
+                    routes: vec![
+                        BassManagementRoute {
+                            group_id: Some("lcr".to_string()),
+                            source_channel: "L".to_string(),
+                            source_index: 0,
+                            destination: "L".to_string(),
+                            destination_index: 0,
+                            route_kind: "main_highpass_to_self".to_string(),
+                            crossover_type: "LR24".to_string(),
+                            high_pass_hz: Some(80.0),
+                            low_pass_hz: None,
+                            gain_db: 0.0,
+                            gain_linear: 1.0,
+                            matrix_gain: 1.0,
+                            delay_ms: 2.0,
+                            polarity_inverted: false,
+                        },
+                        BassManagementRoute {
+                            group_id: Some("lcr".to_string()),
+                            source_channel: "L".to_string(),
+                            source_index: 0,
+                            destination: "Sub".to_string(),
+                            destination_index: 1,
+                            route_kind: "redirected_bass_lowpass_to_sub".to_string(),
+                            crossover_type: "LR24".to_string(),
+                            high_pass_hz: None,
+                            low_pass_hz: Some(80.0),
+                            gain_db: -3.0,
+                            gain_linear: 0.707945784,
+                            matrix_gain: 1.0,
+                            delay_ms: 4.0,
+                            polarity_inverted: true,
+                        },
+                    ],
+                    matrix: None,
+                    advisories: Vec::new(),
+                }),
+                optimization: None,
+                groups: Vec::new(),
+                sub_outputs: Vec::new(),
+                headroom_simulation: None,
+                advisory: "ok".to_string(),
+            }),
+            timing_diagnostics: None,
+        });
+        output
+    }
+
+    #[test]
+    fn test_requires_room_eq_graph_with_routed_bass_management() {
+        let output = routed_bass_output();
+        assert!(output.requires_room_eq_graph());
+        assert!(!output.is_rack_compatible());
+    }
+
+    #[test]
+    fn test_build_room_eq_graph_emits_route_dsp_and_output_correction() {
+        let output = routed_bass_output();
+        let graph = build_room_eq_plugin_graph_config(&output, 48_000.0).unwrap();
+        let plugin_types: Vec<_> = graph
+            .nodes
+            .iter()
+            .map(|node| node.plugin_type.as_str())
+            .collect();
+        assert!(
+            plugin_types
+                .iter()
+                .filter(|&&kind| kind == "matrix")
+                .count()
+                >= 4
+        );
+        assert!(plugin_types.contains(&"crossover"));
+        assert!(plugin_types.contains(&"delay"));
+        assert!(plugin_types.iter().filter(|&&kind| kind == "gain").count() >= 3);
+        assert!(plugin_types.contains(&"eq"));
+        assert!(graph.nodes.iter().all(|node| node.input_channels == 2));
+
+        let labeled_nodes: Vec<_> = graph
+            .nodes
+            .iter()
+            .filter_map(|node| {
+                node.parameters
+                    .get("label")
+                    .and_then(|label| label.as_str())
+                    .map(|label| (node.id, label))
+            })
+            .collect();
+        let pre_eq_id = labeled_nodes
+            .iter()
+            .find(|(_, label)| *label == "pre_room_eq")
+            .map(|(id, _)| *id)
+            .expect("pre-route EQ should be emitted");
+        let first_route_crossover_id = labeled_nodes
+            .iter()
+            .find(|(_, label)| *label == "room_eq_route_highpass")
+            .map(|(id, _)| *id)
+            .expect("route highpass should be emitted");
+        let post_eq_id = labeled_nodes
+            .iter()
+            .find(|(_, label)| *label == "post_room_eq")
+            .map(|(id, _)| *id)
+            .expect("post-route EQ should be emitted");
+        let sum_anchor_id = labeled_nodes
+            .iter()
+            .find(|(_, label)| *label == "room_eq_route_sum_anchor")
+            .map(|(id, _)| *id)
+            .expect("route sum anchor should be emitted");
+        assert!(
+            pre_eq_id < first_route_crossover_id,
+            "pre-crossover EQ must stay before route crossover"
+        );
+        assert!(
+            post_eq_id > sum_anchor_id,
+            "post-crossover EQ must stay after route summation"
+        );
     }
 }

@@ -48,15 +48,14 @@ impl InteractiveChartStateWrapper {
 // Domain types shared via sotf-player crate — single source of truth for all apps.
 pub use sotf_audio_player::room_eq_types::RoomEqWizardMode;
 pub use sotf_audio_player::room_eq_types::{
-    ChannelDspChain, ChannelMatchingUiConfig, ChannelMeasurement,
-    ChannelOptResult, CustomTargetCurve, DelayDetectionState, DelayDetectionStatus, DriverDspChain,
-    DspChainMetadata, DspChainOutput, DspPluginConfig, EqFilterConfig, ExcursionProtectionConfig,
-    MixedModeUiConfig, MixedPhaseUiConfig, MultiMeasurementUiConfig,
-    MultiSeatConfig, MultiSpeakerMode, PhaseAlignmentConfig, PreRingingConfig,
-    RecordingConfiguration, RoomEqDataSource, RoomEqFirConfig, RoomEqMeasurementsFile,
-    RoomEqOptimizationMode, RoomEqSpeakerConfig, RoomEqStep, SchroederSplitConfig,
-    SimplePresetConfig, SpeakerConfigType, SubOptimizerUiConfig, TargetCurveControlPoint,
-    TargetResponseUiConfig, VoGConfig,
+    ChannelDspChain, ChannelMatchingUiConfig, ChannelMeasurement, ChannelOptResult,
+    CustomTargetCurve, DelayDetectionState, DelayDetectionStatus, DriverDspChain, DspChainMetadata,
+    DspChainOutput, DspPluginConfig, EqFilterConfig, ExcursionProtectionConfig, MixedModeUiConfig,
+    MixedPhaseUiConfig, MultiMeasurementUiConfig, MultiSeatConfig, MultiSpeakerMode,
+    PhaseAlignmentConfig, PreRingingConfig, RecordingConfiguration, RoomEqDataSource,
+    RoomEqFirConfig, RoomEqMeasurementsFile, RoomEqOptimizationMode, RoomEqSpeakerConfig,
+    RoomEqStep, SchroederSplitConfig, SimplePresetConfig, SpeakerConfigType, SubOptimizerUiConfig,
+    TargetCurveControlPoint, TargetResponseUiConfig, VoGConfig,
 };
 pub type CrossoverType = sotf_audio_player::room_eq_types::RoomEqCrossoverType;
 pub use sotf_audio_player::room_eq_types::AutoEqField;

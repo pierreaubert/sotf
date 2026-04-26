@@ -38,7 +38,9 @@ impl PlayerView {
                 "Ready — {:.0} Hz @ amp {:.3} for {:.1}s on ch {}",
                 cal.reference_freq_hz, cal.tone_amp, cal.duration_s, cal.output_channel
             ),
-            SplCalibrationCaptureStatus::Running { .. } => "Tone playing — read your SPL meter now…".to_string(),
+            SplCalibrationCaptureStatus::Running { .. } => {
+                "Tone playing — read your SPL meter now…".to_string()
+            }
             SplCalibrationCaptureStatus::Complete => {
                 let er = cal.engine_result.as_ref();
                 match er {
@@ -94,8 +96,9 @@ impl PlayerView {
             let reported = cal.reported_db_spl;
             let reported_line = match reported {
                 Some(v) => format!("Reported dBSPL: {v:.1}"),
-                None => "Reported dBSPL: (not entered yet — type it in the UI entry below)"
-                    .to_string(),
+                None => {
+                    "Reported dBSPL: (not entered yet — type it in the UI entry below)".to_string()
+                }
             };
             column = column
                 .child(

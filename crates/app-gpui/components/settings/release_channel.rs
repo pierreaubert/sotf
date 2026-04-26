@@ -114,15 +114,13 @@ impl PlayerView {
                                             .full_width(true)
                                             .theme(theme.to_button_theme())
                                             .on_click_event(cx.listener(
-                                                    move |view, _: &ClickEvent, _window, cx| {
-                                                        view.state.update(cx, |state, _cx| {
-                                                            state
-                                                                .app
-                                                                .set_release_channel(channel_val);
-                                                        });
-                                                        cx.notify();
-                                                    },
-                                                )),
+                                                move |view, _: &ClickEvent, _window, cx| {
+                                                    view.state.update(cx, |state, _cx| {
+                                                        state.app.set_release_channel(channel_val);
+                                                    });
+                                                    cx.notify();
+                                                },
+                                            )),
                                         ),
                                     ),
                             );

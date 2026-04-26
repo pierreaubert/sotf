@@ -138,7 +138,7 @@ ensure-venv:
 	fi
 	if ! ./venv/bin/python3 -c "import plotly" 2>/dev/null; then
 		echo "Installing Python dependencies..."
-		./venv/bin/pip install -r ./scripts/requirements.txt
+		./venv/bin/pip install -r ./crates/autoeq/scripts/requirements.txt
 	fi
 
 [group('qa-roomeq')]
@@ -172,10 +172,10 @@ qa-roomeq-small-stereo-20: ensure-venv
 	  for algo in bem fem; do \
 	      mkdir -p ./data_generated/roomeq/generated/$algo/small_stereo_2_0; \
 	      cargo run --bin roomeq --release -- \
-	        --config       ./data_tests/roomeq/generated/$algo/small_stereo_2_0/config.json \
-		    --override-config ./data_tests/roomeq/generated/optimiser-config/small_stereo_2_0/optimiser-$method.json \
+	        --config       ./crates/autoeq/data_tests/roomeq/generated/$algo/small_stereo_2_0/config.json \
+		    --override-config ./crates/autoeq/data_tests/roomeq/generated/optimiser-config/small_stereo_2_0/optimiser-$method.json \
 		    --output       ./data_generated/roomeq/generated/$algo/small_stereo_2_0/dsp_$method.json; \
-		  ./venv/bin/python3 ./scripts/display-roomeq.py \
+		  ./venv/bin/python3 ./crates/autoeq/scripts/display-roomeq.py \
 		                   ./data_generated/roomeq/generated/$algo/small_stereo_2_0/dsp_$method.json; \
 	  done \
 	done
@@ -187,10 +187,10 @@ qa-roomeq-small-stereo-21: ensure-venv
 	  for algo in fem; do \
 	    mkdir -p ./data_generated/roomeq/generated/$algo/small_stereo_2_1; \
 	    cargo run --bin roomeq --release -- \
-	        --config       ./data_tests/roomeq/generated/$algo/small_stereo_2_1/config.json \
-		    --override-config ./data_tests/roomeq/generated/optimiser-config/small_stereo_2_1/optimiser-$method.json \
+	        --config       ./crates/autoeq/data_tests/roomeq/generated/$algo/small_stereo_2_1/config.json \
+		    --override-config ./crates/autoeq/data_tests/roomeq/generated/optimiser-config/small_stereo_2_1/optimiser-$method.json \
 		    --output       ./data_generated/roomeq/generated/$algo/small_stereo_2_1/dsp_$method.json; \
-		./venv/bin/python3 ./scripts/display-roomeq.py \
+		./venv/bin/python3 ./crates/autoeq/scripts/display-roomeq.py \
 		                   ./data_generated/roomeq/generated/$algo/small_stereo_2_1/dsp_$method.json; \
 	  done \
 	done
@@ -202,10 +202,10 @@ qa-roomeq-small-stereo-22: ensure-venv
 	  for algo in fem; do \
 	    mkdir -p ./data_generated/roomeq/generated/$algo/small_stereo_2_2; \
 	    cargo run --bin roomeq --release -- \
-	        --config       ./data_tests/roomeq/generated/$algo/small_stereo_2_2/config.json \
-		    --override-config ./data_tests/roomeq/generated/optimiser-config/small_stereo_2_2/optimiser-$method.json \
+	        --config       ./crates/autoeq/data_tests/roomeq/generated/$algo/small_stereo_2_2/config.json \
+		    --override-config ./crates/autoeq/data_tests/roomeq/generated/optimiser-config/small_stereo_2_2/optimiser-$method.json \
 		    --output       ./data_generated/roomeq/generated/$algo/small_stereo_2_2/dsp_$method.json; \
-		./venv/bin/python3 ./scripts/display-roomeq.py \
+		./venv/bin/python3 ./crates/autoeq/scripts/display-roomeq.py \
 		                   ./data_generated/roomeq/generated/$algo/small_stereo_2_2/dsp_$method.json; \
 	  done \
 	done
@@ -216,10 +216,10 @@ qa-roomeq-small-stereo-51: ensure-venv
 	  for algo in fem; do \
 	    mkdir -p ./data_generated/roomeq/generated/$algo/medium_surround_5_1; \
 	    cargo run --bin roomeq --release -- \
-	        --config       ./data_tests/roomeq/generated/$algo/medium_surround_5_1/config.json \
-		    --override-config ./data_tests/roomeq/generated/optimiser-config/medium_surround_5_1/optimiser-$method.json \
+	        --config       ./crates/autoeq/data_tests/roomeq/generated/$algo/medium_surround_5_1/config.json \
+		    --override-config ./crates/autoeq/data_tests/roomeq/generated/optimiser-config/medium_surround_5_1/optimiser-$method.json \
 		    --output       ./data_generated/roomeq/generated/$algo/medium_surround_5_1/dsp_$method.json; \
-		./venv/bin/python3 ./scripts/display-roomeq.py \
+		./venv/bin/python3 ./crates/autoeq/scripts/display-roomeq.py \
 		                   ./data_generated/roomeq/generated/$algo/medium_surround_5_1/dsp_$method.json; \
 	  done \
 	done
@@ -243,10 +243,10 @@ qa-roomeq-multi-small-stereo-20: ensure-venv
 	    mkdir -p ./data_generated/roomeq/generated/$algo/small_stereo_2_0; \
 	    echo "=== Multi-measurement $strategy ($algo) small_stereo_2_0 ==="; \
 	    cargo run --bin roomeq --release -- \
-	      --config       ./data_tests/roomeq/generated/$algo/small_stereo_2_0/config.json \
-	      --override-config ./data_tests/roomeq/generated/optimiser-config/multi_measurement/$strategy.json \
+	      --config       ./crates/autoeq/data_tests/roomeq/generated/$algo/small_stereo_2_0/config.json \
+	      --override-config ./crates/autoeq/data_tests/roomeq/generated/optimiser-config/multi_measurement/$strategy.json \
 	      --output       ./data_generated/roomeq/generated/$algo/small_stereo_2_0/dsp_iir_multi_$strategy.json; \
-	    ./venv/bin/python3 ./scripts/display-roomeq.py \
+	    ./venv/bin/python3 ./crates/autoeq/scripts/display-roomeq.py \
 	                     ./data_generated/roomeq/generated/$algo/small_stereo_2_0/dsp_iir_multi_$strategy.json; \
 	  done \
 	done
@@ -258,10 +258,10 @@ qa-roomeq-multi-small-stereo-21: ensure-venv
 	    mkdir -p ./data_generated/roomeq/generated/$algo/small_stereo_2_1; \
 	    echo "=== Multi-measurement $strategy ($algo) small_stereo_2_1 ==="; \
 	    cargo run --bin roomeq --release -- \
-	      --config       ./data_tests/roomeq/generated/$algo/small_stereo_2_1/config.json \
-	      --override-config ./data_tests/roomeq/generated/optimiser-config/multi_measurement/$strategy.json \
+	      --config       ./crates/autoeq/data_tests/roomeq/generated/$algo/small_stereo_2_1/config.json \
+	      --override-config ./crates/autoeq/data_tests/roomeq/generated/optimiser-config/multi_measurement/$strategy.json \
 	      --output       ./data_generated/roomeq/generated/$algo/small_stereo_2_1/dsp_iir_multi_$strategy.json; \
-	    ./venv/bin/python3 ./scripts/display-roomeq.py \
+	    ./venv/bin/python3 ./crates/autoeq/scripts/display-roomeq.py \
 	                     ./data_generated/roomeq/generated/$algo/small_stereo_2_1/dsp_iir_multi_$strategy.json; \
 	  done \
 	done
@@ -273,10 +273,10 @@ qa-roomeq-multi-small-stereo-22-mso: ensure-venv
 	    mkdir -p ./data_generated/roomeq/generated/$algo/small_stereo_2_2_mso; \
 	    echo "=== Multi-measurement $strategy ($algo) small_stereo_2_2_mso ==="; \
 	    cargo run --bin roomeq --release -- \
-	      --config       ./data_tests/roomeq/generated/$algo/small_stereo_2_2_mso/config.json \
-	      --override-config ./data_tests/roomeq/generated/optimiser-config/multi_measurement/$strategy.json \
+	      --config       ./crates/autoeq/data_tests/roomeq/generated/$algo/small_stereo_2_2_mso/config.json \
+	      --override-config ./crates/autoeq/data_tests/roomeq/generated/optimiser-config/multi_measurement/$strategy.json \
 	      --output       ./data_generated/roomeq/generated/$algo/small_stereo_2_2_mso/dsp_iir_multi_$strategy.json; \
-	    ./venv/bin/python3 ./scripts/display-roomeq.py \
+	    ./venv/bin/python3 ./crates/autoeq/scripts/display-roomeq.py \
 	                     ./data_generated/roomeq/generated/$algo/small_stereo_2_2_mso/dsp_iir_multi_$strategy.json; \
 	  done \
 	done
@@ -315,6 +315,12 @@ qa-roomeq-home-cinema:
 qa-roomeq-bass-management:
 	cargo test -p autoeq home_cinema_bass_management --lib -- --nocapture
 	cargo test -p autoeq validate_bass_management --lib -- --nocapture
+
+[group('qa-roomeq')]
+qa-roomeq-export-routing:
+	cargo test -p autoeq external_exports_reject_routed_bass_management --lib -- --nocapture
+	cargo test -p sotf-player test_build_room_eq_graph_emits_route_dsp_and_output_correction --lib -- --nocapture
+	cargo test -p sotf-player test_requires_room_eq_graph_with_routed_bass_management --lib -- --nocapture
 
 [group('qa-roomeq')]
 qa-roomeq-dsp-consistency:
