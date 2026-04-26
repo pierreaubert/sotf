@@ -8,17 +8,18 @@
 // The audio thread never blocks: features are pushed non-blocking via rtrb,
 // and V_prob is read via a relaxed atomic load.
 
-use super::ml_features::FEATURE_SIZE;
+use super::ml_features::{CONTEXT_FRAMES, FEATURE_SIZE, FRAME_FEATURE_SIZE};
 use ort::session::Session;
 use ort::session::builder::GraphOptimizationLevel;
+use ort::value::{TensorElementType, ValueType};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::thread::{self, JoinHandle};
 
-/// Ring buffer capacity in frames (inference ~1-5ms, blocks arrive every ~42ms at 2048/44100)
+/// Ring buffer capacity in contexts (blocks arrive every ~21ms at 2048/48k with 50% overlap).
 const RING_BUFFER_CAPACITY: usize = 4;
 
-/// A single MFCC feature frame sent from audio thread to inference thread
+/// A single feature context sent from audio thread to inference thread.
 pub struct MfccFrame {
     pub features: [f32; FEATURE_SIZE],
 }
@@ -57,6 +58,8 @@ impl MlInferenceHandle {
             .map_err(|e| format!("Failed to set intra threads: {}", e))?
             .commit_from_file(model_path)
             .map_err(|e| format!("Failed to load ONNX model '{}': {}", model_path, e))?;
+        validate_input_contract(&session)?;
+        validate_metadata_contract(&session)?;
 
         let (producer, consumer) = rtrb::RingBuffer::<MfccFrame>::new(RING_BUFFER_CAPACITY);
 
@@ -81,7 +84,7 @@ impl MlInferenceHandle {
         })
     }
 
-    /// Send MFCC features to the inference thread. Non-blocking.
+    /// Send feature context to the inference thread. Non-blocking.
     ///
     /// If the ring buffer is full, the frame is silently dropped (inference
     /// is slower than audio — the latest frame that fits will be used).
@@ -121,6 +124,80 @@ impl Drop for MlInferenceHandle {
     fn drop(&mut self) {
         self.shutdown();
     }
+}
+
+fn validate_input_contract(session: &Session) -> Result<(), String> {
+    let input = session
+        .inputs()
+        .first()
+        .ok_or_else(|| "ONNX model must expose one f32 input tensor".to_string())?;
+
+    match input.dtype() {
+        ValueType::Tensor { ty, shape, .. } => {
+            if *ty != TensorElementType::Float32 {
+                return Err(format!(
+                    "ONNX model input '{}' must be f32, got {}",
+                    input.name(),
+                    ty
+                ));
+            }
+            if !shape_accepts_feature_size(shape) {
+                return Err(format!(
+                    "ONNX model input '{}' must have shape [1, {}] or [-1, {}], got {}",
+                    input.name(),
+                    FEATURE_SIZE,
+                    FEATURE_SIZE,
+                    shape
+                ));
+            }
+            Ok(())
+        }
+        other => Err(format!(
+            "ONNX model input '{}' must be a f32 tensor, got {:?}",
+            input.name(),
+            other
+        )),
+    }
+}
+
+fn shape_accepts_feature_size(shape: &[i64]) -> bool {
+    shape.len() == 2
+        && (shape[0] == 1 || shape[0] == -1)
+        && (shape[1] == FEATURE_SIZE as i64 || shape[1] == -1)
+}
+
+fn validate_metadata_contract(session: &Session) -> Result<(), String> {
+    let Ok(metadata) = session.metadata() else {
+        return Ok(());
+    };
+
+    for (key, expected) in [
+        ("feature_size", FEATURE_SIZE),
+        ("frame_feature_size", FRAME_FEATURE_SIZE),
+        ("context_frames", CONTEXT_FRAMES),
+    ] {
+        let Some(value) = metadata.custom(key) else {
+            continue;
+        };
+        let parsed = value.parse::<usize>().map_err(|_| {
+            format!(
+                "ONNX metadata '{}' must be an integer, got '{}'",
+                key, value
+            )
+        })?;
+        if parsed != expected {
+            return Err(format!(
+                "ONNX metadata '{}' mismatch: model has {}, plugin expects {}",
+                key, parsed, expected
+            ));
+        }
+    }
+
+    if let Some(threshold) = metadata.custom("recommended_threshold") {
+        log::info!("ML vocal detector recommended threshold: {}", threshold);
+    }
+
+    Ok(())
 }
 
 /// Inference worker function running on the dedicated thread.
@@ -223,7 +300,17 @@ mod tests {
         let frame = MfccFrame {
             features: [0.0; FEATURE_SIZE],
         };
-        assert_eq!(frame.features.len(), 40);
+        assert_eq!(frame.features.len(), FEATURE_SIZE);
+    }
+
+    #[test]
+    fn test_shape_accepts_current_feature_contract() {
+        assert!(shape_accepts_feature_size(&[1, FEATURE_SIZE as i64]));
+        assert!(shape_accepts_feature_size(&[-1, FEATURE_SIZE as i64]));
+        assert!(shape_accepts_feature_size(&[1, -1]));
+        assert!(!shape_accepts_feature_size(&[1, 40]));
+        assert!(!shape_accepts_feature_size(&[FEATURE_SIZE as i64]));
+        assert!(!shape_accepts_feature_size(&[2, FEATURE_SIZE as i64]));
     }
 
     #[test]

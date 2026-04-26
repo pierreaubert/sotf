@@ -3,7 +3,7 @@
 Create a dummy ONNX vocal detection model for testing.
 
 Generates a minimal ONNX model with:
-- Input: "input" shape [1, 40] (20 MFCCs + 20 deltas)
+- Input: "input" shape [1, 320] (5 frames × 64 features)
 - Output: "output" shape [1, 1] (vocal probability after sigmoid)
 - Single linear layer with zero weights -> constant output of sigmoid(0) = 0.5
 
@@ -24,7 +24,7 @@ except ImportError:
     print("Error: onnx package required. Install with: pip install onnx")
     raise SystemExit(1)
 
-FEATURE_SIZE = 40  # 20 MFCCs + 20 deltas
+FEATURE_SIZE = 320  # 5 frames × (20 MFCCs + 20 deltas + 24 spatial/spectral)
 OUTPUT_DIR = os.path.join(
     os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")),
     "crates", "sotf-plugins", "test_data"
@@ -33,13 +33,13 @@ OUTPUT_PATH = os.path.join(OUTPUT_DIR, "dummy_vocal_detector.onnx")
 
 
 def create_dummy_model():
-    # Input: [1, 40]
+    # Input: [1, 320]
     X = helper.make_tensor_value_info("input", TensorProto.FLOAT, [1, FEATURE_SIZE])
 
     # Output: [1, 1]
     Y = helper.make_tensor_value_info("output", TensorProto.FLOAT, [1, 1])
 
-    # Linear layer weights: [40, 1] all zeros
+    # Linear layer weights: [320, 1] all zeros
     W = helper.make_tensor(
         "W",
         TensorProto.FLOAT,

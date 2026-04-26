@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Train a tiny vocal detector model and export to ONNX.
+Train a small vocal/dialog detector model and export to ONNX.
 
-Extracts MFCC features from WAV files (matching the Rust ml_features.rs implementation
-exactly), uses Silero VAD for pseudo-labeling, trains a 3-layer MLP (~1857 params),
-and exports to ONNX with sigmoid wrapper.
+Extracts temporal MFCC + spatial features from WAV files (matching the Rust
+ml_features.rs implementation), uses Silero VAD for pseudo-labeling, trains
+a small MLP, and exports to ONNX with sigmoid wrapper.
 
 ONNX contract:
-  Input:  "input"  [1, 40] float32 (20 MFCCs + 20 deltas)
+  Input:  "input"  [1, 320] float32 (5 frames × 64 features)
   Output: "output" [1, 1] float32 (post-sigmoid probability)
 
 Usage:
@@ -25,15 +25,16 @@ Output:
 """
 
 import argparse
+import io
 import os
 import sys
 import time
 import wave
 from concurrent.futures import ProcessPoolExecutor
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
-import scipy.sparse
 import torch
 import torch.nn as nn
 
@@ -62,10 +63,13 @@ AUDIO_FILES = [
 # ---------------------------------------------------------------------------
 NUM_MEL_BANDS = 40
 NUM_MFCCS = 20
-FEATURE_SIZE = NUM_MFCCS + NUM_MFCCS  # 20 MFCCs + 20 deltas
+NUM_AUX_FEATURES = 24
+FRAME_FEATURE_SIZE = NUM_MFCCS + NUM_MFCCS + NUM_AUX_FEATURES
+CONTEXT_FRAMES = 5
+FEATURE_SIZE = FRAME_FEATURE_SIZE * CONTEXT_FRAMES
 FFT_SIZE = 2048
 HOP_SIZE = FFT_SIZE // 2  # 1024, 50% overlap
-SAMPLE_RATE = 44100
+SAMPLE_RATE = 48000
 
 # Pre-computed Hann window (module-level, matches Rust: w[n] = 0.5*(1 - cos(2*pi*n/N)))
 _HANN_WINDOW = 0.5 * (1.0 - np.cos(2.0 * np.pi * np.arange(FFT_SIZE) / FFT_SIZE))
@@ -109,44 +113,41 @@ class MfccExtractor:
     """
     Python port of ml_features.rs::MfccExtractor.
 
-    Matches the Rust implementation exactly:
-    - HTK mel scale, triangular filters with same bin iteration logic
-    - Natural log compression with floor 1e-10
-    - Unnormalized DCT-II: cos(PI * k * (n + 0.5) / 40)
-    - First-order delta (current - previous), zeros for first frame
+    Per frame:
+    - 20 MFCCs
+    - 20 MFCC deltas
+    - 24 spatial/spectral features
+
+    Output:
+    - Flattened 5-frame context, oldest to newest: shape (320,)
     """
 
     def __init__(self, sample_rate: int, fft_size: int):
-        spectrum_size = fft_size // 2 + 1
+        self.sample_rate = sample_rate
+        self.fft_size = fft_size
+        self.spectrum_size = fft_size // 2 + 1
         nyquist = sample_rate / 2.0
 
-        # HTK mel scale
         mel_low = hz_to_mel(0.0)
         mel_high = hz_to_mel(nyquist)
-
-        # Equally spaced mel points (NUM_MEL_BANDS + 2 for triangular filter edges)
         num_points = NUM_MEL_BANDS + 2
         mel_points = np.array([
             mel_low + (mel_high - mel_low) * i / (num_points - 1)
             for i in range(num_points)
         ])
         hz_points = np.array([mel_to_hz(m) for m in mel_points])
-
-        # Convert Hz to FFT bin indices (fractional)
         bin_points = hz_points * fft_size / sample_rate
 
-        # Build sparse triangular filters as CSR matrix for vectorized compute()
-        rows: list[int] = []
-        cols: list[int] = []
-        vals: list[float] = []
-
+        self.filter_weights: list[tuple[int, float]] = []
+        self.mel_filters: list[tuple[int, int]] = []
         for band in range(NUM_MEL_BANDS):
             left = bin_points[band]
             center = bin_points[band + 1]
             right = bin_points[band + 2]
-
             bin_start = int(np.floor(left))
-            bin_end = min(int(np.ceil(right)), spectrum_size - 1)
+            bin_end = min(int(np.ceil(right)), self.spectrum_size - 1)
+            offset = len(self.filter_weights)
+            count = 0
 
             for b in range(bin_start, bin_end + 1):
                 bin_f = float(b)
@@ -158,20 +159,11 @@ class MfccExtractor:
                     weight = (right - bin_f) / (right - center)
                 else:
                     weight = 0.0
-
                 if weight > 0.0:
-                    rows.append(band)
-                    cols.append(b)
-                    vals.append(weight)
+                    self.filter_weights.append((b, weight))
+                    count += 1
+            self.mel_filters.append((offset, count))
 
-        self.mel_filter_matrix = scipy.sparse.csr_matrix(
-            (vals, (rows, cols)),
-            shape=(NUM_MEL_BANDS, spectrum_size),
-            dtype=np.float64,
-        )
-
-        # Pre-compute DCT-II matrix: dct[k][n] = cos(PI * k * (n + 0.5) / N)
-        # This is unnormalized — NOT scipy's ortho-normalized DCT
         self.dct_matrix = np.zeros((NUM_MFCCS, NUM_MEL_BANDS), dtype=np.float64)
         for k in range(NUM_MFCCS):
             for n in range(NUM_MEL_BANDS):
@@ -179,45 +171,139 @@ class MfccExtractor:
                     np.pi * k * (n + 0.5) / NUM_MEL_BANDS
                 )
 
-        # State for delta computation
         self.prev_mfccs = np.zeros(NUM_MFCCS, dtype=np.float64)
+        self.prev_power = np.zeros(self.spectrum_size, dtype=np.float64)
+        self.context = np.zeros(FEATURE_SIZE, dtype=np.float32)
         self.has_prev = False
 
-    def compute(self, power_spectrum: np.ndarray) -> np.ndarray:
-        """
-        Compute MFCC features from a mono power spectrum.
+    def compute(self, left_spectrum: np.ndarray, right_spectrum: np.ndarray) -> np.ndarray:
+        left_power = np.abs(left_spectrum) ** 2
+        right_power = np.abs(right_spectrum) ** 2
+        mono_power = (left_power + right_power) * 0.5
 
-        Args:
-            power_spectrum: |X[k]|^2 for k in 0..spectrum_size
-                            (already mono-averaged if stereo)
-
-        Returns:
-            features: array of shape (FEATURE_SIZE,) = 20 MFCCs + 20 deltas
-        """
-        # Step 1: Apply mel filterbank (sparse matrix-vector multiply)
-        mel_energies = self.mel_filter_matrix @ power_spectrum
-
-        # Step 2: Log compression (natural log, floor 1e-10)
+        mel_energies = np.zeros(NUM_MEL_BANDS, dtype=np.float64)
+        for band, (offset, count) in enumerate(self.mel_filters):
+            energy = 0.0
+            for bin_idx, weight in self.filter_weights[offset:offset + count]:
+                energy += mono_power[bin_idx] * weight
+            mel_energies[band] = energy
         log_mel = np.log(mel_energies + 1e-10)
+        mfccs = self.dct_matrix @ log_mel
 
-        # Step 3: DCT-II to get MFCCs
-        mfccs = self.dct_matrix @ log_mel  # shape (NUM_MFCCS,)
-
-        # Step 4: Delta MFCCs (first-order difference)
         if self.has_prev:
             deltas = mfccs - self.prev_mfccs
         else:
             deltas = np.zeros(NUM_MFCCS, dtype=np.float64)
-
-        # Save for next frame
         self.prev_mfccs = mfccs.copy()
-        self.has_prev = True
 
-        features = np.concatenate([mfccs, deltas])
-        return features.astype(np.float32)
+        aux = self.compute_aux_features(left_spectrum, right_spectrum, mono_power)
+        frame = np.concatenate([mfccs, deltas, aux]).astype(np.float32)
+
+        self.context[:-FRAME_FEATURE_SIZE] = self.context[FRAME_FEATURE_SIZE:]
+        self.context[-FRAME_FEATURE_SIZE:] = frame
+        self.has_prev = True
+        return self.context.copy()
+
+    def compute_aux_features(
+        self,
+        left_spectrum: np.ndarray,
+        right_spectrum: np.ndarray,
+        mono_power: np.ndarray,
+    ) -> np.ndarray:
+        eps = 1e-12
+        freq_per_bin = self.sample_rate / self.fft_size
+        nyquist = self.sample_rate * 0.5
+        freqs = np.arange(self.spectrum_size, dtype=np.float64) * freq_per_bin
+
+        left_power = np.abs(left_spectrum) ** 2
+        right_power = np.abs(right_spectrum) ** 2
+        mid = (left_spectrum + right_spectrum) * 0.5
+        side = (left_spectrum - right_spectrum) * 0.5
+        mid_power = np.abs(mid) ** 2
+        side_power = np.abs(side) ** 2
+
+        left_energy = float(left_power.sum())
+        right_energy = float(right_power.sum())
+        mid_energy = float(mid_power.sum())
+        side_energy = float(side_power.sum())
+        mono_total = float(mono_power.sum())
+        total_energy = left_energy + right_energy
+
+        voice = (freqs >= 200.0) & (freqs <= 5000.0)
+        voice_energy = float(mono_power[voice].sum())
+        voice_mid_energy = float(mid_power[voice].sum())
+        voice_side_energy = float(side_power[voice].sum())
+        voice_left_energy = float(left_power[voice].sum())
+        voice_right_energy = float(right_power[voice].sum())
+
+        cross = np.sum(left_spectrum * np.conj(right_spectrum))
+        voice_cross = np.sum(left_spectrum[voice] * np.conj(right_spectrum[voice]))
+        energy_root = np.sqrt(left_energy * right_energy)
+        voice_energy_root = np.sqrt(voice_left_energy * voice_right_energy)
+        correlation = float(np.real(cross) / energy_root) if energy_root > eps else 0.0
+        phase_coherence = float(np.abs(cross) / energy_root) if energy_root > eps else 0.0
+        voice_correlation = (
+            float(np.real(voice_cross) / voice_energy_root) if voice_energy_root > eps else 0.0
+        )
+        voice_phase_coherence = (
+            float(np.abs(voice_cross) / voice_energy_root) if voice_energy_root > eps else 0.0
+        )
+
+        centroid = float((freqs * mono_power).sum() / mono_total) if mono_total > eps else 0.0
+        spread = (
+            float(np.sqrt((((freqs - centroid) ** 2) * mono_power).sum() / mono_total))
+            if mono_total > eps
+            else 0.0
+        )
+        flux = (
+            float(np.maximum(mono_power - self.prev_power, 0.0).sum() / (mono_total + eps))
+            if self.has_prev
+            else 0.0
+        )
+        self.prev_power = mono_power.copy()
+
+        def band_ratio(lo: float, hi: float | None) -> float:
+            if hi is None:
+                mask = freqs > lo
+            else:
+                mask = (freqs > lo) & (freqs <= hi)
+            return float(mono_power[mask].sum() / (mono_total + eps))
+
+        aux = np.zeros(NUM_AUX_FEATURES, dtype=np.float64)
+        aux[0] = np.log(mono_total + eps)
+        aux[1] = np.log(mid_energy + eps)
+        aux[2] = np.log(side_energy + eps)
+        aux[3] = mid_energy / (mid_energy + side_energy + eps)
+        aux[4] = side_energy / (mid_energy + side_energy + eps)
+        aux[5] = (left_energy - right_energy) / (total_energy + eps)
+        aux[6] = 1.0 - abs(left_energy - right_energy) / (total_energy + eps)
+        aux[7] = np.clip(correlation, -1.0, 1.0)
+        aux[8] = np.clip(phase_coherence, 0.0, 1.0)
+        aux[9] = voice_energy / (mono_total + eps)
+        aux[10] = voice_mid_energy / (voice_mid_energy + voice_side_energy + eps)
+        aux[11] = voice_side_energy / (voice_mid_energy + voice_side_energy + eps)
+        aux[12] = (voice_left_energy - voice_right_energy) / (
+            voice_left_energy + voice_right_energy + eps
+        )
+        aux[13] = 1.0 - abs(voice_left_energy - voice_right_energy) / (
+            voice_left_energy + voice_right_energy + eps
+        )
+        aux[14] = np.clip(voice_correlation, -1.0, 1.0)
+        aux[15] = np.clip(voice_phase_coherence, 0.0, 1.0)
+        aux[16] = centroid / max(nyquist, 1.0)
+        aux[17] = spread / max(nyquist, 1.0)
+        aux[18] = flux
+        aux[19] = float(mono_power[freqs <= 250.0].sum() / (mono_total + eps))
+        aux[20] = band_ratio(250.0, 500.0)
+        aux[21] = band_ratio(500.0, 2000.0)
+        aux[22] = band_ratio(2000.0, 5000.0)
+        aux[23] = band_ratio(5000.0, None)
+        return aux
 
     def reset(self):
-        self.prev_mfccs = np.zeros(NUM_MFCCS, dtype=np.float64)
+        self.prev_mfccs.fill(0.0)
+        self.prev_power.fill(0.0)
+        self.context.fill(0.0)
         self.has_prev = False
 
 
@@ -225,9 +311,21 @@ class MfccExtractor:
 # WAV loading and feature extraction
 # ============================================================================
 
-def load_wav_mono_44100(path: str) -> np.ndarray:
-    """Load a WAV file and return mono float32 samples at 44100 Hz."""
-    with wave.open(path, "rb") as wf:
+def _open_wave_tolerant(path: str) -> wave.Wave_read:
+    """Open WAV files, including files with leading ID3 metadata before RIFF."""
+    with open(path, "rb") as f:
+        data = f.read()
+    if not data.startswith(b"RIFF"):
+        riff_start = data.find(b"RIFF")
+        if riff_start < 0:
+            raise ValueError(f"No RIFF header found in {path}")
+        data = data[riff_start:]
+    return wave.open(io.BytesIO(data), "rb")
+
+
+def load_wav_stereo_model_rate(path: str) -> tuple[np.ndarray, np.ndarray]:
+    """Load a WAV file and return stereo float32 samples at SAMPLE_RATE."""
+    with _open_wave_tolerant(path) as wf:
         n_channels = wf.getnchannels()
         sampwidth = wf.getsampwidth()
         framerate = wf.getframerate()
@@ -254,24 +352,30 @@ def load_wav_mono_44100(path: str) -> np.ndarray:
     else:
         raise ValueError(f"Unsupported sample width: {sampwidth}")
 
-    # Deinterleave to mono
-    if n_channels == 2:
+    if n_channels == 1:
+        left = samples
+        right = samples
+    elif n_channels == 2:
         left = samples[0::2]
         right = samples[1::2]
-        samples = (left + right) * 0.5
     elif n_channels > 2:
-        samples = samples[0::n_channels]
+        left = samples[0::n_channels]
+        right = samples[1::n_channels]
 
-    # Resample if needed (simple case: only support 44100)
     if framerate != SAMPLE_RATE:
-        # Basic linear resampling
         ratio = SAMPLE_RATE / framerate
-        n_out = int(len(samples) * ratio)
-        x_old = np.linspace(0, 1, len(samples))
+        n_out = int(len(left) * ratio)
+        x_old = np.linspace(0, 1, len(left))
         x_new = np.linspace(0, 1, n_out)
-        samples = np.interp(x_new, x_old, samples).astype(np.float32)
+        left = np.interp(x_new, x_old, left).astype(np.float32)
+        right = np.interp(x_new, x_old, right).astype(np.float32)
 
-    return samples
+    return left.astype(np.float32), right.astype(np.float32)
+
+
+def load_wav_mono_model_rate(path: str) -> np.ndarray:
+    left, right = load_wav_stereo_model_rate(path)
+    return (left + right) * 0.5
 
 
 def extract_features_from_wav(path: str) -> np.ndarray:
@@ -286,29 +390,26 @@ def extract_features_from_wav(path: str) -> np.ndarray:
 
     Returns: array of shape (num_frames, FEATURE_SIZE)
     """
-    samples = load_wav_mono_44100(path)
+    left, right = load_wav_stereo_model_rate(path)
 
     extractor = MfccExtractor(SAMPLE_RATE, FFT_SIZE)
     features_list = []
 
     # Process overlapping frames
     pos = 0
-    while pos + FFT_SIZE <= len(samples):
-        frame = samples[pos:pos + FFT_SIZE].astype(np.float64)
+    while pos + FFT_SIZE <= len(left):
+        left_frame = left[pos:pos + FFT_SIZE].astype(np.float64)
+        right_frame = right[pos:pos + FFT_SIZE].astype(np.float64)
 
         # Apply pre-computed Hann window (module-level)
-        windowed = frame * _HANN_WINDOW
+        left_windowed = left_frame * _HANN_WINDOW
+        right_windowed = right_frame * _HANN_WINDOW
 
         # Forward FFT (real-to-complex, unnormalized like RustFFT)
-        spectrum = np.fft.rfft(windowed)
+        left_spectrum = np.fft.rfft(left_windowed)
+        right_spectrum = np.fft.rfft(right_windowed)
 
-        # Power spectrum: |X[k]|^2
-        # In Rust, compute() averages L+R: 0.5 * (|L|^2 + |R|^2)
-        # Since we loaded mono, |mono|^2 is equivalent (the 0.5 factor
-        # would cancel if L == R, which is the mono case)
-        power = np.abs(spectrum) ** 2
-
-        features = extractor.compute(power)
+        features = extractor.compute(left_spectrum, right_spectrum)
         features_list.append(features)
 
         pos += HOP_SIZE
@@ -491,8 +592,8 @@ def load_manifest_with_holdout(
 
 def load_wav_16k(path: str) -> torch.Tensor:
     """Load WAV as mono float32 tensor at 16kHz for Silero VAD."""
-    samples = load_wav_mono_44100(path)
-    # Resample 44100 -> 16000
+    samples = load_wav_mono_model_rate(path)
+    # Resample model rate -> 16k
     ratio = 16000 / SAMPLE_RATE
     n_out = int(len(samples) * ratio)
     x_old = np.linspace(0, 1, len(samples))
@@ -541,16 +642,71 @@ def generate_labels_silero(path: str, num_frames: int) -> np.ndarray:
 # PyTorch Model
 # ============================================================================
 
+@dataclass
+class BinaryMetrics:
+    threshold: float
+    accuracy: float
+    precision: float
+    recall: float
+    f1: float
+    tp: int
+    fp: int
+    fn: int
+    tn: int
+
+
+@dataclass
+class TrainingResult:
+    model: "VocalDetector"
+    feature_mean: np.ndarray
+    feature_std: np.ndarray
+    threshold: float
+    val_metrics: BinaryMetrics
+
+
+def binary_metrics(
+    preds: np.ndarray,
+    labels: np.ndarray,
+    threshold: float = 0.5,
+) -> BinaryMetrics:
+    binary_preds = (preds >= threshold).astype(np.float32)
+    tp = int(((binary_preds == 1) & (labels == 1)).sum())
+    fp = int(((binary_preds == 1) & (labels == 0)).sum())
+    fn = int(((binary_preds == 0) & (labels == 1)).sum())
+    tn = int(((binary_preds == 0) & (labels == 0)).sum())
+
+    accuracy = (tp + tn) / max(tp + fp + fn + tn, 1)
+    precision = tp / max(tp + fp, 1)
+    recall = tp / max(tp + fn, 1)
+    f1 = 2 * precision * recall / max(precision + recall, 1e-10)
+    return BinaryMetrics(threshold, accuracy, precision, recall, f1, tp, fp, fn, tn)
+
+
+def best_f1_threshold(
+    preds: np.ndarray,
+    labels: np.ndarray,
+    min_threshold: float = 0.05,
+    max_threshold: float = 0.95,
+    steps: int = 91,
+) -> BinaryMetrics:
+    thresholds = np.linspace(min_threshold, max_threshold, steps)
+    best = binary_metrics(preds, labels, threshold=0.5)
+    for threshold in thresholds:
+        metrics = binary_metrics(preds, labels, threshold=float(threshold))
+        if metrics.f1 > best.f1:
+            best = metrics
+    return best
+
 class VocalDetector(nn.Module):
     """
     MLP for vocal detection. Architecture configurable via hidden_sizes.
-    Default: [128, 64] → Linear(40,128)->ReLU->Linear(128,64)->ReLU->Linear(64,1)
+    Default: [256, 128, 64].
     """
 
     def __init__(self, hidden_sizes: list[int] | None = None):
         super().__init__()
         if hidden_sizes is None:
-            hidden_sizes = [128, 64]
+            hidden_sizes = [256, 128, 64]
 
         layers: list[nn.Module] = []
         prev = FEATURE_SIZE
@@ -566,14 +722,26 @@ class VocalDetector(nn.Module):
 
 
 class VocalDetectorWithSigmoid(nn.Module):
-    """Wrapper that adds sigmoid for ONNX export (model outputs probability)."""
+    """Wrapper that normalizes raw features and adds sigmoid for ONNX export."""
 
-    def __init__(self, model: VocalDetector):
+    def __init__(
+        self,
+        model: VocalDetector,
+        feature_mean: np.ndarray | None = None,
+        feature_std: np.ndarray | None = None,
+    ):
         super().__init__()
         self.model = model
         self.sigmoid = nn.Sigmoid()
+        if feature_mean is None:
+            feature_mean = np.zeros(FEATURE_SIZE, dtype=np.float32)
+        if feature_std is None:
+            feature_std = np.ones(FEATURE_SIZE, dtype=np.float32)
+        self.register_buffer("feature_mean", torch.from_numpy(feature_mean.astype(np.float32)))
+        self.register_buffer("feature_std", torch.from_numpy(feature_std.astype(np.float32)))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = (x - self.feature_mean) / self.feature_std
         return self.sigmoid(self.model(x))
 
 
@@ -590,7 +758,7 @@ def train_model(
     val_split: float = 0.2,
     lr: float = 1e-3,
     batch_size: int = 64,
-) -> VocalDetector:
+) -> TrainingResult:
     """
     Train VocalDetector with BCEWithLogitsLoss, Adam, early stopping.
 
@@ -611,7 +779,7 @@ def train_model(
     np.random.shuffle(train_idx)
     np.random.shuffle(val_idx)
 
-    # MPS has too much kernel-launch overhead for a 1857-param model.
+    # MPS has too much kernel-launch overhead for this small MLP.
     # CPU + large batches is faster: the entire dataset fits in cache.
     device = torch.device("cpu")
 
@@ -619,9 +787,20 @@ def train_model(
     effective_batch = max(batch_size, min(len(train_idx) // 64, 8192))
     print(f"  Using device: CPU (batch_size={effective_batch})")
 
-    X_train = torch.from_numpy(features[train_idx])
+    feature_mean = features[train_idx].mean(axis=0).astype(np.float32)
+    feature_std = features[train_idx].std(axis=0).astype(np.float32)
+    feature_std = np.maximum(feature_std, 1e-4).astype(np.float32)
+
+    features_norm = ((features - feature_mean) / feature_std).astype(np.float32)
+    print(
+        "  Feature normalization: "
+        f"mean range [{feature_mean.min():.3f}, {feature_mean.max():.3f}], "
+        f"std range [{feature_std.min():.3f}, {feature_std.max():.3f}]"
+    )
+
+    X_train = torch.from_numpy(features_norm[train_idx])
     y_train = torch.from_numpy(labels[train_idx]).unsqueeze(1)
-    X_val = torch.from_numpy(features[val_idx])
+    X_val = torch.from_numpy(features_norm[val_idx])
     y_val = torch.from_numpy(labels[val_idx]).unsqueeze(1)
 
     pos_count = y_train.sum().item()
@@ -699,23 +878,40 @@ def train_model(
     model.eval()
     with torch.no_grad():
         val_logits = model(X_val)
-        val_preds = (torch.sigmoid(val_logits) > 0.5).float()
-        val_acc = (val_preds == y_val).float().mean().item()
-        print(f"  Best val accuracy: {val_acc:.3f}")
+        val_probs = torch.sigmoid(val_logits)[:, 0].numpy()
+        val_labels = y_val[:, 0].numpy()
+        metrics_05 = binary_metrics(val_probs, val_labels, threshold=0.5)
+        best_metrics = best_f1_threshold(val_probs, val_labels)
+        print(f"  Best val accuracy @0.50: {metrics_05.accuracy:.3f}")
+        print(
+            f"  Best val F1: threshold={best_metrics.threshold:.2f} "
+            f"F1={best_metrics.f1:.3f} precision={best_metrics.precision:.3f} "
+            f"recall={best_metrics.recall:.3f}"
+        )
 
-    return model
+    return TrainingResult(
+        model=model,
+        feature_mean=feature_mean,
+        feature_std=feature_std,
+        threshold=best_metrics.threshold,
+        val_metrics=best_metrics,
+    )
 
 
 # ============================================================================
 # ONNX Export
 # ============================================================================
 
-def export_onnx(model: VocalDetector, path: str):
+def export_onnx(result: TrainingResult, path: str):
     """Export model with sigmoid wrapper to ONNX, validate with onnxruntime."""
     import onnx
     import onnxruntime as ort
 
-    wrapped = VocalDetectorWithSigmoid(model)
+    wrapped = VocalDetectorWithSigmoid(
+        result.model,
+        feature_mean=result.feature_mean,
+        feature_std=result.feature_std,
+    )
     wrapped.eval()
 
     dummy_input = torch.randn(1, FEATURE_SIZE)
@@ -731,7 +927,26 @@ def export_onnx(model: VocalDetector, path: str):
         do_constant_folding=True,
     )
 
-    # Validate with onnx
+    onnx_model = onnx.load(path)
+    metadata = {
+        "feature_size": str(FEATURE_SIZE),
+        "frame_feature_size": str(FRAME_FEATURE_SIZE),
+        "context_frames": str(CONTEXT_FRAMES),
+        "sample_rate": str(SAMPLE_RATE),
+        "fft_size": str(FFT_SIZE),
+        "hop_size": str(HOP_SIZE),
+        "recommended_threshold": f"{result.threshold:.6f}",
+        "validation_f1": f"{result.val_metrics.f1:.6f}",
+        "validation_precision": f"{result.val_metrics.precision:.6f}",
+        "validation_recall": f"{result.val_metrics.recall:.6f}",
+        "normalization": "input = (raw_features - feature_mean) / feature_std",
+    }
+    for key, value in metadata.items():
+        prop = onnx_model.metadata_props.add()
+        prop.key = key
+        prop.value = value
+    onnx.save(onnx_model, path)
+
     onnx_model = onnx.load(path)
     onnx.checker.check_model(onnx_model)
 
@@ -769,6 +984,7 @@ def export_onnx(model: VocalDetector, path: str):
     print(f"  Output:  '{out.name}' {out.shape}")
     print(f"  Size:    {file_size:,} bytes ({file_size / 1024:.1f} KB)")
     print(f"  Latency: {mean_ms:.2f} ms mean, {p99_ms:.2f} ms p99 (100 runs)")
+    print(f"  Threshold: {result.threshold:.2f} recommended by validation F1 sweep")
 
 
 # ============================================================================
@@ -814,7 +1030,7 @@ def load_demo_data() -> tuple[np.ndarray, np.ndarray]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Train a tiny vocal detector MLP and export to ONNX"
+        description="Train a small vocal/dialog detector MLP and export to ONNX"
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
@@ -843,9 +1059,9 @@ def parse_args() -> argparse.Namespace:
         "--hidden",
         nargs="+",
         type=int,
-        default=[128, 64],
+        default=[256, 128, 64],
         metavar="N",
-        help="Hidden layer sizes (default: 128 64). E.g. --hidden 256 128 64",
+        help="Hidden layer sizes (default: 256 128 64). Use --hidden 128 64 for a smaller model.",
     )
     parser.add_argument(
         "--holdout",
@@ -859,10 +1075,27 @@ def parse_args() -> argparse.Namespace:
         default=OUTPUT_PATH,
         help=f"Output ONNX path (default: {OUTPUT_PATH})",
     )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=None,
+        metavar="P",
+        help="Probability threshold for --eval metrics (default: ONNX metadata, then 0.5)",
+    )
+    parser.add_argument(
+        "--sweep-thresholds",
+        action="store_true",
+        help="During --eval, also report the best F1 threshold on each eval set",
+    )
     return parser.parse_args()
 
 
-def evaluate_onnx(onnx_path: str, tsv_paths: list[str]) -> None:
+def evaluate_onnx(
+    onnx_path: str,
+    tsv_paths: list[str],
+    threshold: float | None = None,
+    sweep_thresholds: bool = False,
+) -> None:
     """Evaluate an ONNX model against manifest TSVs, reporting per-file and aggregate metrics."""
     import onnxruntime as ort
 
@@ -872,6 +1105,15 @@ def evaluate_onnx(onnx_path: str, tsv_paths: list[str]) -> None:
 
     sess = ort.InferenceSession(onnx_path)
     print(f"Loaded model: {onnx_path}")
+    eval_threshold = threshold
+    if eval_threshold is None:
+        metadata = sess.get_modelmeta().custom_metadata_map
+        if "recommended_threshold" in metadata:
+            eval_threshold = float(metadata["recommended_threshold"])
+            print(f"Using metadata threshold: {eval_threshold:.2f}")
+        else:
+            eval_threshold = 0.5
+            print("Using default threshold: 0.50")
 
     all_preds: list[np.ndarray] = []
     all_labels: list[np.ndarray] = []
@@ -901,44 +1143,42 @@ def evaluate_onnx(onnx_path: str, tsv_paths: list[str]) -> None:
                 if i % 500_000 == 0 and i > 0:
                     print(f"    {i}/{len(features)} frames...")
 
-        binary_preds = (preds > 0.5).astype(np.float32)
-
-        tp = ((binary_preds == 1) & (labels == 1)).sum()
-        fp = ((binary_preds == 1) & (labels == 0)).sum()
-        fn = ((binary_preds == 0) & (labels == 1)).sum()
-        tn = ((binary_preds == 0) & (labels == 0)).sum()
-
-        accuracy = (tp + tn) / max(tp + fp + fn + tn, 1)
-        precision = tp / max(tp + fp, 1)
-        recall = tp / max(tp + fn, 1)
-        f1 = 2 * precision * recall / max(precision + recall, 1e-10)
+        metrics = binary_metrics(preds, labels, threshold=eval_threshold)
 
         print(f"  Frames:    {len(labels)} ({int(labels.sum())} vocal, {int(len(labels) - labels.sum())} non-vocal)")
-        print(f"  Accuracy:  {accuracy:.4f}")
-        print(f"  Precision: {precision:.4f}")
-        print(f"  Recall:    {recall:.4f}")
-        print(f"  F1:        {f1:.4f}")
-        print(f"  Confusion: TP={tp}  FP={fp}  FN={fn}  TN={tn}")
+        print(f"  Threshold: {metrics.threshold:.2f}")
+        print(f"  Accuracy:  {metrics.accuracy:.4f}")
+        print(f"  Precision: {metrics.precision:.4f}")
+        print(f"  Recall:    {metrics.recall:.4f}")
+        print(f"  F1:        {metrics.f1:.4f}")
+        print(f"  Confusion: TP={metrics.tp}  FP={metrics.fp}  "
+              f"FN={metrics.fn}  TN={metrics.tn}")
+        if sweep_thresholds:
+            best = best_f1_threshold(preds, labels)
+            print(
+                f"  Best F1:   threshold={best.threshold:.2f} F1={best.f1:.4f} "
+                f"precision={best.precision:.4f} recall={best.recall:.4f}"
+            )
 
-        all_preds.append(binary_preds)
+        all_preds.append(preds)
         all_labels.append(labels)
 
     if len(all_preds) > 1:
         preds_cat = np.concatenate(all_preds)
         labels_cat = np.concatenate(all_labels)
-        tp = ((preds_cat == 1) & (labels_cat == 1)).sum()
-        fp = ((preds_cat == 1) & (labels_cat == 0)).sum()
-        fn = ((preds_cat == 0) & (labels_cat == 1)).sum()
-        tn = ((preds_cat == 0) & (labels_cat == 0)).sum()
-        accuracy = (tp + tn) / max(tp + fp + fn + tn, 1)
-        precision = tp / max(tp + fp, 1)
-        recall = tp / max(tp + fn, 1)
-        f1 = 2 * precision * recall / max(precision + recall, 1e-10)
+        metrics = binary_metrics(preds_cat, labels_cat, threshold=eval_threshold)
         print(f"\n  AGGREGATE ({len(labels_cat)} frames):")
-        print(f"  Accuracy:  {accuracy:.4f}")
-        print(f"  Precision: {precision:.4f}")
-        print(f"  Recall:    {recall:.4f}")
-        print(f"  F1:        {f1:.4f}")
+        print(f"  Threshold: {metrics.threshold:.2f}")
+        print(f"  Accuracy:  {metrics.accuracy:.4f}")
+        print(f"  Precision: {metrics.precision:.4f}")
+        print(f"  Recall:    {metrics.recall:.4f}")
+        print(f"  F1:        {metrics.f1:.4f}")
+        if sweep_thresholds:
+            best = best_f1_threshold(preds_cat, labels_cat)
+            print(
+                f"  Best F1:   threshold={best.threshold:.2f} F1={best.f1:.4f} "
+                f"precision={best.precision:.4f} recall={best.recall:.4f}"
+            )
 
 
 def main() -> None:
@@ -948,7 +1188,12 @@ def main() -> None:
         print("=" * 60)
         print("Vocal Detector Evaluation")
         print("=" * 60)
-        evaluate_onnx(args.output, args.eval)
+        evaluate_onnx(
+            args.output,
+            args.eval,
+            threshold=args.threshold,
+            sweep_thresholds=args.sweep_thresholds,
+        )
         return
 
     print("=" * 60)
@@ -964,7 +1209,7 @@ def main() -> None:
     step = 1
 
     if use_demo:
-        print(f"\n[{step}/4] Extracting MFCC features from demo audio...")
+        print(f"\n[{step}/4] Extracting temporal spatial features from demo audio...")
         demo_features, demo_labels = load_demo_data()
         if len(demo_features) > 0:
             all_features.append(demo_features)
@@ -1023,7 +1268,7 @@ def main() -> None:
     print(f"  Parameters:   {param_count}")
     step += 1
 
-    model = train_model(features, labels, hidden_sizes=hidden)
+    result = train_model(features, labels, hidden_sizes=hidden)
 
     # Step 3: Export and validate
     output_path = args.output
@@ -1032,7 +1277,7 @@ def main() -> None:
     print(f"\n[{step}/4] Exporting to ONNX...")
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
-    export_onnx(model, output_path)
+    export_onnx(result, output_path)
 
     print(f"\nModel saved to: {output_path}")
 
@@ -1042,31 +1287,28 @@ def main() -> None:
         holdout_lab = np.concatenate(holdout_labels_list)
 
         print(f"\n[Holdout Evaluation]")
-        model.eval()
-        wrapped = VocalDetectorWithSigmoid(model)
+        result.model.eval()
+        wrapped = VocalDetectorWithSigmoid(
+            result.model,
+            feature_mean=result.feature_mean,
+            feature_std=result.feature_std,
+        )
         wrapped.eval()
         with torch.no_grad():
             preds = wrapped(torch.from_numpy(holdout_feat))
             preds = preds[:, 0].numpy()
 
-        binary_preds = (preds > 0.5).astype(np.float32)
-        tp = ((binary_preds == 1) & (holdout_lab == 1)).sum()
-        fp = ((binary_preds == 1) & (holdout_lab == 0)).sum()
-        fn = ((binary_preds == 0) & (holdout_lab == 1)).sum()
-        tn = ((binary_preds == 0) & (holdout_lab == 0)).sum()
-
-        accuracy = (tp + tn) / max(tp + fp + fn + tn, 1)
-        precision = tp / max(tp + fp, 1)
-        recall = tp / max(tp + fn, 1)
-        f1 = 2 * precision * recall / max(precision + recall, 1e-10)
+        metrics = binary_metrics(preds, holdout_lab, threshold=result.threshold)
 
         print(f"  Frames:    {len(holdout_lab)} ({int(holdout_lab.sum())} vocal, "
               f"{int(len(holdout_lab) - holdout_lab.sum())} non-vocal)")
-        print(f"  Accuracy:  {accuracy:.4f}")
-        print(f"  Precision: {precision:.4f}")
-        print(f"  Recall:    {recall:.4f}")
-        print(f"  F1:        {f1:.4f}")
-        print(f"  Confusion: TP={tp}  FP={fp}  FN={fn}  TN={tn}")
+        print(f"  Threshold: {metrics.threshold:.2f}")
+        print(f"  Accuracy:  {metrics.accuracy:.4f}")
+        print(f"  Precision: {metrics.precision:.4f}")
+        print(f"  Recall:    {metrics.recall:.4f}")
+        print(f"  F1:        {metrics.f1:.4f}")
+        print(f"  Confusion: TP={metrics.tp}  FP={metrics.fp}  "
+              f"FN={metrics.fn}  TN={metrics.tn}")
 
 
 if __name__ == "__main__":
