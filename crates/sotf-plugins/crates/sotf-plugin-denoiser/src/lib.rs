@@ -48,7 +48,7 @@ mod spectral_sub;
 #[cfg(test)]
 #[allow(clippy::field_reassign_with_default)]
 mod tests;
-mod transient;
+pub mod transient;
 mod wiener;
 
 pub use config::DenoiserPluginParams;

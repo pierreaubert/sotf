@@ -104,6 +104,27 @@ mod plugin {
     nih_plug::nih_export_vst3!(SotfDenoiser);
 }
 
+#[cfg(feature = "speech-denoiser")]
+mod plugin {
+    sotf_nih_plugin!(SotfSpeechDenoiser, plugin_type: "SpeechDenoiser", name: "SOTF: Speech Denoiser", clap_id: "org.spinorama.sotf.speech-denoiser", vst3_class_id: *b"SotfSpeechDN0000", channels: 2);
+    nih_plug::nih_export_clap!(SotfSpeechDenoiser);
+    nih_plug::nih_export_vst3!(SotfSpeechDenoiser);
+}
+
+#[cfg(feature = "hiss-reducer")]
+mod plugin {
+    sotf_nih_plugin!(SotfHissReducer, plugin_type: "HissReducer", name: "SOTF: Hiss Reducer", clap_id: "org.spinorama.sotf.hiss-reducer", vst3_class_id: *b"SotfHissReduc000", channels: 2);
+    nih_plug::nih_export_clap!(SotfHissReducer);
+    nih_plug::nih_export_vst3!(SotfHissReducer);
+}
+
+#[cfg(feature = "declick")]
+mod plugin {
+    sotf_nih_plugin!(SotfDeclick, plugin_type: "Declick", name: "SOTF: Declick", clap_id: "org.spinorama.sotf.declick", vst3_class_id: *b"SotfDeclick00001", channels: 2);
+    nih_plug::nih_export_clap!(SotfDeclick);
+    nih_plug::nih_export_vst3!(SotfDeclick);
+}
+
 #[cfg(feature = "downmix")]
 mod plugin {
     sotf_nih_plugin!(SotfDownmix, plugin_type: "Downmix", name: "SOTF: Downmix", clap_id: "org.spinorama.sotf.downmix", vst3_class_id: *b"SotfDownmix00001", channels: 2);

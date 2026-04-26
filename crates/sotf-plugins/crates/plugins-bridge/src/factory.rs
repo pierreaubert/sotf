@@ -210,6 +210,27 @@ pub fn create_plugin(
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
+        "SpeechDenoiser" | "speech_denoiser" | "RNNoise" | "rnnoise" => {
+            let params: sotf_plugin_speech_denoiser::SpeechDenoiserPluginParams =
+                parse_params(config_json)?;
+            let plugin =
+                sotf_plugin_speech_denoiser::SpeechDenoiserPlugin::from_params(channels, params);
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+        }
+
+        "HissReducer" | "hiss_reducer" | "Hiss" | "hiss" => {
+            let params: sotf_plugin_hiss_reducer::HissReducerPluginParams =
+                parse_params(config_json)?;
+            let plugin = sotf_plugin_hiss_reducer::HissReducerPlugin::from_params(channels, params);
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+        }
+
+        "Declick" | "declick" | "TransientRepair" | "transient_repair" => {
+            let params: sotf_plugin_declick::DeclickPluginParams = parse_params(config_json)?;
+            let plugin = sotf_plugin_declick::DeclickPlugin::from_params(channels, params);
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+        }
+
         "ABCompare" | "ab_compare" => {
             let params: sotf_plugin_ab_compare::ABComparePluginParams = parse_params(config_json)?;
             let plugin = sotf_plugin_ab_compare::ABComparePlugin::from_params(channels, params)?;
@@ -307,6 +328,9 @@ pub fn available_plugin_types() -> &'static [&'static str] {
         "MonoToStereo",
         "PND",
         "Denoiser",
+        "SpeechDenoiser",
+        "HissReducer",
+        "Declick",
         "ABCompare",
         "Crossover",
         "StereoImager",

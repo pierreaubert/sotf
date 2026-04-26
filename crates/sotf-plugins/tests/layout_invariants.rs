@@ -201,6 +201,15 @@ invariant_test!(
 invariant_test!(invariants_crossfeed, sotf_plugin_crossfeed::params::Params);
 invariant_test!(invariants_delay, sotf_plugin_delay::params::Params);
 invariant_test!(invariants_denoiser, sotf_plugin_denoiser::params::Params);
+invariant_test!(
+    invariants_speech_denoiser,
+    sotf_plugin_speech_denoiser::params::Params
+);
+invariant_test!(
+    invariants_hiss_reducer,
+    sotf_plugin_hiss_reducer::params::Params
+);
+invariant_test!(invariants_declick, sotf_plugin_declick::params::Params);
 invariant_test!(invariants_dither, sotf_plugin_dither::params::Params);
 invariant_test!(invariants_downmix, sotf_plugin_downmix::params::Params);
 

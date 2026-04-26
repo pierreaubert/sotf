@@ -10,11 +10,11 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use sotf_plugins::{
-    AaePlugin, AaePluginParams, ChannelMuteSoloPlugin, CrossoverPlugin, DelayPlugin, EqPlugin,
-    ExpanderPlugin, GatePlugin, InPlacePlugin, InPlacePluginAdapter, LimiterPlugin,
-    LoudnessCompensationPlugin, LoudnessCompensationPluginParams, LoudnessMonitorPlugin,
-    MatrixPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin, Plugin, ProcessContext,
-    SpectrumAnalyzerPlugin, SpectrumConfig,
+    AaePlugin, AaePluginParams, ChannelMuteSoloPlugin, CrossoverPlugin, DeclickPlugin, DelayPlugin,
+    EqPlugin, ExpanderPlugin, GatePlugin, HissReducerPlugin, InPlacePlugin, InPlacePluginAdapter,
+    LimiterPlugin, LoudnessCompensationPlugin, LoudnessCompensationPluginParams,
+    LoudnessMonitorPlugin, MatrixPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin,
+    Plugin, ProcessContext, SpectrumAnalyzerPlugin, SpectrumConfig, SpeechDenoiserPlugin,
 };
 use std::hint::black_box;
 
@@ -943,6 +943,55 @@ fn benchmark_aae(c: &mut Criterion) {
     group.finish();
 }
 
+fn benchmark_denoiser_splits(c: &mut Criterion) {
+    let mut group = c.benchmark_group("DenoiserSplits");
+    let context = ProcessContext {
+        sample_rate: SAMPLE_RATE,
+        num_frames: BUFFER_SIZE,
+    };
+
+    {
+        let mut plugin = SpeechDenoiserPlugin::new(CHANNELS);
+        plugin.initialize(SAMPLE_RATE).unwrap();
+        let mut buffer = generate_test_buffer(BUFFER_SIZE, CHANNELS);
+        group.bench_function("speech_denoiser", |b| {
+            b.iter(|| {
+                plugin
+                    .process_in_place(black_box(&mut buffer), black_box(&context))
+                    .unwrap();
+            })
+        });
+    }
+
+    {
+        let mut plugin = HissReducerPlugin::new(CHANNELS);
+        plugin.initialize(SAMPLE_RATE).unwrap();
+        let mut buffer = generate_test_buffer(BUFFER_SIZE, CHANNELS);
+        group.bench_function("hiss_reducer", |b| {
+            b.iter(|| {
+                plugin
+                    .process_in_place(black_box(&mut buffer), black_box(&context))
+                    .unwrap();
+            })
+        });
+    }
+
+    {
+        let mut plugin = DeclickPlugin::new(CHANNELS);
+        plugin.initialize(SAMPLE_RATE).unwrap();
+        let mut buffer = generate_test_buffer(BUFFER_SIZE, CHANNELS);
+        group.bench_function("declick", |b| {
+            b.iter(|| {
+                plugin
+                    .process_in_place(black_box(&mut buffer), black_box(&context))
+                    .unwrap();
+            })
+        });
+    }
+
+    group.finish();
+}
+
 // ============================================================================
 // Benchmark Groups
 // ============================================================================
@@ -962,5 +1011,6 @@ criterion_group!(
     benchmark_multiband_compressor,
     benchmark_multiband_expander,
     benchmark_aae,
+    benchmark_denoiser_splits,
 );
 criterion_main!(benches);
