@@ -112,7 +112,13 @@ impl PlayerView {
         }
 
         // Update status to running
-        self.state.update(cx, |state, cx| {
+        let cancel_flag = self.state.update(cx, |state, cx| {
+            state
+                .app
+                .measurement_state
+                .headphone_eq_state
+                .cancel_requested
+                .store(false, std::sync::atomic::Ordering::Relaxed);
             state
                 .app
                 .measurement_state
@@ -133,9 +139,11 @@ impl PlayerView {
             state.app.measurement_state.headphone_eq_state.result = None;
             state.app.measurement_state.headphone_eq_state.error_message = None;
             cx.notify();
+            state.app.measurement_state.headphone_eq_state.cancel_requested.clone()
         });
 
         let state_entity = self.state.clone();
+        let cancel_for_task = cancel_flag.clone();
 
         cx.spawn(async move |_, cx| {
             // Run optimization in a blocking task
@@ -166,15 +174,42 @@ impl PlayerView {
                     params.smooth = config.smooth;
                     params.smooth_n = config.smooth_n;
 
+                    let cancel_for_cb = cancel_for_task.clone();
                     sotf_audio_player::autoeq::headphone::run_headphone_optimization_with_callback(
                         &measurement_path,
                         &target_preset,
                         &custom_target_path,
                         &params,
-                        Some(|_: &autoeq::ProgressUpdate| autoeq::de::CallbackAction::Continue),
+                        Some(move |_: &autoeq::ProgressUpdate| {
+                            if cancel_for_cb.load(std::sync::atomic::Ordering::Relaxed) {
+                                autoeq::de::CallbackAction::Stop
+                            } else {
+                                autoeq::de::CallbackAction::Continue
+                            }
+                        }),
                     )
                 })
                 .await;
+
+            // If the user cancelled, surface Cancelled status and skip the
+            // success/failure branch — the optimizer may have returned Ok
+            // with partial results, but we don't want them.
+            if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
+                state_entity.update(&mut cx.clone(), |state, cx| {
+                    state
+                        .app
+                        .measurement_state
+                        .headphone_eq_state
+                        .optimization_status = crate::app::types::OptimizationStatus::Cancelled;
+                    state
+                        .app
+                        .measurement_state
+                        .headphone_eq_state
+                        .status_message = "Optimization cancelled".to_string();
+                    cx.notify();
+                });
+                return;
+            }
 
             state_entity.update(&mut cx.clone(), |state, cx| {
                 match result {
@@ -265,6 +300,24 @@ impl PlayerView {
             });
         })
         .detach();
+    }
+
+    pub(crate) fn cancel_headphone_eq_optimization(&mut self, cx: &mut Context<Self>) {
+        log::info!("Cancel requested for headphone EQ optimization");
+        self.state.update(cx, |state, cx| {
+            state
+                .app
+                .measurement_state
+                .headphone_eq_state
+                .cancel_requested
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            state
+                .app
+                .measurement_state
+                .headphone_eq_state
+                .status_message = "Cancelling — finishing current iteration...".to_string();
+            cx.notify();
+        });
     }
 
     pub(crate) fn apply_headphone_eq_result(&mut self, cx: &mut Context<Self>) {

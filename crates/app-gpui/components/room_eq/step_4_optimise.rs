@@ -182,25 +182,23 @@ impl PlayerView {
                     .content(
                         VStack::new()
                             .spacing(StackSpacing::Sm)
-                            .child(
-                                Button::new(
-                                    "start_optimization",
-                                    if is_running {
-                                        "Optimizing..."
-                                    } else {
-                                        "Start Optimization"
-                                    },
-                                )
-                                .variant(ButtonVariant::Primary)
-                                .full_width(true)
-                                .theme(theme.to_button_theme())
-                                .disabled(is_running)
-                                .when(!is_running, |btn| {
-                                    btn.on_click_event(cx.listener(|view, _, _, cx| {
-                                            view.start_room_eq_optimization(cx);
-                                        }))
-                                }),
-                            )
+                            .child(if is_running {
+                                Button::new("cancel_optimization", "Cancel")
+                                    .variant(ButtonVariant::Secondary)
+                                    .full_width(true)
+                                    .theme(theme.to_button_theme())
+                                    .on_click_event(cx.listener(|view, _, _, cx| {
+                                        view.cancel_room_eq_optimization(cx);
+                                    }))
+                            } else {
+                                Button::new("start_optimization", "Start Optimization")
+                                    .variant(ButtonVariant::Primary)
+                                    .full_width(true)
+                                    .theme(theme.to_button_theme())
+                                    .on_click_event(cx.listener(|view, _, _, cx| {
+                                        view.start_room_eq_optimization(cx);
+                                    }))
+                            })
                             .when(show_progress, |vstack| {
                                 let display_progress = if is_completed {
                                     100.0
@@ -886,7 +884,13 @@ impl PlayerView {
         }
 
         // Update state to running and clear progress history
-        self.state.update(cx, |state, _cx| {
+        let cancel_flag = self.state.update(cx, |state, _cx| {
+            state
+                .app
+                .measurement_state
+                .room_eq_state
+                .cancel_requested
+                .store(false, std::sync::atomic::Ordering::Relaxed);
             state
                 .app
                 .measurement_state
@@ -922,6 +926,8 @@ impl PlayerView {
                     .with_log_x(false)
                     .with_size(700.0, 250.0),
             );
+
+            state.app.measurement_state.room_eq_state.cancel_requested.clone()
         });
 
         let state_clone = self.state.clone();
@@ -1010,8 +1016,13 @@ impl PlayerView {
 
             // Create progress callback
             let progress_tx_clone = progress_tx.clone();
+            let cancel_for_cb = cancel_flag.clone();
             let callback: RoomOptimizationCallback =
                 Box::new(move |progress: &RoomOptimizationProgress| {
+                    if cancel_for_cb.load(std::sync::atomic::Ordering::Relaxed) {
+                        return CallbackAction::Stop;
+                    }
+
                     let iteration = progress.iteration;
                     let loss = progress.loss;
                     let speaker = progress.current_speaker.clone();
@@ -1048,6 +1059,26 @@ impl PlayerView {
 
             // Drop progress sender to close channel and stop receiver
             drop(progress_tx);
+
+            // If the user cancelled, short-circuit before mapping partial
+            // results into the UI. The optimizer returns Ok(..) with whatever
+            // it had finished when the callback returned Stop, but we want
+            // Cancelled status and to stay on the Optimise step.
+            let was_cancelled = cancel_flag.load(std::sync::atomic::Ordering::Relaxed);
+            if was_cancelled {
+                state_clone.update(&mut cx.clone(), |state, cx| {
+                    state
+                        .app
+                        .measurement_state
+                        .room_eq_state
+                        .optimization_status = OptimizationStatus::Cancelled;
+                    state.app.measurement_state.room_eq_state.status_message =
+                        "Optimization cancelled".to_string();
+                    state.app.measurement_state.room_eq_state.current_channel = None;
+                    cx.notify();
+                });
+                return;
+            }
 
             match result {
                 Ok(room_result) => {
@@ -1274,6 +1305,21 @@ impl PlayerView {
             }
         })
         .detach();
+    }
+
+    pub(crate) fn cancel_room_eq_optimization(&mut self, cx: &mut Context<Self>) {
+        log::info!("Cancel requested for Room EQ optimization");
+        self.state.update(cx, |state, cx| {
+            state
+                .app
+                .measurement_state
+                .room_eq_state
+                .cancel_requested
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            state.app.measurement_state.room_eq_state.status_message =
+                "Cancelling — finishing current iteration...".to_string();
+            cx.notify();
+        });
     }
 }
 
