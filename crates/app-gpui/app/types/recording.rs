@@ -5,6 +5,8 @@
 // Domain types are shared via the player crate. UI-specific state stays here.
 
 use super::calibration::CalibrationData;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 // Re-export shared domain types from player crate
 pub use sotf_audio_player::recording_types::{
@@ -93,6 +95,11 @@ pub struct RecordingState {
     /// Populated by `start_probe_capture` on success; consumed by
     /// `save_recordings` to embed results in the session JSON.
     pub probe_capture: ProbeCaptureState,
+    /// Cancel-request flag polled by the probe-capture engine call. UI
+    /// sets this to true when the user clicks Cancel; the engine returns
+    /// `Err(CANCELLED_ERR)` on the next stability poll. Lives behind
+    /// `Arc<AtomicBool>` so the spawn closure can clone it cheaply.
+    pub probe_cancel_requested: Arc<AtomicBool>,
 
     // === BassAnchor Step State (GD-Opt v2 Phase GD-1e) ===
     /// Shared business state for the bass anchor step. Populated by
@@ -103,6 +110,9 @@ pub struct RecordingState {
     // === SPL Calibration Step State (GD-Opt v2 Phase GD-1e.5) ===
     /// Shared business state for the SPL calibration step.
     pub spl_calibration_capture: SplCalibrationCaptureState,
+    /// Cancel-request flag for the SPL calibration capture. Same shape
+    /// and lifetime as `probe_cancel_requested`.
+    pub spl_cancel_requested: Arc<AtomicBool>,
 
     // === UI State ===
     pub playback_device_dropdown_open: bool,
@@ -209,8 +219,10 @@ impl Default for RecordingState {
             recording_directory: None,
             recording_base_directory: None,
             probe_capture: ProbeCaptureState::default(),
+            probe_cancel_requested: Arc::new(AtomicBool::new(false)),
             bass_anchor_capture: BassAnchorCaptureState::default(),
             spl_calibration_capture: SplCalibrationCaptureState::default(),
+            spl_cancel_requested: Arc::new(AtomicBool::new(false)),
             playback_device_dropdown_open: false,
             recording_device_dropdown_open: false,
             playback_sample_rate_dropdown_open: false,

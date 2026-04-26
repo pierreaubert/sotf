@@ -104,25 +104,26 @@ impl PlayerView {
                         },
                     ))
                     .child(
-                        HStack::new().spacing(StackSpacing::Sm).child(
-                            Button::new(
-                                "probe_run",
-                                if running { "Running..." } else { "Run Probe" },
-                            )
-                            .variant(if running {
-                                ButtonVariant::Secondary
-                            } else {
-                                ButtonVariant::Primary
-                            })
-                            .size(ButtonSize::Sm)
-                            .theme(theme.to_button_theme())
-                            .on_click_event(cx.listener(move |view, _, _, cx| {
-                                    if running || !has_capture {
+                        HStack::new().spacing(StackSpacing::Sm).child(if running {
+                            Button::new("probe_cancel", "Cancel")
+                                .variant(ButtonVariant::Secondary)
+                                .size(ButtonSize::Sm)
+                                .theme(theme.to_button_theme())
+                                .on_click_event(cx.listener(|view, _, _, cx| {
+                                    view.cancel_probe_capture(cx);
+                                }))
+                        } else {
+                            Button::new("probe_run", "Run Probe")
+                                .variant(ButtonVariant::Primary)
+                                .size(ButtonSize::Sm)
+                                .theme(theme.to_button_theme())
+                                .on_click_event(cx.listener(move |view, _, _, cx| {
+                                    if !has_capture {
                                         return;
                                     }
                                     view.start_probe_capture(cx);
-                                })),
-                        ),
+                                }))
+                        }),
                     ),
             );
         let _ = view; // silence unused warning if the closure didn't capture
@@ -375,15 +376,19 @@ impl PlayerView {
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
 
-        self.state.update(cx, |state, cx| {
-            let pc = &mut state.app.measurement_state.recording_state.probe_capture;
-            pc.status = ProbeCaptureStatus::Running { started_at_ms };
-            pc.results = None;
+        let cancel_flag = self.state.update(cx, |state, cx| {
+            let rec = &mut state.app.measurement_state.recording_state;
+            rec.probe_cancel_requested
+                .store(false, std::sync::atomic::Ordering::Relaxed);
+            rec.probe_capture.status = ProbeCaptureStatus::Running { started_at_ms };
+            rec.probe_capture.results = None;
             cx.notify();
+            rec.probe_cancel_requested.clone()
         });
 
         let state_clone = self.state.clone();
         let wav_path_for_state = wav_path.clone();
+        let cancel_for_task = cancel_flag.clone();
         cx.spawn(async move |_, cx| {
             let result = smol::unblock(move || {
                 sotf_audio::signal_recorder::probe_channel_delays_with_recording(
@@ -396,7 +401,7 @@ impl PlayerView {
                     in_dev.as_deref(),
                     input_channel,
                     &wav_path,
-                    None,
+                    Some(cancel_for_task),
                 )
             })
             .await;
@@ -410,6 +415,12 @@ impl PlayerView {
                             Some(wav_path_for_state.to_string_lossy().to_string()),
                         );
                     }
+                    Err(e) if e == sotf_audio::signal_recorder::CANCELLED_ERR => {
+                        log::info!("Probe capture cancelled by user");
+                        // Reset to Idle so the UI shows the start button
+                        // again rather than a red Failed banner.
+                        pc.status = ProbeCaptureStatus::Idle;
+                    }
                     Err(e) => {
                         log::warn!("Probe capture failed: {}", e);
                         pc.status = ProbeCaptureStatus::Failed(e);
@@ -419,6 +430,23 @@ impl PlayerView {
             });
         })
         .detach();
+    }
+
+    /// Request cancellation of an in-progress probe capture. The engine
+    /// honors the flag at its next stability poll (~50 ms latency) and
+    /// returns `Err(CANCELLED_ERR)`, which the runner maps back to
+    /// `ProbeCaptureStatus::Idle`.
+    pub(crate) fn cancel_probe_capture(&mut self, cx: &mut Context<Self>) {
+        log::info!("Cancel requested for probe capture");
+        self.state.update(cx, |state, cx| {
+            state
+                .app
+                .measurement_state
+                .recording_state
+                .probe_cancel_requested
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            cx.notify();
+        });
     }
 }
 
