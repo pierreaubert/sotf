@@ -61,6 +61,39 @@ const PHASE_SHIFT_270: Complex<f32> = Complex::new(0.0, -1.0); // -i
 // Plugin Implementation
 // ============================================================================
 
+/// Summary statistics for an internal Upmixer control vector.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct UpmixerControlStats {
+    pub mean: f32,
+    pub min: f32,
+    pub max: f32,
+    pub stddev: f32,
+}
+
+/// Snapshot of internal Upmixer control signals useful for artifact diagnosis.
+#[derive(Debug, Clone, Default)]
+pub struct UpmixerDiagnostics {
+    pub sample_rate: u32,
+    pub fft_size: usize,
+    pub hop_size: usize,
+    pub output_channels: usize,
+    pub speaker_config: String,
+    pub dialogue_probability: f32,
+    pub dialogue_spectral_centroid_hz: f32,
+    pub dialogue_envelope_variance: f32,
+    pub decorrelation_strength: f32,
+    pub hr_direct_envelope: f32,
+    pub hr_transient_env: f32,
+    pub height_transient_env: f32,
+    pub spectral_flux_smooth: f32,
+    pub height_spectral_flux_smooth: f32,
+    pub safety_scale: f32,
+    pub output_accumulator_fill: usize,
+    pub height_gain: UpmixerControlStats,
+    pub height_flux_gate: UpmixerControlStats,
+    pub coherence: UpmixerControlStats,
+}
+
 /// Stereo to multi-channel surround upmixer using FFT-based Direct/Ambient decomposition
 pub struct UpmixerPlugin {
     /// FFT size (must be power of 2)
@@ -461,6 +494,31 @@ pub struct UpmixerPlugin {
 }
 
 impl UpmixerPlugin {
+    /// Return a snapshot of internal control signals for offline diagnostics.
+    pub fn diagnostics(&self) -> UpmixerDiagnostics {
+        UpmixerDiagnostics {
+            sample_rate: self.sample_rate,
+            fft_size: self.fft_size,
+            hop_size: self.hop_size,
+            output_channels: self.num_output_channels,
+            speaker_config: self.speaker_config.id.to_string(),
+            dialogue_probability: self.dialogue_probability,
+            dialogue_spectral_centroid_hz: self.dialogue_spectral_centroid,
+            dialogue_envelope_variance: self.dialogue_envelope_variance,
+            decorrelation_strength: self.decorrelation_strength,
+            hr_direct_envelope: self.hr_direct_envelope,
+            hr_transient_env: self.hr_transient_env,
+            height_transient_env: self.height_transient_env_slow,
+            spectral_flux_smooth: self.spectral_flux_smooth,
+            height_spectral_flux_smooth: self.height_spectral_flux_smooth,
+            safety_scale: self.prev_safety_scale,
+            output_accumulator_fill: self.output_accumulator_fill,
+            height_gain: control_stats(&self.height_band_gains),
+            height_flux_gate: control_stats(&self.height_flux_gate),
+            coherence: control_stats(&self.smoothed_coherence),
+        }
+    }
+
     /// Create a new upmixer plugin with speaker configuration
     ///
     /// # Arguments
@@ -1235,6 +1293,36 @@ impl UpmixerPlugin {
     #[cfg(not(feature = "onnx"))]
     fn try_ml_inference(&mut self) -> Option<f32> {
         None
+    }
+}
+
+fn control_stats(values: &[f32]) -> UpmixerControlStats {
+    if values.is_empty() {
+        return UpmixerControlStats::default();
+    }
+
+    let mut sum = 0.0_f32;
+    let mut min = f32::INFINITY;
+    let mut max = f32::NEG_INFINITY;
+    for &v in values {
+        sum += v;
+        min = min.min(v);
+        max = max.max(v);
+    }
+
+    let mean = sum / values.len() as f32;
+    let mut variance = 0.0_f32;
+    for &v in values {
+        let d = v - mean;
+        variance += d * d;
+    }
+    variance /= values.len() as f32;
+
+    UpmixerControlStats {
+        mean,
+        min,
+        max,
+        stddev: variance.sqrt(),
     }
 }
 
