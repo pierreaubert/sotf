@@ -1007,6 +1007,7 @@ fn run_multiseat_phase_control_guard() -> TestResult {
         allpass_filters_per_sub: 1,
         primary_seat: 0,
         max_deviation_db: 6.0,
+        ..Default::default()
     };
 
     let result = match optimize_multiseat(&ms, &config, (20.0, 120.0), SAMPLE_RATE) {

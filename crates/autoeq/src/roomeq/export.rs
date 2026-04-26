@@ -1130,6 +1130,7 @@ mod tests {
                 perceptual_metrics: None,
                 home_cinema_layout: None,
                 multi_seat_coverage: None,
+                multi_seat_correction: None,
                 bass_management: None,
                 timing_diagnostics: None,
             }),

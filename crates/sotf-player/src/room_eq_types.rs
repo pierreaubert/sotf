@@ -1006,6 +1006,26 @@ pub struct MultiSeatConfig {
     pub strategy: String,
     pub primary_seat: usize,
     pub max_deviation_db: f64,
+    #[serde(default = "default_all_channel_multiseat_enabled")]
+    pub all_channel_enabled: bool,
+    #[serde(default = "default_all_channel_multiseat_strategy")]
+    pub all_channel_strategy: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seat_weights: Option<Vec<f64>>,
+    #[serde(default = "default_primary_seat_weight")]
+    pub primary_seat_weight: f64,
+}
+
+fn default_all_channel_multiseat_enabled() -> bool {
+    true
+}
+
+fn default_all_channel_multiseat_strategy() -> String {
+    "spatial_robustness".to_string()
+}
+
+fn default_primary_seat_weight() -> f64 {
+    2.0
 }
 
 impl Default for MultiSeatConfig {
@@ -1015,6 +1035,10 @@ impl Default for MultiSeatConfig {
             strategy: "variance".to_string(),
             primary_seat: 0,
             max_deviation_db: 6.0,
+            all_channel_enabled: default_all_channel_multiseat_enabled(),
+            all_channel_strategy: default_all_channel_multiseat_strategy(),
+            seat_weights: None,
+            primary_seat_weight: default_primary_seat_weight(),
         }
     }
 }
@@ -1643,19 +1667,37 @@ impl RoomEqOptimizerConfig {
             None
         };
 
-        let multi_seat = if self.multi_seat.enabled {
+        let has_all_channel_multiseat_policy = !self.multi_seat.all_channel_enabled
+            || self.multi_seat.all_channel_strategy != default_all_channel_multiseat_strategy()
+            || self.multi_seat.seat_weights.is_some()
+            || (self.multi_seat.primary_seat_weight - default_primary_seat_weight()).abs() > 1e-9
+            || self.multi_seat.primary_seat != 0
+            || (self.multi_seat.max_deviation_db - 6.0).abs() > 1e-9;
+        let multi_seat = if self.multi_seat.enabled || has_all_channel_multiseat_policy {
             let strategy = match self.multi_seat.strategy.as_str() {
                 "primary" => MultiSeatStrategy::PrimaryWithConstraints,
                 "average" => MultiSeatStrategy::Average,
                 _ => MultiSeatStrategy::MinimizeVariance,
             };
             Some(BackendMultiSeatConfig {
-                enabled: true,
+                enabled: self.multi_seat.enabled,
                 strategy,
                 primary_seat: self.multi_seat.primary_seat,
                 max_deviation_db: self.multi_seat.max_deviation_db,
                 optimize_polarity: false,
                 allpass_filters_per_sub: 0,
+                all_channel_enabled: self.multi_seat.all_channel_enabled,
+                all_channel_strategy: match self.multi_seat.all_channel_strategy.as_str() {
+                    "weighted_sum" => autoeq::roomeq::MultiMeasurementStrategy::WeightedSum,
+                    "minimax" => autoeq::roomeq::MultiMeasurementStrategy::Minimax,
+                    "variance_penalized" => {
+                        autoeq::roomeq::MultiMeasurementStrategy::VariancePenalized
+                    }
+                    "average" => autoeq::roomeq::MultiMeasurementStrategy::Average,
+                    _ => autoeq::roomeq::MultiMeasurementStrategy::SpatialRobustness,
+                },
+                seat_weights: self.multi_seat.seat_weights.clone(),
+                primary_seat_weight: self.multi_seat.primary_seat_weight,
             })
         } else {
             None

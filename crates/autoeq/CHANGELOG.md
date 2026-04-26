@@ -1,5 +1,33 @@
 # 0.4.37
 
+## Home-cinema all-channel multi-seat correction
+
+RoomEQ now applies and reports multi-seat correction for non-sub
+home-cinema channels, while leaving subwoofer/MSO optimization on the
+dedicated bass-management path.
+
+- Added all-channel multi-seat policy fields for home-cinema configs,
+  including seat weights, primary-seat weighting, and a default
+  `spatial_robustness` strategy.
+- Non-sub channels with multiple measurements now derive per-channel
+  multi-measurement optimization automatically unless an explicit
+  optimizer config is supplied.
+- Spatial robustness correction depth now honors seat weights, and the
+  same mask feeds IIR and mixed-phase/FIR paths to avoid overcorrecting
+  seat-specific nulls.
+- Metadata now reports all-channel multi-seat correction status,
+  normalized seat weights, primary/non-primary pass/fail, per-seat
+  predicted metrics, role-group summaries, and null-suppression
+  advisories.
+- SotF player config conversion preserves all-channel multi-seat policy
+  even when legacy sub/MSO multi-seat optimization is disabled.
+- Added `qa-roomeq-all-channel-multiseat` and wired the focused guardrails
+  into home-cinema/perceptual QA.
+
+Tests/QA:
+`just -f crates/autoeq/Justfile qa-roomeq-all-channel-multiseat`,
+`cargo test -p autoeq spatial_robustness --lib -- --nocapture`.
+
 ## Home-cinema bass-management routing groundwork
 
 RoomEQ bass management now carries enough lossless metadata for routed

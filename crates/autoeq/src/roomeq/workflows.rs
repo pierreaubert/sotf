@@ -111,6 +111,20 @@ fn run_channel_via_generic_path(
     f64,
     Option<Vec<f64>>,
 )> {
+    let derived_config;
+    let effective_config = if let Some(multi_config) =
+        super::home_cinema::derive_all_channel_multiseat_config(config, role, source)
+    {
+        derived_config = {
+            let mut cloned = config.clone();
+            cloned.optimizer.multi_measurement = Some(multi_config);
+            cloned
+        };
+        &derived_config
+    } else {
+        config
+    };
+
     let (
         raw_chain,
         pre_score,
@@ -124,7 +138,7 @@ fn run_channel_via_generic_path(
     ) = super::speaker_eq::process_single_speaker(
         role,
         source,
-        config,
+        effective_config,
         sample_rate,
         output_dir,
         None,
@@ -1782,6 +1796,7 @@ pub fn optimize_stereo_2_0(
             perceptual_metrics: None,
             home_cinema_layout: None,
             multi_seat_coverage: None,
+            multi_seat_correction: None,
             bass_management: None,
             timing_diagnostics: None,
         },
@@ -2563,6 +2578,7 @@ pub fn optimize_stereo_2_1(
             perceptual_metrics: None,
             home_cinema_layout: Some(super::home_cinema::analyze_layout(config)),
             multi_seat_coverage: Some(super::home_cinema::multi_seat_coverage(config)),
+            multi_seat_correction: None,
             bass_management: super::home_cinema::bass_management_report_with_optimization(
                 config,
                 Some(sub_gain_post),
@@ -2740,6 +2756,10 @@ fn optimize_home_cinema_no_sub(
 
     let epa_cfg = config.optimizer.epa_config.clone().unwrap_or_default();
     let epa_per_channel = crate::roomeq::output::compute_epa_per_channel(&channel_chains, &epa_cfg);
+    let multi_seat_correction = Some(super::home_cinema::multi_seat_correction_report(
+        config,
+        &channel_results,
+    ));
 
     Ok(RoomOptimizationResult {
         channels: channel_chains,
@@ -2759,6 +2779,7 @@ fn optimize_home_cinema_no_sub(
             perceptual_metrics: None,
             home_cinema_layout: Some(super::home_cinema::analyze_layout(config)),
             multi_seat_coverage: Some(super::home_cinema::multi_seat_coverage(config)),
+            multi_seat_correction,
             bass_management: None,
             timing_diagnostics: None,
         },
@@ -3525,6 +3546,10 @@ fn optimize_home_cinema_with_sub(
 
     let epa_cfg = config.optimizer.epa_config.clone().unwrap_or_default();
     let epa_per_channel = crate::roomeq::output::compute_epa_per_channel(&channel_chains, &epa_cfg);
+    let multi_seat_correction = Some(super::home_cinema::multi_seat_correction_report(
+        config,
+        &channel_results,
+    ));
 
     Ok(RoomOptimizationResult {
         channels: channel_chains,
@@ -3544,6 +3569,7 @@ fn optimize_home_cinema_with_sub(
             perceptual_metrics: None,
             home_cinema_layout: Some(super::home_cinema::analyze_layout(config)),
             multi_seat_coverage: Some(super::home_cinema::multi_seat_coverage(config)),
+            multi_seat_correction,
             bass_management: super::home_cinema::bass_management_report_with_optimization(
                 config,
                 Some(sub_gain_post),

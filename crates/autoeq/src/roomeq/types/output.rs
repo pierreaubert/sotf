@@ -246,6 +246,9 @@ pub struct OptimizationMetadata {
     /// Coverage summary for multi-position measurements beyond sub-only MSO.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub multi_seat_coverage: Option<crate::roomeq::home_cinema::MultiSeatCoverageReport>,
+    /// All-channel multi-seat correction summary for non-sub home-cinema channels.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub multi_seat_correction: Option<crate::roomeq::home_cinema::MultiSeatCorrectionReport>,
     /// Bass-management policy and applied trim/headroom summary.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bass_management: Option<crate::roomeq::home_cinema::BassManagementReport>,
