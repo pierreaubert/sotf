@@ -120,9 +120,10 @@ impl PlayerView {
 
     /// Render playback device content for accordion
     fn render_playback_device_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let translations = self.state.read(cx).app.ui_state.translations.clone();
         let device_label = VStack::new()
             .spacing(StackSpacing::Xs)
-            .child(Text::label("Output Device"));
+            .child(Text::label(translations.recording_output_device));
 
         // Sample rate dropdown row
         let sample_rate_row = self
@@ -172,7 +173,7 @@ impl PlayerView {
 
         let device_label = VStack::new()
             .spacing(StackSpacing::Xs)
-            .child(Text::label("Input Device").color(theme.text_secondary));
+            .child(Text::label(translations.recording_input_device).color(theme.text_secondary));
 
         // Sample rate dropdown row
         let sample_rate_row = self
@@ -241,6 +242,7 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.weak_entity();
         let num_channels = recording_state.recording_config.num_channels;
@@ -294,7 +296,7 @@ impl PlayerView {
             row = row
                 .child(
                     Input::new(gpui::SharedString::from(input_id))
-                        .placeholder("No calibration file loaded")
+                        .placeholder(translations.recording_no_calibration_placeholder)
                         .value(path.clone().unwrap_or_default())
                         .size(InputSize::Sm)
                         .disabled(true),
@@ -302,7 +304,7 @@ impl PlayerView {
                 .child(
                     Button::new(
                         gpui::ElementId::from(gpui::SharedString::from(browse_id)),
-                        "Browse...",
+                        translations.recording_browse,
                     )
                     .variant(ButtonVariant::Secondary)
                     .size(ButtonSize::Sm)
@@ -321,7 +323,7 @@ impl PlayerView {
                 row = row.child(
                     Button::new(
                         gpui::ElementId::from(gpui::SharedString::from(clear_id)),
-                        "Clear",
+                        translations.recording_clear,
                     )
                     .variant(ButtonVariant::Secondary)
                     .size(ButtonSize::Sm)
@@ -356,9 +358,7 @@ impl PlayerView {
             container = container.child(row);
         }
 
-        container = container.child(Text::caption(
-            "Load a microphone calibration file (CSV) to compensate for microphone frequency response",
-        ));
+        container = container.child(Text::caption(translations.recording_calibration_help));
 
         // Add calibration graph when any channel has data
         let cal_entries: Vec<(usize, CalibrationData)> = channel_data
@@ -391,7 +391,7 @@ impl PlayerView {
 
         let display_path = recording_dir
             .clone()
-            .unwrap_or_else(|| "No directory selected".to_string());
+            .unwrap_or_else(|| translations.recording_no_directory.to_string());
 
         VStack::new()
             .spacing(StackSpacing::Sm)
@@ -414,7 +414,7 @@ impl PlayerView {
                 HStack::new()
                     .spacing(StackSpacing::Sm)
                     .child(
-                        Button::new("browse_output_dir", "Browse...")
+                        Button::new("browse_output_dir", translations.recording_browse)
                             .variant(ButtonVariant::Secondary)
                             .size(ButtonSize::Sm)
                             .theme(theme.to_button_theme())
@@ -431,7 +431,7 @@ impl PlayerView {
                         let view = view.clone();
                         let theme = theme.clone();
                         stack.child(
-                            Button::new("clear_output_dir", "Clear")
+                            Button::new("clear_output_dir", translations.recording_clear)
                                 .variant(ButtonVariant::Secondary)
                                 .size(ButtonSize::Xs)
                                 .theme(theme.to_button_theme())
@@ -707,6 +707,7 @@ impl PlayerView {
     fn render_playback_device_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.weak_entity();
 
@@ -733,7 +734,7 @@ impl PlayerView {
         Select::new("playback_device")
             .options(options)
             .selected(selected_value)
-            .placeholder("Select playback device...")
+            .placeholder(translations.recording_select_playback_placeholder)
             .is_open(recording_state.playback_device_dropdown_open)
             .theme(theme.to_select_theme())
             .on_toggle({
@@ -872,7 +873,7 @@ impl PlayerView {
                     Select::new("playback_sample_rate")
                         .options(options)
                         .selected(selected_value)
-                        .placeholder("Select rate...")
+                        .placeholder(translations.recording_select_rate_placeholder)
                         .is_open(recording_state.playback_sample_rate_dropdown_open)
                         .theme(theme.to_select_theme())
                         .on_toggle({
@@ -966,7 +967,7 @@ impl PlayerView {
                     Select::new("speaker_config")
                         .options(options)
                         .selected(selected_value)
-                        .placeholder("Select config...")
+                        .placeholder(translations.recording_select_config_placeholder)
                         .is_open(recording_state.speaker_config_dropdown_open)
                         .theme(theme.to_select_theme())
                         .on_toggle({
@@ -1073,6 +1074,7 @@ impl PlayerView {
 
     /// Render playback channel mapping table (speaker-centric view)
     fn render_playback_channel_mapping(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let translations = self.state.read(cx).app.ui_state.translations.clone();
         // Extract all needed data upfront, then release the borrow
         let (theme, speaker_data, is_custom) = {
             let state = self.state.read(cx);
@@ -1175,7 +1177,7 @@ impl PlayerView {
                                     .into_any_element(),
                             )
                             .child(div().w(px(70.0))) // intentional: align with ch-number input column
-                            .child(Text::caption("Ch"))
+                            .child(Text::caption(translations.recording_ch_short))
                             .child(div().w(px(30.0))) // intentional: spacer before ch number
                             .child({
                                 let view = view.clone();
@@ -1495,12 +1497,13 @@ impl PlayerView {
         channel_idx: usize,
         current_name: &str,
     ) -> impl IntoElement {
+        let translations = self.state.read(cx).app.ui_state.translations.clone();
         let view = cx.weak_entity();
         let current_name = current_name.to_string();
 
         div().size_full().child(
             Input::new(SharedString::from(format!("channel_name_{}", channel_idx)))
-                .placeholder("Name")
+                .placeholder(translations.recording_name_placeholder)
                 .value(current_name)
                 .size(InputSize::Xs)
                 .on_change({
@@ -1610,6 +1613,7 @@ impl PlayerView {
     fn render_recording_device_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.weak_entity();
 
@@ -1636,7 +1640,7 @@ impl PlayerView {
         Select::new("recording_device")
             .options(options)
             .selected(selected_value)
-            .placeholder("Select recording device...")
+            .placeholder(translations.recording_select_recording_placeholder)
             .is_open(recording_state.recording_device_dropdown_open)
             .theme(theme.to_select_theme())
             .on_toggle({
@@ -1772,7 +1776,7 @@ impl PlayerView {
                     Select::new("recording_sample_rate")
                         .options(options)
                         .selected(selected_value)
-                        .placeholder("Select rate...")
+                        .placeholder(translations.recording_select_rate_placeholder)
                         .is_open(recording_state.recording_sample_rate_dropdown_open)
                         .theme(theme.to_select_theme())
                         .on_toggle({
@@ -1821,6 +1825,7 @@ impl PlayerView {
     fn render_recording_channel_mapping(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.weak_entity();
 
@@ -1848,7 +1853,7 @@ impl PlayerView {
                                 HStack::new()
                                     .spacing(StackSpacing::Xs)
                                     .align(StackAlign::Center)
-                                    .child(Text::caption("Interface"))
+                                    .child(Text::caption(translations.recording_interface))
                                     .child({
                                         let view = view.clone();
                                         NumberInput::new(SharedString::from(format!(

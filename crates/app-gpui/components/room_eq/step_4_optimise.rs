@@ -150,7 +150,7 @@ impl PlayerView {
                                         .color(theme.text_secondary),
                                 )
                                 .child(
-                                    Text::label("Click Next to review the results.")
+                                    Text::label(translations.roomeq_click_next_to_review)
                                         .color(theme.text_secondary),
                                 ),
                         )
@@ -173,7 +173,7 @@ impl PlayerView {
                             )
                             .when_some(current_channel.clone(), |hstack, ch| {
                                 hstack.child(
-                                    Text::new(format!("Channel: {}", ch))
+                                    Text::new(format!("{}: {}", translations.roomeq_channel, ch))
                                         .size(TextSize::Xs)
                                         .color(theme.accent),
                                 )
@@ -183,7 +183,7 @@ impl PlayerView {
                         VStack::new()
                             .spacing(StackSpacing::Sm)
                             .child(if is_running {
-                                Button::new("cancel_optimization", "Cancel")
+                                Button::new("cancel_optimization", translations.general_cancel)
                                     .variant(ButtonVariant::Secondary)
                                     .full_width(true)
                                     .theme(theme.to_button_theme())
@@ -191,7 +191,7 @@ impl PlayerView {
                                         view.cancel_room_eq_optimization(cx);
                                     }))
                             } else {
-                                Button::new("start_optimization", "Start Optimization")
+                                Button::new("start_optimization", translations.roomeq_start_optimization)
                                     .variant(ButtonVariant::Primary)
                                     .full_width(true)
                                     .theme(theme.to_button_theme())

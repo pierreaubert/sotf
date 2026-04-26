@@ -1947,13 +1947,13 @@ impl PlayerView {
                 .child(
                     VStack::new()
                         .spacing(StackSpacing::Xs)
-                        .child(Text::caption("Near-field: <1.5m (desktop)"))
-                        .child(Text::caption("Mid-field:  1.5–3m (couch)"))
-                        .child(Text::caption("Far-field:  >3m (theater)")),
+                        .child(Text::caption(translations.roomeq_near_field_desc))
+                        .child(Text::caption(translations.roomeq_mid_field_desc))
+                        .child(Text::caption(translations.roomeq_far_field_desc)),
                 )
                 .child(
                     HStack::new().child(
-                        Button::new("open_target_modal", "Customize target curve...")
+                        Button::new("open_target_modal", translations.roomeq_customize_target)
                             .variant(ButtonVariant::Secondary)
                             .size(ButtonSize::Xs)
                             .theme(theme.to_button_theme())
@@ -2049,8 +2049,8 @@ impl PlayerView {
                 .child(
                     VStack::new()
                         .spacing(StackSpacing::Xs)
-                        .child(Text::caption("IIR: low latency (<5ms)"))
-                        .child(Text::caption("Mixed Phase: best quality")),
+                        .child(Text::caption(translations.roomeq_iir_desc))
+                        .child(Text::caption(translations.roomeq_mixed_phase_desc)),
                 ),
         );
 

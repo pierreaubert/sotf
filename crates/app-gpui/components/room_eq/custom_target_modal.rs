@@ -277,7 +277,7 @@ impl PlayerView {
         let view_entity = cx.entity().clone();
 
         Dialog::new("custom-target-modal")
-            .title("Custom Target Curve Editor")
+            .title(translations.roomeq_custom_target_editor)
             .size(DialogSize::Full)
             .on_close({
                 let state = state_entity.clone();
@@ -315,12 +315,12 @@ impl PlayerView {
                             .flex()
                             .justify_between()
                             .items_center()
-                            .child(Text::section_header("Custom Target Curve Editor"))
+                            .child(Text::section_header(translations.roomeq_custom_target_editor))
                             .child(
                                 div()
                                     .relative()
                                     .child(
-                                        Button::new("presets-curve", "Presets ▾")
+                                        Button::new("presets-curve", translations.roomeq_presets_button)
                                             .variant(ButtonVariant::Secondary)
                                             .size(ButtonSize::Sm)
                                             .theme(theme.to_button_theme())
@@ -413,7 +413,7 @@ impl PlayerView {
                             .gap(d.gap)
                             .justify_end()
                             .child(
-                                Button::new("load-curve", "Import...")
+                                Button::new("load-curve", translations.roomeq_import_button)
                                     .variant(ButtonVariant::Secondary)
                                     .size(ButtonSize::Sm)
                                     .theme(theme.to_button_theme())
@@ -427,7 +427,7 @@ impl PlayerView {
                                     }),
                             )
                             .child(
-                                Button::new("save-curve", "Export...")
+                                Button::new("save-curve", translations.roomeq_export_button)
                                     .variant(ButtonVariant::Secondary)
                                     .size(ButtonSize::Sm)
                                     .theme(theme.to_button_theme())
@@ -441,7 +441,7 @@ impl PlayerView {
                                     }),
                             )
                             .child(
-                                Button::new("done-curve", "Done")
+                                Button::new("done-curve", translations.roomeq_done_button)
                                     .variant(ButtonVariant::Primary)
                                     .size(ButtonSize::Sm)
                                     .theme(theme.to_button_theme())

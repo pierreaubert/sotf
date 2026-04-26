@@ -82,14 +82,12 @@ impl PlayerView {
                         VStack::new()
                             .spacing(StackSpacing::Sm)
                             .child(
-                                Text::new(
-                                    "Save a copy of your current plugin rack before applying changes.",
-                                )
+                                Text::new(translations.roomeq_backup_rack_help)
                                 .size(TextSize::Xs)
                                 .color(theme.text_secondary),
                             )
                             .child(
-                                Button::new("backup_rack", "Save Rack Backup...")
+                                Button::new("backup_rack", translations.roomeq_save_rack_backup)
                                     .variant(ButtonVariant::Secondary)
                                     .theme(theme.to_button_theme())
                                     .on_click_event(cx.listener(|view, _, _, cx| {
@@ -153,7 +151,7 @@ impl PlayerView {
                                         ),
                                 )
                                 .child(
-                                    Button::new("export_file", "Export...")
+                                    Button::new("export_file", translations.roomeq_export_button)
                                         .variant(ButtonVariant::Primary)
                                         .size(ButtonSize::Sm)
                                         .theme(theme.to_button_theme())
@@ -243,15 +241,15 @@ impl PlayerView {
                             .spacing(StackSpacing::Sm)
                             .child(
                                 Text::new(if has_eq_in_rack {
-                                    "An EQ plugin exists in your rack. It will be updated with the new filters."
+                                    translations.roomeq_eq_exists_in_rack
                                 } else {
-                                    "No EQ plugin in rack. A new EQ will be added at the end of the processing chain."
+                                    translations.roomeq_no_eq_in_rack
                                 })
                                 .size(TextSize::Xs)
                                 .color(theme.text_secondary),
                             )
                             .child(
-                                Button::new("apply_to_player", "Apply to Rack")
+                                Button::new("apply_to_player", translations.roomeq_apply_to_rack)
                                     .variant(ButtonVariant::Secondary)
                                     .theme(theme.to_button_theme())
                                     .on_click_event(cx.listener(|view, _, _, cx| {
@@ -272,15 +270,12 @@ impl PlayerView {
                         VStack::new()
                             .spacing(StackSpacing::Sm)
                             .child(
-                                Text::new(
-                                    "This optimization includes crossovers and per-driver processing \
-                                     that requires the full graph view."
-                                )
+                                Text::new(translations.roomeq_apply_graph_help)
                                 .size(TextSize::Xs)
                                 .color(theme.text_secondary),
                             )
                             .child(
-                                Button::new("apply_as_graph", "Apply as Graph")
+                                Button::new("apply_as_graph", translations.roomeq_apply_as_graph)
                                     .variant(ButtonVariant::Secondary)
                                     .theme(theme.to_button_theme())
                                     .on_click_event(cx.listener(|view, _, _, cx| {

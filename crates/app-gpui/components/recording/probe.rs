@@ -105,7 +105,7 @@ impl PlayerView {
                     ))
                     .child(
                         HStack::new().spacing(StackSpacing::Sm).child(if running {
-                            Button::new("probe_cancel", "Cancel")
+                            Button::new("probe_cancel", translations.general_cancel)
                                 .variant(ButtonVariant::Secondary)
                                 .size(ButtonSize::Sm)
                                 .theme(theme.to_button_theme())
@@ -113,7 +113,7 @@ impl PlayerView {
                                     view.cancel_probe_capture(cx);
                                 }))
                         } else {
-                            Button::new("probe_run", "Run Probe")
+                            Button::new("probe_run", translations.recording_run_probe)
                                 .variant(ButtonVariant::Primary)
                                 .size(ButtonSize::Sm)
                                 .theme(theme.to_button_theme())
