@@ -52,14 +52,14 @@ impl PlayerView {
                     HStack::new()
                         .spacing(StackSpacing::Sm)
                         .align(StackAlign::Center)
-                        .child(Text::label("Signal Type:"))
+                        .child(Text::label(translations.recording_signal_type_label))
                         .child(self.render_signal_type_dropdown(cx)),
                 )
                 .child(
                     HStack::new()
                         .spacing(StackSpacing::Sm)
                         .align(StackAlign::Center)
-                        .child(Text::label("Duration:"))
+                        .child(Text::label(translations.recording_duration_label))
                         .child(self.render_duration_dropdown(cx)),
                 )
                 .child(
@@ -99,7 +99,6 @@ impl PlayerView {
     fn render_signal_type_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
 
@@ -156,7 +155,6 @@ impl PlayerView {
     fn render_duration_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
 
@@ -258,7 +256,7 @@ impl PlayerView {
             .content(
                 VStack::new()
                     .spacing(StackSpacing::Sm)
-                    .child(Text::eyebrow("CHANNEL FREQUENCY RANGE").color(theme.accent))
+                    .child(Text::eyebrow(translations.recording_channel_frequency_range).color(theme.accent))
                     .children(
                         channel_data
                             .iter()
@@ -449,7 +447,7 @@ impl PlayerView {
             .content(
                 VStack::new()
                     .spacing(StackSpacing::Sm)
-                    .child(Text::eyebrow("CHANNEL METRICS").color(theme.accent))
+                    .child(Text::eyebrow(translations.recording_channel_metrics).color(theme.accent))
                     // Header row
                     .child(
                         HStack::new()
@@ -457,22 +455,22 @@ impl PlayerView {
                             .align(StackAlign::Center)
                             .child(
                                 div().w(px(100.0)).child( // intentional: metrics-table column width
-                                    Text::label("Channel").color(theme.text_secondary),
+                                    Text::label(translations.recording_channel_column).color(theme.text_secondary),
                                 ),
                             )
                             .child(
                                 div().w(px(60.0)).child( // intentional: metrics-table column width
-                                    Text::label("Mic In").color(theme.text_secondary),
+                                    Text::label(translations.recording_mic_in).color(theme.text_secondary),
                                 ),
                             )
                             .child(
                                 div().w(px(80.0)).child( // intentional: metrics-table column width
-                                    Text::label("Avg SPL").color(theme.text_secondary),
+                                    Text::label(translations.recording_avg_spl).color(theme.text_secondary),
                                 ),
                             )
                             .child(
                                 div().w(px(80.0)).child( // intentional: metrics-table column width
-                                    Text::label("Noise Floor").color(theme.text_secondary),
+                                    Text::label(translations.recording_noise_floor).color(theme.text_secondary),
                                 ),
                             ),
                     )
@@ -554,15 +552,16 @@ impl PlayerView {
                         .spacing(StackSpacing::Sm)
                         .justify(StackJustify::SpaceBetween)
                         .align(StackAlign::Center)
-                        .child(Text::eyebrow("CHANNEL STATUS").color(theme.accent))
+                        .child(Text::eyebrow(translations.recording_channel_status).color(theme.accent))
                         .child(
                             HStack::new()
                                 .spacing(StackSpacing::Xs)
                                 .when(!is_recording, |stack| {
                                     let view = view.clone();
                                     let theme = theme.clone();
+                                    let label = translations.recording_record_all_channels;
                                     stack.child(
-                                        Button::new("record_all", "Record All Channels")
+                                        Button::new("record_all", label)
                                             .variant(ButtonVariant::Primary)
                                             .size(ButtonSize::Sm)
                                             .theme(theme.to_button_theme())
@@ -579,8 +578,9 @@ impl PlayerView {
                                 .when(is_recording, |stack| {
                                     let view = view.clone();
                                     let theme = theme.clone();
+                                    let label = translations.recording_stop_recording;
                                     stack.child(
-                                        Button::new("stop_recording", "Stop Recording")
+                                        Button::new("stop_recording", label)
                                             .variant(ButtonVariant::Destructive)
                                             .size(ButtonSize::Sm)
                                             .theme(theme.to_button_theme())
@@ -705,13 +705,13 @@ impl PlayerView {
                         .any(|(_, s)| *s == ChannelRecordingState::Error);
 
                     let (state_text, state_color) = if any_recording {
-                        ("Recording...", theme.warning)
+                        (translations.recording_state_recording, theme.warning)
                     } else if all_done {
-                        ("Complete", theme.success)
+                        (translations.recording_state_complete, theme.success)
                     } else if any_error {
-                        ("Error", theme.error)
+                        (translations.recording_state_error, theme.error)
                     } else {
-                        ("Not recorded", theme.text_muted)
+                        (translations.recording_state_not_recorded, theme.text_muted)
                     };
                     let state_icon: AnyElement = if any_recording {
                         // intentional: 8px dot status indicator, not a scaling icon
@@ -725,7 +725,11 @@ impl PlayerView {
                         div().size(px(8.0)).rounded_full().border_1().border_color(theme.text_muted).into_any_element()
                     };
 
-                    let button_label = if all_done { "Re-record" } else { "Record" };
+                    let button_label = if all_done {
+                        translations.recording_re_record
+                    } else {
+                        translations.recording_record
+                    };
 
                     let mut row = div()
                         .flex()
@@ -845,7 +849,7 @@ impl PlayerView {
         HStack::new()
             .spacing(StackSpacing::Sm)
             .child(
-                Button::new("redo_recordings", "Redo All")
+                Button::new("redo_recordings", translations.recording_redo_all)
                     .variant(ButtonVariant::Secondary)
                     .size(ButtonSize::Sm)
                     .disabled(!has_recordings || is_recording)
@@ -860,7 +864,7 @@ impl PlayerView {
                     }),
             )
             .child(
-                Button::new("load_from_file", "Load from File")
+                Button::new("load_from_file", translations.recording_load_from_file)
                     .variant(ButtonVariant::Secondary)
                     .size(ButtonSize::Sm)
                     .disabled(is_recording)
@@ -2274,7 +2278,7 @@ impl PlayerView {
                                     .text_size(d.text_lg)
                                     .font_weight(FontWeight::BOLD)
                                     .text_color(theme.text_primary)
-                                    .child("Convert Recording Format"),
+                                    .child(translations.recording_convert_format_title),
                             ),
                     )
                     // Content
@@ -2356,7 +2360,7 @@ impl PlayerView {
                                     .text_color(theme.text_secondary)
                                     .cursor_pointer()
                                     .hover(|s| s.bg(theme.border))
-                                    .child("Cancel")
+                                    .child(translations.general_cancel)
                                     .on_click({
                                         let view = view.clone();
                                         move |_event, _window, cx| {
@@ -2386,7 +2390,7 @@ impl PlayerView {
                                     .text_color(theme.text_on_accent)
                                     .cursor_pointer()
                                     .hover(|s| s.bg(theme.accent_muted))
-                                    .child("Convert")
+                                    .child(translations.recording_convert_button)
                                     .on_click({
                                         move |_event, _window, cx| {
                                             log::info!("Convert button clicked!");

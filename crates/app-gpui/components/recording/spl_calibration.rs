@@ -15,7 +15,7 @@
 
 use crate::app::types::recording::SplCalibrationCaptureStatus;
 use crate::ui::PlayerView;
-use gpui::{Context, IntoElement};
+use gpui::{AnyElement, Context, IntoElement};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Card, StackSpacing, Text, TextSize, TextWeight, VStack,
 };
@@ -53,23 +53,38 @@ impl PlayerView {
         };
 
         let view = cx.entity().clone();
-        let button_label = match cal.status {
-            SplCalibrationCaptureStatus::Idle | SplCalibrationCaptureStatus::Failed(_) => {
-                "Play calibration tone"
-            }
-            SplCalibrationCaptureStatus::Running { .. } => "Playing…",
-            SplCalibrationCaptureStatus::Complete => "Re-play tone",
-        };
-        let start_button = Button::new("spl-cal-start", button_label)
-            .variant(ButtonVariant::Primary)
-            .size(ButtonSize::Md)
-            .disabled(running)
-            .on_click({
-                let view = view.clone();
-                move |_, cx| {
-                    let _ = view.update(cx, |this, cx| this.start_spl_calibration_capture(cx));
+        let start_button: AnyElement = if running {
+            Button::new("spl-cal-cancel", "Cancel")
+                .variant(ButtonVariant::Secondary)
+                .size(ButtonSize::Md)
+                .on_click({
+                    let view = view.clone();
+                    move |_, cx| {
+                        let _ = view
+                            .update(cx, |this, cx| this.cancel_spl_calibration_capture(cx));
+                    }
+                })
+                .into_any_element()
+        } else {
+            let button_label = match cal.status {
+                SplCalibrationCaptureStatus::Idle | SplCalibrationCaptureStatus::Failed(_) => {
+                    "Play calibration tone"
                 }
-            });
+                SplCalibrationCaptureStatus::Running { .. } => "Playing…",
+                SplCalibrationCaptureStatus::Complete => "Re-play tone",
+            };
+            Button::new("spl-cal-start", button_label)
+                .variant(ButtonVariant::Primary)
+                .size(ButtonSize::Md)
+                .on_click({
+                    let view = view.clone();
+                    move |_, cx| {
+                        let _ = view
+                            .update(cx, |this, cx| this.start_spl_calibration_capture(cx));
+                    }
+                })
+                .into_any_element()
+        };
 
         let mut column = VStack::new()
             .spacing(StackSpacing::Sm)
@@ -158,18 +173,19 @@ impl PlayerView {
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
 
-        self.state.update(cx, |state, cx| {
-            let cal = &mut state
-                .app
-                .measurement_state
-                .recording_state
-                .spl_calibration_capture;
-            cal.status = SplCalibrationCaptureStatus::Running { started_at_ms };
-            cal.engine_result = None;
+        let cancel_flag = self.state.update(cx, |state, cx| {
+            let rec = &mut state.app.measurement_state.recording_state;
+            rec.spl_cancel_requested
+                .store(false, std::sync::atomic::Ordering::Relaxed);
+            rec.spl_calibration_capture.status =
+                SplCalibrationCaptureStatus::Running { started_at_ms };
+            rec.spl_calibration_capture.engine_result = None;
             cx.notify();
+            rec.spl_cancel_requested.clone()
         });
 
         let state_clone = self.state.clone();
+        let cancel_for_task = cancel_flag.clone();
         cx.spawn(async move |_, cx| {
             let result = smol::unblock(move || {
                 sotf_audio::signal_recorder::run_spl_calibration(
@@ -181,7 +197,7 @@ impl PlayerView {
                     out_dev.as_deref(),
                     in_dev.as_deref(),
                     input_channel,
-                    None,
+                    Some(cancel_for_task),
                 )
             })
             .await;
@@ -194,6 +210,10 @@ impl PlayerView {
                     .spl_calibration_capture;
                 match result {
                     Ok(res) => cal.apply_engine_result(res),
+                    Err(e) if e == sotf_audio::signal_recorder::CANCELLED_ERR => {
+                        log::info!("SPL calibration capture cancelled by user");
+                        cal.status = SplCalibrationCaptureStatus::Idle;
+                    }
                     Err(e) => {
                         log::warn!("SPL calibration capture failed: {e}");
                         cal.status = SplCalibrationCaptureStatus::Failed(e);
@@ -203,5 +223,21 @@ impl PlayerView {
             });
         })
         .detach();
+    }
+
+    /// Request cancellation of the in-progress SPL calibration capture.
+    /// Mirrors `cancel_probe_capture` — the engine returns
+    /// `Err(CANCELLED_ERR)` on the next poll.
+    pub(crate) fn cancel_spl_calibration_capture(&mut self, cx: &mut Context<Self>) {
+        log::info!("Cancel requested for SPL calibration capture");
+        self.state.update(cx, |state, cx| {
+            state
+                .app
+                .measurement_state
+                .recording_state
+                .spl_cancel_requested
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            cx.notify();
+        });
     }
 }

@@ -16,7 +16,6 @@ use super::render::render_channel_config_row;
 impl PlayerView {
     pub(crate) fn render_room_eq_configure(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let wizard_mode = state.app.measurement_state.room_eq_state.wizard_mode;
 
         match wizard_mode {
@@ -1751,7 +1750,6 @@ impl PlayerView {
     #[allow(dead_code)]
     fn render_slope_recommendation(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let room_eq = &state.app.measurement_state.room_eq_state;
 
@@ -1841,7 +1839,6 @@ impl PlayerView {
     fn render_channel_config_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
-        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let speaker_configs = state
             .app
@@ -1950,13 +1947,13 @@ impl PlayerView {
                 .child(
                     VStack::new()
                         .spacing(StackSpacing::Xs)
-                        .child(Text::caption("Near-field: <1.5m (desktop)"))
-                        .child(Text::caption("Mid-field:  1.5–3m (couch)"))
-                        .child(Text::caption("Far-field:  >3m (theater)")),
+                        .child(Text::caption(translations.roomeq_near_field_desc))
+                        .child(Text::caption(translations.roomeq_mid_field_desc))
+                        .child(Text::caption(translations.roomeq_far_field_desc)),
                 )
                 .child(
                     HStack::new().child(
-                        Button::new("open_target_modal", "Customize target curve...")
+                        Button::new("open_target_modal", translations.roomeq_customize_target)
                             .variant(ButtonVariant::Secondary)
                             .size(ButtonSize::Xs)
                             .theme(theme.to_button_theme())
@@ -2052,8 +2049,8 @@ impl PlayerView {
                 .child(
                     VStack::new()
                         .spacing(StackSpacing::Xs)
-                        .child(Text::caption("IIR: low latency (<5ms)"))
-                        .child(Text::caption("Mixed Phase: best quality")),
+                        .child(Text::caption(translations.roomeq_iir_desc))
+                        .child(Text::caption(translations.roomeq_mixed_phase_desc)),
                 ),
         );
 

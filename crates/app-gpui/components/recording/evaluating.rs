@@ -280,7 +280,7 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(Text::eyebrow("MAGNITUDE (dB)").color(theme.accent))
+                .child(Text::eyebrow(translations.recording_magnitude).color(theme.accent))
                 .child(if has_results {
                     self.render_magnitude_chart(&results, smoothing, &theme)
                         .into_any_element()
@@ -305,7 +305,7 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(Text::eyebrow("PHASE (degrees)").color(theme.accent))
+                .child(Text::eyebrow(translations.recording_phase).color(theme.accent))
                 .child(if has_results {
                     self.render_phase_chart(&results, smoothing, &theme)
                         .into_any_element()
@@ -330,7 +330,7 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(Text::eyebrow("GROUP DELAY (ms)").color(theme.accent))
+                .child(Text::eyebrow(translations.recording_group_delay).color(theme.accent))
                 .child(if has_results {
                     self.render_group_delay_chart(&results, smoothing, &theme)
                         .into_any_element()
@@ -346,15 +346,15 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-
         let translations = state.app.ui_state.translations.clone();
+
         let results = self.get_filtered_results(cx);
         let has_results = !results.is_empty();
 
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(Text::eyebrow("IMPULSE RESPONSE").color(theme.accent))
+                .child(Text::eyebrow(translations.recording_impulse_response).color(theme.accent))
                 .child(if has_results {
                     self.render_impulse_response_chart(&results, &theme)
                         .into_any_element()
@@ -379,7 +379,7 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(Text::eyebrow("DISTORTION (THD+N %)").color(theme.accent))
+                .child(Text::eyebrow(translations.recording_distortion).color(theme.accent))
                 .child(if has_results {
                     self.render_distortion_chart(&d, &results, smoothing, &theme)
                         .into_any_element()
@@ -404,7 +404,7 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(Text::eyebrow("RT60 DECAY (ms)").color(theme.accent))
+                .child(Text::eyebrow(translations.recording_rt60).color(theme.accent))
                 .child(if has_results {
                     self.render_rt60_chart(&results, smoothing, &theme)
                         .into_any_element()
@@ -429,7 +429,7 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(Text::eyebrow("CLARITY (C50/C80 dB)").color(theme.accent))
+                .child(Text::eyebrow(translations.recording_clarity).color(theme.accent))
                 .child(if has_results {
                     self.render_clarity_chart(&results, smoothing, &theme)
                         .into_any_element()
@@ -459,7 +459,7 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(Text::eyebrow("SPECTROGRAM").color(theme.accent))
+                .child(Text::eyebrow(translations.recording_spectrogram).color(theme.accent))
                 .child(if has_results {
                     self.render_spectrogram_chart(&d, &results, &theme, sample_rate)
                         .into_any_element()
@@ -1183,7 +1183,7 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(Text::eyebrow("RECORDING SUMMARY").color(theme.accent))
+                .child(Text::eyebrow(translations.recording_summary_title).color(theme.accent))
                 .child(
                     HStack::new()
                         .spacing(StackSpacing::Md)
@@ -1215,9 +1215,9 @@ impl PlayerView {
                                 )
                                 .child(
                                     Text::label(if recorded_count == total_count {
-                                        "All channels recorded"
+                                        translations.recording_all_channels_recorded
                                     } else {
-                                        "Some channels missing"
+                                        translations.recording_some_channels_missing
                                     })
                                     .color(if recorded_count == total_count {
                                         theme.success

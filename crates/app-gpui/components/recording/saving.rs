@@ -98,7 +98,7 @@ impl PlayerView {
                 // Header
                 VStack::new()
                     .spacing(StackSpacing::Xs)
-                    .child(Heading::h4("Save Recordings"))
+                    .child(Heading::h4(translations.recording_save_recordings))
                     .child(
                         Text::new(translations.recording_saving_desc)
                             .size(TextSize::Xs)
@@ -130,7 +130,7 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(Text::eyebrow("RECORDING NAME").color(theme.accent))
+                .child(Text::eyebrow(translations.recording_name_eyebrow).color(theme.accent))
                 .child(
                     HStack::new()
                         .spacing(StackSpacing::Sm)
@@ -149,7 +149,7 @@ impl PlayerView {
                                 .child(
                                     Input::new("save_name_input")
                                         .value(save_name.clone())
-                                        .placeholder("Enter recording name")
+                                        .placeholder(translations.recording_enter_name_placeholder)
                                         .on_text_change({
                                             let view = view.clone();
                                             move |value, _window, cx| {
@@ -168,9 +168,7 @@ impl PlayerView {
                                 ),
                         ),
                 )
-                .child(Text::caption(
-                    "This name will be used for the subdirectory containing your recordings.",
-                )),
+                .child(Text::caption(translations.recording_save_name_help)),
         )
     }
 
@@ -183,19 +181,21 @@ impl PlayerView {
         let view = cx.entity().clone();
 
         let base_dir = recording_state.recording_base_directory.clone();
-        let base_dir_display = base_dir.clone().unwrap_or_else(|| "Not set".to_string());
+        let base_dir_display = base_dir
+            .clone()
+            .unwrap_or_else(|| translations.recording_not_set.to_string());
 
         let save_name = &recording_state.save_name;
         let full_path = if base_dir.is_some() {
             format!("{}/{}/", base_dir_display, save_name)
         } else {
-            "Not set".to_string()
+            translations.recording_not_set.to_string()
         };
 
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(Text::eyebrow("SAVE LOCATION").color(theme.accent))
+                .child(Text::eyebrow(translations.recording_save_location_eyebrow).color(theme.accent))
                 .child(
                     HStack::new()
                         .spacing(StackSpacing::Sm)
@@ -211,7 +211,7 @@ impl PlayerView {
                                 .color(theme.text_primary),
                         )
                         .child(
-                            Button::new("browse_save_dir", "Browse...")
+                            Button::new("browse_save_dir", translations.recording_browse)
                                 .variant(ButtonVariant::Secondary)
                                 .size(ButtonSize::Xs)
                                 .theme(theme.to_button_theme())
@@ -228,7 +228,7 @@ impl PlayerView {
                             let view = view.clone();
                             let theme = theme.clone();
                             stack.child(
-                                Button::new("clear_save_dir", "Clear")
+                                Button::new("clear_save_dir", translations.recording_clear)
                                     .variant(ButtonVariant::Secondary)
                                     .size(ButtonSize::Xs)
                                     .theme(theme.to_button_theme())
@@ -297,7 +297,7 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(Text::eyebrow("FILES TO SAVE").color(theme.accent))
+                .child(Text::eyebrow(translations.recording_files_to_save).color(theme.accent))
                 .child(
                     VStack::new()
                         .spacing(StackSpacing::Xs)
@@ -311,7 +311,7 @@ impl PlayerView {
                                     Text::label(format!("{}.json", safe_save_name))
                                         .color(theme.text_primary),
                                 )
-                                .child(Text::caption("- Configuration and measurement data")),
+                                .child(Text::caption(translations.recording_files_config_data)),
                         )
                         // Per-channel files
                         .children(
@@ -404,12 +404,12 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(Text::eyebrow("ACTIONS").color(theme.accent))
+                .child(Text::eyebrow(translations.recording_actions).color(theme.accent))
                 .child(
                     HStack::new()
                         .spacing(StackSpacing::Sm)
                         .child(
-                            Button::new("save_recordings", "Save All")
+                            Button::new("save_recordings", translations.recording_save_all)
                                 .variant(ButtonVariant::Primary)
                                 .size(ButtonSize::Md)
                                 .disabled(!can_save)
@@ -424,7 +424,7 @@ impl PlayerView {
                                 }),
                         )
                         .child(
-                            Button::new("load_recordings", "Load Previous")
+                            Button::new("load_recordings", translations.recording_load_previous)
                                 .variant(ButtonVariant::Secondary)
                                 .size(ButtonSize::Sm)
                                 .theme(theme.to_button_theme())
@@ -450,9 +450,9 @@ impl PlayerView {
                 })
                 .when(!can_save, |stack| {
                     let reason = if !has_recordings {
-                        "No recordings to save. Go back to capture some channels."
+                        translations.recording_no_recordings_warning
                     } else {
-                        "No save directory selected. Go back to setup to select a directory."
+                        translations.recording_no_dir_warning
                     };
                     stack.child(Text::new(reason).size(TextSize::Xs).color(theme.warning))
                 }),
@@ -481,11 +481,8 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(Text::eyebrow("ROOM DIMENSIONS").color(theme.accent))
-                .child(Text::caption(
-                    "Width × Depth × Height. Optional, but lets the optimizer auto-tune \
-                     the Schroeder frequency from room volume.",
-                ))
+                .child(Text::eyebrow(translations.recording_room_dimensions).color(theme.accent))
+                .child(Text::caption(translations.recording_room_dimensions_help))
                 .child(
                     HStack::new()
                         .spacing(StackSpacing::Sm)
@@ -559,11 +556,8 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(Text::eyebrow("SETUP DESCRIPTION").color(theme.accent))
-                .child(Text::caption(
-                    "Notes about the listening position, acoustic treatment, \
-                     equipment chain, anything worth remembering next session.",
-                ))
+                .child(Text::eyebrow(translations.recording_setup_description_label).color(theme.accent))
+                .child(Text::caption(translations.recording_setup_description_help))
                 .child(
                     div()
                         .w(px(560.0)) // intentional: wide description field width
@@ -573,10 +567,7 @@ impl PlayerView {
                         .child(
                             Input::new("setup_description_input")
                                 .value(description)
-                                .placeholder(
-                                    "e.g. small bedroom, equilateral triangle, \
-                                     bass traps in corners, 2.2m sweet-spot to plane",
-                                )
+                                .placeholder(translations.recording_setup_placeholder)
                                 .on_text_change({
                                     let view = view.clone();
                                     move |value, _window, cx| {
@@ -643,13 +634,13 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(Text::eyebrow("SPEAKERS PER CHANNEL").color(theme.accent))
+                .child(Text::eyebrow(translations.recording_speakers_per_channel).color(theme.accent))
                 .child(Text::caption(if is_loading {
-                    "Loading catalog from spinorama.org…"
+                    translations.recording_speakers_loading_catalog
                 } else if catalog.is_empty() {
-                    "Catalog unavailable. Type freely — any label is saved as-is."
+                    translations.recording_speakers_catalog_unavailable
                 } else {
-                    "Type to filter the spinorama.org catalog; click a match to fill in."
+                    translations.recording_speakers_filter_help
                 }))
                 .children(rows.into_iter().map(|(row, channel_name, current)| {
                     let suggestions = if open_row == Some(row) {
@@ -683,7 +674,7 @@ impl PlayerView {
                                                 row
                                             )))
                                             .value(current.clone())
-                                            .placeholder("Brand and model")
+                                            .placeholder(translations.recording_speakers_placeholder)
                                             .on_text_change({
                                                 let view = view.clone();
                                                 move |value, _window, cx| {

@@ -713,26 +713,25 @@ impl PlayerView {
 
                         VStack::new()
                             .spacing(StackSpacing::Sm)
-                            .child(
-                                Button::new(
-                                    "start_optimization",
-                                    if is_optimizing {
-                                        "Optimizing..."
-                                    } else {
-                                        "Generate Headphone EQ"
-                                    },
-                                )
-                                .variant(ButtonVariant::Primary)
-                                .size(ButtonSize::Md)
-                                .full_width(true)
-                                .disabled(is_optimizing)
-                                .theme(button_theme.clone())
-                                .when(!is_optimizing, |btn| {
-                                    btn.on_click_event(cx.listener(|view, _, _, cx| {
-                                            view.start_headphone_eq_optimization(cx);
-                                        }))
-                                }),
-                            )
+                            .child(if is_optimizing {
+                                Button::new("cancel_optimization", "Cancel")
+                                    .variant(ButtonVariant::Secondary)
+                                    .size(ButtonSize::Md)
+                                    .full_width(true)
+                                    .theme(button_theme.clone())
+                                    .on_click_event(cx.listener(|view, _, _, cx| {
+                                        view.cancel_headphone_eq_optimization(cx);
+                                    }))
+                            } else {
+                                Button::new("start_optimization", "Generate Headphone EQ")
+                                    .variant(ButtonVariant::Primary)
+                                    .size(ButtonSize::Md)
+                                    .full_width(true)
+                                    .theme(button_theme.clone())
+                                    .on_click_event(cx.listener(|view, _, _, cx| {
+                                        view.start_headphone_eq_optimization(cx);
+                                    }))
+                            })
                             .when(show_progress, |vstack| {
                                 let display_progress = if is_completed {
                                     100.0

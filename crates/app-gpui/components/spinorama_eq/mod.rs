@@ -1073,7 +1073,13 @@ impl PlayerView {
             return;
         }
 
-        self.state.update(cx, |state, _cx| {
+        let cancel_flag = self.state.update(cx, |state, _cx| {
+            state
+                .app
+                .measurement_state
+                .spinorama_eq_state
+                .cancel_requested
+                .store(false, std::sync::atomic::Ordering::Relaxed);
             state
                 .app
                 .measurement_state
@@ -1092,6 +1098,12 @@ impl PlayerView {
                 .progress_history
                 .clear();
             state.app.measurement_state.spinorama_eq_state.error_message = None;
+            state
+                .app
+                .measurement_state
+                .spinorama_eq_state
+                .cancel_requested
+                .clone()
         });
         cx.notify();
 
@@ -1187,6 +1199,7 @@ impl PlayerView {
         params.curve_name = effective_curve_name.clone();
 
         // Run optimization in background thread (blocking tokio runtime)
+        let cancel_for_thread = cancel_flag.clone();
         std::thread::spawn(move || {
             // Build the optimization config
             let config = SpeakerOptimizationConfig {
@@ -1211,8 +1224,13 @@ impl PlayerView {
 
             // Create callback for progress updates
             let max_iter = params.maxeval;
+            let cancel_for_cb = cancel_for_thread.clone();
             let callback: SpeakerOptimizationCallback =
                 Box::new(move |progress: &SpeakerOptimizationProgress| {
+                    if cancel_for_cb.load(std::sync::atomic::Ordering::Relaxed) {
+                        return sotf_audio_player::autoeq::speaker::CallbackAction::Stop;
+                    }
+
                     let progress_pct = progress.iteration as f32 / max_iter as f32;
                     let iter = progress.iteration;
                     let loss = progress.loss;
@@ -1351,6 +1369,7 @@ impl PlayerView {
 
         // Start a polling timer to check for results and progress
         let weak_state = self.state.downgrade();
+        let cancel_for_poll = cancel_flag.clone();
         cx.spawn(async move |_, cx| {
             loop {
                 smol::Timer::after(std::time::Duration::from_millis(100)).await;
@@ -1388,8 +1407,25 @@ impl PlayerView {
                 let result_ready = lock!(SPINORAMA_RESULT).take();
 
                 if let Some((success, result, full_result, error)) = result_ready {
+                    let was_cancelled =
+                        cancel_for_poll.load(std::sync::atomic::Ordering::Relaxed);
                     state_for_poll.update(cx, |state, cx| {
-                        if success {
+                        if was_cancelled {
+                            // The optimizer may have returned Ok with partial
+                            // results, but the user asked us to stop — surface
+                            // Cancelled status and stay on the Configure step.
+                            state
+                                .app
+                                .measurement_state
+                                .spinorama_eq_state
+                                .optimization_status =
+                                crate::app::types::OptimizationStatus::Cancelled;
+                            state
+                                .app
+                                .measurement_state
+                                .spinorama_eq_state
+                                .status_message = "Optimization cancelled".to_string();
+                        } else if success {
                             state
                                 .app
                                 .measurement_state
@@ -1454,6 +1490,24 @@ impl PlayerView {
             }
         })
         .detach();
+    }
+
+    pub fn cancel_spinorama_optimization(&mut self, cx: &mut Context<Self>) {
+        log::info!("Cancel requested for spinorama optimization");
+        self.state.update(cx, |state, cx| {
+            state
+                .app
+                .measurement_state
+                .spinorama_eq_state
+                .cancel_requested
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            state
+                .app
+                .measurement_state
+                .spinorama_eq_state
+                .status_message = "Cancelling — finishing current iteration...".to_string();
+            cx.notify();
+        });
     }
 
     fn apply_spinorama_eq_result(&mut self, cx: &mut Context<Self>) {
