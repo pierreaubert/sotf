@@ -1,11 +1,10 @@
 //! Room EQ configuration and serialization tests.
 
+use sotf_audio_player::{
+    EQFilter, PluginGraph, PluginSettings, PluginType, room_eq_types::parse_eq_filters_from_json,
+};
 use sotf_audio_player_gpui::{
     ChannelMeasurement, RecordingResult, RoomEqOptimizerConfig, RoomEqState, RoomEqStep,
-};
-use sotf_audio_player::{
-    EQFilter, PluginGraph, PluginSettings, PluginType,
-    room_eq_types::parse_eq_filters_from_json,
 };
 
 #[test]
@@ -537,9 +536,7 @@ fn driver(name: &str, index: usize, plugins: Vec<DspPluginConfig>) -> DriverDspC
 
 /// Build a `DspChainOutput` from a channels map with default version and
 /// no metadata.
-fn output(
-    channels: std::collections::HashMap<String, ChannelDspChain>,
-) -> DspChainOutput {
+fn output(channels: std::collections::HashMap<String, ChannelDspChain>) -> DspChainOutput {
     DspChainOutput {
         version: "1.0.0".to_string(),
         global_plugins: Vec::new(),

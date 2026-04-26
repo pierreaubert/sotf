@@ -55,6 +55,7 @@ pub fn export_dsp_chain(
     path: &Path,
     sample_rate: f64,
 ) -> anyhow::Result<()> {
+    ensure_external_export_supported(output, format)?;
     let content = match format {
         ExportFormat::CamillaDsp => export_camilladsp(output, sample_rate)?,
         ExportFormat::EqualizerApo => export_equalizer_apo(output)?,
@@ -65,6 +66,34 @@ pub fn export_dsp_chain(
     };
     std::fs::write(path, content)?;
     Ok(())
+}
+
+pub fn external_export_supported(
+    output: &DspChainOutput,
+    format: ExportFormat,
+) -> anyhow::Result<()> {
+    ensure_external_export_supported(output, format)
+}
+
+fn ensure_external_export_supported(
+    output: &DspChainOutput,
+    format: ExportFormat,
+) -> anyhow::Result<()> {
+    if output.global_plugins.is_empty()
+        && !output
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.bass_management.as_ref())
+            .and_then(|report| report.routing_graph.as_ref())
+            .is_some_and(|graph| !graph.routes.is_empty())
+    {
+        return Ok(());
+    }
+
+    anyhow::bail!(
+        "{format:?} export cannot represent routed home-cinema bass management safely. \
+         Use SotF JSON or Apply as Graph so global_plugins and route-level bass-management DSP are preserved."
+    );
 }
 
 // ============================================================================
@@ -1104,6 +1133,36 @@ mod tests {
                 bass_management: None,
                 timing_diagnostics: None,
             }),
+        }
+    }
+
+    #[test]
+    fn external_exports_reject_routed_bass_management() {
+        let mut output = make_test_output();
+        output.global_plugins.push(PluginConfigWrapper {
+            plugin_type: "matrix".to_string(),
+            parameters: json!({
+                "label": "home_cinema_bass_management",
+                "input_channel_map": [0],
+                "output_channel_map": [1],
+                "matrix": [1.0],
+            }),
+        });
+
+        for format in [
+            ExportFormat::CamillaDsp,
+            ExportFormat::EqualizerApo,
+            ExportFormat::EasyEffects,
+            ExportFormat::Wavelet,
+            ExportFormat::PipeWire,
+            ExportFormat::RoonDsp,
+        ] {
+            let err = external_export_supported(&output, format).unwrap_err();
+            assert!(
+                err.to_string()
+                    .contains("cannot represent routed home-cinema bass management safely"),
+                "unexpected error for {format:?}: {err}"
+            );
         }
     }
 

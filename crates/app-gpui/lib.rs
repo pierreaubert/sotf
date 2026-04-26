@@ -72,8 +72,8 @@ pub use components::home::image_cache::MAX_CACHE_SIZE;
 
 // Re-export UI functions for testing
 pub use ui::{
-    combined_scale_bounds, compute_responsive_scale, estimate_grid_dimensions,
-    DEFAULT_MAX_FONT_SIZE_PX, DEFAULT_MIN_FONT_SIZE_PX,
+    DEFAULT_MAX_FONT_SIZE_PX, DEFAULT_MIN_FONT_SIZE_PX, combined_scale_bounds,
+    compute_responsive_scale, estimate_grid_dimensions,
 };
 
 // Re-export room EQ rack-apply helper for testing.

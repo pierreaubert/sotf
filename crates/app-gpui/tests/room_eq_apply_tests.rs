@@ -45,10 +45,7 @@ fn eq_plugins_with_names(graph: &PluginGraph) -> Vec<(Option<String>, PluginSett
         .collect()
 }
 
-fn named_eq<'a>(
-    graph: &'a PluginGraph,
-    name: &str,
-) -> Option<&'a sotf_audio_player::Plugin> {
+fn named_eq<'a>(graph: &'a PluginGraph, name: &str) -> Option<&'a sotf_audio_player::Plugin> {
     graph
         .plugins()
         .into_iter()
@@ -71,10 +68,7 @@ fn apply_broadband_plus_main_produces_two_named_eqs() {
     let mut graph = PluginGraph::with_default_rack();
 
     let bb = vec![bb_filter(60.0, 0.7, 3.0)];
-    let main = vec![
-        main_filter(120.0, 1.2, -2.5),
-        main_filter(800.0, 2.0, -1.5),
-    ];
+    let main = vec![main_filter(120.0, 1.2, -2.5), main_filter(800.0, 2.0, -1.5)];
     let per_channel_bb = vec![bb.clone(), bb.clone()];
     let per_channel_main = vec![main.clone(), main.clone()];
 
@@ -477,9 +471,7 @@ fn old_merge_style_apply_loses_the_two_eq_distinction() {
 // broken production behavior. These cover the gap.
 // ============================================================================
 
-use autoeq::roomeq::{
-    SpectralAlignmentResult, create_alignment_plugins, create_eq_plugin,
-};
+use autoeq::roomeq::{SpectralAlignmentResult, create_alignment_plugins, create_eq_plugin};
 use math_audio_iir_fir::{Biquad, BiquadFilterType as AutoeqBiquadFilterType};
 use sotf_audio_player::room_eq_types::{ChannelDspChain, DspPluginConfig};
 
@@ -542,20 +534,8 @@ fn build_channel_dsp_from_real_emitters(
 #[test]
 fn classify_real_emitter_output_separates_broadband_from_main() {
     let main = vec![
-        Biquad::new(
-            AutoeqBiquadFilterType::Peak,
-            120.0,
-            48_000.0,
-            1.2,
-            -2.5,
-        ),
-        Biquad::new(
-            AutoeqBiquadFilterType::Peak,
-            800.0,
-            48_000.0,
-            2.0,
-            -1.5,
-        ),
+        Biquad::new(AutoeqBiquadFilterType::Peak, 120.0, 48_000.0, 1.2, -2.5),
+        Biquad::new(AutoeqBiquadFilterType::Peak, 800.0, 48_000.0, 2.0, -1.5),
     ];
     let channel = build_channel_dsp_from_real_emitters("FL", 3.0, -2.0, &main);
 

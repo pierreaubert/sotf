@@ -80,15 +80,15 @@ impl PlayerView {
                                 .size(ButtonSize::Sm)
                                 .theme(theme.to_button_theme())
                                 .on_click_event(cx.listener(move |view, _, _, cx| {
-                                        view.state.update(cx, |state, _| {
-                                            state
-                                                .app
-                                                .measurement_state
-                                                .room_eq_state
-                                                .review_selected_channel = idx;
-                                        });
-                                        cx.notify();
-                                    }))
+                                    view.state.update(cx, |state, _| {
+                                        state
+                                            .app
+                                            .measurement_state
+                                            .room_eq_state
+                                            .review_selected_channel = idx;
+                                    });
+                                    cx.notify();
+                                }))
                             }),
                         )),
                 )

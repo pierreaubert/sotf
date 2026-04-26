@@ -1,7 +1,7 @@
 //! Federation Sources settings content
 
-use crate::app::federation::test_federation_connection;
 use crate::app::constants::spacing;
+use crate::app::federation::test_federation_connection;
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;

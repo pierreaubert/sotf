@@ -37,7 +37,9 @@ impl TestScenario for FletcherMunsonScenario {
                 .graph
                 .plugins()
                 .iter()
-                .position(|p: &&sotf_audio::plugins::Plugin| matches!(p.plugin_type(), PluginType::LoudnessCompensation))
+                .position(|p: &&sotf_audio::plugins::Plugin| {
+                    matches!(p.plugin_type(), PluginType::LoudnessCompensation)
+                })
                 .expect("LoudnessCompensation plugin not found after addition");
 
             println!("LoudnessCompensation (FM) found at index {}", plugin_idx);
@@ -54,7 +56,9 @@ impl TestScenario for FletcherMunsonScenario {
                 .graph
                 .plugins()
                 .iter()
-                .position(|p: &&sotf_audio::plugins::Plugin| matches!(p.plugin_type(), PluginType::LoudnessCompensation))
+                .position(|p: &&sotf_audio::plugins::Plugin| {
+                    matches!(p.plugin_type(), PluginType::LoudnessCompensation)
+                })
                 .expect("LoudnessCompensation plugin not found for verification");
 
             let plugin = app
@@ -91,7 +95,9 @@ impl TestScenario for FletcherMunsonScenario {
                 .graph
                 .plugins()
                 .iter()
-                .position(|p: &&sotf_audio::plugins::Plugin| matches!(p.plugin_type(), PluginType::LoudnessCompensation))
+                .position(|p: &&sotf_audio::plugins::Plugin| {
+                    matches!(p.plugin_type(), PluginType::LoudnessCompensation)
+                })
                 .expect("LoudnessCompensation plugin not found");
 
             // Set Low Freq to 80 Hz (index 0 in LC PARAMS)
@@ -106,7 +112,9 @@ impl TestScenario for FletcherMunsonScenario {
                 .graph
                 .plugins()
                 .iter()
-                .position(|p: &&sotf_audio::plugins::Plugin| matches!(p.plugin_type(), PluginType::LoudnessCompensation))
+                .position(|p: &&sotf_audio::plugins::Plugin| {
+                    matches!(p.plugin_type(), PluginType::LoudnessCompensation)
+                })
                 .expect("LoudnessCompensation plugin not found");
 
             let plugin = app

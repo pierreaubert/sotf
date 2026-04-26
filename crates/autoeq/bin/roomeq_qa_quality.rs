@@ -50,8 +50,8 @@ const SEED: u64 = 42;
 const QA_MAXEVAL: usize = 15_000;
 
 /// Base config directories
-const FEM_DIR: &str = "data_tests/roomeq/generated/fem";
-const OPTIM_CONFIG_DIR: &str = "data_tests/roomeq/generated/optimiser-config";
+const FEM_DIR: &str = "crates/autoeq/data_tests/roomeq/generated/fem";
+const OPTIM_CONFIG_DIR: &str = "crates/autoeq/data_tests/roomeq/generated/optimiser-config";
 
 // Cross-mode convergence thresholds
 /// Maximum dB difference between any two modes' final curves in passband.

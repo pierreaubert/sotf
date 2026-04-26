@@ -12,8 +12,8 @@ use std::sync::atomic::AtomicBool;
 pub use sotf_audio_player::recording_types::{
     BassAnchorCaptureState, BassAnchorCaptureStatus, ChannelMapping, ChannelRecording,
     ChannelRecordingState, PlaybackDeviceConfig, PlotSmoothing, ProbeCaptureState,
-    ProbeCaptureStatus, RecordingDeviceConfig, RecordingResult, RecordingSignalType,
-    RecordingStep, SpeakerConfiguration, SplCalibrationCaptureState, SplCalibrationCaptureStatus,
+    ProbeCaptureStatus, RecordingDeviceConfig, RecordingResult, RecordingSignalType, RecordingStep,
+    SpeakerConfiguration, SplCalibrationCaptureState, SplCalibrationCaptureStatus,
 };
 
 /// Measurement-unit preference for the room-dimensions inputs on the

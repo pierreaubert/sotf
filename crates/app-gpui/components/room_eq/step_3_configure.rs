@@ -542,7 +542,12 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.de_f = value;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .de_f = value;
                         cx.notify();
                     });
                 }
@@ -551,7 +556,12 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.de_cr = value;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .de_cr = value;
                         cx.notify();
                     });
                 }
@@ -560,9 +570,18 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.strategy =
-                            value.to_string();
-                        state.app.measurement_state.room_eq_state.dropdowns.strategy_open = false;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .strategy = value.to_string();
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .strategy_open = false;
                         cx.notify();
                     });
                 }
@@ -571,7 +590,12 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |open, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state.app.measurement_state.room_eq_state.dropdowns.strategy_open = open;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .strategy_open = open;
                         cx.notify();
                     });
                 }
@@ -1698,7 +1722,9 @@ impl PlayerView {
                     // intentional: .w() is a Stateful Div method, not on Button itself —
                     // keep .build() so the segmented-button mode-selector width applies.
                     .w(px(75.0))
-                    .on_mouse_up(MouseButton::Left, cx.listener(move |view, _, _, cx| {
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(move |view, _, _, cx| {
                             view.state.update(cx, |state, _| {
                                 state
                                     .app
@@ -1708,7 +1734,8 @@ impl PlayerView {
                                     .mode = mode_val;
                             });
                             cx.notify();
-                        }))
+                        }),
+                    )
                     .into_any_element()
                 }))
         };
@@ -1958,16 +1985,16 @@ impl PlayerView {
                             .size(ButtonSize::Xs)
                             .theme(theme.to_button_theme())
                             .on_click_event(cx.listener(|view, _, _, cx| {
-                                    view.state.update(cx, |state, _| {
-                                        state
-                                            .app
-                                            .measurement_state
-                                            .room_eq_state
-                                            .dropdowns
-                                            .custom_target_modal_open = true;
-                                    });
-                                    cx.notify();
-                                })),
+                                view.state.update(cx, |state, _| {
+                                    state
+                                        .app
+                                        .measurement_state
+                                        .room_eq_state
+                                        .dropdowns
+                                        .custom_target_modal_open = true;
+                                });
+                                cx.notify();
+                            })),
                     ),
                 ),
         );
@@ -2004,9 +2031,7 @@ impl PlayerView {
                 .child(
                     VStack::new()
                         .spacing(StackSpacing::Xs)
-                        .child(Text::caption(
-                            "Flat: minimize frequency response deviation",
-                        ))
+                        .child(Text::caption("Flat: minimize frequency response deviation"))
                         .child(Text::caption(
                             "EPA: optimize perceived quality (psychoacoustic)",
                         )),

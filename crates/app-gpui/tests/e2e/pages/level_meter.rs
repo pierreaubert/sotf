@@ -55,7 +55,8 @@ impl<'a, 'b> LevelMeterPage<'a, 'b> {
 
     pub fn is_muted(&mut self, group_idx: usize) -> bool {
         self.driver.read_app(|app| {
-            app.level_meters.groups
+            app.level_meters
+                .groups
                 .get(group_idx)
                 .map(|g| g.muted)
                 .unwrap_or(false)
@@ -64,7 +65,8 @@ impl<'a, 'b> LevelMeterPage<'a, 'b> {
 
     pub fn is_soloed(&mut self, group_idx: usize) -> bool {
         self.driver.read_app(|app| {
-            app.level_meters.groups
+            app.level_meters
+                .groups
                 .get(group_idx)
                 .map(|g| g.soloed)
                 .unwrap_or(false)
@@ -73,7 +75,8 @@ impl<'a, 'b> LevelMeterPage<'a, 'b> {
 
     pub fn is_dimmed(&mut self, group_idx: usize) -> bool {
         self.driver.read_app(|app| {
-            app.level_meters.groups
+            app.level_meters
+                .groups
                 .get(group_idx)
                 .map(|g| g.dimmed)
                 .unwrap_or(false)

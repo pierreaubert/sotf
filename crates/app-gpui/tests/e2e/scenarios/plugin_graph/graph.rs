@@ -174,7 +174,9 @@ impl TestScenario for PaletteElementsScenario {
                 .graph
                 .plugins()
                 .first()
-                .map(|p: &&sotf_audio::plugins::Plugin| p.plugin_type() == sotf_audio::plugins::PluginType::EQ)
+                .map(|p: &&sotf_audio::plugins::Plugin| {
+                    p.plugin_type() == sotf_audio::plugins::PluginType::EQ
+                })
                 .unwrap_or(false)
         });
 

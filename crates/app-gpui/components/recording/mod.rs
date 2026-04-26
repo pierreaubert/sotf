@@ -46,9 +46,9 @@ impl PlayerView {
                 .into_any_element(),
             RecordingStep::Capture => self.render_recording_capture_step(cx).into_any_element(),
             RecordingStep::Probe => self.render_recording_probe_step(cx).into_any_element(),
-            RecordingStep::BassAnchor => {
-                self.render_recording_bass_anchor_step(cx).into_any_element()
-            }
+            RecordingStep::BassAnchor => self
+                .render_recording_bass_anchor_step(cx)
+                .into_any_element(),
             RecordingStep::Evaluating => {
                 self.render_recording_evaluating_step(cx).into_any_element()
             }
@@ -204,27 +204,26 @@ impl PlayerView {
                     .disabled(next_disabled)
                     .theme(button_theme.clone())
                     .on_click_event(cx.listener(|view, _, _, cx| {
-                            view.state.update(cx, |state, _| {
-                                let step = state.app.measurement_state.recording_state.step;
-                                // Transitioning out of Config still needs
-                                // to initialise channel recordings before
-                                // advancing — preserve that side-effect.
-                                if step == RecordingStep::Config {
-                                    state
-                                        .app
-                                        .measurement_state
-                                        .recording_state
-                                        .init_channel_recordings();
-                                }
-                                if step == RecordingStep::Saving {
-                                    state.app.ui_state.current_screen =
-                                        state.app.ui_state.last_screen;
-                                } else if let Some(next) = step.next() {
-                                    state.app.measurement_state.recording_state.step = next;
-                                }
-                            });
-                            cx.notify();
-                        })),
+                        view.state.update(cx, |state, _| {
+                            let step = state.app.measurement_state.recording_state.step;
+                            // Transitioning out of Config still needs
+                            // to initialise channel recordings before
+                            // advancing — preserve that side-effect.
+                            if step == RecordingStep::Config {
+                                state
+                                    .app
+                                    .measurement_state
+                                    .recording_state
+                                    .init_channel_recordings();
+                            }
+                            if step == RecordingStep::Saving {
+                                state.app.ui_state.current_screen = state.app.ui_state.last_screen;
+                            } else if let Some(next) = step.next() {
+                                state.app.measurement_state.recording_state.step = next;
+                            }
+                        });
+                        cx.notify();
+                    })),
             );
 
         // Home button for navigation back to Library

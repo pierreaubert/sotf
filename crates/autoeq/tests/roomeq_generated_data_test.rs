@@ -6,7 +6,14 @@
 use autoeq::roomeq::{FirConfig, MixedPhaseSerdeConfig, ProcessingMode, RoomConfig, optimize_room};
 use std::path::{Path, PathBuf};
 
-/// Get workspace root (two levels up from CARGO_MANIFEST_DIR = crates/autoeq)
+/// Get the autoeq crate root (CARGO_MANIFEST_DIR).
+/// roomeq test data lives under `<crate>/data_tests/roomeq/`.
+fn crate_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+/// Get workspace root (two levels up from CARGO_MANIFEST_DIR = crates/autoeq).
+/// Used for output paths under `data_generated/`.
 fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -18,7 +25,7 @@ fn workspace_root() -> PathBuf {
 
 /// Run roomeq optimization on a generated BEM scenario and verify improvement
 fn run_roomeq_on_generated(scenario_name: &str) {
-    let config_path = workspace_root()
+    let config_path = crate_root()
         .join("data_tests/roomeq/generated/bem")
         .join(scenario_name)
         .join("config.json");
@@ -261,7 +268,7 @@ fn run_roomeq_with_mode(
     mode_config: &ModeConfig,
     output_dir: &Path,
 ) -> autoeq::roomeq::RoomOptimizationResult {
-    let config_path = workspace_root()
+    let config_path = crate_root()
         .join("data_tests/roomeq/generated/bem")
         .join(scenario_name)
         .join("config.json");

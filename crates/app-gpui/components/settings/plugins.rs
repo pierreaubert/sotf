@@ -2,9 +2,9 @@
 
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
+use crate::ui::{DEFAULT_MAX_FONT_SIZE_PX, DEFAULT_MIN_FONT_SIZE_PX};
 use gpui::prelude::*;
 use gpui::*;
-use crate::ui::{DEFAULT_MAX_FONT_SIZE_PX, DEFAULT_MIN_FONT_SIZE_PX};
 use gpui_ui_kit::{HStack, NumberInput, NumberInputSize, StackSpacing, Text, TextSize, VStack};
 
 impl PlayerView {

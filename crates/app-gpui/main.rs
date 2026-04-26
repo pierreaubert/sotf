@@ -184,7 +184,12 @@ fn main() {
             let path = exe.with_file_name("sotf_startup.log");
             use std::io::Write;
             if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&path) {
-                let _ = writeln!(f, "[{}] {}", chrono::Local::now().format("%H:%M:%S%.3f"), msg);
+                let _ = writeln!(
+                    f,
+                    "[{}] {}",
+                    chrono::Local::now().format("%H:%M:%S%.3f"),
+                    msg
+                );
             }
         }
     };

@@ -88,7 +88,11 @@ impl Render for PluginDragInfo {
 // Plugin visual identity — canonical implementations in ui_plugin_shell.rs
 use super::ui_plugin_shell::{plugin_accent_color as plugin_color, plugin_icon, plugin_short_name};
 
-pub(crate) fn short_name(plugin_type: &PluginType, is_input_mon: bool, is_output_mon: bool) -> &'static str {
+pub(crate) fn short_name(
+    plugin_type: &PluginType,
+    is_input_mon: bool,
+    is_output_mon: bool,
+) -> &'static str {
     plugin_short_name(plugin_type, is_input_mon, is_output_mon, false)
 }
 
@@ -208,7 +212,9 @@ impl PlayerView {
                     // Update the parameter value via the plugin editing system
                     // (set_plugin_param already sets pending_plugin_update)
                     view.state.update(cx, |state, _cx| {
-                        state.app.set_plugin_param(drag.plugin_idx, drag.param_idx, new_value);
+                        state
+                            .app
+                            .set_plugin_param(drag.plugin_idx, drag.param_idx, new_value);
                     });
                     cx.notify();
                 } else if let Some(drag) = divider_drag {
@@ -1592,7 +1598,11 @@ impl PlayerView {
             )
             // Spacer for channel name (to align with render_gradient_meter)
             .child(
-                div().text_size(d.text_xs).mt(d.grid).opacity(0.0).child("X"), // Invisible spacer
+                div()
+                    .text_size(d.text_xs)
+                    .mt(d.grid)
+                    .opacity(0.0)
+                    .child("X"), // Invisible spacer
             )
     }
 
@@ -1796,7 +1806,11 @@ impl PlayerView {
             }
         }
 
-        div().flex().flex_col().gap(d.section).children(category_rows)
+        div()
+            .flex()
+            .flex_col()
+            .gap(d.section)
+            .children(category_rows)
     }
 
     /// Render the plugin detail/settings panel
@@ -2350,7 +2364,10 @@ impl PlayerView {
                         )
                         .into_any_element()
                     }))
-                    .child(self.render_vertical_legend(&d, &theme, true).into_any_element())
+                    .child(
+                        self.render_vertical_legend(&d, &theme, true)
+                            .into_any_element(),
+                    )
                     // Output groups (real indices → M/S/D connected to matrix plugin)
                     .children(out_groups.iter().enumerate().map(|(i, group)| {
                         self.render_meter_group(
@@ -2564,7 +2581,10 @@ impl PlayerView {
 /// If the mapping engine already has a real mapping, use it. Otherwise, create
 /// a synthetic overlay showing the controller's layout name so the UI renders
 /// the controller header even without live MIDI input.
-pub(crate) fn build_controller_overlay(controller_id: &str, engine: &MidiMappingEngine) -> MidiOverlay {
+pub(crate) fn build_controller_overlay(
+    controller_id: &str,
+    engine: &MidiMappingEngine,
+) -> MidiOverlay {
     // If the engine already has a mapping for this controller, use it
     let engine_overlay = engine.build_overlay(&[]);
     if engine_overlay.has_controller()

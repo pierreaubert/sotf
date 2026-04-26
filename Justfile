@@ -56,11 +56,11 @@ generate-roomeq-tests: generate-roomeq-tests-bem generate-roomeq-tests-fem
 
 [group('download')]
 generate-roomeq-tests-bem:
-	cargo run --bin generate-roomeq-data --release -- --solver bem --output-dir data_tests/roomeq/generated
+	cargo run --bin generate-roomeq-data --release -- --solver bem --output-dir crates/autoeq/data_tests/roomeq/generated
 
 [group('download')]
 generate-roomeq-tests-fem:
-	cargo run --bin generate-roomeq-data --release -- --solver fem --output-dir data_tests/roomeq/generated
+	cargo run --bin generate-roomeq-data --release -- --solver fem --output-dir crates/autoeq/data_tests/roomeq/generated
 
 [group('download')]
 generate-ml-dataset-muslan:

@@ -122,7 +122,9 @@ fn render_path_section(
     // Plugin list
     if plugins.is_empty() {
         section = section.child(
-            div().py(d.pad_y).child(Text::caption("Empty (pass-through)")),
+            div()
+                .py(d.pad_y)
+                .child(Text::caption("Empty (pass-through)")),
         );
     } else {
         let len = plugins.len();

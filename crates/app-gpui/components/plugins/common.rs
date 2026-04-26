@@ -1222,7 +1222,9 @@ pub fn render_interactive_transfer_curve(
                         return;
                     }
                     entity_drag.update(cx, |state, _| {
-                        let Some(ref drag) = state.app.knob_drag else { return };
+                        let Some(ref drag) = state.app.knob_drag else {
+                            return;
+                        };
                         if drag.plugin_idx != plugin_idx {
                             return;
                         }

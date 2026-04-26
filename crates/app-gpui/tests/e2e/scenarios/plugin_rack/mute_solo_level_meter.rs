@@ -34,7 +34,8 @@ impl TestScenario for MuteSoloLevelMeterScenario {
             group_count
         );
         let channel_count = meter_page.driver.read_app(|app| {
-            app.level_meters.groups
+            app.level_meters
+                .groups
                 .first()
                 .map(|g| g.channels.len())
                 .unwrap_or(0)

@@ -855,7 +855,8 @@ impl PlayerView {
                                     })
                                     .size(ButtonSize::Sm)
                                     .theme(theme.to_button_theme())
-                                    .on_click_event(cx.listener(move |view, _, _, cx| {
+                                    .on_click_event(
+                                        cx.listener(move |view, _, _, cx| {
                                             view.state.update(cx, |state, _cx| {
                                                 state
                                                     .app
@@ -865,7 +866,8 @@ impl PlayerView {
                                                     .mode = mode_value;
                                             });
                                             cx.notify();
-                                        }))
+                                        }),
+                                    )
                                 }),
                             ))
                             .child(Text::caption(current_mode.description())),
@@ -916,7 +918,8 @@ impl PlayerView {
                                                 })
                                                 .size(ButtonSize::Sm)
                                                 .theme(theme.to_button_theme())
-                                                .on_click_event(cx.listener(move |view, _, _, cx| {
+                                                .on_click_event(cx.listener(
+                                                    move |view, _, _, cx| {
                                                         view.state.update(cx, |state, _cx| {
                                                             state
                                                                 .app
@@ -926,7 +929,8 @@ impl PlayerView {
                                                                 .target_curve = curve_value;
                                                         });
                                                         cx.notify();
-                                                    }))
+                                                    },
+                                                ))
                                             },
                                         ),
                                     ))

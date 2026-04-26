@@ -288,12 +288,11 @@ impl PlayerView {
                             .status_message = format!("Optimization failed: {}", e);
                         // Toast in case the user is no longer looking at the
                         // optimisation step's inline banner.
-                        state.app.ui_state.toast_message = Some(
-                            crate::app::types::ToastMessage::error(format!(
+                        state.app.ui_state.toast_message =
+                            Some(crate::app::types::ToastMessage::error(format!(
                                 "Optimization failed: {}",
                                 e
-                            )),
-                        );
+                            )));
                     }
                 }
                 cx.notify();

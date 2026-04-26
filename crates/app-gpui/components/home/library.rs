@@ -57,10 +57,9 @@ impl PlayerView {
         // Selection filters and counts for each category
         let window_width = state.app.ui_state.window_width;
         let window_height = state.app.ui_state.window_height;
-        let responsive_scale =
-            crate::ui::compute_responsive_scale(window_width, window_height);
-        let effective_rem = 16.0 * (state.app.ui_state.font_scale * responsive_scale)
-            .clamp(
+        let responsive_scale = crate::ui::compute_responsive_scale(window_width, window_height);
+        let effective_rem = 16.0
+            * (state.app.ui_state.font_scale * responsive_scale).clamp(
                 crate::ui::DEFAULT_MIN_FONT_SIZE_PX / 16.0,
                 crate::ui::DEFAULT_MAX_FONT_SIZE_PX / 16.0,
             );
@@ -233,7 +232,9 @@ impl PlayerView {
                 el.child(
                     div()
                         .flex()
-                        .when(window_width_rems < BREAKPOINT_NARROW_LAYOUT_REMS, |el| el.flex_col())
+                        .when(window_width_rems < BREAKPOINT_NARROW_LAYOUT_REMS, |el| {
+                            el.flex_col()
+                        })
                         .when(window_width_rems >= BREAKPOINT_NARROW_LAYOUT_REMS, |el| {
                             el.flex_wrap()
                         })
@@ -624,7 +625,8 @@ impl PlayerView {
                         })
                         .size(ButtonSize::Xs)
                         .theme(theme.to_button_theme())
-                        .on_click_event(cx.listener(move |view, _: &ClickEvent, _window, cx| {
+                        .on_click_event(cx.listener(
+                            move |view, _: &ClickEvent, _window, cx| {
                                 view.state.update(cx, |state, _cx| {
                                     if state.app.library_state.selected_decade == Some((start, end))
                                     {
@@ -639,7 +641,8 @@ impl PlayerView {
                                     state.app.library_state.selected_index = 0;
                                 });
                                 cx.notify();
-                            }))
+                            },
+                        ))
                     })),
             )
             .when_some(selected_decade, |el, (decade_start, decade_end)| {
@@ -673,7 +676,8 @@ impl PlayerView {
                             })
                             .size(ButtonSize::Xs)
                             .theme(theme.to_button_theme())
-                            .on_click_event(cx.listener(move |view, _: &ClickEvent, _window, cx| {
+                            .on_click_event(cx.listener(
+                                move |view, _: &ClickEvent, _window, cx| {
                                     view.state.update(cx, |state, _cx| {
                                         if state.app.library_state.selected_year == Some(year) {
                                             state.app.library_state.selected_year = None;
@@ -683,7 +687,8 @@ impl PlayerView {
                                         state.app.library_state.selected_index = 0;
                                     });
                                     cx.notify();
-                                }))
+                                },
+                            ))
                         })),
                 )
             })
@@ -764,7 +769,8 @@ impl PlayerView {
                 })
                 .size(ButtonSize::Xs)
                 .theme(theme.to_button_theme())
-                .on_click_event(cx.listener(move |view, _: &ClickEvent, _window, cx| {
+                .on_click_event(cx.listener(
+                    move |view, _: &ClickEvent, _window, cx| {
                         view.state.update(cx, |state, _cx| {
                             if state.app.library_state.selected_album_letter == Some(letter) {
                                 state.app.library_state.selected_album_letter = None;
@@ -774,7 +780,8 @@ impl PlayerView {
                             state.app.library_state.selected_index = 0;
                         });
                         cx.notify();
-                    }))
+                    },
+                ))
             }))
     }
 
@@ -888,7 +895,8 @@ impl PlayerView {
                         })
                         .size(ButtonSize::Xs)
                         .theme(theme.to_button_theme())
-                        .on_click_event(cx.listener(move |view, _: &ClickEvent, _window, cx| {
+                        .on_click_event(cx.listener(
+                            move |view, _: &ClickEvent, _window, cx| {
                                 view.state.update(cx, |state, _cx| {
                                     if state.app.library_state.selected_artist_letter
                                         == Some(letter)
@@ -903,7 +911,8 @@ impl PlayerView {
                                     state.app.library_state.selected_index = 0;
                                 });
                                 cx.notify();
-                            }))
+                            },
+                        ))
                     })),
             )
             // Artist names row (when a letter is selected)
@@ -931,7 +940,8 @@ impl PlayerView {
                             })
                             .size(ButtonSize::Xs)
                             .theme(theme.to_button_theme())
-                            .on_click_event(cx.listener(move |view, _: &ClickEvent, _window, cx| {
+                            .on_click_event(cx.listener(
+                                move |view, _: &ClickEvent, _window, cx| {
                                     let artist_to_set = artist_clone.clone();
                                     view.state.update(cx, |state, _cx| {
                                         if state.app.library_state.selected_artist.as_ref()
@@ -945,7 +955,8 @@ impl PlayerView {
                                         state.app.library_state.selected_index = 0;
                                     });
                                     cx.notify();
-                                }))
+                                },
+                            ))
                         })),
                 )
             })
@@ -1061,7 +1072,8 @@ impl PlayerView {
                         })
                         .size(ButtonSize::Xs)
                         .theme(theme.to_button_theme())
-                        .on_click_event(cx.listener(move |view, _: &ClickEvent, _window, cx| {
+                        .on_click_event(cx.listener(
+                            move |view, _: &ClickEvent, _window, cx| {
                                 view.state.update(cx, |state, _cx| {
                                     if state.app.library_state.selected_composer_letter
                                         == Some(letter)
@@ -1076,7 +1088,8 @@ impl PlayerView {
                                     state.app.library_state.selected_index = 0;
                                 });
                                 cx.notify();
-                            }))
+                            },
+                        ))
                     })),
             )
             // Composer names row (when a letter is selected)
@@ -1104,7 +1117,8 @@ impl PlayerView {
                             })
                             .size(ButtonSize::Xs)
                             .theme(theme.to_button_theme())
-                            .on_click_event(cx.listener(move |view, _: &ClickEvent, _window, cx| {
+                            .on_click_event(cx.listener(
+                                move |view, _: &ClickEvent, _window, cx| {
                                     let composer_to_set = composer_clone.clone();
                                     view.state.update(cx, |state, _cx| {
                                         if state.app.library_state.selected_composer.as_ref()
@@ -1118,7 +1132,8 @@ impl PlayerView {
                                         state.app.library_state.selected_index = 0;
                                     });
                                     cx.notify();
-                                }))
+                                },
+                            ))
                         })),
                 )
             })
@@ -1195,7 +1210,8 @@ impl PlayerView {
                 })
                 .size(ButtonSize::Xs)
                 .theme(theme.to_button_theme())
-                .on_click_event(cx.listener(move |view, _: &ClickEvent, _window, cx| {
+                .on_click_event(cx.listener(
+                    move |view, _: &ClickEvent, _window, cx| {
                         view.state.update(cx, |state, _cx| {
                             if state.app.library_state.selected_track_range == Some((min, max)) {
                                 state.app.library_state.selected_track_range = None;
@@ -1205,7 +1221,8 @@ impl PlayerView {
                             state.app.library_state.selected_index = 0;
                         });
                         cx.notify();
-                    }))
+                    },
+                ))
             }))
     }
 
@@ -1244,13 +1261,15 @@ impl PlayerView {
                                 .variant(ButtonVariant::Secondary)
                                 .size(ButtonSize::Xs)
                                 .theme(theme.to_button_theme())
-                                .on_click_event(cx.listener(move |view, _: &ClickEvent, _window, cx| {
+                                .on_click_event(cx.listener(
+                                    move |view, _: &ClickEvent, _window, cx| {
                                         view.state.update(cx, |state, _cx| {
                                             state.app.library_state.selected_genre = None;
                                             state.app.library_state.selected_index = 0;
                                         });
                                         cx.notify();
-                                    })),
+                                    },
+                                )),
                         )
                         .child(
                             div()
@@ -1370,7 +1389,9 @@ impl PlayerView {
                             // intentional: .w() is a Stateful Div method, not on Button itself —
                             // keep .build() so the segmented-button width still applies.
                             .w(px(size))
-                            .on_mouse_up(MouseButton::Left, cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                                     let action = action.clone();
                                     view.state.update(cx, |state, _cx| {
                                         match action {
@@ -1381,7 +1402,8 @@ impl PlayerView {
                                         state.app.library_state.selected_index = 0;
                                     });
                                     cx.notify();
-                                }))
+                                }),
+                            )
                     })),
             )
             .into_any_element()
@@ -1467,16 +1489,15 @@ impl PlayerView {
                     });
                     // Double-click adds to queue
                     if event.click_count() == 2 {
-                        view.state.update(cx, |state, _cx| {
-                            match state.app.add_album_to_queue() {
+                        view.state
+                            .update(cx, |state, _cx| match state.app.add_album_to_queue() {
                                 Ok(Some(path)) => Self::play_track(state, path),
                                 Err(e) => {
                                     state.app.ui_state.toast_message =
                                         Some(crate::app::ToastMessage::error(e));
                                 }
                                 _ => {}
-                            }
-                        });
+                            });
                     }
                     cx.notify();
                 }))
@@ -1571,10 +1592,10 @@ impl PlayerView {
         .selected(is_active)
         .theme(theme.to_button_theme())
         .on_click_event(cx.listener(move |view, _: &ClickEvent, _window, cx| {
-                view.state.update(cx, |state, _cx| {
-                    state.app.set_channel_filter(filter);
-                });
-                cx.notify();
-            }))
+            view.state.update(cx, |state, _cx| {
+                state.app.set_channel_filter(filter);
+            });
+            cx.notify();
+        }))
     }
 }

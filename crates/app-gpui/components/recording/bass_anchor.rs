@@ -78,7 +78,11 @@ impl PlayerView {
                     ch.bass_anchor_phase_deg,
                     ch.bass_anchor_magnitude,
                     ch.bass_anchor_stability_deg,
-                    if reliable { "" } else { "  ⚠ unreliable (> 20°)" }
+                    if reliable {
+                        ""
+                    } else {
+                        "  ⚠ unreliable (> 20°)"
+                    }
                 );
                 column = column.child(Text::new(line).size(TextSize::Sm));
             }

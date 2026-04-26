@@ -657,11 +657,10 @@ impl PlayerView {
                             HStack::new()
                                 .spacing(StackSpacing::Sm)
                                 .align(StackAlign::Center)
-                                .child(
-                                    div().w(px(80.0)).child( // intentional: channel label column
-                                        Text::label(channel_name.clone()).color(theme.text_primary),
-                                    ),
-                                )
+                                .child(div().w(px(80.0)).child(
+                                    // intentional: channel label column
+                                    Text::label(channel_name.clone()).color(theme.text_primary),
+                                ))
                                 .child(
                                     div()
                                         .w(px(380.0)) // intentional: speaker input field width

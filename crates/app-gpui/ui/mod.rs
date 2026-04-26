@@ -382,8 +382,10 @@ impl PlayerView {
         } else if let Some(ref err) = playback_state.last_error {
             log::error!("[GPUI] Playback error: {}", err);
             state.app.playback.is_playing = false;
-            state.app.ui_state.toast_message =
-                Some(crate::app::ToastMessage::error(format!("Playback error: {}", err)));
+            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(format!(
+                "Playback error: {}",
+                err
+            )));
         } else if playback_state.engine_restarted {
             log::info!("[GPUI] Engine auto-restarted after crash, resuming playback");
             state.app.ui_state.toast_message = Some(crate::app::ToastMessage::info(
@@ -397,8 +399,7 @@ impl PlayerView {
             if let Some(path) = state.app.get_current_track_path() {
                 state.app.start_track_tracking(path);
             }
-        } else if (playback_state.track_ended
-            || (was_playing && !playback_state.is_playing))
+        } else if (playback_state.track_ended || (was_playing && !playback_state.is_playing))
             && state.app.playback.current_queue_index.is_some()
         {
             // Track ended — auto-advance to next in queue
@@ -426,9 +427,7 @@ impl PlayerView {
         let duration = state.app.playback.duration_secs;
         let near_end = duration > 0.0 && position > 0.0 && (duration - position) < 10.0;
 
-        if near_end
-            && let Some(next_track) = state.app.queue_state.peek_next_track()
-        {
+        if near_end && let Some(next_track) = state.app.queue_state.peek_next_track() {
             let next_ch = next_track.channels.unwrap_or(2) as usize;
             let current_ch = state
                 .app
@@ -762,7 +761,9 @@ impl PlayerView {
                 return;
             }
             if state.app.ui_state.current_screen == Screen::Queue {
-                state.app.remove_from_queue(state.app.queue_state.selected_index);
+                state
+                    .app
+                    .remove_from_queue(state.app.queue_state.selected_index);
             }
         });
         cx.notify();
@@ -791,33 +792,29 @@ impl PlayerView {
 
     fn add_to_queue(&mut self, _: &AddToQueue, _: &mut Window, cx: &mut Context<Self>) {
         log::info!("[UI] AddToQueue action handler triggered");
-        self.state.update(cx, |state, _cx| {
-            match state.app.add_album_to_queue() {
+        self.state
+            .update(cx, |state, _cx| match state.app.add_album_to_queue() {
                 Ok(Some(path)) => Self::play_track(state, path),
                 Err(e) => {
                     log::warn!("[UI] Cannot add to queue: {}", e);
-                    state.app.ui_state.toast_message =
-                        Some(crate::app::ToastMessage::error(e));
+                    state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(e));
                 }
                 _ => {}
-            }
-        });
+            });
         cx.notify();
     }
 
     fn play_now(&mut self, _: &PlayNow, _: &mut Window, cx: &mut Context<Self>) {
         log::info!("[UI] PlayNow action handler triggered");
-        self.state.update(cx, |state, _cx| {
-            match state.app.play_album_now() {
+        self.state
+            .update(cx, |state, _cx| match state.app.play_album_now() {
                 Ok(Some(path)) => Self::play_track(state, path),
                 Err(e) => {
                     log::warn!("[UI] Cannot play album: {}", e);
-                    state.app.ui_state.toast_message =
-                        Some(crate::app::ToastMessage::error(e));
+                    state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(e));
                 }
                 _ => {}
-            }
-        });
+            });
         cx.notify();
     }
 
@@ -1074,9 +1071,10 @@ impl PlayerView {
         } else {
             state.app.playback.is_playing = true;
             if let Some(queue_index) = state.app.playback.current_queue_index {
-                state
-                    .app
-                    .record_playback_started(queue_index, state.app.queue_state.current_track_path());
+                state.app.record_playback_started(
+                    queue_index,
+                    state.app.queue_state.current_track_path(),
+                );
             }
             if let Some(path) = state.app.queue_state.current_track_path() {
                 state.app.start_track_tracking(path);
@@ -1248,7 +1246,7 @@ impl PlayerView {
                                 let param_idx = if path_id == "a" { 9 } else { 10 };
                                 state_entity.update(&mut cx.clone(), |state, cx| {
                                     // AB Compare configs are JSON, not file paths — error won't occur
-                                let _ = state
+                                    let _ = state
                                         .app
                                         .set_plugin_param_string(plugin_idx, param_idx, content);
                                     // Store the source file path for display
@@ -1393,8 +1391,13 @@ impl PlayerView {
             )
         };
 
-        let (columns, rows) =
-            estimate_grid_dimensions(window_width, window_height, font_scale, min_font_px, max_font_px);
+        let (columns, rows) = estimate_grid_dimensions(
+            window_width,
+            window_height,
+            font_scale,
+            min_font_px,
+            max_font_px,
+        );
 
         self.state.update(cx, |state, _cx| {
             let app = &mut state.app;

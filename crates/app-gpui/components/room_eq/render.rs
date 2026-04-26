@@ -516,9 +516,7 @@ fn render_response_comparison_graph(
     // normalize_to_target shifts are deferred until after trend computation.
     // First, subtract the target curve (if normalizing) so the target becomes 0 dB.
     let (original_values, corrected_values): (Vec<f64>, Vec<f64>) =
-        if normalize_to_target
-            && let Some(ref target_vals) = target_interpolated
-        {
+        if normalize_to_target && let Some(ref target_vals) = target_interpolated {
             // Subtract target from raw curves (target becomes 0 dB everywhere)
             let orig: Vec<f64> = original_values_raw
                 .iter()
@@ -539,10 +537,7 @@ fn render_response_comparison_graph(
             );
             (
                 original_values_raw.iter().map(|&db| db - offset).collect(),
-                corrected_values_raw
-                    .iter()
-                    .map(|&db| db - offset)
-                    .collect(),
+                corrected_values_raw.iter().map(|&db| db - offset).collect(),
             )
         };
 
@@ -659,8 +654,14 @@ fn render_response_comparison_graph(
                 .map(|(s, i)| s * log_1k + i)
                 .unwrap_or_else(|| interpolate_value_at(&frequencies, &corrected_smooth, 1000.0));
             (
-                original_smooth.iter().map(|&v| v - orig_offset).collect::<Vec<_>>(),
-                corrected_smooth.iter().map(|&v| v - corr_offset).collect::<Vec<_>>(),
+                original_smooth
+                    .iter()
+                    .map(|&v| v - orig_offset)
+                    .collect::<Vec<_>>(),
+                corrected_smooth
+                    .iter()
+                    .map(|&v| v - corr_offset)
+                    .collect::<Vec<_>>(),
                 orig_trend.map(|(s, i)| (s, i - orig_offset)),
                 corr_trend.map(|(s, i)| (s, i - corr_offset)),
             )
@@ -865,7 +866,13 @@ fn render_filter_plot(
     };
 
     let filter_response_at = |f: &crate::app::types::EqFilterConfig, freq: f64| -> f64 {
-        let biquad = Biquad::new(parse_type(&f.filter_type), f.frequency, SAMPLE_RATE, f.q, f.gain_db);
+        let biquad = Biquad::new(
+            parse_type(&f.filter_type),
+            f.frequency,
+            SAMPLE_RATE,
+            f.q,
+            f.gain_db,
+        );
         biquad.log_result(freq)
     };
 
@@ -881,7 +888,12 @@ fn render_filter_plot(
     let eq_response: Vec<f64> = sanitize(
         &frequencies
             .iter()
-            .map(|&freq| all_filters.iter().map(|f| filter_response_at(f, freq)).sum::<f64>())
+            .map(|&freq| {
+                all_filters
+                    .iter()
+                    .map(|f| filter_response_at(f, freq))
+                    .sum::<f64>()
+            })
             .collect::<Vec<_>>(),
     );
 
@@ -903,7 +915,10 @@ fn render_filter_plot(
     // Main EQ filters (parametric IIR biquads from the room optimizer).
     for (i, filter) in eq_filters.iter().enumerate() {
         let resp = sanitize(
-            &frequencies.iter().map(|&f| filter_response_at(filter, f)).collect::<Vec<_>>(),
+            &frequencies
+                .iter()
+                .map(|&f| filter_response_at(filter, f))
+                .collect::<Vec<_>>(),
         );
         let color = filter_colors[i % filter_colors.len()];
         let label = format!(
@@ -921,7 +936,10 @@ fn render_filter_plot(
     const BB_COLOR: u32 = 0x8B4513; // saddle brown — distinct from PK palette
     for (i, filter) in broadband_filters.iter().enumerate() {
         let resp = sanitize(
-            &frequencies.iter().map(|&f| filter_response_at(filter, f)).collect::<Vec<_>>(),
+            &frequencies
+                .iter()
+                .map(|&f| filter_response_at(filter, f))
+                .collect::<Vec<_>>(),
         );
         let label = format!(
             "Broadband {} {} {:.0}Hz",
@@ -988,15 +1006,11 @@ fn render_filter_plot(
         subtitle_parts.push(format!("{} IIR peak filters", iir_count));
     }
     if bb_count > 0 {
-        subtitle_parts.push(format!(
-            "{} broadband pre-corrections (dashed)",
-            bb_count
-        ));
+        subtitle_parts.push(format!("{} broadband pre-corrections (dashed)", bb_count));
     }
     if has_fir {
-        subtitle_parts.push(
-            "FIR correction applied (magnitude included in Corrected curve)".to_string(),
-        );
+        subtitle_parts
+            .push("FIR correction applied (magnitude included in Corrected curve)".to_string());
     }
     let subtitle = if subtitle_parts.is_empty() {
         None
@@ -1013,11 +1027,7 @@ fn render_filter_plot(
                 .color(theme.text_primary),
         )
         .when_some(subtitle, |el, s| {
-            el.child(
-                Text::new(s)
-                    .size(TextSize::Xs)
-                    .color(theme.text_secondary),
-            )
+            el.child(Text::new(s).size(TextSize::Xs).color(theme.text_secondary))
         })
         .when_some(chart_element, |el, c| el.child(c))
         .into_any_element()
@@ -1360,7 +1370,11 @@ fn render_filter_table(
 
     if filters.is_empty() {
         return div()
-            .child(render_empty_state(IconName::AudioWaveform, "No filters", theme))
+            .child(render_empty_state(
+                IconName::AudioWaveform,
+                "No filters",
+                theme,
+            ))
             .into_any_element();
     }
 

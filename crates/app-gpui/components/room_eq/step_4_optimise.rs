@@ -1,7 +1,7 @@
 use crate::app::types::room_eq::InteractiveChartStateWrapper;
 use crate::components::design::Ds;
-use crate::components::icons::{Icon, IconName, IconSize};
 use crate::components::graphs::common::theme_to_chart_theme;
+use crate::components::icons::{Icon, IconName, IconSize};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -313,11 +313,7 @@ impl PlayerView {
                         let channels_text = if channel_names.is_empty() {
                             "None".to_string()
                         } else {
-                            format!(
-                                "{}: {}",
-                                channel_names.len(),
-                                channel_names.join(", ")
-                            )
+                            format!("{}: {}", channel_names.len(), channel_names.join(", "))
                         };
 
                         let refine_text = if param_refine {
@@ -341,24 +337,12 @@ impl PlayerView {
                             .child(
                                 HStack::new()
                                     .spacing(StackSpacing::Md)
-                                    .child(pair(
-                                        "Filters",
-                                        param_num_filters.to_string(),
-                                    ))
-                                    .child(pair(
-                                        "Iter",
-                                        param_max_iter.to_string(),
-                                    ))
-                                    .child(pair(
-                                        "Pop",
-                                        param_population.to_string(),
-                                    ))
+                                    .child(pair("Filters", param_num_filters.to_string()))
+                                    .child(pair("Iter", param_max_iter.to_string()))
+                                    .child(pair("Pop", param_population.to_string()))
                                     .child(pair(
                                         "Freq",
-                                        format!(
-                                            "{:.0}-{:.0} Hz",
-                                            param_min_freq, param_max_freq
-                                        ),
+                                        format!("{:.0}-{:.0} Hz", param_min_freq, param_max_freq),
                                     ))
                                     .child(pair(
                                         "Q",
@@ -366,10 +350,7 @@ impl PlayerView {
                                     ))
                                     .child(pair(
                                         "dB",
-                                        format!(
-                                            "{:.1}/{:.1}",
-                                            param_min_db, param_max_db
-                                        ),
+                                        format!("{:.1}/{:.1}", param_min_db, param_max_db),
                                     )),
                             )
                             // Row 3: feature flags — only show the enabled
@@ -378,9 +359,7 @@ impl PlayerView {
                                 HStack::new()
                                     .spacing(StackSpacing::Md)
                                     .child(pair("Refine", refine_text))
-                                    .when(param_psychoacoustic, |h| {
-                                        h.child(chip("Psychoacoustic"))
-                                    })
+                                    .when(param_psychoacoustic, |h| h.child(chip("Psychoacoustic")))
                                     .when(param_asymmetric_loss, |h| {
                                         h.child(chip("Asymmetric Loss"))
                                     })
@@ -591,10 +570,9 @@ impl PlayerView {
                             .values()
                             .flat_map(|(_, vals)| vals.iter().copied())
                             .filter(|v| v.is_finite())
-                            .fold(
-                                (f64::INFINITY, f64::NEG_INFINITY),
-                                |(min, max), v| (min.min(v), max.max(v)),
-                            );
+                            .fold((f64::INFINITY, f64::NEG_INFINITY), |(min, max), v| {
+                                (min.min(v), max.max(v))
+                            });
                         // Pad by 10% of the span (or 0.5 if degenerate)
                         // so extremes don't hug the chart edge.
                         let (y2_lo, y2_hi) = if epa_min.is_finite() && epa_max.is_finite() {
@@ -954,8 +932,14 @@ impl PlayerView {
                 loop {
                     // Block until at least one message arrives (or channel closes).
                     let first = progress_rx.recv().await;
-                    let Ok((mut iteration, mut loss, mut overall_progress, mut speaker, mut message, first_epa)) =
-                        first
+                    let Ok((
+                        mut iteration,
+                        mut loss,
+                        mut overall_progress,
+                        mut speaker,
+                        mut message,
+                        first_epa,
+                    )) = first
                     else {
                         break;
                     };

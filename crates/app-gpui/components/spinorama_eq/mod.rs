@@ -439,28 +439,27 @@ impl PlayerView {
                     .disabled(is_busy)
                     .theme(button_theme.clone())
                     .on_click_event(cx.listener(|view, _, _, cx| {
-                            view.state.update(cx, |state, _| {
-                                match state.app.measurement_state.spinorama_eq_state.step {
-                                    SpinoramaStep::SelectSpeaker => {
-                                        state.app.ui_state.current_screen =
-                                            state.app.ui_state.last_screen;
-                                    }
-                                    _ => {
-                                        if let Some(prev) = state
-                                            .app
-                                            .measurement_state
-                                            .spinorama_eq_state
-                                            .step
-                                            .previous()
-                                        {
-                                            state.app.measurement_state.spinorama_eq_state.step =
-                                                prev;
-                                        }
+                        view.state.update(cx, |state, _| {
+                            match state.app.measurement_state.spinorama_eq_state.step {
+                                SpinoramaStep::SelectSpeaker => {
+                                    state.app.ui_state.current_screen =
+                                        state.app.ui_state.last_screen;
+                                }
+                                _ => {
+                                    if let Some(prev) = state
+                                        .app
+                                        .measurement_state
+                                        .spinorama_eq_state
+                                        .step
+                                        .previous()
+                                    {
+                                        state.app.measurement_state.spinorama_eq_state.step = prev;
                                     }
                                 }
-                            });
-                            cx.notify();
-                        })),
+                            }
+                        });
+                        cx.notify();
+                    })),
             )
             .child(
                 Button::new("next", next_label)
@@ -469,28 +468,23 @@ impl PlayerView {
                     .disabled(!can_go_next || is_busy)
                     .theme(button_theme.clone())
                     .on_click_event(cx.listener(|view, _, _, cx| {
-                            view.state.update(cx, |state, _| {
-                                match state.app.measurement_state.spinorama_eq_state.step {
-                                    SpinoramaStep::Export => {
-                                        state.app.ui_state.current_screen =
-                                            state.app.ui_state.last_screen;
-                                    }
-                                    _ => {
-                                        if let Some(next) = state
-                                            .app
-                                            .measurement_state
-                                            .spinorama_eq_state
-                                            .step
-                                            .next()
-                                        {
-                                            state.app.measurement_state.spinorama_eq_state.step =
-                                                next;
-                                        }
+                        view.state.update(cx, |state, _| {
+                            match state.app.measurement_state.spinorama_eq_state.step {
+                                SpinoramaStep::Export => {
+                                    state.app.ui_state.current_screen =
+                                        state.app.ui_state.last_screen;
+                                }
+                                _ => {
+                                    if let Some(next) =
+                                        state.app.measurement_state.spinorama_eq_state.step.next()
+                                    {
+                                        state.app.measurement_state.spinorama_eq_state.step = next;
                                     }
                                 }
-                            });
-                            cx.notify();
-                        })),
+                            }
+                        });
+                        cx.notify();
+                    })),
             );
 
         // Home button for navigation back to Library

@@ -41,9 +41,9 @@ const SEED: u64 = 42;
 
 const QA_MAXEVAL: usize = 15000; // Fast mode for QA
 
-const FEM_DIR: &str = "data_tests/roomeq/generated/fem";
-const BEM_DIR: &str = "data_tests/roomeq/generated/bem";
-const OPTIM_CONFIG_DIR: &str = "data_tests/roomeq/generated/optimiser-config";
+const FEM_DIR: &str = "crates/autoeq/data_tests/roomeq/generated/fem";
+const BEM_DIR: &str = "crates/autoeq/data_tests/roomeq/generated/bem";
+const OPTIM_CONFIG_DIR: &str = "crates/autoeq/data_tests/roomeq/generated/optimiser-config";
 
 // ---------------------------------------------------------------------------
 // Room Size Classification & Thresholds

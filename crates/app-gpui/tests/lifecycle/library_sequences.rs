@@ -47,8 +47,20 @@ fn create_diverse_library() -> Vec<Album> {
         make_album("A Love Supreme", "John Coltrane", 1965, "Jazz", 2),
         make_album("Time Out", "Dave Brubeck", 1959, "Jazz", 2),
         // Classical (surround 5.1)
-        make_album("Beethoven Symphony No. 9", "Berlin Philharmonic", 2010, "Classical", 6),
-        make_album("Mozart Requiem", "Vienna Philharmonic", 2015, "Classical", 6),
+        make_album(
+            "Beethoven Symphony No. 9",
+            "Berlin Philharmonic",
+            2010,
+            "Classical",
+            6,
+        ),
+        make_album(
+            "Mozart Requiem",
+            "Vienna Philharmonic",
+            2015,
+            "Classical",
+            6,
+        ),
         // Electronic (stereo)
         make_album("Discovery", "Daft Punk", 2001, "Electronic", 2),
         make_album("Random Access Memories", "Daft Punk", 2013, "Electronic", 2),
@@ -149,7 +161,10 @@ fn test_filter_then_search_workflow() {
     ctrl.set_search_query("Beethoven".to_string());
     ctrl.ensure_cache_valid();
     let search_in_filter = ctrl.filtered_albums().len();
-    assert_eq!(search_in_filter, 1, "Should find 1 Beethoven surround album");
+    assert_eq!(
+        search_in_filter, 1,
+        "Should find 1 Beethoven surround album"
+    );
 
     // Clear search, channel filter should persist
     ctrl.clear_search();
@@ -189,7 +204,10 @@ fn test_cascading_filter_workflow() {
         rock_70s, 3,
         "Should have 3 Rock albums from 70s (1971, 1973, 1979)"
     );
-    assert!(rock_70s <= rock, "Adding filter should not increase results");
+    assert!(
+        rock_70s <= rock,
+        "Adding filter should not increase results"
+    );
 
     // Clear genre, keep decade
     ctrl.selected_genre = None;
@@ -274,7 +292,13 @@ fn test_artist_navigation_workflow() {
 fn test_special_char_artist_letter() {
     let mut albums = create_diverse_library();
     albums.push(make_album("1984", "Van Halen", 1984, "Rock", 2));
-    albums.push(make_album("2001 Space Odyssey", "Various", 1968, "Soundtrack", 2));
+    albums.push(make_album(
+        "2001 Space Odyssey",
+        "Various",
+        1968,
+        "Soundtrack",
+        2,
+    ));
 
     let mut ctrl = controller_with_albums(albums);
 
@@ -301,7 +325,10 @@ fn test_pagination_with_filters() {
     ctrl.ensure_cache_valid();
 
     let total_pages = ctrl.total_pages();
-    assert!(total_pages >= 3, "Should have multiple pages with 12 albums / 3 per page");
+    assert!(
+        total_pages >= 3,
+        "Should have multiple pages with 12 albums / 3 per page"
+    );
 
     // Apply genre filter that reduces results
     ctrl.selected_genre = Some("Jazz".to_string());

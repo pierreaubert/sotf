@@ -1270,9 +1270,8 @@ impl App {
         window_geometry: Option<crate::config::WindowGeometry>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         use crate::config::{Config, PanelLayout};
-        let geometry = window_geometry.unwrap_or_else(|| {
-            self.last_saved_geometry.clone().unwrap_or_default()
-        });
+        let geometry =
+            window_geometry.unwrap_or_else(|| self.last_saved_geometry.clone().unwrap_or_default());
         // Update cache so future saves without geometry don't need disk I/O
         self.last_saved_geometry = Some(geometry.clone());
         let config = Config {

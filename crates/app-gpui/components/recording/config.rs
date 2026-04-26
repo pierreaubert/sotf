@@ -53,8 +53,9 @@ impl PlayerView {
         let recording_content = self.render_recording_device_content(cx).into_any_element();
         let calibration_content = self.render_mic_calibration_content(cx).into_any_element();
         let output_dir_content = self.render_output_directory_content(cx).into_any_element();
-        let advanced_sweep_content =
-            self.render_advanced_sweep_quality_content(cx).into_any_element();
+        let advanced_sweep_content = self
+            .render_advanced_sweep_quality_content(cx)
+            .into_any_element();
 
         VStack::new()
             .spacing(StackSpacing::Md)
@@ -63,10 +64,7 @@ impl PlayerView {
                 VStack::new()
                     .spacing(StackSpacing::Xs)
                     .child(Heading::h4("Audio Device Configuration"))
-                    .child(
-                        Text::new(translations.recording_config_desc)
-                            .size(TextSize::Xs),
-                    ),
+                    .child(Text::new(translations.recording_config_desc).size(TextSize::Xs)),
             )
             .child(
                 // Accordion with five sections
@@ -74,8 +72,7 @@ impl PlayerView {
                     .mode(AccordionMode::Multiple)
                     .expanded(expanded_sections)
                     .item(
-                        AccordionItem::new("playback", "Playback Device")
-                            .content(playback_content),
+                        AccordionItem::new("playback", "Playback Device").content(playback_content),
                     )
                     .item(
                         AccordionItem::new("recording", "Recording Device")
@@ -90,19 +87,19 @@ impl PlayerView {
                             .content(output_dir_content),
                     )
                     .item(
-                        AccordionItem::new(
-                            "advanced_sweep",
-                            "Advanced: Measurement Quality",
-                        )
-                        .content(advanced_sweep_content),
+                        AccordionItem::new("advanced_sweep", "Advanced: Measurement Quality")
+                            .content(advanced_sweep_content),
                     )
                     .on_change({
                         let view = view.clone();
                         move |item_id, is_expanded, _window, cx| {
                             let _ = view.update(cx, |this, cx| {
                                 this.state.update(cx, |state, _| {
-                                    let expanded =
-                                        &mut state.app.measurement_state.recording_state.config_accordion_expanded;
+                                    let expanded = &mut state
+                                        .app
+                                        .measurement_state
+                                        .recording_state
+                                        .config_accordion_expanded;
                                     if is_expanded {
                                         if !expanded.contains(item_id) {
                                             expanded.push(item_id.clone());
@@ -457,11 +454,9 @@ impl PlayerView {
                         )
                     }),
             )
-            .child(
-                Text::caption(
-                    "A timestamped subdirectory will be created for each recording session.",
-                ),
-            )
+            .child(Text::caption(
+                "A timestamped subdirectory will be created for each recording session.",
+            ))
             .when(!has_directory, |stack| {
                 stack.child(
                     HStack::new()
@@ -560,11 +555,8 @@ impl PlayerView {
                         .on_change(move |value, _window, cx| {
                             let _ = view.update(cx, |this, cx| {
                                 this.state.update(cx, |state, _| {
-                                    state
-                                        .app
-                                        .measurement_state
-                                        .recording_state
-                                        .pre_silence_s = value as f32;
+                                    state.app.measurement_state.recording_state.pre_silence_s =
+                                        value as f32;
                                 });
                                 cx.notify();
                             });
@@ -593,15 +585,12 @@ impl PlayerView {
                         .on_change(move |value, _window, cx| {
                             let _ = view.update(cx, |this, cx| {
                                 this.state.update(cx, |state, _| {
-                                    state
-                                        .app
-                                        .measurement_state
-                                        .recording_state
-                                        .post_silence_s = if value < 0.001 {
-                                        None // 0 = auto-derive from RT60
-                                    } else {
-                                        Some(value as f32)
-                                    };
+                                    state.app.measurement_state.recording_state.post_silence_s =
+                                        if value < 0.001 {
+                                            None // 0 = auto-derive from RT60
+                                        } else {
+                                            Some(value as f32)
+                                        };
                                 });
                                 cx.notify();
                             });
@@ -625,10 +614,10 @@ impl PlayerView {
         // expected rough value.
         let estimated_min = {
             let oct_bass = (100.0_f64 / 10.0_f64).log2();
-            let oct_mid  = (1000.0_f64 / 100.0_f64).log2();
+            let oct_mid = (1000.0_f64 / 100.0_f64).log2();
             let oct_high = (20_000.0_f64 / 1000.0_f64).log2();
             let sweep_s = oct_bass * bass_dur as f64
-                + oct_mid  * (bass_dur as f64 * 0.5)
+                + oct_mid * (bass_dur as f64 * 0.5)
                 + oct_high * (bass_dur as f64 * 0.25);
             let total_per_ch = sweep_s + pre_s as f64 + post_s_opt.unwrap_or(2.0) as f64;
             let channels = 5.0; // show for typical 5-channel system
@@ -869,7 +858,8 @@ impl PlayerView {
                     .color(theme.text_secondary),
             )
             .child(
-                div().w(px(100.0)).child( // intentional: sample-rate dropdown width
+                div().w(px(100.0)).child(
+                    // intentional: sample-rate dropdown width
                     Select::new("playback_sample_rate")
                         .options(options)
                         .selected(selected_value)
@@ -963,7 +953,8 @@ impl PlayerView {
                     .color(theme.text_secondary),
             )
             .child(
-                div().w(px(100.0)).child( // intentional: speaker-config dropdown width
+                div().w(px(100.0)).child(
+                    // intentional: speaker-config dropdown width
                     Select::new("speaker_config")
                         .options(options)
                         .selected(selected_value)
@@ -1135,7 +1126,8 @@ impl PlayerView {
                                     .spacing(StackSpacing::Xs)
                                     .align(StackAlign::Center)
                                     .child(
-                                        div().w(px(LABEL_WIDTH)).child( // intentional: speaker-label column
+                                        div().w(px(LABEL_WIDTH)).child(
+                                            // intentional: speaker-label column
                                             Text::new(format!("Speaker {}:", speaker_idx + 1))
                                                 .size(TextSize::Xs)
                                                 .color(theme.text_secondary),
@@ -1165,7 +1157,8 @@ impl PlayerView {
                             .spacing(StackSpacing::Xs)
                             .align(StackAlign::Center)
                             .child(
-                                div().w(px(LABEL_WIDTH)).child( // intentional: speaker-label column
+                                div().w(px(LABEL_WIDTH)).child(
+                                    // intentional: speaker-label column
                                     Text::new(format!("Speaker {}:", speaker_idx + 1))
                                         .size(TextSize::Xs)
                                         .color(theme.text_secondary),
@@ -1251,7 +1244,8 @@ impl PlayerView {
 
         let selected = if is_multi { "multi" } else { "single" };
 
-        div().w(px(80.0)).child( // intentional: speaker-mode dropdown width
+        div().w(px(80.0)).child(
+            // intentional: speaker-mode dropdown width
             Select::new(SharedString::from(format!("speaker_mode_{}", speaker_idx)))
                 .options(options)
                 .selected(selected)
@@ -1351,12 +1345,12 @@ impl PlayerView {
                             .align(StackAlign::Center)
                             // Indent to align under the name column
                             .child(div().w(px(LABEL_WIDTH))) // intentional: indent spacer matches header
-                            .child(
-                                div().w(px(CH_LABEL_WIDTH)).child( // intentional: fixed ch-label column
-                                    Text::caption(format!("Ch {}:", ch_idx + 1)),
-                                ),
-                            )
-                            .child(div().w(px(70.0)).child({ // intentional: fixed ch-number input column
+                            .child(div().w(px(CH_LABEL_WIDTH)).child(
+                                // intentional: fixed ch-label column
+                                Text::caption(format!("Ch {}:", ch_idx + 1)),
+                            ))
+                            .child(div().w(px(70.0)).child({
+                                // intentional: fixed ch-number input column
                                 let view = view.clone();
                                 NumberInput::new(SharedString::from(format!(
                                     "speaker_{}_ch_{}",
@@ -1558,7 +1552,8 @@ impl PlayerView {
             .map(|(_, name)| SharedString::from(*name))
             .unwrap_or_else(|| SharedString::from(current_group.clone()));
 
-        div().w(px(140.0)).child( // intentional: channel-name dropdown width
+        div().w(px(140.0)).child(
+            // intentional: channel-name dropdown width
             Select::new(SharedString::from(format!("channel_name_{}", channel_idx)))
                 .options(options)
                 .selected(current_group.clone())
@@ -1772,7 +1767,8 @@ impl PlayerView {
                     .color(theme.text_secondary),
             )
             .child(
-                div().w(px(100.0)).child( // intentional: sample-rate dropdown width
+                div().w(px(100.0)).child(
+                    // intentional: sample-rate dropdown width
                     Select::new("recording_sample_rate")
                         .options(options)
                         .selected(selected_value)
