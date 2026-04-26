@@ -1,5 +1,6 @@
 """HTML report generation for roomeq visualization."""
 
+from html import escape
 from pathlib import Path
 
 from .figures import (
@@ -9,6 +10,8 @@ from .figures import (
     create_multipass_eq_figure,
     create_ir_figure,
     create_combined_figure,
+    create_bass_management_routing_figure,
+    create_bass_management_headroom_figure,
     create_comparison_overlay_figure,
     create_comparison_zoomed_figure,
     create_comparison_eq_overlay_figure,
@@ -205,6 +208,139 @@ def _epa_summary_pref(metadata: dict) -> tuple[float | None, float | None]:
     return (pre_avg, post_avg)
 
 
+def _fmt_db(value: object, suffix: str = " dB") -> str:
+    return f"{value:+.2f}{suffix}" if isinstance(value, (int, float)) else "-"
+
+
+def _fmt_hz(value: object) -> str:
+    return f"{value:.1f} Hz" if isinstance(value, (int, float)) else "-"
+
+
+def _fmt_ms(value: object) -> str:
+    return f"{value:.3f} ms" if isinstance(value, (int, float)) else "-"
+
+
+def _bass_management_summary_html(report: dict) -> str:
+    if not report:
+        return ""
+
+    routing = report.get("routing_graph") or {}
+    routes = routing.get("routes") or []
+    route_count = len(routes)
+    physical_outputs = sorted(
+        {
+            str(route.get("destination"))
+            for route in routes
+            if route.get("route_kind")
+            in {"redirected_bass_lowpass_to_sub", "lfe_lowpass_to_sub"}
+            and route.get("destination")
+        }
+    )
+    advisories: list[str] = []
+    advisory = report.get("advisory")
+    if advisory:
+        advisories.append(str(advisory))
+    advisories.extend(str(item) for item in routing.get("advisories") or [])
+    advisories = sorted({item for item in advisories if item and item != "ok"})
+    advisory_html = (
+        f"<br><span style=\"color:#b36b00\">{escape('; '.join(advisories))}</span>"
+        if advisories
+        else ""
+    )
+
+    items = [
+        ("Enabled", "yes" if report.get("enabled") else "no"),
+        ("Crossover", f"{escape(str(report.get('crossover_type', '-')))} @ {_fmt_hz(report.get('crossover_frequency_hz'))}"),
+        ("LFE gain", _fmt_db(report.get("lfe_playback_gain_db"))),
+        ("Shared sub gain", _fmt_db(report.get("applied_sub_gain_db"))),
+        ("Physical bass outputs", ", ".join(escape(name) for name in physical_outputs) or escape(str(report.get("physical_sub_output", "-")))),
+        ("Route count", str(route_count)),
+        ("Graph mode", "route branches" if route_count else "linear / none"),
+    ]
+    cells = "".join(
+        f'<div class="metadata-item"><span class="metadata-label">{label}:</span> '
+        f'<span class="metadata-value">{value}</span></div>\n'
+        for label, value in items
+    )
+    return (
+        '<div class="metadata bass-management-section">\n'
+        "<h2>Bass Management</h2>\n"
+        f'<div class="metadata-grid">{cells}</div>\n'
+        f"{advisory_html}\n"
+        "</div>\n"
+    )
+
+
+def _bass_management_groups_table_html(report: dict) -> str:
+    groups = report.get("groups") or []
+    if not groups:
+        groups = ((report.get("optimization") or {}).get("group_results") or [])
+    if not groups:
+        return ""
+
+    rows = []
+    for group in groups:
+        advisories = ", ".join(
+            str(item) for item in group.get("advisories", []) if item != "ok"
+        )
+        rows.append(
+            "<tr>"
+            f"<td>{escape(str(group.get('group_id', '-')))}</td>"
+            f"<td>{escape(', '.join(str(role) for role in group.get('roles', [])))}</td>"
+            f"<td>{escape(str(group.get('crossover_type', '-')))}</td>"
+            f"<td>{_fmt_hz(group.get('selected_crossover_hz'))}</td>"
+            f"<td>{_fmt_ms(group.get('main_delay_ms'))}</td>"
+            f"<td>{_fmt_ms(group.get('bass_route_delay_ms'))}</td>"
+            f"<td>{'yes' if group.get('polarity_inverted') else 'no'}</td>"
+            f"<td>{_fmt_db(group.get('trim_db'))}</td>"
+            f"<td>{escape(advisories) if advisories else '-'}</td>"
+            "</tr>\n"
+        )
+
+    return (
+        '<div class="filters-section bass-management-section">\n'
+        "<h3>Per-Speaker-Group Crossovers</h3>\n"
+        '<table class="bm-table">\n'
+        "<thead><tr><th>Group</th><th>Roles</th><th>Type</th><th>Selected XO</th>"
+        "<th>Main delay</th><th>Bass delay</th><th>Invert bass</th><th>Trim</th><th>Advisories</th></tr></thead>\n"
+        f"<tbody>{''.join(rows)}</tbody>\n"
+        "</table>\n"
+        "</div>\n"
+    )
+
+
+def _bass_management_sub_outputs_table_html(report: dict) -> str:
+    outputs = report.get("sub_outputs") or []
+    if not outputs:
+        outputs = ((report.get("optimization") or {}).get("sub_output_results") or [])
+    if not outputs:
+        return ""
+
+    rows = []
+    for output in outputs:
+        rows.append(
+            "<tr>"
+            f"<td>{escape(str(output.get('output_role', '-')))}</td>"
+            f"<td>{escape(str(output.get('strategy_source', '-')))}</td>"
+            f"<td>{_fmt_db(output.get('gain_db'))}</td>"
+            f"<td>{_fmt_ms(output.get('delay_ms'))}</td>"
+            f"<td>{'yes' if output.get('polarity_inverted') else 'no'}</td>"
+            f"<td>{_fmt_db(output.get('headroom_contribution_db'))}</td>"
+            "</tr>\n"
+        )
+
+    return (
+        '<div class="filters-section bass-management-section">\n'
+        "<h3>Physical Bass Outputs</h3>\n"
+        '<table class="bm-table">\n'
+        "<thead><tr><th>Output</th><th>Strategy</th><th>Gain</th><th>Delay</th>"
+        "<th>Invert</th><th>Headroom contribution</th></tr></thead>\n"
+        f"<tbody>{''.join(rows)}</tbody>\n"
+        "</table>\n"
+        "</div>\n"
+    )
+
+
 def create_html_report(
     data: dict,
     output_path: Path,
@@ -371,6 +507,29 @@ def create_html_report(
             font-size: 0.8em;
             font-style: italic;
         }
+        .bass-management-section {
+            border-left: 4px solid #2ecc71;
+        }
+        .bm-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.92em;
+        }
+        .bm-table th,
+        .bm-table td {
+            padding: 7px 9px;
+            border: 1px solid #e4e4e4;
+            text-align: left;
+            vertical-align: top;
+        }
+        .bm-table th {
+            background: #f1f1f1;
+            font-weight: 600;
+            color: #555;
+        }
+        .bm-table tbody tr:nth-child(odd) {
+            background: #fdfdfd;
+        }
 
         /* Tabs styles */
         .tabs-container {
@@ -511,6 +670,27 @@ def create_html_report(
         </div>
 """
     )
+
+    # Bass-management routing/headroom section. This is driven by the
+    # route-level #14 schema, not the deprecated single matrix summary.
+    bass_management = metadata.get("bass_management") or {}
+    if bass_management:
+        html_parts.append(_bass_management_summary_html(bass_management))
+        routing_fig = create_bass_management_routing_figure(data)
+        headroom_fig = create_bass_management_headroom_figure(data)
+        if routing_fig or headroom_fig:
+            html_parts.append('<div class="plot-row">\n')
+            if routing_fig:
+                html_parts.append(
+                    f'<div class="plot-container">{routing_fig.to_html(full_html=False, include_plotlyjs=False)}</div>\n'
+                )
+            if headroom_fig:
+                html_parts.append(
+                    f'<div class="plot-container">{headroom_fig.to_html(full_html=False, include_plotlyjs=False)}</div>\n'
+                )
+            html_parts.append("</div>\n")
+        html_parts.append(_bass_management_groups_table_html(bass_management))
+        html_parts.append(_bass_management_sub_outputs_table_html(bass_management))
 
     # Individual channel sections in tabs
     html_parts.append('<div class="tabs-container">\n')

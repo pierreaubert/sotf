@@ -599,7 +599,9 @@ pub fn bass_management_routing_graph(
     if effective.config.apply_lfe_gain_to_chain {
         advisories.push("legacy_lfe_gain_applied_to_shared_sub_chain".to_string());
     }
-    if effective.config.redirect_bass && matrix.is_none() {
+    if effective.config.redirect_bass && matrix.is_none() && sub_outputs.len() > 1 {
+        advisories.push("branch_routing_required_for_multiple_sub_outputs".to_string());
+    } else if effective.config.redirect_bass && matrix.is_none() {
         advisories.push("redirect_bass_enabled_but_no_matrix_routes".to_string());
     }
     if advisories.is_empty() {
@@ -2606,6 +2608,11 @@ mod tests {
         assert!(
             graph.matrix.is_none(),
             "multi-sub routing needs route branches"
+        );
+        assert!(
+            graph
+                .advisories
+                .contains(&"branch_routing_required_for_multiple_sub_outputs".to_string())
         );
         assert!(graph.output_channels.contains(&"subs_1".to_string()));
         assert!(graph.output_channels.contains(&"subs_2".to_string()));
