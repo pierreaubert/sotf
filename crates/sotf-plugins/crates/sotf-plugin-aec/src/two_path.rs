@@ -95,12 +95,7 @@ impl TwoPathAec {
 
     /// Transfer background filter weights to foreground.
     fn transfer_bg_to_fg(&mut self) {
-        // Recreate foreground with current background state
-        // Since we can't directly copy weights between Pbfdaf instances
-        // (they share FFT plans), we reset foreground and let it converge
-        // from background's point.
-        // In practice, a production implementation would share weight buffers.
-        self.foreground.reset();
+        self.foreground.copy_adaptive_state_from(&self.background);
         self.power_fg = self.power_bg;
     }
 
@@ -182,5 +177,35 @@ mod tests {
             let error = aec.process(&mic, &reference);
             assert_eq!(error.len(), block_size);
         }
+    }
+
+    #[test]
+    fn test_transfer_copies_background_state_to_foreground() {
+        let block_size = 256;
+        let mut aec = TwoPathAec::new(block_size, 512, 0.3, 0.7);
+
+        for block_idx in 0..8 {
+            let reference: Vec<f32> = (0..block_size)
+                .map(|i| {
+                    let t = (block_idx * block_size + i) as f32;
+                    (t * 0.13).sin() * 0.4
+                })
+                .collect();
+            let mic: Vec<f32> = reference.iter().map(|sample| sample * 0.5).collect();
+            let _ = aec.process(&mic, &reference);
+        }
+
+        let background_energy = aec.background.adaptive_state_energy();
+        assert!(background_energy > 0.0);
+
+        aec.foreground.reset();
+        assert_eq!(aec.foreground.adaptive_state_energy(), 0.0);
+
+        aec.transfer_bg_to_fg();
+        let foreground_energy = aec.foreground.adaptive_state_energy();
+        assert!(
+            (foreground_energy - background_energy).abs() < background_energy * 1e-5,
+            "foreground should receive background state: foreground={foreground_energy}, background={background_energy}"
+        );
     }
 }
