@@ -12,6 +12,16 @@ dedicated bass-management path.
 - Non-sub channels with multiple measurements now derive per-channel
   multi-measurement optimization automatically unless an explicit
   optimizer config is supplied.
+- Derived all-channel correction now requires shared seat frequency grids
+  and valid seat-weight policy, so invalid channels skip safely instead
+  of optimizing against mismatched data.
+- Derived corrections are accepted only when predicted primary and
+  non-primary seat constraints pass and weighted target fit does not
+  collapse; rejected channels are rerun through the normal single/average
+  path.
+- All-channel multi-seat guardrails now also reject broadband target-level
+  collapse and report role-group summaries while keeping sub/LFE channels
+  owned by MSO/bass management.
 - Spatial robustness correction depth now honors seat weights, and the
   same mask feeds IIR and mixed-phase/FIR paths to avoid overcorrecting
   seat-specific nulls.
@@ -45,6 +55,16 @@ matrix.
 - Group crossover mappings now drive the emitted high-pass/low-pass routes
   and signal-flow metadata, so LCR/surround/height/wide groups can carry
   distinct configured crossovers.
+- Configured group crossover mappings are also applied to exported channel
+  chains when `optimize_groups=false`, so disabling group optimization no
+  longer collapses LCR/surround/height outputs back onto the global
+  crossover.
+- Apply-as-Graph now preserves post-route output trims instead of mistaking
+  every post-crossover gain/delay on a routed output for bass-management
+  route-owned DSP.
+- Routed Apply-as-Graph playback now preserves non-routing `global_plugins`
+  while suppressing the legacy bass-management matrix that route branches
+  replace, avoiding both dropped global DSP and double bass routing.
 - Home-cinema bass management now emits per-role-group optimization results
   into routing metadata and uses those group crossovers/delays in main output
   chains instead of collapsing every role onto one global crossover result.

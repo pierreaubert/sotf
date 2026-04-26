@@ -4,7 +4,7 @@ use crate::Curve;
 use crate::error::{AutoeqError, Result};
 use crate::read::load_source;
 use crate::response;
-use log::info;
+use log::{info, warn};
 use math_audio_dsp::analysis::compute_average_response;
 use math_audio_iir_fir::Biquad;
 use rand::{Rng, SeedableRng};
@@ -110,11 +110,12 @@ fn run_channel_via_generic_path(
     f64,
     f64,
     Option<Vec<f64>>,
+    Option<Vec<String>>,
 )> {
+    let derived_multiseat_config =
+        super::home_cinema::derive_all_channel_multiseat_config(config, role, source);
     let derived_config;
-    let effective_config = if let Some(multi_config) =
-        super::home_cinema::derive_all_channel_multiseat_config(config, role, source)
-    {
+    let effective_config = if let Some(multi_config) = derived_multiseat_config.clone() {
         derived_config = {
             let mut cloned = config.clone();
             cloned.optimizer.multi_measurement = Some(multi_config);
@@ -124,6 +125,46 @@ fn run_channel_via_generic_path(
     } else {
         config
     };
+
+    let mut processed = super::speaker_eq::process_single_speaker(
+        role,
+        source,
+        effective_config,
+        sample_rate,
+        output_dir,
+        None,
+        None,
+        None,
+    )?;
+
+    let mut multiseat_rejection = None;
+    if derived_multiseat_config.is_some() {
+        let acceptance = super::home_cinema::all_channel_multiseat_acceptance(
+            config,
+            role,
+            source,
+            &processed.3,
+            &processed.4,
+        );
+        if !acceptance.accepted {
+            warn!(
+                "All-channel multi-seat correction rejected for '{}': {}. Re-running without derived multi-seat correction.",
+                role,
+                acceptance.advisories.join(", ")
+            );
+            multiseat_rejection = Some(acceptance.advisories);
+            processed = super::speaker_eq::process_single_speaker(
+                role,
+                source,
+                config,
+                sample_rate,
+                output_dir,
+                None,
+                None,
+                None,
+            )?;
+        }
+    }
 
     let (
         raw_chain,
@@ -135,16 +176,7 @@ fn run_channel_via_generic_path(
         _mean_spl,
         _arrival_ms,
         fir_coeffs,
-    ) = super::speaker_eq::process_single_speaker(
-        role,
-        source,
-        effective_config,
-        sample_rate,
-        output_dir,
-        None,
-        None,
-        None,
-    )?;
+    ) = processed;
 
     // Prepend the alignment gain plugin without touching the inner chain's
     // existing plugins (excursion HPF, broadband shelf, CEA2034 PEQ, fine EQ).
@@ -176,7 +208,14 @@ fn run_channel_via_generic_path(
         fir_coeffs: fir_coeffs.clone(),
     };
 
-    Ok((chain, channel_result, pre_score, post_score, fir_coeffs))
+    Ok((
+        chain,
+        channel_result,
+        pre_score,
+        post_score,
+        fir_coeffs,
+        multiseat_rejection,
+    ))
 }
 
 /// Coherent (complex) sum of N main channels, used by the stereo-2.1 and
@@ -1753,7 +1792,7 @@ pub fn optimize_stereo_2_0(
 
         info!("  Optimizing '{}' with alignment gain {:.2} dB", role, gain);
 
-        let (chain, ch_result, pre_score, post_score, _fir) =
+        let (chain, ch_result, pre_score, post_score, _fir, _multiseat_rejection) =
             run_channel_via_generic_path(role, source, config, gain, sample_rate, output_dir)?;
 
         info!(
@@ -1960,7 +1999,7 @@ pub fn optimize_stereo_2_1(
             "  Pre-EQ via generic path for '{}' (min_freq={:.1} Hz)",
             role, min_xo
         );
-        let (chain, ch_result, _pre_score, _post_score, _fir) =
+        let (chain, ch_result, _pre_score, _post_score, _fir, _multiseat_rejection) =
             run_channel_via_generic_path(role, source, &per_config, 0.0, sample_rate, output_dir)?;
         pre_eq_plugins.insert(role.to_string(), chain.plugins);
         linearized_curves.insert(role.to_string(), ch_result.final_curve);
@@ -1975,14 +2014,15 @@ pub fn optimize_stereo_2_1(
             "  Pre-EQ via generic path for '{}' (max_freq={:.1} Hz)",
             sub_role, max_xo
         );
-        let (chain, ch_result, _pre_score, _post_score, _fir) = run_channel_via_generic_path(
-            &sub_role,
-            &sub_source,
-            &sub_config,
-            0.0,
-            sample_rate,
-            output_dir,
-        )?;
+        let (chain, ch_result, _pre_score, _post_score, _fir, _multiseat_rejection) =
+            run_channel_via_generic_path(
+                &sub_role,
+                &sub_source,
+                &sub_config,
+                0.0,
+                sample_rate,
+                output_dir,
+            )?;
         pre_eq_plugins.insert(sub_role.clone(), chain.plugins);
         linearized_curves.insert(sub_role.clone(), ch_result.final_curve);
     }
@@ -2725,6 +2765,7 @@ fn optimize_home_cinema_no_sub(
     let mut channel_results = HashMap::new();
     let mut pre_scores = Vec::new();
     let mut post_scores = Vec::new();
+    let mut multi_seat_rejections: HashMap<String, Vec<String>> = HashMap::new();
 
     for role in main_roles {
         let gain = *gains.get(role).unwrap_or(&0.0);
@@ -2732,8 +2773,11 @@ fn optimize_home_cinema_no_sub(
 
         info!("  Optimizing '{}' with alignment gain {:.2} dB", role, gain);
 
-        let (chain, ch_result, pre_score, post_score, _fir) =
+        let (chain, ch_result, pre_score, post_score, _fir, multiseat_rejection) =
             run_channel_via_generic_path(role, source, config, gain, sample_rate, output_dir)?;
+        if let Some(advisories) = multiseat_rejection {
+            multi_seat_rejections.insert(role.clone(), advisories);
+        }
 
         info!(
             "  '{}' pre_score={:.4} post_score={:.4}",
@@ -2759,6 +2803,7 @@ fn optimize_home_cinema_no_sub(
     let multi_seat_correction = Some(super::home_cinema::multi_seat_correction_report(
         config,
         &channel_results,
+        Some(&multi_seat_rejections),
     ));
 
     Ok(RoomOptimizationResult {
@@ -2860,6 +2905,7 @@ fn optimize_home_cinema_with_sub(
     let mut pre_eq_plugins: HashMap<String, Vec<super::types::PluginConfigWrapper>> =
         HashMap::new();
     let mut linearized_curves: HashMap<String, Curve> = HashMap::new();
+    let mut multi_seat_rejections: HashMap<String, Vec<String>> = HashMap::new();
 
     for role in main_roles {
         let source = resolve_single_source(role, config, sys)?;
@@ -2869,8 +2915,11 @@ fn optimize_home_cinema_with_sub(
             "  Pre-EQ via generic path for '{}' (min_freq={:.1} Hz)",
             role, min_xo
         );
-        let (chain, ch_result, _pre, _post, _fir) =
+        let (chain, ch_result, _pre, _post, _fir, multiseat_rejection) =
             run_channel_via_generic_path(role, source, &per_config, 0.0, sample_rate, output_dir)?;
+        if let Some(advisories) = multiseat_rejection {
+            multi_seat_rejections.insert(role.clone(), advisories);
+        }
         pre_eq_plugins.insert(role.clone(), chain.plugins);
         linearized_curves.insert(role.clone(), ch_result.final_curve);
     }
@@ -2884,14 +2933,15 @@ fn optimize_home_cinema_with_sub(
             "  Pre-EQ via generic path for '{}' (max_freq={:.1} Hz)",
             sub_role, max_xo
         );
-        let (chain, ch_result, _pre, _post, _fir) = run_channel_via_generic_path(
-            &sub_role,
-            &sub_source,
-            &sub_config,
-            0.0,
-            sample_rate,
-            output_dir,
-        )?;
+        let (chain, ch_result, _pre, _post, _fir, _multiseat_rejection) =
+            run_channel_via_generic_path(
+                &sub_role,
+                &sub_source,
+                &sub_config,
+                0.0,
+                sample_rate,
+                output_dir,
+            )?;
         pre_eq_plugins.insert(sub_role.clone(), chain.plugins);
         linearized_curves.insert(sub_role.clone(), ch_result.final_curve);
     }
@@ -3034,7 +3084,10 @@ fn optimize_home_cinema_with_sub(
             bass_management.as_ref(),
         )?
     } else {
-        BTreeMap::new()
+        super::home_cinema::bass_management_groups(config, None)
+            .into_iter()
+            .map(|group| (group.group_id.clone(), group))
+            .collect()
     };
     // 5. Apply crossover filters
     let _hp_biquads = create_crossover_filters(xover_type_str, final_xo_freq, sample_rate, false);
@@ -3549,6 +3602,7 @@ fn optimize_home_cinema_with_sub(
     let multi_seat_correction = Some(super::home_cinema::multi_seat_correction_report(
         config,
         &channel_results,
+        Some(&multi_seat_rejections),
     ));
 
     Ok(RoomOptimizationResult {
@@ -3636,8 +3690,8 @@ mod tests {
     use crate::MeasurementSource;
     use crate::roomeq::optimize::optimize_room;
     use crate::roomeq::types::{
-        BassManagementConfig, CrossoverConfig, OptimizerConfig, RoomConfig, SpeakerConfig,
-        SubwooferSystemConfig, SystemConfig, SystemModel,
+        BassManagementConfig, CrossoverConfig, MultiSeatConfig, MultiSeatStrategy, OptimizerConfig,
+        RoomConfig, SpeakerConfig, SubwooferSystemConfig, SystemConfig, SystemModel,
     };
     use ndarray::array;
     use std::collections::HashMap;
@@ -3761,6 +3815,69 @@ mod tests {
         }
     }
 
+    fn home_cinema_multiseat_guardrail_config() -> RoomConfig {
+        let primary = bass_management_workflow_curve(76.0, 0.0, true);
+        let mut null_seat = bass_management_workflow_curve(76.0, 0.0, true);
+        for (freq, spl) in null_seat.freq.iter().zip(null_seat.spl.iter_mut()) {
+            if *freq >= 70.0 && *freq <= 140.0 {
+                *spl -= 24.0;
+            }
+        }
+
+        let mut speakers = HashMap::new();
+        speakers.insert(
+            "left".to_string(),
+            SpeakerConfig::Single(MeasurementSource::InMemoryMultiple(vec![
+                primary.clone(),
+                null_seat.clone(),
+            ])),
+        );
+        speakers.insert(
+            "right".to_string(),
+            SpeakerConfig::Single(MeasurementSource::InMemoryMultiple(vec![
+                primary, null_seat,
+            ])),
+        );
+
+        let mut system_speakers = HashMap::new();
+        system_speakers.insert("L".to_string(), "left".to_string());
+        system_speakers.insert("R".to_string(), "right".to_string());
+
+        RoomConfig {
+            version: "test".to_string(),
+            system: Some(SystemConfig {
+                model: SystemModel::HomeCinema,
+                speakers: system_speakers,
+                subwoofers: None,
+                bass_management: None,
+            }),
+            speakers,
+            crossovers: None,
+            target_curve: None,
+            optimizer: OptimizerConfig {
+                num_filters: 1,
+                max_iter: 3,
+                population: 4,
+                seed: Some(19),
+                refine: false,
+                allow_delay: Some(false),
+                decomposed_correction: None,
+                multi_seat: Some(MultiSeatConfig {
+                    enabled: false,
+                    strategy: MultiSeatStrategy::PrimaryWithConstraints,
+                    primary_seat: 0,
+                    max_deviation_db: 6.0,
+                    ..Default::default()
+                }),
+                min_freq: 40.0,
+                max_freq: 500.0,
+                ..OptimizerConfig::default()
+            },
+            recording_config: None,
+            cea2034_cache: None,
+        }
+    }
+
     fn total_delay_ms(chain: &ChannelDspChain) -> f64 {
         chain
             .plugins
@@ -3775,6 +3892,14 @@ mod tests {
             .plugins
             .iter()
             .any(|p| p.plugin_type == "crossover" && p.parameters["output"].as_str() == Some(mode))
+    }
+
+    fn crossover_plugin_frequency(chain: &ChannelDspChain, mode: &str) -> Option<f64> {
+        chain.plugins.iter().find_map(|p| {
+            (p.plugin_type == "crossover" && p.parameters["output"].as_str() == Some(mode))
+                .then(|| p.parameters["frequency"].as_f64())
+                .flatten()
+        })
     }
 
     #[test]
@@ -3928,6 +4053,45 @@ mod tests {
     }
 
     #[test]
+    fn home_cinema_all_channel_multiseat_guardrail_reruns_and_reports_rejection() {
+        let config = home_cinema_multiseat_guardrail_config();
+        let result = optimize_room(&config, 48_000.0, None, None).expect("room optimization");
+        let report = result
+            .metadata
+            .multi_seat_correction
+            .as_ref()
+            .expect("multi-seat correction report");
+
+        assert!(report.enabled);
+        assert!(!report.applied);
+        assert!(
+            report
+                .advisories
+                .contains(&"all_channel_corrections_rejected_by_guardrails".to_string()),
+            "expected guardrail rejection advisory, got {:?}",
+            report.advisories
+        );
+        for role in ["L", "R"] {
+            let channel = report
+                .channels
+                .iter()
+                .find(|channel| channel.channel == role)
+                .expect("channel report");
+            assert_eq!(channel.status, "rejected_guardrails");
+            assert!(
+                channel
+                    .advisories
+                    .iter()
+                    .any(|advisory| advisory == "non_primary_seat_constraint_failed"
+                        || advisory == "weighted_target_fit_collapsed"),
+                "expected rejection reason for {role}, got {:?}",
+                channel.advisories
+            );
+            assert!(channel.seats.is_empty());
+        }
+    }
+
+    #[test]
     fn home_cinema_bass_management_workflow_skips_alignment_without_phase() {
         let config = bass_management_workflow_config(false, 6.0);
         let result = optimize_room(&config, 48_000.0, None, None).expect("room optimization");
@@ -4009,6 +4173,110 @@ mod tests {
                 .iter()
                 .all(|route| route.crossover_type == optimization.crossover_type)
         );
+    }
+
+    #[test]
+    fn home_cinema_bass_management_workflow_applies_configured_group_crossovers_when_optimization_disabled()
+     {
+        let mut config = bass_management_workflow_config(true, 6.0);
+        let mut speakers = HashMap::new();
+        for role in ["L", "R", "SL", "SR", "TFL", "TFR"] {
+            speakers.insert(
+                role.to_string(),
+                SpeakerConfig::Single(MeasurementSource::InMemory(bass_management_workflow_curve(
+                    76.0, 0.0, true,
+                ))),
+            );
+        }
+        speakers.insert(
+            "sub".to_string(),
+            SpeakerConfig::Single(MeasurementSource::InMemory(bass_management_workflow_curve(
+                62.0, 3.0, true,
+            ))),
+        );
+        config.speakers = speakers;
+        let system = config.system.as_mut().expect("system");
+        system.speakers = HashMap::from([
+            ("L".to_string(), "L".to_string()),
+            ("R".to_string(), "R".to_string()),
+            ("SL".to_string(), "SL".to_string()),
+            ("SR".to_string(), "SR".to_string()),
+            ("TFL".to_string(), "TFL".to_string()),
+            ("TFR".to_string(), "TFR".to_string()),
+            ("LFE".to_string(), "sub".to_string()),
+        ]);
+        system.bass_management = Some(BassManagementConfig {
+            enabled: true,
+            redirect_bass: true,
+            optimize_groups: false,
+            group_crossovers: HashMap::from([
+                ("surround".to_string(), "surround".to_string()),
+                ("height".to_string(), "height".to_string()),
+            ]),
+            ..BassManagementConfig::default()
+        });
+        config.crossovers.as_mut().expect("crossovers").extend([
+            (
+                "surround".to_string(),
+                CrossoverConfig {
+                    crossover_type: "BW12".to_string(),
+                    frequency: Some(100.0),
+                    frequencies: None,
+                    frequency_range: None,
+                },
+            ),
+            (
+                "height".to_string(),
+                CrossoverConfig {
+                    crossover_type: "LR48".to_string(),
+                    frequency: Some(140.0),
+                    frequencies: None,
+                    frequency_range: None,
+                },
+            ),
+        ]);
+
+        let result = optimize_room(&config, 48_000.0, None, None).expect("room optimization");
+        assert_eq!(
+            crossover_plugin_frequency(result.channels.get("L").expect("L chain"), "high"),
+            Some(80.0)
+        );
+        assert_eq!(
+            crossover_plugin_frequency(result.channels.get("SL").expect("SL chain"), "high"),
+            Some(100.0)
+        );
+        assert_eq!(
+            crossover_plugin_frequency(result.channels.get("TFL").expect("TFL chain"), "high"),
+            Some(140.0)
+        );
+
+        let report = result
+            .metadata
+            .bass_management
+            .as_ref()
+            .expect("bass management report");
+        let routing = report.routing_graph.as_ref().expect("routing graph");
+        assert!(routing.routes.iter().any(|route| {
+            route.source_channel == "SL"
+                && route.route_kind == "main_highpass_to_self"
+                && route.crossover_type == "BW12"
+                && route.high_pass_hz == Some(100.0)
+        }));
+        assert!(routing.routes.iter().any(|route| {
+            route.source_channel == "TFL"
+                && route.route_kind == "main_highpass_to_self"
+                && route.crossover_type == "LR48"
+                && route.high_pass_hz == Some(140.0)
+        }));
+        let optimization = report.optimization.as_ref().expect("optimization");
+        assert!(optimization.group_results.iter().any(|group| {
+            group.group_id == "surround"
+                && group.crossover_type == "BW12"
+                && group.selected_crossover_hz == Some(100.0)
+                && group
+                    .advisories
+                    .contains(&"group_optimization_disabled".to_string())
+        }));
     }
 
     #[test]

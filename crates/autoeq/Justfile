@@ -311,16 +311,35 @@ qa-roomeq-home-cinema:
 	cargo test -p autoeq home_cinema --lib -- --nocapture
 	cargo test -p autoeq validate_bass_management --lib -- --nocapture
 	cargo test -p autoeq derives_all_channel_multiseat_primary_weights --lib -- --nocapture
+	cargo test -p autoeq skips_all_channel_multiseat_on_grid_mismatch --lib -- --nocapture
+	cargo test -p autoeq skips_all_channel_multiseat_on_invalid_weight_policy --lib -- --nocapture
+	cargo test -p autoeq reports_grid_mismatch_as_channel_skip --lib -- --nocapture
+	cargo test -p autoeq skips_all_channel_multiseat_when_primary_seat_is_invalid --lib -- --nocapture
+	cargo test -p autoeq rejects_all_channel_multiseat_when_constraints_fail --lib -- --nocapture
+	cargo test -p autoeq rejects_all_channel_multiseat_when_broadband_level_collapses --lib -- --nocapture
+	cargo test -p autoeq reports_guardrail_rejection_without_claiming_applied --lib -- --nocapture
+	cargo test -p autoeq home_cinema_all_channel_multiseat_guardrail_reruns_and_reports_rejection --lib -- --nocapture
 	cargo test -p autoeq reports_all_channel_multiseat_null_guard --lib -- --nocapture
+	cargo test -p autoeq reports_all_channel_multiseat_by_role_group_and_excludes_subs --lib -- --nocapture
 
 [group('qa-roomeq')]
 qa-roomeq-all-channel-multiseat:
 	cargo test -p autoeq derives_all_channel_multiseat_primary_weights --lib -- --nocapture
+	cargo test -p autoeq skips_all_channel_multiseat_on_grid_mismatch --lib -- --nocapture
+	cargo test -p autoeq skips_all_channel_multiseat_on_invalid_weight_policy --lib -- --nocapture
+	cargo test -p autoeq reports_grid_mismatch_as_channel_skip --lib -- --nocapture
+	cargo test -p autoeq skips_all_channel_multiseat_when_primary_seat_is_invalid --lib -- --nocapture
+	cargo test -p autoeq rejects_all_channel_multiseat_when_constraints_fail --lib -- --nocapture
+	cargo test -p autoeq rejects_all_channel_multiseat_when_broadband_level_collapses --lib -- --nocapture
+	cargo test -p autoeq reports_guardrail_rejection_without_claiming_applied --lib -- --nocapture
+	cargo test -p autoeq home_cinema_all_channel_multiseat_guardrail_reruns_and_reports_rejection --lib -- --nocapture
 	cargo test -p autoeq reports_all_channel_multiseat_null_guard --lib -- --nocapture
+	cargo test -p autoeq reports_all_channel_multiseat_by_role_group_and_excludes_subs --lib -- --nocapture
 
 [group('qa-roomeq')]
 qa-roomeq-bass-management:
 	cargo test -p autoeq home_cinema_bass_management --lib -- --nocapture
+	cargo test -p autoeq home_cinema_bass_management_workflow_applies_configured_group_crossovers_when_optimization_disabled --lib -- --nocapture
 	cargo test -p autoeq validate_bass_management --lib -- --nocapture
 
 [group('qa-roomeq')]
@@ -344,6 +363,10 @@ qa-roomeq-phase-critical:
 [group('qa-roomeq')]
 qa-roomeq-perceptual:
 	cargo test -p autoeq perceptual_metrics --lib -- --nocapture
+	cargo test -p autoeq rejects_all_channel_multiseat_when_constraints_fail --lib -- --nocapture
+	cargo test -p autoeq rejects_all_channel_multiseat_when_broadband_level_collapses --lib -- --nocapture
+	cargo test -p autoeq reports_guardrail_rejection_without_claiming_applied --lib -- --nocapture
+	cargo test -p autoeq home_cinema_all_channel_multiseat_guardrail_reruns_and_reports_rejection --lib -- --nocapture
 	cargo test -p autoeq reports_all_channel_multiseat_null_guard --lib -- --nocapture
 
 [group('qa-roomeq')]
