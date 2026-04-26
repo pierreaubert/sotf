@@ -80,6 +80,7 @@ pub struct AecPlugin {
     output_buffer: Vec<f32>,
     output_read_pos: usize,
     output_write_pos: usize,
+    output_len: usize,
     /// FFT for post-filter
     fft_forward: Arc<dyn Fft<f32>>,
     fft_inverse: Arc<dyn Fft<f32>>,
@@ -122,6 +123,7 @@ impl AecPlugin {
             output_buffer: vec![0.0; block_size * 16],
             output_read_pos: 0,
             output_write_pos: 0,
+            output_len: 0,
             fft_forward,
             fft_inverse,
             fft_scratch: vec![Complex::new(0.0, 0.0); scratch_len],
@@ -177,23 +179,41 @@ impl AecPlugin {
     }
 
     fn available_output(&self) -> usize {
-        if self.output_write_pos >= self.output_read_pos {
-            self.output_write_pos - self.output_read_pos
-        } else {
-            self.output_buffer.len() - self.output_read_pos + self.output_write_pos
+        self.output_len
+    }
+
+    fn ensure_output_capacity(&mut self, additional: usize) {
+        let needed = self.output_len + additional;
+        if needed <= self.output_buffer.len() {
+            return;
         }
+
+        let new_len = needed
+            .max(self.output_buffer.len() * 2)
+            .max(self.block_size);
+        let old_len = self.output_buffer.len();
+        let mut new_buffer = vec![0.0; new_len];
+        for (i, dst) in new_buffer.iter_mut().enumerate().take(self.output_len) {
+            *dst = self.output_buffer[(self.output_read_pos + i) % old_len];
+        }
+        self.output_buffer = new_buffer;
+        self.output_read_pos = 0;
+        self.output_write_pos = self.output_len;
     }
 
     fn push_output(&mut self, samples: &[f32]) {
+        self.ensure_output_capacity(samples.len());
         for &s in samples {
             self.output_buffer[self.output_write_pos] = s;
             self.output_write_pos = (self.output_write_pos + 1) % self.output_buffer.len();
+            self.output_len += 1;
         }
     }
 
     fn pop_output(&mut self) -> f32 {
         let s = self.output_buffer[self.output_read_pos];
         self.output_read_pos = (self.output_read_pos + 1) % self.output_buffer.len();
+        self.output_len -= 1;
         s
     }
 }
@@ -261,6 +281,7 @@ impl Plugin for AecPlugin {
         self.input_fill = 0;
         self.output_read_pos = 0;
         self.output_write_pos = 0;
+        self.output_len = 0;
         self.output_buffer.fill(0.0);
     }
 
@@ -271,6 +292,23 @@ impl Plugin for AecPlugin {
         context: &ProcessContext,
     ) -> Result<usize, String> {
         let nf = context.num_frames;
+        let expected_input = nf
+            .checked_mul(2)
+            .ok_or_else(|| "Frame/input-channel count overflow".to_string())?;
+        if input.len() != expected_input {
+            return Err(format!(
+                "Input buffer size mismatch: expected {}, got {}",
+                expected_input,
+                input.len()
+            ));
+        }
+        if output.len() != nf {
+            return Err(format!(
+                "Output buffer size mismatch: expected {}, got {}",
+                nf,
+                output.len()
+            ));
+        }
 
         // Deinterleave: input is [mic0, ref0, mic1, ref1, ...]
         for i in 0..nf {
@@ -282,6 +320,7 @@ impl Plugin for AecPlugin {
             self.input_fill += 1;
 
             if self.input_fill == self.block_size {
+                self.ensure_output_capacity(self.block_size);
                 // Process one block — copy error output before push (avoids borrow conflict)
                 let error = self.aec.process(&self.mic_buffer, &self.ref_buffer);
                 let error_len = error.len();
@@ -309,18 +348,18 @@ impl Plugin for AecPlugin {
                         // Take last B samples (overlap-save convention)
                         self.post_filter_time_buf[i] = self.post_filter_ifft_buf[b + i].re * inv_n;
                     }
-                    // Write post-filtered output to ring
                     for i in 0..error_len {
                         self.output_buffer[self.output_write_pos] = self.post_filter_time_buf[i];
                         self.output_write_pos =
                             (self.output_write_pos + 1) % self.output_buffer.len();
+                        self.output_len += 1;
                     }
                 } else {
-                    // Write raw AEC error to ring
                     for &sample in &error[..error_len] {
                         self.output_buffer[self.output_write_pos] = sample;
                         self.output_write_pos =
                             (self.output_write_pos + 1) % self.output_buffer.len();
+                        self.output_len += 1;
                     }
                 }
                 self.input_fill = 0;
@@ -400,6 +439,62 @@ mod tests {
 
         let result = plugin.process(&input, &mut output, &context);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_aec_rejects_mismatched_buffer_sizes() {
+        let mut plugin = AecPlugin::new(48000);
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames: 16,
+        };
+
+        let short_input = vec![0.0f32; 31];
+        let mut output = vec![0.0f32; 16];
+        let err = plugin
+            .process(&short_input, &mut output, &context)
+            .unwrap_err();
+        assert!(err.contains("Input buffer size mismatch"));
+
+        let input = vec![0.0f32; 32];
+        let mut short_output = vec![0.0f32; 15];
+        let err = plugin
+            .process(&input, &mut short_output, &context)
+            .unwrap_err();
+        assert!(err.contains("Output buffer size mismatch"));
+    }
+
+    #[test]
+    fn test_aec_large_host_block_does_not_overwrite_output_queue() {
+        let sample_rate = 48000;
+        let block_size = DEFAULT_BLOCK_SIZE;
+        let num_frames = block_size * 20;
+        let mut plugin = AecPlugin::from_params(
+            sample_rate,
+            AecPluginParams {
+                echo_tail_ms: 100.0,
+                step_size: 0.5,
+                post_filter_enabled: false,
+            },
+        );
+
+        let mut input = vec![0.0f32; num_frames * 2];
+        for frame in 0..num_frames {
+            input[frame * 2] = 0.1;
+            input[frame * 2 + 1] = 0.0;
+        }
+        let mut output = vec![0.0f32; num_frames];
+        let context = ProcessContext {
+            sample_rate,
+            num_frames,
+        };
+
+        plugin.process(&input, &mut output, &context).unwrap();
+        let nonzero = output.iter().filter(|sample| sample.abs() > 0.01).count();
+        assert_eq!(
+            nonzero, num_frames,
+            "large blocks should preserve every produced output sample"
+        );
     }
 
     #[test]

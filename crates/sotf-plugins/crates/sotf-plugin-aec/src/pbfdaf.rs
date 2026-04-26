@@ -184,6 +184,34 @@ impl Pbfdaf {
         self.power_sum.fill(self.delta);
     }
 
+    /// Copy adaptive state from another filter with the same shape.
+    pub(crate) fn copy_adaptive_state_from(&mut self, other: &Self) {
+        assert_eq!(self.block_size, other.block_size);
+        assert_eq!(self.fft_size, other.fft_size);
+        assert_eq!(self.num_partitions, other.num_partitions);
+
+        for (dst, src) in self.weights.iter_mut().zip(&other.weights) {
+            dst.copy_from_slice(src);
+        }
+        for (dst, src) in self.fdl.iter_mut().zip(&other.fdl) {
+            dst.copy_from_slice(src);
+        }
+        self.fdl_head = other.fdl_head;
+        self.power_sum.copy_from_slice(&other.power_sum);
+        self.error_buf.copy_from_slice(&other.error_buf);
+        self.error_freq.copy_from_slice(&other.error_freq);
+        self.output_buf.copy_from_slice(&other.output_buf);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn adaptive_state_energy(&self) -> f32 {
+        self.weights
+            .iter()
+            .flat_map(|part| part.iter())
+            .map(|w| w.norm_sqr())
+            .sum()
+    }
+
     /// Get current ERLE (Echo Return Loss Enhancement) in dB.
     /// Requires tracking of mic and error power externally.
     pub fn block_size(&self) -> usize {
