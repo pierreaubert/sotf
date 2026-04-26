@@ -350,6 +350,7 @@ impl PlayerView {
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
 
+        let translations = state.app.ui_state.translations.clone();
         let results = self.get_filtered_results(cx);
         let has_results = !results.is_empty();
 

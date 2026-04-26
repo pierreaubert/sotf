@@ -96,6 +96,7 @@ impl PlayerView {
     fn render_signal_type_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
 
@@ -152,6 +153,7 @@ impl PlayerView {
     fn render_duration_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
 

@@ -1318,10 +1318,31 @@ pub struct MultiSeatConfig {
     /// Number of per-sub all-pass filters allowed during MSO.
     #[serde(default)]
     pub allpass_filters_per_sub: usize,
+    /// Enable all-channel multi-seat correction for non-sub home-cinema channels.
+    #[serde(default = "default_all_channel_multiseat_enabled")]
+    pub all_channel_enabled: bool,
+    /// Strategy used when deriving per-channel multi-measurement correction.
+    #[serde(default = "default_all_channel_multiseat_strategy")]
+    pub all_channel_strategy: MultiMeasurementStrategy,
+    /// Optional seat weights for all-channel multi-seat correction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seat_weights: Option<Vec<f64>>,
+    /// Relative primary-seat weight used with PrimaryWithConstraints.
+    #[serde(default = "default_primary_seat_weight")]
+    pub primary_seat_weight: f64,
 }
 
 fn default_max_deviation_db() -> f64 {
     6.0
+}
+fn default_all_channel_multiseat_enabled() -> bool {
+    true
+}
+fn default_all_channel_multiseat_strategy() -> MultiMeasurementStrategy {
+    MultiMeasurementStrategy::SpatialRobustness
+}
+fn default_primary_seat_weight() -> f64 {
+    2.0
 }
 
 impl Default for MultiSeatConfig {
@@ -1333,6 +1354,10 @@ impl Default for MultiSeatConfig {
             max_deviation_db: default_max_deviation_db(),
             optimize_polarity: false,
             allpass_filters_per_sub: 0,
+            all_channel_enabled: default_all_channel_multiseat_enabled(),
+            all_channel_strategy: default_all_channel_multiseat_strategy(),
+            seat_weights: None,
+            primary_seat_weight: default_primary_seat_weight(),
         }
     }
 }

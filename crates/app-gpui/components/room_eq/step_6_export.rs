@@ -296,6 +296,7 @@ impl PlayerView {
     fn export_room_eq_format(&mut self, cx: &mut Context<Self>) {
         let (dsp_output, format_idx) = {
             let state = self.state.read(cx);
+            let translations = state.app.ui_state.translations.clone();
             (
                 state.app.measurement_state.room_eq_state.dsp_output.clone(),
                 state
@@ -485,6 +486,7 @@ impl PlayerView {
             // Get the current plugin graph
             let plugin_graph = {
                 let state = self.state.read(cx);
+                let translations = state.app.ui_state.translations.clone();
                 state.app.plugin_state.graph.clone()
             };
 
@@ -544,6 +546,7 @@ impl PlayerView {
         // because the EQ plugin maps channel_filters[i] to audio channel i.
         let (dsp_output, channel_result_names) = {
             let state = self.state.read(cx);
+            let translations = state.app.ui_state.translations.clone();
             let names: Vec<String> = state
                 .app
                 .measurement_state

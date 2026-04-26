@@ -66,17 +66,22 @@ pub struct SpatialRobustnessResult {
 ///
 /// All curves must share the same frequency axis.
 pub fn rms_average(curves: &[Curve]) -> Curve {
+    rms_average_weighted(curves, None)
+}
+
+pub fn rms_average_weighted(curves: &[Curve], weights: Option<&[f64]>) -> Curve {
     assert!(!curves.is_empty(), "need at least one curve");
-    let n = curves.len() as f64;
     let len = curves[0].freq.len();
+    let weights = normalized_weights(curves.len(), weights);
 
     let mut avg_spl = Array1::zeros(len);
     for bin in 0..len {
         let sum_power: f64 = curves
             .iter()
-            .map(|c| 10.0_f64.powf(c.spl[bin] / 10.0))
+            .zip(weights.iter())
+            .map(|(c, weight)| weight * 10.0_f64.powf(c.spl[bin] / 10.0))
             .sum();
-        avg_spl[bin] = 10.0 * (sum_power / n).log10();
+        avg_spl[bin] = 10.0 * sum_power.max(1e-12).log10();
     }
 
     Curve {
@@ -93,23 +98,36 @@ pub fn rms_average(curves: &[Curve]) -> Curve {
 /// (e.g., a room mode). A high std dev means position-dependent (e.g., comb
 /// filtering from reflections arriving at different phase per position).
 pub fn spatial_std_dev(curves: &[Curve]) -> Array1<f64> {
+    spatial_std_dev_weighted(curves, None)
+}
+
+pub fn spatial_std_dev_weighted(curves: &[Curve], weights: Option<&[f64]>) -> Array1<f64> {
     assert!(!curves.is_empty(), "need at least one curve");
     if curves.len() == 1 {
         // Single curve: zero variance everywhere
         return Array1::zeros(curves[0].freq.len());
     }
-    let n = curves.len() as f64;
     let len = curves[0].freq.len();
+    let weights = normalized_weights(curves.len(), weights);
 
     let mut std_dev = Array1::zeros(len);
     for bin in 0..len {
-        let mean: f64 = curves.iter().map(|c| c.spl[bin]).sum::<f64>() / n;
+        let mean: f64 = curves
+            .iter()
+            .zip(weights.iter())
+            .map(|(c, weight)| weight * c.spl[bin])
+            .sum();
         let variance: f64 = curves
             .iter()
-            .map(|c| (c.spl[bin] - mean).powi(2))
-            .sum::<f64>()
-            / (n - 1.0);
-        std_dev[bin] = variance.sqrt();
+            .zip(weights.iter())
+            .map(|(c, weight)| weight * (c.spl[bin] - mean).powi(2))
+            .sum::<f64>();
+        let unbiased_denominator = 1.0 - weights.iter().map(|w| w * w).sum::<f64>();
+        std_dev[bin] = if unbiased_denominator > f64::EPSILON {
+            (variance / unbiased_denominator).sqrt()
+        } else {
+            0.0
+        };
     }
 
     std_dev
@@ -163,8 +181,16 @@ pub fn analyze_spatial_robustness(
     curves: &[Curve],
     config: &SpatialRobustnessConfig,
 ) -> SpatialRobustnessResult {
-    let averaged_curve = rms_average(curves);
-    let spatial_variance = spatial_std_dev(curves);
+    analyze_spatial_robustness_weighted(curves, config, None)
+}
+
+pub fn analyze_spatial_robustness_weighted(
+    curves: &[Curve],
+    config: &SpatialRobustnessConfig,
+    weights: Option<&[f64]>,
+) -> SpatialRobustnessResult {
+    let averaged_curve = rms_average_weighted(curves, weights);
+    let spatial_variance = spatial_std_dev_weighted(curves, weights);
     let correction_depth = correction_depth_mask(&averaged_curve.freq, &spatial_variance, config);
 
     SpatialRobustnessResult {
@@ -172,6 +198,27 @@ pub fn analyze_spatial_robustness(
         spatial_variance,
         correction_depth,
     }
+}
+
+fn normalized_weights(len: usize, weights: Option<&[f64]>) -> Vec<f64> {
+    let Some(weights) = weights else {
+        return vec![1.0 / len as f64; len];
+    };
+    if weights.len() != len {
+        return vec![1.0 / len as f64; len];
+    }
+    let mut clean: Vec<f64> = weights
+        .iter()
+        .map(|w| if w.is_finite() && *w > 0.0 { *w } else { 0.0 })
+        .collect();
+    let sum: f64 = clean.iter().sum();
+    if sum <= f64::EPSILON {
+        return vec![1.0 / len as f64; len];
+    }
+    for weight in &mut clean {
+        *weight /= sum;
+    }
+    clean
 }
 
 /// Smooth an array using a sliding window in log-frequency domain.

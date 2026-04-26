@@ -1387,7 +1387,11 @@ fn optimize_spatial_robustness(
     };
 
     // Analyze spatial robustness
-    let analysis = spatial_robustness::analyze_spatial_robustness(curves, &sr_config);
+    let analysis = spatial_robustness::analyze_spatial_robustness_weighted(
+        curves,
+        &sr_config,
+        multi_config.weights.as_deref(),
+    );
 
     log::info!(
         "  Spatial robustness: {} positions, variance range {:.1}-{:.1} dB",

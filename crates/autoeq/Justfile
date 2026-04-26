@@ -310,6 +310,13 @@ qa-roomeq-multiseat-guards:
 qa-roomeq-home-cinema:
 	cargo test -p autoeq home_cinema --lib -- --nocapture
 	cargo test -p autoeq validate_bass_management --lib -- --nocapture
+	cargo test -p autoeq derives_all_channel_multiseat_primary_weights --lib -- --nocapture
+	cargo test -p autoeq reports_all_channel_multiseat_null_guard --lib -- --nocapture
+
+[group('qa-roomeq')]
+qa-roomeq-all-channel-multiseat:
+	cargo test -p autoeq derives_all_channel_multiseat_primary_weights --lib -- --nocapture
+	cargo test -p autoeq reports_all_channel_multiseat_null_guard --lib -- --nocapture
 
 [group('qa-roomeq')]
 qa-roomeq-bass-management:
@@ -337,6 +344,7 @@ qa-roomeq-phase-critical:
 [group('qa-roomeq')]
 qa-roomeq-perceptual:
 	cargo test -p autoeq perceptual_metrics --lib -- --nocapture
+	cargo test -p autoeq reports_all_channel_multiseat_null_guard --lib -- --nocapture
 
 [group('qa-roomeq')]
 qa-roomeq-gd:

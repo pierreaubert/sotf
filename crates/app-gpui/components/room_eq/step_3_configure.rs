@@ -16,6 +16,7 @@ use super::render::render_channel_config_row;
 impl PlayerView {
     pub(crate) fn render_room_eq_configure(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let wizard_mode = state.app.measurement_state.room_eq_state.wizard_mode;
 
         match wizard_mode {
@@ -1777,6 +1778,7 @@ impl PlayerView {
     #[allow(dead_code)]
     fn render_slope_recommendation(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let room_eq = &state.app.measurement_state.room_eq_state;
 
@@ -1866,6 +1868,7 @@ impl PlayerView {
     fn render_channel_config_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let speaker_configs = state
             .app

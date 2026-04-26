@@ -1079,14 +1079,33 @@ pub(super) fn process_single_speaker(
 
             // Compute spatial correction depth mask if multi-measurement data is available.
             // This prevents the excess phase FIR from correcting position-dependent phase.
-            let spatial_depth = if matches!(source, MeasurementSource::Multiple(_)) {
+            let spatial_depth = if matches!(
+                source,
+                MeasurementSource::Multiple(_) | MeasurementSource::InMemoryMultiple(_)
+            ) {
                 match load::load_source_individual(source) {
                     Ok(curves) if curves.len() > 1 => {
-                        let sr_config =
-                            super::spatial_robustness::SpatialRobustnessConfig::default();
-                        let analysis = super::spatial_robustness::analyze_spatial_robustness(
-                            &curves, &sr_config,
-                        );
+                        let sr_config = room_config
+                            .optimizer
+                            .multi_measurement
+                            .as_ref()
+                            .and_then(|mc| mc.spatial_robustness.as_ref())
+                            .map(|sc| super::spatial_robustness::SpatialRobustnessConfig {
+                                variance_threshold_db: sc.variance_threshold_db,
+                                transition_width_db: sc.transition_width_db,
+                                min_correction_depth: sc.min_correction_depth,
+                                mask_smoothing_octaves: sc.mask_smoothing_octaves,
+                            })
+                            .unwrap_or_default();
+                        let weights = room_config
+                            .optimizer
+                            .multi_measurement
+                            .as_ref()
+                            .and_then(|mc| mc.weights.as_deref());
+                        let analysis =
+                            super::spatial_robustness::analyze_spatial_robustness_weighted(
+                                &curves, &sr_config, weights,
+                            );
                         info!(
                             "  Spatial depth for mixed-phase: mean={:.2}",
                             analysis.correction_depth.iter().sum::<f64>()
