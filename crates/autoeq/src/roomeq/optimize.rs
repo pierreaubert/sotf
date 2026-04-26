@@ -1345,7 +1345,11 @@ fn optimize_room_impl(
                 if workflow_refresh_needed {
                     refresh_final_reports(&mut result, config, sample_rate);
                 }
-                update_perceptual_metrics(&mut result.metadata);
+                update_perceptual_metrics(
+                    &mut result.metadata,
+                    Some(&result.channels),
+                    Some(config),
+                );
 
                 sanity_check_result(&result)?;
                 return Ok(result);
@@ -2253,6 +2257,7 @@ fn optimize_room_impl(
         home_cinema_layout: None,
         multi_seat_coverage: None,
         bass_management: None,
+        timing_diagnostics: build_timing_diagnostics(config, &channel_arrivals, &channel_chains),
     };
 
     let mut result = RoomOptimizationResult {
@@ -2370,7 +2375,7 @@ fn refresh_final_reports(
     let epa_cfg = config.optimizer.epa_config.clone().unwrap_or_default();
     result.metadata.epa_per_channel =
         crate::roomeq::output::compute_epa_per_channel(&result.channels, &epa_cfg);
-    update_perceptual_metrics(&mut result.metadata);
+    update_perceptual_metrics(&mut result.metadata, Some(&result.channels), Some(config));
 
     let ir_inputs: Vec<_> = result
         .channel_results
@@ -2406,7 +2411,154 @@ fn refresh_final_reports(
     }
 }
 
-fn update_perceptual_metrics(metadata: &mut OptimizationMetadata) {
+fn build_timing_diagnostics(
+    config: &RoomConfig,
+    arrivals_ms: &HashMap<String, f64>,
+    chains: &HashMap<String, ChannelDspChain>,
+) -> Option<super::home_cinema::TimingDiagnosticsReport> {
+    if arrivals_ms.is_empty() {
+        return None;
+    }
+
+    let mut channels = Vec::new();
+    for (name, arrival_ms) in arrivals_ms {
+        let applied_delay_ms = chains.get(name).map(total_chain_delay_ms).unwrap_or(0.0);
+        let final_arrival_ms = arrival_ms + applied_delay_ms;
+        channels.push(super::home_cinema::ChannelTimingReport {
+            name: name.clone(),
+            role: super::home_cinema::role_for_channel(name),
+            measured_arrival_ms: *arrival_ms,
+            acoustic_distance_m: arrival_ms * 0.343,
+            applied_delay_ms,
+            final_arrival_ms,
+            final_offset_from_reference_ms: 0.0,
+        });
+    }
+    channels.sort_by(|a, b| a.name.cmp(&b.name));
+
+    let before_values: Vec<f64> = channels
+        .iter()
+        .map(|channel| channel.measured_arrival_ms)
+        .collect();
+    let after_values: Vec<f64> = channels
+        .iter()
+        .map(|channel| channel.final_arrival_ms)
+        .collect();
+    let arrival_spread_before_ms = spread(&before_values).unwrap_or(0.0);
+    let arrival_spread_after_ms = spread(&after_values).unwrap_or(0.0);
+    let reference_arrival_ms = after_values.iter().copied().reduce(f64::max);
+    let reference_channel = reference_arrival_ms.and_then(|reference| {
+        channels
+            .iter()
+            .find(|channel| (channel.final_arrival_ms - reference).abs() < 1e-6)
+            .map(|channel| channel.name.clone())
+    });
+    if let Some(reference) = reference_arrival_ms {
+        for channel in &mut channels {
+            channel.final_offset_from_reference_ms = channel.final_arrival_ms - reference;
+        }
+    }
+
+    let mut advisories = Vec::new();
+    if arrival_spread_before_ms > ARRIVAL_TIME_WARNING_THRESHOLD_MS {
+        advisories.push("large_measured_arrival_spread".to_string());
+    }
+    if arrival_spread_after_ms > 0.5 {
+        advisories.push("post_dsp_arrivals_not_aligned".to_string());
+    }
+    if let Some(lcr_advisory) = lcr_timing_advisory(&channels) {
+        advisories.push(lcr_advisory);
+    }
+    if surround_or_height_precedence_risk(&channels) {
+        advisories.push("surround_or_height_precedence_risk".to_string());
+    }
+    if advisories.is_empty() {
+        advisories.push("ok".to_string());
+    }
+
+    let _ = config;
+    Some(super::home_cinema::TimingDiagnosticsReport {
+        reference_channel,
+        reference_arrival_ms,
+        arrival_spread_before_ms,
+        arrival_spread_after_ms,
+        channels,
+        advisories,
+    })
+}
+
+fn lcr_timing_advisory(channels: &[super::home_cinema::ChannelTimingReport]) -> Option<String> {
+    let front_or_center: Vec<_> = channels
+        .iter()
+        .filter(|channel| {
+            matches!(
+                channel.role,
+                super::home_cinema::HomeCinemaRole::FrontLeft
+                    | super::home_cinema::HomeCinemaRole::FrontRight
+                    | super::home_cinema::HomeCinemaRole::Center
+            )
+        })
+        .collect();
+    if front_or_center.len() < 2 {
+        return None;
+    }
+    let values: Vec<f64> = front_or_center
+        .iter()
+        .map(|channel| channel.final_arrival_ms)
+        .collect();
+    if spread(&values).unwrap_or(0.0) > 0.5 {
+        Some("lcr_imaging_timing_spread".to_string())
+    } else {
+        None
+    }
+}
+
+fn surround_or_height_precedence_risk(
+    channels: &[super::home_cinema::ChannelTimingReport],
+) -> bool {
+    let front_reference = channels
+        .iter()
+        .filter(|channel| {
+            matches!(
+                channel.role,
+                super::home_cinema::HomeCinemaRole::FrontLeft
+                    | super::home_cinema::HomeCinemaRole::FrontRight
+                    | super::home_cinema::HomeCinemaRole::Center
+            )
+        })
+        .map(|channel| channel.final_arrival_ms)
+        .reduce(f64::min);
+    let Some(front_reference) = front_reference else {
+        return false;
+    };
+    channels.iter().any(|channel| {
+        let surround_or_height = matches!(
+            channel.role,
+            super::home_cinema::HomeCinemaRole::SideSurroundLeft
+                | super::home_cinema::HomeCinemaRole::SideSurroundRight
+                | super::home_cinema::HomeCinemaRole::RearSurroundLeft
+                | super::home_cinema::HomeCinemaRole::RearSurroundRight
+                | super::home_cinema::HomeCinemaRole::WideLeft
+                | super::home_cinema::HomeCinemaRole::WideRight
+        ) || channel.role.is_height();
+        surround_or_height && channel.final_arrival_ms + 0.5 < front_reference
+    })
+}
+
+fn spread(values: &[f64]) -> Option<f64> {
+    if values.is_empty() {
+        return None;
+    }
+    let min = values.iter().copied().reduce(f64::min)?;
+    let max = values.iter().copied().reduce(f64::max)?;
+    Some(max - min)
+}
+
+fn update_perceptual_metrics(
+    metadata: &mut OptimizationMetadata,
+    channels: Option<&HashMap<String, ChannelDspChain>>,
+    config: Option<&RoomConfig>,
+) {
     let Some(epa_per_channel) = metadata.epa_per_channel.as_ref() else {
         metadata.perceptual_metrics = None;
         return;
@@ -2431,6 +2583,24 @@ fn update_perceptual_metrics(metadata: &mut OptimizationMetadata) {
         .inter_channel_deviation
         .as_ref()
         .map(|icd| icd.midrange_rms_db);
+    let role_channel_matching_rms_db = channels.and_then(role_channel_matching_rms_db);
+    let bass_consistency_rms_db = channels.and_then(bass_consistency_rms_db);
+    let dialog_band_roughness_rms_db = channels.and_then(dialog_band_roughness_rms_db);
+    let headroom_peak_boost_db = channels.and_then(headroom_peak_boost_db);
+    let headroom_risk = headroom_peak_boost_db.map(|peak_boost| {
+        let margin_db = config
+            .and_then(|cfg| cfg.system.as_ref())
+            .and_then(|system| system.bass_management.as_ref())
+            .map(|bm| bm.headroom_margin_db)
+            .unwrap_or(6.0);
+        if peak_boost > margin_db {
+            "high_boost_exceeds_headroom_margin".to_string()
+        } else if peak_boost > margin_db * 0.5 {
+            "moderate_boost_uses_headroom".to_string()
+        } else {
+            "ok".to_string()
+        }
+    });
     let timing_confidence = metadata.group_delay.as_ref().map(|gd| {
         if gd.applied {
             "gd_applied".to_string()
@@ -2446,8 +2616,153 @@ fn update_perceptual_metrics(metadata: &mut OptimizationMetadata) {
         epa_preference_post,
         epa_preference_delta: epa_preference_post - epa_preference_pre,
         channel_matching_midrange_rms_db,
+        role_channel_matching_rms_db,
+        bass_consistency_rms_db,
+        dialog_band_roughness_rms_db,
+        headroom_peak_boost_db,
+        headroom_risk,
         timing_confidence,
     });
+}
+
+fn role_channel_matching_rms_db(channels: &HashMap<String, ChannelDspChain>) -> Option<f64> {
+    let mut grouped: HashMap<&'static str, Vec<&ChannelDspChain>> = HashMap::new();
+    for (name, chain) in channels {
+        if let Some(key) = channel_matching_role_key(name) {
+            grouped.entry(key).or_default().push(chain);
+        }
+    }
+
+    let mut group_rms = Vec::new();
+    for group in grouped.values() {
+        if group.len() < 2 {
+            continue;
+        }
+        if let Some(rms) = group_mean_deviation_rms_db(group, (300.0, 4_000.0)) {
+            group_rms.push(rms);
+        }
+    }
+    mean(&group_rms)
+}
+
+fn bass_consistency_rms_db(channels: &HashMap<String, ChannelDspChain>) -> Option<f64> {
+    let bass_channels: Vec<&ChannelDspChain> = channels
+        .iter()
+        .filter_map(|(name, chain)| {
+            if super::home_cinema::role_for_channel(name).is_sub_or_lfe() {
+                Some(chain)
+            } else {
+                None
+            }
+        })
+        .collect();
+    if bass_channels.len() < 2 {
+        return None;
+    }
+    group_mean_deviation_rms_db(&bass_channels, (20.0, 160.0))
+}
+
+fn dialog_band_roughness_rms_db(channels: &HashMap<String, ChannelDspChain>) -> Option<f64> {
+    let center = channels.iter().find_map(|(name, chain)| {
+        if super::home_cinema::role_for_channel(name) == super::home_cinema::HomeCinemaRole::Center
+        {
+            Some(chain)
+        } else {
+            None
+        }
+    })?;
+    curve_roughness_rms_db(center.final_curve.as_ref()?, (300.0, 4_000.0))
+}
+
+fn headroom_peak_boost_db(channels: &HashMap<String, ChannelDspChain>) -> Option<f64> {
+    let mut peak = 0.0_f64;
+    let mut saw_plugin = false;
+    for chain in channels.values() {
+        for plugin in &chain.plugins {
+            if plugin.plugin_type == "gain" {
+                if let Some(gain_db) = plugin.parameters.get("gain_db").and_then(|v| v.as_f64()) {
+                    peak = peak.max(gain_db);
+                    saw_plugin = true;
+                }
+            } else if plugin.plugin_type == "eq"
+                && let Some(filters) = plugin.parameters.get("filters").and_then(|v| v.as_array())
+            {
+                for filter in filters {
+                    if let Some(gain_db) = filter.get("db_gain").and_then(|v| v.as_f64()) {
+                        peak = peak.max(gain_db);
+                        saw_plugin = true;
+                    }
+                }
+            }
+        }
+    }
+    if saw_plugin { Some(peak) } else { None }
+}
+
+fn group_mean_deviation_rms_db(channels: &[&ChannelDspChain], band: (f64, f64)) -> Option<f64> {
+    let reference = channels.first()?.final_curve.as_ref()?;
+    if channels.iter().any(|chain| {
+        chain.final_curve.as_ref().is_none_or(|curve| {
+            curve.freq.len() != reference.freq.len()
+                || curve.freq.iter().zip(reference.freq.iter()).any(|(a, b)| {
+                    let scale = a.abs().max(b.abs()).max(1.0);
+                    (a - b).abs() > scale * 1e-6
+                })
+        })
+    }) {
+        return None;
+    }
+
+    let mut deviations = Vec::new();
+    for idx in 0..reference.freq.len() {
+        let freq = reference.freq[idx];
+        if freq < band.0 || freq > band.1 {
+            continue;
+        }
+        let values: Vec<f64> = channels
+            .iter()
+            .filter_map(|chain| chain.final_curve.as_ref().map(|curve| curve.spl[idx]))
+            .collect();
+        let Some(avg) = mean(&values) else {
+            continue;
+        };
+        deviations.extend(values.into_iter().map(|value| value - avg));
+    }
+    rms(&deviations)
+}
+
+fn curve_roughness_rms_db(curve: &super::types::CurveData, band: (f64, f64)) -> Option<f64> {
+    let values: Vec<f64> = curve
+        .freq
+        .iter()
+        .zip(curve.spl.iter())
+        .filter_map(|(freq, spl)| {
+            if *freq >= band.0 && *freq <= band.1 {
+                Some(*spl)
+            } else {
+                None
+            }
+        })
+        .collect();
+    let avg = mean(&values)?;
+    let deviations: Vec<f64> = values.into_iter().map(|value| value - avg).collect();
+    rms(&deviations)
+}
+
+fn mean(values: &[f64]) -> Option<f64> {
+    if values.is_empty() {
+        None
+    } else {
+        Some(values.iter().sum::<f64>() / values.len() as f64)
+    }
+}
+
+fn rms(values: &[f64]) -> Option<f64> {
+    if values.is_empty() {
+        None
+    } else {
+        Some((values.iter().map(|value| value * value).sum::<f64>() / values.len() as f64).sqrt())
+    }
 }
 
 fn channel_matching_role_key(channel_name: &str) -> Option<&'static str> {
@@ -3462,9 +3777,10 @@ mod tests {
             home_cinema_layout: None,
             multi_seat_coverage: None,
             bass_management: None,
+            timing_diagnostics: None,
         };
 
-        update_perceptual_metrics(&mut metadata);
+        update_perceptual_metrics(&mut metadata, None, None);
 
         let metrics = metadata.perceptual_metrics.expect("metrics");
         assert_close(metrics.epa_preference_pre, 4.5);
@@ -3472,6 +3788,183 @@ mod tests {
         assert_close(metrics.epa_preference_delta, 2.0);
         assert_close(metrics.channel_matching_midrange_rms_db.unwrap(), 1.25);
         assert_eq!(metrics.timing_confidence.as_deref(), Some("gd_applied"));
+    }
+
+    #[test]
+    fn perceptual_metrics_report_role_bass_dialog_and_headroom_guards() {
+        let score = |preference| crate::loss::epa::score::EpaScore {
+            evaluation: 0.0,
+            potency: 0.0,
+            activity: 0.0,
+            preference,
+            sharpness_acum: 0.0,
+            roughness: 0.0,
+            total_loudness_sone: 0.0,
+            loudness_balance: 0.0,
+        };
+        let freqs = array![40.0, 80.0, 300.0, 1000.0, 4000.0];
+        let left = Curve {
+            freq: freqs.clone(),
+            spl: array![0.0, 0.0, 0.0, 0.0, 0.0],
+            phase: None,
+            ..Default::default()
+        };
+        let right = Curve {
+            freq: freqs.clone(),
+            spl: array![0.0, 0.0, 0.0, 2.0, 0.0],
+            phase: None,
+            ..Default::default()
+        };
+        let center = Curve {
+            freq: freqs.clone(),
+            spl: array![0.0, 0.0, -1.0, 1.0, -1.0],
+            phase: None,
+            ..Default::default()
+        };
+        let sub = Curve {
+            freq: freqs.clone(),
+            spl: array![1.0, 1.0, 0.0, 0.0, 0.0],
+            phase: None,
+            ..Default::default()
+        };
+        let lfe = Curve {
+            freq: freqs,
+            spl: array![-1.0, -1.0, 0.0, 0.0, 0.0],
+            phase: None,
+            ..Default::default()
+        };
+        let mut boosted_left = test_chain("L", &left);
+        boosted_left.plugins.push(output::create_gain_plugin(5.0));
+        let channels = HashMap::from([
+            ("L".to_string(), boosted_left),
+            ("R".to_string(), test_chain("R", &right)),
+            ("C".to_string(), test_chain("C", &center)),
+            ("Sub".to_string(), test_chain("Sub", &sub)),
+            ("LFE".to_string(), test_chain("LFE", &lfe)),
+        ]);
+        let mut metadata = OptimizationMetadata {
+            pre_score: 0.0,
+            post_score: 0.0,
+            algorithm: "test".to_string(),
+            loss_type: Some("flat".to_string()),
+            iterations: 0,
+            timestamp: "test".to_string(),
+            inter_channel_deviation: None,
+            epa_per_channel: Some(HashMap::from([(
+                "L".to_string(),
+                super::super::types::EpaChannelMetrics {
+                    pre: score(1.0),
+                    post: score(2.0),
+                },
+            )])),
+            group_delay: None,
+            perceptual_metrics: None,
+            home_cinema_layout: None,
+            multi_seat_coverage: None,
+            bass_management: None,
+            timing_diagnostics: None,
+        };
+
+        update_perceptual_metrics(&mut metadata, Some(&channels), None);
+
+        let metrics = metadata.perceptual_metrics.expect("metrics");
+        assert!(metrics.role_channel_matching_rms_db.unwrap() > 0.0);
+        assert_close(metrics.bass_consistency_rms_db.unwrap(), 1.0);
+        assert!(metrics.dialog_band_roughness_rms_db.unwrap() > 0.8);
+        assert_close(metrics.headroom_peak_boost_db.unwrap(), 5.0);
+        assert_eq!(
+            metrics.headroom_risk.as_deref(),
+            Some("moderate_boost_uses_headroom")
+        );
+    }
+
+    #[test]
+    fn role_channel_matching_metric_skips_invalid_groups() {
+        let valid_l = Curve {
+            freq: array![300.0, 1000.0, 4000.0],
+            spl: array![0.0, 0.0, 0.0],
+            phase: None,
+            ..Default::default()
+        };
+        let valid_r = Curve {
+            freq: array![300.0, 1000.0, 4000.0],
+            spl: array![0.0, 2.0, 0.0],
+            phase: None,
+            ..Default::default()
+        };
+        let invalid_sl = Curve {
+            freq: array![300.0, 1000.0, 4000.0],
+            spl: array![0.0, 0.0, 0.0],
+            phase: None,
+            ..Default::default()
+        };
+        let invalid_sr = Curve {
+            freq: array![301.0, 1000.0, 4000.0],
+            spl: array![0.0, 0.0, 0.0],
+            phase: None,
+            ..Default::default()
+        };
+        let channels = HashMap::from([
+            ("L".to_string(), test_chain("L", &valid_l)),
+            ("R".to_string(), test_chain("R", &valid_r)),
+            ("SL".to_string(), test_chain("SL", &invalid_sl)),
+            ("SR".to_string(), test_chain("SR", &invalid_sr)),
+        ]);
+
+        let rms = role_channel_matching_rms_db(&channels).expect("valid L/R group");
+
+        assert!(rms > 0.0);
+    }
+
+    #[test]
+    fn timing_diagnostics_reflect_measured_arrivals_and_exported_delays() {
+        let curve = Curve {
+            freq: array![100.0, 1000.0],
+            spl: array![0.0, 0.0],
+            phase: None,
+            ..Default::default()
+        };
+        let mut left = test_chain("L", &curve);
+        left.plugins.push(output::create_delay_plugin(2.0));
+        let channels = HashMap::from([
+            ("L".to_string(), left),
+            ("R".to_string(), test_chain("R", &curve)),
+            ("SL".to_string(), test_chain("SL", &curve)),
+        ]);
+        let arrivals = HashMap::from([
+            ("L".to_string(), 8.0),
+            ("R".to_string(), 10.0),
+            ("SL".to_string(), 7.0),
+        ]);
+        let config = RoomConfig {
+            version: "test".to_string(),
+            system: None,
+            speakers: HashMap::new(),
+            crossovers: None,
+            target_curve: None,
+            optimizer: OptimizerConfig::default(),
+            recording_config: None,
+            cea2034_cache: None,
+        };
+
+        let report = build_timing_diagnostics(&config, &arrivals, &channels).expect("timing");
+        assert_eq!(report.reference_channel.as_deref(), Some("L"));
+        assert_close(report.reference_arrival_ms.unwrap(), 10.0);
+        assert_close(report.arrival_spread_before_ms, 3.0);
+        assert_close(report.arrival_spread_after_ms, 3.0);
+        let left_report = report
+            .channels
+            .iter()
+            .find(|channel| channel.name == "L")
+            .unwrap();
+        assert_close(left_report.measured_arrival_ms, 8.0);
+        assert_close(left_report.applied_delay_ms, 2.0);
+        assert_close(left_report.final_arrival_ms, 10.0);
+        assert!(
+            report
+                .advisories
+                .contains(&"surround_or_height_precedence_risk".to_string())
+        );
     }
 
     #[test]

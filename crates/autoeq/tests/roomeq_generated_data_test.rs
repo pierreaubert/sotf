@@ -634,6 +634,7 @@ fn test_mixedphase_with_phase_data() {
             model: SystemModel::Custom,
             speakers: system_speakers,
             subwoofers: None,
+            bass_management: None,
         }),
         speakers,
         crossovers: None,

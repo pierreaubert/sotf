@@ -629,6 +629,7 @@ pub fn optimize_stereo_2_0(
             home_cinema_layout: None,
             multi_seat_coverage: None,
             bass_management: None,
+            timing_diagnostics: None,
         },
     })
 }
@@ -1328,6 +1329,7 @@ pub fn optimize_stereo_2_1(
                 Some(sub_gain_post),
                 sub_gain_limited,
             ),
+            timing_diagnostics: None,
         },
     })
 }
@@ -1518,6 +1520,7 @@ fn optimize_home_cinema_no_sub(
             home_cinema_layout: Some(super::home_cinema::analyze_layout(config)),
             multi_seat_coverage: Some(super::home_cinema::multi_seat_coverage(config)),
             bass_management: None,
+            timing_diagnostics: None,
         },
     })
 }
@@ -2102,6 +2105,7 @@ fn optimize_home_cinema_with_sub(
                 Some(sub_gain_post),
                 sub_gain_limited,
             ),
+            timing_diagnostics: None,
         },
     })
 }

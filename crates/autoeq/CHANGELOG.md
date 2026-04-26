@@ -112,6 +112,18 @@ variance-only heuristic.
 - `OptimizationMetadata` now includes optional `perceptual_metrics` with
   average EPA preference before/after, EPA preference delta, channel-matching
   midrange RMS, and GD/timing confidence.
+- `perceptual_metrics` now also reports bounded home-cinema guardrails:
+  role-aware channel matching RMS, sub/LFE bass consistency, center dialog-band
+  roughness, peak positive boost/headroom risk, and final-chain timing
+  confidence. These are report-only metrics for now so QA can catch perceptual
+  tradeoffs without changing optimizer behavior.
+- Added `metadata.timing_diagnostics`, derived from measured/probe/phase
+  arrivals plus the final exported delay plugins. It reports acoustic
+  distance, post-DSP timing offsets, LCR imaging timing spread, and
+  surround/height precedence advisories.
+- Added focused QA entry points for the remaining home-cinema roadmap layers:
+  `qa-roomeq-dsp-consistency`, `qa-roomeq-phase-critical`, and
+  `qa-roomeq-perceptual`, and wired their fast checks into `qa-roomeq-ci`.
 - RoomEQ QA was updated so X.1 systems are evaluated against the main bed for
   broadband improvement while keeping separate sub-system and per-channel
   sanity checks.

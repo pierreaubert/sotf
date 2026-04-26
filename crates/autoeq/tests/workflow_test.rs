@@ -48,6 +48,7 @@ mod tests {
                 model: SystemModel::Stereo,
                 speakers: system_speakers,
                 subwoofers: None,
+                bass_management: None,
             }),
             speakers,
             crossovers: None,
@@ -143,6 +144,7 @@ mod tests {
                     crossover: Some("sub_xover".to_string()),
                     mapping: sub_map,
                 }),
+                bass_management: None,
             }),
             speakers,
             crossovers: Some(crossovers),
@@ -311,6 +313,7 @@ mod tests {
                 curve_path: None,
                 preference: Default::default(),
                 broadband_precorrection: false,
+                role_targets: None,
             }),
             ..OptimizerConfig::default()
         };

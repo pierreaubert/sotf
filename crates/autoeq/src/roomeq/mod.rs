@@ -161,8 +161,9 @@ pub use excursion::{
     ExcursionProtectionResult, F3DetectionResult, detect_f3, generate_excursion_protection,
 };
 pub use home_cinema::{
-    BassManagementReport, HomeCinemaChannelReport, HomeCinemaLayoutReport, HomeCinemaRole,
-    HomeCinemaRoleGroup, MultiSeatCoverageReport, analyze_layout as analyze_home_cinema_layout,
+    BassManagementReport, ChannelTimingReport, HomeCinemaChannelReport, HomeCinemaLayoutReport,
+    HomeCinemaRole, HomeCinemaRoleGroup, MultiSeatCoverageReport, TimingDiagnosticsReport,
+    analyze_layout as analyze_home_cinema_layout,
 };
 pub use multiseat::{MultiSeatMeasurements, MultiSeatOptimizationResult, optimize_multiseat};
 pub use phase_alignment::{

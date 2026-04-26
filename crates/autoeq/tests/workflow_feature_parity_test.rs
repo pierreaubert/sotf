@@ -72,6 +72,7 @@ fn make_stereo_config(optimizer: OptimizerConfig) -> RoomConfig {
             model: SystemModel::Stereo,
             speakers: system_speakers,
             subwoofers: None,
+            bass_management: None,
         }),
         speakers,
         crossovers: None,
@@ -204,6 +205,7 @@ fn stereo_2_0_runs_with_target_response_tilt() {
             curve_path: None,
             preference: UserPreference::default(),
             broadband_precorrection: false,
+            role_targets: None,
         }),
         ..OptimizerConfig::default()
     };
@@ -274,6 +276,7 @@ fn make_stereo_2_1_config(optimizer: OptimizerConfig) -> RoomConfig {
                 crossover: Some("sub_xover".to_string()),
                 mapping: sub_map,
             }),
+            bass_management: None,
         }),
         speakers,
         crossovers: Some(crossovers),
@@ -343,6 +346,7 @@ fn stereo_2_1_honours_target_response() {
             curve_path: None,
             preference: UserPreference::default(),
             broadband_precorrection: false,
+            role_targets: None,
         }),
         ..OptimizerConfig::default()
     };

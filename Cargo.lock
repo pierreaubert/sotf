@@ -8017,6 +8017,7 @@ dependencies = [
  "sotf-plugin-crossfeed",
  "sotf-plugin-crossover",
  "sotf-plugin-de-esser",
+ "sotf-plugin-declick",
  "sotf-plugin-delay",
  "sotf-plugin-denoiser",
  "sotf-plugin-dither",
@@ -8025,6 +8026,7 @@ dependencies = [
  "sotf-plugin-eq",
  "sotf-plugin-gain",
  "sotf-plugin-gate",
+ "sotf-plugin-hiss-reducer",
  "sotf-plugin-limiter",
  "sotf-plugin-linear-phase-eq",
  "sotf-plugin-loudness-compensation",
@@ -8036,6 +8038,7 @@ dependencies = [
  "sotf-plugin-resampler",
  "sotf-plugin-saturation",
  "sotf-plugin-spectral-compressor",
+ "sotf-plugin-speech-denoiser",
  "sotf-plugin-stereo-imager",
  "sotf-plugin-transient-shaper",
  "sotf-plugin-upmixer",
@@ -10417,7 +10420,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-engine"
-version = "1.0.23"
+version = "1.0.25"
 dependencies = [
  "arc-swap",
  "chrono",
@@ -10560,7 +10563,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-host"
-version = "0.5.89"
+version = "0.5.90"
 dependencies = [
  "arc-swap",
  "audioadapter-buffers",
@@ -10696,7 +10699,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-aae"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "criterion",
  "hound",
@@ -10708,7 +10711,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-ab-compare"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "math-iir-fir",
  "serde",
@@ -10856,6 +10859,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sotf-plugin-declick"
+version = "0.5.4"
+dependencies = [
+ "hound",
+ "serde",
+ "serde_json",
+ "sotf-host",
+ "sotf-plugin-denoiser",
+]
+
+[[package]]
 name = "sotf-plugin-delay"
 version = "0.5.4"
 dependencies = [
@@ -10969,6 +10983,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sotf-plugin-hiss-reducer"
+version = "0.5.4"
+dependencies = [
+ "hound",
+ "serde",
+ "serde_json",
+ "sotf-host",
+ "sotf-plugin-denoiser",
+]
+
+[[package]]
 name = "sotf-plugin-limiter"
 version = "0.5.8"
 dependencies = [
@@ -10980,7 +11005,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-linear-phase-eq"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "math-iir-fir",
  "num-complex 0.4.6",
@@ -11048,7 +11073,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-pnd"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "audioadapter-buffers",
  "hound",
@@ -11061,7 +11086,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-resampler"
-version = "0.5.21"
+version = "0.5.22"
 dependencies = [
  "audioadapter-buffers",
  "log",
@@ -11081,7 +11106,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-spectral-compressor"
-version = "0.5.20"
+version = "0.5.21"
 dependencies = [
  "math-dsp",
  "realfft",
@@ -11089,6 +11114,17 @@ dependencies = [
  "serde",
  "serde_json",
  "sotf-host",
+]
+
+[[package]]
+name = "sotf-plugin-speech-denoiser"
+version = "0.5.4"
+dependencies = [
+ "hound",
+ "serde",
+ "serde_json",
+ "sotf-host",
+ "sotf-plugin-denoiser",
 ]
 
 [[package]]
@@ -11111,7 +11147,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-upmixer"
-version = "0.5.114"
+version = "0.5.115"
 dependencies = [
  "criterion",
  "hound",
@@ -11131,7 +11167,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-xtc"
-version = "0.5.35"
+version = "0.5.36"
 dependencies = [
  "arc-swap",
  "criterion",
@@ -11203,6 +11239,7 @@ dependencies = [
  "sotf-plugin-crossfeed",
  "sotf-plugin-crossover",
  "sotf-plugin-de-esser",
+ "sotf-plugin-declick",
  "sotf-plugin-delay",
  "sotf-plugin-denoiser",
  "sotf-plugin-dither",
@@ -11213,6 +11250,7 @@ dependencies = [
  "sotf-plugin-gate",
  "sotf-plugin-hal-input",
  "sotf-plugin-hal-output",
+ "sotf-plugin-hiss-reducer",
  "sotf-plugin-limiter",
  "sotf-plugin-linear-phase-eq",
  "sotf-plugin-loudness-compensation",
@@ -11224,6 +11262,7 @@ dependencies = [
  "sotf-plugin-resampler",
  "sotf-plugin-saturation",
  "sotf-plugin-spectral-compressor",
+ "sotf-plugin-speech-denoiser",
  "sotf-plugin-stereo-imager",
  "sotf-plugin-transient-shaper",
  "sotf-plugin-upmixer",
