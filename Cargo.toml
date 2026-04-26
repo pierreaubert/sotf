@@ -17,6 +17,9 @@ members = [
     "crates/sotf-plugins/crates/sotf-plugin-de-esser",
     "crates/sotf-plugins/crates/sotf-plugin-dynamic-eq",
     "crates/sotf-plugins/crates/sotf-plugin-denoiser",
+    "crates/sotf-plugins/crates/sotf-plugin-speech-denoiser",
+    "crates/sotf-plugins/crates/sotf-plugin-hiss-reducer",
+    "crates/sotf-plugins/crates/sotf-plugin-declick",
     "crates/sotf-plugins/crates/sotf-plugin-dither",
     "crates/sotf-plugins/crates/sotf-plugin-downmix",
     "crates/sotf-plugins/crates/sotf-plugin-eq",
@@ -211,6 +214,9 @@ sotf-plugin-delay = { path = "crates/sotf-plugins/crates/sotf-plugin-delay" }
 sotf-plugin-de-esser = { path = "crates/sotf-plugins/crates/sotf-plugin-de-esser" }
 sotf-plugin-dynamic-eq = { path = "crates/sotf-plugins/crates/sotf-plugin-dynamic-eq" }
 sotf-plugin-denoiser = { path = "crates/sotf-plugins/crates/sotf-plugin-denoiser" }
+sotf-plugin-speech-denoiser = { path = "crates/sotf-plugins/crates/sotf-plugin-speech-denoiser" }
+sotf-plugin-hiss-reducer = { path = "crates/sotf-plugins/crates/sotf-plugin-hiss-reducer" }
+sotf-plugin-declick = { path = "crates/sotf-plugins/crates/sotf-plugin-declick" }
 sotf-plugin-dither = { path = "crates/sotf-plugins/crates/sotf-plugin-dither" }
 sotf-plugin-downmix = { path = "crates/sotf-plugins/crates/sotf-plugin-downmix" }
 sotf-plugin-eq = { path = "crates/sotf-plugins/crates/sotf-plugin-eq" }

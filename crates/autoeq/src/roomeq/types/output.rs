@@ -171,6 +171,25 @@ pub struct PerceptualMetrics {
     /// channel exists.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub channel_matching_midrange_rms_db: Option<f64>,
+    /// Role-aware channel matching RMS, computed only inside comparable
+    /// channel groups such as L/R, surrounds, or matching height pairs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role_channel_matching_rms_db: Option<f64>,
+    /// Bass-seat/output consistency RMS across sub/LFE outputs in the
+    /// modal/crossover band. Lower is better.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bass_consistency_rms_db: Option<f64>,
+    /// Center-channel dialog-band roughness after removing the local mean.
+    /// Lower is better for speech intelligibility.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dialog_band_roughness_rms_db: Option<f64>,
+    /// Peak positive gain requested by exported gain/EQ plugins. High values
+    /// are a clipping/headroom risk even when the final curve looks smooth.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub headroom_peak_boost_db: Option<f64>,
+    /// Advisory derived from `headroom_peak_boost_db`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub headroom_risk: Option<String>,
     /// Human-readable timing/GD confidence label.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timing_confidence: Option<String>,
@@ -226,4 +245,8 @@ pub struct OptimizationMetadata {
     /// Bass-management policy and applied trim/headroom summary.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bass_management: Option<crate::roomeq::home_cinema::BassManagementReport>,
+    /// Timing/localization diagnostics derived from measured arrivals and
+    /// final exported delay plugins.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timing_diagnostics: Option<crate::roomeq::home_cinema::TimingDiagnosticsReport>,
 }

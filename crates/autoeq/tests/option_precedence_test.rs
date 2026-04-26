@@ -54,6 +54,7 @@ fn i1_target_curve_plus_target_response_warns() {
         curve_path: None,
         preference: UserPreference::default(),
         broadband_precorrection: false,
+        role_targets: None,
     });
 
     let config = single_speaker_config(

@@ -1101,6 +1101,7 @@ mod tests {
                 home_cinema_layout: None,
                 multi_seat_coverage: None,
                 bass_management: None,
+                timing_diagnostics: None,
             }),
         }
     }

@@ -312,6 +312,21 @@ qa-roomeq-home-cinema:
 	cargo test -p autoeq validate_bass_management --lib -- --nocapture
 
 [group('qa-roomeq')]
+qa-roomeq-dsp-consistency:
+	cargo test -p autoeq reported_ --lib -- --nocapture
+	cargo test -p autoeq timing_diagnostics --lib -- --nocapture
+
+[group('qa-roomeq')]
+qa-roomeq-phase-critical:
+	cargo test -p autoeq gd_opt -- --nocapture
+	cargo test -p autoeq frequency_grid --lib -- --nocapture
+	cargo run --bin roomeq-qa-synthetic --no-default-features --release -- --multiseat-guards-only
+
+[group('qa-roomeq')]
+qa-roomeq-perceptual:
+	cargo test -p autoeq perceptual_metrics --lib -- --nocapture
+
+[group('qa-roomeq')]
 qa-roomeq-gd:
 	cargo test -p autoeq gd_opt -- --nocapture
 
@@ -325,6 +340,14 @@ qa-roomeq-features:
 qa-roomeq-ci:
 	cargo run --bin roomeq-fuzzer --release -- -n 50
 	cargo run --bin roomeq-qa-coverage --release -- --quick --maxeval 200
+	cargo test -p autoeq reported_ --lib -- --nocapture
+	cargo test -p autoeq timing_diagnostics --lib -- --nocapture
+	cargo test -p autoeq gd_opt -- --nocapture
+	cargo test -p autoeq frequency_grid --lib -- --nocapture
+	cargo run --bin roomeq-qa-synthetic --no-default-features --release -- --multiseat-guards-only
+	cargo test -p autoeq home_cinema --lib -- --nocapture
+	cargo test -p autoeq validate_bass_management --lib -- --nocapture
+	cargo test -p autoeq perceptual_metrics --lib -- --nocapture
 
 # Memory-capped integration test runner for autoeq.
 #

@@ -101,6 +101,27 @@ pub struct BassManagementReport {
     pub advisory: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ChannelTimingReport {
+    pub name: String,
+    pub role: HomeCinemaRole,
+    pub measured_arrival_ms: f64,
+    pub acoustic_distance_m: f64,
+    pub applied_delay_ms: f64,
+    pub final_arrival_ms: f64,
+    pub final_offset_from_reference_ms: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct TimingDiagnosticsReport {
+    pub reference_channel: Option<String>,
+    pub reference_arrival_ms: Option<f64>,
+    pub arrival_spread_before_ms: f64,
+    pub arrival_spread_after_ms: f64,
+    pub channels: Vec<ChannelTimingReport>,
+    pub advisories: Vec<String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct EffectiveBassManagement {
     pub config: BassManagementConfig,
