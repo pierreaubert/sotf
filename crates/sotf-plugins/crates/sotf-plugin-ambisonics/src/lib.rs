@@ -19,6 +19,7 @@ use std::any::Any;
 use std::sync::Arc;
 
 use decode_matrix::DecodeMatrix;
+use plugins_spatial::validate_interleaved_io;
 use spherical_harmonics::channel_count;
 
 use sotf_host::lr4_crossover::Lr4Crossover;
@@ -294,15 +295,23 @@ impl Plugin for AmbisonicsDecoderPlugin {
         output: &mut [f32],
         context: &ProcessContext,
     ) -> Result<usize, String> {
-        if self.decode_matrix.is_none() {
-            // No matrix — output silence
-            output[..context.num_frames * self.output_channels].fill(0.0);
-            return Ok(context.num_frames);
-        }
-
         let in_ch = self.input_channels;
         let out_ch = self.output_channels;
         let num_frames = context.num_frames;
+        let sizes = validate_interleaved_io(
+            "AmbisonicsDecoder",
+            num_frames,
+            in_ch,
+            out_ch,
+            input.len(),
+            output.len(),
+        )?;
+
+        if self.decode_matrix.is_none() {
+            // No matrix — output silence
+            output[..sizes.output_samples].fill(0.0);
+            return Ok(num_frames);
+        }
 
         if self.dual_band
             && self.basic_matrix.is_some()
@@ -473,6 +482,24 @@ mod tests {
         for s in &output {
             assert!(s.abs() < 1e-10, "Expected silence, got {}", s);
         }
+    }
+
+    #[test]
+    fn test_process_rejects_short_buffers() {
+        let mut plugin = AmbisonicsDecoderPlugin::new(&default_config()).unwrap();
+        plugin.initialize(48000).unwrap();
+
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: 16,
+        };
+        let short_input = vec![0.0_f32; 16 * 4 - 1];
+        let mut output = vec![0.0_f32; 16 * 6];
+        assert!(plugin.process(&short_input, &mut output, &ctx).is_err());
+
+        let input = vec![0.0_f32; 16 * 4];
+        let mut short_output = vec![0.0_f32; 16 * 6 - 1];
+        assert!(plugin.process(&input, &mut short_output, &ctx).is_err());
     }
 
     #[test]

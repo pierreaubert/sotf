@@ -14,6 +14,7 @@ path = "src/lib.rs"
 
 [dependencies]
 sotf-host = { workspace = true }
+plugins-spatial = { workspace = true }
 math-dsp = { workspace = true }
 math-rir = { workspace = true }
 arc-swap = { workspace = true }

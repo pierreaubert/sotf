@@ -2,11 +2,11 @@
 // Convolution Plugin - Partitioned FFT-based convolution
 // ============================================================================
 
-pub mod nupc;
 pub mod params;
 
 use arc_swap::ArcSwap;
 use audioadapter_buffers::direct::SequentialSliceOfVecs;
+use plugins_spatial::{nupc, validate_interleaved_in_place};
 use rayon::prelude::*;
 use rubato::{Fft, FixedSync, Resampler};
 use rustfft::FftPlanner;
@@ -159,6 +159,13 @@ impl ConvolutionPlugin {
 
     fn rebuild_cached_parameters(&mut self) {
         self.cached_parameters = param_bridge::build_parameters(CV, |i| self.param_value(i));
+        if let Some(ir_param) = self
+            .cached_parameters
+            .iter_mut()
+            .find(|param| param.id.as_str() == "ir_file")
+        {
+            ir_param.default_value = ParameterValue::String(self.ir_file.clone());
+        }
     }
 
     pub fn from_params(
@@ -171,7 +178,7 @@ impl ConvolutionPlugin {
         plugin.zero_latency_head = params.zero_latency_head;
         plugin.head_taps = params.head_taps;
         if !params.ir_file.is_empty() {
-            let _ = plugin.load_ir(&params.ir_file);
+            plugin.load_ir(&params.ir_file)?;
         }
         plugin.mix_value = params.mix;
         plugin.mix.set_target(params.mix);
@@ -467,11 +474,33 @@ impl InPlacePlugin for ConvolutionPlugin {
         self.cached_parameters.clone()
     }
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        if id.as_str() == "ir_file" {
+            let path = match value {
+                ParameterValue::String(path) => path,
+                other => {
+                    return Err(format!(
+                        "ir_file: type mismatch (expected String, got {other:?})"
+                    ));
+                }
+            };
+            if path.is_empty() {
+                self.state.store(Arc::new(None));
+                self.nupc_engines.clear();
+                self.ir_file.clear();
+            } else {
+                self.load_ir(&path)?;
+            }
+            self.rebuild_cached_parameters();
+            return Ok(());
+        }
         param_bridge::set_parameter(CV, &id, &value, |i, v| self.set_param_value(i, v))?;
         self.rebuild_cached_parameters();
         Ok(())
     }
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
+        if id.as_str() == "ir_file" {
+            return Some(ParameterValue::String(self.ir_file.clone()));
+        }
         param_bridge::get_parameter(CV, id, |i| self.param_value(i))
     }
     fn initialize(&mut self, sr: u32) -> PluginResult<()> {
@@ -491,6 +520,8 @@ impl InPlacePlugin for ConvolutionPlugin {
         context: &ProcessContext,
     ) -> PluginResult<usize> {
         let nf = context.num_frames;
+        let total_samples =
+            validate_interleaved_in_place("Convolution", nf, self.channels, buffer.len())?;
         let state_guard = self.state.load();
         let state = match state_guard.as_ref() {
             Some(s) => s,
@@ -657,7 +688,7 @@ impl InPlacePlugin for ConvolutionPlugin {
             }
             in_pos += to_copy;
         }
-        flush_denormals_inplace(buffer);
+        flush_denormals_inplace(&mut buffer[..total_samples]);
         Ok(nf)
     }
 
@@ -670,6 +701,28 @@ impl InPlacePlugin for ConvolutionPlugin {
 mod tests {
     use super::*;
     use sotf_host::plugin::{InPlacePlugin, ProcessContext};
+    use std::fs;
+
+    fn write_test_wav(path: &Path, samples: &[i16], sample_rate: u32) {
+        let data_len = samples.len() * 2;
+        let mut bytes = Vec::with_capacity(44 + data_len);
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&(36 + data_len as u32).to_le_bytes());
+        bytes.extend_from_slice(b"WAVEfmt ");
+        bytes.extend_from_slice(&16_u32.to_le_bytes());
+        bytes.extend_from_slice(&1_u16.to_le_bytes());
+        bytes.extend_from_slice(&1_u16.to_le_bytes());
+        bytes.extend_from_slice(&sample_rate.to_le_bytes());
+        bytes.extend_from_slice(&(sample_rate * 2).to_le_bytes());
+        bytes.extend_from_slice(&2_u16.to_le_bytes());
+        bytes.extend_from_slice(&16_u16.to_le_bytes());
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&(data_len as u32).to_le_bytes());
+        for sample in samples {
+            bytes.extend_from_slice(&sample.to_le_bytes());
+        }
+        fs::write(path, bytes).unwrap();
+    }
 
     /// Helper: create a ConvolutionPlugin and load a synthetic IR directly.
     fn make_plugin_with_ir(
@@ -1069,5 +1122,68 @@ mod tests {
                 "Output sample at index {i} is not finite: {s}"
             );
         }
+    }
+
+    #[test]
+    fn test_from_params_propagates_ir_load_errors() {
+        let params = ConvolutionPluginParams {
+            ir_file: "/definitely/missing/sotf-test-ir.wav".to_string(),
+            mix: 1.0,
+            gain_db: 0.0,
+            use_nupc: true,
+            zero_latency_head: false,
+            head_taps: 128,
+        };
+        assert!(ConvolutionPlugin::from_params(1, 48000, params).is_err());
+    }
+
+    #[test]
+    fn test_ir_file_parameter_loads_and_reports_path() {
+        let path = std::env::temp_dir().join(format!(
+            "sotf-convolution-ir-{}-{}.wav",
+            std::process::id(),
+            "param"
+        ));
+        write_test_wav(&path, &[32767, 0, 0, 0], 48000);
+
+        let mut plugin = ConvolutionPlugin::new(1, 48000);
+        plugin
+            .set_parameter(
+                ParameterId::from("ir_file"),
+                ParameterValue::String(path.to_string_lossy().into_owned()),
+            )
+            .unwrap();
+
+        assert_eq!(
+            plugin.get_parameter(&ParameterId::from("ir_file")),
+            Some(ParameterValue::String(path.to_string_lossy().into_owned()))
+        );
+        assert!(plugin.state.load().is_some());
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_ir_file_parameter_reports_load_errors() {
+        let mut plugin = ConvolutionPlugin::new(1, 48000);
+        let err = plugin
+            .set_parameter(
+                ParameterId::from("ir_file"),
+                ParameterValue::String("/definitely/missing/sotf-test-ir.wav".to_string()),
+            )
+            .unwrap_err();
+        assert!(err.contains("IO:"), "unexpected error: {err}");
+        assert!(plugin.state.load().is_none());
+    }
+
+    #[test]
+    fn test_process_rejects_short_buffer() {
+        let mut plugin = make_plugin_with_ir(2, 48000, vec![vec![1.0], vec![1.0]]);
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: 32,
+        };
+        let mut short = vec![0.0_f32; 32 * 2 - 1];
+        assert!(plugin.process_in_place(&mut short, &ctx).is_err());
     }
 }

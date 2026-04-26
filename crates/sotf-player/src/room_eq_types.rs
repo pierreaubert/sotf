@@ -2274,7 +2274,7 @@ fn build_routed_room_eq_graph(
             }),
         );
 
-        for plugin in pre_route_plugins_for_route(output, route) {
+        for plugin in pre_route_plugins_for_route(output, route, graph) {
             let node = add_node(plugin.plugin_type.clone(), plugin.parameters.clone());
             edges.push(PluginGraphEdgeConfig {
                 from_node: prev,
@@ -2496,8 +2496,14 @@ fn identity_matrix(channel_count: usize) -> Vec<f32> {
 fn pre_route_plugins_for_route<'a>(
     output: &'a DspChainOutput,
     route: &autoeq::roomeq::BassManagementRoute,
+    graph: &autoeq::roomeq::BassManagementRoutingGraph,
 ) -> Vec<&'a DspPluginConfig> {
-    let Some(chain) = output.channels.get(&route.source_channel) else {
+    let channel_name = if is_bass_route(route) {
+        &graph.physical_sub_output
+    } else {
+        &route.source_channel
+    };
+    let Some(chain) = output.channels.get(channel_name) else {
         return Vec::new();
     };
     chain
@@ -2512,7 +2518,12 @@ fn post_route_plugins_for_channel<'a>(
     channel_name: &str,
     graph: &autoeq::roomeq::BassManagementRoutingGraph,
 ) -> Vec<&'a DspPluginConfig> {
-    let Some(chain) = output.channels.get(channel_name) else {
+    let chain = output.channels.get(channel_name).or_else(|| {
+        is_bass_output_channel(channel_name, graph)
+            .then(|| output.channels.get(&graph.physical_sub_output))
+            .flatten()
+    });
+    let Some(chain) = chain else {
         return Vec::new();
     };
     let Some(crossover_idx) = chain
@@ -2538,6 +2549,20 @@ fn post_route_plugins_for_channel<'a>(
     }
 
     chain.plugins[start..].iter().collect()
+}
+
+fn is_bass_route(route: &autoeq::roomeq::BassManagementRoute) -> bool {
+    route.route_kind == "redirected_bass_lowpass_to_sub" || route.route_kind == "lfe_lowpass_to_sub"
+}
+
+fn is_bass_output_channel(
+    channel_name: &str,
+    graph: &autoeq::roomeq::BassManagementRoutingGraph,
+) -> bool {
+    graph
+        .routes
+        .iter()
+        .any(|route| is_bass_route(route) && route.destination == channel_name)
 }
 
 fn route_owns_gain_plugin(
@@ -3308,7 +3333,54 @@ mod tests {
                     ..bare_chain("L", None)
                 },
             ),
-            ("Sub".to_string(), bare_chain("Sub", None)),
+            (
+                "Sub".to_string(),
+                ChannelDspChain {
+                    plugins: vec![
+                        PluginConfigWrapper {
+                            plugin_type: "gain".to_string(),
+                            parameters: serde_json::json!({
+                                "label": "sub_pre_trim",
+                                "gain_db": -0.5
+                            }),
+                        },
+                        PluginConfigWrapper {
+                            plugin_type: "eq".to_string(),
+                            parameters: serde_json::json!({
+                                "label": "sub_pre_room_eq",
+                                "filters": []
+                            }),
+                        },
+                        PluginConfigWrapper {
+                            plugin_type: "crossover".to_string(),
+                            parameters: serde_json::json!({
+                                "type": "LR24",
+                                "frequency": 80.0,
+                                "output": "low"
+                            }),
+                        },
+                        PluginConfigWrapper {
+                            plugin_type: "gain".to_string(),
+                            parameters: serde_json::json!({
+                                "gain_db": -3.0,
+                                "invert": true
+                            }),
+                        },
+                        PluginConfigWrapper {
+                            plugin_type: "delay".to_string(),
+                            parameters: serde_json::json!({"delay_ms": 4.0}),
+                        },
+                        PluginConfigWrapper {
+                            plugin_type: "eq".to_string(),
+                            parameters: serde_json::json!({
+                                "label": "sub_post_room_eq",
+                                "filters": []
+                            }),
+                        },
+                    ],
+                    ..bare_chain("Sub", None)
+                },
+            ),
         ]);
         output.metadata = Some(OptimizationMetadata {
             pre_score: 1.0,
@@ -3403,6 +3475,31 @@ mod tests {
         output
     }
 
+    fn routed_physical_sub_output() -> DspChainOutput {
+        let mut output = routed_bass_output();
+        let mut sub_chain = output.channels.remove("Sub").expect("sub chain");
+        sub_chain.channel = "LFE".to_string();
+        output.channels.insert("LFE".to_string(), sub_chain);
+
+        let report = output
+            .metadata
+            .as_mut()
+            .and_then(|metadata| metadata.bass_management.as_mut())
+            .expect("bass management report");
+        report.physical_sub_output = "LFE".to_string();
+        let graph = report.routing_graph.as_mut().expect("routing graph");
+        graph.physical_sub_output = "LFE".to_string();
+        graph.input_channels = vec!["L".to_string(), "LFE".to_string(), "SubA".to_string()];
+        graph.output_channels = vec!["L".to_string(), "LFE".to_string(), "SubA".to_string()];
+        for route in &mut graph.routes {
+            if route.route_kind == "redirected_bass_lowpass_to_sub" {
+                route.destination = "SubA".to_string();
+                route.destination_index = 2;
+            }
+        }
+        output
+    }
+
     #[test]
     fn test_requires_room_eq_graph_with_routed_bass_management() {
         let output = routed_bass_output();
@@ -3457,6 +3554,21 @@ mod tests {
             .find(|(_, label)| *label == "post_room_eq")
             .map(|(id, _)| *id)
             .expect("post-route EQ should be emitted");
+        let sub_pre_eq_id = labeled_nodes
+            .iter()
+            .find(|(_, label)| *label == "sub_pre_room_eq")
+            .map(|(id, _)| *id)
+            .expect("sub pre-crossover EQ should be emitted on the bass route");
+        let lowpass_id = labeled_nodes
+            .iter()
+            .find(|(_, label)| *label == "room_eq_route_lowpass")
+            .map(|(id, _)| *id)
+            .expect("route lowpass should be emitted");
+        let sub_post_eq_id = labeled_nodes
+            .iter()
+            .find(|(_, label)| *label == "sub_post_room_eq")
+            .map(|(id, _)| *id)
+            .expect("sub post-crossover EQ should be emitted after bass summation");
         let sum_anchor_id = labeled_nodes
             .iter()
             .find(|(_, label)| *label == "room_eq_route_sum_anchor")
@@ -3470,5 +3582,54 @@ mod tests {
             post_eq_id > sum_anchor_id,
             "post-crossover EQ must stay after route summation"
         );
+        assert!(
+            sub_pre_eq_id < lowpass_id,
+            "bass-route sub EQ must stay before the routed lowpass"
+        );
+        assert!(
+            sub_post_eq_id > sum_anchor_id,
+            "bass-output post EQ must stay after redirected-bass summation"
+        );
+    }
+
+    #[test]
+    fn test_build_room_eq_graph_applies_shared_sub_chain_to_physical_sub_routes() {
+        let output = routed_physical_sub_output();
+        let graph = build_room_eq_plugin_graph_config(&output, 48_000.0).unwrap();
+        assert!(graph.nodes.iter().all(|node| node.input_channels == 3));
+
+        let labeled_nodes: Vec<_> = graph
+            .nodes
+            .iter()
+            .filter_map(|node| {
+                node.parameters
+                    .get("label")
+                    .and_then(|label| label.as_str())
+                    .map(|label| (node.id, label))
+            })
+            .collect();
+        let sub_pre_eq_id = labeled_nodes
+            .iter()
+            .find(|(_, label)| *label == "sub_pre_room_eq")
+            .map(|(id, _)| *id)
+            .expect("shared sub pre-EQ should be emitted for physical sub route");
+        let lowpass_id = labeled_nodes
+            .iter()
+            .find(|(_, label)| *label == "room_eq_route_lowpass")
+            .map(|(id, _)| *id)
+            .expect("route lowpass should be emitted");
+        let sub_post_eq_id = labeled_nodes
+            .iter()
+            .find(|(_, label)| *label == "sub_post_room_eq")
+            .map(|(id, _)| *id)
+            .expect("shared sub post-EQ should be emitted for physical sub output");
+        let sum_anchor_id = labeled_nodes
+            .iter()
+            .find(|(_, label)| *label == "room_eq_route_sum_anchor")
+            .map(|(id, _)| *id)
+            .expect("route sum anchor should be emitted");
+
+        assert!(sub_pre_eq_id < lowpass_id);
+        assert!(sub_post_eq_id > sum_anchor_id);
     }
 }

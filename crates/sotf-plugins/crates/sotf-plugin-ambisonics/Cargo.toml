@@ -27,6 +27,7 @@ harness = false
 
 [dependencies]
 sotf-host = { workspace = true }
+plugins-spatial = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }

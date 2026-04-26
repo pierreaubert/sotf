@@ -5,6 +5,7 @@
 use crate::params::PARAMS as BN;
 use arc_swap::ArcSwap;
 use math_audio_dsp::rtpghi::RtpghiProcessor;
+use plugins_spatial::validate_interleaved_io;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
 use sotf_host::param_bridge;
@@ -1456,6 +1457,14 @@ impl Plugin for BinauralDecoderPlugin {
         context: &ProcessContext,
     ) -> Result<usize, String> {
         let nf = context.num_frames;
+        validate_interleaved_io(
+            "BinauralDecoder",
+            nf,
+            self.input_channels,
+            2,
+            input.len(),
+            output.len(),
+        )?;
 
         // Advance head-angle smoothers and check whether the angles have changed
         // enough (> 0.5°) to require an HRTF recompute.
@@ -1598,6 +1607,35 @@ mod tests {
             2,
             "Binaural decoder should always output 2 channels (binaural stereo)"
         );
+    }
+
+    #[test]
+    fn test_process_rejects_short_buffers() {
+        let mut plugin = BinauralDecoderPlugin::new(
+            5,
+            2048,
+            None,
+            true,
+            0.0,
+            0.0,
+            false,
+            120.0,
+            2.0,
+            0.0,
+            RoomModel::default(),
+        );
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: 32,
+        };
+
+        let short_input = vec![0.0_f32; 32 * 5 - 1];
+        let mut output = vec![0.0_f32; 32 * 2];
+        assert!(plugin.process(&short_input, &mut output, &ctx).is_err());
+
+        let input = vec![0.0_f32; 32 * 5];
+        let mut short_output = vec![0.0_f32; 32 * 2 - 1];
+        assert!(plugin.process(&input, &mut short_output, &ctx).is_err());
     }
 
     /// Create a minimal synthetic SofaFile for testing (no file I/O needed)

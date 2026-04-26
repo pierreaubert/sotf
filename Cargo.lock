@@ -8098,6 +8098,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "plugins-spatial"
+version = "0.5.0"
+dependencies = [
+ "rustfft 6.4.1",
+ "sotf-host",
+]
+
+[[package]]
 name = "png"
 version = "0.17.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10749,6 +10757,7 @@ dependencies = [
  "approx",
  "criterion",
  "log",
+ "plugins-spatial",
  "serde",
  "serde_json",
  "sotf-host",
@@ -10797,6 +10806,7 @@ dependencies = [
  "log",
  "math-dsp",
  "math-rir",
+ "plugins-spatial",
  "realfft",
  "rubato",
  "rustfft 6.4.1",
@@ -10822,6 +10832,7 @@ dependencies = [
  "arc-swap",
  "audioadapter-buffers",
  "log",
+ "plugins-spatial",
  "rayon",
  "rubato",
  "rustfft 6.4.1",
