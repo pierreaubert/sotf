@@ -2297,6 +2297,22 @@ fn build_routed_room_eq_graph(
         id
     };
 
+    let mut global_tail = None;
+    for plugin in output
+        .global_plugins
+        .iter()
+        .filter(|plugin| !is_route_replaced_global_plugin(plugin))
+    {
+        let node = add_node(plugin.plugin_type.clone(), plugin.parameters.clone());
+        if let Some(prev) = global_tail {
+            edges.push(PluginGraphEdgeConfig {
+                from_node: prev,
+                to_node: node,
+            });
+        }
+        global_tail = Some(node);
+    }
+
     let mut route_tails = Vec::new();
     for route in &graph.routes {
         let matrix_gain = route_matrix_gain(route);
@@ -2315,6 +2331,12 @@ fn build_routed_room_eq_graph(
                 },
             }),
         );
+        if let Some(global_tail) = global_tail {
+            edges.push(PluginGraphEdgeConfig {
+                from_node: global_tail,
+                to_node: prev,
+            });
+        }
 
         for plugin in pre_route_plugins_for_route(output, route, graph) {
             let node = add_node(plugin.plugin_type.clone(), plugin.parameters.clone());
@@ -2535,6 +2557,21 @@ fn identity_matrix(channel_count: usize) -> Vec<f32> {
     matrix
 }
 
+fn is_route_replaced_global_plugin(plugin: &DspPluginConfig) -> bool {
+    plugin.plugin_type == "matrix"
+        && (plugin
+            .parameters
+            .get("label")
+            .and_then(|value| value.as_str())
+            == Some("home_cinema_bass_management")
+            || plugin
+                .parameters
+                .get("metadata")
+                .and_then(|metadata| metadata.get("purpose"))
+                .and_then(|value| value.as_str())
+                == Some("home_cinema_bass_management"))
+}
+
 fn pre_route_plugins_for_route<'a>(
     output: &'a DspChainOutput,
     route: &autoeq::roomeq::BassManagementRoute,
@@ -2577,11 +2614,21 @@ fn post_route_plugins_for_channel<'a>(
     };
 
     let mut start = crossover_idx + 1;
+    let mut skipped_route_gain = false;
+    let mut skipped_route_delay = false;
     while let Some(plugin) = chain.plugins.get(start) {
         let route_owned = match plugin.plugin_type.as_str() {
             "crossover" => true,
-            "gain" => route_owns_gain_plugin(plugin, channel_name, graph),
-            "delay" => route_owns_delay_plugin(plugin, channel_name, graph),
+            "gain" if !skipped_route_gain => {
+                let owned = route_owns_gain_plugin(plugin, channel_name, graph);
+                skipped_route_gain = owned;
+                owned
+            }
+            "delay" if !skipped_route_delay => {
+                let owned = route_owns_delay_plugin(plugin, channel_name, graph);
+                skipped_route_delay = owned;
+                owned
+            }
             _ => false,
         };
         if !route_owned {
@@ -2622,13 +2669,27 @@ fn route_owns_gain_plugin(
         .get("invert")
         .and_then(|value| value.as_bool())
         .unwrap_or(false);
-    graph.routes.iter().any(|route| {
-        route.destination == channel_name
-            && ((route.gain_db - gain_db).abs() <= 0.01
-                || route.gain_db.abs() > 0.01
-                || gain_db.abs() > 0.01)
-            && (route.polarity_inverted == invert || route.polarity_inverted || invert)
-    })
+    let bass_output = is_bass_output_channel(channel_name, graph);
+    graph
+        .routes
+        .iter()
+        .filter(|route| route.destination == channel_name)
+        .any(|route| {
+            let exact_route_match =
+                (route.gain_db - gain_db).abs() <= 0.01 && route.polarity_inverted == invert;
+            if exact_route_match {
+                return true;
+            }
+
+            // Bass routes can encode the shared sub gain in the route matrix
+            // instead of a separate gain node. Treat only the first
+            // post-crossover gain as route-owned; later trims remain output
+            // correction plugins and are preserved by the caller's state.
+            bass_output
+                && is_bass_route(route)
+                && (route.gain_db.abs() > 0.01 || route.polarity_inverted)
+                && (gain_db.abs() > 0.01 || invert)
+        })
 }
 
 fn route_owns_delay_plugin(
@@ -2643,12 +2704,18 @@ fn route_owns_delay_plugin(
     else {
         return false;
     };
-    graph.routes.iter().any(|route| {
-        route.destination == channel_name
-            && ((route.delay_ms - delay_ms).abs() <= 0.001
-                || route.delay_ms.abs() > 0.001
-                || delay_ms.abs() > 0.001)
-    })
+    let bass_output = is_bass_output_channel(channel_name, graph);
+    graph
+        .routes
+        .iter()
+        .filter(|route| route.destination == channel_name)
+        .any(|route| {
+            (route.delay_ms - delay_ms).abs() <= 0.001
+                || (bass_output
+                    && is_bass_route(route)
+                    && route.delay_ms.abs() > 0.001
+                    && delay_ms.abs() > 0.001)
+        })
 }
 
 /// A control point for custom target curve editing
@@ -3365,6 +3432,13 @@ mod tests {
                             parameters: serde_json::json!({"delay_ms": 2.0}),
                         },
                         PluginConfigWrapper {
+                            plugin_type: "gain".to_string(),
+                            parameters: serde_json::json!({
+                                "label": "post_main_trim",
+                                "gain_db": -0.75
+                            }),
+                        },
+                        PluginConfigWrapper {
                             plugin_type: "eq".to_string(),
                             parameters: serde_json::json!({
                                 "label": "post_room_eq",
@@ -3413,6 +3487,13 @@ mod tests {
                             parameters: serde_json::json!({"delay_ms": 4.0}),
                         },
                         PluginConfigWrapper {
+                            plugin_type: "gain".to_string(),
+                            parameters: serde_json::json!({
+                                "label": "sub_post_trim",
+                                "gain_db": -0.25
+                            }),
+                        },
+                        PluginConfigWrapper {
                             plugin_type: "eq".to_string(),
                             parameters: serde_json::json!({
                                 "label": "sub_post_room_eq",
@@ -3437,6 +3518,7 @@ mod tests {
             perceptual_metrics: None,
             home_cinema_layout: None,
             multi_seat_coverage: None,
+            multi_seat_correction: None,
             bass_management: Some(BassManagementReport {
                 enabled: true,
                 crossover_type: "LR24".to_string(),
@@ -3596,6 +3678,11 @@ mod tests {
             .find(|(_, label)| *label == "post_room_eq")
             .map(|(id, _)| *id)
             .expect("post-route EQ should be emitted");
+        let post_main_trim_id = labeled_nodes
+            .iter()
+            .find(|(_, label)| *label == "post_main_trim")
+            .map(|(id, _)| *id)
+            .expect("post-route main trim should be emitted");
         let sub_pre_eq_id = labeled_nodes
             .iter()
             .find(|(_, label)| *label == "sub_pre_room_eq")
@@ -3611,6 +3698,11 @@ mod tests {
             .find(|(_, label)| *label == "sub_post_room_eq")
             .map(|(id, _)| *id)
             .expect("sub post-crossover EQ should be emitted after bass summation");
+        let sub_post_trim_id = labeled_nodes
+            .iter()
+            .find(|(_, label)| *label == "sub_post_trim")
+            .map(|(id, _)| *id)
+            .expect("post-route sub trim should be emitted after bass summation");
         let sum_anchor_id = labeled_nodes
             .iter()
             .find(|(_, label)| *label == "room_eq_route_sum_anchor")
@@ -3625,12 +3717,20 @@ mod tests {
             "post-crossover EQ must stay after route summation"
         );
         assert!(
+            post_main_trim_id > sum_anchor_id,
+            "post-crossover main trims must stay after route summation"
+        );
+        assert!(
             sub_pre_eq_id < lowpass_id,
             "bass-route sub EQ must stay before the routed lowpass"
         );
         assert!(
             sub_post_eq_id > sum_anchor_id,
             "bass-output post EQ must stay after redirected-bass summation"
+        );
+        assert!(
+            sub_post_trim_id > sum_anchor_id,
+            "bass-output post trims must not be mistaken for route-owned gain"
         );
     }
 
@@ -3673,5 +3773,65 @@ mod tests {
 
         assert!(sub_pre_eq_id < lowpass_id);
         assert!(sub_post_eq_id > sum_anchor_id);
+    }
+
+    #[test]
+    fn test_build_room_eq_graph_preserves_non_routing_global_plugins() {
+        let mut output = routed_bass_output();
+        output.global_plugins.push(PluginConfigWrapper {
+            plugin_type: "eq".to_string(),
+            parameters: serde_json::json!({
+                "label": "global_room_eq",
+                "filters": []
+            }),
+        });
+        output.global_plugins.push(PluginConfigWrapper {
+            plugin_type: "matrix".to_string(),
+            parameters: serde_json::json!({
+                "label": "home_cinema_bass_management",
+                "metadata": {
+                    "purpose": "home_cinema_bass_management"
+                },
+                "input_channel_map": [0],
+                "output_channel_map": [1],
+                "matrix": [1.0]
+            }),
+        });
+
+        let graph = build_room_eq_plugin_graph_config(&output, 48_000.0).unwrap();
+        let labeled_nodes: Vec<_> = graph
+            .nodes
+            .iter()
+            .filter_map(|node| {
+                node.parameters
+                    .get("label")
+                    .and_then(|label| label.as_str())
+                    .map(|label| (node.id, label))
+            })
+            .collect();
+        let global_id = labeled_nodes
+            .iter()
+            .find(|(_, label)| *label == "global_room_eq")
+            .map(|(id, _)| *id)
+            .expect("non-routing global plugin should be preserved");
+        assert!(
+            labeled_nodes
+                .iter()
+                .all(|(_, label)| *label != "home_cinema_bass_management"),
+            "legacy global bass matrix should be replaced by route branches"
+        );
+        let route_matrix_ids: Vec<_> = labeled_nodes
+            .iter()
+            .filter(|(_, label)| label.starts_with("room_eq_route_") && label.contains("_to_"))
+            .map(|(id, _)| *id)
+            .collect();
+        assert!(!route_matrix_ids.is_empty());
+        assert!(route_matrix_ids.iter().all(|id| *id > global_id));
+        assert!(route_matrix_ids.iter().all(|route_id| {
+            graph
+                .edges
+                .iter()
+                .any(|edge| edge.from_node == global_id && edge.to_node == *route_id)
+        }));
     }
 }

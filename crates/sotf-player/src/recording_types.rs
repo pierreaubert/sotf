@@ -801,6 +801,7 @@ pub use sotf_audio::signal_recorder::{
 pub enum SpeakerConfiguration {
     Stereo,       // 2.0
     Stereo21,     // 2.1
+    Stereo22,     // 2.2 (L + R + Sub1 + Sub2)
     Surround50,   // 5.0
     Surround51,   // 5.1
     Surround71,   // 7.1
@@ -820,6 +821,7 @@ impl SpeakerConfiguration {
         match self {
             SpeakerConfiguration::Stereo => "2.0",
             SpeakerConfiguration::Stereo21 => "2.1",
+            SpeakerConfiguration::Stereo22 => "2.2",
             SpeakerConfiguration::Surround50 => "5.0",
             SpeakerConfiguration::Surround51 => "5.1",
             SpeakerConfiguration::Surround71 => "7.1",
@@ -839,6 +841,7 @@ impl SpeakerConfiguration {
         &[
             SpeakerConfiguration::Stereo,
             SpeakerConfiguration::Stereo21,
+            SpeakerConfiguration::Stereo22,
             SpeakerConfiguration::Surround50,
             SpeakerConfiguration::Surround51,
             SpeakerConfiguration::Surround71,
@@ -859,6 +862,7 @@ impl SpeakerConfiguration {
         match self {
             SpeakerConfiguration::Stereo => 2,
             SpeakerConfiguration::Stereo21 => 3,
+            SpeakerConfiguration::Stereo22 => 4,
             SpeakerConfiguration::Surround50 => 5,
             SpeakerConfiguration::Surround51 => 6,
             SpeakerConfiguration::Surround71 => 8,
@@ -879,6 +883,7 @@ impl SpeakerConfiguration {
         match self {
             SpeakerConfiguration::Stereo => vec!["L", "R"],
             SpeakerConfiguration::Stereo21 => vec!["L", "R", "LFE"],
+            SpeakerConfiguration::Stereo22 => vec!["L", "R", "Sub1", "Sub2"],
             SpeakerConfiguration::Surround50 => vec!["L", "R", "C", "SL", "SR"],
             SpeakerConfiguration::Surround51 => vec!["L", "R", "C", "LFE", "SL", "SR"],
             SpeakerConfiguration::Surround71 => vec!["L", "R", "C", "LFE", "SL", "SR", "BL", "BR"],

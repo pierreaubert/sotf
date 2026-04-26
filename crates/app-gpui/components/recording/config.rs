@@ -21,6 +21,8 @@ const CHANNEL_GROUPS: &[(&str, &str)] = &[
     ("R", "Right (R)"),
     ("C", "Center (C)"),
     ("LFE", "Subwoofer (LFE)"),
+    ("Sub1", "Subwoofer 1 (Sub1)"),
+    ("Sub2", "Subwoofer 2 (Sub2)"),
     ("SL", "Surround Left (SL)"),
     ("SR", "Surround Right (SR)"),
     ("BL", "Back Left (BL)"),
@@ -1094,7 +1096,8 @@ impl PlayerView {
         const LABEL_WIDTH: f32 = 80.0;
         const NAME_WIDTH: f32 = 140.0;
 
-        VStack::new()
+        let speaker_count = speaker_data.len();
+        let stack = VStack::new()
             .spacing(StackSpacing::Xs)
             .children(speaker_data.iter().enumerate().map(
                 |(speaker_idx, (interface_channels, group_name))| {
@@ -1217,8 +1220,73 @@ impl PlayerView {
                             .into_any_element()
                     }
                 },
-            ))
-            .into_any_element()
+            ));
+
+        if is_custom {
+            let theme_clone = theme.clone();
+            let view_add = view.clone();
+            let view_remove = view.clone();
+            stack
+                .child(
+                    HStack::new()
+                        .spacing(StackSpacing::Xs)
+                        .align(StackAlign::Center)
+                        .child(div().w(px(LABEL_WIDTH))) // intentional: indent spacer matches header
+                        .child(
+                            Button::new("custom_add_speaker", "+ Add Speaker")
+                                .variant(ButtonVariant::Ghost)
+                                .size(ButtonSize::Xs)
+                                .theme(theme_clone.to_button_theme())
+                                .on_click(move |_, cx| {
+                                    let _ = view_add.update(cx, |this, cx| {
+                                        this.state.update(cx, |state, _| {
+                                            let cfg = &mut state
+                                                .app
+                                                .measurement_state
+                                                .recording_state
+                                                .playback_config;
+                                            let next_ch = cfg.total_interface_channels();
+                                            let idx = cfg.channel_mappings.len() + 1;
+                                            cfg.channel_mappings.push(
+                                                ChannelMapping::single(
+                                                    next_ch,
+                                                    format!("Ch{}", idx),
+                                                ),
+                                            );
+                                            cfg.sync_channel_count();
+                                        });
+                                        cx.notify();
+                                    });
+                                }),
+                        )
+                        .child(
+                            Button::new("custom_remove_speaker", "- Remove Speaker")
+                                .variant(ButtonVariant::Ghost)
+                                .size(ButtonSize::Xs)
+                                .theme(theme.clone().to_button_theme())
+                                .disabled(speaker_count <= 1)
+                                .on_click(move |_, cx| {
+                                    let _ = view_remove.update(cx, |this, cx| {
+                                        this.state.update(cx, |state, _| {
+                                            let cfg = &mut state
+                                                .app
+                                                .measurement_state
+                                                .recording_state
+                                                .playback_config;
+                                            if cfg.channel_mappings.len() > 1 {
+                                                cfg.channel_mappings.pop();
+                                                cfg.sync_channel_count();
+                                            }
+                                        });
+                                        cx.notify();
+                                    });
+                                }),
+                        ),
+                )
+                .into_any_element()
+        } else {
+            stack.into_any_element()
+        }
     }
 
     /// Render the single/multi mode toggle for a speaker

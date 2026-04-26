@@ -276,6 +276,20 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 KeyCode::Right | KeyCode::Char('+') => {
                     adjust_recording_field(app, 1);
                 }
+                KeyCode::Char('a') | KeyCode::Char('A')
+                    if app.recording.selected_field == 2
+                        && app.recording.playback_config.speaker_configuration
+                            == sotf_audio_player::recording_types::SpeakerConfiguration::Custom =>
+                {
+                    add_custom_speaker(app);
+                }
+                KeyCode::Char('x') | KeyCode::Char('X')
+                    if app.recording.selected_field == 2
+                        && app.recording.playback_config.speaker_configuration
+                            == sotf_audio_player::recording_types::SpeakerConfiguration::Custom =>
+                {
+                    remove_custom_speaker(app);
+                }
                 KeyCode::Tab => {
                     if app.recording.selected_field < 9 {
                         app.recording.selected_field += 1;
@@ -928,7 +942,18 @@ pub(crate) fn update_channel_mappings_for_config(
     app: &mut App,
     config: sotf_audio_player::recording_types::SpeakerConfiguration,
 ) {
-    use sotf_audio_player::recording_types::ChannelMapping;
+    use sotf_audio_player::recording_types::{ChannelMapping, SpeakerConfiguration};
+
+    // For Custom, keep the existing channel mappings (renamed to generic Ch labels
+    // when transitioning into Custom from a preset) so the user can edit them.
+    if config == SpeakerConfiguration::Custom {
+        let len = app.recording.playback_config.channel_mappings.len().max(2);
+        app.recording.playback_config.channel_mappings = (0..len)
+            .map(|i| ChannelMapping::single(i, format!("Ch{}", i + 1)))
+            .collect();
+        app.recording.playback_config.num_channels = len;
+        return;
+    }
 
     let names = config.default_channel_names();
     app.recording.playback_config.channel_mappings = names
@@ -937,6 +962,28 @@ pub(crate) fn update_channel_mappings_for_config(
         .map(|(i, name)| ChannelMapping::single(i, *name))
         .collect();
     app.recording.playback_config.num_channels = names.len();
+}
+
+pub(crate) fn add_custom_speaker(app: &mut App) {
+    use sotf_audio_player::recording_types::ChannelMapping;
+    let cfg = &mut app.recording.playback_config;
+    let next_ch = cfg
+        .channel_mappings
+        .iter()
+        .map(|m| m.channel_count())
+        .sum::<usize>();
+    let idx = cfg.channel_mappings.len() + 1;
+    cfg.channel_mappings
+        .push(ChannelMapping::single(next_ch, format!("Ch{}", idx)));
+    cfg.sync_channel_count();
+}
+
+pub(crate) fn remove_custom_speaker(app: &mut App) {
+    let cfg = &mut app.recording.playback_config;
+    if cfg.channel_mappings.len() > 1 {
+        cfg.channel_mappings.pop();
+        cfg.sync_channel_count();
+    }
 }
 
 pub(crate) fn init_recording_channels(app: &mut App) {
