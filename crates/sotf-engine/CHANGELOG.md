@@ -1,3 +1,16 @@
+# 1.0.26
+
+## Added a way to cancel a running recording
+
+- Public CancelFlag = Arc<AtomicBool> type and stable CANCELLED_ERR = "cancelled" sentinel string.
+- probe_channel_delays_with_recording and run_spl_calibration gained a trailing cancel: Option<CancelFlag> parameter.
+- The flag is threaded through probe_channel_delays_core → play_per_channel_and_record_mono, where it is checked:
+    a. before any device setup,
+    b. before kicking off playback (after the input stream is built),
+	c. each iteration of the ~50 ms stability poll loop.
+- Sibling probe_channel_delays and run_bass_anchor keep their existing public signatures and pass None internally.
+- All three call sites (app-gpui/components/recording/probe.rs, spl_calibration.rs, and app-tui/events/conf_recordings.rs) updated to pass None for now — wiring an actual UI Stop button into a stored CancelFlag is the follow-up UI task.
+
 # 1.0.25
 
 ## Engine threading and low-latency fixes

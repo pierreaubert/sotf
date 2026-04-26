@@ -9,7 +9,29 @@ use crate::signals::*;
 use hound::{SampleFormat, WavSpec, WavWriter};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tempfile::NamedTempFile;
+
+/// Cooperative cancellation flag for recording-side capture loops.
+///
+/// Callers create one with `CancelFlag::default()` (or
+/// `Arc::new(AtomicBool::new(false))`) and store it alongside the running
+/// task. Setting the flag to `true` from any thread asks the recorder to
+/// stop the in-progress playback + capture as soon as the next stability
+/// poll fires (worst-case ~50 ms latency). The recorder returns
+/// `Err("cancelled")` so callers can distinguish user-cancellation from
+/// real failures.
+pub type CancelFlag = Arc<AtomicBool>;
+
+/// Canonical error string returned when the recording-side cancel flag
+/// is observed during a capture. Stable so UI code can match on it.
+pub const CANCELLED_ERR: &str = "cancelled";
+
+#[inline]
+fn cancel_requested(cancel: Option<&CancelFlag>) -> bool {
+    cancel.is_some_and(|c| c.load(Ordering::Relaxed))
+}
 
 /// Signal type for recording
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1192,12 +1214,17 @@ fn play_per_channel_and_record_mono(
     input_device_name: Option<&str>,
     input_channel: u16,
     log_tag: &str,
+    cancel: Option<&CancelFlag>,
 ) -> Result<PlayPerChannelOutput, String> {
     use crate::AudioEngineManager;
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-    use std::sync::{Arc, Mutex};
+    use std::sync::Mutex;
     use std::thread::sleep;
     use std::time::Duration;
+
+    if cancel_requested(cancel) {
+        return Err(CANCELLED_ERR.to_string());
+    }
 
     let num_channels = channel_indices.len();
     if num_channels == 0 {
@@ -1369,6 +1396,10 @@ fn play_per_channel_and_record_mono(
     sleep(Duration::from_millis(100));
 
     // --- Start playback ---
+    if cancel_requested(cancel) {
+        std::mem::drop(input_stream);
+        return Err(CANCELLED_ERR.to_string());
+    }
     let mut manager = AudioEngineManager::new();
     manager.set_allow_virtual_output(true);
     manager
@@ -1384,16 +1415,23 @@ fn play_per_channel_and_record_mono(
         .map_err(|e| format!("[{log_tag}] Failed to start playback: {}", e))?;
 
     // Wait for playback to finish — same stability-loop pattern both
-    // original functions used.
+    // original functions used. Honors `cancel` between polls so a UI
+    // stop button propagates with at most ~50 ms of latency.
     let expected_duration = total_frames as f64 / sample_rate as f64;
     let total_wait = Duration::from_secs_f64(expected_duration + 3.0);
     let check_interval = Duration::from_millis(50);
     let mut elapsed = Duration::ZERO;
     let mut last_count = 0_usize;
     let mut stable = 0_u32;
+    let mut cancelled = false;
     while elapsed < total_wait {
         sleep(check_interval);
         elapsed += check_interval;
+        if cancel_requested(cancel) {
+            cancelled = true;
+            log::info!("[{log_tag}] Cancellation requested — aborting capture");
+            break;
+        }
         let count = recorded_samples.lock().unwrap().len();
         if count == last_count && count > 0 {
             stable += 1;
@@ -1409,14 +1447,21 @@ fn play_per_channel_and_record_mono(
         }
     }
 
-    // Capture the tail, then tear everything down in playback →
-    // input-stream → sleep order. Skipping the sleep reliably leaves
-    // the audio device busy for the next consecutive run.
-    sleep(Duration::from_millis(500));
+    // Tear everything down in playback → input-stream → sleep order.
+    // Skipping the sleep reliably leaves the audio device busy for the
+    // next consecutive run. On cancel, skip the tail-capture sleep so
+    // the UI gets snappy feedback.
+    if !cancelled {
+        sleep(Duration::from_millis(500));
+    }
     manager.stop().ok();
     std::mem::drop(manager);
     std::mem::drop(input_stream);
     sleep(Duration::from_millis(500));
+
+    if cancelled {
+        return Err(CANCELLED_ERR.to_string());
+    }
 
     let recorded = recorded_samples.lock().unwrap().clone();
     log::info!(
@@ -1485,6 +1530,7 @@ pub fn probe_channel_delays(
         output_device_name,
         input_device_name,
         input_channel,
+        None,
     )?;
     Ok(results)
 }
@@ -1522,6 +1568,7 @@ pub fn probe_channel_delays_with_recording(
     input_device_name: Option<&str>,
     input_channel: u16,
     recording_wav_path: &std::path::Path,
+    cancel: Option<CancelFlag>,
 ) -> Result<ProbeDelayResults, String> {
     let (results, recorded, input_sr) = probe_channel_delays_core(
         channel_indices,
@@ -1532,6 +1579,7 @@ pub fn probe_channel_delays_with_recording(
         output_device_name,
         input_device_name,
         input_channel,
+        cancel.as_ref(),
     )?;
 
     // Write the mono recording as an f32 WAV. Matches the spec used by
@@ -1581,6 +1629,7 @@ fn probe_channel_delays_core(
     output_device_name: Option<&str>,
     input_device_name: Option<&str>,
     input_channel: u16,
+    cancel: Option<&CancelFlag>,
 ) -> Result<(ProbeDelayResults, Vec<f32>, u32), String> {
     let num_channels = channel_indices.len();
     if num_channels == 0 {
@@ -1614,6 +1663,7 @@ fn probe_channel_delays_core(
         input_device_name,
         input_channel,
         "probe_channel_delays",
+        cancel,
     )?;
 
     // If the mic rate differs from the playback rate, regenerate the
@@ -1999,6 +2049,7 @@ fn run_bass_anchor_core(
         input_device_name,
         input_channel,
         "run_bass_anchor",
+        None,
     )?;
 
     // Per-channel analysis via the pure helper. `extract_tone_phase`
@@ -2071,6 +2122,7 @@ pub fn run_spl_calibration(
     output_device_name: Option<&str>,
     input_device_name: Option<&str>,
     input_channel: u16,
+    cancel: Option<CancelFlag>,
 ) -> Result<SplCalibrationResult, String> {
     if !reference_freq_hz.is_finite() || reference_freq_hz <= 0.0 {
         return Err(format!(
@@ -2113,6 +2165,7 @@ pub fn run_spl_calibration(
         input_device_name,
         input_channel,
         "run_spl_calibration",
+        cancel.as_ref(),
     )?;
 
     // Slice the mic recording to the stable portion of the tone.
