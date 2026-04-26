@@ -138,6 +138,24 @@ Examples:
 
     print(f"Found {len(channels)} channel(s): {', '.join(channels.keys())}")
 
+    bass_management = (data.get("metadata") or {}).get("bass_management") or {}
+    routing_graph = bass_management.get("routing_graph") or {}
+    routes = routing_graph.get("routes") or []
+    if routes:
+        outputs = sorted(
+            {
+                route.get("destination")
+                for route in routes
+                if route.get("route_kind")
+                in {"redirected_bass_lowpass_to_sub", "lfe_lowpass_to_sub"}
+                and route.get("destination")
+            }
+        )
+        print(
+            "Bass management routing: "
+            f"{len(routes)} route(s), physical bass outputs={', '.join(outputs) or 'none'}"
+        )
+
     has_curves = False
     for name, ch in channels.items():
         initial = ch.get("initial_curve")

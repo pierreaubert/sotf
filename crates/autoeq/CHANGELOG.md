@@ -20,9 +20,30 @@ matrix.
 - Home-cinema bass management now emits per-role-group optimization results
   into routing metadata and uses those group crossovers/delays in main output
   chains instead of collapsing every role onto one global crossover result.
+- Added a bounded joint DE refinement pass over role-group crossover
+  frequency/type, main delay, bass-route delay, polarity, and trim. The joint
+  pass is seeded from the independent group optimizers and only replaces them
+  when the full grouped objective improves, with soft bass-bus headroom
+  pressure to avoid route gains that win locally but overload the shared sub
+  bus.
+- Added a physical sub-output DE refinement pass for multi-sub/DBA routes.
+  It optimizes per-output gain, delay, and polarity against all optimized
+  role groups, requires measured phase, normalizes common delay, preserves DBA
+  front-array anchoring, and writes the resulting values back to routing
+  metadata and per-driver chains.
+- Routed bass output metadata now carries the shared optimized sub gain into
+  single-sub and physical multi-sub route gains, so graph playback does not
+  suppress the sub chain gain without reapplying it at the route level.
 - Routed bass-management graphs now preserve pre-crossover channel plugins
   inside each route branch and keep post-crossover correction after route
   summation, avoiding the previous pre/post crossover reordering.
+- Redirected-bass and LFE graph branches now consume the shared bass output
+  correction stack for physical sub destinations, so multi-sub/DBA graph
+  playback preserves the sub pre-EQ and post-EQ path instead of applying a
+  main-speaker correction stack to routed bass.
+- `display-roomeq.py` now reads the routed bass-management schema and renders
+  the route graph, per-group crossover choices, physical sub outputs, and
+  bass-bus headroom simulation instead of only showing channel-level curves.
 - MSO/DBA preprocessed sub drivers are now exported as physical bass route
   destinations with per-output gain, delay, and polarity, so route graphs can
   target multiple real sub outputs instead of a single metadata-only sub bus.

@@ -1133,6 +1133,220 @@ def create_combined_figure(data: dict, json_path: "None | object" = None) -> go.
     return fig
 
 
+def _bass_management_report(data: dict) -> dict:
+    metadata = data.get("metadata") or {}
+    return metadata.get("bass_management") or {}
+
+
+def _route_display_name(route_kind: str) -> str:
+    names = {
+        "main_highpass_to_self": "Main HP",
+        "redirected_bass_lowpass_to_sub": "Redirected LP",
+        "lfe_lowpass_to_sub": "LFE LP",
+    }
+    return names.get(route_kind, route_kind.replace("_", " ").title())
+
+
+def _route_color(route_kind: str, alpha: float = 0.58) -> str:
+    colors = {
+        "main_highpass_to_self": f"rgba(74, 144, 217, {alpha})",
+        "redirected_bass_lowpass_to_sub": f"rgba(46, 204, 113, {alpha})",
+        "lfe_lowpass_to_sub": f"rgba(231, 126, 34, {alpha})",
+    }
+    return colors.get(route_kind, f"rgba(127, 140, 141, {alpha})")
+
+
+def create_bass_management_routing_figure(data: dict) -> go.Figure | None:
+    """Create a Sankey graph from route-level bass-management metadata.
+
+    The #14 routed schema may emit several branches per source channel:
+    a high-passed self-route plus one low-passed route per physical bass
+    output. A Sankey view makes that routing explicit, including per-route
+    crossover, gain, delay and polarity metadata.
+    """
+    report = _bass_management_report(data)
+    routing_graph = report.get("routing_graph") or {}
+    routes = routing_graph.get("routes") or []
+    if not routes:
+        return None
+
+    node_index: dict[str, int] = {}
+    labels: list[str] = []
+
+    def add_node(prefix: str, name: str) -> int:
+        key = f"{prefix}:{name}"
+        if key not in node_index:
+            node_index[key] = len(labels)
+            labels.append(f"{prefix}: {name}")
+        return node_index[key]
+
+    sources: list[int] = []
+    targets: list[int] = []
+    values: list[float] = []
+    colors: list[str] = []
+    hover: list[str] = []
+
+    for route in routes:
+        source = str(route.get("source_channel", "?"))
+        destination = str(route.get("destination", "?"))
+        route_kind = str(route.get("route_kind", "route"))
+        group = route.get("group_id") or "-"
+        hp = route.get("high_pass_hz")
+        lp = route.get("low_pass_hz")
+        xo = hp if hp is not None else lp
+        xo_label = f"{xo:.1f} Hz" if isinstance(xo, (int, float)) else "-"
+        gain_db = route.get("gain_db", 0.0)
+        delay_ms = route.get("delay_ms", 0.0)
+        polarity = "inverted" if route.get("polarity_inverted") else "normal"
+        gain_linear = route.get("gain_linear") or route.get("matrix_gain") or 1.0
+        try:
+            value = max(abs(float(gain_linear)), 0.05)
+        except (TypeError, ValueError):
+            value = 1.0
+
+        sources.append(add_node("in", source))
+        targets.append(add_node("out", destination))
+        values.append(value)
+        colors.append(_route_color(route_kind))
+        hover.append(
+            "<br>".join(
+                [
+                    f"<b>{_route_display_name(route_kind)}</b>",
+                    f"source: {source}",
+                    f"destination: {destination}",
+                    f"group: {group}",
+                    f"crossover: {route.get('crossover_type', '-')} @ {xo_label}",
+                    f"gain: {gain_db:+.2f} dB" if isinstance(gain_db, (int, float)) else "gain: -",
+                    f"delay: {delay_ms:.3f} ms" if isinstance(delay_ms, (int, float)) else "delay: -",
+                    f"polarity: {polarity}",
+                ]
+            )
+        )
+
+    fig = go.Figure(
+        data=[
+            go.Sankey(
+                arrangement="snap",
+                node=dict(
+                    label=labels,
+                    pad=18,
+                    thickness=16,
+                    color="rgba(52, 73, 94, 0.75)",
+                ),
+                link=dict(
+                    source=sources,
+                    target=targets,
+                    value=values,
+                    color=colors,
+                    customdata=hover,
+                    hovertemplate="%{customdata}<extra></extra>",
+                ),
+            )
+        ]
+    )
+    fig.update_layout(
+        title=dict(text="Bass Management Routing Graph", font=dict(size=14)),
+        height=max(420, min(760, 260 + 18 * len(routes))),
+        margin=dict(l=20, r=20, t=60, b=20),
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+    )
+    return fig
+
+
+def create_bass_management_headroom_figure(data: dict) -> go.Figure | None:
+    """Create a per-physical-output bass-bus headroom chart."""
+    report = _bass_management_report(data)
+    simulation = report.get("headroom_simulation") or {}
+    per_output = simulation.get("per_output") or []
+    if not per_output:
+        return None
+
+    outputs = [entry.get("output_role", f"out {i + 1}") for i, entry in enumerate(per_output)]
+    rms = [entry.get("rms_bus_gain_db") for entry in per_output]
+    peak = [entry.get("coherent_peak_gain_db") for entry in per_output]
+    lfe = [entry.get("lfe_contribution_db") for entry in per_output]
+    margins = [entry.get("margin_db") for entry in per_output]
+    worst_freq = [entry.get("worst_frequency_hz") for entry in per_output]
+    headroom_margin = simulation.get("headroom_margin_db")
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Bar(
+            name="RMS programme gain",
+            x=outputs,
+            y=rms,
+            marker_color="rgba(74, 144, 217, 0.75)",
+        )
+    )
+    fig.add_trace(
+        go.Bar(
+            name="Coherent peak gain",
+            x=outputs,
+            y=peak,
+            marker_color="rgba(231, 76, 60, 0.78)",
+            customdata=list(zip(margins, worst_freq)),
+            hovertemplate=(
+                "%{x}<br>coherent peak: %{y:.2f} dB"
+                "<br>margin: %{customdata[0]:.2f} dB"
+                "<br>worst freq: %{customdata[1]:.1f} Hz<extra></extra>"
+            ),
+        )
+    )
+    fig.add_trace(
+        go.Bar(
+            name="LFE contribution",
+            x=outputs,
+            y=lfe,
+            marker_color="rgba(230, 126, 34, 0.72)",
+        )
+    )
+
+    shapes = []
+    annotations = []
+    if isinstance(headroom_margin, (int, float)):
+        shapes.append(
+            dict(
+                type="line",
+                xref="paper",
+                x0=0,
+                x1=1,
+                yref="y",
+                y0=headroom_margin,
+                y1=headroom_margin,
+                line=dict(color="rgba(40, 40, 40, 0.7)", dash="dash", width=2),
+            )
+        )
+        annotations.append(
+            dict(
+                xref="paper",
+                yref="y",
+                x=1.0,
+                y=headroom_margin,
+                xanchor="right",
+                yanchor="bottom",
+                text=f"headroom limit {headroom_margin:+.1f} dB",
+                showarrow=False,
+                font=dict(size=10, color="#333"),
+            )
+        )
+
+    fig.update_layout(
+        title=dict(text="Bass Bus Headroom Simulation", font=dict(size=14)),
+        barmode="group",
+        yaxis=dict(title="Gain vs programme reference (dB)", zeroline=True),
+        xaxis=dict(title="Physical bass output"),
+        height=420,
+        margin=dict(l=60, r=30, t=70, b=60),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
+        shapes=shapes,
+        annotations=annotations,
+    )
+    return fig
+
+
 # ============================================================================
 # Multi-mode comparison figures
 # ============================================================================

@@ -320,6 +320,7 @@ qa-roomeq-bass-management:
 qa-roomeq-export-routing:
 	cargo test -p autoeq external_exports_reject_routed_bass_management --lib -- --nocapture
 	cargo test -p sotf-player test_build_room_eq_graph_emits_route_dsp_and_output_correction --lib -- --nocapture
+	cargo test -p sotf-player test_build_room_eq_graph_applies_shared_sub_chain_to_physical_sub_routes --lib -- --nocapture
 	cargo test -p sotf-player test_requires_room_eq_graph_with_routed_bass_management --lib -- --nocapture
 
 [group('qa-roomeq')]
