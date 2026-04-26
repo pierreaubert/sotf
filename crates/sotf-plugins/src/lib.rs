@@ -114,6 +114,15 @@ pub mod param_specs {
     pub mod denoiser {
         pub use sotf_plugin_denoiser::params::*;
     }
+    pub mod speech_denoiser {
+        pub use sotf_plugin_speech_denoiser::params::*;
+    }
+    pub mod hiss_reducer {
+        pub use sotf_plugin_hiss_reducer::params::*;
+    }
+    pub mod declick {
+        pub use sotf_plugin_declick::params::*;
+    }
     pub mod dither {
         pub use sotf_plugin_dither::params::*;
     }
@@ -169,8 +178,8 @@ pub use sotf_host::stft_common;
 pub use sotf_host::test_utils;
 
 // Re-export all plugin crates
-pub use sotf_plugin_ab_compare as plugin_ab_compare;
 pub use sotf_plugin_aae as plugin_aae;
+pub use sotf_plugin_ab_compare as plugin_ab_compare;
 pub use sotf_plugin_aec as plugin_aec;
 pub use sotf_plugin_band_merge as plugin_band_merge;
 pub use sotf_plugin_band_split as plugin_band_split;
@@ -181,6 +190,7 @@ pub use sotf_plugin_convolution as plugin_convolution;
 pub use sotf_plugin_crossfeed as plugin_crossfeed;
 pub use sotf_plugin_crossover as plugin_crossover;
 pub use sotf_plugin_de_esser as plugin_de_esser;
+pub use sotf_plugin_declick as plugin_declick;
 pub use sotf_plugin_delay as plugin_delay;
 pub use sotf_plugin_denoiser as plugin_denoiser;
 pub use sotf_plugin_dither;
@@ -189,6 +199,7 @@ pub use sotf_plugin_dynamic_eq as plugin_dynamic_eq;
 pub use sotf_plugin_eq as plugin_eq;
 pub use sotf_plugin_gain as plugin_gain;
 pub use sotf_plugin_gate as plugin_gate;
+pub use sotf_plugin_hiss_reducer as plugin_hiss_reducer;
 pub use sotf_plugin_limiter as plugin_limiter;
 pub use sotf_plugin_linear_phase_eq as plugin_linear_phase_eq;
 /// Backward compat: Fletcher-Munson is now part of loudness_compensation.
@@ -204,6 +215,7 @@ pub use sotf_plugin_pnd as plugin_pnd;
 pub use sotf_plugin_resampler as plugin_resampler;
 pub use sotf_plugin_saturation as plugin_saturation;
 pub use sotf_plugin_spectral_compressor as plugin_spectral_compressor;
+pub use sotf_plugin_speech_denoiser as plugin_speech_denoiser;
 pub use sotf_plugin_stereo_imager as plugin_stereo_imager;
 pub use sotf_plugin_transient_shaper as plugin_transient_shaper;
 pub use sotf_plugin_upmixer as plugin_upmixer;
@@ -215,8 +227,8 @@ pub use sotf_plugin_hal_input as plugin_hal_input;
 pub use sotf_plugin_hal_output as plugin_hal_output;
 
 // Re-export all public types for backward compatibility
-pub use plugin_ab_compare::{ABComparePlugin, ABComparePluginParams};
 pub use plugin_aae::{AaePlugin, params::AaePluginParams};
+pub use plugin_ab_compare::{ABComparePlugin, ABComparePluginParams};
 pub use plugin_aec::{AecPlugin, AecPluginParams};
 pub use plugin_band_merge::{BandMergePlugin, BandMergePluginParams};
 pub use plugin_band_split::{BandSplitPlugin, BandSplitPluginParams};
@@ -234,6 +246,7 @@ pub use plugin_crossfeed::{
 };
 pub use plugin_crossover::{CrossoverPlugin, CrossoverPluginParams};
 pub use plugin_de_esser::{DeEsserData, DeEsserPlugin, DeEsserPluginParams};
+pub use plugin_declick::{DeclickPlugin, DeclickPluginParams};
 pub use plugin_delay::{DelayPlugin, DelayPluginParams};
 pub use plugin_denoiser::{DenoiserData, DenoiserPlugin, DenoiserPluginParams};
 pub use plugin_downmix::{DownmixPlugin, DownmixPluginParams};
@@ -245,6 +258,7 @@ pub type ExpanderPlugin = sotf_plugin_multiband_expander::MultibandExpanderPlugi
 pub type ExpanderPluginParams = sotf_plugin_multiband_expander::MultibandExpanderPluginParams;
 pub use plugin_gain::{GainPlugin, GainPluginParams};
 pub use plugin_gate::{GateData, GatePlugin, GatePluginParams};
+pub use plugin_hiss_reducer::{HissReducerPlugin, HissReducerPluginParams};
 pub use plugin_limiter::{LimiterData, LimiterPlugin, LimiterPluginParams};
 pub use plugin_loudness_compensation::{FletcherMunsonPlugin, FletcherMunsonPluginParams};
 pub use plugin_loudness_compensation::{
@@ -262,6 +276,7 @@ pub use plugin_pnd::{PndPlugin, PndPluginParams};
 pub use plugin_resampler::ResamplerPlugin;
 pub use plugin_saturation::{SaturationPlugin, SaturationPluginParams};
 pub use plugin_spectral_compressor::{SpectralCompressorPlugin, SpectralCompressorPluginParams};
+pub use plugin_speech_denoiser::{SpeechDenoiserPlugin, SpeechDenoiserPluginParams};
 pub use plugin_stereo_imager::{StereoImagerPlugin, StereoImagerPluginParams};
 pub use plugin_transient_shaper::{
     TransientShaperData, TransientShaperPlugin, TransientShaperPluginParams,

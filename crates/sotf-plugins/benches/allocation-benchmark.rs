@@ -21,14 +21,14 @@ use criterion::{Criterion, criterion_group, criterion_main};
 
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use sotf_plugins::{
-    AaePlugin, AaePluginParams, ABComparePlugin, AecPlugin, AecPluginParams, AutoGain,
+    ABComparePlugin, AaePlugin, AaePluginParams, AecPlugin, AecPluginParams, AutoGain,
     AutoGainParams, BandMergePlugin, BandSplitPlugin, BeamformerPlugin, ChannelMuteSoloPlugin,
-    CompressorPlugin, CrossoverPlugin, DelayPlugin, DenoiserPlugin, EqPlugin, ExpanderPlugin,
-    GainPlugin, GatePlugin, InPlacePlugin, InPlacePluginAdapter, LimiterPlugin,
-    LoudnessCompensationPlugin, LoudnessCompensationPluginParams, LoudnessMonitorPlugin,
-    MatrixPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin, Plugin, ProcessContext,
-    SpectrumAnalyzerPlugin, SpectrumConfig, UpmixerPlugin, UpmixerPluginParams, XtcPlugin,
-    XtcPluginParams,
+    CompressorPlugin, CrossoverPlugin, DeclickPlugin, DelayPlugin, DenoiserPlugin, EqPlugin,
+    ExpanderPlugin, GainPlugin, GatePlugin, HissReducerPlugin, InPlacePlugin, InPlacePluginAdapter,
+    LimiterPlugin, LoudnessCompensationPlugin, LoudnessCompensationPluginParams,
+    LoudnessMonitorPlugin, MatrixPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin,
+    Plugin, ProcessContext, SpectrumAnalyzerPlugin, SpectrumConfig, SpeechDenoiserPlugin,
+    UpmixerPlugin, UpmixerPluginParams, XtcPlugin, XtcPluginParams,
 };
 
 // ============================================================================
@@ -469,6 +469,59 @@ fn test_denoiser_zero_alloc() {
     });
 }
 
+fn test_speech_denoiser_zero_alloc() {
+    let mut plugin = SpeechDenoiserPlugin::new(2);
+    plugin.initialize(SAMPLE_RATE).unwrap();
+
+    let mut buffer = generate_test_buffer(BUFFER_SIZE, 2);
+    let ctx = ProcessContext {
+        sample_rate: SAMPLE_RATE,
+        num_frames: BUFFER_SIZE,
+    };
+
+    for _ in 0..3 {
+        plugin.process_in_place(&mut buffer, &ctx).unwrap();
+    }
+
+    assert_no_allocs("SpeechDenoiserPlugin", || {
+        plugin.process_in_place(&mut buffer, &ctx).unwrap();
+    });
+}
+
+fn test_hiss_reducer_zero_alloc() {
+    let mut plugin = HissReducerPlugin::new(2);
+    plugin.initialize(SAMPLE_RATE).unwrap();
+
+    let mut buffer = generate_test_buffer(BUFFER_SIZE, 2);
+    let ctx = ProcessContext {
+        sample_rate: SAMPLE_RATE,
+        num_frames: BUFFER_SIZE,
+    };
+
+    for _ in 0..3 {
+        plugin.process_in_place(&mut buffer, &ctx).unwrap();
+    }
+
+    assert_no_allocs("HissReducerPlugin", || {
+        plugin.process_in_place(&mut buffer, &ctx).unwrap();
+    });
+}
+
+fn test_declick_zero_alloc() {
+    let mut plugin = DeclickPlugin::new(2);
+    plugin.initialize(SAMPLE_RATE).unwrap();
+
+    let mut buffer = generate_test_buffer(BUFFER_SIZE, 2);
+    let ctx = ProcessContext {
+        sample_rate: SAMPLE_RATE,
+        num_frames: BUFFER_SIZE,
+    };
+
+    assert_no_allocs("DeclickPlugin", || {
+        plugin.process_in_place(&mut buffer, &ctx).unwrap();
+    });
+}
+
 fn test_spectrum_analyzer_zero_alloc() {
     let config = SpectrumConfig {
         num_bins: 30,
@@ -645,6 +698,11 @@ fn benchmark_zero_allocation(c: &mut Criterion) {
     group.bench_function("upmixer", |b| b.iter(test_upmixer_zero_alloc));
     group.bench_function("xtc", |b| b.iter(test_xtc_zero_alloc));
     group.bench_function("denoiser", |b| b.iter(test_denoiser_zero_alloc));
+    group.bench_function("speech_denoiser", |b| {
+        b.iter(test_speech_denoiser_zero_alloc)
+    });
+    group.bench_function("hiss_reducer", |b| b.iter(test_hiss_reducer_zero_alloc));
+    group.bench_function("declick", |b| b.iter(test_declick_zero_alloc));
     group.bench_function("spectrum_analyzer", |b| {
         b.iter(test_spectrum_analyzer_zero_alloc)
     });

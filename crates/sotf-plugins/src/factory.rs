@@ -4,23 +4,25 @@
 //! Used by the audio engine and by the A/B Compare plugin's sub-rack builder.
 
 use crate::{
-    AaePlugin, AaePluginParams, ABComparePlugin, ABComparePluginParams, AecPlugin, AecPluginParams, BandMergePlugin,
-    BandMergePluginParams, BandSplitPlugin, BandSplitPluginParams, BeamformerPlugin,
-    BeamformerPluginParams, BinauralDecoderParams, BinauralDecoderPlugin, ChannelMuteSoloParams,
-    ChannelMuteSoloPlugin, CompressorPlugin, CompressorPluginParams, ConvolutionPlugin,
-    ConvolutionPluginParams, CrossfeedPlugin, CrossfeedPluginParams, CrossoverPlugin,
-    CrossoverPluginParams, DeEsserPlugin, DeEsserPluginParams, DelayPlugin, DelayPluginParams,
-    DenoiserPlugin, DenoiserPluginParams, DownmixPlugin, DownmixPluginParams, DynamicEqPlugin,
-    DynamicEqPluginParams, EqPlugin, EqPluginParams, ExpanderPlugin, ExpanderPluginParams,
-    GainPlugin, GainPluginParams, GatePlugin, GatePluginParams, InPlacePluginAdapter,
+    ABComparePlugin, ABComparePluginParams, AaePlugin, AaePluginParams, AecPlugin, AecPluginParams,
+    BandMergePlugin, BandMergePluginParams, BandSplitPlugin, BandSplitPluginParams,
+    BeamformerPlugin, BeamformerPluginParams, BinauralDecoderParams, BinauralDecoderPlugin,
+    ChannelMuteSoloParams, ChannelMuteSoloPlugin, CompressorPlugin, CompressorPluginParams,
+    ConvolutionPlugin, ConvolutionPluginParams, CrossfeedPlugin, CrossfeedPluginParams,
+    CrossoverPlugin, CrossoverPluginParams, DeEsserPlugin, DeEsserPluginParams, DeclickPlugin,
+    DeclickPluginParams, DelayPlugin, DelayPluginParams, DenoiserPlugin, DenoiserPluginParams,
+    DownmixPlugin, DownmixPluginParams, DynamicEqPlugin, DynamicEqPluginParams, EqPlugin,
+    EqPluginParams, ExpanderPlugin, ExpanderPluginParams, GainPlugin, GainPluginParams, GatePlugin,
+    GatePluginParams, HissReducerPlugin, HissReducerPluginParams, InPlacePluginAdapter,
     LimiterPlugin, LimiterPluginParams, LinearPhaseEqPlugin, LinearPhaseEqPluginParams,
     LoudnessCompensationPlugin, LoudnessCompensationPluginParams, LoudnessMonitorPlugin,
     MatrixPlugin, MonoToStereoPlugin, MonoToStereoPluginParams, MultibandCompressorPlugin,
     MultibandCompressorPluginParams, MultibandExpanderPlugin, MultibandExpanderPluginParams,
     Plugin, PndPlugin, PndPluginParams, ResamplerPlugin, SaturationPlugin, SaturationPluginParams,
     SpectralCompressorPlugin, SpectralCompressorPluginParams, SpectrumAnalyzerPlugin,
-    SpectrumConfig, StereoImagerPlugin, StereoImagerPluginParams, TransientShaperPlugin,
-    TransientShaperPluginParams, UpmixerPlugin, UpmixerPluginParams, XtcPlugin, XtcPluginParams,
+    SpectrumConfig, SpeechDenoiserPlugin, SpeechDenoiserPluginParams, StereoImagerPlugin,
+    StereoImagerPluginParams, TransientShaperPlugin, TransientShaperPluginParams, UpmixerPlugin,
+    UpmixerPluginParams, XtcPlugin, XtcPluginParams,
 };
 
 /// Create a plugin instance from its type string and JSON parameters.
@@ -240,6 +242,27 @@ pub fn create_plugin(
             let params: DenoiserPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse denoiser params: {e}"))?;
             let plugin = DenoiserPlugin::from_params(channels, params);
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+        }
+
+        "speech_denoiser" | "rnnoise" | "rnnoise_denoiser" => {
+            let params: SpeechDenoiserPluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse speech denoiser params: {e}"))?;
+            let plugin = SpeechDenoiserPlugin::from_params(channels, params);
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+        }
+
+        "hiss_reducer" | "hiss" => {
+            let params: HissReducerPluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse hiss reducer params: {e}"))?;
+            let plugin = HissReducerPlugin::from_params(channels, params);
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+        }
+
+        "declick" | "transient_repair" => {
+            let params: DeclickPluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse declick params: {e}"))?;
+            let plugin = DeclickPlugin::from_params(channels, params);
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 

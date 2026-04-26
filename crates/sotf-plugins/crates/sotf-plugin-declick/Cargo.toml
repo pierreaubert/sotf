@@ -1,0 +1,30 @@
+[package]
+name = "sotf-plugin-declick"
+description = "SOTF declick plugin - time-domain click and transient repair"
+version = "0.5.4"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[lib]
+name = "sotf_plugin_declick"
+path = "src/lib.rs"
+
+[features]
+qa = ["sotf-host/qa"]
+
+[[bin]]
+name = "qa-declick"
+path = "bin/qa_declick.rs"
+required-features = ["qa"]
+
+[dependencies]
+sotf-host = { workspace = true }
+sotf-plugin-denoiser = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+hound = { workspace = true }
