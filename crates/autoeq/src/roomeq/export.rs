@@ -1086,6 +1086,7 @@ mod tests {
 
         DspChainOutput {
             version: "1.3.0".to_string(),
+            global_plugins: Vec::new(),
             channels,
             metadata: Some(OptimizationMetadata {
                 pre_score: 5.0,
@@ -1304,6 +1305,7 @@ mod tests {
         );
         let output = DspChainOutput {
             version: "1.3.0".to_string(),
+            global_plugins: Vec::new(),
             channels,
             metadata: None,
         };
@@ -1352,6 +1354,7 @@ mod tests {
         );
         let output = DspChainOutput {
             version: "1.3.0".to_string(),
+            global_plugins: Vec::new(),
             channels,
             metadata: None,
         };
@@ -1401,6 +1404,7 @@ mod tests {
         );
         let output = DspChainOutput {
             version: "1.3.0".to_string(),
+            global_plugins: Vec::new(),
             channels,
             metadata: None,
         };
@@ -1438,6 +1442,7 @@ mod tests {
         }
         let output = DspChainOutput {
             version: "1.3.0".to_string(),
+            global_plugins: Vec::new(),
             channels,
             metadata: None,
         };
@@ -1510,6 +1515,7 @@ mod tests {
 
         let output = DspChainOutput {
             version: "1.3.0".to_string(),
+            global_plugins: Vec::new(),
             channels,
             metadata: None,
         };

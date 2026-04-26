@@ -2369,8 +2369,17 @@ fn refresh_final_reports(
     result.metadata.post_score = avg_post;
     result.metadata.home_cinema_layout = Some(super::home_cinema::analyze_layout(config));
     result.metadata.multi_seat_coverage = Some(super::home_cinema::multi_seat_coverage(config));
-    result.metadata.bass_management =
-        super::home_cinema::bass_management_report(config, None, false);
+    let existing_bass_management = result.metadata.bass_management.clone();
+    result.metadata.bass_management = if let Some(existing) = existing_bass_management {
+        super::home_cinema::bass_management_report_with_optimization(
+            config,
+            existing.applied_sub_gain_db,
+            existing.gain_limited,
+            existing.optimization,
+        )
+    } else {
+        super::home_cinema::bass_management_report(config, None, false)
+    };
 
     let epa_cfg = config.optimizer.epa_config.clone().unwrap_or_default();
     result.metadata.epa_per_channel =

@@ -260,6 +260,32 @@ pub fn create_delay_plugin(delay_ms: f64) -> PluginConfigWrapper {
     }
 }
 
+/// Create a sparse matrix plugin configuration for channel routing/mixing.
+///
+/// The matrix is row-major with shape
+/// `output_channel_map.len() x input_channel_map.len()`. For bass management
+/// we usually emit a single-output sparse matrix whose input map lists the
+/// redirected main/LFE programme channels and whose output map points at the
+/// physical subwoofer bus.
+pub fn create_sparse_matrix_plugin(
+    input_channel_map: Vec<usize>,
+    output_channel_map: Vec<usize>,
+    matrix: Vec<f32>,
+    label: &str,
+    metadata: serde_json::Value,
+) -> PluginConfigWrapper {
+    PluginConfigWrapper {
+        plugin_type: "matrix".to_string(),
+        parameters: json!({
+            "label": label,
+            "input_channel_map": input_channel_map,
+            "output_channel_map": output_channel_map,
+            "matrix": matrix,
+            "metadata": metadata,
+        }),
+    }
+}
+
 /// Create a convolution plugin configuration
 pub fn create_convolution_plugin(wav_path: &str) -> PluginConfigWrapper {
     PluginConfigWrapper {
@@ -707,8 +733,27 @@ pub fn create_dsp_chain_output(
     channels: HashMap<String, ChannelDspChain>,
     metadata: Option<OptimizationMetadata>,
 ) -> DspChainOutput {
+    let global_plugins = metadata
+        .as_ref()
+        .and_then(|metadata| metadata.bass_management.as_ref())
+        .and_then(|report| report.routing_graph.as_ref())
+        .and_then(|graph| {
+            graph.matrix.as_ref().map(|matrix| {
+                create_sparse_matrix_plugin(
+                    matrix.input_channel_map.clone(),
+                    matrix.output_channel_map.clone(),
+                    matrix.matrix.clone(),
+                    "home_cinema_bass_management",
+                    super::home_cinema::bass_management_matrix_metadata(graph),
+                )
+            })
+        })
+        .into_iter()
+        .collect();
+
     DspChainOutput {
         version: super::types::default_config_version(),
+        global_plugins,
         channels,
         metadata,
     }

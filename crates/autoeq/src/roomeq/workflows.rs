@@ -171,8 +171,9 @@ fn run_channel_via_generic_path(
 /// (B8). Using the complex sum preserves phase coherence the same way
 /// `preprocess_cardioid` does for the front/rear sub pair.
 ///
-/// Missing phase is treated as 0° to match the rest of the pipeline's
-/// convention for measurements that weren't captured with phase.
+/// Callers must only use this for curves with measured/current phase. Bass
+/// management is phase-critical, so the workflows skip delay/polarity
+/// optimization instead of inventing 0 deg phase.
 ///
 /// Expects every input curve to share the same frequency grid. Empty or
 /// single-element input panics — callers always supply ≥ 1 main.
@@ -189,7 +190,7 @@ fn complex_sum_mains(curves: &[&Curve]) -> Curve {
         let mut sum = Complex::new(0.0_f64, 0.0);
         for c in curves {
             let mag = 10.0_f64.powf(c.spl[i] / 20.0);
-            let phi = c.phase.as_ref().map(|p| p[i]).unwrap_or(0.0).to_radians();
+            let phi = c.phase.as_ref().expect("phase checked by caller")[i].to_radians();
             sum += Complex::from_polar(mag, phi);
         }
         sum /= divisor;
@@ -203,6 +204,202 @@ fn complex_sum_mains(curves: &[&Curve]) -> Curve {
         phase: Some(phase),
         ..Default::default()
     }
+}
+
+fn average_mains_magnitude(curves: &[&Curve]) -> Curve {
+    assert!(
+        !curves.is_empty(),
+        "average_mains_magnitude needs >= 1 curve"
+    );
+    let ref_freq = curves[0].freq.clone();
+    let mut spl = ndarray::Array1::<f64>::zeros(ref_freq.len());
+
+    for curve in curves {
+        let interpolated = crate::read::interpolate_log_space(&ref_freq, curve);
+        spl += &interpolated.spl;
+    }
+    spl.mapv_inplace(|v| v / curves.len() as f64);
+
+    Curve {
+        freq: ref_freq,
+        spl,
+        phase: None,
+        ..Default::default()
+    }
+}
+
+fn curve_has_usable_phase(curve: &Curve) -> bool {
+    curve
+        .phase
+        .as_ref()
+        .map(|phase| phase.len() >= curve.freq.len() && phase.iter().all(|v| v.is_finite()))
+        .unwrap_or(false)
+}
+
+fn all_curves_have_usable_phase(curves: &[&Curve]) -> bool {
+    curves.iter().all(|curve| curve_has_usable_phase(curve))
+}
+
+fn all_curves_share_frequency_grid(curves: &[&Curve]) -> bool {
+    let Some(reference) = curves.first() else {
+        return false;
+    };
+    super::frequency_grid::is_valid_frequency_grid(&reference.freq)
+        && curves.iter().skip(1).all(|curve| {
+            super::frequency_grid::is_valid_frequency_grid(&curve.freq)
+                && super::frequency_grid::same_frequency_grid(&reference.freq, &curve.freq)
+        })
+}
+
+fn normalize_crossover_delays(main_delay_ms: f64, sub_delay_ms: f64) -> (f64, f64) {
+    let common_delay_ms = main_delay_ms.min(sub_delay_ms);
+    (
+        main_delay_ms - common_delay_ms,
+        sub_delay_ms - common_delay_ms,
+    )
+}
+
+fn apply_delay_and_polarity_to_curve(curve: &Curve, delay_ms: f64, invert: bool) -> Curve {
+    let mut adjusted = curve.clone();
+    let Some(phase) = adjusted.phase.as_mut() else {
+        return adjusted;
+    };
+    let delay_s = delay_ms / 1000.0;
+    for (idx, phase_deg) in phase.iter_mut().enumerate() {
+        let freq_hz = adjusted.freq[idx];
+        *phase_deg -= 360.0 * freq_hz * delay_s;
+        if invert {
+            *phase_deg += 180.0;
+        }
+    }
+    adjusted
+}
+
+#[allow(clippy::too_many_arguments)]
+fn predict_bass_management_sum(
+    main_curve: &Curve,
+    sub_curve: &Curve,
+    xover_type: &str,
+    xover_freq: f64,
+    sample_rate: f64,
+    main_gain_db: f64,
+    sub_gain_db: f64,
+    main_delay_ms: f64,
+    sub_delay_ms: f64,
+    sub_inverted: bool,
+) -> Option<Curve> {
+    use num_complex::Complex;
+
+    if !curve_has_usable_phase(main_curve) || !curve_has_usable_phase(sub_curve) {
+        return None;
+    }
+
+    let sub_on_main_grid = crate::read::interpolate_log_space(&main_curve.freq, sub_curve);
+    if !curve_has_usable_phase(&sub_on_main_grid) {
+        return None;
+    }
+
+    let hp_biquads = create_crossover_filters(xover_type, xover_freq, sample_rate, false);
+    let lp_biquads = create_crossover_filters(xover_type, xover_freq, sample_rate, true);
+    let main_resp =
+        response::compute_peq_complex_response(&hp_biquads, &main_curve.freq, sample_rate);
+    let sub_resp =
+        response::compute_peq_complex_response(&lp_biquads, &sub_on_main_grid.freq, sample_rate);
+
+    let mut main_filtered = response::apply_complex_response(main_curve, &main_resp);
+    for spl in main_filtered.spl.iter_mut() {
+        *spl += main_gain_db;
+    }
+    let main_filtered = apply_delay_and_polarity_to_curve(&main_filtered, main_delay_ms, false);
+
+    let mut sub_filtered = response::apply_complex_response(&sub_on_main_grid, &sub_resp);
+    for spl in sub_filtered.spl.iter_mut() {
+        *spl += sub_gain_db;
+    }
+    let sub_filtered = apply_delay_and_polarity_to_curve(&sub_filtered, sub_delay_ms, sub_inverted);
+
+    let main_phase = main_filtered.phase.as_ref()?;
+    let sub_phase = sub_filtered.phase.as_ref()?;
+    let mut spl = ndarray::Array1::<f64>::zeros(main_filtered.freq.len());
+    let mut phase = ndarray::Array1::<f64>::zeros(main_filtered.freq.len());
+
+    for i in 0..main_filtered.freq.len() {
+        let main = Complex::from_polar(
+            10.0_f64.powf(main_filtered.spl[i] / 20.0),
+            main_phase[i].to_radians(),
+        );
+        let sub = Complex::from_polar(
+            10.0_f64.powf(sub_filtered.spl[i] / 20.0),
+            sub_phase[i].to_radians(),
+        );
+        let sum = main + sub;
+        spl[i] = 20.0 * sum.norm().max(1e-12).log10();
+        phase[i] = sum.arg().to_degrees();
+    }
+
+    Some(Curve {
+        freq: main_filtered.freq,
+        spl,
+        phase: Some(phase),
+        ..Default::default()
+    })
+}
+
+fn bass_management_objective(curve: Option<&Curve>, xover_freq: f64) -> Option<f64> {
+    let curve = curve?;
+    let min_freq = (xover_freq / 2.0).max(20.0);
+    let max_freq = (xover_freq * 2.0).min(2_000.0).max(min_freq + 1.0);
+    Some(compute_flat_loss(curve, min_freq, max_freq))
+}
+
+fn bass_management_crossover_type_candidates(requested: &str) -> Vec<String> {
+    let requested = requested.trim();
+    if requested.eq_ignore_ascii_case("auto") || requested.eq_ignore_ascii_case("optimize") {
+        vec![
+            "LR24".to_string(),
+            "LR48".to_string(),
+            "BW12".to_string(),
+            "BW24".to_string(),
+        ]
+    } else {
+        vec![requested.to_string()]
+    }
+}
+
+fn select_bass_management_crossover_type(
+    requested: &str,
+    main_curve: &Curve,
+    sub_curve: &Curve,
+    xover_freq: f64,
+    sample_rate: f64,
+) -> String {
+    let candidates = bass_management_crossover_type_candidates(requested);
+    if candidates.len() == 1 {
+        return candidates[0].clone();
+    }
+
+    candidates
+        .iter()
+        .filter(|candidate| candidate.parse::<crate::loss::CrossoverType>().is_ok())
+        .filter_map(|candidate| {
+            let predicted = predict_bass_management_sum(
+                main_curve,
+                sub_curve,
+                candidate,
+                xover_freq,
+                sample_rate,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                false,
+            );
+            bass_management_objective(predicted.as_ref(), xover_freq)
+                .map(|objective| (candidate.clone(), objective))
+        })
+        .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|(candidate, _)| candidate)
+        .unwrap_or_else(|| "LR24".to_string())
 }
 
 /// Resolve the `MeasurementSource` for a logical role via the SystemConfig →
@@ -833,28 +1030,44 @@ pub fn optimize_stereo_2_1(
         aligned_pre_eq_curves.insert(role.to_string(), c);
     }
 
-    // 4. Crossover Optimization
-    // Virtual Main = complex sum of aligned + linearized L and R
+    // 4. Bass-management crossover optimization
     let l_curve = &aligned_pre_eq_curves["L"];
     let r_curve = &aligned_pre_eq_curves["R"];
     let sub_curve = &aligned_pre_eq_curves[&sub_role];
+    let measured_phase_inputs = [
+        &aligned_curves["L"],
+        &aligned_curves["R"],
+        &aligned_curves[&sub_role],
+    ];
+    let phase_inputs = [l_curve, r_curve, sub_curve];
+    let measured_phase_available = all_curves_have_usable_phase(&measured_phase_inputs);
+    let shared_grid_available = all_curves_share_frequency_grid(&measured_phase_inputs)
+        && all_curves_share_frequency_grid(&phase_inputs);
+    let phase_available = measured_phase_available && shared_grid_available;
+    let mut optimization_advisories = Vec::new();
+    if !measured_phase_available {
+        optimization_advisories.push("missing_phase_crossover_alignment_skipped".to_string());
+    } else if !shared_grid_available {
+        optimization_advisories
+            .push("frequency_grid_mismatch_crossover_alignment_skipped".to_string());
+    }
+    let virtual_main = if phase_available {
+        // The crossover optimizer needs a coherent summed magnitude+phase for
+        // the mains, not separate averages. If phase is missing, we fall back
+        // to magnitude-only reporting and keep configured timing/polarity.
+        complex_sum_mains(&[l_curve, r_curve])
+    } else {
+        average_mains_magnitude(&[l_curve, r_curve])
+    };
 
-    // Virtual Main = complex sum of L and R, divided by 2.
-    //
-    // The crossover optimizer needs a *coherent* summed magnitude+phase for
-    // the mains, not separate averages. Earlier code took `(L.spl + R.spl)/2`
-    // and kept only L's phase, which left the optimizer blind to phase
-    // mismatches between L and R (common in asymmetric rooms). The
-    // group-delay- and phase-aware crossover loss then worked against a
-    // phantom channel that matched neither L nor R.
-    //
-    // `preprocess_cardioid` already uses complex summation for the same
-    // reason; this brings the 2.1 virtual-main in line (B8).
-    let virtual_main = complex_sum_mains(&[l_curve, r_curve]);
-
-    // Optimize Crossover between Virtual Main and Sub
-    // We reuse crossover::optimize_crossover. It expects a list of drivers.
-    // [VirtualMain, Sub]
+    let final_xover_type = select_bass_management_crossover_type(
+        xover_type_str,
+        &virtual_main,
+        sub_curve,
+        est_xo,
+        sample_rate,
+    );
+    let xover_type_str = final_xover_type.as_str();
 
     // We need to parse crossover type for the optimizer
     let crossover_type_enum: crate::loss::CrossoverType = xover_type_str
@@ -875,26 +1088,48 @@ pub fn optimize_stereo_2_1(
     xo_optimizer_config.min_db = 0.0;
     xo_optimizer_config.max_db = 0.0;
 
-    // Optimize
-    let (xo_gains, xo_delays, xo_freqs, _, inversions) = crossover::optimize_crossover(
-        vec![virtual_main.clone(), sub_curve.clone()],
-        crossover_type_enum,
+    let objective_before_curve = predict_bass_management_sum(
+        &virtual_main,
+        sub_curve,
+        xover_type_str,
+        est_xo,
         sample_rate,
-        &xo_optimizer_config,
-        fixed_freqs,
-        range_opt,
-    )
-    .map_err(|e| AutoeqError::OptimizationFailed {
-        message: e.to_string(),
-    })?;
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        false,
+    );
+    let objective_before = bass_management_objective(objective_before_curve.as_ref(), est_xo);
 
-    // Results: index 0 = Mains, index 1 = Sub
-    let main_gain_post = xo_gains[0];
-    let main_delay_post = xo_delays[0];
-    let sub_gain_post = xo_gains[1];
-    let sub_delay_post = xo_delays[1];
-    let sub_inverted = inversions[1];
-    let final_xo_freq = xo_freqs[0];
+    let (main_gain_post, main_delay_raw, sub_gain_raw, sub_delay_raw, sub_inverted, final_xo_freq) =
+        if phase_available {
+            let (xo_gains, xo_delays, xo_freqs, _, inversions) = crossover::optimize_crossover(
+                vec![virtual_main.clone(), sub_curve.clone()],
+                crossover_type_enum,
+                sample_rate,
+                &xo_optimizer_config,
+                fixed_freqs,
+                range_opt,
+            )
+            .map_err(|e| AutoeqError::OptimizationFailed {
+                message: e.to_string(),
+            })?;
+
+            (
+                xo_gains[0],
+                xo_delays[0],
+                xo_gains[1],
+                xo_delays[1],
+                inversions[1],
+                xo_freqs[0],
+            )
+        } else {
+            (0.0, 0.0, 0.0, 0.0, false, est_xo)
+        };
+    let (main_delay_post, sub_delay_post) =
+        normalize_crossover_delays(main_delay_raw, sub_delay_raw);
+    let sub_gain_post = sub_gain_raw;
 
     info!(
         "  Crossover Optimized: Freq={:.1} Hz, Main Gain={:.2}, Sub Gain={:.2}, Main Delay={:.2}, Sub Delay={:.2}",
@@ -908,17 +1143,13 @@ pub fn optimize_stereo_2_1(
     let lp_biquads = create_crossover_filters(xover_type_str, final_xo_freq, sample_rate, true);
 
     let apply_chain =
-        |curve: &Curve, filters: &[Biquad], gain: f64, _delay: f64, _invert: bool| -> Curve {
+        |curve: &Curve, filters: &[Biquad], gain: f64, delay: f64, invert: bool| -> Curve {
             let resp = response::compute_peq_complex_response(filters, &curve.freq, sample_rate);
             let mut c = response::apply_complex_response(curve, &resp);
-            // Apply gain
             for s in c.spl.iter_mut() {
                 *s += gain;
             }
-            // Apply delay/invert (affects phase)
-            // ... phase update logic ...
-            // For Post-EQ magnitude, phase doesn't matter much unless we do more summing.
-            c
+            apply_delay_and_polarity_to_curve(&c, delay, invert)
         };
 
     // Apply the crossover to the POST-FEATURE curves so Post-EQ sees the
@@ -930,21 +1161,21 @@ pub fn optimize_stereo_2_1(
         &aligned_pre_eq_curves["L"],
         &hp_biquads,
         main_gain_post,
-        0.0,
+        main_delay_post,
         false,
     );
     let r_post = apply_chain(
         &aligned_pre_eq_curves["R"],
         &hp_biquads,
         main_gain_post,
-        0.0,
+        main_delay_post,
         false,
     );
     let sub_post_initial = apply_chain(
         &aligned_pre_eq_curves[&sub_role],
         &lp_biquads,
         sub_gain_post,
-        0.0,
+        sub_delay_post,
         sub_inverted,
     );
 
@@ -976,12 +1207,6 @@ pub fn optimize_stereo_2_1(
         main_mean, sub_mean, sub_correction
     );
 
-    // Apply correction
-    let mut sub_post = sub_post_initial.clone();
-    for s in sub_post.spl.iter_mut() {
-        *s += sub_correction;
-    }
-
     let lfe_physical_gain = bass_management
         .as_ref()
         .filter(|bm| bm.config.apply_lfe_gain_to_chain)
@@ -996,7 +1221,57 @@ pub fn optimize_stereo_2_1(
             requested_sub_gain,
             sub_gain_post
         );
+        optimization_advisories.push("sub_gain_limited_for_headroom".to_string());
     }
+    let mut sub_post = sub_post_initial.clone();
+    for s in sub_post.spl.iter_mut() {
+        *s += sub_gain_post - sub_gain_raw;
+    }
+    let objective_after_curve = predict_bass_management_sum(
+        &virtual_main,
+        sub_curve,
+        xover_type_str,
+        final_xo_freq,
+        sample_rate,
+        main_gain_post,
+        sub_gain_post,
+        main_delay_post,
+        sub_delay_post,
+        sub_inverted,
+    );
+    let objective_after = bass_management_objective(objective_after_curve.as_ref(), final_xo_freq);
+    if optimization_advisories.is_empty() {
+        optimization_advisories.push("ok".to_string());
+    }
+    let mut bass_management_optimization = super::home_cinema::BassManagementOptimizationReport {
+        applied: phase_available,
+        phase_required: true,
+        phase_available,
+        configured_crossover_hz: Some(est_xo),
+        optimized_crossover_hz: Some(final_xo_freq),
+        crossover_range_hz: xover_config.frequency_range,
+        crossover_type: xover_type_str.to_string(),
+        main_delay_ms: main_delay_post,
+        sub_delay_ms: sub_delay_post,
+        relative_sub_delay_ms: sub_delay_post - main_delay_post,
+        sub_polarity_inverted: sub_inverted,
+        requested_sub_gain_db: requested_sub_gain,
+        applied_sub_gain_db: sub_gain_post,
+        gain_limited: sub_gain_limited,
+        estimated_bass_bus_peak_gain_db: None,
+        objective_before,
+        objective_after,
+        advisories: optimization_advisories,
+    };
+    let bass_routing_graph = super::home_cinema::bass_management_routing_graph(
+        config,
+        Some(&bass_management_optimization),
+    );
+    bass_management_optimization.estimated_bass_bus_peak_gain_db =
+        super::home_cinema::estimated_bass_bus_peak_gain_db(
+            bass_routing_graph.as_ref(),
+            sub_gain_post,
+        );
 
     // 7. Post-EQ (Global)
     // L/R: min_freq = xover + 20
@@ -1324,10 +1599,11 @@ pub fn optimize_stereo_2_1(
             perceptual_metrics: None,
             home_cinema_layout: Some(super::home_cinema::analyze_layout(config)),
             multi_seat_coverage: Some(super::home_cinema::multi_seat_coverage(config)),
-            bass_management: super::home_cinema::bass_management_report(
+            bass_management: super::home_cinema::bass_management_report_with_optimization(
                 config,
                 Some(sub_gain_post),
                 sub_gain_limited,
+                Some(bass_management_optimization),
             ),
             timing_diagnostics: None,
         },
@@ -1352,7 +1628,7 @@ pub fn optimize_home_cinema(
     let main_roles: Vec<String> = sys
         .speakers
         .keys()
-        .filter(|r| *r != &sub_role)
+        .filter(|r| *r != &sub_role && !super::home_cinema::role_for_channel(r).is_sub_or_lfe())
         .cloned()
         .collect();
 
@@ -1655,16 +1931,44 @@ fn optimize_home_cinema_with_sub(
         aligned_pre_eq_curves.insert(sub_role.clone(), c);
     }
 
-    // 3. Virtual Main = coherent complex sum of all feature-corrected mains
+    // 3. Bass-managed virtual main. Phase is mandatory for optimizing
+    // crossover delay/polarity; without it, keep configured timing/polarity.
     let main_refs: Vec<&Curve> = main_roles
         .iter()
         .map(|r| &aligned_pre_eq_curves[r])
         .collect();
-    let virtual_main = complex_sum_mains(&main_refs);
-
-    // 4. Crossover optimization between Virtual Main and LFE
     let sub_curve = &aligned_pre_eq_curves[&sub_role];
+    let mut measured_phase_check_refs: Vec<&Curve> =
+        main_roles.iter().map(|r| &aligned_curves[r]).collect();
+    measured_phase_check_refs.push(&aligned_curves[&sub_role]);
+    let mut phase_check_refs = main_refs.clone();
+    phase_check_refs.push(sub_curve);
+    let measured_phase_available = all_curves_have_usable_phase(&measured_phase_check_refs);
+    let shared_grid_available = all_curves_share_frequency_grid(&measured_phase_check_refs)
+        && all_curves_share_frequency_grid(&phase_check_refs);
+    let phase_available = measured_phase_available && shared_grid_available;
+    let mut optimization_advisories = Vec::new();
+    if !measured_phase_available {
+        optimization_advisories.push("missing_phase_crossover_alignment_skipped".to_string());
+    } else if !shared_grid_available {
+        optimization_advisories
+            .push("frequency_grid_mismatch_crossover_alignment_skipped".to_string());
+    }
+    let virtual_main = if phase_available {
+        complex_sum_mains(&main_refs)
+    } else {
+        average_mains_magnitude(&main_refs)
+    };
 
+    // 4. Crossover optimization between virtual main and physical bass output
+    let final_xover_type = select_bass_management_crossover_type(
+        xover_type_str,
+        &virtual_main,
+        sub_curve,
+        est_xo,
+        sample_rate,
+    );
+    let xover_type_str = final_xover_type.as_str();
     let crossover_type_enum: crate::loss::CrossoverType = xover_type_str
         .parse()
         .map_err(|e: String| AutoeqError::InvalidConfiguration { message: e })?;
@@ -1681,24 +1985,48 @@ fn optimize_home_cinema_with_sub(
     xo_optimizer_config.min_db = 0.0;
     xo_optimizer_config.max_db = 0.0;
 
-    let (xo_gains, xo_delays, xo_freqs, _, inversions) = crossover::optimize_crossover(
-        vec![virtual_main.clone(), sub_curve.clone()],
-        crossover_type_enum,
+    let objective_before_curve = predict_bass_management_sum(
+        &virtual_main,
+        sub_curve,
+        xover_type_str,
+        est_xo,
         sample_rate,
-        &xo_optimizer_config,
-        fixed_freqs,
-        range_opt,
-    )
-    .map_err(|e| AutoeqError::OptimizationFailed {
-        message: e.to_string(),
-    })?;
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        false,
+    );
+    let objective_before = bass_management_objective(objective_before_curve.as_ref(), est_xo);
 
-    let main_gain_post = xo_gains[0];
-    let main_delay_post = xo_delays[0];
-    let sub_gain_post = xo_gains[1];
-    let sub_delay_post = xo_delays[1];
-    let sub_inverted = inversions[1];
-    let final_xo_freq = xo_freqs[0];
+    let (main_gain_post, main_delay_raw, sub_gain_raw, sub_delay_raw, sub_inverted, final_xo_freq) =
+        if phase_available {
+            let (xo_gains, xo_delays, xo_freqs, _, inversions) = crossover::optimize_crossover(
+                vec![virtual_main.clone(), sub_curve.clone()],
+                crossover_type_enum,
+                sample_rate,
+                &xo_optimizer_config,
+                fixed_freqs,
+                range_opt,
+            )
+            .map_err(|e| AutoeqError::OptimizationFailed {
+                message: e.to_string(),
+            })?;
+
+            (
+                xo_gains[0],
+                xo_delays[0],
+                xo_gains[1],
+                xo_delays[1],
+                inversions[1],
+                xo_freqs[0],
+            )
+        } else {
+            (0.0, 0.0, 0.0, 0.0, false, est_xo)
+        };
+    let (main_delay_post, sub_delay_post) =
+        normalize_crossover_delays(main_delay_raw, sub_delay_raw);
+    let sub_gain_post = sub_gain_raw;
 
     info!(
         "  Crossover Optimized: Freq={:.1} Hz, Main Gain={:.2}, Sub Gain={:.2}, Main Delay={:.2}, Sub Delay={:.2}",
@@ -1709,14 +2037,15 @@ fn optimize_home_cinema_with_sub(
     let hp_biquads = create_crossover_filters(xover_type_str, final_xo_freq, sample_rate, false);
     let lp_biquads = create_crossover_filters(xover_type_str, final_xo_freq, sample_rate, true);
 
-    let apply_chain = |curve: &Curve, filters: &[Biquad], gain: f64| -> Curve {
-        let resp = response::compute_peq_complex_response(filters, &curve.freq, sample_rate);
-        let mut c = response::apply_complex_response(curve, &resp);
-        for s in c.spl.iter_mut() {
-            *s += gain;
-        }
-        c
-    };
+    let apply_chain =
+        |curve: &Curve, filters: &[Biquad], gain: f64, delay: f64, invert: bool| -> Curve {
+            let resp = response::compute_peq_complex_response(filters, &curve.freq, sample_rate);
+            let mut c = response::apply_complex_response(curve, &resp);
+            for s in c.spl.iter_mut() {
+                *s += gain;
+            }
+            apply_delay_and_polarity_to_curve(&c, delay, invert)
+        };
 
     // Post-crossover curves for all mains and sub.
     // Using aligned_pre_eq_curves (post-feature, post-align) so Post-EQ
@@ -1724,13 +2053,21 @@ fn optimize_home_cinema_with_sub(
     // and crossover.
     let mut main_post_curves = HashMap::new();
     for role in main_roles {
-        let post = apply_chain(&aligned_pre_eq_curves[role], &hp_biquads, main_gain_post);
+        let post = apply_chain(
+            &aligned_pre_eq_curves[role],
+            &hp_biquads,
+            main_gain_post,
+            main_delay_post,
+            false,
+        );
         main_post_curves.insert(role.clone(), post);
     }
     let sub_post_initial = apply_chain(
         &aligned_pre_eq_curves[&sub_role],
         &lp_biquads,
         sub_gain_post,
+        sub_delay_post,
+        sub_inverted,
     );
 
     // Re-align sub level post-crossover (use first main as reference)
@@ -1758,10 +2095,6 @@ fn optimize_home_cinema_with_sub(
         main_mean, sub_mean, sub_correction
     );
 
-    let mut sub_post = sub_post_initial.clone();
-    for s in sub_post.spl.iter_mut() {
-        *s += sub_correction;
-    }
     let lfe_physical_gain = bass_management
         .as_ref()
         .filter(|bm| bm.config.apply_lfe_gain_to_chain)
@@ -1776,7 +2109,57 @@ fn optimize_home_cinema_with_sub(
             requested_sub_gain,
             sub_gain_post
         );
+        optimization_advisories.push("sub_gain_limited_for_headroom".to_string());
     }
+    let mut sub_post = sub_post_initial.clone();
+    for s in sub_post.spl.iter_mut() {
+        *s += sub_gain_post - sub_gain_raw;
+    }
+    let objective_after_curve = predict_bass_management_sum(
+        &virtual_main,
+        sub_curve,
+        xover_type_str,
+        final_xo_freq,
+        sample_rate,
+        main_gain_post,
+        sub_gain_post,
+        main_delay_post,
+        sub_delay_post,
+        sub_inverted,
+    );
+    let objective_after = bass_management_objective(objective_after_curve.as_ref(), final_xo_freq);
+    if optimization_advisories.is_empty() {
+        optimization_advisories.push("ok".to_string());
+    }
+    let mut bass_management_optimization = super::home_cinema::BassManagementOptimizationReport {
+        applied: phase_available,
+        phase_required: true,
+        phase_available,
+        configured_crossover_hz: Some(est_xo),
+        optimized_crossover_hz: Some(final_xo_freq),
+        crossover_range_hz: xover_config.frequency_range,
+        crossover_type: xover_type_str.to_string(),
+        main_delay_ms: main_delay_post,
+        sub_delay_ms: sub_delay_post,
+        relative_sub_delay_ms: sub_delay_post - main_delay_post,
+        sub_polarity_inverted: sub_inverted,
+        requested_sub_gain_db: requested_sub_gain,
+        applied_sub_gain_db: sub_gain_post,
+        gain_limited: sub_gain_limited,
+        estimated_bass_bus_peak_gain_db: None,
+        objective_before,
+        objective_after,
+        advisories: optimization_advisories,
+    };
+    let bass_routing_graph = super::home_cinema::bass_management_routing_graph(
+        config,
+        Some(&bass_management_optimization),
+    );
+    bass_management_optimization.estimated_bass_bus_peak_gain_db =
+        super::home_cinema::estimated_bass_bus_peak_gain_db(
+            bass_routing_graph.as_ref(),
+            sub_gain_post,
+        );
 
     // 6. Post-EQ
     let mut post_eq_filters = HashMap::new();
@@ -2100,10 +2483,11 @@ fn optimize_home_cinema_with_sub(
             perceptual_metrics: None,
             home_cinema_layout: Some(super::home_cinema::analyze_layout(config)),
             multi_seat_coverage: Some(super::home_cinema::multi_seat_coverage(config)),
-            bass_management: super::home_cinema::bass_management_report(
+            bass_management: super::home_cinema::bass_management_report_with_optimization(
                 config,
                 Some(sub_gain_post),
                 sub_gain_limited,
+                Some(bass_management_optimization),
             ),
             timing_diagnostics: None,
         },
@@ -2157,4 +2541,381 @@ fn create_crossover_filters(
         }
     };
     peq.into_iter().map(|(_, b)| b).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::MeasurementSource;
+    use crate::roomeq::optimize::optimize_room;
+    use crate::roomeq::types::{
+        BassManagementConfig, CrossoverConfig, OptimizerConfig, RoomConfig, SpeakerConfig,
+        SubwooferSystemConfig, SystemConfig, SystemModel,
+    };
+    use ndarray::array;
+    use std::collections::HashMap;
+
+    fn phase_curve(phase_deg: f64) -> Curve {
+        Curve {
+            freq: array![40.0, 80.0, 160.0],
+            spl: array![0.0, 0.0, 0.0],
+            phase: Some(array![phase_deg, phase_deg, phase_deg]),
+            ..Default::default()
+        }
+    }
+
+    fn bass_management_workflow_curve(
+        base_level: f64,
+        acoustic_delay_ms: f64,
+        with_phase: bool,
+    ) -> Curve {
+        let n = 96;
+        let freq: Vec<f64> = (0..n)
+            .map(|i| 20.0 * (1000.0f64).powf(i as f64 / (n - 1) as f64))
+            .collect();
+        let spl: Vec<f64> = freq
+            .iter()
+            .map(|&f| {
+                let bass_shelf = if f < 80.0 {
+                    -3.0 * (80.0 / f).log2().min(2.0)
+                } else {
+                    0.0
+                };
+                base_level + bass_shelf
+            })
+            .collect();
+        let phase = with_phase.then(|| {
+            ndarray::Array1::from_vec(
+                freq.iter()
+                    .map(|&f| -360.0 * f * acoustic_delay_ms / 1000.0)
+                    .collect(),
+            )
+        });
+
+        Curve {
+            freq: ndarray::Array1::from_vec(freq),
+            spl: ndarray::Array1::from_vec(spl),
+            phase,
+            ..Default::default()
+        }
+    }
+
+    fn bass_management_workflow_config(with_phase: bool, max_sub_boost_db: f64) -> RoomConfig {
+        let mut speakers = HashMap::new();
+        speakers.insert(
+            "left".to_string(),
+            SpeakerConfig::Single(MeasurementSource::InMemory(bass_management_workflow_curve(
+                76.0, 0.0, with_phase,
+            ))),
+        );
+        speakers.insert(
+            "right".to_string(),
+            SpeakerConfig::Single(MeasurementSource::InMemory(bass_management_workflow_curve(
+                76.5, 0.1, with_phase,
+            ))),
+        );
+        speakers.insert(
+            "sub".to_string(),
+            SpeakerConfig::Single(MeasurementSource::InMemory(bass_management_workflow_curve(
+                62.0, 3.0, with_phase,
+            ))),
+        );
+
+        let mut system_speakers = HashMap::new();
+        system_speakers.insert("L".to_string(), "left".to_string());
+        system_speakers.insert("R".to_string(), "right".to_string());
+        system_speakers.insert("LFE".to_string(), "sub".to_string());
+
+        let mut crossovers = HashMap::new();
+        crossovers.insert(
+            "bass".to_string(),
+            CrossoverConfig {
+                crossover_type: "LR24".to_string(),
+                frequency: Some(80.0),
+                frequencies: None,
+                frequency_range: None,
+            },
+        );
+
+        RoomConfig {
+            version: "test".to_string(),
+            system: Some(SystemConfig {
+                model: SystemModel::HomeCinema,
+                speakers: system_speakers,
+                subwoofers: Some(SubwooferSystemConfig {
+                    config: super::SubwooferStrategy::Single,
+                    crossover: Some("bass".to_string()),
+                    mapping: HashMap::new(),
+                }),
+                bass_management: Some(BassManagementConfig {
+                    enabled: true,
+                    redirect_bass: true,
+                    max_sub_boost_db,
+                    ..BassManagementConfig::default()
+                }),
+            }),
+            speakers,
+            crossovers: Some(crossovers),
+            target_curve: None,
+            optimizer: OptimizerConfig {
+                num_filters: 1,
+                max_iter: 4,
+                population: 4,
+                seed: Some(7),
+                refine: false,
+                allow_delay: Some(false),
+                decomposed_correction: None,
+                min_freq: 20.0,
+                max_freq: 20_000.0,
+                ..OptimizerConfig::default()
+            },
+            recording_config: None,
+            cea2034_cache: None,
+        }
+    }
+
+    fn total_delay_ms(chain: &ChannelDspChain) -> f64 {
+        chain
+            .plugins
+            .iter()
+            .filter(|p| p.plugin_type == "delay")
+            .map(|p| p.parameters["delay_ms"].as_f64().unwrap_or(0.0))
+            .sum()
+    }
+
+    fn has_crossover_plugin(chain: &ChannelDspChain, mode: &str) -> bool {
+        chain
+            .plugins
+            .iter()
+            .any(|p| p.plugin_type == "crossover" && p.parameters["output"].as_str() == Some(mode))
+    }
+
+    #[test]
+    fn home_cinema_bass_management_delays_are_normalized() {
+        let (main, sub) = normalize_crossover_delays(-1.5, 0.25);
+        assert_eq!(main, 0.0);
+        assert!((sub - 1.75).abs() < 1e-9);
+
+        let (main, sub) = normalize_crossover_delays(2.0, 5.0);
+        assert_eq!(main, 0.0);
+        assert_eq!(sub, 3.0);
+    }
+
+    #[test]
+    fn home_cinema_bass_management_delay_and_polarity_update_phase() {
+        let curve = phase_curve(0.0);
+        let adjusted = apply_delay_and_polarity_to_curve(&curve, 1.0, true);
+        let phase = adjusted.phase.expect("phase");
+
+        assert!((phase[0] - 165.6).abs() < 1e-6);
+        assert!((phase[1] - 151.2).abs() < 1e-6);
+        assert!((phase[2] - 122.4).abs() < 1e-6);
+    }
+
+    #[test]
+    fn home_cinema_bass_management_prediction_requires_phase() {
+        let main = phase_curve(0.0);
+        let mut sub = phase_curve(0.0);
+        sub.phase = None;
+
+        let predicted = predict_bass_management_sum(
+            &main, &sub, "LR24", 80.0, 48_000.0, 0.0, 0.0, 0.0, 0.0, false,
+        );
+
+        assert!(predicted.is_none());
+    }
+
+    #[test]
+    fn home_cinema_bass_management_alignment_requires_matching_grids() {
+        let main = phase_curve(0.0);
+        let mut shifted = phase_curve(0.0);
+        shifted.freq = array![41.0, 82.0, 164.0];
+
+        assert!(all_curves_have_usable_phase(&[&main, &shifted]));
+        assert!(!all_curves_share_frequency_grid(&[&main, &shifted]));
+    }
+
+    #[test]
+    fn home_cinema_bass_management_prediction_has_phase_when_valid() {
+        let main = phase_curve(0.0);
+        let sub = phase_curve(0.0);
+
+        let predicted = predict_bass_management_sum(
+            &main, &sub, "LR24", 80.0, 48_000.0, 0.0, 0.0, 0.0, 1.0, false,
+        )
+        .expect("prediction");
+
+        assert_eq!(predicted.freq.len(), main.freq.len());
+        assert!(predicted.phase.is_some());
+        assert!(bass_management_objective(Some(&predicted), 80.0).is_some());
+    }
+
+    #[test]
+    fn home_cinema_bass_management_workflow_reports_exported_dsp() {
+        let config = bass_management_workflow_config(true, 6.0);
+        let result = optimize_room(&config, 48_000.0, None, None).expect("room optimization");
+        let report = result
+            .metadata
+            .bass_management
+            .as_ref()
+            .expect("bass management report");
+        let optimization = report.optimization.as_ref().expect("optimization report");
+
+        assert!(optimization.applied);
+        assert!(optimization.phase_available);
+        assert_eq!(optimization.advisories, vec!["ok".to_string()]);
+        assert!(optimization.objective_before.is_some());
+        assert!(optimization.objective_after.is_some());
+        assert!(optimization.main_delay_ms >= -1e-9);
+        assert!(optimization.sub_delay_ms >= -1e-9);
+        assert_eq!(
+            report.applied_sub_gain_db,
+            Some(optimization.applied_sub_gain_db)
+        );
+        assert!(optimization.estimated_bass_bus_peak_gain_db.is_some());
+        let routing = report.routing_graph.as_ref().expect("routing graph");
+        assert_eq!(routing.physical_sub_output, "LFE");
+        assert!(routing.routes.iter().any(|route| {
+            route.route_kind == "redirected_bass_lowpass_to_sub"
+                && route.source_channel == "L"
+                && route.destination == "LFE"
+        }));
+        assert!(routing.routes.iter().any(|route| {
+            route.route_kind == "lfe_lowpass_to_sub"
+                && route.source_channel == "LFE"
+                && (route.gain_db - 10.0).abs() < 1e-9
+        }));
+        let routing_matrix = routing.matrix.as_ref().expect("routing matrix");
+        assert_eq!(routing_matrix.output_channel_map, vec![2]);
+        assert_eq!(routing_matrix.route_count, 3);
+
+        for role in ["L", "R"] {
+            let chain = result.channels.get(role).expect("main chain");
+            assert!(has_crossover_plugin(chain, "high"));
+            assert!((total_delay_ms(chain) - optimization.main_delay_ms).abs() < 1e-6);
+            let chain_phase = chain
+                .final_curve
+                .as_ref()
+                .and_then(|c| c.phase.as_ref())
+                .expect("chain final phase");
+            let result_phase = result.channel_results[role]
+                .final_curve
+                .phase
+                .as_ref()
+                .expect("result final phase");
+            assert_eq!(chain_phase.len(), result_phase.len());
+        }
+
+        let sub_chain = result.channels.get("LFE").expect("sub chain");
+        let dsp_output = result.to_dsp_chain_output();
+        let matrix_plugin = dsp_output
+            .global_plugins
+            .iter()
+            .find(|plugin| plugin.plugin_type == "matrix")
+            .expect("bass-management global matrix plugin");
+        assert_eq!(
+            matrix_plugin.parameters["label"].as_str(),
+            Some("home_cinema_bass_management")
+        );
+        assert_eq!(
+            matrix_plugin.parameters["input_channel_map"]
+                .as_array()
+                .expect("input map")
+                .len(),
+            routing_matrix.input_channel_map.len()
+        );
+        assert!(has_crossover_plugin(sub_chain, "low"));
+        assert!((total_delay_ms(sub_chain) - optimization.sub_delay_ms).abs() < 1e-6);
+        assert!(
+            sub_chain
+                .final_curve
+                .as_ref()
+                .and_then(|c| c.phase.as_ref())
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn home_cinema_bass_management_workflow_skips_alignment_without_phase() {
+        let config = bass_management_workflow_config(false, 6.0);
+        let result = optimize_room(&config, 48_000.0, None, None).expect("room optimization");
+        let optimization = result
+            .metadata
+            .bass_management
+            .as_ref()
+            .and_then(|r| r.optimization.as_ref())
+            .expect("optimization report");
+
+        assert!(!optimization.applied);
+        assert!(!optimization.phase_available);
+        assert_eq!(optimization.main_delay_ms, 0.0);
+        assert_eq!(optimization.sub_delay_ms, 0.0);
+        assert!(!optimization.sub_polarity_inverted);
+        assert!(optimization.objective_before.is_none());
+        assert!(optimization.objective_after.is_none());
+        assert!(
+            optimization
+                .advisories
+                .contains(&"missing_phase_crossover_alignment_skipped".to_string())
+        );
+    }
+
+    #[test]
+    fn home_cinema_bass_management_workflow_limits_sub_boost_for_headroom() {
+        let config = bass_management_workflow_config(true, 0.0);
+        let result = optimize_room(&config, 48_000.0, None, None).expect("room optimization");
+        let report = result
+            .metadata
+            .bass_management
+            .as_ref()
+            .expect("bass management report");
+        let optimization = report.optimization.as_ref().expect("optimization report");
+
+        assert!(optimization.gain_limited);
+        assert!(report.gain_limited);
+        assert!(optimization.applied_sub_gain_db <= 1e-9);
+        assert_eq!(
+            report.applied_sub_gain_db,
+            Some(optimization.applied_sub_gain_db)
+        );
+        assert!(
+            optimization
+                .advisories
+                .contains(&"sub_gain_limited_for_headroom".to_string())
+        );
+    }
+
+    #[test]
+    fn home_cinema_bass_management_workflow_selects_auto_crossover_type() {
+        let mut config = bass_management_workflow_config(true, 6.0);
+        config
+            .crossovers
+            .as_mut()
+            .and_then(|crossovers| crossovers.get_mut("bass"))
+            .expect("bass crossover")
+            .crossover_type = "auto".to_string();
+
+        let result = optimize_room(&config, 48_000.0, None, None).expect("room optimization");
+        let routing = result
+            .metadata
+            .bass_management
+            .as_ref()
+            .and_then(|report| report.routing_graph.as_ref())
+            .expect("routing graph");
+        let optimization = result
+            .metadata
+            .bass_management
+            .as_ref()
+            .and_then(|report| report.optimization.as_ref())
+            .expect("optimization report");
+
+        assert_ne!(optimization.crossover_type, "auto");
+        assert!(["LR24", "LR48", "BW12", "BW24"].contains(&optimization.crossover_type.as_str()));
+        assert!(
+            routing
+                .routes
+                .iter()
+                .all(|route| route.crossover_type == optimization.crossover_type)
+        );
+    }
 }

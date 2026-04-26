@@ -79,7 +79,7 @@ pub use output::{
     build_multisub_dsp_chain_with_allpass, build_multisub_dsp_chain_with_curves,
     create_convolution_plugin, create_crossover_plugin, create_delay_plugin,
     create_dsp_chain_output, create_eq_plugin, create_gain_plugin, create_gain_plugin_with_invert,
-    create_labeled_eq_plugin, save_dsp_chain,
+    create_labeled_eq_plugin, create_sparse_matrix_plugin, save_dsp_chain,
 };
 
 // Progress reporting
@@ -161,8 +161,10 @@ pub use excursion::{
     ExcursionProtectionResult, F3DetectionResult, detect_f3, generate_excursion_protection,
 };
 pub use home_cinema::{
-    BassManagementReport, ChannelTimingReport, HomeCinemaChannelReport, HomeCinemaLayoutReport,
-    HomeCinemaRole, HomeCinemaRoleGroup, MultiSeatCoverageReport, TimingDiagnosticsReport,
+    BassManagementMatrix, BassManagementOptimizationReport, BassManagementReport,
+    BassManagementRoute, BassManagementRoutingGraph, BassManagementSignalFlowEntry,
+    ChannelTimingReport, HomeCinemaChannelReport, HomeCinemaLayoutReport, HomeCinemaRole,
+    HomeCinemaRoleGroup, MultiSeatCoverageReport, TimingDiagnosticsReport,
     analyze_layout as analyze_home_cinema_layout,
 };
 pub use multiseat::{MultiSeatMeasurements, MultiSeatOptimizationResult, optimize_multiseat};
