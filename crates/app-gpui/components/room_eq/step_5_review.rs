@@ -274,7 +274,6 @@ impl PlayerView {
         // Initialize interactive chart state if needed
         {
             let state = self.state.read(cx);
-            let translations = state.app.ui_state.translations.clone();
             if state
                 .app
                 .measurement_state

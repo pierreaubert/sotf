@@ -402,7 +402,6 @@ impl PlayerView {
                 // Initialize interactive chart state if needed
                 {
                     let state = self.state.read(cx);
-                    let translations = state.app.ui_state.translations.clone();
                     if state
                         .app
                         .measurement_state
@@ -803,7 +802,6 @@ impl PlayerView {
         // letting it fall back to WAV-onset detection.
         let (room_config, channel_names, max_iter, probe_arrivals) = {
             let state = self.state.read(cx);
-            let translations = state.app.ui_state.translations.clone();
             let room_eq = &state.app.measurement_state.room_eq_state;
             let cfg = &room_eq.optimizer_config;
             log::info!(

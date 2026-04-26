@@ -271,7 +271,6 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let translations = state.app.ui_state.translations.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
         let results = self.get_filtered_results(cx);
@@ -296,7 +295,6 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let translations = state.app.ui_state.translations.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
         let results = self.get_filtered_results(cx);
@@ -321,7 +319,6 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let translations = state.app.ui_state.translations.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
         let results = self.get_filtered_results(cx);
@@ -347,7 +344,6 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
 
-        let translations = state.app.ui_state.translations.clone();
         let results = self.get_filtered_results(cx);
         let has_results = !results.is_empty();
 
@@ -370,7 +366,6 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let translations = state.app.ui_state.translations.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
         let results = self.get_filtered_results(cx);
@@ -395,7 +390,6 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let translations = state.app.ui_state.translations.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
         let results = self.get_filtered_results(cx);
@@ -420,7 +414,6 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let translations = state.app.ui_state.translations.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
         let results = self.get_filtered_results(cx);
@@ -445,7 +438,6 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let translations = state.app.ui_state.translations.clone();
         let sample_rate = state
             .app
             .measurement_state

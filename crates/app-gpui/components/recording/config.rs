@@ -241,7 +241,6 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.weak_entity();
         let num_channels = recording_state.recording_config.num_channels;
@@ -708,7 +707,6 @@ impl PlayerView {
     fn render_playback_device_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.weak_entity();
 
@@ -1078,7 +1076,6 @@ impl PlayerView {
         // Extract all needed data upfront, then release the borrow
         let (theme, speaker_data, is_custom) = {
             let state = self.state.read(cx);
-            let translations = state.app.ui_state.translations.clone();
             let mappings: Vec<_> = state
                 .app
                 .measurement_state
@@ -1237,7 +1234,6 @@ impl PlayerView {
     ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let translations = state.app.ui_state.translations.clone();
         let is_open = state
             .app
             .measurement_state
@@ -1539,7 +1535,6 @@ impl PlayerView {
     ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.weak_entity();
         let current_group = current_group.to_string();
@@ -1615,7 +1610,6 @@ impl PlayerView {
     fn render_recording_device_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.weak_entity();
 
@@ -1827,7 +1821,6 @@ impl PlayerView {
     fn render_recording_channel_mapping(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.weak_entity();
 

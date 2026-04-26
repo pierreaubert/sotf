@@ -99,7 +99,6 @@ impl PlayerView {
     fn render_signal_type_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
 
@@ -156,7 +155,6 @@ impl PlayerView {
     fn render_duration_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
 
@@ -388,7 +386,6 @@ impl PlayerView {
     fn render_channel_metrics_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
 
         // Collect metrics for channels that have results
@@ -523,7 +520,6 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let translations = state.app.ui_state.translations.clone();
         let is_recording = state.app.measurement_state.recording_state.is_recording();
         let status_message = state
             .app
@@ -641,7 +637,6 @@ impl PlayerView {
         let d = crate::components::design::Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
         let is_recording = recording_state.is_recording();
@@ -832,7 +827,6 @@ impl PlayerView {
     fn render_capture_redo_actions(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let is_recording = recording_state.is_recording();
         let view = cx.entity().clone();
