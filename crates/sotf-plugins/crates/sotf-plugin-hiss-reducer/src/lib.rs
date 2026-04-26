@@ -1,14 +1,12 @@
 pub mod params;
 
 use crate::params::PARAMS as HP;
+use plugins_denoiser::hiss::HissReducer;
 use serde::{Deserialize, Serialize};
 use sotf_host::param_bridge;
 use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
-use sotf_plugin_denoiser::{DenoiserPlugin, DenoiserPluginParams};
-use std::any::Any;
-use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HissReducerPluginParams {
@@ -57,7 +55,7 @@ pub struct HissReducerPlugin {
     sample_rate: u32,
     initialized: bool,
     params: HissReducerPluginParams,
-    inner: DenoiserPlugin,
+    reducer: HissReducer,
     cached_parameters: Vec<Parameter>,
 }
 
@@ -71,7 +69,7 @@ impl HissReducerPlugin {
             channels,
             sample_rate: 44100,
             initialized: false,
-            inner: DenoiserPlugin::from_params(channels, Self::inner_params(&params)),
+            reducer: Self::build_reducer(channels, &params),
             params,
             cached_parameters: Vec::new(),
         };
@@ -79,26 +77,17 @@ impl HissReducerPlugin {
         plugin
     }
 
-    fn inner_params(params: &HissReducerPluginParams) -> DenoiserPluginParams {
-        DenoiserPluginParams {
-            reduction_db: 0.0,
-            transient_enabled: false,
-            hiss_enabled: true,
-            hiss_threshold_db: params.threshold_db,
-            hiss_frequency_hz: params.frequency_hz,
-            hiss_strength: params.strength,
-            low_latency: params.low_latency,
-            algorithm: 0,
-            ..DenoiserPluginParams::default()
-        }
+    fn build_reducer(channels: usize, params: &HissReducerPluginParams) -> HissReducer {
+        let mut reducer = HissReducer::new(channels);
+        reducer.set_params(params.frequency_hz, params.threshold_db, params.strength);
+        reducer
     }
 
-    fn rebuild_inner(&mut self) -> PluginResult<()> {
-        self.inner = DenoiserPlugin::from_params(self.channels, Self::inner_params(&self.params));
+    fn rebuild_reducer(&mut self) {
+        self.reducer = Self::build_reducer(self.channels, &self.params);
         if self.initialized {
-            self.inner.initialize(self.sample_rate)?;
+            self.reducer.initialize(self.sample_rate);
         }
-        Ok(())
     }
 
     fn param_value(&self, index: usize) -> Option<f64> {
@@ -141,7 +130,7 @@ impl InPlacePlugin for HissReducerPlugin {
             _ => {}
         })?;
         if idx != 0 {
-            self.rebuild_inner()?;
+            self.rebuild_reducer();
         }
         self.rebuild_cached_parameters();
         Ok(())
@@ -154,11 +143,12 @@ impl InPlacePlugin for HissReducerPlugin {
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
         self.initialized = true;
-        self.inner.initialize(sample_rate)
+        self.reducer.initialize(sample_rate);
+        Ok(())
     }
 
     fn reset(&mut self) {
-        self.inner.reset();
+        self.reducer.reset();
     }
 
     fn process_in_place(
@@ -167,21 +157,23 @@ impl InPlacePlugin for HissReducerPlugin {
         context: &ProcessContext,
     ) -> PluginResult<usize> {
         if self.params.enabled {
-            self.inner.process_in_place(buffer, context)
-        } else {
-            Ok(context.num_frames)
+            let expected = context
+                .num_frames
+                .checked_mul(self.channels)
+                .ok_or_else(|| "Frame/channel count overflow".to_string())?;
+            if buffer.len() != expected {
+                return Err(format!(
+                    "Buffer size mismatch: expected {}, got {}",
+                    expected,
+                    buffer.len()
+                ));
+            }
+            self.reducer.process(buffer);
         }
+        Ok(context.num_frames)
     }
 
     fn latency_samples(&self) -> usize {
-        if self.params.enabled {
-            self.inner.latency_samples()
-        } else {
-            0
-        }
-    }
-
-    fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
-        self.inner.get_data()
+        0
     }
 }

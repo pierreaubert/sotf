@@ -1,12 +1,12 @@
 pub mod params;
 
 use crate::params::PARAMS as DC;
+use plugins_denoiser::transient::TransientSuppressor;
 use serde::{Deserialize, Serialize};
 use sotf_host::param_bridge;
 use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
-use sotf_plugin_denoiser::transient::TransientSuppressor;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeclickPluginParams {

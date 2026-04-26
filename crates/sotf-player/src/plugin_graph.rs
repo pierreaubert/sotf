@@ -111,8 +111,8 @@ impl PluginGraphNode {
     fn channel_counts_for(plugin: &Plugin) -> (usize, usize) {
         match plugin.plugin_type() {
             PluginType::Upmixer | PluginType::AAE => (2, 6), // Stereo to 5.1
-            PluginType::BinauralDecoder => (6, 2), // Surround to stereo
-            _ => (2, 2),                           // Most plugins are stereo in/out
+            PluginType::BinauralDecoder => (6, 2),           // Surround to stereo
+            _ => (2, 2),                                     // Most plugins are stereo in/out
         }
     }
 
@@ -1295,9 +1295,7 @@ impl PluginGraph {
 
     /// Find the linear index of a plugin node by its `GraphNodeId`.
     pub fn linear_index_of_node(&self, node_id: GraphNodeId) -> Option<usize> {
-        self.plugins_linear()?
-            .iter()
-            .position(|n| n.id == node_id)
+        self.plugins_linear()?.iter().position(|n| n.id == node_id)
     }
 
     /// Clear all suspensions.
@@ -1521,7 +1519,9 @@ impl PluginGraph {
                     let old_in = *input_channels;
                     let old_out = *output_channels;
                     // Need mutable access
-                    let node = self.nodes.get_mut(&node_id)
+                    let node = self
+                        .nodes
+                        .get_mut(&node_id)
                         .expect("plugin_ids/nodes desync: node missing from map");
                     if let PluginSettings::Matrix {
                         input_channels,
@@ -1707,9 +1707,11 @@ impl PluginGraph {
             }
 
             if let Some(new_settings) = updated_settings {
-                self.nodes.get_mut(&node_id)
+                self.nodes
+                    .get_mut(&node_id)
                     .expect("plugin_ids/nodes desync: node missing from map")
-                    .plugin.settings = new_settings;
+                    .plugin
+                    .settings = new_settings;
             }
 
             // Track output channels for the next plugin
@@ -2686,7 +2688,13 @@ mod tests {
 
         // Verify settings are preserved
         let eq = g.get_plugin(insert_idx).unwrap();
-        if let PluginSettings::EQ { channels, per_channel_mode, channel_filters, .. } = &eq.settings {
+        if let PluginSettings::EQ {
+            channels,
+            per_channel_mode,
+            channel_filters,
+            ..
+        } = &eq.settings
+        {
             assert_eq!(*channels, 2);
             assert!(*per_channel_mode);
             let cf = channel_filters.as_ref().unwrap();
@@ -2731,11 +2739,19 @@ mod tests {
         let eq_idx_after = g.find_plugin_index(&PluginType::EQ).unwrap();
         let comp_idx_after = g.find_plugin_index(&PluginType::Compressor).unwrap();
         assert_eq!(eq_idx, eq_idx_after, "EQ position should not change");
-        assert_eq!(comp_idx, comp_idx_after, "Compressor position should not change");
+        assert_eq!(
+            comp_idx, comp_idx_after,
+            "Compressor position should not change"
+        );
 
         // Verify new settings
         let eq = g.get_plugin(eq_idx).unwrap();
-        if let PluginSettings::EQ { filters, per_channel_mode, .. } = &eq.settings {
+        if let PluginSettings::EQ {
+            filters,
+            per_channel_mode,
+            ..
+        } = &eq.settings
+        {
             assert!(*per_channel_mode);
             assert_eq!(filters[0].frequency, 500.0);
         } else {
@@ -2763,11 +2779,17 @@ mod tests {
         };
 
         let configs = g.to_plugin_configs(48000.0);
-        let eq_config = configs.iter().find(|c| c.plugin_type == "eq").expect("EQ config should be present");
+        let eq_config = configs
+            .iter()
+            .find(|c| c.plugin_type == "eq")
+            .expect("EQ config should be present");
         let params = &eq_config.parameters;
 
         // per_channel_mode should produce "channel_filters" key
-        assert!(params.get("channel_filters").is_some(), "Should have channel_filters key");
+        assert!(
+            params.get("channel_filters").is_some(),
+            "Should have channel_filters key"
+        );
         let ch_filters = params["channel_filters"].as_array().unwrap();
         assert_eq!(ch_filters.len(), 2);
 
@@ -2797,12 +2819,18 @@ mod tests {
         };
 
         let configs = g.to_plugin_configs(48000.0);
-        let eq_config = configs.iter().find(|c| c.plugin_type == "eq").expect("EQ config");
+        let eq_config = configs
+            .iter()
+            .find(|c| c.plugin_type == "eq")
+            .expect("EQ config");
         let params = &eq_config.parameters;
 
         // Global mode should produce "filters" key, NOT "channel_filters"
         assert!(params.get("filters").is_some(), "Should have filters key");
-        assert!(params.get("channel_filters").is_none(), "Should NOT have channel_filters key");
+        assert!(
+            params.get("channel_filters").is_none(),
+            "Should NOT have channel_filters key"
+        );
     }
 
     #[test]

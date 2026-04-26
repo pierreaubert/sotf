@@ -1,9 +1,9 @@
 // ============================================================================
-// Denoiser Plugin Demo — Vinyl/Old Recording Restoration
+// Denoiser Plugin Demo — Broadband Noise Restoration
 // ============================================================================
 //
-// Takes a mono WAV input file (e.g. an old recording with crackles, hiss, and
-// background noise) and writes a cleaned mono WAV output.
+// Takes a mono WAV input file with stationary broadband noise and writes a
+// cleaned mono WAV output.
 //
 // Run with:
 //   cargo run -p sotf-plugin-denoiser --example denoiser_demo --release -- input.wav output.wav
@@ -73,14 +73,6 @@ fn main() {
         attack_ms: 1.0,
         release_ms: 50.0,
         low_latency: false, // use larger FFT for better quality
-        // Crackle / click removal
-        transient_enabled: true,
-        crack_sensitivity: 5.0,
-        // Hiss removal (tape hiss, surface noise)
-        hiss_enabled: true,
-        hiss_threshold_db: -35.0,
-        hiss_frequency_hz: 3000.0,
-        hiss_strength: 0.7,
         // Spectral subtraction for broadband noise
         spectral_sub_enabled: true,
         // Temporal + spectral smoothing to reduce musical noise artifacts
@@ -94,14 +86,6 @@ fn main() {
     println!("Denoiser configuration:");
     println!("  Reduction:           {} dB", params.reduction_db);
     println!("  Floor:               {} dB", params.floor_db);
-    println!(
-        "  Crackle removal:     on (sensitivity {})",
-        params.crack_sensitivity
-    );
-    println!(
-        "  Hiss removal:        on (>{} Hz, strength {})",
-        params.hiss_frequency_hz, params.hiss_strength
-    );
     println!("  Spectral sub:        on");
     println!("  Multi-resolution:    on");
     println!();

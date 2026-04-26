@@ -280,11 +280,19 @@ impl PlayerView {
                     PluginType::EQ,
                     PluginType::Gain,
                     PluginType::Delay,
-                    PluginType::Denoiser,
-                    PluginType::Aec,
-                    PluginType::Pnd,
                     PluginType::LoudnessCompensation,
                     PluginType::FletcherMunson,
+                ],
+            ),
+            (
+                "Denoising",
+                &[
+                    PluginType::Denoiser,
+                    PluginType::Declick,
+                    PluginType::HissReducer,
+                    PluginType::SpeechDenoiser,
+                    PluginType::Aec,
+                    PluginType::Pnd,
                 ],
             ),
             (

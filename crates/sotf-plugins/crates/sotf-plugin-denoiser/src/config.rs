@@ -52,10 +52,6 @@ pub fn default_polyphonic_detection() -> bool {
     pk(DN, "polyphonic_detection").default_bool()
 }
 
-pub fn default_crack_sensitivity() -> f32 {
-    pk(DN, "crack_sensitivity").default_f32()
-}
-
 pub fn default_psychoacoustic_masking() -> bool {
     pk(DN, "psychoacoustic_masking").default_bool()
 }
@@ -64,32 +60,12 @@ pub fn default_use_captured_profile() -> bool {
     pk(DN, "use_captured_profile").default_bool()
 }
 
-pub fn default_transient_enabled() -> bool {
-    pk(DN, "transient_enabled").default_bool()
-}
-
 pub fn default_spectral_smoothing_enabled() -> bool {
     pk(DN, "spectral_smoothing_enabled").default_bool()
 }
 
 pub fn default_temporal_smoothing_enabled() -> bool {
     pk(DN, "temporal_smoothing_enabled").default_bool()
-}
-
-pub fn default_hiss_enabled() -> bool {
-    pk(DN, "hiss_enabled").default_bool()
-}
-
-pub fn default_hiss_threshold_db() -> f32 {
-    pk(DN, "hiss_threshold_db").default_f32()
-}
-
-pub fn default_hiss_frequency_hz() -> f32 {
-    pk(DN, "hiss_frequency_hz").default_f32()
-}
-
-pub fn default_hiss_strength() -> f32 {
-    pk(DN, "hiss_strength").default_f32()
 }
 
 pub fn default_spectral_sub_enabled() -> bool {
@@ -159,11 +135,6 @@ pub struct DenoiserPluginParams {
     #[serde(default = "default_polyphonic_detection")]
     pub polyphonic_detection: bool,
 
-    /// Sensitivity of the transient suppressor (1.0-100.0)
-    /// Higher values mean LESS sensitive (higher threshold multiplier)
-    #[serde(default = "default_crack_sensitivity")]
-    pub crack_sensitivity: f32,
-
     // Advanced MCRA parameters (expert use)
     /// Noise PSD smoothing factor
     #[serde(default = "default_mcra_alpha_s")]
@@ -201,10 +172,6 @@ pub struct DenoiserPluginParams {
     #[serde(default = "default_use_captured_profile")]
     pub use_captured_profile: bool,
 
-    /// Enable transient suppression (de-clicking)
-    #[serde(default = "default_transient_enabled")]
-    pub transient_enabled: bool,
-
     /// Enable spectral (frequency-domain) gain smoothing
     #[serde(default = "default_spectral_smoothing_enabled")]
     pub spectral_smoothing_enabled: bool,
@@ -212,22 +179,6 @@ pub struct DenoiserPluginParams {
     /// Enable temporal (attack/release) gain smoothing
     #[serde(default = "default_temporal_smoothing_enabled")]
     pub temporal_smoothing_enabled: bool,
-
-    /// Enable hiss remover (high-frequency noise reduction)
-    #[serde(default = "default_hiss_enabled")]
-    pub hiss_enabled: bool,
-
-    /// Hiss detection SNR threshold (dB)
-    #[serde(default = "default_hiss_threshold_db")]
-    pub hiss_threshold_db: f32,
-
-    /// Frequency above which hiss removal applies (Hz)
-    #[serde(default = "default_hiss_frequency_hz")]
-    pub hiss_frequency_hz: f32,
-
-    /// Hiss removal strength (0.0 to 1.0)
-    #[serde(default = "default_hiss_strength")]
-    pub hiss_strength: f32,
 
     /// Enable spectral subtraction
     #[serde(default = "default_spectral_sub_enabled")]
@@ -240,10 +191,6 @@ pub struct DenoiserPluginParams {
     /// Spectral subtraction floor
     #[serde(default = "default_spectral_sub_beta")]
     pub spectral_sub_beta: f32,
-
-    /// Algorithm backend: 0=Classical, 1=RNNoise, 2=DeepFilter, 3=HybridNeural
-    #[serde(default)]
-    pub algorithm: usize,
 
     /// Preserve speech formant structure during denoising
     #[serde(default = "default_formant_preservation")]
@@ -270,7 +217,6 @@ impl Default for DenoiserPluginParams {
             release_ms: default_release_ms(),
             low_latency: default_low_latency(),
             polyphonic_detection: default_polyphonic_detection(),
-            crack_sensitivity: default_crack_sensitivity(),
             mcra_alpha_s: default_mcra_alpha_s(),
             mcra_alpha_p: default_mcra_alpha_p(),
             mcra_l: default_mcra_l(),
@@ -280,17 +226,11 @@ impl Default for DenoiserPluginParams {
             dd_alpha: default_dd_alpha(),
             psychoacoustic_masking: default_psychoacoustic_masking(),
             use_captured_profile: default_use_captured_profile(),
-            transient_enabled: default_transient_enabled(),
             spectral_smoothing_enabled: default_spectral_smoothing_enabled(),
             temporal_smoothing_enabled: default_temporal_smoothing_enabled(),
-            hiss_enabled: default_hiss_enabled(),
-            hiss_threshold_db: default_hiss_threshold_db(),
-            hiss_frequency_hz: default_hiss_frequency_hz(),
-            hiss_strength: default_hiss_strength(),
             spectral_sub_enabled: default_spectral_sub_enabled(),
             spectral_sub_alpha: default_spectral_sub_alpha(),
             spectral_sub_beta: default_spectral_sub_beta(),
-            algorithm: 0,
             formant_preservation: default_formant_preservation(),
             formant_strength: default_formant_strength(),
             multi_resolution: default_multi_resolution(),

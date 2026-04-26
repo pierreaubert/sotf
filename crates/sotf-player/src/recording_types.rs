@@ -201,7 +201,9 @@ impl ProbeCaptureState {
 pub enum BassAnchorCaptureStatus {
     #[default]
     Idle,
-    Running { started_at_ms: u64 },
+    Running {
+        started_at_ms: u64,
+    },
     Complete,
     Failed(String),
 }
@@ -292,7 +294,9 @@ impl BassAnchorCaptureState {
 pub enum SplCalibrationCaptureStatus {
     #[default]
     Idle,
-    Running { started_at_ms: u64 },
+    Running {
+        started_at_ms: u64,
+    },
     Complete,
     Failed(String),
 }
@@ -786,12 +790,11 @@ impl RecordingSignalType {
 // (`sotf_audio::signal_recorder`) because that's where the measurement is
 // implemented. Re-export them under player-layer names so UI code only
 // has to depend on `sotf_audio_player` types.
-pub use sotf_audio::signal_recorder::{
-    BassAnchorChannelResult, BassAnchorResults,
-    ProbeDelayChannelResult as DelayProbeChannelResult, ProbeDelayResults as DelayProbeResults,
-    SplCalibrationResult,
-};
 pub use autoeq::roomeq::SplCalibration;
+pub use sotf_audio::signal_recorder::{
+    BassAnchorChannelResult, BassAnchorResults, ProbeDelayChannelResult as DelayProbeChannelResult,
+    ProbeDelayResults as DelayProbeResults, SplCalibrationResult,
+};
 
 /// Speaker configuration presets
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

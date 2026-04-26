@@ -2,7 +2,9 @@
 
 ## Overview
 
-Spectral denoiser using MCRA (Minimum Controlled Recursive Averaging) for automatic noise estimation and Wiener filtering for optimal noise reduction. Processes audio in the STFT domain with overlap-add for artifact-free results. Supports both automatic and manual noise profile modes.
+Classical spectral denoiser using MCRA (Minimum Controlled Recursive Averaging) for automatic noise estimation and Wiener filtering for noise reduction. It processes audio in the STFT domain with overlap-add, and keeps broadband spectral denoising modes such as multi-resolution processing, formant preservation, harmonic/percussive weighting, manual noise profiles, psychoacoustic masking, and spectral subtraction.
+
+RNNoise speech cleanup, focused high-frequency hiss reduction, and click/transient repair live in separate plugins.
 
 ## Features
 
@@ -11,83 +13,65 @@ Spectral denoiser using MCRA (Minimum Controlled Recursive Averaging) for automa
 | Parameter | Range | Default | Unit | Description |
 |-----------|-------|---------|------|-------------|
 | Reduction | 0 to 40 | 10 | dB | Maximum noise reduction depth |
-| Floor | -60 to -10 | -20 | dB | Noise floor — residual noise level below which reduction stops |
-| Smoothing | 0 to 99 | 30 | % | Temporal smoothing of noise estimate (higher = more stable, slower adaptation) |
-| Attack | 0.1 to 100 | 5 | ms | How quickly reduction engages when noise is detected |
-| Release | 10 to 500 | 50 | ms | How quickly reduction releases when signal returns |
-| Low Latency | On/Off | Off | — | Use smaller FFT (512 vs 2048) for lower latency at reduced quality |
+| Floor | -60 to -10 | -20 | dB | Residual noise floor below which reduction stops |
+| Smoothing | 0 to 99 | 30 | % | Temporal smoothing of noise estimate |
+| Attack | 0.1 to 100 | 5 | ms | How quickly reduction engages |
+| Release | 10 to 500 | 50 | ms | How quickly reduction releases |
+| Low Latency | On/Off | Off | - | Use smaller FFT for lower latency at reduced quality |
+| Polyphonic | On/Off | Off | - | Protect tonal content using polyphonic pitch detection |
 
 ### MCRA Noise Estimation
 
-Advanced parameters for the MCRA algorithm:
-
 | Parameter | Range | Default | Unit | Description |
 |-----------|-------|---------|------|-------------|
-| Alpha S | 0.5 to 0.99 | 0.9 | — | Signal presence probability smoothing |
-| Alpha P | 0.1 to 0.99 | 0.7 | — | Noise spectrum smoothing factor |
-| Delta | 1.0 to 20.0 | 5.0 | — | Speech presence detection threshold |
+| Alpha S | 0.5 to 0.99 | 0.9 | - | Signal presence probability smoothing |
+| Alpha P | 0.1 to 0.99 | 0.7 | - | Noise spectrum smoothing factor |
 | L | 10 to 200 | 50 | frames | Minimum statistics tracking window length |
+| Delta | 1.0 to 20.0 | 5.0 | - | Speech/presence detection threshold |
 
 ### Transparency & SNR
 
 | Parameter | Range | Default | Unit | Description |
 |-----------|-------|---------|------|-------------|
-| Transparency | 0 to 100 | 0 | % | Blend between aggressive reduction and signal preservation (0 = full denoising, 100 = pass-through) |
-| DD Alpha | 0.9 to 0.999 | 0.98 | — | Decision-directed SNR estimator smoothing |
-| DD Beta | 0.5 to 1.0 | 0.8 | — | Decision-directed a priori SNR weight |
+| Transparency | 0 to 100 | 0 | % | Blend between aggressive reduction and signal preservation |
+| DD SNR | On/Off | On | - | Enable decision-directed SNR estimation |
+| DD Alpha | 0.9 to 0.999 | 0.98 | - | Decision-directed estimator smoothing |
+| Psychoacoustic Masking | On/Off | On | - | Preserve masked noise to reduce artifacts |
 
-### Psychoacoustic Masking
-
-| Parameter | Range | Default | Description |
-|-----------|-------|---------|-------------|
-| Enable | On/Off | On | Use psychoacoustic masking model to preserve masked noise |
-| Bark Scale | On/Off | On | Use Bark-scale critical bands for masking calculation |
-
-### Transient Detection
+### Spectral Modes
 
 | Parameter | Range | Default | Description |
 |-----------|-------|---------|-------------|
-| Enable | On/Off | On | Protect transients from over-reduction |
-| Sensitivity | 0.5 to 5.0 | 2.0 | Transient detection sensitivity |
-
-### Polyphonic Detection
-
-| Parameter | Range | Default | Description |
-|-----------|-------|---------|-------------|
-| Enable | On/Off | Off | Enable polyphonic pitch tracking to protect tonal content |
-
-### Hiss Remover
-
-| Parameter | Range | Default | Unit | Description |
-|-----------|-------|---------|------|-------------|
-| Enable | On/Off | Off | — | Enable dedicated high-frequency hiss reduction |
-| Threshold | -60 to -10 | -30 | dB | Noise floor threshold for hiss detection |
-| Frequency | 1000 to 16000 | 4000 | Hz | Frequency above which hiss reduction is applied |
-| Strength | 0 to 100 | 50 | % | Hiss reduction intensity |
+| Spectral Smoothing | On/Off | On | Smooth gains across neighboring frequency bins |
+| Temporal Smoothing | On/Off | On | Smooth gain changes between frames |
+| Formant Preservation | On/Off | Off | Protect spectral peaks associated with formants |
+| Formant Strength | 0 to 100 | 50 | Strength of formant peak protection |
+| Multi-Resolution | On/Off | Off | Blend small and large FFT denoising paths |
+| Harmonic/Percussive | On/Off | Off | Treat tonal and transient/percussive regions differently |
+| Spatial Denoise | On/Off | Off | Apply multichannel spatial denoising |
+| Spatial Strength | 0 to 100 | 50 | Spatial denoising intensity |
 
 ### Spectral Subtraction
 
 | Parameter | Range | Default | Unit | Description |
 |-----------|-------|---------|------|-------------|
-| Enable | On/Off | Off | — | Enable spectral subtraction (alternative to Wiener) |
-| Over-subtraction | 0.5 to 6.0 | 2.0 | — | Over-subtraction factor (higher = more aggressive) |
-| Floor | 0.001 to 0.5 | 0.02 | — | Spectral floor to prevent musical noise |
+| Enable | On/Off | Off | - | Enable spectral subtraction as an alternate reduction path |
+| Over-subtraction | 0.5 to 6.0 | 2.0 | - | Higher values are more aggressive |
+| Floor | 0.001 to 0.5 | 0.02 | - | Spectral floor to reduce musical noise |
 
 ### Noise Profile
 
 | Parameter | Description |
 |-----------|-------------|
-| Learn | Start capturing a noise profile from silent/noise-only portions |
+| Learn | Start capturing a noise profile from noise-only portions |
 | Use | Apply the captured noise profile instead of MCRA estimation |
 | Clear | Discard the captured noise profile and revert to automatic estimation |
 
 ## Demos
 
-### Demo: Removing Background Hum
+### Removing Background Hum
 
 **Scenario:** Recording has steady low-frequency hum from electrical interference.
-**Before:** Constant hum masks quiet passages and low-frequency content.
-**After:** Hum removed with minimal impact on program material.
 **Config:**
 ```json
 {
@@ -99,11 +83,9 @@ Advanced parameters for the MCRA algorithm:
 }
 ```
 
-### Demo: Gentle Noise Reduction for Music
+### Gentle Noise Reduction for Music
 
 **Scenario:** Light noise reduction that preserves musical detail.
-**Before:** Faint hiss or room noise audible during quiet passages.
-**After:** Noise floor lowered without audible artifacts or loss of detail.
 **Config:**
 ```json
 {
@@ -112,31 +94,28 @@ Advanced parameters for the MCRA algorithm:
   "smoothing": 60.0,
   "transparency": 80.0,
   "psychoacoustic_masking": true,
-  "transient_detection": true
+  "formant_preservation": true
 }
 ```
 
-### Demo: Aggressive Denoising with Hiss Remover
+### Broadband Restoration
 
-**Scenario:** Old recording with heavy tape hiss and broadband noise.
-**Before:** Significant hiss and broadband noise obscure the recording.
-**After:** Deep noise reduction with dedicated hiss remover for high frequencies.
+**Scenario:** Noisy archive material with steady broadband noise.
 **Config:**
 ```json
 {
-  "reduction_db": 30.0,
-  "floor_db": -30.0,
-  "smoothing": 50.0,
-  "hiss_enabled": true,
-  "hiss_frequency_hz": 4000.0,
-  "hiss_strength": 0.8
+  "reduction_db": 24.0,
+  "floor_db": -32.0,
+  "smoothing": 55.0,
+  "spectral_smoothing_enabled": true,
+  "temporal_smoothing_enabled": true,
+  "multi_resolution": true
 }
 ```
 
 ## Presets
 
 ### Gentle
-**Use case:** Minimal noise reduction for clean recordings with faint background noise
 ```json
 {
   "reduction_db": 6.0,
@@ -145,10 +124,8 @@ Advanced parameters for the MCRA algorithm:
   "transparency": 80.0
 }
 ```
-**Tips:** Prioritizes signal preservation over noise removal. Ideal for music mastering.
 
 ### Moderate
-**Use case:** Balanced noise reduction for recordings with noticeable noise
 ```json
 {
   "reduction_db": 12.0,
@@ -157,41 +134,38 @@ Advanced parameters for the MCRA algorithm:
   "transparency": 70.0
 }
 ```
-**Tips:** Good default for most situations. Adjust reduction_db to taste.
 
 ### Aggressive
-**Use case:** Heavy noise reduction for very noisy recordings
 ```json
 {
   "reduction_db": 25.0,
   "floor_db": -30.0,
   "smoothing": 40.0,
-  "transparency": 50.0
+  "transparency": 50.0,
+  "spectral_smoothing_enabled": true,
+  "temporal_smoothing_enabled": true
 }
 ```
-**Tips:** May introduce audible artifacts. Enable psychoacoustic masking and transient detection to minimize.
 
 ## Tips & Best Practices
 
-- Start with low reduction and increase until noise is adequately suppressed — over-reduction causes "musical noise" artifacts.
-- Enable psychoacoustic masking to let the algorithm skip noise that's already inaudible (masked by the signal).
-- Transient detection protects percussive elements from being smeared by the noise gate.
-- The noise profile feature gives better results than automatic MCRA for stationary noise — capture a few seconds of noise-only audio.
-- Low latency mode halves the FFT size (512 vs 2048), reducing quality but suitable for monitoring.
-- Smoothing controls the trade-off between stability (high) and responsiveness (low) of the noise estimate.
-- Spectral subtraction is an alternative to Wiener filtering — simpler but more prone to musical noise.
-- The hiss remover is a dedicated high-frequency noise reducer that complements the broadband Wiener filter.
+- Start with low reduction and increase until noise is adequately suppressed; over-reduction causes musical-noise artifacts.
+- Enable psychoacoustic masking and smoothing when using deeper reduction.
+- Use captured noise profiles for stationary noise when a clean noise-only section is available.
+- Use low latency mode for monitoring, and the default larger FFT for quality-focused offline or playback use.
+- Use the Speech Denoiser plugin for RNNoise speech cleanup.
+- Use the Hiss Reducer plugin for focused stationary high-frequency hiss.
+- Use the Declick plugin for click, crackle, and time-domain transient repair.
 
 ## Signal Flow
 
 ```
-Input → STFT (Hann window, 75% overlap)
-  → MCRA noise estimation (or captured profile)
-  → Wiener filter gain calculation
-  → Optional: psychoacoustic masking adjustment
-  → Optional: transient detection (bypass reduction during transients)
-  → Optional: hiss remover (additional HF reduction)
-  → Optional: spectral subtraction (alternative path)
-  → Apply gains in frequency domain
-  → ISTFT + overlap-add → Output
+Input -> STFT (Hann window, overlap-add)
+  -> MCRA noise estimation (or captured profile)
+  -> Wiener or spectral-subtraction gain calculation
+  -> Optional: psychoacoustic masking
+  -> Optional: spectral/temporal smoothing
+  -> Optional: formant, multi-resolution, harmonic/percussive, spatial modes
+  -> Apply gains in frequency domain
+  -> ISTFT + overlap-add -> Output
 ```

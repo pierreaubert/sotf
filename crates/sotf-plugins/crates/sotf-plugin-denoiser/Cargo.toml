@@ -20,7 +20,6 @@ rustfft = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sotf-plugin-pnd = { workspace = true }
-nnnoiseless = { workspace = true }
 
 [features]
 qa = ["sotf-host/qa"]

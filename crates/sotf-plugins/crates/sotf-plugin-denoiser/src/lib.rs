@@ -22,7 +22,6 @@ use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
 pub mod params;
 
-use crate::backend::DenoiserBackend;
 use crate::params::PARAMS as DN;
 use sotf_host::param_bridge;
 use sotf_host::param_specs::find_by_key as pk;
@@ -34,11 +33,8 @@ use std::sync::Arc;
 
 use sotf_host::analyzer::RealTimeCache;
 
-pub mod backend;
-pub mod backend_rnnoise;
 mod config;
 mod fft;
-mod hiss;
 mod masking;
 mod mcra;
 mod multi_resolution;
@@ -48,7 +44,6 @@ mod spectral_sub;
 #[cfg(test)]
 #[allow(clippy::field_reassign_with_default)]
 mod tests;
-pub mod transient;
 mod wiener;
 
 pub use config::DenoiserPluginParams;
@@ -171,7 +166,6 @@ pub struct DenoiserPlugin {
     release_ms: f32,
     low_latency: bool,
     polyphonic_detection: bool,
-    crack_sensitivity: f32,
 
     // Transparency: blend gain toward 1.0 (0 = full denoising, 1 = pass-through)
     transparency: f32,
@@ -250,25 +244,13 @@ pub struct DenoiserPlugin {
     mcra_delta: f32,
 
     // Technique enable flags
-    transient_enabled: bool,
     spectral_smoothing_enabled: bool,
     temporal_smoothing_enabled: bool,
-
-    // Hiss remover
-    hiss_enabled: bool,
-    hiss_threshold_db: f32,
-    hiss_frequency_hz: f32,
-    hiss_strength: f32,
-    hiss_cutoff_bin: usize,
-    hiss_threshold_linear: f32,
 
     // Spectral subtraction
     spectral_sub_enabled: bool,
     spectral_sub_alpha: f32,
     spectral_sub_beta: f32,
-
-    // Transient Suppressor
-    transient_suppressor: transient::TransientSuppressor,
 
     // PND Analyzers for polyphonic detection
     pnd_analyzers: Vec<PndAnalyzer>,
@@ -281,10 +263,6 @@ pub struct DenoiserPlugin {
     /// `Some(state)` when multi_resolution is enabled, `None` otherwise.
     /// Stored as an Option so that when disabled the extra RAM is not held.
     multi_res_state: Option<multi_resolution::MultiResState>,
-
-    // Algorithm selection (Choice param, index 29)
-    algorithm: usize,
-    rnnoise_backend: backend_rnnoise::RnnoiseBackend,
 
     // --- Phase 4B: SOTA additions ---
     harmonic_percussive: bool,
@@ -372,7 +350,6 @@ impl DenoiserPlugin {
             release_ms: pk(DN, "release_ms").default_f32(),
             low_latency,
             polyphonic_detection: pk(DN, "polyphonic_detection").default_bool(),
-            crack_sensitivity: pk(DN, "crack_sensitivity").default_f32(),
             transparency: pk(DN, "transparency").default_f32(),
 
             dd_enabled: pk(DN, "dd_enabled").default_bool(),
@@ -433,30 +410,18 @@ impl DenoiserPlugin {
             mcra_l: pk(DN, "mcra_l").default_usize(),
             mcra_delta: pk(DN, "mcra_delta").default_f32(),
 
-            transient_enabled: pk(DN, "transient_enabled").default_bool(),
             spectral_smoothing_enabled: pk(DN, "spectral_smoothing_enabled").default_bool(),
             temporal_smoothing_enabled: pk(DN, "temporal_smoothing_enabled").default_bool(),
-
-            hiss_enabled: pk(DN, "hiss_enabled").default_bool(),
-            hiss_threshold_db: pk(DN, "hiss_threshold_db").default_f32(),
-            hiss_frequency_hz: pk(DN, "hiss_frequency_hz").default_f32(),
-            hiss_strength: pk(DN, "hiss_strength").default_f32(),
-            hiss_cutoff_bin: 0, // computed in initialize()
-            hiss_threshold_linear: 10.0_f32.powf(pk(DN, "hiss_threshold_db").default_f32() / 10.0),
 
             spectral_sub_enabled: pk(DN, "spectral_sub_enabled").default_bool(),
             spectral_sub_alpha: pk(DN, "spectral_sub_alpha").default_f32(),
             spectral_sub_beta: pk(DN, "spectral_sub_beta").default_f32(),
 
-            transient_suppressor: transient::TransientSuppressor::new(channels),
             pnd_analyzers,
 
             formant_preserver: wiener::FormantPreserver::new(spectrum_size),
 
             multi_resolution: pk(DN, "multi_resolution").default_bool(),
-
-            algorithm: pk(DN, "algorithm").default_usize(),
-            rnnoise_backend: backend_rnnoise::RnnoiseBackend::new(),
 
             harmonic_percussive: false,
             spatial_denoise: false,
@@ -488,7 +453,7 @@ impl DenoiserPlugin {
     }
 
     /// Get the f64 value of parameter at PARAMS index.
-    /// Order must match params::PARAMS exactly (36 params).
+    /// Order must match params::PARAMS exactly.
     fn param_value(&self, index: usize) -> Option<f64> {
         match index {
             0 => Some(self.reduction_db as f64),
@@ -498,57 +463,50 @@ impl DenoiserPlugin {
             4 => Some(self.release_ms as f64),
             5 => Some(if self.low_latency { 1.0 } else { 0.0 }),
             6 => Some(if self.polyphonic_detection { 1.0 } else { 0.0 }),
-            7 => Some(self.crack_sensitivity as f64),
-            8 => Some(self.mcra_alpha_s as f64),
-            9 => Some(self.mcra_alpha_p as f64),
-            10 => Some(self.mcra_l as f64),
-            11 => Some(self.mcra_delta as f64),
-            12 => Some(self.transparency as f64),
-            13 => Some(if self.dd_enabled { 1.0 } else { 0.0 }),
-            14 => Some(self.dd_alpha as f64),
-            15 => Some(if self.psychoacoustic_masking {
+            7 => Some(self.mcra_alpha_s as f64),
+            8 => Some(self.mcra_alpha_p as f64),
+            9 => Some(self.mcra_l as f64),
+            10 => Some(self.mcra_delta as f64),
+            11 => Some(self.transparency as f64),
+            12 => Some(if self.dd_enabled { 1.0 } else { 0.0 }),
+            13 => Some(self.dd_alpha as f64),
+            14 => Some(if self.psychoacoustic_masking {
                 1.0
             } else {
                 0.0
             }),
-            16 => Some(if self.transient_enabled { 1.0 } else { 0.0 }),
-            17 => Some(if self.spectral_smoothing_enabled {
+            15 => Some(if self.spectral_smoothing_enabled {
                 1.0
             } else {
                 0.0
             }),
-            18 => Some(if self.temporal_smoothing_enabled {
+            16 => Some(if self.temporal_smoothing_enabled {
                 1.0
             } else {
                 0.0
             }),
-            19 => Some(if self.hiss_enabled { 1.0 } else { 0.0 }),
-            20 => Some(self.hiss_threshold_db as f64),
-            21 => Some(self.hiss_frequency_hz as f64),
-            22 => Some(self.hiss_strength as f64),
-            23 => Some(if self.spectral_sub_enabled { 1.0 } else { 0.0 }),
-            24 => Some(self.spectral_sub_alpha as f64),
-            25 => Some(self.spectral_sub_beta as f64),
-            26 => Some(if self.is_learning { 1.0 } else { 0.0 }),
-            27 => Some(if self.use_captured_profile { 1.0 } else { 0.0 }),
-            28 => Some(0.0), // clear_profile: trigger-only, always reads as false
-            29 => Some(self.algorithm as f64),
-            30 => Some(if self.formant_preserver.enabled {
+            17 => Some(if self.spectral_sub_enabled { 1.0 } else { 0.0 }),
+            18 => Some(self.spectral_sub_alpha as f64),
+            19 => Some(self.spectral_sub_beta as f64),
+            20 => Some(if self.is_learning { 1.0 } else { 0.0 }),
+            21 => Some(if self.use_captured_profile { 1.0 } else { 0.0 }),
+            22 => Some(0.0), // clear_profile: trigger-only, always reads as false
+            23 => Some(if self.formant_preserver.enabled {
                 1.0
             } else {
                 0.0
             }),
-            31 => Some(self.formant_preserver.strength as f64),
-            32 => Some(if self.multi_resolution { 1.0 } else { 0.0 }),
-            33 => Some(if self.harmonic_percussive { 1.0 } else { 0.0 }),
-            34 => Some(if self.spatial_denoise { 1.0 } else { 0.0 }),
-            35 => Some(self.spatial_strength as f64),
+            24 => Some(self.formant_preserver.strength as f64),
+            25 => Some(if self.multi_resolution { 1.0 } else { 0.0 }),
+            26 => Some(if self.harmonic_percussive { 1.0 } else { 0.0 }),
+            27 => Some(if self.spatial_denoise { 1.0 } else { 0.0 }),
+            28 => Some(self.spatial_strength as f64),
             _ => None,
         }
     }
 
     /// Set the f64 value of parameter at PARAMS index.
-    /// Order must match params::PARAMS exactly (36 params).
+    /// Order must match params::PARAMS exactly.
     /// Side effects are dispatched separately after param_bridge::set_parameter.
     fn set_param_value(&mut self, index: usize, value: f64) {
         match index {
@@ -559,35 +517,28 @@ impl DenoiserPlugin {
             4 => self.release_ms = value as f32,
             5 => self.low_latency = value > 0.5,
             6 => self.polyphonic_detection = value > 0.5,
-            7 => self.crack_sensitivity = value as f32,
-            8 => self.mcra_alpha_s = value as f32,
-            9 => self.mcra_alpha_p = value as f32,
-            10 => self.mcra_l = value as usize,
-            11 => self.mcra_delta = value as f32,
-            12 => self.transparency = value as f32,
-            13 => self.dd_enabled = value > 0.5,
-            14 => self.dd_alpha = value as f32,
-            15 => self.psychoacoustic_masking = value > 0.5,
-            16 => self.transient_enabled = value > 0.5,
-            17 => self.spectral_smoothing_enabled = value > 0.5,
-            18 => self.temporal_smoothing_enabled = value > 0.5,
-            19 => self.hiss_enabled = value > 0.5,
-            20 => self.hiss_threshold_db = value as f32,
-            21 => self.hiss_frequency_hz = value as f32,
-            22 => self.hiss_strength = value as f32,
-            23 => self.spectral_sub_enabled = value > 0.5,
-            24 => self.spectral_sub_alpha = value as f32,
-            25 => self.spectral_sub_beta = value as f32,
-            26 => {} // learn_noise: side effect handled in set_parameter
-            27 => self.use_captured_profile = value > 0.5,
-            28 => {} // clear_profile: side effect handled in set_parameter
-            29 => self.algorithm = value as usize,
-            30 => self.formant_preserver.enabled = value > 0.5,
-            31 => self.formant_preserver.strength = value as f32,
-            32 => self.multi_resolution = value > 0.5,
-            33 => self.harmonic_percussive = value > 0.5,
-            34 => self.spatial_denoise = value > 0.5,
-            35 => self.spatial_strength = value as f32,
+            7 => self.mcra_alpha_s = value as f32,
+            8 => self.mcra_alpha_p = value as f32,
+            9 => self.mcra_l = value as usize,
+            10 => self.mcra_delta = value as f32,
+            11 => self.transparency = value as f32,
+            12 => self.dd_enabled = value > 0.5,
+            13 => self.dd_alpha = value as f32,
+            14 => self.psychoacoustic_masking = value > 0.5,
+            15 => self.spectral_smoothing_enabled = value > 0.5,
+            16 => self.temporal_smoothing_enabled = value > 0.5,
+            17 => self.spectral_sub_enabled = value > 0.5,
+            18 => self.spectral_sub_alpha = value as f32,
+            19 => self.spectral_sub_beta = value as f32,
+            20 => {} // learn_noise: side effect handled in set_parameter
+            21 => self.use_captured_profile = value > 0.5,
+            22 => {} // clear_profile: side effect handled in set_parameter
+            23 => self.formant_preserver.enabled = value > 0.5,
+            24 => self.formant_preserver.strength = value as f32,
+            25 => self.multi_resolution = value > 0.5,
+            26 => self.harmonic_percussive = value > 0.5,
+            27 => self.spatial_denoise = value > 0.5,
+            28 => self.spatial_strength = value as f32,
             _ => {}
         }
     }
@@ -621,12 +572,6 @@ impl DenoiserPlugin {
             pk(DN, "release_ms").max_f64() as f32,
         );
         plugin.polyphonic_detection = params.polyphonic_detection;
-        plugin.crack_sensitivity = params
-            .crack_sensitivity
-            .max(pk(DN, "crack_sensitivity").min_f64() as f32);
-        plugin
-            .transient_suppressor
-            .set_sensitivity(plugin.crack_sensitivity);
 
         plugin.mcra_alpha_s = params.mcra_alpha_s;
         plugin.mcra_alpha_p = params.mcra_alpha_p;
@@ -644,18 +589,8 @@ impl DenoiserPlugin {
         );
         plugin.psychoacoustic_masking = params.psychoacoustic_masking;
         plugin.use_captured_profile = params.use_captured_profile;
-        plugin.transient_enabled = params.transient_enabled;
         plugin.spectral_smoothing_enabled = params.spectral_smoothing_enabled;
         plugin.temporal_smoothing_enabled = params.temporal_smoothing_enabled;
-
-        plugin.hiss_enabled = params.hiss_enabled;
-        plugin.hiss_threshold_db = params.hiss_threshold_db;
-        plugin.hiss_frequency_hz = params.hiss_frequency_hz;
-        plugin.hiss_strength = params.hiss_strength.clamp(
-            pk(DN, "hiss_strength").min_f64() as f32,
-            pk(DN, "hiss_strength").max_f64() as f32,
-        );
-        plugin.update_hiss_threshold_linear();
 
         plugin.spectral_sub_enabled = params.spectral_sub_enabled;
         plugin.spectral_sub_alpha = params.spectral_sub_alpha.clamp(
@@ -676,10 +611,6 @@ impl DenoiserPlugin {
             pk(DN, "formant_strength").min_f64() as f32,
             pk(DN, "formant_strength").max_f64() as f32,
         );
-
-        plugin.algorithm = params
-            .algorithm
-            .min(crate::params::ALGORITHMS.len().saturating_sub(1));
 
         plugin.multi_resolution = params.multi_resolution;
         if plugin.multi_resolution {
@@ -873,44 +804,19 @@ impl InPlacePlugin for DenoiserPlugin {
                 // attack_ms or release_ms -> recompute envelope coefficients
                 self.update_envelope_coefficients();
             }
-            7 => {
-                // crack_sensitivity -> update transient suppressor
-                self.transient_suppressor
-                    .set_sensitivity(self.crack_sensitivity);
-            }
             20 => {
-                // hiss_threshold_db -> recompute hiss_threshold_linear
-                self.update_hiss_threshold_linear();
-            }
-            21 => {
-                // hiss_frequency_hz -> recompute hiss_cutoff_bin
-                self.update_hiss_cutoff_bin();
-            }
-            26 => {
                 // learn_noise (trigger param)
                 if value.as_bool().unwrap_or(false) {
                     self.start_learning();
                 }
             }
-            28 => {
+            22 => {
                 // clear_profile (trigger param)
                 if value.as_bool().unwrap_or(false) {
                     self.clear_noise_profile();
                 }
             }
-            29 => {
-                if self.algorithm >= crate::params::ALGORITHMS.len() {
-                    return Err(format!(
-                        "Unsupported denoiser algorithm index {}",
-                        self.algorithm
-                    ));
-                }
-                if self.algorithm == 1 {
-                    self.rnnoise_backend
-                        .initialize(self.sample_rate, self.channels);
-                }
-            }
-            32 => {
+            25 => {
                 // multi_resolution -> allocate/deallocate state
                 if self.multi_resolution && self.multi_res_state.is_none() {
                     self.multi_res_state = Some(multi_resolution::MultiResState::new(
@@ -938,9 +844,6 @@ impl InPlacePlugin for DenoiserPlugin {
         self.sample_rate = sample_rate;
         self.update_envelope_coefficients();
         self.precompute_bark_mapping();
-        self.update_hiss_cutoff_bin();
-        self.rnnoise_backend
-            .initialize(self.sample_rate, self.channels);
 
         // Update PND analyzers with correct sample rate
         for analyzer in &mut self.pnd_analyzers {
@@ -964,9 +867,6 @@ impl InPlacePlugin for DenoiserPlugin {
         self.is_learning = false;
         self.learning_frames_count = 0;
 
-        // Reset transient suppressor
-        self.transient_suppressor.reset();
-
         // Reset PND analyzers
         for analyzer in &mut self.pnd_analyzers {
             analyzer.reset();
@@ -987,8 +887,6 @@ impl InPlacePlugin for DenoiserPlugin {
         if let Some(ref mut mrs) = self.multi_res_state {
             mrs.reset();
         }
-        self.rnnoise_backend.reset();
-
         self.avg_reduction_db = 0.0;
         self.learning_active = true;
     }
@@ -1031,27 +929,6 @@ impl InPlacePlugin for DenoiserPlugin {
             ));
         }
 
-        if self.algorithm == 1 {
-            let max_in_place_frames = self.rnnoise_backend.max_in_place_frames();
-            if num_frames > max_in_place_frames {
-                #[cfg(target_arch = "x86_64")]
-                unsafe {
-                    std::arch::asm!("ldmxcsr [{}]", in(reg) &_old_mxcsr, options(nostack, preserves_flags));
-                }
-                return Err(format!(
-                    "Block too large for RNNoise denoiser: {} frames exceeds prepared safe maximum {}",
-                    num_frames, max_in_place_frames
-                ));
-            }
-            self.rnnoise_backend
-                .process(buffer, num_frames, self.channels);
-            #[cfg(target_arch = "x86_64")]
-            unsafe {
-                std::arch::asm!("ldmxcsr [{}]", in(reg) &_old_mxcsr, options(nostack, preserves_flags));
-            }
-            return Ok(num_frames);
-        }
-
         let max_in_place_frames = self.output_accumulator[0].len();
         if num_frames > max_in_place_frames {
             #[cfg(target_arch = "x86_64")]
@@ -1062,11 +939,6 @@ impl InPlacePlugin for DenoiserPlugin {
                 "Block too large for in-place denoiser: {} frames exceeds prepared safe maximum {}",
                 num_frames, max_in_place_frames
             ));
-        }
-
-        // Pre-process: Time-domain transient suppression (de-clicking)
-        if self.transient_enabled {
-            self.transient_suppressor.process(buffer);
         }
 
         let block_samples = self.fft_size * self.channels;
@@ -1156,10 +1028,6 @@ impl InPlacePlugin for DenoiserPlugin {
     }
 
     fn latency_samples(&self) -> usize {
-        if self.algorithm == 1 {
-            return self.rnnoise_backend.latency_samples();
-        }
-        // Latency is fft_size due to overlap-add buffering
         self.fft_size
     }
 

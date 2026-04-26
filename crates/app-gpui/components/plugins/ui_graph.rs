@@ -476,11 +476,21 @@ impl PlayerView {
                 ],
             ),
             (
+                "Denoising",
+                vec![
+                    (PluginType::Denoiser, "Denoise"),
+                    (PluginType::Declick, "Declick"),
+                    (PluginType::HissReducer, "Hiss"),
+                    (PluginType::SpeechDenoiser, "Speech"),
+                    (PluginType::Aec, "AEC"),
+                    (PluginType::Pnd, "PND"),
+                ],
+            ),
+            (
                 "Utility",
                 vec![
                     (PluginType::Matrix, "Matrix"),
                     (PluginType::ABCompare, "A/B"),
-                    (PluginType::Denoiser, "Denoise"),
                 ],
             ),
         ];
@@ -613,6 +623,9 @@ fn plugin_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
         | PluginType::ChannelMuteSolo => theme.text_muted,
         PluginType::Matrix => theme.accent,
         PluginType::Denoiser => theme.info,
+        PluginType::Declick => theme.info,
+        PluginType::HissReducer => theme.info,
+        PluginType::SpeechDenoiser => theme.info,
         PluginType::Pnd => theme.info,
         PluginType::ABCompare => theme.warning, // A/B Compare - use warning color
         PluginType::BandSplit | PluginType::BandMerge => theme.accent, // Band processing - use accent
@@ -669,6 +682,9 @@ fn plugin_channel_counts(plugin_type: &PluginType) -> (usize, usize) {
         | PluginType::ChannelMuteSolo
         | PluginType::XTC
         | PluginType::Denoiser
+        | PluginType::Declick
+        | PluginType::HissReducer
+        | PluginType::SpeechDenoiser
         | PluginType::Pnd => (2, 2),
         // Upmixer/AAE: stereo in, multi-channel out
         PluginType::Upmixer | PluginType::AAE => (2, 5),
@@ -1004,11 +1020,21 @@ fn build_menu_items(
 
     items.push(MenuItem::separator());
 
+    // Denoising section
+    items.push(MenuItem::new("denoising-header", "Denoising").disabled(true));
+    items.push(MenuItem::new("plugin-denoiser", "Denoiser"));
+    items.push(MenuItem::new("plugin-declick", "Declick"));
+    items.push(MenuItem::new("plugin-hiss-reducer", "Hiss Reducer"));
+    items.push(MenuItem::new("plugin-speech-denoiser", "Speech Denoiser"));
+    items.push(MenuItem::new("plugin-aec", "AEC"));
+    items.push(MenuItem::new("plugin-pnd", "PND Varispeed"));
+
+    items.push(MenuItem::separator());
+
     // Utility section
     items.push(MenuItem::new("utility-header", "Utility").disabled(true));
     items.push(MenuItem::new("plugin-matrix", "Matrix Mixer"));
     items.push(MenuItem::new("plugin-ab-compare", "A/B Compare"));
-    items.push(MenuItem::new("plugin-denoiser", "Denoiser"));
 
     items
 }
