@@ -353,12 +353,12 @@ impl DynEqBand {
     }
 
     fn reset(&mut self, sample_rate: u32) {
+        self.current_gain_db.fill(0.0);
         self.rebuild_sidechain_filters(sample_rate);
         self.rebuild_eq_filters(sample_rate);
         for core in &mut self.cores {
             core.reset();
         }
-        self.current_gain_db.fill(0.0);
     }
 
     fn get_effective_threshold(&self, global_threshold: f32) -> f32 {
@@ -658,7 +658,9 @@ impl InPlacePlugin for DynamicEqPlugin {
     }
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        self.validate_parameter(&id, &value)?;
+        if !id.0.starts_with("band_") {
+            self.validate_parameter(&id, &value)?;
+        }
 
         if id == self.param_num_bands {
             let v = value
@@ -733,11 +735,15 @@ impl InPlacePlugin for DynamicEqPlugin {
                         "frequency" | "freq" => {
                             if let Some(v) = value.as_float() {
                                 band.frequency = v.clamp(20.0, 20000.0);
+                                band.rebuild_sidechain_filters(self.sample_rate);
+                                band.rebuild_eq_filters(self.sample_rate);
                             }
                         }
                         "q" => {
                             if let Some(v) = value.as_float() {
                                 band.q = v.clamp(0.1, 10.0);
+                                band.rebuild_sidechain_filters(self.sample_rate);
+                                band.rebuild_eq_filters(self.sample_rate);
                             }
                         }
                         "gain" => {
@@ -855,7 +861,16 @@ impl InPlacePlugin for DynamicEqPlugin {
         enable_ftz_daz();
         let nf = context.num_frames;
         let nc = self.channels;
-        let total = nf * nc;
+        let total = nf
+            .checked_mul(nc)
+            .ok_or_else(|| "Frame/channel count overflow".to_string())?;
+        if buffer.len() != total {
+            return Err(format!(
+                "Buffer size mismatch: expected {}, got {}",
+                total,
+                buffer.len()
+            ));
+        }
 
         // Ensure dry buffer is big enough
         self.ensure_dry_buf(total);
@@ -981,6 +996,14 @@ mod tests {
     fn rms(buf: &[f32]) -> f32 {
         let sum: f32 = buf.iter().map(|x| x * x).sum();
         (sum / buf.len() as f32).sqrt()
+    }
+
+    fn process_with_first_eq_filter(plugin: &mut DynamicEqPlugin, input: &[f32]) -> Vec<f32> {
+        let filter = &mut plugin.bands[0].eq_filters[0];
+        input
+            .iter()
+            .map(|sample| filter.process(*sample as f64) as f32)
+            .collect()
     }
 
     #[test]
@@ -1242,5 +1265,123 @@ mod tests {
             .unwrap();
         let val = plugin.get_parameter(&ParameterId::from("num_bands"));
         assert_eq!(val, Some(ParameterValue::Int(6)));
+    }
+
+    #[test]
+    fn test_band_frequency_change_rebuilds_filters() {
+        let sr = 48000u32;
+        let num_frames = 48000;
+        let input = make_sine(1000.0, sr, num_frames, 0.25);
+        let input_rms = rms(&input);
+
+        let mut plugin = DynamicEqPlugin::new(1);
+        plugin.initialize(sr).unwrap();
+        plugin.bands[0].frequency = 1000.0;
+        plugin.bands[0].q = 4.0;
+        plugin.bands[0].current_gain_db[0] = 12.0;
+        plugin.bands[0].rebuild_eq_filters(sr);
+
+        let boosted = process_with_first_eq_filter(&mut plugin, &input);
+        let boosted_rms = rms(&boosted[num_frames / 2..]);
+        assert!(boosted_rms > input_rms * 1.4);
+
+        plugin.bands[0].frequency = 1000.0;
+        plugin.bands[0].q = 4.0;
+        plugin.bands[0].current_gain_db[0] = 12.0;
+        plugin.bands[0].rebuild_eq_filters(sr);
+        plugin
+            .set_parameter(
+                ParameterId::from("band_0_frequency"),
+                ParameterValue::Float(100.0),
+            )
+            .unwrap();
+
+        let retuned = process_with_first_eq_filter(&mut plugin, &input);
+        let retuned_rms = rms(&retuned[num_frames / 2..]);
+        assert!(
+            retuned_rms < input_rms * 1.15,
+            "retuned 100 Hz EQ should not keep boosting 1 kHz: input={input_rms:.4}, retuned={retuned_rms:.4}"
+        );
+    }
+
+    #[test]
+    fn test_band_q_change_rebuilds_filters() {
+        let sr = 48000u32;
+        let num_frames = 48000;
+        let input = make_sine(400.0, sr, num_frames, 0.25);
+        let input_rms = rms(&input);
+
+        let mut plugin = DynamicEqPlugin::new(1);
+        plugin.initialize(sr).unwrap();
+        plugin.bands[0].frequency = 1000.0;
+        plugin.bands[0].q = 0.1;
+        plugin.bands[0].current_gain_db[0] = 12.0;
+        plugin.bands[0].rebuild_eq_filters(sr);
+
+        let wide = process_with_first_eq_filter(&mut plugin, &input);
+        let wide_rms = rms(&wide[num_frames / 2..]);
+        assert!(wide_rms > input_rms * 1.3);
+
+        plugin.bands[0].frequency = 1000.0;
+        plugin.bands[0].q = 0.1;
+        plugin.bands[0].current_gain_db[0] = 12.0;
+        plugin.bands[0].rebuild_eq_filters(sr);
+        plugin
+            .set_parameter(ParameterId::from("band_0_q"), ParameterValue::Float(10.0))
+            .unwrap();
+
+        let narrow = process_with_first_eq_filter(&mut plugin, &input);
+        let narrow_rms = rms(&narrow[num_frames / 2..]);
+        assert!(
+            narrow_rms < input_rms * 1.15,
+            "narrowed Q should not keep wide-band boost: input={input_rms:.4}, narrow={narrow_rms:.4}"
+        );
+    }
+
+    #[test]
+    fn test_reset_rebuilds_eq_filters_at_zero_gain() {
+        let sr = 48000u32;
+        let num_frames = 48000;
+        let input = make_sine(1000.0, sr, num_frames, 0.25);
+        let input_rms = rms(&input);
+
+        let mut plugin = DynamicEqPlugin::new(1);
+        plugin.initialize(sr).unwrap();
+        plugin.num_bands = 1;
+        plugin.bands[0].frequency = 1000.0;
+        plugin.bands[0].q = 4.0;
+        plugin.bands[0].target_gain_db = 0.0;
+        plugin.bands[0].current_gain_db[0] = 12.0;
+        plugin.bands[0].rebuild_eq_filters(sr);
+
+        plugin.reset();
+
+        let mut buf = input.clone();
+        let ctx = ProcessContext {
+            sample_rate: sr,
+            num_frames,
+        };
+        plugin.process_in_place(&mut buf, &ctx).unwrap();
+
+        let output_rms = rms(&buf[num_frames / 2..]);
+        assert!(
+            (output_rms / input_rms - 1.0).abs() < 0.05,
+            "reset should restore neutral EQ: input={input_rms:.4}, output={output_rms:.4}"
+        );
+    }
+
+    #[test]
+    fn test_rejects_mismatched_buffer_size() {
+        let sr = 48000u32;
+        let mut plugin = DynamicEqPlugin::new(2);
+        plugin.initialize(sr).unwrap();
+
+        let ctx = ProcessContext {
+            sample_rate: sr,
+            num_frames: 16,
+        };
+        let mut short = vec![0.0; 31];
+        let err = plugin.process_in_place(&mut short, &ctx).unwrap_err();
+        assert!(err.contains("Buffer size mismatch"));
     }
 }
