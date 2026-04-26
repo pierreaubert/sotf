@@ -595,6 +595,7 @@ fn spawn_probe_capture(app: &mut App) {
             input_device.as_deref(),
             input_channel,
             &wav_path,
+            None,
         )
         .map(|r| (r, wav_path_str));
         if let Ok(mut g) = slot.lock() {
