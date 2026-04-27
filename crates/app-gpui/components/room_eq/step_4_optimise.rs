@@ -381,7 +381,6 @@ impl PlayerView {
                 // Initialize interactive chart state if needed
                 {
                     let state = self.state.read(cx);
-                    let translations = state.app.ui_state.translations.clone();
                     if state
                         .app
                         .measurement_state
@@ -585,20 +584,20 @@ impl PlayerView {
                         };
                         builder = builder.y2_label("EPA Preference").y2_range(y2_lo, y2_hi);
                         for (idx, ch_name) in channel_order.iter().enumerate() {
-                            if let Some((ep_iters, ep_vals)) = epa_data.get(ch_name) {
-                                if !ep_iters.is_empty() {
-                                    let color = channel_colors[idx % channel_colors.len()];
-                                    builder = builder
-                                        .add_series_y2_with_x(
-                                            ep_iters,
-                                            ep_vals,
-                                            Some(&format!("EPA {}", ch_name)),
-                                            color,
-                                            1.0,
-                                            0.6,
-                                        )
-                                        .series_dash_array(StrokeDashArray::Dashed);
-                                }
+                            if let Some((ep_iters, ep_vals)) = epa_data.get(ch_name)
+                                && !ep_iters.is_empty()
+                            {
+                                let color = channel_colors[idx % channel_colors.len()];
+                                builder = builder
+                                    .add_series_y2_with_x(
+                                        ep_iters,
+                                        ep_vals,
+                                        Some(&format!("EPA {}", ch_name)),
+                                        color,
+                                        1.0,
+                                        0.6,
+                                    )
+                                    .series_dash_array(StrokeDashArray::Dashed);
                             }
                         }
                     }
@@ -781,7 +780,6 @@ impl PlayerView {
         // letting it fall back to WAV-onset detection.
         let (room_config, channel_names, max_iter, probe_arrivals) = {
             let state = self.state.read(cx);
-            let translations = state.app.ui_state.translations.clone();
             let room_eq = &state.app.measurement_state.room_eq_state;
             let cfg = &room_eq.optimizer_config;
             log::info!(

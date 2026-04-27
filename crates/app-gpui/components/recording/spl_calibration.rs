@@ -62,8 +62,7 @@ impl PlayerView {
                 .on_click({
                     let view = view.clone();
                     move |_, cx| {
-                        let _ = view
-                            .update(cx, |this, cx| this.cancel_spl_calibration_capture(cx));
+                        view.update(cx, |this, cx| this.cancel_spl_calibration_capture(cx));
                     }
                 })
                 .into_any_element()
@@ -81,8 +80,7 @@ impl PlayerView {
                 .on_click({
                     let view = view.clone();
                     move |_, cx| {
-                        let _ = view
-                            .update(cx, |this, cx| this.start_spl_calibration_capture(cx));
+                        view.update(cx, |this, cx| this.start_spl_calibration_capture(cx));
                     }
                 })
                 .into_any_element()

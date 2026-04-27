@@ -296,7 +296,6 @@ impl PlayerView {
     fn export_room_eq_format(&mut self, cx: &mut Context<Self>) {
         let (dsp_output, format_idx) = {
             let state = self.state.read(cx);
-            let translations = state.app.ui_state.translations.clone();
             (
                 state.app.measurement_state.room_eq_state.dsp_output.clone(),
                 state
@@ -486,7 +485,6 @@ impl PlayerView {
             // Get the current plugin graph
             let plugin_graph = {
                 let state = self.state.read(cx);
-                let translations = state.app.ui_state.translations.clone();
                 state.app.plugin_state.graph.clone()
             };
 
@@ -546,7 +544,6 @@ impl PlayerView {
         // because the EQ plugin maps channel_filters[i] to audio channel i.
         let (dsp_output, channel_result_names) = {
             let state = self.state.read(cx);
-            let translations = state.app.ui_state.translations.clone();
             let names: Vec<String> = state
                 .app
                 .measurement_state
@@ -889,11 +886,11 @@ impl PlayerView {
         let nodes_with_incoming: std::collections::HashSet<usize> =
             config.edges.iter().map(|e| e.to_node).collect();
         for node_config in &config.nodes {
-            if !nodes_with_incoming.contains(&node_config.id) {
-                if let Some(&graph_id) = id_map.get(&node_config.id) {
-                    for ch in 0..graph_channels {
-                        let _ = graph.add_connection(input_id, ch, graph_id, ch);
-                    }
+            if !nodes_with_incoming.contains(&node_config.id)
+                && let Some(&graph_id) = id_map.get(&node_config.id)
+            {
+                for ch in 0..graph_channels {
+                    let _ = graph.add_connection(input_id, ch, graph_id, ch);
                 }
             }
         }
@@ -902,11 +899,11 @@ impl PlayerView {
         let nodes_with_outgoing: std::collections::HashSet<usize> =
             config.edges.iter().map(|e| e.from_node).collect();
         for node_config in &config.nodes {
-            if !nodes_with_outgoing.contains(&node_config.id) {
-                if let Some(&graph_id) = id_map.get(&node_config.id) {
-                    for ch in 0..graph_channels {
-                        let _ = graph.add_connection(graph_id, ch, output_id, ch);
-                    }
+            if !nodes_with_outgoing.contains(&node_config.id)
+                && let Some(&graph_id) = id_map.get(&node_config.id)
+            {
+                for ch in 0..graph_channels {
+                    let _ = graph.add_connection(graph_id, ch, output_id, ch);
                 }
             }
         }
@@ -1139,24 +1136,24 @@ fn apply_dsp_params_to_settings(
     let lower = plugin_type_str.to_lowercase();
     match lower.as_str() {
         "eq" => {
-            if let PluginSettings::EQ { filters, .. } = settings {
-                if let Some(filter_arr) = parameters.get("filters").and_then(|v| v.as_array()) {
-                    *filters = parse_eq_filters_from_json(filter_arr);
-                }
+            if let PluginSettings::EQ { filters, .. } = settings
+                && let Some(filter_arr) = parameters.get("filters").and_then(|v| v.as_array())
+            {
+                *filters = parse_eq_filters_from_json(filter_arr);
             }
         }
         "gain" => {
-            if let PluginSettings::Gain { gain_db, .. } = settings {
-                if let Some(v) = parameters.get("gain_db").and_then(|v| v.as_f64()) {
-                    *gain_db = v;
-                }
+            if let PluginSettings::Gain { gain_db, .. } = settings
+                && let Some(v) = parameters.get("gain_db").and_then(|v| v.as_f64())
+            {
+                *gain_db = v;
             }
         }
         "delay" => {
-            if let PluginSettings::Delay { delay_ms, .. } = settings {
-                if let Some(v) = parameters.get("delay_ms").and_then(|v| v.as_f64()) {
-                    *delay_ms = v;
-                }
+            if let PluginSettings::Delay { delay_ms, .. } = settings
+                && let Some(v) = parameters.get("delay_ms").and_then(|v| v.as_f64())
+            {
+                *delay_ms = v;
             }
         }
         _ => {} // Other types keep defaults

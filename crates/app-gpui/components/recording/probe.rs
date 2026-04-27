@@ -176,7 +176,7 @@ impl PlayerView {
                     // than predicted, so we clamp to 0..=1.0 in the
                     // Progress component itself.
                     content = content
-                        .child(Progress::new(p.clamp(0.0, 1.0) as f32).size(ProgressSize::Sm));
+                        .child(Progress::new(p.clamp(0.0, 1.0)).size(ProgressSize::Sm));
                 } else if matches!(pc.status, ProbeCaptureStatus::Running { .. }) {
                     // No fraction available yet (e.g. estimated_total=0) —
                     // show an indeterminate Spinner so the user sees the

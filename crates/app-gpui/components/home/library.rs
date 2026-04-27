@@ -652,7 +652,7 @@ impl PlayerView {
                     .filter(|(y, _)| **y >= decade_start && **y <= decade_end)
                     .map(|(y, c)| (*y, *c))
                     .collect();
-                years_in_decade.sort_by(|a, b| b.0.cmp(&a.0));
+                years_in_decade.sort_by_key(|b| std::cmp::Reverse(b.0));
 
                 el.child(
                     div()
@@ -859,7 +859,7 @@ impl PlayerView {
                 })
                 .map(|(name, count)| (name.clone(), *count))
                 .collect();
-            filtered.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+            filtered.sort_by_key(|a| a.0.to_lowercase());
             filtered.into_iter().take(20).collect()
         } else {
             Vec::new()
@@ -1036,7 +1036,7 @@ impl PlayerView {
                 })
                 .map(|(name, count)| (name.clone(), *count))
                 .collect();
-            filtered.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+            filtered.sort_by_key(|a| a.0.to_lowercase());
             filtered.into_iter().take(20).collect()
         } else {
             Vec::new()
@@ -1307,7 +1307,7 @@ impl PlayerView {
             .into_iter()
             .filter(|(_, count)| *count >= 5)
             .collect();
-        genres.sort_by(|a, b| b.1.cmp(&a.1));
+        genres.sort_by_key(|b| std::cmp::Reverse(b.1));
 
         if genres.is_empty() {
             return self.render_empty_selection("No genres with 5+ albums found", &theme);

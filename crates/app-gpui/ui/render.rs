@@ -468,37 +468,35 @@ impl Render for PlayerView {
                             _ => {}
                         }
                     }
-                    crate::app::InputMode::Normal => {
-                        // Handle screen-specific shortcuts in Normal mode
+                    crate::app::InputMode::Normal
                         if current_screen == crate::app::Screen::Settings
                             && view
                                 .state
                                 .read(cx)
                                 .app
                                 .expanded_settings_sections
-                                .contains(&"plugins".to_string())
-                        {
-                            match event.keystroke.key.as_str() {
-                                "S" => {
-                                    // Enter save plugins mode (Shift-S)
-                                    view.state.update(cx, |state, _cx| {
-                                        state.app.refresh_plugin_presets();
-                                        state.app.input_state.plugin_file_input.clear();
-                                        state.app.ui_state.input_mode = crate::app::InputMode::SavePlugins;
-                                    });
-                                    cx.notify();
-                                }
-                                "l" => {
-                                    // Enter load plugins mode
-                                    view.state.update(cx, |state, _cx| {
-                                        state.app.refresh_plugin_presets();
-                                        state.app.input_state.plugin_file_input.clear();
-                                        state.app.ui_state.input_mode = crate::app::InputMode::LoadPlugins;
-                                    });
-                                    cx.notify();
-                                }
-                                _ => {}
+                                .contains(&"plugins".to_string()) =>
+                    {
+                        match event.keystroke.key.as_str() {
+                            "S" => {
+                                // Enter save plugins mode (Shift-S)
+                                view.state.update(cx, |state, _cx| {
+                                    state.app.refresh_plugin_presets();
+                                    state.app.input_state.plugin_file_input.clear();
+                                    state.app.ui_state.input_mode = crate::app::InputMode::SavePlugins;
+                                });
+                                cx.notify();
                             }
+                            "l" => {
+                                // Enter load plugins mode
+                                view.state.update(cx, |state, _cx| {
+                                    state.app.refresh_plugin_presets();
+                                    state.app.input_state.plugin_file_input.clear();
+                                    state.app.ui_state.input_mode = crate::app::InputMode::LoadPlugins;
+                                });
+                                cx.notify();
+                            }
+                            _ => {}
                         }
                     }
                     _ => {}
