@@ -1908,46 +1908,40 @@ fn optimize_room_impl(
             let shelf_filters =
                 super::spectral_align::create_alignment_filters(result, sample_rate);
 
-            let (apply_shelves, apply_gain) =
-                if let Some(ch_result) = channel_results.get(channel_name) {
-                    let (score_min, score_max) =
-                        final_score_band_for_channel(config, channel_name);
-                    let before = recompute_curve_flatness_score(
-                        &ch_result.final_curve,
-                        score_min,
-                        score_max,
-                    );
+            let (apply_shelves, apply_gain) = if let Some(ch_result) =
+                channel_results.get(channel_name)
+            {
+                let (score_min, score_max) = final_score_band_for_channel(config, channel_name);
+                let before =
+                    recompute_curve_flatness_score(&ch_result.final_curve, score_min, score_max);
 
-                    let shelves_ok = if shelf_filters.is_empty() {
+                let shelves_ok = if shelf_filters.is_empty() {
+                    false
+                } else {
+                    let response = crate::response::compute_peq_complex_response(
+                        &shelf_filters,
+                        &ch_result.final_curve.freq,
+                        sample_rate,
+                    );
+                    let corrected =
+                        crate::response::apply_complex_response(&ch_result.final_curve, &response);
+                    let after = recompute_curve_flatness_score(&corrected, score_min, score_max);
+                    if after > before + 1e-3 {
+                        info!(
+                            "Skipping shelf alignment for '{}': flatness would regress from {:.4} to {:.4}",
+                            channel_name, before, after
+                        );
                         false
                     } else {
-                        let response = crate::response::compute_peq_complex_response(
-                            &shelf_filters,
-                            &ch_result.final_curve.freq,
-                            sample_rate,
-                        );
-                        let corrected = crate::response::apply_complex_response(
-                            &ch_result.final_curve,
-                            &response,
-                        );
-                        let after =
-                            recompute_curve_flatness_score(&corrected, score_min, score_max);
-                        if after > before + 1e-3 {
-                            info!(
-                                "Skipping shelf alignment for '{}': flatness would regress from {:.4} to {:.4}",
-                                channel_name, before, after
-                            );
-                            false
-                        } else {
-                            true
-                        }
-                    };
-
-                    let gain_ok = result.flat_gain_db.abs() >= 0.3;
-                    (shelves_ok, gain_ok)
-                } else {
-                    (false, false)
+                        true
+                    }
                 };
+
+                let gain_ok = result.flat_gain_db.abs() >= 0.3;
+                (shelves_ok, gain_ok)
+            } else {
+                (false, false)
+            };
 
             if !apply_shelves && !apply_gain {
                 continue;
@@ -1956,14 +1950,10 @@ fn optimize_room_impl(
             if let Some(chain) = channel_chains.get_mut(channel_name) {
                 let (eq_plugin, gain_plugin) =
                     super::spectral_align::create_alignment_plugins(result, sample_rate);
-                if apply_shelves
-                    && let Some(eq) = eq_plugin
-                {
+                if apply_shelves && let Some(eq) = eq_plugin {
                     chain.plugins.push(eq);
                 }
-                if apply_gain
-                    && let Some(gain) = gain_plugin
-                {
+                if apply_gain && let Some(gain) = gain_plugin {
                     chain.plugins.push(gain);
                 }
             }

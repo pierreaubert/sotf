@@ -10,6 +10,7 @@
 //! Reference: Patent EP2104374B1 — spatial zero clustering
 
 use crate::Curve;
+use crate::error::{AutoeqError, Result};
 use ndarray::Array1;
 
 /// Configuration for spatial robustness analysis.
@@ -181,7 +182,8 @@ pub fn analyze_spatial_robustness(
     curves: &[Curve],
     config: &SpatialRobustnessConfig,
 ) -> SpatialRobustnessResult {
-    analyze_spatial_robustness_weighted(curves, config, None)
+    try_analyze_spatial_robustness_weighted(curves, config, None)
+        .expect("spatial robustness curves must share the same frequency grid")
 }
 
 pub fn analyze_spatial_robustness_weighted(
@@ -189,15 +191,66 @@ pub fn analyze_spatial_robustness_weighted(
     config: &SpatialRobustnessConfig,
     weights: Option<&[f64]>,
 ) -> SpatialRobustnessResult {
+    try_analyze_spatial_robustness_weighted(curves, config, weights)
+        .expect("spatial robustness curves must share the same frequency grid")
+}
+
+pub fn try_analyze_spatial_robustness_weighted(
+    curves: &[Curve],
+    config: &SpatialRobustnessConfig,
+    weights: Option<&[f64]>,
+) -> Result<SpatialRobustnessResult> {
+    validate_spatial_curves(curves)?;
+
     let averaged_curve = rms_average_weighted(curves, weights);
     let spatial_variance = spatial_std_dev_weighted(curves, weights);
     let correction_depth = correction_depth_mask(&averaged_curve.freq, &spatial_variance, config);
 
-    SpatialRobustnessResult {
+    Ok(SpatialRobustnessResult {
         averaged_curve,
         spatial_variance,
         correction_depth,
+    })
+}
+
+fn validate_spatial_curves(curves: &[Curve]) -> Result<()> {
+    if curves.is_empty() {
+        return Err(AutoeqError::InvalidMeasurement {
+            message: "spatial robustness needs at least one curve".to_string(),
+        });
     }
+
+    let reference = &curves[0].freq;
+    if !super::frequency_grid::is_valid_frequency_grid(reference)
+        || curves[0].spl.len() != reference.len()
+    {
+        return Err(AutoeqError::InvalidMeasurement {
+            message: "spatial robustness reference curve has an invalid frequency grid".to_string(),
+        });
+    }
+
+    for (idx, curve) in curves.iter().enumerate().skip(1) {
+        if !super::frequency_grid::is_valid_frequency_grid(&curve.freq)
+            || curve.spl.len() != curve.freq.len()
+        {
+            return Err(AutoeqError::InvalidMeasurement {
+                message: format!(
+                    "spatial robustness curve {} has an invalid frequency grid",
+                    idx
+                ),
+            });
+        }
+        if !super::frequency_grid::same_frequency_grid(reference, &curve.freq) {
+            return Err(AutoeqError::InvalidMeasurement {
+                message: format!(
+                    "spatial robustness curves must share the same frequency grid; curve {} differs",
+                    idx
+                ),
+            });
+        }
+    }
+
+    Ok(())
 }
 
 fn normalized_weights(len: usize, weights: Option<&[f64]>) -> Vec<f64> {
@@ -439,6 +492,19 @@ mod tests {
                 .cloned()
                 .fold(f64::INFINITY, f64::min)
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "same frequency grid")]
+    fn test_analyze_spatial_robustness_rejects_mismatched_frequency_grids() {
+        let c1 = make_curve(vec![100.0, 1000.0], vec![80.0, 85.0]);
+        let c2 = make_curve(vec![110.0, 1100.0], vec![80.0, 85.0]);
+        let config = SpatialRobustnessConfig {
+            mask_smoothing_octaves: 0.0,
+            ..Default::default()
+        };
+
+        let _ = analyze_spatial_robustness(&[c1, c2], &config);
     }
 
     #[test]

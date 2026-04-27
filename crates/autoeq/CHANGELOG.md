@@ -1,3 +1,16 @@
+# 0.4.38
+
+Bug hunting party
+
+- Spectral align may not work for 2.0 and miss adding a gain plugin
+- RoomEQ phase alignment now uses a global delay scan before local
+  refinement, so multi-modal crossover-energy curves do not get trapped on
+  the wrong delay peak.
+- RoomEQ phase alignment now rejects invalid or non-overlapping measurement
+  frequency ranges instead of fabricating a common grid.
+- Spatial robustness and cardioid preprocessing now reject mismatched
+  frequency grids before bin-wise averaging or complex summation.
+
 # 0.4.37
 
 ## Home-cinema all-channel multi-seat correction

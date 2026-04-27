@@ -742,6 +742,35 @@ fn preprocess_cardioid(c: &CardioidConfig) -> Result<SubPreprocessResult> {
         message: format!("Cardioid rear: {}", e),
     })?;
 
+    if !super::frequency_grid::is_valid_frequency_grid(&front_curve.freq)
+        || !super::frequency_grid::is_valid_frequency_grid(&rear_curve.freq)
+    {
+        return Err(AutoeqError::InvalidMeasurement {
+            message: "Cardioid preprocessing requires valid frequency grids".to_string(),
+        });
+    }
+    if front_curve.spl.len() != front_curve.freq.len()
+        || rear_curve.spl.len() != rear_curve.freq.len()
+        || front_curve
+            .phase
+            .as_ref()
+            .is_some_and(|phase| phase.len() != front_curve.freq.len())
+        || rear_curve
+            .phase
+            .as_ref()
+            .is_some_and(|phase| phase.len() != rear_curve.freq.len())
+    {
+        return Err(AutoeqError::InvalidMeasurement {
+            message: "Cardioid preprocessing curve arrays must match frequency-grid length"
+                .to_string(),
+        });
+    }
+    if !super::frequency_grid::same_frequency_grid(&front_curve.freq, &rear_curve.freq) {
+        return Err(AutoeqError::InvalidMeasurement {
+            message: "Cardioid preprocessing requires front and rear curves to share the same frequency grid".to_string(),
+        });
+    }
+
     let delay_ms = c.separation_meters / 343.0 * 1000.0;
     info!(
         "  Cardioid: separation={:.2}m, delay={:.2}ms",
@@ -4761,6 +4790,28 @@ mod tests {
 
         assert!(all_curves_have_usable_phase(&[&main, &shifted]));
         assert!(!all_curves_share_frequency_grid(&[&main, &shifted]));
+    }
+
+    #[test]
+    fn cardioid_preprocess_rejects_mismatched_frequency_grids() {
+        let front = phase_curve(0.0);
+        let mut rear = phase_curve(0.0);
+        rear.freq = array![41.0, 82.0, 164.0];
+        let cardioid = CardioidConfig {
+            name: "cardioid".to_string(),
+            speaker_name: None,
+            front: MeasurementSource::InMemory(front),
+            rear: MeasurementSource::InMemory(rear),
+            separation_meters: 0.5,
+        };
+
+        match preprocess_cardioid(&cardioid) {
+            Ok(_) => panic!("cardioid preprocessing should reject mismatched frequency grids"),
+            Err(err) => assert!(
+                err.to_string().contains("same frequency grid"),
+                "unexpected error: {err}"
+            ),
+        }
     }
 
     #[test]

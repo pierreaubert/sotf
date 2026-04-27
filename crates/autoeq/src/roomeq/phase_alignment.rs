@@ -14,6 +14,7 @@ use ndarray::Array1;
 use num_complex::Complex64;
 use std::f64::consts::PI;
 
+use super::frequency_grid;
 use super::types::PhaseAlignmentConfig;
 
 /// Weighting type for energy computation
@@ -113,7 +114,7 @@ pub fn optimize_phase_alignment_with_options(
     }
 
     let common_freqs =
-        create_common_freq_grid(sub_curve, speaker_curve, config.min_freq, config.max_freq);
+        create_common_freq_grid(sub_curve, speaker_curve, config.min_freq, config.max_freq)?;
 
     let sub_interp = interpolate_curve_complex(sub_curve, &common_freqs)?;
     let speaker_interp = interpolate_curve_complex(speaker_curve, &common_freqs)?;
@@ -141,19 +142,22 @@ pub fn optimize_phase_alignment_with_options(
     let mut best_invert = false;
     let mut best_energy = energy_before;
 
-    // For each polarity, use golden section search to find optimal delay
+    // For each polarity, search globally first. The summed crossover energy
+    // is periodic and usually multi-modal, so golden-section search is only
+    // safe as a local refinement around a sampled peak.
     for &invert in &polarities {
-        let (optimal_delay, optimal_energy) = golden_section_maximize(
-            |delay_ms| {
-                compute_weighted_energy(
-                    &sub_interp,
-                    &speaker_interp,
-                    &common_freqs,
-                    &weights,
-                    delay_ms,
-                    invert,
-                )
-            },
+        let energy_at = |delay_ms| {
+            compute_weighted_energy(
+                &sub_interp,
+                &speaker_interp,
+                &common_freqs,
+                &weights,
+                delay_ms,
+                invert,
+            )
+        };
+        let (optimal_delay, optimal_energy) = maximize_delay_globally(
+            energy_at,
             -config.max_delay_ms,
             config.max_delay_ms,
             opt_config.tolerance_ms,
@@ -181,6 +185,47 @@ pub fn optimize_phase_alignment_with_options(
         energy_after: best_energy,
         improvement_db,
     })
+}
+
+/// Global scan followed by local golden-section refinement for delay search.
+fn maximize_delay_globally<F>(
+    f: F,
+    min_delay_ms: f64,
+    max_delay_ms: f64,
+    tol: f64,
+    max_iter: usize,
+) -> (f64, f64)
+where
+    F: Fn(f64) -> f64,
+{
+    if max_delay_ms <= min_delay_ms {
+        let value = f(min_delay_ms);
+        return (min_delay_ms, value);
+    }
+
+    let scan_points = (((max_delay_ms - min_delay_ms) / 0.05).ceil() as usize).clamp(64, 1024) + 1;
+    let step = (max_delay_ms - min_delay_ms) / (scan_points - 1) as f64;
+    let mut best_idx = 0;
+    let mut best_delay = min_delay_ms;
+    let mut best_energy = f(best_delay);
+
+    for idx in 1..scan_points {
+        let delay = min_delay_ms + idx as f64 * step;
+        let energy = f(delay);
+        if energy > best_energy {
+            best_idx = idx;
+            best_delay = delay;
+            best_energy = energy;
+        }
+    }
+
+    if best_idx == 0 || best_idx + 1 == scan_points {
+        return (best_delay, best_energy);
+    }
+
+    let local_min = min_delay_ms + (best_idx - 1) as f64 * step;
+    let local_max = min_delay_ms + (best_idx + 1) as f64 * step;
+    golden_section_maximize(f, local_min, local_max, tol, max_iter)
 }
 
 /// Golden section search for 1D maximization.
@@ -317,22 +362,63 @@ fn create_common_freq_grid(
     curve2: &Curve,
     min_freq: f64,
     max_freq: f64,
-) -> Array1<f64> {
+) -> Result<Array1<f64>> {
+    if !frequency_grid::is_valid_frequency_grid(&curve1.freq)
+        || !frequency_grid::is_valid_frequency_grid(&curve2.freq)
+    {
+        return Err(AutoeqError::InvalidMeasurement {
+            message:
+                "Phase alignment requires finite, positive, strictly increasing frequency grids"
+                    .to_string(),
+        });
+    }
+    if curve1.spl.len() != curve1.freq.len()
+        || curve2.spl.len() != curve2.freq.len()
+        || curve1
+            .phase
+            .as_ref()
+            .is_some_and(|phase| phase.len() != curve1.freq.len())
+        || curve2
+            .phase
+            .as_ref()
+            .is_some_and(|phase| phase.len() != curve2.freq.len())
+    {
+        return Err(AutoeqError::InvalidMeasurement {
+            message: "Phase alignment curve arrays must match frequency-grid length".to_string(),
+        });
+    }
+    if !min_freq.is_finite() || !max_freq.is_finite() || min_freq <= 0.0 || min_freq >= max_freq {
+        return Err(AutoeqError::InvalidConfiguration {
+            message: format!(
+                "Invalid phase-alignment frequency range [{:.1}, {:.1}] Hz",
+                min_freq, max_freq
+            ),
+        });
+    }
+
     let f_min = min_freq
         .max(*curve1.freq.first().unwrap_or(&20.0))
         .max(*curve2.freq.first().unwrap_or(&20.0));
     let f_max = max_freq
         .min(*curve1.freq.last().unwrap_or(&20000.0))
         .min(*curve2.freq.last().unwrap_or(&20000.0));
+    if f_min >= f_max {
+        return Err(AutoeqError::InvalidMeasurement {
+            message: format!(
+                "Phase alignment frequency range has no overlap across measurements: [{:.1}, {:.1}] Hz",
+                f_min, f_max
+            ),
+        });
+    }
 
     let num_points = 100;
     let log_min = f_min.log10();
     let log_max = f_max.log10();
 
-    Array1::from_shape_fn(num_points, |i| {
+    Ok(Array1::from_shape_fn(num_points, |i| {
         let log_f = log_min + (log_max - log_min) * (i as f64 / (num_points - 1) as f64);
         10.0_f64.powf(log_f)
-    })
+    }))
 }
 
 /// Interpolate a curve to new frequencies, returning complex values
@@ -480,6 +566,34 @@ mod tests {
     }
 
     #[test]
+    fn test_phase_alignment_disjoint_frequency_ranges_fail() {
+        let sub = Curve {
+            freq: Array1::from(vec![20.0, 30.0, 40.0]),
+            spl: Array1::from(vec![90.0, 90.0, 90.0]),
+            phase: Some(Array1::from(vec![0.0, 0.0, 0.0])),
+            ..Default::default()
+        };
+        let speaker = Curve {
+            freq: Array1::from(vec![100.0, 120.0, 140.0]),
+            spl: Array1::from(vec![90.0, 90.0, 90.0]),
+            phase: Some(Array1::from(vec![0.0, 0.0, 0.0])),
+            ..Default::default()
+        };
+        let config = PhaseAlignmentConfig {
+            min_freq: 20.0,
+            max_freq: 140.0,
+            ..Default::default()
+        };
+
+        let result = optimize_phase_alignment(&sub, &speaker, &config);
+
+        assert!(
+            result.is_err(),
+            "phase alignment should reject disjoint frequency ranges"
+        );
+    }
+
+    #[test]
     fn test_phase_alignment_polarity_detection() {
         let sub = create_test_sub_curve();
 
@@ -513,7 +627,7 @@ mod tests {
         let sub = create_test_sub_curve();
         let speaker = create_test_speaker_curve();
 
-        let grid = create_common_freq_grid(&sub, &speaker, 60.0, 100.0);
+        let grid = create_common_freq_grid(&sub, &speaker, 60.0, 100.0).expect("grid");
 
         assert!(!grid.is_empty());
         assert!(grid[0] >= 60.0);
@@ -537,6 +651,46 @@ mod tests {
         // Maximize -(x - 3)^2 (peak at x=3)
         let (x, _) = golden_section_maximize(|x| -(x - 3.0).powi(2), -10.0, 10.0, 1e-6, 50);
         assert!((x - 3.0).abs() < 1e-5, "Expected 3.0, got {}", x);
+    }
+
+    #[test]
+    fn test_phase_alignment_finds_global_peak_for_multimodal_objective() {
+        let freqs = Array1::from_vec(vec![40.0, 63.0, 80.0, 125.0, 160.0, 250.0, 400.0]);
+        let sub = Curve {
+            freq: freqs.clone(),
+            spl: Array1::zeros(freqs.len()),
+            phase: Some(Array1::zeros(freqs.len())),
+            ..Default::default()
+        };
+        let speaker = Curve {
+            freq: freqs,
+            spl: Array1::zeros(7),
+            phase: Some(Array1::from_vec(vec![
+                164.17233788012976,
+                161.21789534136576,
+                -159.64150761834887,
+                -149.4460817427882,
+                120.77959612660186,
+                84.9491960646684,
+                61.10294451847952,
+            ])),
+            ..Default::default()
+        };
+        let config = PhaseAlignmentConfig {
+            min_freq: 40.0,
+            max_freq: 400.0,
+            max_delay_ms: 10.0,
+            optimize_polarity: false,
+            ..Default::default()
+        };
+
+        let result = optimize_phase_alignment(&sub, &speaker, &config).expect("alignment");
+
+        assert!(
+            (result.delay_ms - 6.15).abs() < 0.2,
+            "expected global delay peak near 6.15ms, got {:.3}ms",
+            result.delay_ms
+        );
     }
 
     #[test]
