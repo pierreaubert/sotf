@@ -6,10 +6,31 @@ Bug hunting party
 - RoomEQ phase alignment now uses a global delay scan before local
   refinement, so multi-modal crossover-energy curves do not get trapped on
   the wrong delay peak.
+- RoomEQ phase alignment now sizes the global delay scan from the highest
+  analyzed frequency instead of a fixed 0.05 ms grid.
+- RoomEQ phase alignment now reports delay improvement against the best
+  zero-delay allowed polarity baseline and always keeps that baseline as a
+  valid no-regression candidate.
 - RoomEQ phase alignment now rejects invalid or non-overlapping measurement
   frequency ranges instead of fabricating a common grid.
+- RoomEQ phase interpolation now uses adjacent edge points for out-of-band
+  helper queries instead of silently clamping phase to a constant.
+- RoomEQ phase alignment A/C weighting now applies dB weighting in the power
+  domain used by the energy objective.
+- RoomEQ spectral shelf alignment now accepts shelves based on inter-channel
+  deviation improvement instead of standalone per-channel flatness.
+- RoomEQ spectral alignment now shares the minimum correction threshold between
+  gain-plugin emission and the optimize/reporting gates.
 - Spatial robustness and cardioid preprocessing now reject mismatched
   frequency grids before bin-wise averaging or complex summation.
+- Spatial robustness bare averaging/variance helpers now validate array lengths
+  before indexing and handle highly skewed non-zero weights without collapsing
+  variance to zero.
+- Spatial robustness non-try wrappers now surface the underlying validation
+  error in panic messages, and mask smoothing now uses a linear sliding window
+  on sorted frequency grids.
+- Spectral alignment now mean-centers flat gain corrections before applying the
+  absolute flat-gain clamp.
 
 # 0.4.37
 

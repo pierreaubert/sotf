@@ -71,7 +71,7 @@ pub fn rms_average(curves: &[Curve]) -> Curve {
 }
 
 pub fn rms_average_weighted(curves: &[Curve], weights: Option<&[f64]>) -> Curve {
-    assert!(!curves.is_empty(), "need at least one curve");
+    validate_spatial_curves(curves).expect("spatial robustness curves must be valid");
     let len = curves[0].freq.len();
     let weights = normalized_weights(curves.len(), weights);
 
@@ -103,7 +103,7 @@ pub fn spatial_std_dev(curves: &[Curve]) -> Array1<f64> {
 }
 
 pub fn spatial_std_dev_weighted(curves: &[Curve], weights: Option<&[f64]>) -> Array1<f64> {
-    assert!(!curves.is_empty(), "need at least one curve");
+    validate_spatial_curves(curves).expect("spatial robustness curves must be valid");
     if curves.len() == 1 {
         // Single curve: zero variance everywhere
         return Array1::zeros(curves[0].freq.len());
@@ -124,11 +124,8 @@ pub fn spatial_std_dev_weighted(curves: &[Curve], weights: Option<&[f64]>) -> Ar
             .map(|(c, weight)| weight * (c.spl[bin] - mean).powi(2))
             .sum::<f64>();
         let unbiased_denominator = 1.0 - weights.iter().map(|w| w * w).sum::<f64>();
-        std_dev[bin] = if unbiased_denominator > f64::EPSILON {
-            (variance / unbiased_denominator).sqrt()
-        } else {
-            0.0
-        };
+        let denominator_floor = 1.0 / curves.len() as f64;
+        std_dev[bin] = (variance / unbiased_denominator.max(denominator_floor)).sqrt();
     }
 
     std_dev
@@ -182,8 +179,7 @@ pub fn analyze_spatial_robustness(
     curves: &[Curve],
     config: &SpatialRobustnessConfig,
 ) -> SpatialRobustnessResult {
-    try_analyze_spatial_robustness_weighted(curves, config, None)
-        .expect("spatial robustness curves must share the same frequency grid")
+    try_analyze_spatial_robustness_weighted(curves, config, None).unwrap_or_else(|e| panic!("{e}"))
 }
 
 pub fn analyze_spatial_robustness_weighted(
@@ -192,7 +188,7 @@ pub fn analyze_spatial_robustness_weighted(
     weights: Option<&[f64]>,
 ) -> SpatialRobustnessResult {
     try_analyze_spatial_robustness_weighted(curves, config, weights)
-        .expect("spatial robustness curves must share the same frequency grid")
+        .unwrap_or_else(|e| panic!("{e}"))
 }
 
 pub fn try_analyze_spatial_robustness_weighted(
@@ -221,18 +217,14 @@ fn validate_spatial_curves(curves: &[Curve]) -> Result<()> {
     }
 
     let reference = &curves[0].freq;
-    if !super::frequency_grid::is_valid_frequency_grid(reference)
-        || curves[0].spl.len() != reference.len()
-    {
+    if !is_valid_spatial_frequency_grid(reference) || curves[0].spl.len() != reference.len() {
         return Err(AutoeqError::InvalidMeasurement {
             message: "spatial robustness reference curve has an invalid frequency grid".to_string(),
         });
     }
 
     for (idx, curve) in curves.iter().enumerate().skip(1) {
-        if !super::frequency_grid::is_valid_frequency_grid(&curve.freq)
-            || curve.spl.len() != curve.freq.len()
-        {
+        if !is_valid_spatial_frequency_grid(&curve.freq) || curve.spl.len() != curve.freq.len() {
             return Err(AutoeqError::InvalidMeasurement {
                 message: format!(
                     "spatial robustness curve {} has an invalid frequency grid",
@@ -251,6 +243,12 @@ fn validate_spatial_curves(curves: &[Curve]) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn is_valid_spatial_frequency_grid(freq: &Array1<f64>) -> bool {
+    !freq.is_empty()
+        && freq.iter().all(|f| f.is_finite() && *f > 0.0)
+        && freq.windows(2).into_iter().all(|pair| pair[0] < pair[1])
 }
 
 fn normalized_weights(len: usize, weights: Option<&[f64]>) -> Vec<f64> {
@@ -283,22 +281,52 @@ fn smooth_log_frequency(data: &Array1<f64>, freq: &Array1<f64>, width_octaves: f
     let half_width = width_octaves / 2.0;
     let mut smoothed = Array1::zeros(len);
 
-    for i in 0..len {
-        let center_log = freq[i].log2();
-        let low_log = center_log - half_width;
-        let high_log = center_log + half_width;
+    if !freq.windows(2).into_iter().all(|pair| pair[0] <= pair[1]) {
+        for i in 0..len {
+            let center_log = freq[i].log2();
+            let low_log = center_log - half_width;
+            let high_log = center_log + half_width;
 
-        let mut sum = 0.0;
-        let mut count = 0.0;
-        for j in 0..len {
-            let f_log = freq[j].log2();
-            if f_log >= low_log && f_log <= high_log {
-                sum += data[j];
-                count += 1.0;
+            let mut sum = 0.0;
+            let mut count = 0.0;
+            for j in 0..len {
+                let f_log = freq[j].log2();
+                if f_log >= low_log && f_log <= high_log {
+                    sum += data[j];
+                    count += 1.0;
+                }
             }
+
+            smoothed[i] = if count > 0.0 { sum / count } else { data[i] };
+        }
+        return smoothed;
+    }
+
+    let logs: Vec<f64> = freq.iter().map(|f| f.log2()).collect();
+    let mut left = 0usize;
+    let mut right = 0usize;
+    let mut sum = 0.0;
+
+    for i in 0..len {
+        let low_log = logs[i] - half_width;
+        let high_log = logs[i] + half_width;
+
+        while right < len && logs[right] <= high_log {
+            sum += data[right];
+            right += 1;
         }
 
-        smoothed[i] = if count > 0.0 { sum / count } else { data[i] };
+        while left < right && logs[left] < low_log {
+            sum -= data[left];
+            left += 1;
+        }
+
+        let count = right - left;
+        smoothed[i] = if count > 0 {
+            sum / count as f64
+        } else {
+            data[i]
+        };
     }
 
     smoothed
@@ -371,6 +399,36 @@ mod tests {
             "expected ~4.24, got {}",
             std[0]
         );
+    }
+
+    #[test]
+    fn test_spatial_std_dev_skewed_weights_do_not_zero_variance() {
+        let c1 = make_curve(vec![100.0, 1000.0], vec![80.0, 80.0]);
+        let c2 = make_curve(vec![100.0, 1000.0], vec![100.0, 100.0]);
+        let c3 = make_curve(vec![100.0, 1000.0], vec![100.0, 100.0]);
+        let std = spatial_std_dev_weighted(&[c1, c2, c3], Some(&[1.0, 1e-18, 1e-18]));
+
+        assert!(
+            std[0] > 0.0 && std[0].is_finite(),
+            "skewed non-zero weights should not collapse variance to zero, got {}",
+            std[0]
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid frequency grid")]
+    fn test_spatial_std_dev_rejects_mismatched_spl_lengths() {
+        let c1 = make_curve(vec![100.0, 1000.0], vec![80.0, 85.0]);
+        let c2 = make_curve(vec![100.0, 1000.0], vec![80.0]);
+        let _ = spatial_std_dev(&[c1, c2]);
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid frequency grid")]
+    fn test_rms_average_rejects_mismatched_spl_lengths() {
+        let c1 = make_curve(vec![100.0, 1000.0], vec![80.0, 85.0]);
+        let c2 = make_curve(vec![100.0, 1000.0], vec![80.0]);
+        let _ = rms_average(&[c1, c2]);
     }
 
     #[test]

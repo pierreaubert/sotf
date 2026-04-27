@@ -1908,36 +1908,18 @@ fn optimize_room_impl(
             let shelf_filters =
                 super::spectral_align::create_alignment_filters(result, sample_rate);
 
-            let (apply_shelves, apply_gain) = if let Some(ch_result) =
-                channel_results.get(channel_name)
-            {
+            let (apply_shelves, apply_gain) = if channel_results.contains_key(channel_name) {
                 let (score_min, score_max) = final_score_band_for_channel(config, channel_name);
-                let before =
-                    recompute_curve_flatness_score(&ch_result.final_curve, score_min, score_max);
+                let shelves_ok = should_apply_spectral_shelves(
+                    &curves,
+                    channel_name,
+                    &shelf_filters,
+                    sample_rate,
+                    score_min,
+                    score_max,
+                );
 
-                let shelves_ok = if shelf_filters.is_empty() {
-                    false
-                } else {
-                    let response = crate::response::compute_peq_complex_response(
-                        &shelf_filters,
-                        &ch_result.final_curve.freq,
-                        sample_rate,
-                    );
-                    let corrected =
-                        crate::response::apply_complex_response(&ch_result.final_curve, &response);
-                    let after = recompute_curve_flatness_score(&corrected, score_min, score_max);
-                    if after > before + 1e-3 {
-                        info!(
-                            "Skipping shelf alignment for '{}': flatness would regress from {:.4} to {:.4}",
-                            channel_name, before, after
-                        );
-                        false
-                    } else {
-                        true
-                    }
-                };
-
-                let gain_ok = result.flat_gain_db.abs() >= 0.3;
+                let gain_ok = result.flat_gain_db.abs() >= super::spectral_align::MIN_CORRECTION_DB;
                 (shelves_ok, gain_ok)
             } else {
                 (false, false)
@@ -2041,7 +2023,8 @@ fn optimize_room_impl(
                             &shelf_filters,
                             sample_rate,
                         );
-                        if alignment.flat_gain_db.abs() >= 0.3 {
+                        if alignment.flat_gain_db.abs() >= super::spectral_align::MIN_CORRECTION_DB
+                        {
                             sync_reported_gain_adjustment(
                                 channel_name,
                                 &mut channel_results,
@@ -2351,6 +2334,47 @@ fn recompute_curve_flatness_score(curve: &Curve, min_freq: f64, max_freq: f64) -
     ) as f64;
     let normalized_spl = &curve.spl - mean;
     crate::loss::flat_loss(&curve.freq, &normalized_spl, min_freq, max_freq)
+}
+
+fn should_apply_spectral_shelves(
+    current_curves: &HashMap<String, Curve>,
+    channel_name: &str,
+    shelf_filters: &[Biquad],
+    sample_rate: f64,
+    score_min: f64,
+    score_max: f64,
+) -> bool {
+    if shelf_filters.is_empty() {
+        return false;
+    }
+
+    let Some(curve) = current_curves.get(channel_name) else {
+        return false;
+    };
+
+    let response =
+        crate::response::compute_peq_complex_response(shelf_filters, &curve.freq, sample_rate);
+    let corrected = crate::response::apply_complex_response(curve, &response);
+    let flatness_before = recompute_curve_flatness_score(curve, score_min, score_max);
+    let flatness_after = recompute_curve_flatness_score(&corrected, score_min, score_max);
+    let flatness_regression = (flatness_after - flatness_before).max(0.0);
+
+    let icd_before =
+        super::spectral_align::compute_inter_channel_deviation(current_curves, score_min);
+    if icd_before.deviation_per_freq.is_empty() {
+        return false;
+    }
+
+    let mut corrected_curves = current_curves.clone();
+    corrected_curves.insert(channel_name.to_string(), corrected);
+    let icd_after =
+        super::spectral_align::compute_inter_channel_deviation(&corrected_curves, score_min);
+    if icd_after.deviation_per_freq.is_empty() {
+        return false;
+    }
+
+    let icd_improvement = icd_before.passband_rms_db - icd_after.passband_rms_db;
+    icd_improvement > flatness_regression + 1e-6
 }
 
 fn final_score_band_for_channel(config: &RoomConfig, channel_name: &str) -> (f64, f64) {
@@ -4477,6 +4501,158 @@ mod tests {
             biquads: Vec::new(),
             fir_coeffs: None,
         }
+    }
+
+    fn spectral_gate_curve(spl_fn: impl Fn(f64) -> f64) -> Curve {
+        let n = 200;
+        let log_start = 20f64.log10();
+        let log_end = 20000f64.log10();
+        let freq: Vec<f64> = (0..n)
+            .map(|i| 10f64.powf(log_start + (log_end - log_start) * i as f64 / (n - 1) as f64))
+            .collect();
+        let spl: Vec<f64> = freq.iter().map(|&f| spl_fn(f)).collect();
+        Curve {
+            freq: ndarray::Array1::from(freq),
+            spl: ndarray::Array1::from(spl),
+            phase: None,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn spectral_shelf_gate_accepts_icd_improvement_despite_flatness_regression() {
+        let sample_rate = 48_000.0;
+        let mut candidate = None;
+
+        for left_low in [-3.0, -1.5, 0.0, 1.5, 3.0] {
+            for left_high in [-3.0, -1.5, 0.0, 1.5, 3.0] {
+                for right_low in [-3.0, -1.5, 0.0, 1.5, 3.0] {
+                    for right_high in [-3.0, -1.5, 0.0, 1.5, 3.0] {
+                        let make_shaped = |low_gain, high_gain| {
+                            let low = Biquad::new(
+                                math_audio_iir_fir::BiquadFilterType::Lowshelf,
+                                super::super::spectral_align::LOWSHELF_FREQ,
+                                sample_rate,
+                                math_audio_iir_fir::DEFAULT_Q_HIGH_LOW_SHELF,
+                                low_gain,
+                            );
+                            let high = Biquad::new(
+                                math_audio_iir_fir::BiquadFilterType::Highshelf,
+                                super::super::spectral_align::HIGHSHELF_FREQ,
+                                sample_rate,
+                                math_audio_iir_fir::DEFAULT_Q_HIGH_LOW_SHELF,
+                                high_gain,
+                            );
+                            spectral_gate_curve(|f| {
+                                low.np_log_result(&ndarray::arr1(&[f]))[0]
+                                    + high.np_log_result(&ndarray::arr1(&[f]))[0]
+                            })
+                        };
+
+                        let curves = HashMap::from([
+                            ("L".to_string(), make_shaped(left_low, left_high)),
+                            ("R".to_string(), make_shaped(right_low, right_high)),
+                        ]);
+                        let alignment = super::super::spectral_align::compute_spectral_alignment(
+                            &curves,
+                            sample_rate,
+                            20.0,
+                            20_000.0,
+                        );
+
+                        for channel in ["L", "R"] {
+                            let shelf_filters =
+                                super::super::spectral_align::create_alignment_filters(
+                                    &alignment[channel],
+                                    sample_rate,
+                                );
+                            if shelf_filters.is_empty() {
+                                continue;
+                            }
+
+                            let before_flat =
+                                recompute_curve_flatness_score(&curves[channel], 20.0, 20_000.0);
+                            let response = crate::response::compute_peq_complex_response(
+                                &shelf_filters,
+                                &curves[channel].freq,
+                                sample_rate,
+                            );
+                            let corrected = crate::response::apply_complex_response(
+                                &curves[channel],
+                                &response,
+                            );
+                            let after_flat =
+                                recompute_curve_flatness_score(&corrected, 20.0, 20_000.0);
+                            if after_flat <= before_flat + 1e-3 {
+                                continue;
+                            }
+
+                            let icd_before =
+                                super::super::spectral_align::compute_inter_channel_deviation(
+                                    &curves, 20.0,
+                                );
+                            let mut corrected_curves = curves.clone();
+                            corrected_curves.insert(channel.to_string(), corrected);
+                            let icd_after =
+                                super::super::spectral_align::compute_inter_channel_deviation(
+                                    &corrected_curves,
+                                    20.0,
+                                );
+                            let flatness_regression = after_flat - before_flat;
+                            let icd_improvement =
+                                icd_before.passband_rms_db - icd_after.passband_rms_db;
+                            if icd_improvement > flatness_regression + 1e-6 {
+                                candidate = Some((
+                                    curves,
+                                    channel.to_string(),
+                                    shelf_filters,
+                                    before_flat,
+                                    after_flat,
+                                    icd_before.passband_rms_db,
+                                    icd_after.passband_rms_db,
+                                ));
+                                break;
+                            }
+                        }
+                        if candidate.is_some() {
+                            break;
+                        }
+                    }
+                    if candidate.is_some() {
+                        break;
+                    }
+                }
+                if candidate.is_some() {
+                    break;
+                }
+            }
+            if candidate.is_some() {
+                break;
+            }
+        }
+
+        let Some((curves, channel, shelf_filters, before_flat, after_flat, icd_before, icd_after)) =
+            candidate
+        else {
+            panic!("test setup could not find an ICD-improving shelf with a flatness regression");
+        };
+        assert!(
+            after_flat > before_flat + 1e-3
+                && icd_before - icd_after > after_flat - before_flat + 1e-6,
+            "invalid test candidate: flatness {before_flat}->{after_flat}, ICD {icd_before}->{icd_after}"
+        );
+
+        assert!(
+            should_apply_spectral_shelves(
+                &curves,
+                &channel,
+                &shelf_filters,
+                sample_rate,
+                20.0,
+                20_000.0,
+            ),
+            "shelves should be accepted when they improve inter-channel deviation"
+        );
     }
 
     fn test_room_config_with_gd(

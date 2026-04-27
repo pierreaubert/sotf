@@ -58,11 +58,11 @@ pub struct PhaseAlignmentResult {
     pub delay_ms: f64,
     /// Whether to invert polarity of the speaker
     pub invert_polarity: bool,
-    /// Energy sum before optimization (arbitrary units)
+    /// Energy sum at zero delay using the best allowed polarity (arbitrary units)
     pub energy_before: f64,
     /// Energy sum after optimization (arbitrary units)
     pub energy_after: f64,
-    /// Improvement in dB
+    /// Improvement in dB relative to `energy_before`
     pub improvement_db: f64,
 }
 
@@ -122,8 +122,16 @@ pub fn optimize_phase_alignment_with_options(
     // Compute frequency weights
     let weights = compute_frequency_weights(&common_freqs, opt_config.weighting);
 
-    // Calculate baseline energy (no delay, no inversion)
-    let energy_before = compute_weighted_energy(
+    let polarities = if config.optimize_polarity {
+        vec![false, true]
+    } else {
+        vec![false]
+    };
+
+    // Baseline is the best allowed zero-delay polarity. This reports delay
+    // alignment improvement without flattering cases where polarity alone
+    // fixes an already-measured 180 degree mismatch.
+    let mut energy_before = compute_weighted_energy(
         &sub_interp,
         &speaker_interp,
         &common_freqs,
@@ -131,16 +139,24 @@ pub fn optimize_phase_alignment_with_options(
         0.0,
         false,
     );
-
-    let polarities = if config.optimize_polarity {
-        vec![false, true]
-    } else {
-        vec![false]
-    };
-
     let mut best_delay = 0.0;
     let mut best_invert = false;
     let mut best_energy = energy_before;
+    if config.optimize_polarity {
+        let inverted_baseline = compute_weighted_energy(
+            &sub_interp,
+            &speaker_interp,
+            &common_freqs,
+            &weights,
+            0.0,
+            true,
+        );
+        if inverted_baseline > energy_before {
+            energy_before = inverted_baseline;
+            best_energy = inverted_baseline;
+            best_invert = true;
+        }
+    }
 
     // For each polarity, search globally first. The summed crossover energy
     // is periodic and usually multi-modal, so golden-section search is only
@@ -160,6 +176,7 @@ pub fn optimize_phase_alignment_with_options(
             energy_at,
             -config.max_delay_ms,
             config.max_delay_ms,
+            common_freqs.iter().copied().fold(0.0, f64::max),
             opt_config.tolerance_ms,
             opt_config.max_iterations,
         );
@@ -171,7 +188,7 @@ pub fn optimize_phase_alignment_with_options(
         }
     }
 
-    let improvement_db = 10.0 * (best_energy / energy_before.max(1e-12)).log10();
+    let improvement_db = (10.0 * (best_energy / energy_before.max(1e-12)).log10()).max(0.0);
 
     info!(
         "  Phase alignment: delay={:.2}ms, invert={}, improvement={:.2}dB",
@@ -192,6 +209,7 @@ fn maximize_delay_globally<F>(
     f: F,
     min_delay_ms: f64,
     max_delay_ms: f64,
+    max_freq_hz: f64,
     tol: f64,
     max_iter: usize,
 ) -> (f64, f64)
@@ -203,8 +221,21 @@ where
         return (min_delay_ms, value);
     }
 
-    let scan_points = (((max_delay_ms - min_delay_ms) / 0.05).ceil() as usize).clamp(64, 1024) + 1;
-    let step = (max_delay_ms - min_delay_ms) / (scan_points - 1) as f64;
+    const DEFAULT_SCAN_STEP_MS: f64 = 0.05;
+    const SCAN_SAMPLES_PER_HIGHEST_PERIOD: f64 = 16.0;
+
+    let range_ms = max_delay_ms - min_delay_ms;
+    let freq_limited_step_ms = if max_freq_hz.is_finite() && max_freq_hz > 0.0 {
+        1000.0 / (max_freq_hz * SCAN_SAMPLES_PER_HIGHEST_PERIOD)
+    } else {
+        DEFAULT_SCAN_STEP_MS
+    };
+    let min_step_ms = tol.abs().max(f64::EPSILON);
+    let scan_step_ms = DEFAULT_SCAN_STEP_MS
+        .min(freq_limited_step_ms)
+        .max(min_step_ms);
+    let scan_points = ((range_ms / scan_step_ms).ceil() as usize).max(64) + 1;
+    let step = range_ms / (scan_points - 1) as f64;
     let mut best_idx = 0;
     let mut best_delay = min_delay_ms;
     let mut best_energy = f(best_delay);
@@ -286,7 +317,7 @@ fn compute_frequency_weights(freqs: &Array1<f64>, weighting: WeightingType) -> V
     }
 }
 
-/// A-weighting curve (dB -> linear scale).
+/// A-weighting curve (dB -> linear power scale).
 ///
 /// Approximates the equal-loudness curve at 40 phon.
 /// Peaks around 2-5 kHz where human hearing is most sensitive.
@@ -307,8 +338,8 @@ fn a_weighting(f: f64) -> f64 {
 
     let weighting_db = 2.0 + 20.0 * (num / denom).log10();
 
-    // Convert dB to linear scale
-    10.0_f64.powf(weighting_db / 20.0)
+    // Convert dB to the power multiplier consumed by compute_weighted_energy.
+    10.0_f64.powf(weighting_db / 10.0)
 }
 
 /// C-weighting curve (dB -> linear scale).
@@ -326,7 +357,7 @@ fn c_weighting(f: f64) -> f64 {
 
     let weighting_db = 0.0619 + 20.0 * (num / denom).log10();
 
-    10.0_f64.powf(weighting_db / 20.0)
+    10.0_f64.powf(weighting_db / 10.0)
 }
 
 /// Compute weighted combined energy of sub + speaker with delay and polarity.
@@ -396,12 +427,10 @@ fn create_common_freq_grid(
         });
     }
 
-    let f_min = min_freq
-        .max(*curve1.freq.first().unwrap_or(&20.0))
-        .max(*curve2.freq.first().unwrap_or(&20.0));
+    let f_min = min_freq.max(curve1.freq[0]).max(curve2.freq[0]);
     let f_max = max_freq
-        .min(*curve1.freq.last().unwrap_or(&20000.0))
-        .min(*curve2.freq.last().unwrap_or(&20000.0));
+        .min(curve1.freq[curve1.freq.len() - 1])
+        .min(curve2.freq[curve2.freq.len() - 1]);
     if f_min >= f_max {
         return Err(AutoeqError::InvalidMeasurement {
             message: format!(
@@ -471,10 +500,10 @@ fn find_bracket_indices(freqs: &Array1<f64>, target: f64) -> (usize, usize) {
     }
 
     if target <= freqs[0] {
-        (0, 0)
+        (0, 1)
     } else {
         let last = freqs.len() - 1;
-        (last, last)
+        (last - 1, last)
     }
 }
 
@@ -635,6 +664,29 @@ mod tests {
     }
 
     #[test]
+    fn test_complex_interpolation_extrapolates_phase_at_edges() {
+        let curve = Curve {
+            freq: Array1::from_vec(vec![100.0, 200.0]),
+            spl: Array1::from_vec(vec![80.0, 90.0]),
+            phase: Some(Array1::from_vec(vec![10.0, 30.0])),
+            ..Default::default()
+        };
+        let values =
+            interpolate_curve_complex(&curve, &Array1::from_vec(vec![50.0, 250.0])).unwrap();
+        let low_phase = values[0].arg().to_degrees();
+        let high_phase = values[1].arg().to_degrees();
+
+        assert!(
+            low_phase.abs() < 1e-9,
+            "expected low-edge extrapolated phase near 0 degrees, got {low_phase}"
+        );
+        assert!(
+            (high_phase - 40.0).abs() < 1e-9,
+            "expected high-edge extrapolated phase near 40 degrees, got {high_phase}"
+        );
+    }
+
+    #[test]
     fn test_batch_alignment() {
         let sub = create_test_sub_curve();
         let speakers = vec![create_test_speaker_curve(), create_test_speaker_curve()];
@@ -694,6 +746,22 @@ mod tests {
     }
 
     #[test]
+    fn test_global_delay_scan_resolves_high_frequency_peak() {
+        let objective = |delay_ms: f64| {
+            let narrow_global = (-((delay_ms - 0.026) / 0.006).powi(2)).exp();
+            let broad_secondary = 0.4 * (-((delay_ms - 1.0) / 0.2).powi(2)).exp();
+            narrow_global + broad_secondary
+        };
+
+        let (delay_ms, _) = maximize_delay_globally(objective, -3.0, 3.0, 2000.0, 0.001, 80);
+
+        assert!(
+            (delay_ms - 0.026).abs() < 0.003,
+            "expected high-frequency peak near 0.026ms, got {delay_ms:.6}ms"
+        );
+    }
+
+    #[test]
     fn test_a_weighting() {
         // A-weighting peaks around 2-5 kHz
         let w_1k = a_weighting(1000.0);
@@ -712,6 +780,21 @@ mod tests {
     }
 
     #[test]
+    fn test_a_weighting_returns_power_multiplier() {
+        let w_1k = a_weighting(1000.0);
+        let w_100 = a_weighting(100.0);
+
+        assert!(
+            (w_1k - 1.0).abs() < 0.01,
+            "A-weighting at 1kHz should be a unity power multiplier, got {w_1k:.4}"
+        );
+        assert!(
+            (w_100 - 0.0122).abs() < 0.001,
+            "A-weighting at 100Hz should be about -19.1dB as a power multiplier, got {w_100:.4}"
+        );
+    }
+
+    #[test]
     fn test_c_weighting() {
         // C-weighting is nearly flat in audible range
         let w_100 = c_weighting(100.0);
@@ -722,8 +805,23 @@ mod tests {
         assert!(w_100 > 0.5, "C-weighting at 100Hz should be reasonable");
         assert!(w_1k > 0.9, "C-weighting at 1kHz should be near 1.0");
         assert!(
-            w_10k > 0.5,
+            w_10k > 0.3,
             "C-weighting at 10kHz should still be reasonable"
+        );
+    }
+
+    #[test]
+    fn test_c_weighting_returns_power_multiplier() {
+        let w_1k = c_weighting(1000.0);
+        let w_31_5 = c_weighting(31.5);
+
+        assert!(
+            (w_1k - 1.0).abs() < 0.01,
+            "C-weighting at 1kHz should be a unity power multiplier, got {w_1k:.4}"
+        );
+        assert!(
+            (w_31_5 - 0.5).abs() < 0.03,
+            "C-weighting at 31.5Hz should be about -3dB as a power multiplier, got {w_31_5:.4}"
         );
     }
 

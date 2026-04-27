@@ -35,7 +35,7 @@ const MAX_SHELF_GAIN_DB: f64 = 6.0;
 const MAX_FLAT_GAIN_DB: f64 = 12.0;
 
 /// Minimum correction magnitude to bother applying (dB)
-const MIN_CORRECTION_DB: f64 = 0.3;
+pub(super) const MIN_CORRECTION_DB: f64 = 0.3;
 
 /// Result of spectral alignment for a single channel.
 #[derive(Debug, Clone)]
@@ -130,10 +130,11 @@ pub fn compute_spectral_alignment(
         let (ls_fit, hs_fit, flat_fit, residual_rms) =
             fit_shelf_gain_iterative(&diff, &active_freq, sample_rate, &weights);
 
-        // Negate to get corrections, then clamp gains
+        // Negate to get corrections. Shelf gains are independent per channel;
+        // flat gains are mean-centered below before the final clamp.
         let ls_gain = (-ls_fit).clamp(-MAX_SHELF_GAIN_DB, MAX_SHELF_GAIN_DB);
         let hs_gain = (-hs_fit).clamp(-MAX_SHELF_GAIN_DB, MAX_SHELF_GAIN_DB);
-        let flat_gain = (-flat_fit).clamp(-MAX_FLAT_GAIN_DB, MAX_FLAT_GAIN_DB);
+        let flat_gain = -flat_fit;
 
         results.insert(
             name.clone(),
@@ -146,11 +147,13 @@ pub fn compute_spectral_alignment(
         );
     }
 
-    // Renormalize: subtract mean flat_gain so net system level doesn't shift
+    // Renormalize before clamping: subtract mean flat_gain so net system level
+    // doesn't shift, then apply the absolute flat-gain safety limit once.
     let mean_flat: f64 =
         results.values().map(|r| r.flat_gain_db).sum::<f64>() / results.len() as f64;
     for result in results.values_mut() {
-        result.flat_gain_db -= mean_flat;
+        result.flat_gain_db =
+            (result.flat_gain_db - mean_flat).clamp(-MAX_FLAT_GAIN_DB, MAX_FLAT_GAIN_DB);
     }
 
     // Zero out corrections that are too small
@@ -813,10 +816,15 @@ fn fit_shelf_gain_iterative(
         &r * &weights.mapv(f64::sqrt)
     };
 
+    // Bounds give the LM solver headroom past the final correction limits so
+    // it converges to the true LS optimum. Callers (`compute_spectral_alignment`,
+    // `compute_target_alignment`) apply the user-facing safety clamps. Narrowing
+    // the flat-gain bound here would re-introduce M5: pre-clamped flat_fit
+    // values pull untouched channels during the outer mean-centering step.
     let bounds = [
         (-MAX_SHELF_GAIN_DB * 2.0, MAX_SHELF_GAIN_DB * 2.0), // ls_gain
         (-MAX_SHELF_GAIN_DB * 2.0, MAX_SHELF_GAIN_DB * 2.0), // hs_gain
-        (-MAX_FLAT_GAIN_DB, MAX_FLAT_GAIN_DB),               // flat_gain
+        (-MAX_FLAT_GAIN_DB * 4.0, MAX_FLAT_GAIN_DB * 4.0),   // flat_gain
     ];
 
     let config = LMConfigBuilder::new()
@@ -841,7 +849,7 @@ fn fit_shelf_gain_iterative(
                 0.0
             };
             let flat = if flat_init.is_finite() {
-                flat_init.clamp(-MAX_FLAT_GAIN_DB, MAX_FLAT_GAIN_DB)
+                flat_init.clamp(-MAX_FLAT_GAIN_DB * 4.0, MAX_FLAT_GAIN_DB * 4.0)
             } else {
                 0.0
             };
@@ -1156,6 +1164,45 @@ mod tests {
                 "HS gain {} exceeds max ±{}",
                 result.highshelf_gain_db,
                 MAX_SHELF_GAIN_DB
+            );
+        }
+    }
+
+    #[test]
+    fn test_flat_gain_saturation_does_not_pull_unsaturated_channels() {
+        // L sits 30 dB above C/R, so LS would solve flat_gain ≈ -20 for L
+        // and ≈ +10 for C/R. The OLD broken pipeline (clamp first, then
+        // mean-center) produced two regressions:
+        //   1. L's reported gain leaked past the safety limit at ≈ -14.7 dB
+        //      because the mean-shift moved an already-clamped value.
+        //   2. Untouched C/R were dragged from their LS solution at +10 to
+        //      ≈ +7.3 dB even though their LS fit was well within range.
+        // The fix mean-centers first and clamps once, leaving C/R alone.
+        let mut curves = HashMap::new();
+        curves.insert("L".to_string(), make_curve(|_| 30.0));
+        curves.insert("C".to_string(), make_curve(|_| 0.0));
+        curves.insert("R".to_string(), make_curve(|_| 0.0));
+
+        let results = compute_spectral_alignment(&curves, SAMPLE_RATE, 20.0, 20000.0);
+
+        let l = results["L"].flat_gain_db;
+        assert!(
+            l.abs() <= MAX_FLAT_GAIN_DB + 0.01,
+            "L flat_gain {l:.3} dB must respect ±{MAX_FLAT_GAIN_DB} dB"
+        );
+        assert!(
+            (l + MAX_FLAT_GAIN_DB).abs() < 0.5,
+            "L should saturate near -{MAX_FLAT_GAIN_DB} dB, got {l:.3} dB"
+        );
+
+        // Untouched channels must keep their LS-derived gain (+10 dB)
+        // within ~1 dB; the old broken flow would land near +7.3 dB.
+        for ch in ["C", "R"] {
+            let g = results[ch].flat_gain_db;
+            assert!(
+                g >= 9.0 && g <= MAX_FLAT_GAIN_DB + 0.01,
+                "{ch} flat_gain {g:.3} dB should stay near LS value (+10 dB); \
+                 saturating L must not pull unsaturated channels"
             );
         }
     }
