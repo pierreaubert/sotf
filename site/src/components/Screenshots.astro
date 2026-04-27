@@ -1,14 +1,52 @@
 ---
-const screenshots = [
+const tuiScreenshots = [
   {
-    src: '/images/sotf-player.png',
-    alt: 'SotF music player and library view',
-    caption: 'Full-featured music player with library management',
+    src: '/images/0.5.12/sotf-tui-v0.5.12-player.png',
+    alt: 'SotF TUI — music player view',
+    caption: 'Music player with library and queue',
   },
   {
-    src: '/images/upmixer.png',
-    alt: 'SotF upmixer plugin rack',
-    caption: 'Upmixer plugin in the visual rack editor',
+    src: '/images/0.5.12/sotf-tui-v0.5.12-plugins.png',
+    alt: 'SotF TUI — plugin chain',
+    caption: 'Plugin chain manager',
+  },
+  {
+    src: '/images/0.5.12/sotf-tui-v0.5.12-upmixer.png',
+    alt: 'SotF TUI — upmixer plugin',
+    caption: 'Stereo-to-surround upmixer',
+  },
+  {
+    src: '/images/0.5.12/sotf-tui-v0.5.12-headphone.png',
+    alt: 'SotF TUI — headphone EQ',
+    caption: 'Headphone EQ optimization',
+  },
+];
+
+const gpuiScreenshots = [
+  {
+    src: '/images/0.5.12/sotf-gpui-v0.5.12-player.png',
+    alt: 'SotF Desktop — player view',
+    caption: 'Desktop player with library',
+  },
+  {
+    src: '/images/0.5.12/sotf-gpui-v0.5.12-eq.png',
+    alt: 'SotF Desktop — parametric EQ',
+    caption: 'Visual parametric EQ editor',
+  },
+  {
+    src: '/images/0.5.12/sotf-gpui-v0.5.12-upmixer.png',
+    alt: 'SotF Desktop — upmixer',
+    caption: 'Upmixer plugin in desktop app',
+  },
+  {
+    src: '/images/0.5.12/sotf-v0.5.12-headphoneeq.png',
+    alt: 'SotF — headphone EQ wizard',
+    caption: 'Headphone EQ wizard',
+  },
+  {
+    src: '/images/0.5.12/sotf-v0.5.12-roomeq-mixedmode.png',
+    alt: 'SotF — room EQ wizard',
+    caption: 'Room correction wizard',
   },
 ];
 ---
@@ -20,20 +58,40 @@ const screenshots = [
       See SotF in action.
     </p>
 
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-      {screenshots.map((shot) => (
-        <figure class="group">
-          <div class="overflow-hidden rounded-xl border border-border group-hover:border-accent/30 transition-all group-hover:shadow-[0_0_30px_rgba(34,211,238,0.08)]">
-            <img
-              src={shot.src}
-              alt={shot.alt}
-              class="w-full h-auto"
-              loading="lazy"
-            />
-          </div>
-          <figcaption class="mt-3 text-sm text-gray-500 text-center">{shot.caption}</figcaption>
-        </figure>
-      ))}
+    <!-- TUI -->
+    <div class="mb-16">
+      <h3 class="text-lg font-semibold text-gray-300 mb-6 flex items-center gap-2">
+        <span class="px-2 py-0.5 text-xs font-mono rounded bg-accent/10 text-accent border border-accent/20">Terminal</span>
+        TUI Player
+      </h3>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+        {tuiScreenshots.map((shot) => (
+          <figure class="group">
+            <div class="overflow-hidden rounded-xl border border-border group-hover:border-accent/30 transition-all group-hover:shadow-[0_0_30px_rgba(34,211,238,0.08)]">
+              <img src={shot.src} alt={shot.alt} class="w-full h-auto" loading="lazy" />
+            </div>
+            <figcaption class="mt-3 text-sm text-gray-500 text-center">{shot.caption}</figcaption>
+          </figure>
+        ))}
+      </div>
+    </div>
+
+    <!-- Desktop -->
+    <div>
+      <h3 class="text-lg font-semibold text-gray-300 mb-6 flex items-center gap-2">
+        <span class="px-2 py-0.5 text-xs font-mono rounded bg-accent/10 text-accent border border-accent/20">Desktop</span>
+        GPUI App
+      </h3>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        {gpuiScreenshots.map((shot) => (
+          <figure class="group">
+            <div class="overflow-hidden rounded-xl border border-border group-hover:border-accent/30 transition-all group-hover:shadow-[0_0_30px_rgba(34,211,238,0.08)]">
+              <img src={shot.src} alt={shot.alt} class="w-full h-auto" loading="lazy" />
+            </div>
+            <figcaption class="mt-3 text-sm text-gray-500 text-center">{shot.caption}</figcaption>
+          </figure>
+        ))}
+      </div>
     </div>
   </div>
 </section>

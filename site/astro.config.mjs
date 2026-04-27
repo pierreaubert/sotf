@@ -34,6 +34,7 @@ export default defineConfig({
             { label: 'Plugin Presets', slug: 'guides/plugin-presets' },
             { label: 'Recording Measurements', slug: 'guides/recording' },
             { label: 'AutoEQ CLI', slug: 'guides/autoeq-cli' },
+            { label: 'RoomEQ CLI', slug: 'guides/roomeq-cli' },
             { label: 'Listening Profiles', slug: 'guides/listening-profiles' },
           ],
         },

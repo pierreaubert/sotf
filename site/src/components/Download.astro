@@ -37,9 +37,11 @@ const builds = [
     icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M3 12V6.5l8-1.1V12H3zm0 .5h8v6.6l-8-1.1V12.5zm9 0h9V3l-9 1.2V12.5zm0 .5v6.3L21 21v-8H12z"/></svg>`,
     variants: [
       { arch: 'ARM64', quality: 'alpha', signature: 'self-signed', files: [
+        { label: 'MSIX', file: `SotF-windows-arm64-${version}.msix` },
         { label: 'TUI exe', file: `sotf-tui-windows-arm64-${version}.exe` },
       ]},
       { arch: 'x86_64', quality: 'alpha', signature: 'self-signed', files: [
+        { label: 'MSIX', file: `SotF-windows-x86_64-${version}.msix` },
         { label: 'TUI exe', file: `sotf-tui-windows-x86_64-${version}.exe` },
       ]},
     ],
