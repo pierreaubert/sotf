@@ -1900,6 +1900,43 @@ fn optimize_room_impl(
 
         // Insert alignment plugins after the per-channel PEQ
         for (channel_name, result) in &alignment_results {
+            let shelf_filters =
+                super::spectral_align::create_alignment_filters(result, sample_rate);
+            let should_apply = if let Some(ch_result) = channel_results.get(channel_name) {
+                let (score_min, score_max) = final_score_band_for_channel(config, channel_name);
+                let before =
+                    recompute_curve_flatness_score(&ch_result.final_curve, score_min, score_max);
+                let mut corrected = if shelf_filters.is_empty() {
+                    ch_result.final_curve.clone()
+                } else {
+                    let response = crate::response::compute_peq_complex_response(
+                        &shelf_filters,
+                        &ch_result.final_curve.freq,
+                        sample_rate,
+                    );
+                    crate::response::apply_complex_response(&ch_result.final_curve, &response)
+                };
+                if result.flat_gain_db.abs() >= 0.3 {
+                    for spl in corrected.spl.iter_mut() {
+                        *spl += result.flat_gain_db;
+                    }
+                }
+                let after = recompute_curve_flatness_score(&corrected, score_min, score_max);
+                if after > before + 1e-3 {
+                    info!(
+                        "Skipping spectral alignment for '{}': flatness would regress from {:.4} to {:.4}",
+                        channel_name, before, after
+                    );
+                    false
+                } else {
+                    true
+                }
+            } else {
+                false
+            };
+            if !should_apply {
+                continue;
+            }
             if let Some(chain) = channel_chains.get_mut(channel_name) {
                 let (eq_plugin, gain_plugin) =
                     super::spectral_align::create_alignment_plugins(result, sample_rate);
@@ -1910,8 +1947,6 @@ fn optimize_room_impl(
                     chain.plugins.push(gain);
                 }
             }
-            let shelf_filters =
-                super::spectral_align::create_alignment_filters(result, sample_rate);
             sync_reported_biquad_adjustment(
                 channel_name,
                 &mut channel_results,
@@ -2308,6 +2343,9 @@ fn recompute_curve_flatness_score(curve: &Curve, min_freq: f64, max_freq: f64) -
 fn final_score_band_for_channel(config: &RoomConfig, channel_name: &str) -> (f64, f64) {
     let min_freq = config.optimizer.min_freq;
     let mut max_freq = config.optimizer.max_freq;
+    if config.system.is_none() {
+        return (min_freq, max_freq.max(min_freq));
+    }
     let crossover_max = config.crossovers.as_ref().and_then(|xos| {
         xos.values()
             .filter_map(|xo| xo.frequency)
@@ -2372,11 +2410,12 @@ fn refresh_final_reports(
     result.metadata.multi_seat_coverage = Some(super::home_cinema::multi_seat_coverage(config));
     let existing_bass_management = result.metadata.bass_management.clone();
     result.metadata.bass_management = if let Some(existing) = existing_bass_management {
-        super::home_cinema::bass_management_report_with_optimization(
+        super::home_cinema::bass_management_report_with_optimization_and_sample_rate(
             config,
             existing.applied_sub_gain_db,
             existing.gain_limited,
             existing.optimization,
+            sample_rate,
         )
     } else {
         super::home_cinema::bass_management_report(config, None, false)
@@ -4281,6 +4320,19 @@ mod tests {
             "GD DSP must be reflected in final_curve phase"
         );
         assert_close(result_phase, chain_phase);
+    }
+
+    #[test]
+    fn generic_path_score_band_uses_optimizer_bounds() {
+        let mut config = test_room_config_with_gd(Default::default());
+        config.system = None;
+        config.optimizer.min_freq = 35.0;
+        config.optimizer.max_freq = 12_500.0;
+
+        assert_eq!(
+            final_score_band_for_channel(&config, "left"),
+            (35.0, 12_500.0)
+        );
     }
 
     #[test]

@@ -339,6 +339,10 @@ qa-roomeq-all-channel-multiseat:
 [group('qa-roomeq')]
 qa-roomeq-bass-management:
 	cargo test -p autoeq home_cinema_bass_management --lib -- --nocapture
+	cargo test -p autoeq bass_headroom_uses_supplied_sample_rate_for_crossover_response --lib -- --nocapture
+	cargo test -p autoeq home_cinema_bass_management_sub_curve_is_predicted_from_routes --lib -- --nocapture
+	cargo test -p autoeq home_cinema_bass_bus_curve_is_predicted_across_multiple_sub_outputs --lib -- --nocapture
+	cargo test -p autoeq representative_bass_route_signature_uses_emitted_route_shape --lib -- --nocapture
 	cargo test -p autoeq home_cinema_bass_management_workflow_applies_configured_group_crossovers_when_optimization_disabled --lib -- --nocapture
 	cargo test -p autoeq validate_bass_management --lib -- --nocapture
 
@@ -347,6 +351,7 @@ qa-roomeq-export-routing:
 	cargo test -p autoeq external_exports_reject_routed_bass_management --lib -- --nocapture
 	cargo test -p sotf-player test_build_room_eq_graph_emits_route_dsp_and_output_correction --lib -- --nocapture
 	cargo test -p sotf-player test_build_room_eq_graph_applies_shared_sub_chain_to_physical_sub_routes --lib -- --nocapture
+	cargo test -p sotf-player test_build_room_eq_graph_preserves_non_routing_global_plugins --lib -- --nocapture
 	cargo test -p sotf-player test_requires_room_eq_graph_with_routed_bass_management --lib -- --nocapture
 
 [group('qa-roomeq')]
