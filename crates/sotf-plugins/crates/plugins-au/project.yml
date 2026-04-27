@@ -145,6 +145,14 @@ targets:
         embed: true
       - target: AmbisonicsAudioUnit
         embed: true
+      - target: DeclickAudioUnit
+        embed: true
+      - target: HissReducerAudioUnit
+        embed: true
+      - target: SpeechDenoiserAudioUnit
+        embed: true
+      - target: DitherAudioUnit
+        embed: true
 
   # EQ Audio Unit
   EQAudioUnit:
@@ -652,3 +660,55 @@ targets:
       PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.AmbisonicsAudioUnit
       INFOPLIST_FILE: AmbisonicsAudioUnit/Info.plist
       CODE_SIGN_ENTITLEMENTS: AmbisonicsAudioUnit/AmbisonicsAudioUnit.entitlements
+
+  # Declick Audio Unit
+  DeclickAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: DeclickAudioUnit
+        name: DeclickAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.DeclickAudioUnit
+      INFOPLIST_FILE: DeclickAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: DeclickAudioUnit/DeclickAudioUnit.entitlements
+
+  # Hiss Reducer Audio Unit
+  HissReducerAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: HissReducerAudioUnit
+        name: HissReducerAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.HissReducerAudioUnit
+      INFOPLIST_FILE: HissReducerAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: HissReducerAudioUnit/HissReducerAudioUnit.entitlements
+
+  # Speech Denoiser Audio Unit
+  SpeechDenoiserAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: SpeechDenoiserAudioUnit
+        name: SpeechDenoiserAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.SpeechDenoiserAudioUnit
+      INFOPLIST_FILE: SpeechDenoiserAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: SpeechDenoiserAudioUnit/SpeechDenoiserAudioUnit.entitlements
+
+  # Dither Audio Unit
+  DitherAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: DitherAudioUnit
+        name: DitherAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.DitherAudioUnit
+      INFOPLIST_FILE: DitherAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: DitherAudioUnit/DitherAudioUnit.entitlements

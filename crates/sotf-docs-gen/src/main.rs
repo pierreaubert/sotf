@@ -313,6 +313,46 @@ fn plugin_registry() -> Vec<PluginEntry> {
             global_params: None,
             band_template: None,
         },
+        PluginEntry {
+            slug: "aae",
+            name: "Active Acoustic Enhancement",
+            description: "Active acoustic enhancement using psychoacoustic processing to improve perceived clarity, presence, and depth.",
+            params: param_specs::aae::PARAMS,
+            global_params: None,
+            band_template: None,
+        },
+        PluginEntry {
+            slug: "declick",
+            name: "Declick",
+            description: "Removes clicks, pops, and short transient defects from audio (vinyl restoration, recording artifacts).",
+            params: param_specs::declick::PARAMS,
+            global_params: None,
+            band_template: None,
+        },
+        PluginEntry {
+            slug: "hiss-reducer",
+            name: "Hiss Reducer",
+            description: "Reduces high-frequency hiss and tape noise while preserving program content.",
+            params: param_specs::hiss_reducer::PARAMS,
+            global_params: None,
+            band_template: None,
+        },
+        PluginEntry {
+            slug: "speech-denoiser",
+            name: "Speech Denoiser",
+            description: "Neural speech-focused denoiser (RNNoise-derived) optimized for voice and dialogue cleanup.",
+            params: param_specs::speech_denoiser::PARAMS,
+            global_params: None,
+            band_template: None,
+        },
+        PluginEntry {
+            slug: "dither",
+            name: "Dither",
+            description: "Adds dither noise for bit-depth reduction, minimizing quantization distortion.",
+            params: param_specs::dither::PARAMS,
+            global_params: None,
+            band_template: None,
+        },
     ]
 }
 

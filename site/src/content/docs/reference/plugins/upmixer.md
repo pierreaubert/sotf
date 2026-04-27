@@ -108,5 +108,5 @@ Stereo to surround upmixing (2ch to 5.0/5.1/7.1) using FFT-based spatial decompo
 | ML Detection | Bool | On / Off | Off | - | Use ML model for source detect |
 
 :::note
-**Structural parameters** (Speaker Config, Freq Resolution, Binaural Preview) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
+**Structural parameters** (Speaker Config, Decor Mode, Velvet Duration, Velvet Density, Low Latency, Freq Resolution, Bypass Decor, Binaural Preview) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
 :::

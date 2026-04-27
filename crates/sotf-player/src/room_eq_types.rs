@@ -2577,18 +2577,28 @@ fn pre_route_plugins_for_route<'a>(
     route: &autoeq::roomeq::BassManagementRoute,
     graph: &autoeq::roomeq::BassManagementRoutingGraph,
 ) -> Vec<&'a DspPluginConfig> {
-    let channel_name = if is_bass_route(route) {
-        &graph.physical_sub_output
-    } else {
-        &route.source_channel
-    };
+    let channel_name = route.pre_chain_channel.as_deref().unwrap_or_else(|| {
+        if is_bass_route(route) {
+            &graph.physical_sub_output
+        } else {
+            &route.source_channel
+        }
+    });
     let Some(chain) = output.channels.get(channel_name) else {
         return Vec::new();
     };
+    let staged: Vec<_> = chain
+        .plugins
+        .iter()
+        .filter(|plugin| plugin_stage(plugin) == Some("pre_route"))
+        .collect();
+    if !staged.is_empty() {
+        return staged;
+    }
     chain
         .plugins
         .iter()
-        .take_while(|plugin| plugin.plugin_type != "crossover")
+        .take_while(|plugin| !is_route_owned_plugin(plugin) && plugin.plugin_type != "crossover")
         .collect()
 }
 
@@ -2597,7 +2607,20 @@ fn post_route_plugins_for_channel<'a>(
     channel_name: &str,
     graph: &autoeq::roomeq::BassManagementRoutingGraph,
 ) -> Vec<&'a DspPluginConfig> {
-    let chain = output.channels.get(channel_name).or_else(|| {
+    let post_chain_name = graph
+        .routes
+        .iter()
+        .find(|route| route.destination == channel_name)
+        .and_then(|route| route.post_chain_channel.as_deref())
+        .unwrap_or(channel_name);
+    let mut staged = plugins_for_post_chain_name(output, post_chain_name);
+    if staged.is_empty() && is_bass_output_channel(channel_name, graph) {
+        staged = plugins_for_post_chain_name(output, &graph.physical_sub_output);
+    }
+    if !staged.is_empty() {
+        return staged;
+    }
+    let chain = output.channels.get(post_chain_name).or_else(|| {
         is_bass_output_channel(channel_name, graph)
             .then(|| output.channels.get(&graph.physical_sub_output))
             .flatten()
@@ -2605,27 +2628,31 @@ fn post_route_plugins_for_channel<'a>(
     let Some(chain) = chain else {
         return Vec::new();
     };
-    let Some(crossover_idx) = chain
+    let Some(split_idx) = chain
         .plugins
         .iter()
-        .position(|plugin| plugin.plugin_type == "crossover")
+        .position(|plugin| is_route_owned_plugin(plugin) || plugin.plugin_type == "crossover")
     else {
         return chain.plugins.iter().collect();
     };
 
-    let mut start = crossover_idx + 1;
+    let mut start = split_idx + 1;
     let mut skipped_route_gain = false;
     let mut skipped_route_delay = false;
     while let Some(plugin) = chain.plugins.get(start) {
+        if is_route_owned_plugin(plugin) {
+            start += 1;
+            continue;
+        }
         let route_owned = match plugin.plugin_type.as_str() {
             "crossover" => true,
             "gain" if !skipped_route_gain => {
-                let owned = route_owns_gain_plugin(plugin, channel_name, graph);
+                let owned = route_owns_gain_plugin(plugin, channel_name, post_chain_name, graph);
                 skipped_route_gain = owned;
                 owned
             }
             "delay" if !skipped_route_delay => {
-                let owned = route_owns_delay_plugin(plugin, channel_name, graph);
+                let owned = route_owns_delay_plugin(plugin, channel_name, post_chain_name, graph);
                 skipped_route_delay = owned;
                 owned
             }
@@ -2638,6 +2665,39 @@ fn post_route_plugins_for_channel<'a>(
     }
 
     chain.plugins[start..].iter().collect()
+}
+
+fn is_route_owned_plugin(plugin: &DspPluginConfig) -> bool {
+    plugin_stage(plugin) == Some("route_owned")
+        || plugin
+            .parameters
+            .get("label")
+            .and_then(|value| value.as_str())
+            == Some("room_eq_route_owned")
+}
+
+fn plugin_stage(plugin: &DspPluginConfig) -> Option<&str> {
+    plugin
+        .parameters
+        .get("room_eq_stage")
+        .and_then(|value| value.as_str())
+}
+
+fn plugins_for_post_chain_name<'a>(
+    output: &'a DspChainOutput,
+    post_chain_name: &str,
+) -> Vec<&'a DspPluginConfig> {
+    output
+        .channels
+        .get(post_chain_name)
+        .map(|chain| {
+            chain
+                .plugins
+                .iter()
+                .filter(|plugin| plugin_stage(plugin) == Some("post_route"))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
 }
 
 fn is_bass_route(route: &autoeq::roomeq::BassManagementRoute) -> bool {
@@ -2657,6 +2717,7 @@ fn is_bass_output_channel(
 fn route_owns_gain_plugin(
     plugin: &DspPluginConfig,
     channel_name: &str,
+    post_chain_name: &str,
     graph: &autoeq::roomeq::BassManagementRoutingGraph,
 ) -> bool {
     let gain_db = plugin
@@ -2673,7 +2734,10 @@ fn route_owns_gain_plugin(
     graph
         .routes
         .iter()
-        .filter(|route| route.destination == channel_name)
+        .filter(|route| {
+            route.destination == channel_name
+                || route.post_chain_channel.as_deref() == Some(post_chain_name)
+        })
         .any(|route| {
             let exact_route_match =
                 (route.gain_db - gain_db).abs() <= 0.01 && route.polarity_inverted == invert;
@@ -2695,6 +2759,7 @@ fn route_owns_gain_plugin(
 fn route_owns_delay_plugin(
     plugin: &DspPluginConfig,
     channel_name: &str,
+    post_chain_name: &str,
     graph: &autoeq::roomeq::BassManagementRoutingGraph,
 ) -> bool {
     let Some(delay_ms) = plugin
@@ -2708,7 +2773,10 @@ fn route_owns_delay_plugin(
     graph
         .routes
         .iter()
-        .filter(|route| route.destination == channel_name)
+        .filter(|route| {
+            route.destination == channel_name
+                || route.post_chain_channel.as_deref() == Some(post_chain_name)
+        })
         .any(|route| {
             (route.delay_ms - delay_ms).abs() <= 0.001
                 || (bass_output
@@ -3410,12 +3478,16 @@ mod tests {
                     plugins: vec![
                         PluginConfigWrapper {
                             plugin_type: "gain".to_string(),
-                            parameters: serde_json::json!({"gain_db": -1.0}),
+                            parameters: serde_json::json!({
+                                "gain_db": -1.0,
+                                "room_eq_stage": "pre_route"
+                            }),
                         },
                         PluginConfigWrapper {
                             plugin_type: "eq".to_string(),
                             parameters: serde_json::json!({
                                 "label": "pre_room_eq",
+                                "room_eq_stage": "pre_route",
                                 "filters": []
                             }),
                         },
@@ -3429,12 +3501,16 @@ mod tests {
                         },
                         PluginConfigWrapper {
                             plugin_type: "delay".to_string(),
-                            parameters: serde_json::json!({"delay_ms": 2.0}),
+                            parameters: serde_json::json!({
+                                "delay_ms": 2.0,
+                                "room_eq_stage": "route_owned"
+                            }),
                         },
                         PluginConfigWrapper {
                             plugin_type: "gain".to_string(),
                             parameters: serde_json::json!({
                                 "label": "post_main_trim",
+                                "room_eq_stage": "post_route",
                                 "gain_db": -0.75
                             }),
                         },
@@ -3442,6 +3518,7 @@ mod tests {
                             plugin_type: "eq".to_string(),
                             parameters: serde_json::json!({
                                 "label": "post_room_eq",
+                                "room_eq_stage": "post_route",
                                 "filters": []
                             }),
                         },
@@ -3457,6 +3534,7 @@ mod tests {
                             plugin_type: "gain".to_string(),
                             parameters: serde_json::json!({
                                 "label": "sub_pre_trim",
+                                "room_eq_stage": "pre_route",
                                 "gain_db": -0.5
                             }),
                         },
@@ -3464,6 +3542,7 @@ mod tests {
                             plugin_type: "eq".to_string(),
                             parameters: serde_json::json!({
                                 "label": "sub_pre_room_eq",
+                                "room_eq_stage": "pre_route",
                                 "filters": []
                             }),
                         },
@@ -3478,18 +3557,23 @@ mod tests {
                         PluginConfigWrapper {
                             plugin_type: "gain".to_string(),
                             parameters: serde_json::json!({
+                                "room_eq_stage": "route_owned",
                                 "gain_db": -3.0,
                                 "invert": true
                             }),
                         },
                         PluginConfigWrapper {
                             plugin_type: "delay".to_string(),
-                            parameters: serde_json::json!({"delay_ms": 4.0}),
+                            parameters: serde_json::json!({
+                                "delay_ms": 4.0,
+                                "room_eq_stage": "route_owned"
+                            }),
                         },
                         PluginConfigWrapper {
                             plugin_type: "gain".to_string(),
                             parameters: serde_json::json!({
                                 "label": "sub_post_trim",
+                                "room_eq_stage": "post_route",
                                 "gain_db": -0.25
                             }),
                         },
@@ -3497,6 +3581,7 @@ mod tests {
                             plugin_type: "eq".to_string(),
                             parameters: serde_json::json!({
                                 "label": "sub_post_room_eq",
+                                "room_eq_stage": "post_route",
                                 "filters": []
                             }),
                         },
@@ -3558,6 +3643,8 @@ mod tests {
                             source_index: 0,
                             destination: "L".to_string(),
                             destination_index: 0,
+                            pre_chain_channel: Some("L".to_string()),
+                            post_chain_channel: Some("L".to_string()),
                             route_kind: "main_highpass_to_self".to_string(),
                             crossover_type: "LR24".to_string(),
                             high_pass_hz: Some(80.0),
@@ -3574,6 +3661,8 @@ mod tests {
                             source_index: 0,
                             destination: "Sub".to_string(),
                             destination_index: 1,
+                            pre_chain_channel: Some("Sub".to_string()),
+                            post_chain_channel: Some("Sub".to_string()),
                             route_kind: "redirected_bass_lowpass_to_sub".to_string(),
                             crossover_type: "LR24".to_string(),
                             high_pass_hz: None,
@@ -3603,6 +3692,12 @@ mod tests {
         let mut output = routed_bass_output();
         let mut sub_chain = output.channels.remove("Sub").expect("sub chain");
         sub_chain.channel = "LFE".to_string();
+        sub_chain.drivers = Some(vec![DriverDspChain {
+            name: "SubA".to_string(),
+            index: 0,
+            plugins: vec![],
+            initial_curve: None,
+        }]);
         output.channels.insert("LFE".to_string(), sub_chain);
 
         let report = output
@@ -3619,6 +3714,8 @@ mod tests {
             if route.route_kind == "redirected_bass_lowpass_to_sub" {
                 route.destination = "SubA".to_string();
                 route.destination_index = 2;
+                route.pre_chain_channel = Some("LFE".to_string());
+                route.post_chain_channel = Some("SubA".to_string());
             }
         }
         output

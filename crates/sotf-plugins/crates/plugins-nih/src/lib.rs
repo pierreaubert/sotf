@@ -1,7 +1,7 @@
 //! VST3/CLAP plugin wrappers for SOTF audio plugins via nih-plug.
 //!
-//! One cdylib per plugin, selected by feature flag. The Justfile builds all 29
-//! sequentially, each producing a separate `.dylib` that exports both VST3 and CLAP.
+//! One cdylib per plugin, selected by feature flag. The Justfile builds each
+//! sequentially, producing a separate `.dylib` that exports both VST3 and CLAP.
 //!
 //! ```bash
 //! cargo build --release -p plugins-nih --features eq --no-default-features
@@ -326,4 +326,11 @@ mod plugin {
     sotf_nih_plugin!(SotfAmbisonics, plugin_type: "AmbisonicsDecoder", name: "SOTF: Ambisonics Decoder", clap_id: "org.spinorama.sotf.ambisonics", vst3_class_id: *b"SotfAmbisnic0001", channels: 2);
     nih_plug::nih_export_clap!(SotfAmbisonics);
     nih_plug::nih_export_vst3!(SotfAmbisonics);
+}
+
+#[cfg(feature = "dither")]
+mod plugin {
+    sotf_nih_plugin!(SotfDither, plugin_type: "Dither", name: "SOTF: Dither", clap_id: "org.spinorama.sotf.dither", vst3_class_id: *b"SotfDither000001", channels: 2);
+    nih_plug::nih_export_clap!(SotfDither);
+    nih_plug::nih_export_vst3!(SotfDither);
 }

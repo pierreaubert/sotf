@@ -17,7 +17,6 @@ Audio denoising using MCRA (Minima Controlled Recursive Averaging) and Wiener fi
 | Smoothing | Float | 0 .. 0.99 | 0.3 | - | Gain curve temporal smoothing |
 | Low Latency | Bool | On / Off | Off | - | Smaller FFT for lower latency |
 | Transparency | Float | 0 .. 1 | 0 | - | Blend denoised toward dry signal |
-| Algorithm | Choice (Classical, RNNoise, DeepFilter, HybridNeural) | 4 options | Classical | - | Denoising algorithm selection |
 | Multi-Res | Bool | On / Off | Off | - | Multi-resolution FFT analysis |
 
 ### Timing
@@ -32,11 +31,9 @@ Audio denoising using MCRA (Minima Controlled Recursive Averaging) and Wiener fi
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
 | Polyphonic | Bool | On / Off | Off | - | Detect multiple pitched signals |
-| Crack Sens. | Float | 1 .. 100 | 10 | - | Click/crack detection sensitivity |
 | DD SNR | Bool | On / Off | On | - | Decision-Directed SNR estimator |
 | DD Alpha | Float | 0.5 .. 0.999 | 0.98 | - | DD SNR smoothing coefficient |
 | Psychoacoustic | Bool | On / Off | On | - | Use auditory masking curves |
-| Transient | Bool | On / Off | On | - | Preserve transient details |
 | Spectral Smooth | Bool | On / Off | On | - | Smooth gain across frequency bins |
 | Temporal Smooth | Bool | On / Off | On | - | Smooth gain across time frames |
 
@@ -51,15 +48,6 @@ Audio denoising using MCRA (Minima Controlled Recursive Averaging) and Wiener fi
 | Harmonic/Percussive | Bool | On / Off | Off | - | Separate tonal and transient components for differential denoising |
 | Spatial Denoise | Bool | On / Off | Off | - | Use inter-channel coherence for noise detection (stereo+ only) |
 | Spatial Strength | Float | 0 .. 1 | 0.5 | - | Weight of inter-channel coherence in noise estimation |
-
-### Hiss
-
-| Parameter | Type | Range | Default | Unit | Description |
-|-----------|------|-------|---------|------|-------------|
-| Hiss Remover | Bool | On / Off | Off | - | Enable dedicated hiss reduction |
-| Hiss Threshold | Float | -60 .. -10 | -30 | dB | Level above which hiss is removed |
-| Hiss Frequency | Float | 1000 .. 16000 | 4000 | Hz | Corner freq for hiss detection |
-| Hiss Strength | Float | 0 .. 1 | 0.5 | - | Hiss removal aggressiveness |
 
 ### Spectral Sub
 
@@ -85,5 +73,5 @@ Audio denoising using MCRA (Minima Controlled Recursive Averaging) and Wiener fi
 | Formant Strength | Float | 0 .. 1 | 0.5 | - | Formant preservation amount |
 
 :::note
-**Structural parameters** (Low Latency, Learn Noise, Clear Profile, Algorithm, Multi-Res) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
+**Structural parameters** (Low Latency, Learn Noise, Clear Profile, Multi-Res) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
 :::

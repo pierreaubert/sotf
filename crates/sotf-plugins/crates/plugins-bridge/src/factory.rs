@@ -298,6 +298,33 @@ pub fn create_plugin(
             Ok(Box::new(plugin))
         }
 
+        "BandSplit" | "band_split" => {
+            let params: sotf_plugin_band_split::BandSplitPluginParams =
+                parse_params(config_json)?;
+            let plugin = sotf_plugin_band_split::BandSplitPlugin::from_params(channels, &params)?;
+            Ok(Box::new(plugin))
+        }
+
+        "BandMerge" | "band_merge" => {
+            let params: sotf_plugin_band_merge::BandMergePluginParams =
+                parse_params(config_json)?;
+            let plugin = sotf_plugin_band_merge::BandMergePlugin::from_params(channels, &params)?;
+            Ok(Box::new(plugin))
+        }
+
+        "AEC" | "aec" => {
+            let params: sotf_plugin_aec::AecPluginParams = parse_params(config_json)?;
+            let plugin = sotf_plugin_aec::AecPlugin::from_params(sample_rate, params);
+            Ok(Box::new(plugin))
+        }
+
+        "Beamformer" | "beamformer" => {
+            let params: sotf_plugin_beamformer::BeamformerPluginParams =
+                parse_params(config_json)?;
+            let plugin = sotf_plugin_beamformer::BeamformerPlugin::from_params(sample_rate, params);
+            Ok(Box::new(plugin))
+        }
+
         _ => Err(format!("Unknown plugin type: {plugin_type}")),
     }
 }
@@ -341,6 +368,10 @@ pub fn available_plugin_types() -> &'static [&'static str] {
         "SpectralCompressor",
         "Dither",
         "AmbisonicsDecoder",
+        "BandSplit",
+        "BandMerge",
+        "AEC",
+        "Beamformer",
     ]
 }
 
@@ -392,6 +423,20 @@ mod tests {
     fn test_unknown_plugin() {
         let result = create_plugin("NonExistent", 2, 48000, "{}");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_create_newly_wired_plugins() {
+        for plugin_type in ["BandSplit", "BandMerge", "AEC", "Beamformer"] {
+            let result = create_plugin(plugin_type, 2, 48000, "{}");
+            assert!(
+                result.is_ok(),
+                "Failed to create {plugin_type}: {:?}",
+                result.err()
+            );
+            let mut plugin = result.unwrap();
+            assert!(plugin.initialize(48000).is_ok());
+        }
     }
 
     #[test]

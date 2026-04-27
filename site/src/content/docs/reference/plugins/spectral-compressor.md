@@ -40,3 +40,6 @@ Frequency-dependent compression operating in the spectral domain for transparent
 | Mix | Float | 0 .. 1 | 1 | % | Dry/wet blend |
 | Delta Listen | Bool | On / Off | Off | - | Solo the compression delta (hear what's being removed) |
 
+:::note
+**Structural parameters** (FFT Size) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
+:::

@@ -29,3 +29,6 @@ Perceptual noise diffusion (PND) for improving perceived audio quality through c
 | Confidence Threshold | Float | 0 .. 1 | 0.5 | - | Min detection confidence to apply |
 | Phase Vocoder | Bool | On / Off | Off | - | Use phase vocoder for correction |
 
+:::note
+**Structural parameters** (Analysis Window, Multi-Channel, Phase Vocoder) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
+:::

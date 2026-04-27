@@ -1,10 +1,10 @@
 # ----------------------------------------------------------------------
 # plugins-nih: VST3/CLAP wrappers via nih-plug
 # ----------------------------------------------------------------------
-# One crate, 29 feature-gated plugins. Build each with --features <name>.
+# One crate, feature-gated plugins. Build each with --features <name>.
 
 # All plugin features
-NIH_FEATURES := "eq compressor limiter gate gain delay expander crossfeed saturation denoiser speech-denoiser hiss-reducer declick downmix mono-to-stereo stereo-imager transient-shaper de-esser dynamic-eq multiband-compressor multiband-expander convolution fletcher-munson loudness-compensation channel-mute-solo upmixer aae xtc binaural matrix pnd ab-compare crossover band-split band-merge aec beamformer linear-phase-eq spectral-compressor loudness-monitor spectrum-analyzer ambisonics"
+NIH_FEATURES := "eq compressor limiter gate gain delay expander crossfeed saturation denoiser speech-denoiser hiss-reducer declick downmix mono-to-stereo stereo-imager transient-shaper de-esser dynamic-eq multiband-compressor multiband-expander convolution fletcher-munson loudness-compensation channel-mute-solo upmixer aae xtc binaural matrix pnd ab-compare crossover band-split band-merge aec beamformer linear-phase-eq spectral-compressor loudness-monitor spectrum-analyzer ambisonics dither"
 
 _lib_name := "libplugins_nih"
 
@@ -22,7 +22,7 @@ lint-nih-all:
 		cargo check -p plugins-nih --features "$feat" --no-default-features
 	done
 
-# Build all 29 plugin cdylibs (release)
+# Build all feature-gated plugin cdylibs (release)
 [group('build')]
 build-nih-all:
 	#!/usr/bin/env bash
@@ -44,7 +44,8 @@ build-nih-all:
 		fi
 	done
 	count=$(ls dist/nih/*.dylib 2>/dev/null | wc -l | tr -d ' ')
-	echo "Built $count/29 plugins in dist/nih/ ($failed failed)"
+	total=$(echo "{{NIH_FEATURES}}" | wc -w | tr -d ' ')
+	echo "Built $count/$total plugins in dist/nih/ ($failed failed)"
 	[ "$failed" -eq 0 ]
 
 # Build + bundle all VST3 plugins

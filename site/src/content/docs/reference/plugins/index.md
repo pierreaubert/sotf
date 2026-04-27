@@ -3,7 +3,7 @@ title: Plugin Reference
 description: Complete reference for all SotF audio plugins.
 ---
 
-SotF includes 36 audio processing plugins. Click any plugin for its full parameter reference.
+SotF includes 41 audio processing plugins. Click any plugin for its full parameter reference.
 
 ## Processing Plugins
 
@@ -45,4 +45,9 @@ SotF includes 36 audio processing plugins. Click any plugin for its full paramet
 | [Transient Shaper](/reference/plugins/transient-shaper/) | Shapes attack and sustain characteristics of audio transients. |
 | [Ambisonics](/reference/plugins/ambisonics/) | Ambisonics encoding and decoding for immersive spatial audio. |
 | [Spectrum Analyzer](/reference/plugins/spectrum-analyzer/) | FFT-based spectrum analysis with configurable bin count, frequency range, smoothing, and tilt correction. |
+| [Active Acoustic Enhancement](/reference/plugins/aae/) | Active acoustic enhancement using psychoacoustic processing to improve perceived clarity, presence, and depth. |
+| [Declick](/reference/plugins/declick/) | Removes clicks, pops, and short transient defects from audio (vinyl restoration, recording artifacts). |
+| [Hiss Reducer](/reference/plugins/hiss-reducer/) | Reduces high-frequency hiss and tape noise while preserving program content. |
+| [Speech Denoiser](/reference/plugins/speech-denoiser/) | Neural speech-focused denoiser (RNNoise-derived) optimized for voice and dialogue cleanup. |
+| [Dither](/reference/plugins/dither/) | Adds dither noise for bit-depth reduction, minimizing quantization distortion. |
 
