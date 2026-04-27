@@ -1898,63 +1898,86 @@ fn optimize_room_impl(
         );
         super::spectral_align::log_spectral_alignment(&alignment_results);
 
-        // Insert alignment plugins after the per-channel PEQ
+        // Insert alignment plugins after the per-channel PEQ.
+        //
+        // Shelves and flat-gain are gated independently: a constant SPL shift
+        // can never change flatness (the score normalizes by mean), so a
+        // legitimate inter-channel level correction must not be discarded just
+        // because the shelves would regress flatness.
         for (channel_name, result) in &alignment_results {
             let shelf_filters =
                 super::spectral_align::create_alignment_filters(result, sample_rate);
-            let should_apply = if let Some(ch_result) = channel_results.get(channel_name) {
-                let (score_min, score_max) = final_score_band_for_channel(config, channel_name);
-                let before =
-                    recompute_curve_flatness_score(&ch_result.final_curve, score_min, score_max);
-                let mut corrected = if shelf_filters.is_empty() {
-                    ch_result.final_curve.clone()
-                } else {
-                    let response = crate::response::compute_peq_complex_response(
-                        &shelf_filters,
-                        &ch_result.final_curve.freq,
-                        sample_rate,
+
+            let (apply_shelves, apply_gain) =
+                if let Some(ch_result) = channel_results.get(channel_name) {
+                    let (score_min, score_max) =
+                        final_score_band_for_channel(config, channel_name);
+                    let before = recompute_curve_flatness_score(
+                        &ch_result.final_curve,
+                        score_min,
+                        score_max,
                     );
-                    crate::response::apply_complex_response(&ch_result.final_curve, &response)
+
+                    let shelves_ok = if shelf_filters.is_empty() {
+                        false
+                    } else {
+                        let response = crate::response::compute_peq_complex_response(
+                            &shelf_filters,
+                            &ch_result.final_curve.freq,
+                            sample_rate,
+                        );
+                        let corrected = crate::response::apply_complex_response(
+                            &ch_result.final_curve,
+                            &response,
+                        );
+                        let after =
+                            recompute_curve_flatness_score(&corrected, score_min, score_max);
+                        if after > before + 1e-3 {
+                            info!(
+                                "Skipping shelf alignment for '{}': flatness would regress from {:.4} to {:.4}",
+                                channel_name, before, after
+                            );
+                            false
+                        } else {
+                            true
+                        }
+                    };
+
+                    let gain_ok = result.flat_gain_db.abs() >= 0.3;
+                    (shelves_ok, gain_ok)
+                } else {
+                    (false, false)
                 };
-                if result.flat_gain_db.abs() >= 0.3 {
-                    for spl in corrected.spl.iter_mut() {
-                        *spl += result.flat_gain_db;
-                    }
-                }
-                let after = recompute_curve_flatness_score(&corrected, score_min, score_max);
-                if after > before + 1e-3 {
-                    info!(
-                        "Skipping spectral alignment for '{}': flatness would regress from {:.4} to {:.4}",
-                        channel_name, before, after
-                    );
-                    false
-                } else {
-                    true
-                }
-            } else {
-                false
-            };
-            if !should_apply {
+
+            if !apply_shelves && !apply_gain {
                 continue;
             }
+
             if let Some(chain) = channel_chains.get_mut(channel_name) {
                 let (eq_plugin, gain_plugin) =
                     super::spectral_align::create_alignment_plugins(result, sample_rate);
-                if let Some(eq) = eq_plugin {
+                if apply_shelves
+                    && let Some(eq) = eq_plugin
+                {
                     chain.plugins.push(eq);
                 }
-                if let Some(gain) = gain_plugin {
+                if apply_gain
+                    && let Some(gain) = gain_plugin
+                {
                     chain.plugins.push(gain);
                 }
             }
-            sync_reported_biquad_adjustment(
-                channel_name,
-                &mut channel_results,
-                &mut channel_chains,
-                &shelf_filters,
-                sample_rate,
-            );
-            if result.flat_gain_db.abs() >= 0.3 {
+
+            if apply_shelves {
+                sync_reported_biquad_adjustment(
+                    channel_name,
+                    &mut channel_results,
+                    &mut channel_chains,
+                    &shelf_filters,
+                    sample_rate,
+                );
+            }
+            if apply_gain {
                 sync_reported_gain_adjustment(
                     channel_name,
                     &mut channel_results,
