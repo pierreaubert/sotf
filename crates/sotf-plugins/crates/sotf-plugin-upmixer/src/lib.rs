@@ -79,6 +79,7 @@ pub struct UpmixerDiagnostics {
     pub output_channels: usize,
     pub speaker_config: String,
     pub dialogue_probability: f32,
+    pub dialogue_spatial_control: f32,
     pub dialogue_spectral_centroid_hz: f32,
     pub dialogue_envelope_variance: f32,
     pub decorrelation_strength: f32,
@@ -451,6 +452,10 @@ pub struct UpmixerPlugin {
     dialogue_prev_rms: f32,
     /// Dialogue probability (0.0 = no dialogue, 1.0 = strong dialogue)
     dialogue_probability: f32,
+    /// Slower dialogue control used by spatial decomposition and panning.
+    /// Keeping this separate from raw detector probability prevents center/ambient
+    /// and decorrelation controls from zippering when detection jitters.
+    dialogue_spatial_control: f32,
     /// Current adaptive decorrelation strength (0.0 to 1.0)
     pub(crate) decorrelation_strength: f32,
     /// Previous decorrelation strength for skipping redundant filter blends
@@ -503,6 +508,7 @@ impl UpmixerPlugin {
             output_channels: self.num_output_channels,
             speaker_config: self.speaker_config.id.to_string(),
             dialogue_probability: self.dialogue_probability,
+            dialogue_spatial_control: self.dialogue_spatial_control,
             dialogue_spectral_centroid_hz: self.dialogue_spectral_centroid,
             dialogue_envelope_variance: self.dialogue_envelope_variance,
             decorrelation_strength: self.decorrelation_strength,
@@ -736,8 +742,8 @@ impl UpmixerPlugin {
             lfe_low_gains: vec![Complex::new(1.0, 0.0); spectrum_size],
             mains_high_gains: vec![Complex::new(1.0, 0.0); spectrum_size],
 
-            height_band_gains: vec![0.0; spectrum_size],
-            height_band_gains_prev: vec![0.0; spectrum_size],
+            height_band_gains: vec![frequency_domain::HEIGHT_MASK_FLOOR; spectrum_size],
+            height_band_gains_prev: vec![frequency_domain::HEIGHT_MASK_FLOOR; spectrum_size],
             height_band_gains_temp: vec![0.0; spectrum_size],
 
             energy_correction_per_bin: vec![1.0; spectrum_size],
@@ -859,6 +865,7 @@ impl UpmixerPlugin {
             dialogue_envelope_variance: 0.0,
             dialogue_prev_rms: 0.0,
             dialogue_probability: 0.0,
+            dialogue_spatial_control: 0.0,
             decorrelation_strength: 1.0,
             prev_decorrelation_strength: -1.0, // Force initial computation
             blended_decorrelation_filters: vec![
@@ -1189,8 +1196,8 @@ impl UpmixerPlugin {
         self.decorrelation_filter_right = vec![zero_complex; spectrum_size];
         self.lfe_low_gains = vec![Complex::new(1.0, 0.0); spectrum_size];
         self.mains_high_gains = vec![Complex::new(1.0, 0.0); spectrum_size];
-        self.height_band_gains = vec![0.0; spectrum_size];
-        self.height_band_gains_prev = vec![0.0; spectrum_size];
+        self.height_band_gains = vec![frequency_domain::HEIGHT_MASK_FLOOR; spectrum_size];
+        self.height_band_gains_prev = vec![frequency_domain::HEIGHT_MASK_FLOOR; spectrum_size];
         self.height_band_gains_temp = vec![0.0; spectrum_size];
         self.energy_correction_per_bin = vec![1.0; spectrum_size];
         self.energy_correction_temp = vec![1.0; spectrum_size];
@@ -1496,6 +1503,11 @@ impl Plugin for UpmixerPlugin {
         self.height_prev_magnitude = vec![0.0; spectrum_size];
         self.height_spectral_flux_smooth = 0.0;
         self.height_flux_gate = vec![0.15; spectrum_size]; // Start at floor value
+        self.height_band_gains
+            .fill(frequency_domain::HEIGHT_MASK_FLOOR);
+        self.height_band_gains_prev
+            .fill(frequency_domain::HEIGHT_MASK_FLOOR);
+        self.height_band_gains_temp.fill(0.0);
 
         // Generate decorrelation filters
         self.generate_decorrelation_filters();
@@ -1642,6 +1654,7 @@ impl Plugin for UpmixerPlugin {
         self.height_prev_magnitude.fill(0.0);
         self.height_spectral_flux_smooth = 0.0;
         self.height_flux_gate.fill(0.15);
+        self.dialogue_spatial_control = self.dialogue_probability;
         self.prev_hr_scale = 0.0;
         self.coherence_history_idx = 0;
         for h in &mut self.coherence_history {

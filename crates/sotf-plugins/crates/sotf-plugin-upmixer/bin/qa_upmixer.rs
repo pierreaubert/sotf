@@ -83,6 +83,7 @@ fn run_diagnostic(args: Vec<String>) -> Result<(), String> {
     let mut prev_output_last = vec![0.0_f32; out_channels];
 
     let mut max_dialogue_delta = 0.0_f32;
+    let mut max_dialogue_spatial_delta = 0.0_f32;
     let mut max_height_mean_delta = 0.0_f32;
     let mut max_decorrelation_delta = 0.0_f32;
     let mut max_output_peak = 0.0_f32;
@@ -105,6 +106,8 @@ fn run_diagnostic(args: Vec<String>) -> Result<(), String> {
         let deltas = DiagnosticDeltas::from_previous(&diag, prev_diag.as_ref());
 
         max_dialogue_delta = max_dialogue_delta.max(deltas.dialogue_probability_abs);
+        max_dialogue_spatial_delta =
+            max_dialogue_spatial_delta.max(deltas.dialogue_spatial_control_abs);
         max_height_mean_delta = max_height_mean_delta.max(deltas.height_gain_mean_abs);
         max_decorrelation_delta = max_decorrelation_delta.max(deltas.decorrelation_abs);
         max_output_peak = max_output_peak.max(output_metrics.max_peak);
@@ -142,6 +145,7 @@ fn run_diagnostic(args: Vec<String>) -> Result<(), String> {
     println!("max_output_peak:        {max_output_peak:.6}");
     println!("max_output_step:        {max_output_step:.6}");
     println!("max_dialogue_delta:     {max_dialogue_delta:.6}");
+    println!("max_dialogue_spatial_delta:{max_dialogue_spatial_delta:.6}");
     println!("max_height_mean_delta:  {max_height_mean_delta:.6}");
     println!("max_decorrelation_delta:{max_decorrelation_delta:.6}");
 
@@ -372,6 +376,7 @@ fn channel_metrics(
 #[derive(Debug, Clone, Copy, Default)]
 struct DiagnosticDeltas {
     dialogue_probability_abs: f32,
+    dialogue_spatial_control_abs: f32,
     height_gain_mean_abs: f32,
     height_gate_mean_abs: f32,
     decorrelation_abs: f32,
@@ -384,6 +389,9 @@ impl DiagnosticDeltas {
             Self {
                 dialogue_probability_abs: (current.dialogue_probability
                     - previous.dialogue_probability)
+                    .abs(),
+                dialogue_spatial_control_abs: (current.dialogue_spatial_control
+                    - previous.dialogue_spatial_control)
                     .abs(),
                 height_gain_mean_abs: (current.height_gain.mean - previous.height_gain.mean).abs(),
                 height_gate_mean_abs: (current.height_flux_gate.mean
@@ -403,7 +411,7 @@ impl DiagnosticDeltas {
 fn write_header(writer: &mut dyn Write, channels: usize) -> Result<(), String> {
     write!(
         writer,
-        "block,start_frame,time_sec,frames_produced,input_peak,input_rms,output_peak_max,output_rms_sum,output_step_peak,dialogue_probability,dialogue_delta,dialogue_centroid_hz,dialogue_envelope_variance,decorrelation_strength,decorrelation_delta,hr_direct_envelope,hr_transient_env,height_transient_env,spectral_flux_smooth,height_spectral_flux_smooth,safety_scale,safety_delta,output_accumulator_fill,height_gain_mean,height_gain_min,height_gain_max,height_gain_stddev,height_gain_mean_delta,height_gate_mean,height_gate_min,height_gate_max,height_gate_stddev,height_gate_mean_delta,coherence_mean,coherence_min,coherence_max,coherence_stddev"
+        "block,start_frame,time_sec,frames_produced,input_peak,input_rms,output_peak_max,output_rms_sum,output_step_peak,dialogue_probability,dialogue_delta,dialogue_spatial_control,dialogue_spatial_delta,dialogue_centroid_hz,dialogue_envelope_variance,decorrelation_strength,decorrelation_delta,hr_direct_envelope,hr_transient_env,height_transient_env,spectral_flux_smooth,height_spectral_flux_smooth,safety_scale,safety_delta,output_accumulator_fill,height_gain_mean,height_gain_min,height_gain_max,height_gain_stddev,height_gain_mean_delta,height_gate_mean,height_gate_min,height_gate_max,height_gate_stddev,height_gate_mean_delta,coherence_mean,coherence_min,coherence_max,coherence_stddev"
     )
     .map_err(|e| e.to_string())?;
     for ch in 0..channels {
@@ -426,7 +434,7 @@ fn write_row(
     let time_sec = start_frame as f64 / sample_rate as f64;
     write!(
         writer,
-        "{block},{start_frame},{time_sec:.9},{frames_produced},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.3},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9}",
+        "{block},{start_frame},{time_sec:.9},{frames_produced},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.3},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9}",
         input.peak,
         input.rms,
         output.max_peak,
@@ -434,6 +442,8 @@ fn write_row(
         output.step_peak,
         diag.dialogue_probability,
         deltas.dialogue_probability_abs,
+        diag.dialogue_spatial_control,
+        deltas.dialogue_spatial_control_abs,
         diag.dialogue_spectral_centroid_hz,
         diag.dialogue_envelope_variance,
         diag.decorrelation_strength,

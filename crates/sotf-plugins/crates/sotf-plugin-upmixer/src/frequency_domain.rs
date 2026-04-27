@@ -34,6 +34,14 @@ const STEERING_RELEASE_RANGE: f32 = 0.06;
 
 /// Smoothing alpha for DOA angle tracking (one-pole filter)
 const DOA_SMOOTHING_ALPHA: f32 = 0.2;
+/// Dialogue control smoothing for spatial decomposition. This is intentionally
+/// slower than detector smoothing because it modulates center, ambience, and
+/// decorrelation over the whole sound field.
+const DIALOGUE_SPATIAL_ATTACK_ALPHA: f32 = 0.06;
+const DIALOGUE_SPATIAL_RELEASE_ALPHA: f32 = 0.025;
+const DIALOGUE_SPATIAL_MAX_RISE: f32 = 0.035;
+const DIALOGUE_SPATIAL_MAX_FALL: f32 = 0.018;
+const DIALOGUE_SPATIAL_DEADBAND: f32 = 0.004;
 
 /// 5-element median using 6 comparisons (optimal).
 /// After eliminating the global minimum via 3 compare-swaps on pairs,
@@ -133,6 +141,25 @@ fn compute_diffuseness_and_doa(
     (diffuseness, doa, direct_gain, ambient_gain)
 }
 
+#[inline(always)]
+fn smooth_dialogue_spatial_control(previous: f32, target: f32) -> f32 {
+    let target = target.clamp(0.0, 1.0);
+    let diff = target - previous;
+    if diff.abs() <= DIALOGUE_SPATIAL_DEADBAND {
+        return previous;
+    }
+
+    let alpha = if diff > 0.0 {
+        DIALOGUE_SPATIAL_ATTACK_ALPHA
+    } else {
+        DIALOGUE_SPATIAL_RELEASE_ALPHA
+    };
+    let smoothed = previous + alpha * diff;
+    let limited_diff =
+        (smoothed - previous).clamp(-DIALOGUE_SPATIAL_MAX_FALL, DIALOGUE_SPATIAL_MAX_RISE);
+    (previous + limited_diff).clamp(0.0, 1.0)
+}
+
 impl UpmixerPlugin {
     pub(super) fn process_frequency_domain_erb_bands(&mut self) {
         if self.sample_rate == 0 || self.fft_size == 0 {
@@ -152,6 +179,11 @@ impl UpmixerPlugin {
         let lfe_cutoff_bin = self.cached_lfe_cutoff_bin;
         let bandpass_bin = self.cached_bandpass_bin;
         let freq_per_bin = self.cached_freq_per_bin;
+        self.dialogue_spatial_control = smooth_dialogue_spatial_control(
+            self.dialogue_spatial_control,
+            self.dialogue_probability,
+        );
+        let dialogue_control = self.dialogue_spatial_control * self.dialogue_weight.current();
 
         for band_idx in 0..self.erb_bands.len() {
             let start_bin = self.erb_bands[band_idx];
@@ -286,14 +318,11 @@ impl UpmixerPlugin {
                 // Diffuseness-based ambient gain (energy-preserving)
                 // ambient_gain_base = sqrt(psi) where psi is diffuseness
                 // Scale by ambient_boost parameter and dialogue weight
-                let ambient_gain = ambient_gain_base
-                    * self.ambient_boost.current()
-                    * (1.0 - self.dialogue_probability * self.dialogue_weight.current());
+                let ambient_gain =
+                    ambient_gain_base * self.ambient_boost.current() * (1.0 - dialogue_control);
 
                 // Effective coherence for center extraction: blend coherence with dialogue
-                let eff_coh = coherence
-                    + (1.0 - coherence)
-                        * (self.dialogue_probability * self.dialogue_weight.current());
+                let eff_coh = coherence + (1.0 - coherence) * dialogue_control;
 
                 // Direct gain from diffuseness decomposition
                 // direct_gain_base = sqrt(1 - psi), already energy-preserving
@@ -440,7 +469,7 @@ impl UpmixerPlugin {
                 }
             }
         }
-        let strength = (1.0 - self.dialogue_probability * 0.7).clamp(0.05, 1.0);
+        let strength = (1.0 - self.dialogue_spatial_control * 0.7).clamp(0.05, 1.0);
         self.decorrelation_strength = strength;
 
         let spec_size = self.fft_size / 2 + 1;
@@ -550,5 +579,24 @@ mod tests {
         );
         assert!(direct_gain > 0.99);
         assert!(ambient_gain < 0.1);
+    }
+
+    #[test]
+    fn dialogue_spatial_control_slew_limits_jitter() {
+        let up = smooth_dialogue_spatial_control(0.0, 1.0);
+        assert!(
+            up <= DIALOGUE_SPATIAL_MAX_RISE + 1e-6,
+            "dialogue control rose too quickly: {up}"
+        );
+
+        let down = smooth_dialogue_spatial_control(1.0, 0.0);
+        assert!(
+            1.0 - down <= DIALOGUE_SPATIAL_MAX_FALL + 1e-6,
+            "dialogue control fell too quickly: {}",
+            1.0 - down
+        );
+
+        let stable = smooth_dialogue_spatial_control(0.5, 0.5 + DIALOGUE_SPATIAL_DEADBAND * 0.5);
+        assert_eq!(stable, 0.5);
     }
 }

@@ -11,18 +11,57 @@
 // - Low coherence (reverberant tails) -> good for height (creates envelopment)
 // The gate output modulates height_band_gains to focus height content on these moments.
 
-use super::UpmixerPlugin;
+use super::{UpmixerPlugin, frequency_domain::HEIGHT_MASK_FLOOR};
 
 /// Spectral flux smoothing alpha for height onset detection
 const HEIGHT_FLUX_SMOOTH_ALPHA: f32 = 0.12;
 /// Minimum gate value to prevent complete silence in height channels
 const HEIGHT_GATE_FLOOR: f32 = 0.15;
+/// Ignore tiny gate target changes; they create modulation with no useful audible intent.
+const HEIGHT_GATE_DEADBAND: f32 = 0.01;
+/// Fastest per-frame gate rise. Keeps transient lift audible without bin-rate chatter.
+const HEIGHT_GATE_MAX_RISE: f32 = 0.08;
+/// Fastest per-frame gate fall. Release is deliberately slower to avoid grain.
+const HEIGHT_GATE_MAX_FALL: f32 = 0.035;
+/// Gate smoothing alpha while rising toward onset/reverb targets.
+const HEIGHT_GATE_ATTACK_ALPHA: f32 = 0.18;
+/// Gate smoothing alpha while falling back toward the floor.
+const HEIGHT_GATE_RELEASE_ALPHA: f32 = 0.055;
 /// Threshold multiplier: flux must exceed baseline * this to trigger onset gate
 const HEIGHT_ONSET_THRESHOLD: f32 = 1.5;
 /// How much the onset gate can boost height content (0.0 = no boost, 1.0 = full boost)
 const HEIGHT_ONSET_BOOST: f32 = 0.6;
 /// How much low coherence contributes to height gate (reverb tail detection)
 const HEIGHT_REVERB_WEIGHT: f32 = 0.4;
+/// Fastest per-frame increase in final height gains after all masking.
+const HEIGHT_GAIN_MAX_RISE: f32 = 0.035;
+/// Fastest per-frame decrease in final height gains after all masking.
+const HEIGHT_GAIN_MAX_FALL: f32 = 0.07;
+
+#[inline(always)]
+fn smooth_slew_limited(
+    previous: f32,
+    target: f32,
+    attack_alpha: f32,
+    release_alpha: f32,
+    max_rise: f32,
+    max_fall: f32,
+    deadband: f32,
+) -> f32 {
+    let diff = target - previous;
+    if diff.abs() <= deadband {
+        return previous;
+    }
+
+    let alpha = if diff > 0.0 {
+        attack_alpha
+    } else {
+        release_alpha
+    };
+    let smoothed = previous + alpha * diff;
+    let limited_diff = (smoothed - previous).clamp(-max_fall, max_rise);
+    (previous + limited_diff).clamp(HEIGHT_GATE_FLOOR, 1.0)
+}
 
 impl UpmixerPlugin {
     /// Compute the height spectral flux gate.
@@ -104,7 +143,15 @@ impl UpmixerPlugin {
             if start < bandpass_bin {
                 // Below bandpass: no height content
                 for i in start..end.min(bandpass_bin) {
-                    self.height_flux_gate[i] = HEIGHT_GATE_FLOOR;
+                    self.height_flux_gate[i] = smooth_slew_limited(
+                        self.height_flux_gate[i],
+                        HEIGHT_GATE_FLOOR,
+                        HEIGHT_GATE_ATTACK_ALPHA,
+                        HEIGHT_GATE_RELEASE_ALPHA,
+                        HEIGHT_GATE_MAX_RISE,
+                        HEIGHT_GATE_MAX_FALL,
+                        HEIGHT_GATE_DEADBAND,
+                    );
                 }
             }
 
@@ -125,7 +172,15 @@ impl UpmixerPlugin {
             let combined = (onset_gate + reverb_gate).clamp(HEIGHT_GATE_FLOOR, 1.0);
 
             for i in band_start..end {
-                self.height_flux_gate[i] = combined;
+                self.height_flux_gate[i] = smooth_slew_limited(
+                    self.height_flux_gate[i],
+                    combined,
+                    HEIGHT_GATE_ATTACK_ALPHA,
+                    HEIGHT_GATE_RELEASE_ALPHA,
+                    HEIGHT_GATE_MAX_RISE,
+                    HEIGHT_GATE_MAX_FALL,
+                    HEIGHT_GATE_DEADBAND,
+                );
             }
         }
     }
@@ -215,8 +270,8 @@ impl UpmixerPlugin {
 
         // Temporal smoothing: asymmetric attack/release blend with previous frame.
         // Fast attack for transient ducking, slow release to prevent crackle on mask recovery.
-        let attack_alpha = 0.25_f32;
-        let release_alpha = 0.08_f32;
+        let attack_alpha = 0.16_f32;
+        let release_alpha = 0.045_f32;
         for (s, (gain, prev)) in smoothed
             .iter()
             .zip(
@@ -232,10 +287,50 @@ impl UpmixerPlugin {
                 release_alpha
             };
             let blended = alpha * s + (1.0 - alpha) * *prev;
+            let delta = (blended - *prev).clamp(-HEIGHT_GAIN_MAX_FALL, HEIGHT_GAIN_MAX_RISE);
+            let blended = (*prev + delta).clamp(HEIGHT_MASK_FLOOR, 1.0);
             *gain = blended;
             *prev = blended;
         }
 
         self.height_band_gains_temp = smoothed;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn height_gate_slew_limiter_caps_frame_steps() {
+        let up = smooth_slew_limited(
+            HEIGHT_GATE_FLOOR,
+            1.0,
+            HEIGHT_GATE_ATTACK_ALPHA,
+            HEIGHT_GATE_RELEASE_ALPHA,
+            HEIGHT_GATE_MAX_RISE,
+            HEIGHT_GATE_MAX_FALL,
+            HEIGHT_GATE_DEADBAND,
+        );
+        assert!(
+            up - HEIGHT_GATE_FLOOR <= HEIGHT_GATE_MAX_RISE + 1e-6,
+            "gate rose too quickly: {}",
+            up - HEIGHT_GATE_FLOOR
+        );
+
+        let down = smooth_slew_limited(
+            1.0,
+            HEIGHT_GATE_FLOOR,
+            HEIGHT_GATE_ATTACK_ALPHA,
+            HEIGHT_GATE_RELEASE_ALPHA,
+            HEIGHT_GATE_MAX_RISE,
+            HEIGHT_GATE_MAX_FALL,
+            HEIGHT_GATE_DEADBAND,
+        );
+        assert!(
+            1.0 - down <= HEIGHT_GATE_MAX_FALL + 1e-6,
+            "gate fell too quickly: {}",
+            1.0 - down
+        );
     }
 }

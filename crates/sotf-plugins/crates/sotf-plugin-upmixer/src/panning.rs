@@ -37,7 +37,7 @@ impl UpmixerPlugin {
                     0.0
                 } else {
                     // Reduce bleed for coherent signals to prevent voice leakage
-                    let bleed_scale = (1.0 - self.dialogue_probability * 0.8).clamp(0.1, 1.0);
+                    let bleed_scale = (1.0 - self.dialogue_spatial_control * 0.8).clamp(0.1, 1.0);
                     self.surround_direct_bleed.current() * bleed_scale
                 };
                 let mut ag = if is_f && !is_h {
@@ -59,7 +59,7 @@ impl UpmixerPlugin {
                 if is_h {
                     // Pre-compute scalar products outside inner loop
                     // Reduce height direct leak for coherent signals
-                    let h_leak_scale = (1.0 - self.dialogue_probability * 0.9).clamp(0.05, 1.0);
+                    let h_leak_scale = (1.0 - self.dialogue_spatial_control * 0.9).clamp(0.05, 1.0);
                     let pld_dl = pld * self.height_direct_leak.current() * h_leak_scale;
                     let prd_dl = prd * self.height_direct_leak.current() * h_leak_scale;
                     let dec = &self.blended_decorrelation_filters[ch];
