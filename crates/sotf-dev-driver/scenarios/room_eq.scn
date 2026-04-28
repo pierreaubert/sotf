@@ -1,0 +1,16 @@
+# Room EQ screen.
+#
+# Note: RoomEq is gated on release-channel maturity. The QA config defaults to
+# the most permissive channel; if the screen is unavailable the action is a
+# no-op and the assert below will fail — surface the channel mismatch loudly.
+#
+# Reproducible run:
+#   QA_DIR=$(mktemp -d)
+#   cargo run -p sotf-gpui --features dev-api --bin SotF -- --qa "$QA_DIR" &
+#   cargo run -p sotf-dev-driver -- crates/sotf-dev-driver/scenarios/room_eq.scn -v
+
+focus       room-e-q
+assert      screen.focused == "RoomEq"
+
+focus       library
+assert      screen.focused == "Library"

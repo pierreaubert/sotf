@@ -1,0 +1,12 @@
+# Headphone EQ screen.
+#
+# Reproducible run:
+#   QA_DIR=$(mktemp -d)
+#   cargo run -p sotf-gpui --features dev-api --bin SotF -- --qa "$QA_DIR" &
+#   cargo run -p sotf-dev-driver -- crates/sotf-dev-driver/scenarios/headphone_eq.scn -v
+
+focus       headphone-e-q
+assert      screen.focused == "HeadphoneEq"
+
+focus       library
+assert      screen.focused == "Library"

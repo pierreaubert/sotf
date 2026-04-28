@@ -1,0 +1,13 @@
+# Library screen — basic focus + state read.
+#
+# Reproducible run (clean config per run):
+#   QA_DIR=$(mktemp -d)
+#   cargo run -p sotf-gpui --features dev-api --bin SotF -- --qa "$QA_DIR" &
+#   cargo run -p sotf-dev-driver -- crates/sotf-dev-driver/scenarios/library.scn -v
+
+focus       library
+assert      screen.focused == "Library"
+
+# Empty QA dir → empty queue, nothing playing.
+assert      queue.length == 0
+assert      playback.is_playing == false

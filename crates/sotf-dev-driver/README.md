@@ -7,15 +7,38 @@ script and translates each verb into an HTTP call against a running
 ## Run a scenario
 
 ```bash
-# Terminal 1: launch SotF with the dev API on the default port (7777).
-cargo run -p sotf-gpui --features dev-api --bin SotF
+# Terminal 1: launch SotF with the dev API + an isolated QA config dir.
+QA_DIR=$(mktemp -d)
+cargo run -p sotf-gpui --features dev-api --bin SotF -- --qa "$QA_DIR"
 
 # Terminal 2: drive a scenario.
 cargo run -p sotf-dev-driver -- crates/sotf-dev-driver/scenarios/smoke.scn -v
 ```
 
+The `--qa <dir>` flag points SotF at a clean, throwaway config directory so
+runs are reproducible (no leftover library scans, plugin presets, or window
+geometry from a previous session). Each scenario in `scenarios/` assumes the
+process was launched this way — `mktemp -d` per run, deleted after.
+
 Override the URL with `--url http://127.0.0.1:9999`. Override the
 server port with `SOTF_DEV_API_PORT=9999`.
+
+## Per-screen scenarios
+
+One scenario per main user-facing screen lives in `scenarios/`:
+
+| File                  | Screen        |
+|-----------------------|---------------|
+| `library.scn`         | Library       |
+| `studio.scn`          | Studio        |
+| `plugin_graph.scn`    | PluginGraph   |
+| `recording.scn`       | Recording     |
+| `room_eq.scn`         | RoomEq        |
+| `headphone_eq.scn`    | HeadphoneEq   |
+| `spinorama.scn`       | Spinorama     |
+
+Each focuses the screen, asserts `screen.focused`, and returns to Library.
+These are seeds — extend them with screen-specific actions and queries.
 
 ## DSL
 

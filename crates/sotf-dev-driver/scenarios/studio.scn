@@ -1,0 +1,12 @@
+# Studio screen — switch, confirm, leave to Library.
+#
+# Reproducible run:
+#   QA_DIR=$(mktemp -d)
+#   cargo run -p sotf-gpui --features dev-api --bin SotF -- --qa "$QA_DIR" &
+#   cargo run -p sotf-dev-driver -- crates/sotf-dev-driver/scenarios/studio.scn -v
+
+focus       studio
+assert      screen.focused == "Studio"
+
+focus       library
+assert      screen.focused == "Library"
