@@ -18,6 +18,8 @@ gpu-2d = ["gpui-px/gpu-2d"]
 gpu-3d = ["gpui-px/gpu-3d"]
 tidal = ["dep:sotf-services", "sotf-services/tidal"]
 spotify = ["dep:sotf-services", "sotf-services/spotify"]
+# Dev-only HTTP API for scripted E2E testing. NEVER enable in release builds.
+dev-api = []
 
 [dependencies]
 # GPUI framework

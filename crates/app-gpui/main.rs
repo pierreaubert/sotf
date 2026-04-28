@@ -445,6 +445,17 @@ fn main() {
                 },
             );
 
+            #[cfg(feature = "dev-api")]
+            {
+                if let Ok(handle) = window.as_ref() {
+                    let port: u16 = std::env::var("SOTF_DEV_API_PORT")
+                        .ok()
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(7777);
+                    sotf_audio_player_gpui::app::dev_api::start(cx, port, (*handle).into());
+                }
+            }
+
             let _ = window;
         });
 }

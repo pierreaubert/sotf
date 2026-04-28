@@ -120,10 +120,12 @@ doc:
 # RUN
 # ----------------------------------------------------------------------
 
-# Run the GPUI player (debug mode with ad-hoc signing for macOS file dialogs)
+# Run the GPUI player (debug mode with ad-hoc signing for macOS file dialogs).
+# Debug builds enable `dev-api`, exposing the scripted-test HTTP endpoint on
+# 127.0.0.1:7777 (override via SOTF_DEV_API_PORT). Release builds never include it.
 [group('run')]
 run-gpui:
-	cargo build --bin SotF --features "onnx, hal, gpu-2d, gpu-3d, iamf"
+	cargo build --bin SotF --features "onnx, hal, gpu-2d, gpu-3d, iamf, dev-api"
 	codesign --force --deep --sign - --entitlements scripts/debug.entitlements target/debug/SotF
 	./target/debug/SotF
 
@@ -247,8 +249,13 @@ clean:
 # DEV
 # ----------------------------------------------------------------------
 
+# Workspace debug build. Also builds SotF with the `dev-api` feature so
+# scripted scenarios (sotf-dev-driver) can drive the running app.
+# Release builds (`prod-*`, `run-gpui-release`) intentionally omit `dev-api`.
 dev:
 	cargo build --workspace
+	cargo build -p sotf-gpui --bin SotF --features "onnx, hal, gpu-2d, gpu-3d, iamf, dev-api"
+	cargo build -p sotf-dev-driver
 
 # ----------------------------------------------------------------------
 # UPDATE

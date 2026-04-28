@@ -1,0 +1,25 @@
+# Minimal smoke scenario: drive the action bus and read state back.
+# Run SotF with the dev-api feature, then:
+#   cargo run -p sotf-dev-driver -- crates/sotf-dev-driver/scenarios/smoke.scn -v
+
+focus       library
+assert      screen.focused == "Library"
+
+# Toggle playback twice — leaves us back where we started.
+action      PlayPause
+action      PlayPause
+
+# Volume nudges. Tolerance covers the small steps the controller takes.
+action      VolumeUpSmall
+query       playback.volume
+action      VolumeDownSmall
+
+# Synthetic keystroke — useful for typing into Input components or
+# exercising key bindings end-to-end.
+key         space
+
+# Tracked-element click — `transport.play` is registered by
+# `crates/app-gpui/components/home/footer.rs`. Run `elements` if a
+# selector is missing to see what is currently tracked.
+elements
+click       transport.play

@@ -10416,6 +10416,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sotf-dev-driver"
+version = "0.5.16"
+dependencies = [
+ "anyhow",
+ "clap",
+ "reqwest 0.13.2",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "sotf-dlna"
 version = "0.1.0"
 dependencies = [
