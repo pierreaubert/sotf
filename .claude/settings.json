@@ -2,20 +2,11 @@
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": "Edit",
+        "matcher": "Edit|Write",
         "hooks": [
           {
             "type": "command",
-            "command": "cargo check --workspace --message-format=short 2>&1 | head -20"
-          }
-        ]
-      },
-      {
-        "matcher": "Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "cargo check --workspace --message-format=short 2>&1 | head -20"
+            "command": "jq -er '.tool_input.file_path | endswith(\".rs\")' >/dev/null 2>&1 && cargo check --workspace --message-format=short 2>&1 | head -20 || true"
           }
         ]
       }
