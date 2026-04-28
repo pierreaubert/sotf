@@ -659,9 +659,9 @@ fn read_ring_buffer(
     underrun
 }
 
-/// Apply volume and mute to f32 scratch buffer, then clamp to [-1, 1].
+/// Apply volume and mute to f32 scratch buffer without clipping the float path.
 #[inline(always)]
-fn apply_volume_clamp(scratch: &mut [f32], state: &CpalPlaybackState) {
+fn apply_volume(scratch: &mut [f32], state: &CpalPlaybackState) {
     let volume = f32::from_bits(state.volume.load(Ordering::Relaxed));
     let muted = state.muted.load(Ordering::Relaxed);
 
@@ -669,13 +669,22 @@ fn apply_volume_clamp(scratch: &mut [f32], state: &CpalPlaybackState) {
         scratch.fill(0.0);
     } else if (volume - 1.0).abs() > 0.001 {
         for sample in scratch.iter_mut() {
-            *sample = (*sample * volume).clamp(-1.0, 1.0);
-        }
-    } else {
-        for sample in scratch.iter_mut() {
-            *sample = sample.clamp(-1.0, 1.0);
+            *sample *= volume;
         }
     }
+}
+
+#[inline(always)]
+fn clamp_samples(scratch: &mut [f32]) {
+    for sample in scratch.iter_mut() {
+        *sample = sample.clamp(-1.0, 1.0);
+    }
+}
+
+#[inline(always)]
+fn apply_volume_clamp(scratch: &mut [f32], state: &CpalPlaybackState) {
+    apply_volume(scratch, state);
+    clamp_samples(scratch);
 }
 
 fn build_output_stream(
@@ -720,7 +729,7 @@ fn build_output_stream_f32(
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
                 state_clone.callback_count.fetch_add(1, Ordering::Relaxed);
                 read_ring_buffer(&mut consumer, data, data.len(), &state_clone, capacity);
-                apply_volume_clamp(data, &state_clone);
+                apply_volume(data, &state_clone);
             },
             move |err| {
                 log::warn!("[CpalSink] Stream error: {}", err);

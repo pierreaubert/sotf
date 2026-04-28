@@ -48,6 +48,56 @@ fn create_test_wav(duration_secs: f32, sample_rate: u32) -> NamedTempFile {
     temp_file
 }
 
+/// Helper to create a stereo WAV with an exact frame count.
+fn create_test_wav_frames(num_frames: usize, sample_rate: u32, channels: u16) -> NamedTempFile {
+    let spec = WavSpec {
+        channels,
+        sample_rate,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+
+    let temp_file = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();
+    let mut writer = WavWriter::create(temp_file.path(), spec).unwrap();
+
+    for i in 0..num_frames {
+        let sample = ((i % 257) as i16).saturating_sub(128);
+        for _ in 0..channels {
+            writer.write_sample(sample).unwrap();
+        }
+    }
+
+    writer.finalize().unwrap();
+    temp_file
+}
+
+fn collect_decoder_until_eos(
+    message_rx: &std::sync::mpsc::Receiver<DecoderMessage>,
+    timeout: Duration,
+) -> (usize, Vec<usize>, bool) {
+    let start = std::time::Instant::now();
+    let mut total_frames = 0;
+    let mut frame_sizes = Vec::new();
+    let mut got_eos = false;
+
+    while start.elapsed() < timeout {
+        match message_rx.recv_timeout(Duration::from_millis(100)) {
+            Ok(DecoderMessage::Frame(frame)) => {
+                total_frames += frame.num_frames;
+                frame_sizes.push(frame.num_frames);
+            }
+            Ok(DecoderMessage::EndOfStream) => {
+                got_eos = true;
+                break;
+            }
+            Ok(DecoderMessage::Flush) => {}
+            Err(_) => {}
+        }
+    }
+
+    (total_frames, frame_sizes, got_eos)
+}
+
 #[test]
 fn test_decoder_thread_creation() {
     let (message_tx, _message_rx) = sync_channel(100);
@@ -113,6 +163,73 @@ fn test_decoder_load_and_decode() {
 
     assert!(frame_count > 0, "No frames received from decoder");
     assert!(got_eos, "Did not receive end of stream");
+}
+
+#[test]
+fn test_decoder_preserves_non_resampled_final_partial_frame() {
+    let (message_tx, message_rx) = sync_channel(100);
+    let (event_tx, _event_rx) = channel();
+
+    let frame_size = 512;
+    let total_input_frames = (frame_size * 2) + 17;
+    let (decoder, _recycle_tx) = create_decoder(message_tx, event_tx, 48000, frame_size);
+    let temp_file = create_test_wav_frames(total_input_frames, 48000, 2);
+
+    decoder
+        .send_command(DecoderCommand::Play(temp_file.path().to_path_buf().into()))
+        .unwrap();
+
+    let (decoded_frames, frame_sizes, got_eos) =
+        collect_decoder_until_eos(&message_rx, Duration::from_secs(5));
+
+    assert!(got_eos, "decoder should reach end of stream");
+    assert_eq!(
+        decoded_frames, total_input_frames,
+        "decoder must not drop the final partial frame"
+    );
+    assert_eq!(
+        frame_sizes.last().copied(),
+        Some(17),
+        "last frame should carry the exact partial tail"
+    );
+}
+
+#[test]
+fn test_decoder_gapless_preserves_tail_frames_from_both_sources() {
+    let (message_tx, message_rx) = sync_channel(100);
+    let (event_tx, event_rx) = channel();
+
+    let frame_size = 512;
+    let first_frames = (frame_size * 8) + 17;
+    let second_frames = (frame_size * 3) + 31;
+    let (decoder, _recycle_tx) = create_decoder(message_tx, event_tx, 48000, frame_size);
+    let temp_file1 = create_test_wav_frames(first_frames, 48000, 2);
+    let temp_file2 = create_test_wav_frames(second_frames, 48000, 2);
+
+    decoder
+        .send_command(DecoderCommand::Play(temp_file1.path().to_path_buf().into()))
+        .unwrap();
+    decoder
+        .send_command(DecoderCommand::QueueNext(
+            temp_file2.path().to_path_buf().into(),
+        ))
+        .unwrap();
+
+    let (decoded_frames, _frame_sizes, got_eos) =
+        collect_decoder_until_eos(&message_rx, Duration::from_secs(5));
+
+    assert!(got_eos, "decoder should reach end of the second stream");
+    assert_eq!(
+        decoded_frames,
+        first_frames + second_frames,
+        "gapless transition must not truncate either source"
+    );
+    assert!(
+        event_rx
+            .try_iter()
+            .any(|event| matches!(event, ThreadEvent::DecoderGaplessTransition(_))),
+        "decoder should report the queued-source transition"
+    );
 }
 
 #[test]

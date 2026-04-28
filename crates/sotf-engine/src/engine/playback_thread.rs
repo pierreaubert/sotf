@@ -1537,9 +1537,9 @@ fn read_ring_buffer(
     underrun
 }
 
-/// Apply volume and mute to f32 scratch buffer, then clamp to [-1, 1].
+/// Apply volume and mute to f32 scratch buffer without clipping the float path.
 #[inline(always)]
-fn apply_volume_clamp(scratch: &mut [f32], state: &PlaybackState) {
+fn apply_volume(scratch: &mut [f32], state: &PlaybackState) {
     let volume = f32::from_bits(state.volume.load(Ordering::Relaxed));
     let muted = state.muted.load(Ordering::Relaxed);
 
@@ -1547,13 +1547,23 @@ fn apply_volume_clamp(scratch: &mut [f32], state: &PlaybackState) {
         scratch.fill(0.0);
     } else if (volume - 1.0).abs() > 0.001 {
         for sample in scratch.iter_mut() {
-            *sample = (*sample * volume).clamp(-1.0, 1.0);
-        }
-    } else {
-        for sample in scratch.iter_mut() {
-            *sample = sample.clamp(-1.0, 1.0);
+            *sample *= volume;
         }
     }
+}
+
+#[inline(always)]
+fn clamp_samples(scratch: &mut [f32]) {
+    for sample in scratch.iter_mut() {
+        *sample = sample.clamp(-1.0, 1.0);
+    }
+}
+
+/// Apply volume/mute and clamp for integer hardware formats.
+#[inline(always)]
+fn apply_volume_clamp(scratch: &mut [f32], state: &PlaybackState) {
+    apply_volume(scratch, state);
+    clamp_samples(scratch);
 }
 
 /// Build the cpal output stream with the specified sample format.
@@ -1602,7 +1612,7 @@ fn build_output_stream_f32(
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
                 state_clone.callback_count.fetch_add(1, Ordering::Relaxed);
                 read_ring_buffer(&mut consumer, data, data.len(), &state_clone, capacity);
-                apply_volume_clamp(data, &state_clone);
+                apply_volume(data, &state_clone);
             },
             move |err| {
                 log::warn!("[Playback Thread] Stream error: {}", err);
@@ -1689,7 +1699,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        PlaybackState, fallback_output_format, is_virtual_output_device_name,
+        PlaybackState, apply_volume, fallback_output_format, is_virtual_output_device_name,
         pick_preferred_output_format, playback_buffer_capacity, read_ring_buffer, request_flush,
     };
     use cpal::SampleFormat;
@@ -1733,6 +1743,16 @@ mod tests {
         assert_eq!(scratch, [0.0; 4]);
         assert_eq!(consumer.slots(), 0);
         assert!(!state.flush_requested.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn f32_output_volume_at_unity_does_not_clip_samples() {
+        let state = PlaybackState::new(8);
+        let mut scratch = [-1.25, -0.5, 0.5, 1.25];
+
+        apply_volume(&mut scratch, &state);
+
+        assert_eq!(scratch, [-1.25, -0.5, 0.5, 1.25]);
     }
 
     #[test]

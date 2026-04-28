@@ -1,3 +1,21 @@
+# 1.0.27
+
+## Engine playback transparency and gapless fixes
+
+- Preserved pending decoder frames when `QueueNext` or `CancelNext` arrives
+  during downstream backpressure, preventing frame drops near gapless
+  transitions.
+- Emitted final partial decoder frames at end-of-stream instead of dropping
+  non-`frame_size` tails.
+- Preserved compatible decoder/resampler staging across gapless transitions so
+  same-format queued sources can continue without truncating the current tail.
+- Added manager-side channel-count validation for local-file queued gapless
+  sources without opening URL streams on the control thread.
+- Stopped clamping f32 output at unity volume; integer output still clamps
+  before hardware-format conversion.
+- Replaced decoder hot-path front `Vec::drain` usage with cursor-backed sample
+  queues.
+
 # 1.0.26
 
 ## Added a way to cancel a running recording

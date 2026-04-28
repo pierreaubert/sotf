@@ -1437,6 +1437,39 @@ fn load_config_file(path: &std::path::Path) -> Result<EngineConfig, ConfigError>
     Ok(config)
 }
 
+fn validate_gapless_source_compatible(
+    source: &crate::decoder::AudioSource,
+    expected_channels: usize,
+) -> Result<(), String> {
+    if !matches!(source, crate::decoder::AudioSource::File(_)) {
+        log::debug!(
+            "[Manager Thread] Skipping queued source channel validation for non-file source: {}",
+            source.display_name()
+        );
+        return Ok(());
+    }
+
+    let decoder = crate::decoder::create_decoder_from_source(source).map_err(|e| {
+        format!(
+            "Failed to inspect queued source '{}': {:?}",
+            source.display_name(),
+            e
+        )
+    })?;
+    let channels = decoder.spec().channels as usize;
+
+    if channels != expected_channels {
+        return Err(format!(
+            "Queued source channel mismatch for '{}': expected {} channels, got {}",
+            source.display_name(),
+            expected_channels,
+            channels
+        ));
+    }
+
+    Ok(())
+}
+
 /// Handle a manager command
 fn handle_command(
     command: ManagerCommand,
@@ -1593,6 +1626,10 @@ fn handle_command(
         }
         ManagerCommand::QueueNext(source) => {
             log::debug!("[Manager Thread] QueueNext: {}", source.display_name());
+
+            if let Err(e) = validate_gapless_source_compatible(&source, config.input_channels) {
+                return ManagerResponse::Error(e);
+            }
 
             if let Err(e) = decoder.send_command(DecoderCommand::QueueNext(source)) {
                 return ManagerResponse::Error(e);
@@ -1906,6 +1943,27 @@ fn handle_command(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hound::{WavSpec, WavWriter};
+    use tempfile::NamedTempFile;
+
+    fn create_test_wav_with_channels(channels: u16) -> NamedTempFile {
+        let spec = WavSpec {
+            channels,
+            sample_rate: 48_000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+
+        let temp_file = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();
+        let mut writer = WavWriter::create(temp_file.path(), spec).unwrap();
+        for _ in 0..128 {
+            for _ in 0..channels {
+                writer.write_sample(0i16).unwrap();
+            }
+        }
+        writer.finalize().unwrap();
+        temp_file
+    }
 
     #[test]
     fn test_config_error_display() {
@@ -1949,6 +2007,31 @@ mod tests {
         let err: Box<dyn std::error::Error> =
             Box::new(ConfigError::TimeoutError { waited_ms: 100 });
         assert!(err.to_string().contains("100ms"));
+    }
+
+    #[test]
+    fn validate_gapless_source_rejects_channel_mismatch() {
+        let stereo = create_test_wav_with_channels(2);
+        let mono = create_test_wav_with_channels(1);
+
+        assert!(validate_gapless_source_compatible(&stereo.path().to_path_buf().into(), 2).is_ok());
+
+        let err =
+            validate_gapless_source_compatible(&mono.path().to_path_buf().into(), 2).unwrap_err();
+        assert!(err.contains("channel"));
+        assert!(err.contains("expected 2"));
+        assert!(err.contains("got 1"));
+    }
+
+    #[test]
+    fn validate_gapless_source_does_not_open_urls_on_manager_thread() {
+        let source = crate::decoder::AudioSource::Url {
+            url: "http://127.0.0.1:9/unreachable.wav".to_string(),
+            format_hint: Some("wav".to_string()),
+            seekable: true,
+        };
+
+        assert!(validate_gapless_source_compatible(&source, 2).is_ok());
     }
 
     #[test]

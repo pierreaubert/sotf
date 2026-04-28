@@ -30,6 +30,75 @@ enum DecoderLoopAction {
     Interrupted(DecoderCommand),
 }
 
+/// Cursor-backed FIFO for decoded samples.
+///
+/// The decoder consumes from the front on every emitted frame. Keeping a cursor
+/// avoids a `Vec::drain(..n)` memmove in the hot path; compaction only happens
+/// before growth when the consumed prefix is large enough to matter.
+#[derive(Debug, Default)]
+struct SampleQueue {
+    data: Vec<f32>,
+    start: usize,
+}
+
+impl SampleQueue {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn len(&self) -> usize {
+        self.data.len().saturating_sub(self.start)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    fn as_slice(&self) -> &[f32] {
+        &self.data[self.start..]
+    }
+
+    fn prefix(&self, len: usize) -> &[f32] {
+        &self.as_slice()[..len]
+    }
+
+    fn extend_from_slice(&mut self, samples: &[f32]) {
+        self.compact_if_needed(samples.len());
+        self.data.extend_from_slice(samples);
+    }
+
+    fn consume(&mut self, len: usize) {
+        debug_assert!(len <= self.len());
+        self.start += len.min(self.len());
+        if self.start == self.data.len() {
+            self.clear();
+        }
+    }
+
+    fn clear(&mut self) {
+        self.data.clear();
+        self.start = 0;
+    }
+
+    fn compact_if_needed(&mut self, incoming_len: usize) {
+        if self.start == 0 {
+            return;
+        }
+        if self.start == self.data.len() {
+            self.clear();
+            return;
+        }
+
+        let retained = self.len();
+        let would_grow_past_consumed = retained + incoming_len > self.start;
+        if self.start >= 8192 && would_grow_past_consumed {
+            self.data.copy_within(self.start.., 0);
+            self.data.truncate(retained);
+            self.start = 0;
+        }
+    }
+}
+
 /// Take frame_send_buffer for sending, then restore it from a recycled
 /// Vec (zero alloc in steady state) or fall back to Vec::with_capacity.
 fn take_frame_buffer(
@@ -56,14 +125,14 @@ fn send_or_interrupt<T>(
     tx: &SyncSender<T>,
     rx: &Receiver<DecoderCommand>,
     mut msg: T,
-) -> Result<Option<DecoderCommand>, String> {
+) -> Result<Option<(DecoderCommand, T)>, String> {
     loop {
         match tx.try_send(msg) {
             Ok(_) => return Ok(None),
             Err(std::sync::mpsc::TrySendError::Full(returned_msg)) => {
                 // Buffer full - check for interruption
                 if let Ok(cmd) = rx.try_recv() {
-                    return Ok(Some(cmd));
+                    return Ok(Some((cmd, returned_msg)));
                 }
                 msg = returned_msg;
                 std::thread::sleep(Duration::from_millis(1));
@@ -146,7 +215,7 @@ impl Drop for DecoderThread {
 struct DecoderState {
     decoder: Option<Box<dyn AudioDecoder>>,
     resampler: Option<ResamplerPlugin>,
-    resampler_buffer: Vec<f32>,
+    resampler_buffer: SampleQueue,
     paused: bool,
     current_source: Option<AudioSource>,
     spec: Option<AudioSpec>,
@@ -158,7 +227,7 @@ struct DecoderState {
     /// Without this, a 48 kHz source resampled to 44.1 kHz produces ~940-frame blocks
     /// which are smaller than the upmixer's hop size (1024), causing the upmixer to
     /// never fire an FFT block and produce silence.
-    resample_staging: Vec<f32>,
+    resample_staging: SampleQueue,
     /// Pre-allocated buffer for chunk processing (avoids allocation in hot path)
     chunk_buffer: Vec<f32>,
     /// Pre-allocated buffer for frame sending (avoids allocation in hot path)
@@ -186,14 +255,14 @@ impl DecoderState {
         Self {
             decoder: None,
             resampler: None,
-            resampler_buffer: Vec::new(),
+            resampler_buffer: SampleQueue::new(),
             paused: false,
             current_source: None,
             spec: None,
             silent_source: false,
             decode_buffer: None,
             resample_output_buffer: Vec::new(),
-            resample_staging: Vec::new(),
+            resample_staging: SampleQueue::new(),
             // Pre-allocate for typical frame size (1024 frames * 8 channels)
             chunk_buffer: Vec::with_capacity(1024 * 8),
             frame_send_buffer: Vec::with_capacity(1024 * 8),
@@ -265,26 +334,197 @@ impl DecoderState {
         Ok(())
     }
 
+    fn try_gapless_transition_preserving_buffers(
+        &mut self,
+        target_sample_rate: u32,
+    ) -> Result<Option<AudioSource>, String> {
+        let Some(next_source) = self.queued_next.take() else {
+            return Ok(None);
+        };
+
+        let current_spec = self.spec.as_ref().ok_or("No spec")?.clone();
+        let next_decoder = create_decoder_from_source(&next_source)
+            .map_err(|e| format!("Failed to create decoder: {:?}", e))?;
+        let next_spec = next_decoder.spec().clone();
+
+        let compatible = current_spec.channels == next_spec.channels
+            && current_spec.sample_rate == next_spec.sample_rate
+            && (current_spec.sample_rate != target_sample_rate) == self.resampler.is_some();
+
+        if !compatible {
+            self.queued_next = Some(next_source);
+            return Ok(None);
+        }
+
+        log::info!(
+            "[Decoder Thread] Gapless transition preserving decoder buffers: {}",
+            next_source.display_name()
+        );
+
+        self.decoder = Some(next_decoder);
+        self.current_source = Some(next_source.clone());
+        self.spec = Some(next_spec);
+        self.decode_buffer = None;
+        self.paused = false;
+        self.silent_source = false;
+
+        Ok(Some(next_source))
+    }
+
+    fn send_decoder_message(
+        &mut self,
+        message_tx: &SyncSender<DecoderMessage>,
+        command_rx: &Receiver<DecoderCommand>,
+        response_tx: &Sender<DecoderResponse>,
+        message: DecoderMessage,
+    ) -> Result<Option<DecoderCommand>, String> {
+        let mut pending = message;
+
+        loop {
+            match send_or_interrupt(message_tx, command_rx, pending)? {
+                None => return Ok(None),
+                Some((cmd, returned_message)) => {
+                    if matches!(returned_message, DecoderMessage::EndOfStream) {
+                        return Ok(Some(cmd));
+                    }
+
+                    match cmd {
+                        DecoderCommand::QueueNext(source) => {
+                            log::debug!(
+                                "[Decoder Thread] Queued next while sending frame: {}",
+                                source.display_name()
+                            );
+                            self.queued_next = Some(source);
+                            response_tx.send(DecoderResponse::Ok).ok();
+                            pending = returned_message;
+                        }
+                        DecoderCommand::CancelNext => {
+                            log::debug!("[Decoder Thread] Cancelled queued next while sending");
+                            self.queued_next = None;
+                            response_tx.send(DecoderResponse::Ok).ok();
+                            pending = returned_message;
+                        }
+                        other => return Ok(Some(other)),
+                    }
+                }
+            }
+        }
+    }
+
+    fn send_prepared_frame(
+        &mut self,
+        message_tx: &SyncSender<DecoderMessage>,
+        command_rx: &Receiver<DecoderCommand>,
+        response_tx: &Sender<DecoderResponse>,
+        sample_len: usize,
+        num_frames: usize,
+        channels: usize,
+        sample_rate: u32,
+    ) -> Result<Option<DecoderCommand>, String> {
+        let frame_data =
+            take_frame_buffer(&mut self.frame_send_buffer, &self.recycle_rx, sample_len);
+        let frame = AudioFrame::new(frame_data, num_frames, channels, sample_rate);
+        self.send_decoder_message(
+            message_tx,
+            command_rx,
+            response_tx,
+            DecoderMessage::Frame(frame),
+        )
+    }
+
+    fn emit_resample_staging(
+        &mut self,
+        message_tx: &SyncSender<DecoderMessage>,
+        command_rx: &Receiver<DecoderCommand>,
+        response_tx: &Sender<DecoderResponse>,
+        frame_size: usize,
+        channels: usize,
+        sample_rate: u32,
+        emit_partial: bool,
+    ) -> Result<Option<DecoderCommand>, String> {
+        let send_chunk_len = frame_size * channels;
+
+        while self.resample_staging.len() >= send_chunk_len {
+            if self.frame_send_buffer.len() < send_chunk_len {
+                self.frame_send_buffer.resize(send_chunk_len, 0.0);
+            }
+            self.frame_send_buffer[..send_chunk_len]
+                .copy_from_slice(self.resample_staging.prefix(send_chunk_len));
+            self.resample_staging.consume(send_chunk_len);
+
+            if let Some(cmd) = self.send_prepared_frame(
+                message_tx,
+                command_rx,
+                response_tx,
+                send_chunk_len,
+                frame_size,
+                channels,
+                sample_rate,
+            )? {
+                return Ok(Some(cmd));
+            }
+        }
+
+        if emit_partial && !self.resample_staging.is_empty() {
+            let aligned_len =
+                self.resample_staging.len() - (self.resample_staging.len() % channels);
+            if aligned_len > 0 {
+                if self.frame_send_buffer.len() < aligned_len {
+                    self.frame_send_buffer.resize(aligned_len, 0.0);
+                }
+                self.frame_send_buffer[..aligned_len]
+                    .copy_from_slice(self.resample_staging.prefix(aligned_len));
+                self.resample_staging.consume(aligned_len);
+
+                if let Some(cmd) = self.send_prepared_frame(
+                    message_tx,
+                    command_rx,
+                    response_tx,
+                    aligned_len,
+                    aligned_len / channels,
+                    channels,
+                    sample_rate,
+                )? {
+                    return Ok(Some(cmd));
+                }
+            }
+            if !self.resample_staging.is_empty() {
+                log::warn!(
+                    "[Decoder Thread] Dropping {} unaligned resample staging samples at EOS",
+                    self.resample_staging.len()
+                );
+                self.resample_staging.clear();
+            }
+        }
+
+        Ok(None)
+    }
+
     /// Decode and send chunks
     fn decode_chunk(
         &mut self,
         message_tx: &SyncSender<DecoderMessage>,
         command_rx: &Receiver<DecoderCommand>,
+        response_tx: &Sender<DecoderResponse>,
         event_tx: &Sender<ThreadEvent>,
         frame_size: usize,
         target_sample_rate: u32,
     ) -> Result<DecoderLoopAction, String> {
-        let decoder = self.decoder.as_mut().ok_or("No decoder")?;
-        let spec = self.spec.as_ref().ok_or("No spec")?;
+        let spec = self.spec.as_ref().ok_or("No spec")?.clone();
 
         // Use internal buffer for decoding
         if self.decode_buffer.is_none() {
             self.decode_buffer = Some(DecodedAudio::new(spec.clone()));
         }
-        let decode_buffer = self.decode_buffer.as_mut().unwrap();
 
         // Decode next chunk
-        match decoder.decode_into(decode_buffer) {
+        let decode_result = {
+            let decoder = self.decoder.as_mut().ok_or("No decoder")?;
+            let decode_buffer = self.decode_buffer.as_mut().unwrap();
+            decoder.decode_into(decode_buffer)
+        };
+
+        match decode_result {
             Ok(frames_decoded) if frames_decoded > 0 => {
                 let channels = spec.channels as usize;
                 let source_sample_rate = spec.sample_rate;
@@ -294,7 +534,7 @@ impl DecoderState {
 
                 // Add to buffer (reusing resampler_buffer as general sample buffer)
                 self.resampler_buffer
-                    .extend_from_slice(&decode_buffer.samples);
+                    .extend_from_slice(&self.decode_buffer.as_ref().unwrap().samples);
 
                 // Process buffer in frame_size chunks
                 while self.resampler_buffer.len() >= frame_size * channels {
@@ -305,13 +545,13 @@ impl DecoderState {
                     let chunk_len = frame_size * channels;
 
                     if let Some(resampler) = &mut self.resampler {
-                        // Copy chunk to pre-allocated buffer (avoids drain().collect() allocation)
+                        // Copy chunk to pre-allocated buffer.
                         if self.chunk_buffer.len() < chunk_len {
                             self.chunk_buffer.resize(chunk_len, 0.0);
                         }
                         self.chunk_buffer[..chunk_len]
-                            .copy_from_slice(&self.resampler_buffer[..chunk_len]);
-                        self.resampler_buffer.drain(..chunk_len);
+                            .copy_from_slice(self.resampler_buffer.prefix(chunk_len));
+                        self.resampler_buffer.consume(chunk_len);
 
                         // Resample
                         let max_output_frames = resampler.output_frames_for_input(frame_size);
@@ -347,7 +587,7 @@ impl DecoderState {
                         let frame_len = actual_output_frames * channels;
                         let new_staging_len = self.resample_staging.len() + frame_len;
                         if new_staging_len > MAX_RESAMPLE_STAGING_SAMPLES {
-                            // Staging buffer growing too large — drain the oldest
+                            // Staging buffer growing too large — consume the oldest
                             // complete-frame-sized blocks to stay under the cap
                             // while preserving any partial frame at the tail.
                             let send_chunk_len_here = frame_size * channels;
@@ -365,44 +605,24 @@ impl DecoderState {
                                 self.resample_staging.len(),
                                 drain_amount,
                             );
-                            self.resample_staging.drain(..drain_amount);
+                            self.resample_staging.consume(drain_amount);
                         }
                         self.resample_staging
                             .extend_from_slice(&self.resample_output_buffer[..frame_len]);
 
-                        // Emit as many complete frame_size blocks as are available.
-                        let send_chunk_len = frame_size * channels;
-                        while self.resample_staging.len() >= send_chunk_len {
-                            if self.frame_send_buffer.len() < send_chunk_len {
-                                self.frame_send_buffer.resize(send_chunk_len, 0.0);
-                            }
-                            self.frame_send_buffer[..send_chunk_len]
-                                .copy_from_slice(&self.resample_staging[..send_chunk_len]);
-                            self.resample_staging.drain(..send_chunk_len);
-
-                            let frame_data = take_frame_buffer(
-                                &mut self.frame_send_buffer,
-                                &self.recycle_rx,
-                                send_chunk_len,
-                            );
-
-                            let frame = AudioFrame::new(
-                                frame_data,
-                                frame_size,
-                                channels,
-                                target_sample_rate,
-                            );
-
-                            let s_inner = Instant::now();
-                            if let Some(cmd) = send_or_interrupt(
-                                message_tx,
-                                command_rx,
-                                DecoderMessage::Frame(frame),
-                            )? {
-                                return Ok(DecoderLoopAction::Interrupted(cmd));
-                            }
-                            total_send_time += s_inner.elapsed();
+                        let s_inner = Instant::now();
+                        if let Some(cmd) = self.emit_resample_staging(
+                            message_tx,
+                            command_rx,
+                            response_tx,
+                            frame_size,
+                            channels,
+                            target_sample_rate,
+                            false,
+                        )? {
+                            return Ok(DecoderLoopAction::Interrupted(cmd));
                         }
+                        total_send_time += s_inner.elapsed();
 
                         // All sending handled in the inner loop above; continue outer loop.
                         continue;
@@ -412,30 +632,19 @@ impl DecoderState {
                             self.frame_send_buffer.resize(chunk_len, 0.0);
                         }
                         self.frame_send_buffer[..chunk_len]
-                            .copy_from_slice(&self.resampler_buffer[..chunk_len]);
-                        self.resampler_buffer.drain(..chunk_len);
-
-                        let frame_data = take_frame_buffer(
-                            &mut self.frame_send_buffer,
-                            &self.recycle_rx,
-                            chunk_len,
-                        );
-
-                        let frame =
-                            AudioFrame::new(frame_data, frame_size, channels, source_sample_rate);
-                        debug_assert_eq!(
-                            frame.data.len(),
-                            frame.num_frames * frame.num_channels,
-                            "Non-resampled frame data size mismatch: data.len()={}, num_frames={}, num_channels={}",
-                            frame.data.len(),
-                            frame.num_frames,
-                            frame.num_channels,
-                        );
+                            .copy_from_slice(self.resampler_buffer.prefix(chunk_len));
+                        self.resampler_buffer.consume(chunk_len);
 
                         // Send with interruption support
-                        if let Some(cmd) =
-                            send_or_interrupt(message_tx, command_rx, DecoderMessage::Frame(frame))?
-                        {
+                        if let Some(cmd) = self.send_prepared_frame(
+                            message_tx,
+                            command_rx,
+                            response_tx,
+                            chunk_len,
+                            frame_size,
+                            channels,
+                            source_sample_rate,
+                        )? {
                             return Ok(DecoderLoopAction::Interrupted(cmd));
                         }
                         total_send_time += s_start.elapsed();
@@ -443,7 +652,11 @@ impl DecoderState {
                 }
 
                 // Update position
-                let position_sec = decoder.position() as f64 / source_sample_rate as f64;
+                let position_sec = self
+                    .decoder
+                    .as_ref()
+                    .map(|decoder| decoder.position() as f64 / source_sample_rate as f64)
+                    .unwrap_or(0.0);
                 event_tx
                     .send(ThreadEvent::PositionUpdate(position_sec))
                     .ok();
@@ -454,106 +667,137 @@ impl DecoderState {
                 // End of stream
                 log::debug!("[Decoder Thread] End of stream");
 
-                // Flush remaining resampler buffer
-                if let Some(resampler) = &mut self.resampler
-                    && !self.resampler_buffer.is_empty()
-                {
-                    let channels = spec.channels as usize;
-                    let source_sample_rate = spec.sample_rate;
-                    let remaining_samples = self.resampler_buffer.len();
-                    let remaining_frames = remaining_samples / channels;
-
-                    log::info!(
-                        "[Decoder Thread] Flushing {} remaining samples ({} frames)",
-                        remaining_samples,
-                        remaining_frames
-                    );
-
-                    // Use chunk_buffer for padded chunk (avoids .clone() allocation)
-                    let padded_len = frame_size * channels;
-                    if self.chunk_buffer.len() < padded_len {
-                        self.chunk_buffer.resize(padded_len, 0.0);
+                // If the next source has the same decoder shape, carry the
+                // residual input/resampler/staging state across the boundary.
+                // That lets frame-size blocks straddle the file transition
+                // instead of zero-padding or truncating the current source tail.
+                match self.try_gapless_transition_preserving_buffers(target_sample_rate) {
+                    Ok(Some(next_source)) => {
+                        event_tx
+                            .send(ThreadEvent::DecoderGaplessTransition(next_source))
+                            .ok();
+                        return Ok(DecoderLoopAction::Continue);
                     }
-                    // Copy remaining samples and zero-pad
-                    let copy_len = remaining_samples.min(padded_len);
-                    self.chunk_buffer[..copy_len]
-                        .copy_from_slice(&self.resampler_buffer[..copy_len]);
-                    self.chunk_buffer[copy_len..padded_len].fill(0.0);
-
-                    let max_output_frames = resampler.output_frames_for_input(frame_size);
-                    let output_len = max_output_frames * channels;
-
-                    if self.resample_output_buffer.len() < output_len {
-                        self.resample_output_buffer.resize(output_len, 0.0);
+                    Ok(None) => {}
+                    Err(e) => {
+                        let msg = format!("Gapless transition failed: {}", e);
+                        log::warn!("[Decoder Thread] {}", msg);
+                        event_tx.send(ThreadEvent::DecoderError(msg)).ok();
                     }
-
-                    let context = ProcessContext {
-                        sample_rate: source_sample_rate,
-                        num_frames: frame_size,
-                    };
-
-                    // Process padded chunk to flush resampler state
-                    if let Ok(actual_output_frames) = resampler.process(
-                        &self.chunk_buffer[..padded_len],
-                        &mut self.resample_output_buffer,
-                        &context,
-                    ) {
-                        // Use actual output frames returned by resampler.process()
-                        if actual_output_frames > 0 {
-                            let frame_len = actual_output_frames * channels;
-                            // Use frame_send_buffer (avoids .to_vec() allocation)
-                            if self.frame_send_buffer.len() < frame_len {
-                                self.frame_send_buffer.resize(frame_len, 0.0);
-                            }
-                            self.frame_send_buffer[..frame_len]
-                                .copy_from_slice(&self.resample_output_buffer[..frame_len]);
-
-                            let frame_data = take_frame_buffer(
-                                &mut self.frame_send_buffer,
-                                &self.recycle_rx,
-                                frame_len,
-                            );
-
-                            let frame = AudioFrame::new(
-                                frame_data,
-                                actual_output_frames,
-                                channels,
-                                target_sample_rate,
-                            );
-
-                            // Send with interruption support
-                            if let Some(cmd) = send_or_interrupt(
-                                message_tx,
-                                command_rx,
-                                DecoderMessage::Frame(frame),
-                            )? {
-                                return Ok(DecoderLoopAction::Interrupted(cmd));
-                            }
-
-                            log::debug!(
-                                "[Decoder Thread] Flushed {} frames through resampler",
-                                actual_output_frames
-                            );
-                        }
-                    } else {
-                        log::warn!("[Decoder Thread] Failed to flush resampler");
-                    }
-
-                    self.resampler_buffer.clear();
                 }
 
-                // Gapless playback: if a next file is queued, transition seamlessly
-                // without sending EndOfStream or Flush. The audio pipeline continues
-                // uninterrupted with frames from the new file.
+                let channels = spec.channels as usize;
+                let source_sample_rate = spec.sample_rate;
+
+                if self.resampler.is_some() {
+                    let remaining_samples = self.resampler_buffer.len();
+                    if remaining_samples > 0 {
+                        let remaining_frames = remaining_samples / channels;
+
+                        log::info!(
+                            "[Decoder Thread] Flushing {} remaining samples ({} frames)",
+                            remaining_samples,
+                            remaining_frames
+                        );
+
+                        // Use chunk_buffer for padded chunk.
+                        let padded_len = frame_size * channels;
+                        if self.chunk_buffer.len() < padded_len {
+                            self.chunk_buffer.resize(padded_len, 0.0);
+                        }
+                        let copy_len = remaining_samples.min(padded_len);
+                        self.chunk_buffer[..copy_len]
+                            .copy_from_slice(&self.resampler_buffer.as_slice()[..copy_len]);
+                        self.chunk_buffer[copy_len..padded_len].fill(0.0);
+                        self.resampler_buffer.clear();
+
+                        let resampler = self.resampler.as_mut().expect("checked above");
+                        let max_output_frames = resampler.output_frames_for_input(frame_size);
+                        let output_len = max_output_frames * channels;
+
+                        if self.resample_output_buffer.len() < output_len {
+                            self.resample_output_buffer.resize(output_len, 0.0);
+                        }
+
+                        let context = ProcessContext {
+                            sample_rate: source_sample_rate,
+                            num_frames: frame_size,
+                        };
+
+                        match resampler.process(
+                            &self.chunk_buffer[..padded_len],
+                            &mut self.resample_output_buffer,
+                            &context,
+                        ) {
+                            Ok(actual_output_frames) => {
+                                if actual_output_frames > 0 {
+                                    let frame_len = actual_output_frames * channels;
+                                    self.resample_staging.extend_from_slice(
+                                        &self.resample_output_buffer[..frame_len],
+                                    );
+                                    log::debug!(
+                                        "[Decoder Thread] Flushed {} frames through resampler",
+                                        actual_output_frames
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                log::warn!("[Decoder Thread] Failed to flush resampler: {}", e);
+                            }
+                        }
+                    }
+
+                    if let Some(cmd) = self.emit_resample_staging(
+                        message_tx,
+                        command_rx,
+                        response_tx,
+                        frame_size,
+                        channels,
+                        target_sample_rate,
+                        true,
+                    )? {
+                        return Ok(DecoderLoopAction::Interrupted(cmd));
+                    }
+                } else if !self.resampler_buffer.is_empty() {
+                    let remaining_samples = self.resampler_buffer.len();
+                    let aligned_len = remaining_samples - (remaining_samples % channels);
+                    if aligned_len > 0 {
+                        if self.frame_send_buffer.len() < aligned_len {
+                            self.frame_send_buffer.resize(aligned_len, 0.0);
+                        }
+                        self.frame_send_buffer[..aligned_len]
+                            .copy_from_slice(self.resampler_buffer.prefix(aligned_len));
+                        self.resampler_buffer.consume(aligned_len);
+
+                        if let Some(cmd) = self.send_prepared_frame(
+                            message_tx,
+                            command_rx,
+                            response_tx,
+                            aligned_len,
+                            aligned_len / channels,
+                            channels,
+                            source_sample_rate,
+                        )? {
+                            return Ok(DecoderLoopAction::Interrupted(cmd));
+                        }
+                    }
+                    if !self.resampler_buffer.is_empty() {
+                        log::warn!(
+                            "[Decoder Thread] Dropping {} unaligned decoded samples at EOS",
+                            self.resampler_buffer.len()
+                        );
+                        self.resampler_buffer.clear();
+                    }
+                }
+
+                // Incompatible queued sources (for example a sample-rate change)
+                // transition after the current source has been explicitly flushed.
                 if let Some(next_source) = self.queued_next.take() {
                     log::info!(
                         "[Decoder Thread] Gapless transition to: {}",
                         next_source.display_name()
                     );
 
-                    // Keep resampler state — clear buffers but don't destroy the
-                    // resampler. The new source may or may not need resampling; we
-                    // re-evaluate below.
                     self.decoder = None;
                     self.resampler_buffer.clear();
                     self.resample_staging.clear();
@@ -579,9 +823,12 @@ impl DecoderState {
                     }
                 }
 
-                if let Some(cmd) =
-                    send_or_interrupt(message_tx, command_rx, DecoderMessage::EndOfStream)?
-                {
+                if let Some(cmd) = self.send_decoder_message(
+                    message_tx,
+                    command_rx,
+                    response_tx,
+                    DecoderMessage::EndOfStream,
+                )? {
                     return Ok(DecoderLoopAction::Interrupted(cmd));
                 }
 
@@ -609,6 +856,7 @@ impl DecoderState {
 
             // Clear resampler buffer
             self.resampler_buffer.clear();
+            self.resample_staging.clear();
 
             // Reset resampler state
             if let Some(resampler) = &mut self.resampler {
@@ -631,6 +879,7 @@ impl DecoderState {
         self.decoder = None;
         self.resampler = None;
         self.resampler_buffer.clear();
+        self.resample_staging.clear();
         self.current_source = None;
         self.spec = None;
         self.silent_source = false;
@@ -696,6 +945,11 @@ impl DecoderState {
             allow(unused_variables)
         )]
         command_rx: &Receiver<DecoderCommand>,
+        #[cfg_attr(
+            not(all(target_os = "macos", feature = "hal")),
+            allow(unused_variables)
+        )]
+        response_tx: &Sender<DecoderResponse>,
         frame_size: usize,
         target_sample_rate: u32,
     ) -> Result<(bool, Option<DecoderCommand>), String> {
@@ -801,7 +1055,12 @@ impl DecoderState {
                 // Use send_or_interrupt so we can still receive commands
                 // (Stop/Shutdown/Seek) while the downstream pipeline is full,
                 // preventing a deadlock if processing or playback stalls.
-                match send_or_interrupt(message_tx, command_rx, DecoderMessage::Frame(frame)) {
+                match self.send_decoder_message(
+                    message_tx,
+                    command_rx,
+                    response_tx,
+                    DecoderMessage::Frame(frame),
+                ) {
                     Ok(Some(cmd)) => {
                         log::debug!("[Decoder Thread] HAL send interrupted by command");
                         return Ok((false, Some(cmd)));
@@ -828,7 +1087,12 @@ impl DecoderState {
                 // Send frame with HAL sample rate (which matches target)
                 let frame = AudioFrame::new(frame_data, frame_size, hal_channels, hal_sample_rate);
 
-                match send_or_interrupt(message_tx, command_rx, DecoderMessage::Frame(frame)) {
+                match self.send_decoder_message(
+                    message_tx,
+                    command_rx,
+                    response_tx,
+                    DecoderMessage::Frame(frame),
+                ) {
                     Ok(Some(cmd)) => {
                         log::debug!("[Decoder Thread] HAL send interrupted by command");
                         return Ok((false, Some(cmd)));
@@ -983,8 +1247,13 @@ fn run_decoder_thread(
         // Generate frames based on mode
         if state.silent_source && !state.paused {
             // HAL Input / Silent Source mode
-            match state.process_hal_input(&message_tx, &command_rx, frame_size, target_sample_rate)
-            {
+            match state.process_hal_input(
+                &message_tx,
+                &command_rx,
+                &response_tx,
+                frame_size,
+                target_sample_rate,
+            ) {
                 Ok((true, _)) => {
                     // Frame processed successfully
                     // Don't sleep if connected - rely on backpressure from message_tx
@@ -1121,6 +1390,7 @@ fn run_decoder_thread(
             match state.decode_chunk(
                 &message_tx,
                 &command_rx,
+                &response_tx,
                 &event_tx,
                 frame_size,
                 target_sample_rate,
@@ -1238,6 +1508,43 @@ fn run_decoder_thread(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn send_or_interrupt_returns_unsent_message_with_interrupting_command() {
+        let (message_tx, message_rx) = std::sync::mpsc::sync_channel(1);
+        message_tx.send(DecoderMessage::EndOfStream).unwrap();
+
+        let (command_tx, command_rx) = std::sync::mpsc::channel();
+        command_tx
+            .send(DecoderCommand::QueueNext(PathBuf::from("next.wav").into()))
+            .unwrap();
+
+        let result = send_or_interrupt(&message_tx, &command_rx, DecoderMessage::Flush).unwrap();
+        let Some((DecoderCommand::QueueNext(_), pending)) = result else {
+            panic!("expected QueueNext command with the unsent message");
+        };
+
+        assert!(matches!(pending, DecoderMessage::Flush));
+        assert!(matches!(
+            message_rx.try_recv().unwrap(),
+            DecoderMessage::EndOfStream
+        ));
+    }
+
+    #[test]
+    fn sample_queue_consume_advances_cursor_without_front_memmove() {
+        let mut queue = SampleQueue::new();
+        queue.extend_from_slice(&[0.0, 1.0, 2.0, 3.0]);
+
+        let original_ptr = queue.as_slice().as_ptr();
+        queue.consume(2);
+
+        assert_eq!(queue.as_slice(), &[2.0, 3.0]);
+        assert_eq!(queue.as_slice().as_ptr(), unsafe { original_ptr.add(2) });
+    }
+
     /// Regression test for the upmixer silence bug with cross-rate resampling.
     ///
     /// Root cause: the rubato resampler produces a variable number of output frames
@@ -1263,7 +1570,7 @@ mod tests {
         let resampled_chunk_frames: usize = 940;
         let resampled_chunk_len = resampled_chunk_frames * channels;
 
-        let mut staging: Vec<f32> = Vec::new();
+        let mut staging = SampleQueue::new();
         let mut emitted_blocks: usize = 0;
 
         // Feed several resampled chunks and count how many full blocks are emitted.
@@ -1277,7 +1584,7 @@ mod tests {
             staging.extend_from_slice(&chunk);
 
             while staging.len() >= send_chunk_len {
-                staging.drain(..send_chunk_len);
+                staging.consume(send_chunk_len);
                 emitted_blocks += 1;
             }
         }
@@ -1303,7 +1610,7 @@ mod tests {
         let chunk: Vec<f32> = vec![0.0; resampled_chunk_len];
         staging.extend_from_slice(&chunk);
         while staging.len() >= send_chunk_len {
-            staging.drain(..send_chunk_len);
+            staging.consume(send_chunk_len);
             emitted_blocks += 1;
         }
         assert_eq!(
