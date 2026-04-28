@@ -565,6 +565,8 @@ impl PlayerView {
                             })
                             // Play/Pause
                             .child({
+                                #[cfg(feature = "dev-api")]
+                                use crate::app::dev_api::DevTrackExt;
                                 let play_icon = if is_playing {
                                     IconName::Pause
                                 } else {
@@ -572,7 +574,7 @@ impl PlayerView {
                                 };
                                 let tt = theme_clone.clone();
                                 let play_label = if is_playing { "Pause" } else { "Play" };
-                                div()
+                                let wrapper = div()
                                     .id("transport-play-wrapper")
                                     .on_click(cx.listener(
                                         |view, _event: &ClickEvent, window, cx| {
@@ -596,7 +598,10 @@ impl PlayerView {
                                         .rounded_full()
                                         .selected(true)
                                         .theme(theme_clone.to_icon_button_theme()),
-                                    )
+                                    );
+                                #[cfg(feature = "dev-api")]
+                                let wrapper = wrapper.dev_track("transport.play");
+                                wrapper
                             })
                             // Seek forward
                             .child({

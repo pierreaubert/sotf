@@ -1,0 +1,19 @@
+[package]
+name = "sotf-dev-driver"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "Drives sotf-gpui's dev-api over HTTP from line-based scenario scripts"
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+reqwest = { workspace = true, features = ["json", "blocking"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[[bin]]
+name = "sotf-dev-driver"
+path = "src/main.rs"

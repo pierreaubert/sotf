@@ -13,6 +13,8 @@ pub mod cast;
 pub mod config;
 pub mod constants;
 pub mod debug;
+#[cfg(feature = "dev-api")]
+pub mod dev_api;
 pub mod federation;
 pub mod i18n;
 pub mod keybindings;

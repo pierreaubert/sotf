@@ -47,6 +47,7 @@ members = [
     "crates/sotf-engine",
     "crates/sotf-player",
     "crates/sotf-tools",
+    "crates/sotf-dev-driver",
     "crates/app-cli",
     "crates/app-gpui",
     "crates/app-tui",
