@@ -13,11 +13,12 @@ impl UpmixerPlugin {
     /// accumulator. This final pass caps the real signal that leaves `process()`.
     #[inline]
     pub(super) fn apply_final_safety_cap(&mut self, output: &mut [f32], num_frames: usize) {
-        if self.safety_cap_db < 0.0 || num_frames == 0 || self.num_output_channels == 0 {
+        let output_channels = self.effective_output_channels();
+        if self.safety_cap_db < 0.0 || num_frames == 0 || output_channels == 0 {
             return;
         }
 
-        let sample_count = (num_frames * self.num_output_channels).min(output.len());
+        let sample_count = (num_frames * output_channels).min(output.len());
         let samples = &mut output[..sample_count];
         if samples.is_empty() {
             return;
@@ -53,6 +54,11 @@ impl UpmixerPlugin {
             // Flush denormals in the time-domain buffers before scaling/limiting.
             // This prevents performance spikes and keeps the peak detector accurate.
             flush_denormals_inplace(&mut self.time_out_channels[ch]);
+
+            // Synthesis window for WOLA. Frequency-domain routing can change phase
+            // and magnitude enough that the analysis window alone no longer
+            // guarantees tapered IFFT block edges.
+            sotf_host::simd::window_mul_simd_inplace(&mut self.time_out_channels[ch], &self.window);
 
             let speaker = &self.speaker_config.speakers[ch];
             if speaker.elevation > 10.0 {

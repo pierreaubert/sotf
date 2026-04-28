@@ -34,6 +34,9 @@ const STEERING_RELEASE_RANGE: f32 = 0.06;
 
 /// Smoothing alpha for DOA angle tracking (one-pole filter)
 const DOA_SMOOTHING_ALPHA: f32 = 0.2;
+/// Smoothing alpha for diffuseness, which directly modulates ambient/height routing.
+const DIFFUSENESS_SMOOTHING_ALPHA: f32 = 0.18;
+const DIFFUSENESS_MAX_STEP: f32 = 0.08;
 /// Dialogue control smoothing for spatial decomposition. This is intentionally
 /// slower than detector smoothing because it modulates center, ambience, and
 /// decorrelation over the whole sound field.
@@ -160,6 +163,16 @@ fn smooth_dialogue_spatial_control(previous: f32, target: f32) -> f32 {
     (previous + limited_diff).clamp(0.0, 1.0)
 }
 
+#[inline(always)]
+fn smooth_diffuseness(previous: f32, target: f32, smoothing_scale: f32) -> f32 {
+    let target = target.clamp(0.0, 1.0);
+    let alpha = (DIFFUSENESS_SMOOTHING_ALPHA * smoothing_scale).max(0.035);
+    let max_step = (DIFFUSENESS_MAX_STEP * smoothing_scale).max(0.025);
+    let smoothed = previous + alpha * (target - previous);
+    let limited_diff = (smoothed - previous).clamp(-max_step, max_step);
+    (previous + limited_diff).clamp(0.0, 1.0)
+}
+
 impl UpmixerPlugin {
     pub(super) fn process_frequency_domain_erb_bands(&mut self) {
         if self.sample_rate == 0 || self.fft_size == 0 {
@@ -179,6 +192,10 @@ impl UpmixerPlugin {
         let lfe_cutoff_bin = self.cached_lfe_cutoff_bin;
         let bandpass_bin = self.cached_bandpass_bin;
         let freq_per_bin = self.cached_freq_per_bin;
+        let analysis_smoothing_scale = self.analysis_smoothing_scale();
+        let coherence_smoothing_alpha =
+            (COHERENCE_SMOOTHING_ALPHA * analysis_smoothing_scale).max(0.03);
+        let doa_smoothing_alpha = (DOA_SMOOTHING_ALPHA * analysis_smoothing_scale).max(0.04);
         self.dialogue_spatial_control = smooth_dialogue_spatial_control(
             self.dialogue_spatial_control,
             self.dialogue_probability,
@@ -209,8 +226,12 @@ impl UpmixerPlugin {
             let center_bin = (start_bin + end_bin) / 2;
             let center_freq = center_bin as f32 * freq_per_bin;
             let norm = ((center_freq - 100.0) / (8000.0 - 100.0)).clamp(0.0, 1.0);
-            let attack_alpha = STEERING_ATTACK_BASE + STEERING_ATTACK_RANGE * norm;
-            let release_alpha = STEERING_RELEASE_BASE + STEERING_RELEASE_RANGE * norm;
+            let attack_alpha = ((STEERING_ATTACK_BASE + STEERING_ATTACK_RANGE * norm)
+                * analysis_smoothing_scale)
+                .max(0.05);
+            let release_alpha = ((STEERING_RELEASE_BASE + STEERING_RELEASE_RANGE * norm)
+                * analysis_smoothing_scale)
+                .max(0.005);
             let alpha = if inst_energy > smooth_energy * 1.5 {
                 attack_alpha
             } else {
@@ -250,18 +271,37 @@ impl UpmixerPlugin {
                 let median = median5(self.coherence_history[band_idx]);
                 let prev = self.smoothed_coherence[band_idx];
                 self.smoothed_coherence[band_idx] =
-                    prev + COHERENCE_SMOOTHING_ALPHA * (median - prev);
+                    prev + coherence_smoothing_alpha * (median - prev);
                 coherence = self.smoothed_coherence[band_idx];
             }
 
             // --- Intensity-vector DOA and diffuseness (Phase 1 & 2) ---
-            let (diffuseness, raw_doa, direct_gain_base, ambient_gain_base) =
+            let (raw_diffuseness, raw_doa, direct_gain_base, _ambient_gain_base) =
                 compute_diffuseness_and_doa(
                     &self.freq_domain_left,
                     &self.freq_domain_right,
                     start_bin,
                     end_bin,
                 );
+            let diffuseness = if band_idx < self.smoothed_diffuseness.len()
+                && band_idx < self.diffuseness_initialized.len()
+            {
+                if !self.diffuseness_initialized[band_idx] {
+                    self.smoothed_diffuseness[band_idx] = raw_diffuseness;
+                    self.diffuseness_initialized[band_idx] = true;
+                    raw_diffuseness
+                } else {
+                    let smoothed = smooth_diffuseness(
+                        self.smoothed_diffuseness[band_idx],
+                        raw_diffuseness,
+                        analysis_smoothing_scale,
+                    );
+                    self.smoothed_diffuseness[band_idx] = smoothed;
+                    smoothed
+                }
+            } else {
+                raw_diffuseness
+            };
 
             // Smooth DOA angle with one-pole filter (angle wrapping handled)
             if band_idx < self.doa_angle.len() {
@@ -272,7 +312,7 @@ impl UpmixerPlugin {
                 } else if delta < -std::f32::consts::PI {
                     delta += 2.0 * std::f32::consts::PI;
                 }
-                self.doa_angle[band_idx] = prev_doa + DOA_SMOOTHING_ALPHA * delta;
+                self.doa_angle[band_idx] = prev_doa + doa_smoothing_alpha * delta;
             }
 
             // LFE Band
@@ -316,8 +356,9 @@ impl UpmixerPlugin {
             let needs_upmix = transition_start.max(start_bin) < end_bin;
             if needs_upmix {
                 // Diffuseness-based ambient gain (energy-preserving)
-                // ambient_gain_base = sqrt(psi) where psi is diffuseness
+                // ambient_gain_base = sqrt(psi) where psi is smoothed diffuseness
                 // Scale by ambient_boost parameter and dialogue weight
+                let ambient_gain_base = diffuseness.max(0.0).sqrt();
                 let ambient_gain =
                     ambient_gain_base * self.ambient_boost.current() * (1.0 - dialogue_control);
 
@@ -598,5 +639,27 @@ mod tests {
 
         let stable = smooth_dialogue_spatial_control(0.5, 0.5 + DIALOGUE_SPATIAL_DEADBAND * 0.5);
         assert_eq!(stable, 0.5);
+    }
+
+    #[test]
+    fn diffuseness_smoothing_limits_block_steps() {
+        let up = smooth_diffuseness(0.0, 1.0, 1.0);
+        assert!(
+            up <= DIFFUSENESS_MAX_STEP + 1e-6,
+            "diffuseness rose too quickly: {up}"
+        );
+
+        let down = smooth_diffuseness(1.0, 0.0, 1.0);
+        assert!(
+            1.0 - down <= DIFFUSENESS_MAX_STEP + 1e-6,
+            "diffuseness fell too quickly: {}",
+            1.0 - down
+        );
+
+        let narrow_band = smooth_diffuseness(0.0, 1.0, 0.35);
+        assert!(
+            narrow_band <= up,
+            "narrow-band analysis should not smooth faster than ERB mode"
+        );
     }
 }

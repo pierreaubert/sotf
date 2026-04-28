@@ -206,7 +206,7 @@ impl UpmixerPlugin {
         let freq_per_bin = self.sample_rate as f32 / self.fft_size as f32;
         let freq_size = self.fft_size / 2; // Positive-frequency bins (Nyquist exclusive)
 
-        match self.frequency_resolution.as_str() {
+        match Self::canonical_frequency_resolution(&self.frequency_resolution) {
             "per_bin" => {
                 // One band per FFT bin: band[k] starts at bin k
                 for bin in 0..=freq_size {

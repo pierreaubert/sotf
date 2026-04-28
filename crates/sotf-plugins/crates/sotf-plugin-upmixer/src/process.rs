@@ -86,7 +86,8 @@ impl UpmixerPlugin {
         let _dialogue_prob = self.detect_dialogue();
         self.process_frequency_domain_erb_bands();
 
-        // 50% overlap Hann sum is 1.0*N → base scale = 1/N.
+        // 50% overlap sqrt-Hann analysis/synthesis multiplies to a Hann
+        // COLA sum of 1.0; realfft inverse is unnormalized, so base scale = 1/N.
         // Multiply by sqrt(2) to compensate for the -3 dB headroom scale
         // (1/sqrt(2)) applied to the input in apply_window_and_forward_fft.
         let combined_scale = std::f32::consts::SQRT_2 / self.fft_size as f32;

@@ -6,6 +6,22 @@ use super::UpmixerPlugin;
 use rustfft::num_complex::Complex;
 
 impl UpmixerPlugin {
+    fn hr_target_scale(&self) -> f32 {
+        let hr_mix = (self.hr_transient_env * self.hr_sharpen.current() * self.hr_direct_envelope)
+            .clamp(0.0, 1.0);
+
+        if hr_mix < 0.01 || self.gain_front_direct.current() <= 0.0 {
+            0.0
+        } else {
+            // Scale HR path relative to main: sqrt ratio avoids overpowering the
+            // main path while still providing transient detail enhancement.
+            // Also apply the 1/N overlap-add scaling factor for the HR path itself.
+            // Multiply by sqrt(2) to compensate for the -3 dB headroom scale.
+            let hr_ola_scale = std::f32::consts::SQRT_2 / self.hr_fft_size as f32;
+            (self.fft_size as f32 / self.hr_fft_size as f32).sqrt() * hr_mix * hr_ola_scale
+        }
+    }
+
     /// Run HR FFT processing: window, forward FFT, HF filtering, IFFT per channel.
     /// Populates `hr_time_out_channels[ch]` with the per-channel time-domain results.
     /// Does NOT scale or mix — the caller handles that.
@@ -81,9 +97,12 @@ impl UpmixerPlugin {
                 )
                 .unwrap();
 
-            // No synthesis window needed: analysis-only Hann with 50% overlap sums
-            // to 1.0 (periodic Hann COLA). Matches the main path (fft.rs / panning.rs).
-            // The 1/N OLA normalization is applied in mix_hr_output via hr_ola_scale.
+            // Matching sqrt-Hann synthesis window. The 1/N OLA normalization is
+            // applied in mix_hr_output via hr_ola_scale.
+            sotf_host::simd::window_mul_simd_inplace(
+                &mut self.hr_time_out_channels[ch_idx],
+                &self.hr_window,
+            );
         }
     }
 
@@ -92,22 +111,9 @@ impl UpmixerPlugin {
     pub(super) fn mix_hr_output(&mut self, output: &mut [f32], num_frames: usize) {
         let drain = num_frames.min(self.hr_output_accumulator_fill);
 
-        let hr_mix = (self.hr_transient_env * self.hr_sharpen.current() * self.hr_direct_envelope)
-            .clamp(0.0, 1.0);
         let nch = self.num_output_channels;
         let mask = self.hr_output_accumulator_mask;
-
-        // Compute target scale (0 when muted)
-        let target_scale = if hr_mix < 0.01 || self.gain_front_direct.current() <= 0.0 {
-            0.0
-        } else {
-            // Scale HR path relative to main: sqrt ratio avoids overpowering the
-            // main path while still providing transient detail enhancement.
-            // Also apply the 1/N overlap-add scaling factor for the HR path itself.
-            // Multiply by sqrt(2) to compensate for the -3 dB headroom scale.
-            let hr_ola_scale = std::f32::consts::SQRT_2 / self.hr_fft_size as f32;
-            (self.fft_size as f32 / self.hr_fft_size as f32).sqrt() * hr_mix * hr_ola_scale
-        };
+        let target_scale = self.hr_target_scale();
 
         let mut scale = self.prev_hr_scale;
         let scale_step = (target_scale - scale) / drain.max(1) as f32;
@@ -123,6 +129,41 @@ impl UpmixerPlugin {
                 output[out_base + ch] += self.hr_output_accumulator[acc_base + ch] * scale;
                 self.hr_output_accumulator[acc_base + ch] = 0.0;
             }
+        }
+
+        self.prev_hr_scale = target_scale;
+        self.hr_output_read_position = (self.hr_output_read_position + drain) & mask;
+        self.hr_output_accumulator_fill -= drain;
+    }
+
+    /// Drain HR output into a 2-channel binaural preview buffer.
+    pub(super) fn mix_hr_output_binaural(&mut self, output: &mut [f32], num_frames: usize) {
+        let drain = num_frames.min(self.hr_output_accumulator_fill);
+        let nch = self.num_output_channels;
+        let mask = self.hr_output_accumulator_mask;
+        let target_scale = self.hr_target_scale();
+
+        let mut scale = self.prev_hr_scale;
+        let scale_step = (target_scale - scale) / drain.max(1) as f32;
+
+        for i in 0..drain {
+            scale += scale_step;
+            let read_idx = (self.hr_output_read_position + i) & mask;
+            let acc_base = read_idx * nch;
+            let out_base = i * 2;
+            let mut left = 0.0;
+            let mut right = 0.0;
+
+            for &ch in &self.cached_hr_active_channels {
+                let sample = self.hr_output_accumulator[acc_base + ch];
+                let (left_gain, right_gain) = self.binaural_preview_gains_for_channel(ch);
+                left += sample * left_gain;
+                right += sample * right_gain;
+                self.hr_output_accumulator[acc_base + ch] = 0.0;
+            }
+
+            output[out_base] += left * scale;
+            output[out_base + 1] += right * scale;
         }
 
         self.prev_hr_scale = target_scale;

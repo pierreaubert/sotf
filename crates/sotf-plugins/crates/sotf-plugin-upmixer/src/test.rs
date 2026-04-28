@@ -28,6 +28,79 @@ mod upmixer_tests {
     }
 
     #[test]
+    fn test_binaural_preview_reports_and_processes_stereo() {
+        let mut plugin = UpmixerPlugin::new(
+            2048, "7.1.4", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+        plugin.initialize(44100).unwrap();
+        assert_eq!(plugin.output_channels(), 12);
+
+        plugin
+            .set_parameter(
+                ParameterId::from("binaural_preview"),
+                ParameterValue::Bool(true),
+            )
+            .unwrap();
+        assert_eq!(plugin.output_channels(), 2);
+
+        let num_frames = 4096;
+        let context = ProcessContext {
+            sample_rate: 44100,
+            num_frames,
+        };
+        let mut input = vec![0.0_f32; num_frames * 2];
+        for i in 0..num_frames {
+            let t = i as f32 / context.sample_rate as f32;
+            input[i * 2] = (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.4;
+            input[i * 2 + 1] = (2.0 * std::f32::consts::PI * 660.0 * t).sin() * 0.4;
+        }
+        let mut output = vec![0.0_f32; num_frames * plugin.output_channels()];
+        let frames = plugin.process(&input, &mut output, &context).unwrap();
+
+        assert_eq!(frames, num_frames);
+        assert_eq!(output.len(), num_frames * 2);
+        let energy: f32 = output.iter().map(|sample| sample * sample).sum();
+        assert!(energy > 1e-4, "binaural preview should emit stereo audio");
+    }
+
+    #[test]
+    fn test_frequency_resolution_choice_uses_canonical_analysis_modes() {
+        let mut plugin = UpmixerPlugin::new(
+            2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+        plugin.initialize(44100).unwrap();
+        assert_eq!(plugin.frequency_resolution, "erb");
+        let erb_band_count = plugin.erb_bands.len();
+
+        plugin
+            .set_parameter(
+                ParameterId::from("frequency_resolution"),
+                ParameterValue::Int(1),
+            )
+            .unwrap();
+        assert_eq!(plugin.frequency_resolution, "fine_erb");
+        assert!(plugin.erb_bands.len() > erb_band_count);
+        assert_eq!(
+            plugin
+                .get_parameter(&ParameterId::from("frequency_resolution"))
+                .unwrap()
+                .as_int(),
+            Some(1)
+        );
+
+        plugin
+            .set_parameter(
+                ParameterId::from("frequency_resolution"),
+                ParameterValue::Int(2),
+            )
+            .unwrap();
+        assert_eq!(plugin.frequency_resolution, "per_bin");
+        assert_eq!(plugin.erb_bands.len(), plugin.fft_size / 2 + 1);
+        assert_eq!(plugin.pca_cov_xx.len(), plugin.erb_bands.len());
+        assert_eq!(plugin.coherence_history.len(), plugin.erb_bands.len());
+    }
+
+    #[test]
     fn test_upmixer_parameters() {
         let mut plugin = UpmixerPlugin::new(
             2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
@@ -202,8 +275,8 @@ mod upmixer_tests {
         let mut output = vec![0.0f32; fft_size * plugin.num_output_channels];
 
         // Process enough coherent frames to fill the median filter ring buffer (5 entries)
-        // AND let the one-pole smoother (alpha=0.15) converge near the instant value
-        for _ in 0..20 {
+        // and let the mode-dependent one-pole smoother converge near the instant value.
+        for _ in 0..40 {
             for i in 0..fft_size {
                 let t = i as f32 / 44100.0;
                 let s = (2.0 * std::f32::consts::PI * 1000.0 * t).sin() * 0.5;
@@ -1509,6 +1582,38 @@ mod upmixer_tests {
     }
 
     #[test]
+    fn test_synthesis_window_tapers_modified_fft_block_edges() {
+        let fft_size = 2048;
+        let mut plugin = UpmixerPlugin::new(
+            fft_size, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+        plugin.initialize(44100).unwrap();
+        plugin.safety_cap_db = -1.0;
+
+        for ch_buf in plugin.time_out_channels.iter_mut() {
+            ch_buf.fill(1.0);
+        }
+
+        let nch = plugin.num_output_channels;
+        let mut output = vec![0.0_f32; fft_size * nch];
+        plugin.extract_output_and_scale(&mut output, 1.0);
+
+        for ch in 0..nch {
+            assert!(
+                output[ch].abs() < 1e-6,
+                "channel {ch} first sample should be synthesis-windowed to zero, got {}",
+                output[ch]
+            );
+        }
+
+        let midpoint = (fft_size / 2) * nch;
+        assert!(
+            output[midpoint].abs() > 0.99,
+            "bed-channel midpoint should remain near unity after sqrt-Hann synthesis window"
+        );
+    }
+
+    #[test]
     fn test_decorrelation_filters_mode_0_no_overflow() {
         let mut plugin = UpmixerPlugin::new(
             2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
@@ -1799,8 +1904,8 @@ mod upmixer_tests {
     #[test]
     fn test_bypass_all_processing() {
         // Test that when bypass_all_processing is enabled, the plugin
-        // passes through the stereo input to the front L/R channels,
-        // (and L+R/2 to center if present) and silences other channels.
+        // passes through the stereo input to the front L/R channels and
+        // silences every derived channel.
         let mut plugin = UpmixerPlugin::new(
             2048, "5.1", // Test with a 5.1 configuration
             1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
@@ -1852,14 +1957,12 @@ mod upmixer_tests {
                 "FR output does not match input"
             );
 
-            // Center channel should be (L+R)/2 *exactly*
-            assert_eq!(
-                output[i * plugin.output_channels() + c_idx],
-                (input[i * 2] + input[i * 2 + 1]) * 0.5,
-                "Center output does not match (L+R)/2"
+            // Center and other derived channels should be silent.
+            assert!(
+                output[i * plugin.output_channels() + c_idx].abs() < 1e-6,
+                "Center channel should be silent"
             );
 
-            // Other channels should be effectively silent
             assert!(
                 output[i * plugin.output_channels() + lfe_idx].abs() < 1e-6,
                 "LFE channel should be silent"

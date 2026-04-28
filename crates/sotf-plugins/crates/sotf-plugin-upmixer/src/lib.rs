@@ -61,6 +61,15 @@ const PHASE_SHIFT_270: Complex<f32> = Complex::new(0.0, -1.0); // -i
 // Plugin Implementation
 // ============================================================================
 
+fn periodic_sqrt_hann_window(size: usize) -> Vec<f32> {
+    (0..size)
+        .map(|i| {
+            let hann = 0.5 * (1.0 - ((2.0 * std::f32::consts::PI * i as f32) / size as f32).cos());
+            hann.sqrt()
+        })
+        .collect()
+}
+
 /// Summary statistics for an internal Upmixer control vector.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct UpmixerControlStats {
@@ -180,6 +189,8 @@ pub struct UpmixerPlugin {
     steering_alphas: Vec<f32>, // Per-band alpha
     coherence_instant: Vec<f32>,
     smoothed_coherence: Vec<f32>,
+    smoothed_diffuseness: Vec<f32>,
+    diffuseness_initialized: Vec<bool>,
     /// Ring buffer for median-filtered coherence (5-element per ERB band)
     coherence_history: Vec<[f32; 5]>,
     /// Current write index in coherence_history ring buffer
@@ -364,9 +375,9 @@ pub struct UpmixerPlugin {
     /// Temporary frequency buffer for IFFT mixing (reused per channel)
     temp_freq_out: Vec<Complex<f32>>,
 
-    /// Hann window for FFT (pre-computed)
+    /// Periodic sqrt-Hann window for WOLA analysis/synthesis (pre-computed)
     window: Vec<f32>,
-    /// Hann window for high-resolution FFT path
+    /// Periodic sqrt-Hann window for high-resolution FFT path
     hr_window: Vec<f32>,
     /// Pre-computed raised-cosine edge taper table for height channels (avoids cos() in hot path)
     edge_taper_table: Vec<f32>,
@@ -576,13 +587,10 @@ impl UpmixerPlugin {
         let zero_complex = Complex::new(0.0, 0.0);
         let spectrum_size = fft_size / 2 + 1;
 
-        // Generate Hann window: w[n] = 0.5 * (1 - cos(2*pi*n/N))
-        // Using N (not N-1) for perfect COLA with 50% overlap
-        let window: Vec<f32> = (0..fft_size)
-            .map(|i| {
-                0.5 * (1.0 - ((2.0 * std::f32::consts::PI * i as f32) / fft_size as f32).cos())
-            })
-            .collect();
+        // Periodic sqrt-Hann WOLA window. Analysis * synthesis = periodic Hann,
+        // which is COLA at 50% overlap while forcing modified IFFT block edges
+        // to zero before overlap-add.
+        let window = periodic_sqrt_hann_window(fft_size);
 
         // 50% overlap requires fft_size/2 hop size
         let hop_size = fft_size / 2;
@@ -594,11 +602,7 @@ impl UpmixerPlugin {
         let hr_fft_forward = planner.plan_fft_forward(hr_fft_size);
         let hr_fft_inverse = planner.plan_fft_inverse(hr_fft_size);
 
-        let hr_window: Vec<f32> = (0..hr_fft_size)
-            .map(|i| {
-                0.5 * (1.0 - ((2.0 * std::f32::consts::PI * i as f32) / hr_fft_size as f32).cos())
-            })
-            .collect();
+        let hr_window = periodic_sqrt_hann_window(hr_fft_size);
 
         // Pre-compute raised-cosine edge taper for height channels (64 values)
         const TAPER_LEN: usize = 64;
@@ -730,6 +734,8 @@ impl UpmixerPlugin {
             steering_alphas: Vec::new(),
             coherence_instant: Vec::new(),
             smoothed_coherence: Vec::new(),
+            smoothed_diffuseness: Vec::new(),
+            diffuseness_initialized: Vec::new(),
             coherence_history: Vec::new(),
             coherence_history_idx: 0,
             decorrelation_filter_left: vec![zero_complex; spectrum_size],
@@ -912,6 +918,117 @@ impl UpmixerPlugin {
             .unwrap_or(2) // default to "5.1" at index 2
     }
 
+    fn effective_output_channels(&self) -> usize {
+        if self.binaural_preview {
+            2
+        } else {
+            self.num_output_channels
+        }
+    }
+
+    fn canonical_frequency_resolution(value: &str) -> &'static str {
+        let mut normalized = String::with_capacity(value.len());
+        for ch in value.chars() {
+            match ch {
+                ' ' | '-' => normalized.push('_'),
+                _ => normalized.push(ch.to_ascii_lowercase()),
+            }
+        }
+
+        match normalized.as_str() {
+            "fine_erb" => "fine_erb",
+            "per_bin" => "per_bin",
+            _ => "erb",
+        }
+    }
+
+    fn frequency_resolution_from_index(index: usize) -> &'static str {
+        match index {
+            1 => "fine_erb",
+            2 => "per_bin",
+            _ => "erb",
+        }
+    }
+
+    fn frequency_resolution_index(&self) -> usize {
+        match Self::canonical_frequency_resolution(&self.frequency_resolution) {
+            "fine_erb" => 1,
+            "per_bin" => 2,
+            _ => 0,
+        }
+    }
+
+    fn analysis_smoothing_scale(&self) -> f32 {
+        let resolution_scale =
+            match Self::canonical_frequency_resolution(&self.frequency_resolution) {
+                "fine_erb" => 0.65,
+                "per_bin" => 0.45,
+                _ => 1.0,
+            };
+        let latency_scale = if self.fft_size > 1024 { 0.70 } else { 1.0 };
+        resolution_scale * latency_scale
+    }
+
+    fn reset_analysis_state_for_current_resolution(&mut self) {
+        let canonical = Self::canonical_frequency_resolution(&self.frequency_resolution);
+        self.frequency_resolution = canonical.to_string();
+
+        if self.sample_rate == 0 || self.fft_size == 0 {
+            return;
+        }
+
+        self.calculate_erb_bands();
+        let num_bands = self.erb_bands.len();
+        self.steering_alphas = vec![0.15; num_bands];
+        self.pca_cov_xx = vec![0.0; num_bands];
+        self.pca_cov_yy = vec![0.0; num_bands];
+        self.pca_cov_xy = vec![Complex::new(0.0, 0.0); num_bands];
+        self.coherence_instant = vec![0.0; num_bands];
+        self.smoothed_coherence = vec![0.0; num_bands];
+        self.smoothed_diffuseness = vec![0.0; num_bands];
+        self.diffuseness_initialized = vec![false; num_bands];
+        self.coherence_history = vec![[0.0; 5]; num_bands];
+        self.doa_angle = vec![0.0; num_bands];
+        self.coherence_history_idx = 0;
+        self.prev_decorrelation_strength = -1.0;
+    }
+
+    fn binaural_preview_gains_for_channel(&self, ch: usize) -> (f32, f32) {
+        let Some(speaker) = self.speaker_config.speakers.get(ch) else {
+            return (0.0, 0.0);
+        };
+
+        if speaker.is_lfe {
+            return (0.35, 0.35);
+        }
+
+        let pan = ((speaker.azimuth.clamp(-90.0, 90.0) + 90.0) / 180.0).clamp(0.0, 1.0);
+        let angle = pan * std::f32::consts::FRAC_PI_2;
+        let height_scale = if speaker.elevation.abs() > 10.0 {
+            0.75
+        } else {
+            1.0
+        };
+        let preview_headroom = 0.65;
+
+        (
+            angle.sin() * height_scale * preview_headroom,
+            angle.cos() * height_scale * preview_headroom,
+        )
+    }
+
+    fn fold_accumulator_frame_to_binaural(&self, accumulator: &[f32], base: usize) -> (f32, f32) {
+        let mut left = 0.0;
+        let mut right = 0.0;
+        for ch in 0..self.num_output_channels {
+            let sample = accumulator[base + ch];
+            let (left_gain, right_gain) = self.binaural_preview_gains_for_channel(ch);
+            left += sample * left_gain;
+            right += sample * right_gain;
+        }
+        (left, right)
+    }
+
     /// Get the f64 value of parameter at PARAMS index.
     /// Order must match params::PARAMS exactly.
     fn param_value(&self, index: usize) -> Option<f64> {
@@ -956,14 +1073,7 @@ impl UpmixerPlugin {
             33 => Some(self.dialogue_coherence_weight as f64),
             34 => Some(self.safety_cap_db_smoother.target() as f64),
             35 => Some(if self.low_latency { 1.0 } else { 0.0 }),
-            36 => {
-                // frequency_resolution is a String in the plugin but a Choice index in PARAMS
-                let idx = crate::params::FREQUENCY_RESOLUTIONS
-                    .iter()
-                    .position(|&s| s.eq_ignore_ascii_case(&self.frequency_resolution))
-                    .unwrap_or(0);
-                Some(idx as f64)
-            }
+            36 => Some(self.frequency_resolution_index() as f64),
             37 => Some(if self.bypass_decorrelation { 1.0 } else { 0.0 }),
             38 => Some(if self.bypass_transient_detection {
                 1.0
@@ -1026,10 +1136,8 @@ impl UpmixerPlugin {
             34 => self.safety_cap_db_smoother.set_target(value as f32),
             35 => self.low_latency = value > 0.5,
             36 => {
-                let idx = value as usize;
-                if let Some(&label) = crate::params::FREQUENCY_RESOLUTIONS.get(idx) {
-                    self.frequency_resolution = label.to_string();
-                }
+                self.frequency_resolution =
+                    Self::frequency_resolution_from_index(value as usize).to_string();
             }
             37 => self.bypass_decorrelation = value > 0.5,
             38 => self.bypass_transient_detection = value > 0.5,
@@ -1146,8 +1254,9 @@ impl UpmixerPlugin {
         plugin.bypass_transient_detection = params.bypass_transient_detection;
         plugin.bypass_all_processing = params.bypass_all_processing;
 
-        // Frequency resolution (construction-only: stored and applied in initialize())
-        plugin.frequency_resolution = params.frequency_resolution;
+        // Frequency resolution (canonicalized for analyzer band selection)
+        plugin.frequency_resolution =
+            Self::canonical_frequency_resolution(&params.frequency_resolution).to_string();
 
         plugin.rebuild_cached_parameters();
         plugin
@@ -1171,12 +1280,7 @@ impl UpmixerPlugin {
         self.fft_forward = planner.plan_fft_forward(new_fft_size);
         self.fft_inverse = planner.plan_fft_inverse(new_fft_size);
 
-        // Regenerate Hann window
-        self.window = (0..new_fft_size)
-            .map(|i| {
-                0.5 * (1.0 - ((2.0 * std::f32::consts::PI * i as f32) / new_fft_size as f32).cos())
-            })
-            .collect();
+        self.window = periodic_sqrt_hann_window(new_fft_size);
 
         let spectrum_size = new_fft_size / 2 + 1;
         let zero_complex = Complex::new(0.0, 0.0);
@@ -1358,9 +1462,7 @@ impl Plugin for UpmixerPlugin {
     }
 
     fn output_channels(&self) -> usize {
-        // binaural_preview is a host hint — the upmixer always outputs surround channels.
-        // The host should chain a BinauralDecoderPlugin downstream when this flag is set.
-        self.num_output_channels
+        self.effective_output_channels()
     }
 
     fn parameters(&self) -> Vec<sotf_host::parameters::Parameter> {
@@ -1436,8 +1538,7 @@ impl Plugin for UpmixerPlugin {
                 self.resize_fft(new_fft_size);
             }
             36 => {
-                // frequency_resolution is construction-only; accept silently
-                // (value stored via set_param_value, used on next rebuild)
+                self.reset_analysis_state_for_current_resolution();
             }
             37 => {
                 // bypass_decorrelation: crossfade + regenerate filters
@@ -1654,6 +1755,8 @@ impl Plugin for UpmixerPlugin {
         self.pca_cov_xy.fill(Complex::new(0.0, 0.0));
         self.coherence_instant.fill(0.0);
         self.smoothed_coherence.fill(0.0);
+        self.smoothed_diffuseness.fill(0.0);
+        self.diffuseness_initialized.fill(false);
         self.hr_transient_env = 0.0;
         self.hr_energy_smooth = 0.0;
         self.prev_magnitude_spectrum.fill(0.0);
@@ -1701,6 +1804,7 @@ impl Plugin for UpmixerPlugin {
         context: &ProcessContext,
     ) -> Result<usize, String> {
         let n = context.num_frames;
+        let out_nch = self.effective_output_channels();
 
         let input_samples = context.num_frames * 2;
         if input.len() != input_samples {
@@ -1711,7 +1815,7 @@ impl Plugin for UpmixerPlugin {
             ));
         }
 
-        let output_samples = context.num_frames * self.num_output_channels;
+        let output_samples = context.num_frames * out_nch;
         if output.len() != output_samples {
             return Err(format!(
                 "Output size mismatch: expected {}, got {}",
@@ -1791,15 +1895,12 @@ impl Plugin for UpmixerPlugin {
                 let left = input[i * 2];
                 let right = input[i * 2 + 1];
 
-                output[i * self.num_output_channels] = left; // FL
-                if self.num_output_channels > 1 {
-                    output[i * self.num_output_channels + 1] = right; // FR
+                output[i * out_nch] = left; // FL
+                if out_nch > 1 {
+                    output[i * out_nch + 1] = right; // FR
                 }
-                if self.num_output_channels > 2 {
-                    output[i * self.num_output_channels + 2] = (left + right) * 0.5; // C
-                }
-                for ch in 3..self.num_output_channels {
-                    output[i * self.num_output_channels + ch] = 0.0;
+                for ch in 2..out_nch {
+                    output[i * out_nch + ch] = 0.0;
                 }
             }
             return Ok(context.num_frames);
@@ -1956,11 +2057,23 @@ impl Plugin for UpmixerPlugin {
                     for i in 0..frames_to_drain {
                         let read_idx = (self.output_read_position + i) & mask;
                         let acc_base = read_idx * nch;
-                        let out_base = (output_pos + i) * nch;
-                        for ch in 0..nch {
-                            output[out_base + ch] = self.output_accumulator[acc_base + ch];
-                            // Clear after reading for next overlap-add cycle
-                            self.output_accumulator[acc_base + ch] = 0.0;
+                        let out_base = (output_pos + i) * out_nch;
+                        if self.binaural_preview {
+                            let (left, right) = self.fold_accumulator_frame_to_binaural(
+                                &self.output_accumulator,
+                                acc_base,
+                            );
+                            output[out_base] = left;
+                            output[out_base + 1] = right;
+                            for ch in 0..nch {
+                                self.output_accumulator[acc_base + ch] = 0.0;
+                            }
+                        } else {
+                            for ch in 0..nch {
+                                output[out_base + ch] = self.output_accumulator[acc_base + ch];
+                                // Clear after reading for next overlap-add cycle
+                                self.output_accumulator[acc_base + ch] = 0.0;
+                            }
                         }
                     }
                     self.output_read_position =
@@ -1969,7 +2082,17 @@ impl Plugin for UpmixerPlugin {
 
                     // Drain HR output and mix into the frames we just wrote
                     if self.hr_direct_envelope > 0.0 {
-                        self.mix_hr_output(&mut output[output_pos * nch..], frames_to_drain);
+                        if self.binaural_preview {
+                            self.mix_hr_output_binaural(
+                                &mut output[output_pos * out_nch..],
+                                frames_to_drain,
+                            );
+                        } else {
+                            self.mix_hr_output(
+                                &mut output[output_pos * out_nch..],
+                                frames_to_drain,
+                            );
+                        }
                     } else if self.hr_output_accumulator_fill > 0 {
                         // HR disabled: reset ring buffer state so no stale data lingers.
                         self.hr_output_accumulator_fill = 0;
@@ -1989,7 +2112,7 @@ impl Plugin for UpmixerPlugin {
 
         // Return actual number of frames written; startup latency is emitted as leading silence.
         if output_pos > 0 {
-            self.apply_final_safety_cap(&mut output[..output_pos * nch], output_pos);
+            self.apply_final_safety_cap(&mut output[..output_pos * out_nch], output_pos);
         }
         flush_denormals_inplace(output);
         Ok(output_pos)

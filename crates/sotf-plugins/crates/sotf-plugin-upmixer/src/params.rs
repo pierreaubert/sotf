@@ -485,6 +485,7 @@ pub const PARAMS: &[ParamSpec] = &[
     )
     .secondary("Analysis")
     .structural()
+    .setup()
     .doc("Frequency band grouping method"),
     // Diagnostics
     // 37: bypass_decorrelation
@@ -536,6 +537,7 @@ pub const PARAMS: &[ParamSpec] = &[
     // Phase 4G: SOTA addition
     ParamSpec::bool_param("Binaural Preview", "binaural_preview", false, "Output")
         .structural()
+        .output()
         .doc("Preview surround output binaurally (headphone monitoring, changes output to 2ch)"),
 ];
 

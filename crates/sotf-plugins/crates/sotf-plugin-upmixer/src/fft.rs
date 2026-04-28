@@ -15,7 +15,8 @@ impl UpmixerPlugin {
             &mut self.time_domain_right,
         );
 
-        // Apply window and headroom scale using SIMD
+        // Apply sqrt-Hann analysis window and headroom scale using SIMD.
+        // The matching synthesis window is applied after inverse FFT.
         // Apply -3dB attenuation (1/sqrt(2)) to provide headroom for hot mixes
         let headroom_scale = std::f32::consts::FRAC_1_SQRT_2;
         sotf_host::simd::window_mul_simd_inplace(&mut self.time_domain_left, &self.window);
