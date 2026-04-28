@@ -30,6 +30,14 @@ fn default_plugin_preset_version() -> u32 {
     2
 }
 
+fn upmixer_settings_output_channels(speaker_config: &str, binaural_preview: bool) -> usize {
+    if binaural_preview {
+        2
+    } else {
+        upmixer_output_channels(speaker_config)
+    }
+}
+
 /// Extract a human-readable plugin type name from a raw JSON plugin value.
 fn plugin_type_from_raw(raw: &serde_json::Value) -> String {
     // PluginSettings is an externally tagged enum, so the settings field is
@@ -560,8 +568,16 @@ impl PluginChain {
             }
 
             match &plugin.settings {
-                PluginSettings::Upmixer { speaker_config, .. } => {
-                    return Some(speaker_config.as_str());
+                PluginSettings::Upmixer {
+                    speaker_config,
+                    binaural_preview,
+                    ..
+                } => {
+                    return Some(if *binaural_preview {
+                        "2.0"
+                    } else {
+                        speaker_config.as_str()
+                    });
                 }
                 PluginSettings::BinauralDecoder { .. } => {
                     return Some("2.0");
@@ -584,12 +600,19 @@ impl PluginChain {
                 continue;
             }
             match &plugin.settings {
-                PluginSettings::Upmixer { speaker_config, .. }
-                | PluginSettings::AmbisonicsDecoder {
-                    target_layout: speaker_config,
+                PluginSettings::Upmixer {
+                    speaker_config,
+                    binaural_preview,
                     ..
                 } => {
-                    config = Some(speaker_config.clone());
+                    config = Some(if *binaural_preview {
+                        "2.0".to_string()
+                    } else {
+                        speaker_config.clone()
+                    });
+                }
+                PluginSettings::AmbisonicsDecoder { target_layout, .. } => {
+                    config = Some(target_layout.clone());
                 }
                 PluginSettings::BinauralDecoder { .. }
                 | PluginSettings::Downmix { .. }
@@ -616,8 +639,14 @@ impl PluginChain {
             }
 
             match &plugin.settings {
-                PluginSettings::Upmixer { speaker_config, .. }
-                | PluginSettings::AAE { speaker_config, .. } => {
+                PluginSettings::Upmixer {
+                    speaker_config,
+                    binaural_preview,
+                    ..
+                } => {
+                    return upmixer_settings_output_channels(speaker_config, *binaural_preview);
+                }
+                PluginSettings::AAE { speaker_config, .. } => {
                     return upmixer_output_channels(speaker_config);
                 }
                 PluginSettings::AmbisonicsDecoder { target_layout, .. } => {
@@ -657,8 +686,16 @@ impl PluginChain {
             }
             // Track channel changes from plugins before the matrix
             match &plugin.settings {
-                PluginSettings::Upmixer { speaker_config, .. }
-                | PluginSettings::AAE { speaker_config, .. } => {
+                PluginSettings::Upmixer {
+                    speaker_config,
+                    binaural_preview,
+                    ..
+                } => {
+                    running_channels =
+                        upmixer_settings_output_channels(speaker_config, *binaural_preview);
+                    continue;
+                }
+                PluginSettings::AAE { speaker_config, .. } => {
                     running_channels = upmixer_output_channels(speaker_config);
                     continue;
                 }
@@ -737,8 +774,13 @@ impl PluginChain {
 
             // Track channel changes through the chain
             match &plugin.settings {
-                PluginSettings::Upmixer { speaker_config, .. } => {
-                    running_channels = upmixer_output_channels(speaker_config);
+                PluginSettings::Upmixer {
+                    speaker_config,
+                    binaural_preview,
+                    ..
+                } => {
+                    running_channels =
+                        upmixer_settings_output_channels(speaker_config, *binaural_preview);
                 }
                 PluginSettings::AmbisonicsDecoder { target_layout, .. } => {
                     running_channels = upmixer_output_channels(target_layout);
@@ -1188,8 +1230,15 @@ impl PluginChain {
             // Update output channels for next plugin
             if self.plugins[i].enabled && !self.plugins[i].suspended {
                 match &self.plugins[i].settings {
-                    PluginSettings::Upmixer { speaker_config, .. }
-                    | PluginSettings::AAE { speaker_config, .. } => {
+                    PluginSettings::Upmixer {
+                        speaker_config,
+                        binaural_preview,
+                        ..
+                    } => {
+                        current_channels =
+                            upmixer_settings_output_channels(speaker_config, *binaural_preview);
+                    }
+                    PluginSettings::AAE { speaker_config, .. } => {
                         current_channels = upmixer_output_channels(speaker_config);
                     }
                     PluginSettings::AmbisonicsDecoder { target_layout, .. } => {
@@ -1304,6 +1353,27 @@ mod tests {
             };
         }
         assert_eq!(chain.output_channels(), 8);
+    }
+
+    #[test]
+    fn test_upmixer_binaural_preview_counts_as_stereo_output() {
+        let mut chain = PluginChain::new();
+        chain.add_plugin(&PluginType::Upmixer);
+
+        if let Some(plugin) = chain.get_plugin_mut(0)
+            && let PluginSettings::Upmixer {
+                speaker_config,
+                binaural_preview,
+                ..
+            } = &mut plugin.settings
+        {
+            *speaker_config = "9.1.6".to_string();
+            *binaural_preview = true;
+        }
+
+        assert_eq!(chain.output_channels(), 2);
+        assert_eq!(chain.output_speaker_config(), Some("2.0"));
+        assert_eq!(chain.speaker_config_at_index(1).as_deref(), Some("2.0"));
     }
 
     #[test]

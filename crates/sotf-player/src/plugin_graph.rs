@@ -17,6 +17,14 @@ use uuid::Uuid;
 /// Unique identifier for graph nodes
 pub type GraphNodeId = Uuid;
 
+fn upmixer_settings_output_channels(speaker_config: &str, binaural_preview: bool) -> usize {
+    if binaural_preview {
+        2
+    } else {
+        upmixer_output_channels(speaker_config)
+    }
+}
+
 /// Position on the 2D canvas
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
 pub struct NodePosition {
@@ -109,10 +117,25 @@ impl PluginGraphNode {
 
     /// Get default channel counts based on plugin type
     fn channel_counts_for(plugin: &Plugin) -> (usize, usize) {
-        match plugin.plugin_type() {
-            PluginType::Upmixer | PluginType::AAE => (2, 6), // Stereo to 5.1
-            PluginType::BinauralDecoder => (6, 2),           // Surround to stereo
-            _ => (2, 2),                                     // Most plugins are stereo in/out
+        match &plugin.settings {
+            PluginSettings::Upmixer {
+                speaker_config,
+                binaural_preview,
+                ..
+            } => (
+                2,
+                upmixer_settings_output_channels(speaker_config, *binaural_preview),
+            ),
+            PluginSettings::AAE { speaker_config, .. } => {
+                (2, upmixer_output_channels(speaker_config))
+            }
+            PluginSettings::BinauralDecoder { input_channels, .. } => (*input_channels, 2),
+            PluginSettings::Matrix {
+                input_channels,
+                output_channels,
+                ..
+            } => (*input_channels, *output_channels),
+            _ => (2, 2), // Most plugins are stereo in/out
         }
     }
 
@@ -1220,8 +1243,15 @@ impl PluginGraph {
 
             // Track output channel changes
             match &node.plugin.settings {
-                PluginSettings::Upmixer { speaker_config, .. }
-                | PluginSettings::AAE { speaker_config, .. } => {
+                PluginSettings::Upmixer {
+                    speaker_config,
+                    binaural_preview,
+                    ..
+                } => {
+                    current_channels =
+                        upmixer_settings_output_channels(speaker_config, *binaural_preview);
+                }
+                PluginSettings::AAE { speaker_config, .. } => {
                     current_channels = upmixer_output_channels(speaker_config);
                 }
                 PluginSettings::AmbisonicsDecoder { target_layout, .. } => {
@@ -1329,8 +1359,14 @@ impl PluginGraph {
                 continue;
             }
             match &node.plugin.settings {
-                PluginSettings::Upmixer { speaker_config, .. }
-                | PluginSettings::AAE { speaker_config, .. } => {
+                PluginSettings::Upmixer {
+                    speaker_config,
+                    binaural_preview,
+                    ..
+                } => {
+                    return upmixer_settings_output_channels(speaker_config, *binaural_preview);
+                }
+                PluginSettings::AAE { speaker_config, .. } => {
                     return upmixer_output_channels(speaker_config);
                 }
                 PluginSettings::AmbisonicsDecoder { target_layout, .. } => {
@@ -1356,8 +1392,18 @@ impl PluginGraph {
                 continue;
             }
             match &node.plugin.settings {
-                PluginSettings::Upmixer { speaker_config, .. }
-                | PluginSettings::AAE { speaker_config, .. } => {
+                PluginSettings::Upmixer {
+                    speaker_config,
+                    binaural_preview,
+                    ..
+                } => {
+                    return Some(if *binaural_preview {
+                        "2.0".to_string()
+                    } else {
+                        speaker_config.clone()
+                    });
+                }
+                PluginSettings::AAE { speaker_config, .. } => {
                     return Some(speaker_config.clone());
                 }
                 PluginSettings::BinauralDecoder { .. } => return Some("2.0".to_string()),
@@ -1379,12 +1425,21 @@ impl PluginGraph {
                 continue;
             }
             match &node.plugin.settings {
-                PluginSettings::Upmixer { speaker_config, .. }
-                | PluginSettings::AAE { speaker_config, .. }
-                | PluginSettings::AmbisonicsDecoder {
-                    target_layout: speaker_config,
+                PluginSettings::Upmixer {
+                    speaker_config,
+                    binaural_preview,
                     ..
-                } => config = Some(speaker_config.clone()),
+                } => {
+                    config = Some(if *binaural_preview {
+                        "2.0".to_string()
+                    } else {
+                        speaker_config.clone()
+                    });
+                }
+                PluginSettings::AAE { speaker_config, .. } => config = Some(speaker_config.clone()),
+                PluginSettings::AmbisonicsDecoder { target_layout, .. } => {
+                    config = Some(target_layout.clone());
+                }
                 PluginSettings::BinauralDecoder { .. }
                 | PluginSettings::Downmix { .. }
                 | PluginSettings::MonoToStereo { .. } => config = Some("2.0".to_string()),
@@ -1492,8 +1547,16 @@ impl PluginGraph {
                 continue;
             }
             match &node.plugin.settings {
-                PluginSettings::Upmixer { speaker_config, .. }
-                | PluginSettings::AAE { speaker_config, .. } => {
+                PluginSettings::Upmixer {
+                    speaker_config,
+                    binaural_preview,
+                    ..
+                } => {
+                    running_channels =
+                        upmixer_settings_output_channels(speaker_config, *binaural_preview);
+                    continue;
+                }
+                PluginSettings::AAE { speaker_config, .. } => {
                     running_channels = upmixer_output_channels(speaker_config);
                     continue;
                 }
@@ -1556,6 +1619,7 @@ impl PluginGraph {
         let mut current_channels: usize = 2;
 
         for &node_id in &plugin_ids {
+            let node_input_channels = current_channels;
             let node = &self.nodes[&node_id];
             let mut updated_settings = None;
 
@@ -1718,8 +1782,15 @@ impl PluginGraph {
             let node = &self.nodes[&node_id];
             if node.plugin.enabled && !node.plugin.suspended {
                 match &node.plugin.settings {
-                    PluginSettings::Upmixer { speaker_config, .. }
-                    | PluginSettings::AAE { speaker_config, .. } => {
+                    PluginSettings::Upmixer {
+                        speaker_config,
+                        binaural_preview,
+                        ..
+                    } => {
+                        current_channels =
+                            upmixer_settings_output_channels(speaker_config, *binaural_preview);
+                    }
+                    PluginSettings::AAE { speaker_config, .. } => {
                         current_channels = upmixer_output_channels(speaker_config);
                     }
                     PluginSettings::AmbisonicsDecoder { target_layout, .. } => {
@@ -1738,6 +1809,11 @@ impl PluginGraph {
                     }
                     _ => {}
                 }
+            }
+
+            if let Some(node) = self.nodes.get_mut(&node_id) {
+                node.input_channels = node_input_channels;
+                node.output_channels = current_channels;
             }
         }
     }

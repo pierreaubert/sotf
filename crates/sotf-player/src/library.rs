@@ -474,7 +474,12 @@ pub struct MusicLibrary {
     pub albums: Vec<Album>,
     db: Option<MusicDatabase>,
     /// Cached directory stats for lazy loading of subdirectories.
-    dir_stats_cache: HashMap<PathBuf, (usize, usize)>,
+    /// Per directory we store `(track_count, album_keys)` — the set of unique
+    /// album keys whose tracks live directly in that directory. Aggregating
+    /// stats for a parent path then becomes a union of the sets across all
+    /// matching subdirectories, which correctly dedupes albums whose tracks
+    /// span multiple subdirectories.
+    dir_stats_cache: HashMap<PathBuf, (usize, std::collections::HashSet<String>)>,
 }
 
 impl MusicLibrary {
@@ -711,7 +716,7 @@ impl MusicLibrary {
         fn toggle_recursive(
             directories: &mut [DirectoryInfo],
             target_path: &Path,
-            stats_map: &HashMap<PathBuf, (usize, usize)>,
+            stats_map: &HashMap<PathBuf, (usize, std::collections::HashSet<String>)>,
         ) -> bool {
             for dir in directories {
                 if dir.path == target_path {
@@ -987,7 +992,8 @@ impl MusicLibrary {
         let mut last_progress_report = SystemTime::now();
 
         // Create a map of directory path to (file count, album count)
-        let mut dir_stats: HashMap<PathBuf, (usize, usize)> = HashMap::new();
+        let mut dir_stats: HashMap<PathBuf, (usize, std::collections::HashSet<String>)> =
+            HashMap::new();
 
         // Log directories being scanned
         log::info!(
@@ -1048,25 +1054,17 @@ impl MusicLibrary {
         // Final progress report
         progress_callback(total_tracks, album_map.len());
 
-        // Calculate album counts per directory
-        // We use a temporary map to store sets of album keys per directory to ensure uniqueness
-        let mut dir_albums: HashMap<PathBuf, std::collections::HashSet<String>> = HashMap::new();
-
+        // Stitch album-key sets into dir_stats. Each track contributes its
+        // album's key to the parent directory's set; aggregation up the tree
+        // unions these sets so an album whose tracks span N subdirectories is
+        // counted once instead of N times.
         for (title, album) in &album_map {
             for track in &album.tracks {
                 if let Some(parent) = track.path.parent() {
-                    dir_albums
-                        .entry(parent.to_path_buf())
-                        .or_default()
-                        .insert(title.clone());
+                    let entry = dir_stats.entry(parent.to_path_buf()).or_default();
+                    entry.1.insert(title.clone());
                 }
             }
-        }
-
-        // Update dir_stats with album counts
-        for (dir_path, albums) in dir_albums {
-            let stats = dir_stats.entry(dir_path).or_insert((0, 0));
-            stats.1 = albums.len();
         }
 
         // Update directory stats using aggregate computation (no tree walk needed)
@@ -1207,7 +1205,7 @@ impl MusicLibrary {
         dir: &Path,
         album_map: &mut HashMap<String, Album>,
         incremental: bool,
-        dir_stats: &mut HashMap<PathBuf, (usize, usize)>,
+        dir_stats: &mut HashMap<PathBuf, (usize, std::collections::HashSet<String>)>,
         cancellation_token: Option<Arc<AtomicBool>>,
         pause_flag: Option<Arc<AtomicBool>>,
     ) -> Result<(usize, usize), Box<dyn std::error::Error>> {
@@ -1259,14 +1257,12 @@ impl MusicLibrary {
                 ) {
                     total_tracks += 1;
 
-                    // Update stats for the parent directory of this file
+                    // Update stats for the parent directory of this file.
+                    // Album keys are stitched in below (post-scan) once each
+                    // track has been associated with an album in `album_map`.
                     if let Some(parent) = path.parent() {
-                        let stats = dir_stats.entry(parent.to_path_buf()).or_insert((0, 0));
+                        let stats = dir_stats.entry(parent.to_path_buf()).or_default();
                         stats.0 += 1;
-                        // We'll update album count later or try to track it here?
-                        // Tracking unique albums per directory is tricky if we process file by file.
-                        // Let's just count tracks for now in the stats map, and maybe estimate albums?
-                        // Or we can track unique albums per directory in a separate map?
                     }
 
                     // Check if we should skip this file in incremental mode
@@ -1731,7 +1727,7 @@ fn build_directory_shallow(
 /// Computes aggregate stats for each child from the stats_map.
 pub fn load_children_from_disk(
     dir_info: &mut DirectoryInfo,
-    stats_map: &HashMap<PathBuf, (usize, usize)>,
+    stats_map: &HashMap<PathBuf, (usize, std::collections::HashSet<String>)>,
 ) {
     if dir_info.children_loaded {
         return;
@@ -1764,27 +1760,43 @@ pub fn load_children_from_disk(
 
 /// Compute aggregate stats (track count, album count) for a directory and all its descendants.
 /// Iterates the stats_map in memory — no disk I/O.
+///
+/// Album count is the size of the union of per-directory album-key sets, so an
+/// album whose tracks span several subdirectories is counted once, not once
+/// per subdirectory.
 fn compute_aggregate_stats_for_path(
     root: &Path,
-    stats_map: &HashMap<PathBuf, (usize, usize)>,
+    stats_map: &HashMap<PathBuf, (usize, std::collections::HashSet<String>)>,
 ) -> (usize, usize) {
     let mut total_tracks = 0;
-    let mut total_albums = 0;
-    for (dir, (tracks, albums)) in stats_map {
+    let mut album_union: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    for (dir, (tracks, album_keys)) in stats_map {
         if dir.starts_with(root) {
             total_tracks += tracks;
-            total_albums += albums;
+            for key in album_keys {
+                album_union.insert(key.as_str());
+            }
         }
     }
-    (total_tracks, total_albums)
+    (total_tracks, album_union.len())
 }
 
-/// Compute directory stats from albums in the library
-/// Returns a map of directory path -> (track count, album count)
-/// Uses both original and canonicalized paths as keys for robust matching
-fn compute_directory_stats(albums: &[Album]) -> HashMap<PathBuf, (usize, usize)> {
-    let mut dir_track_counts: HashMap<PathBuf, usize> = HashMap::new();
-    let mut dir_album_sets: HashMap<PathBuf, std::collections::HashSet<String>> = HashMap::new();
+/// Compute directory stats from albums in the library.
+/// Returns a map of `directory path -> (track count, album-key set)`.
+/// Each entry covers tracks that live *directly* in that directory; the
+/// aggregator (`compute_aggregate_stats_for_path`) walks descendants and
+/// unions the album-key sets so albums spanning multiple subdirectories are
+/// counted once.
+///
+/// Both the original parent path and (when different) its canonicalized form
+/// are inserted as keys so callers can look up by either form. The track
+/// count and album set are duplicated under both keys; aggregation uses
+/// `starts_with(root)` against a single root form, so only one form
+/// participates in any given aggregation.
+fn compute_directory_stats(
+    albums: &[Album],
+) -> HashMap<PathBuf, (usize, std::collections::HashSet<String>)> {
+    let mut result: HashMap<PathBuf, (usize, std::collections::HashSet<String>)> = HashMap::new();
     // Cache canonicalize() results — many tracks share the same parent directory
     let mut canonical_cache: HashMap<PathBuf, Option<PathBuf>> = HashMap::new();
 
@@ -1795,33 +1807,21 @@ fn compute_directory_stats(albums: &[Album]) -> HashMap<PathBuf, (usize, usize)>
             if let Some(parent) = track.path.parent() {
                 let parent_buf = parent.to_path_buf();
 
-                *dir_track_counts.entry(parent_buf.clone()).or_insert(0) += 1;
-
-                dir_album_sets
-                    .entry(parent_buf.clone())
-                    .or_default()
-                    .insert(album_key.clone());
+                let entry = result.entry(parent_buf.clone()).or_default();
+                entry.0 += 1;
+                entry.1.insert(album_key.clone());
 
                 // Use cached canonicalize result
                 let canonical = canonical_cache
                     .entry(parent_buf.clone())
                     .or_insert_with(|| parent_buf.canonicalize().ok().filter(|c| *c != parent_buf));
                 if let Some(canonical) = canonical.clone() {
-                    *dir_track_counts.entry(canonical.clone()).or_insert(0) += 1;
-                    dir_album_sets
-                        .entry(canonical)
-                        .or_default()
-                        .insert(album_key.clone());
+                    let entry = result.entry(canonical).or_default();
+                    entry.0 += 1;
+                    entry.1.insert(album_key.clone());
                 }
             }
         }
-    }
-
-    // Combine track counts and album counts
-    let mut result = HashMap::new();
-    for (dir, track_count) in dir_track_counts {
-        let album_count = dir_album_sets.get(&dir).map(|set| set.len()).unwrap_or(0);
-        result.insert(dir, (track_count, album_count));
     }
 
     result

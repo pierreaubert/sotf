@@ -3,7 +3,9 @@
 //! Covers: move_plugin, insert_plugin, user_plugin_insert_index, is_permanent,
 //! and PluginController integration.
 
-use sotf_audio_player::{PluginChain, PluginType};
+use sotf_audio_player::{
+    PluginChain, PluginController, PluginSettings, PluginType, PluginUpdateEffect, param_specs,
+};
 
 #[test]
 fn default_rack_has_permanent_plugins() {
@@ -88,6 +90,51 @@ fn user_added_matrix_is_not_permanent() {
         !chain.plugins()[insert_idx].is_permanent(),
         "user-added Matrix plugin should not be permanent"
     );
+}
+
+#[test]
+fn upmixer_binaural_preview_resizes_graph_matrix_to_stereo() {
+    let mut controller = PluginController::new();
+    controller.add_plugin(&PluginType::Upmixer);
+    let upmixer_idx = controller
+        .graph
+        .find_plugin_index(&PluginType::Upmixer)
+        .expect("upmixer should be present");
+    let preview_idx = param_specs::index_of(param_specs::upmixer::PARAMS, "binaural_preview");
+
+    let effect = controller.set_plugin_param(upmixer_idx, preview_idx, 1.0);
+
+    assert!(matches!(effect, PluginUpdateEffect::Structural));
+    assert_eq!(controller.graph.output_channels(), 2);
+
+    let upmixer_node = controller
+        .graph
+        .plugins_linear()
+        .expect("default graph should be linear")
+        .into_iter()
+        .find(|node| node.plugin.plugin_type() == PluginType::Upmixer)
+        .expect("upmixer should be present");
+    assert_eq!(upmixer_node.output_channels, 2);
+
+    let matrix = controller
+        .graph
+        .plugins_linear()
+        .expect("default graph should be linear")
+        .into_iter()
+        .find(|node| node.plugin.plugin_type() == PluginType::Matrix)
+        .expect("matrix should be present");
+
+    match &matrix.plugin.settings {
+        PluginSettings::Matrix {
+            input_channels,
+            output_channels,
+            ..
+        } => {
+            assert_eq!(*input_channels, 2);
+            assert_eq!(*output_channels, 2);
+        }
+        _ => panic!("expected matrix settings"),
+    }
 }
 
 #[test]

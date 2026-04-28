@@ -1705,15 +1705,22 @@ fn set_plugin_param_value(
 
 /// Apply structural side effects after a parameter update via the generic path.
 ///
-/// Handles: Upmixer speaker_config (idx 0) sets channel_count_changed,
+/// Handles: Upmixer output topology params set channel_count_changed,
 /// MultibandCompressor/Expander num_bands (idx 0) resizes band arrays.
 fn apply_structural_side_effects(
     settings: &mut PluginSettings,
     param_idx: usize,
     channel_count_changed: &mut bool,
 ) {
+    let upmixer_binaural_preview_idx = sotf_plugins::param_specs::index_of(
+        sotf_plugins::param_specs::upmixer::PARAMS,
+        "binaural_preview",
+    );
+
     match settings {
-        PluginSettings::Upmixer { .. } if param_idx == 0 => {
+        PluginSettings::Upmixer { .. }
+            if param_idx == 0 || param_idx == upmixer_binaural_preview_idx =>
+        {
             *channel_count_changed = true;
         }
         PluginSettings::MultibandCompressor {
