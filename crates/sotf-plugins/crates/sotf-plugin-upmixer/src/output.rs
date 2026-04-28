@@ -6,6 +6,44 @@ use super::UpmixerPlugin;
 use sotf_host::simd::flush_denormals_inplace;
 
 impl UpmixerPlugin {
+    /// Apply the safety cap to final emitted samples after overlap-add and HR mixing.
+    ///
+    /// The per-FFT cap in `extract_output_and_scale` limits individual synthesis
+    /// blocks, but overlapping blocks can still sum above the cap in the output
+    /// accumulator. This final pass caps the real signal that leaves `process()`.
+    #[inline]
+    pub(super) fn apply_final_safety_cap(&mut self, output: &mut [f32], num_frames: usize) {
+        if self.safety_cap_db < 0.0 || num_frames == 0 || self.num_output_channels == 0 {
+            return;
+        }
+
+        let sample_count = (num_frames * self.num_output_channels).min(output.len());
+        let samples = &mut output[..sample_count];
+        if samples.is_empty() {
+            return;
+        }
+
+        let max_abs = sotf_host::simd::find_max_abs_simd(samples);
+        let mut target_scale = 1.0_f32;
+        if max_abs.is_finite() && max_abs > self.safety_cap_linear && max_abs > 0.0 {
+            target_scale = self.safety_cap_linear / max_abs;
+        }
+
+        // Attack immediately to guarantee the emitted chunk is capped. Release
+        // slowly so recovery does not pump between adjacent host buffers.
+        let release_coeff = 0.02_f32;
+        let applied_scale = if target_scale < self.final_safety_scale {
+            target_scale
+        } else {
+            self.final_safety_scale + release_coeff * (target_scale - self.final_safety_scale)
+        };
+
+        self.final_safety_scale = applied_scale.clamp(0.0, 1.0);
+        if (self.final_safety_scale - 1.0).abs() > 1e-6 {
+            sotf_host::simd::scale_add_simd_inplace(samples, self.final_safety_scale);
+        }
+    }
+
     /// Phase 5: Extract real parts from time domain and apply final scaling
     #[inline]
     pub(super) fn extract_output_and_scale(&mut self, output: &mut [f32], combined_scale: f32) {

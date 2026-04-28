@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod upmixer_tests {
     use crate::UpmixerPlugin;
+    use crate::params::SPEAKER_CONFIGS;
     use sotf_host::ProcessContext;
     use sotf_host::*;
 
@@ -2021,6 +2022,62 @@ mod upmixer_tests {
             "Output peak should be capped near 1.0 with safety_cap_db=0.0, got {}",
             peak,
         );
+    }
+
+    /// The safety cap must apply to the actual post-overlap-add signal. Limiting
+    /// individual FFT synthesis blocks is not enough because adjacent OLA blocks
+    /// can sum above 0 dBFS and clip downstream.
+    #[test]
+    fn test_safety_cap_limits_post_ola_output() {
+        let num_frames = 2048 * 24;
+        let mut input = vec![0.0f32; num_frames * 2];
+        let freqs = [55.0_f32, 110.0, 220.0, 440.0, 880.0, 1760.0, 3520.0, 7040.0];
+
+        for i in 0..num_frames {
+            let t = i as f32 / 44100.0;
+            let mut left = 0.0_f32;
+            let mut right = 0.0_f32;
+            for (idx, &freq) in freqs.iter().enumerate() {
+                let phase = 2.0 * std::f32::consts::PI * freq * t;
+                let weight = 1.0 / (1.0 + idx as f32 * 0.18);
+                left += (phase + idx as f32 * 0.13).sin() * weight;
+                right += (phase + idx as f32 * 0.19).sin() * weight;
+            }
+            input[i * 2] = (left * 0.55).tanh() * 0.98;
+            input[i * 2 + 1] = (right * 0.55).tanh() * 0.98;
+        }
+
+        let context = ProcessContext {
+            sample_rate: 44100,
+            num_frames,
+        };
+
+        for &config in SPEAKER_CONFIGS.iter().filter(|&&config| config != "2.0") {
+            let mut plugin = UpmixerPlugin::new(
+                2048, config, 1.6, 1.2, 1.2, 120.0, 0.5, 250.0, 0.0, 1.0, false, 0.5,
+            );
+            plugin.initialize(44100).unwrap();
+            plugin.safety_cap_db = 0.0;
+            plugin.safety_cap_db_smoother.set_target(0.0);
+            plugin.safety_cap_db_smoother.next_n(4096);
+            plugin.update_safety_cap_cache();
+
+            let num_ch = plugin.num_output_channels;
+            let mut output = vec![0.0f32; num_frames * num_ch];
+            plugin.process(&input, &mut output, &context).unwrap();
+
+            let peak = output
+                .iter()
+                .fold(0.0_f32, |acc, sample| acc.max(sample.abs()));
+            assert!(
+                peak <= 1.0005,
+                "post-OLA safety cap should keep emitted {config} samples at unity, got {peak}",
+            );
+            assert!(
+                plugin.final_safety_scale < 1.0,
+                "{config} test signal should exercise the final post-OLA limiter",
+            );
+        }
     }
 
     /// Sub-harmonic synthesis: with strong 80Hz content in LFE, the sub-harmonic

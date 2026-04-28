@@ -162,6 +162,8 @@ pub struct UpmixerPlugin {
     safety_cap_db: f32,
     /// Previous safety scale for smoothing between blocks
     prev_safety_scale: f32,
+    /// Final post-OLA safety scale for the actual emitted samples
+    final_safety_scale: f32,
 
     // Sub-harmonic synth state
     subharmonic_phase: f32,
@@ -517,7 +519,7 @@ impl UpmixerPlugin {
             height_transient_env: self.height_transient_env_slow,
             spectral_flux_smooth: self.spectral_flux_smooth,
             height_spectral_flux_smooth: self.height_spectral_flux_smooth,
-            safety_scale: self.prev_safety_scale,
+            safety_scale: self.prev_safety_scale.min(self.final_safety_scale),
             output_accumulator_fill: self.output_accumulator_fill,
             height_gain: control_stats(&self.height_band_gains),
             height_flux_gate: control_stats(&self.height_flux_gate),
@@ -661,7 +663,8 @@ impl UpmixerPlugin {
             hr_sharpen: Smoother::new(1.0, 5.0, sample_rate),
             safety_cap_db: default_safety_cap_db(),
             prev_safety_scale: 1.0, // Start with no gain reduction
-            decorrelation_mode: 0,  // Default to Velvet Noise
+            final_safety_scale: 1.0,
+            decorrelation_mode: 0, // Default to Velvet Noise
 
             // Sub-harmonic synthesis parameters
             subharmonic_freq_hz: default_subharmonic_freq_hz(),
@@ -1677,6 +1680,7 @@ impl Plugin for UpmixerPlugin {
         self.energy_correction_prev.fill(1.0);
 
         self.prev_safety_scale = 1.0;
+        self.final_safety_scale = 1.0;
 
         // Reset MFCC extractor state
         #[cfg(feature = "onnx")]
@@ -1954,6 +1958,9 @@ impl Plugin for UpmixerPlugin {
         }
 
         // Return actual number of frames produced. DawHost handles silence padding.
+        if output_pos > 0 {
+            self.apply_final_safety_cap(&mut output[..output_pos * nch], output_pos);
+        }
         flush_denormals_inplace(output);
         Ok(output_pos)
     }
