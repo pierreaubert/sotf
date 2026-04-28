@@ -586,47 +586,19 @@ impl PluginController {
     // EQ operations
     // ========================================================================
 
-    /// Load EQ filters from an APO file path.
+    /// Load EQ filters from an APO file path. Works for both EQ and LinearPhaseEq.
     pub fn load_apo_filters(&mut self, path: &Path) -> Result<PluginUpdateEffect, String> {
         crate::security::validate_plugin_file_path(path).map_err(|e| e.to_string())?;
-
-        if let Some(plugin) = self.get_editing_plugin() {
-            if !matches!(plugin.settings, PluginSettings::EQ { .. }) {
-                return Err("Selected plugin is not an EQ".to_string());
-            }
-        } else {
-            return Err("No plugin being edited".to_string());
-        }
-
-        let filters = EQFilter::from_apo_file(path)?;
-
-        if let Some(plugin) = self.get_editing_plugin_mut() {
-            if let PluginSettings::EQ {
-                channels,
-                channel_filters,
-                per_channel_mode,
-                ..
-            } = &plugin.settings
-            {
-                let channels = *channels;
-                let channel_filters = channel_filters.clone();
-                let per_channel_mode = *per_channel_mode;
-                plugin.settings = PluginSettings::EQ {
-                    channels,
-                    filters,
-                    channel_filters,
-                    per_channel_mode,
-                    max_filters: 10,
-                    tdf2: false,
-                    topology: 0.0,
-                };
-                Ok(PluginUpdateEffect::Structural)
-            } else {
-                Err("Selected plugin is not an EQ".to_string())
-            }
-        } else {
-            Err("No plugin being edited".to_string())
-        }
+        let new_filters = EQFilter::from_apo_file(path)?;
+        let plugin = self
+            .get_editing_plugin_mut()
+            .ok_or_else(|| "No plugin being edited".to_string())?;
+        let filters = plugin
+            .settings
+            .eq_global_filters_mut()
+            .ok_or_else(|| "Selected plugin is not an EQ".to_string())?;
+        *filters = new_filters;
+        Ok(PluginUpdateEffect::Structural)
     }
 
     /// Update SOFA file path for the currently editing binaural decoder plugin.
@@ -654,193 +626,65 @@ impl PluginController {
         }
     }
 
-    /// Add a new EQ band to the currently editing EQ plugin.
+    /// Add a new EQ band to the currently editing EQ or LinearPhaseEq plugin.
     pub fn add_eq_band(&mut self) -> Result<PluginUpdateEffect, String> {
-        if let Some(plugin) = self.get_editing_plugin() {
-            if !matches!(plugin.settings, PluginSettings::EQ { .. }) {
-                return Err("Selected plugin is not an EQ".to_string());
-            }
-        } else {
-            return Err("No plugin being edited".to_string());
-        }
-
-        if let Some(plugin) = self.get_editing_plugin_mut() {
-            if let PluginSettings::EQ {
-                channels,
-                filters,
-                channel_filters,
-                per_channel_mode,
-                ..
-            } = &mut plugin.settings
-            {
-                let new_filter = EQFilter::new(BiquadFilterType::Peak, 1000.0, 1.0, 0.0);
-                filters.push(new_filter);
-
-                let channels = *channels;
-                let filters = filters.clone();
-                let channel_filters = channel_filters.clone();
-                let per_channel_mode = *per_channel_mode;
-                plugin.settings = PluginSettings::EQ {
-                    channels,
-                    filters,
-                    channel_filters,
-                    per_channel_mode,
-                    max_filters: 10,
-                    tdf2: false,
-                    topology: 0.0,
-                };
-
-                Ok(PluginUpdateEffect::Structural)
-            } else {
-                Err("Selected plugin is not an EQ".to_string())
-            }
-        } else {
-            Err("No plugin being edited".to_string())
-        }
+        let plugin = self
+            .get_editing_plugin_mut()
+            .ok_or_else(|| "No plugin being edited".to_string())?;
+        let filters = plugin
+            .settings
+            .eq_global_filters_mut()
+            .ok_or_else(|| "Selected plugin is not an EQ".to_string())?;
+        filters.push(EQFilter::new(BiquadFilterType::Peak, 1000.0, 1.0, 0.0));
+        Ok(PluginUpdateEffect::Structural)
     }
 
-    /// Remove an EQ band from the currently editing EQ plugin.
+    /// Remove an EQ band from the currently editing EQ or LinearPhaseEq plugin.
     pub fn remove_eq_band(&mut self, band_idx: usize) -> Result<PluginUpdateEffect, String> {
-        if let Some(plugin) = self.get_editing_plugin() {
-            if !matches!(plugin.settings, PluginSettings::EQ { .. }) {
-                return Err("Selected plugin is not an EQ".to_string());
-            }
-        } else {
-            return Err("No plugin being edited".to_string());
+        let plugin = self
+            .get_editing_plugin_mut()
+            .ok_or_else(|| "No plugin being edited".to_string())?;
+        let filters = plugin
+            .settings
+            .eq_global_filters_mut()
+            .ok_or_else(|| "Selected plugin is not an EQ".to_string())?;
+        if band_idx >= filters.len() {
+            return Err("Invalid band index".to_string());
         }
-
-        if let Some(plugin) = self.get_editing_plugin_mut() {
-            if let PluginSettings::EQ {
-                channels,
-                filters,
-                channel_filters,
-                per_channel_mode,
-                ..
-            } = &mut plugin.settings
-            {
-                if band_idx >= filters.len() {
-                    return Err("Invalid band index".to_string());
-                }
-
-                filters.remove(band_idx);
-
-                let channels = *channels;
-                let filters = filters.clone();
-                let channel_filters = channel_filters.clone();
-                let per_channel_mode = *per_channel_mode;
-                plugin.settings = PluginSettings::EQ {
-                    channels,
-                    filters,
-                    channel_filters,
-                    per_channel_mode,
-                    max_filters: 10,
-                    tdf2: false,
-                    topology: 0.0,
-                };
-
-                Ok(PluginUpdateEffect::Structural)
-            } else {
-                Err("Selected plugin is not an EQ".to_string())
-            }
-        } else {
-            Err("No plugin being edited".to_string())
-        }
+        filters.remove(band_idx);
+        Ok(PluginUpdateEffect::Structural)
     }
 
-    /// Toggle mute state for an EQ band.
+    /// Toggle mute state for an EQ or LinearPhaseEq band.
     pub fn toggle_eq_band_mute(&mut self, band_idx: usize) -> Result<PluginUpdateEffect, String> {
-        if let Some(plugin) = self.get_editing_plugin() {
-            if !matches!(plugin.settings, PluginSettings::EQ { .. }) {
-                return Err("Selected plugin is not an EQ".to_string());
-            }
-        } else {
-            return Err("No plugin being edited".to_string());
+        let plugin = self
+            .get_editing_plugin_mut()
+            .ok_or_else(|| "No plugin being edited".to_string())?;
+        let filters = plugin
+            .settings
+            .eq_global_filters_mut()
+            .ok_or_else(|| "Selected plugin is not an EQ".to_string())?;
+        if band_idx >= filters.len() {
+            return Err("Invalid band index".to_string());
         }
-
-        if let Some(plugin) = self.get_editing_plugin_mut() {
-            if let PluginSettings::EQ {
-                channels,
-                filters,
-                channel_filters,
-                per_channel_mode,
-                ..
-            } = &mut plugin.settings
-            {
-                if band_idx >= filters.len() {
-                    return Err("Invalid band index".to_string());
-                }
-
-                filters[band_idx].muted = !filters[band_idx].muted;
-
-                let channels = *channels;
-                let filters = filters.clone();
-                let channel_filters = channel_filters.clone();
-                let per_channel_mode = *per_channel_mode;
-                plugin.settings = PluginSettings::EQ {
-                    channels,
-                    filters,
-                    channel_filters,
-                    per_channel_mode,
-                    max_filters: 10,
-                    tdf2: false,
-                    topology: 0.0,
-                };
-
-                Ok(PluginUpdateEffect::Structural)
-            } else {
-                Err("Selected plugin is not an EQ".to_string())
-            }
-        } else {
-            Err("No plugin being edited".to_string())
-        }
+        filters[band_idx].muted = !filters[band_idx].muted;
+        Ok(PluginUpdateEffect::Structural)
     }
 
-    /// Toggle solo state for an EQ band.
+    /// Toggle solo state for an EQ or LinearPhaseEq band.
     pub fn toggle_eq_band_solo(&mut self, band_idx: usize) -> Result<PluginUpdateEffect, String> {
-        if let Some(plugin) = self.get_editing_plugin() {
-            if !matches!(plugin.settings, PluginSettings::EQ { .. }) {
-                return Err("Selected plugin is not an EQ".to_string());
-            }
-        } else {
-            return Err("No plugin being edited".to_string());
+        let plugin = self
+            .get_editing_plugin_mut()
+            .ok_or_else(|| "No plugin being edited".to_string())?;
+        let filters = plugin
+            .settings
+            .eq_global_filters_mut()
+            .ok_or_else(|| "Selected plugin is not an EQ".to_string())?;
+        if band_idx >= filters.len() {
+            return Err("Invalid band index".to_string());
         }
-
-        if let Some(plugin) = self.get_editing_plugin_mut() {
-            if let PluginSettings::EQ {
-                channels,
-                filters,
-                channel_filters,
-                per_channel_mode,
-                ..
-            } = &mut plugin.settings
-            {
-                if band_idx >= filters.len() {
-                    return Err("Invalid band index".to_string());
-                }
-
-                filters[band_idx].solo = !filters[band_idx].solo;
-
-                let channels = *channels;
-                let filters = filters.clone();
-                let channel_filters = channel_filters.clone();
-                let per_channel_mode = *per_channel_mode;
-                plugin.settings = PluginSettings::EQ {
-                    channels,
-                    filters,
-                    channel_filters,
-                    per_channel_mode,
-                    max_filters: 10,
-                    tdf2: false,
-                    topology: 0.0,
-                };
-
-                Ok(PluginUpdateEffect::Structural)
-            } else {
-                Err("Selected plugin is not an EQ".to_string())
-            }
-        } else {
-            Err("No plugin being edited".to_string())
-        }
+        filters[band_idx].solo = !filters[band_idx].solo;
+        Ok(PluginUpdateEffect::Structural)
     }
 
     /// Set the EQ plugin to per-channel mode or global mode.

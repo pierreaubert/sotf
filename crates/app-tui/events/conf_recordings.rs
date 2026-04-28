@@ -52,8 +52,8 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
             app.clear_autocomplete();
             return None;
         }
-        if app.recording.editing_mic_cal {
-            app.recording.editing_mic_cal = false;
+        if app.recording.editing_mic_cal_channel.is_some() {
+            app.recording.editing_mic_cal_channel = None;
             app.clear_autocomplete();
             return None;
         }
@@ -161,10 +161,10 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 }
                 return None;
             }
-            if app.recording.editing_mic_cal {
+            if app.recording.editing_mic_cal_channel.is_some() {
                 match key.code {
                     KeyCode::Enter => {
-                        app.recording.editing_mic_cal = false;
+                        app.recording.editing_mic_cal_channel = None;
                         app.clear_autocomplete();
                     }
                     KeyCode::Tab => {
@@ -190,14 +190,16 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                         );
                     }
                     KeyCode::Backspace => {
-                        app.recording.mic_calibration_path.pop();
+                        if let Some(s) = app.recording.active_mic_cal_path_mut() {
+                            s.pop();
+                        }
                         app.refresh_autocomplete_inline(
                             crate::app::app_autocomplete::get_recording_mic_cal_path,
                             crate::app::app_autocomplete::AutocompleteKind::FilePath,
                         );
                     }
                     KeyCode::F(2) => {
-                        let start = app.recording.mic_calibration_path.clone();
+                        let start = app.recording.active_mic_cal_path().to_string();
                         app.open_file_explorer(
                             FilePickerOrigin::RecordingMicCalibration,
                             FilePickerMode::File,
@@ -207,7 +209,9 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                         );
                     }
                     KeyCode::Char(c) => {
-                        app.recording.mic_calibration_path.push(c);
+                        if let Some(s) = app.recording.active_mic_cal_path_mut() {
+                            s.push(c);
+                        }
                         app.refresh_autocomplete_inline(
                             crate::app::app_autocomplete::get_recording_mic_cal_path,
                             crate::app::app_autocomplete::AutocompleteKind::FilePath,
@@ -240,6 +244,8 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 return None;
             }
 
+            use crate::app::{recording_field_at, recording_field_count, RecordingField};
+            let total_fields = recording_field_count(&app.recording);
             match key.code {
                 KeyCode::Up => {
                     if app.recording.selected_field == 0 {
@@ -249,25 +255,27 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                     }
                 }
                 KeyCode::Down => {
-                    if app.recording.selected_field < 9 {
+                    if app.recording.selected_field + 1 < total_fields {
                         app.recording.selected_field += 1;
                     }
                 }
                 KeyCode::Enter => {
-                    let f = app.recording.selected_field;
-                    match f {
-                        8 => {
+                    match recording_field_at(&app.recording, app.recording.selected_field) {
+                        Some(RecordingField::OutputDir) => {
                             app.recording.editing_output_dir = true;
                         }
-                        9 => {
-                            app.recording.editing_mic_cal = true;
+                        Some(RecordingField::MicCal(ch)) => {
+                            // Make sure the channel slot exists so the
+                            // autocomplete getter can read it as `&str`.
+                            app.recording.sync_recording_channel_vecs();
+                            app.recording.editing_mic_cal_channel = Some(ch);
                         }
-                        _ => {
-                            if is_recording_field_numerical(f) {
-                                app.recording.edit_buffer = recording_field_value_string(app, f);
-                                app.recording.editing_value = true;
-                            }
+                        Some(field) if is_recording_field_numerical_kind(&field) => {
+                            app.recording.edit_buffer =
+                                recording_field_value_string_kind(app, &field);
+                            app.recording.editing_value = true;
                         }
+                        _ => {}
                     }
                 }
                 KeyCode::Left | KeyCode::Char('-') => {
@@ -277,21 +285,25 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                     adjust_recording_field(app, 1);
                 }
                 KeyCode::Char('a') | KeyCode::Char('A')
-                    if app.recording.selected_field == 2
-                        && app.recording.playback_config.speaker_configuration
-                            == sotf_audio_player::recording_types::SpeakerConfiguration::Custom =>
+                    if matches!(
+                        recording_field_at(&app.recording, app.recording.selected_field),
+                        Some(RecordingField::SpeakerConfig)
+                    ) && app.recording.playback_config.speaker_configuration
+                        == sotf_audio_player::recording_types::SpeakerConfiguration::Custom =>
                 {
                     add_custom_speaker(app);
                 }
                 KeyCode::Char('x') | KeyCode::Char('X')
-                    if app.recording.selected_field == 2
-                        && app.recording.playback_config.speaker_configuration
-                            == sotf_audio_player::recording_types::SpeakerConfiguration::Custom =>
+                    if matches!(
+                        recording_field_at(&app.recording, app.recording.selected_field),
+                        Some(RecordingField::SpeakerConfig)
+                    ) && app.recording.playback_config.speaker_configuration
+                        == sotf_audio_player::recording_types::SpeakerConfiguration::Custom =>
                 {
                     remove_custom_speaker(app);
                 }
                 KeyCode::Tab => {
-                    if app.recording.selected_field < 9 {
+                    if app.recording.selected_field + 1 < total_fields {
                         app.recording.selected_field += 1;
                     } else {
                         app.recording.selected_field = 0;
@@ -809,42 +821,86 @@ fn commit_save_field_edit(app: &mut App) {
     app.recording.edit_buffer.clear();
 }
 
-/// Fields 4-7 are numerical (duration, level, start_freq, end_freq)
-fn is_recording_field_numerical(field: usize) -> bool {
-    matches!(field, 4..=7)
+use crate::app::RecordingField;
+
+/// True for fields whose value is edited as a typed number string.
+pub(crate) fn is_recording_field_numerical_kind(field: &RecordingField) -> bool {
+    use RecordingField::*;
+    matches!(
+        field,
+        Duration
+            | Level
+            | SweepStart
+            | SweepEnd
+            | NumRecordingChannels
+            | ChannelInput(_)
+    )
 }
 
-fn recording_field_value_string(app: &App, field: usize) -> String {
+pub(crate) fn recording_field_value_string_kind(app: &App, field: &RecordingField) -> String {
+    use RecordingField::*;
     match field {
-        4 => format!("{:.1}", app.recording.signal_duration_secs),
-        5 => format!("{:.1}", app.recording.signal_level_db),
-        6 => format!("{:.0}", app.recording.sweep_start_freq),
-        7 => format!("{:.0}", app.recording.sweep_end_freq),
+        Duration => format!("{:.1}", app.recording.signal_duration_secs),
+        Level => format!("{:.1}", app.recording.signal_level_db),
+        SweepStart => format!("{:.0}", app.recording.sweep_start_freq),
+        SweepEnd => format!("{:.0}", app.recording.sweep_end_freq),
+        NumRecordingChannels => app.recording.recording_config.num_channels.to_string(),
+        ChannelInput(i) => app
+            .recording
+            .recording_config
+            .channel_mappings
+            .get(*i)
+            .map(|c| (c + 1).to_string())
+            .unwrap_or_else(|| "1".to_string()),
         _ => String::new(),
     }
 }
 
 fn set_recording_field_from_string(app: &mut App) {
-    let buf = &app.recording.edit_buffer;
-    match app.recording.selected_field {
-        4 => {
+    use crate::app::recording_field_at;
+    let buf = app.recording.edit_buffer.clone();
+    let Some(field) = recording_field_at(&app.recording, app.recording.selected_field) else {
+        return;
+    };
+    use RecordingField::*;
+    match field {
+        Duration => {
             if let Ok(v) = buf.parse::<f32>() {
                 app.recording.signal_duration_secs = v.clamp(1.0, 30.0);
             }
         }
-        5 => {
+        Level => {
             if let Ok(v) = buf.parse::<f32>() {
                 app.recording.signal_level_db = v.clamp(-40.0, 0.0);
             }
         }
-        6 => {
+        SweepStart => {
             if let Ok(v) = buf.parse::<f32>() {
                 app.recording.sweep_start_freq = v.clamp(10.0, 1000.0);
             }
         }
-        7 => {
+        SweepEnd => {
             if let Ok(v) = buf.parse::<f32>() {
                 app.recording.sweep_end_freq = v.clamp(1000.0, 24000.0);
+            }
+        }
+        NumRecordingChannels => {
+            if let Ok(v) = buf.parse::<usize>() {
+                app.recording.recording_config.num_channels = v.clamp(1, 128);
+                app.recording.sync_recording_channel_vecs();
+                // Clamp cursor in case the field count just shrank.
+                let last = crate::app::recording_field_count(&app.recording) - 1;
+                if app.recording.selected_field > last {
+                    app.recording.selected_field = last;
+                }
+            }
+        }
+        ChannelInput(i) => {
+            if let Ok(v) = buf.parse::<usize>() {
+                let v = v.saturating_sub(1).min(127);
+                if let Some(slot) = app.recording.recording_config.channel_mappings.get_mut(i) {
+                    *slot = v;
+                }
             }
         }
         _ => {}
@@ -852,10 +908,15 @@ fn set_recording_field_from_string(app: &mut App) {
 }
 
 fn adjust_recording_field(app: &mut App, delta: i32) {
+    use crate::app::recording_field_at;
     use sotf_audio_player::recording_types::{RecordingSignalType, SpeakerConfiguration};
 
-    match app.recording.selected_field {
-        0 => {
+    let Some(field) = recording_field_at(&app.recording, app.recording.selected_field) else {
+        return;
+    };
+    use RecordingField::*;
+    match field {
+        PlaybackDevice => {
             // B1: Cycle playback device and populate config
             if !app.recording.available_playback_devices.is_empty() {
                 let len = app.recording.available_playback_devices.len();
@@ -871,7 +932,7 @@ fn adjust_recording_field(app: &mut App, delta: i32) {
                 app.recording.playback_config.device_id = id;
             }
         }
-        1 => {
+        RecordingDevice => {
             // B1: Cycle recording device and populate config
             if !app.recording.available_recording_devices.is_empty() {
                 let len = app.recording.available_recording_devices.len();
@@ -887,8 +948,7 @@ fn adjust_recording_field(app: &mut App, delta: i32) {
                 app.recording.recording_config.device_id = id;
             }
         }
-        2 => {
-            // Cycle speaker config
+        SpeakerConfig => {
             let configs = SpeakerConfiguration::all();
             let idx = configs
                 .iter()
@@ -901,11 +961,9 @@ fn adjust_recording_field(app: &mut App, delta: i32) {
             };
             let new_config = configs[new_idx];
             app.recording.playback_config.speaker_configuration = new_config;
-            // Update channel mappings for new config
             update_channel_mappings_for_config(app, new_config);
         }
-        3 => {
-            // Cycle signal type
+        SignalType => {
             let types = RecordingSignalType::all();
             let idx = types
                 .iter()
@@ -918,23 +976,42 @@ fn adjust_recording_field(app: &mut App, delta: i32) {
             };
             app.recording.signal_type = types[new_idx];
         }
-        4 => {
+        Duration => {
             app.recording.signal_duration_secs =
                 (app.recording.signal_duration_secs + delta as f32).clamp(1.0, 30.0);
         }
-        5 => {
+        Level => {
             app.recording.signal_level_db =
                 (app.recording.signal_level_db + delta as f32).clamp(-40.0, 0.0);
         }
-        6 => {
+        SweepStart => {
             app.recording.sweep_start_freq =
                 (app.recording.sweep_start_freq + delta as f32 * 10.0).clamp(10.0, 1000.0);
         }
-        7 => {
+        SweepEnd => {
             app.recording.sweep_end_freq =
                 (app.recording.sweep_end_freq + delta as f32 * 1000.0).clamp(1000.0, 24000.0);
         }
-        _ => {}
+        NumRecordingChannels => {
+            let cur = app.recording.recording_config.num_channels as i32;
+            let next = (cur + delta).clamp(1, 128) as usize;
+            app.recording.recording_config.num_channels = next;
+            app.recording.sync_recording_channel_vecs();
+            let last = crate::app::recording_field_count(&app.recording) - 1;
+            if app.recording.selected_field > last {
+                app.recording.selected_field = last;
+            }
+        }
+        ChannelInput(i) => {
+            if let Some(slot) = app.recording.recording_config.channel_mappings.get_mut(i) {
+                let cur = *slot as i32;
+                let next = (cur + delta).clamp(0, 127) as usize;
+                *slot = next;
+            }
+        }
+        OutputDir | MicCal(_) => {
+            // Path fields ignore Left/Right adjust; user must Enter to edit.
+        }
     }
 }
 
@@ -1063,11 +1140,16 @@ fn start_recording_channel(app: &mut App, channel_idx: usize) {
         .copied()
         .unwrap_or(0) as u16;
 
-    let mic_calibration = if app.recording.mic_calibration_path.is_empty() {
-        None
-    } else {
-        Some(app.recording.mic_calibration_path.clone())
-    };
+    // Per-channel calibration lives in `recording_config.mic_calibration_paths`.
+    // The per-channel signal recorder takes a single path and applies it to
+    // its one input — pick the calibration for the input channel being used.
+    let mic_calibration = app
+        .recording
+        .recording_config
+        .mic_calibration_paths
+        .get(input_channel as usize)
+        .and_then(|o| o.clone())
+        .filter(|s| !s.is_empty());
 
     let channel_name = app.recording.channel_recordings[channel_idx]
         .channel_name
@@ -1328,11 +1410,16 @@ pub(crate) fn save_recordings(app: &mut App) {
         recording_device_id: app.recording.recording_config.device_id.clone(),
         recording_sample_rate: app.recording.recording_config.sample_rate,
         recording_channels: app.recording.recording_config.num_channels,
-        mic_calibration_path: if app.recording.mic_calibration_path.is_empty() {
-            None
-        } else {
-            Some(app.recording.mic_calibration_path.clone())
-        },
+        // Legacy single-mic field: derive from channel 0 for backwards
+        // compatibility with consumers that haven't migrated to the per-
+        // channel vec.
+        mic_calibration_path: app
+            .recording
+            .recording_config
+            .mic_calibration_paths
+            .first()
+            .and_then(|o| o.clone())
+            .filter(|s| !s.is_empty()),
         mic_calibration_paths: app.recording.recording_config.mic_calibration_paths.clone(),
         recording_directory: if app.recording.output_directory.is_empty() {
             None
@@ -1366,6 +1453,7 @@ pub(crate) fn save_recordings(app: &mut App) {
             .as_ref()
             .and_then(|p| std::path::Path::new(p).file_name())
             .map(|f| f.to_string_lossy().to_string()),
+        num_positions: app.recording.recording_config.num_positions.max(1),
     };
 
     let measurements_file = RoomEqMeasurementsFile::with_configuration(channels, configuration);

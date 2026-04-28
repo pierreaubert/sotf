@@ -103,6 +103,61 @@ pub(super) fn handle_queue_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
             app.toggle_current_queue_album_favorite();
             None
         }
+        KeyCode::Char('A') => {
+            // Add to the active playlist. If a track is selected within an
+            // expanded album, add just that track; otherwise add the whole
+            // album. Mirrors the Library `A` handler for albums and extends
+            // it with track-level granularity from the queue view.
+            if app.playlist_controller.active_playlist_id().is_none() {
+                app.status_message = Some("Open a playlist first (Y screen)".to_string());
+                return None;
+            }
+            let Some(db) = app.library.get_database() else {
+                return None;
+            };
+            let idx = app.selected_queue_index;
+            let Some(entry) = app.queue.get(idx) else {
+                return None;
+            };
+
+            if let Some(t_idx) = app.selected_queue_track_index
+                && let Some(track) = entry.item.album.tracks.get(t_idx)
+            {
+                let title = track
+                    .title
+                    .clone()
+                    .unwrap_or_else(|| format!("Track {}", t_idx + 1));
+                let path = track.path.clone();
+                match app.playlist_controller.add_tracks(db, &[path]) {
+                    Ok(()) => {
+                        app.status_message = Some(format!("Added '{}' to playlist", title))
+                    }
+                    Err(e) => app.status_message = Some(format!("Error: {}", e)),
+                }
+            } else {
+                let active_id = app.playlist_controller.active_playlist_id();
+                let pl_idx = active_id.and_then(|id| {
+                    app.playlist_controller
+                        .playlists()
+                        .iter()
+                        .position(|p| p.id == Some(id))
+                });
+                if let Some(pl_idx) = pl_idx {
+                    let album = entry.item.album.clone();
+                    match app
+                        .playlist_controller
+                        .add_album_to_playlist(db, pl_idx, &album)
+                    {
+                        Ok(()) => {
+                            app.status_message =
+                                Some(format!("Added '{}' to playlist", album.title))
+                        }
+                        Err(e) => app.status_message = Some(format!("Error: {}", e)),
+                    }
+                }
+            }
+            None
+        }
         // Note: Volume controls (+/-) are now global (see handle_normal_mode)
         _ => None,
     }

@@ -27,4 +27,7 @@ pub use types::{
     TreeItem,
 };
 // Allow access to types submodule for full detail (SOURCE_TYPE_NAMES, etc.)
-pub(crate) use types::{ADD_SOURCE_TYPE_IDX, SOURCE_TYPE_NAMES};
+pub(crate) use types::{
+    ADD_SOURCE_TYPE_IDX, RecordingField, SOURCE_TYPE_NAMES, recording_field_at,
+    recording_field_count,
+};

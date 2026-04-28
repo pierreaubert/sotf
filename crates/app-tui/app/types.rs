@@ -488,7 +488,6 @@ pub struct RecordingTuiState {
     pub available_recording_devices: Vec<(String, String)>,
     pub selected_playback_idx: usize,
     pub selected_recording_idx: usize,
-    pub mic_calibration_path: String,
     pub signal_type: RecordingSignalType,
     pub signal_duration_secs: f32,
     pub signal_level_db: f32,
@@ -496,7 +495,11 @@ pub struct RecordingTuiState {
     pub sweep_end_freq: f32,
     pub output_directory: String,
     pub editing_output_dir: bool,
-    pub editing_mic_cal: bool,
+    /// `Some(ch)` while editing channel `ch`'s mic-calibration path; `None`
+    /// otherwise. The path itself lives in
+    /// `recording_config.mic_calibration_paths[ch]` — there is no separate
+    /// scratch buffer (mirrors the GPUI per-channel calibration model).
+    pub editing_mic_cal_channel: Option<usize>,
     pub selected_field: usize,
     /// True when a numerical field is being directly edited via keyboard
     pub editing_value: bool,
@@ -554,7 +557,6 @@ impl Default for RecordingTuiState {
             available_recording_devices: Vec::new(),
             selected_playback_idx: 0,
             selected_recording_idx: 0,
-            mic_calibration_path: String::new(),
             signal_type: RecordingSignalType::Sweep,
             signal_duration_secs: 5.0,
             signal_level_db: -20.0,
@@ -562,7 +564,7 @@ impl Default for RecordingTuiState {
             sweep_end_freq: 20000.0,
             output_directory: String::new(),
             editing_output_dir: false,
-            editing_mic_cal: false,
+            editing_mic_cal_channel: None,
             selected_field: 0,
             editing_value: false,
             edit_buffer: String::new(),
@@ -591,7 +593,116 @@ impl Default for RecordingTuiState {
     }
 }
 
+/// Logical identity of every cursor position on the Recording → Config
+/// step. The TUI's flat `selected_field: usize` is mapped to one of these
+/// via `recording_field_at`, so the renderer and the event handler agree
+/// on what each row means even when the dynamic per-channel rows change
+/// length with `recording_config.num_channels`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RecordingField {
+    PlaybackDevice,
+    RecordingDevice,
+    SpeakerConfig,
+    SignalType,
+    Duration,
+    Level,
+    SweepStart,
+    SweepEnd,
+    OutputDir,
+    NumRecordingChannels,
+    /// Per-channel mic-calibration path (`recording_config.mic_calibration_paths[i]`).
+    MicCal(usize),
+    /// Per-channel input mapping (`recording_config.channel_mappings[i]`).
+    ChannelInput(usize),
+}
+
+/// Map a flat field index to its logical identity. Returns `None` past the
+/// last valid row.
+pub fn recording_field_at(s: &RecordingTuiState, idx: usize) -> Option<RecordingField> {
+    use RecordingField::*;
+    let n = s.recording_config.num_channels.max(1);
+    match idx {
+        0 => Some(PlaybackDevice),
+        1 => Some(RecordingDevice),
+        2 => Some(SpeakerConfig),
+        3 => Some(SignalType),
+        4 => Some(Duration),
+        5 => Some(Level),
+        6 => Some(SweepStart),
+        7 => Some(SweepEnd),
+        8 => Some(OutputDir),
+        9 => Some(NumRecordingChannels),
+        i if i < 10 + n => Some(MicCal(i - 10)),
+        i if i < 10 + 2 * n => Some(ChannelInput(i - 10 - n)),
+        _ => None,
+    }
+}
+
+/// Total number of selectable rows for the current state.
+pub fn recording_field_count(s: &RecordingTuiState) -> usize {
+    10 + 2 * s.recording_config.num_channels.max(1)
+}
+
 impl RecordingTuiState {
+    /// Currently-active mic-calibration path string (read-only). Returns
+    /// `""` when not editing or when the channel slot is empty.
+    pub fn active_mic_cal_path(&self) -> &str {
+        match self.editing_mic_cal_channel {
+            Some(ch) => self
+                .recording_config
+                .mic_calibration_paths
+                .get(ch)
+                .and_then(|o| o.as_deref())
+                .unwrap_or(""),
+            None => "",
+        }
+    }
+
+    /// Mutable reference to the currently-active mic-calibration string,
+    /// growing the underlying `Vec` and lazily inserting an empty `String`
+    /// in the slot if needed. Returns `None` if no channel is being edited.
+    pub fn active_mic_cal_path_mut(&mut self) -> Option<&mut String> {
+        let ch = self.editing_mic_cal_channel?;
+        let paths = &mut self.recording_config.mic_calibration_paths;
+        while paths.len() <= ch {
+            paths.push(None);
+        }
+        if paths[ch].is_none() {
+            paths[ch] = Some(String::new());
+        }
+        paths[ch].as_mut()
+    }
+
+    /// Replace the active mic-calibration path, normalising an empty
+    /// string back to `None` so downstream code can treat both states
+    /// uniformly via `Option`.
+    pub fn set_active_mic_cal_path(&mut self, val: String) {
+        if let Some(ch) = self.editing_mic_cal_channel {
+            let paths = &mut self.recording_config.mic_calibration_paths;
+            while paths.len() <= ch {
+                paths.push(None);
+            }
+            paths[ch] = if val.is_empty() { None } else { Some(val) };
+        }
+    }
+
+    /// Resize the mic-calibration and recording-channel-mapping vecs to
+    /// match `num_channels`. Mirrors GPUI's `update_recording_channel_mappings`.
+    pub fn sync_recording_channel_vecs(&mut self) {
+        let target = self.recording_config.num_channels.max(1);
+        let cm = &mut self.recording_config.channel_mappings;
+        while cm.len() < target {
+            cm.push(cm.len());
+        }
+        cm.truncate(target);
+
+        let cal = &mut self.recording_config.mic_calibration_paths;
+        while cal.len() < target {
+            cal.push(None);
+        }
+        cal.truncate(target);
+    }
+
     /// Ensure `channel_speakers` has one slot per current channel row.
     /// Call this whenever the channel list changes so the UI never
     /// indexes a short vec. Preserves any pre-existing values.

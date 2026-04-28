@@ -149,7 +149,7 @@ impl PlayerView {
     fn render_recording_device_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let translations = state.app.ui_state.translations.clone();
-        let (theme, num_channels, sample_rate, max_input_channels) = {
+        let (theme, num_channels, sample_rate, max_input_channels, num_positions) = {
             let rec_config = &state.app.measurement_state.recording_state.recording_config;
             let input_devices = &state.app.audio_device_state.input_devices;
             // Find selected device, or fall back to first available device
@@ -166,6 +166,7 @@ impl PlayerView {
                 rec_config.num_channels,
                 rec_config.sample_rate,
                 max_ch,
+                rec_config.num_positions.max(1),
             )
         };
         let view = cx.weak_entity();
@@ -222,6 +223,43 @@ impl PlayerView {
                     })
             });
 
+        // Number of measurement positions. Each position runs a full
+        // speaker × mic sweep; between positions a modal asks the user
+        // to move the microphones to the next seat.
+        let positions_row = HStack::new()
+            .spacing(StackSpacing::Sm)
+            .align(StackAlign::Center)
+            .child(
+                Text::new("Positions")
+                    .size(TextSize::Xs)
+                    .color(theme.text_secondary),
+            )
+            .child({
+                let view = view.clone();
+                NumberInput::new("recording_num_positions")
+                    .value(num_positions as f64)
+                    .min(1.0)
+                    .max(8.0)
+                    .step(1.0)
+                    .size(NumberInputSize::Xs)
+                    .on_change({
+                        let view = view.clone();
+                        move |value, _window, cx| {
+                            let n = (value as usize).max(1);
+                            let _ = view.update(cx, |this, cx| {
+                                this.state.update(cx, |state, _| {
+                                    let rs =
+                                        &mut state.app.measurement_state.recording_state;
+                                    rs.recording_config.num_positions = n;
+                                    rs.init_channel_recordings();
+                                    rs.sync_channel_speakers_length();
+                                });
+                                cx.notify();
+                            });
+                        }
+                    })
+            });
+
         // Render device dropdown first, converting to AnyElement to release borrow
         let device_dropdown = self.render_recording_device_dropdown(cx).into_any_element();
         // Render channel mapping second (after first borrow is released)
@@ -233,6 +271,7 @@ impl PlayerView {
             .child(sample_rate_row)
             .child(badges)
             .child(channel_count_row)
+            .child(positions_row)
             .child(channel_mapping)
     }
 

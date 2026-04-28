@@ -1851,6 +1851,8 @@ pub enum PluginSettings {
         auto_gain: bool,
         #[serde(default = "default_lpeq_mix")]
         mix: f64,
+        #[serde(default)]
+        filters: Vec<EQFilter>,
     },
     SpectralCompressor {
         #[serde(default = "default_sc_fft_size")]
@@ -1921,6 +1923,25 @@ sotf_plugins::serde_param_default! {
 }
 
 impl PluginSettings {
+    /// Mutable access to the global EQ band list shared by EQ and LinearPhaseEq.
+    /// Returns `None` for any other plugin variant.
+    pub fn eq_global_filters_mut(&mut self) -> Option<&mut Vec<EQFilter>> {
+        match self {
+            Self::EQ { filters, .. } => Some(filters),
+            Self::LinearPhaseEq { filters, .. } => Some(filters),
+            _ => None,
+        }
+    }
+
+    /// Read-only counterpart of [`eq_global_filters_mut`].
+    pub fn eq_global_filters(&self) -> Option<&Vec<EQFilter>> {
+        match self {
+            Self::EQ { filters, .. } => Some(filters),
+            Self::LinearPhaseEq { filters, .. } => Some(filters),
+            _ => None,
+        }
+    }
+
     pub fn plugin_type(&self) -> PluginType {
         match self {
             Self::EQ { .. } => PluginType::EQ,
@@ -2198,15 +2219,33 @@ impl PluginSettings {
                 fir_length,
                 auto_gain,
                 mix,
-            } => PluginConfig::new(
-                "linear_phase_eq",
-                json!({
-                    "num_filters": *num_filters as usize,
-                    "fir_length_index": *fir_length as usize,
-                    "auto_gain": auto_gain,
-                    "mix": *mix as f32,
-                }),
-            ),
+                filters,
+            } => {
+                let any_soloed = filters.iter().any(|f| f.solo);
+                let band_configs: Vec<serde_json::Value> = filters
+                    .iter()
+                    .filter(|f| !f.muted && (!any_soloed || f.solo))
+                    .map(|f| {
+                        json!({
+                            "filter_type": f.filter_type.long_name().to_lowercase(),
+                            "frequency": f.frequency,
+                            "q": f.q,
+                            "gain_db": f.gain_db,
+                            "active": true,
+                        })
+                    })
+                    .collect();
+                PluginConfig::new(
+                    "linear_phase_eq",
+                    json!({
+                        "num_filters": *num_filters as usize,
+                        "fir_length_index": *fir_length as usize,
+                        "auto_gain": auto_gain,
+                        "mix": *mix as f32,
+                        "filters": band_configs,
+                    }),
+                )
+            }
             Self::SpectralCompressor {
                 fft_size,
                 threshold,
@@ -3743,11 +3782,16 @@ impl PluginSettings {
             }
             PluginType::LinearPhaseEq => {
                 let lp = linear_phase_eq_specs::PARAMS;
+                let n = p(lp, "num_filters").default_f64() as usize;
+                let filters = (0..n)
+                    .map(|_| EQFilter::new(BiquadFilterType::Peak, 1000.0, 1.0, 0.0))
+                    .collect();
                 Self::LinearPhaseEq {
                     num_filters: p(lp, "num_filters").default_f64(),
                     fir_length: p(lp, "fir_length").default_f64(),
                     auto_gain: p(lp, "auto_gain").default_bool(),
                     mix: p(lp, "mix").default_f64(),
+                    filters,
                 }
             }
             PluginType::SpectralCompressor => {

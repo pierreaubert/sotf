@@ -96,17 +96,30 @@ pub(crate) fn draw_plugin_list(f: &mut Frame, area: Rect, app: &App) {
 }
 
 pub(crate) fn draw_available_plugins(f: &mut Frame, area: Rect, app: &App) {
-    let mut plugins = PluginType::all();
-    plugins.sort_by_key(|p| p.name());
     let is_selecting = app.input_mode == InputMode::AddPlugin;
 
-    let items: Vec<ListItem> = plugins
-        .iter()
-        .map(|plugin_type| {
-            let content = format!("{} - {}", plugin_type.name(), plugin_type.description());
-            ListItem::new(content).style(Style::default().fg(app.theme.accent_primary))
-        })
-        .collect();
+    // Walk the shared category list. For each category emit a non-selectable
+    // header row, then one row per plugin. Track the mapping from "selectable
+    // index" (what `add_plugin_selected_index` points at) to "display index"
+    // (the row in the rendered list) so highlighting lines up.
+    let mut items: Vec<ListItem> = Vec::new();
+    let mut display_for_selectable: Vec<usize> = Vec::new();
+
+    for cat in sotf_audio_player::plugin_categories::CATEGORIES {
+        items.push(
+            ListItem::new(format!("── {} ──", cat.name)).style(
+                Style::default()
+                    .fg(app.theme.fg_secondary)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        );
+        for plugin_type in cat.plugins {
+            display_for_selectable.push(items.len());
+            let content =
+                format!("  {} - {}", plugin_type.name(), plugin_type.description());
+            items.push(ListItem::new(content).style(Style::default().fg(app.theme.accent_primary)));
+        }
+    }
 
     let title = if is_selecting {
         "▶ Select Plugin (↑/↓, Enter=add, Esc=cancel)"
@@ -135,8 +148,10 @@ pub(crate) fn draw_available_plugins(f: &mut Frame, area: Rect, app: &App) {
         );
 
     let mut state = ListState::default();
-    if is_selecting {
-        state.select(Some(app.add_plugin_selected_index));
+    if is_selecting
+        && let Some(&row) = display_for_selectable.get(app.add_plugin_selected_index)
+    {
+        state.select(Some(row));
     }
 
     use ratatui::widgets::StatefulWidget;

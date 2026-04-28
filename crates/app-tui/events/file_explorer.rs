@@ -87,8 +87,9 @@ fn apply_file_selection(app: &mut App, path: std::path::PathBuf) {
             app.recording.editing_output_dir = false;
         }
         FilePickerOrigin::RecordingMicCalibration => {
-            app.recording.mic_calibration_path = path_str;
-            app.recording.editing_mic_cal = false;
+            // Write into the channel slot the user was editing.
+            app.recording.set_active_mic_cal_path(path_str);
+            app.recording.editing_mic_cal_channel = None;
         }
         FilePickerOrigin::RoomEqFilePath => {
             app.room_eq.file_path = path_str;

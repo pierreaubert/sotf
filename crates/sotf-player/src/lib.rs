@@ -26,6 +26,7 @@ pub mod library_scanner;
 pub mod peq_filter;
 pub mod play_tracker;
 pub mod player;
+pub mod plugin_categories;
 pub mod plugin_graph;
 pub mod queue;
 pub mod recording_types;

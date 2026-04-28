@@ -181,6 +181,18 @@ pub struct RecordingState {
     /// Warning message when recording level is close to noise floor
     pub noise_floor_warning: Option<String>,
 
+    // === Multi-Position Modal State ===
+    /// Whether the "move microphones to next position" modal is shown.
+    /// Set to `true` after every recording at the current position
+    /// completes and another position is still pending; cleared when
+    /// the user clicks Continue or Cancel.
+    pub move_position_modal_open: bool,
+    /// Position index (0-based) the user is being asked to move the
+    /// microphones to. `Some(n)` while the modal is open; `None` when
+    /// dismissed. Mirrors the modal's "expected next position" so the
+    /// auto-record loop can resume cleanly when Continue fires.
+    pub pending_next_position: Option<usize>,
+
     // === Migration Modal State ===
     /// Whether the migration modal is currently shown
     pub migration_modal_open: bool,
@@ -249,6 +261,8 @@ impl Default for RecordingState {
             pre_silence_s: 2.0,
             post_silence_s: None,
             noise_floor_warning: None,
+            move_position_modal_open: false,
+            pending_next_position: None,
             migration_modal_open: false,
             migration_file_path: None,
             migration_file_dir: None,
@@ -260,37 +274,104 @@ impl Default for RecordingState {
 }
 
 impl RecordingState {
-    /// Initialize channel recordings from playback config × recording config.
-    /// With 1 mic: one entry per speaker (e.g. [L, R]).
-    /// With 2+ mics: one entry per (speaker, mic) pair (e.g. [L/Mic1, L/Mic2, R/Mic1, R/Mic2]).
+    /// Initialize channel recordings from playback × recording × position
+    /// configuration. Order is `position-major, speaker-mid, mic-minor` so
+    /// every (speaker, mic) pair at position 0 comes before any entry at
+    /// position 1. The auto-record loop uses this ordering to advance
+    /// through one full sweep pass before prompting the user to move the
+    /// mics to the next seat.
+    ///
+    /// Naming:
+    /// * 1 mic, 1 position  → `"L"`
+    /// * N mics, 1 position → `"L (Mic 1)"`
+    /// * 1 mic,  M positions → `"L (Pos 1)"`
+    /// * N mics, M positions → `"L (Pos 1 / Mic 1)"`
     pub fn init_channel_recordings(&mut self) {
         let raw_num_mics = self.recording_config.channel_mappings.len();
         let num_mics = raw_num_mics.max(1);
+        let num_positions = self.recording_config.num_positions.max(1);
+        let speakers = &self.playback_config.channel_mappings;
 
-        if raw_num_mics <= 1 {
-            // Single mic: one entry per speaker, mic_index=0
-            self.channel_recordings = self
-                .playback_config
-                .channel_mappings
-                .iter()
-                .enumerate()
-                .map(|(idx, mapping)| ChannelRecording::new(idx, mapping.group_name.clone()))
-                .collect();
-        } else {
-            // Multiple mics: one entry per (speaker, mic) pair
-            self.channel_recordings = self
-                .playback_config
-                .channel_mappings
-                .iter()
-                .enumerate()
-                .flat_map(|(speaker_idx, mapping)| {
-                    (0..num_mics).map(move |mic_idx| {
-                        let name = format!("{} (Mic {})", mapping.group_name, mic_idx + 1);
-                        ChannelRecording::with_mic(speaker_idx, name, mic_idx)
-                    })
-                })
-                .collect();
+        let mut out: Vec<ChannelRecording> =
+            Vec::with_capacity(num_positions * speakers.len() * num_mics);
+
+        for pos_idx in 0..num_positions {
+            for (speaker_idx, mapping) in speakers.iter().enumerate() {
+                for mic_idx in 0..num_mics {
+                    let name = match (num_positions > 1, raw_num_mics > 1) {
+                        (false, false) => mapping.group_name.clone(),
+                        (false, true) => {
+                            format!("{} (Mic {})", mapping.group_name, mic_idx + 1)
+                        }
+                        (true, false) => {
+                            format!("{} (Pos {})", mapping.group_name, pos_idx + 1)
+                        }
+                        (true, true) => format!(
+                            "{} (Pos {} / Mic {})",
+                            mapping.group_name,
+                            pos_idx + 1,
+                            mic_idx + 1
+                        ),
+                    };
+                    out.push(ChannelRecording::with_mic_position(
+                        speaker_idx,
+                        name,
+                        mic_idx,
+                        pos_idx,
+                    ));
+                }
+            }
         }
+
+        self.channel_recordings = out;
+    }
+
+    /// Position index (0-based) of the next pending recording. Returns
+    /// `num_positions` when every entry is `Done`. Used by the capture
+    /// loop to decide whether the next start should advance to a new
+    /// seat (and thus open the move-position modal).
+    pub fn current_position(&self) -> usize {
+        let num_positions = self.recording_config.num_positions.max(1);
+        self.channel_recordings
+            .iter()
+            .filter(|r| r.state != ChannelRecordingState::Done)
+            .map(|r| r.mic_position_index)
+            .min()
+            .unwrap_or(num_positions)
+    }
+
+    /// True when every recording with `mic_position_index == pos` is
+    /// `Done`. Returns `true` for positions that have no entries (e.g.
+    /// when `num_positions == 1` and `pos == 0` after all are Done).
+    pub fn position_complete(&self, pos: usize) -> bool {
+        let mut saw_any = false;
+        for r in &self.channel_recordings {
+            if r.mic_position_index == pos {
+                saw_any = true;
+                if r.state != ChannelRecordingState::Done {
+                    return false;
+                }
+            }
+        }
+        saw_any
+    }
+
+    /// Index (into `channel_recordings`) of the next recording at
+    /// `pos` whose `channel_index` (speaker) hasn't been started yet
+    /// at this position. Mirrors the dedup-by-speaker logic the
+    /// auto-record loop uses, but constrained to a single position so
+    /// the modal flow can pause cleanly between passes.
+    pub fn next_channel_in_position(&self, pos: usize) -> Option<usize> {
+        let mut seen = std::collections::HashSet::new();
+        self.channel_recordings
+            .iter()
+            .enumerate()
+            .find(|(_, r)| {
+                r.mic_position_index == pos
+                    && r.state == ChannelRecordingState::Empty
+                    && seen.insert(r.channel_index)
+            })
+            .map(|(idx, _)| idx)
     }
 
     /// Check if all channels have been recorded

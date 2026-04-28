@@ -1,6 +1,6 @@
 [package]
 name = "sotf-player"
-version = "0.5.121"
+version = "0.5.122"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true

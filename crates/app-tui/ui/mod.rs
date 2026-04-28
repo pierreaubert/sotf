@@ -360,6 +360,7 @@ fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str
             ("b or <", "Previous track"),
             ("d/Delete", "Remove from queue"),
             ("c", "Clear entire queue"),
+            ("A", "Add album (or selected track) to active playlist"),
         ],
         Screen::Plugins => vec![
             ("↑/↓ or k/j", "Navigate plugin chain"),

@@ -620,6 +620,15 @@ pub struct RecordingDeviceConfig {
     /// Calibration file path for each input channel (parallel to channel_mappings)
     #[serde(default)]
     pub mic_calibration_paths: Vec<Option<String>>,
+    /// Number of measurement positions (seats). Each position runs a full
+    /// speaker × mic sweep; between positions the user is prompted to move
+    /// the microphones. Defaults to 1 to keep older sessions byte-compatible.
+    #[serde(default = "default_num_positions")]
+    pub num_positions: usize,
+}
+
+fn default_num_positions() -> usize {
+    1
 }
 
 impl Default for RecordingDeviceConfig {
@@ -632,6 +641,7 @@ impl Default for RecordingDeviceConfig {
             available_sample_rates: vec![44100, 48000, 88200, 96000, 176400, 192000],
             channel_mappings: vec![0],
             mic_calibration_paths: vec![None],
+            num_positions: 1,
         }
     }
 }
@@ -688,6 +698,11 @@ pub struct ChannelRecording {
     /// Microphone input index (into recording_config.channel_mappings)
     #[serde(default)]
     pub mic_index: usize,
+    /// Measurement-position index (which seat the mics were at). 0 for the
+    /// primary listening position; higher indices correspond to additional
+    /// seats captured after the user moved the mics.
+    #[serde(default)]
+    pub mic_position_index: usize,
     pub state: ChannelRecordingState,
     pub result: Option<RecordingResult>,
     /// Per-speaker sweep start frequency in Hz
@@ -715,16 +730,29 @@ impl ChannelRecording {
 
     /// Create a new channel recording for a specific mic index.
     pub fn with_mic(channel_index: usize, channel_name: String, mic_index: usize) -> Self {
+        Self::with_mic_position(channel_index, channel_name, mic_index, 0)
+    }
+
+    /// Create a new channel recording for a specific (mic, position) pair.
+    pub fn with_mic_position(
+        channel_index: usize,
+        channel_name: String,
+        mic_index: usize,
+        mic_position_index: usize,
+    ) -> Self {
         let name_lower = channel_name.to_ascii_lowercase();
-        // Strip " (mic N)" suffix so LFE detection works in multi-mic mode
+        // Strip the first parenthetical suffix (e.g. " (mic 1)", " (pos 2)",
+        // " (pos 1 / mic 2)") so LFE detection works regardless of the
+        // multi-mic / multi-position naming format.
         let base_name = name_lower
-            .find(" (mic ")
+            .find(" (")
             .map_or(name_lower.as_str(), |pos| &name_lower[..pos]);
         let is_lfe = base_name == "lfe" || base_name == "sub";
         Self {
             channel_index,
             channel_name,
             mic_index,
+            mic_position_index,
             state: ChannelRecordingState::Empty,
             result: None,
             sweep_start_freq: if is_lfe { 10.0 } else { 20.0 },

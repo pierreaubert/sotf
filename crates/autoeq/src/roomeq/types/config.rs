@@ -179,6 +179,13 @@ pub struct RecordingConfiguration {
     /// fixed seed constants.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recording_seed: Option<u64>,
+    /// Number of measurement positions (seats) the user captured. `None`
+    /// or `Some(1)` means a single-position session; `Some(n)` with
+    /// `n >= 2` means each `ChannelMeasurement.multi_mic_measurements`
+    /// holds `n * num_mics - 1` entries in `(position, mic)` order
+    /// (primary measurement is `(0, 0)`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub num_positions: Option<usize>,
 }
 
 /// SPL calibration anchor captured from a pre-sweep reference tone.

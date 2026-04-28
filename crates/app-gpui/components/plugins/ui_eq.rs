@@ -178,6 +178,26 @@ impl Render for EqQHandleDrag {
     }
 }
 
+/// View variant for the shared EQ renderer.
+///
+/// `Standard` is the regular biquad EQ (per-channel mode toggle visible).
+/// `LinearPhase` reuses the same band editor for the linear-phase FIR EQ:
+/// per-channel mode is hidden (always global), and a header shows the FIR
+/// latency plus linear-phase-only controls.
+pub enum EqViewMode {
+    Standard,
+    LinearPhase {
+        /// Latency in samples = (fir_length - 1) / 2
+        latency_samples: usize,
+        /// Latency in milliseconds at the current sample rate
+        latency_ms: f32,
+        /// Current FIR length (samples) for display
+        fir_length: usize,
+        /// Whether auto_gain is enabled
+        auto_gain: bool,
+    },
+}
+
 /// State for rendering the EQ plugin
 pub struct EqRenderState<'a> {
     /// Number of channels
@@ -193,6 +213,8 @@ pub struct EqRenderState<'a> {
     pub selected_band_idx: usize,
     /// MIDI overlay for displaying controller assignments on EQ bands
     pub midi_overlay: Option<&'a MidiOverlay>,
+    /// View variant — Standard biquad EQ or LinearPhase FIR EQ
+    pub mode: EqViewMode,
 }
 
 /// Calculate the combined response in dB at a given frequency
@@ -913,7 +935,14 @@ pub fn render_eq_plugin(
 
     // Clone values needed for closures
     let channels = state.channels;
-    let per_channel_mode = state.per_channel_mode;
+    let is_lp_mode = matches!(state.mode, EqViewMode::LinearPhase { .. });
+    // Linear-phase EQ is global-only; force the toggle off so the renderer's
+    // downstream logic doesn't try to surface per-channel data we don't have.
+    let per_channel_mode = if is_lp_mode {
+        false
+    } else {
+        state.per_channel_mode
+    };
 
     let controls_section = div()
         .flex()
@@ -921,8 +950,8 @@ pub fn render_eq_plugin(
         .items_center() // Center band selector and knob box
         .gap(ds.section)
         .w_full()
-        // Channel Mode Toggle and Channel Selector
-        .child({
+        // Channel Mode Toggle and Channel Selector — hidden in linear-phase mode
+        .when(!is_lp_mode, |container| container.child({
             let entity_clone = entity.clone();
             let entity_clone2 = entity.clone();
             let accent = theme.accent;
@@ -1050,7 +1079,7 @@ pub fn render_eq_plugin(
                             })),
                     )
                 })
-        })
+        }))
         // Band selector tabs (custom rendering to avoid context issues)
         .child({
             let mut tabs_container = div()
@@ -1360,6 +1389,39 @@ pub fn render_eq_plugin(
             )
         });
 
+    // Optional linear-phase info header — shown only for the LP variant.
+    let lp_header = if let EqViewMode::LinearPhase {
+        latency_samples,
+        latency_ms,
+        fir_length,
+        auto_gain,
+    } = state.mode
+    {
+        Some(
+            div()
+                .flex()
+                .items_center()
+                .justify_center()
+                .gap(ds.section)
+                .px(ds.pad_x)
+                .py(ds.pad_y_half)
+                .bg(theme.surface)
+                .rounded(ds.r_md)
+                .text_size(ds.text_sm)
+                .text_color(theme.text_secondary)
+                .child(format!("FIR length: {fir_length}"))
+                .child(format!(
+                    "Latency: {latency_samples} samples ({latency_ms:.2} ms)"
+                ))
+                .child(format!(
+                    "Auto-gain: {}",
+                    if auto_gain { "on" } else { "off" }
+                )),
+        )
+    } else {
+        None
+    };
+
     // Combine sections based on layout mode
 
     div()
@@ -1367,6 +1429,7 @@ pub fn render_eq_plugin(
         .flex_col()
         .items_center()
         .gap(ds.section_xl)
+        .children(lp_header)
         .child(graph_section)
         .child(controls_section)
 }

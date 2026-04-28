@@ -121,6 +121,7 @@ impl Render for PlayerView {
             font_scale,
             theme_id,
             show_migration_modal,
+            show_move_position_modal,
             context_menu,
             show_studio_menu,
             show_device_popup,
@@ -138,6 +139,11 @@ impl Render for PlayerView {
                 state.app.ui_state.font_scale,
                 state.app.ui_state.theme_id,
                 state.app.measurement_state.recording_state.migration_modal_open,
+                state
+                    .app
+                    .measurement_state
+                    .recording_state
+                    .move_position_modal_open,
                 state.app.ui_state.context_menu.is_some(),
                 state.app.ui_state.show_studio_menu,
                 state.app.ui_state.show_device_popup,
@@ -583,6 +589,10 @@ impl Render for PlayerView {
             .child(self.render_scan_progress_modal(cx))
             // Migration modal for recording format conversion
             .when(show_migration_modal, |div| div.child(self.render_migration_modal(cx)))
+            // Move-microphones-to-next-position modal (multi-position recording)
+            .when(show_move_position_modal, |div| {
+                div.child(self.render_move_position_modal(cx))
+            })
             .child(self.render_toast(cx))
             .when(context_menu, |div| div.child(self.render_context_menu(cx)))
             // Studio menu overlay (click outside to close)

@@ -1,6 +1,6 @@
 [package]
 name = "sotf-tui"
-version = "0.5.204"
+version = "0.5.205"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true
@@ -15,6 +15,7 @@ autotests = false
 default = []
 hal = ["sotf-engine/hal", "sotf-player/hal"]
 onnx = ["sotf-plugins/onnx"]
+iamf = ["sotf-engine/iamf", "sotf-plugins/iamf"]
 tidal = ["dep:sotf-services", "sotf-services/tidal"]
 spotify = ["dep:sotf-services", "sotf-services/spotify"]
 

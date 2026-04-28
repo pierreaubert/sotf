@@ -350,6 +350,28 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
 
     match s.step {
         RecordingStep::Config => {
+            // When editing a path field, reserve space for the autocomplete
+            // dropdown at the bottom of the content area. Without this carve-
+            // out the dropdown was placed *below* the already full-height
+            // config block and clipped to zero rows — so suggestions never
+            // appeared even though the rest of the autocomplete plumbing
+            // worked.
+            let editing_path = s.editing_output_dir || s.editing_mic_cal_channel.is_some();
+            let ac_h = if editing_path {
+                autocomplete_dropdown_height(app)
+            } else {
+                0
+            };
+            let (config_area, ac_area_opt) = if ac_h > 0 && content.height > ac_h + 2 {
+                let split = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Min(3), Constraint::Length(ac_h)])
+                    .split(content);
+                (split[0], Some(split[1]))
+            } else {
+                (content, None)
+            };
+
             let playback_name = if s.available_playback_devices.is_empty() {
                 "(no devices)".to_string()
             } else if let Some(d) = s.available_playback_devices.get(s.selected_playback_idx) {
@@ -366,72 +388,130 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                 "(select)".to_string()
             };
 
-            let rows: Vec<(Option<usize>, &str, String)> = vec![
-                (None, "── Devices ──", String::new()),
-                (Some(0), "Playback Device", playback_name),
-                (Some(1), "Recording Device", recording_name),
-                (
-                    Some(2),
-                    "Speaker Config",
-                    s.playback_config.speaker_configuration.as_str().to_string(),
-                ),
-                (None, "── Signal ──", String::new()),
-                (Some(3), "Signal Type", s.signal_type.as_str().to_string()),
-                (
-                    Some(4),
-                    "Duration (s)",
-                    format!("{:.1}", s.signal_duration_secs),
-                ),
-                (Some(5), "Level (dB)", format!("{:.1}", s.signal_level_db)),
-                (
-                    Some(6),
-                    "Sweep Start (Hz)",
-                    format!("{:.0}", s.sweep_start_freq),
-                ),
-                (
-                    Some(7),
-                    "Sweep End (Hz)",
-                    format!("{:.0}", s.sweep_end_freq),
-                ),
-                (None, "── Paths ──", String::new()),
-                (
-                    Some(8),
-                    "Output Directory",
-                    if s.output_directory.is_empty() {
-                        "<not set>".to_string()
-                    } else {
-                        s.output_directory.clone()
-                    },
-                ),
-                (
-                    Some(9),
-                    "Mic Calibration",
-                    if s.mic_calibration_path.is_empty() {
-                        "<none>".to_string()
-                    } else {
-                        s.mic_calibration_path.clone()
-                    },
-                ),
-            ];
+            // Build the row list dynamically. Each row is either a
+            // non-selectable section header (`idx = None`) or one logical
+            // field (`idx = Some(i)` where `i` matches `selected_field`'s
+            // value via `recording_field_at`).
+            use crate::app::RecordingField;
+            let n_channels = s.recording_config.num_channels.max(1);
+            let mic_cal_label = |ch: usize| {
+                if n_channels > 1 {
+                    format!("Mic Cal Ch{}", ch + 1)
+                } else {
+                    "Mic Calibration".to_string()
+                }
+            };
+            let mic_cal_value = |ch: usize| {
+                s.recording_config
+                    .mic_calibration_paths
+                    .get(ch)
+                    .and_then(|o| o.clone())
+                    .filter(|p| !p.is_empty())
+                    .unwrap_or_else(|| "<none>".to_string())
+            };
+            let channel_input_label = |ch: usize| format!("Ch{} input", ch + 1);
+            let channel_input_value = |ch: usize| {
+                s.recording_config
+                    .channel_mappings
+                    .get(ch)
+                    .map(|c| (c + 1).to_string())
+                    .unwrap_or_else(|| "1".to_string())
+            };
+
+            // Use owned strings throughout so the dynamic per-channel rows
+            // can be formatted in place.
+            let mut rows: Vec<(Option<usize>, String, String)> = Vec::new();
+            rows.push((None, "── Devices ──".to_string(), String::new()));
+            rows.push((Some(0), "Playback Device".to_string(), playback_name));
+            rows.push((Some(1), "Recording Device".to_string(), recording_name));
+            rows.push((
+                Some(2),
+                "Speaker Config".to_string(),
+                s.playback_config.speaker_configuration.as_str().to_string(),
+            ));
+            rows.push((None, "── Signal ──".to_string(), String::new()));
+            rows.push((
+                Some(3),
+                "Signal Type".to_string(),
+                s.signal_type.as_str().to_string(),
+            ));
+            rows.push((
+                Some(4),
+                "Duration (s)".to_string(),
+                format!("{:.1}", s.signal_duration_secs),
+            ));
+            rows.push((
+                Some(5),
+                "Level (dB)".to_string(),
+                format!("{:.1}", s.signal_level_db),
+            ));
+            rows.push((
+                Some(6),
+                "Sweep Start (Hz)".to_string(),
+                format!("{:.0}", s.sweep_start_freq),
+            ));
+            rows.push((
+                Some(7),
+                "Sweep End (Hz)".to_string(),
+                format!("{:.0}", s.sweep_end_freq),
+            ));
+            rows.push((None, "── Paths ──".to_string(), String::new()));
+            rows.push((
+                Some(8),
+                "Output Directory".to_string(),
+                if s.output_directory.is_empty() {
+                    "<not set>".to_string()
+                } else {
+                    s.output_directory.clone()
+                },
+            ));
+            rows.push((None, "── Recording Channels ──".to_string(), String::new()));
+            rows.push((
+                Some(9),
+                "Num Channels".to_string(),
+                s.recording_config.num_channels.to_string(),
+            ));
+            for ch in 0..n_channels {
+                rows.push((Some(10 + ch), mic_cal_label(ch), mic_cal_value(ch)));
+            }
+            for ch in 0..n_channels {
+                rows.push((
+                    Some(10 + n_channels + ch),
+                    channel_input_label(ch),
+                    channel_input_value(ch),
+                ));
+            }
 
             let mut lines: Vec<Line> = Vec::new();
             for (idx, label, value) in &rows {
                 let is_selected = idx.is_some_and(|i| i == s.selected_field);
                 let is_editing_numerical = is_selected && s.editing_value;
+                // Resolve the field identity to know whether this row is
+                // currently in path-edit mode.
+                let field_kind = idx.and_then(|i| {
+                    crate::app::recording_field_at(&app.recording, i)
+                });
                 let is_editing_path = is_selected
-                    && match idx {
-                        Some(8) => s.editing_output_dir,
-                        Some(9) => s.editing_mic_cal,
+                    && match field_kind {
+                        Some(RecordingField::OutputDir) => s.editing_output_dir,
+                        Some(RecordingField::MicCal(ch)) => {
+                            s.editing_mic_cal_channel == Some(ch)
+                        }
                         _ => false,
                     };
                 let is_editing = is_editing_numerical || is_editing_path;
                 let display_value = if is_editing_numerical {
                     format!("{}▏", s.edit_buffer)
                 } else if is_editing_path {
-                    let path_val = match idx {
-                        Some(8) => &s.output_directory,
-                        Some(9) => &s.mic_calibration_path,
-                        _ => value,
+                    let path_val: String = match field_kind {
+                        Some(RecordingField::OutputDir) => s.output_directory.clone(),
+                        Some(RecordingField::MicCal(ch)) => s
+                            .recording_config
+                            .mic_calibration_paths
+                            .get(ch)
+                            .and_then(|o| o.clone())
+                            .unwrap_or_default(),
+                        _ => value.clone(),
                     };
                     format!("{}▏", path_val)
                 } else {
@@ -493,7 +573,7 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
             lines.push(Line::from(""));
             let hint = if s.editing_value {
                 " Type value, Enter=confirm  Esc=cancel"
-            } else if s.editing_output_dir || s.editing_mic_cal {
+            } else if s.editing_output_dir || s.editing_mic_cal_channel.is_some() {
                 " Type path, Tab=complete  Enter=confirm  F2=browse  Esc=cancel"
             } else {
                 " Up/Down=navigate  Left/Right=adjust  Enter=edit value/path  Tab=next field"
@@ -506,26 +586,11 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
             let para = Paragraph::new(lines)
                 .block(Block::default().borders(Borders::ALL).title("Configure"))
                 .wrap(Wrap { trim: false });
-            f.render_widget(para, content);
+            f.render_widget(para, config_area);
 
-            // Autocomplete overlay for output_dir / mic_cal path fields
-            if s.editing_output_dir || s.editing_mic_cal {
-                let ac_h = autocomplete_dropdown_height(app);
-                if ac_h > 0 {
-                    // Position below the config block
-                    let ac_y = content.y + content.height;
-                    let available = area.height.saturating_sub(ac_y);
-                    if available > 2 {
-                        let ac_area = Rect {
-                            x: content.x,
-                            y: ac_y,
-                            width: content.width,
-                            height: ac_h.min(available),
-                        };
-                        f.render_widget(Clear, ac_area);
-                        render_autocomplete_dropdown(f, ac_area, app);
-                    }
-                }
+            if let Some(ac_area) = ac_area_opt {
+                f.render_widget(Clear, ac_area);
+                render_autocomplete_dropdown(f, ac_area, app);
             }
         }
 

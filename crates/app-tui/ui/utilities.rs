@@ -100,6 +100,7 @@ pub fn get_keybindings_for_screen(screen: crate::app::Screen) -> Vec<(&'static s
             ("d", "Remove track"),
             ("c", "Clear"),
             ("p", "Play"),
+            ("A", "Add to playlist"),
         ],
         Screen::Plugins => vec![
             ("↑↓", "Browse"),

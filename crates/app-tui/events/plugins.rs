@@ -4,8 +4,13 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use sotf_audio_player::{PluginSettings, PluginType};
 
 pub(super) fn handle_add_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    let mut plugin_types = PluginType::all();
-    plugin_types.sort_by_key(|p| p.name());
+    // Flatten the canonical category list into a selection order. Categories
+    // are presented in `draw_available_plugins`; selection always lands on a
+    // plugin (headers are non-selectable).
+    let plugin_types: Vec<PluginType> = sotf_audio_player::plugin_categories::CATEGORIES
+        .iter()
+        .flat_map(|c| c.plugins.iter().cloned())
+        .collect();
     let num_plugins = plugin_types.len();
 
     match key.code {

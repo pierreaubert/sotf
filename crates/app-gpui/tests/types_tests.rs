@@ -824,6 +824,84 @@ fn test_recording_state_init_channel_recordings() {
         state.channel_recordings[0].state,
         ChannelRecordingState::Empty
     );
+    for rec in &state.channel_recordings {
+        assert_eq!(rec.mic_position_index, 0);
+        assert_eq!(rec.mic_index, 0);
+    }
+}
+
+#[test]
+fn test_recording_state_init_multi_position_single_mic() {
+    let mut state = RecordingState::default();
+    state.playback_config.channel_mappings = vec![
+        ChannelMapping::single(1, "L"),
+        ChannelMapping::single(2, "R"),
+    ];
+    state.recording_config.num_positions = 2;
+    state.recording_config.channel_mappings = vec![0];
+
+    state.init_channel_recordings();
+
+    assert_eq!(state.channel_recordings.len(), 4);
+    let names: Vec<&str> = state
+        .channel_recordings
+        .iter()
+        .map(|r| r.channel_name.as_str())
+        .collect();
+    assert_eq!(
+        names,
+        vec!["L (Pos 1)", "R (Pos 1)", "L (Pos 2)", "R (Pos 2)"]
+    );
+    let positions: Vec<usize> = state
+        .channel_recordings
+        .iter()
+        .map(|r| r.mic_position_index)
+        .collect();
+    assert_eq!(positions, vec![0, 0, 1, 1]);
+}
+
+#[test]
+fn test_recording_state_init_multi_position_multi_mic() {
+    let mut state = RecordingState::default();
+    state.playback_config.channel_mappings = vec![
+        ChannelMapping::single(1, "L"),
+        ChannelMapping::single(2, "R"),
+    ];
+    state.recording_config.num_positions = 2;
+    state.recording_config.channel_mappings = vec![0, 1];
+
+    state.init_channel_recordings();
+
+    assert_eq!(state.channel_recordings.len(), 8);
+    assert_eq!(state.channel_recordings[0].channel_name, "L (Pos 1 / Mic 1)");
+    assert_eq!(state.channel_recordings[0].mic_index, 0);
+    assert_eq!(state.channel_recordings[0].mic_position_index, 0);
+    assert_eq!(state.channel_recordings[7].channel_name, "R (Pos 2 / Mic 2)");
+    assert_eq!(state.channel_recordings[7].mic_index, 1);
+    assert_eq!(state.channel_recordings[7].mic_position_index, 1);
+}
+
+#[test]
+fn test_recording_state_position_helpers() {
+    let mut state = RecordingState::default();
+    state.playback_config.channel_mappings = vec![
+        ChannelMapping::single(1, "L"),
+        ChannelMapping::single(2, "R"),
+    ];
+    state.recording_config.num_positions = 2;
+    state.init_channel_recordings();
+
+    assert_eq!(state.current_position(), 0);
+    assert!(!state.position_complete(0));
+    assert_eq!(state.next_channel_in_position(0), Some(0));
+
+    state.channel_recordings[0].state = ChannelRecordingState::Done;
+    state.channel_recordings[1].state = ChannelRecordingState::Done;
+
+    assert!(state.position_complete(0));
+    assert_eq!(state.current_position(), 1);
+    assert_eq!(state.next_channel_in_position(1), Some(2));
+    assert!(!state.position_complete(1));
 }
 
 #[test]

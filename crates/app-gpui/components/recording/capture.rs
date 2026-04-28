@@ -1344,7 +1344,7 @@ impl PlayerView {
 
             // Update state with results
             let Some(state_entity) = weak_state.upgrade() else { return; };
-            let (should_auto_continue, next_channel_idx) =
+            let (should_auto_continue, next_channel_idx, need_position_modal, cur_pos) =
                 state_entity.update(&mut cx.clone(), |state, _| {
                     let should_continue = match results {
                         Ok(analysis_results) => {
@@ -1493,29 +1493,29 @@ impl PlayerView {
                         .recording_state
                         .recording_progress = 1.0;
 
-                    // Find next speaker to record: first entry with Empty state
-                    // that belongs to a speaker not yet recorded.
-                    // We find the first Empty entry and use it as the start of the
-                    // next speaker group.
-                    let next_channel_idx = if should_continue {
-                        let mut seen = std::collections::HashSet::new();
-                        state
-                            .app
-                            .measurement_state
-                            .recording_state
-                            .channel_recordings
-                            .iter()
-                            .enumerate()
-                            .find(|(_, r)| {
-                                r.state == ChannelRecordingState::Empty
-                                    && seen.insert(r.channel_index)
-                            })
-                            .map(|(idx, _)| idx)
+                    // Find the next speaker to record AT THE CURRENT
+                    // POSITION. When the current position is fully Done,
+                    // we don't return an index — the caller pauses for
+                    // the move-position modal (or finishes if no more
+                    // positions remain).
+                    let rec_state = &state.app.measurement_state.recording_state;
+                    let num_positions = rec_state.recording_config.num_positions.max(1);
+                    let cur_pos = rec_state.current_position();
+                    let next_channel_idx = if should_continue && cur_pos < num_positions {
+                        rec_state.next_channel_in_position(cur_pos)
                     } else {
                         None
                     };
+                    let need_position_modal = should_continue
+                        && next_channel_idx.is_none()
+                        && cur_pos < num_positions;
 
-                    (should_continue, next_channel_idx)
+                    (
+                        should_continue,
+                        next_channel_idx,
+                        need_position_modal,
+                        cur_pos,
+                    )
                 });
 
             if should_auto_continue {
@@ -1523,6 +1523,29 @@ impl PlayerView {
                     log::info!("Auto-recording: starting next speaker at idx {}", next_idx);
                     let _ = weak_view.update(cx, |view, cx| {
                         view.start_recording_channel(next_idx, cx);
+                    });
+                } else if need_position_modal {
+                    // Pause auto-record and ask the user to move the
+                    // microphones to the next seat. The modal's Continue
+                    // button resumes by calling start_recording_channel
+                    // for the first speaker at `cur_pos`.
+                    log::info!(
+                        "Auto-recording: position {} done; prompting user to move mics to position {}",
+                        cur_pos,
+                        cur_pos + 1
+                    );
+                    let _ = weak_view.update(cx, |view, cx| {
+                        view.state.update(cx, |state, _| {
+                            let rec_state =
+                                &mut state.app.measurement_state.recording_state;
+                            rec_state.move_position_modal_open = true;
+                            rec_state.pending_next_position = Some(cur_pos);
+                            rec_state.status_message = format!(
+                                "Move microphones to position {} and click Continue",
+                                cur_pos + 1
+                            );
+                        });
+                        cx.notify();
                     });
                 } else {
                     log::info!("Auto-recording complete - all channels recorded, saving JSON");
@@ -1773,6 +1796,10 @@ impl PlayerView {
                 // and the user has entered their meter reading.
                 spl_calibration: rec_state.spl_calibration_capture.to_spl_calibration(),
                 recording_seed: None,
+                num_positions: {
+                    let n = rec_state.recording_config.num_positions.max(1);
+                    if n > 1 { Some(n) } else { None }
+                },
             };
 
             // Convert ChannelRecording to speakers HashMap with inline measurements
@@ -2563,6 +2590,175 @@ impl PlayerView {
             }
         }
 
+        cx.notify();
+    }
+
+    /// Render the "move microphones to next position" modal. Same
+    /// manual-modal pattern as `render_migration_modal` (the comment
+    /// there explains why we don't use the `Dialog` component here).
+    pub(crate) fn render_move_position_modal(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let rec_state = &state.app.measurement_state.recording_state;
+
+        // `pending_next_position` is the index of the position the user
+        // just *finished*; the next pass is `pending + 1` (one-based).
+        let just_finished = rec_state.pending_next_position.unwrap_or(0);
+        let next_pos_one_based = just_finished + 2;
+        let total_positions = rec_state.recording_config.num_positions.max(1);
+
+        let view = cx.entity().clone();
+        let view_cancel = view.clone();
+
+        div()
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(
+                div()
+                    .id("move-position-backdrop")
+                    .absolute()
+                    .inset_0()
+                    .bg(theme.overlay_bg),
+            )
+            .child(
+                div()
+                    .id("move-position-modal-container")
+                    .relative()
+                    .w(px(480.0)) // intentional: fixed modal dialog width
+                    .bg(theme.surface)
+                    .border_1()
+                    .border_color(theme.accent)
+                    .rounded(d.r_lg)
+                    .shadow_lg()
+                    .overflow_hidden()
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .px(d.card)
+                            .py(d.pad_x)
+                            .border_b_1()
+                            .border_color(theme.border)
+                            .child(
+                                div()
+                                    .text_size(d.text_lg)
+                                    .font_weight(FontWeight::BOLD)
+                                    .text_color(theme.text_primary)
+                                    .child(format!(
+                                        "Move microphones to position {} of {}",
+                                        next_pos_one_based, total_positions
+                                    )),
+                            ),
+                    )
+                    .child(
+                        div().px(d.card).py(d.card).child(
+                            VStack::new()
+                                .spacing(StackSpacing::Md)
+                                .child(
+                                    Text::new(format!(
+                                        "Reposition every configured microphone to seat {}, then click Continue. Click Cancel to stop the session and save what you have so far.",
+                                        next_pos_one_based
+                                    ))
+                                    .size(TextSize::Sm)
+                                    .color(theme.text_primary),
+                                ),
+                        ),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .justify_end()
+                            .gap(d.gap_md)
+                            .px(d.card)
+                            .py(d.pad_x)
+                            .border_t_1()
+                            .border_color(theme.border)
+                            .child(
+                                div()
+                                    .id("move-position-cancel-btn")
+                                    .px(d.pad_x)
+                                    .py(d.pad_y)
+                                    .rounded(d.r_md)
+                                    .bg(theme.surface_hover)
+                                    .text_color(theme.text_secondary)
+                                    .cursor_pointer()
+                                    .hover(|s| s.bg(theme.border))
+                                    .child("Cancel session")
+                                    .on_click(move |_event, _window, cx| {
+                                        view_cancel.update(cx, |this, cx| {
+                                            this.cancel_position_modal(cx);
+                                        });
+                                    }),
+                            )
+                            .child(
+                                div()
+                                    .id("move-position-continue-btn")
+                                    .px(d.pad_x)
+                                    .py(d.pad_y)
+                                    .rounded(d.r_md)
+                                    .bg(theme.accent)
+                                    .text_color(theme.text_on_accent)
+                                    .cursor_pointer()
+                                    .hover(|s| s.bg(theme.accent_muted))
+                                    .child("Continue")
+                                    .on_click(move |_event, _window, cx| {
+                                        view.update(cx, |this, cx| {
+                                            this.continue_position_modal(cx);
+                                        });
+                                    }),
+                            ),
+                    ),
+            )
+    }
+
+    /// Continue button handler for the move-position modal. Closes the
+    /// modal and resumes auto-record at the next position.
+    fn continue_position_modal(&mut self, cx: &mut Context<Self>) {
+        let next_idx_opt = self.state.update(cx, |state, _| {
+            let rec_state = &mut state.app.measurement_state.recording_state;
+            rec_state.move_position_modal_open = false;
+            let just_finished = rec_state.pending_next_position.take().unwrap_or(0);
+            let next_pos = just_finished + 1;
+            let num_positions = rec_state.recording_config.num_positions.max(1);
+            if next_pos >= num_positions {
+                // Defensive: shouldn't happen — modal only opens when
+                // there's another position. Treat as completion.
+                rec_state.auto_record_remaining = false;
+                None
+            } else {
+                rec_state.status_message =
+                    format!("Recording position {}...", next_pos + 1);
+                rec_state.next_channel_in_position(next_pos)
+            }
+        });
+        if let Some(next_idx) = next_idx_opt {
+            self.start_recording_channel(next_idx, cx);
+        } else {
+            // No more entries to record — auto-save and finish.
+            self.save_recordings(cx);
+        }
+        cx.notify();
+    }
+
+    /// Cancel button handler for the move-position modal. Stops the
+    /// auto-record session in place; the user can save partial results
+    /// from the Save step.
+    fn cancel_position_modal(&mut self, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _| {
+            let rec_state = &mut state.app.measurement_state.recording_state;
+            rec_state.move_position_modal_open = false;
+            rec_state.pending_next_position = None;
+            rec_state.auto_record_remaining = false;
+            rec_state.status_message = "Recording session cancelled".to_string();
+        });
         cx.notify();
     }
 }

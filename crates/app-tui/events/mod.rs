@@ -193,6 +193,17 @@ fn handle_shared_keys(app: &mut App, key: KeyEvent) -> Option<Option<PlayerComma
 
 /// Handle keys in Normal mode (no special sub-mode active).
 fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    // The Playlists screen has its own sub-state machine. When the user is
+    // typing a playlist name (Create / Rename), characters must reach the
+    // text input handler — bypass Tab/Esc/shared-shortcut routing so capital
+    // letters like `C` go into the name instead of switching to Configure.
+    use crate::app::PlaylistMode;
+    if app.current_screen == Screen::Playlists
+        && matches!(app.playlist_mode, PlaylistMode::Create | PlaylistMode::Rename)
+    {
+        return playlists::handle_playlists_keys(app, key);
+    }
+
     match key.code {
         KeyCode::Esc => {
             app.should_quit = true;

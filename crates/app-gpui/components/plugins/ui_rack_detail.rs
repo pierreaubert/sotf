@@ -255,86 +255,20 @@ impl PlayerView {
             .filter(|p| matches!(p, PluginType::LoudnessMonitor))
             .count();
 
-        // Categories with their plugins
-        let categories: &[(&str, &[PluginType])] = &[
-            (
-                "Dynamics",
-                &[
-                    PluginType::Compressor,
-                    PluginType::Limiter,
-                    PluginType::Gate,
-                    PluginType::Expander,
-                    PluginType::MultibandCompressor,
-                    PluginType::MultibandExpander,
-                    PluginType::TransientShaper,
-                    PluginType::DeEsser,
-                    PluginType::Saturation,
-                    PluginType::DynamicEq,
-                    PluginType::LinearPhaseEq,
-                    PluginType::SpectralCompressor,
-                ],
-            ),
-            (
-                "EQ & Tone",
-                &[
-                    PluginType::EQ,
-                    PluginType::Gain,
-                    PluginType::Delay,
-                    PluginType::LoudnessCompensation,
-                    PluginType::FletcherMunson,
-                ],
-            ),
-            (
-                "Denoising",
-                &[
-                    PluginType::Denoiser,
-                    PluginType::Declick,
-                    PluginType::HissReducer,
-                    PluginType::SpeechDenoiser,
-                    PluginType::Aec,
-                    PluginType::Pnd,
-                ],
-            ),
-            (
-                "Spatial",
-                &[
-                    PluginType::Upmixer,
-                    PluginType::AAE,
-                    PluginType::Matrix,
-                    PluginType::BinauralDecoder,
-                    PluginType::Convolution,
-                    PluginType::XTC,
-                    PluginType::Crossfeed,
-                    PluginType::Beamformer,
-                    PluginType::Downmix,
-                    PluginType::MonoToStereo,
-                ],
-            ),
-            (
-                "Analysis",
-                &[
-                    PluginType::LoudnessMonitor,
-                    PluginType::SpectrumAnalyzer,
-                    PluginType::ABCompare,
-                ],
-            ),
-            (
-                "Routing",
-                &[
-                    PluginType::ChannelMuteSolo,
-                    PluginType::BandSplit,
-                    PluginType::BandMerge,
-                ],
-            ),
-        ];
+        // Categories sourced from `sotf_audio_player::plugin_categories` so
+        // every player frontend (TUI, GPUI rack, GPUI rack-detail) renders
+        // the same grouping.
+        let categories = sotf_audio_player::plugin_categories::CATEGORIES;
 
         let mut category_rows: Vec<gpui::AnyElement> = Vec::new();
         let mut global_idx = 0usize;
 
-        for (cat_name, plugins) in categories {
+        for cat in categories {
+            let cat_name = &cat.name;
+            let plugins = cat.plugins;
             let mut buttons: Vec<gpui::AnyElement> = Vec::new();
 
-            for pt in *plugins {
+            for pt in plugins {
                 let pt = pt.clone();
                 if !release_channel.allows(pt.maturity()) {
                     continue;

@@ -339,8 +339,8 @@ pub fn set_recording_output_dir(app: &mut App, val: String) {
 }
 
 pub fn get_recording_mic_cal_path(app: &App) -> &str {
-    &app.recording.mic_calibration_path
+    app.recording.active_mic_cal_path()
 }
 pub fn set_recording_mic_cal_path(app: &mut App, val: String) {
-    app.recording.mic_calibration_path = val;
+    app.recording.set_active_mic_cal_path(val);
 }

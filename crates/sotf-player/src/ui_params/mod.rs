@@ -134,6 +134,19 @@ impl TuiEditablePlugin for PluginSettings {
                 }
                 descs
             }
+            PluginSettings::LinearPhaseEq { num_filters, .. } => {
+                let mut descs = specs_to_descriptors(param_specs::linear_phase_eq::PARAMS);
+                let n = (*num_filters as usize).clamp(1, 10);
+                for i in 0..n {
+                    let g = format!("Filter {}", i + 1);
+                    for spec in param_specs::linear_phase_eq::BAND_TEMPLATE {
+                        let mut d = spec_to_descriptor(spec);
+                        d.group = g.clone();
+                        descs.push(d);
+                    }
+                }
+                descs
+            }
             PluginSettings::MultibandCompressor { num_bands, .. } => {
                 let mut descs =
                     specs_to_descriptors(param_specs::multiband_compressor::GLOBAL_PARAMS);
@@ -202,6 +215,48 @@ impl TuiEditablePlugin for PluginSettings {
                     }
                 } else {
                     String::new()
+                }
+            }
+            PluginSettings::LinearPhaseEq {
+                num_filters,
+                fir_length,
+                auto_gain,
+                mix,
+                filters,
+            } => {
+                let global_specs = sotf_plugins::param_specs::linear_phase_eq::PARAMS;
+                let band_template = sotf_plugins::param_specs::linear_phase_eq::BAND_TEMPLATE;
+                let global_count = global_specs.len();
+                let band_params = band_template.len();
+                if index < global_count {
+                    let val = match index {
+                        0 => *num_filters,
+                        1 => *fir_length,
+                        2 => {
+                            return global_specs[2]
+                                .format_value(if *auto_gain { 1.0 } else { 0.0 });
+                        }
+                        3 => *mix,
+                        _ => return String::new(),
+                    };
+                    global_specs[index].format_value(val)
+                } else {
+                    let band_offset = index - global_count;
+                    let band_idx = band_offset / band_params;
+                    let param_in_band = band_offset % band_params;
+                    if let Some(filter) = filters.get(band_idx) {
+                        match param_in_band {
+                            0 => format!("{:?}", filter.filter_type),
+                            1 => format!("{:.0}", filter.frequency),
+                            2 => format!("{:.2}", filter.q),
+                            3 => format!("{:.1}", filter.gain_db),
+                            4 => band_template[4]
+                                .format_value(if filter.muted { 0.0 } else { 1.0 }),
+                            _ => String::new(),
+                        }
+                    } else {
+                        String::new()
+                    }
                 }
             }
             PluginSettings::MultibandCompressor {
@@ -469,6 +524,84 @@ impl TuiEditablePlugin for PluginSettings {
                             };
                             filter.filter_type = types[new_idx];
                         }
+                        _ => return false,
+                    }
+                    return true;
+                }
+            }
+            PluginSettings::LinearPhaseEq {
+                num_filters,
+                fir_length,
+                auto_gain,
+                mix,
+                filters,
+            } => {
+                let global_specs = sotf_plugins::param_specs::linear_phase_eq::PARAMS;
+                let global_count = global_specs.len();
+                if index < global_count {
+                    match index {
+                        0 => {
+                            let old = *num_filters as usize;
+                            *num_filters =
+                                ((*num_filters as i64) + delta as i64).clamp(1, 10) as f64;
+                            let new = *num_filters as usize;
+                            if new > old {
+                                while filters.len() < new {
+                                    filters.push(crate::EQFilter::new(
+                                        crate::BiquadFilterType::Peak,
+                                        1000.0,
+                                        1.0,
+                                        0.0,
+                                    ));
+                                }
+                            } else if new < old {
+                                filters.truncate(new);
+                            }
+                        }
+                        1 => {
+                            *fir_length =
+                                ((*fir_length as i64) + delta as i64).clamp(0, 3) as f64;
+                        }
+                        2 => *auto_gain = !*auto_gain,
+                        3 => *mix = (*mix + delta * 0.01).clamp(0.0, 1.0),
+                        _ => return false,
+                    }
+                    return true;
+                }
+                let band_offset = index - global_count;
+                let band_params = sotf_plugins::param_specs::linear_phase_eq::BAND_TEMPLATE.len();
+                let band_idx = band_offset / band_params;
+                let param_in_band = band_offset % band_params;
+                if let Some(filter) = filters.get_mut(band_idx) {
+                    use crate::BiquadFilterType;
+                    match param_in_band {
+                        0 => {
+                            // Linear-phase only supports Peak/Lowshelf/Highshelf/Lowpass/Highpass.
+                            let types = [
+                                BiquadFilterType::Peak,
+                                BiquadFilterType::Lowshelf,
+                                BiquadFilterType::Highshelf,
+                                BiquadFilterType::Lowpass,
+                                BiquadFilterType::Highpass,
+                            ];
+                            let current_idx = types
+                                .iter()
+                                .position(|t| *t == filter.filter_type)
+                                .unwrap_or(0);
+                            let new_idx = if delta > 0.0 {
+                                (current_idx + 1) % types.len()
+                            } else {
+                                (current_idx + types.len() - 1) % types.len()
+                            };
+                            filter.filter_type = types[new_idx];
+                        }
+                        1 => {
+                            filter.frequency =
+                                (filter.frequency + delta * 10.0).clamp(20.0, 20000.0)
+                        }
+                        2 => filter.q = (filter.q + delta * 0.05).clamp(0.1, 10.0),
+                        3 => filter.gain_db = (filter.gain_db + delta * 0.5).clamp(-24.0, 24.0),
+                        4 => filter.muted = !filter.muted,
                         _ => return false,
                     }
                     return true;
@@ -962,6 +1095,30 @@ impl TuiEditablePlugin for PluginSettings {
                 let param_idx = filter_offset % 4;
                 if param_idx == 3 && (filter_offset / 4) < filters.len() {
                     let spec = &sotf_plugins::param_specs::eq::BAND_TEMPLATE[3];
+                    return spec.choice_labels().iter().map(|s| s.to_string()).collect();
+                }
+                Vec::new()
+            }
+            PluginSettings::LinearPhaseEq { filters, .. } => {
+                let global_specs = sotf_plugins::param_specs::linear_phase_eq::PARAMS;
+                let global_count = global_specs.len();
+                if index < global_count {
+                    if let Some(spec) = global_specs.get(index)
+                        && matches!(
+                            spec.param_type,
+                            sotf_plugins::param_specs::ParamType::Choice { .. }
+                        )
+                    {
+                        return spec.choice_labels().iter().map(|s| s.to_string()).collect();
+                    }
+                    return Vec::new();
+                }
+                let band_offset = index - global_count;
+                let band_params = sotf_plugins::param_specs::linear_phase_eq::BAND_TEMPLATE.len();
+                let param_in_band = band_offset % band_params;
+                let band_idx = band_offset / band_params;
+                if param_in_band == 0 && band_idx < filters.len() {
+                    let spec = &sotf_plugins::param_specs::linear_phase_eq::BAND_TEMPLATE[0];
                     return spec.choice_labels().iter().map(|s| s.to_string()).collect();
                 }
                 Vec::new()

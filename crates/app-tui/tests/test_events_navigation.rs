@@ -1231,8 +1231,12 @@ mod tests {
         assert_eq!(app.recording.selected_field, 1);
         assert_eq!(app.recording.step, RecordingStep::Config);
 
-        // Wrap at max field (9)
-        app.recording.selected_field = 9;
+        // Wrap at max field. Field count is dynamic: 10 statics +
+        // 2*num_channels per-channel rows (mic cal + input mapping). The
+        // default RecordingDeviceConfig has num_channels=1, so the last
+        // selectable index is 11.
+        let last = crate::app::recording_field_count(&app.recording) - 1;
+        app.recording.selected_field = last;
         send_keys(&mut app, &[KeyCode::Tab]);
         assert_eq!(app.recording.selected_field, 0);
         assert_eq!(app.recording.step, RecordingStep::Config);

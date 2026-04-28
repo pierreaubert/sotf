@@ -428,10 +428,11 @@ impl RoomEqState {
             .into_values()
             .map(|recordings| {
                 let first = recordings[0];
-                // Strip " (Mic N)" suffix for the channel name
+                // Strip the first parenthetical suffix — handles
+                // " (Mic N)", " (Pos N)", and " (Pos N / Mic M)" naming.
                 let base_name = first
                     .channel_name
-                    .find(" (Mic ")
+                    .find(" (")
                     .map_or(first.channel_name.as_str(), |pos| {
                         &first.channel_name[..pos]
                     })

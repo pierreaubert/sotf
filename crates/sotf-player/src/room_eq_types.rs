@@ -237,6 +237,16 @@ pub struct RecordingConfiguration {
     /// `None` for sessions that skipped the Probe step.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub probe_wav_relative: Option<String>,
+    /// Number of measurement positions (seats) the user captured.
+    /// 1 for legacy single-position sessions; ≥ 2 means the
+    /// `multi_mic_measurements` arrays on each channel hold the
+    /// per-(position, mic) sweeps in `(position, mic)` order.
+    #[serde(default = "default_num_positions_one")]
+    pub num_positions: usize,
+}
+
+fn default_num_positions_one() -> usize {
+    1
 }
 
 /// Simple W/D/H triple in meters for the legacy
