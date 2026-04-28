@@ -451,9 +451,13 @@ impl<P: InPlacePlugin> InPlacePlugin for OversampledPlugin<P> {
 
         let inner = &mut self.inner;
         let os_interleaved = &mut self.os_interleaved;
+        let mut inner_error: Option<String> = None;
 
         self.oversampler
             .process(buffer, nf, |planar, os_frames| {
+                if inner_error.is_some() {
+                    return;
+                }
                 let total_os = os_frames * nc;
                 // Ensure buffer is large enough
                 if os_interleaved.len() < total_os {
@@ -466,11 +470,27 @@ impl<P: InPlacePlugin> InPlacePlugin for OversampledPlugin<P> {
                     sample_rate: os_context.sample_rate,
                     num_frames: os_frames,
                 };
-                let _ = inner.process_in_place(&mut os_interleaved[..total_os], &ctx);
+                match inner.process_in_place(&mut os_interleaved[..total_os], &ctx) {
+                    Ok(frames) if frames == os_frames => {}
+                    Ok(frames) => {
+                        inner_error = Some(format!(
+                            "oversampled inner processed {frames} frames, expected {os_frames}"
+                        ));
+                        return;
+                    }
+                    Err(err) => {
+                        inner_error = Some(err);
+                        return;
+                    }
+                }
                 // Convert interleaved → planar (back)
                 interleaved_to_planar(&os_interleaved[..total_os], planar, os_frames, nc);
             })
             .map_err(|e| e.to_string())?;
+
+        if let Some(err) = inner_error {
+            return Err(err);
+        }
 
         Ok(nf)
     }
@@ -746,6 +766,54 @@ mod tests {
             max > 0.8,
             "Doubler through oversampler should produce amplified output: max={max}"
         );
+    }
+
+    #[test]
+    fn test_oversampled_plugin_propagates_inner_process_error() {
+        use crate::parameters::{Parameter, ParameterId, ParameterValue};
+        use crate::plugin::{InPlacePlugin, PluginInfo, ProcessContext};
+
+        struct ErrorPlugin;
+        impl InPlacePlugin for ErrorPlugin {
+            fn info(&self) -> PluginInfo {
+                PluginInfo::new("Error", "1.0", "Test")
+            }
+            fn channels(&self) -> usize {
+                1
+            }
+            fn parameters(&self) -> Vec<Parameter> {
+                vec![]
+            }
+            fn set_parameter(
+                &mut self,
+                _: ParameterId,
+                _: ParameterValue,
+            ) -> crate::plugin::PluginResult<()> {
+                Ok(())
+            }
+            fn get_parameter(&self, _: &ParameterId) -> Option<ParameterValue> {
+                None
+            }
+            fn process_in_place(
+                &mut self,
+                _buffer: &mut [f32],
+                _context: &ProcessContext,
+            ) -> crate::plugin::PluginResult<usize> {
+                Err("inner failed".to_string())
+            }
+        }
+
+        let mut os = OversampledPlugin::new(ErrorPlugin, 2, 1).unwrap();
+        os.initialize(48000).unwrap();
+
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: 256,
+        };
+        let mut buf = vec![0.0f32; 256];
+        let err = os.process_in_place(&mut buf, &ctx).unwrap_err();
+
+        assert!(err.contains("inner failed"));
     }
 
     #[test]

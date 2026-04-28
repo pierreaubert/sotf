@@ -413,6 +413,7 @@ impl DawHost {
             self.plugins.resize_with(id + 1, || None);
         }
         self.plugins[id] = Some(plugin);
+        self.built = false;
         self.cached_latency = None;
         Ok(id)
     }
@@ -425,6 +426,7 @@ impl DawHost {
             return Err("Self-loop".into());
         }
         self.edges.push(edge);
+        self.built = false;
         self.cached_latency = None;
         Ok(())
     }
@@ -1113,6 +1115,18 @@ impl DawHost {
                     .unwrap_or(0);
 
                 // For each predecessor with lower latency, create a compensation delay
+                let dest_node = self
+                    .nodes
+                    .get(&nid)
+                    .expect("stage node should exist in graph");
+                let has_sidechain = preds.iter().any(|e| e.edge_type == EdgeType::Sidechain);
+                let primary_channels =
+                    if has_sidechain && dest_node.input_channels() > dest_node.output_channels() {
+                        dest_node.output_channels()
+                    } else {
+                        dest_node.input_channels()
+                    };
+                let mut sidechain_offset = primary_channels;
                 for edge in preds {
                     let pred_latency = self.node_latency_from_input[edge.from_node];
                     let compensation = max_pred_latency - pred_latency;
@@ -1122,9 +1136,32 @@ impl DawHost {
                             .get(&edge.from_node)
                             .map(|n| n.output_channels())
                             .unwrap_or(2);
+                        let delay_channels = Self::routed_channel_count(
+                            dest_node,
+                            edge,
+                            pred_channels,
+                            primary_channels,
+                            &mut sidechain_offset,
+                        );
+                        if delay_channels == 0 {
+                            continue;
+                        }
                         delays.insert(
                             (edge.from_node, edge.to_node),
-                            LookaheadBuffer::new(compensation, pred_channels),
+                            LookaheadBuffer::new(compensation, delay_channels),
+                        );
+                    } else if edge.edge_type == EdgeType::Sidechain {
+                        let pred_channels = self
+                            .nodes
+                            .get(&edge.from_node)
+                            .map(|n| n.output_channels())
+                            .unwrap_or(2);
+                        let _ = Self::routed_channel_count(
+                            dest_node,
+                            edge,
+                            pred_channels,
+                            primary_channels,
+                            &mut sidechain_offset,
                         );
                     }
                 }
@@ -1132,6 +1169,39 @@ impl DawHost {
         }
 
         delays
+    }
+
+    fn routed_channel_count(
+        dest_node: &GraphNode,
+        edge: &GraphEdge,
+        source_channels: usize,
+        primary_channels: usize,
+        sidechain_offset: &mut usize,
+    ) -> usize {
+        let available_dest_channels = match edge.edge_type {
+            EdgeType::Audio => primary_channels,
+            EdgeType::Sidechain => {
+                if *sidechain_offset >= dest_node.input_channels() {
+                    return 0;
+                }
+                let available = dest_node.input_channels().saturating_sub(*sidechain_offset);
+                let requested = edge
+                    .channel_map
+                    .as_ref()
+                    .map_or(source_channels, |cm| cm.len());
+                *sidechain_offset = (*sidechain_offset + requested).min(dest_node.input_channels());
+                available
+            }
+        };
+
+        if available_dest_channels == 0 {
+            return 0;
+        }
+
+        edge.channel_map.as_ref().map_or_else(
+            || source_channels.min(available_dest_channels),
+            |cm| cm.len().min(available_dest_channels),
+        )
     }
 
     fn has_cycle(&self) -> bool {
@@ -1548,6 +1618,28 @@ mod tests {
 
         assert_eq!(processed, frames);
         assert_eq!(output, input);
+    }
+
+    #[test]
+    fn test_direct_dag_mutation_after_build_rebuilds_before_processing() {
+        let mut g = DawHost::new(2, 48000);
+        let first = g
+            .add_node("first".into(), Box::new(ScalerPlugin::new(2, 2.0)))
+            .unwrap();
+        g.build().unwrap();
+
+        let input = vec![1.0, 2.0, 3.0, 4.0];
+        let mut output = vec![0.0; 4];
+        g.process(&input, &mut output).unwrap();
+        assert_eq!(output, vec![2.0, 4.0, 6.0, 8.0]);
+
+        let second = g
+            .add_node("second".into(), Box::new(ScalerPlugin::new(2, 3.0)))
+            .unwrap();
+        g.add_edge(GraphEdge::new(first, second)).unwrap();
+
+        g.process(&input, &mut output).unwrap();
+        assert_eq!(output, vec![6.0, 12.0, 18.0, 24.0]);
     }
 
     /// Mock plugin that scales all samples by a factor. Used to detect bypass vs. active processing.
@@ -1978,6 +2070,51 @@ mod tests {
         );
         assert_eq!(output[2], 2.0, "Frame 2: both A and delayed B contribute");
         assert_eq!(output[7], 2.0, "Frame 7: both A and delayed B contribute");
+    }
+
+    #[test]
+    fn test_latency_compensation_handles_channel_mapped_edge() {
+        let mut g = DawHost::new(2, 48000);
+
+        let inp = g
+            .add_node("input".into(), Box::new(ScalerPlugin::new(2, 1.0)))
+            .unwrap();
+        let long_path = g
+            .add_node(
+                "long".into(),
+                Box::new(ScalerPlugin::with_latency(2, 1.0, 2)),
+            )
+            .unwrap();
+        let mapped_path = g
+            .add_node("mapped".into(), Box::new(ScalerPlugin::new(2, 1.0)))
+            .unwrap();
+        let out = g
+            .add_node("output".into(), Box::new(ScalerPlugin::new(2, 1.0)))
+            .unwrap();
+
+        g.add_edge(GraphEdge::new(inp, long_path)).unwrap();
+        g.add_edge(GraphEdge::new(inp, mapped_path)).unwrap();
+        g.add_edge(GraphEdge::new(long_path, out)).unwrap();
+        g.add_edge(GraphEdge::with_channels(mapped_path, out, vec![0]))
+            .unwrap();
+        g.build().unwrap();
+
+        let input = vec![
+            1.0, 10.0, //
+            2.0, 20.0, //
+            3.0, 30.0, //
+            4.0, 40.0,
+        ];
+        let mut output = vec![0.0; input.len()];
+
+        g.process(&input, &mut output).unwrap();
+
+        assert_eq!(output[0], 1.0);
+        assert_eq!(output[1], 10.0);
+        assert_eq!(output[4], 4.0);
+        assert_eq!(output[5], 30.0);
+        assert_eq!(output[6], 6.0);
+        assert_eq!(output[7], 40.0);
     }
 
     #[test]
