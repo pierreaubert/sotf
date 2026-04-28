@@ -18,26 +18,30 @@ fn test_upmixer_stereo_to_5ch() {
     assert_eq!(host.input_channels(), 2);
     assert_eq!(host.output_channels(), 6);
 
+    host.build().unwrap();
+    let latency = host.total_latency_samples();
+    let num_frames = latency + 2048;
+
     // Create stereo input with sine waves
-    let mut input_stereo = vec![0.0; 2048 * 2];
-    for i in 0..2048 {
+    let mut input_stereo = vec![0.0; num_frames * 2];
+    for i in 0..num_frames {
         let t = i as f32 / 44100.0;
         input_stereo[i * 2] = (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.5; // 440 Hz left
         input_stereo[i * 2 + 1] = (2.0 * std::f32::consts::PI * 880.0 * t).sin() * 0.3; // 880 Hz right
     }
 
-    let mut output_6ch = vec![0.0; 2048 * 6];
+    let mut output_6ch = vec![0.0; num_frames * 6];
 
     // Process
     host.process(&input_stereo, &mut output_6ch).unwrap();
 
     // Verify we got output
-    let total_energy: f32 = output_6ch.iter().map(|x| x * x).sum();
+    let total_energy: f32 = output_6ch[latency * 6..].iter().map(|x| x * x).sum();
     assert!(total_energy > 0.0, "Should have non-zero output");
 
     // Check individual channels
     let mut channel_energies = [0.0; 6];
-    for i in 0..2048 {
+    for i in latency..num_frames {
         for ch in 0..6 {
             channel_energies[ch] += output_6ch[i * 6 + ch].powi(2);
         }
@@ -81,18 +85,22 @@ fn test_upmixer_chain_with_gain() {
     assert_eq!(host.input_channels(), 2);
     assert_eq!(host.output_channels(), 6);
 
+    host.build().unwrap();
+    let latency = host.total_latency_samples();
+    let num_frames = latency + 1024;
+
     // Process with varying input
-    let mut input = vec![0.0; 1024 * 2];
-    for i in 0..1024 {
+    let mut input = vec![0.0; num_frames * 2];
+    for i in 0..num_frames {
         input[i * 2] = (i as f32 * 0.01).sin() * 0.5;
         input[i * 2 + 1] = (i as f32 * 0.015).cos() * 0.5;
     }
-    let mut output = vec![0.0; 1024 * 6];
+    let mut output = vec![0.0; num_frames * 6];
 
     host.process(&input, &mut output).unwrap();
 
     // Output should be non-zero and attenuated
-    let sum: f32 = output.iter().map(|&x| x.abs()).sum();
+    let sum: f32 = output[latency * 6..].iter().map(|&x| x.abs()).sum();
     println!("Chain output sum: {}", sum);
     assert!(sum > 0.0, "Should have output after upmixer + gain");
 }
@@ -525,9 +533,10 @@ fn test_upmixer_subharmonic_smoothing() {
 
     // Create input with sharp amplitude transition: silence -> signal -> silence
     // This tests both attack (turn-on) and release (turn-off) smoothing
+    let latency = plugin.latency_samples();
     let silence_samples = 2048;
     let signal_samples = 2048;
-    let total_samples = silence_samples + signal_samples + silence_samples;
+    let total_samples = silence_samples + signal_samples + silence_samples + latency;
 
     let mut input = vec![0.0; total_samples * 2];
 
@@ -556,8 +565,8 @@ fn test_upmixer_subharmonic_smoothing() {
 
     // Check for discontinuities at the transitions (silence -> signal, signal -> silence)
     // Measure maximum derivative in the transition regions
-    let transition_attack_start = silence_samples;
-    let transition_release_start = silence_samples + signal_samples;
+    let transition_attack_start = silence_samples + latency;
+    let transition_release_start = silence_samples + signal_samples + latency;
     let check_window = 100; // Check 100 samples around transition
 
     let mut max_derivative_attack = 0.0_f32;
@@ -598,7 +607,7 @@ fn test_upmixer_subharmonic_smoothing() {
     );
 
     // Verify LFE channel has content in the signal region
-    let lfe_signal_energy: f32 = lfe_samples[silence_samples..(silence_samples + signal_samples)]
+    let lfe_signal_energy: f32 = lfe_samples[transition_attack_start..transition_release_start]
         .iter()
         .map(|x| x * x)
         .sum();

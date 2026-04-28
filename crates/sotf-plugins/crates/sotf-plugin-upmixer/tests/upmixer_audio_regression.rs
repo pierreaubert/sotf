@@ -423,20 +423,23 @@ fn test_upmixer_stereo_imaging_preserved() {
     let mut plugin = create_upmixer("5.1");
     plugin.initialize(SAMPLE_RATE).unwrap();
 
+    let latency = plugin.latency_samples();
+    let num_frames = latency + FFT_SIZE;
+
     // Mono input (same on L and R)
-    let mut mono_input = vec![0.0_f32; FFT_SIZE * 2];
-    for i in 0..FFT_SIZE {
+    let mut mono_input = vec![0.0_f32; num_frames * 2];
+    for i in 0..num_frames {
         let t = i as f32 / SAMPLE_RATE as f32;
         let sample = (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.5;
         mono_input[i * 2] = sample; // L
         mono_input[i * 2 + 1] = sample; // R (same as L)
     }
 
-    let mut output = vec![0.0_f32; FFT_SIZE * plugin.output_channels()];
+    let mut output = vec![0.0_f32; num_frames * plugin.output_channels()];
 
     let context = ProcessContext {
         sample_rate: SAMPLE_RATE,
-        num_frames: FFT_SIZE,
+        num_frames,
     };
 
     plugin.process(&mono_input, &mut output, &context).unwrap();
@@ -446,7 +449,7 @@ fn test_upmixer_stereo_imaging_preserved() {
     let mut energy_left = 0.0_f32;
     let mut energy_right = 0.0_f32;
 
-    for i in 0..FFT_SIZE {
+    for i in latency..num_frames {
         energy_left += output[i * num_ch].powi(2);
         energy_right += output[i * num_ch + 1].powi(2);
     }

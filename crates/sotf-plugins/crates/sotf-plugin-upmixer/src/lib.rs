@@ -497,6 +497,8 @@ pub struct UpmixerPlugin {
 
     /// Initial latency counter to ensure OLA buffer is primed before output
     latency_filled: usize,
+    /// Remaining leading silence frames needed to align output with latency_samples().
+    startup_padding_remaining: usize,
     cached_parameters: Vec<sotf_host::parameters::Parameter>,
 }
 
@@ -885,6 +887,7 @@ impl UpmixerPlugin {
             prev_blended_filters_for_crossfade: Vec::new(),
 
             latency_filled: 0,
+            startup_padding_remaining: fft_size,
 
             multi_source_extraction: false,
             multi_source_threshold: 0.1,
@@ -1243,6 +1246,7 @@ impl UpmixerPlugin {
         self.hr_next_add_position = 0;
         self.hr_output_read_position = 0;
         self.latency_filled = 0;
+        self.startup_padding_remaining = new_fft_size;
 
         // Re-initialize all derived state (ERB bands, decorrelation filters, crossover
         // gains, bin caches, smoothers, MFCC, etc.)
@@ -1630,6 +1634,7 @@ impl Plugin for UpmixerPlugin {
         self.next_add_position = 0;
         self.output_read_position = 0;
         self.latency_filled = 0;
+        self.startup_padding_remaining = self.fft_size;
 
         // Clear HR input and temp blocks
         self.hr_input_buffer.fill(0.0);
@@ -1808,13 +1813,16 @@ impl Plugin for UpmixerPlugin {
         let mask = self.output_accumulator_mask;
         let nch = self.num_output_channels;
 
-        while output_pos < context.num_frames {
+        while input_pos < context.num_frames || output_pos < context.num_frames {
+            let mut made_progress = false;
+
             // Step 1: Fill input buffer if we have more input
             if input_pos < context.num_frames {
                 let samples_to_copy =
                     (input_samples - input_pos * 2).min(self.fft_size * 2 - self.input_buffer_fill);
 
                 if samples_to_copy > 0 {
+                    made_progress = true;
                     let input_slice = &input[input_pos * 2..input_pos * 2 + samples_to_copy];
 
                     self.input_buffer
@@ -1886,6 +1894,7 @@ impl Plugin for UpmixerPlugin {
 
             // Step 2: Process FFT block if we have enough input
             while self.input_buffer_fill >= self.fft_size * 2 {
+                made_progress = true;
                 // Copy to temp buffer
                 self.temp_input_block[..self.fft_size * 2]
                     .copy_from_slice(&self.input_buffer[..self.fft_size * 2]);
@@ -1921,43 +1930,64 @@ impl Plugin for UpmixerPlugin {
                 self.input_buffer_fill -= shift_amount;
             }
 
-            // Step 3: Drain available output from ring buffer (flat interleaved)
-            let frames_to_drain = self
-                .output_accumulator_fill
-                .min(context.num_frames - output_pos);
+            // Step 3: Drain available output from ring buffer (flat interleaved).
+            // Keep ingesting input after the caller's output buffer is full; otherwise
+            // small host blocks can drop the unread tail of the input block and later
+            // starve the OLA reservoir.
+            if output_pos < context.num_frames {
+                if self.startup_padding_remaining > 0 {
+                    let frames_to_pad = self
+                        .startup_padding_remaining
+                        .min(context.num_frames - output_pos);
+                    output_pos += frames_to_pad;
+                    self.startup_padding_remaining -= frames_to_pad;
+                    made_progress = true;
+                }
 
-            if frames_to_drain > 0 {
-                for i in 0..frames_to_drain {
-                    let read_idx = (self.output_read_position + i) & mask;
-                    let acc_base = read_idx * nch;
-                    let out_base = (output_pos + i) * nch;
-                    for ch in 0..nch {
-                        output[out_base + ch] = self.output_accumulator[acc_base + ch];
-                        // Clear after reading for next overlap-add cycle
-                        self.output_accumulator[acc_base + ch] = 0.0;
+                let frames_to_drain = if output_pos < context.num_frames {
+                    self.output_accumulator_fill
+                        .min(context.num_frames - output_pos)
+                } else {
+                    0
+                };
+
+                if frames_to_drain > 0 {
+                    made_progress = true;
+                    for i in 0..frames_to_drain {
+                        let read_idx = (self.output_read_position + i) & mask;
+                        let acc_base = read_idx * nch;
+                        let out_base = (output_pos + i) * nch;
+                        for ch in 0..nch {
+                            output[out_base + ch] = self.output_accumulator[acc_base + ch];
+                            // Clear after reading for next overlap-add cycle
+                            self.output_accumulator[acc_base + ch] = 0.0;
+                        }
                     }
-                }
-                self.output_read_position = (self.output_read_position + frames_to_drain) & mask;
-                self.output_accumulator_fill -= frames_to_drain;
+                    self.output_read_position =
+                        (self.output_read_position + frames_to_drain) & mask;
+                    self.output_accumulator_fill -= frames_to_drain;
 
-                // Drain HR output and mix into the frames we just wrote
-                if self.hr_direct_envelope > 0.0 {
-                    self.mix_hr_output(&mut output[output_pos * nch..], frames_to_drain);
-                } else if self.hr_output_accumulator_fill > 0 {
-                    // HR disabled — reset ring buffer state so no stale data lingers
-                    self.hr_output_accumulator_fill = 0;
-                    self.hr_output_read_position = 0;
-                    self.hr_next_add_position = 0;
-                }
+                    // Drain HR output and mix into the frames we just wrote
+                    if self.hr_direct_envelope > 0.0 {
+                        self.mix_hr_output(&mut output[output_pos * nch..], frames_to_drain);
+                    } else if self.hr_output_accumulator_fill > 0 {
+                        // HR disabled: reset ring buffer state so no stale data lingers.
+                        self.hr_output_accumulator_fill = 0;
+                        self.hr_output_read_position = 0;
+                        self.hr_next_add_position = 0;
+                    }
 
-                output_pos += frames_to_drain;
-            } else {
-                // Break if no progress is possible
+                    output_pos += frames_to_drain;
+                }
+            }
+
+            // Break if no progress is possible.
+            if !made_progress {
                 break;
             }
         }
 
-        // Return actual number of frames produced. DawHost handles silence padding.
+        // Return actual number of frames written; startup latency is emitted as leading silence.
         if output_pos > 0 {
             self.apply_final_safety_cap(&mut output[..output_pos * nch], output_pos);
         }

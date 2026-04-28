@@ -2080,6 +2080,51 @@ mod upmixer_tests {
         }
     }
 
+    #[test]
+    fn test_prime_block_processing_has_no_midstream_partial_output() {
+        let sample_rate = 44100;
+        let fft_size = 2048;
+        let prime_block = 127;
+        let total_blocks = 160;
+        let context = ProcessContext {
+            sample_rate,
+            num_frames: prime_block,
+        };
+
+        for &config in SPEAKER_CONFIGS.iter().filter(|&&config| config != "2.0") {
+            let mut plugin = UpmixerPlugin::new(
+                fft_size, config, 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+            );
+            plugin.initialize(sample_rate).unwrap();
+
+            let mut input = vec![0.0_f32; prime_block * 2];
+            let mut output = vec![0.0_f32; prime_block * plugin.num_output_channels];
+
+            for block_idx in 0..total_blocks {
+                for i in 0..prime_block {
+                    let frame = block_idx * prime_block + i;
+                    let t = frame as f32 / sample_rate as f32;
+                    input[i * 2] = (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.35
+                        + (2.0 * std::f32::consts::PI * 1760.0 * t).sin() * 0.08;
+                    input[i * 2 + 1] = (2.0 * std::f32::consts::PI * 660.0 * t).sin() * 0.32
+                        + (2.0 * std::f32::consts::PI * 1320.0 * t).sin() * 0.07;
+                }
+                output.fill(0.0);
+
+                let produced = plugin.process(&input, &mut output, &context).unwrap();
+                assert_eq!(
+                    produced,
+                    prime_block,
+                    "{config} emitted a short block at block {block_idx}: \
+                     produced {produced}/{prime_block}, output_accumulator_fill={}, \
+                     input_buffer_frames={}",
+                    plugin.output_accumulator_fill,
+                    plugin.input_buffer_fill / 2,
+                );
+            }
+        }
+    }
+
     /// Sub-harmonic synthesis: with strong 80Hz content in LFE, the sub-harmonic
     /// generator should produce energy at the configured sub-harmonic frequency
     /// (default ~40Hz), detectable via FFT on the LFE output.

@@ -10434,7 +10434,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-player"
-version = "0.5.121"
+version = "0.5.122"
 dependencies = [
  "anyhow",
  "audioadapter-buffers",
@@ -11161,12 +11161,12 @@ dependencies = [
 
 [[package]]
 name = "sotf-tui"
-version = "0.5.204"
+version = "0.5.205"
 dependencies = [
  "autoeq",
  "chrono",
  "clap",
- "core-foundation-sys 0.8.7",
+ "core-foundation-sys 0.7.0",
  "crossterm",
  "directories",
  "env_logger",
