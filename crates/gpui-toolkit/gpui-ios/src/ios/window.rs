@@ -20,7 +20,7 @@ use gpui::{
     RequestFrameOptions, Scene, Size, TileId, WindowAppearance, WindowBackgroundAppearance,
     WindowBounds, WindowControlArea, WindowParams, point, px, size,
 };
-use gpui_wgpu::{WgpuContext, WgpuRenderer, WgpuSurfaceConfig};
+use gpui_wgpu::{WgpuContext, WgpuRenderer, WgpuSurfaceConfig, wgpu};
 use objc::{
     class,
     declare::ClassDecl,
@@ -644,50 +644,53 @@ impl IosWindow {
             // `gpui_wgpu::WgpuContext::instance()` only enables Vulkan+GL,
             // so we create our own wgpu instance with Metal enabled, build
             // a surface from the UIView's raw window handle, construct the
-            // WgpuContext with that instance, and finally create the renderer.
+            // WgpuContext with that instance, and pre-populate the
+            // shared GpuContext so WgpuRenderer::new() reuses it.
             let config = WgpuSurfaceConfig {
                 size: size(DevicePixels(pixel_w), DevicePixels(pixel_h)),
                 transparent: false,
             };
 
-            let metal_instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+            let metal_instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
                 backends: wgpu::Backends::METAL,
                 flags: wgpu::InstanceFlags::default(),
-                ..Default::default()
+                backend_options: wgpu::BackendOptions::default(),
+                memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
+                display: None,
             });
 
-            // Build raw-window-handle types for the surface.
+            // Build raw-window-handle wrapper for the renderer. We can't
+            // pass `&IosWindow` directly because WgpuRenderer::new requires
+            // `Debug + Clone + Send + Sync + 'static`.
             let window_handle = ios_window
                 .window_handle()
                 .expect("iOS window handle unavailable");
             let display_handle = ios_window
                 .display_handle()
                 .expect("iOS display handle unavailable");
-
-            let target = wgpu::SurfaceTargetUnsafe::RawHandle {
-                raw_display_handle: display_handle.as_raw(),
-                raw_window_handle: window_handle.as_raw(),
+            let raw_handles = IosRawHandles {
+                window: window_handle.as_raw(),
+                display: display_handle.as_raw(),
             };
 
-            // Create a temporary surface just for WgpuContext initialisation
-            // (adapter selection needs a surface to test compatibility).
-            // Then use WgpuRenderer::new() which creates its own surface
-            // from the window handles — it reuses the Metal instance from
-            // the pre-populated WgpuContext.
-            //
-            // `new_with_surface` is private in upstream gpui_wgpu, so we
-            // go through the public `WgpuRenderer::new()` path instead.
-            let surface_result = metal_instance.create_surface_unsafe(target);
+            let target = wgpu::SurfaceTargetUnsafe::RawHandle {
+                raw_display_handle: Some(raw_handles.display),
+                raw_window_handle: raw_handles.window,
+            };
+
+            // Build a Metal-backed WgpuContext, pre-populate the shared
+            // GpuContext (Rc<RefCell<Option<WgpuContext>>>), then call
+            // WgpuRenderer::new which will reuse our context instead of
+            // falling back to the Vulkan+GL default.
+            let surface_result = unsafe { metal_instance.create_surface_unsafe(target) };
             match surface_result {
-                Ok(surface) => match WgpuContext::new(metal_instance, &surface) {
+                Ok(surface) => match WgpuContext::new(metal_instance, &surface, None) {
                     Ok(context) => {
-                        // Pre-populate gpu_context so WgpuRenderer::new()
-                        // reuses our Metal-backed context (and its instance)
-                        // instead of creating a Vulkan+GL one.
-                        let mut gpu_context: Option<WgpuContext> = Some(context);
+                        let gpu_context: Rc<RefCell<Option<WgpuContext>>> =
+                            Rc::new(RefCell::new(Some(context)));
                         drop(surface); // no longer needed — new() creates its own
 
-                        match WgpuRenderer::new(&mut gpu_context, &ios_window, config) {
+                        match WgpuRenderer::new(gpu_context, &raw_handles, config, None) {
                             Ok(renderer) => {
                                 log::info!("iOS wgpu renderer created (Metal)");
                                 *ios_window.renderer.lock() = Some(renderer);
@@ -1516,6 +1519,40 @@ impl IosWindow {
                 }
             }
         }
+    }
+}
+
+/// Lightweight, owned, `Debug + Clone + Send + Sync + 'static` wrapper around
+/// the raw iOS window/display handles. `WgpuRenderer::new` requires these
+/// trait bounds on the window argument; `IosWindow` itself can't satisfy them
+/// because of its interior mutability and raw `*mut Object` pointers.
+#[derive(Clone, Debug)]
+pub(crate) struct IosRawHandles {
+    window: raw_window_handle::RawWindowHandle,
+    display: raw_window_handle::RawDisplayHandle,
+}
+
+// Safety: the underlying UIKit view/display pointers remain valid for the
+// lifetime of the renderer (the renderer is dropped before the IosWindow).
+// The handles themselves are POD and only ever read from the GPU thread.
+unsafe impl Send for IosRawHandles {}
+unsafe impl Sync for IosRawHandles {}
+
+impl HasWindowHandle for IosRawHandles {
+    fn window_handle(
+        &self,
+    ) -> std::result::Result<raw_window_handle::WindowHandle<'_>, raw_window_handle::HandleError>
+    {
+        Ok(unsafe { raw_window_handle::WindowHandle::borrow_raw(self.window) })
+    }
+}
+
+impl HasDisplayHandle for IosRawHandles {
+    fn display_handle(
+        &self,
+    ) -> std::result::Result<raw_window_handle::DisplayHandle<'_>, raw_window_handle::HandleError>
+    {
+        Ok(unsafe { raw_window_handle::DisplayHandle::borrow_raw(self.display) })
     }
 }
 

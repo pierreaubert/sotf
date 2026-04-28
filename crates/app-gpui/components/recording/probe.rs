@@ -388,18 +388,39 @@ impl PlayerView {
         let cancel_for_task = cancel_flag.clone();
         cx.spawn(async move |_, cx| {
             let result = smol::unblock(move || {
-                sotf_audio::signal_recorder::probe_channel_delays_with_recording(
-                    &channel_indices,
-                    &channel_names,
-                    sample_rate,
-                    probe_ms,
-                    silence_ms,
-                    out_dev.as_deref(),
-                    in_dev.as_deref(),
-                    input_channel,
-                    &wav_path,
-                    Some(cancel_for_task),
-                )
+                #[cfg(not(target_os = "ios"))]
+                {
+                    sotf_audio::signal_recorder::probe_channel_delays_with_recording(
+                        &channel_indices,
+                        &channel_names,
+                        sample_rate,
+                        probe_ms,
+                        silence_ms,
+                        out_dev.as_deref(),
+                        in_dev.as_deref(),
+                        input_channel,
+                        &wav_path,
+                        Some(cancel_for_task),
+                    )
+                }
+                #[cfg(target_os = "ios")]
+                {
+                    let _ = (
+                        &channel_indices,
+                        &channel_names,
+                        sample_rate,
+                        probe_ms,
+                        silence_ms,
+                        out_dev.as_deref(),
+                        in_dev.as_deref(),
+                        input_channel,
+                        &wav_path,
+                        cancel_for_task,
+                    );
+                    Err::<sotf_audio::signal_recorder::ProbeDelayResults, String>(
+                        "Probe capture is not available on iOS".to_string(),
+                    )
+                }
             })
             .await;
 

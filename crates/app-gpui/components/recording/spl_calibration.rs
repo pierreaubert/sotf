@@ -189,17 +189,37 @@ impl PlayerView {
         let cancel_for_task = cancel_flag.clone();
         cx.spawn(async move |_, cx| {
             let result = smol::unblock(move || {
-                sotf_audio::signal_recorder::run_spl_calibration(
-                    output_channel,
-                    sample_rate,
-                    reference_freq_hz,
-                    tone_amp,
-                    duration_s,
-                    out_dev.as_deref(),
-                    in_dev.as_deref(),
-                    input_channel,
-                    Some(cancel_for_task),
-                )
+                #[cfg(not(target_os = "ios"))]
+                {
+                    sotf_audio::signal_recorder::run_spl_calibration(
+                        output_channel,
+                        sample_rate,
+                        reference_freq_hz,
+                        tone_amp,
+                        duration_s,
+                        out_dev.as_deref(),
+                        in_dev.as_deref(),
+                        input_channel,
+                        Some(cancel_for_task),
+                    )
+                }
+                #[cfg(target_os = "ios")]
+                {
+                    let _ = (
+                        output_channel,
+                        sample_rate,
+                        reference_freq_hz,
+                        tone_amp,
+                        duration_s,
+                        out_dev.as_deref(),
+                        in_dev.as_deref(),
+                        input_channel,
+                        cancel_for_task,
+                    );
+                    Err::<sotf_audio::signal_recorder::SplCalibrationResult, String>(
+                        "SPL calibration is not available on iOS".to_string(),
+                    )
+                }
             })
             .await;
 
