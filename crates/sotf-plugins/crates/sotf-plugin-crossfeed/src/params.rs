@@ -26,7 +26,7 @@ pub const PRESET_LABELS: &[&str] = &["Default", "Cmoy", "Meier", "Mb", "Off"];
 // ============================================================================
 
 pub const PARAMS: &[ParamSpec] = &[
-    ParamSpec::choice("Mode", "crossfeed_mode", 0, MODE_LABELS, "General")
+    ParamSpec::choice("Mode", "crossfeed_mode", 3, MODE_LABELS, "General")
         .structural()
         .setup()
         .doc("Crossfeed algorithm selection"),

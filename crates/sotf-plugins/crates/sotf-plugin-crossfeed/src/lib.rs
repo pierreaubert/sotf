@@ -148,7 +148,7 @@ fn default_autogain_smoothing() -> f32 {
 impl Default for CrossfeedPluginParams {
     fn default() -> Self {
         Self {
-            mode: CrossfeedMode::Bauer,
+            mode: CrossfeedMode::Mb,
             preset: CrossfeedPreset::Default,
             enabled: true,
             mix: 1.0,

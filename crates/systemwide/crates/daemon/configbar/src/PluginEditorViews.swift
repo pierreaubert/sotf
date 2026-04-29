@@ -12,6 +12,7 @@ struct PluginEditorView: View {
     var body: some View {
         if !descriptors.isEmpty && pluginType != "eq" {
             DescriptorPluginEditor(
+                pluginType: pluginType,
                 parameters: parameters,
                 descriptors: descriptors,
                 onUpdate: onUpdate
@@ -334,27 +335,92 @@ struct GateEditor: View {
 // MARK: - Descriptor-Driven Plugin Editor
 
 struct DescriptorPluginEditor: View {
+    let pluginType: String
     let parameters: [String: Any]
     let descriptors: [PluginParameterDescriptor]
     let onUpdate: ([String: Any]) -> Void
 
     @State private var draftParameters: [String: Any] = [:]
 
-    private var descriptorGroups: [(String, [PluginParameterDescriptor])] {
-        var groups: [(String, [PluginParameterDescriptor])] = []
-        for descriptor in descriptors {
-            let groupName = descriptor.group.isEmpty ? "General" : descriptor.group
-            if let lastIndex = groups.indices.last, groups[lastIndex].0 == groupName {
-                groups[lastIndex].1.append(descriptor)
-            } else {
-                groups.append((groupName, [descriptor]))
+    private var visibleDescriptors: [PluginParameterDescriptor] {
+        switch pluginType {
+        case "crossfeed":
+            return crossfeedVisibleDescriptors
+        case "multiband_compressor", "multiband_expander":
+            return multibandVisibleDescriptors
+        case "upmixer":
+            return descriptors.filter { $0.key != "speaker_config" }
+        default:
+            return descriptors
+        }
+    }
+
+    private var crossfeedVisibleDescriptors: [PluginParameterDescriptor] {
+        let modeIndex = crossfeedAlgorithmModeIndex()
+        return descriptors.filter { descriptor in
+            if descriptor.key == "crossfeed_mode" {
+                return false
+            }
+
+            switch descriptor.group.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+            case "bauer":
+                return modeIndex == 1
+            case "meier":
+                return modeIndex == 2
+            case "multiband", "multibands":
+                return modeIndex == 3
+            default:
+                return true
             }
         }
-        return groups
+    }
+
+    private var multibandVisibleDescriptors: [PluginParameterDescriptor] {
+        let activeCrossoverCount = max(multibandBandCount() - 1, 0)
+        return descriptors.filter { descriptor in
+            guard let crossoverIndex = crossoverFrequencyIndex(for: descriptor.key) else {
+                return true
+            }
+            return crossoverIndex <= activeCrossoverCount
+        }
+    }
+
+    private var speakerConfigDescriptor: PluginParameterDescriptor? {
+        descriptors.first { $0.key == "speaker_config" }
+    }
+
+    private var descriptorGroups: [(String, [PluginParameterDescriptor])] {
+        var groupOrder: [String] = []
+        var groupedDescriptors: [String: [PluginParameterDescriptor]] = [:]
+
+        for descriptor in visibleDescriptors {
+            let trimmedGroup = descriptor.group.trimmingCharacters(in: .whitespacesAndNewlines)
+            let groupName = trimmedGroup.isEmpty ? "General" : trimmedGroup
+            if groupedDescriptors[groupName] == nil {
+                groupOrder.append(groupName)
+                groupedDescriptors[groupName] = []
+            }
+            groupedDescriptors[groupName, default: []].append(descriptor)
+        }
+
+        return groupOrder.compactMap { groupName in
+            guard let descriptors = groupedDescriptors[groupName] else {
+                return nil
+            }
+            return (groupName, descriptors)
+        }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if pluginType == "crossfeed" {
+                crossfeedModeButtonBar
+            }
+
+            if pluginType == "upmixer" {
+                upmixerSpeakerConfigMenu
+            }
+
             ForEach(descriptorGroups, id: \.0) { group in
                 VStack(alignment: .leading, spacing: 6) {
                     Text(group.0.uppercased())
@@ -368,8 +434,47 @@ struct DescriptorPluginEditor: View {
             }
         }
         .onAppear {
-            draftParameters = parameters
+            draftParameters = normalizedInitialParameters(parameters)
         }
+    }
+
+    @ViewBuilder
+    private var upmixerSpeakerConfigMenu: some View {
+        if let descriptor = speakerConfigDescriptor {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("OUTPUT LAYOUT")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.secondary)
+
+                descriptorRow(descriptor)
+            }
+        }
+    }
+
+    private var crossfeedModeButtonBar: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Text("Mode")
+                    .frame(width: 150, alignment: .trailing)
+                    .font(.caption)
+
+                Picker("", selection: crossfeedAlgorithmModeBinding) {
+                    Text("Bauer").tag(1)
+                    Text("Meier").tag(2)
+                    Text("Multiband").tag(3)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 260)
+            }
+
+            Text("Crossfeed algorithm selection")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .padding(.leading, 158)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 3)
     }
 
     @ViewBuilder
@@ -391,7 +496,7 @@ struct DescriptorPluginEditor: View {
                             Text(label).tag(index)
                         }
                     }
-                    .frame(width: 180)
+                    .frame(width: descriptor.key == "speaker_config" ? 220 : 180)
 
                 case "int":
                     Stepper(
@@ -426,11 +531,32 @@ struct DescriptorPluginEditor: View {
                     .font(.caption2)
                     .foregroundColor(.secondary)
                     .padding(.leading, 158)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        .padding(.vertical, descriptor.doc.isEmpty ? 1 : 3)
     }
 
     private func updateValue(_ value: Any, for descriptor: PluginParameterDescriptor) {
+        if pluginType == "crossfeed" {
+            switch descriptor.key {
+            case "crossfeed_mode":
+                let index = crossfeedModeIndex(from: value) ?? 3
+                draftParameters["crossfeed_mode"] = index
+                draftParameters["mode"] = crossfeedModeValue(for: index)
+                onUpdate(draftParameters)
+                return
+            case "crossfeed_preset":
+                let index = crossfeedPresetIndex(from: value) ?? 0
+                draftParameters["crossfeed_preset"] = index
+                draftParameters["preset"] = crossfeedPresetValue(for: index)
+                onUpdate(draftParameters)
+                return
+            default:
+                break
+            }
+        }
+
         draftParameters[descriptor.key] = value
         onUpdate(draftParameters)
     }
@@ -467,34 +593,35 @@ struct DescriptorPluginEditor: View {
         Binding(
             get: { choiceIndex(for: descriptor) },
             set: { index in
-                let choices = descriptor.choices ?? []
-                if let current = draftParameters[descriptor.key] as? String,
-                   choices.contains(current),
-                   let selected = choices[safe: index] {
-                    updateValue(selected, for: descriptor)
-                } else {
-                    updateValue(index, for: descriptor)
-                }
+                updateValue(choiceValue(for: descriptor, index: index), for: descriptor)
             }
         )
     }
 
+    private var crossfeedAlgorithmModeBinding: Binding<Int> {
+        Binding(
+            get: { crossfeedAlgorithmModeIndex() },
+            set: { updateCrossfeedMode($0) }
+        )
+    }
+
     private func doubleValue(for descriptor: PluginParameterDescriptor) -> Double {
-        numberValue(draftParameters[descriptor.key]) ?? descriptor.defaultDouble ?? descriptor.min ?? 0.0
+        numberValue(rawValue(for: descriptor)) ?? descriptor.defaultDouble ?? descriptor.min ?? 0.0
     }
 
     private func intValue(for descriptor: PluginParameterDescriptor) -> Int {
-        Int((numberValue(draftParameters[descriptor.key]) ?? descriptor.defaultDouble ?? descriptor.min ?? 0.0).rounded())
+        Int((numberValue(rawValue(for: descriptor)) ?? descriptor.defaultDouble ?? descriptor.min ?? 0.0).rounded())
     }
 
     private func boolValue(for descriptor: PluginParameterDescriptor) -> Bool {
-        if let bool = draftParameters[descriptor.key] as? Bool {
+        let raw = rawValue(for: descriptor)
+        if let bool = raw as? Bool {
             return bool
         }
-        if let number = numberValue(draftParameters[descriptor.key]) {
+        if let number = numberValue(raw) {
             return number > 0.5
         }
-        if let string = draftParameters[descriptor.key] as? String {
+        if let string = raw as? String {
             let trueWords = ["true", "on", "yes", "1", descriptor.trueLabel?.lowercased() ?? ""]
             return trueWords.contains(string.lowercased())
         }
@@ -502,20 +629,190 @@ struct DescriptorPluginEditor: View {
     }
 
     private func stringValue(for descriptor: PluginParameterDescriptor) -> String {
-        if let string = draftParameters[descriptor.key] as? String {
+        if let string = rawValue(for: descriptor) as? String {
             return string
         }
         return ""
     }
 
     private func choiceIndex(for descriptor: PluginParameterDescriptor) -> Int {
+        if pluginType == "crossfeed" && descriptor.key == "crossfeed_mode" {
+            return crossfeedModeIndex()
+        }
+        if pluginType == "crossfeed" && descriptor.key == "crossfeed_preset" {
+            return crossfeedPresetIndex()
+        }
+
         let choices = descriptor.choices ?? []
-        if let string = draftParameters[descriptor.key] as? String,
+        let raw = rawValue(for: descriptor)
+        if let string = raw as? String,
            let index = choices.firstIndex(of: string) {
             return index
         }
-        return Int((numberValue(draftParameters[descriptor.key]) ?? descriptor.defaultDouble ?? 0.0).rounded())
+        return Int((numberValue(raw) ?? descriptor.defaultDouble ?? 0.0).rounded())
             .clamped(to: 0...max(choices.count - 1, 0))
+    }
+
+    private func choiceValue(for descriptor: PluginParameterDescriptor, index: Int) -> Any {
+        let choices = descriptor.choices ?? []
+        if pluginType == "crossfeed" && (descriptor.key == "crossfeed_mode" || descriptor.key == "crossfeed_preset") {
+            return index
+        }
+        if descriptor.key == "speaker_config", let selected = choices[safe: index] {
+            return selected
+        }
+        if let current = rawValue(for: descriptor) as? String,
+           choices.contains(current),
+           let selected = choices[safe: index] {
+            return selected
+        }
+        return index
+    }
+
+    private func rawValue(for descriptor: PluginParameterDescriptor) -> Any? {
+        if pluginType == "crossfeed" {
+            switch descriptor.key {
+            case "crossfeed_mode":
+                return draftParameters["crossfeed_mode"] ?? draftParameters["mode"]
+            case "crossfeed_preset":
+                return draftParameters["crossfeed_preset"] ?? draftParameters["preset"]
+            default:
+                break
+            }
+        }
+        return draftParameters[descriptor.key]
+    }
+
+    private func normalizedInitialParameters(_ parameters: [String: Any]) -> [String: Any] {
+        guard pluginType == "crossfeed" else {
+            return parameters
+        }
+
+        var normalized = parameters
+        let parsedModeIndex = crossfeedModeIndex(from: normalized["crossfeed_mode"] ?? normalized["mode"]) ?? 3
+        let modeIndex = parsedModeIndex == 0 ? 3 : parsedModeIndex
+        if parsedModeIndex == 0 {
+            normalized["enabled"] = false
+        }
+        let presetIndex = crossfeedPresetIndex(from: normalized["crossfeed_preset"] ?? normalized["preset"]) ?? 0
+        normalized["crossfeed_mode"] = modeIndex
+        normalized["mode"] = crossfeedModeValue(for: modeIndex)
+        normalized["crossfeed_preset"] = presetIndex
+        normalized["preset"] = crossfeedPresetValue(for: presetIndex)
+        return normalized
+    }
+
+    private func updateCrossfeedMode(_ index: Int) {
+        let modeIndex = index.clamped(to: 1...3)
+        draftParameters["crossfeed_mode"] = modeIndex
+        draftParameters["mode"] = crossfeedModeValue(for: modeIndex)
+        onUpdate(draftParameters)
+    }
+
+    private func multibandBandCount() -> Int {
+        guard let descriptor = descriptors.first(where: { $0.key == "num_bands" }) else {
+            return 3
+        }
+
+        let rawCount = numberValue(rawValue(for: descriptor)) ?? descriptor.defaultDouble ?? descriptor.min ?? 3.0
+        let minBands = max(Int((descriptor.min ?? 2.0).rounded()), 1)
+        let maxBands = max(Int((descriptor.max ?? Double(minBands)).rounded()), minBands)
+        return Int(rawCount.rounded()).clamped(to: minBands...maxBands)
+    }
+
+    private func crossoverFrequencyIndex(for key: String) -> Int? {
+        let prefix = "crossover_freq_"
+        guard key.hasPrefix(prefix) else {
+            return nil
+        }
+        return Int(String(key.dropFirst(prefix.count)))
+    }
+
+    private func crossfeedAlgorithmModeIndex() -> Int {
+        let mode = crossfeedModeIndex()
+        return mode == 0 ? 3 : mode.clamped(to: 1...3)
+    }
+
+    private func crossfeedModeIndex() -> Int {
+        crossfeedModeIndex(from: draftParameters["crossfeed_mode"] ?? draftParameters["mode"]) ?? 3
+    }
+
+    private func crossfeedModeIndex(from raw: Any?) -> Int? {
+        if let number = numberValue(raw) {
+            return Int(number.rounded()).clamped(to: 0...3)
+        }
+        guard let string = raw as? String else {
+            return nil
+        }
+
+        switch string.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "disable", "disabled", "off":
+            return 0
+        case "bauer":
+            return 1
+        case "meier":
+            return 2
+        case "multiband", "mb":
+            return 3
+        default:
+            return nil
+        }
+    }
+
+    private func crossfeedModeValue(for index: Int) -> String {
+        switch index.clamped(to: 0...3) {
+        case 0:
+            return "Off"
+        case 1:
+            return "Bauer"
+        case 2:
+            return "Meier"
+        default:
+            return "Mb"
+        }
+    }
+
+    private func crossfeedPresetIndex() -> Int {
+        crossfeedPresetIndex(from: draftParameters["crossfeed_preset"] ?? draftParameters["preset"]) ?? 0
+    }
+
+    private func crossfeedPresetIndex(from raw: Any?) -> Int? {
+        if let number = numberValue(raw) {
+            return Int(number.rounded()).clamped(to: 0...4)
+        }
+        guard let string = raw as? String else {
+            return nil
+        }
+
+        switch string.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "default":
+            return 0
+        case "cmoy":
+            return 1
+        case "meier":
+            return 2
+        case "mb", "multiband":
+            return 3
+        case "off", "disable", "disabled":
+            return 4
+        default:
+            return nil
+        }
+    }
+
+    private func crossfeedPresetValue(for index: Int) -> String {
+        switch index.clamped(to: 0...4) {
+        case 1:
+            return "Cmoy"
+        case 2:
+            return "Meier"
+        case 3:
+            return "Mb"
+        case 4:
+            return "Off"
+        default:
+            return "Default"
+        }
     }
 
     private func numberValue(_ raw: Any?) -> Double? {

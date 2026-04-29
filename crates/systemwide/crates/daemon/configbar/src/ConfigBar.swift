@@ -1177,59 +1177,81 @@ func dbToPosition(_ db: Double) -> Double {
     return min(1.0, 0.66 + ((db + 10.0) / 10.0) * 0.34)
 }
 
-/// Single channel level meter bar with optional LUFS markers
+private func linearPeakToDb(_ level: Double) -> Double {
+    guard level.isFinite, level > 0.00001 else {
+        return -60.0
+    }
+    return 20.0 * log10(level)
+}
+
+private func lufsToPosition(_ lufs: Double) -> Double {
+    guard lufs.isFinite else {
+        return 0.0
+    }
+    let normalized = min(max((lufs + 60.0) / 60.0, 0.0), 1.0)
+    return normalized * normalized
+}
+
+/// Single channel GPUI-style level meter bar with segmented fill and peak hold.
 struct LevelMeterBar: View {
     let level: Double  // Linear peak value (0.0 to 1.0+)
-    let momentaryLufs: Double?  // Momentary LUFS (-60 to 0)
-    let shortTermLufs: Double?  // Short-term LUFS (-60 to 0)
+    let peakHoldLevel: Double?
     let width: CGFloat
 
-    init(level: Double, momentaryLufs: Double? = nil, shortTermLufs: Double? = nil, width: CGFloat = 16) {
+    init(level: Double, peakHoldLevel: Double? = nil, width: CGFloat = 16) {
         self.level = level
-        self.momentaryLufs = momentaryLufs
-        self.shortTermLufs = shortTermLufs
+        self.peakHoldLevel = peakHoldLevel
         self.width = width
     }
 
     var body: some View {
         GeometryReader { geometry in
             let height = geometry.size.height
-            // Convert linear to dB
-            let db = level > 0.00001 ? 20.0 * log10(level) : -60.0
+            let db = linearPeakToDb(level)
             let fillRatio = dbToPosition(db)
-            let fillHeight = CGFloat(fillRatio) * height
+            let yellowThreshold = dbToPosition(-6.0)
+            let redThreshold = dbToPosition(-1.0)
+            let greenHeight = min(fillRatio, yellowThreshold)
+            let yellowHeight = fillRatio > yellowThreshold
+                ? min(fillRatio - yellowThreshold, redThreshold - yellowThreshold)
+                : 0.0
+            let redHeight = fillRatio > redThreshold ? fillRatio - redThreshold : 0.0
 
             ZStack(alignment: .bottom) {
-                // Background
                 RoundedRectangle(cornerRadius: 2)
-                    .fill(Color.black.opacity(0.3))
+                    .fill(Color.black.opacity(0.38))
 
-                // Meter fill with gradient colors based on level
-            if fillRatio > 0 {
-                    let color: Color = db >= -1.0 ? .red : (db >= -12.0 ? .yellow : .green)
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(color)
-                        .frame(height: fillHeight)
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    if redHeight > 0.001 {
+                        Rectangle()
+                            .fill(Color(red: 0.95, green: 0.18, blue: 0.18))
+                            .frame(height: CGFloat(redHeight) * height)
+                    }
+                    if yellowHeight > 0.001 {
+                        Rectangle()
+                            .fill(Color(red: 0.95, green: 0.72, blue: 0.18))
+                            .frame(height: CGFloat(yellowHeight) * height)
+                    }
+                    if greenHeight > 0.001 {
+                        Rectangle()
+                            .fill(Color(red: 0.22, green: 0.78, blue: 0.34))
+                            .frame(height: CGFloat(greenHeight) * height)
+                    }
                 }
+                .clipShape(RoundedRectangle(cornerRadius: 2))
 
-                // Momentary LUFS marker (cyan, thick)
-                if let mLufs = momentaryLufs, mLufs > -60 && !mLufs.isNaN && !mLufs.isInfinite {
-                    let mPos = dbToPosition(mLufs)
-                    let yOffset = height - (CGFloat(mPos) * height)
+                if let peakHoldLevel,
+                   peakHoldLevel > 0.00001,
+                   peakHoldLevel.isFinite {
+                    let peakRatio = dbToPosition(linearPeakToDb(peakHoldLevel))
+                    let markerY = min(max(height - (CGFloat(peakRatio) * height), 1), height - 1)
                     Rectangle()
-                        .fill(Color.cyan)
-                        .frame(width: width, height: 3)
-                        .position(x: width / 2, y: yOffset)
-                }
-
-                // Short-term LUFS marker (blue, thick)
-                if let sLufs = shortTermLufs, sLufs > -60 && !sLufs.isNaN && !sLufs.isInfinite {
-                    let sPos = dbToPosition(sLufs)
-                    let yOffset = height - (CGFloat(sPos) * height)
-                    Rectangle()
-                        .fill(Color.blue)
-                        .frame(width: width, height: 3)
-                        .position(x: width / 2, y: yOffset)
+                        .fill(Color.white.opacity(0.95))
+                        .frame(width: width, height: 2)
+                        .position(x: width / 2, y: markerY)
+                        .shadow(color: .black.opacity(0.65), radius: 1)
+                        .zIndex(2)
                 }
             }
         }
@@ -1237,92 +1259,68 @@ struct LevelMeterBar: View {
     }
 }
 
-/// Level meter group showing peak meters with LUFS markers
-struct LevelMeterView: View {
-    let title: String
-    let channelPeaks: [Double]
-    let channelLabels: [String]
-    let momentaryLufs: Double
-    let shortTermLufs: Double
-
-    private let scaleWidth: CGFloat = 18
-    private let barWidth: CGFloat = 18
-    private let barSpacing: CGFloat = 3
+struct LevelMeterScale: View {
+    private let ticks: [Double] = [0, -6, -12, -18, -24, -30, -40, -50, -60]
+    let width: CGFloat
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Title
-            Text(title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(.secondary)
-                .padding(.top, 8)
-                .padding(.bottom, 4)
-
-            // Main meter area - fills available space
-            GeometryReader { geometry in
-                HStack(spacing: barSpacing) {
-                    // dB scale legend
-                    VStack(alignment: .trailing, spacing: 0) {
-                        Text("0").font(.system(size: 8)).foregroundColor(.secondary)
-                        Spacer()
-                        Text("-12").font(.system(size: 8)).foregroundColor(.secondary)
-                        Spacer()
-                        Text("-24").font(.system(size: 8)).foregroundColor(.secondary)
-                        Spacer()
-                        Text("-60").font(.system(size: 8)).foregroundColor(.secondary)
+        GeometryReader { geometry in
+            ZStack(alignment: .topLeading) {
+                ForEach(ticks, id: \.self) { db in
+                    let y = tickY(for: db, height: geometry.size.height)
+                    HStack(spacing: 2) {
+                        Text(tickLabel(db))
+                            .font(.system(size: 8))
+                            .foregroundColor(.secondary)
+                            .frame(width: max(width - 6, 12), alignment: .trailing)
+                        Rectangle()
+                            .fill(Color.secondary.opacity(0.45))
+                            .frame(width: 4, height: 1)
                     }
-                    .frame(width: scaleWidth)
-
-                    // Peak meter bars with LUFS markers
-                    ForEach(Array(zip(channelPeaks.indices, channelPeaks)), id: \.0) { _, peak in
-                        LevelMeterBar(
-                            level: peak,
-                            momentaryLufs: momentaryLufs,
-                            shortTermLufs: shortTermLufs,
-                            width: barWidth
-                        )
-                    }
+                    .position(x: width / 2, y: y)
                 }
             }
-
-            // Channel labels row
-            HStack(spacing: barSpacing) {
-                Text("")
-                    .frame(width: scaleWidth)
-
-                ForEach(Array(channelPeaks.indices), id: \.self) { index in
-                    let label = index < channelLabels.count ? channelLabels[index] : "\(index + 1)"
-                    Text(label)
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(.secondary)
-                        .frame(width: barWidth)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                }
-            }
-            .padding(.top, 4)
-
-            // LUFS legend and values
-            VStack(spacing: 2) {
-                HStack(spacing: 4) {
-                    Rectangle().fill(Color.cyan).frame(width: 12, height: 3)
-                    Text("M: \(formatLufs(momentaryLufs))")
-                        .font(.system(size: 9, design: .monospaced))
-                        .foregroundColor(.cyan)
-                }
-                HStack(spacing: 4) {
-                    Rectangle().fill(Color.blue).frame(width: 12, height: 3)
-                    Text("S: \(formatLufs(shortTermLufs))")
-                        .font(.system(size: 9, design: .monospaced))
-                        .foregroundColor(.blue)
-                }
-            }
-            .padding(.top, 4)
-            .padding(.bottom, 8)
         }
-        .frame(maxHeight: .infinity)
-        .background(Color.black.opacity(0.1))
-        .cornerRadius(8)
+        .frame(width: width)
+    }
+
+    private func tickY(for db: Double, height: CGFloat) -> CGFloat {
+        let rawY = height - (CGFloat(dbToPosition(db)) * height)
+        return min(max(rawY, 6), max(height - 6, 6))
+    }
+
+    private func tickLabel(_ db: Double) -> String {
+        db == 0 ? "0" : String(Int(db))
+    }
+}
+
+struct LufsMiniMeterRow: View {
+    let label: String
+    let value: Double
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Text(label)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundColor(.secondary)
+                .frame(width: 10, alignment: .leading)
+
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.black.opacity(0.35))
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.white.opacity(0.85))
+                        .frame(width: CGFloat(lufsToPosition(value)) * geometry.size.width)
+                }
+            }
+            .frame(height: 6)
+
+            Text(formatLufs(value))
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundColor(.primary)
+                .frame(width: 34, alignment: .trailing)
+        }
     }
 
     private func formatLufs(_ lufs: Double) -> String {
@@ -1330,6 +1328,75 @@ struct LevelMeterView: View {
             return "-∞"
         }
         return String(format: "%.1f", lufs)
+    }
+}
+
+/// Level meter group showing GPUI-style peak meters with separate LUFS rows.
+struct LevelMeterView: View {
+    let title: String
+    let channelPeaks: [Double]
+    let peakHolds: [Double]
+    let channelLabels: [String]
+    let momentaryLufs: Double
+    let shortTermLufs: Double
+
+    private let scaleWidth: CGFloat = 24
+    private let barWidth: CGFloat = 16
+    private let barSpacing: CGFloat = 1
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.secondary)
+
+            HStack(alignment: .top, spacing: barSpacing) {
+                VStack(spacing: 4) {
+                    LevelMeterScale(width: scaleWidth)
+                        .frame(maxHeight: .infinity)
+                    Text("0")
+                        .font(.system(size: 9, weight: .medium))
+                        .opacity(0)
+                }
+                .frame(width: scaleWidth)
+
+                ForEach(Array(channelPeaks.indices), id: \.self) { index in
+                    let label = index < channelLabels.count ? channelLabels[index] : "\(index + 1)"
+                    VStack(spacing: 4) {
+                        LevelMeterBar(
+                            level: channelPeaks[index],
+                            peakHoldLevel: peakHoldValue(for: index),
+                            width: barWidth
+                        )
+                        .frame(maxHeight: .infinity)
+
+                        Text(label)
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(.secondary)
+                            .frame(width: barWidth)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
+                    }
+                }
+            }
+            .frame(maxHeight: .infinity)
+            .padding(.horizontal, 4)
+
+            VStack(spacing: 2) {
+                LufsMiniMeterRow(label: "M", value: momentaryLufs)
+                LufsMiniMeterRow(label: "S", value: shortTermLufs)
+            }
+            .padding(.horizontal, 5)
+            .padding(.bottom, 6)
+        }
+        .frame(maxHeight: .infinity)
+        .padding(.top, 6)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.72))
+        .cornerRadius(4)
+    }
+
+    private func peakHoldValue(for index: Int) -> Double? {
+        index < peakHolds.count ? peakHolds[index] : nil
     }
 }
 
@@ -1358,6 +1425,8 @@ struct ConfigurationView: View {
     // Level metering
     @State private var inputPeaks: [Double] = [0.0, 0.0]
     @State private var outputPeaks: [Double] = [0.0, 0.0]
+    @State private var inputPeakHolds: [Double] = [0.0, 0.0]
+    @State private var outputPeakHolds: [Double] = [0.0, 0.0]
     @State private var momentaryLufs: Double = -60.0
     @State private var shortTermLufs: Double = -60.0
     @State private var meteringTimer: Timer? = nil
@@ -1365,9 +1434,10 @@ struct ConfigurationView: View {
     @State private var loadingDevices = false
 
     // Encryption state
-    @State private var encryptionEnabled: Bool = false
+    @State private var encryptionEnabled: Bool = true
     @State private var encryptionFingerprint: String = ""
     @State private var encryptionError: String? = nil
+    @State private var pluginRackRefreshToken = 0
 
     // HAL Configuration state
     @State private var halConfig: AudioEngineClient.HalConfigData = AudioEngineClient.HalConfigData()
@@ -1385,6 +1455,7 @@ struct ConfigurationView: View {
             LevelMeterView(
                 title: "Monitor In",
                 channelPeaks: inputPeaks,
+                peakHolds: inputPeakHolds,
                 channelLabels: channelLabels(for: inputPeaks.count),
                 momentaryLufs: momentaryLufs,
                 shortTermLufs: shortTermLufs
@@ -1394,19 +1465,6 @@ struct ConfigurationView: View {
 
             // Main content with scroll
             VStack(spacing: 0) {
-                // Header (fixed, not scrollable)
-                HStack {
-                    Text("SotF Systemwide")
-                        .font(.title)
-                    Spacer()
-                    Button("Close") {
-                        onClose()
-                    }
-                }
-                .padding()
-
-                Divider()
-
                 // Scrollable configuration content
                 ScrollView(.vertical, showsIndicators: true) {
                     VStack(spacing: 20) {
@@ -1524,7 +1582,11 @@ struct ConfigurationView: View {
                         .font(.headline)
 
                     Picker("Device", selection: $selectedDevice) {
-                        ForEach(devices, id: \.name) { device in
+                        if physicalOutputDevices.isEmpty {
+                            Text("No hardware output devices").tag("")
+                        }
+
+                        ForEach(physicalOutputDevices, id: \.name) { device in
                             HStack {
                                 Text(device.name)
                                 if device.is_default {
@@ -1543,7 +1605,18 @@ struct ConfigurationView: View {
                     }
                     .pickerStyle(.menu)
                     .onChange(of: selectedDevice) { _, newDevice in
-                        _ = client.setDevice(newDevice)
+                        guard !newDevice.isEmpty else { return }
+                        guard !isVirtualDevice(newDevice) else {
+                            errorMessage = "Virtual audio devices cannot be used as Systemwide speaker output. Select hardware speakers/headphones here, and select SotF Virtual Audio in macOS Sound Output."
+                            showingError = true
+                            loadDevices()
+                            return
+                        }
+                        if !client.setDevice(newDevice) {
+                            errorMessage = "Failed to set output device: \(newDevice)"
+                            showingError = true
+                            loadDevices()
+                        }
                     }
                     .onAppear {
                         loadDevices()
@@ -1609,7 +1682,11 @@ struct ConfigurationView: View {
 
                     Divider()
 
-                    PluginRackView(client: client, outputChannels: halOutputChannels)
+                    PluginRackView(
+                        client: client,
+                        outputChannels: halOutputChannels,
+                        refreshTrigger: pluginRackRefreshToken
+                    )
                 }
                 .padding()
             }
@@ -1820,6 +1897,7 @@ struct ConfigurationView: View {
             }
                     }  // End of scrollable VStack
                     .padding(.horizontal)
+                    .padding(.top)
                     .padding(.bottom)
                 }  // End of ScrollView
 
@@ -1838,6 +1916,7 @@ struct ConfigurationView: View {
             LevelMeterView(
                 title: "Post Chain",
                 channelPeaks: outputPeaks,
+                peakHolds: outputPeakHolds,
                 channelLabels: channelLabels(for: outputPeaks.count),
                 momentaryLufs: momentaryLufs,
                 shortTermLufs: shortTermLufs
@@ -1862,7 +1941,7 @@ struct ConfigurationView: View {
 
     private func meterWidth(for channelCount: Int) -> CGFloat {
         let count = max(channelCount, 1)
-        return 33 + CGFloat(count * 21)
+        return max(84, 34 + CGFloat(count * 17))
     }
 
     private func channelLabels(for channelCount: Int) -> [String] {
@@ -1897,8 +1976,12 @@ struct ConfigurationView: View {
 
     private func updateMetering() {
         guard !meteringRequestInFlight else {
-            inputPeaks = decayedPeaks(inputPeaks)
-            outputPeaks = decayedPeaks(outputPeaks)
+            let nextInputPeaks = decayedPeaks(inputPeaks)
+            let nextOutputPeaks = decayedPeaks(outputPeaks)
+            inputPeakHolds = updatedPeakHolds(previous: inputPeakHolds, current: nextInputPeaks)
+            outputPeakHolds = updatedPeakHolds(previous: outputPeakHolds, current: nextOutputPeaks)
+            inputPeaks = nextInputPeaks
+            outputPeaks = nextOutputPeaks
             return
         }
 
@@ -1914,34 +1997,42 @@ struct ConfigurationView: View {
     }
 
     private func applyMetering(_ metering: AudioEngineClient.MeteringData?) {
+        var nextInputPeaks = inputPeaks
+        var nextOutputPeaks = outputPeaks
+
         if let metering = metering {
             // Input peaks from pre-processing monitor
             if let input = metering.input {
                 if !input.channelPeaks.isEmpty {
-                    inputPeaks = sanitizedPeaks(input.channelPeaks)
+                    nextInputPeaks = sanitizedPeaks(input.channelPeaks)
                 } else {
-                    inputPeaks = sanitizedPeaks(Array(repeating: input.peak, count: max(inputPeaks.count, 1)))
+                    nextInputPeaks = sanitizedPeaks(Array(repeating: input.peak, count: max(inputPeaks.count, 1)))
                 }
             } else {
-                inputPeaks = decayedPeaks(inputPeaks)
+                nextInputPeaks = decayedPeaks(inputPeaks)
             }
 
             // Output peaks from post-processing monitor
             if let output = metering.output {
                 if !output.channelPeaks.isEmpty {
-                    outputPeaks = sanitizedPeaks(output.channelPeaks)
+                    nextOutputPeaks = sanitizedPeaks(output.channelPeaks)
                 } else {
-                    outputPeaks = sanitizedPeaks(Array(repeating: output.peak, count: max(outputPeaks.count, 1)))
+                    nextOutputPeaks = sanitizedPeaks(Array(repeating: output.peak, count: max(outputPeaks.count, 1)))
                 }
                 momentaryLufs = output.momentary
                 shortTermLufs = output.shortTerm
             } else {
-                outputPeaks = decayedPeaks(outputPeaks)
+                nextOutputPeaks = decayedPeaks(outputPeaks)
             }
         } else {
-            inputPeaks = decayedPeaks(inputPeaks)
-            outputPeaks = decayedPeaks(outputPeaks)
+            nextInputPeaks = decayedPeaks(inputPeaks)
+            nextOutputPeaks = decayedPeaks(outputPeaks)
         }
+
+        inputPeakHolds = updatedPeakHolds(previous: inputPeakHolds, current: nextInputPeaks)
+        outputPeakHolds = updatedPeakHolds(previous: outputPeakHolds, current: nextOutputPeaks)
+        inputPeaks = nextInputPeaks
+        outputPeaks = nextOutputPeaks
     }
 
     private func sanitizedPeaks(_ peaks: [Double]) -> [Double] {
@@ -1949,7 +2040,7 @@ struct ConfigurationView: View {
             guard peak.isFinite, peak > 0 else {
                 return 0.0
             }
-            return min(peak, 1.0)
+            return min(peak, 2.0)
         }
     }
 
@@ -1960,12 +2051,38 @@ struct ConfigurationView: View {
         }
     }
 
-    /// Virtual device patterns that should not be used as output
-    private let virtualDevicePatterns = ["SotF", "BlackHole", "Loopback", "Virtual"]
+    private func updatedPeakHolds(previous: [Double], current: [Double]) -> [Double] {
+        current.enumerated().map { index, peak in
+            let oldValue = index < previous.count ? previous[index] : 0.0
+            if peak >= oldValue {
+                return peak
+            }
+            let decayed = oldValue * 0.96
+            return max(peak, decayed < 0.00001 ? 0.0 : decayed)
+        }
+    }
+
+    /// Virtual device patterns that should not be used as speaker output.
+    private let virtualDevicePatterns = [
+        "SotF",
+        "BlackHole",
+        "Loopback",
+        "Virtual",
+        "Soundflower",
+        "Background Music",
+        "Audio Bridge",
+        "ZoomAudio",
+    ]
 
     /// Check if a device name matches a virtual device pattern
     private func isVirtualDevice(_ name: String) -> Bool {
-        return virtualDevicePatterns.contains { name.contains($0) }
+        return virtualDevicePatterns.contains { pattern in
+            name.range(of: pattern, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+        }
+    }
+
+    private var physicalOutputDevices: [AudioEngineClient.AudioDevice] {
+        devices.filter { !isVirtualDevice($0.name) }
     }
 
     private func loadDevices() {
@@ -1985,7 +2102,7 @@ struct ConfigurationView: View {
 
     private func applyLoadedDevices() {
         // Filter out virtual devices for output selection
-        let physicalDevices = devices.filter { !isVirtualDevice($0.name) }
+        let physicalDevices = physicalOutputDevices
 
         // Prefer a physical device as output, avoiding virtual devices (HAL, BlackHole)
         if let physicalDefault = physicalDevices.first(where: { $0.is_default }) {
@@ -1994,12 +2111,8 @@ struct ConfigurationView: View {
         } else if let firstPhysical = physicalDevices.first {
             // Use the first physical device
             selectedDevice = firstPhysical.name
-        } else if let defaultDevice = devices.first(where: { $0.is_default }) {
-            // Fallback to system default if no physical devices found
-            selectedDevice = defaultDevice.name
-        } else if let firstDevice = devices.first {
-            // Last resort: use the first device
-            selectedDevice = firstDevice.name
+        } else {
+            selectedDevice = ""
         }
 
         // Also detect available audio sources
@@ -2162,6 +2275,7 @@ struct ConfigurationView: View {
                 if let resp = response, resp.success {
                     print("✅ Plugin configuration loaded from: \(url.path)")
                     print("   User plugins: \(userPlugins.count)")
+                    pluginRackRefreshToken += 1
                 } else {
                     errorMessage = response?.error ?? "Failed to apply plugin configuration"
                     showingError = true

@@ -41,6 +41,10 @@ fn is_virtual_output_device_name(name: &str) -> bool {
         || lower.contains("blackhole")
         || lower.contains("zoomaudio")
         || lower.contains("loopback")
+        || lower.contains("virtual")
+        || lower.contains("soundflower")
+        || lower.contains("background music")
+        || lower.contains("audio bridge")
         || crate::devices::is_null_device(name)
 }
 
@@ -1811,6 +1815,10 @@ mod tests {
         assert!(is_virtual_output_device_name("BlackHole 2ch"));
         assert!(is_virtual_output_device_name("ZoomAudioDevice"));
         assert!(is_virtual_output_device_name("Loopback Audio"));
+        assert!(is_virtual_output_device_name("Soundflower (2ch)"));
+        assert!(is_virtual_output_device_name("Background Music"));
+        assert!(is_virtual_output_device_name("Audio Bridge"));
+        assert!(is_virtual_output_device_name("Generic Virtual Device"));
         assert!(is_virtual_output_device_name("blackhole 2ch"));
         assert!(is_virtual_output_device_name("zoomaudiodevice"));
         assert!(is_virtual_output_device_name("loopback audio"));

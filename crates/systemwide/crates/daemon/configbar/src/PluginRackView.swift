@@ -6,6 +6,7 @@ import SwiftUI
 struct PluginRackView: View {
     let client: AudioEngineClient
     let outputChannels: Int
+    let refreshTrigger: Int
 
     @State private var plugins: [PluginInstance] = []
     @State private var availablePlugins: [AvailablePlugin] = []
@@ -92,11 +93,14 @@ struct PluginRackView: View {
             loadAvailablePlugins()
             refreshPlugins()
         }
+        .onChange(of: refreshTrigger) { _, _ in
+            refreshPlugins()
+        }
         .sheet(isPresented: $showingAddSheet) {
             AddPluginSheet(
                 availablePlugins: availablePlugins,
-                onAdd: { pluginType in
-                    addPlugin(type: pluginType)
+                onAdd: { pluginType, parameters in
+                    addPlugin(type: pluginType, parameters: parameters)
                     showingAddSheet = false
                 },
                 onCancel: {
@@ -174,16 +178,16 @@ struct PluginRackView: View {
             DispatchQueue.main.async {
                 loadingAvailablePlugins = false
                 if let result = result {
-                    availablePlugins = result
+                    availablePlugins = result.filter { $0.type_ != "fletcher_munson" }
                 }
             }
         }
     }
 
-    private func addPlugin(type: String) {
+    private func addPlugin(type: String, parameters: [String: Any]? = nil) {
         errorMessage = nil
-        let defaultParameters = availablePlugins.first { $0.type_ == type }?.defaultParameters ?? [:]
-        if client.addPlugin(type: type, parameters: defaultParameters, index: nil) {
+        let pluginParameters = parameters ?? availablePlugins.first { $0.type_ == type }?.defaultParameters ?? [:]
+        if client.addPlugin(type: type, parameters: pluginParameters, index: nil) {
             refreshPlugins()
         } else {
             errorMessage = "Failed to add plugin"
@@ -368,17 +372,30 @@ struct PluginEditSheet: View {
 
 struct AddPluginSheet: View {
     let availablePlugins: [AvailablePlugin]
-    let onAdd: (String) -> Void
+    let onAdd: (String, [String: Any]) -> Void
     let onCancel: () -> Void
 
     @State private var searchText = ""
+    @State private var selectedPluginID: String? = nil
+    @State private var draftParameters: [String: Any] = [:]
+
+    private var visiblePlugins: [AvailablePlugin] {
+        availablePlugins.filter { $0.type_ != "fletcher_munson" }
+    }
+
+    private var selectedPlugin: AvailablePlugin? {
+        guard let selectedPluginID else {
+            return nil
+        }
+        return visiblePlugins.first { $0.type_ == selectedPluginID }
+    }
 
     var categories: [PluginCategory] {
         let filtered: [AvailablePlugin]
         if searchText.isEmpty {
-            filtered = availablePlugins
+            filtered = visiblePlugins
         } else {
-            filtered = availablePlugins.filter {
+            filtered = visiblePlugins.filter {
                 $0.name.localizedCaseInsensitiveContains(searchText) ||
                 $0.description.localizedCaseInsensitiveContains(searchText) ||
                 $0.category.localizedCaseInsensitiveContains(searchText)
@@ -404,37 +421,115 @@ struct AddPluginSheet: View {
                 .textFieldStyle(.roundedBorder)
                 .padding(.horizontal)
 
-            // Plugin list by category
-            List {
-                ForEach(categories) { category in
-                    Section(header: Text(category.name)) {
-                        ForEach(category.plugins) { plugin in
-                            Button(action: { onAdd(plugin.type_) }) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    HStack {
-                                        Text(plugin.name)
-                                            .font(.body.weight(.medium))
-                                        if plugin.maturity != "Prod" {
-                                            Text(plugin.maturity)
-                                                .font(.caption2)
-                                                .padding(.horizontal, 4)
-                                                .padding(.vertical, 1)
-                                                .background(plugin.maturity == "Beta" ? Color.blue.opacity(0.2) : Color.orange.opacity(0.2))
-                                                .cornerRadius(3)
+            HStack(spacing: 0) {
+                // Plugin list by category
+                List {
+                    ForEach(categories) { category in
+                        Section(header: Text(category.name)) {
+                            ForEach(category.plugins) { plugin in
+                                Button(action: { selectPlugin(plugin) }) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        HStack {
+                                            Text(plugin.name)
+                                                .font(.body.weight(.medium))
+                                            if plugin.maturity != "Prod" {
+                                                Text(plugin.maturity)
+                                                    .font(.caption2)
+                                                    .padding(.horizontal, 4)
+                                                    .padding(.vertical, 1)
+                                                    .background(plugin.maturity == "Beta" ? Color.blue.opacity(0.2) : Color.orange.opacity(0.2))
+                                                    .cornerRadius(3)
+                                            }
                                         }
+                                        Text(plugin.description)
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
                                     }
-                                    Text(plugin.description)
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .contentShape(Rectangle())
                                 }
+                                .buttonStyle(.plain)
+                                .listRowBackground(
+                                    selectedPluginID == plugin.type_
+                                        ? Color.accentColor.opacity(0.16)
+                                        : Color.clear
+                                )
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                 }
+                .listStyle(.sidebar)
+                .frame(width: 300)
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 0) {
+                    if let plugin = selectedPlugin {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(plugin.name)
+                                .font(.headline)
+                            Text(plugin.description)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding()
+
+                        Divider()
+
+                        ScrollView(.vertical, showsIndicators: true) {
+                            PluginEditorView(
+                                pluginType: plugin.type_,
+                                parameters: draftParameters,
+                                descriptors: plugin.parameters,
+                                onUpdate: { draftParameters = $0 }
+                            )
+                            .id(plugin.type_)
+                            .padding(20)
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                        }
+                    } else {
+                        Spacer()
+                        Text("Select a plugin")
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity)
+                        Spacer()
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .listStyle(.sidebar)
+
+            Divider()
+
+            HStack {
+                Spacer()
+                Button("Add") {
+                    if let plugin = selectedPlugin {
+                        onAdd(plugin.type_, draftParameters)
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(selectedPlugin == nil)
+            }
+            .padding()
         }
-        .frame(width: 450, height: 500)
+        .frame(width: 840, height: 620)
+        .onAppear {
+            selectInitialPluginIfNeeded()
+        }
+        .onChange(of: availablePlugins.count) { _, _ in
+            selectInitialPluginIfNeeded()
+        }
+    }
+
+    private func selectInitialPluginIfNeeded() {
+        guard selectedPluginID == nil, let first = categories.first?.plugins.first else {
+            return
+        }
+        selectPlugin(first)
+    }
+
+    private func selectPlugin(_ plugin: AvailablePlugin) {
+        selectedPluginID = plugin.type_
+        draftParameters = plugin.defaultParameters
     }
 }

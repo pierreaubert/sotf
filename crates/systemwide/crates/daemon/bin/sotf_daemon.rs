@@ -461,6 +461,18 @@ impl AudioDaemon {
                     .map(|d| d.name().to_string())
                     .unwrap_or_else(|_| "Unknown Device".to_string());
 
+                if !is_safe_output_device_name(&resolved_name) {
+                    log::warn!(
+                        "Rejected virtual output device '{}' (requested '{}') to prevent feedback",
+                        resolved_name,
+                        device
+                    );
+                    return Response::err(format!(
+                        "'{}' is a virtual/loopback device and cannot be used as Systemwide speaker output. Select hardware speakers/headphones here, and select SotF Virtual Audio in macOS Sound Output.",
+                        resolved_name
+                    ));
+                }
+
                 // Store with ASIO prefix preserved so playback thread selects the right host
                 let stored_name = if is_asio {
                     format!(
@@ -629,6 +641,7 @@ impl AudioDaemon {
                 // Set engine_ready so driver starts sending audio
                 self.driver_manager.lock().set_engine_ready(true);
                 log::info!("Set engine_ready=true via driver");
+                self.sync_encryption_to_shared_memory(false);
 
                 Response::ok_empty()
             }
@@ -709,6 +722,7 @@ impl AudioDaemon {
             "band_split",
             "band_merge",
             "ab_compare",
+            "fletcher_munson",
         ];
 
         let available: Vec<Value> = PluginType::all()
@@ -837,6 +851,34 @@ impl AudioDaemon {
     // Encryption handlers
     // =========================================================================
 
+    #[cfg(all(target_os = "macos", feature = "hal"))]
+    fn sync_encryption_to_shared_memory(&self, flush_audio: bool) {
+        let key_manager = self.key_manager.lock();
+        Self::apply_encryption_to_shared_memory(&key_manager, flush_audio);
+    }
+
+    #[cfg(not(all(target_os = "macos", feature = "hal")))]
+    fn sync_encryption_to_shared_memory(&self, _flush_audio: bool) {}
+
+    #[cfg(all(target_os = "macos", feature = "hal"))]
+    fn apply_encryption_to_shared_memory(key_manager: &KeyManager, flush_audio: bool) {
+        match driver_hal::SharedAudioBuffer::open_default() {
+            Ok(mut buffer) => {
+                if flush_audio {
+                    buffer.flush_audio();
+                }
+                if key_manager.is_enabled() {
+                    buffer.set_key_fingerprint(*key_manager.fingerprint());
+                }
+                buffer.set_encrypted(key_manager.is_enabled());
+                buffer.set_config_changed();
+            }
+            Err(e) => {
+                log::warn!("Failed to sync encryption state to shared memory: {}", e);
+            }
+        }
+    }
+
     async fn handle_set_encryption(&self, enabled: bool) -> Response {
         let mut key_manager = self.key_manager.lock();
         key_manager.set_enabled(enabled);
@@ -844,14 +886,7 @@ impl AudioDaemon {
         // On macOS with HAL, update shared memory encryption flag
         #[cfg(all(target_os = "macos", feature = "hal"))]
         {
-            if let Ok(mut buffer) = driver_hal::SharedAudioBuffer::open_default() {
-                buffer.flush_audio();
-                if enabled {
-                    buffer.set_key_fingerprint(*key_manager.fingerprint());
-                }
-                buffer.set_encrypted(enabled);
-                buffer.set_config_changed();
-            }
+            Self::apply_encryption_to_shared_memory(&key_manager, true);
         }
 
         Response::ok(serde_json::json!({
@@ -879,13 +914,7 @@ impl AudioDaemon {
                 // On macOS with HAL, update shared memory fingerprint
                 #[cfg(all(target_os = "macos", feature = "hal"))]
                 {
-                    if key_manager.is_enabled()
-                        && let Ok(mut buffer) = driver_hal::SharedAudioBuffer::open_default()
-                    {
-                        buffer.flush_audio();
-                        buffer.set_key_fingerprint(*key_manager.fingerprint());
-                        buffer.set_config_changed();
-                    }
+                    Self::apply_encryption_to_shared_memory(&key_manager, true);
                 }
 
                 Response::ok(serde_json::json!({
@@ -1497,6 +1526,7 @@ fn is_safe_output_device_name(name: &str) -> bool {
         "blackhole",
         "zoomaudio",
         "loopback",
+        "virtual",
         "soundflower",
         "background music",
         "audio bridge",
@@ -1613,6 +1643,26 @@ mod tests {
         );
         assert_eq!(configured_output_device_from_value(Some("   ")), None);
         assert_eq!(configured_output_device_from_value(None), None);
+    }
+
+    #[test]
+    fn virtual_output_device_names_are_rejected() {
+        for name in [
+            "SotF Virtual Audio",
+            "BlackHole 2ch",
+            "Loopback Audio",
+            "Soundflower (2ch)",
+            "Background Music",
+            "Audio Bridge",
+            "ZoomAudioDevice",
+            "Generic Virtual Device",
+        ] {
+            assert!(!is_safe_output_device_name(name), "{name} should be unsafe");
+        }
+
+        for name in ["Built-in Output", "ADAM Audio D3V", "MacBook Pro Speakers"] {
+            assert!(is_safe_output_device_name(name), "{name} should be safe");
+        }
     }
 }
 

@@ -3658,7 +3658,7 @@ impl PluginSettings {
             PluginType::Crossfeed => {
                 let cf = crossfeed_specs::PARAMS;
                 Self::Crossfeed {
-                    mode: CrossfeedMode::Bauer,
+                    mode: CrossfeedMode::Mb,
                     preset: CrossfeedPreset::Default,
                     enabled: true,
                     mix: p(cf, "mix").default_f64(),

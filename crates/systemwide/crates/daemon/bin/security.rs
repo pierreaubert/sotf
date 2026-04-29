@@ -178,6 +178,7 @@ pub struct EncryptionStatus {
 }
 
 /// Key file path: ~/.config/sotf/session.key
+#[cfg_attr(not(all(target_os = "macos", feature = "hal")), allow(dead_code))]
 fn get_key_path() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     PathBuf::from(home).join(".config/sotf/session.key")
@@ -281,7 +282,7 @@ mod encryption_impl {
                 cipher,
                 last_check: Instant::now(),
                 last_mtime: mtime,
-                enabled: false,
+                enabled: true,
             })
         }
 
@@ -541,6 +542,9 @@ mod tests {
     #[test]
     fn test_key_manager_creation() {
         let manager = KeyManager::default();
+        #[cfg(all(target_os = "macos", feature = "hal"))]
+        assert!(manager.is_enabled());
+        #[cfg(not(all(target_os = "macos", feature = "hal")))]
         assert!(!manager.is_enabled());
         assert_eq!(manager.fingerprint().len(), 8);
         assert!(!manager.fingerprint_hex().is_empty());
@@ -550,6 +554,9 @@ mod tests {
     fn test_encryption_status() {
         let manager = KeyManager::default();
         let status = manager.status();
+        #[cfg(all(target_os = "macos", feature = "hal"))]
+        assert!(status.enabled);
+        #[cfg(not(all(target_os = "macos", feature = "hal")))]
         assert!(!status.enabled);
     }
 
@@ -565,6 +572,9 @@ mod tests {
     #[test]
     fn test_key_manager_enable_disable() {
         let mut manager = KeyManager::default();
+        #[cfg(all(target_os = "macos", feature = "hal"))]
+        assert!(manager.is_enabled());
+        #[cfg(not(all(target_os = "macos", feature = "hal")))]
         assert!(!manager.is_enabled());
 
         manager.set_enabled(true);
