@@ -13,24 +13,29 @@ prod-hal:
 prod-daemon:
 	cargo build --release -p sotf-daemon --features hal
 
-# Build the ConfigBar/Toolbar Swift app
+# Build the SotF Systemwide Swift app
 [group('build-macos')]
-prod-toolbar:
+prod-systemwide:
 	#!/usr/bin/env bash
 	set -euo pipefail
 	CONFIGBAR_DIR="crates/systemwide/crates/daemon/configbar"
 	BUILD_DIR="target/release"
 	mkdir -p "$BUILD_DIR"
-	echo "Building ConfigBar/Toolbar..."
+	echo "Building SotF Systemwide..."
 	swiftc \
-		-o "$BUILD_DIR/sotf-toolbar" \
+		-o "$BUILD_DIR/sotf-systemwide" \
 		"$CONFIGBAR_DIR"/src/*.swift \
 		-framework SwiftUI \
 		-framework WebKit \
 		-framework UserNotifications \
 		-framework CoreAudio \
 		-O
-	echo "✅ Toolbar built: $BUILD_DIR/sotf-toolbar"
+	echo "✅ Systemwide built: $BUILD_DIR/sotf-systemwide"
+
+# Backward-compatible build target.
+[group('build-macos')]
+prod-toolbar: prod-systemwide
+	@echo "✅ prod-toolbar is an alias for prod-systemwide"
 
 # Build the Swift HAL driver bundle
 [group('build-macos')]
@@ -68,9 +73,9 @@ prod-hal-driver:
 	codesign --force --deep --sign - "$BUILD_DIR"
 	echo "✅ HAL driver built: $BUILD_DIR"
 
-# Build all macOS daemon components (daemon + toolbar + HAL driver)
+# Build all macOS daemon components (daemon + Systemwide app + HAL driver)
 [group('build-macos')]
-prod-macos-daemon: prod-daemon prod-toolbar prod-hal-driver
+prod-macos-daemon: prod-daemon prod-systemwide prod-hal-driver
 	@echo "✅ All macOS daemon components built"
 
 [group('build-macos')]
@@ -194,7 +199,7 @@ build-installer:
 build-installer-no-hal:
 	./scripts/build-installer.sh --no-hal
 
-# Build daemon + ConfigBar DMG
+# Build daemon + Systemwide package
 [group('build-macos')]
 build-daemon-dmg:
 	./scripts/build-dmg-daemon.sh

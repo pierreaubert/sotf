@@ -13,6 +13,8 @@ struct PluginRackView: View {
     @State private var editingIndex: Int? = nil
     @State private var errorMessage: String? = nil
     @State private var updateDebounceTask: DispatchWorkItem? = nil
+    @State private var loadingAvailablePlugins = false
+    @State private var refreshingPlugins = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -70,17 +72,11 @@ struct PluginRackView: View {
                     ForEach(Array(plugins.enumerated()), id: \.element.id) { index, plugin in
                         PluginRowView(
                             plugin: plugin,
-                            isEditing: editingIndex == index,
-                            onToggleEdit: {
-                                withAnimation {
-                                    editingIndex = editingIndex == index ? nil : index
-                                }
+                            onEdit: {
+                                editingIndex = index
                             },
                             onRemove: {
                                 removePlugin(at: index)
-                            },
-                            onUpdateParams: { newParams in
-                                updatePlugin(at: index, parameters: newParams)
                             }
                         )
                     }
@@ -93,6 +89,7 @@ struct PluginRackView: View {
             }
         }
         .onAppear {
+            loadAvailablePlugins()
             refreshPlugins()
         }
         .sheet(isPresented: $showingAddSheet) {
@@ -107,41 +104,94 @@ struct PluginRackView: View {
                 }
             )
         }
+        .sheet(
+            isPresented: Binding(
+                get: { editingIndex != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        editingIndex = nil
+                    }
+                }
+            )
+        ) {
+            if let index = editingIndex, plugins.indices.contains(index) {
+                let plugin = plugins[index]
+                PluginEditSheet(
+                    plugin: plugin,
+                    descriptors: descriptors(for: plugin.pluginType),
+                    onUpdate: { newParams in
+                        plugin.parameters = newParams
+                        updatePlugin(at: index, parameters: newParams)
+                    },
+                    onDone: {
+                        editingIndex = nil
+                    }
+                )
+            } else {
+                EmptyView()
+                    .frame(width: 720, height: 520)
+            }
+        }
     }
 
     // MARK: - Actions
 
     private func refreshPlugins() {
+        guard !refreshingPlugins else { return }
+        refreshingPlugins = true
         errorMessage = nil
-        if let result = client.getPlugins() {
-            plugins = result.enumerated().map { index, dict in
-                let type_ = dict["plugin_type"] as? String ?? "unknown"
-                let params = dict["parameters"] as? [String: Any] ?? [:]
-                return PluginInstance(
-                    index: index,
-                    pluginType: type_,
-                    pluginName: pluginDisplayName(type_),
-                    parameters: params
-                )
+
+        DispatchQueue.global(qos: .utility).async {
+            let result = AudioEngineClient().getPlugins()
+
+            DispatchQueue.main.async {
+                refreshingPlugins = false
+                if let result = result {
+                    plugins = result.enumerated().map { index, dict in
+                        let type_ = dict["plugin_type"] as? String ?? "unknown"
+                        let params = dict["parameters"] as? [String: Any] ?? [:]
+                        return PluginInstance(
+                            index: index,
+                            pluginType: type_,
+                            pluginName: pluginDisplayName(type_),
+                            parameters: params
+                        )
+                    }
+                } else {
+                    errorMessage = "Failed to fetch plugins from daemon"
+                }
             }
-        } else {
-            errorMessage = "Failed to fetch plugins from daemon"
         }
     }
 
     private func loadAvailablePlugins() {
-        if let result = client.getAvailablePlugins() {
-            availablePlugins = result
+        guard !loadingAvailablePlugins else { return }
+        loadingAvailablePlugins = true
+
+        DispatchQueue.global(qos: .utility).async {
+            let result = AudioEngineClient().getAvailablePlugins()
+
+            DispatchQueue.main.async {
+                loadingAvailablePlugins = false
+                if let result = result {
+                    availablePlugins = result
+                }
+            }
         }
     }
 
     private func addPlugin(type: String) {
         errorMessage = nil
-        if client.addPlugin(type: type, parameters: [:], index: nil) {
+        let defaultParameters = availablePlugins.first { $0.type_ == type }?.defaultParameters ?? [:]
+        if client.addPlugin(type: type, parameters: defaultParameters, index: nil) {
             refreshPlugins()
         } else {
             errorMessage = "Failed to add plugin"
         }
+    }
+
+    private func descriptors(for pluginType: String) -> [PluginParameterDescriptor] {
+        availablePlugins.first { $0.type_ == pluginType }?.parameters ?? []
     }
 
     private func removePlugin(at index: Int) {
@@ -186,10 +236,8 @@ struct PluginRackView: View {
 
 struct PluginRowView: View {
     let plugin: PluginInstance
-    let isEditing: Bool
-    let onToggleEdit: () -> Void
+    let onEdit: () -> Void
     let onRemove: () -> Void
-    let onUpdateParams: ([String: Any]) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -209,8 +257,8 @@ struct PluginRowView: View {
 
                 Spacer()
 
-                Button(action: onToggleEdit) {
-                    Image(systemName: isEditing ? "chevron.up" : "slider.horizontal.3")
+                Button(action: onEdit) {
+                    Image(systemName: "slider.horizontal.3")
                 }
                 .buttonStyle(.borderless)
                 .help("Edit parameters")
@@ -221,17 +269,6 @@ struct PluginRowView: View {
                 }
                 .buttonStyle(.borderless)
                 .help("Remove plugin")
-            }
-
-            if isEditing {
-                Divider()
-                PluginEditorView(
-                    pluginType: plugin.pluginType,
-                    parameters: plugin.parameters,
-                    onUpdate: onUpdateParams
-                )
-                .padding(.leading, 20)
-                .padding(.vertical, 4)
             }
         }
         .padding(.vertical, 2)
@@ -263,6 +300,67 @@ struct PluginRowView: View {
             let count = params.count
             return count > 0 ? "\(count) parameter\(count == 1 ? "" : "s")" : "defaults"
         }
+    }
+}
+
+// MARK: - Edit Plugin Sheet
+
+struct PluginEditSheet: View {
+    @ObservedObject var plugin: PluginInstance
+    let descriptors: [PluginParameterDescriptor]
+    let onUpdate: ([String: Any]) -> Void
+    let onDone: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(plugin.pluginName)
+                        .font(.headline)
+                    Text(parameterSummary())
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Button("Done") {
+                    onDone()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+            .padding()
+
+            Divider()
+
+            ScrollView(.vertical, showsIndicators: true) {
+                PluginEditorView(
+                    pluginType: plugin.pluginType,
+                    parameters: plugin.parameters,
+                    descriptors: descriptors,
+                    onUpdate: onUpdate
+                )
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+
+            Divider()
+
+            HStack {
+                Spacer()
+                Button("Close") {
+                    onDone()
+                }
+                .keyboardShortcut(.cancelAction)
+            }
+            .padding()
+        }
+        .frame(minWidth: 720, idealWidth: 780, minHeight: 520, idealHeight: 620)
+    }
+
+    private func parameterSummary() -> String {
+        let count = plugin.parameters.count
+        return count > 0 ? "\(count) parameter\(count == 1 ? "" : "s")" : "Default parameters"
     }
 }
 

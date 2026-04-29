@@ -3,14 +3,14 @@
 # Build script for SotF macOS distribution
 #
 # Creates an UNSIGNED installer package (.pkg) containing:
-#   - SotF Toolbar.app (menu bar app) -> /Applications/
+#   - SotF Systemwide.app (menu bar app) -> /Applications/
 #   - SotFHAL.driver (HAL audio driver) -> /Library/Audio/Plug-Ins/HAL/
 #   - sotf-daemon (embedded in app)
 #
 # Signing and notarization live in ./scripts/sign-macos.sh — run that after build.
 #
 # Bundle identifiers:
-#   - org.spinorama.sotf-toolbar  (menu bar app)
+#   - org.spinorama.sotf-systemwide  (menu bar app)
 #   - org.spinorama.sotf-hal      (HAL driver)
 #   - org.spinorama.sotf-daemon   (background daemon)
 #
@@ -27,12 +27,13 @@
 set -euo pipefail
 
 # Configuration
-APP_NAME="SotF Toolbar"
+APP_NAME="SotF Systemwide"
 DRIVER_NAME="SotFHAL.driver"
 DAEMON_BINARY="sotf-daemon"
+SYSTEMWIDE_BINARY="sotf-systemwide"
 
 # Bundle identifiers
-TOOLBAR_BUNDLE_ID="org.spinorama.sotf-toolbar"
+SYSTEMWIDE_BUNDLE_ID="org.spinorama.sotf-systemwide"
 HAL_BUNDLE_ID="org.spinorama.sotf-hal"
 DAEMON_BUNDLE_ID="org.spinorama.sotf-daemon"
 
@@ -181,15 +182,15 @@ build_components() {
             just prod-hal-driver
         fi
 
-        log_info "Building toolbar (debug)..."
-        just prod-toolbar
+        log_info "Building Systemwide app (debug)..."
+        just prod-systemwide
     else
         # Release builds - use Justfile targets
         if $BUILD_HAL; then
             just prod-macos-daemon
         else
             just prod-daemon
-            just prod-toolbar
+            just prod-systemwide
         fi
     fi
 
@@ -226,20 +227,20 @@ copy_hal_driver() {
     log_success "HAL driver copied"
 }
 
-# Set up the Toolbar app bundle structure
-setup_toolbar_bundle() {
-    log_info "Setting up Toolbar app bundle..."
+# Set up the Systemwide app bundle structure
+setup_systemwide_bundle() {
+    log_info "Setting up Systemwide app bundle..."
 
     # Create app bundle structure
     mkdir -p "$APP_BUNDLE/Contents/MacOS"
     mkdir -p "$APP_BUNDLE/Contents/Resources"
     mkdir -p "$APP_BUNDLE/Contents/Helpers"
 
-    # Copy the compiled toolbar binary
-    cp "$BUILD_DIR/sotf-toolbar" "$APP_BUNDLE/Contents/MacOS/"
-    chmod +x "$APP_BUNDLE/Contents/MacOS/sotf-toolbar"
+    # Copy the compiled Systemwide binary
+    cp "$BUILD_DIR/$SYSTEMWIDE_BINARY" "$APP_BUNDLE/Contents/MacOS/"
+    chmod +x "$APP_BUNDLE/Contents/MacOS/$SYSTEMWIDE_BINARY"
 
-    log_success "Toolbar bundle structure created"
+    log_success "Systemwide bundle structure created"
 }
 
 # Regenerate PNG icons from SVG if SVG is newer
@@ -298,20 +299,20 @@ create_app_bundle() {
         log_warning "Menubar icon assets not found at $ICON_ASSETS_DIR"
     fi
 
-    # Create Toolbar Info.plist
+    # Create Systemwide Info.plist
     cat > "$APP_BUNDLE/Contents/Info.plist" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key>
-    <string>sotf-toolbar</string>
+    <string>${SYSTEMWIDE_BINARY}</string>
     <key>CFBundleIdentifier</key>
-    <string>${TOOLBAR_BUNDLE_ID}</string>
+    <string>${SYSTEMWIDE_BUNDLE_ID}</string>
     <key>CFBundleName</key>
-    <string>SotF Toolbar</string>
+    <string>SotF Systemwide</string>
     <key>CFBundleDisplayName</key>
-    <string>Sound of the Future - Toolbar</string>
+    <string>Sound of the Future - Systemwide</string>
     <key>CFBundleVersion</key>
     <string>$VERSION</string>
     <key>CFBundleShortVersionString</key>
@@ -398,11 +399,11 @@ create_readme() {
     log_info "Creating README..."
 
     cat > "$DMG_DIR/README.txt" << 'EOF'
-SotF Toolbar - Sound of the Future Audio Engine
+SotF Systemwide - Sound of the Future Audio Engine
 
 INSTALLATION
 ============
-1. Drag "SotF Toolbar.app" to your Applications folder
+1. Drag "SotF Systemwide.app" to your Applications folder
 2. Launch the app from Applications
 3. The daemon will start automatically when the app launches
 4. A speaker icon will appear in your menu bar
@@ -411,14 +412,14 @@ FIRST RUN
 =========
 On first run, macOS may show a security warning. To allow the app:
 1. Open System Preferences -> Privacy & Security
-2. Scroll down and click "Open Anyway" for SotF Toolbar
+2. Scroll down and click "Open Anyway" for SotF Systemwide
 
 HAL DRIVER (Optional)
 =====================
 The HAL driver provides a virtual audio device for system-wide audio capture.
 To install:
 1. Open Terminal
-2. Run: /Applications/SotF\ Toolbar.app/Contents/Resources/install-hal.sh
+2. Run: /Applications/SotF\ Systemwide.app/Contents/Resources/install-hal.sh
 
 Alternatively, you can use BlackHole as the audio source.
 
@@ -434,7 +435,7 @@ UNINSTALLATION
 1. Quit the app from the menu bar icon
 2. Delete the app from Applications
 3. To remove HAL driver:
-   /Applications/SotF\ Toolbar.app/Contents/Resources/uninstall-hal.sh
+   /Applications/SotF\ Systemwide.app/Contents/Resources/uninstall-hal.sh
 4. Remove LaunchAgent (if installed):
    rm ~/Library/LaunchAgents/org.spinorama.sotf-*.plist
 
@@ -569,7 +570,7 @@ UNINSTALL_SCRIPT
 create_dmg_file() {
     log_info "Creating DMG..."
 
-    local dmg_path="$DMG_DIR/SotF-Toolbar-$VERSION.dmg"
+    local dmg_path="$DMG_DIR/SotF-Systemwide-$VERSION.dmg"
     local dmg_temp="$DMG_DIR/temp.dmg"
 
     rm -f "$dmg_path" "$dmg_temp"
@@ -590,7 +591,7 @@ create_dmg_file() {
         log_info "Using create-dmg for styled DMG..."
 
         if create-dmg \
-            --volname "SotF Toolbar" \
+            --volname "SotF Systemwide" \
             --window-pos 200 120 \
             --window-size 600 400 \
             --icon-size 100 \
@@ -639,7 +640,7 @@ create_dmg_hdiutil() {
     ln -s /Applications "$staging_dir/Applications"
 
     # Create DMG
-    hdiutil create -volname "SotF Toolbar" \
+    hdiutil create -volname "SotF Systemwide" \
         -srcfolder "$staging_dir" \
         -ov -format UDZO \
         "$dmg_path"
@@ -653,7 +654,7 @@ create_dmg_hdiutil() {
 create_pkg() {
     log_info "Creating installer package..."
 
-    local pkg_path="$DMG_DIR/SotF-Toolbar-$VERSION.pkg"
+    local pkg_path="$DMG_DIR/SotF-Systemwide-$VERSION.pkg"
     local pkg_root="$DMG_DIR/pkg-root"
     local pkg_scripts="$DMG_DIR/pkg-scripts"
     local pkg_components="$DMG_DIR/pkg-components"
@@ -704,15 +705,15 @@ POSTINSTALL
     # Create postinstall script for auto-launch component
     cat > "$launch_scripts/postinstall" << 'LAUNCHSCRIPT'
 #!/bin/bash
-# Launch SotF Toolbar after installation
+# Launch SotF Systemwide after installation
 
 # Get the user who initiated the installation
 CONSOLE_USER=$(stat -f "%Su" /dev/console)
 
 if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ]; then
-    echo "Launching SotF Toolbar for user: $CONSOLE_USER"
+    echo "Launching SotF Systemwide for user: $CONSOLE_USER"
     # Use launchctl to run as the console user
-    sudo -u "$CONSOLE_USER" open -a "/Applications/SotF Toolbar.app" &
+    sudo -u "$CONSOLE_USER" open -a "/Applications/SotF Systemwide.app" &
 else
     echo "No console user found, skipping auto-launch"
 fi
@@ -750,6 +751,14 @@ if [ -d "/Library/Audio/Plug-Ins/HAL/SotFHAL.driver" ]; then
     rm -rf "/Library/Audio/Plug-Ins/HAL/SotFHAL.driver"
 fi
 
+# Remove old menu bar app names so Systemwide replaces Toolbar/ConfigBar cleanly
+for app in "/Applications/SotF Toolbar.app" "/Applications/SotF ConfigBar.app"; do
+    if [ -d "$app" ]; then
+        echo "Removing legacy app: $app"
+        rm -rf "$app"
+    fi
+done
+
 exit 0
 PREINSTALL
     chmod +x "$pkg_scripts/preinstall"
@@ -761,10 +770,10 @@ PREINSTALL
     pkgbuild \
         --root "$pkg_root/Applications" \
         --install-location "/Applications" \
-        --identifier "$TOOLBAR_BUNDLE_ID" \
+        --identifier "$SYSTEMWIDE_BUNDLE_ID" \
         --version "$VERSION" \
         --scripts "$pkg_scripts" \
-        "$pkg_components/SotFToolbar.pkg"
+        "$pkg_components/SotFSystemwide.pkg"
 
     # HAL driver component (if built)
     if $BUILD_HAL && [ -d "$pkg_root/Library/Audio/Plug-Ins/HAL/$DRIVER_NAME" ]; then
@@ -788,7 +797,7 @@ PREINSTALL
     <welcome file="welcome.html"/>
     <conclusion file="conclusion.html"/>
 
-    <pkg-ref id="$TOOLBAR_BUNDLE_ID"/>
+    <pkg-ref id="$SYSTEMWIDE_BUNDLE_ID"/>
     <pkg-ref id="org.spinorama.sotf.autolaunch"/>
 DISTXML
 
@@ -803,7 +812,7 @@ DISTXML
     <options hostArchitectures="arm64,x86_64"/>
 
     <choices-outline>
-        <line choice="$TOOLBAR_BUNDLE_ID"/>
+        <line choice="$SYSTEMWIDE_BUNDLE_ID"/>
 DISTXML
 
     if $BUILD_HAL; then
@@ -816,8 +825,8 @@ DISTXML
         <line choice="org.spinorama.sotf.autolaunch"/>
     </choices-outline>
 
-    <choice id="$TOOLBAR_BUNDLE_ID" title="SotF Toolbar" description="Menu bar application for controlling the audio engine" enabled="false" selected="true">
-        <pkg-ref id="$TOOLBAR_BUNDLE_ID"/>
+    <choice id="$SYSTEMWIDE_BUNDLE_ID" title="SotF Systemwide" description="Menu bar application for controlling the systemwide audio engine" enabled="false" selected="true">
+        <pkg-ref id="$SYSTEMWIDE_BUNDLE_ID"/>
     </choice>
 DISTXML
 
@@ -830,11 +839,11 @@ DISTXML
     fi
 
     cat >> "$DMG_DIR/distribution.xml" << DISTXML
-    <choice id="org.spinorama.sotf.autolaunch" title="Launch after installation" description="Start SotF Toolbar automatically after installation completes" selected="true">
+    <choice id="org.spinorama.sotf.autolaunch" title="Launch after installation" description="Start SotF Systemwide automatically after installation completes" selected="true">
         <pkg-ref id="org.spinorama.sotf.autolaunch"/>
     </choice>
 
-    <pkg-ref id="$TOOLBAR_BUNDLE_ID" version="$VERSION" onConclusion="none">SotFToolbar.pkg</pkg-ref>
+    <pkg-ref id="$SYSTEMWIDE_BUNDLE_ID" version="$VERSION" onConclusion="none">SotFSystemwide.pkg</pkg-ref>
     <pkg-ref id="org.spinorama.sotf.autolaunch" version="$VERSION" onConclusion="none">SotFAutoLaunch.pkg</pkg-ref>
 DISTXML
 
@@ -868,7 +877,7 @@ DISTXML
 
     <p>This installer will install:</p>
     <ul class="features">
-        <li><strong>SotF Toolbar</strong> - Menu bar application for controlling the audio engine</li>
+        <li><strong>SotF Systemwide</strong> - Menu bar application for controlling the systemwide audio engine</li>
         <li><strong>SotF HAL Driver</strong> - Virtual audio device for system-wide audio capture</li>
     </ul>
 
@@ -899,7 +908,7 @@ WELCOME
     <div class="next-steps">
         <h3>Getting Started</h3>
         <ol>
-            <li>Launch <strong>SotF Toolbar</strong> from your Applications folder</li>
+            <li>Launch <strong>SotF Systemwide</strong> from your Applications folder</li>
             <li>A speaker icon will appear in your menu bar</li>
             <li>Click the icon to configure audio settings</li>
             <li>Set "SotF" as your audio output device in System Settings → Sound</li>
@@ -934,10 +943,10 @@ CONCLUSION
 # Main build process
 main() {
     log_info "=========================================="
-    log_info "Building SotF Toolbar v$VERSION"
+    log_info "Building SotF Systemwide v$VERSION"
     log_info "=========================================="
     log_info "Bundle IDs:"
-    log_info "  Toolbar: $TOOLBAR_BUNDLE_ID"
+    log_info "  Systemwide: $SYSTEMWIDE_BUNDLE_ID"
     log_info "  Daemon:  $DAEMON_BUNDLE_ID"
     log_info "  HAL:     $HAL_BUNDLE_ID"
     log_info "=========================================="
@@ -949,7 +958,7 @@ main() {
     clean_build
     build_components
     copy_hal_driver
-    setup_toolbar_bundle
+    setup_systemwide_bundle
     create_app_bundle
 
     if $BUILD_DMG; then
@@ -962,7 +971,7 @@ main() {
         log_success "Build complete!"
         log_info "=========================================="
 
-        local dmg_path="$DMG_DIR/SotF-Toolbar-$VERSION.dmg"
+        local dmg_path="$DMG_DIR/SotF-Systemwide-$VERSION.dmg"
         if [ -f "$dmg_path" ]; then
             mkdir -p "$PROJECT_ROOT/dist"
             cp "$dmg_path" "$PROJECT_ROOT/dist/"
@@ -980,7 +989,7 @@ main() {
         log_success "Build complete!"
         log_info "=========================================="
 
-        local pkg_path="$DMG_DIR/SotF-Toolbar-$VERSION.pkg"
+        local pkg_path="$DMG_DIR/SotF-Systemwide-$VERSION.pkg"
         if [ -f "$pkg_path" ]; then
             mkdir -p "$PROJECT_ROOT/dist"
             cp "$pkg_path" "$PROJECT_ROOT/dist/"

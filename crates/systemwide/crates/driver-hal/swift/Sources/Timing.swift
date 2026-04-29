@@ -61,13 +61,14 @@ final class DriverClock {
 
     /// Get the zero timestamp for Core Audio synchronization
     /// Returns (sampleTime, hostTime, seed)
-    func getZeroTimeStamp(bufferFrameSize: UInt32) -> (Float64, UInt64, UInt64) {
+    func getZeroTimeStamp(period: UInt32) -> (Float64, UInt64, UInt64) {
         let currentHostTime = mach_absolute_time()
         let currentSampleTime = getCurrentSampleTime(at: currentHostTime)
 
-        // Zero timestamp should be aligned to buffer boundaries
-        let bufferSize = Float64(bufferFrameSize)
-        let zeroSampleTime = floor(currentSampleTime / bufferSize) * bufferSize
+        // Zero timestamps advance by kAudioDevicePropertyZeroTimeStampPeriod,
+        // not by the IO buffer size.
+        let periodFrames = Float64(max(period, 1))
+        let zeroSampleTime = floor(currentSampleTime / periodFrames) * periodFrames
 
         // Calculate the host time that corresponds to the zero sample time
         let sampleOffset = zeroSampleTime - anchorSampleTime

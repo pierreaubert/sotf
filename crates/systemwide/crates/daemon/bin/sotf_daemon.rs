@@ -35,6 +35,7 @@ use std::sync::Arc;
 
 /// Legacy socket path for backwards compatibility
 const LEGACY_SOCKET_PATH: &str = "/tmp/autoeq_audio.sock";
+const OUTPUT_DEVICE_ENV: &str = "SOTF_OUTPUT_DEVICE";
 
 fn default_output_channels() -> usize {
     2
@@ -157,6 +158,109 @@ impl Response {
     }
 }
 
+fn loudness_data_to_json(info: &sotf_audio::LoudnessData) -> Value {
+    serde_json::json!({
+        "momentary": info.momentary_lufs,
+        "short_term": info.shortterm_lufs,
+        "integrated": info.integrated_lufs,
+        "peak": info.peak,
+        "channel_peaks": info.channel_peaks.as_ref(),
+        "true_peaks_dbtp": info.true_peaks_dbtp.as_ref(),
+        "correlation_lr": info.correlation_lr,
+    })
+}
+
+fn loudness_info_to_json(info: &sotf_audio::LoudnessInfo) -> Value {
+    serde_json::json!({
+        "momentary": info.momentary_lufs,
+        "short_term": info.shortterm_lufs,
+        "integrated": info.integrated_lufs,
+        "peak": info.peak,
+        "channel_peaks": [],
+        "true_peaks_dbtp": [],
+        "correlation_lr": null,
+    })
+}
+
+fn parameter_descriptor_to_json(spec: &sotf_plugins::param_specs::ParamSpec) -> Value {
+    use sotf_plugins::param_specs::{ParamType, UpdateMode};
+
+    let mut descriptor = serde_json::json!({
+        "key": spec.engine_key,
+        "name": spec.name,
+        "unit": spec.unit,
+        "group": spec.group,
+        "doc": spec.doc,
+        "update_mode": match spec.update_mode {
+            UpdateMode::Realtime => "realtime",
+            UpdateMode::Structural => "structural",
+        },
+    });
+
+    let object = descriptor
+        .as_object_mut()
+        .expect("descriptor starts as a JSON object");
+
+    match spec.param_type {
+        ParamType::Float {
+            default,
+            min,
+            max,
+            step,
+        } => {
+            object.insert("type".to_string(), serde_json::json!("float"));
+            object.insert("default".to_string(), serde_json::json!(default));
+            object.insert("min".to_string(), serde_json::json!(min));
+            object.insert("max".to_string(), serde_json::json!(max));
+            object.insert("step".to_string(), serde_json::json!(step));
+        }
+        ParamType::Int {
+            default,
+            min,
+            max,
+            step,
+        } => {
+            object.insert("type".to_string(), serde_json::json!("int"));
+            object.insert("default".to_string(), serde_json::json!(default));
+            object.insert("min".to_string(), serde_json::json!(min));
+            object.insert("max".to_string(), serde_json::json!(max));
+            object.insert("step".to_string(), serde_json::json!(step));
+        }
+        ParamType::Bool {
+            default,
+            true_label,
+            false_label,
+        } => {
+            object.insert("type".to_string(), serde_json::json!("bool"));
+            object.insert("default".to_string(), serde_json::json!(default));
+            object.insert("true_label".to_string(), serde_json::json!(true_label));
+            object.insert("false_label".to_string(), serde_json::json!(false_label));
+        }
+        ParamType::Choice {
+            default_index,
+            labels,
+        } => {
+            object.insert("type".to_string(), serde_json::json!("choice"));
+            object.insert("default".to_string(), serde_json::json!(default_index));
+            object.insert("choices".to_string(), serde_json::json!(labels));
+        }
+        ParamType::FilePath => {
+            object.insert("type".to_string(), serde_json::json!("file_path"));
+        }
+    }
+
+    descriptor
+}
+
+fn plugin_parameter_descriptors(settings: &sotf_audio::PluginSettings) -> Vec<Value> {
+    settings
+        .param_specs()
+        .iter()
+        .map(parameter_descriptor_to_json)
+        .collect()
+}
+
+#[derive(Clone)]
 struct AudioDaemon {
     manager: Arc<Mutex<AudioEngineManager>>,
     running: Arc<Mutex<bool>>,
@@ -193,6 +297,33 @@ impl AudioDaemon {
             input_loudness_index: Arc::new(Mutex::new(None)),
             output_loudness_index: Arc::new(Mutex::new(None)),
         }
+    }
+
+    fn spawn_initial_driver_playback(&self) {
+        let daemon = self.clone();
+        std::thread::spawn(move || {
+            println!("Auto-starting driver playback (2ch)...");
+
+            let output_device = configured_output_device_from_env();
+            println!("   Output device: {:?}", output_device);
+
+            if let Some(ref device) = output_device {
+                *daemon.selected_device.lock() = Some(device.clone());
+            } else {
+                println!("   No output device override; playback thread will choose a safe device");
+            }
+
+            let plugins: Vec<PluginConfig> = vec![];
+
+            let result = daemon
+                .runtime
+                .block_on(daemon.handle_load_plugins_with_channels(plugins, 2));
+            if result.success {
+                println!("   Driver playback started successfully");
+            } else {
+                println!("   Driver playback failed: {:?}", result.error);
+            }
+        });
     }
 
     async fn handle_command(&self, cmd: Command) -> Response {
@@ -347,27 +478,20 @@ impl AudioDaemon {
                     device
                 );
 
-                // If playback is live, the cpal stream is bound to the previous
-                // device — we must restart the driver playback chain so audio
-                // is actually routed to the new device.
-                let needs_restart = {
-                    let manager = self.manager.lock();
-                    manager.get_state() != sotf_audio::manager::StreamingState::Idle
-                };
-
-                if needs_restart {
-                    let plugins = self.current_plugins.lock().clone();
-                    let output_channels = *self.current_output_channels.lock();
-                    log::info!(
-                        "Restarting driver playback with new output device: {}",
-                        resolved_name
-                    );
-                    let resp = self
-                        .handle_load_plugins_with_channels(plugins, output_channels)
-                        .await;
-                    if !resp.success {
-                        return resp;
-                    }
+                // The cpal stream is bound to the current output device. Reload
+                // the driver chain even from Idle so selecting a device can
+                // recover from startup fallback discovery failures.
+                let plugins = self.current_plugins.lock().clone();
+                let output_channels = *self.current_output_channels.lock();
+                log::info!(
+                    "Starting/restarting driver playback with output device: {}",
+                    resolved_name
+                );
+                let resp = self
+                    .handle_load_plugins_with_channels(plugins, output_channels)
+                    .await;
+                if !resp.success {
+                    return resp;
                 }
 
                 Response::ok_empty()
@@ -423,17 +547,25 @@ impl AudioDaemon {
         let mut manager = self.manager.lock();
         let mut output_device = self.selected_device.lock().clone();
 
-        // If no device selected (or it's the virtual device), find a safe physical fallback
-        if output_device.is_none()
-            || output_device
-                .as_ref()
-                .map(|d| d.contains("SotF"))
-                .unwrap_or(false)
+        if output_device.is_none() {
+            output_device = configured_output_device_from_env();
+        }
+
+        // If no device is selected, let the playback thread choose. It already
+        // knows how to avoid virtual loopback devices. Doing cpal enumeration
+        // here can block startup while coreaudiod is busy loading HAL plugins.
+        if output_device
+            .as_ref()
+            .map(|d| is_safe_output_device_name(d))
+            .unwrap_or(false)
         {
-            output_device = find_fallback_output_device();
-            if let Some(ref dev) = output_device {
-                log::info!("Using fallback output device for driver playback: {}", dev);
-            }
+            log::info!("Using selected output device for driver playback: {:?}", output_device);
+        } else if output_device.is_some() {
+            log::warn!(
+                "Ignoring virtual output device selection {:?}; playback thread will choose a safe device",
+                output_device
+            );
+            output_device = None;
         }
 
         // Stop current playback if running
@@ -510,12 +642,7 @@ impl AudioDaemon {
     async fn handle_get_loudness(&self) -> Response {
         let manager = self.manager.lock();
         match manager.get_loudness() {
-            Some(loudness) => Response::ok(serde_json::json!({
-                "momentary": loudness.momentary_lufs,
-                "short_term": loudness.shortterm_lufs,
-                "integrated": loudness.integrated_lufs,
-                "peak": loudness.peak,
-            })),
+            Some(loudness) => Response::ok(loudness_info_to_json(&loudness)),
             None => Response::err("Loudness monitoring not enabled"),
         }
     }
@@ -525,34 +652,25 @@ impl AudioDaemon {
         let input_idx = *self.input_loudness_index.lock();
         let output_idx = *self.output_loudness_index.lock();
 
-        let loudness_to_json = |info: &sotf_audio::LoudnessInfo| -> Value {
-            serde_json::json!({
-                "momentary": info.momentary_lufs,
-                "short_term": info.shortterm_lufs,
-                "integrated": info.integrated_lufs,
-                "peak": info.peak,
-            })
-        };
-
         let input_data = input_idx.and_then(|idx| {
             manager
                 .get_cached_plugin_data(idx)
-                .and_then(|data| data.downcast_ref::<sotf_audio::LoudnessInfo>().cloned())
+                .and_then(|data| data.downcast_ref::<sotf_audio::LoudnessData>().cloned())
         });
 
         let output_data = output_idx.and_then(|idx| {
             manager
                 .get_cached_plugin_data(idx)
-                .and_then(|data| data.downcast_ref::<sotf_audio::LoudnessInfo>().cloned())
+                .and_then(|data| data.downcast_ref::<sotf_audio::LoudnessData>().cloned())
         });
 
         let input_json = input_data
             .as_ref()
-            .map(loudness_to_json)
+            .map(loudness_data_to_json)
             .unwrap_or(serde_json::json!(null));
         let output_json = output_data
             .as_ref()
-            .map(loudness_to_json)
+            .map(loudness_data_to_json)
             .unwrap_or(serde_json::json!(null));
 
         Response::ok(serde_json::json!({
@@ -602,12 +720,16 @@ impl AudioDaemon {
             .map(|pt| {
                 let engine_type = plugin_type_to_engine_str(&pt);
                 let category = plugin_type_category(&pt);
+                let default_settings = sotf_audio::PluginSettings::default_for(&pt);
+                let default_parameters = default_settings.to_plugin_config(48_000.0).parameters;
                 serde_json::json!({
                     "type": engine_type,
                     "name": pt.name(),
                     "description": pt.description(),
                     "category": category,
                     "maturity": format!("{:?}", pt.maturity()),
+                    "default_parameters": default_parameters,
+                    "parameters": plugin_parameter_descriptors(&default_settings),
                 })
             })
             .collect();
@@ -950,6 +1072,8 @@ impl AudioDaemon {
 
         // Accept connections (non-blocking so Ctrl-C can interrupt)
         listener.set_nonblocking(true)?;
+        self.spawn_initial_driver_playback();
+
         loop {
             if !*self.running.lock() {
                 println!("Shutdown requested, exiting");
@@ -1221,7 +1345,7 @@ fn reconfigure_audio_pipeline(
     *input_loudness_index.lock() = Some(input_monitor_index);
     *output_loudness_index.lock() = Some(output_monitor_index);
 
-    let output_device = find_fallback_output_device();
+    let output_device = configured_output_device_from_env();
 
     log::info!(
         "Restarting driver playback with {} plugins (incl. 2 monitors), {} output channels, device: {:?}",
@@ -1356,27 +1480,14 @@ fn plugin_type_category(pt: &PluginType) -> &'static str {
     }
 }
 
-fn find_fallback_output_device() -> Option<String> {
-    if let Some(device) =
-        default_system_output_device_name().filter(|name| is_safe_output_device_name(name))
-    {
-        return Some(device);
-    }
+fn configured_output_device_from_env() -> Option<String> {
+    configured_output_device_from_value(std::env::var(OUTPUT_DEVICE_ENV).ok().as_deref())
+}
 
-    if let Ok(devices) = list_audio_devices() {
-        let physical_device = devices.iter().find(|d| {
-            let name = d.get("name").and_then(|n| n.as_str()).unwrap_or("");
-            is_safe_output_device_name(name)
-        });
-
-        if let Some(device) = physical_device {
-            return device
-                .get("name")
-                .and_then(|n| n.as_str())
-                .map(|s| s.to_string());
-        }
-    }
-    None
+fn configured_output_device_from_value(value: Option<&str>) -> Option<String> {
+    value
+        .map(|device| device.trim().to_string())
+        .filter(|device| !device.is_empty())
 }
 
 fn is_safe_output_device_name(name: &str) -> bool {
@@ -1392,73 +1503,6 @@ fn is_safe_output_device_name(name: &str) -> bool {
     ]
     .iter()
     .any(|virtual_name| lowercase_name.contains(virtual_name))
-}
-
-#[cfg(target_os = "macos")]
-fn default_system_output_device_name() -> Option<String> {
-    use objc2_core_audio::{
-        AudioDeviceID, AudioObjectGetPropertyData, AudioObjectID, AudioObjectPropertyAddress,
-        kAudioDevicePropertyDeviceNameCFString, kAudioHardwareNoError,
-        kAudioHardwarePropertyDefaultSystemOutputDevice, kAudioObjectPropertyElementMain,
-        kAudioObjectPropertyScopeGlobal, kAudioObjectSystemObject,
-    };
-    use objc2_core_foundation::CFString;
-    use std::mem;
-    use std::ptr::{NonNull, null};
-
-    let property_address = AudioObjectPropertyAddress {
-        mSelector: kAudioHardwarePropertyDefaultSystemOutputDevice,
-        mScope: kAudioObjectPropertyScopeGlobal,
-        mElement: kAudioObjectPropertyElementMain,
-    };
-
-    let mut audio_device_id: AudioDeviceID = 0;
-    let mut data_size = mem::size_of::<AudioDeviceID>() as u32;
-    let status = unsafe {
-        AudioObjectGetPropertyData(
-            kAudioObjectSystemObject as AudioObjectID,
-            NonNull::from(&property_address),
-            0,
-            null(),
-            NonNull::from(&mut data_size),
-            NonNull::from(&mut audio_device_id).cast(),
-        )
-    };
-
-    if status != kAudioHardwareNoError as i32 || audio_device_id == 0 {
-        return None;
-    }
-
-    let property_address = AudioObjectPropertyAddress {
-        mSelector: kAudioDevicePropertyDeviceNameCFString,
-        mScope: kAudioObjectPropertyScopeGlobal,
-        mElement: kAudioObjectPropertyElementMain,
-    };
-
-    let mut device_name: *const CFString = null();
-    let mut data_size = mem::size_of::<*const CFString>() as u32;
-    let status = unsafe {
-        AudioObjectGetPropertyData(
-            audio_device_id,
-            NonNull::from(&property_address),
-            0,
-            null(),
-            NonNull::from(&mut data_size),
-            NonNull::from(&mut device_name).cast(),
-        )
-    };
-
-    if status != kAudioHardwareNoError as i32 || device_name.is_null() {
-        return None;
-    }
-
-    let name = unsafe { (&*device_name).to_string() };
-    (!name.is_empty()).then_some(name)
-}
-
-#[cfg(not(target_os = "macos"))]
-fn default_system_output_device_name() -> Option<String> {
-    None
 }
 
 fn list_audio_devices() -> Result<Vec<serde_json::Value>, String> {
@@ -1519,6 +1563,56 @@ fn list_audio_devices() -> Result<Vec<serde_json::Value>, String> {
         Err("No audio devices found".to_string())
     } else {
         Ok(devices)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn loudness_data_json_includes_meter_fields() {
+        let loudness = sotf_audio::LoudnessData {
+            momentary_lufs: -18.5,
+            shortterm_lufs: -17.25,
+            integrated_lufs: -20.0,
+            peak: 0.75,
+            channel_peaks: Arc::new(vec![0.5, 0.75]),
+            true_peaks_dbtp: Arc::new(vec![-2.0, -1.0]),
+            correlation_lr: Some(0.42),
+        };
+
+        let json = loudness_data_to_json(&loudness);
+
+        assert_eq!(json["momentary"], serde_json::json!(-18.5));
+        assert_eq!(json["short_term"], serde_json::json!(-17.25));
+        assert_eq!(json["integrated"], serde_json::json!(-20.0));
+        assert_eq!(json["peak"], serde_json::json!(0.75));
+        assert_eq!(json["channel_peaks"], serde_json::json!([0.5, 0.75]));
+        assert_eq!(json["true_peaks_dbtp"], serde_json::json!([-2.0, -1.0]));
+        assert_eq!(json["correlation_lr"], serde_json::json!(0.42));
+    }
+
+    #[test]
+    fn available_plugin_descriptors_expose_engine_keys() {
+        let settings = sotf_audio::PluginSettings::default_for(&PluginType::Gain);
+        let descriptors = plugin_parameter_descriptors(&settings);
+
+        assert!(
+            descriptors
+                .iter()
+                .any(|d| d["key"] == "gain_db" && d["type"] == "float")
+        );
+    }
+
+    #[test]
+    fn configured_output_device_uses_non_empty_value() {
+        assert_eq!(
+            configured_output_device_from_value(Some(" ADAM Audio D3V ")),
+            Some("ADAM Audio D3V".to_string())
+        );
+        assert_eq!(configured_output_device_from_value(Some("   ")), None);
+        assert_eq!(configured_output_device_from_value(None), None);
     }
 }
 
@@ -1606,29 +1700,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("===============================================================================");
     println!("Starting daemon...");
     println!("===============================================================================");
-
-    // Auto-start driver playback with empty plugin chain
-    {
-        println!("Auto-starting driver playback (2ch)...");
-
-        let output_device = find_fallback_output_device();
-        println!("   Output device: {:?}", output_device);
-
-        if output_device.is_none() {
-            println!("   WARNING: No physical output device found!");
-        }
-
-        let plugins: Vec<PluginConfig> = vec![];
-
-        let result = daemon
-            .runtime
-            .block_on(daemon.handle_load_plugins_with_channels(plugins, 2));
-        if result.success {
-            println!("   Driver playback started successfully");
-        } else {
-            println!("   Driver playback failed: {:?}", result.error);
-        }
-    }
 
     daemon.run()?;
 

@@ -2,23 +2,73 @@ import Foundation
 
 // MARK: - Plugin Models
 
+/// Parameter metadata for descriptor-driven plugin editors.
+struct PluginParameterDescriptor: Identifiable {
+    let key: String
+    let name: String
+    let type: String
+    let unit: String
+    let group: String
+    let doc: String
+    let updateMode: String
+    let min: Double?
+    let max: Double?
+    let step: Double?
+    let defaultDouble: Double?
+    let defaultBool: Bool?
+    let choices: [String]?
+    let trueLabel: String?
+    let falseLabel: String?
+
+    var id: String { key }
+
+    init(
+        key: String,
+        name: String,
+        type: String,
+        unit: String = "",
+        group: String = "General",
+        doc: String = "",
+        updateMode: String = "realtime",
+        min: Double? = nil,
+        max: Double? = nil,
+        step: Double? = nil,
+        defaultDouble: Double? = nil,
+        defaultBool: Bool? = nil,
+        choices: [String]? = nil,
+        trueLabel: String? = nil,
+        falseLabel: String? = nil
+    ) {
+        self.key = key
+        self.name = name
+        self.type = type
+        self.unit = unit
+        self.group = group
+        self.doc = doc
+        self.updateMode = updateMode
+        self.min = min
+        self.max = max
+        self.step = step
+        self.defaultDouble = defaultDouble
+        self.defaultBool = defaultBool
+        self.choices = choices
+        self.trueLabel = trueLabel
+        self.falseLabel = falseLabel
+    }
+
+}
+
 /// Metadata for an available plugin type (from get_available_plugins)
-struct AvailablePlugin: Identifiable, Codable {
+struct AvailablePlugin: Identifiable {
     let type_: String
     let name: String
     let description: String
     let category: String
     let maturity: String
+    let defaultParameters: [String: Any]
+    let parameters: [PluginParameterDescriptor]
 
     var id: String { type_ }
-
-    enum CodingKeys: String, CodingKey {
-        case type_ = "type"
-        case name
-        case description
-        case category
-        case maturity
-    }
 }
 
 /// A plugin instance in the current chain (from get_plugins)
@@ -90,6 +140,69 @@ func pluginDisplayName(_ type: String) -> String {
     case "delay": return "Delay"
     case "downmix": return "Downmix"
     case "mono_to_stereo": return "Mono to Stereo"
+    case "de_esser": return "De-Esser"
+    case "declick": return "Declick"
+    case "hiss_reducer": return "Hiss Reducer"
+    case "speech_denoiser": return "Speech Denoiser"
+    case "stereo_imager": return "Stereo Imager"
+    case "transient_shaper": return "Transient Shaper"
+    case "saturation": return "Saturation"
+    case "dynamic_eq": return "Dynamic EQ"
+    case "linear_phase_eq": return "Linear Phase EQ"
+    case "spectral_compressor": return "Spectral Compressor"
+    case "aae": return "AAE"
+    case "aec": return "AEC"
+    case "beamformer": return "Beamformer"
+    case "ambisonics_decoder": return "Ambisonics Decoder"
+    case "ab_compare": return "A/B Compare"
     default: return type
     }
 }
+
+let engineTypeToAppGpuiSettingsVariant: [String: String] = [
+    "eq": "EQ",
+    "gain": "Gain",
+    "upmixer": "Upmixer",
+    "compressor": "Compressor",
+    "limiter": "Limiter",
+    "gate": "Gate",
+    "expander": "Expander",
+    "multiband_compressor": "MultibandCompressor",
+    "multiband_expander": "MultibandExpander",
+    "loudness_compensation": "LoudnessCompensation",
+    "fletcher_munson": "FletcherMunson",
+    "binaural_decoder": "BinauralDecoder",
+    "convolution": "Convolution",
+    "loudness_monitor": "LoudnessMonitor",
+    "spectrum_analyzer": "SpectrumAnalyzer",
+    "channel_mute_solo": "ChannelMuteSolo",
+    "matrix": "Matrix",
+    "xtc": "XTC",
+    "denoiser": "Denoiser",
+    "declick": "Declick",
+    "hiss_reducer": "HissReducer",
+    "speech_denoiser": "SpeechDenoiser",
+    "pnd": "Pnd",
+    "ab_compare": "ABCompare",
+    "band_split": "BandSplit",
+    "band_merge": "BandMerge",
+    "downmix": "Downmix",
+    "mono_to_stereo": "MonoToStereo",
+    "crossfeed": "Crossfeed",
+    "delay": "Delay",
+    "aec": "Aec",
+    "beamformer": "Beamformer",
+    "ambisonics_decoder": "AmbisonicsDecoder",
+    "stereo_imager": "StereoImager",
+    "de_esser": "DeEsser",
+    "transient_shaper": "TransientShaper",
+    "saturation": "Saturation",
+    "dynamic_eq": "DynamicEq",
+    "linear_phase_eq": "LinearPhaseEq",
+    "spectral_compressor": "SpectralCompressor",
+    "aae": "AAE",
+]
+
+let appGpuiSettingsVariantToEngineType: [String: String] = Dictionary(
+    uniqueKeysWithValues: engineTypeToAppGpuiSettingsVariant.map { ($0.value, $0.key) }
+)

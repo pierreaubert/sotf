@@ -3,10 +3,10 @@
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>org.spinorama.sotf.configbar</string>
+	<string>org.spinorama.sotf-systemwide</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/Applications/AutoEQMenuBar.app/Contents/MacOS/AutoEQMenuBar</string>
+		<string>/Applications/SotF Systemwide.app/Contents/MacOS/sotf-systemwide</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
@@ -22,8 +22,8 @@
 		<string>Aqua</string>
 	</array>
 	<key>StandardOutPath</key>
-	<string>/tmp/autoeq-menubar.log</string>
+	<string>/tmp/sotf-systemwide.log</string>
 	<key>StandardErrorPath</key>
-	<string>/tmp/autoeq-menubar.error.log</string>
+	<string>/tmp/sotf-systemwide.error.log</string>
 </dict>
 </plist>

@@ -521,12 +521,12 @@ build_macos() {
     fi
 
     # --- macOS daemon pkg ---
-    log_step "Building macOS daemon/toolbar pkg..."
+    log_step "Building macOS Systemwide pkg..."
     if $DRY_RUN; then
         log_dry "./scripts/build-dmg-daemon.sh"
     else
         ./scripts/build-dmg-daemon.sh
-        record_result "macOS daemon pkg: OK"
+        record_result "macOS Systemwide pkg: OK"
     fi
 
     # --- Sign macOS artifacts ---

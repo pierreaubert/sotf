@@ -21,6 +21,12 @@
 - Swift now consumes daemon-initiated config requests, applies supported sample
   rate / buffer-frame changes, acknowledges the result through shared memory,
   and notifies CoreAudio of the updated format properties.
+- Daemon-initiated HAL format changes now go through CoreAudio's device
+  configuration-change handshake before mutating sample rate or buffer size, so
+  active IO is quiesced by the host before the new format is applied.
+- Swift now reports a legal fixed zero timestamp period and aligns
+  `GetZeroTimeStamp()` to that period instead of using the much smaller IO
+  buffer size.
 - `ReadInput` no longer consumes the same shared-memory ring used by `WriteMix`
   for app-to-daemon capture; until separate daemon-to-HAL IPC exists it only
   serves loopback audio or silence.

@@ -3,14 +3,14 @@
 # SotF Uninstaller Script
 #
 # Removes all SotF components:
-#   - SotF Toolbar app
+#   - SotF Systemwide app
 #   - sotf-daemon (embedded in app)
 #   - HAL driver
 #   - LaunchAgents
 #   - Socket files and logs
 #
 # Bundle identifiers:
-#   - org.spinorama.sotf-toolbar
+#   - org.spinorama.sotf-systemwide
 #   - org.spinorama.sotf-hal
 #   - org.spinorama.sotf-daemon
 #
@@ -30,20 +30,22 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Bundle identifiers
-TOOLBAR_BUNDLE_ID="org.spinorama.sotf-toolbar"
+SYSTEMWIDE_BUNDLE_ID="org.spinorama.sotf-systemwide"
 HAL_BUNDLE_ID="org.spinorama.sotf-hal"
 DAEMON_BUNDLE_ID="org.spinorama.sotf-daemon"
 
 # Paths
 USER_HOME="$HOME"
 LAUNCHAGENTS_DIR="${USER_HOME}/Library/LaunchAgents"
-TOOLBAR_PLIST="${LAUNCHAGENTS_DIR}/${TOOLBAR_BUNDLE_ID}.plist"
+SYSTEMWIDE_PLIST="${LAUNCHAGENTS_DIR}/${SYSTEMWIDE_BUNDLE_ID}.plist"
 DAEMON_PLIST="${LAUNCHAGENTS_DIR}/${DAEMON_BUNDLE_ID}.plist"
 # Legacy plists
+LEGACY_TOOLBAR_PLIST="${LAUNCHAGENTS_DIR}/org.spinorama.sotf-toolbar.plist"
 LEGACY_DAEMON_PLIST="${LAUNCHAGENTS_DIR}/org.spinorama.sotf.daemon.plist"
 LEGACY_CONFIGBAR_PLIST="${LAUNCHAGENTS_DIR}/org.spinorama.sotf.configbar.plist"
 
-TOOLBAR_APP="/Applications/SotF Toolbar.app"
+SYSTEMWIDE_APP="/Applications/SotF Systemwide.app"
+LEGACY_TOOLBAR_APP="/Applications/SotF Toolbar.app"
 LEGACY_CONFIGBAR_APP="/Applications/SotF ConfigBar.app"
 DAEMON_BIN="/usr/local/bin/sotf-daemon"
 HAL_DRIVER="/Library/Audio/Plug-Ins/HAL/sotf.driver"
@@ -73,7 +75,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --help         Show this help message"
             echo ""
             echo "Bundle identifiers that will be removed:"
-            echo "  - $TOOLBAR_BUNDLE_ID"
+            echo "  - $SYSTEMWIDE_BUNDLE_ID"
             echo "  - $HAL_BUNDLE_ID"
             echo "  - $DAEMON_BUNDLE_ID"
             exit 0
@@ -131,12 +133,18 @@ NEED_SUDO=false
 
 log_info "[1/6] Stopping running processes..."
 
-# Stop Toolbar
+# Stop Systemwide
+if pgrep -x "sotf-systemwide" > /dev/null 2>&1; then
+    killall "sotf-systemwide" 2>/dev/null || true
+    log_success "Systemwide stopped"
+else
+    log_info "Systemwide not running"
+fi
+
+# Stop legacy Toolbar
 if pgrep -x "sotf-toolbar" > /dev/null 2>&1; then
     killall "sotf-toolbar" 2>/dev/null || true
-    log_success "Toolbar stopped"
-else
-    log_info "Toolbar not running"
+    log_success "Legacy Toolbar stopped"
 fi
 
 # Stop legacy ConfigBar
@@ -155,10 +163,16 @@ fi
 
 log_info "[2/6] Unloading LaunchAgents..."
 
-# Unload Toolbar LaunchAgent
-if [ -f "${TOOLBAR_PLIST}" ]; then
-    launchctl unload "${TOOLBAR_PLIST}" 2>/dev/null || true
-    log_success "Toolbar LaunchAgent unloaded"
+# Unload Systemwide LaunchAgent
+if [ -f "${SYSTEMWIDE_PLIST}" ]; then
+    launchctl unload "${SYSTEMWIDE_PLIST}" 2>/dev/null || true
+    log_success "Systemwide LaunchAgent unloaded"
+fi
+
+# Unload legacy Toolbar LaunchAgent
+if [ -f "${LEGACY_TOOLBAR_PLIST}" ]; then
+    launchctl unload "${LEGACY_TOOLBAR_PLIST}" 2>/dev/null || true
+    log_success "Legacy Toolbar LaunchAgent unloaded"
 fi
 
 # Unload daemon LaunchAgent
@@ -181,7 +195,7 @@ fi
 log_info "[3/6] Removing LaunchAgent plists..."
 
 # Remove all SotF LaunchAgent plists
-for plist in "${TOOLBAR_PLIST}" "${DAEMON_PLIST}" "${LEGACY_DAEMON_PLIST}" "${LEGACY_CONFIGBAR_PLIST}"; do
+for plist in "${SYSTEMWIDE_PLIST}" "${DAEMON_PLIST}" "${LEGACY_TOOLBAR_PLIST}" "${LEGACY_DAEMON_PLIST}" "${LEGACY_CONFIGBAR_PLIST}"; do
     if [ -f "$plist" ]; then
         rm -f "$plist"
         log_success "Removed $(basename "$plist")"
@@ -190,12 +204,18 @@ done
 
 log_info "[4/6] Removing applications..."
 
-# Remove Toolbar app
-if [ -d "${TOOLBAR_APP}" ]; then
-    rm -rf "${TOOLBAR_APP}"
-    log_success "Toolbar app removed"
+# Remove Systemwide app
+if [ -d "${SYSTEMWIDE_APP}" ]; then
+    rm -rf "${SYSTEMWIDE_APP}"
+    log_success "Systemwide app removed"
 else
-    log_info "Toolbar app not found"
+    log_info "Systemwide app not found"
+fi
+
+# Remove legacy Toolbar app
+if [ -d "${LEGACY_TOOLBAR_APP}" ]; then
+    rm -rf "${LEGACY_TOOLBAR_APP}"
+    log_success "Legacy Toolbar app removed"
 fi
 
 # Remove legacy ConfigBar app
@@ -241,6 +261,8 @@ fi
 
 # Remove logs (unless --keep-logs)
 if [ "$KEEP_LOGS" = false ]; then
+    rm -f /tmp/sotf-systemwide.log 2>/dev/null || true
+    rm -f /tmp/sotf-systemwide.error.log 2>/dev/null || true
     rm -f /tmp/sotf-toolbar.log 2>/dev/null || true
     rm -f /tmp/sotf-toolbar.error.log 2>/dev/null || true
     rm -f /tmp/sotf-daemon.log 2>/dev/null || true

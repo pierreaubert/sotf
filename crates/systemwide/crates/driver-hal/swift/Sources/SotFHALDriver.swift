@@ -139,8 +139,15 @@ private let kIOOperation_WriteMix: UInt32 = 0x72697465     // 'rite' - Write mix
 // MARK: - Supported Sample Rates
 
 private let kSupportedSampleRates: [Float64] = [44100.0, 48000.0, 88200.0, 96000.0, 176400.0, 192000.0]
+private let kZeroTimeStampPeriod: UInt32 = 16_384
+private let kDaemonConfigChangeAction: UInt64 = 0x53434647  // 'SCFG'
 
 // MARK: - Driver State
+
+private struct PendingDaemonConfig {
+    let sampleRate: UInt32
+    let bufferFrames: UInt32
+}
 
 final class DriverState {
     var host: AudioServerPlugInHostRef?
@@ -202,6 +209,8 @@ final class DriverState {
     private let initRetryLock = NSLock()
     private let maintenanceQueue = DispatchQueue(label: "org.spinorama.sotf-hal.maintenance")
     private var maintenanceTimer: DispatchSourceTimer?
+    private let pendingDaemonConfigLock = NSLock()
+    private var pendingDaemonConfig: PendingDaemonConfig?
 
     /// Attempt to re-initialise shared memory if we're not connected.
     /// Throttled to one call per second. Safe to call from any thread.
@@ -280,22 +289,98 @@ final class DriverState {
             return
         }
 
-        sampleRate = Float64(requestedRate)
-        bufferFrameSize = requestedFrames
+        requestDaemonConfigChange(sampleRate: requestedRate, bufferFrames: requestedFrames)
+    }
+
+    private func requestDaemonConfigChange(sampleRate requestedRate: UInt32, bufferFrames requestedFrames: UInt32) {
+        pendingDaemonConfigLock.lock()
+        if let pending = pendingDaemonConfig {
+            let sameRequest = pending.sampleRate == requestedRate && pending.bufferFrames == requestedFrames
+            pendingDaemonConfigLock.unlock()
+            if !sameRequest {
+                halLog("[CONFIG] Ignoring daemon config request while another change is pending: \(requestedRate)Hz, \(requestedFrames) frames")
+            }
+            return
+        }
+        pendingDaemonConfig = PendingDaemonConfig(sampleRate: requestedRate, bufferFrames: requestedFrames)
+        pendingDaemonConfigLock.unlock()
+
+        guard let host = host else {
+            clearPendingDaemonConfig()
+            sharedAudio.acknowledgeConfigChange(
+                actualSampleRate: UInt32(sampleRate),
+                actualBufferFrames: bufferFrameSize,
+                status: 3,
+                errorCode: 2
+            )
+            halLog("[CONFIG] Cannot request CoreAudio configuration change: missing host")
+            return
+        }
+
+        let status = host.pointee.RequestDeviceConfigurationChange(
+            host,
+            kDeviceObjectID,
+            kDaemonConfigChangeAction,
+            nil
+        )
+        if status != noErr {
+            clearPendingDaemonConfig()
+            sharedAudio.acknowledgeConfigChange(
+                actualSampleRate: UInt32(sampleRate),
+                actualBufferFrames: bufferFrameSize,
+                status: 3,
+                errorCode: UInt32(bitPattern: status)
+            )
+            halLog("[CONFIG] CoreAudio configuration change request failed: \(status)")
+            return
+        }
+
+        halLog("[CONFIG] Requested CoreAudio config change: \(requestedRate)Hz, \(requestedFrames) frames")
+    }
+
+    private func clearPendingDaemonConfig() {
+        pendingDaemonConfigLock.lock()
+        pendingDaemonConfig = nil
+        pendingDaemonConfigLock.unlock()
+    }
+
+    func performPendingDaemonConfigChange() -> Bool {
+        pendingDaemonConfigLock.lock()
+        guard let pending = pendingDaemonConfig else {
+            pendingDaemonConfigLock.unlock()
+            return false
+        }
+        pendingDaemonConfig = nil
+        pendingDaemonConfigLock.unlock()
+
+        sampleRate = Float64(pending.sampleRate)
+        bufferFrameSize = pending.bufferFrames
         clock.setSampleRate(sampleRate)
         resetBuffers()
         sharedAudio.acknowledgeConfigChange(
-            actualSampleRate: requestedRate,
-            actualBufferFrames: requestedFrames,
+            actualSampleRate: pending.sampleRate,
+            actualBufferFrames: pending.bufferFrames,
             status: 1,
             errorCode: 0
         )
-        halLog("[CONFIG] Applied daemon config: \(requestedRate)Hz, \(requestedFrames) frames")
+        halLog("[CONFIG] Applied daemon config: \(pending.sampleRate)Hz, \(pending.bufferFrames) frames")
 
         notifyPropertyChanged(objectID: kDeviceObjectID, selector: kSelector_NominalSampleRate)
         notifyPropertyChanged(objectID: kDeviceObjectID, selector: kSelector_BufferFrameSize)
         notifyPropertyChanged(objectID: kOutputStreamObjectID, selector: kSelector_VirtualFormat)
         notifyPropertyChanged(objectID: kOutputStreamObjectID, selector: kSelector_PhysicalFormat)
+        return true
+    }
+
+    func abortPendingDaemonConfigChange() {
+        clearPendingDaemonConfig()
+        sharedAudio.acknowledgeConfigChange(
+            actualSampleRate: UInt32(sampleRate),
+            actualBufferFrames: bufferFrameSize,
+            status: 3,
+            errorCode: 3
+        )
+        halLog("[CONFIG] CoreAudio aborted daemon config change")
     }
 
     // Flag to indicate driver is being disposed (prevents race conditions in StartIO)
@@ -401,11 +486,19 @@ private func driverRemoveDeviceClient(_ driver: AudioServerPlugInDriverRef, _ de
 
 private func driverPerformDeviceConfigurationChange(_ driver: AudioServerPlugInDriverRef, _ deviceObjectID: AudioObjectID, _ changeAction: UInt64, _ changeInfo: UnsafeMutableRawPointer?) -> OSStatus {
     halLog("PerformDeviceConfigurationChange: device=\(deviceObjectID) action=\(changeAction)")
+    if changeAction == kDaemonConfigChangeAction {
+        if !DriverState.shared.performPendingDaemonConfigChange() {
+            halLog("[CONFIG] PerformDeviceConfigurationChange had no pending daemon config")
+        }
+    }
     return noErr
 }
 
 private func driverAbortDeviceConfigurationChange(_ driver: AudioServerPlugInDriverRef, _ deviceObjectID: AudioObjectID, _ changeAction: UInt64, _ changeInfo: UnsafeMutableRawPointer?) -> OSStatus {
     halLog("AbortDeviceConfigurationChange: device=\(deviceObjectID)")
+    if changeAction == kDaemonConfigChangeAction {
+        DriverState.shared.abortPendingDaemonConfigChange()
+    }
     return noErr
 }
 
@@ -753,7 +846,7 @@ private func driverGetPropertyData(_ driver: AudioServerPlugInDriverRef, _ objec
         outDataSize.pointee = 4
 
     case kSelector_ZeroTimePeriod:
-        outData.storeBytes(of: state.bufferFrameSize, as: UInt32.self)
+        outData.storeBytes(of: kZeroTimeStampPeriod, as: UInt32.self)
         outDataSize.pointee = 4
 
     case kSelector_BufferSizeRange:
@@ -1004,7 +1097,7 @@ private func driverStopIO(_ driver: AudioServerPlugInDriverRef, _ deviceObjectID
 
 private func driverGetZeroTimeStamp(_ driver: AudioServerPlugInDriverRef, _ deviceObjectID: AudioObjectID, _ clientID: UInt32, _ outSampleTime: UnsafeMutablePointer<Float64>, _ outHostTime: UnsafeMutablePointer<UInt64>, _ outSeed: UnsafeMutablePointer<UInt64>) -> OSStatus {
     let state = DriverState.shared
-    let (sampleTime, hostTime, seed) = state.clock.getZeroTimeStamp(bufferFrameSize: state.bufferFrameSize)
+    let (sampleTime, hostTime, seed) = state.clock.getZeroTimeStamp(period: kZeroTimeStampPeriod)
 
     outSampleTime.pointee = sampleTime
     outHostTime.pointee = hostTime

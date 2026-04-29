@@ -161,6 +161,89 @@ fn swift_consumes_daemon_initiated_config_requests() {
 }
 
 #[test]
+fn swift_daemon_config_requests_go_through_coreaudio_reconfiguration() {
+    let source =
+        read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/SotFHALDriver.swift");
+    let handler = function_body(&source, "private func handleDaemonConfigRequestIfNeeded");
+    let requester = function_body(&source, "private func requestDaemonConfigChange");
+    let performer = function_body(
+        &source,
+        "private func driverPerformDeviceConfigurationChange",
+    );
+
+    assert!(
+        handler.contains("requestDaemonConfigChange("),
+        "daemon-initiated format changes must be handed to CoreAudio before mutating HAL state"
+    );
+    assert!(
+        !handler.contains("bufferFrameSize = requestedFrames")
+            && !handler.contains("sampleRate = Float64(requestedRate)"),
+        "maintenance polling must not mutate active IO format directly"
+    );
+    assert!(
+        requester.contains("RequestDeviceConfigurationChange("),
+        "HAL must ask CoreAudio to quiesce IO before applying daemon-requested format changes"
+    );
+    assert!(
+        performer.contains("performPendingDaemonConfigChange()"),
+        "daemon-requested config must be applied from PerformDeviceConfigurationChange"
+    );
+}
+
+#[test]
+fn swift_reports_legal_zero_time_stamp_period() {
+    let source =
+        read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/SotFHALDriver.swift");
+    let timing = read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/Timing.swift");
+
+    let period_line = source
+        .lines()
+        .find(|line| line.contains("private let kZeroTimeStampPeriod"))
+        .expect("missing kZeroTimeStampPeriod");
+    let period_value = period_line
+        .split('=')
+        .nth(1)
+        .expect("period line should contain '='")
+        .split("//")
+        .next()
+        .expect("period value should precede comment")
+        .trim()
+        .replace('_', "")
+        .parse::<u32>()
+        .expect("zero timestamp period should be a u32 literal");
+
+    assert!(
+        period_value >= 10_923,
+        "kAudioDevicePropertyZeroTimeStampPeriod must be at least 10923 frames"
+    );
+
+    let get_data = function_body(&source, "private func driverGetPropertyData(");
+    let zero_period_case = switch_case_body(
+        get_data,
+        "case kSelector_ZeroTimePeriod:",
+        "case kSelector_BufferSizeRange:",
+    );
+    let get_zero = function_body(&source, "private func driverGetZeroTimeStamp");
+
+    assert!(
+        zero_period_case.contains("kZeroTimeStampPeriod"),
+        "the HAL property must report the fixed legal zero timestamp period"
+    );
+    assert!(
+        !zero_period_case.contains("state.bufferFrameSize"),
+        "zero timestamp period must not track the small IO buffer size"
+    );
+    assert!(
+        get_zero.contains("getZeroTimeStamp(period: kZeroTimeStampPeriod)"),
+        "GetZeroTimeStamp must align to the reported zero timestamp period"
+    );
+    assert!(
+        timing.contains("func getZeroTimeStamp(period: UInt32)"),
+        "DriverClock should accept the timestamp period explicitly"
+    );
+}
+
+#[test]
 fn swift_shared_memory_is_open_only_for_restricted_hal_process() {
     let source =
         read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/SharedMemory.swift");

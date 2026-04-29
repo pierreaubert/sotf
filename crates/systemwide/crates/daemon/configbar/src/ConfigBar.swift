@@ -1,7 +1,7 @@
 //
-// AutoEQ Menu Bar Application
+// SotF Systemwide Menu Bar Application
 //
-// A macOS menu bar app that controls the AutoEQ audio engine with:
+// A macOS menu bar app that controls the SotF Systemwide audio engine with:
 // - Color-coded speaker icon (grey/green/red) based on audio activity
 // - Configuration window for audio interfaces and plugin chains
 // - Energy optimization (stops engine after 3s of silence)
@@ -242,15 +242,15 @@ class AudioEngineClient {
             var responseData = Data()
             var buffer = [UInt8](repeating: 0, count: 4096)
             let bufferCount = buffer.count
-            let maxResponseSize = 65536 // 64KB max response size
-            let timeoutMs: useconds_t = 5000000 // 5 second timeout
+            let maxResponseSize = 1024 * 1024 // Plugin metadata can exceed 64KB
+            let timeoutMs: useconds_t = 1000000 // Keep UI-facing calls from hanging the app
 
             // Set socket to non-blocking for timeout handling
-            var flags = fcntl(socketFD, F_GETFL, 0)
-            fcntl(socketFD, F_SETFL, flags | O_NONBLOCK)
+            let flags = fcntl(socketFD, F_GETFL, 0)
+            _ = fcntl(socketFD, F_SETFL, flags | O_NONBLOCK)
 
             var totalWaitTime: useconds_t = 0
-            let pollInterval: useconds_t = 10000 // 10ms poll interval
+            let pollInterval: useconds_t = 5000 // 5ms poll interval
 
             while responseData.count < maxResponseSize && totalWaitTime < timeoutMs {
                 let bytesRead = buffer.withUnsafeMutableBufferPointer { bufferPtr in
@@ -281,8 +281,14 @@ class AudioEngineClient {
                 }
             }
 
+            if responseData.count >= maxResponseSize,
+               !responseData.contains(UInt8(ascii: "\n")) {
+                print("Daemon response exceeded \(maxResponseSize) bytes without a complete JSON line")
+                return nil
+            }
+
             // Restore blocking mode
-            fcntl(socketFD, F_SETFL, flags)
+            _ = fcntl(socketFD, F_SETFL, flags)
 
             guard !responseData.isEmpty else {
                 print("Empty response from daemon (timeout or connection closed)")
@@ -406,20 +412,13 @@ class AudioEngineClient {
         }
 
         var loudness = LoudnessData()
-        loudness.momentary = data["momentary"]?.value as? Double ?? -60.0
-        loudness.shortTerm = data["short_term"]?.value as? Double ?? -60.0
-        loudness.integrated = data["integrated"]?.value as? Double ?? -60.0
-        loudness.peak = data["peak"]?.value as? Double ?? 0.0
-
-        if let peaks = data["channel_peaks"]?.value as? [Any] {
-            loudness.channelPeaks = peaks.compactMap { $0 as? Double }
-        }
-        if let truePeaks = data["true_peaks_dbtp"]?.value as? [Any] {
-            loudness.truePeaksDbtp = truePeaks.compactMap { $0 as? Double }
-        }
-        if let correlation = data["correlation_lr"]?.value as? Double {
-            loudness.correlationLR = correlation
-        }
+        loudness.momentary = numberValue(data["momentary"]?.value) ?? -60.0
+        loudness.shortTerm = numberValue(data["short_term"]?.value) ?? -60.0
+        loudness.integrated = numberValue(data["integrated"]?.value) ?? -60.0
+        loudness.peak = numberValue(data["peak"]?.value) ?? 0.0
+        loudness.channelPeaks = numberArrayValue(data["channel_peaks"]?.value)
+        loudness.truePeaksDbtp = numberArrayValue(data["true_peaks_dbtp"]?.value)
+        loudness.correlationLR = numberValue(data["correlation_lr"]?.value)
 
         return loudness
     }
@@ -454,20 +453,13 @@ class AudioEngineClient {
 
     private func parseLoudnessDict(_ dict: [String: Any]) -> LoudnessData {
         var loudness = LoudnessData()
-        loudness.momentary = dict["momentary"] as? Double ?? -60.0
-        loudness.shortTerm = dict["short_term"] as? Double ?? -60.0
-        loudness.integrated = dict["integrated"] as? Double ?? -60.0
-        loudness.peak = dict["peak"] as? Double ?? 0.0
-
-        if let peaks = dict["channel_peaks"] as? [Any] {
-            loudness.channelPeaks = peaks.compactMap { $0 as? Double }
-        }
-        if let truePeaks = dict["true_peaks_dbtp"] as? [Any] {
-            loudness.truePeaksDbtp = truePeaks.compactMap { $0 as? Double }
-        }
-        if let correlation = dict["correlation_lr"] as? Double {
-            loudness.correlationLR = correlation
-        }
+        loudness.momentary = numberValue(dict["momentary"]) ?? -60.0
+        loudness.shortTerm = numberValue(dict["short_term"]) ?? -60.0
+        loudness.integrated = numberValue(dict["integrated"]) ?? -60.0
+        loudness.peak = numberValue(dict["peak"]) ?? 0.0
+        loudness.channelPeaks = numberArrayValue(dict["channel_peaks"])
+        loudness.truePeaksDbtp = numberArrayValue(dict["true_peaks_dbtp"])
+        loudness.correlationLR = numberValue(dict["correlation_lr"])
 
         return loudness
     }
@@ -508,8 +500,74 @@ class AudioEngineClient {
                   let maturity = dict["maturity"] as? String else {
                 return nil
             }
-            return AvailablePlugin(type_: type_, name: name, description: description, category: category, maturity: maturity)
+            let parameters = parsePluginParameterDescriptors(dict["parameters"])
+            return AvailablePlugin(
+                type_: type_,
+                name: name,
+                description: description,
+                category: category,
+                maturity: maturity,
+                defaultParameters: dict["default_parameters"] as? [String: Any] ?? [:],
+                parameters: parameters
+            )
         }
+    }
+
+    private func parsePluginParameterDescriptors(_ raw: Any?) -> [PluginParameterDescriptor] {
+        guard let items = raw as? [[String: Any]] else {
+            return []
+        }
+
+        return items.compactMap { item in
+            guard let key = item["key"] as? String,
+                  let name = item["name"] as? String,
+                  let type = item["type"] as? String else {
+                return nil
+            }
+
+            let defaultDouble = numberValue(item["default"])
+
+            return PluginParameterDescriptor(
+                key: key,
+                name: name,
+                type: type,
+                unit: item["unit"] as? String ?? "",
+                group: item["group"] as? String ?? "General",
+                doc: item["doc"] as? String ?? "",
+                updateMode: item["update_mode"] as? String ?? "realtime",
+                min: numberValue(item["min"]),
+                max: numberValue(item["max"]),
+                step: numberValue(item["step"]),
+                defaultDouble: defaultDouble,
+                defaultBool: item["default"] as? Bool,
+                choices: item["choices"] as? [String],
+                trueLabel: item["true_label"] as? String,
+                falseLabel: item["false_label"] as? String
+            )
+        }
+    }
+
+    private func numberValue(_ raw: Any?) -> Double? {
+        if let double = raw as? Double {
+            return double
+        }
+        if let int = raw as? Int {
+            return Double(int)
+        }
+        if let number = raw as? NSNumber {
+            return number.doubleValue
+        }
+        if let string = raw as? String {
+            return Double(string)
+        }
+        return nil
+    }
+
+    private func numberArrayValue(_ raw: Any?) -> [Double] {
+        guard let values = raw as? [Any] else {
+            return []
+        }
+        return values.compactMap(numberValue)
     }
 
     /// Add a plugin to the chain
@@ -652,6 +710,13 @@ class DaemonManager {
     var onStatusChange: ((Bool) -> Void)?
 
     init() {
+        if let overridePath = ProcessInfo.processInfo.environment["SOTF_DAEMON_PATH"],
+           FileManager.default.isExecutableFile(atPath: overridePath) {
+            daemonPath = overridePath
+            print("DaemonManager: Using daemon path from SOTF_DAEMON_PATH: \(daemonPath)")
+            return
+        }
+
         // Look for daemon in several locations (note: binary is named sotf-daemon with hyphen)
         let possiblePaths = [
             // In app bundle's Helpers directory
@@ -825,6 +890,7 @@ class StatusBarController: NSObject, ObservableObject {
 
     private let client = AudioEngineClient()
     private var monitorTimer: Timer?
+    private var statusRequestInFlight = false
 
     // Daemon management
     private let daemonManager = DaemonManager()
@@ -1015,15 +1081,25 @@ class StatusBarController: NSObject, ObservableObject {
     }
 
     private func updateStatus() {
-        let (state, _, _) = client.getStatus()
+        guard !statusRequestInFlight else { return }
+        statusRequestInFlight = true
 
-        if currentState != state {
-            currentState = state
-            updateIcon()
+        DispatchQueue.global(qos: .utility).async {
+            let (state, _, _) = AudioEngineClient().getStatus()
 
-            // Update menu item
-            if let menu = statusItem.menu, let statusItem = menu.item(withTag: 100) {
-                statusItem.title = "Status: \(state.rawValue)"
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.statusRequestInFlight = false
+
+                if self.currentState != state {
+                    self.currentState = state
+                    self.updateIcon()
+
+                    // Update menu item
+                    if let menu = self.statusItem.menu, let statusItem = menu.item(withTag: 100) {
+                        statusItem.title = "Status: \(state.rawValue)"
+                    }
+                }
             }
         }
     }
@@ -1062,7 +1138,7 @@ class StatusBarController: NSObject, ObservableObject {
             defer: false
         )
 
-        window.title = "AutoEQ Configuration"
+        window.title = "SotF Systemwide Configuration"
         window.center()
         window.minSize = NSSize(width: 800, height: 500)
 
@@ -1129,8 +1205,8 @@ struct LevelMeterBar: View {
                     .fill(Color.black.opacity(0.3))
 
                 // Meter fill with gradient colors based on level
-                if fillRatio > 0 {
-                    let color: Color = fillRatio > 0.9 ? .red : (fillRatio > 0.6 ? .yellow : .green)
+            if fillRatio > 0 {
+                    let color: Color = db >= -1.0 ? .red : (db >= -12.0 ? .yellow : .green)
                     RoundedRectangle(cornerRadius: 2)
                         .fill(color)
                         .frame(height: fillHeight)
@@ -1169,6 +1245,10 @@ struct LevelMeterView: View {
     let momentaryLufs: Double
     let shortTermLufs: Double
 
+    private let scaleWidth: CGFloat = 18
+    private let barWidth: CGFloat = 18
+    private let barSpacing: CGFloat = 3
+
     var body: some View {
         VStack(spacing: 0) {
             // Title
@@ -1180,7 +1260,7 @@ struct LevelMeterView: View {
 
             // Main meter area - fills available space
             GeometryReader { geometry in
-                HStack(spacing: 3) {
+                HStack(spacing: barSpacing) {
                     // dB scale legend
                     VStack(alignment: .trailing, spacing: 0) {
                         Text("0").font(.system(size: 8)).foregroundColor(.secondary)
@@ -1191,7 +1271,7 @@ struct LevelMeterView: View {
                         Spacer()
                         Text("-60").font(.system(size: 8)).foregroundColor(.secondary)
                     }
-                    .frame(width: 18)
+                    .frame(width: scaleWidth)
 
                     // Peak meter bars with LUFS markers
                     ForEach(Array(zip(channelPeaks.indices, channelPeaks)), id: \.0) { _, peak in
@@ -1199,23 +1279,25 @@ struct LevelMeterView: View {
                             level: peak,
                             momentaryLufs: momentaryLufs,
                             shortTermLufs: shortTermLufs,
-                            width: 16
+                            width: barWidth
                         )
                     }
                 }
             }
 
             // Channel labels row
-            HStack(spacing: 3) {
+            HStack(spacing: barSpacing) {
                 Text("")
-                    .frame(width: 18)
+                    .frame(width: scaleWidth)
 
                 ForEach(Array(channelPeaks.indices), id: \.self) { index in
                     let label = index < channelLabels.count ? channelLabels[index] : "\(index + 1)"
                     Text(label)
                         .font(.system(size: 9, weight: .medium))
                         .foregroundColor(.secondary)
-                        .frame(width: 16)
+                        .frame(width: barWidth)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                 }
             }
             .padding(.top, 4)
@@ -1279,6 +1361,8 @@ struct ConfigurationView: View {
     @State private var momentaryLufs: Double = -60.0
     @State private var shortTermLufs: Double = -60.0
     @State private var meteringTimer: Timer? = nil
+    @State private var meteringRequestInFlight = false
+    @State private var loadingDevices = false
 
     // Encryption state
     @State private var encryptionEnabled: Bool = false
@@ -1297,22 +1381,22 @@ struct ConfigurationView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            // Left level meter (Input)
+            // Left level meter (input monitor)
             LevelMeterView(
-                title: "Input",
+                title: "Monitor In",
                 channelPeaks: inputPeaks,
-                channelLabels: inputPeaks.count == 2 ? ["L", "R"] : (1...inputPeaks.count).map { "\($0)" },
+                channelLabels: channelLabels(for: inputPeaks.count),
                 momentaryLufs: momentaryLufs,
                 shortTermLufs: shortTermLufs
             )
-            .frame(width: 70)
+            .frame(width: meterWidth(for: inputPeaks.count))
             .padding(.leading, 8)
 
             // Main content with scroll
             VStack(spacing: 0) {
                 // Header (fixed, not scrollable)
                 HStack {
-                    Text("AutoEQ Audio Configuration")
+                    Text("SotF Systemwide")
                         .font(.title)
                     Spacer()
                     Button("Close") {
@@ -1750,15 +1834,15 @@ struct ConfigurationView: View {
                 .padding()
             }  // End of main VStack
 
-            // Right level meter (Output)
+            // Right level meter (after plugin chain)
             LevelMeterView(
-                title: "Output",
+                title: "Post Chain",
                 channelPeaks: outputPeaks,
-                channelLabels: outputPeaks.count == 2 ? ["L", "R"] : (1...outputPeaks.count).map { "\($0)" },
+                channelLabels: channelLabels(for: outputPeaks.count),
                 momentaryLufs: momentaryLufs,
                 shortTermLufs: shortTermLufs
             )
-            .frame(width: 70)
+            .frame(width: meterWidth(for: outputPeaks.count))
             .padding(.trailing, 8)
         }  // End of HStack
         .frame(minWidth: 820, minHeight: 600)
@@ -1776,8 +1860,32 @@ struct ConfigurationView: View {
         }
     }
 
+    private func meterWidth(for channelCount: Int) -> CGFloat {
+        let count = max(channelCount, 1)
+        return 33 + CGFloat(count * 21)
+    }
+
+    private func channelLabels(for channelCount: Int) -> [String] {
+        switch max(channelCount, 1) {
+        case 1:
+            return ["M"]
+        case 2:
+            return ["L", "R"]
+        case 4:
+            return ["L", "R", "Ls", "Rs"]
+        case 5:
+            return ["L", "R", "C", "Ls", "Rs"]
+        case 6:
+            return ["L", "R", "C", "LFE", "Ls", "Rs"]
+        case 8:
+            return ["L", "R", "C", "LFE", "Ls", "Rs", "Lrs", "Rrs"]
+        default:
+            return (1...max(channelCount, 1)).map { "\($0)" }
+        }
+    }
+
     private func startMeteringTimer() {
-        meteringTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
+        meteringTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
             updateMetering()
         }
     }
@@ -1788,20 +1896,67 @@ struct ConfigurationView: View {
     }
 
     private func updateMetering() {
-        if let metering = client.getMetering() {
+        guard !meteringRequestInFlight else {
+            inputPeaks = decayedPeaks(inputPeaks)
+            outputPeaks = decayedPeaks(outputPeaks)
+            return
+        }
+
+        meteringRequestInFlight = true
+        DispatchQueue.global(qos: .userInteractive).async {
+            let metering = AudioEngineClient().getMetering()
+
+            DispatchQueue.main.async {
+                meteringRequestInFlight = false
+                applyMetering(metering)
+            }
+        }
+    }
+
+    private func applyMetering(_ metering: AudioEngineClient.MeteringData?) {
+        if let metering = metering {
             // Input peaks from pre-processing monitor
-            if let input = metering.input, !input.channelPeaks.isEmpty {
-                inputPeaks = input.channelPeaks
+            if let input = metering.input {
+                if !input.channelPeaks.isEmpty {
+                    inputPeaks = sanitizedPeaks(input.channelPeaks)
+                } else {
+                    inputPeaks = sanitizedPeaks(Array(repeating: input.peak, count: max(inputPeaks.count, 1)))
+                }
+            } else {
+                inputPeaks = decayedPeaks(inputPeaks)
             }
 
             // Output peaks from post-processing monitor
             if let output = metering.output {
                 if !output.channelPeaks.isEmpty {
-                    outputPeaks = output.channelPeaks
+                    outputPeaks = sanitizedPeaks(output.channelPeaks)
+                } else {
+                    outputPeaks = sanitizedPeaks(Array(repeating: output.peak, count: max(outputPeaks.count, 1)))
                 }
                 momentaryLufs = output.momentary
                 shortTermLufs = output.shortTerm
+            } else {
+                outputPeaks = decayedPeaks(outputPeaks)
             }
+        } else {
+            inputPeaks = decayedPeaks(inputPeaks)
+            outputPeaks = decayedPeaks(outputPeaks)
+        }
+    }
+
+    private func sanitizedPeaks(_ peaks: [Double]) -> [Double] {
+        peaks.map { peak in
+            guard peak.isFinite, peak > 0 else {
+                return 0.0
+            }
+            return min(peak, 1.0)
+        }
+    }
+
+    private func decayedPeaks(_ peaks: [Double]) -> [Double] {
+        peaks.map { peak in
+            let next = peak * 0.85
+            return next < 0.00001 ? 0.0 : next
         }
     }
 
@@ -1814,8 +1969,21 @@ struct ConfigurationView: View {
     }
 
     private func loadDevices() {
-        devices = client.listDevices()
+        guard !loadingDevices else { return }
+        loadingDevices = true
 
+        DispatchQueue.global(qos: .utility).async {
+            let loadedDevices = AudioEngineClient().listDevices()
+
+            DispatchQueue.main.async {
+                loadingDevices = false
+                devices = loadedDevices
+                applyLoadedDevices()
+            }
+        }
+    }
+
+    private func applyLoadedDevices() {
         // Filter out virtual devices for output selection
         let physicalDevices = devices.filter { !isVirtualDevice($0.name) }
 
@@ -1847,9 +2015,6 @@ struct ConfigurationView: View {
             }
             sourceDetectionStatus[source] = isDetected
         }
-
-        // Also check using Core Audio API for more thorough detection
-        detectAudioDevicesViaCoreAudio()
 
         // Update available sources list
         availableSources = AudioSource.allCases.filter { source in
@@ -1950,10 +2115,9 @@ struct ConfigurationView: View {
             return
         }
 
-        // Send empty plugin chain — daemon auto-injects loudness monitors
-        // hal_input/hal_output are NOT needed: decoder thread reads from HAL shared memory,
-        // cpal handles output directly.
-        let plugins: [[String: Any]] = []
+        // Preserve the user's processing chain while changing driver output channels.
+        // The daemon auto-injects the input/output loudness monitors.
+        let plugins = client.getPlugins() ?? []
 
         let command: [String: Any] = [
             "command": "load_plugins",
@@ -1985,59 +2149,7 @@ struct ConfigurationView: View {
             do {
                 let data = try Data(contentsOf: url)
                 let json = try JSONSerialization.jsonObject(with: data)
-
-                var plugins: [[String: Any]]
-
-                // Try parsing as simple array first (legacy format)
-                if let simplePlugins = json as? [[String: Any]] {
-                    plugins = simplePlugins
-                }
-                // Try parsing as complex format with channels (genelec.json format)
-                else if let configDict = json as? [String: Any],
-                        let channels = configDict["channels"] as? [String: Any] {
-                    // Extract plugins from all channels and flatten
-                    var allPlugins: [[String: Any]] = []
-
-                    // Sort channel names for consistent ordering (L before R)
-                    let sortedChannelNames = channels.keys.sorted()
-
-                    for channelName in sortedChannelNames {
-                        if let channelData = channels[channelName] as? [String: Any],
-                           let channelPlugins = channelData["plugins"] as? [[String: Any]] {
-                            // Add channel info to each plugin for context
-                            for var plugin in channelPlugins {
-                                plugin["_channel"] = channelName
-                                allPlugins.append(plugin)
-                            }
-                        }
-                    }
-
-                    if allPlugins.isEmpty {
-                        errorMessage = "No plugins found in channels configuration"
-                        showingError = true
-                        return
-                    }
-
-                    plugins = allPlugins
-
-                    // Log what we found
-                    if let version = configDict["version"] as? String {
-                        print("Loading config version: \(version)")
-                    }
-                    print("Found \(channels.count) channel(s) with \(plugins.count) total plugins")
-                }
-                else {
-                    errorMessage = "Invalid configuration format: expected array of plugins or object with 'channels'"
-                    showingError = true
-                    return
-                }
-
-                // Strip obsolete hal_input/hal_output and loudness_monitor from loaded config
-                // The daemon auto-injects loudness monitors and handles HAL I/O directly
-                let userPlugins = plugins.filter { plugin in
-                    let pt = plugin["plugin_type"] as? String ?? ""
-                    return pt != "hal_input" && pt != "hal_output" && pt != "loudness_monitor"
-                }
+                let userPlugins = try normalizedPluginConfigs(from: json)
 
                 // Send plugins to daemon (daemon auto-injects metering)
                 let command: [String: Any] = [
@@ -2049,7 +2161,7 @@ struct ConfigurationView: View {
                 let response = client.sendCommand(command)
                 if let resp = response, resp.success {
                     print("✅ Plugin configuration loaded from: \(url.path)")
-                    print("   User plugins: \(userPlugins.count) (stripped obsolete hal_input/hal_output)")
+                    print("   User plugins: \(userPlugins.count)")
                 } else {
                     errorMessage = response?.error ?? "Failed to apply plugin configuration"
                     showingError = true
@@ -2064,14 +2176,17 @@ struct ConfigurationView: View {
     private func savePluginConfig() {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
-        panel.nameFieldStringValue = "autoeq_plugins.json"
+        panel.nameFieldStringValue = "sotf_systemwide_plugins.json"
         panel.message = "Save plugin configuration"
 
         if panel.runModal() == .OK, let url = panel.url {
             // Query daemon for the current active plugin list
             if let currentPlugins = client.getPlugins() {
                 do {
-                    let data = try JSONSerialization.data(withJSONObject: currentPlugins, options: .prettyPrinted)
+                    let data = try JSONSerialization.data(
+                        withJSONObject: appGpuiPreset(from: currentPlugins),
+                        options: .prettyPrinted
+                    )
                     try data.write(to: url)
                     print("✅ Plugin configuration saved to: \(url.path)")
                 } catch {
@@ -2083,6 +2198,154 @@ struct ConfigurationView: View {
                 showingError = true
             }
         }
+    }
+
+    private func normalizedPluginConfigs(from json: Any) throws -> [[String: Any]] {
+        if let simplePlugins = json as? [[String: Any]] {
+            return simplePlugins.compactMap(normalizedPluginConfigEntry)
+        }
+
+        guard let configDict = json as? [String: Any] else {
+            throw pluginConfigError("Invalid configuration format: expected an array or object")
+        }
+
+        if let plugins = configDict["plugins"] as? [[String: Any]] {
+            return plugins.compactMap(normalizedPluginConfigEntry)
+        }
+
+        var allPlugins: [[String: Any]] = []
+        if let globalPlugins = configDict["global_plugins"] as? [[String: Any]] {
+            allPlugins.append(contentsOf: globalPlugins)
+        }
+
+        if let channels = configDict["channels"] as? [String: Any] {
+            for channelName in channels.keys.sorted() {
+                if let channelData = channels[channelName] as? [String: Any],
+                   let channelPlugins = channelData["plugins"] as? [[String: Any]] {
+                    allPlugins.append(contentsOf: channelPlugins)
+                }
+            }
+            print("Found \(channels.count) channel(s) with \(allPlugins.count) total plugin entries")
+        }
+
+        if allPlugins.isEmpty {
+            throw pluginConfigError("No plugins found in configuration")
+        }
+
+        return allPlugins.compactMap(normalizedPluginConfigEntry)
+    }
+
+    private func normalizedPluginConfigEntry(_ entry: [String: Any]) -> [String: Any]? {
+        if let type = (entry["plugin_type"] as? String) ?? (entry["type"] as? String) {
+            if isSystemPluginType(type) {
+                return nil
+            }
+            return [
+                "plugin_type": type,
+                "parameters": entry["parameters"] as? [String: Any] ?? [:],
+            ]
+        }
+
+        guard let settings = entry["settings"] else {
+            return nil
+        }
+
+        let enabled = entry["enabled"] as? Bool ?? true
+        let permanent = entry["permanent"] as? Bool ?? false
+        return pluginConfigFromAppGpuiSettings(settings, enabled: enabled, permanent: permanent)
+    }
+
+    private func pluginConfigFromAppGpuiSettings(_ settings: Any, enabled: Bool, permanent: Bool) -> [String: Any]? {
+        guard enabled, !permanent else {
+            return nil
+        }
+
+        let variant: String
+        let parameters: [String: Any]
+
+        if let variantName = settings as? String {
+            variant = variantName
+            parameters = [:]
+        } else if let settingsDict = settings as? [String: Any],
+                  let first = settingsDict.first {
+            variant = first.key
+            parameters = first.value as? [String: Any] ?? [:]
+        } else {
+            return nil
+        }
+
+        guard let type = appGpuiSettingsVariantToEngineType[variant],
+              !isSystemPluginType(type) else {
+            return nil
+        }
+
+        return [
+            "plugin_type": type,
+            "parameters": parameters,
+        ]
+    }
+
+    private func appGpuiPreset(from plugins: [[String: Any]]) -> [String: Any] {
+        let available = client.getAvailablePlugins() ?? []
+        let defaultsByType = Dictionary(uniqueKeysWithValues: available.map { ($0.type_, $0.defaultParameters) })
+
+        let records = plugins.enumerated().compactMap { index, plugin in
+            appGpuiPluginRecord(from: plugin, id: index, defaultsByType: defaultsByType)
+        }
+
+        return [
+            "version": 2,
+            "plugins": records,
+        ]
+    }
+
+    private func appGpuiPluginRecord(
+        from plugin: [String: Any],
+        id: Int,
+        defaultsByType: [String: [String: Any]]
+    ) -> [String: Any]? {
+        guard let type = plugin["plugin_type"] as? String,
+              !isSystemPluginType(type),
+              let variant = engineTypeToAppGpuiSettingsVariant[type] else {
+            return nil
+        }
+
+        var parameters = defaultsByType[type] ?? [:]
+        if let currentParameters = plugin["parameters"] as? [String: Any] {
+            for (key, value) in currentParameters {
+                parameters[key] = value
+            }
+        }
+
+        var record: [String: Any] = [
+            "id": id,
+            "enabled": true,
+            "settings": [variant: parameters],
+            "permanent": false,
+            "plugin_type": type,
+            "parameters": parameters,
+        ]
+
+        if let name = plugin["name"] as? String, !name.isEmpty {
+            record["name"] = name
+        }
+
+        return record
+    }
+
+    private func isSystemPluginType(_ type: String) -> Bool {
+        return type == "hal_input"
+            || type == "hal_output"
+            || type == "loudness_monitor"
+            || type == "spectrum_analyzer"
+    }
+
+    private func pluginConfigError(_ message: String) -> NSError {
+        NSError(
+            domain: "SotFSystemwidePluginConfig",
+            code: 1,
+            userInfo: [NSLocalizedDescriptionKey: message]
+        )
     }
 
     // MARK: - Encryption Methods
@@ -2112,13 +2375,19 @@ struct ConfigurationView: View {
     }
 
     private func refreshEncryptionStatus() {
-        if let status = client.getEncryptionStatus() {
-            encryptionEnabled = status.enabled
-            encryptionFingerprint = status.fingerprint
-            encryptionError = nil
-        } else {
-            // Daemon might not be running
-            encryptionFingerprint = ""
+        DispatchQueue.global(qos: .utility).async {
+            let status = AudioEngineClient().getEncryptionStatus()
+
+            DispatchQueue.main.async {
+                if let status = status {
+                    encryptionEnabled = status.enabled
+                    encryptionFingerprint = status.fingerprint
+                    encryptionError = nil
+                } else {
+                    // Daemon might not be running
+                    encryptionFingerprint = ""
+                }
+            }
         }
     }
 
@@ -2127,17 +2396,23 @@ struct ConfigurationView: View {
     private func refreshHalConfig() {
         halConfigError = nil
 
-        if let config = client.getHalConfig() {
-            halConfig = config
-            // Update UI to match actual values
-            if config.actualSampleRate != 0 {
-                selectedSampleRate = config.actualSampleRate
+        DispatchQueue.global(qos: .utility).async {
+            let config = AudioEngineClient().getHalConfig()
+
+            DispatchQueue.main.async {
+                if let config = config {
+                    halConfig = config
+                    // Update UI to match actual values
+                    if config.actualSampleRate != 0 {
+                        selectedSampleRate = config.actualSampleRate
+                    }
+                    if config.actualBufferFrames != 0 {
+                        selectedBufferFrames = config.actualBufferFrames
+                    }
+                } else {
+                    halConfigError = "Failed to get HAL config (daemon may not be running)"
+                }
             }
-            if config.actualBufferFrames != 0 {
-                selectedBufferFrames = config.actualBufferFrames
-            }
-        } else {
-            halConfigError = "Failed to get HAL config (daemon may not be running)"
         }
     }
 
@@ -2217,13 +2492,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             body: "Audio engine control ready"
         )
 
-        print("AutoEQ menu bar app started")
+        print("SotF Systemwide menu bar app started")
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         statusBarController?.stopMonitoring()
         statusBarController?.stopDaemon()
-        print("AutoEQ menu bar app terminated")
+        print("SotF Systemwide menu bar app terminated")
     }
 }
 

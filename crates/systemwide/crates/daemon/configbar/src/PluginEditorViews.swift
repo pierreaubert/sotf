@@ -6,22 +6,23 @@ import SwiftUI
 struct PluginEditorView: View {
     let pluginType: String
     let parameters: [String: Any]
+    let descriptors: [PluginParameterDescriptor]
     let onUpdate: ([String: Any]) -> Void
 
     var body: some View {
-        switch pluginType {
-        case "gain":
-            GainEditor(parameters: parameters, onUpdate: onUpdate)
-        case "eq":
-            EQEditor(parameters: parameters, onUpdate: onUpdate)
-        case "compressor":
-            CompressorEditor(parameters: parameters, onUpdate: onUpdate)
-        case "limiter":
-            LimiterEditor(parameters: parameters, onUpdate: onUpdate)
-        case "gate":
-            GateEditor(parameters: parameters, onUpdate: onUpdate)
-        default:
-            GenericPluginEditor(pluginType: pluginType, parameters: parameters, onUpdate: onUpdate)
+        if !descriptors.isEmpty && pluginType != "eq" {
+            DescriptorPluginEditor(
+                parameters: parameters,
+                descriptors: descriptors,
+                onUpdate: onUpdate
+            )
+        } else {
+            switch pluginType {
+            case "eq":
+                EQEditor(parameters: parameters, onUpdate: onUpdate)
+            default:
+                GenericPluginEditor(pluginType: pluginType, parameters: parameters, onUpdate: onUpdate)
+            }
         }
     }
 }
@@ -327,6 +328,222 @@ struct GateEditor: View {
                 .frame(width: 80, alignment: .trailing)
                 .monospacedDigit()
         }
+    }
+}
+
+// MARK: - Descriptor-Driven Plugin Editor
+
+struct DescriptorPluginEditor: View {
+    let parameters: [String: Any]
+    let descriptors: [PluginParameterDescriptor]
+    let onUpdate: ([String: Any]) -> Void
+
+    @State private var draftParameters: [String: Any] = [:]
+
+    private var descriptorGroups: [(String, [PluginParameterDescriptor])] {
+        var groups: [(String, [PluginParameterDescriptor])] = []
+        for descriptor in descriptors {
+            let groupName = descriptor.group.isEmpty ? "General" : descriptor.group
+            if let lastIndex = groups.indices.last, groups[lastIndex].0 == groupName {
+                groups[lastIndex].1.append(descriptor)
+            } else {
+                groups.append((groupName, [descriptor]))
+            }
+        }
+        return groups
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(descriptorGroups, id: \.0) { group in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(group.0.uppercased())
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.secondary)
+
+                    ForEach(group.1) { descriptor in
+                        descriptorRow(descriptor)
+                    }
+                }
+            }
+        }
+        .onAppear {
+            draftParameters = parameters
+        }
+    }
+
+    @ViewBuilder
+    private func descriptorRow(_ descriptor: PluginParameterDescriptor) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 8) {
+                Text(descriptor.name)
+                    .frame(width: 150, alignment: .trailing)
+                    .font(.caption)
+
+                switch descriptor.type {
+                case "bool":
+                    Toggle("", isOn: boolBinding(for: descriptor))
+                        .labelsHidden()
+
+                case "choice":
+                    Picker("", selection: choiceIndexBinding(for: descriptor)) {
+                        ForEach(Array((descriptor.choices ?? []).enumerated()), id: \.offset) { index, label in
+                            Text(label).tag(index)
+                        }
+                    }
+                    .frame(width: 180)
+
+                case "int":
+                    Stepper(
+                        value: intBinding(for: descriptor),
+                        in: Int(descriptor.min ?? 0)...Int(descriptor.max ?? 100),
+                        step: max(Int(descriptor.step ?? 1), 1)
+                    ) {
+                        Text("\(intValue(for: descriptor))\(descriptor.unit.isEmpty ? "" : " \(descriptor.unit)")")
+                            .frame(width: 90, alignment: .leading)
+                            .monospacedDigit()
+                    }
+
+                case "file_path":
+                    TextField("", text: stringBinding(for: descriptor))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(minWidth: 220)
+
+                default:
+                    Slider(
+                        value: doubleBinding(for: descriptor),
+                        in: (descriptor.min ?? -100.0)...(descriptor.max ?? 100.0),
+                        step: max(descriptor.step ?? 0.1, 0.0001)
+                    )
+                    Text("\(doubleValue(for: descriptor), specifier: "%.2f")\(descriptor.unit.isEmpty ? "" : " \(descriptor.unit)")")
+                        .frame(width: 100, alignment: .trailing)
+                        .monospacedDigit()
+                }
+            }
+
+            if !descriptor.doc.isEmpty {
+                Text(descriptor.doc)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .padding(.leading, 158)
+            }
+        }
+    }
+
+    private func updateValue(_ value: Any, for descriptor: PluginParameterDescriptor) {
+        draftParameters[descriptor.key] = value
+        onUpdate(draftParameters)
+    }
+
+    private func doubleBinding(for descriptor: PluginParameterDescriptor) -> Binding<Double> {
+        Binding(
+            get: { doubleValue(for: descriptor) },
+            set: { updateValue($0, for: descriptor) }
+        )
+    }
+
+    private func intBinding(for descriptor: PluginParameterDescriptor) -> Binding<Int> {
+        Binding(
+            get: { intValue(for: descriptor) },
+            set: { updateValue($0, for: descriptor) }
+        )
+    }
+
+    private func boolBinding(for descriptor: PluginParameterDescriptor) -> Binding<Bool> {
+        Binding(
+            get: { boolValue(for: descriptor) },
+            set: { updateValue($0, for: descriptor) }
+        )
+    }
+
+    private func stringBinding(for descriptor: PluginParameterDescriptor) -> Binding<String> {
+        Binding(
+            get: { stringValue(for: descriptor) },
+            set: { updateValue($0, for: descriptor) }
+        )
+    }
+
+    private func choiceIndexBinding(for descriptor: PluginParameterDescriptor) -> Binding<Int> {
+        Binding(
+            get: { choiceIndex(for: descriptor) },
+            set: { index in
+                let choices = descriptor.choices ?? []
+                if let current = draftParameters[descriptor.key] as? String,
+                   choices.contains(current),
+                   let selected = choices[safe: index] {
+                    updateValue(selected, for: descriptor)
+                } else {
+                    updateValue(index, for: descriptor)
+                }
+            }
+        )
+    }
+
+    private func doubleValue(for descriptor: PluginParameterDescriptor) -> Double {
+        numberValue(draftParameters[descriptor.key]) ?? descriptor.defaultDouble ?? descriptor.min ?? 0.0
+    }
+
+    private func intValue(for descriptor: PluginParameterDescriptor) -> Int {
+        Int((numberValue(draftParameters[descriptor.key]) ?? descriptor.defaultDouble ?? descriptor.min ?? 0.0).rounded())
+    }
+
+    private func boolValue(for descriptor: PluginParameterDescriptor) -> Bool {
+        if let bool = draftParameters[descriptor.key] as? Bool {
+            return bool
+        }
+        if let number = numberValue(draftParameters[descriptor.key]) {
+            return number > 0.5
+        }
+        if let string = draftParameters[descriptor.key] as? String {
+            let trueWords = ["true", "on", "yes", "1", descriptor.trueLabel?.lowercased() ?? ""]
+            return trueWords.contains(string.lowercased())
+        }
+        return descriptor.defaultBool ?? false
+    }
+
+    private func stringValue(for descriptor: PluginParameterDescriptor) -> String {
+        if let string = draftParameters[descriptor.key] as? String {
+            return string
+        }
+        return ""
+    }
+
+    private func choiceIndex(for descriptor: PluginParameterDescriptor) -> Int {
+        let choices = descriptor.choices ?? []
+        if let string = draftParameters[descriptor.key] as? String,
+           let index = choices.firstIndex(of: string) {
+            return index
+        }
+        return Int((numberValue(draftParameters[descriptor.key]) ?? descriptor.defaultDouble ?? 0.0).rounded())
+            .clamped(to: 0...max(choices.count - 1, 0))
+    }
+
+    private func numberValue(_ raw: Any?) -> Double? {
+        if let double = raw as? Double {
+            return double
+        }
+        if let int = raw as? Int {
+            return Double(int)
+        }
+        if let number = raw as? NSNumber {
+            return number.doubleValue
+        }
+        if let string = raw as? String {
+            return Double(string)
+        }
+        return nil
+    }
+}
+
+private extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
+    }
+}
+
+private extension Comparable {
+    func clamped(to range: ClosedRange<Self>) -> Self {
+        Swift.min(Swift.max(self, range.lowerBound), range.upperBound)
     }
 }
 
