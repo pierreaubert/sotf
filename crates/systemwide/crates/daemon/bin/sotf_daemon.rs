@@ -723,10 +723,11 @@ impl AudioDaemon {
         #[cfg(all(target_os = "macos", feature = "hal"))]
         {
             if let Ok(mut buffer) = driver_hal::SharedAudioBuffer::open_default() {
-                buffer.set_encrypted(enabled);
+                buffer.flush_audio();
                 if enabled {
                     buffer.set_key_fingerprint(*key_manager.fingerprint());
                 }
+                buffer.set_encrypted(enabled);
                 buffer.set_config_changed();
             }
         }
@@ -759,6 +760,7 @@ impl AudioDaemon {
                     if key_manager.is_enabled()
                         && let Ok(mut buffer) = driver_hal::SharedAudioBuffer::open_default()
                     {
+                        buffer.flush_audio();
                         buffer.set_key_fingerprint(*key_manager.fingerprint());
                         buffer.set_config_changed();
                     }

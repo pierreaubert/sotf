@@ -14,9 +14,22 @@
 import Foundation
 import CryptoKit
 import CommonCrypto
+import SystemConfiguration
 
 /// Size of the authentication tag (16 bytes for Poly1305)
 let kAuthTagSize = 16
+
+private func getSessionKeyPath() -> String {
+    var uid: uid_t = 0
+    var gid: gid_t = 0
+
+    if SCDynamicStoreCopyConsoleUser(nil, &uid, &gid) != nil,
+       uid != 0 {
+        return "/tmp/sotf-\(uid)/session.key"
+    }
+
+    return "\(NSHomeDirectory())/.config/sotf/session.key"
+}
 
 /// Audio encryption cipher using ChaCha20-Poly1305 (via CryptoKit)
 final class AudioCipher {
@@ -235,8 +248,7 @@ final class EncryptionKeyManager {
     static let shared = EncryptionKeyManager()
 
     private init() {
-        let home = NSHomeDirectory()
-        keyPath = "\(home)/.config/sotf/session.key"
+        keyPath = getSessionKeyPath()
         loadKey()
     }
 

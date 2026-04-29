@@ -6,7 +6,7 @@
 //! # Security Model
 //!
 //! - Each session generates a new 256-bit encryption key
-//! - Key is stored in `~/.config/sotf/session.key` with mode 0640
+//! - Key is stored in `~/.config/sotf/session.key` and mirrored for the HAL process
 //! - Key fingerprint (first 8 bytes of SHA256) is stored in shared memory header
 //! - Frame counter provides unique nonces (never reused)
 //! - Poly1305 authentication tag detects tampering
@@ -369,8 +369,17 @@ pub fn samples_to_encrypted_into(samples: &[f32], output: &mut [u8]) -> usize {
     byte_count
 }
 
-/// Get the path to the session encryption key (~/.config/sotf/session.key)
+/// Get the path to the session encryption key.
 pub fn get_session_key_path() -> std::path::PathBuf {
+    #[cfg(unix)]
+    {
+        let uid = unsafe { libc::getuid() };
+        let hal_key_path = std::path::PathBuf::from(format!("/tmp/sotf-{}/session.key", uid));
+        if hal_key_path.exists() {
+            return hal_key_path;
+        }
+    }
+
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     std::path::PathBuf::from(home).join(".config/sotf/session.key")
 }

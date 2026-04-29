@@ -183,6 +183,11 @@ fn get_key_path() -> PathBuf {
     PathBuf::from(home).join(".config/sotf/session.key")
 }
 
+/// HAL-readable copy of the session key.
+fn get_hal_key_path() -> PathBuf {
+    PathBuf::from(format!("/tmp/sotf-{}/session.key", get_current_uid()))
+}
+
 // =============================================================================
 // Full encryption support (macOS with HAL feature)
 // =============================================================================
@@ -194,7 +199,52 @@ mod encryption_impl {
     use std::fs::{self, File, OpenOptions};
     use std::io::{self, Read, Write};
     use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
     use std::time::{Instant, SystemTime};
+
+    #[cfg(target_os = "macos")]
+    pub(super) fn coreaudiod_acl_targets(key_path: &Path) -> Vec<(PathBuf, &'static str)> {
+        let mut targets = Vec::new();
+        if let Some(parent) = key_path.parent() {
+            targets.push((parent.to_path_buf(), "_coreaudiod allow search,readattr"));
+        }
+        targets.push((key_path.to_path_buf(), "_coreaudiod allow read,readattr"));
+        targets
+    }
+
+    #[cfg(target_os = "macos")]
+    fn grant_coreaudiod_key_access(key_path: &Path) {
+        for (path, acl) in coreaudiod_acl_targets(key_path) {
+            match Command::new("/bin/chmod")
+                .arg("+a")
+                .arg(acl)
+                .arg(&path)
+                .status()
+            {
+                Ok(status) if status.success() => {
+                    log::debug!("Granted _coreaudiod key access on {}", path.display());
+                }
+                Ok(status) => {
+                    log::warn!(
+                        "Failed to grant _coreaudiod key access on {}: chmod exited with {}",
+                        path.display(),
+                        status
+                    );
+                }
+                Err(e) => {
+                    log::warn!(
+                        "Failed to grant _coreaudiod key access on {}: {}",
+                        path.display(),
+                        e
+                    );
+                }
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn grant_coreaudiod_key_access(_key_path: &Path) {}
 
     /// Encryption key manager for shared memory audio encryption
     #[allow(dead_code)]
@@ -219,6 +269,8 @@ mod encryption_impl {
                 let key = Self::create_new_key(&key_path)?;
                 (key, Self::get_mtime(&key_path))
             };
+            grant_coreaudiod_key_access(&key_path);
+            Self::publish_hal_key_copy(&key)?;
 
             let fingerprint = compute_fingerprint(&key);
             let cipher = Some(AudioCipher::new(&key));
@@ -253,13 +305,39 @@ mod encryption_impl {
                 .create(true)
                 .write(true)
                 .truncate(true)
-                .mode(0o640)
+                .mode(0o600)
                 .open(path)?;
             file.write_all(&key)?;
             file.sync_all()?;
 
             log::info!("Created new encryption key at {}", path.display());
             Ok(key)
+        }
+
+        fn publish_hal_key_copy(key: &[u8; 32]) -> io::Result<()> {
+            let path = get_hal_key_path();
+            if let Some(parent) = path.parent() {
+                if !parent.exists() {
+                    fs::create_dir_all(parent)?;
+                    fs::set_permissions(parent, fs::Permissions::from_mode(0o755))?;
+                }
+            }
+
+            let mut file = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .mode(0o644)
+                .open(&path)?;
+            file.write_all(key)?;
+            file.sync_all()?;
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o644))?;
+
+            log::info!(
+                "Published HAL-readable encryption key at {}",
+                path.display()
+            );
+            Ok(())
         }
 
         fn get_mtime(path: &std::path::Path) -> Option<SystemTime> {
@@ -279,6 +357,8 @@ mod encryption_impl {
             if !key_path.exists() {
                 log::warn!("Key file deleted, regenerating...");
                 let key = Self::create_new_key(&key_path)?;
+                grant_coreaudiod_key_access(&key_path);
+                Self::publish_hal_key_copy(&key)?;
                 self.key = key;
                 self.fingerprint = compute_fingerprint(&key);
                 self.cipher = Some(AudioCipher::new(&key));
@@ -290,6 +370,8 @@ mod encryption_impl {
             if current_mtime != self.last_mtime {
                 log::info!("Key file modified, reloading...");
                 let key = Self::load_key_from_file(&key_path)?;
+                grant_coreaudiod_key_access(&key_path);
+                Self::publish_hal_key_copy(&key)?;
                 self.key = key;
                 self.fingerprint = compute_fingerprint(&key);
                 self.cipher = Some(AudioCipher::new(&key));
@@ -305,6 +387,8 @@ mod encryption_impl {
             log::info!("Force rotating encryption key...");
 
             let key = Self::create_new_key(&key_path)?;
+            grant_coreaudiod_key_access(&key_path);
+            Self::publish_hal_key_copy(&key)?;
 
             let fingerprint = compute_fingerprint(&key);
             let cipher = AudioCipher::new(&key);
@@ -352,7 +436,7 @@ mod encryption_impl {
             EncryptionStatus {
                 enabled: self.enabled,
                 fingerprint: self.fingerprint_hex(),
-                key_path: get_key_path().to_string_lossy().to_string(),
+                key_path: get_hal_key_path().to_string_lossy().to_string(),
             }
         }
     }
@@ -424,7 +508,7 @@ mod encryption_impl {
             EncryptionStatus {
                 enabled: false,
                 fingerprint: self.fingerprint_hex(),
-                key_path: get_key_path().to_string_lossy().to_string(),
+                key_path: get_hal_key_path().to_string_lossy().to_string(),
             }
         }
     }
@@ -470,6 +554,15 @@ mod tests {
     }
 
     #[test]
+    fn test_hal_key_path_is_under_uid_tmpdir() {
+        let path = get_hal_key_path();
+        let path_str = path.to_string_lossy();
+
+        assert!(path_str.contains(&format!("/tmp/sotf-{}", get_current_uid())));
+        assert!(path_str.ends_with("/session.key"));
+    }
+
+    #[test]
     fn test_key_manager_enable_disable() {
         let mut manager = KeyManager::default();
         assert!(!manager.is_enabled());
@@ -483,6 +576,19 @@ mod tests {
 
         manager.set_enabled(false);
         assert!(!manager.is_enabled());
+    }
+
+    #[cfg(all(target_os = "macos", feature = "hal"))]
+    #[test]
+    fn test_coreaudiod_acl_targets_cover_key_and_parent_dir() {
+        let key_path = PathBuf::from("/Users/test/.config/sotf/session.key");
+        let targets = encryption_impl::coreaudiod_acl_targets(&key_path);
+
+        assert_eq!(targets.len(), 2);
+        assert_eq!(targets[0].0, PathBuf::from("/Users/test/.config/sotf"));
+        assert_eq!(targets[0].1, "_coreaudiod allow search,readattr");
+        assert_eq!(targets[1].0, key_path);
+        assert_eq!(targets[1].1, "_coreaudiod allow read,readattr");
     }
 
     #[test]

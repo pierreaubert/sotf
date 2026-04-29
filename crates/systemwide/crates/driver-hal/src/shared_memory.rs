@@ -18,6 +18,100 @@ const SHARED_MEMORY_MAGIC: u32 = 0x534F5446;
 /// Version 3: Added config negotiation fields for bidirectional HAL-Daemon sync
 const SHARED_MEMORY_VERSION: u32 = 3;
 
+/// Encrypted audio record magic: 'SEA1' (SotF Encrypted Audio v1)
+const ENCRYPTED_RECORD_MAGIC: u32 = 0x5345_4131;
+const ENCRYPTED_RECORD_HEADER_BYTES: usize = 24;
+const ENCRYPTED_RECORD_HEADER_SLOTS: usize = ENCRYPTED_RECORD_HEADER_BYTES / 4;
+
+#[derive(Debug, Clone, Copy)]
+struct EncryptedRecordHeader {
+    sample_count: usize,
+    frame_counter: u64,
+    ciphertext_len: usize,
+    total_bytes: usize,
+    slot_count: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EncryptedRecordRead {
+    Empty,
+    InvalidHeader,
+    OutputTooSmall { sample_count: usize },
+    Corrupt { frame_counter: u64 },
+    Read { sample_count: usize },
+}
+
+fn encrypted_record_total_bytes(sample_count: usize) -> Option<usize> {
+    crate::encryption::encrypted_byte_size(sample_count).checked_add(ENCRYPTED_RECORD_HEADER_BYTES)
+}
+
+fn encrypted_record_slots(sample_count: usize) -> Option<usize> {
+    encrypted_record_total_bytes(sample_count).map(|bytes| bytes.div_ceil(4))
+}
+
+fn write_encrypted_record_header(
+    output: &mut [u8],
+    sample_count: usize,
+    frame_counter: u64,
+    ciphertext_len: usize,
+) -> bool {
+    if output.len() < ENCRYPTED_RECORD_HEADER_BYTES
+        || sample_count > u32::MAX as usize
+        || ciphertext_len > u32::MAX as usize
+    {
+        return false;
+    }
+
+    output[0..4].copy_from_slice(&ENCRYPTED_RECORD_MAGIC.to_be_bytes());
+    output[4..8].copy_from_slice(&(sample_count as u32).to_be_bytes());
+    output[8..16].copy_from_slice(&frame_counter.to_be_bytes());
+    output[16..20].copy_from_slice(&(ciphertext_len as u32).to_be_bytes());
+    output[20..24].copy_from_slice(&0u32.to_be_bytes());
+    true
+}
+
+fn parse_encrypted_record_header(
+    bytes: &[u8],
+    audio_capacity: usize,
+) -> Option<EncryptedRecordHeader> {
+    if bytes.len() < ENCRYPTED_RECORD_HEADER_BYTES {
+        return None;
+    }
+
+    let magic = u32::from_be_bytes(bytes[0..4].try_into().ok()?);
+    if magic != ENCRYPTED_RECORD_MAGIC {
+        return None;
+    }
+
+    let sample_count = u32::from_be_bytes(bytes[4..8].try_into().ok()?) as usize;
+    let frame_counter = u64::from_be_bytes(bytes[8..16].try_into().ok()?);
+    let ciphertext_len = u32::from_be_bytes(bytes[16..20].try_into().ok()?) as usize;
+    let reserved = u32::from_be_bytes(bytes[20..24].try_into().ok()?);
+
+    if sample_count == 0 || reserved != 0 {
+        return None;
+    }
+
+    let expected_ciphertext_len = crate::encryption::encrypted_byte_size(sample_count);
+    if ciphertext_len != expected_ciphertext_len {
+        return None;
+    }
+
+    let total_bytes = ENCRYPTED_RECORD_HEADER_BYTES.checked_add(ciphertext_len)?;
+    let slot_count = total_bytes.div_ceil(4);
+    if slot_count == 0 || slot_count > audio_capacity {
+        return None;
+    }
+
+    Some(EncryptedRecordHeader {
+        sample_count,
+        frame_counter,
+        ciphertext_len,
+        total_bytes,
+        slot_count,
+    })
+}
+
 /// Get the shared memory path for the current user
 ///
 /// Security model: each user has their own shared memory region.
@@ -485,12 +579,22 @@ impl SharedAudioBuffer {
 
     /// Get the key fingerprint
     pub fn key_fingerprint(&self) -> [u8; 8] {
+        fence(Ordering::Acquire);
         self.header().key_fingerprint
     }
 
     /// Set the key fingerprint
     pub fn set_key_fingerprint(&mut self, fingerprint: [u8; 8]) {
         self.header_mut().key_fingerprint = fingerprint;
+        fence(Ordering::Release);
+    }
+
+    /// Drop all queued audio while preserving the current write position.
+    pub fn flush_audio(&self) {
+        let write_pos = self.header().write_position.load(Ordering::Acquire);
+        self.header()
+            .read_position
+            .store(write_pos, Ordering::Release);
     }
 
     /// Get the current frame counter (used as nonce base)
@@ -676,6 +780,57 @@ impl SharedAudioBuffer {
         unsafe { self.mmap.as_mut_ptr().add(self.audio_offset) as *mut f32 }
     }
 
+    fn copy_audio_slots_to(&self, position: u64, slot_count: usize, output: &mut [f32]) {
+        debug_assert!(output.len() >= slot_count);
+        if slot_count == 0 {
+            return;
+        }
+
+        let read_index = (position as usize) % self.audio_capacity;
+        let first_part = slot_count.min(self.audio_capacity - read_index);
+        let second_part = slot_count - first_part;
+
+        unsafe {
+            let audio_data = self.audio_data();
+            std::ptr::copy_nonoverlapping(
+                audio_data.add(read_index),
+                output.as_mut_ptr(),
+                first_part,
+            );
+
+            if second_part > 0 {
+                std::ptr::copy_nonoverlapping(
+                    audio_data,
+                    output.as_mut_ptr().add(first_part),
+                    second_part,
+                );
+            }
+        }
+    }
+
+    fn copy_audio_slots_from(&mut self, position: u64, input: &[f32]) {
+        if input.is_empty() {
+            return;
+        }
+
+        let write_index = (position as usize) % self.audio_capacity;
+        let first_part = input.len().min(self.audio_capacity - write_index);
+        let second_part = input.len() - first_part;
+
+        unsafe {
+            let audio_data = self.audio_data_mut();
+            std::ptr::copy_nonoverlapping(input.as_ptr(), audio_data.add(write_index), first_part);
+
+            if second_part > 0 {
+                std::ptr::copy_nonoverlapping(
+                    input.as_ptr().add(first_part),
+                    audio_data,
+                    second_part,
+                );
+            }
+        }
+    }
+
     /// Read audio from the shared memory ring buffer
     /// Returns the number of frames actually read
     pub fn read_audio(&self, buffer: &mut [f32]) -> usize {
@@ -810,7 +965,47 @@ impl SharedAudioBuffer {
             return 0;
         }
 
+        if self.is_encrypted() {
+            return self.available_encrypted_read_frames(write_pos, read_pos, channel_count);
+        }
+
         ((write_pos - read_pos) as usize) / channel_count
+    }
+
+    fn available_encrypted_read_frames(
+        &self,
+        write_pos: u64,
+        mut read_pos: u64,
+        channel_count: usize,
+    ) -> usize {
+        let mut available_slots = (write_pos - read_pos) as usize;
+        let mut available_frames = 0;
+        let mut header_slots = [0.0f32; ENCRYPTED_RECORD_HEADER_SLOTS];
+        let mut header_bytes = [0u8; ENCRYPTED_RECORD_HEADER_BYTES];
+
+        while available_slots >= ENCRYPTED_RECORD_HEADER_SLOTS {
+            self.copy_audio_slots_to(read_pos, ENCRYPTED_RECORD_HEADER_SLOTS, &mut header_slots);
+            crate::encryption::samples_to_encrypted_into(&header_slots, &mut header_bytes);
+
+            let Some(record) = parse_encrypted_record_header(&header_bytes, self.audio_capacity)
+            else {
+                log::warn!("Invalid encrypted audio record header; flushing encrypted ring");
+                self.header()
+                    .read_position
+                    .store(write_pos, Ordering::Release);
+                return 0;
+            };
+
+            if record.slot_count > available_slots {
+                break;
+            }
+
+            available_frames += record.sample_count / channel_count;
+            read_pos += record.slot_count as u64;
+            available_slots -= record.slot_count;
+        }
+
+        available_frames
     }
 
     /// Get available space to write (in frames)
@@ -831,8 +1026,8 @@ impl SharedAudioBuffer {
     /// Write audio with encryption
     ///
     /// When encryption is enabled, this encrypts the audio data before writing
-    /// to shared memory. The nonce (frame counter) is prepended to the encrypted
-    /// block so the reader can decrypt without external state.
+    /// to shared memory as a framed AEAD record. The record header carries the
+    /// frame counter so the reader can decrypt without external state.
     ///
     /// # Arguments
     /// * `buffer` - Audio samples to write
@@ -845,75 +1040,9 @@ impl SharedAudioBuffer {
         buffer: &[f32],
         cipher: &crate::encryption::AudioCipher,
     ) -> usize {
-        if !self.is_encrypted() {
-            // Fall back to unencrypted write
-            return self.write_audio(buffer);
-        }
-
-        let header = self.header();
-        let channel_count = header.channel_count as usize;
-        let sample_count = buffer.len();
-
-        // Encrypt the samples
-        let frame_counter = self.increment_frame_counter();
-        let ciphertext = cipher.encrypt(buffer, frame_counter);
-
-        // Prepend nonce (8 bytes big-endian) to ciphertext
-        let mut payload = Vec::with_capacity(8 + ciphertext.len());
-        payload.extend_from_slice(&frame_counter.to_be_bytes());
-        payload.extend_from_slice(&ciphertext);
-
-        // Store as f32 slots in the ring buffer
-        let encrypted_samples = crate::encryption::encrypted_to_samples(&payload);
-
-        let write_pos = header.write_position.load(Ordering::Acquire);
-        let read_pos = header.read_position.load(Ordering::Acquire);
-
-        let used = (write_pos - read_pos) as usize;
-        let available = self.audio_capacity - used;
-        let to_write = encrypted_samples.len();
-
-        if to_write > available {
-            // Not enough space for the full encrypted block - count and warn
-            header
-                .encryption_overflow_count
-                .fetch_add(1, Ordering::AcqRel);
-            log::warn!(
-                "Encrypted audio overflow: {} bytes needed, {} available, frame_counter={}",
-                to_write,
-                available,
-                frame_counter
-            );
-            return 0;
-        }
-
-        let write_index = (write_pos as usize) % self.audio_capacity;
-        let first_part = to_write.min(self.audio_capacity - write_index);
-        let second_part = to_write - first_part;
-
-        unsafe {
-            let audio_data = self.audio_data_mut();
-
-            std::ptr::copy_nonoverlapping(
-                encrypted_samples.as_ptr(),
-                audio_data.add(write_index),
-                first_part,
-            );
-
-            if second_part > 0 {
-                std::ptr::copy_nonoverlapping(
-                    encrypted_samples.as_ptr().add(first_part),
-                    audio_data,
-                    second_part,
-                );
-            }
-        }
-
-        self.header()
-            .write_position
-            .store(write_pos + to_write as u64, Ordering::Release);
-
-        sample_count / channel_count
+        let mut ciphertext_buf = Vec::new();
+        let mut encrypted_buf = Vec::new();
+        self.write_audio_encrypted_into(buffer, cipher, &mut ciphertext_buf, &mut encrypted_buf)
     }
 
     /// Read audio with decryption
@@ -921,7 +1050,7 @@ impl SharedAudioBuffer {
     /// When encryption is enabled, this reads encrypted data from shared memory
     /// and decrypts it. Returns silence if decryption fails (tampered data).
     ///
-    /// The nonce (frame counter) is stored at the start of each encrypted block,
+    /// The frame counter is stored in each encrypted record header,
     /// so no external tracking is needed.
     ///
     /// # Arguments
@@ -935,92 +1064,129 @@ impl SharedAudioBuffer {
         buffer: &mut [f32],
         cipher: &crate::encryption::AudioCipher,
     ) -> usize {
-        if !self.is_encrypted() {
-            // Fall back to unencrypted read
-            return self.read_audio(buffer);
+        let mut encrypted_buf = Vec::new();
+        let mut ciphertext_buf = Vec::new();
+        self.read_audio_encrypted_into(buffer, cipher, &mut encrypted_buf, &mut ciphertext_buf)
+    }
+
+    fn peek_encrypted_record_header(
+        &self,
+        read_pos: u64,
+        available_slots: usize,
+        encrypted_buf: &mut Vec<f32>,
+        ciphertext_buf: &mut Vec<u8>,
+    ) -> Option<Option<EncryptedRecordHeader>> {
+        if available_slots < ENCRYPTED_RECORD_HEADER_SLOTS {
+            return Some(None);
         }
 
+        if encrypted_buf.len() < ENCRYPTED_RECORD_HEADER_SLOTS {
+            encrypted_buf.resize(ENCRYPTED_RECORD_HEADER_SLOTS, 0.0);
+        }
+        if ciphertext_buf.len() < ENCRYPTED_RECORD_HEADER_BYTES {
+            ciphertext_buf.resize(ENCRYPTED_RECORD_HEADER_BYTES, 0);
+        }
+
+        self.copy_audio_slots_to(
+            read_pos,
+            ENCRYPTED_RECORD_HEADER_SLOTS,
+            &mut encrypted_buf[..ENCRYPTED_RECORD_HEADER_SLOTS],
+        );
+        crate::encryption::samples_to_encrypted_into(
+            &encrypted_buf[..ENCRYPTED_RECORD_HEADER_SLOTS],
+            &mut ciphertext_buf[..ENCRYPTED_RECORD_HEADER_BYTES],
+        );
+
+        parse_encrypted_record_header(
+            &ciphertext_buf[..ENCRYPTED_RECORD_HEADER_BYTES],
+            self.audio_capacity,
+        )
+        .map(Some)
+    }
+
+    fn read_next_encrypted_record_into(
+        &self,
+        output: &mut [f32],
+        cipher: &crate::encryption::AudioCipher,
+        encrypted_buf: &mut Vec<f32>,
+        ciphertext_buf: &mut Vec<u8>,
+    ) -> EncryptedRecordRead {
         let header = self.header();
-        let channel_count = header.channel_count as usize;
-        let sample_count = buffer.len();
-
-        // Calculate expected encrypted size in f32 "slots"
-        // Format: [8-byte nonce] [ciphertext + 16-byte tag]
-        // ciphertext_size returns bytes for samples + tag, add 8 for nonce
-        let ciphertext_bytes = crate::encryption::AudioCipher::ciphertext_size(sample_count);
-        let total_bytes = 8 + ciphertext_bytes; // 8 bytes for nonce prefix
-        let encrypted_size = total_bytes.div_ceil(std::mem::size_of::<f32>());
-
         let write_pos = header.write_position.load(Ordering::Acquire);
         let read_pos = header.read_position.load(Ordering::Acquire);
+        let available_slots = (write_pos - read_pos) as usize;
 
-        let available = (write_pos - read_pos) as usize;
-        if available < encrypted_size {
-            buffer.fill(0.0);
-            return 0;
+        let Some(record) = self.peek_encrypted_record_header(
+            read_pos,
+            available_slots,
+            encrypted_buf,
+            ciphertext_buf,
+        ) else {
+            log::warn!("Invalid encrypted audio record header; flushing encrypted ring");
+            header.read_position.store(write_pos, Ordering::Release);
+            return EncryptedRecordRead::InvalidHeader;
+        };
+
+        let Some(record) = record else {
+            return EncryptedRecordRead::Empty;
+        };
+
+        if record.slot_count > available_slots {
+            return EncryptedRecordRead::Empty;
+        }
+        if record.sample_count > output.len() {
+            return EncryptedRecordRead::OutputTooSmall {
+                sample_count: record.sample_count,
+            };
         }
 
-        // Read the encrypted data (includes nonce prefix)
-        let read_index = (read_pos as usize) % self.audio_capacity;
-        let first_part = encrypted_size.min(self.audio_capacity - read_index);
-        let second_part = encrypted_size - first_part;
-
-        let mut encrypted_samples = vec![0.0f32; encrypted_size];
-
-        unsafe {
-            let audio_data = self.audio_data();
-
-            std::ptr::copy_nonoverlapping(
-                audio_data.add(read_index),
-                encrypted_samples.as_mut_ptr(),
-                first_part,
-            );
-
-            if second_part > 0 {
-                std::ptr::copy_nonoverlapping(
-                    audio_data,
-                    encrypted_samples.as_mut_ptr().add(first_part),
-                    second_part,
-                );
-            }
+        if encrypted_buf.len() < record.slot_count {
+            encrypted_buf.resize(record.slot_count, 0.0);
+        }
+        if ciphertext_buf.len() < record.total_bytes {
+            ciphertext_buf.resize(record.total_bytes, 0);
         }
 
-        // Convert samples back to bytes
-        let all_bytes = crate::encryption::samples_to_encrypted(&encrypted_samples);
+        self.copy_audio_slots_to(
+            read_pos,
+            record.slot_count,
+            &mut encrypted_buf[..record.slot_count],
+        );
+        crate::encryption::samples_to_encrypted_into(
+            &encrypted_buf[..record.slot_count],
+            &mut ciphertext_buf[..record.slot_count * 4],
+        );
 
-        // Extract nonce (first 8 bytes) and ciphertext (rest)
-        if all_bytes.len() < 8 {
-            log::warn!("Encrypted block too small for nonce");
-            buffer.fill(0.0);
-            return 0;
-        }
+        let ciphertext_start = ENCRYPTED_RECORD_HEADER_BYTES;
+        let ciphertext_end = ciphertext_start + record.ciphertext_len;
+        let ciphertext = &ciphertext_buf[ciphertext_start..ciphertext_end];
 
-        let frame_counter = u64::from_be_bytes(all_bytes[..8].try_into().unwrap());
-        let ciphertext = &all_bytes[8..8 + ciphertext_bytes];
-
-        // Decrypt
-        match cipher.decrypt(ciphertext, frame_counter) {
-            Some(decrypted) => {
-                let to_copy = decrypted.len().min(sample_count);
-                buffer[..to_copy].copy_from_slice(&decrypted[..to_copy]);
-                if to_copy < sample_count {
-                    buffer[to_copy..].fill(0.0);
+        let status = match cipher.decrypt_into(
+            ciphertext,
+            record.frame_counter,
+            &mut output[..record.sample_count],
+        ) {
+            Some(decrypted_count) if decrypted_count == record.sample_count => {
+                EncryptedRecordRead::Read {
+                    sample_count: decrypted_count,
                 }
-
-                // Update read position
-                header
-                    .read_position
-                    .store(read_pos + encrypted_size as u64, Ordering::Release);
-
-                to_copy / channel_count
             }
-            None => {
-                // Decryption failed - return silence
-                log::warn!("Audio decryption failed (frame {})", frame_counter);
-                buffer.fill(0.0);
-                0
+            _ => {
+                log::warn!(
+                    "Audio decryption failed; dropping encrypted record frame_counter={}",
+                    record.frame_counter
+                );
+                EncryptedRecordRead::Corrupt {
+                    frame_counter: record.frame_counter,
+                }
             }
-        }
+        };
+
+        header
+            .read_position
+            .store(read_pos + record.slot_count as u64, Ordering::Release);
+
+        status
     }
 
     /// Read audio with decryption using pre-allocated buffers (allocation-free hot path)
@@ -1044,90 +1210,42 @@ impl SharedAudioBuffer {
             return self.read_audio(buffer);
         }
 
-        let header = self.header();
-        let channel_count = header.channel_count as usize;
-        let sample_count = buffer.len();
-
-        // Calculate expected encrypted size
-        let ciphertext_bytes = crate::encryption::AudioCipher::ciphertext_size(sample_count);
-        let total_bytes = 8 + ciphertext_bytes; // 8 bytes for nonce prefix
-        let encrypted_size = total_bytes.div_ceil(4); // Round up to f32 slots
-
-        let write_pos = header.write_position.load(Ordering::Acquire);
-        let read_pos = header.read_position.load(Ordering::Acquire);
-
-        let available = (write_pos - read_pos) as usize;
-        if available < encrypted_size {
+        let channel_count = self.header().channel_count as usize;
+        if channel_count == 0 {
             buffer.fill(0.0);
             return 0;
         }
 
-        // Ensure pre-allocated buffers are large enough (resize only if needed)
-        if encrypted_buf.len() < encrypted_size {
-            encrypted_buf.resize(encrypted_size, 0.0);
-        }
-        if ciphertext_buf.len() < total_bytes {
-            ciphertext_buf.resize(total_bytes, 0);
-        }
+        let mut copied_samples = 0;
 
-        // Read encrypted data from ring buffer
-        let read_index = (read_pos as usize) % self.audio_capacity;
-        let first_part = encrypted_size.min(self.audio_capacity - read_index);
-        let second_part = encrypted_size - first_part;
-
-        unsafe {
-            let audio_data = self.audio_data();
-
-            std::ptr::copy_nonoverlapping(
-                audio_data.add(read_index),
-                encrypted_buf.as_mut_ptr(),
-                first_part,
-            );
-
-            if second_part > 0 {
-                std::ptr::copy_nonoverlapping(
-                    audio_data,
-                    encrypted_buf.as_mut_ptr().add(first_part),
-                    second_part,
-                );
-            }
-        }
-
-        // Convert samples to bytes using pre-allocated buffer
-        crate::encryption::samples_to_encrypted_into(
-            &encrypted_buf[..encrypted_size],
-            ciphertext_buf,
-        );
-
-        // Extract nonce and decrypt
-        if total_bytes < 8 {
-            log::warn!("Encrypted block too small for nonce");
-            buffer.fill(0.0);
-            return 0;
-        }
-
-        let frame_counter = u64::from_be_bytes(ciphertext_buf[..8].try_into().unwrap());
-        let ciphertext = &ciphertext_buf[8..8 + ciphertext_bytes];
-
-        // Decrypt directly into output buffer
-        match cipher.decrypt_into(ciphertext, frame_counter, buffer) {
-            Some(decrypted_count) => {
-                if decrypted_count < sample_count {
-                    buffer[decrypted_count..].fill(0.0);
+        while copied_samples < buffer.len() {
+            match self.read_next_encrypted_record_into(
+                &mut buffer[copied_samples..],
+                cipher,
+                encrypted_buf,
+                ciphertext_buf,
+            ) {
+                EncryptedRecordRead::Read { sample_count } => {
+                    copied_samples += sample_count;
                 }
-
-                header
-                    .read_position
-                    .store(read_pos + encrypted_size as u64, Ordering::Release);
-
-                decrypted_count / channel_count
-            }
-            None => {
-                log::warn!("Audio decryption failed (frame {})", frame_counter);
-                buffer.fill(0.0);
-                0
+                EncryptedRecordRead::Corrupt { .. } | EncryptedRecordRead::InvalidHeader => {
+                    if copied_samples == 0 {
+                        buffer.fill(0.0);
+                        return 0;
+                    }
+                    break;
+                }
+                EncryptedRecordRead::Empty | EncryptedRecordRead::OutputTooSmall { .. } => {
+                    break;
+                }
             }
         }
+
+        if copied_samples < buffer.len() {
+            buffer[copied_samples..].fill(0.0);
+        }
+
+        copied_samples / channel_count
     }
 
     /// Write audio with encryption using pre-allocated buffers (allocation-free hot path)
@@ -1135,7 +1253,7 @@ impl SharedAudioBuffer {
     /// # Arguments
     /// * `samples` - Audio samples to write
     /// * `cipher` - The AudioCipher for encryption
-    /// * `ciphertext_buf` - Pre-allocated buffer for ciphertext bytes (must be >= encrypted_byte_size + 8)
+    /// * `ciphertext_buf` - Pre-allocated buffer for encrypted record bytes
     /// * `encrypted_buf` - Pre-allocated buffer for encrypted f32 slots
     ///
     /// # Returns
@@ -1155,12 +1273,20 @@ impl SharedAudioBuffer {
         let channel_count = header.channel_count as usize;
         let sample_count = samples.len();
 
-        // Calculate sizes
-        let ciphertext_size = crate::encryption::encrypted_byte_size(sample_count);
-        let total_bytes = 8 + ciphertext_size; // 8 bytes nonce + ciphertext
-        let encrypted_slots = total_bytes.div_ceil(4);
+        if channel_count == 0 || sample_count == 0 {
+            return 0;
+        }
 
-        // Ensure pre-allocated buffers are large enough
+        let ciphertext_size = crate::encryption::encrypted_byte_size(sample_count);
+        let Some(total_bytes) = encrypted_record_total_bytes(sample_count) else {
+            log::error!("Encrypted audio record size overflow");
+            return 0;
+        };
+        let Some(encrypted_slots) = encrypted_record_slots(sample_count) else {
+            log::error!("Encrypted audio slot count overflow");
+            return 0;
+        };
+
         if ciphertext_buf.len() < total_bytes {
             ciphertext_buf.resize(total_bytes, 0);
         }
@@ -1168,15 +1294,22 @@ impl SharedAudioBuffer {
             encrypted_buf.resize(encrypted_slots, 0.0);
         }
 
-        // Get frame counter and write nonce
         let frame_counter = self.increment_frame_counter();
-        ciphertext_buf[..8].copy_from_slice(&frame_counter.to_be_bytes());
+        if !write_encrypted_record_header(
+            &mut ciphertext_buf[..ENCRYPTED_RECORD_HEADER_BYTES],
+            sample_count,
+            frame_counter,
+            ciphertext_size,
+        ) {
+            log::error!("Encrypted audio record header overflow");
+            return 0;
+        }
 
-        // Encrypt directly into the buffer after nonce
         match cipher.encrypt_into(
             samples,
             frame_counter,
-            &mut ciphertext_buf[8..8 + ciphertext_size],
+            &mut ciphertext_buf
+                [ENCRYPTED_RECORD_HEADER_BYTES..ENCRYPTED_RECORD_HEADER_BYTES + ciphertext_size],
         ) {
             Some(_) => {}
             None => {
@@ -1185,10 +1318,8 @@ impl SharedAudioBuffer {
             }
         }
 
-        // Convert bytes to f32 slots
         crate::encryption::encrypted_to_samples_into(&ciphertext_buf[..total_bytes], encrypted_buf);
 
-        // Write to ring buffer
         let write_pos = header.write_position.load(Ordering::Acquire);
         let read_pos = header.read_position.load(Ordering::Acquire);
 
@@ -1209,27 +1340,7 @@ impl SharedAudioBuffer {
             return 0;
         }
 
-        let write_index = (write_pos as usize) % self.audio_capacity;
-        let first_part = encrypted_slots.min(self.audio_capacity - write_index);
-        let second_part = encrypted_slots - first_part;
-
-        unsafe {
-            let audio_data = self.audio_data_mut();
-
-            std::ptr::copy_nonoverlapping(
-                encrypted_buf.as_ptr(),
-                audio_data.add(write_index),
-                first_part,
-            );
-
-            if second_part > 0 {
-                std::ptr::copy_nonoverlapping(
-                    encrypted_buf.as_ptr().add(first_part),
-                    audio_data,
-                    second_part,
-                );
-            }
-        }
+        self.copy_audio_slots_from(write_pos, &encrypted_buf[..encrypted_slots]);
 
         self.header()
             .write_position
@@ -1252,6 +1363,87 @@ pub struct HalInputReader {
     encrypted_samples_buf: Vec<f32>,
     /// Pre-allocated buffer for ciphertext bytes (avoids allocation in hot path)
     ciphertext_buf: Vec<u8>,
+    /// Decrypted plaintext for the current encrypted record.
+    decrypted_record_buf: Vec<f32>,
+    /// Leftover decrypted samples when a HAL encrypted record is larger than the caller's read.
+    pending_decrypted_samples: Vec<f32>,
+    pending_sample_offset: usize,
+}
+
+fn read_encrypted_with_staging(
+    shared: &SharedAudioBuffer,
+    output: &mut [f32],
+    cipher: &crate::encryption::AudioCipher,
+    encrypted_samples_buf: &mut Vec<f32>,
+    ciphertext_buf: &mut Vec<u8>,
+    decrypted_record_buf: &mut Vec<f32>,
+    pending_decrypted_samples: &mut Vec<f32>,
+    pending_sample_offset: &mut usize,
+) -> usize {
+    let channel_count = shared.channel_count() as usize;
+    if channel_count == 0 {
+        output.fill(0.0);
+        return 0;
+    }
+
+    let mut copied_samples = 0;
+
+    if *pending_sample_offset < pending_decrypted_samples.len() {
+        let pending_available = pending_decrypted_samples.len() - *pending_sample_offset;
+        let to_copy = pending_available.min(output.len());
+        output[..to_copy].copy_from_slice(
+            &pending_decrypted_samples[*pending_sample_offset..*pending_sample_offset + to_copy],
+        );
+        *pending_sample_offset += to_copy;
+        copied_samples += to_copy;
+
+        if *pending_sample_offset >= pending_decrypted_samples.len() {
+            pending_decrypted_samples.clear();
+            *pending_sample_offset = 0;
+        }
+    }
+
+    while copied_samples < output.len() {
+        match shared.read_next_encrypted_record_into(
+            decrypted_record_buf,
+            cipher,
+            encrypted_samples_buf,
+            ciphertext_buf,
+        ) {
+            EncryptedRecordRead::Read { sample_count } => {
+                let remaining = output.len() - copied_samples;
+                let to_copy = sample_count.min(remaining);
+                output[copied_samples..copied_samples + to_copy]
+                    .copy_from_slice(&decrypted_record_buf[..to_copy]);
+                copied_samples += to_copy;
+
+                if to_copy < sample_count {
+                    pending_decrypted_samples.clear();
+                    pending_decrypted_samples
+                        .extend_from_slice(&decrypted_record_buf[to_copy..sample_count]);
+                    *pending_sample_offset = 0;
+                    break;
+                }
+            }
+            EncryptedRecordRead::OutputTooSmall { sample_count } => {
+                decrypted_record_buf.resize(sample_count, 0.0);
+            }
+            EncryptedRecordRead::Corrupt { .. } | EncryptedRecordRead::InvalidHeader => {
+                if copied_samples == 0 {
+                    output.fill(0.0);
+                    return 0;
+                }
+                break;
+            }
+            EncryptedRecordRead::Empty => break,
+        }
+    }
+
+    if copied_samples < output.len() {
+        output[copied_samples..].fill(0.0);
+    }
+
+    copied_samples / channel_count
 }
 
 impl HalInputReader {
@@ -1273,14 +1465,21 @@ impl HalInputReader {
                 // Pre-allocate buffers for typical frame size (2048 samples * channels)
                 // Will be resized if needed
                 let typical_samples = 2048 * buffer.channel_count() as usize;
-                let encrypted_slots = crate::encryption::encrypted_sample_slots(typical_samples);
+                let encrypted_slots = encrypted_record_slots(typical_samples)
+                    .unwrap_or_else(|| crate::encryption::encrypted_sample_slots(typical_samples));
                 Some(Self {
                     buffer: Some(buffer),
                     cipher: None,
                     encrypted_samples_buf: Vec::with_capacity(encrypted_slots),
                     ciphertext_buf: Vec::with_capacity(
-                        crate::encryption::encrypted_byte_size(typical_samples) + 8,
+                        encrypted_record_total_bytes(typical_samples).unwrap_or_else(|| {
+                            crate::encryption::encrypted_byte_size(typical_samples)
+                                + ENCRYPTED_RECORD_HEADER_BYTES
+                        }),
                     ),
+                    decrypted_record_buf: Vec::with_capacity(typical_samples),
+                    pending_decrypted_samples: Vec::new(),
+                    pending_sample_offset: 0,
                 })
             }
             Err(e) => {
@@ -1372,12 +1571,15 @@ impl HalInputReader {
                 }
 
                 if let Some(cipher) = &self.cipher {
-                    // Use allocation-free version with pre-allocated buffers
-                    return buf.read_audio_encrypted_into(
+                    return read_encrypted_with_staging(
+                        buf,
                         buffer,
                         cipher,
                         &mut self.encrypted_samples_buf,
                         &mut self.ciphertext_buf,
+                        &mut self.decrypted_record_buf,
+                        &mut self.pending_decrypted_samples,
+                        &mut self.pending_sample_offset,
                     );
                 } else {
                     // Encrypted but no key -> return silence
@@ -1411,10 +1613,21 @@ impl HalInputReader {
 
     /// Get available frames to read
     pub fn available_read_frames(&self) -> usize {
-        self.buffer
+        let shared_frames = self
+            .buffer
             .as_ref()
             .map(|b| b.available_read_frames())
-            .unwrap_or(0)
+            .unwrap_or(0);
+        let pending_samples = self
+            .pending_decrypted_samples
+            .len()
+            .saturating_sub(self.pending_sample_offset);
+        let channels = self.channel_count() as usize;
+        if channels == 0 {
+            shared_frames
+        } else {
+            shared_frames + pending_samples / channels
+        }
     }
 }
 
@@ -1439,8 +1652,13 @@ impl HalOutputWriter {
             Ok(buffer) => {
                 // Pre-allocate buffers for typical frame size
                 let typical_samples = 2048 * buffer.channel_count() as usize;
-                let ciphertext_size = crate::encryption::encrypted_byte_size(typical_samples) + 8;
-                let encrypted_slots = crate::encryption::encrypted_sample_slots(typical_samples);
+                let ciphertext_size =
+                    encrypted_record_total_bytes(typical_samples).unwrap_or_else(|| {
+                        crate::encryption::encrypted_byte_size(typical_samples)
+                            + ENCRYPTED_RECORD_HEADER_BYTES
+                    });
+                let encrypted_slots = encrypted_record_slots(typical_samples)
+                    .unwrap_or_else(|| crate::encryption::encrypted_sample_slots(typical_samples));
                 Some(Self {
                     buffer: Some(buffer),
                     cipher: None,
@@ -2248,6 +2466,231 @@ mod tests {
             assert_eq!(
                 counter, expected,
                 "Counter should be monotonically increasing"
+            );
+        }
+    }
+
+    fn test_audio_cipher() -> crate::encryption::AudioCipher {
+        let key = [0x42u8; 32];
+        crate::encryption::AudioCipher::new(&key)
+    }
+
+    fn sequential_audio(frame_count: usize, channel_count: usize, offset: usize) -> Vec<f32> {
+        (0..frame_count * channel_count)
+            .map(|sample| ((offset + sample) as f32 * 0.0001) - 0.5)
+            .collect()
+    }
+
+    #[test]
+    fn test_encrypted_available_read_frames_reports_plaintext_frames() {
+        let temp_file = create_mock_shared_memory(48_000, 512, 2);
+        let mut buffer = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open buffer");
+        let cipher = test_audio_cipher();
+        buffer.set_key_fingerprint(*cipher.fingerprint());
+        buffer.set_encrypted(true);
+
+        let mut ciphertext_buf = Vec::new();
+        let mut encrypted_buf = Vec::new();
+        let samples = sequential_audio(192, 2, 0);
+
+        assert_eq!(
+            buffer.write_audio_encrypted_into(
+                &samples,
+                &cipher,
+                &mut ciphertext_buf,
+                &mut encrypted_buf,
+            ),
+            192
+        );
+
+        assert_eq!(buffer.available_read_frames(), 192);
+    }
+
+    #[test]
+    fn test_flush_audio_drops_pending_ring_data() {
+        let temp_file = create_mock_shared_memory(48_000, 512, 2);
+        let mut buffer = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open buffer");
+        let samples = sequential_audio(128, 2, 0);
+
+        assert_eq!(buffer.write_audio(&samples), 128);
+        assert_eq!(buffer.available_read_frames(), 128);
+
+        buffer.flush_audio();
+
+        assert_eq!(buffer.available_read_frames(), 0);
+        assert_eq!(
+            buffer.header().write_position.load(Ordering::Acquire),
+            buffer.header().read_position.load(Ordering::Acquire)
+        );
+    }
+
+    #[test]
+    fn test_encrypted_hal_sized_records_read_back_in_plaintext_order() {
+        let temp_file = create_mock_shared_memory(48_000, 512, 2);
+        let mut buffer = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open buffer");
+        let cipher = test_audio_cipher();
+        buffer.set_key_fingerprint(*cipher.fingerprint());
+        buffer.set_encrypted(true);
+
+        let mut ciphertext_buf = Vec::new();
+        let mut encrypted_buf = Vec::new();
+        let mut expected = Vec::new();
+
+        for chunk in 0..5 {
+            let samples = sequential_audio(192, 2, chunk * 192 * 2);
+            expected.extend_from_slice(&samples);
+            assert_eq!(
+                buffer.write_audio_encrypted_into(
+                    &samples,
+                    &cipher,
+                    &mut ciphertext_buf,
+                    &mut encrypted_buf,
+                ),
+                192
+            );
+        }
+
+        let mut output = vec![0.0; expected.len()];
+        let frames_read = buffer.read_audio_encrypted_into(
+            &mut output,
+            &cipher,
+            &mut encrypted_buf,
+            &mut ciphertext_buf,
+        );
+
+        assert_eq!(frames_read, 960);
+        for (index, (actual, expected)) in output.iter().zip(expected.iter()).enumerate() {
+            assert_eq!(
+                actual.to_bits(),
+                expected.to_bits(),
+                "sample {index} mismatch"
+            );
+        }
+    }
+
+    #[test]
+    fn test_hal_input_reader_stages_partial_encrypted_record() {
+        let temp_file = create_mock_shared_memory(48_000, 512, 2);
+        let mut buffer = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open buffer");
+        let writer_cipher = test_audio_cipher();
+        let reader_cipher = test_audio_cipher();
+        buffer.set_key_fingerprint(*writer_cipher.fingerprint());
+        buffer.set_encrypted(true);
+
+        let mut ciphertext_buf = Vec::new();
+        let mut encrypted_buf = Vec::new();
+        let mut expected = Vec::new();
+
+        for chunk in 0..6 {
+            let samples = sequential_audio(192, 2, chunk * 192 * 2);
+            expected.extend_from_slice(&samples);
+            assert_eq!(
+                buffer.write_audio_encrypted_into(
+                    &samples,
+                    &writer_cipher,
+                    &mut ciphertext_buf,
+                    &mut encrypted_buf,
+                ),
+                192
+            );
+        }
+
+        let mut reader = HalInputReader {
+            buffer: Some(buffer),
+            cipher: Some(reader_cipher),
+            encrypted_samples_buf: Vec::new(),
+            ciphertext_buf: Vec::new(),
+            decrypted_record_buf: Vec::new(),
+            pending_decrypted_samples: Vec::new(),
+            pending_sample_offset: 0,
+        };
+
+        let mut output = vec![0.0; 1024 * 2];
+        assert_eq!(reader.available_read_frames(), 1152);
+        assert_eq!(reader.read(&mut output), 1024);
+        for (index, (actual, expected)) in output.iter().zip(expected.iter()).enumerate() {
+            assert_eq!(
+                actual.to_bits(),
+                expected.to_bits(),
+                "sample {index} mismatch"
+            );
+        }
+
+        let mut tail = vec![0.0; 128 * 2];
+        assert_eq!(reader.available_read_frames(), 128);
+        assert_eq!(reader.read(&mut tail), 128);
+        for (index, (actual, expected)) in
+            tail.iter().zip(expected[output.len()..].iter()).enumerate()
+        {
+            assert_eq!(
+                actual.to_bits(),
+                expected.to_bits(),
+                "tail sample {index} mismatch"
+            );
+        }
+    }
+
+    #[test]
+    fn test_corrupt_encrypted_record_is_dropped() {
+        let temp_file = create_mock_shared_memory(48_000, 512, 2);
+        let mut buffer = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open buffer");
+        let cipher = test_audio_cipher();
+        buffer.set_key_fingerprint(*cipher.fingerprint());
+        buffer.set_encrypted(true);
+
+        let mut ciphertext_buf = Vec::new();
+        let mut encrypted_buf = Vec::new();
+        let corrupt = sequential_audio(192, 2, 0);
+        let good = sequential_audio(192, 2, corrupt.len());
+
+        assert_eq!(
+            buffer.write_audio_encrypted_into(
+                &corrupt,
+                &cipher,
+                &mut ciphertext_buf,
+                &mut encrypted_buf,
+            ),
+            192
+        );
+        assert_eq!(
+            buffer.write_audio_encrypted_into(
+                &good,
+                &cipher,
+                &mut ciphertext_buf,
+                &mut encrypted_buf,
+            ),
+            192
+        );
+
+        unsafe {
+            let tampered_slot = buffer.audio_data_mut().add(6);
+            *tampered_slot = f32::from_bits((*tampered_slot).to_bits() ^ 0x0000_0001);
+        }
+
+        let mut output = vec![0.0; corrupt.len()];
+        assert_eq!(
+            buffer.read_audio_encrypted_into(
+                &mut output,
+                &cipher,
+                &mut encrypted_buf,
+                &mut ciphertext_buf,
+            ),
+            0
+        );
+
+        let frames_read = buffer.read_audio_encrypted_into(
+            &mut output,
+            &cipher,
+            &mut encrypted_buf,
+            &mut ciphertext_buf,
+        );
+
+        assert_eq!(frames_read, 192);
+        for (index, (actual, expected)) in output.iter().zip(good.iter()).enumerate() {
+            assert_eq!(
+                actual.to_bits(),
+                expected.to_bits(),
+                "sample {index} mismatch"
             );
         }
     }
