@@ -1,10 +1,45 @@
 use std::path::PathBuf;
 
 const DATA_CACHED: &str = "data_cached";
+const CACHE_BUNDLE_ID: &str = "org.spinorama.sotf";
+const CACHE_ENV_VAR: &str = "SOTF_CACHE_DIR";
 
-/// Return the cache directory for a given speaker under `data_cached/speakers/org.spinorama/` using sanitized name
+/// Resolve the root cache directory used to store downloaded measurements.
+///
+/// Resolution order:
+/// 1. `$SOTF_CACHE_DIR` if set (tests, CI, dev overrides).
+/// 2. A `./data_cached` directory in the current working directory if it
+///    already exists (preserves the in-tree dev workflow used by the
+///    benchmark and download CLIs).
+/// 3. The platform user cache directory joined with `org.spinorama.sotf`
+///    (`~/Library/Caches/org.spinorama.sotf` on macOS,
+///    `~/.cache/org.spinorama.sotf` on Linux,
+///    `%LOCALAPPDATA%\org.spinorama.sotf` on Windows).
+/// 4. As a last resort, the relative `./data_cached` path.
+pub fn cache_root() -> PathBuf {
+    if let Ok(custom) = std::env::var(CACHE_ENV_VAR)
+        && !custom.is_empty()
+    {
+        return PathBuf::from(custom);
+    }
+
+    let legacy = PathBuf::from(DATA_CACHED);
+    if legacy.is_dir() {
+        return legacy;
+    }
+
+    if let Some(mut base) = dirs::cache_dir() {
+        base.push(CACHE_BUNDLE_ID);
+        return base;
+    }
+
+    legacy
+}
+
+/// Return the cache directory for a given speaker under
+/// `<cache_root>/speakers/org.spinorama/<sanitized name>`.
 pub fn data_dir_for(speaker: &str) -> PathBuf {
-    let mut p = PathBuf::from(DATA_CACHED);
+    let mut p = cache_root();
     p.push("speakers");
     p.push("org.spinorama");
     p.push(sanitize_dir_name(speaker));

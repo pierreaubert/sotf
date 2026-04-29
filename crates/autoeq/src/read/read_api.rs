@@ -1019,9 +1019,9 @@ fn extract_contour_data(plot_data: &Value) -> Result<ContourPlotData, Box<dyn Er
 // Headphone API
 // ==========================================================================
 
-/// Return the cache directory for a headphone under `data_cached/headphones/org.spinorama/`
+/// Return the cache directory for a headphone under `<cache_root>/headphones/org.spinorama/`.
 fn headphone_cache_dir(headphone: &str) -> std::path::PathBuf {
-    let mut p = std::path::PathBuf::from("data_cached");
+    let mut p = crate::read::directory::cache_root();
     p.push("headphones");
     p.push("org.spinorama");
     p.push(crate::read::directory::sanitize_dir_name(headphone));

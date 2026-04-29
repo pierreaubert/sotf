@@ -15,6 +15,7 @@ build_html = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 csv = { workspace = true }
+dirs = { workspace = true }
 env_logger = { workspace = true }
 log = { workspace = true }
 num_cpus = { workspace = true }
