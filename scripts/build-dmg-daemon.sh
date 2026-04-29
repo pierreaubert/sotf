@@ -223,7 +223,13 @@ copy_hal_driver() {
     # *inside* dst when dst already exists, leaving the stale top-level
     # bundle untouched and getting packaged into the pkg.
     rm -rf "$DRIVER_BUNDLE"
-    cp -R "$HAL_BUILD_DIR" "$DRIVER_BUNDLE"
+    /usr/bin/ditto "$HAL_BUILD_DIR" "$DRIVER_BUNDLE"
+
+    if [ ! -x "$DRIVER_BUNDLE/Contents/MacOS/SotFHAL" ]; then
+        log_error "Staged HAL driver executable is missing or not executable"
+        exit 1
+    fi
+
     log_success "HAL driver copied"
 }
 
@@ -342,10 +348,12 @@ EOF
     cp "$BUILD_DIR/$DAEMON_BINARY" "$APP_BUNDLE/Contents/Helpers/"
     chmod +x "$APP_BUNDLE/Contents/Helpers/$DAEMON_BINARY"
 
-    # Copy HAL driver bundle to Resources (for user installation)
-    if $BUILD_HAL && [ -d "$DRIVER_BUNDLE" ]; then
+    # Copy HAL driver bundle to Resources only for the legacy DMG/manual
+    # installation path. The pkg installs HAL as its own component package.
+    rm -rf "$APP_BUNDLE/Contents/Resources/$DRIVER_NAME"
+    if $BUILD_DMG && $BUILD_HAL && [ -d "$DRIVER_BUNDLE" ]; then
         log_info "Bundling HAL driver..."
-        cp -R "$DRIVER_BUNDLE" "$APP_BUNDLE/Contents/Resources/"
+        /usr/bin/ditto "$DRIVER_BUNDLE" "$APP_BUNDLE/Contents/Resources/$DRIVER_NAME"
         log_success "HAL driver bundled in app"
     fi
 
@@ -458,12 +466,49 @@ create_hal_scripts() {
 #
 # Install SotF HAL Driver
 #
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DRIVER_SOURCE="$SCRIPT_DIR/SotFHAL.driver"
 TARGET_DIR="/Library/Audio/Plug-Ins/HAL"
 TARGET_BUNDLE="${TARGET_DIR}/SotFHAL.driver"
+EXECUTABLE="${TARGET_BUNDLE}/Contents/MacOS/SotFHAL"
+HELPER_NAME="Core-Audio-Driver-Service.helper"
+LEGACY_BUNDLES=(
+    "${TARGET_DIR}/SotFHAL.driver"
+    "${TARGET_DIR}/sotf.driver"
+    "${TARGET_DIR}/sotf_hal.driver"
+    "${TARGET_DIR}/AutoEQ.driver"
+)
+
+restart_coreaudio() {
+    echo "Restarting CoreAudio..."
+    sudo /usr/bin/killall "${HELPER_NAME}" 2>/dev/null || true
+
+    if sudo /usr/bin/killall coreaudiod 2>/dev/null; then
+        echo "CoreAudio restart requested; launchd will relaunch coreaudiod"
+    else
+        echo "coreaudiod was not running or could not be signalled"
+    fi
+
+    for _ in 1 2 3 4 5; do
+        if /usr/bin/pgrep -x coreaudiod >/dev/null 2>&1; then
+            echo "coreaudiod is running"
+            return 0
+        fi
+        sleep 1
+    done
+
+    echo "Warning: coreaudiod has not relaunched yet"
+}
+
+remove_bundle() {
+    local bundle="$1"
+    if [ -d "${bundle}" ]; then
+        echo "Removing existing driver: ${bundle}"
+        sudo /bin/rm -rf "${bundle}"
+    fi
+}
 
 echo "Installing SotF HAL Driver..."
 
@@ -474,40 +519,42 @@ if [ ! -d "${DRIVER_SOURCE}" ]; then
 fi
 
 # Create target directory if needed
-sudo mkdir -p "${TARGET_DIR}"
+sudo /usr/bin/install -d -o root -g wheel -m 755 "${TARGET_DIR}"
 
-# Remove old version if it exists
-if [ -d "${TARGET_BUNDLE}" ]; then
-    echo "Removing old driver..."
-    sudo rm -rf "${TARGET_BUNDLE}"
-fi
+sudo /usr/bin/killall "${HELPER_NAME}" 2>/dev/null || true
+for bundle in "${LEGACY_BUNDLES[@]}"; do
+    remove_bundle "${bundle}"
+done
 
-# Also remove old named version
-if [ -d "${TARGET_DIR}/sotf.driver" ]; then
-    echo "Removing legacy driver..."
-    sudo rm -rf "${TARGET_DIR}/sotf.driver"
-fi
-
-# Copy the bundle
+# Copy the bundle as a clean replacement instead of merging into any stale
+# directory that the Installer or cp might leave behind.
 echo "Copying driver bundle..."
-sudo cp -R "${DRIVER_SOURCE}" "${TARGET_DIR}/"
+sudo /usr/bin/ditto "${DRIVER_SOURCE}" "${TARGET_BUNDLE}"
 
-# Set permissions
-sudo chmod -R 755 "${TARGET_BUNDLE}"
-sudo chmod 644 "${TARGET_BUNDLE}/Contents/Info.plist"
+if [ ! -f "${EXECUTABLE}" ]; then
+    echo "Error: installed HAL executable is missing: ${EXECUTABLE}"
+    exit 1
+fi
+
+echo "Setting driver ownership and permissions..."
+sudo /usr/sbin/chown -R root:wheel "${TARGET_BUNDLE}"
+sudo /usr/bin/find "${TARGET_BUNDLE}" -type d -exec /bin/chmod 755 {} +
+sudo /usr/bin/find "${TARGET_BUNDLE}" -type f -exec /bin/chmod 644 {} +
+sudo /bin/chmod 755 "${EXECUTABLE}"
+sudo /usr/bin/xattr -dr com.apple.quarantine "${TARGET_BUNDLE}" 2>/dev/null || true
+
+if [ ! -x "${EXECUTABLE}" ]; then
+    echo "Error: installed HAL executable is not executable after chmod: ${EXECUTABLE}"
+    exit 1
+fi
 
 # Sign with ad-hoc signature
 echo "Signing driver bundle..."
-sudo codesign --force --deep --sign - --options runtime "${TARGET_BUNDLE}"
+sudo /usr/bin/codesign --force --deep --sign - --options runtime "${TARGET_BUNDLE}"
+sudo /usr/bin/codesign --verify --deep "${TARGET_BUNDLE}"
 
 # Restart CoreAudio
-echo "Restarting CoreAudio..."
-if sudo launchctl kickstart -kp system/com.apple.audio.coreaudiod >/dev/null 2>&1; then
-     echo "CoreAudio restarted (via launchctl)"
-else
-     sudo killall coreaudiod 2>/dev/null || true
-     echo "CoreAudio restarted (via killall)"
-fi
+restart_coreaudio
 
 echo ""
 echo "HAL driver installed successfully!"
@@ -523,26 +570,50 @@ INSTALL_SCRIPT
 #
 # Uninstall SotF HAL Driver
 #
-set -e
+set -euo pipefail
 
-TARGET_BUNDLE="/Library/Audio/Plug-Ins/HAL/SotFHAL.driver"
-LEGACY_BUNDLE="/Library/Audio/Plug-Ins/HAL/sotf.driver"
+TARGET_DIR="/Library/Audio/Plug-Ins/HAL"
+HELPER_NAME="Core-Audio-Driver-Service.helper"
+DRIVER_BUNDLES=(
+    "${TARGET_DIR}/SotFHAL.driver"
+    "${TARGET_DIR}/sotf.driver"
+    "${TARGET_DIR}/sotf_hal.driver"
+    "${TARGET_DIR}/AutoEQ.driver"
+)
+
+restart_coreaudio() {
+    echo "Restarting CoreAudio..."
+    sudo /usr/bin/killall "${HELPER_NAME}" 2>/dev/null || true
+
+    if sudo /usr/bin/killall coreaudiod 2>/dev/null; then
+        echo "CoreAudio restart requested; launchd will relaunch coreaudiod"
+    else
+        echo "coreaudiod was not running or could not be signalled"
+    fi
+
+    for _ in 1 2 3 4 5; do
+        if /usr/bin/pgrep -x coreaudiod >/dev/null 2>&1; then
+            echo "coreaudiod is running"
+            return 0
+        fi
+        sleep 1
+    done
+
+    echo "Warning: coreaudiod has not relaunched yet"
+}
 
 echo "Uninstalling SotF HAL Driver..."
 
 REMOVED=false
+sudo /usr/bin/killall "${HELPER_NAME}" 2>/dev/null || true
 
-if [ -d "${TARGET_BUNDLE}" ]; then
-    echo "Removing driver bundle..."
-    sudo rm -rf "${TARGET_BUNDLE}"
-    REMOVED=true
-fi
-
-if [ -d "${LEGACY_BUNDLE}" ]; then
-    echo "Removing legacy driver bundle..."
-    sudo rm -rf "${LEGACY_BUNDLE}"
-    REMOVED=true
-fi
+for bundle in "${DRIVER_BUNDLES[@]}"; do
+    if [ -d "${bundle}" ]; then
+        echo "Removing driver bundle: ${bundle}"
+        sudo /bin/rm -rf "${bundle}"
+        REMOVED=true
+    fi
+done
 
 if [ "$REMOVED" = false ]; then
     echo "HAL driver is not installed."
@@ -550,13 +621,7 @@ if [ "$REMOVED" = false ]; then
 fi
 
 # Restart CoreAudio
-echo "Restarting CoreAudio..."
-if sudo launchctl kickstart -kp system/com.apple.audio.coreaudiod >/dev/null 2>&1; then
-     echo "CoreAudio restarted (via launchctl)"
-else
-     sudo killall coreaudiod 2>/dev/null || true
-     echo "CoreAudio restarted (via killall)"
-fi
+restart_coreaudio
 
 echo ""
 echo "HAL driver uninstalled successfully!"
@@ -582,7 +647,7 @@ create_dmg_file() {
         cp "$DMG_DIR/uninstall-hal.sh" "$APP_BUNDLE/Contents/Resources/"
         # Copy standalone driver to Resources if not already there
         if [ ! -d "$APP_BUNDLE/Contents/Resources/$DRIVER_NAME" ] && [ -d "$DRIVER_BUNDLE" ]; then
-            cp -R "$DRIVER_BUNDLE" "$APP_BUNDLE/Contents/Resources/"
+            /usr/bin/ditto "$DRIVER_BUNDLE" "$APP_BUNDLE/Contents/Resources/$DRIVER_NAME"
         fi
     fi
 
@@ -657,12 +722,14 @@ create_pkg() {
     local pkg_path="$DMG_DIR/SotF-Systemwide-$VERSION.pkg"
     local pkg_root="$DMG_DIR/pkg-root"
     local pkg_scripts="$DMG_DIR/pkg-scripts"
+    local hal_pkg_scripts="$DMG_DIR/pkg-scripts-hal"
     local pkg_components="$DMG_DIR/pkg-components"
 
-    rm -rf "$pkg_root" "$pkg_scripts" "$pkg_components"
+    rm -rf "$pkg_root" "$pkg_scripts" "$hal_pkg_scripts" "$pkg_components"
     mkdir -p "$pkg_root/Applications"
     mkdir -p "$pkg_root/Library/Audio/Plug-Ins/HAL"
     mkdir -p "$pkg_scripts"
+    mkdir -p "$hal_pkg_scripts"
     mkdir -p "$pkg_components"
 
     # Copy app to pkg root
@@ -670,28 +737,14 @@ create_pkg() {
 
     # Copy HAL driver to pkg root
     if $BUILD_HAL && [ -d "$DRIVER_BUNDLE" ]; then
-        cp -R "$DRIVER_BUNDLE" "$pkg_root/Library/Audio/Plug-Ins/HAL/"
+        /usr/bin/ditto "$DRIVER_BUNDLE" "$pkg_root/Library/Audio/Plug-Ins/HAL/$DRIVER_NAME"
     fi
 
-    # Create postinstall script to restart CoreAudio
+    # Create app postinstall script. HAL driver lifecycle is handled by the
+    # HAL component package so CoreAudio restarts after the driver payload lands.
     cat > "$pkg_scripts/postinstall" << 'POSTINSTALL'
 #!/bin/bash
-# Post-installation script for SotF
-
-# Restart CoreAudio to load the new HAL driver
-echo "Restarting CoreAudio to load HAL driver..."
-if launchctl kickstart -kp system/com.apple.audio.coreaudiod >/dev/null 2>&1; then
-    echo "CoreAudio restarted (via launchctl)"
-else
-    killall coreaudiod 2>/dev/null || true
-    echo "CoreAudio restarted (via killall)"
-fi
-
-# Set correct permissions on HAL driver
-if [ -d "/Library/Audio/Plug-Ins/HAL/SotFHAL.driver" ]; then
-    chmod -R 755 "/Library/Audio/Plug-Ins/HAL/SotFHAL.driver"
-    chmod 644 "/Library/Audio/Plug-Ins/HAL/SotFHAL.driver/Contents/Info.plist"
-fi
+# Post-installation script for SotF Systemwide app
 
 echo "SotF installation complete!"
 exit 0
@@ -737,19 +790,7 @@ LAUNCHSCRIPT
     # Create preinstall script to remove old versions
     cat > "$pkg_scripts/preinstall" << 'PREINSTALL'
 #!/bin/bash
-# Pre-installation script for SotF
-
-# Remove legacy driver if it exists
-if [ -d "/Library/Audio/Plug-Ins/HAL/sotf.driver" ]; then
-    echo "Removing legacy HAL driver..."
-    rm -rf "/Library/Audio/Plug-Ins/HAL/sotf.driver"
-fi
-
-# Remove old version of current driver
-if [ -d "/Library/Audio/Plug-Ins/HAL/SotFHAL.driver" ]; then
-    echo "Removing old HAL driver..."
-    rm -rf "/Library/Audio/Plug-Ins/HAL/SotFHAL.driver"
-fi
+# Pre-installation script for SotF Systemwide app
 
 # Remove old menu bar app names so Systemwide replaces Toolbar/ConfigBar cleanly
 for app in "/Applications/SotF Toolbar.app" "/Applications/SotF ConfigBar.app"; do
@@ -762,6 +803,98 @@ done
 exit 0
 PREINSTALL
     chmod +x "$pkg_scripts/preinstall"
+
+    # Create HAL component scripts. These must be attached to SotFHAL.pkg, not
+    # the app package, so the driver is removed before the HAL payload and
+    # CoreAudio is restarted only after the new payload has been installed.
+    cat > "$hal_pkg_scripts/preinstall" << 'HAL_PREINSTALL'
+#!/bin/bash
+# Pre-installation script for SotF HAL driver
+set -euo pipefail
+
+TARGET_DIR="/Library/Audio/Plug-Ins/HAL"
+HELPER_NAME="Core-Audio-Driver-Service.helper"
+DRIVER_BUNDLES=(
+    "${TARGET_DIR}/SotFHAL.driver"
+    "${TARGET_DIR}/sotf.driver"
+    "${TARGET_DIR}/sotf_hal.driver"
+    "${TARGET_DIR}/AutoEQ.driver"
+)
+
+echo "Preparing SotF HAL driver install..."
+/usr/bin/killall "${HELPER_NAME}" 2>/dev/null || true
+
+for bundle in "${DRIVER_BUNDLES[@]}"; do
+    if [ -d "${bundle}" ]; then
+        echo "Removing existing HAL driver: ${bundle}"
+        /bin/rm -rf "${bundle}"
+    fi
+done
+
+exit 0
+HAL_PREINSTALL
+    chmod +x "$hal_pkg_scripts/preinstall"
+
+    cat > "$hal_pkg_scripts/postinstall" << 'HAL_POSTINSTALL'
+#!/bin/bash
+# Post-installation script for SotF HAL driver
+set -euo pipefail
+
+TARGET_BUNDLE="/Library/Audio/Plug-Ins/HAL/SotFHAL.driver"
+EXECUTABLE="${TARGET_BUNDLE}/Contents/MacOS/SotFHAL"
+HELPER_NAME="Core-Audio-Driver-Service.helper"
+
+restart_coreaudio() {
+    echo "Restarting CoreAudio to load SotF HAL driver..."
+    /usr/bin/killall "${HELPER_NAME}" 2>/dev/null || true
+
+    if /usr/bin/killall coreaudiod 2>/dev/null; then
+        echo "CoreAudio restart requested; launchd will relaunch coreaudiod"
+    else
+        echo "coreaudiod was not running or could not be signalled"
+    fi
+
+    for _ in 1 2 3 4 5; do
+        if /usr/bin/pgrep -x coreaudiod >/dev/null 2>&1; then
+            echo "coreaudiod is running"
+            return 0
+        fi
+        sleep 1
+    done
+
+    echo "Warning: coreaudiod has not relaunched yet"
+}
+
+if [ ! -f "${EXECUTABLE}" ]; then
+    echo "Error: installed HAL executable is missing: ${EXECUTABLE}"
+    exit 1
+fi
+
+echo "Setting SotF HAL driver ownership and permissions..."
+/usr/sbin/chown -R root:wheel "${TARGET_BUNDLE}"
+/usr/bin/find "${TARGET_BUNDLE}" -type d -exec /bin/chmod 755 {} +
+/usr/bin/find "${TARGET_BUNDLE}" -type f -exec /bin/chmod 644 {} +
+/bin/chmod 755 "${EXECUTABLE}"
+/usr/bin/xattr -dr com.apple.quarantine "${TARGET_BUNDLE}" 2>/dev/null || true
+
+if [ ! -x "${EXECUTABLE}" ]; then
+    echo "Error: installed HAL executable is not executable after chmod: ${EXECUTABLE}"
+    exit 1
+fi
+
+if /usr/bin/codesign --verify --deep "${TARGET_BUNDLE}" >/dev/null 2>&1; then
+    echo "SotF HAL driver code signature verified"
+else
+    echo "Signing SotF HAL driver with an ad-hoc signature..."
+    /usr/bin/codesign --force --deep --sign - --options runtime "${TARGET_BUNDLE}"
+    /usr/bin/codesign --verify --deep "${TARGET_BUNDLE}"
+fi
+
+restart_coreaudio
+echo "SotF HAL driver installed successfully"
+exit 0
+HAL_POSTINSTALL
+    chmod +x "$hal_pkg_scripts/postinstall"
 
     # Build component packages
     log_info "Building component packages..."
@@ -782,6 +915,7 @@ PREINSTALL
             --install-location "/Library/Audio/Plug-Ins/HAL" \
             --identifier "$HAL_BUNDLE_ID" \
             --version "$VERSION" \
+            --scripts "$hal_pkg_scripts" \
             "$pkg_components/SotFHAL.pkg"
     fi
 
@@ -864,11 +998,12 @@ DISTXML
 <head>
     <meta charset="utf-8">
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 20px; }
+        html { color-scheme: light; background: #fff; }
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 20px; background: #fff; color: #333; }
         h1 { color: #333; }
         p { color: #666; line-height: 1.6; }
         .features { margin-top: 20px; }
-        .features li { margin: 8px 0; }
+        .features li { margin: 8px 0; color: #333; }
     </style>
 </head>
 <body>
@@ -893,12 +1028,15 @@ WELCOME
 <head>
     <meta charset="utf-8">
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 20px; }
+        html { color-scheme: light; background: #fff; }
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 20px; background: #fff; color: #333; }
         h1 { color: #28a745; }
         p { color: #666; line-height: 1.6; }
-        .next-steps { background: #f8f9fa; padding: 15px; border-radius: 8px; margin-top: 20px; }
+        .next-steps { background: #f8f9fa; color: #333; padding: 15px; border-radius: 8px; margin-top: 20px; }
         .next-steps h3 { margin-top: 0; color: #333; }
-        code { background: #e9ecef; padding: 2px 6px; border-radius: 4px; }
+        .next-steps li { color: #333; margin: 6px 0; }
+        .next-steps strong { color: #111; }
+        code { background: #e9ecef; color: #333; padding: 2px 6px; border-radius: 4px; }
     </style>
 </head>
 <body>
@@ -932,7 +1070,7 @@ CONCLUSION
     log_success "Installer package created (unsigned)"
 
     # Cleanup
-    rm -rf "$pkg_root" "$pkg_scripts" "$pkg_components"
+    rm -rf "$pkg_root" "$pkg_scripts" "$hal_pkg_scripts" "$pkg_components"
     rm -f "$DMG_DIR/distribution.xml" "$DMG_DIR/welcome.html" "$DMG_DIR/conclusion.html"
 
     log_success "Package created at $pkg_path"
