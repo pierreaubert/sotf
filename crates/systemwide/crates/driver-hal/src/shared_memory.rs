@@ -831,6 +831,35 @@ impl SharedAudioBuffer {
         }
     }
 
+    fn repair_read_position_and_available_slots(
+        &self,
+        write_pos: u64,
+        read_pos: u64,
+    ) -> (u64, usize) {
+        if self.audio_capacity == 0 {
+            return (write_pos, 0);
+        }
+
+        if write_pos < read_pos {
+            self.header()
+                .read_position
+                .store(write_pos, Ordering::Release);
+            return (write_pos, 0);
+        }
+
+        let available = write_pos - read_pos;
+        let capacity = self.audio_capacity as u64;
+        if available > capacity {
+            let adjusted_read_pos = write_pos - capacity;
+            self.header()
+                .read_position
+                .store(adjusted_read_pos, Ordering::Release);
+            return (adjusted_read_pos, self.audio_capacity);
+        }
+
+        (read_pos, available as usize)
+    }
+
     /// Read audio from the shared memory ring buffer
     /// Returns the number of frames actually read
     pub fn read_audio(&self, buffer: &mut [f32]) -> usize {
@@ -841,7 +870,8 @@ impl SharedAudioBuffer {
         let write_pos = header.write_position.load(Ordering::Acquire);
         let read_pos = header.read_position.load(Ordering::Acquire);
 
-        let available = (write_pos - read_pos) as usize;
+        let (read_pos, available) =
+            self.repair_read_position_and_available_slots(write_pos, read_pos);
         let to_read = sample_count.min(available);
 
         if to_read == 0 {
@@ -906,8 +936,8 @@ impl SharedAudioBuffer {
         let write_pos = header.write_position.load(Ordering::Acquire);
         let read_pos = header.read_position.load(Ordering::Acquire);
 
-        let used = (write_pos - read_pos) as usize;
-        let available = self.audio_capacity - used;
+        let (_, used) = self.repair_read_position_and_available_slots(write_pos, read_pos);
+        let available = self.audio_capacity.saturating_sub(used);
         let to_write = sample_count.min(available);
 
         if to_write == 0 {
@@ -969,7 +999,8 @@ impl SharedAudioBuffer {
             return self.available_encrypted_read_frames(write_pos, read_pos, channel_count);
         }
 
-        ((write_pos - read_pos) as usize) / channel_count
+        let (_, available) = self.repair_read_position_and_available_slots(write_pos, read_pos);
+        available / channel_count
     }
 
     fn available_encrypted_read_frames(
@@ -978,7 +1009,16 @@ impl SharedAudioBuffer {
         mut read_pos: u64,
         channel_count: usize,
     ) -> usize {
-        let mut available_slots = (write_pos - read_pos) as usize;
+        let (repaired_read_pos, mut available_slots) =
+            self.repair_read_position_and_available_slots(write_pos, read_pos);
+        if repaired_read_pos != read_pos {
+            self.header()
+                .read_position
+                .store(write_pos, Ordering::Release);
+            return 0;
+        }
+        read_pos = repaired_read_pos;
+
         let mut available_frames = 0;
         let mut header_slots = [0.0f32; ENCRYPTED_RECORD_HEADER_SLOTS];
         let mut header_bytes = [0u8; ENCRYPTED_RECORD_HEADER_BYTES];
@@ -1015,8 +1055,12 @@ impl SharedAudioBuffer {
         let read_pos = header.read_position.load(Ordering::Acquire);
         let channel_count = header.channel_count as usize;
 
-        let used = (write_pos - read_pos) as usize;
-        (self.audio_capacity - used) / channel_count
+        if channel_count == 0 {
+            return 0;
+        }
+
+        let (_, used) = self.repair_read_position_and_available_slots(write_pos, read_pos);
+        self.audio_capacity.saturating_sub(used) / channel_count
     }
 
     // =========================================================================
@@ -1113,8 +1157,13 @@ impl SharedAudioBuffer {
     ) -> EncryptedRecordRead {
         let header = self.header();
         let write_pos = header.write_position.load(Ordering::Acquire);
-        let read_pos = header.read_position.load(Ordering::Acquire);
-        let available_slots = (write_pos - read_pos) as usize;
+        let original_read_pos = header.read_position.load(Ordering::Acquire);
+        let (read_pos, available_slots) =
+            self.repair_read_position_and_available_slots(write_pos, original_read_pos);
+        if read_pos != original_read_pos {
+            header.read_position.store(write_pos, Ordering::Release);
+            return EncryptedRecordRead::Empty;
+        }
 
         let Some(record) = self.peek_encrypted_record_header(
             read_pos,
@@ -1323,8 +1372,8 @@ impl SharedAudioBuffer {
         let write_pos = header.write_position.load(Ordering::Acquire);
         let read_pos = header.read_position.load(Ordering::Acquire);
 
-        let used = (write_pos - read_pos) as usize;
-        let available = self.audio_capacity - used;
+        let (_, used) = self.repair_read_position_and_available_slots(write_pos, read_pos);
+        let available = self.audio_capacity.saturating_sub(used);
 
         if encrypted_slots > available {
             // Not enough space for the full encrypted block - count and warn
@@ -1513,13 +1562,7 @@ impl HalInputReader {
                 let read_pos = header
                     .read_position
                     .load(std::sync::atomic::Ordering::Acquire);
-                let available = (write_pos - read_pos) as usize;
-                let channel_count = header.channel_count as usize;
-                let available_frames = if channel_count > 0 {
-                    available / channel_count
-                } else {
-                    0
-                };
+                let available_frames = buf.available_read_frames();
 
                 log::info!(
                     "[HAL INPUT] State: wpos={}, rpos={}, available={} frames, driver_ready={}, engine_ready={}, active={}",
@@ -2522,6 +2565,39 @@ mod tests {
             buffer.header().write_position.load(Ordering::Acquire),
             buffer.header().read_position.load(Ordering::Acquire)
         );
+    }
+
+    #[test]
+    fn test_read_audio_repairs_inverted_ring_positions() {
+        let temp_file = create_mock_shared_memory(48_000, 512, 2);
+        let buffer = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open buffer");
+
+        buffer.header().write_position.store(64, Ordering::Release);
+        buffer.header().read_position.store(96, Ordering::Release);
+
+        assert_eq!(buffer.available_read_frames(), 0);
+        assert_eq!(buffer.header().read_position.load(Ordering::Acquire), 64);
+
+        let mut output = vec![1.0; 32];
+        assert_eq!(buffer.read_audio(&mut output), 0);
+        assert!(output.iter().all(|sample| *sample == 0.0));
+        assert_eq!(buffer.header().read_position.load(Ordering::Acquire), 64);
+    }
+
+    #[test]
+    fn test_available_read_frames_clamps_overfull_ring() {
+        let temp_file = create_mock_shared_memory(48_000, 512, 2);
+        let buffer = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open buffer");
+        let capacity = buffer.audio_capacity as u64;
+
+        buffer
+            .header()
+            .write_position
+            .store(capacity + 128, Ordering::Release);
+        buffer.header().read_position.store(0, Ordering::Release);
+
+        assert_eq!(buffer.available_read_frames(), buffer.audio_capacity / 2);
+        assert_eq!(buffer.header().read_position.load(Ordering::Acquire), 128);
     }
 
     #[test]

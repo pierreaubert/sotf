@@ -902,23 +902,8 @@ class StatusBarController: NSObject, ObservableObject {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         if let button = statusItem.button {
-            // Try to load custom icon from bundle assets
-            if let iconImage = loadMenuBarIcon() {
-                button.image = iconImage
-            } else {
-                // Fallback: use SF Symbol
-                let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
-                if let image = NSImage(systemSymbolName: "speaker.wave.2.fill",
-                                       accessibilityDescription: "SotF")?
-                    .withSymbolConfiguration(config) {
-                    let templateImage = image.copy() as! NSImage
-                    templateImage.isTemplate = true
-                    button.image = templateImage
-                } else {
-                    // Final fallback: use simple text
-                    button.title = "♪"
-                }
-            }
+            button.image = makeMenuBarIcon()
+            button.imagePosition = .imageOnly
             button.toolTip = "SotF Audio Engine"
         }
 
@@ -1009,60 +994,79 @@ class StatusBarController: NSObject, ObservableObject {
         }
     }
 
-    /// Load custom menubar icon from bundle or assets directory
-    private func loadMenuBarIcon() -> NSImage? {
-        // Standard menubar icon size is 18-22 points
-        // We use 22pt which is common for menubar apps
+    /// Build a vector template image so AppKit can tint it for the menu bar appearance.
+    private func makeMenuBarIcon() -> NSImage {
         let iconSize = NSSize(width: 22, height: 22)
+        let image = NSImage(size: iconSize, flipped: false) { rect in
+            let viewBox: CGFloat = 24
+            let scale = min(rect.width, rect.height) / viewBox
+            let xOffset = rect.minX + (rect.width - viewBox * scale) / 2
+            let yOffset = rect.minY + (rect.height - viewBox * scale) / 2
 
-        // Try loading from bundle resources first (for packaged app)
-        // Try 22pt first, then fall back to 18pt
-        for resourceName in ["icon_22", "icon_18"] {
-            if let bundleIcon = Bundle.main.image(forResource: resourceName) {
-                bundleIcon.isTemplate = true
-                bundleIcon.size = iconSize
-                return bundleIcon
+            func point(_ x: CGFloat, _ y: CGFloat) -> NSPoint {
+                NSPoint(x: xOffset + x * scale, y: yOffset + (viewBox - y) * scale)
             }
-        }
 
-        // Try loading from assets directory (for development)
-        let assetPaths = [
-            // Relative to executable (when running from build)
-            "../assets/icon_22@2x.png",
-            "../assets/icon_22.png",
-            "../assets/icon_18@2x.png",
-            // Relative to source (when running via swift directly)
-            "assets/icon_22@2x.png",
-            "assets/icon_22.png",
-            "assets/icon_18@2x.png",
-            // Absolute paths for development
-            "\(FileManager.default.currentDirectoryPath)/assets/icon_22@2x.png",
-        ]
-
-        for path in assetPaths {
-            if FileManager.default.fileExists(atPath: path),
-               let image = NSImage(contentsOfFile: path) {
-                image.isTemplate = true
-                image.size = iconSize
-                return image
+            func svgRect(x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat) -> NSRect {
+                NSRect(
+                    x: xOffset + x * scale,
+                    y: yOffset + (viewBox - y - height) * scale,
+                    width: width * scale,
+                    height: height * scale
+                )
             }
-        }
 
-        // Try loading from script directory
-        let scriptPath = CommandLine.arguments[0]
-        if let scriptDir = URL(string: scriptPath)?.deletingLastPathComponent().path {
-            for iconName in ["icon_22@2x.png", "icon_22.png", "icon_18@2x.png"] {
-                let iconPath = "\(scriptDir)/assets/\(iconName)"
-                if FileManager.default.fileExists(atPath: iconPath),
-                   let image = NSImage(contentsOfFile: iconPath) {
-                    image.isTemplate = true
-                    image.size = iconSize
-                    return image
-                }
+            let strokeColor = NSColor.black
+            strokeColor.setStroke()
+            strokeColor.setFill()
+
+            let strokeWidth = 2.0 * scale
+
+            let headband = NSBezierPath()
+            headband.lineWidth = strokeWidth
+            headband.lineCapStyle = .round
+            headband.lineJoinStyle = .round
+            headband.move(to: point(3, 11.5))
+            headband.curve(
+                to: point(21, 11.5),
+                controlPoint1: point(3.5, 3.6),
+                controlPoint2: point(20.5, 3.6)
+            )
+            headband.stroke()
+
+            for rectSpec in [
+                (x: CGFloat(1), y: CGFloat(11.5), width: CGFloat(4), height: CGFloat(7), radius: CGFloat(2)),
+                (x: CGFloat(19), y: CGFloat(11.5), width: CGFloat(4), height: CGFloat(7), radius: CGFloat(2)),
+                (x: CGFloat(8), y: CGFloat(7), width: CGFloat(8), height: CGFloat(13), radius: CGFloat(1)),
+            ] {
+                let path = NSBezierPath(
+                    roundedRect: svgRect(
+                        x: rectSpec.x,
+                        y: rectSpec.y,
+                        width: rectSpec.width,
+                        height: rectSpec.height
+                    ),
+                    xRadius: rectSpec.radius * scale,
+                    yRadius: rectSpec.radius * scale
+                )
+                path.lineWidth = strokeWidth
+                path.stroke()
             }
-        }
 
-        return nil
+            NSBezierPath(
+                ovalIn: svgRect(x: 11, y: 9, width: 2, height: 2)
+            ).fill()
+
+            let dial = NSBezierPath(
+                ovalIn: svgRect(x: 10, y: 13, width: 4, height: 4)
+            )
+            dial.lineWidth = strokeWidth
+            dial.stroke()
+
+            return true
+        }
+        image.isTemplate = true
+        return image
     }
 
     func startMonitoring() {

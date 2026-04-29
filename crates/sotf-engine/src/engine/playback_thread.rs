@@ -134,6 +134,7 @@ struct PlaybackState {
     last_buffer_level: Arc<AtomicU64>, // For tracking buffer fill percentage
     total_callback_samples: Arc<AtomicU64>,
     callback_count: Arc<AtomicU64>,
+    stream_error_count: Arc<AtomicU64>,
 }
 
 impl PlaybackState {
@@ -147,6 +148,7 @@ impl PlaybackState {
             last_buffer_level: Arc::new(AtomicU64::new(100)),
             total_callback_samples: Arc::new(AtomicU64::new(0)),
             callback_count: Arc::new(AtomicU64::new(0)),
+            stream_error_count: Arc::new(AtomicU64::new(0)),
         }
     }
 }
@@ -176,6 +178,175 @@ fn prefill_silence(producer: &mut Producer<f32>, samples: usize) {
     }
     // Safety: we initialized exactly `to_write` elements across the two slices.
     unsafe { chunk.commit(to_write) };
+}
+
+fn copy_playback_controls(from: &PlaybackState, to: &PlaybackState) {
+    to.volume
+        .store(from.volume.load(Ordering::Relaxed), Ordering::Relaxed);
+    to.muted
+        .store(from.muted.load(Ordering::Relaxed), Ordering::Relaxed);
+}
+
+fn select_playback_device(
+    host: &cpal::Host,
+    output_device: Option<&str>,
+    allow_virtual_output: bool,
+) -> Result<Device, String> {
+    let get_name = |d: &Device| -> String {
+        d.description()
+            .map(|desc| desc.name().to_string())
+            .unwrap_or_else(|_| "Unknown".to_string())
+    };
+
+    let find_fallback = || -> Result<Device, String> {
+        let devices = host.output_devices().map_err(|e| e.to_string())?;
+        let physical = devices.into_iter().find(|d| {
+            let name = get_name(d);
+            !is_virtual_output_device_name(&name)
+        });
+
+        if let Some(dev) = physical {
+            log::info!(
+                "[Playback Thread] Using fallback physical device: {}",
+                get_name(&dev)
+            );
+            Ok(dev)
+        } else {
+            host.default_output_device()
+                .ok_or("No default device found".to_string())
+        }
+    };
+
+    if let Some(device_identifier) = output_device {
+        log::debug!(
+            "[Playback Thread] Looking for device: '{}'",
+            device_identifier
+        );
+
+        if is_virtual_output_device_name(device_identifier) && !allow_virtual_output {
+            log::info!(
+                "[Playback Thread] Explicit virtual output device '{}' requested; honoring selection",
+                device_identifier
+            );
+        }
+
+        match crate::devices::find_device(host, device_identifier, false) {
+            Ok(dev) => {
+                log::debug!("[Playback Thread] Using device: '{}'", get_name(&dev));
+                Ok(dev)
+            }
+            Err(e) => {
+                log::info!(
+                    "[Playback Thread] Device '{}' not found (error: {}), using fallback output device",
+                    device_identifier,
+                    e
+                );
+                find_fallback().map_err(|fallback_err| {
+                    format!(
+                        "Failed to find fallback output device after lookup error '{}': {}",
+                        e, fallback_err
+                    )
+                })
+            }
+        }
+    } else {
+        let default_dev = host
+            .default_output_device()
+            .ok_or("No output device available")?;
+        let name = get_name(&default_dev);
+
+        if is_virtual_output_device_name(&name) && !allow_virtual_output {
+            log::warn!(
+                "[Playback Thread] Default device is '{}' (virtual/null) - finding fallback physical device",
+                name
+            );
+            Ok(find_fallback().unwrap_or(default_dev))
+        } else {
+            Ok(default_dev)
+        }
+    }
+}
+
+struct RebuiltPlaybackStream {
+    device: Device,
+    device_name: String,
+    stream: Stream,
+    producer: Producer<f32>,
+    state: Arc<PlaybackState>,
+    config: StreamConfig,
+    output_format: SampleFormat,
+    channels: usize,
+    buffer_capacity: usize,
+}
+
+struct RebuildPlaybackParams<'a> {
+    output_device: Option<&'a str>,
+    allow_virtual_output: bool,
+    sample_rate: u32,
+    requested_channels: usize,
+    buffer_ms: u32,
+    buffer_size: cpal::BufferSize,
+    event_tx: Sender<ThreadEvent>,
+    old_state: &'a PlaybackState,
+}
+
+fn rebuild_playback_stream(
+    host: &cpal::Host,
+    params: RebuildPlaybackParams<'_>,
+) -> Result<RebuiltPlaybackStream, String> {
+    let device = select_playback_device(host, params.output_device, params.allow_virtual_output)?;
+    let device_name = device
+        .description()
+        .map(|d| d.name().to_string())
+        .unwrap_or_else(|_| "Unknown".to_string());
+
+    let mut config = StreamConfig {
+        channels: params.requested_channels as u16,
+        sample_rate: params.sample_rate,
+        buffer_size: params.buffer_size,
+    };
+
+    let (output_format, hw_channels) = choose_output_format(&device, &config);
+    if hw_channels != config.channels {
+        log::warn!(
+            "[Playback Thread] Recovery adjusted channels from {} to {} for '{}'",
+            config.channels,
+            hw_channels,
+            device_name
+        );
+        config.channels = hw_channels;
+    }
+
+    let channels = hw_channels as usize;
+    let buffer_capacity = playback_buffer_capacity(params.sample_rate, channels, params.buffer_ms);
+    let (mut producer, consumer) = RingBuffer::<f32>::new(buffer_capacity);
+    let state = Arc::new(PlaybackState::new(buffer_capacity));
+    copy_playback_controls(params.old_state, &state);
+    prefill_silence(&mut producer, buffer_capacity / 2);
+
+    let stream = build_output_stream(
+        &device,
+        &config,
+        Arc::clone(&state),
+        params.event_tx,
+        consumer,
+        output_format,
+    )?;
+    stream
+        .play()
+        .map_err(|e| format!("Failed to start recovered stream: {}", e))?;
+
+    Ok(RebuiltPlaybackStream {
+        device,
+        device_name,
+        stream,
+        producer,
+        state,
+        config,
+        output_format,
+        channels,
+        buffer_capacity,
+    })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -233,104 +404,9 @@ fn run_playback_thread(
         }
     });
 
-    // Select output device
-    let device = if let Some(device_identifier) = output_device {
-        // Try to find device by ID first, then name
-        log::debug!(
-            "[Playback Thread] Looking for device: '{}'",
-            device_identifier
-        );
-
-        // HELPER: Find fallback device if requested one is invalid/virtual
-        let find_fallback = || -> Result<Device, String> {
-            let devices = host.output_devices().map_err(|e| e.to_string())?;
-            // Filter out virtual devices to prevent loops
-            let get_device_name = |d: &Device| -> String {
-                d.description()
-                    .map(|desc| desc.name().to_string())
-                    .unwrap_or_else(|_| "Unknown".to_string())
-            };
-            let physical = devices.into_iter().find(|d| {
-                let name = get_device_name(d);
-                !is_virtual_output_device_name(&name)
-            });
-
-            if let Some(dev) = physical {
-                log::info!(
-                    "[Playback Thread] Using fallback physical device: {}",
-                    get_device_name(&dev)
-                );
-                Ok(dev)
-            } else {
-                host.default_output_device()
-                    .ok_or("No default device found".to_string())
-            }
-        };
-
-        // If explicitly requested a virtual device (likely by accident due to it being default),
-        // force a fallback to avoid feedback loop — unless allow_virtual_output is set
-        if is_virtual_output_device_name(&device_identifier) && !allow_virtual_output {
-            log::warn!(
-                "[Playback Thread] Virtual output device '{}' requested as output - forcing fallback to prevent feedback loop",
-                device_identifier
-            );
-            find_fallback().map_err(|e| format!("Failed to find fallback device: {}", e))?
-        } else {
-            // Try to find the device using shared logic
-            match crate::devices::find_device(&host, &device_identifier, false) {
-                Ok(dev) => {
-                    let dev_name = dev
-                        .description()
-                        .map(|d| d.name().to_string())
-                        .unwrap_or_else(|_| "Unknown Device".to_string());
-                    log::debug!("[Playback Thread] Using device: '{}'", dev_name);
-                    dev
-                }
-                Err(e) => {
-                    log::info!(
-                        "[Playback Thread] Device '{}' not found (error: {}), using fallback output device",
-                        device_identifier,
-                        e
-                    );
-                    find_fallback().map_err(|fallback_err| {
-                        format!(
-                            "Failed to find fallback output device after lookup error '{}': {}",
-                            e, fallback_err
-                        )
-                    })?
-                }
-            }
-        }
-    } else {
-        // Use default device
-        // CHECK if default device is virtual -> if so, use fallback
-        let default_dev = host
-            .default_output_device()
-            .ok_or("No output device available")?;
-        let get_name = |d: &Device| -> String {
-            d.description()
-                .map(|desc| desc.name().to_string())
-                .unwrap_or_else(|_| "Unknown".to_string())
-        };
-        let name = get_name(&default_dev);
-
-        if is_virtual_output_device_name(&name) {
-            log::warn!(
-                "[Playback Thread] Default device is '{}' (virtual/null) - finding fallback physical device",
-                name
-            );
-            let devices = host
-                .output_devices()
-                .map_err(|e| format!("Failed to list devices: {}", e))?;
-            let physical = devices.into_iter().find(|d| {
-                let n = get_name(d);
-                !is_virtual_output_device_name(&n)
-            });
-            physical.unwrap_or(default_dev)
-        } else {
-            default_dev
-        }
-    };
+    // Select output device. Keep the sanitized device name so recovery can
+    // re-resolve the CoreAudio device if the current handle is invalidated.
+    let mut device = select_playback_device(&host, output_device.as_deref(), allow_virtual_output)?;
 
     // Track current channel count (can change dynamically)
     let mut channels = initial_channels;
@@ -346,7 +422,7 @@ fn run_playback_thread(
     // Detect the best output sample format for this device + config.
     // hw_channels may be less than channels if the device doesn't support
     // the requested channel count (e.g. 6ch file on a 2ch HDMI device).
-    let (output_format, hw_channels) = choose_output_format(&device, &config);
+    let (mut output_format, hw_channels) = choose_output_format(&device, &config);
     if hw_channels != channels as u16 {
         log::warn!(
             "[Playback Thread] Adjusting output channels from {} to {} (device limitation)",
@@ -431,7 +507,7 @@ fn run_playback_thread(
         .ok();
 
     // Get device name for logging
-    let device_name = device
+    let mut device_name = device
         .description()
         .map(|d| d.name().to_string())
         .unwrap_or_else(|_| "Unknown".to_string());
@@ -487,6 +563,11 @@ fn run_playback_thread(
     let mut last_callback_count: u64 = 0;
     let mut last_callback_check = std::time::Instant::now();
     let callback_stall_timeout = std::time::Duration::from_secs(3);
+    let mut last_stream_error_count: u64 = 0;
+    let mut last_recovery_attempt = std::time::Instant::now()
+        .checked_sub(std::time::Duration::from_secs(10))
+        .unwrap_or_else(std::time::Instant::now);
+    let recovery_retry_interval = std::time::Duration::from_millis(500);
     let mut last_reported_underruns: u64 = 0;
 
     // Main loop: read from queue and write to ring buffer
@@ -858,28 +939,123 @@ fn run_playback_thread(
             }
         }
 
-        // Callback stall detection: check if cpal callbacks have stopped firing.
-        // This catches HDMI/monitor audio devices that accept stream.play() but
-        // stop calling the audio callback after a short time.
-        // Active during both normal playback AND drain — if callbacks stall during
-        // drain, the ring buffer will never empty and we'd hit a silent timeout.
+        // Callback/stream recovery: CoreAudio can invalidate an output stream
+        // when another client starts or stops on the HAL device. Re-resolve the
+        // device name and rebuild the CPAL stream instead of stopping playback.
         {
+            let current_stream_errors = state.stream_error_count.load(Ordering::Relaxed);
             let current_callbacks = state.callback_count.load(Ordering::Relaxed);
-            if current_callbacks != last_callback_count {
-                // Callbacks are still firing, reset the timer
+            let recovery_reason = if current_stream_errors != last_stream_error_count {
+                last_stream_error_count = current_stream_errors;
+                Some(format!(
+                    "stream error reported by CoreAudio ({} total)",
+                    current_stream_errors
+                ))
+            } else if current_callbacks != last_callback_count {
                 last_callback_count = current_callbacks;
                 last_callback_check = std::time::Instant::now();
+                None
             } else if last_callback_check.elapsed() > callback_stall_timeout && frames_received > 0
             {
-                // Callbacks have stalled for too long while we have data
-                let msg = format!(
-                    "Audio device '{}' stopped responding (callbacks stalled after {} frames played). \
-                     This device may not support sustained playback.",
-                    device_name, frames_written
+                Some(format!(
+                    "callbacks stalled after {} frames played",
+                    frames_written
+                ))
+            } else {
+                None
+            };
+
+            if let Some(reason) = recovery_reason {
+                if last_recovery_attempt.elapsed() < recovery_retry_interval {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                    continue;
+                }
+                last_recovery_attempt = std::time::Instant::now();
+
+                let mut drained_count = 0;
+                while message_rx.try_recv().is_ok() {
+                    drained_count += 1;
+                }
+
+                let warning = format!(
+                    "Audio device '{}' needs playback stream recovery: {}",
+                    device_name, reason
                 );
-                log::error!("[Playback Thread] {}", msg);
-                event_tx.send(ThreadEvent::ProcessingError(msg)).ok();
-                break;
+                log::warn!(
+                    "[Playback Thread] {} (drained {} queued frames)",
+                    warning,
+                    drained_count
+                );
+                event_tx.send(ThreadEvent::ProcessingWarning(warning)).ok();
+
+                if let Err(e) = stream.pause() {
+                    log::warn!(
+                        "[Playback Thread] Failed to pause stream before recovery: {}",
+                        e
+                    );
+                }
+
+                match rebuild_playback_stream(
+                    &host,
+                    RebuildPlaybackParams {
+                        output_device: output_device.as_deref(),
+                        allow_virtual_output,
+                        sample_rate: config.sample_rate,
+                        requested_channels: channels,
+                        buffer_ms,
+                        buffer_size: config.buffer_size,
+                        event_tx: event_tx.clone(),
+                        old_state: &state,
+                    },
+                ) {
+                    Ok(rebuilt) => {
+                        log::warn!(
+                            "[Playback Thread] Recovered playback stream: device='{}', {}Hz, {}ch, format={:?}",
+                            rebuilt.device_name,
+                            rebuilt.config.sample_rate,
+                            rebuilt.channels,
+                            rebuilt.output_format
+                        );
+
+                        device = rebuilt.device;
+                        device_name = rebuilt.device_name;
+                        stream = rebuilt.stream;
+                        producer = rebuilt.producer;
+                        state = rebuilt.state;
+                        config = rebuilt.config;
+                        output_format = rebuilt.output_format;
+                        channels = rebuilt.channels;
+                        buffer_capacity = rebuilt.buffer_capacity;
+                        last_callback_count = 0;
+                        last_stream_error_count = 0;
+                        last_callback_check = std::time::Instant::now();
+                        last_reported_underruns = 0;
+                        flush_mode = FlushMode::Normal;
+                        end_of_stream = false;
+                        drain_start = None;
+                        event_tx
+                            .send(ThreadEvent::PlaybackChannelsChanged(channels))
+                            .ok();
+                        continue;
+                    }
+                    Err(e) => {
+                        let msg = format!(
+                            "Playback stream recovery failed for '{}': {}",
+                            device_name, e
+                        );
+                        log::error!("[Playback Thread] {}", msg);
+                        event_tx.send(ThreadEvent::ProcessingWarning(msg)).ok();
+                        if let Err(resume_err) = stream.play() {
+                            log::warn!(
+                                "[Playback Thread] Failed to resume previous stream after recovery failure: {}",
+                                resume_err
+                            );
+                        }
+                        last_callback_check = std::time::Instant::now();
+                        std::thread::sleep(std::time::Duration::from_millis(250));
+                        continue;
+                    }
+                }
             }
         }
 
@@ -926,7 +1102,7 @@ fn run_playback_thread(
             };
             log::debug!(
                 "[Playback Thread] PERIODIC: callbacks={}, effective={}Hz (expected {}Hz), \
-                 buffer_fill={}%, blocked={}, dropped={}, received={}",
+                 buffer_fill={}%, blocked={}, dropped={}, received={}, format={:?}",
                 total_cb,
                 effective_hz,
                 sample_rate,
@@ -934,6 +1110,7 @@ fn run_playback_thread(
                 frames_blocked,
                 frames_dropped,
                 frames_received,
+                output_format,
             );
             last_diagnostic_log = std::time::Instant::now();
         }
@@ -1608,6 +1785,7 @@ fn build_output_stream_f32(
     mut consumer: Consumer<f32>,
 ) -> Result<Stream, String> {
     let state_clone = Arc::clone(&state);
+    let error_state = Arc::clone(&state);
     let capacity = state.capacity;
 
     let stream = device
@@ -1619,9 +1797,12 @@ fn build_output_stream_f32(
                 apply_volume(data, &state_clone);
             },
             move |err| {
+                error_state
+                    .stream_error_count
+                    .fetch_add(1, Ordering::Relaxed);
                 log::warn!("[Playback Thread] Stream error: {}", err);
                 event_tx
-                    .send(ThreadEvent::ProcessingError(format!(
+                    .send(ThreadEvent::ProcessingWarning(format!(
                         "Stream error: {}",
                         err
                     )))
@@ -1648,6 +1829,7 @@ where
     T: cpal::SizedSample + cpal::FromSample<f32>,
 {
     let state_clone = Arc::clone(&state);
+    let error_state = Arc::clone(&state);
     let capacity = state.capacity;
 
     // Pre-allocate scratch buffer (captured by closure, no alloc in callback).
@@ -1685,9 +1867,12 @@ where
                 }
             },
             move |err| {
+                error_state
+                    .stream_error_count
+                    .fetch_add(1, Ordering::Relaxed);
                 log::warn!("[Playback Thread] Stream error: {}", err);
                 event_tx
-                    .send(ThreadEvent::ProcessingError(format!(
+                    .send(ThreadEvent::ProcessingWarning(format!(
                         "Stream error: {}",
                         err
                     )))

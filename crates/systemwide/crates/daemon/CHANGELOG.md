@@ -1,4 +1,4 @@
-# Unreleased
+# 0.1.36
 
 ## Driver HAL streaming configuration
 

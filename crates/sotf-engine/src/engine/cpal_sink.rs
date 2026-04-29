@@ -31,6 +31,14 @@ fn is_virtual_output_device_name(name: &str) -> bool {
         || crate::devices::is_null_device(name)
 }
 
+fn should_fallback_from_virtual_default(
+    requested_device: Option<&str>,
+    candidate_name: &str,
+    allow_virtual: bool,
+) -> bool {
+    requested_device.is_none() && !allow_virtual && is_virtual_output_device_name(candidate_name)
+}
+
 /// Shared state between the playback thread and cpal callback.
 /// All fields are lock-free atomics for real-time safety.
 pub(crate) struct CpalPlaybackState {
@@ -135,22 +143,21 @@ impl CpalSink {
 
         let device = if let Some(device_id) = device_name_stripped {
             if is_virtual_output_device_name(&device_id) && !allow_virtual {
-                log::warn!(
-                    "[CpalSink] Virtual output device '{}' requested - forcing fallback",
+                log::info!(
+                    "[CpalSink] Explicit virtual output device '{}' requested; honoring selection",
                     device_id
                 );
-                find_fallback(&host)?
-            } else {
-                match crate::devices::find_device(&host, &device_id, false) {
-                    Ok(dev) => dev,
-                    Err(e) => {
-                        log::info!(
-                            "[CpalSink] Device '{}' not found ({}), using fallback",
-                            device_id,
-                            e
-                        );
-                        find_fallback(&host)?
-                    }
+            }
+
+            match crate::devices::find_device(&host, &device_id, false) {
+                Ok(dev) => dev,
+                Err(e) => {
+                    log::info!(
+                        "[CpalSink] Device '{}' not found ({}), using fallback",
+                        device_id,
+                        e
+                    );
+                    find_fallback(&host)?
                 }
             }
         } else {
@@ -162,7 +169,7 @@ impl CpalSink {
                 .map(|d| d.name().to_string())
                 .unwrap_or_else(|_| "Unknown".to_string());
 
-            if is_virtual_output_device_name(&name) && !allow_virtual {
+            if should_fallback_from_virtual_default(None, &name, allow_virtual) {
                 log::warn!(
                     "[CpalSink] Default device '{}' is virtual - finding fallback",
                     name
@@ -874,5 +881,29 @@ mod tests {
     #[test]
     fn is_virtual_output_device_name_allows_regular_physical_outputs() {
         assert!(!is_virtual_output_device_name("Built-in Output"));
+    }
+
+    #[test]
+    fn virtual_output_fallback_only_applies_to_implicit_default_device() {
+        assert!(should_fallback_from_virtual_default(
+            None,
+            "SotF Virtual Output",
+            false
+        ));
+        assert!(!should_fallback_from_virtual_default(
+            Some("SotF Virtual Output"),
+            "SotF Virtual Output",
+            false
+        ));
+        assert!(!should_fallback_from_virtual_default(
+            None,
+            "SotF Virtual Output",
+            true
+        ));
+        assert!(!should_fallback_from_virtual_default(
+            None,
+            "Built-in Output",
+            false
+        ));
     }
 }

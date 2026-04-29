@@ -290,3 +290,82 @@ fn swift_read_input_does_not_consume_capture_ring() {
         "ReadInput should be limited to loopback or silence until separate output IPC exists"
     );
 }
+
+#[test]
+fn swift_tracks_io_clients_by_client_id() {
+    let source =
+        read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/SotFHALDriver.swift");
+    let state_body = function_body(&source, "final class DriverState");
+    let start_io = function_body(&source, "private func driverStartIO");
+    let stop_io = function_body(&source, "private func driverStopIO");
+    let remove_client = function_body(&source, "private func driverRemoveDeviceClient");
+
+    assert!(
+        state_body.contains("activeIOClients = Set<UInt32>()"),
+        "HAL must track active IO clients by clientID, not only by a global counter"
+    );
+    assert!(
+        start_io.contains("state.startIOClient(clientID)")
+            && !start_io.contains("incrementIOClientCount"),
+        "StartIO should insert the CoreAudio clientID exactly once"
+    );
+    assert!(
+        stop_io.contains("state.stopIOClient(clientID)")
+            && !stop_io.contains("decrementIOClientCount"),
+        "StopIO should remove the CoreAudio clientID and ignore duplicate stops"
+    );
+    assert!(
+        remove_client.contains("state.removeIOClient(info.mClientID)"),
+        "RemoveDeviceClient should clear any stale active IO state for that client"
+    );
+}
+
+#[test]
+fn swift_write_mix_falls_back_to_secondary_buffer() {
+    let source =
+        read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/SotFHALDriver.swift");
+    let io_body = function_body(&source, "private func driverDoIOOperation");
+    let write_mix = switch_case_body(io_body, "case kIOOperation_WriteMix:", "default:");
+
+    assert!(
+        source.contains("private func peakMagnitude("),
+        "WriteMix should cheaply detect when CoreAudio put audio in the secondary buffer"
+    );
+    assert!(
+        write_mix.contains("ioSecondaryBuffer")
+            && write_mix.contains("selectedFloatBuffer")
+            && write_mix.contains("selectedSecondaryBuffer"),
+        "WriteMix should select between main and secondary CoreAudio buffers"
+    );
+    assert!(
+        write_mix.contains("state.sharedAudio.writeAudio(selectedFloatBuffer")
+            && write_mix.contains("outputBuffer.writeInterleaved(selectedFloatBuffer"),
+        "HAL should forward the selected CoreAudio buffer to loopback and shared memory"
+    );
+}
+
+#[test]
+fn swift_shared_memory_drops_old_capture_when_ring_is_full() {
+    let source =
+        read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/SharedMemory.swift");
+    let write_audio = function_body(&source, "func writeAudio");
+    let write_raw = function_body(&source, "private func writeRawBytes");
+
+    assert!(
+        write_audio.contains("samplesToWrite")
+            && write_audio.contains("samplesToDrop")
+            && write_audio.contains("header.pointee.readPosition = adjustedReadPos"),
+        "unencrypted live capture writes must drop oldest samples before publishing current audio"
+    );
+    assert!(
+        write_audio.contains("sourceOffset")
+            && !write_audio.contains("if toWrite <= 0 { return 0 }"),
+        "oversized live capture writes should keep the newest complete frames instead of returning 0"
+    );
+    assert!(
+        write_raw.contains("floatCount > audioCapacity")
+            && write_raw.contains("floatCount > available")
+            && write_raw.contains("header.pointee.readPosition = writePos"),
+        "encrypted capture writes must drop old records at record boundaries when the ring is full"
+    );
+}

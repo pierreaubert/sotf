@@ -155,31 +155,35 @@ final class DriverState {
     var bufferFrameSize: UInt32 = 512
     var channelCount: UInt32 = 2
 
-    // IO client count - accessed atomically for thread safety
-    // Multiple CoreAudio threads can call StartIO/StopIO concurrently
-    // Using fileprivate to allow atomic operations from driver callbacks
-    fileprivate var _ioClientCount: Int32 = 0
+    // Active IO clients. CoreAudio may overlap clients or deliver duplicate
+    // StartIO/StopIO transitions while switching apps, so key this by clientID
+    // instead of maintaining a blind refcount.
+    private let ioClientLock = NSLock()
+    private var activeIOClients = Set<UInt32>()
 
     var ioClientCount: Int32 {
-        get { OSAtomicAdd32(0, &_ioClientCount) }
+        ioClientLock.lock()
+        defer { ioClientLock.unlock() }
+        return Int32(activeIOClients.count)
     }
 
-    func incrementIOClientCount() -> Int32 {
-        return OSAtomicIncrement32(&_ioClientCount)
+    func startIOClient(_ clientID: UInt32) -> (wasIdle: Bool, inserted: Bool, count: Int) {
+        ioClientLock.lock()
+        defer { ioClientLock.unlock() }
+        let wasIdle = activeIOClients.isEmpty
+        let inserted = activeIOClients.insert(clientID).inserted
+        return (wasIdle, inserted, activeIOClients.count)
     }
 
-    func decrementIOClientCount() -> Int32 {
-        return OSAtomicDecrement32(&_ioClientCount)
+    func stopIOClient(_ clientID: UInt32) -> (wasActive: Bool, isIdle: Bool, count: Int) {
+        ioClientLock.lock()
+        defer { ioClientLock.unlock() }
+        let wasActive = activeIOClients.remove(clientID) != nil
+        return (wasActive, activeIOClients.isEmpty, activeIOClients.count)
     }
 
-    func resetIOClientCount() {
-        // Reset to 0 atomically
-        while true {
-            let current = _ioClientCount
-            if OSAtomicCompareAndSwap32(current, 0, &_ioClientCount) {
-                break
-            }
-        }
+    func removeIOClient(_ clientID: UInt32) -> (wasActive: Bool, isIdle: Bool, count: Int) {
+        stopIOClient(clientID)
     }
 
     // Timing
@@ -475,12 +479,23 @@ private func driverDestroyDevice(_ driver: AudioServerPlugInDriverRef, _ deviceO
 }
 
 private func driverAddDeviceClient(_ driver: AudioServerPlugInDriverRef, _ deviceObjectID: AudioObjectID, _ clientInfo: UnsafePointer<AudioServerPlugInClientInfo>) -> OSStatus {
-    halLog("AddDeviceClient: device=\(deviceObjectID)")
+    let info = clientInfo.pointee
+    halLog("AddDeviceClient: device=\(deviceObjectID) client=\(info.mClientID) pid=\(info.mProcessID)")
     return noErr
 }
 
 private func driverRemoveDeviceClient(_ driver: AudioServerPlugInDriverRef, _ deviceObjectID: AudioObjectID, _ clientInfo: UnsafePointer<AudioServerPlugInClientInfo>) -> OSStatus {
-    halLog("RemoveDeviceClient: device=\(deviceObjectID)")
+    let info = clientInfo.pointee
+    let state = DriverState.shared
+    let result = state.removeIOClient(info.mClientID)
+    halLog("RemoveDeviceClient: device=\(deviceObjectID) client=\(info.mClientID) pid=\(info.mProcessID) wasActive=\(result.wasActive) activeClients=\(result.count)")
+
+    if result.wasActive && result.isIdle {
+        state.clock.stop()
+        state.sharedAudio.setActive(false)
+        halLog("IO stopped after client removal")
+    }
+
     return noErr
 }
 
@@ -1053,22 +1068,26 @@ private func driverStartIO(_ driver: AudioServerPlugInDriverRef, _ deviceObjectI
         return kAudioHardwareIllegalOperationError
     }
 
-    let newCount = state.incrementIOClientCount()
+    let clientState = state.startIOClient(clientID)
 
-    if newCount == 1 {
+    if clientState.wasIdle {
         // First client - start the clock
         state.clock.start(sampleRate: state.sampleRate)
         state.inputRingBuffer?.reset()
         state.outputRingBuffer?.reset()
         state.startMaintenanceTasks()
         state.sharedAudio.setActive(true)
-        halLog("IO started, clock running")
+        halLog("IO started, clock running (activeClients=\(clientState.count))")
 
         // Log SharedMemory state for debugging
         halLog("SharedMemory state: \(state.sharedAudio.connectionStateDebug)")
 
         // Log device configuration
         halLog("Device config: sampleRate=\(state.sampleRate), bufferFrameSize=\(state.bufferFrameSize), channels=\(state.channelCount)")
+    } else if !clientState.inserted {
+        halLog("StartIO duplicate ignored for active client=\(clientID) activeClients=\(clientState.count)")
+    } else {
+        halLog("StartIO added overlapping client=\(clientID) activeClients=\(clientState.count)")
     }
 
     return noErr
@@ -1078,18 +1097,16 @@ private func driverStopIO(_ driver: AudioServerPlugInDriverRef, _ deviceObjectID
     halLog("StopIO: device=\(deviceObjectID) client=\(clientID)")
 
     let state = DriverState.shared
-    let newCount = state.decrementIOClientCount()
+    let clientState = state.stopIOClient(clientID)
 
-    // Guard against underflow (shouldn't happen, but be safe)
-    if newCount < 0 {
-        halLog("StopIO warning: ioClientCount underflow, resetting to 0")
-        state.resetIOClientCount()
-    }
-
-    if newCount <= 0 {
+    if clientState.isIdle {
         state.clock.stop()
         state.sharedAudio.setActive(false)
-        halLog("IO stopped")
+        halLog("IO stopped (activeClients=0)")
+    } else if !clientState.wasActive {
+        halLog("StopIO ignored for inactive client=\(clientID) activeClients=\(clientState.count)")
+    } else {
+        halLog("StopIO removed client=\(clientID) activeClients=\(clientState.count)")
     }
 
     return noErr
@@ -1153,6 +1170,17 @@ private func driverBeginIOOperation(_ driver: AudioServerPlugInDriverRef, _ devi
     return noErr
 }
 
+private func peakMagnitude(_ buffer: UnsafePointer<Float>, sampleCount: Int) -> Float {
+    var peak: Float = 0.0
+    for index in 0..<sampleCount {
+        let absSample = abs(buffer[index])
+        if absSample > peak {
+            peak = absSample
+        }
+    }
+    return peak
+}
+
 private func driverDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ deviceObjectID: AudioObjectID, _ streamObjectID: AudioObjectID, _ clientID: UInt32, _ operationID: UInt32, _ ioBufferFrameSize: UInt32, _ ioCycleInfo: UnsafePointer<AudioServerPlugInIOCycleInfo>, _ ioMainBuffer: UnsafeMutableRawPointer?, _ ioSecondaryBuffer: UnsafeMutableRawPointer?) -> OSStatus {
 
     // Log first call for each operation type
@@ -1192,10 +1220,28 @@ private func driverDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ deviceO
         }
 
     case kIOOperation_WriteMix:
+        var selectedFloatBuffer = floatBuffer
+        var selectedSecondaryBuffer = false
+        var mainPeakForSelection: Float? = nil
+        var secondaryPeakForSelection: Float? = nil
+
+        if let secondaryBuffer = ioSecondaryBuffer {
+            let secondaryFloatBuffer = secondaryBuffer.assumingMemoryBound(to: Float.self)
+            let mainPeak = peakMagnitude(floatBuffer, sampleCount: sampleCount)
+            let secondaryPeak = peakMagnitude(secondaryFloatBuffer, sampleCount: sampleCount)
+            mainPeakForSelection = mainPeak
+            secondaryPeakForSelection = secondaryPeak
+
+            if mainPeak <= 0.000001 && secondaryPeak > mainPeak {
+                selectedFloatBuffer = secondaryFloatBuffer
+                selectedSecondaryBuffer = true
+            }
+        }
+
         // Receive audio from clients (playback to virtual device)
         // Always store in loopback buffer first (ensures audio flows even without daemon)
         if state.loopbackEnabled, let outputBuffer = state.outputRingBuffer {
-            _ = outputBuffer.writeInterleaved(floatBuffer, frameCount: frameCount)
+            _ = outputBuffer.writeInterleaved(selectedFloatBuffer, frameCount: frameCount)
         }
 
         // Periodic diagnostic logging (every ~2 seconds at 48kHz with 512 frame buffers)
@@ -1235,48 +1281,53 @@ private func driverDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ deviceO
         // Compute RMS and peak of the incoming CoreAudio buffer to verify data is non-zero
         if shouldLogDiag {
             var mainRms: Float = 0.0
-            var mainPeak: Float = 0.0
+            var mainPeak: Float = mainPeakForSelection ?? 0.0
             let checkCount = min(sampleCount, 1024)
             for i in 0..<checkCount {
                 let sample = floatBuffer[i]
                 mainRms += sample * sample
-                let absSample = abs(sample)
-                if absSample > mainPeak { mainPeak = absSample }
+                if mainPeakForSelection == nil {
+                    let absSample = abs(sample)
+                    if absSample > mainPeak { mainPeak = absSample }
+                }
             }
             mainRms = sqrtf(mainRms / Float(checkCount))
 
             // Also check ioSecondaryBuffer - CoreAudio may place mixed audio there
             var secRms: Float = 0.0
-            var secPeak: Float = 0.0
+            var secPeak: Float = secondaryPeakForSelection ?? 0.0
             if let secBuf = ioSecondaryBuffer {
                 let secFloat = secBuf.assumingMemoryBound(to: Float.self)
                 for i in 0..<checkCount {
                     let sample = secFloat[i]
                     secRms += sample * sample
-                    let absSample = abs(sample)
-                    if absSample > secPeak { secPeak = absSample }
+                    if secondaryPeakForSelection == nil {
+                        let absSample = abs(sample)
+                        if absSample > secPeak { secPeak = absSample }
+                    }
                 }
                 secRms = sqrtf(secRms / Float(checkCount))
             }
 
-            os_log("[DIAG] WriteMix: conn=%{public}d eng=%{public}d mainRMS=%{public}.6f mainPeak=%{public}.6f secRMS=%{public}.6f secPeak=%{public}.6f frames=%{public}d sec=%{public}d",
+            os_log("[DIAG] WriteMix: conn=%{public}d eng=%{public}d mainRMS=%{public}.6f mainPeak=%{public}.6f secRMS=%{public}.6f secPeak=%{public}.6f frames=%{public}d sec=%{public}d selectedSec=%{public}d",
                    log: logger, type: .error,
                    isConnected ? 1 : 0,
                    engineReady ? 1 : 0,
                    mainRms, mainPeak, secRms, secPeak, frameCount,
-                   ioSecondaryBuffer != nil ? 1 : 0)
+                   ioSecondaryBuffer != nil ? 1 : 0,
+                   selectedSecondaryBuffer ? 1 : 0)
         }
 
         // Also send to Rust engine if connected and ready
         if isConnected && engineReady {
-            let framesWritten = state.sharedAudio.writeAudio(floatBuffer, frameCount: frameCount, channelCount: channelCount)
+            let framesWritten = state.sharedAudio.writeAudio(selectedFloatBuffer, frameCount: frameCount, channelCount: channelCount)
             // TRACE: Log frames received from macOS apps and written to shared memory
             if framesWritten > 0 {
                 if shouldLogDiag {
                     os_log("[AUDIO FLOW] HAL WriteMix: %d frames from app -> shm", log: logger, type: .error, framesWritten)
                 }
             } else if framesWritten == 0 {
-                os_log("[AUDIO FLOW] HAL WriteMix: buffer full, dropped %d frames", log: logger, type: .error, frameCount)
+                os_log("[AUDIO FLOW] HAL WriteMix: shared-memory write returned 0 for %d frames", log: logger, type: .error, frameCount)
             }
         } else if shouldLogDiag {
             // Log why we're not sending to daemon

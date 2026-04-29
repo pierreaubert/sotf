@@ -392,10 +392,22 @@ final class SharedAudioBuffer {
         )
     }
 
+    private func clampedUsedSampleCount(writePos: UInt64, readPos: UInt64, capacity: Int) -> Int {
+        guard capacity > 0, writePos >= readPos else { return 0 }
+
+        let distance = writePos - readPos
+        let capacity64 = UInt64(capacity)
+        if distance >= capacity64 {
+            return capacity
+        }
+        return Int(distance)
+    }
+
     /// Write audio to shared memory (called from DoIOOperation for output)
     /// Uses lock-free ring buffer algorithm
     func writeAudio(_ buffer: UnsafePointer<Float>, frameCount: Int, channelCount: Int) -> Int {
         guard let header = header, let audioData = audioData else { return 0 }
+        guard frameCount > 0, channelCount > 0, audioCapacity > 0 else { return 0 }
 
         // Check for encryption
         if header.pointee.encrypted != 0 {
@@ -437,40 +449,56 @@ final class SharedAudioBuffer {
 
         // Standard unencrypted write
         let sampleCount = frameCount * channelCount
+        let writableCapacity = audioCapacity - (audioCapacity % channelCount)
+        guard sampleCount > 0, writableCapacity > 0 else { return 0 }
+
+        let samplesToWrite = min(sampleCount, writableCapacity)
+        let sourceOffset = sampleCount - samplesToWrite
+        let sourceBuffer = buffer.advanced(by: sourceOffset)
         let writePos = header.pointee.writePosition
         let readPos = header.pointee.readPosition
 
-        // Calculate available space
-        let used = Int(writePos - readPos)
-        let available = audioCapacity - used
+        // This is a live capture stream. If the daemon falls behind during a
+        // reconnect/client switch, drop stale samples and always publish the
+        // newest complete frames instead of returning 0 forever on a full ring.
+        let used = clampedUsedSampleCount(
+            writePos: writePos,
+            readPos: readPos,
+            capacity: writableCapacity
+        )
+        let effectiveReadPos = writePos >= readPos ? readPos : writePos
+        let samplesToDrop = max(0, used + samplesToWrite - writableCapacity)
+        let adjustedReadPos = effectiveReadPos + UInt64(samplesToDrop)
 
-        let toWrite = min(sampleCount, available)
-        if toWrite <= 0 { return 0 }
+        if adjustedReadPos != readPos {
+            OSMemoryBarrier()
+            header.pointee.readPosition = adjustedReadPos
+        }
 
         let writeIndex = Int(writePos % UInt64(audioCapacity))
-        let firstPart = min(toWrite, audioCapacity - writeIndex)
-        let secondPart = toWrite - firstPart
+        let firstPart = min(samplesToWrite, audioCapacity - writeIndex)
+        let secondPart = samplesToWrite - firstPart
 
         // Copy data
-        memcpy(audioData.advanced(by: writeIndex), buffer, firstPart * MemoryLayout<Float>.size)
+        memcpy(audioData.advanced(by: writeIndex), sourceBuffer, firstPart * MemoryLayout<Float>.size)
         if secondPart > 0 {
-            memcpy(audioData, buffer.advanced(by: firstPart), secondPart * MemoryLayout<Float>.size)
+            memcpy(audioData, sourceBuffer.advanced(by: firstPart), secondPart * MemoryLayout<Float>.size)
         }
 
         // Update write position atomically
         OSMemoryBarrier()
-        header.pointee.writePosition = writePos + UInt64(toWrite)
+        header.pointee.writePosition = writePos + UInt64(samplesToWrite)
 
         // TRACE: Log successful write to shared memory ring buffer
         // Note: Avoid logging every frame in production (use os_signpost for performance tracing)
         #if DEBUG
-        if toWrite > 0 {
-            let newWritePos = writePos + UInt64(toWrite)
-            halLog("[SHM TRACE] write: \(toWrite/channelCount) frames, wpos=\(newWritePos), rpos=\(readPos)")
+        if samplesToWrite > 0 {
+            let newWritePos = writePos + UInt64(samplesToWrite)
+            halLog("[SHM TRACE] write: \(samplesToWrite/channelCount) frames, dropped=\(samplesToDrop/channelCount) frames, wpos=\(newWritePos), rpos=\(adjustedReadPos)")
         }
         #endif
 
-        return toWrite / channelCount
+        return samplesToWrite / channelCount
     }
 
     /// Helper to write raw bytes (ciphertext) to ring buffer
@@ -479,14 +507,29 @@ final class SharedAudioBuffer {
         
         // Calculate required space in floats (rounded up)
         let floatCount = (bytes.count + 3) / 4
+        guard floatCount > 0, audioCapacity > 0 else { return 0 }
+
+        if floatCount > audioCapacity {
+            header.pointee.encryptionOverflowCount += 1
+            return 0
+        }
         
         let writePos = header.pointee.writePosition
         let readPos = header.pointee.readPosition
-        let available = audioCapacity - Int(writePos - readPos)
+        let used = clampedUsedSampleCount(
+            writePos: writePos,
+            readPos: readPos,
+            capacity: audioCapacity
+        )
+        let available = audioCapacity - used
         
         if floatCount > available {
             header.pointee.encryptionOverflowCount += 1
-            return 0
+            OSMemoryBarrier()
+            header.pointee.readPosition = writePos
+        } else if writePos < readPos {
+            OSMemoryBarrier()
+            header.pointee.readPosition = writePos
         }
         
         let writeIndex = Int(writePos % UInt64(audioCapacity))
