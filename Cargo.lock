@@ -10175,6 +10175,8 @@ dependencies = [
  "env_logger",
  "libc",
  "log",
+ "objc2-core-audio",
+ "objc2-core-foundation",
  "parking_lot",
  "serde",
  "serde_json",
@@ -10357,7 +10359,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-host"
-version = "0.5.90"
+version = "0.5.91"
 dependencies = [
  "arc-swap",
  "audioadapter-buffers",

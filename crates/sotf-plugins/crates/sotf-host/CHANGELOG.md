@@ -1,3 +1,15 @@
+# 0.5.91
+
+## Fixes
+
+- Invalidate built graph topology after direct `add_node` and `add_edge` mutations so processing rebuilds stale stages and buffers before the next block.
+- Size latency-compensation delay buffers to the routed channel count for channel-mapped graph edges.
+- Propagate inner `process_in_place` errors from oversampled plugin wrappers.
+
+## Performance
+
+- Replace per-chunk oversampler residual shifting with input/output cursors and a reusable chunk buffer, reducing hot-path memory traffic for oversampled processing.
+
 # 0.5.90
 
 ## Fixes

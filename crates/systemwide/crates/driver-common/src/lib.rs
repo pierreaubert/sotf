@@ -24,6 +24,9 @@ pub struct DriverStatus {
     pub buffer_frames: u32,
     /// Human-readable driver name (e.g. "macOS CoreAudio HAL", "PipeWire", "Windows APO").
     pub driver_name: String,
+    /// Whether the platform driver itself reports it is ready (kernel/HAL side initialised).
+    /// On platforms with no driver concept this mirrors `driver_installed`.
+    pub driver_ready: bool,
 }
 
 /// Configuration request for the audio driver.
@@ -140,6 +143,7 @@ impl AudioDriver for NullDriver {
             channel_count: 0,
             buffer_frames: 0,
             driver_name: "None".to_string(),
+            driver_ready: false,
         }
     }
 

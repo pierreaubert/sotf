@@ -13,7 +13,7 @@ use rubato::{Fft, FixedSync, Resampler};
 /// and efficiency.
 pub const OS_CHUNK_SIZE: usize = 256;
 
-/// Maximum number of channels supported in the stack-based chunk buffer.
+/// Maximum number of channels supported by the oversampler.
 /// 32 channels covers up to 9.1.6 with headroom.
 const MAX_OS_CHANNELS: usize = 32;
 
@@ -39,6 +39,8 @@ pub struct Oversampler {
     down_out: Vec<Vec<f32>>,
     /// Residual input frames (interleaved) waiting to fill a full OS_CHUNK_SIZE chunk
     residual_in: Vec<f32>,
+    /// Read cursor into `residual_in`
+    residual_in_read: usize,
     /// Number of frames currently in `residual_in`
     residual_frames: usize,
     /// Residual output frames (interleaved) waiting to be consumed by the caller
@@ -47,6 +49,8 @@ pub struct Oversampler {
     residual_out_frames: usize,
     /// Read cursor into `residual_out`
     residual_out_read: usize,
+    /// Reusable interleaved chunk buffer for full OS_CHUNK_SIZE input blocks.
+    chunk_buffer: Vec<f32>,
     /// Oversampling factor (2 or 4)
     factor: u32,
     /// Number of audio channels
@@ -108,10 +112,12 @@ impl Oversampler {
             // Residual I/O buffers pre-allocated for max expected frame size (4096)
             // to avoid hot-path resize. The resize guards remain as safety nets.
             residual_in: vec![0.0f32; (4096 + OS_CHUNK_SIZE) * channels],
+            residual_in_read: 0,
             residual_frames: 0,
             residual_out: vec![0.0f32; (OS_CHUNK_SIZE + latency) * channels * 4],
             residual_out_frames: 0,
             residual_out_read: 0,
+            chunk_buffer: vec![0.0f32; OS_CHUNK_SIZE * channels],
             factor,
             channels,
             latency,
@@ -122,6 +128,7 @@ impl Oversampler {
     pub fn reset(&mut self) {
         self.resampler_up.reset();
         self.resampler_down.reset();
+        self.residual_in_read = 0;
         self.residual_frames = 0;
         self.residual_out_frames = 0;
         self.residual_out_read = 0;
@@ -170,33 +177,31 @@ impl Oversampler {
         let nc = self.channels;
         let total_in_samples = num_frames * nc;
 
-        // 1. Grow residual_in if needed
-        {
-            let needed = (self.residual_frames + num_frames) * nc;
-            if needed > self.residual_in.len() {
-                self.residual_in.resize(needed + OS_CHUNK_SIZE * nc, 0.0);
-            }
-            // Append incoming frames to residual_in
-            let write_start = self.residual_frames * nc;
-            self.residual_in[write_start..write_start + total_in_samples]
-                .copy_from_slice(&buffer[..total_in_samples]);
-            self.residual_frames += num_frames;
+        // 1. Append incoming frames to residual_in. The read cursor allows full
+        // chunks to be consumed without shifting residual data every iteration.
+        self.ensure_residual_in_capacity(num_frames);
+        let write_start = (self.residual_in_read + self.residual_frames) * nc;
+        self.residual_in[write_start..write_start + total_in_samples]
+            .copy_from_slice(&buffer[..total_in_samples]);
+        self.residual_frames += num_frames;
+
+        if self.chunk_buffer.len() < OS_CHUNK_SIZE * nc {
+            self.chunk_buffer.resize(OS_CHUNK_SIZE * nc, 0.0);
         }
 
         // 2. Process all full chunks from the residual input
         while self.residual_frames >= OS_CHUNK_SIZE {
             let chunk_len = OS_CHUNK_SIZE * nc;
-            let mut chunk_buf = [0.0f32; OS_CHUNK_SIZE * MAX_OS_CHANNELS];
-            chunk_buf[..chunk_len].copy_from_slice(&self.residual_in[..chunk_len]);
-
-            // Shift residual_in left by OS_CHUNK_SIZE frames
-            let remaining = (self.residual_frames - OS_CHUNK_SIZE) * nc;
-            self.residual_in
-                .copy_within(chunk_len..chunk_len + remaining, 0);
+            let chunk_start = self.residual_in_read * nc;
+            self.chunk_buffer[..chunk_len]
+                .copy_from_slice(&self.residual_in[chunk_start..chunk_start + chunk_len]);
+            self.residual_in_read += OS_CHUNK_SIZE;
             self.residual_frames -= OS_CHUNK_SIZE;
+            if self.residual_frames == 0 {
+                self.residual_in_read = 0;
+            }
 
-            // Process the chunk
-            self.process_chunk(&chunk_buf[..chunk_len], &mut process_fn)?;
+            self.process_chunk(&mut process_fn)?;
         }
 
         // 3. Drain residual_out into buffer
@@ -218,15 +223,9 @@ impl Oversampler {
             buffer[dst_start..dst_start + frames_to_copy * nc]
                 .copy_from_slice(&self.residual_out[src_start..src_start + frames_to_copy * nc]);
 
+            self.residual_out_read += frames_to_copy;
             self.residual_out_frames -= frames_to_copy;
             if self.residual_out_frames == 0 {
-                self.residual_out_read = 0;
-            } else {
-                // Compact: move remaining data to front so write_offset stays consistent
-                let remaining = self.residual_out_frames * nc;
-                let src_start = (self.residual_out_read + frames_to_copy) * nc;
-                self.residual_out
-                    .copy_within(src_start..src_start + remaining, 0);
                 self.residual_out_read = 0;
             }
             frames_written += frames_to_copy;
@@ -235,9 +234,68 @@ impl Oversampler {
         Ok(frames_written)
     }
 
+    fn ensure_residual_in_capacity(&mut self, additional_frames: usize) {
+        let nc = self.channels;
+        let needed_end = (self.residual_in_read + self.residual_frames + additional_frames) * nc;
+        if needed_end <= self.residual_in.len() {
+            return;
+        }
+
+        self.compact_residual_in();
+        let needed = (self.residual_frames + additional_frames) * nc;
+        if needed > self.residual_in.len() {
+            self.residual_in.resize(needed + OS_CHUNK_SIZE * nc, 0.0);
+        }
+    }
+
+    fn compact_residual_in(&mut self) {
+        if self.residual_in_read == 0 {
+            return;
+        }
+        let nc = self.channels;
+        let remaining = self.residual_frames * nc;
+        if remaining > 0 {
+            let src_start = self.residual_in_read * nc;
+            self.residual_in
+                .copy_within(src_start..src_start + remaining, 0);
+        }
+        self.residual_in_read = 0;
+    }
+
+    fn ensure_residual_out_capacity(&mut self, additional_frames: usize) -> usize {
+        let nc = self.channels;
+        let mut write_frame = self.residual_out_read + self.residual_out_frames;
+        let needed_end = (write_frame + additional_frames) * nc;
+        if needed_end <= self.residual_out.len() {
+            return write_frame;
+        }
+
+        self.compact_residual_out();
+        write_frame = self.residual_out_frames;
+        let needed = (write_frame + additional_frames) * nc;
+        if needed > self.residual_out.len() {
+            self.residual_out.resize(needed + OS_CHUNK_SIZE * nc, 0.0);
+        }
+        write_frame
+    }
+
+    fn compact_residual_out(&mut self) {
+        if self.residual_out_read == 0 {
+            return;
+        }
+        let nc = self.channels;
+        let remaining = self.residual_out_frames * nc;
+        if remaining > 0 {
+            let src_start = self.residual_out_read * nc;
+            self.residual_out
+                .copy_within(src_start..src_start + remaining, 0);
+        }
+        self.residual_out_read = 0;
+    }
+
     /// Process one OS_CHUNK_SIZE chunk of interleaved input through
     /// upsample -> callback -> downsample.
-    fn process_chunk<F>(&mut self, input_chunk: &[f32], process_fn: &mut F) -> Result<(), String>
+    fn process_chunk<F>(&mut self, process_fn: &mut F) -> Result<(), String>
     where
         F: FnMut(&mut [Vec<f32>], usize),
     {
@@ -245,7 +303,12 @@ impl Oversampler {
         let factor = self.factor as usize;
 
         // Step 1: interleaved -> planar into up_in
-        interleaved_to_planar(input_chunk, &mut self.up_in, OS_CHUNK_SIZE, nc);
+        interleaved_to_planar(
+            &self.chunk_buffer[..OS_CHUNK_SIZE * nc],
+            &mut self.up_in,
+            OS_CHUNK_SIZE,
+            nc,
+        );
 
         // Step 2: upsample
         let up_out_max = self.resampler_up.output_frames_max();
@@ -286,11 +349,8 @@ impl Oversampler {
         };
 
         // Step 6: planar -> interleaved into residual_out
-        let write_offset = self.residual_out_frames * nc;
-        let needed = write_offset + down_frames * nc;
-        if needed > self.residual_out.len() {
-            self.residual_out.resize(needed + OS_CHUNK_SIZE * nc, 0.0);
-        }
+        let write_frame = self.ensure_residual_out_capacity(down_frames);
+        let write_offset = write_frame * nc;
         planar_to_interleaved(
             &self.down_out,
             &mut self.residual_out[write_offset..],
@@ -662,6 +722,30 @@ mod tests {
         assert_eq!(os.residual_frames, 0);
         assert_eq!(os.residual_out_frames, 0);
         assert_eq!(os.residual_out_read, 0);
+    }
+
+    #[test]
+    fn test_oversampler_variable_small_blocks_keep_residual_cursors_valid() {
+        let channels = 2;
+        let mut os = Oversampler::new(2, channels).unwrap();
+        let block_sizes = [17usize, 64, 191, 3, 512, 29, 257, 128];
+
+        for (block_idx, &num_frames) in block_sizes.iter().cycle().take(32).enumerate() {
+            let mut buffer: Vec<f32> = (0..num_frames * channels)
+                .map(|i| ((block_idx * 31 + i) as f32 * 0.01).sin() * 0.25)
+                .collect();
+
+            let processed = os
+                .process(&mut buffer, num_frames, |_planar, _frames| {})
+                .unwrap();
+
+            assert!(processed <= num_frames);
+            assert!(buffer.iter().all(|s| s.is_finite()));
+            assert!(os.residual_in_read + os.residual_frames <= os.residual_in.len() / channels);
+            assert!(
+                os.residual_out_read + os.residual_out_frames <= os.residual_out.len() / channels
+            );
+        }
     }
 
     #[test]

@@ -242,11 +242,18 @@ impl AudioDaemon {
     async fn handle_status(&self) -> Response {
         let manager = self.manager.lock();
         let state = manager.get_state();
+        let engine_state = manager.get_engine_state();
+        let selected_device = self.selected_device.lock().clone();
 
         Response::ok(serde_json::json!({
             "state": format!("{:?}", state),
             "volume": manager.get_volume(),
             "muted": manager.is_muted(),
+            "selected_device": selected_device,
+            "sample_rate": engine_state.sample_rate,
+            "channels": engine_state.num_channels,
+            "underruns": engine_state.underruns,
+            "last_error": engine_state.last_error,
         }))
     }
 
@@ -340,13 +347,27 @@ impl AudioDaemon {
                     device
                 );
 
-                let manager = self.manager.lock();
-                let state = manager.get_state();
-                if state != sotf_audio::manager::StreamingState::Idle {
-                    log::warn!(
-                        "Device change will take effect on next playback start (current state: {:?})",
-                        state
+                // If playback is live, the cpal stream is bound to the previous
+                // device — we must restart the driver playback chain so audio
+                // is actually routed to the new device.
+                let needs_restart = {
+                    let manager = self.manager.lock();
+                    manager.get_state() != sotf_audio::manager::StreamingState::Idle
+                };
+
+                if needs_restart {
+                    let plugins = self.current_plugins.lock().clone();
+                    let output_channels = *self.current_output_channels.lock();
+                    log::info!(
+                        "Restarting driver playback with new output device: {}",
+                        resolved_name
                     );
+                    let resp = self
+                        .handle_load_plugins_with_channels(plugins, output_channels)
+                        .await;
+                    if !resp.success {
+                        return resp;
+                    }
                 }
 
                 Response::ok_empty()
@@ -825,11 +846,14 @@ impl AudioDaemon {
 
         Response::ok(serde_json::json!({
             "sample_rate": status.sample_rate,
+            "actual_sample_rate": status.sample_rate,
             "buffer_frames": status.buffer_frames,
+            "actual_buffer_frames": status.buffer_frames,
             "channel_count": status.channel_count,
             "active": status.capture_active,
             "driver_name": status.driver_name,
             "driver_installed": status.driver_installed,
+            "driver_ready": status.driver_ready,
             "platform_supported": status.platform_supported,
         }))
     }
@@ -1331,13 +1355,16 @@ fn plugin_type_category(pt: &PluginType) -> &'static str {
 }
 
 fn find_fallback_output_device() -> Option<String> {
+    if let Some(device) =
+        default_system_output_device_name().filter(|name| is_safe_output_device_name(name))
+    {
+        return Some(device);
+    }
+
     if let Ok(devices) = list_audio_devices() {
         let physical_device = devices.iter().find(|d| {
             let name = d.get("name").and_then(|n| n.as_str()).unwrap_or("");
-            !name.contains("SotF")
-                && !name.contains("BlackHole")
-                && !name.contains("ZoomAudio")
-                && !name.contains("Loopback")
+            is_safe_output_device_name(name)
         });
 
         if let Some(device) = physical_device {
@@ -1347,6 +1374,88 @@ fn find_fallback_output_device() -> Option<String> {
                 .map(|s| s.to_string());
         }
     }
+    None
+}
+
+fn is_safe_output_device_name(name: &str) -> bool {
+    let lowercase_name = name.to_ascii_lowercase();
+    ![
+        "sotf",
+        "blackhole",
+        "zoomaudio",
+        "loopback",
+        "soundflower",
+        "background music",
+        "audio bridge",
+    ]
+    .iter()
+    .any(|virtual_name| lowercase_name.contains(virtual_name))
+}
+
+#[cfg(target_os = "macos")]
+fn default_system_output_device_name() -> Option<String> {
+    use objc2_core_audio::{
+        AudioDeviceID, AudioObjectGetPropertyData, AudioObjectID, AudioObjectPropertyAddress,
+        kAudioDevicePropertyDeviceNameCFString, kAudioHardwareNoError,
+        kAudioHardwarePropertyDefaultSystemOutputDevice, kAudioObjectPropertyElementMain,
+        kAudioObjectPropertyScopeGlobal, kAudioObjectSystemObject,
+    };
+    use objc2_core_foundation::CFString;
+    use std::mem;
+    use std::ptr::{NonNull, null};
+
+    let property_address = AudioObjectPropertyAddress {
+        mSelector: kAudioHardwarePropertyDefaultSystemOutputDevice,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain,
+    };
+
+    let mut audio_device_id: AudioDeviceID = 0;
+    let mut data_size = mem::size_of::<AudioDeviceID>() as u32;
+    let status = unsafe {
+        AudioObjectGetPropertyData(
+            kAudioObjectSystemObject as AudioObjectID,
+            NonNull::from(&property_address),
+            0,
+            null(),
+            NonNull::from(&mut data_size),
+            NonNull::from(&mut audio_device_id).cast(),
+        )
+    };
+
+    if status != kAudioHardwareNoError as i32 || audio_device_id == 0 {
+        return None;
+    }
+
+    let property_address = AudioObjectPropertyAddress {
+        mSelector: kAudioDevicePropertyDeviceNameCFString,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain,
+    };
+
+    let mut device_name: *const CFString = null();
+    let mut data_size = mem::size_of::<*const CFString>() as u32;
+    let status = unsafe {
+        AudioObjectGetPropertyData(
+            audio_device_id,
+            NonNull::from(&property_address),
+            0,
+            null(),
+            NonNull::from(&mut data_size),
+            NonNull::from(&mut device_name).cast(),
+        )
+    };
+
+    if status != kAudioHardwareNoError as i32 || device_name.is_null() {
+        return None;
+    }
+
+    let name = unsafe { (&*device_name).to_string() };
+    (!name.is_empty()).then_some(name)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn default_system_output_device_name() -> Option<String> {
     None
 }
 

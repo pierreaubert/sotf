@@ -2,10 +2,12 @@
 #
 # Build script for SotF macOS distribution
 #
-# Creates a signed and notarized installer package (.pkg) containing:
+# Creates an UNSIGNED installer package (.pkg) containing:
 #   - SotF Toolbar.app (menu bar app) -> /Applications/
 #   - SotFHAL.driver (HAL audio driver) -> /Library/Audio/Plug-Ins/HAL/
 #   - sotf-daemon (embedded in app)
+#
+# Signing and notarization live in ./scripts/sign-macos.sh — run that after build.
 #
 # Bundle identifiers:
 #   - org.spinorama.sotf-toolbar  (menu bar app)
@@ -13,18 +15,8 @@
 #   - org.spinorama.sotf-daemon   (background daemon)
 #
 # Usage:
-#   ./build-dmg-daemon.sh                    # Build unsigned pkg (for local testing)
-#   ./build-dmg-daemon.sh --sign             # Build signed pkg (requires Developer ID)
-#   ./build-dmg-daemon.sh --sign --notarize  # Build, sign, and notarize (for distribution)
-#   ./build-dmg-daemon.sh --dmg              # Build DMG instead of pkg (legacy)
-#
-# Environment variables:
-#   DEVELOPER_ID             - Developer ID Application certificate name
-#                              Example: "Developer ID Application: Your Name (TEAMID)"
-#   INSTALLER_DEVELOPER_ID   - Developer ID Installer certificate name (for pkg signing)
-#                              Example: "Developer ID Installer: Your Name (TEAMID)"
-#   APPLE_ID                 - Apple ID email for notarization
-#   APPLE_TEAM_ID            - Apple Developer Team ID
+#   ./build-dmg-daemon.sh         # Build unsigned pkg (default)
+#   ./build-dmg-daemon.sh --dmg   # Build DMG instead of pkg (legacy)
 #
 # Prerequisites:
 #   - Xcode Command Line Tools
@@ -62,8 +54,6 @@ CONFIGBAR_DIR="$PROJECT_ROOT/crates/systemwide/crates/daemon/configbar"
 HAL_DRIVER_DIR="$PROJECT_ROOT/crates/systemwide/crates/driver-hal"
 
 # Command line options
-SIGN=false
-NOTARIZE=false
 CLEAN=false
 BUILD_HAL=true
 DEBUG=false
@@ -228,6 +218,10 @@ copy_hal_driver() {
     fi
 
     log_info "Copying HAL driver to DMG directory..."
+    # Remove any prior staged copy first — macOS `cp -R src dst` nests src
+    # *inside* dst when dst already exists, leaving the stale top-level
+    # bundle untouched and getting packaged into the pkg.
+    rm -rf "$DRIVER_BUNDLE"
     cp -R "$HAL_BUILD_DIR" "$DRIVER_BUNDLE"
     log_success "HAL driver copied"
 }
@@ -397,77 +391,6 @@ create_app_icon() {
     else
         log_warning "No icon source found, using default icon"
     fi
-}
-
-# Create entitlements files
-create_entitlements() {
-    log_info "Creating entitlements files..."
-
-    # Daemon entitlements
-    cat > "$DMG_DIR/daemon.entitlements" << 'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>com.apple.security.app-sandbox</key>
-    <false/>
-    <key>com.apple.security.cs.allow-jit</key>
-    <true/>
-    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
-    <true/>
-    <key>com.apple.security.cs.disable-library-validation</key>
-    <true/>
-    <key>com.apple.security.device.audio-input</key>
-    <true/>
-    <key>com.apple.security.files.user-selected.read-write</key>
-    <true/>
-    <key>com.apple.security.network.client</key>
-    <true/>
-</dict>
-</plist>
-EOF
-
-    # Toolbar entitlements
-    cat > "$DMG_DIR/toolbar.entitlements" << 'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>com.apple.security.app-sandbox</key>
-    <false/>
-    <key>com.apple.security.cs.allow-jit</key>
-    <true/>
-    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
-    <true/>
-    <key>com.apple.security.cs.disable-library-validation</key>
-    <true/>
-    <key>com.apple.security.device.audio-input</key>
-    <true/>
-    <key>com.apple.security.files.user-selected.read-write</key>
-    <true/>
-    <key>com.apple.security.network.client</key>
-    <true/>
-</dict>
-</plist>
-EOF
-
-    # HAL driver entitlements
-    cat > "$DMG_DIR/hal.entitlements" << 'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>com.apple.security.app-sandbox</key>
-    <false/>
-    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
-    <true/>
-    <key>com.apple.security.cs.disable-library-validation</key>
-    <true/>
-</dict>
-</plist>
-EOF
-
-    log_success "Entitlements files created"
 }
 
 # Create README for the DMG
@@ -640,15 +563,6 @@ UNINSTALL_SCRIPT
     chmod +x "$DMG_DIR/uninstall-hal.sh"
 
     log_success "HAL driver scripts created"
-}
-
-# Ad-hoc sign for local testing (real signing via sign-macos.sh)
-sign_app() {
-    log_info "Ad-hoc signing for local testing..."
-    codesign --force --deep --sign - "$APP_BUNDLE" 2>/dev/null || true
-    if $BUILD_HAL && [ -d "$DRIVER_BUNDLE" ]; then
-        codesign --force --deep --sign - "$DRIVER_BUNDLE" 2>/dev/null || true
-    fi
 }
 
 # Create DMG
@@ -999,30 +913,14 @@ WELCOME
 </html>
 CONCLUSION
 
-    # Build the distribution package
+    # Build the distribution package (unsigned — sign via ./scripts/sign-macos.sh)
     log_info "Building distribution package..."
-
-    if $SIGN && [ -n "${INSTALLER_DEVELOPER_ID:-}" ]; then
-        productbuild \
-            --distribution "$DMG_DIR/distribution.xml" \
-            --package-path "$pkg_components" \
-            --resources "$DMG_DIR" \
-            --sign "$INSTALLER_DEVELOPER_ID" \
-            "$pkg_path"
-        log_success "Signed installer package created"
-    else
-        productbuild \
-            --distribution "$DMG_DIR/distribution.xml" \
-            --package-path "$pkg_components" \
-            --resources "$DMG_DIR" \
-            "$pkg_path"
-
-        if $SIGN; then
-            log_warning "INSTALLER_DEVELOPER_ID not set, package is unsigned"
-            log_info "Set INSTALLER_DEVELOPER_ID='Developer ID Installer: Your Name (TEAMID)' to sign packages"
-        fi
-        log_success "Installer package created (unsigned)"
-    fi
+    productbuild \
+        --distribution "$DMG_DIR/distribution.xml" \
+        --package-path "$pkg_components" \
+        --resources "$DMG_DIR" \
+        "$pkg_path"
+    log_success "Installer package created (unsigned)"
 
     # Cleanup
     rm -rf "$pkg_root" "$pkg_scripts" "$pkg_components"
@@ -1058,7 +956,6 @@ main() {
         # Legacy DMG build
         create_readme
         create_hal_scripts
-        sign_app
         create_dmg_file
 
         log_info "=========================================="
@@ -1077,7 +974,6 @@ main() {
         log_info "To sign: ./scripts/sign-macos.sh"
     else
         # Package installer build (default)
-        sign_app
         create_pkg
 
         log_info "=========================================="

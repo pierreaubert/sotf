@@ -35,3 +35,5 @@ libc = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 driver-hal = { workspace = true, optional = true }
+objc2-core-audio = { version = "0.3", features = ["std", "objc2-core-audio-types", "AudioHardware"], default-features = false }
+objc2-core-foundation = { version = "0.3", features = ["std", "CFString"], default-features = false }

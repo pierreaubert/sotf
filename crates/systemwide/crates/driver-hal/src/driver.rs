@@ -137,16 +137,17 @@ impl AudioDriver for HalDriver {
     }
 
     fn status(&self) -> DriverStatus {
-        let (sample_rate, channel_count, buffer_frames, capture_active) =
+        let (sample_rate, channel_count, buffer_frames, capture_active, driver_ready) =
             if let Some(ref buf) = self.config_buffer {
                 (
                     buf.sample_rate(),
                     buf.channel_count(),
                     buf.buffer_frames(),
                     buf.is_active(),
+                    buf.driver_ready(),
                 )
             } else {
-                (0, 0, 0, false)
+                (0, 0, 0, false, false)
             };
 
         DriverStatus {
@@ -157,6 +158,7 @@ impl AudioDriver for HalDriver {
             channel_count,
             buffer_frames,
             driver_name: "macOS CoreAudio HAL".to_string(),
+            driver_ready,
         }
     }
 

@@ -120,6 +120,11 @@ fn take_frame_buffer(
     frame_data
 }
 
+#[cfg(any(test, all(target_os = "macos", feature = "hal")))]
+fn frames_to_sample_count(frames: usize, channels: usize, max_samples: usize) -> usize {
+    frames.saturating_mul(channels).min(max_samples)
+}
+
 /// Helper to send a message with backpressure handling and interruption support
 fn send_or_interrupt<T>(
     tx: &SyncSender<T>,
@@ -976,7 +981,8 @@ impl DecoderState {
                 self.hal_input_buffer.resize(buffer_len, 0.0);
             }
 
-            let samples_read = reader.read(&mut self.hal_input_buffer);
+            let frames_read = reader.read(&mut self.hal_input_buffer);
+            let samples_read = frames_to_sample_count(frames_read, hal_channels, buffer_len);
 
             if samples_read < buffer_len {
                 self.hal_input_buffer[samples_read..].fill(0.0);
@@ -1543,6 +1549,23 @@ mod tests {
 
         assert_eq!(queue.as_slice(), &[2.0, 3.0]);
         assert_eq!(queue.as_slice().as_ptr(), unsafe { original_ptr.add(2) });
+    }
+
+    #[test]
+    fn hal_read_frame_count_converts_to_sample_count() {
+        let frame_size = 1024;
+        let channels = 2;
+        let buffer_len = frame_size * channels;
+
+        assert_eq!(
+            frames_to_sample_count(frame_size, channels, buffer_len),
+            buffer_len
+        );
+        assert_eq!(frames_to_sample_count(192, channels, buffer_len), 384);
+        assert_eq!(
+            frames_to_sample_count(frame_size + 1, channels, buffer_len),
+            buffer_len
+        );
     }
 
     /// Regression test for the upmixer silence bug with cross-rate resampling.
