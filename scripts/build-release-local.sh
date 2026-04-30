@@ -523,9 +523,9 @@ build_macos() {
     # --- macOS daemon pkg ---
     log_step "Building macOS Systemwide pkg..."
     if $DRY_RUN; then
-        log_dry "./scripts/build-dmg-daemon.sh"
+        log_dry "./scripts/build-systemwide.sh"
     else
-        ./scripts/build-dmg-daemon.sh
+        ./scripts/build-systemwide.sh
         record_result "macOS Systemwide pkg: OK"
     fi
 

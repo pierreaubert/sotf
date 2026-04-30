@@ -17,8 +17,8 @@
 #   - org.spinorama.sotf-daemon   (background daemon)
 #
 # Usage:
-#   ./build-dmg-daemon.sh         # Build pkg (default; payload signed if DEVELOPER_ID is set)
-#   ./build-dmg-daemon.sh --dmg   # Build DMG instead of pkg (legacy)
+#   ./build-systemwide.sh         # Build pkg (default; payload signed if DEVELOPER_ID is set)
+#   ./build-systemwide.sh --dmg   # Build DMG instead of pkg (legacy)
 #
 # Prerequisites:
 #   - Xcode Command Line Tools
@@ -465,38 +465,51 @@ create_app_icon() {
     log_info "Creating app icon..."
 
     local iconset_dir="$DMG_DIR/AppIcon.iconset"
+    local input_svg="$CONFIGBAR_DIR/assets/icon.svg"
     mkdir -p "$iconset_dir"
 
-    # Check if there's an existing icon we can use
-    if [ -f "$PROJECT_ROOT/crates/app-gpui/assets/sotf.jpg" ]; then
-        local input_image="$PROJECT_ROOT/crates/app-gpui/assets/sotf.jpg"
-
-        # Generate all required sizes
-        local sizes=(16 32 64 128 256 512 1024)
-        for size in "${sizes[@]}"; do
-            sips -s format png -z $size $size "$input_image" --out "$iconset_dir/icon_${size}x${size}.png" 2>/dev/null || true
-        done
-
-        # Create @2x versions
-        sips -s format png -z 32 32 "$input_image" --out "$iconset_dir/icon_16x16@2x.png" 2>/dev/null || true
-        sips -s format png -z 64 64 "$input_image" --out "$iconset_dir/icon_32x32@2x.png" 2>/dev/null || true
-        sips -s format png -z 128 128 "$input_image" --out "$iconset_dir/icon_64x64@2x.png" 2>/dev/null || true
-        sips -s format png -z 256 256 "$input_image" --out "$iconset_dir/icon_128x128@2x.png" 2>/dev/null || true
-        sips -s format png -z 512 512 "$input_image" --out "$iconset_dir/icon_256x256@2x.png" 2>/dev/null || true
-        sips -s format png -z 1024 1024 "$input_image" --out "$iconset_dir/icon_512x512@2x.png" 2>/dev/null || true
-
-        # Convert to icns
-        iconutil -c icns "$iconset_dir" -o "$APP_BUNDLE/Contents/Resources/AppIcon.icns" 2>/dev/null || {
-            log_warning "Failed to create icns, app will use default icon"
-            rm -rf "$iconset_dir"
-            return
-        }
-
+    if [ ! -f "$input_svg" ]; then
+        log_warning "No Systemwide icon source found at $input_svg; using default icon"
         rm -rf "$iconset_dir"
-        log_success "App icon created"
-    else
-        log_warning "No icon source found, using default icon"
+        return
     fi
+
+    render_systemwide_icon() {
+        local size="$1"
+        local output="$2"
+
+        if command -v rsvg-convert &> /dev/null; then
+            rsvg-convert -w "$size" -h "$size" "$input_svg" -o "$output"
+        elif command -v magick &> /dev/null; then
+            magick -background none -size "${size}x${size}" "$input_svg" "$output"
+        else
+            return 1
+        fi
+    }
+
+    if ! render_systemwide_icon 16 "$iconset_dir/icon_16x16.png" ||
+       ! render_systemwide_icon 32 "$iconset_dir/icon_16x16@2x.png" ||
+       ! render_systemwide_icon 32 "$iconset_dir/icon_32x32.png" ||
+       ! render_systemwide_icon 64 "$iconset_dir/icon_32x32@2x.png" ||
+       ! render_systemwide_icon 128 "$iconset_dir/icon_128x128.png" ||
+       ! render_systemwide_icon 256 "$iconset_dir/icon_128x128@2x.png" ||
+       ! render_systemwide_icon 256 "$iconset_dir/icon_256x256.png" ||
+       ! render_systemwide_icon 512 "$iconset_dir/icon_256x256@2x.png" ||
+       ! render_systemwide_icon 512 "$iconset_dir/icon_512x512.png" ||
+       ! render_systemwide_icon 1024 "$iconset_dir/icon_512x512@2x.png"; then
+        log_warning "Failed to render Systemwide icon from SVG; install librsvg or ImageMagick"
+        rm -rf "$iconset_dir"
+        return
+    fi
+
+    iconutil -c icns "$iconset_dir" -o "$APP_BUNDLE/Contents/Resources/AppIcon.icns" 2>/dev/null || {
+        log_warning "Failed to create icns, app will use default icon"
+        rm -rf "$iconset_dir"
+        return
+    }
+
+    rm -rf "$iconset_dir"
+    log_success "App icon created from configbar icon.svg"
 }
 
 # Create README for the DMG

@@ -4,9 +4,9 @@
 #
 # Signs DMGs, app bundles inside DMGs, and pkg containers produced by the
 # build scripts. Package payload code must be signed before pkgbuild; for
-# Systemwide packages this is handled by build-dmg-daemon.sh when DEVELOPER_ID
+# Systemwide packages this is handled by build-systemwide.sh when DEVELOPER_ID
 # is set.
-# Run this AFTER build-dmg-sotf.sh and/or build-dmg-daemon.sh.
+# Run this AFTER build-dmg-sotf.sh and/or build-systemwide.sh.
 #
 # Usage:
 #   ./sign-macos.sh                    # Sign all artifacts in dist/
@@ -340,7 +340,7 @@ main() {
 
         if ! $found; then
             log_warning "No DMG or pkg files for v${VERSION} found in $DIST_DIR"
-            log_info "Run build-dmg-sotf.sh or build-dmg-daemon.sh first"
+            log_info "Run build-dmg-sotf.sh or build-systemwide.sh first"
             exit 1
         fi
     fi

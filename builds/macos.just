@@ -199,10 +199,15 @@ build-installer:
 build-installer-no-hal:
 	./scripts/build-installer.sh --no-hal
 
-# Build daemon + Systemwide package
+# Build Systemwide package
 [group('build-macos')]
-build-daemon-dmg:
-	./scripts/build-dmg-daemon.sh
+build-systemwide:
+	./scripts/build-systemwide.sh
+
+# Backward-compatible alias for the old package target name.
+[group('build-macos')]
+build-daemon-dmg: build-systemwide
+	@echo "✅ build-daemon-dmg is an alias for build-systemwide"
 
 # Sign all macOS artifacts in dist/
 [group('build-macos')]
