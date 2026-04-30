@@ -245,7 +245,15 @@ impl Render for DemoView {
 }
 
 fn main() {
-    gpui::Application::with_platform(std::rc::Rc::new(gpui_macos::MacPlatform::new(false))).run(
+    #[cfg(target_os = "macos")]
+    let platform = std::rc::Rc::new(gpui_macos::MacPlatform::new(false));
+    #[cfg(target_os = "linux")]
+    let platform = gpui_linux::current_platform(false);
+    #[cfg(target_os = "windows")]
+    let platform = std::rc::Rc::new(
+        gpui_windows::WindowsPlatform::new(false).expect("Windows platform creation failed"),
+    );
+    gpui::Application::with_platform(platform).run(
         move |cx: &mut gpui::App| {
             cx.open_window(
                 WindowOptions {

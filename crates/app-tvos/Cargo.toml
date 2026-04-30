@@ -18,8 +18,11 @@ sotf-player = { workspace = true }
 sotf-engine = { workspace = true }
 
 log = "0.4"
-oslog = "0.2"
 parking_lot = { workspace = true }
 rust-embed = { workspace = true }
 anyhow = { workspace = true }
 serde_json = { workspace = true }
+
+# Apple-only logging (oslog wraps os/log.h, only available on Apple platforms)
+[target.'cfg(any(target_os = "ios", target_os = "tvos", target_os = "macos"))'.dependencies]
+oslog = "0.2"

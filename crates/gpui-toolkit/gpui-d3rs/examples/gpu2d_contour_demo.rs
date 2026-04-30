@@ -221,7 +221,15 @@ impl Render for DemoView {
 }
 
 fn main() {
-    Application::with_platform(std::rc::Rc::new(gpui_macos::MacPlatform::new(false))).run(
+    #[cfg(target_os = "macos")]
+    let platform = std::rc::Rc::new(gpui_macos::MacPlatform::new(false));
+    #[cfg(target_os = "linux")]
+    let platform = gpui_linux::current_platform(false);
+    #[cfg(target_os = "windows")]
+    let platform = std::rc::Rc::new(
+        gpui_windows::WindowsPlatform::new(false).expect("Windows platform creation failed"),
+    );
+    Application::with_platform(platform).run(
         |cx: &mut App| {
             let bounds = Bounds::centered(None, size(px(900.0), px(550.0)), cx);
             cx.open_window(

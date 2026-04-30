@@ -11,7 +11,6 @@ use std::time::Duration;
 
 use mpris_server::{
     LoopStatus, Metadata, PlaybackRate, PlaybackStatus, Player, Property, Time, TrackId, Volume,
-    builder::PlayerBuilder,
 };
 use tokio::sync::mpsc;
 
@@ -131,7 +130,11 @@ fn run_mpris_thread(
         }
     };
 
-    runtime.block_on(async move {
+    // `Player::run()` yields a `!Send` future driven on this thread, and we use
+    // `spawn_local` to run it concurrently with the command loop — both require a
+    // `LocalSet` rather than the bare current-thread runtime.
+    let local = tokio::task::LocalSet::new();
+    local.block_on(&runtime, async move {
         let player = match build_player(&dbus_name, &identity, handler).await {
             Ok(p) => p,
             Err(e) => {
@@ -143,7 +146,10 @@ fn run_mpris_thread(
         let player = Arc::new(player);
         // Player::run returns a future that drives the D-Bus server. Spawn it
         // so command processing can happen in parallel.
-        let server_task = tokio::task::spawn_local(player.clone().run_owned());
+        let server_task = {
+            let player = player.clone();
+            tokio::task::spawn_local(async move { player.run().await })
+        };
 
         let _ = init_tx.send(Ok(()));
 
@@ -164,7 +170,7 @@ async fn build_player(
     identity: &str,
     handler: SharedHandler,
 ) -> Result<Player, Box<dyn std::error::Error + Send + Sync>> {
-    let player = PlayerBuilder::new(dbus_name)
+    let player = Player::builder(dbus_name)
         .identity(identity.to_string())
         .can_play(true)
         .can_pause(true)
@@ -223,7 +229,7 @@ async fn build_player(
     }
     {
         let h = handler.clone();
-        player.connect_set_position(move |_, _track: TrackId, time: Time| {
+        player.connect_set_position(move |_, _track: &TrackId, time: Time| {
             let micros = time.as_micros().max(0) as u64;
             dispatch_ev(
                 &h,
@@ -247,8 +253,8 @@ async fn build_player(
     }
     {
         let h = handler.clone();
-        player.connect_open_uri(move |_, uri: String| {
-            dispatch_ev(&h, MediaControlEvent::OpenUri(uri));
+        player.connect_open_uri(move |_, uri: &str| {
+            dispatch_ev(&h, MediaControlEvent::OpenUri(uri.to_owned()));
         });
     }
 
@@ -293,8 +299,6 @@ async fn apply_playback(player: &Player, pb: MediaPlayback) {
     }
     if let Some(MediaPosition(d)) = progress {
         let micros = d.as_micros().min(i64::MAX as u128) as i64;
-        if let Err(e) = player.set_position(Time::from_micros(micros)).await {
-            log::warn!("mpris set_position: {e}");
-        }
+        player.set_position(Time::from_micros(micros));
     }
 }

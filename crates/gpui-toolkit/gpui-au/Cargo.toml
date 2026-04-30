@@ -26,21 +26,20 @@ gpui = { workspace = true }
 gpui_wgpu = { workspace = true }
 wgpu = { workspace = true }
 
-# Objective-C runtime
-objc = { workspace = true }
-
-# Apple frameworks
-core-foundation = { workspace = true }
-core-graphics = "0.24"
-core-text = "=21.0.0"
-
 # Text / font stack
 pathfinder_geometry = "0.5"
 smallvec = { version = "1.6", features = ["union", "const_new"] }
-font-kit = { git = "https://github.com/zed-industries/font-kit", rev = "110523127440aefb11ce0cf280ae7c5071337ec5", package = "zed-font-kit", version = "0.14.1-zed" }
 
 # UUID for display identification
 uuid = { workspace = true, features = ["v5"] }
 
 # Logging to stderr (visible in Console.app for AU extensions)
 env_logger = "0.11"
+
+# Apple-only deps (Objective-C runtime, Apple frameworks, font-kit)
+[target.'cfg(target_os = "macos")'.dependencies]
+objc = { workspace = true }
+core-foundation = { workspace = true }
+core-graphics = "0.24"
+core-text = "=21.0.0"
+font-kit = { git = "https://github.com/zed-industries/font-kit", rev = "110523127440aefb11ce0cf280ae7c5071337ec5", package = "zed-font-kit", version = "0.14.1-zed" }

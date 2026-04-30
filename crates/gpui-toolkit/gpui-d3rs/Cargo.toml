@@ -15,7 +15,7 @@ name = "d3rs"
 
 [features]
 default = ["gpui", "gpu-2d", "gpu-3d"]
-gpui = ["dep:gpui", "dep:gpui-ui-kit", "dep:gpui-builder", "dep:gpui-design", "gpui-design/gpui", "dep:smol", "dep:gpui_macos"]
+gpui = ["dep:gpui", "dep:gpui-ui-kit", "dep:gpui-builder", "dep:gpui-design", "gpui-design/gpui", "dep:smol", "dep:gpui_macos", "dep:gpui_linux", "dep:gpui_windows"]
 spinorama = ["dep:autoeq", "dep:tokio", "dep:ndarray", "dep:reqwest", "dep:urlencoding", "gpui"]
 gpu-3d = ["dep:wgpu", "dep:bytemuck", "dep:glam", "dep:pollster", "dep:image", "gpui"]
 gpu-2d = ["dep:wgpu", "dep:bytemuck", "dep:glam", "dep:pollster", "dep:image", "dep:fontdue", "gpui"]
@@ -46,6 +46,12 @@ fontdue = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 gpui_macos = { workspace = true, optional = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gpui_linux = { workspace = true, optional = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+gpui_windows = { workspace = true, optional = true }
 
 [dev-dependencies]
 approx = { workspace = true }

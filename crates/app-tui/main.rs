@@ -142,6 +142,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         env_logger::init();
     }
 
+    // Install panic hook BEFORE entering alt screen so panics restore the terminal
+    // and the backtrace remains visible after the app exits.
+    let original_panic_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = disable_raw_mode();
+        let _ = execute!(io::stdout(), LeaveAlternateScreen);
+        original_panic_hook(info);
+    }));
+
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -341,6 +350,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     terminal.show_cursor()?;
 
     log::info!("SOTF UI Player exiting...");
+
+    // Surface any error from the main loop now that the alt screen is gone — otherwise
+    // it gets eaten when the terminal switches back and the user only sees a blank exit.
+    if let Err(e) = &result {
+        eprintln!("sotf-tui: error: {e}");
+        let mut src = e.source();
+        while let Some(s) = src {
+            eprintln!("  caused by: {s}");
+            src = s.source();
+        }
+    }
 
     // Force exit — audio engine threads (decoder, processing, playback) use blocking
     // channel operations that can deadlock during sequential shutdown. The OS will

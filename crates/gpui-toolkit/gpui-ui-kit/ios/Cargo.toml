@@ -13,4 +13,7 @@ gpui = { workspace = true }
 gpui-ios = { workspace = true }
 gpui-ui-kit = { workspace = true }
 log = "0.4"
+
+# Apple-only logging (oslog wraps os/log.h, only available on Apple platforms)
+[target.'cfg(any(target_os = "ios", target_os = "tvos", target_os = "macos"))'.dependencies]
 oslog = "0.2"
