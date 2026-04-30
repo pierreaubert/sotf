@@ -743,8 +743,8 @@ unsafe extern "C" {}
 #[cfg(target_os = "macos")]
 #[allow(unexpected_cfgs)]
 fn request_camera_permission_macos() -> bool {
-    use block::ConcreteBlock;
-    use objc::runtime::{BOOL, Class, NO};
+    use block2::RcBlock;
+    use objc::runtime::Class;
     use objc::{msg_send, sel, sel_impl};
 
     unsafe {
@@ -763,12 +763,13 @@ fn request_camera_permission_macos() -> bool {
             return false; // Restricted or denied
         }
 
-        // Status is notDetermined — trigger the system permission dialog
+        // Status is notDetermined — trigger the system permission dialog.
+        // BOOL has no Encode impl in block2, so the closure takes the C ABI
+        // representation (i8) and we coerce to bool inside.
         let (tx, rx) = std::sync::mpsc::channel();
-        let callback = ConcreteBlock::new(move |granted: BOOL| {
-            let _ = tx.send(granted != NO);
+        let callback = RcBlock::new(move |granted: i8| {
+            let _ = tx.send(granted != 0);
         });
-        let callback = callback.copy();
 
         let _: () = msg_send![cls, requestAccessForMediaType: media_type
                                         completionHandler: &*callback];

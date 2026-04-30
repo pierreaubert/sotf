@@ -33,7 +33,7 @@ core-foundation = { workspace = true }
 # Must match font-kit's core-graphics version (0.24) for type compatibility
 core-graphics = "0.24"
 core-text = "=21.0.0"
-block = { workspace = true }
+block2 = { workspace = true }
 
 # Text / font stack
 pathfinder_geometry = "0.5"

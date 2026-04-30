@@ -269,20 +269,35 @@ detect_win_rsync() {
 
     # Ask Git Bash where rsync is
     local rsync_path
-    rsync_path=$(win_ssh_cmd "$host" "$port" "$key" "which rsync 2>/dev/null || true" 2>/dev/null)
+    rsync_path=$(win_ssh_cmd "$host" "$port" "$key" "command -v rsync 2>/dev/null || true" 2>/dev/null)
     rsync_path=$(echo "$rsync_path" | tr -d '\r\n')
 
-    if [ -n "$rsync_path" ]; then
-        # Convert MSYS path (/usr/bin/rsync) to Windows path for --rsync-path
-        local win_rsync
-        win_rsync=$(win_ssh_cmd "$host" "$port" "$key" "cygpath -w '$rsync_path' 2>/dev/null || echo '$rsync_path'" 2>/dev/null)
-        WIN_RSYNC_PATH=$(echo "$win_rsync" | tr -d '\r\n')
-        log_info "Found rsync at: $WIN_RSYNC_PATH"
-        return 0
+    if [ -z "$rsync_path" ]; then
+        log_error "rsync not found on remote Windows"
+        return 1
     fi
 
-    log_error "rsync not found on remote Windows"
-    return 1
+    if ! win_ssh_cmd "$host" "$port" "$key" "'$rsync_path' --version >/dev/null 2>&1" >/dev/null 2>&1; then
+        local missing_deps
+        missing_deps=$(win_ssh_cmd "$host" "$port" "$key" "ldd '$rsync_path' 2>&1 | grep -i 'not found' || true" 2>/dev/null)
+        log_error "rsync exists at $rsync_path but cannot run on remote Windows"
+        if [ -n "$missing_deps" ]; then
+            log_info "Missing rsync runtime dependencies:"
+            while IFS= read -r line; do
+                [ -n "$line" ] && log_info "  $line"
+            done <<< "$missing_deps"
+        fi
+        return 1
+    fi
+
+    # Convert MSYS path (/usr/bin/rsync) to a short Windows path for
+    # --rsync-path. The remote SSH shell is cmd.exe, so using 8.3 paths avoids
+    # quote-sensitive spaces like "C:\Program Files\...".
+    local win_rsync
+    win_rsync=$(win_ssh_cmd "$host" "$port" "$key" "cygpath -w -s '$rsync_path' 2>/dev/null || cygpath -w '$rsync_path' 2>/dev/null || echo '$rsync_path'" 2>/dev/null)
+    WIN_RSYNC_PATH=$(echo "$win_rsync" | tr -d '\r\n')
+    log_info "Found rsync at: $WIN_RSYNC_PATH"
+    return 0
 }
 
 # Run an SSH command on Windows, routing through Git Bash.
@@ -298,9 +313,11 @@ win_ssh_cmd() {
     shift 3
     local cmd="$*"
     build_ssh_transport "$port" "$key"
-    # Use Git Bash login shell so PATH includes /usr/bin (rsync, etc.)
-    "${SSH_TRANSPORT_CMD[@]}" -o BatchMode=yes -o ConnectTimeout=30 "$host" \
-        "\"$WIN_BASH_PATH\"" -lc "'$cmd'"
+    # Run the Git Bash script over stdin. Passing the command as a remote
+    # command-line argument lets cmd.exe reinterpret shell metacharacters like
+    # pipes, &&, ||, and redirections before bash sees them.
+    printf '%s\n' "$cmd" | "${SSH_TRANSPORT_CMD[@]}" -o BatchMode=yes -o ConnectTimeout=30 "$host" \
+        "\"$WIN_BASH_PATH\"" -s
 }
 
 # Common rsync excludes — mirrors .gitignore for build/generated dirs.
@@ -344,6 +361,25 @@ RSYNC_EXCLUDES=(
     --exclude='/product/'
 )
 
+handle_rsync_status() {
+    local status="$1"
+    local label="$2"
+
+    if [ "$status" -eq 0 ]; then
+        return 0
+    fi
+
+    # Exit 24 means files vanished while rsync was reading the live working
+    # tree. That is common for editor/build cache churn and should not abort a
+    # release build sync.
+    if [ "$status" -eq 24 ]; then
+        log_warning "$label completed with vanished source files (rsync exit 24); continuing"
+        return 0
+    fi
+
+    return "$status"
+}
+
 rsync_to() {
     local host="$1"
     local port="$2"
@@ -354,11 +390,11 @@ rsync_to() {
         "${RSYNC_EXCLUDES[@]}" \
         -e "${SSH_TRANSPORT_CMD[*]}" \
         "$PROJECT_ROOT/" "${host}:${remote_dir}/"
+    handle_rsync_status "$?" "rsync to ${host}:${remote_dir}"
 }
 
 # rsync to a Windows host — tells the remote side to use the detected rsync.
-# The path is double-quoted for cmd.exe (the remote SSH shell) because
-# Windows paths contain spaces (e.g. "C:\Program Files\...").
+# detect_win_rsync normalizes this to a short cmd.exe-safe path.
 rsync_to_win() {
     local host="$1"
     local port="$2"
@@ -368,8 +404,9 @@ rsync_to_win() {
     rsync -avz --delete \
         "${RSYNC_EXCLUDES[@]}" \
         -e "${SSH_TRANSPORT_CMD[*]}" \
-        --rsync-path="\"$WIN_RSYNC_PATH\"" \
+        --rsync-path="$WIN_RSYNC_PATH" \
         "$PROJECT_ROOT/" "${host}:${remote_dir}/"
+    handle_rsync_status "$?" "rsync to ${host}:${remote_dir}"
 }
 
 rsync_from() {
@@ -382,6 +419,7 @@ rsync_from() {
     rsync -avz \
         -e "${SSH_TRANSPORT_CMD[*]}" \
         "${host}:${remote_path}" "$local_path"
+    handle_rsync_status "$?" "rsync from ${host}:${remote_path}"
 }
 
 # rsync from a Windows host — tells the remote side to use the detected rsync
@@ -394,8 +432,9 @@ rsync_from_win() {
     build_ssh_transport "$port" "$key"
     rsync -avz \
         -e "${SSH_TRANSPORT_CMD[*]}" \
-        --rsync-path="\"$WIN_RSYNC_PATH\"" \
+        --rsync-path="$WIN_RSYNC_PATH" \
         "${host}:${remote_path}" "$local_path"
+    handle_rsync_status "$?" "rsync from ${host}:${remote_path}"
 }
 
 # Track build results
@@ -683,6 +722,7 @@ build_windows() {
             log_info "  2. Download Git for Windows SDK (includes pacman):"
             log_info "     https://github.com/git-for-windows/build-extra/releases"
             log_info "  3. Manually copy rsync.exe into C:/Program Files/Git/usr/bin/"
+            log_info "     If rsync is present but a DLL is missing, reinstall rsync and its MSYS dependencies."
             record_result "Windows: FAILED (no rsync)"
             return
         fi
