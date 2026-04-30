@@ -30,9 +30,6 @@ gpui-keybinding = { workspace = true }
 gpui-ui-kit = { workspace = true }
 gpui-px = { workspace = true, features = ["gpui"] }
 
-# Force naga termcolor feature to fix WriteColor trait compilation error
-naga = { version = "28", features = ["termcolor"] }
-
 # Shared audio player library (provides business logic, database, plugins, etc.)
 sotf-player = { workspace = true }
 sotf-plugins = { workspace = true }
@@ -111,7 +108,7 @@ rustfft = { workspace = true }
 
 # Not available on iOS/tvOS — those platforms use their own APIs or lack support.
 [target.'cfg(not(any(target_os = "ios", target_os = "tvos")))'.dependencies]
-souvlaki = { workspace = true }    # OS media controls (MPRIS / MediaPlayer)
+sotf-media-controls = { workspace = true }    # OS media controls (MPRIS / MediaPlayer)
 rfd = { workspace = true }         # File dialogs (no backend on tvOS)
 
 [target.'cfg(all(unix, not(any(target_os = "ios", target_os = "tvos"))))'.dependencies]

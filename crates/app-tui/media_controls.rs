@@ -1,4 +1,4 @@
-use souvlaki::{MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, PlatformConfig};
+use sotf_media_controls::{MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, PlatformConfig};
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -8,7 +8,7 @@ pub struct TuiMediaControls {
 }
 
 impl TuiMediaControls {
-    pub fn new() -> Result<Self, souvlaki::Error> {
+    pub fn new() -> Result<Self, sotf_media_controls::Error> {
         #[cfg(target_os = "macos")]
         init_macos_app();
 
@@ -77,7 +77,7 @@ fn init_macos_app() {
 }
 
 /// Pump the macOS run loop so that pending OS events — including media key
-/// callbacks registered by souvlaki via MPRemoteCommandCenter — are dispatched.
+/// callbacks registered by sotf_media_controls via MPRemoteCommandCenter — are dispatched.
 ///
 /// MPRemoteCommandCenter delivers events through CoreFoundation run loop
 /// sources, NOT through the NSApplication event queue. We must call
@@ -131,7 +131,7 @@ pub fn pump_macos_event_loop() {
     // No-op on non-macOS platforms.
 }
 
-/// On Windows, souvlaki requires a valid HWND. Use the console window handle.
+/// On Windows, sotf_media_controls requires a valid HWND. Use the console window handle.
 #[cfg(target_os = "windows")]
 fn get_hwnd() -> Option<*mut core::ffi::c_void> {
     unsafe extern "system" {

@@ -1,7 +1,7 @@
 use crate::app::{App, InputMode, Screen};
 use crate::media_controls::TuiMediaControls;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use souvlaki::MediaControlEvent;
+use sotf_media_controls::MediaControlEvent;
 use std::time::Duration;
 
 pub mod devices;

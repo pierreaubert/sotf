@@ -76,7 +76,7 @@ directories = { workspace = true }
 thiserror = { workspace = true }
 
 # Media controls (Now Playing / media keys)
-souvlaki = { workspace = true }
+sotf-media-controls = { workspace = true }
 
 [target.'cfg(not(target_os = "windows"))'.dependencies]
 ratatui-image = { workspace = true }
@@ -89,7 +89,7 @@ libc = { workspace = true }
 objc2 = { workspace = true }
 objc2-app-kit = { workspace = true, features = ["NSApplication", "NSRunningApplication", "NSEvent"] }
 objc2-foundation = { workspace = true, features = ["NSObjCRuntime", "NSString", "NSDate"] }
-core-foundation-sys = { workspace = true }
+core-foundation-sys = "0.8"
 
 [dev-dependencies]
 tempfile = { workspace = true }

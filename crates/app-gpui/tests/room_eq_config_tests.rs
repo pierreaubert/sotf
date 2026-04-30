@@ -264,6 +264,7 @@ fn make_bare_backend_config() -> autoeq::roomeq::OptimizerConfig {
         max_boost_envelope: None,
         min_cut_envelope: None,
         epa_config: None,
+        group_delay: None,
     }
 }
 
@@ -420,6 +421,7 @@ fn test_import_with_features_enabled_preserves_them() {
             treble_shelf_freq: 8000.0,
         },
         broadband_precorrection: false,
+        role_targets: None,
     });
     backend.schroeder_split = Some(autoeq::roomeq::SchroederSplitConfig {
         enabled: true,
@@ -482,6 +484,7 @@ fn test_import_broadband_with_enabled_false() {
         curve_path: None,
         preference: autoeq::roomeq::UserPreference::default(),
         broadband_precorrection: false,
+        role_targets: None,
     });
 
     let mut config = RoomEqOptimizerConfig::default();

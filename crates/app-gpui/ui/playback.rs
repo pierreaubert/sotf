@@ -1,5 +1,5 @@
 #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
-use souvlaki::MediaControlEvent;
+use sotf_media_controls::MediaControlEvent;
 
 impl PlayerView {
     /// Handle an OS media control event (MPRIS play/pause/next/etc.).
@@ -75,8 +75,8 @@ impl PlayerView {
             }
             MediaControlEvent::Seek(direction) => {
                 let offset = match direction {
-                    souvlaki::SeekDirection::Forward => 10.0,
-                    souvlaki::SeekDirection::Backward => -10.0,
+                    sotf_media_controls::SeekDirection::Forward => 10.0,
+                    sotf_media_controls::SeekDirection::Backward => -10.0,
                 };
                 let new_pos = (state.app.playback.position_secs + offset).max(0.0);
                 if let Err(e) = state.player.lock().seek(new_pos) {
@@ -86,8 +86,8 @@ impl PlayerView {
             MediaControlEvent::SeekBy(direction, duration) => {
                 let secs = duration.as_secs_f64();
                 let offset = match direction {
-                    souvlaki::SeekDirection::Forward => secs,
-                    souvlaki::SeekDirection::Backward => -secs,
+                    sotf_media_controls::SeekDirection::Forward => secs,
+                    sotf_media_controls::SeekDirection::Backward => -secs,
                 };
                 let new_pos = (state.app.playback.position_secs + offset).max(0.0);
                 if let Err(e) = state.player.lock().seek(new_pos) {

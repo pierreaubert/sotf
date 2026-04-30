@@ -6,10 +6,10 @@ use crate::app::App;
 /// Handle media control events from the system (play/pause/next/etc.)
 pub fn handle_media_control_event(
     app: &mut App,
-    event: souvlaki::MediaControlEvent,
+    event: sotf_media_controls::MediaControlEvent,
 ) -> Option<PlayerCommand> {
     match event {
-        souvlaki::MediaControlEvent::Play => {
+        sotf_media_controls::MediaControlEvent::Play => {
             if app.current_queue_index.is_none() {
                 // Nothing playing yet — start the queue
                 app.start_queue().map(PlayerCommand::Play)
@@ -18,11 +18,11 @@ pub fn handle_media_control_event(
                 Some(PlayerCommand::Resume)
             }
         }
-        souvlaki::MediaControlEvent::Pause => {
+        sotf_media_controls::MediaControlEvent::Pause => {
             app.is_playing = false;
             Some(PlayerCommand::Pause)
         }
-        souvlaki::MediaControlEvent::Toggle => {
+        sotf_media_controls::MediaControlEvent::Toggle => {
             if app.is_playing {
                 app.is_playing = false;
                 Some(PlayerCommand::Pause)
@@ -33,7 +33,7 @@ pub fn handle_media_control_event(
                 Some(PlayerCommand::Resume)
             }
         }
-        souvlaki::MediaControlEvent::Next => {
+        sotf_media_controls::MediaControlEvent::Next => {
             if let Some(path) = app.next_track() {
                 Some(PlayerCommand::Play(path))
             } else {
@@ -41,39 +41,39 @@ pub fn handle_media_control_event(
                 Some(PlayerCommand::Stop)
             }
         }
-        souvlaki::MediaControlEvent::Previous => app.previous_track().map(PlayerCommand::Play),
-        souvlaki::MediaControlEvent::Stop => {
+        sotf_media_controls::MediaControlEvent::Previous => app.previous_track().map(PlayerCommand::Play),
+        sotf_media_controls::MediaControlEvent::Stop => {
             app.is_playing = false;
             Some(PlayerCommand::Stop)
         }
-        souvlaki::MediaControlEvent::SetPosition(pos) => {
+        sotf_media_controls::MediaControlEvent::SetPosition(pos) => {
             Some(PlayerCommand::Seek(pos.0.as_secs_f64()))
         }
-        souvlaki::MediaControlEvent::SetVolume(vol) => {
+        sotf_media_controls::MediaControlEvent::SetVolume(vol) => {
             let clamped = vol.clamp(0.0, 1.0) as f32;
             app.volume = clamped;
             Some(PlayerCommand::SetVolume(clamped))
         }
-        souvlaki::MediaControlEvent::Seek(direction) => {
+        sotf_media_controls::MediaControlEvent::Seek(direction) => {
             let offset = match direction {
-                souvlaki::SeekDirection::Forward => 10.0,
-                souvlaki::SeekDirection::Backward => -10.0,
+                sotf_media_controls::SeekDirection::Forward => 10.0,
+                sotf_media_controls::SeekDirection::Backward => -10.0,
             };
             Some(PlayerCommand::SeekRelative(offset))
         }
-        souvlaki::MediaControlEvent::SeekBy(direction, duration) => {
+        sotf_media_controls::MediaControlEvent::SeekBy(direction, duration) => {
             let secs = duration.as_secs_f64();
             let offset = match direction {
-                souvlaki::SeekDirection::Forward => secs,
-                souvlaki::SeekDirection::Backward => -secs,
+                sotf_media_controls::SeekDirection::Forward => secs,
+                sotf_media_controls::SeekDirection::Backward => -secs,
             };
             Some(PlayerCommand::SeekRelative(offset))
         }
-        souvlaki::MediaControlEvent::Raise => None,
-        souvlaki::MediaControlEvent::Quit => {
+        sotf_media_controls::MediaControlEvent::Raise => None,
+        sotf_media_controls::MediaControlEvent::Quit => {
             app.should_quit = true;
             None
         }
-        souvlaki::MediaControlEvent::OpenUri(_) => None,
+        sotf_media_controls::MediaControlEvent::OpenUri(_) => None,
     }
 }

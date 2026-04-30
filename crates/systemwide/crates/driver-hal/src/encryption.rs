@@ -293,9 +293,11 @@ fn bytes_to_samples_into(bytes: &[u8], output: &mut [f32]) -> usize {
 
 /// Generate a new random 256-bit encryption key
 pub fn generate_key() -> [u8; 32] {
-    use rand::RngCore;
+    use rand::TryRngCore;
     let mut key = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut key);
+    rand::rngs::OsRng
+        .try_fill_bytes(&mut key)
+        .expect("OS RNG must succeed");
     key
 }
 

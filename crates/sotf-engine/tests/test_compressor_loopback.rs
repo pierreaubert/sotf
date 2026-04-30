@@ -43,6 +43,7 @@ fn find_device(
 }
 
 #[test]
+#[ignore = "Hardware loopback test — requires BlackHole device with no other audio routing in flight; run manually with --ignored"]
 fn test_compressor_loopback_verification() {
     let device_names = ["BlackHole 2ch", "BlackHole 16ch", "BlackHole 64ch"];
     let mut output_setup = None;

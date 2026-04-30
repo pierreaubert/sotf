@@ -180,7 +180,7 @@ impl PlayerView {
 
                     // Collect pending media control events (before state borrow)
                     #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
-                    let media_events: Vec<souvlaki::MediaControlEvent> = view
+                    let media_events: Vec<sotf_media_controls::MediaControlEvent> = view
                         .media_controls
                         .as_ref()
                         .map(|mc| std::iter::from_fn(|| mc.poll_event()).collect())

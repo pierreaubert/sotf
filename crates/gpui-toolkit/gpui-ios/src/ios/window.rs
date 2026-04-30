@@ -649,6 +649,7 @@ impl IosWindow {
             let config = WgpuSurfaceConfig {
                 size: size(DevicePixels(pixel_w), DevicePixels(pixel_h)),
                 transparent: false,
+                preferred_present_mode: None,
             };
 
             let metal_instance = wgpu::Instance::new(wgpu::InstanceDescriptor {

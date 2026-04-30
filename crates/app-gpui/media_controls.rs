@@ -2,7 +2,7 @@
 //!
 //! Provides play/pause/next/previous from the desktop environment's media controls.
 
-use souvlaki::{
+use sotf_media_controls::{
     MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, MediaPosition, PlatformConfig,
 };
 use std::sync::mpsc;
@@ -15,27 +15,15 @@ pub struct GpuiMediaControls {
 
 impl GpuiMediaControls {
     pub fn new() -> anyhow::Result<Self> {
-        // On Windows, souvlaki panics (instead of returning Err) if no HWND is
-        // provided. Catch the panic so the app starts without media controls
-        // rather than crashing.
-        let result = std::panic::catch_unwind(|| {
-            let config = PlatformConfig {
-                dbus_name: "sotf_player",
-                display_name: "SotF Player",
-                hwnd: get_hwnd(),
-            };
-            MediaControls::new(config)
-        });
-
-        let mut controls = match result {
-            Ok(Ok(c)) => c,
-            Ok(Err(e)) => return Err(anyhow::anyhow!("media controls init failed: {e}")),
-            Err(_) => {
-                return Err(anyhow::anyhow!(
-                    "media controls panicked during init (no HWND on Windows?)"
-                ));
-            }
+        // sotf_media_controls returns Err(Unsupported) on Windows / iOS / tvOS
+        // instead of panicking, so a simple `?` is enough.
+        let config = PlatformConfig {
+            dbus_name: "sotf_player",
+            display_name: "SotF Player",
+            hwnd: get_hwnd(),
         };
+        let mut controls = MediaControls::new(config)
+            .map_err(|e| anyhow::anyhow!("media controls init failed: {e}"))?;
 
         let (tx, rx) = mpsc::channel();
         controls.attach(move |event: MediaControlEvent| {
@@ -138,10 +126,10 @@ pub fn update_media_controls(
     mc.set_playback(playback);
 }
 
-/// On Windows, souvlaki requires a valid HWND.
+/// On Windows, sotf_media_controls requires a valid HWND.
 #[cfg(target_os = "windows")]
 fn get_hwnd() -> Option<*mut core::ffi::c_void> {
-    // souvlaki on Windows panics if hwnd is None (requires a message window).
+    // sotf_media_controls on Windows panics if hwnd is None (requires a message window).
     // We don't have easy access to the GPUI HWND here, so we return None
     // and let the caller catch the panic via catch_unwind.
     None

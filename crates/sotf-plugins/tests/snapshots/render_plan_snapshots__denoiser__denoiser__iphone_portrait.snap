@@ -1,6 +1,5 @@
 ---
 source: crates/sotf-plugins/tests/render_plan_snapshots.rs
-assertion_line: 60
 expression: plan
 ---
 {
@@ -73,7 +72,7 @@ expression: plan
           "read_only": false
         },
         {
-          "param_index": 12,
+          "param_index": 11,
           "param_name": "Transparency",
           "control_type": "vertical_slider",
           "unit": "",
@@ -113,59 +112,10 @@ expression: plan
       ]
     },
     {
-      "title": "HISS REDUCTION",
-      "controls": [
-        {
-          "param_index": 19,
-          "param_name": "Hiss Remover",
-          "control_type": "toggle",
-          "unit": "",
-          "range": [
-            0.0,
-            1.0
-          ],
-          "read_only": false
-        },
-        {
-          "param_index": 20,
-          "param_name": "Hiss Threshold",
-          "control_type": "knob",
-          "unit": "dB",
-          "range": [
-            -60.0,
-            -10.0
-          ],
-          "read_only": false
-        },
-        {
-          "param_index": 21,
-          "param_name": "Hiss Frequency",
-          "control_type": "knob",
-          "unit": "Hz",
-          "range": [
-            1000.0,
-            16000.0
-          ],
-          "read_only": false
-        },
-        {
-          "param_index": 22,
-          "param_name": "Hiss Strength",
-          "control_type": "knob",
-          "unit": "",
-          "range": [
-            0.0,
-            1.0
-          ],
-          "read_only": false
-        }
-      ]
-    },
-    {
       "title": "SPECTRAL SUB",
       "controls": [
         {
-          "param_index": 23,
+          "param_index": 17,
           "param_name": "Spectral Sub",
           "control_type": "toggle",
           "unit": "",
@@ -176,7 +126,7 @@ expression: plan
           "read_only": false
         },
         {
-          "param_index": 24,
+          "param_index": 18,
           "param_name": "Oversub Factor",
           "control_type": "knob",
           "unit": "",
@@ -187,7 +137,7 @@ expression: plan
           "read_only": false
         },
         {
-          "param_index": 25,
+          "param_index": 19,
           "param_name": "Spectral Floor",
           "control_type": "knob",
           "unit": "",
@@ -203,7 +153,7 @@ expression: plan
       "title": "NOISE PROFILE",
       "controls": [
         {
-          "param_index": 26,
+          "param_index": 20,
           "param_name": "Learn Noise",
           "control_type": "toggle",
           "unit": "",
@@ -214,7 +164,7 @@ expression: plan
           "read_only": false
         },
         {
-          "param_index": 27,
+          "param_index": 21,
           "param_name": "Use Profile",
           "control_type": "toggle",
           "unit": "",
@@ -225,7 +175,7 @@ expression: plan
           "read_only": false
         },
         {
-          "param_index": 28,
+          "param_index": 22,
           "param_name": "Clear Profile",
           "control_type": "toggle",
           "unit": "",
@@ -255,18 +205,7 @@ expression: plan
           "read_only": false
         },
         {
-          "param_index": 7,
-          "param_name": "Crack Sens.",
-          "control_type": "knob",
-          "unit": "",
-          "range": [
-            1.0,
-            100.0
-          ],
-          "read_only": false
-        },
-        {
-          "param_index": 13,
+          "param_index": 12,
           "param_name": "DD SNR",
           "control_type": "toggle",
           "unit": "",
@@ -277,7 +216,7 @@ expression: plan
           "read_only": false
         },
         {
-          "param_index": 14,
+          "param_index": 13,
           "param_name": "DD Alpha",
           "control_type": "knob",
           "unit": "",
@@ -288,7 +227,7 @@ expression: plan
           "read_only": false
         },
         {
-          "param_index": 15,
+          "param_index": 14,
           "param_name": "Psychoacoustic",
           "control_type": "toggle",
           "unit": "",
@@ -299,18 +238,7 @@ expression: plan
           "read_only": false
         },
         {
-          "param_index": 16,
-          "param_name": "Transient",
-          "control_type": "toggle",
-          "unit": "",
-          "range": [
-            0.0,
-            1.0
-          ],
-          "read_only": false
-        },
-        {
-          "param_index": 17,
+          "param_index": 15,
           "param_name": "Spectral Smooth",
           "control_type": "toggle",
           "unit": "",
@@ -321,7 +249,7 @@ expression: plan
           "read_only": false
         },
         {
-          "param_index": 18,
+          "param_index": 16,
           "param_name": "Temporal Smooth",
           "control_type": "toggle",
           "unit": "",
@@ -337,7 +265,7 @@ expression: plan
       "name": "MCRA",
       "controls": [
         {
-          "param_index": 8,
+          "param_index": 7,
           "param_name": "MCRA Alpha S",
           "control_type": "knob",
           "unit": "",
@@ -348,7 +276,7 @@ expression: plan
           "read_only": false
         },
         {
-          "param_index": 9,
+          "param_index": 8,
           "param_name": "MCRA Alpha P",
           "control_type": "knob",
           "unit": "",
@@ -359,7 +287,7 @@ expression: plan
           "read_only": false
         },
         {
-          "param_index": 10,
+          "param_index": 9,
           "param_name": "MCRA Window",
           "control_type": "knob",
           "unit": "fr",
@@ -370,7 +298,7 @@ expression: plan
           "read_only": false
         },
         {
-          "param_index": 11,
+          "param_index": 10,
           "param_name": "MCRA Delta",
           "control_type": "knob",
           "unit": "",
@@ -386,7 +314,7 @@ expression: plan
       "name": "Formant",
       "controls": [
         {
-          "param_index": 30,
+          "param_index": 23,
           "param_name": "Formant Preserve",
           "control_type": "toggle",
           "unit": "",
@@ -397,7 +325,7 @@ expression: plan
           "read_only": false
         },
         {
-          "param_index": 31,
+          "param_index": 24,
           "param_name": "Formant Strength",
           "control_type": "knob",
           "unit": "",
@@ -413,18 +341,7 @@ expression: plan
       "name": "Advanced",
       "controls": [
         {
-          "param_index": 29,
-          "param_name": "Algorithm",
-          "control_type": "selector",
-          "unit": "",
-          "range": [
-            0.0,
-            3.0
-          ],
-          "read_only": false
-        },
-        {
-          "param_index": 32,
+          "param_index": 25,
           "param_name": "Multi-Res",
           "control_type": "toggle",
           "unit": "",
@@ -435,7 +352,7 @@ expression: plan
           "read_only": false
         },
         {
-          "param_index": 33,
+          "param_index": 26,
           "param_name": "Harmonic/Percussive",
           "control_type": "toggle",
           "unit": "",
@@ -446,7 +363,7 @@ expression: plan
           "read_only": false
         },
         {
-          "param_index": 34,
+          "param_index": 27,
           "param_name": "Spatial Denoise",
           "control_type": "toggle",
           "unit": "",
@@ -457,7 +374,7 @@ expression: plan
           "read_only": false
         },
         {
-          "param_index": 35,
+          "param_index": 28,
           "param_name": "Spatial Strength",
           "control_type": "knob",
           "unit": "",

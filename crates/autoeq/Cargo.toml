@@ -114,3 +114,4 @@ path = "src/lib.rs"
 [dev-dependencies]
 tempfile = "3.23"
 assert_fs = "1.0"
+serial_test = "3"

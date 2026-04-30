@@ -14,7 +14,7 @@ use sotf_audio_player_tui::events::{
 };
 use sotf_audio_player_tui::media_controls::{self, TuiMediaControls};
 use sotf_audio_player_tui::ui;
-use souvlaki::{MediaPlayback, MediaPosition};
+use sotf_media_controls::{MediaPlayback, MediaPosition};
 use std::fs::{File, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};

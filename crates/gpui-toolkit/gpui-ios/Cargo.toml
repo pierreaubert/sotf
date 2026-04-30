@@ -30,7 +30,6 @@ objc = { workspace = true }
 
 # Apple frameworks
 core-foundation = { workspace = true }
-core-foundation-sys = { workspace = true }
 # Must match font-kit's core-graphics version (0.24) for type compatibility
 core-graphics = "0.24"
 core-text = "=21.0.0"

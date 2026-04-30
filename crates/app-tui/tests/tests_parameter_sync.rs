@@ -152,15 +152,29 @@ fn test_crossfeed_mode_cycling() {
     let mut settings = PluginSettings::default_for(&PluginType::Crossfeed);
 
     // Index 0 is the mode (choice parameter)
-    // Default is Bauer (index 1) per PluginSettings::default_for
+    // Default is Mb (index 3) per PluginSettings::default_for
     let initial_value = settings.param_value(0);
     assert_eq!(
         initial_value,
-        Some(1.0),
-        "Default mode should be Bauer (index 1)"
+        Some(3.0),
+        "Default mode should be Mb (index 3)"
     );
 
-    // Cycle through modes: Bauer(1) -> Meier(2) -> Mb(3) -> Off(0) -> Bauer(1)
+    // Cycle through modes: Mb(3) -> Off(0) -> Bauer(1) -> Meier(2) -> Mb(3)
+    settings.adjust_param(0, 1.0);
+    assert_eq!(
+        settings.param_value(0),
+        Some(0.0),
+        "Mode should wrap to Off (index 0)"
+    );
+
+    settings.adjust_param(0, 1.0);
+    assert_eq!(
+        settings.param_value(0),
+        Some(1.0),
+        "Mode should cycle to Bauer (index 1)"
+    );
+
     settings.adjust_param(0, 1.0);
     assert_eq!(
         settings.param_value(0),
@@ -172,29 +186,15 @@ fn test_crossfeed_mode_cycling() {
     assert_eq!(
         settings.param_value(0),
         Some(3.0),
-        "Mode should cycle to Mb (index 3)"
+        "Mode should cycle back to Mb (index 3)"
     );
 
-    settings.adjust_param(0, 1.0);
-    assert_eq!(
-        settings.param_value(0),
-        Some(0.0),
-        "Mode should wrap to Off (index 0)"
-    );
-
-    settings.adjust_param(0, 1.0);
-    assert_eq!(
-        settings.param_value(0),
-        Some(1.0),
-        "Mode should cycle back to Bauer (index 1)"
-    );
-
-    // Cycle backwards: Bauer(1) -> Off(0) -> Mb(3) -> Meier(2) -> Bauer(1)
+    // Cycle backwards: Mb(3) -> Meier(2)
     settings.adjust_param(0, -1.0);
     assert_eq!(
         settings.param_value(0),
-        Some(0.0),
-        "Mode should wrap to Off (index 0)"
+        Some(2.0),
+        "Mode should cycle back to Meier (index 2)"
     );
 }
 

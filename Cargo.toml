@@ -51,6 +51,7 @@ members = [
     "crates/app-cli",
     "crates/app-gpui",
     "crates/app-tui",
+    "crates/sotf-media-controls",
     "crates/sotf-midi",
     "crates/sotf-plugins/crates/plugins-bridge",
     "crates/sotf-plugins/crates/plugins-denoiser",
@@ -289,12 +290,12 @@ ratatui-image = { version = "10", default-features = false, features = ["serde",
 crossterm = "0.29"
 
 # GPUI framework - all packages must use the same git revision
-gpui = { version="*", git = "https://github.com/zed-industries/zed.git", rev = "ebb451ec7b5bfdd60e7b70cf56f066c8f9a12293" }
+gpui = { version="*", git = "https://github.com/zed-industries/zed.git", rev = "5ec84a926ef83865afb92d2a3d1ca3b419572cf9" }
 gpui-component = "0.5.1"
-gpui_macos = { version="*", git = "https://github.com/zed-industries/zed.git", rev = "ebb451ec7b5bfdd60e7b70cf56f066c8f9a12293", features = ["font-kit"] }
-gpui_linux = { version="*", git = "https://github.com/zed-industries/zed.git", rev = "ebb451ec7b5bfdd60e7b70cf56f066c8f9a12293" }
-gpui_windows = { version="*", git = "https://github.com/zed-industries/zed.git", rev = "ebb451ec7b5bfdd60e7b70cf56f066c8f9a12293" }
-gpui_wgpu = { version="*", git = "https://github.com/zed-industries/zed.git", rev = "ebb451ec7b5bfdd60e7b70cf56f066c8f9a12293" }
+gpui_macos = { version="*", git = "https://github.com/zed-industries/zed.git", rev = "5ec84a926ef83865afb92d2a3d1ca3b419572cf9", features = ["font-kit"] }
+gpui_linux = { version="*", git = "https://github.com/zed-industries/zed.git", rev = "5ec84a926ef83865afb92d2a3d1ca3b419572cf9" }
+gpui_windows = { version="*", git = "https://github.com/zed-industries/zed.git", rev = "5ec84a926ef83865afb92d2a3d1ca3b419572cf9" }
+gpui_wgpu = { version="*", git = "https://github.com/zed-industries/zed.git", rev = "5ec84a926ef83865afb92d2a3d1ca3b419572cf9" }
 
 # System and low-level
 block = "0.1"
@@ -337,7 +338,7 @@ syn = { version = "2", features = ["full", "parsing", "extra-traits"] }
 # Graphics and visualization
 plotly = "0.13"
 plotly_static = { version = "0.1", features = ["chromedriver", "webdriver_download"] }
-wgpu = "29"
+wgpu = { git = "https://github.com/zed-industries/wgpu.git", branch = "v29" }
 bytemuck = { version = "1.14", features = ["derive"] }
 glam = "0.30"
 pollster = "0.4"
@@ -347,9 +348,7 @@ delaunator = "1.0"
 
 # GPU and macOS graphics
 metal = "0.33"
-core-graphics = "0.25"
 core-foundation = "0.10"
-core-foundation-sys = "0"
 
 # objc2 framework bindings (macOS)
 objc2 = "0.6"
@@ -365,7 +364,7 @@ block2 = "0.6"
 dispatch = "0.2"
 
 # Media controls
-souvlaki = "0.8"
+sotf-media-controls = { path = "crates/sotf-media-controls" }
 
 # Camera capture
 nokhwa = { version = "0.10", default-features = false }
@@ -382,7 +381,7 @@ ort = "2.0.0-rc.12"
 # TUI extensions
 
 # ffi
-cbindgen = "0.29"
+cbindgen = "0.28"
 
 [workspace.lints.rust]
 ambiguous_negative_literals = "warn"

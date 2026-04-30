@@ -169,6 +169,7 @@ fn main() {
                     tabbing_identifier: None,
                     window_decorations: None,
                     window_min_size: None,
+                    icon: None,
                 },
                 |_window, cx| cx.new(|_| HelloView),
             );

@@ -207,9 +207,13 @@ mod tests {
 
     #[test]
     fn data_dir_builds_expected_path() {
+        // SAFETY: only this test mutates SOTF_CACHE_DIR; tests in this module
+        // run sequentially within the same process.
+        unsafe { std::env::set_var("SOTF_CACHE_DIR", "data_cached") };
         let p = read::data_dir_for("KEF LS50 Meta");
+        unsafe { std::env::remove_var("SOTF_CACHE_DIR") };
         let expected =
             std::path::Path::new("data_cached").join("speakers/org.spinorama/KEF LS50 Meta");
-        assert!(p.ends_with(expected));
+        assert!(p.ends_with(expected), "path was: {p:?}");
     }
 }
