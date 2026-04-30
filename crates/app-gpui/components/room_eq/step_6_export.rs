@@ -536,12 +536,10 @@ impl PlayerView {
     }
 
     fn apply_room_eq_to_player(&mut self, cx: &mut Context<Self>) {
-        use sotf_audio_player::EQFilter;
-
-        // Get the DSP output and channel results from state.
-        // channel_results preserves the output channel order (0=FL, 1=FR, 2=C, etc.)
-        // from the recording config — we MUST use this order, not alphabetical sort,
-        // because the EQ plugin maps channel_filters[i] to audio channel i.
+        // The roomeq apply algorithm lives in `sotf-player::autoeq::apply`
+        // so the TUI can use the same path. This function is now a thin
+        // GPUI wrapper: gather inputs from `self.state`, call the shared
+        // function, then flush the config to the engine.
         let (dsp_output, channel_result_names) = {
             let state = self.state.read(cx);
             let names: Vec<String> = state
@@ -570,79 +568,25 @@ impl PlayerView {
             return;
         };
 
-        // Collect EQ filters per channel in output channel order.
-        // channel_result_names preserves the order from the recording config
-        // (0=FL, 1=FR, 2=C, 3=LFE, 4=SL, 5=SR for 5.1).
-        let mut per_channel_filters: Vec<Vec<EQFilter>> = Vec::new();
-        let mut per_channel_broadband: Vec<Vec<EQFilter>> = Vec::new();
-        for channel_name in &channel_result_names {
-            if let Some(channel_dsp) = dsp_output.channels.get(channel_name) {
-                let (channel_eq_filters, channel_bb_filters) =
-                    classify_channel_eq_filters(channel_dsp);
-                log::info!(
-                    "Channel '{}': {} EQ filters, {} broadband filters",
-                    channel_name,
-                    channel_eq_filters.len(),
-                    channel_bb_filters.len(),
-                );
-                per_channel_filters.push(channel_eq_filters);
-                per_channel_broadband.push(channel_bb_filters);
-            } else {
-                log::info!(
-                    "Channel '{}': no DSP output, using empty filters",
-                    channel_name
-                );
-                per_channel_filters.push(Vec::<EQFilter>::new());
-                per_channel_broadband.push(Vec::<EQFilter>::new());
-            }
-        }
-
-        // Check if we have any filters at all
-        let total_filters: usize = per_channel_filters.iter().map(|f| f.len()).sum();
-        let total_bb: usize = per_channel_broadband.iter().map(|f| f.len()).sum();
-        if total_filters == 0 && total_bb == 0 {
-            log::warn!("No EQ filters found in optimization results");
-            self.state.update(cx, |state, _| {
-                state.app.measurement_state.room_eq_state.error_message =
-                    Some("No EQ filters found in optimization results".to_string());
-            });
-            return;
-        }
-
-        let num_channels = per_channel_filters.len();
-        let global_filters = per_channel_filters.first().cloned().unwrap_or_default();
-        let global_bb = per_channel_broadband.first().cloned().unwrap_or_default();
-
-        log::info!(
-            "Applying room EQ with {} channels, {} total filters (per-channel mode)",
-            num_channels,
-            total_filters
-        );
-
         // Update the plugin graph AND immediately flush the config to
-        // the audio engine. The previous code set `pending_plugin_update`
-        // and relied on the 100ms timer to pick it up, but that path
-        // sometimes didn't fire (the timer processes pending updates
-        // only on its own tick, and if it happened to miss the window
-        // the user saw "applied" but heard no change).
-        //
-        // Calling `update_plugins` directly inside the same state.update
-        // closure guarantees the engine sees the new filters before we
-        // show the success toast.
+        // the audio engine. We deliberately don't go through
+        // `pending_plugin_update` / the timer — calling `update_plugins`
+        // synchronously here guarantees the engine sees the new filters
+        // before we show the success toast.
         self.state.update(cx, |state, _| {
-            let plugin_graph = &mut state.app.plugin_state.graph;
-            upsert_named_room_eq_plugins(
-                plugin_graph,
-                num_channels,
-                &global_bb,
-                &per_channel_broadband,
-                total_bb,
-                &global_filters,
-                &per_channel_filters,
+            let outcome = sotf_audio_player::autoeq::apply_room_eq_rack_to_chain(
+                &mut state.app.plugin_state.graph,
+                &dsp_output,
+                &channel_result_names,
             );
 
-            // Flush immediately to the engine — don't defer via
-            // `pending_plugin_update` which depends on the timer.
+            if outcome.total_filters == 0 && outcome.total_broadband == 0 {
+                log::warn!("No EQ filters found in optimization results");
+                state.app.measurement_state.room_eq_state.error_message =
+                    Some("No EQ filters found in optimization results".to_string());
+                return;
+            }
+
             let device_name = state
                 .app
                 .audio_device_state
@@ -680,8 +624,10 @@ impl PlayerView {
 
     /// Apply roomeq results as a graph (for multi-driver crossover setups).
     ///
-    /// Builds a routed `PluginGraphConfig` from the DSP output and sends it to
-    /// the engine via the graph update API.
+    /// Thin GPUI wrapper around
+    /// [`sotf_audio_player::autoeq::apply_room_eq_graph_to_chain`]: builds
+    /// the routed `PluginGraphConfig`, replaces the UI plugin graph with a
+    /// matching topology, and flushes both to the engine.
     fn apply_room_eq_as_graph(&mut self, cx: &mut Context<Self>) {
         let dsp_output = {
             let state = self.state.read(cx);
@@ -708,51 +654,30 @@ impl PlayerView {
             sotf_audio::select_output_sample_rate(track_sr, device_name) as f64
         };
 
-        let graph_config = match sotf_audio_player::room_eq_types::build_room_eq_plugin_graph_config(
-            &dsp_output,
-            sample_rate,
-        ) {
-            Ok(config) => config,
-            Err(e) => {
-                log::warn!("Failed to build Room EQ graph: {}", e);
-                self.state.update(cx, |state, _| {
-                    state.app.measurement_state.room_eq_state.error_message =
-                        Some(format!("Failed to build Room EQ graph: {e}"));
-                });
-                return;
-            }
-        };
-
-        if graph_config.nodes.is_empty() {
-            log::warn!("No graph nodes to apply");
-            self.state.update(cx, |state, _| {
-                state.app.measurement_state.room_eq_state.error_message =
-                    Some("No plugins in DSP output".to_string());
-            });
-            return;
-        }
-
-        log::info!(
-            "Applying room EQ as graph: {} nodes, {} edges",
-            graph_config.nodes.len(),
-            graph_config.edges.len()
-        );
-
-        // Build a matching PluginGraph for the UI so the graph view reflects
-        // the topology we're sending to the engine.
-        let ui_graph = Self::build_ui_graph_from_config(&graph_config);
-
-        // Send the graph config to the engine AND update the UI graph
         self.state.update(cx, |state, _| {
-            match state.player.lock().update_plugin_graph(graph_config) {
+            let outcome = match sotf_audio_player::autoeq::apply_room_eq_graph_to_chain(
+                &mut state.app.plugin_state.graph,
+                &dsp_output,
+                sample_rate,
+            ) {
+                Ok(o) => o,
+                Err(e) => {
+                    log::warn!("Apply-as-graph failed: {}", e);
+                    state.app.measurement_state.room_eq_state.error_message = Some(e);
+                    return;
+                }
+            };
+
+            // The shared function already mutated `state.app.plugin_state.graph`
+            // with the routed UI graph. Invalidate the canvas so the graph
+            // view rebuilds against the new model and switch to it (the
+            // rack can't represent the topology).
+            state.app.plugin_state.workflow_canvas = None;
+            state.app.plugin_state.plugin_graph_modified = true;
+            state.app.ui_state.current_screen = crate::app::Screen::PluginGraph;
+
+            match state.player.lock().update_plugin_graph(outcome.config) {
                 Ok(()) => {
-                    // Update the UI graph and invalidate canvas
-                    state.app.plugin_state.graph = ui_graph;
-                    state.app.plugin_state.workflow_canvas = None;
-                    state.app.plugin_state.plugin_graph_modified = true;
-                    // Switch to graph view mode
-                    state.app.plugin_state.plugin_view_mode =
-                        crate::app::state::plugin::PluginViewMode::Graph;
                     state.app.measurement_state.room_eq_state.status_message =
                         "Room EQ applied as graph!".to_string();
                     state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(
@@ -769,393 +694,10 @@ impl PlayerView {
 
         cx.notify();
     }
-
-    /// Build a `PluginGraph` (UI-level) from a `PluginGraphConfig` (engine-level).
-    ///
-    /// Creates plugin nodes with default settings for each engine node, adds
-    /// Input/Output special nodes, wires connections, and auto-lays-out
-    /// positions left-to-right.
-    fn build_ui_graph_from_config(
-        config: &sotf_audio::engine::PluginGraphConfig,
-    ) -> sotf_audio_player::PluginGraph {
-        use sotf_audio_player::{NodePosition, PluginGraph, SpecialNodeType};
-
-        let mut graph = PluginGraph::new();
-        let graph_channels = config
-            .nodes
-            .iter()
-            .map(|node| node.input_channels)
-            .max()
-            .unwrap_or(2)
-            .max(1);
-
-        // Add Input special node at the left
-        let input_id = graph.add_special_node(
-            SpecialNodeType::Input,
-            NodePosition::new(50.0, 200.0),
-            graph_channels,
-        );
-
-        // Map engine node IDs (usize) to graph node IDs (Uuid)
-        let mut id_map = std::collections::HashMap::new();
-
-        // Auto-layout: position nodes in columns
-        let x_spacing = 200.0;
-        let y_spacing = 120.0;
-
-        // Simple topological layout: assign each node an x based on its longest
-        // incoming path, and stack siblings vertically.
-        let mut node_depth: std::collections::HashMap<usize, usize> =
-            std::collections::HashMap::new();
-        // BFS to compute depth
-        for node in &config.nodes {
-            node_depth.entry(node.id).or_insert(0);
-        }
-        for edge in &config.edges {
-            let from_depth = node_depth.get(&edge.from_node).copied().unwrap_or(0);
-            let to_entry = node_depth.entry(edge.to_node).or_insert(0);
-            *to_entry = (*to_entry).max(from_depth + 1);
-        }
-        // Multiple passes for longer chains
-        for _ in 0..config.nodes.len() {
-            for edge in &config.edges {
-                let from_depth = node_depth.get(&edge.from_node).copied().unwrap_or(0);
-                let to_entry = node_depth.entry(edge.to_node).or_insert(0);
-                *to_entry = (*to_entry).max(from_depth + 1);
-            }
-        }
-
-        // Group nodes by depth for vertical stacking
-        let mut depth_counts: std::collections::HashMap<usize, usize> =
-            std::collections::HashMap::new();
-
-        for node_config in &config.nodes {
-            let depth = node_depth.get(&node_config.id).copied().unwrap_or(0);
-            let y_index = depth_counts.entry(depth).or_insert(0);
-            let x = 250.0 + (depth as f32) * x_spacing;
-            let y = 100.0 + (*y_index as f32) * y_spacing;
-            *y_index += 1;
-
-            // Parse plugin type from the string name
-            let plugin_type = sotf_audio::plugins::PluginType::from_name(&node_config.plugin_type)
-                .unwrap_or(sotf_audio::plugins::PluginType::EQ);
-
-            let node_id = graph.add_plugin_node(&plugin_type, NodePosition::new(x, y));
-
-            // Derive a user-facing name for EQ plugins from the `label`
-            // metadata carried in the DSP params — this is how the optimizer
-            // tells us which EQ is which (broadband vs main room correction).
-            let derived_name =
-                derive_plugin_name(&node_config.plugin_type, &node_config.parameters);
-
-            // Apply actual parameters from the DSP output to the plugin settings
-            // so the modal shows the real optimized values, not defaults.
-            if let Some(node) = graph.nodes.get_mut(&node_id) {
-                apply_dsp_params_to_settings(
-                    &mut node.plugin.settings,
-                    &node_config.plugin_type,
-                    &node_config.parameters,
-                );
-                node.plugin.name = derived_name;
-            }
-
-            id_map.insert(node_config.id, node_id);
-        }
-
-        // Add Output special node at the right
-        let max_depth = node_depth.values().max().copied().unwrap_or(0);
-        let output_x = 250.0 + ((max_depth + 1) as f32) * x_spacing;
-        let output_id = graph.add_special_node(
-            SpecialNodeType::Output,
-            NodePosition::new(output_x, 200.0),
-            graph_channels,
-        );
-
-        // Wire connections between plugin nodes
-        for edge in &config.edges {
-            if let (Some(&from), Some(&to)) =
-                (id_map.get(&edge.from_node), id_map.get(&edge.to_node))
-            {
-                for ch in 0..graph_channels {
-                    let _ = graph.add_connection(from, ch, to, ch);
-                }
-            }
-        }
-
-        // Connect Input to first-depth nodes (nodes with no incoming edges)
-        let nodes_with_incoming: std::collections::HashSet<usize> =
-            config.edges.iter().map(|e| e.to_node).collect();
-        for node_config in &config.nodes {
-            if !nodes_with_incoming.contains(&node_config.id)
-                && let Some(&graph_id) = id_map.get(&node_config.id)
-            {
-                for ch in 0..graph_channels {
-                    let _ = graph.add_connection(input_id, ch, graph_id, ch);
-                }
-            }
-        }
-
-        // Connect last-depth nodes (nodes with no outgoing edges) to Output
-        let nodes_with_outgoing: std::collections::HashSet<usize> =
-            config.edges.iter().map(|e| e.from_node).collect();
-        for node_config in &config.nodes {
-            if !nodes_with_outgoing.contains(&node_config.id)
-                && let Some(&graph_id) = id_map.get(&node_config.id)
-            {
-                for ch in 0..graph_channels {
-                    let _ = graph.add_connection(graph_id, ch, output_id, ch);
-                }
-            }
-        }
-
-        graph
-    }
 }
 
-/// Split a channel's DSP plugins into main-room-EQ filters and broadband
-/// pre-correction filters based on the `parameters.label` tag each plugin
-/// carries.
-///
-/// The optimizer emits multiple EQ plugins per channel — main room
-/// correction is **unlabeled**, broadband pre-correction is labeled
-/// `"broadband"` (see `autoeq::roomeq::spectral_align::create_alignment_plugins`),
-/// and other stages (`cea2034`, `user_preference`, `channel_matching`) are
-/// not user-editable and are filtered out.
-///
-/// Regression guard for Issue 6: the emitter used to produce an
-/// **unlabeled** broadband plugin, which got merged into the main bucket
-/// here. Downstream `upsert_named_room_eq_plugins` then inserted a single
-/// merged EQ instead of the two expected named plugins. Keeping the
-/// classifier as a pure function lets tests exercise the full flow
-/// from real optimizer output to filter lists.
-pub fn classify_channel_eq_filters(
-    channel_dsp: &sotf_audio_player::room_eq_types::ChannelDspChain,
-) -> (
-    Vec<sotf_audio_player::EQFilter>,
-    Vec<sotf_audio_player::EQFilter>,
-) {
-    use sotf_audio_player::room_eq_types::parse_eq_filters_from_json;
-
-    let mut main_filters: Vec<sotf_audio_player::EQFilter> = Vec::new();
-    let mut bb_filters: Vec<sotf_audio_player::EQFilter> = Vec::new();
-
-    for plugin in &channel_dsp.plugins {
-        if !plugin.plugin_type.eq_ignore_ascii_case("eq") {
-            continue;
-        }
-        let Some(filters) = plugin.parameters.get("filters").and_then(|f| f.as_array()) else {
-            continue;
-        };
-        let label = plugin.parameters.get("label").and_then(|l| l.as_str());
-        match label {
-            Some("broadband") => {
-                bb_filters.extend(parse_eq_filters_from_json(filters));
-            }
-            None => {
-                // Unlabeled = main room EQ
-                main_filters.extend(parse_eq_filters_from_json(filters));
-            }
-            _ => {
-                // Other labels (cea2034, user_preference, channel_matching) — skip
-            }
-        }
-    }
-
-    (main_filters, bb_filters)
-}
-
-/// Linear index of the first **user** EQ plugin with no custom name.
-///
-/// A user who ran "Apply to Rack" in an older build will have an anonymous
-/// EQ sitting in the chain. Re-running Apply in the current build needs to
-/// reclaim that node as "Room EQ" instead of inserting a third EQ alongside
-/// it — otherwise the rack accumulates stale plugins across runs.
-fn unnamed_user_eq_index(graph: &sotf_audio_player::PluginGraph) -> Option<usize> {
-    use sotf_audio::plugins::PluginType;
-    use sotf_audio_player::plugin_graph::NodeRole;
-    graph.plugins_linear()?.iter().position(|n| {
-        matches!(n.plugin.plugin_type(), PluginType::EQ)
-            && n.plugin.name.as_deref().is_none_or(str::is_empty)
-            && !n.plugin.permanent
-            && n.role == NodeRole::User
-    })
-}
-
-/// Upsert the two named EQ plugins ("Broadband EQ" + "Room EQ") into the
-/// plugin graph. Extracted from `apply_room_eq_to_player` so the logic is
-/// unit-testable against a raw `PluginGraph` without a full `Context`.
-///
-/// Behavior contract (see `room_eq_apply_tests.rs`):
-///
-/// - When `total_bb > 0`, produces **two** named EQ plugins.
-///   Main is "Room EQ" with `max_filters=10`; broadband is "Broadband EQ"
-///   with `max_filters=4`. Both run in per-channel mode.
-/// - Pre-existing unnamed user EQ plugins (e.g. from an older
-///   Apply-to-Rack build) are adopted in-place as "Room EQ" so the rack
-///   does not accumulate stale nodes on upgrade.
-/// - Second Apply with same names is idempotent: the existing named EQ
-///   is updated in place rather than duplicated.
-pub fn upsert_named_room_eq_plugins(
-    graph: &mut sotf_audio_player::PluginGraph,
-    num_channels: usize,
-    global_bb: &[sotf_audio_player::EQFilter],
-    per_channel_broadband: &[Vec<sotf_audio_player::EQFilter>],
-    total_bb: usize,
-    global_filters: &[sotf_audio_player::EQFilter],
-    per_channel_filters: &[Vec<sotf_audio_player::EQFilter>],
-) {
-    use sotf_audio_player::{PluginSettings, PluginType};
-
-    // Step 1: migrate stale unnamed EQ (pre-release upgrade path).
-    if let Some(existing_idx) = unnamed_user_eq_index(graph)
-        && let Some(p) = graph.get_plugin_mut(existing_idx)
-    {
-        p.name = Some("Room EQ".to_string());
-        log::info!(
-            "Adopted pre-existing unnamed EQ at index {} as 'Room EQ'",
-            existing_idx
-        );
-    }
-
-    // Step 2: name-keyed upsert helper. Tracks new nodes by stable
-    // GraphNodeId so inserts that shift sibling positions don't leave us
-    // writing settings into a neighbouring plugin.
-    let upsert_eq =
-        |graph: &mut sotf_audio_player::PluginGraph, settings: PluginSettings, name: &str| {
-            if let Some(idx) = graph.find_plugin_index_by_name(name) {
-                if let Some(p) = graph.get_plugin_mut(idx) {
-                    p.settings = settings;
-                    p.name = Some(name.to_string());
-                    log::info!("Updated existing '{}' EQ at index {}", name, idx);
-                }
-                return;
-            }
-
-            let insert_idx = graph.user_plugin_insert_index();
-            match graph.insert_plugin(insert_idx, &PluginType::EQ) {
-                Ok(node_id) => {
-                    if let Some(node) = graph.nodes.get_mut(&node_id) {
-                        node.plugin.settings = settings;
-                        node.plugin.name = Some(name.to_string());
-                    }
-                    log::info!(
-                        "Inserted '{}' EQ at linear index {} (node {:?})",
-                        name,
-                        insert_idx,
-                        node_id
-                    );
-                }
-                Err(e) => {
-                    log::error!("Failed to insert '{}' EQ: {}", name, e);
-                }
-            }
-        };
-
-    // Step 3: broadband correction EQ (first in chain)
-    if total_bb > 0 {
-        let bb_settings = PluginSettings::EQ {
-            channels: num_channels,
-            filters: global_bb.to_vec(),
-            channel_filters: Some(per_channel_broadband.to_vec()),
-            per_channel_mode: true,
-            max_filters: 4,
-            tdf2: false,
-            topology: 0.0,
-        };
-        upsert_eq(graph, bb_settings, "Broadband EQ");
-    }
-
-    // Step 4: main room correction EQ (after broadband)
-    let main_settings = PluginSettings::EQ {
-        channels: num_channels,
-        filters: global_filters.to_vec(),
-        channel_filters: Some(per_channel_filters.to_vec()),
-        per_channel_mode: true,
-        max_filters: 10,
-        tdf2: false,
-        topology: 0.0,
-    };
-    upsert_eq(graph, main_settings, "Room EQ");
-
-    // Step 5: post-condition sanity log — makes it obvious in logs if we
-    // ever regress back to the merged-EQ bug.
-    let named_eq_count = graph
-        .plugins()
-        .iter()
-        .filter(|p| {
-            matches!(p.plugin_type(), PluginType::EQ)
-                && p.name
-                    .as_deref()
-                    .is_some_and(|n| n == "Room EQ" || n == "Broadband EQ")
-        })
-        .count();
-    log::info!(
-        "After upsert: {} named room-EQ plugins in graph (expected {}, total EQs {})",
-        named_eq_count,
-        if total_bb > 0 { 2 } else { 1 },
-        graph
-            .plugins()
-            .iter()
-            .filter(|p| matches!(p.plugin_type(), PluginType::EQ))
-            .count()
-    );
-}
-
-/// Derive a user-facing plugin name from the DSP params the optimizer emits.
-///
-/// Today the only plugin type that carries a semantic label is `EQ`
-/// (`"broadband"` for the pre-correction EQ, unlabeled for the main room
-/// correction). Returning `None` lets the UI fall back to the generic
-/// plugin type display name.
-fn derive_plugin_name(plugin_type_str: &str, parameters: &serde_json::Value) -> Option<String> {
-    if !plugin_type_str.eq_ignore_ascii_case("eq") {
-        return None;
-    }
-    match parameters.get("label").and_then(|l| l.as_str()) {
-        Some("broadband") => Some("Broadband EQ".to_string()),
-        Some("cea2034") => Some("Speaker EQ".to_string()),
-        Some("user_preference") => Some("Preference EQ".to_string()),
-        Some(other) if !other.is_empty() => Some(other.to_string()),
-        // Unlabeled = main room correction EQ
-        _ => Some("Room EQ".to_string()),
-    }
-}
-
-/// Apply DSP output parameters to a `PluginSettings` in-place.
-///
-/// Handles the common plugin types from roomeq: EQ (filters), Gain (gain_db),
-/// and Delay (delay_ms). Unknown types are left at their defaults.
-fn apply_dsp_params_to_settings(
-    settings: &mut sotf_audio::plugins::PluginSettings,
-    plugin_type_str: &str,
-    parameters: &serde_json::Value,
-) {
-    use sotf_audio::plugins::PluginSettings;
-    use sotf_audio_player::room_eq_types::parse_eq_filters_from_json;
-
-    let lower = plugin_type_str.to_lowercase();
-    match lower.as_str() {
-        "eq" => {
-            if let PluginSettings::EQ { filters, .. } = settings
-                && let Some(filter_arr) = parameters.get("filters").and_then(|v| v.as_array())
-            {
-                *filters = parse_eq_filters_from_json(filter_arr);
-            }
-        }
-        "gain" => {
-            if let PluginSettings::Gain { gain_db, .. } = settings
-                && let Some(v) = parameters.get("gain_db").and_then(|v| v.as_f64())
-            {
-                *gain_db = v;
-            }
-        }
-        "delay" => {
-            if let PluginSettings::Delay { delay_ms, .. } = settings
-                && let Some(v) = parameters.get("delay_ms").and_then(|v| v.as_f64())
-            {
-                *delay_ms = v;
-            }
-        }
-        _ => {} // Other types keep defaults
-    }
-}
+// `classify_channel_eq_filters`, `upsert_named_room_eq_plugins`,
+// `derive_plugin_name`, `apply_dsp_params_to_settings`, and
+// `build_ui_graph_from_config` were moved to
+// `sotf_audio_player::autoeq::apply` so the TUI can use the same algorithm.
+// Re-exported from `lib.rs` to keep `room_eq_apply_tests.rs` building.

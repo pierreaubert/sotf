@@ -639,12 +639,56 @@ impl PluginController {
         Ok(PluginUpdateEffect::Structural)
     }
 
+    /// Add a new EQ band to a plugin addressed by graph node ID.
+    /// Required when editing a node inside a non-linear graph (graph view),
+    /// where `editing_plugin_index` is not set.
+    pub fn add_eq_band_by_node_id(
+        &mut self,
+        node_id: crate::plugin_graph::GraphNodeId,
+    ) -> Result<PluginUpdateEffect, String> {
+        let node = self
+            .graph
+            .nodes
+            .get_mut(&node_id)
+            .ok_or_else(|| "Plugin node not found".to_string())?;
+        let filters = node
+            .plugin
+            .settings
+            .eq_global_filters_mut()
+            .ok_or_else(|| "Selected plugin is not an EQ".to_string())?;
+        filters.push(EQFilter::new(BiquadFilterType::Peak, 1000.0, 1.0, 0.0));
+        Ok(PluginUpdateEffect::Structural)
+    }
+
     /// Remove an EQ band from the currently editing EQ or LinearPhaseEq plugin.
     pub fn remove_eq_band(&mut self, band_idx: usize) -> Result<PluginUpdateEffect, String> {
         let plugin = self
             .get_editing_plugin_mut()
             .ok_or_else(|| "No plugin being edited".to_string())?;
         let filters = plugin
+            .settings
+            .eq_global_filters_mut()
+            .ok_or_else(|| "Selected plugin is not an EQ".to_string())?;
+        if band_idx >= filters.len() {
+            return Err("Invalid band index".to_string());
+        }
+        filters.remove(band_idx);
+        Ok(PluginUpdateEffect::Structural)
+    }
+
+    /// Remove an EQ band from a plugin addressed by graph node ID.
+    pub fn remove_eq_band_by_node_id(
+        &mut self,
+        node_id: crate::plugin_graph::GraphNodeId,
+        band_idx: usize,
+    ) -> Result<PluginUpdateEffect, String> {
+        let node = self
+            .graph
+            .nodes
+            .get_mut(&node_id)
+            .ok_or_else(|| "Plugin node not found".to_string())?;
+        let filters = node
+            .plugin
             .settings
             .eq_global_filters_mut()
             .ok_or_else(|| "Selected plugin is not an EQ".to_string())?;
@@ -671,12 +715,58 @@ impl PluginController {
         Ok(PluginUpdateEffect::Structural)
     }
 
+    /// Toggle mute for an EQ band on a plugin addressed by graph node ID.
+    pub fn toggle_eq_band_mute_by_node_id(
+        &mut self,
+        node_id: crate::plugin_graph::GraphNodeId,
+        band_idx: usize,
+    ) -> Result<PluginUpdateEffect, String> {
+        let node = self
+            .graph
+            .nodes
+            .get_mut(&node_id)
+            .ok_or_else(|| "Plugin node not found".to_string())?;
+        let filters = node
+            .plugin
+            .settings
+            .eq_global_filters_mut()
+            .ok_or_else(|| "Selected plugin is not an EQ".to_string())?;
+        if band_idx >= filters.len() {
+            return Err("Invalid band index".to_string());
+        }
+        filters[band_idx].muted = !filters[band_idx].muted;
+        Ok(PluginUpdateEffect::Structural)
+    }
+
     /// Toggle solo state for an EQ or LinearPhaseEq band.
     pub fn toggle_eq_band_solo(&mut self, band_idx: usize) -> Result<PluginUpdateEffect, String> {
         let plugin = self
             .get_editing_plugin_mut()
             .ok_or_else(|| "No plugin being edited".to_string())?;
         let filters = plugin
+            .settings
+            .eq_global_filters_mut()
+            .ok_or_else(|| "Selected plugin is not an EQ".to_string())?;
+        if band_idx >= filters.len() {
+            return Err("Invalid band index".to_string());
+        }
+        filters[band_idx].solo = !filters[band_idx].solo;
+        Ok(PluginUpdateEffect::Structural)
+    }
+
+    /// Toggle solo for an EQ band on a plugin addressed by graph node ID.
+    pub fn toggle_eq_band_solo_by_node_id(
+        &mut self,
+        node_id: crate::plugin_graph::GraphNodeId,
+        band_idx: usize,
+    ) -> Result<PluginUpdateEffect, String> {
+        let node = self
+            .graph
+            .nodes
+            .get_mut(&node_id)
+            .ok_or_else(|| "Plugin node not found".to_string())?;
+        let filters = node
+            .plugin
             .settings
             .eq_global_filters_mut()
             .ok_or_else(|| "Selected plugin is not an EQ".to_string())?;
@@ -1750,5 +1840,125 @@ fn apply_structural_side_effects(
             *channel_count_changed = true;
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::plugin_graph::{NodePosition, PluginGraph};
+    use crate::PluginType;
+
+    /// Build a controller with a single non-permanent EQ plugin and return
+    /// its graph node id. Mirrors how the room-EQ-as-graph apply path leaves
+    /// state when the user double-clicks a plugin in the graph view.
+    fn make_controller_with_eq() -> (PluginController, crate::plugin_graph::GraphNodeId) {
+        let mut ctrl = PluginController::new();
+        ctrl.graph = PluginGraph::new();
+        let node_id = ctrl
+            .graph
+            .add_plugin_node(&PluginType::EQ, NodePosition::new(0.0, 0.0));
+        // The EQ plugin defaults to a non-empty filter list — we only need
+        // to know how many bands it starts with.
+        (ctrl, node_id)
+    }
+
+    fn eq_filter_count(ctrl: &PluginController, id: crate::plugin_graph::GraphNodeId) -> usize {
+        let node = ctrl.graph.nodes.get(&id).unwrap();
+        match &node.plugin.settings {
+            PluginSettings::EQ { filters, .. } => filters.len(),
+            other => panic!("expected EQ settings, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn add_eq_band_by_node_id_appends_a_filter() {
+        let (mut ctrl, id) = make_controller_with_eq();
+        let before = eq_filter_count(&ctrl, id);
+        let effect = ctrl.add_eq_band_by_node_id(id).expect("add succeeds");
+        assert!(matches!(effect, PluginUpdateEffect::Structural));
+        assert_eq!(eq_filter_count(&ctrl, id), before + 1);
+    }
+
+    #[test]
+    fn add_eq_band_by_node_id_rejects_unknown_node() {
+        let (mut ctrl, _) = make_controller_with_eq();
+        let bogus = crate::plugin_graph::GraphNodeId::new_v4();
+        assert!(ctrl.add_eq_band_by_node_id(bogus).is_err());
+    }
+
+    #[test]
+    fn add_eq_band_by_node_id_rejects_non_eq_plugin() {
+        let mut ctrl = PluginController::new();
+        ctrl.graph = PluginGraph::new();
+        let id = ctrl
+            .graph
+            .add_plugin_node(&PluginType::Gain, NodePosition::new(0.0, 0.0));
+        assert!(ctrl.add_eq_band_by_node_id(id).is_err());
+    }
+
+    #[test]
+    fn remove_eq_band_by_node_id_drops_the_band() {
+        let (mut ctrl, id) = make_controller_with_eq();
+        // Ensure the EQ has at least one band to remove.
+        ctrl.add_eq_band_by_node_id(id).unwrap();
+        let before = eq_filter_count(&ctrl, id);
+        ctrl.remove_eq_band_by_node_id(id, before - 1).unwrap();
+        assert_eq!(eq_filter_count(&ctrl, id), before - 1);
+    }
+
+    #[test]
+    fn toggle_eq_band_mute_by_node_id_flips_the_flag() {
+        let (mut ctrl, id) = make_controller_with_eq();
+        ctrl.add_eq_band_by_node_id(id).unwrap();
+        let band = eq_filter_count(&ctrl, id) - 1;
+
+        let initial = match &ctrl.graph.nodes.get(&id).unwrap().plugin.settings {
+            PluginSettings::EQ { filters, .. } => filters[band].muted,
+            _ => unreachable!(),
+        };
+        ctrl.toggle_eq_band_mute_by_node_id(id, band).unwrap();
+        let after = match &ctrl.graph.nodes.get(&id).unwrap().plugin.settings {
+            PluginSettings::EQ { filters, .. } => filters[band].muted,
+            _ => unreachable!(),
+        };
+        assert_eq!(after, !initial);
+    }
+
+    #[test]
+    fn toggle_eq_band_solo_by_node_id_flips_the_flag() {
+        let (mut ctrl, id) = make_controller_with_eq();
+        ctrl.add_eq_band_by_node_id(id).unwrap();
+        let band = eq_filter_count(&ctrl, id) - 1;
+
+        let initial = match &ctrl.graph.nodes.get(&id).unwrap().plugin.settings {
+            PluginSettings::EQ { filters, .. } => filters[band].solo,
+            _ => unreachable!(),
+        };
+        ctrl.toggle_eq_band_solo_by_node_id(id, band).unwrap();
+        let after = match &ctrl.graph.nodes.get(&id).unwrap().plugin.settings {
+            PluginSettings::EQ { filters, .. } => filters[band].solo,
+            _ => unreachable!(),
+        };
+        assert_eq!(after, !initial);
+    }
+
+    #[test]
+    fn eq_band_by_node_id_does_not_affect_sibling_node() {
+        // Two EQ nodes in the graph; mutating one via node-id must leave
+        // the other untouched.
+        let mut ctrl = PluginController::new();
+        ctrl.graph = PluginGraph::new();
+        let a = ctrl
+            .graph
+            .add_plugin_node(&PluginType::EQ, NodePosition::new(0.0, 0.0));
+        let b = ctrl
+            .graph
+            .add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 0.0));
+        let a_before = eq_filter_count(&ctrl, a);
+        let b_before = eq_filter_count(&ctrl, b);
+        ctrl.add_eq_band_by_node_id(a).unwrap();
+        assert_eq!(eq_filter_count(&ctrl, a), a_before + 1);
+        assert_eq!(eq_filter_count(&ctrl, b), b_before);
     }
 }

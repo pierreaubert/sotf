@@ -395,6 +395,18 @@ fn handle_export_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         KeyCode::BackTab => {
             app.room_eq.step = RoomEqStep::Review;
         }
+        // 'a' = Apply optimization output to the live plugin chain.
+        // Auto-detects rack vs graph mode (matches the GPUI buttons).
+        KeyCode::Char('a') => match app.apply_room_eq_to_chain() {
+            Ok(msg) => {
+                app.room_eq.apply_status = Some(msg);
+                app.room_eq.apply_error = None;
+            }
+            Err(e) => {
+                app.room_eq.apply_error = Some(e);
+                app.room_eq.apply_status = None;
+            }
+        },
         _ => {}
     }
     None
@@ -704,6 +716,10 @@ pub fn poll_room_eq_optimization(app: &mut App) -> bool {
                         impulse_response: None,
                     })
                     .collect();
+                // Capture the full DSP chain output so the "Apply to
+                // chain" action (rack/graph) can run the same algorithm
+                // the GPUI app uses.
+                app.room_eq.dsp_output = Some(r.to_dsp_chain_output());
                 app.room_eq.opt_status = OptimizationStatus::Completed;
                 app.room_eq.opt_progress = 1.0;
             }
@@ -771,6 +787,9 @@ fn spawn_room_eq_optimization(app: &mut App) {
     app.room_eq.opt_total_speakers = 0;
     app.room_eq.opt_status_message = None;
     app.room_eq.channel_results.clear();
+    app.room_eq.dsp_output = None;
+    app.room_eq.apply_status = None;
+    app.room_eq.apply_error = None;
     app.room_eq.loss_history.clear();
     app.room_eq.opt_log_lines.clear();
     app.room_eq.opt_log_scroll = 0;

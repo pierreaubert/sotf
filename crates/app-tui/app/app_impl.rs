@@ -690,6 +690,65 @@ impl App {
         self.apply_eq_filters_to_chain(&filters, &label)
     }
 
+    /// Apply the captured Room EQ optimization output to the live plugin
+    /// chain. Auto-detects whether the result fits the linear rack or
+    /// requires graph routing (multi-driver crossovers, bass management)
+    /// and dispatches to the matching `sotf-player::autoeq::apply` entry
+    /// — the same algorithm the GPUI "Apply to Rack"/"Apply as Graph"
+    /// buttons use.
+    ///
+    /// On success, schedules a structural plugin update; the main loop's
+    /// flush picks `update_plugins` (linear) or `update_plugin_graph`
+    /// (non-linear) based on the resulting topology.
+    pub fn apply_room_eq_to_chain(&mut self) -> Result<String, String> {
+        use sotf_audio_player::autoeq;
+        use sotf_audio_player::room_eq_types::DspChainOutputExt;
+
+        let Some(dsp_output) = self.room_eq.dsp_output.clone() else {
+            return Err("No optimization results to apply. Run the optimizer first.".to_string());
+        };
+
+        let channel_names: Vec<String> = self
+            .room_eq
+            .channel_results
+            .iter()
+            .map(|r| r.channel_name.clone())
+            .collect();
+
+        if dsp_output.is_rack_compatible() {
+            let outcome = autoeq::apply_room_eq_rack_to_chain(
+                &mut self.plugin_graph,
+                &dsp_output,
+                &channel_names,
+            );
+            if outcome.total_filters == 0 && outcome.total_broadband == 0 {
+                return Err("No EQ filters found in optimization results".to_string());
+            }
+            self.plugin_graph.update_channel_dependent_plugins();
+            self.request_plugin_update();
+            Ok(format!(
+                "Applied Room EQ to rack: {} channels, {} main filters, {} broadband",
+                outcome.num_channels, outcome.total_filters, outcome.total_broadband
+            ))
+        } else {
+            let sample_rate = self
+                .current_sample_rate
+                .map(|r| r as f64)
+                .unwrap_or_else(|| self.get_current_sample_rate());
+            let outcome = autoeq::apply_room_eq_graph_to_chain(
+                &mut self.plugin_graph,
+                &dsp_output,
+                sample_rate,
+            )?;
+            self.plugin_graph.update_channel_dependent_plugins();
+            self.request_plugin_update();
+            Ok(format!(
+                "Applied Room EQ as graph: {} nodes, {} edges",
+                outcome.num_nodes, outcome.num_edges
+            ))
+        }
+    }
+
     /// Start tracking a new track for play statistics
     pub fn start_track_tracking(&mut self, track_path: PathBuf) {
         self.current_track_path = Some(track_path);

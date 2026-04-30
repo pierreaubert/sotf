@@ -37,11 +37,19 @@
 pub mod types;
 
 // Modules
+pub mod apply;
 pub mod headphone;
 pub mod multi_speaker;
 pub mod params;
 pub mod presets;
 pub mod speaker;
+
+// Re-export the shared "apply Room EQ result to chain" API.
+pub use apply::{
+    GraphApplyOutcome, RackApplyOutcome, apply_room_eq_graph_to_chain,
+    apply_room_eq_rack_to_chain, build_ui_graph_from_config, classify_channel_eq_filters,
+    upsert_named_room_eq_plugins,
+};
 
 // Re-export types
 pub use types::{CrossoverType, SpeakerConfigType};

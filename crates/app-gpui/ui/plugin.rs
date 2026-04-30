@@ -103,20 +103,40 @@ impl PlayerView {
                 }
             }
             PluginUpdateType::Structural => {
-                // Full plugin chain rebuild
+                // Full plugin chain rebuild — but the *kind* of rebuild
+                // depends on topology. Linear chains flush via
+                // `update_plugins` (preserves the analyzer-reordering rules
+                // baked into the chain path). Non-linear graphs MUST flush
+                // via `update_plugin_graph`; flattening them through
+                // `to_plugin_configs` topo-sorts the DAG into a single
+                // chain, silently dropping parallel branches and routed
+                // bass-management — which is exactly what
+                // `apply_room_eq_as_graph` set up.
                 let device_name = state.app.audio_device_state.current_output_device_name.as_deref();
                 let track_sample_rate = state.app.playback.sample_rate.unwrap_or(48000);
                 let sample_rate = sotf_audio::select_output_sample_rate(track_sample_rate, device_name) as f64;
-                let plugins = state.app.plugin_state.graph.to_plugin_configs(sample_rate);
-                log::warn!(
-                    "[GPUI] Structural update: sending {} plugins to engine (expected output: {} channels) at {}Hz",
-                    plugins.len(),
-                    state.app.plugin_state.graph.output_channels(),
-                    sample_rate
-                );
                 // Invalidate the workflow canvas so the graph view rebuilds
                 state.app.plugin_state.workflow_canvas = None;
-                state.player.lock().update_plugins(plugins)
+                if state.app.plugin_state.is_rack_available() {
+                    let plugins = state.app.plugin_state.graph.to_plugin_configs(sample_rate);
+                    log::warn!(
+                        "[GPUI] Structural update (linear): sending {} plugins to engine (expected output: {} channels) at {}Hz",
+                        plugins.len(),
+                        state.app.plugin_state.graph.output_channels(),
+                        sample_rate
+                    );
+                    state.player.lock().update_plugins(plugins)
+                } else {
+                    let graph_config =
+                        state.app.plugin_state.graph.to_plugin_graph_config(sample_rate);
+                    log::warn!(
+                        "[GPUI] Structural update (graph): sending {} nodes, {} edges to engine at {}Hz",
+                        graph_config.nodes.len(),
+                        graph_config.edges.len(),
+                        sample_rate
+                    );
+                    state.player.lock().update_plugin_graph(graph_config)
+                }
             }
         };
 

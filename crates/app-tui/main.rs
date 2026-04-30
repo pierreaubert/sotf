@@ -604,9 +604,29 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                                     .current_sample_rate
                                     .map(|r| r as f64)
                                     .unwrap_or_else(|| app.get_current_sample_rate());
-                                let plugins = app.plugin_graph.to_plugin_configs(sample_rate);
 
-                                match player.update_plugins(plugins) {
+                                // Branch on graph topology — flattening a
+                                // non-linear graph through `to_plugin_configs`
+                                // silently drops parallel branches and
+                                // routed bass management. Same fix as the
+                                // GPUI app's structural-flush path.
+                                let result = if app.plugin_graph.is_linear() {
+                                    let plugins =
+                                        app.plugin_graph.to_plugin_configs(sample_rate);
+                                    player.update_plugins(plugins)
+                                } else {
+                                    let config = app
+                                        .plugin_graph
+                                        .to_plugin_graph_config(sample_rate);
+                                    log::info!(
+                                        "[TUI] Plugin update (graph): {} nodes, {} edges",
+                                        config.nodes.len(),
+                                        config.edges.len()
+                                    );
+                                    player.update_plugin_graph(config)
+                                };
+
+                                match result {
                                     Ok(()) => {
                                         log::info!("[TUI] Plugin update successful");
                                         app.status_message =

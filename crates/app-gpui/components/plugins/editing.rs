@@ -238,25 +238,47 @@ impl PluginEditingManager for App {
     }
 
     fn add_eq_band(&mut self) -> Result<(), String> {
-        let effect = self.plugin_state.add_eq_band()?;
+        // In graph view, `editing_plugin_index` may not be set — the
+        // user double-clicked a graph node, populating
+        // `editing_graph_node_uuid` instead. Redirect.
+        let effect = if let Some(node_id) = self.plugin_state.editing_graph_node_uuid {
+            self.plugin_state.add_eq_band_by_node_id(node_id)?
+        } else {
+            self.plugin_state.add_eq_band()?
+        };
         self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
         Ok(())
     }
 
     fn remove_eq_band(&mut self, band_idx: usize) -> Result<(), String> {
-        let effect = self.plugin_state.remove_eq_band(band_idx)?;
+        let effect = if let Some(node_id) = self.plugin_state.editing_graph_node_uuid {
+            self.plugin_state
+                .remove_eq_band_by_node_id(node_id, band_idx)?
+        } else {
+            self.plugin_state.remove_eq_band(band_idx)?
+        };
         self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
         Ok(())
     }
 
     fn toggle_eq_band_mute(&mut self, band_idx: usize) -> Result<(), String> {
-        let effect = self.plugin_state.toggle_eq_band_mute(band_idx)?;
+        let effect = if let Some(node_id) = self.plugin_state.editing_graph_node_uuid {
+            self.plugin_state
+                .toggle_eq_band_mute_by_node_id(node_id, band_idx)?
+        } else {
+            self.plugin_state.toggle_eq_band_mute(band_idx)?
+        };
         self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
         Ok(())
     }
 
     fn toggle_eq_band_solo(&mut self, band_idx: usize) -> Result<(), String> {
-        let effect = self.plugin_state.toggle_eq_band_solo(band_idx)?;
+        let effect = if let Some(node_id) = self.plugin_state.editing_graph_node_uuid {
+            self.plugin_state
+                .toggle_eq_band_solo_by_node_id(node_id, band_idx)?
+        } else {
+            self.plugin_state.toggle_eq_band_solo(band_idx)?
+        };
         self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
         Ok(())
     }

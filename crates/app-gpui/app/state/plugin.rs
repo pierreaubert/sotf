@@ -22,7 +22,6 @@ pub struct PluginState {
 
     // GPUI-specific: UI state
     pub matrix_selected_cell: Option<(usize, usize)>,
-    pub plugin_view_mode: PluginViewMode,
     pub graph_selection: GraphSelection,
     pub graph_connection_drag: Option<ConnectionDrag>,
     pub graph_node_drag: Option<NodeDrag>,
@@ -87,17 +86,9 @@ impl DerefMut for PluginState {
 }
 
 impl PluginState {
-    /// The effective view mode: returns `Graph` when the graph topology is
-    /// non-linear (rack can't represent it), otherwise returns the user's choice.
-    pub fn effective_view_mode(&self) -> PluginViewMode {
-        if !self.ctrl.is_linear() {
-            PluginViewMode::Graph
-        } else {
-            self.plugin_view_mode
-        }
-    }
-
-    /// Whether the rack view is available (graph must be linear).
+    /// Whether the rack view can represent the current plugin graph.
+    /// Returns false when the topology is non-linear (parallel branches,
+    /// merges) — in that case the user must use the graph view.
     pub fn is_rack_available(&self) -> bool {
         self.ctrl.is_linear()
     }
@@ -170,7 +161,6 @@ impl Default for PluginState {
             plugin_graph_modified: false,
             pending_plugin_update: None,
             matrix_selected_cell: None,
-            plugin_view_mode: PluginViewMode::Rack,
             graph_selection: GraphSelection::default(),
             graph_connection_drag: None,
             graph_node_drag: None,

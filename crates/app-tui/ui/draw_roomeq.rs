@@ -692,11 +692,28 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
         }
 
         RoomEqStep::Export => {
+            // Apply badge tells the user up-front whether the result fits
+            // the linear rack or needs graph routing — same heuristic the
+            // GPUI app uses to swap the "Apply to Rack" / "Apply as Graph"
+            // buttons.
+            let apply_hint = match s.dsp_output.as_ref() {
+                Some(out) => {
+                    use sotf_audio_player::room_eq_types::DspChainOutputExt;
+                    if out.is_rack_compatible() {
+                        " a=Apply to Rack (linear EQ)"
+                    } else {
+                        " a=Apply as Graph (multi-driver / routed)"
+                    }
+                }
+                None => " a=Apply (run optimizer first)",
+            };
+
             let inner = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
                     Constraint::Length(3), // export path
-                    Constraint::Length(3), // status
+                    Constraint::Length(3), // export status
+                    Constraint::Length(3), // apply status
                     Constraint::Min(1),    // help
                 ])
                 .split(content);
@@ -734,9 +751,29 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 f.render_widget(hint, inner[1]);
             }
 
-            let help = Paragraph::new(" Enter=edit/export  Tab=back to load  BackTab=review")
-                .style(Style::default().fg(app.theme.fg_secondary));
-            f.render_widget(help, inner[2]);
+            // Apply-to-chain status row
+            if let Some(ref err) = s.apply_error {
+                let err_para = Paragraph::new(err.as_str())
+                    .style(Style::default().fg(app.theme.accent_error))
+                    .block(Block::default().borders(Borders::ALL).title("Apply Error"));
+                f.render_widget(err_para, inner[2]);
+            } else if let Some(ref msg) = s.apply_status {
+                let ok = Paragraph::new(format!(" {}", msg))
+                    .style(Style::default().fg(app.theme.accent_success))
+                    .block(Block::default().borders(Borders::ALL).title("Apply Status"));
+                f.render_widget(ok, inner[2]);
+            } else {
+                let hint = Paragraph::new(apply_hint)
+                    .style(Style::default().fg(app.theme.fg_secondary))
+                    .block(Block::default().borders(Borders::ALL).title("Apply"));
+                f.render_widget(hint, inner[2]);
+            }
+
+            let help = Paragraph::new(
+                " Enter=edit/export  a=Apply to chain  Tab=back to load  BackTab=review",
+            )
+            .style(Style::default().fg(app.theme.fg_secondary));
+            f.render_widget(help, inner[3]);
 
             // Autocomplete overlay below the export path input
             if s.editing_export_path {

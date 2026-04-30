@@ -2168,6 +2168,77 @@ impl PluginGraph {
         result
     }
 
+    /// Serialize the plugin graph to an engine `PluginGraphConfig` that
+    /// preserves topology (parallel branches, merges, multi-driver routing).
+    ///
+    /// Use this instead of [`to_plugin_configs`] when the graph is non-linear:
+    /// flattening a routed graph into a chain via topological sort silently
+    /// drops parallel paths.
+    ///
+    /// Special I/O nodes (Input/Output/Split/Merge from the UI canvas) are
+    /// dropped — the engine handles I/O implicitly via the leaf nodes that
+    /// have no incoming or outgoing edges. Disabled or suspended plugin
+    /// nodes are also skipped, and edges to/from them are pruned.
+    ///
+    /// Per-port channel duplicates in `connections` (a stereo pair shows up
+    /// as two `(port 0→0, port 1→1)` entries) collapse into a single
+    /// logical edge — `PluginGraphConfig::edges` carries no port info.
+    pub fn to_plugin_graph_config(
+        &self,
+        sample_rate: f64,
+    ) -> sotf_audio::engine::PluginGraphConfig {
+        use sotf_audio::engine::{PluginGraphConfig, PluginGraphEdgeConfig, PluginGraphNodeConfig};
+        use std::collections::HashSet;
+
+        let mut nodes = Vec::new();
+        let mut id_map: HashMap<GraphNodeId, usize> = HashMap::new();
+        let mut next_id: usize = 0;
+
+        // Walk plugin nodes in topological order so engine ids match the
+        // signal flow direction. Falls back to the natural HashMap order if
+        // the graph has cycles (shouldn't happen, but don't drop nodes).
+        let ordered_ids = self
+            .topological_sort()
+            .ok()
+            .unwrap_or_else(|| self.nodes.keys().copied().collect());
+
+        for graph_id in ordered_ids {
+            let Some(node) = self.nodes.get(&graph_id) else {
+                continue;
+            };
+            let Some(config) = node.plugin.to_plugin_config(sample_rate) else {
+                continue;
+            };
+            let id = next_id;
+            next_id += 1;
+            id_map.insert(graph_id, id);
+            nodes.push(PluginGraphNodeConfig {
+                id,
+                plugin_type: config.plugin_type,
+                parameters: config.parameters,
+                input_channels: node.input_channels,
+            });
+        }
+
+        // Deduplicate per-port edges into logical edges.
+        let mut seen_edges: HashSet<(usize, usize)> = HashSet::new();
+        let mut edges = Vec::new();
+        for conn in &self.connections {
+            let (Some(&from), Some(&to)) = (id_map.get(&conn.from_node), id_map.get(&conn.to_node))
+            else {
+                continue; // edge touches a special node or a skipped plugin
+            };
+            if seen_edges.insert((from, to)) {
+                edges.push(PluginGraphEdgeConfig {
+                    from_node: from,
+                    to_node: to,
+                });
+            }
+        }
+
+        PluginGraphConfig { nodes, edges }
+    }
+
     /// Map a graph node ID to its index in the `to_plugin_configs()` output.
     ///
     /// Returns None if the node is disabled/suspended or not found.
@@ -2517,6 +2588,81 @@ mod tests {
 
         assert!(!g.is_linear());
         assert!(g.linear_order().is_none());
+    }
+
+    #[test]
+    fn test_to_plugin_graph_config_preserves_parallel_branches() {
+        // Build the same parallel split as test_non_linear_graph; verify
+        // `to_plugin_graph_config` emits both nodes (no flattening) and
+        // drops the per-port duplicates into a single logical edge per pair.
+        let mut g = PluginGraph::new();
+        let input = g.add_special_node(SpecialNodeType::Input, NodePosition::new(0.0, 0.0), 2);
+        let a = g.add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 0.0));
+        let b = g.add_plugin_node(&PluginType::Gain, NodePosition::new(100.0, 100.0));
+        let output = g.add_special_node(SpecialNodeType::Output, NodePosition::new(200.0, 50.0), 2);
+
+        // Two stereo wires from Input to A; one wire from Input to B; two
+        // from A to Output port pair, one from B to Output. This mimics how
+        // the canvas stores per-port connections.
+        g.add_connection(input, 0, a, 0).unwrap();
+        g.add_connection(input, 1, a, 1).unwrap();
+        g.add_connection(input, 0, b, 0).unwrap();
+        g.add_connection(a, 0, output, 0).unwrap();
+        g.add_connection(a, 1, output, 1).unwrap();
+        g.add_connection(b, 0, output, 0).unwrap();
+
+        let config = g.to_plugin_graph_config(48000.0);
+
+        // Both plugin nodes are emitted; special I/O nodes are not.
+        assert_eq!(
+            config.nodes.len(),
+            2,
+            "expected only plugin nodes (no Input/Output), got {:?}",
+            config.nodes.iter().map(|n| n.plugin_type.as_str()).collect::<Vec<_>>()
+        );
+
+        // Edges between plugin nodes only — Input→A/Input→B/A→Output/B→Output
+        // collapse to zero (touch special nodes); A↔B never connected.
+        assert_eq!(
+            config.edges.len(),
+            0,
+            "no plugin-to-plugin edges in this fan-out topology"
+        );
+    }
+
+    #[test]
+    fn test_to_plugin_graph_config_dedups_per_port_edges() {
+        // Two plugin nodes with a stereo wire (port 0→0, port 1→1). The
+        // engine config carries logical edges only — both ports collapse
+        // into one edge.
+        let mut g = PluginGraph::new();
+        let a = g.add_plugin_node(&PluginType::EQ, NodePosition::new(0.0, 0.0));
+        let b = g.add_plugin_node(&PluginType::Gain, NodePosition::new(100.0, 0.0));
+        g.add_connection(a, 0, b, 0).unwrap();
+        g.add_connection(a, 1, b, 1).unwrap();
+
+        let config = g.to_plugin_graph_config(48000.0);
+        assert_eq!(config.nodes.len(), 2);
+        assert_eq!(
+            config.edges.len(),
+            1,
+            "two per-port wires should collapse into one logical edge"
+        );
+    }
+
+    #[test]
+    fn test_to_plugin_graph_config_skips_disabled() {
+        let mut g = PluginGraph::new();
+        let a = g.add_plugin_node(&PluginType::EQ, NodePosition::new(0.0, 0.0));
+        let b = g.add_plugin_node(&PluginType::Gain, NodePosition::new(100.0, 0.0));
+        g.add_connection(a, 0, b, 0).unwrap();
+        // Disable b — `to_plugin_config(sr)` returns None for disabled plugins.
+        g.nodes.get_mut(&b).unwrap().plugin.enabled = false;
+
+        let config = g.to_plugin_graph_config(48000.0);
+        assert_eq!(config.nodes.len(), 1);
+        // Edge a→b is dropped because b is missing from the engine config.
+        assert!(config.edges.is_empty());
     }
 
     #[test]

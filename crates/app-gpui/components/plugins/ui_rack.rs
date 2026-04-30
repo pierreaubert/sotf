@@ -282,35 +282,98 @@ impl PlayerView {
                     )
                 },
             )
-            // Plugin Rack Strip (top) - only show if not collapsed
-            .when(!self.state.read(cx).app.rack_detail_collapsed, |d| {
-                d.child(self.render_plugin_rack(cx))
-            })
-            // Horizontal divider between rack and detail panel
-            .child({
-                let divider_theme = PaneDividerTheme {
-                    background: theme.background,
-                    background_hover: theme.surface_hover,
-                    background_collapsed: theme.surface,
-                    foreground: theme.text_muted,
-                    foreground_hover: theme.text_secondary,
-                    border: theme.border,
-                };
-                let state = self.state.clone();
-                let is_collapsed = self.state.read(cx).app.rack_detail_collapsed;
-                PaneDivider::horizontal("rack-detail-divider", CollapseDirection::Up)
-                    .label("Signal Chain")
-                    .theme(divider_theme)
-                    .thickness(px(4.0))
-                    .collapsed(is_collapsed)
-                    .on_toggle(move |collapsed, _window, cx| {
-                        state.update(cx, |s, _| {
-                            s.app.rack_detail_collapsed = collapsed;
-                        });
+            // When the plugin graph is non-linear (parallel branches, e.g.
+            // after a multi-driver Room EQ "Apply as Graph"), the rack
+            // can't represent the topology — `plugins()` returns an empty
+            // Vec because `plugins_linear()` rejects branching graphs.
+            // Show a redirect card instead of a misleading empty rack.
+            .when(
+                !self.state.read(cx).app.plugin_state.is_rack_available(),
+                |d| d.child(self.render_non_linear_chain_notice(cx)),
+            )
+            .when(self.state.read(cx).app.plugin_state.is_rack_available(), |d| {
+                d
+                    // Plugin Rack Strip (top) - only show if not collapsed
+                    .when(!self.state.read(cx).app.rack_detail_collapsed, |d| {
+                        d.child(self.render_plugin_rack(cx))
                     })
+                    // Horizontal divider between rack and detail panel
+                    .child({
+                        let divider_theme = PaneDividerTheme {
+                            background: theme.background,
+                            background_hover: theme.surface_hover,
+                            background_collapsed: theme.surface,
+                            foreground: theme.text_muted,
+                            foreground_hover: theme.text_secondary,
+                            border: theme.border,
+                        };
+                        let state = self.state.clone();
+                        let is_collapsed = self.state.read(cx).app.rack_detail_collapsed;
+                        PaneDivider::horizontal("rack-detail-divider", CollapseDirection::Up)
+                            .label("Signal Chain")
+                            .theme(divider_theme)
+                            .thickness(px(4.0))
+                            .collapsed(is_collapsed)
+                            .on_toggle(move |collapsed, _window, cx| {
+                                state.update(cx, |s, _| {
+                                    s.app.rack_detail_collapsed = collapsed;
+                                });
+                            })
+                    })
+                    // Parameter Panel (bottom, fills remaining space)
+                    .child(self.render_plugin_detail_panel(cx))
             })
-            // Parameter Panel (bottom, fills remaining space)
-            .child(self.render_plugin_detail_panel(cx))
+    }
+
+    /// Render the empty-state notice shown in Studio when the plugin graph
+    /// has a non-linear topology that the rack strip can't render.
+    fn render_non_linear_chain_notice(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        use gpui_ui_kit::{Button, ButtonVariant, Card, StackSpacing, Text, TextSize, TextWeight, VStack};
+        let d = Ds::from_cx(cx);
+        let theme = self.state.read(cx).app.ui_state.theme.clone();
+
+        div()
+            .flex()
+            .flex_1()
+            .items_center()
+            .justify_center()
+            .p(d.card)
+            .child(
+                Card::new()
+                    .background(theme.surface)
+                    .header_background(theme.background_secondary)
+                    .border(theme.border)
+                    .header(
+                        Text::new("Signal chain uses graph routing")
+                            .color(theme.text_primary)
+                            .weight(TextWeight::Semibold),
+                    )
+                    .content(
+                        VStack::new()
+                            .spacing(StackSpacing::Md)
+                            .child(
+                                Text::new(
+                                    "The current plugin chain has parallel paths or routed \
+                                     bass management and can't be shown in the linear rack. \
+                                     Open the graph view to inspect, edit, and remove plugins.",
+                                )
+                                .size(TextSize::Sm)
+                                .color(theme.text_secondary),
+                            )
+                            .child(
+                                Button::new("open_graph_view", "Open Graph View")
+                                    .variant(ButtonVariant::Primary)
+                                    .theme(theme.to_button_theme())
+                                    .on_click_event(cx.listener(|view, _, _, cx| {
+                                        view.state.update(cx, |state, _| {
+                                            state.app.ui_state.current_screen =
+                                                Screen::PluginGraph;
+                                        });
+                                        cx.notify();
+                                    })),
+                            ),
+                    ),
+            )
     }
 
     /// Render the horizontal plugin rack strip

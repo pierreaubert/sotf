@@ -77,14 +77,13 @@ pub use ui::{
 };
 
 // Re-export room EQ rack-apply helper for testing.
-// Exposes the pure function that "Apply to Rack" uses to insert/upsert
-// the Broadband EQ + Room EQ plugins. Tests in
-// `tests/room_eq_apply_tests.rs` assert it produces two distinct named
-// EQs and stays idempotent on re-apply.
+// Exposes the pure functions "Apply to Rack" uses for upsert/classification
+// of Room EQ plugins. The implementations now live in
+// `sotf-player::autoeq::apply` so the TUI shares the same algorithm; we
+// re-export through the GPUI lib so `tests/room_eq_apply_tests.rs` keeps
+// building.
 pub use components::room_eq::render::should_render_filter_plot;
-pub use components::room_eq::step_6_export::{
-    classify_channel_eq_filters, upsert_named_room_eq_plugins,
-};
+pub use sotf_audio_player::autoeq::{classify_channel_eq_filters, upsert_named_room_eq_plugins};
 
 // Re-export EQ chart functions and constants for testing
 pub use components::plugins::ui_eq::{

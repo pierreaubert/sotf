@@ -423,6 +423,14 @@ pub struct RoomEqTuiState {
     pub export_format: usize,
     pub export_error: Option<String>,
     pub export_success: bool,
+    /// Full DSP chain output captured from the optimizer. Used by the
+    /// "Apply to chain" action to drive the rack-vs-graph apply path
+    /// (mirrors `app-gpui`'s `RoomEqState::dsp_output`).
+    pub dsp_output: Option<sotf_audio_player::room_eq_types::DspChainOutput>,
+    /// Status message shown next to the apply buttons.
+    pub apply_status: Option<String>,
+    /// Error from the most recent "Apply to chain" attempt.
+    pub apply_error: Option<String>,
 }
 
 impl Default for RoomEqTuiState {
@@ -464,6 +472,9 @@ impl Default for RoomEqTuiState {
             export_format: 0,
             export_error: None,
             export_success: false,
+            dsp_output: None,
+            apply_status: None,
+            apply_error: None,
         }
     }
 }

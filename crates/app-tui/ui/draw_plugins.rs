@@ -35,6 +35,29 @@ pub(crate) fn draw_plugins_screen(f: &mut Frame, area: Rect, app: &App) {
 }
 
 pub(crate) fn draw_plugin_list(f: &mut Frame, area: Rect, app: &App) {
+    // Non-linear topology: `plugins()` (linear-only) returns empty, so the
+    // user would see a misleading "0 plugins" rack. Show a banner instead
+    // — same affordance as the GPUI "Open Graph View" card. The TUI has no
+    // node-graph canvas, so editing has to happen in the GPUI app.
+    if !app.plugin_graph.is_linear() {
+        let node_count = app.plugin_graph.nodes.len();
+        let conn_count = app.plugin_graph.connections.len();
+        let msg = format!(
+            "Graph mode: {} plugins, {} connections.\nNon-linear topology (parallel branches).\nUse the GPUI app to edit nodes and connections visually.",
+            node_count, conn_count
+        );
+        let para = Paragraph::new(msg)
+            .style(Style::default().fg(app.theme.fg_secondary))
+            .wrap(ratatui::widgets::Wrap { trim: false })
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Plugin chain (graph)"),
+            );
+        f.render_widget(para, area);
+        return;
+    }
+
     let items: Vec<ListItem> = app
         .plugin_graph
         .plugins()

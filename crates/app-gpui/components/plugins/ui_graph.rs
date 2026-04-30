@@ -121,8 +121,10 @@ impl PlayerView {
             let menu_items = build_menu_items(&input_devices, &output_devices);
 
             // Clone state for the callback
-            let state_for_callback = self.state.clone();
-            let canvas_for_callback = canvas.clone();
+            let state_for_dblclick = self.state.clone();
+            let canvas_for_dblclick = canvas.clone();
+            let state_for_change = self.state.clone();
+            let canvas_for_change = canvas.clone();
 
             canvas.update(cx, |canvas, _cx| {
                 canvas.set_theme(workflow_theme);
@@ -136,8 +138,8 @@ impl PlayerView {
                 // updated" panic.  cx.defer() schedules the work after
                 // the current entity update completes.
                 canvas.set_on_node_double_click(move |node_id, _window, cx| {
-                    let canvas = canvas_for_callback.clone();
-                    let state = state_for_callback.clone();
+                    let canvas = canvas_for_dblclick.clone();
+                    let state = state_for_dblclick.clone();
                     cx.defer(move |cx| {
                         let graph_node_uuid = canvas
                             .read(cx)
@@ -153,6 +155,26 @@ impl PlayerView {
                             state.app.plugin_state.editing_graph_node_uuid = graph_node_uuid;
                             state.app.ui_state.input_mode =
                                 crate::app::InputMode::EditingPluginNode;
+                        });
+                    });
+                });
+
+                // Reconcile PluginGraph (data model + engine source of truth)
+                // with the WorkflowCanvas after every structural mutation.
+                // Same defer pattern as the double-click callback: the
+                // canvas is mutably borrowed when the observer fires.
+                canvas.set_on_graph_change(move |cx| {
+                    let canvas = canvas_for_change.clone();
+                    let state = state_for_change.clone();
+                    cx.defer(move |cx| {
+                        // Snapshot the canvas graph (Clone) so we can
+                        // mutate state without holding a canvas read.
+                        let workflow_graph = canvas.read(cx).graph().clone();
+                        state.update(cx, |state, _cx| {
+                            reconcile_plugin_graph_with_canvas(state, &workflow_graph);
+                            state.app.plugin_state.pending_plugin_update =
+                                Some(crate::app::types::PluginUpdateType::Structural);
+                            state.app.plugin_state.plugin_graph_modified = true;
                         });
                     });
                 });
@@ -1468,5 +1490,118 @@ impl PlayerView {
             None,
             cx,
         )
+    }
+}
+
+// ============================================================================
+// PluginGraph ↔ WorkflowCanvas reconciliation
+// ============================================================================
+
+/// Bring `PluginGraph` (engine source-of-truth) back into sync with the
+/// `WorkflowGraph` (canvas) after the user mutated the canvas — deleting a
+/// node, drawing a new connection, pasting, undo/redo.
+///
+/// Reconciliation rules:
+/// - Plugin nodes still in the canvas (matched by `user_data["plugin_node_id"]`)
+///   keep their `Plugin` settings — we don't touch them.
+/// - Plugin nodes missing from the canvas are removed from `PluginGraph.nodes`.
+/// - Special I/O nodes are matched by `user_data["node_type"]` (Input/Output).
+///   Special nodes missing from the canvas are removed from
+///   `PluginGraph.special_nodes` so the engine config stays consistent.
+/// - `PluginGraph.connections` is rebuilt from scratch from the canvas
+///   connections (the canvas is now the source of truth for topology).
+/// - If the currently-edited graph node was deleted, clear
+///   `editing_graph_node_uuid`.
+pub(crate) fn reconcile_plugin_graph_with_canvas(
+    state: &mut crate::app::AppState,
+    workflow: &WorkflowGraph,
+) {
+    use sotf_audio_player::GraphNodeId;
+    use std::collections::{HashMap, HashSet};
+
+    // 1) Map workflow NodeId → plugin GraphNodeId, and collect surviving
+    //    plugin-node ids.
+    let mut canvas_to_plugin: HashMap<NodeId, GraphNodeId> = HashMap::new();
+    let mut surviving_plugin_ids: HashSet<GraphNodeId> = HashSet::new();
+    let mut canvas_special_nodes: Vec<(NodeId, &str)> = Vec::new();
+
+    for (workflow_id, node) in &workflow.nodes {
+        if let Some(plugin_id_str) = node
+            .user_data
+            .get("plugin_node_id")
+            .and_then(|v| v.as_str())
+            && let Ok(graph_id) = GraphNodeId::parse_str(plugin_id_str)
+        {
+            canvas_to_plugin.insert(*workflow_id, graph_id);
+            surviving_plugin_ids.insert(graph_id);
+            continue;
+        }
+        // Not a plugin node — track it as a special I/O candidate.
+        if let Some(node_type) = node.user_data.get("node_type").and_then(|v| v.as_str())
+            && (node_type == NODE_TYPE_INPUT_DEVICE || node_type == NODE_TYPE_OUTPUT_DEVICE)
+        {
+            canvas_special_nodes.push((*workflow_id, node_type));
+        }
+    }
+
+    let plugin_graph = &mut state.app.plugin_state.graph;
+
+    // 2) Drop plugin nodes that vanished from the canvas.
+    plugin_graph
+        .nodes
+        .retain(|id, _| surviving_plugin_ids.contains(id));
+
+    // 3) Best-effort match each canvas special I/O node to a single
+    //    PluginGraph special node by SpecialNodeType. The post-roomeq
+    //    canvases produced by `apply_room_eq_as_graph` have one Input
+    //    and one Output, so this is unambiguous in practice.
+    let mut canvas_special_to_graph: HashMap<NodeId, sotf_audio_player::GraphNodeId> =
+        HashMap::new();
+    let mut used_special: HashSet<sotf_audio_player::GraphNodeId> = HashSet::new();
+    for (workflow_id, node_type) in &canvas_special_nodes {
+        let target = match *node_type {
+            NODE_TYPE_INPUT_DEVICE => Some(SpecialNodeType::Input),
+            NODE_TYPE_OUTPUT_DEVICE => Some(SpecialNodeType::Output),
+            _ => None,
+        };
+        let Some(target_kind) = target else { continue };
+        if let Some((&id, _)) = plugin_graph.special_nodes.iter().find(|(id, sn)| {
+            !used_special.contains(id)
+                && std::mem::discriminant(&sn.node_type) == std::mem::discriminant(&target_kind)
+        }) {
+            used_special.insert(id);
+            canvas_special_to_graph.insert(*workflow_id, id);
+        }
+    }
+
+    // 4) Drop special nodes the canvas no longer references.
+    plugin_graph
+        .special_nodes
+        .retain(|id, _| used_special.contains(id));
+
+    // 5) Rebuild connections from the canvas. Per-port wires are kept
+    //    one-to-one (PluginGraph.connections carries port info, unlike
+    //    the engine's PluginGraphConfig).
+    plugin_graph.connections.clear();
+    for conn in &workflow.connections {
+        let from = canvas_to_plugin
+            .get(&conn.from_node)
+            .copied()
+            .or_else(|| canvas_special_to_graph.get(&conn.from_node).copied());
+        let to = canvas_to_plugin
+            .get(&conn.to_node)
+            .copied()
+            .or_else(|| canvas_special_to_graph.get(&conn.to_node).copied());
+        if let (Some(from), Some(to)) = (from, to) {
+            let _ = plugin_graph.add_connection(from, conn.from_port, to, conn.to_port);
+        }
+    }
+
+    // 6) Forget the edited node if it was deleted.
+    if let Some(uuid) = state.app.plugin_state.editing_graph_node_uuid
+        && !surviving_plugin_ids.contains(&uuid)
+    {
+        state.app.plugin_state.editing_graph_node_uuid = None;
+        state.app.plugin_state.editing_plugin_node = None;
     }
 }
