@@ -432,8 +432,8 @@ fn run_manager_thread(
 
     // Pre-fill recycle queues to avoid initial allocations in the hot path.
     // We use a safe upper bound for sample count: frame_size * max_channels.
-    // Most plugins use 2-8 channels; 16 is a safe ceiling for most use cases.
-    let prefill_samples = config.frame_size * 16;
+    // Systemwide HAL can advertise up to 32 channels.
+    let prefill_samples = config.frame_size * 32;
     for _ in 0..queue_capacity * 2 {
         let _ = recycle_tx.send(vec![0.0; prefill_samples]);
         let _ = decoder_recycle_tx.send(vec![0.0; prefill_samples]);

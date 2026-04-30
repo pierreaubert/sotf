@@ -69,6 +69,27 @@ fn daemon_plugin_reload_uses_hot_update_path() {
 }
 
 #[test]
+fn daemon_load_plugins_carries_hal_input_channels() {
+    let source = include_str!("../bin/sotf_daemon.rs");
+
+    assert!(
+        source.contains("const MAX_HAL_CHANNELS: usize = 32"),
+        "daemon should validate HAL channel counts up to 32"
+    );
+    assert!(
+        source.contains("input_channels: usize")
+            && source.contains("current_input_channels")
+            && source.contains("channel_count: driver_input_channels as u32"),
+        "load_plugins should carry requested HAL input channels into driver config"
+    );
+    assert!(
+        source.contains("start_hal_playback_with_driver_config(")
+            && source.contains("driver_input_channels"),
+        "driver playback should be restarted with the resolved HAL input channel count"
+    );
+}
+
+#[test]
 fn daemon_pkg_preinstall_quiesces_running_daemon_before_upgrade() {
     let source = include_str!("../../../../../scripts/build-systemwide.sh");
     let preinstall_start = source
@@ -140,6 +161,11 @@ fn configbar_output_device_refresh_tracks_channel_limits() {
         "output channel menu should be constrained by the selected interface"
     );
     assert!(
+        configbar.contains("let channelOptions = Array(1...32)")
+            && configbar.contains("\"input_channels\": halInputChannels"),
+        "toolbar should expose and send HAL input channel counts up to 32"
+    );
+    assert!(
         configbar.contains("syncOutputChannelsToSelectedDevice(applyChange: true)"),
         "device refresh/selection should clamp the channel selection when metadata changes"
     );
@@ -197,6 +223,26 @@ fn configbar_plugin_edit_sheet_batches_parameter_edits_until_apply_or_close() {
     assert!(
         sheet_source.contains("draftParameters = newParameters"),
         "per-control edits should update only the draft"
+    );
+    assert!(
+        sheet_source.contains("PluginParameterFileFormat.allCases")
+            && source.contains("case parameterJSON")
+            && source.contains("case enginePluginJSON")
+            && source.contains("case appGpuiPresetJSON")
+            && source.contains("case rawParametersJSON"),
+        "single-plugin load/save should cover every supported JSON parameter shape"
+    );
+    assert!(
+        sheet_source.contains(
+            "formatPicker.selectItem(at: PluginParameterFileFormat.parameterJSON.rawValue)"
+        ) && sheet_source.contains("panel.allowedContentTypes = [.json]"),
+        "JSON should remain the default on-disk parameter format"
+    );
+    assert!(
+        sheet_source.contains("parametersFromSupportedJSON")
+            && sheet_source.contains("pluginTypeAndParameters(fromAppGpuiSettings:")
+            && sheet_source.contains("pluginEntriesFromChannels"),
+        "load should accept raw parameters, engine plugin JSON, app-GPUI plugin records, and full plugin configs"
     );
     assert!(
         !source.contains("updateDebounceTask"),

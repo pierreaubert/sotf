@@ -117,7 +117,7 @@ fn test_real_shared_memory_connection() {
         buffer_frames
     );
     assert!(
-        (1..=16).contains(&channel_count),
+        (1..=32).contains(&channel_count),
         "Channel count {} out of expected range",
         channel_count
     );

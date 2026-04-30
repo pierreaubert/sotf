@@ -18,6 +18,9 @@ const SHARED_MEMORY_MAGIC: u32 = 0x534F5446;
 /// Version 3: Added config negotiation fields for bidirectional HAL-Daemon sync
 /// Version 4: Added daemon heartbeat for stale-engine detection in the HAL driver
 const SHARED_MEMORY_VERSION: u32 = 4;
+pub const DEFAULT_HAL_CHANNEL_COUNT: u32 = 2;
+pub const MAX_HAL_CHANNEL_COUNT: u32 = 32;
+pub const MAX_HAL_BUFFER_FRAMES: u32 = 4096;
 
 /// Encrypted audio record magic: 'SEA1' (SotF Encrypted Audio v1)
 const ENCRYPTED_RECORD_MAGIC: u32 = 0x5345_4131;
@@ -263,6 +266,10 @@ impl SharedAudioBuffer {
         Ok((audio_offset, audio_capacity, total_size))
     }
 
+    fn max_audio_capacity_from_len(audio_offset: usize, mmap_len: usize) -> usize {
+        mmap_len.saturating_sub(audio_offset) / std::mem::size_of::<f32>()
+    }
+
     fn initialize_header(&mut self, sample_rate: u32, buffer_frames: u32, channel_count: u32) {
         let header = self.header_mut();
         header.magic = SHARED_MEMORY_MAGIC;
@@ -301,9 +308,50 @@ impl SharedAudioBuffer {
         buffer_frames: u32,
         channel_count: u32,
     ) -> io::Result<Self> {
+        Self::create_or_open_with_capacity(
+            path,
+            sample_rate,
+            buffer_frames,
+            channel_count,
+            channel_count,
+        )
+    }
+
+    /// Create or open a shared memory file sized for `max_channel_count` while
+    /// advertising `channel_count` as the current CoreAudio format.
+    pub fn create_or_open_with_capacity<P: AsRef<Path>>(
+        path: P,
+        sample_rate: u32,
+        buffer_frames: u32,
+        channel_count: u32,
+        max_channel_count: u32,
+    ) -> io::Result<Self> {
+        Self::create_or_open_with_max_geometry(
+            path,
+            sample_rate,
+            buffer_frames,
+            channel_count,
+            buffer_frames,
+            max_channel_count,
+        )
+    }
+
+    /// Create or open a shared memory file sized for the largest expected
+    /// runtime geometry while advertising the current format in the header.
+    pub fn create_or_open_with_max_geometry<P: AsRef<Path>>(
+        path: P,
+        sample_rate: u32,
+        buffer_frames: u32,
+        channel_count: u32,
+        max_buffer_frames: u32,
+        max_channel_count: u32,
+    ) -> io::Result<Self> {
         let path = path.as_ref();
-        let (audio_offset, audio_capacity, total_size) =
-            Self::audio_layout(buffer_frames, channel_count)?;
+        let (audio_offset, audio_capacity, _) = Self::audio_layout(buffer_frames, channel_count)?;
+        let max_channel_count = max_channel_count.max(channel_count);
+        let max_buffer_frames = max_buffer_frames.max(buffer_frames);
+        let (_, max_audio_capacity, total_size) =
+            Self::audio_layout(max_buffer_frames, max_channel_count)?;
 
         if let Some(parent) = path.parent() {
             if !parent.exists() {
@@ -334,7 +382,7 @@ impl SharedAudioBuffer {
             mmap,
             audio_offset,
             audio_capacity,
-            max_audio_capacity: audio_capacity,
+            max_audio_capacity,
         };
 
         let needs_init = {
@@ -359,11 +407,23 @@ impl SharedAudioBuffer {
         buffer_frames: u32,
         channel_count: u32,
     ) -> io::Result<Self> {
-        Self::create_or_open(
+        if channel_count == 0 || channel_count > MAX_HAL_CHANNEL_COUNT {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "HAL channel_count {} is out of range 1..={}",
+                    channel_count, MAX_HAL_CHANNEL_COUNT
+                ),
+            ));
+        }
+
+        Self::create_or_open_with_max_geometry(
             get_shared_memory_path(),
             sample_rate,
             buffer_frames,
             channel_count,
+            MAX_HAL_BUFFER_FRAMES,
+            MAX_HAL_CHANNEL_COUNT,
         )
     }
 
@@ -438,11 +498,13 @@ impl SharedAudioBuffer {
             ));
         }
 
+        let max_audio_capacity = Self::max_audio_capacity_from_len(audio_offset, mmap.len());
+
         Ok(Self {
             mmap,
             audio_offset,
             audio_capacity,
-            max_audio_capacity: audio_capacity,
+            max_audio_capacity,
         })
     }
 
@@ -562,13 +624,39 @@ impl SharedAudioBuffer {
         self.header().channel_count
     }
 
+    /// Maximum channel count supported by this mapping at the current buffer size.
+    pub fn max_channel_count(&self) -> u32 {
+        let buffer_frames = self.header().buffer_frames as usize;
+        if buffer_frames == 0 {
+            return 0;
+        }
+        (self.max_audio_capacity / buffer_frames / 8) as u32
+    }
+
     /// Set channel count
     ///
     /// # Arguments
     /// * `channel_count` - Number of audio channels (e.g., 2 for stereo, 6 for 5.1)
     pub fn set_channel_count(&mut self, channel_count: u32) {
+        if channel_count == 0 {
+            log::warn!("Requested channel_count 0 is invalid, ignoring");
+            return;
+        }
+
         let buffer_frames = self.header().buffer_frames as usize;
-        let new_capacity = buffer_frames * (channel_count as usize) * 8;
+        let new_capacity = match buffer_frames
+            .checked_mul(channel_count as usize)
+            .and_then(|v| v.checked_mul(8))
+        {
+            Some(capacity) => capacity,
+            None => {
+                log::warn!(
+                    "Requested channel_count {} overflowed capacity math",
+                    channel_count
+                );
+                return;
+            }
+        };
 
         // Validate doesn't exceed original mmap allocation
         if new_capacity > self.max_audio_capacity {
@@ -582,6 +670,8 @@ impl SharedAudioBuffer {
 
         self.header_mut().channel_count = channel_count;
         self.audio_capacity = new_capacity;
+        self.header().write_position.store(0, Ordering::Release);
+        self.header().read_position.store(0, Ordering::Release);
         self.set_config_changed();
     }
 
@@ -750,10 +840,19 @@ impl SharedAudioBuffer {
     /// Non-atomic fields are written first, then a Release fence ensures they
     /// are visible before the atomic notification flags are set. This prevents
     /// the responder from reading incomplete data.
-    pub fn request_config_change(&mut self, sample_rate: u32, buffer_frames: u32, source: u32) {
+    pub fn request_config_change(
+        &mut self,
+        sample_rate: u32,
+        buffer_frames: u32,
+        channel_count: u32,
+        source: u32,
+    ) {
         let header = self.header_mut();
         header.requested_sample_rate = sample_rate;
         header.requested_buffer_frames = buffer_frames;
+        if channel_count > 0 {
+            header.channel_count = channel_count;
+        }
         // Release fence ensures non-atomic writes are visible before atomic flags
         fence(Ordering::Release);
         // Set status to pending before setting config_source and config_changed
@@ -2000,6 +2099,24 @@ mod tests {
     }
 
     #[test]
+    fn test_create_or_open_with_capacity_allows_hal_growth_to_32ch() {
+        let temp_file = NamedTempFile::new().expect("Failed to create temp file");
+        let mut buffer =
+            SharedAudioBuffer::create_or_open_with_capacity(temp_file.path(), 48_000, 512, 2, 32)
+                .expect("Failed to create shared memory");
+
+        assert_eq!(buffer.channel_count(), 2);
+        buffer.set_channel_count(32);
+
+        assert_eq!(buffer.channel_count(), 32);
+        assert_eq!(buffer.header().write_position.load(Ordering::Acquire), 0);
+        assert_eq!(buffer.header().read_position.load(Ordering::Acquire), 0);
+
+        let reopened = SharedAudioBuffer::open(temp_file.path()).expect("Failed to reopen buffer");
+        assert_eq!(reopened.channel_count(), 32);
+    }
+
+    #[test]
     fn test_create_or_open_preserves_runtime_state_for_same_geometry() {
         let temp_file = NamedTempFile::new().expect("Failed to create temp file");
         let buffer = SharedAudioBuffer::create_or_open(temp_file.path(), 48_000, 512, 2)
@@ -2470,7 +2587,7 @@ mod tests {
         // Simulate config request from HAL driver
         let new_sample_rate = 96000;
         let new_buffer_frames = 512;
-        buffer.request_config_change(new_sample_rate, new_buffer_frames, 1); // source=1 (HAL)
+        buffer.request_config_change(new_sample_rate, new_buffer_frames, channel_count, 1); // source=1 (HAL)
 
         // Verify request is visible
         assert!(buffer.config_changed(), "Config change should be flagged");
@@ -2511,7 +2628,7 @@ mod tests {
         let mut buffer = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open buffer");
 
         // Request an invalid sample rate
-        buffer.request_config_change(999999, 512, 1);
+        buffer.request_config_change(999999, 512, channel_count, 1);
 
         // Daemon rejects with error
         buffer.acknowledge_config_change(0, 0, 3, 42); // status=3 (error), error_code=42
@@ -2919,7 +3036,8 @@ mod tests {
             (2, "Stereo"),
             (6, "5.1 Surround"),
             (8, "7.1 Surround"),
-            (16, "Maximum supported"),
+            (16, "9.1.6"),
+            (32, "Maximum HAL supported"),
         ];
 
         for (channel_count, name) in configurations {

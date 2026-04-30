@@ -6,7 +6,9 @@
 use driver_common::{AudioDriver, ConfigResult, DriverConfig, DriverStatus};
 use std::time::{Duration, Instant};
 
-use crate::shared_memory::{HalInputReader, SharedAudioBuffer};
+use crate::shared_memory::{
+    DEFAULT_HAL_CHANNEL_COUNT, HalInputReader, MAX_HAL_CHANNEL_COUNT, SharedAudioBuffer,
+};
 
 const DAEMON_CONFIG_ACK_TIMEOUT: Duration = Duration::from_millis(750);
 const DAEMON_CONFIG_ACK_POLL_INTERVAL: Duration = Duration::from_millis(10);
@@ -94,7 +96,7 @@ impl AudioDriver for HalDriver {
         // The daemon owns shared-memory creation. The HAL plugin runs inside
         // coreaudiod, so it should only have to open an already-sized file from
         // its realtime paths.
-        match SharedAudioBuffer::create_or_open_default(48_000, 512, 2) {
+        match SharedAudioBuffer::create_or_open_default(48_000, 512, DEFAULT_HAL_CHANNEL_COUNT) {
             Ok(buffer) => {
                 log::info!(
                     "[HalDriver] Prepared shared memory: {}Hz, {}ch, {} frames",
@@ -204,6 +206,7 @@ impl AudioDriver for HalDriver {
             // Use 0 as sentinel for "keep current" — don't write zero to shared memory
             let current_rate = buf.sample_rate();
             let current_frames = buf.buffer_frames();
+            let current_channels = buf.channel_count();
             let requested_rate = if config.sample_rate > 0 {
                 config.sample_rate
             } else {
@@ -214,12 +217,33 @@ impl AudioDriver for HalDriver {
             } else {
                 current_frames
             };
-            buf.request_config_change(requested_rate, requested_frames, 2); // Daemon initiated
+            let requested_channels = if config.channel_count > 0 {
+                config.channel_count
+            } else {
+                current_channels
+            };
+
+            if requested_channels == 0 || requested_channels > MAX_HAL_CHANNEL_COUNT {
+                return ConfigResult::Error(format!(
+                    "HAL channel count must be between 1 and {}, got {}",
+                    MAX_HAL_CHANNEL_COUNT, requested_channels
+                ));
+            }
+            if requested_channels > buf.max_channel_count() {
+                return ConfigResult::Error(format!(
+                    "HAL shared memory was sized for at most {} channels, cannot request {}",
+                    buf.max_channel_count(),
+                    requested_channels
+                ));
+            }
+
+            buf.request_config_change(requested_rate, requested_frames, requested_channels, 2); // Daemon initiated
 
             log::info!(
-                "[HalDriver] Config request: {}Hz, {} frames",
+                "[HalDriver] Config request: {}Hz, {} frames, {} channels",
                 requested_rate,
-                requested_frames
+                requested_frames,
+                requested_channels
             );
             Self::wait_for_daemon_config_ack(buf)
         } else {
@@ -241,11 +265,13 @@ impl AudioDriver for HalDriver {
             let config = DriverConfig {
                 sample_rate: buf.requested_sample_rate(),
                 buffer_frames: buf.requested_buffer_frames(),
+                channel_count: buf.channel_count(),
             };
             log::info!(
-                "[HalDriver] HAL config change detected: {}Hz, {} frames",
+                "[HalDriver] HAL config change detected: {}Hz, {} frames, {} channels",
                 config.sample_rate,
-                config.buffer_frames
+                config.buffer_frames,
+                config.channel_count
             );
             Some(config)
         } else {
@@ -368,6 +394,7 @@ mod tests {
         let result = driver.request_config(DriverConfig {
             sample_rate: 96_000,
             buffer_frames: 256,
+            channel_count: 0,
         });
 
         assert!(matches!(result, ConfigResult::Accepted));
@@ -399,6 +426,7 @@ mod tests {
         let result = driver.request_config(DriverConfig {
             sample_rate: 0,
             buffer_frames: 0,
+            channel_count: 0,
         });
 
         assert!(matches!(result, ConfigResult::Accepted));
@@ -417,6 +445,35 @@ mod tests {
     }
 
     #[test]
+    fn test_request_config_writes_channel_count_when_capacity_allows() {
+        let temp_file = NamedTempFile::new().expect("Failed to create temp file");
+        let buffer =
+            SharedAudioBuffer::create_or_open_with_capacity(temp_file.path(), 48_000, 512, 2, 32)
+                .expect("Failed to create shared memory");
+        let ack = spawn_config_ack(temp_file.path().to_path_buf(), 1);
+
+        let mut driver = HalDriver::new();
+        driver.config_buffer = Some(buffer);
+
+        let result = driver.request_config(DriverConfig {
+            sample_rate: 48_000,
+            buffer_frames: 512,
+            channel_count: 10,
+        });
+
+        assert!(matches!(result, ConfigResult::Accepted));
+        ack.join().expect("Config ack thread failed");
+
+        let buffer = driver
+            .config_buffer
+            .as_ref()
+            .expect("Expected config buffer");
+        assert_eq!(buffer.channel_count(), 10);
+        assert_eq!(buffer.config_source(), 2);
+        assert_eq!(buffer.config_status(), 1);
+    }
+
+    #[test]
     fn test_request_config_times_out_without_hal_ack() {
         let temp_file = NamedTempFile::new().expect("Failed to create temp file");
         let buffer = SharedAudioBuffer::create_or_open(temp_file.path(), 48_000, 512, 2)
@@ -428,6 +485,7 @@ mod tests {
         let result = driver.request_config(DriverConfig {
             sample_rate: 96_000,
             buffer_frames: 256,
+            channel_count: 0,
         });
 
         assert!(matches!(result, ConfigResult::Error(_)));

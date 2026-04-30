@@ -766,11 +766,21 @@ impl WorkflowCanvas {
 
         let mut composite = CompositeCommand::new("Bulk connect");
 
-        // Grow target input_count if needed
-        if connect_count > target.input_count {
+        let output_grow_count = target
+            .max_output_count
+            .filter(|_| target.output_count > 0)
+            .map(|max| connect_count.min(max))
+            .filter(|&count| count > target.output_count);
+
+        // Grow target input_count, and grow target output_count too when
+        // the node explicitly allows variable outputs. This keeps adaptive
+        // pass-through nodes wide after bulk-connecting from a multi-channel
+        // source, while fixed-output nodes such as downmixers stay clamped.
+        if connect_count > target.input_count || output_grow_count.is_some() {
             let old_height = target.height;
-            let new_input_count = connect_count;
-            let ports = new_input_count.max(target.output_count);
+            let new_input_count = target.input_count.max(connect_count);
+            let new_output_count = output_grow_count.unwrap_or(target.output_count);
+            let ports = new_input_count.max(new_output_count);
             let new_height = old_height.max(48.0 + ports as f32 * 16.0);
 
             composite.add(Box::new(ChangePortCountsCommand {
@@ -778,7 +788,7 @@ impl WorkflowCanvas {
                 old_input_count: target.input_count,
                 new_input_count,
                 old_output_count: target.output_count,
-                new_output_count: target.output_count,
+                new_output_count,
                 old_height,
                 new_height,
             }));

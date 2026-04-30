@@ -16,7 +16,7 @@ use std::sync::mpsc::Sender;
 
 /// Max input channels for the stack-allocated downmix coefficient arrays.
 #[allow(dead_code)]
-const MAX_DOWNMIX_CH: usize = 16;
+const MAX_DOWNMIX_CH: usize = 32;
 
 fn is_virtual_output_device_name(name: &str) -> bool {
     let lower = name.to_lowercase();

@@ -28,7 +28,7 @@
 //!
 //! # Channel Support
 //!
-//! The HAL driver supports dynamic channel counts (1-16 channels) as specified
+//! The HAL driver supports dynamic channel counts (1-32 channels) as specified
 //! in the shared memory header. The channel count is read from the header at
 //! runtime, allowing for stereo, 5.1, 7.1, and other configurations.
 //!

@@ -416,6 +416,26 @@ struct PluginRowView: View {
 
 // MARK: - Edit Plugin Sheet
 
+private enum PluginParameterFileFormat: Int, CaseIterable {
+    case parameterJSON
+    case enginePluginJSON
+    case appGpuiPresetJSON
+    case rawParametersJSON
+
+    var title: String {
+        switch self {
+        case .parameterJSON:
+            return "Parameter JSON"
+        case .enginePluginJSON:
+            return "Engine plugin JSON"
+        case .appGpuiPresetJSON:
+            return "App GPUI preset JSON"
+        case .rawParametersJSON:
+            return "Raw parameters JSON"
+        }
+    }
+}
+
 struct PluginEditSheet: View {
     @ObservedObject var plugin: PluginInstance
     let descriptors: [PluginParameterDescriptor]
@@ -558,15 +578,17 @@ struct PluginEditSheet: View {
         panel.nameFieldStringValue = "\(plugin.pluginType)_parameters.json"
         panel.message = "Save \(plugin.pluginName) parameters"
 
+        let formatPicker = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 220, height: 26), pullsDown: false)
+        PluginParameterFileFormat.allCases.forEach { formatPicker.addItem(withTitle: $0.title) }
+        formatPicker.selectItem(at: PluginParameterFileFormat.parameterJSON.rawValue)
+        panel.accessoryView = formatPicker
+
         guard panel.runModal() == .OK, let url = panel.url else {
             return
         }
 
-        let savedPlugin: [String: Any] = [
-            "plugin_type": plugin.pluginType,
-            "plugin_name": plugin.pluginName,
-            "parameters": draftParameters,
-        ]
+        let selectedFormat = PluginParameterFileFormat(rawValue: formatPicker.indexOfSelectedItem) ?? .parameterJSON
+        let savedPlugin = parameterDocument(for: selectedFormat)
 
         do {
             let data = try JSONSerialization.data(
@@ -578,6 +600,51 @@ struct PluginEditSheet: View {
         } catch {
             sheetError = "Failed to save parameters: \(error.localizedDescription)"
         }
+    }
+
+    private func parameterDocument(for format: PluginParameterFileFormat) -> Any {
+        switch format {
+        case .parameterJSON:
+            return [
+                "plugin_type": plugin.pluginType,
+                "plugin_name": plugin.pluginName,
+                "parameters": draftParameters,
+            ]
+
+        case .enginePluginJSON:
+            return [
+                "plugin_type": plugin.pluginType,
+                "parameters": draftParameters,
+            ]
+
+        case .appGpuiPresetJSON:
+            return [
+                "version": 2,
+                "plugins": [
+                    appGpuiPluginRecord()
+                ],
+            ]
+
+        case .rawParametersJSON:
+            return draftParameters
+        }
+    }
+
+    private func appGpuiPluginRecord() -> [String: Any] {
+        var record: [String: Any] = [
+            "id": 0,
+            "enabled": true,
+            "permanent": false,
+            "plugin_type": plugin.pluginType,
+            "plugin_name": plugin.pluginName,
+            "parameters": draftParameters,
+        ]
+
+        if let variant = engineTypeToAppGpuiSettingsVariant[plugin.pluginType] {
+            record["settings"] = [variant: draftParameters]
+        }
+
+        return record
     }
 
     private func parametersFromSupportedJSON(_ json: Any) throws -> [String: Any] {

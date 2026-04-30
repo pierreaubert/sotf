@@ -1466,7 +1466,7 @@ struct ConfigurationView: View {
     @State private var selectedBufferFrames: UInt32 = 512
     @State private var halConfigError: String? = nil
 
-    let channelOptions = Array(1...16)
+    let channelOptions = Array(1...32)
     let sampleRateOptions: [UInt32] = [44100, 48000, 96000]
     let bufferFramesOptions: [UInt32] = [128, 256, 512, 1024, 2048]
 
@@ -1478,11 +1478,11 @@ struct ConfigurationView: View {
         guard let channels = selectedOutputDevice?.channels, channels > 0 else {
             return nil
         }
-        return min(max(channels, 1), 16)
+        return min(max(channels, 1), 32)
     }
 
     private var outputChannelOptions: [Int] {
-        Array(1...(selectedOutputDeviceChannelLimit ?? 16))
+        Array(1...(selectedOutputDeviceChannelLimit ?? 32))
     }
 
     var body: some View {
@@ -2139,7 +2139,7 @@ struct ConfigurationView: View {
         if let limit = selectedOutputDeviceChannelLimit {
             return "Selected interface supports \(limit) channel\(limit == 1 ? "" : "s")"
         }
-        return "2=stereo, 5=5.0 surround, 6=5.1"
+        return "2=stereo, 6=5.1, 10=5.1.4, up to 32"
     }
 
     private func loadDevices() {
@@ -2446,8 +2446,14 @@ struct ConfigurationView: View {
 
     private func applyHALConfiguration() {
         // Validate channel configuration
-        guard halOutputChannels >= 1 && halOutputChannels <= 16 else {
-            errorMessage = "Invalid output channel count: \(halOutputChannels). Must be between 1 and 16."
+        guard halInputChannels >= 1 && halInputChannels <= 32 else {
+            errorMessage = "Invalid input channel count: \(halInputChannels). Must be between 1 and 32."
+            showingError = true
+            return
+        }
+
+        guard halOutputChannels >= 1 && halOutputChannels <= 32 else {
+            errorMessage = "Invalid output channel count: \(halOutputChannels). Must be between 1 and 32."
             showingError = true
             return
         }
@@ -2459,6 +2465,7 @@ struct ConfigurationView: View {
         let command: [String: Any] = [
             "command": "load_plugins",
             "plugins": plugins,
+            "input_channels": halInputChannels,
             "output_channels": halOutputChannels
         ]
 
@@ -2492,6 +2499,7 @@ struct ConfigurationView: View {
                 let command: [String: Any] = [
                     "command": "load_plugins",
                     "plugins": userPlugins,
+                    "input_channels": halInputChannels,
                     "output_channels": halOutputChannels
                 ]
 
@@ -2746,6 +2754,9 @@ struct ConfigurationView: View {
                     }
                     if config.actualBufferFrames != 0 {
                         selectedBufferFrames = config.actualBufferFrames
+                    }
+                    if config.channelCount != 0 {
+                        halInputChannels = Int(config.channelCount)
                     }
                 } else {
                     halConfigError = "Failed to get HAL config (daemon may not be running)"

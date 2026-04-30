@@ -480,6 +480,47 @@ fn swift_write_mix_falls_back_to_secondary_buffer() {
 }
 
 #[test]
+fn swift_hal_supports_daemon_requested_channel_counts_up_to_32() {
+    let hal_source =
+        read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/SotFHALDriver.swift");
+    let shm_source =
+        read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/SharedMemory.swift");
+    let config_handler = function_body(
+        &hal_source,
+        "private func handleDaemonConfigRequestIfNeeded",
+    );
+    let apply_config = function_body(&hal_source, "func performPendingDaemonConfigChange");
+    let initialize = function_body(&shm_source, "func initialize");
+
+    assert!(
+        hal_source.contains("private let kMaxChannelCount: UInt32 = 32"),
+        "Swift HAL should allow channel configurations up to 32"
+    );
+    assert!(
+        config_handler.contains("let requestedChannels = sharedAudio.getRequestedChannelCount()")
+            && config_handler
+                .contains("requestedChannels >= 1 && requestedChannels <= kMaxChannelCount"),
+        "daemon-initiated config validation should include channel count"
+    );
+    assert!(
+        apply_config.contains("channelCount = pending.channelCount")
+            && apply_config.contains("channelCount: pending.channelCount")
+            && apply_config.contains("kSelector_StreamConfig"),
+        "applying daemon config should resize the HAL stream and notify CoreAudio"
+    );
+    assert!(
+        shm_source.contains("func getRequestedChannelCount()")
+            && shm_source.contains("header.pointee.channelCount = channelCount"),
+        "shared-memory config negotiation should carry the requested channel count"
+    );
+    assert!(
+        initialize.contains("memorySize = Int(statBuf.st_size)")
+            && initialize.contains("closeSharedMemory()"),
+        "Swift shared memory should map the daemon-sized capacity so later channel growth can fit"
+    );
+}
+
+#[test]
 fn swift_shared_memory_drops_old_capture_when_ring_is_full() {
     let source =
         read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/SharedMemory.swift");

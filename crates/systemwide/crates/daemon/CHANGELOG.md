@@ -1,5 +1,16 @@
 # Unreleased
 
+## HAL channel capacity
+
+- The Systemwide HAL path now carries the requested input channel count through
+  `load_plugins` and daemon-to-HAL configuration, with validation up to 32
+  channels.
+- The daemon pre-sizes HAL shared memory for 32-channel growth while preserving
+  the current advertised channel count, so switching from stereo to immersive
+  layouts does not leave the HAL stuck at 2 channels.
+- The toolbar input/output channel controls now expose up to 32 channels and
+  send the selected HAL input channel count to the daemon.
+
 ## Systemwide package upgrade and app identity
 
 - The Systemwide package preinstall now asks a running `sotf-daemon` to shut
@@ -24,7 +35,8 @@
 - Plugin edit sheets now keep parameter edits in a local draft until `Apply` or
   `Close`; `Cancel` dismisses without applying. The bottom button row now
   provides `Load`, `Save`, `Apply`, `Cancel`, and `Close`, with JSON as the
-  default parameter file format.
+  default parameter file format and supported JSON shapes available from the
+  save dialog.
 - Added regression coverage for daemon package quiescing, Systemwide icon
   source selection, output-device channel clamping, default-device selection,
   plugin channel warnings, and batched plugin parameter edits.

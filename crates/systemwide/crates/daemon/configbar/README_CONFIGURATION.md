@@ -8,7 +8,7 @@ The Swift menubar app provides an easy-to-use GUI for configuring the HAL driver
 
 Configure how many channels to capture from macOS applications:
 
-- **Input Channels**: 1-16 channels (default: 2 for stereo)
+- **Input Channels**: 1-32 channels (default: 2 for stereo)
 - Common settings:
   - 1 = Mono
   - 2 = Stereo (most common)
@@ -21,7 +21,7 @@ Configure how many channels to capture from macOS applications:
 Configure where and how audio is sent to speakers:
 
 - **Output Device**: Select from available audio devices
-- **Output Channels**: 1-16 channels (default: 2 for stereo)
+- **Output Channels**: 1-32 channels (default: 2 for stereo)
 - **Volume Control**: Adjust playback volume (0-100%)
 
 Common output configurations:
@@ -217,7 +217,7 @@ cargo run --release --bin sotf_daemon
 ### "Failed to load plugin chain"
 
 Check the daemon logs. Common issues:
-- Invalid channel count (must be 1-16)
+- Invalid channel count (must be 1-32)
 - HAL not initialized (daemon should auto-initialize)
 - Plugin configuration error
 

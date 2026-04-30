@@ -197,11 +197,15 @@ final class SharedAudioBuffer {
         let alignedHeaderSize = (headerSize + 63) & ~63  // 64-byte aligned
         audioCapacity = Int(bufferFrames) * Int(channelCount) * numBuffers
         let audioSize = audioCapacity * MemoryLayout<Float>.size
-        memorySize = alignedHeaderSize + audioSize
+        let requiredMemorySize = alignedHeaderSize + audioSize
 
         // Get the shared memory path (secure per-user path or legacy)
         currentPath = getSharedMemoryPath()
-        halLog("SharedMemory: initializing \(memorySize) bytes at \(currentPath)")
+        halLog("SharedMemory: initializing \(requiredMemorySize) bytes at \(currentPath)")
+
+        if sharedMemory != nil || fileDescriptor >= 0 {
+            closeSharedMemory()
+        }
 
         // Open the daemon-owned file. The HAL plugin runs inside coreaudiod's
         // restricted environment, so creation/sizing/permissions are handled by
@@ -220,12 +224,13 @@ final class SharedAudioBuffer {
             return false
         }
 
-        if statBuf.st_size < memorySize {
-            halLog("SharedMemory: file too small: \(statBuf.st_size), need \(memorySize)")
+        if statBuf.st_size < requiredMemorySize {
+            halLog("SharedMemory: file too small: \(statBuf.st_size), need \(requiredMemorySize)")
             Darwin.close(fileDescriptor)
             fileDescriptor = -1
             return false
         }
+        memorySize = Int(statBuf.st_size)
 
         // Map memory
         sharedMemory = mmap(nil, memorySize, PROT_READ | PROT_WRITE, MAP_SHARED, fileDescriptor, 0)
@@ -797,16 +802,27 @@ final class SharedAudioBuffer {
         return header?.pointee.requestedBufferFrames ?? 0
     }
 
+    /// Get requested/current channel count.
+    ///
+    /// Protocol v4 does not have a separate requested-channel field; daemon
+    /// initiated channel changes publish the desired count in `channelCount`
+    /// before setting `configChanged`.
+    func getRequestedChannelCount() -> UInt32 {
+        OSMemoryBarrier()
+        return header?.pointee.channelCount ?? 0
+    }
+
     /// Request a configuration change (called by HAL when client changes sample rate)
     /// Sets configSource=1 (HAL initiated) and configChanged=1
     ///
     /// Memory ordering: All non-atomic fields are written first, then a memory
     /// barrier ensures they are visible before setting configChanged. The
     /// configChanged flag acts as the notification point for the responder.
-    func requestConfigChange(sampleRate: UInt32, bufferFrames: UInt32) {
+    func requestConfigChange(sampleRate: UInt32, bufferFrames: UInt32, channelCount: UInt32) {
         guard let header = header else { return }
         header.pointee.requestedSampleRate = sampleRate
         header.pointee.requestedBufferFrames = bufferFrames
+        header.pointee.channelCount = channelCount
         header.pointee.configStatus = 0  // pending
         header.pointee.configSource = 1  // HAL initiated
         // Memory barrier ensures non-atomic writes are visible before flag

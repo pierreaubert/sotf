@@ -27,6 +27,7 @@ const NODE_TYPE_PLAYER: &str = "player";
 const NODE_TYPE_INPUT_DEVICE: &str = "input_device";
 const NODE_TYPE_OUTPUT_DEVICE: &str = "output_device";
 const NODE_TYPE_PLUGIN: &str = "plugin";
+const MAX_WORKFLOW_PORTS: usize = 32;
 
 // ============================================================================
 // Drag and Drop Types
@@ -701,16 +702,26 @@ fn plugin_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
 /// Maximum port counts for a plugin type (None = fixed, matches default counts)
 fn plugin_max_ports(plugin_type: &PluginType) -> (Option<usize>, Option<usize>) {
     match plugin_type {
-        // Matrix is growable up to 8x8
-        PluginType::Matrix => (Some(8), Some(8)),
-        // Downmix: can accept up to 8 input channels
-        PluginType::Downmix => (Some(8), Some(2)),
-        // Ambisonics decoder: can output up to 8 channels
-        PluginType::AmbisonicsDecoder => (Some(4), Some(8)),
-        // All other plugins: fixed port counts (no growth allowed)
-        _ => {
+        PluginType::Upmixer | PluginType::AAE => (Some(2), Some(MAX_WORKFLOW_PORTS)),
+        PluginType::BinauralDecoder | PluginType::Downmix => (Some(MAX_WORKFLOW_PORTS), Some(2)),
+        PluginType::MonoToStereo => (Some(1), Some(2)),
+        PluginType::BandSplit => (Some(MAX_WORKFLOW_PORTS), Some(MAX_WORKFLOW_PORTS)),
+        PluginType::BandMerge => (Some(MAX_WORKFLOW_PORTS), Some(MAX_WORKFLOW_PORTS)),
+        PluginType::Matrix => (Some(MAX_WORKFLOW_PORTS), Some(MAX_WORKFLOW_PORTS)),
+        PluginType::AmbisonicsDecoder => (Some(4), Some(MAX_WORKFLOW_PORTS)),
+        PluginType::XTC
+        | PluginType::Crossfeed
+        | PluginType::StereoImager
+        | PluginType::Aec
+        | PluginType::Beamformer => {
             let (i, o) = plugin_channel_counts(plugin_type);
             (Some(i), Some(o))
+        }
+        _ => {
+            // Most processors and analyzers are pass-through with respect to
+            // channel layout. Let graph bulk-connect grow both sides after an
+            // upmixer or matrix expands the chain.
+            (Some(MAX_WORKFLOW_PORTS), Some(MAX_WORKFLOW_PORTS))
         }
     }
 }
@@ -826,7 +837,7 @@ fn create_default_graph(output_name: &str, output_channels: usize) -> WorkflowGr
     let eq_id = eq_node.id;
 
     // Output node - only input ports (blue)
-    let output_channels_clamped = output_channels.min(8);
+    let output_channels_clamped = output_channels.min(MAX_WORKFLOW_PORTS);
     let output_node = WorkflowNodeData::new(output_name, Position::new(450.0, 150.0))
         .with_ports(output_channels_clamped, 0) // N inputs, no outputs
         .with_size(160.0, 80.0 + (output_channels_clamped as f32 * 8.0))
@@ -861,19 +872,28 @@ fn convert_plugin_graph(graph: &PluginGraph) -> WorkflowGraph {
     // Convert special nodes (Input/Output devices) to workflow nodes
     for (special_node_id, special_node) in &graph.special_nodes {
         let (input_ports, output_ports, node_type) = match special_node.node_type {
-            SpecialNodeType::Input => (0, special_node.channels.min(8), NODE_TYPE_INPUT_DEVICE),
-            SpecialNodeType::Output => (special_node.channels.min(8), 0, NODE_TYPE_OUTPUT_DEVICE),
-            SpecialNodeType::Split => (1, special_node.channels.min(8), "split"),
-            SpecialNodeType::Merge => (special_node.channels.min(8), 1, "merge"),
+            SpecialNodeType::Input => (
+                0,
+                special_node.channels.min(MAX_WORKFLOW_PORTS),
+                NODE_TYPE_INPUT_DEVICE,
+            ),
+            SpecialNodeType::Output => (
+                special_node.channels.min(MAX_WORKFLOW_PORTS),
+                0,
+                NODE_TYPE_OUTPUT_DEVICE,
+            ),
+            SpecialNodeType::Split => (1, special_node.channels.min(MAX_WORKFLOW_PORTS), "split"),
+            SpecialNodeType::Merge => (special_node.channels.min(MAX_WORKFLOW_PORTS), 1, "merge"),
         };
 
         let height = 80.0 + (input_ports.max(output_ports) as f32 * 8.0);
-        // Special nodes: allow growth up to 8 ports on the variable side
+        // Special nodes: allow growth up to the visible workflow port cap on
+        // the variable side.
         let (max_in, max_out) = match special_node.node_type {
-            SpecialNodeType::Input => (Some(0), Some(8)),
-            SpecialNodeType::Output => (Some(8), Some(0)),
-            SpecialNodeType::Split => (Some(1), Some(8)),
-            SpecialNodeType::Merge => (Some(8), Some(1)),
+            SpecialNodeType::Input => (Some(0), Some(MAX_WORKFLOW_PORTS)),
+            SpecialNodeType::Output => (Some(MAX_WORKFLOW_PORTS), Some(0)),
+            SpecialNodeType::Split => (Some(1), Some(MAX_WORKFLOW_PORTS)),
+            SpecialNodeType::Merge => (Some(MAX_WORKFLOW_PORTS), Some(1)),
         };
         let workflow_node = WorkflowNodeData::new(
             special_node.display_name(),
@@ -895,7 +915,10 @@ fn convert_plugin_graph(graph: &PluginGraph) -> WorkflowGraph {
     // Convert plugin nodes to workflow nodes
     for (graph_node_id, node) in &graph.nodes {
         let plugin_type = node.plugin.plugin_type();
-        let (input_ports, output_ports) = (node.input_channels.min(8), node.output_channels.min(8));
+        let (input_ports, output_ports) = (
+            node.input_channels.min(MAX_WORKFLOW_PORTS),
+            node.output_channels.min(MAX_WORKFLOW_PORTS),
+        );
 
         let height = 90.0 + ((input_ports.max(output_ports)).saturating_sub(2) as f32 * 8.0);
         let (max_in, max_out) = plugin_max_ports(&plugin_type);
@@ -1652,7 +1675,9 @@ pub(crate) fn reconcile_plugin_graph_with_canvas(
     //    plugin-node ids.
     let mut canvas_to_plugin: HashMap<NodeId, GraphNodeId> = HashMap::new();
     let mut surviving_plugin_ids: HashSet<GraphNodeId> = HashSet::new();
+    let mut plugin_port_counts: HashMap<GraphNodeId, (usize, usize)> = HashMap::new();
     let mut canvas_special_nodes: Vec<(NodeId, &str)> = Vec::new();
+    let mut special_port_counts: HashMap<NodeId, (usize, usize)> = HashMap::new();
 
     for (workflow_id, node) in &workflow.nodes {
         if let Some(plugin_id_str) = node
@@ -1663,6 +1688,7 @@ pub(crate) fn reconcile_plugin_graph_with_canvas(
         {
             canvas_to_plugin.insert(*workflow_id, graph_id);
             surviving_plugin_ids.insert(graph_id);
+            plugin_port_counts.insert(graph_id, (node.input_count, node.output_count));
             continue;
         }
         // Not a plugin node — track it as a special I/O candidate.
@@ -1670,6 +1696,7 @@ pub(crate) fn reconcile_plugin_graph_with_canvas(
             && (node_type == NODE_TYPE_INPUT_DEVICE || node_type == NODE_TYPE_OUTPUT_DEVICE)
         {
             canvas_special_nodes.push((*workflow_id, node_type));
+            special_port_counts.insert(*workflow_id, (node.input_count, node.output_count));
         }
     }
 
@@ -1679,6 +1706,12 @@ pub(crate) fn reconcile_plugin_graph_with_canvas(
     plugin_graph
         .nodes
         .retain(|id, _| surviving_plugin_ids.contains(id));
+    for (id, (input_count, output_count)) in plugin_port_counts {
+        if let Some(node) = plugin_graph.nodes.get_mut(&id) {
+            node.input_channels = input_count;
+            node.output_channels = output_count;
+        }
+    }
 
     // 3) Best-effort match each canvas special I/O node to a single
     //    PluginGraph special node by SpecialNodeType. The post-roomeq
@@ -1700,6 +1733,14 @@ pub(crate) fn reconcile_plugin_graph_with_canvas(
         }) {
             used_special.insert(id);
             canvas_special_to_graph.insert(*workflow_id, id);
+            if let Some((input_count, output_count)) = special_port_counts.get(workflow_id)
+                && let Some(special) = plugin_graph.special_nodes.get_mut(&id)
+            {
+                special.channels = match special.node_type {
+                    SpecialNodeType::Input | SpecialNodeType::Split => *output_count,
+                    SpecialNodeType::Output | SpecialNodeType::Merge => *input_count,
+                };
+            }
         }
     }
 
@@ -1725,6 +1766,8 @@ pub(crate) fn reconcile_plugin_graph_with_canvas(
             let _ = plugin_graph.add_connection(from, conn.from_port, to, conn.to_port);
         }
     }
+
+    plugin_graph.update_channel_dependent_plugins();
 
     // 6) Forget the edited node if it was deleted.
     if let Some(uuid) = state.app.plugin_state.editing_graph_node_uuid

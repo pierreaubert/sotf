@@ -852,6 +852,7 @@ impl PluginGraph {
 
         // Re-wire: remove pred→matrix connections, add pred→new and new→matrix
         self.rewire_insert(pred_id, matrix_id, new_id);
+        self.update_channel_dependent_plugins();
 
         Ok(new_id)
     }
@@ -887,6 +888,7 @@ impl PluginGraph {
         for port in 0..ch {
             let _ = self.add_connection(pred_id, port, succ_id, port);
         }
+        self.update_channel_dependent_plugins();
 
         Ok(())
     }
@@ -964,6 +966,7 @@ impl PluginGraph {
                 let _ = self.add_connection(from, port, to, port);
             }
         }
+        self.update_channel_dependent_plugins();
 
         Ok(())
     }
@@ -972,6 +975,7 @@ impl PluginGraph {
     pub fn toggle_plugin(&mut self, node_id: GraphNodeId) -> Result<(), String> {
         let node = self.nodes.get_mut(&node_id).ok_or("Node not found")?;
         node.plugin.enabled = !node.plugin.enabled;
+        self.update_channel_dependent_plugins();
         Ok(())
     }
 
@@ -1048,6 +1052,7 @@ impl PluginGraph {
         };
         let node = self.nodes.get_mut(&node_id)?;
         let old = std::mem::replace(&mut node.plugin.settings, settings);
+        self.update_channel_dependent_plugins();
         Some(old)
     }
 
@@ -1175,6 +1180,7 @@ impl PluginGraph {
 
         let new_id = self.add_plugin_node_with_role(plugin_type, new_pos, NodeRole::User, false);
         self.rewire_insert(pred_id, succ_id, new_id);
+        self.update_channel_dependent_plugins();
         Ok(new_id)
     }
 
@@ -1616,7 +1622,7 @@ impl PluginGraph {
             .filter(|id| self.nodes.contains_key(id))
             .collect();
 
-        let mut current_channels: usize = 2;
+        let mut current_channels: usize = self.input_channel_count().max(1);
 
         for &node_id in &plugin_ids {
             let node_input_channels = current_channels;
@@ -1815,6 +1821,10 @@ impl PluginGraph {
                 node.input_channels = node_input_channels;
                 node.output_channels = current_channels;
             }
+        }
+
+        if let Some(output) = self.output_node_mut() {
+            output.channels = current_channels.max(1);
         }
 
         // Channel counts on adjacent nodes have just been re-aligned. The
@@ -2583,9 +2593,6 @@ mod tests {
         let mut g = PluginGraph::with_default_rack();
         let upmixer_id = g.add_user_plugin(&PluginType::Upmixer).unwrap();
 
-        // The default Upmixer config is 5.1 (6 channels).
-        g.update_channel_dependent_plugins();
-
         let order = g.linear_order().expect("chain must stay linear");
         let upmixer_pos = order
             .iter()
@@ -2601,18 +2608,47 @@ mod tests {
             "downstream plugin should adopt upmixer's channel count"
         );
 
-        // Every port that the upmixer outputs must have a connection to
-        // the next plugin's matching input port.
-        for port in 0..upmixer_out {
-            assert!(
-                g.connections.iter().any(|c| {
-                    c.from_node == upmixer_id
-                        && c.to_node == next_id
-                        && c.from_port == port
-                        && c.to_port == port
-                }),
-                "missing connection on port {port} after upmixer"
-            );
+        let output_monitor_id = g
+            .node_id_for_role(NodeRole::OutputMonitor)
+            .expect("default rack has output monitor");
+        let output_id = g.output_node_id().expect("default rack has output node");
+        assert_eq!(
+            g.node_input_channels(output_monitor_id),
+            upmixer_out,
+            "output monitor input ports should follow the expanded chain"
+        );
+        assert_eq!(
+            g.node_output_channels(output_monitor_id),
+            upmixer_out,
+            "output monitor output ports should pass through the expanded chain"
+        );
+        assert_eq!(
+            g.node_input_channels(output_id),
+            upmixer_out,
+            "audio output input ports should follow the expanded chain"
+        );
+
+        // Every adjacent pair after the upmixer must have a connection for
+        // every channel the expanded chain now carries.
+        for pair in order[upmixer_pos..].windows(2) {
+            let from = pair[0];
+            let to = pair[1];
+            let ports = g.node_output_channels(from).min(g.node_input_channels(to));
+            assert_eq!(ports, upmixer_out, "expanded chain should stay wide");
+
+            for port in 0..upmixer_out {
+                assert!(
+                    g.connections.iter().any(|c| {
+                        c.from_node == from
+                            && c.to_node == to
+                            && c.from_port == port
+                            && c.to_port == port
+                    }),
+                    "missing connection on port {port} from {} to {}",
+                    g.node_display_name(from),
+                    g.node_display_name(to)
+                );
+            }
         }
     }
 
@@ -2714,7 +2750,11 @@ mod tests {
             config.nodes.len(),
             2,
             "expected only plugin nodes (no Input/Output), got {:?}",
-            config.nodes.iter().map(|n| n.plugin_type.as_str()).collect::<Vec<_>>()
+            config
+                .nodes
+                .iter()
+                .map(|n| n.plugin_type.as_str())
+                .collect::<Vec<_>>()
         );
 
         // Edges between plugin nodes only — Input→A/Input→B/A→Output/B→Output

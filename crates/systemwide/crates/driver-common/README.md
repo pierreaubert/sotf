@@ -10,7 +10,7 @@ Defines the `AudioDriver` trait that all platform-specific audio capture drivers
 
 - `AudioDriver` trait for platform-independent audio capture
 - `NullDriver` fallback that compiles on all platforms
-- Configuration negotiation (sample rate, buffer size)
+- Configuration negotiation (sample rate, buffer size, channel count)
 - Driver-initiated config change detection
 - Serializable `DriverStatus` for reporting to UIs
 
@@ -42,7 +42,7 @@ Single-file crate with one trait, one fallback implementation, and three support
 | `AudioDriver` | Core trait for platform drivers |
 | `NullDriver` | No-op fallback (zero frames, always compiles) |
 | `DriverStatus` | Runtime status snapshot |
-| `DriverConfig` | Sample rate + buffer size request |
+| `DriverConfig` | Sample rate, buffer size, and channel count request |
 | `ConfigResult` | Three-way config negotiation result |
 
 ## Testing

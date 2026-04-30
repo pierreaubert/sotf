@@ -648,7 +648,7 @@ fn test_hal_multi_channel_support_8ch() {
 #[test]
 fn test_hal_channel_count_dynamic() {
     // Test that channel count is read from header, not hardcoded
-    for channel_count in [1, 2, 4, 6, 8, 16] {
+    for channel_count in [1, 2, 4, 6, 8, 16, 32] {
         let sample_rate = 48000;
         let buffer_frames = 128;
 

@@ -33,9 +33,17 @@ pub struct DriverStatus {
 #[derive(Debug, Clone)]
 pub struct DriverConfig {
     /// Requested sample rate in Hz.
+    ///
+    /// A value of `0` means "keep current".
     pub sample_rate: u32,
     /// Requested buffer size in frames.
+    ///
+    /// A value of `0` means "keep current".
     pub buffer_frames: u32,
+    /// Requested driver channel count.
+    ///
+    /// A value of `0` means "keep current".
+    pub channel_count: u32,
 }
 
 /// Result of a configuration request.
@@ -216,6 +224,7 @@ mod tests {
         let result = driver.request_config(DriverConfig {
             sample_rate: 48000,
             buffer_frames: 1024,
+            channel_count: 0,
         });
         assert!(matches!(result, ConfigResult::Error(_)));
     }

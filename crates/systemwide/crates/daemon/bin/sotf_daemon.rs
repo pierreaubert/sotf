@@ -36,6 +36,11 @@ use std::sync::Arc;
 /// Legacy socket path for backwards compatibility
 const LEGACY_SOCKET_PATH: &str = "/tmp/autoeq_audio.sock";
 const OUTPUT_DEVICE_ENV: &str = "SOTF_OUTPUT_DEVICE";
+const MAX_HAL_CHANNELS: usize = 32;
+
+fn default_input_channels() -> usize {
+    0
+}
 
 fn default_output_channels() -> usize {
     2
@@ -75,6 +80,8 @@ enum Command {
     #[serde(rename = "load_plugins")]
     LoadPlugins {
         plugins: Vec<PluginConfig>,
+        #[serde(default = "default_input_channels")]
+        input_channels: usize,
         #[serde(default = "default_output_channels")]
         output_channels: usize,
     },
@@ -314,6 +321,8 @@ struct AudioDaemon {
     runtime: Arc<tokio::runtime::Runtime>,
     /// Current plugin configuration (user plugins, excluding auto-added monitors)
     current_plugins: Arc<Mutex<Vec<PluginConfig>>>,
+    /// Current HAL input channel count
+    current_input_channels: Arc<Mutex<usize>>,
     /// Current output channel count
     current_output_channels: Arc<Mutex<usize>>,
     /// Index of the auto-injected input loudness monitor in the final plugin chain
@@ -334,6 +343,7 @@ impl AudioDaemon {
             key_manager: Arc::new(Mutex::new(KeyManager::default())),
             runtime: Arc::new(runtime),
             current_plugins: Arc::new(Mutex::new(Vec::new())),
+            current_input_channels: Arc::new(Mutex::new(2)),
             current_output_channels: Arc::new(Mutex::new(2)),
             input_loudness_index: Arc::new(Mutex::new(None)),
             output_loudness_index: Arc::new(Mutex::new(None)),
@@ -358,7 +368,7 @@ impl AudioDaemon {
 
             let result = daemon
                 .runtime
-                .block_on(daemon.handle_load_plugins_with_channels(plugins, 2));
+                .block_on(daemon.handle_load_plugins_with_channels(plugins, 2, 2));
             if result.success {
                 println!("   Driver playback started successfully");
             } else {
@@ -380,9 +390,10 @@ impl AudioDaemon {
             Command::SetDevice { device } => self.handle_set_device(&device).await,
             Command::LoadPlugins {
                 plugins,
+                input_channels,
                 output_channels,
             } => {
-                self.handle_load_plugins_with_channels(plugins, output_channels)
+                self.handle_load_plugins_with_channels(plugins, input_channels, output_channels)
                     .await
             }
             Command::GetLoudness => self.handle_get_loudness().await,
@@ -535,13 +546,14 @@ impl AudioDaemon {
                 // the driver chain even from Idle so selecting a device can
                 // recover from startup fallback discovery failures.
                 let plugins = self.current_plugins.lock().clone();
+                let input_channels = *self.current_input_channels.lock();
                 let output_channels = *self.current_output_channels.lock();
                 log::info!(
                     "Starting/restarting driver playback with output device: {}",
                     resolved_name
                 );
                 let resp = self
-                    .handle_load_plugins_with_channels(plugins, output_channels)
+                    .handle_load_plugins_with_channels(plugins, input_channels, output_channels)
                     .await;
                 if !resp.success {
                     return resp;
@@ -559,13 +571,10 @@ impl AudioDaemon {
     async fn handle_load_plugins_with_channels(
         &self,
         plugins: Vec<PluginConfig>,
+        input_channels: usize,
         output_channels: usize,
     ) -> Response {
         let plugins = sanitize_user_plugins(plugins);
-
-        // Store user's plugin configuration BEFORE adding monitors
-        *self.current_plugins.lock() = plugins.clone();
-        *self.current_output_channels.lock() = output_channels;
 
         let driver_status = self.driver_manager.lock().status();
         let driver_sample_rate = if driver_status.sample_rate > 0 {
@@ -573,13 +582,68 @@ impl AudioDaemon {
         } else {
             48_000
         };
-        let driver_input_channels = if driver_status.channel_count > 0 {
+        let driver_buffer_frames = if driver_status.buffer_frames > 0 {
+            driver_status.buffer_frames
+        } else {
+            512
+        };
+        let stored_input_channels = *self.current_input_channels.lock();
+        let fallback_input_channels = if driver_status.channel_count > 0 {
             driver_status.channel_count as usize
+        } else if stored_input_channels > 0 {
+            stored_input_channels
         } else {
             2
         };
+        let driver_input_channels = if input_channels > 0 {
+            input_channels
+        } else {
+            fallback_input_channels
+        };
 
-        let mut manager = self.manager.lock();
+        if !(1..=MAX_HAL_CHANNELS).contains(&driver_input_channels) {
+            return Response::err(format!(
+                "Invalid HAL input channel count: {}. Must be between 1 and {}.",
+                driver_input_channels, MAX_HAL_CHANNELS
+            ));
+        }
+
+        self.driver_manager.lock().set_engine_ready(false);
+
+        {
+            let mut manager = self.manager.lock();
+            let _ = manager.stop();
+        }
+
+        if driver_status.driver_installed
+            && driver_status.channel_count != driver_input_channels as u32
+        {
+            let result = self.driver_manager.lock().request_config(DriverConfig {
+                sample_rate: driver_sample_rate,
+                buffer_frames: driver_buffer_frames,
+                channel_count: driver_input_channels as u32,
+            });
+
+            match result {
+                driver_common::ConfigResult::Accepted
+                | driver_common::ConfigResult::Negotiated { .. } => {
+                    log::info!(
+                        "HAL input channel count set to {} via driver config",
+                        driver_input_channels
+                    );
+                }
+                driver_common::ConfigResult::Error(e) => {
+                    log::error!("Failed to set HAL input channels: {}", e);
+                    return Response::err(format!("Failed to set HAL input channels: {}", e));
+                }
+            }
+        }
+
+        // Store user's plugin configuration BEFORE adding monitors
+        *self.current_plugins.lock() = plugins.clone();
+        *self.current_input_channels.lock() = driver_input_channels;
+        *self.current_output_channels.lock() = output_channels;
+
         let mut output_device = self.selected_device.lock().clone();
 
         if output_device.is_none() {
@@ -606,9 +670,6 @@ impl AudioDaemon {
             output_device = None;
         }
 
-        // Stop current playback if running
-        let _ = manager.stop();
-
         let (final_plugins, input_monitor_index, output_monitor_index) =
             build_driver_plugin_chain(plugins);
 
@@ -625,6 +686,8 @@ impl AudioDaemon {
             output_channels,
             output_device
         );
+
+        let mut manager = self.manager.lock();
 
         // Set the output loudness index for backward compat (get_loudness command)
         manager.set_loudness_plugin_index(output_monitor_index);
@@ -858,7 +921,8 @@ impl AudioDaemon {
             }
             Err(e) if e == "No engine running" => {
                 log::info!("No running driver engine; starting driver playback");
-                self.handle_load_plugins_with_channels(plugins, output_channels)
+                let input_channels = *self.current_input_channels.lock();
+                self.handle_load_plugins_with_channels(plugins, input_channels, output_channels)
                     .await
             }
             Err(e) => {
@@ -990,6 +1054,7 @@ impl AudioDaemon {
         let result = driver.request_config(DriverConfig {
             sample_rate: rate,
             buffer_frames: 0, // Keep current
+            channel_count: 0, // Keep current
         });
 
         match result {
@@ -1016,6 +1081,7 @@ impl AudioDaemon {
         let result = driver.request_config(DriverConfig {
             sample_rate: 0, // Keep current
             buffer_frames: frames,
+            channel_count: 0, // Keep current
         });
 
         match result {
@@ -1100,6 +1166,7 @@ impl AudioDaemon {
             let audio_manager = Arc::clone(&self.manager);
             let running = Arc::clone(&self.running);
             let current_plugins = Arc::clone(&self.current_plugins);
+            let current_input_channels = Arc::clone(&self.current_input_channels);
             let current_output_channels = Arc::clone(&self.current_output_channels);
             let input_loudness_index = Arc::clone(&self.input_loudness_index);
             let output_loudness_index = Arc::clone(&self.output_loudness_index);
@@ -1108,6 +1175,7 @@ impl AudioDaemon {
                 audio_manager,
                 running,
                 current_plugins,
+                current_input_channels,
                 current_output_channels,
                 input_loudness_index,
                 output_loudness_index,
@@ -1172,6 +1240,7 @@ impl AudioDaemon {
                         key_manager: Arc::clone(&self.key_manager),
                         runtime: Arc::clone(&self.runtime),
                         current_plugins: Arc::clone(&self.current_plugins),
+                        current_input_channels: Arc::clone(&self.current_input_channels),
                         current_output_channels: Arc::clone(&self.current_output_channels),
                         input_loudness_index: Arc::clone(&self.input_loudness_index),
                         output_loudness_index: Arc::clone(&self.output_loudness_index),
@@ -1213,6 +1282,7 @@ fn spawn_driver_config_watcher(
     audio_manager: Arc<Mutex<AudioEngineManager>>,
     running: Arc<Mutex<bool>>,
     current_plugins: Arc<Mutex<Vec<PluginConfig>>>,
+    current_input_channels: Arc<Mutex<usize>>,
     current_output_channels: Arc<Mutex<usize>>,
     input_loudness_index: Arc<Mutex<Option<usize>>>,
     output_loudness_index: Arc<Mutex<Option<usize>>>,
@@ -1237,6 +1307,7 @@ fn spawn_driver_config_watcher(
                     &audio_manager,
                     config,
                     &current_plugins,
+                    &current_input_channels,
                     &current_output_channels,
                     &input_loudness_index,
                     &output_loudness_index,
@@ -1256,17 +1327,20 @@ fn handle_driver_config_change(
     audio_manager: &Arc<Mutex<AudioEngineManager>>,
     config: DriverConfig,
     current_plugins: &Arc<Mutex<Vec<PluginConfig>>>,
+    current_input_channels: &Arc<Mutex<usize>>,
     current_output_channels: &Arc<Mutex<usize>>,
     input_loudness_index: &Arc<Mutex<Option<usize>>>,
     output_loudness_index: &Arc<Mutex<Option<usize>>>,
 ) {
     let requested_rate = config.sample_rate;
     let requested_frames = config.buffer_frames;
+    let requested_channels = config.channel_count;
 
     log::info!(
-        "Driver config change request: sample_rate={}, buffer_frames={}",
+        "Driver config change request: sample_rate={}, buffer_frames={}, channels={}",
         requested_rate,
-        requested_frames
+        requested_frames,
+        requested_channels
     );
 
     // Validate requested values
@@ -1276,6 +1350,7 @@ fn handle_driver_config_change(
             DriverConfig {
                 sample_rate: 48000,
                 buffer_frames: requested_frames,
+                channel_count: config.channel_count,
             },
             driver_common::ConfigResult::Error("Invalid sample rate".to_string()),
         );
@@ -1290,8 +1365,24 @@ fn handle_driver_config_change(
             DriverConfig {
                 sample_rate: requested_rate,
                 buffer_frames: 512,
+                channel_count: config.channel_count,
             },
             driver_common::ConfigResult::Error("Invalid buffer frames".to_string()),
+        );
+        return;
+    }
+    if requested_channels == 0 || requested_channels as usize > MAX_HAL_CHANNELS {
+        log::warn!(
+            "Invalid config request: channel_count={}, out of range",
+            requested_channels
+        );
+        driver_manager.lock().acknowledge_config_change(
+            DriverConfig {
+                sample_rate: requested_rate,
+                buffer_frames: requested_frames,
+                channel_count: 2,
+            },
+            driver_common::ConfigResult::Error("Invalid channel count".to_string()),
         );
         return;
     }
@@ -1308,6 +1399,7 @@ fn handle_driver_config_change(
     };
 
     let negotiated = actual_rate != requested_rate;
+    *current_input_channels.lock() = requested_channels as usize;
 
     // Reconfigure audio pipeline
     match reconfigure_audio_pipeline(
@@ -1341,13 +1433,15 @@ fn handle_driver_config_change(
                 DriverConfig {
                     sample_rate: actual_rate,
                     buffer_frames: requested_frames,
+                    channel_count: config.channel_count,
                 },
                 result,
             );
             log::info!(
-                "Config accepted: {}Hz, {} frames, engine_ready=true",
+                "Config accepted: {}Hz, {} frames, {} channels, engine_ready=true",
                 actual_rate,
-                requested_frames
+                requested_frames,
+                requested_channels
             );
         }
         Err(e) => {
@@ -1356,6 +1450,7 @@ fn handle_driver_config_change(
                 DriverConfig {
                     sample_rate: actual_rate,
                     buffer_frames: requested_frames,
+                    channel_count: config.channel_count,
                 },
                 driver_common::ConfigResult::Error(e),
             );

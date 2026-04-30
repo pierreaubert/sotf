@@ -11,7 +11,7 @@ lib.rs
   AudioDriver   -- Core trait: initialize/shutdown, read_audio, config negotiation, engine readiness
   NullDriver    -- No-op fallback (compiles everywhere, returns zero frames)
   DriverStatus  -- Runtime status: platform_supported, driver_installed, capture_active, sample_rate, channels, buffer_frames
-  DriverConfig  -- Configuration request: sample_rate, buffer_frames
+  DriverConfig  -- Configuration request: sample_rate, buffer_frames, channel_count
   ConfigResult  -- Accepted, Negotiated { actual_rate, actual_frames }, Error(String)
 ```
 
@@ -20,7 +20,7 @@ lib.rs
 - `AudioDriver` trait -- `initialize()`, `shutdown()`, `status()`, `read_audio()`, `available_frames()`, `sample_rate()`, `channel_count()`, `request_config()`, `poll_config_change()`, `acknowledge_config_change()`, `set_engine_ready()`
 - `NullDriver` -- Fallback implementation: `platform_supported: false`, reads zero frames, always compiles
 - `DriverStatus` -- Serializable status snapshot
-- `DriverConfig` -- Sample rate + buffer size request
+- `DriverConfig` -- Sample rate + buffer size + channel count request
 - `ConfigResult` -- Three-way result for config negotiation
 
 ## Testing

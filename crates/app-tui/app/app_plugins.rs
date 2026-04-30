@@ -192,9 +192,9 @@ impl App {
 
             match header_selection {
                 0 => {
-                    // Input channels: 1-16
+                    // Input channels: 1-32
                     let old_in = *input_channels;
-                    let new_in = (*input_channels as i32 + delta).clamp(1, 16) as usize;
+                    let new_in = (*input_channels as i32 + delta).clamp(1, 32) as usize;
                     if new_in != old_in {
                         resize_matrix(matrix, old_in, *output_channels, new_in, *output_channels);
                         *input_channels = new_in;
@@ -205,9 +205,9 @@ impl App {
                     }
                 }
                 1 => {
-                    // Output channels: 1-16
+                    // Output channels: 1-32
                     let old_out = *output_channels;
-                    let new_out = (*output_channels as i32 + delta).clamp(1, 16) as usize;
+                    let new_out = (*output_channels as i32 + delta).clamp(1, 32) as usize;
                     if new_out != old_out {
                         resize_matrix(matrix, *input_channels, old_out, *input_channels, new_out);
                         *output_channels = new_out;

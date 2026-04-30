@@ -146,6 +146,8 @@ private let kIOOperation_WriteMix: UInt32 = 0x72697465     // 'rite' - Write mix
 // MARK: - Supported Sample Rates
 
 private let kSupportedSampleRates: [Float64] = [44100.0, 48000.0, 88200.0, 96000.0, 176400.0, 192000.0]
+private let kDefaultChannelCount: UInt32 = 2
+private let kMaxChannelCount: UInt32 = 32
 private let kZeroTimeStampPeriod: UInt32 = 16_384
 private let kDaemonConfigChangeAction: UInt64 = 0x53434647  // 'SCFG'
 
@@ -154,13 +156,14 @@ private let kDaemonConfigChangeAction: UInt64 = 0x53434647  // 'SCFG'
 private struct PendingDaemonConfig {
     let sampleRate: UInt32
     let bufferFrames: UInt32
+    let channelCount: UInt32
 }
 
 final class DriverState {
     var host: AudioServerPlugInHostRef?
     var sampleRate: Float64 = 48000.0
     var bufferFrameSize: UInt32 = 512
-    var channelCount: UInt32 = 2
+    var channelCount: UInt32 = kDefaultChannelCount
 
     // Active IO clients. CoreAudio may overlap clients or deliver duplicate
     // StartIO/StopIO transitions while switching apps, so key this by clientID
@@ -290,10 +293,12 @@ final class DriverState {
 
         let requestedRate = sharedAudio.getRequestedSampleRate()
         let requestedFrames = sharedAudio.getRequestedBufferFrames()
+        let requestedChannels = sharedAudio.getRequestedChannelCount()
 
         guard kSupportedSampleRates.contains(Float64(requestedRate)),
-              requestedFrames >= 64 && requestedFrames <= 4096 else {
-            halLog("[CONFIG] Rejected daemon config request: \(requestedRate)Hz, \(requestedFrames) frames")
+              requestedFrames >= 64 && requestedFrames <= 4096,
+              requestedChannels >= 1 && requestedChannels <= kMaxChannelCount else {
+            halLog("[CONFIG] Rejected daemon config request: \(requestedRate)Hz, \(requestedFrames) frames, \(requestedChannels) channels")
             sharedAudio.acknowledgeConfigChange(
                 actualSampleRate: UInt32(sampleRate),
                 actualBufferFrames: bufferFrameSize,
@@ -303,20 +308,20 @@ final class DriverState {
             return
         }
 
-        requestDaemonConfigChange(sampleRate: requestedRate, bufferFrames: requestedFrames)
+        requestDaemonConfigChange(sampleRate: requestedRate, bufferFrames: requestedFrames, channelCount: requestedChannels)
     }
 
-    private func requestDaemonConfigChange(sampleRate requestedRate: UInt32, bufferFrames requestedFrames: UInt32) {
+    private func requestDaemonConfigChange(sampleRate requestedRate: UInt32, bufferFrames requestedFrames: UInt32, channelCount requestedChannels: UInt32) {
         pendingDaemonConfigLock.lock()
         if let pending = pendingDaemonConfig {
-            let sameRequest = pending.sampleRate == requestedRate && pending.bufferFrames == requestedFrames
+            let sameRequest = pending.sampleRate == requestedRate && pending.bufferFrames == requestedFrames && pending.channelCount == requestedChannels
             pendingDaemonConfigLock.unlock()
             if !sameRequest {
-                halLog("[CONFIG] Ignoring daemon config request while another change is pending: \(requestedRate)Hz, \(requestedFrames) frames")
+                halLog("[CONFIG] Ignoring daemon config request while another change is pending: \(requestedRate)Hz, \(requestedFrames) frames, \(requestedChannels) channels")
             }
             return
         }
-        pendingDaemonConfig = PendingDaemonConfig(sampleRate: requestedRate, bufferFrames: requestedFrames)
+        pendingDaemonConfig = PendingDaemonConfig(sampleRate: requestedRate, bufferFrames: requestedFrames, channelCount: requestedChannels)
         pendingDaemonConfigLock.unlock()
 
         guard let host = host else {
@@ -349,7 +354,7 @@ final class DriverState {
             return
         }
 
-        halLog("[CONFIG] Requested CoreAudio config change: \(requestedRate)Hz, \(requestedFrames) frames")
+        halLog("[CONFIG] Requested CoreAudio config change: \(requestedRate)Hz, \(requestedFrames) frames, \(requestedChannels) channels")
     }
 
     private func clearPendingDaemonConfig() {
@@ -369,20 +374,30 @@ final class DriverState {
 
         sampleRate = Float64(pending.sampleRate)
         bufferFrameSize = pending.bufferFrames
+        channelCount = pending.channelCount
         clock.setSampleRate(sampleRate)
         resetBuffers()
+        _ = sharedAudio.initialize(
+            sampleRate: pending.sampleRate,
+            bufferFrames: pending.bufferFrames,
+            channelCount: pending.channelCount
+        )
         sharedAudio.acknowledgeConfigChange(
             actualSampleRate: pending.sampleRate,
             actualBufferFrames: pending.bufferFrames,
             status: 1,
             errorCode: 0
         )
-        halLog("[CONFIG] Applied daemon config: \(pending.sampleRate)Hz, \(pending.bufferFrames) frames")
+        halLog("[CONFIG] Applied daemon config: \(pending.sampleRate)Hz, \(pending.bufferFrames) frames, \(pending.channelCount) channels")
 
         notifyPropertyChanged(objectID: kDeviceObjectID, selector: kSelector_NominalSampleRate)
         notifyPropertyChanged(objectID: kDeviceObjectID, selector: kSelector_BufferFrameSize)
+        notifyPropertyChanged(objectID: kDeviceObjectID, selector: kSelector_StreamConfig)
+        notifyPropertyChanged(objectID: kDeviceObjectID, selector: kSelector_PreferredLayout)
         notifyPropertyChanged(objectID: kOutputStreamObjectID, selector: kSelector_VirtualFormat)
+        notifyPropertyChanged(objectID: kOutputStreamObjectID, selector: kSelector_AvailableVirtualFmts)
         notifyPropertyChanged(objectID: kOutputStreamObjectID, selector: kSelector_PhysicalFormat)
+        notifyPropertyChanged(objectID: kOutputStreamObjectID, selector: kSelector_AvailablePhysicalFmts)
         return true
     }
 
@@ -1110,10 +1125,48 @@ private func driverSetPropertyData(_ driver: AudioServerPlugInDriverRef, _ objec
 
     case kSelector_VirtualFormat, kSelector_PhysicalFormat:
         let asbd = data.load(as: AudioStreamBasicDescription.self)
+        var formatChanged = false
         if kSupportedSampleRates.contains(asbd.mSampleRate) {
             state.sampleRate = asbd.mSampleRate
             state.clock.setSampleRate(asbd.mSampleRate)
+            state.sharedAudio.updateSampleRate(UInt32(asbd.mSampleRate))
             halLog("Set format sample rate: \(asbd.mSampleRate)")
+            formatChanged = true
+        }
+        if asbd.mChannelsPerFrame >= 1 && asbd.mChannelsPerFrame <= kMaxChannelCount {
+            guard asbd.mChannelsPerFrame != state.channelCount else {
+                if formatChanged {
+                    notifyPropertyChanged(objectID: kDeviceObjectID, selector: kSelector_StreamConfig)
+                    notifyPropertyChanged(objectID: kDeviceObjectID, selector: kSelector_PreferredLayout)
+                    notifyPropertyChanged(objectID: kOutputStreamObjectID, selector: kSelector_VirtualFormat)
+                    notifyPropertyChanged(objectID: kOutputStreamObjectID, selector: kSelector_PhysicalFormat)
+                }
+                return noErr
+            }
+            state.channelCount = asbd.mChannelsPerFrame
+            state.resetBuffers()
+            _ = state.sharedAudio.initialize(
+                sampleRate: UInt32(state.sampleRate),
+                bufferFrames: state.bufferFrameSize,
+                channelCount: state.channelCount
+            )
+            state.sharedAudio.requestConfigChange(
+                sampleRate: UInt32(state.sampleRate),
+                bufferFrames: state.bufferFrameSize,
+                channelCount: state.channelCount
+            )
+            halLog("Set format channel count: \(asbd.mChannelsPerFrame)")
+            formatChanged = true
+        } else if asbd.mChannelsPerFrame != 0 {
+            halLog("Rejected format channel count: \(asbd.mChannelsPerFrame)")
+            return kAudioDeviceUnsupportedFormatError
+        }
+
+        if formatChanged {
+            notifyPropertyChanged(objectID: kDeviceObjectID, selector: kSelector_StreamConfig)
+            notifyPropertyChanged(objectID: kDeviceObjectID, selector: kSelector_PreferredLayout)
+            notifyPropertyChanged(objectID: kOutputStreamObjectID, selector: kSelector_VirtualFormat)
+            notifyPropertyChanged(objectID: kOutputStreamObjectID, selector: kSelector_PhysicalFormat)
         }
 
     default:

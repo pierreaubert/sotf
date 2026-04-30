@@ -18,7 +18,7 @@ use std::sync::mpsc::{Receiver, Sender, SyncSender};
 
 const SPIN_MS_RINGBUFFER: u64 = 5;
 /// Max input channels for the stack-allocated downmix coefficient arrays.
-const MAX_DOWNMIX_CH: usize = 16;
+const MAX_DOWNMIX_CH: usize = 32;
 
 /// Bulk-copy a slice into a ring buffer chunk using memcpy instead of per-element iteration.
 /// For 96K f32 samples this is ~2× faster than `fill_from_iter`.
@@ -1203,7 +1203,8 @@ fn run_playback_thread(
                         let lc = &lc[..n];
                         let rc = &rc[..n];
                         for i in 0..num_frames {
-                            let src = &frame.data[i * n..i * n + n];
+                            let src_base = i * frame.num_channels;
+                            let src = &frame.data[src_base..src_base + n];
                             let mut l = 0.0f32;
                             let mut r = 0.0f32;
                             for ch in 0..n {
