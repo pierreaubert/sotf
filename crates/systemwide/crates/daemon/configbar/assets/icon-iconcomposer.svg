@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Stroke-outlined variant of icon.svg for Apple's Icon Composer (Xcode 26).
+  Each top-level <g> becomes a separate layer when imported, so you can
+  apply different Liquid Glass materials per layer (headband / ear cups
+  / mic body / dial / LED).
+
+  All shapes are filled (no strokes). Geometry is offset by 1 unit
+  (half of the original stroke-width=2) to match the visual weight of
+  the original icon.svg. Round line-caps from the original have been
+  approximated with rounded ends on the rect/path geometry; the visual
+  difference at icon scale is invisible.
+-->
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 24 24"
+     fill="currentColor">
+  <g id="headband">
+    <!--
+      Original: M3 11.5 A 9 10 0 0 1 21 11.5 stroked at width=2.
+      Outlined as a closed band: outer arc rx=10 ry=11 (3->21 expanded by
+      half-stroke), inner arc rx=8 ry=9, joined by 1-unit vertical caps.
+    -->
+    <path d="M 2 11.5
+             A 10 11 0 0 1 22 11.5
+             L 20 11.5
+             A 8 9 0 0 0 4 11.5
+             Z"/>
+  </g>
+
+  <g id="ear-cup-left">
+    <!--
+      Original: rect x=1 y=11.5 w=4 h=7 rx=2 stroked at width=2.
+      Outer rounded rect (x=0 y=10.5 w=6 h=9 rx=3) minus inner cavity
+      (x=2 y=12.5 w=2 h=5 rx=1). evenodd fill creates the band.
+    -->
+    <path fill-rule="evenodd"
+          d="M 3 10.5
+             h 0
+             a 3 3 0 0 0 -3 3
+             v 3
+             a 3 3 0 0 0 3 3
+             h 0
+             a 3 3 0 0 0 3 -3
+             v -3
+             a 3 3 0 0 0 -3 -3
+             Z
+             M 3 12.5
+             a 1 1 0 0 0 -1 1
+             v 3
+             a 1 1 0 0 0 1 1
+             h 0
+             a 1 1 0 0 0 1 -1
+             v -3
+             a 1 1 0 0 0 -1 -1
+             Z"/>
+  </g>
+
+  <g id="ear-cup-right">
+    <!--
+      Original: rect x=19 y=11.5 w=4 h=7 rx=2 stroked at width=2.
+    -->
+    <path fill-rule="evenodd"
+          d="M 21 10.5
+             a 3 3 0 0 0 -3 3
+             v 3
+             a 3 3 0 0 0 3 3
+             a 3 3 0 0 0 3 -3
+             v -3
+             a 3 3 0 0 0 -3 -3
+             Z
+             M 21 12.5
+             a 1 1 0 0 0 -1 1
+             v 3
+             a 1 1 0 0 0 1 1
+             a 1 1 0 0 0 1 -1
+             v -3
+             a 1 1 0 0 0 -1 -1
+             Z"/>
+  </g>
+
+  <g id="mic-body">
+    <!--
+      Original: rect x=8 y=7 w=8 h=13 rx=1 stroked at width=2.
+      Outer rounded rect (x=7 y=6 w=10 h=15 rx=2), inner cavity
+      (x=9 y=8 w=6 h=11 rx=0). evenodd fill.
+    -->
+    <path fill-rule="evenodd"
+          d="M 9 6
+             a 2 2 0 0 0 -2 2
+             v 11
+             a 2 2 0 0 0 2 2
+             h 6
+             a 2 2 0 0 0 2 -2
+             v -11
+             a 2 2 0 0 0 -2 -2
+             Z
+             M 9 8
+             v 11
+             h 6
+             v -11
+             Z"/>
+  </g>
+
+  <g id="mic-led">
+    <!-- Original: circle cx=12 cy=10 r=1 (already filled, no change). -->
+    <circle cx="12" cy="10" r="1"/>
+  </g>
+
+  <g id="mic-dial">
+    <!--
+      Original: circle cx=12 cy=15 r=2 stroked at width=2.
+      Annulus: outer r=3 minus inner r=1.
+    -->
+    <path fill-rule="evenodd"
+          d="M 12 12
+             a 3 3 0 1 0 0 6
+             a 3 3 0 1 0 0 -6
+             Z
+             M 12 14
+             a 1 1 0 1 1 0 2
+             a 1 1 0 1 1 0 -2
+             Z"/>
+  </g>
+</svg>

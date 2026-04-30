@@ -1,0 +1,125 @@
+{
+  "color-space-for-untagged-svg-colors" : "display-p3",
+  "fill" : {
+    "automatic-gradient" : "extended-srgb:0.00000,0.53333,1.00000,1.00000"
+  },
+  "groups" : [
+    {
+      "hidden" : false,
+      "layers" : [
+        {
+          "fill" : "automatic",
+          "hidden" : false,
+          "image-name" : "01-headband.svg",
+          "name" : "01-headband",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        }
+      ],
+      "lighting" : "individual",
+      "position" : {
+        "scale" : 10,
+        "translation-in-points" : [
+          0,
+          0
+        ]
+      },
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "specular" : false,
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0.5
+      }
+    },
+    {
+      "layers" : [
+        {
+          "blend-mode" : "normal",
+          "glass-specializations" : [
+            {
+              "appearance" : "light",
+              "value" : true
+            }
+          ],
+          "hidden" : false,
+          "image-name" : "02-ear-cup-left.svg",
+          "name" : "02-ear-cup-left"
+        },
+        {
+          "hidden" : false,
+          "image-name" : "03-ear-cup-right.svg",
+          "name" : "03-ear-cup-right"
+        }
+      ],
+      "lighting" : "individual",
+      "position" : {
+        "scale" : 10,
+        "translation-in-points" : [
+          0,
+          0
+        ]
+      },
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "specular" : true,
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0.5
+      }
+    },
+    {
+      "blend-mode" : "normal",
+      "layers" : [
+        {
+          "hidden" : false,
+          "image-name" : "04-mic-body.svg",
+          "name" : "04-mic-body"
+        },
+        {
+          "hidden" : false,
+          "image-name" : "05-mic-led.svg",
+          "name" : "05-mic-led"
+        },
+        {
+          "fill" : "automatic",
+          "hidden" : false,
+          "image-name" : "06-mic-dial.svg",
+          "name" : "06-mic-dial"
+        }
+      ],
+      "lighting" : "individual",
+      "position" : {
+        "scale" : 10,
+        "translation-in-points" : [
+          0,
+          0
+        ]
+      },
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "specular" : true,
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0.5
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}
