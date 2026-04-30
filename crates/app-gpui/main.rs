@@ -380,6 +380,7 @@ fn main() {
                     tabbing_identifier: None,
                     window_decorations: None,
                     window_min_size: None,
+                    icon: None,
                 },
                 |_, cx| {
                     // Load configuration (directories, theme, etc.) before creating entities.

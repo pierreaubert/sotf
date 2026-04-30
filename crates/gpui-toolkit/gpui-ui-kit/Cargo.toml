@@ -50,7 +50,7 @@ rqrr = { workspace = true }
 nokhwa = { workspace = true, features = ["input-native"] }
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]
-block = { workspace = true }
+block2 = { workspace = true }
 objc = { workspace = true }
 
 [lib]

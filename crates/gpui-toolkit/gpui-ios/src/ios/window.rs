@@ -649,6 +649,7 @@ impl IosWindow {
             let config = WgpuSurfaceConfig {
                 size: size(DevicePixels(pixel_w), DevicePixels(pixel_h)),
                 transparent: false,
+                preferred_present_mode: None,
             };
 
             let metal_instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -770,7 +771,10 @@ impl IosWindow {
 
             // Block that fires when the keyboard appears — extracts the
             // end-frame height and stores it in the global atomic.
-            let show_block = block::ConcreteBlock::new(move |notification: *mut Object| {
+            // The closure takes `*mut c_void` because block2 only encodes
+            // C-ABI types; we cast back to `*mut Object` inside.
+            let show_block = block2::RcBlock::new(move |notification: *mut c_void| {
+                let notification = notification as *mut Object;
                 if notification.is_null() {
                     return;
                 }
@@ -788,13 +792,11 @@ impl IosWindow {
                 log::info!("GPUI iOS: Keyboard will show, height={}", height);
                 crate::set_keyboard_height(height);
             });
-            let show_block = show_block.copy();
 
-            let hide_block = block::ConcreteBlock::new(move |_notification: *mut Object| {
+            let hide_block = block2::RcBlock::new(move |_notification: *mut c_void| {
                 log::info!("GPUI iOS: Keyboard will hide");
                 crate::set_keyboard_height(0.0);
             });
-            let hide_block = hide_block.copy();
 
             let _: *mut Object = msg_send![notification_center,
                 addObserverForName: show_name

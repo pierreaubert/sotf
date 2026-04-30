@@ -289,15 +289,13 @@ ratatui-image = { version = "10", default-features = false, features = ["serde",
 crossterm = "0.29"
 
 # GPUI framework - all packages must use the same git revision
-gpui = { version="*", git = "https://github.com/zed-industries/zed.git", rev = "ebb451ec7b5bfdd60e7b70cf56f066c8f9a12293" }
-gpui-component = "0.5.1"
-gpui_macos = { version="*", git = "https://github.com/zed-industries/zed.git", rev = "ebb451ec7b5bfdd60e7b70cf56f066c8f9a12293", features = ["font-kit"] }
-gpui_linux = { version="*", git = "https://github.com/zed-industries/zed.git", rev = "ebb451ec7b5bfdd60e7b70cf56f066c8f9a12293" }
-gpui_windows = { version="*", git = "https://github.com/zed-industries/zed.git", rev = "ebb451ec7b5bfdd60e7b70cf56f066c8f9a12293" }
-gpui_wgpu = { version="*", git = "https://github.com/zed-industries/zed.git", rev = "ebb451ec7b5bfdd60e7b70cf56f066c8f9a12293" }
+gpui = { version="*", git = "https://github.com/zed-industries/zed.git", tag = "v1.0.0" }
+gpui_macos = { version="*", git = "https://github.com/zed-industries/zed.git", tag = "v1.0.0", features = ["font-kit"] }
+gpui_linux = { version="*", git = "https://github.com/zed-industries/zed.git", tag = "v1.0.0" }
+gpui_windows = { version="*", git = "https://github.com/zed-industries/zed.git", tag = "v1.0.0" }
+gpui_wgpu = { version="*", git = "https://github.com/zed-industries/zed.git", tag = "v1.0.0" }
 
 # System and low-level
-block = "0.1"
 objc = "0.2"
 cocoa = "0.26"
 dirs = "6"
