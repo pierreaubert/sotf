@@ -872,7 +872,7 @@ struct GenericPluginEditor: View {
                         .foregroundColor(.red)
                 }
                 Spacer()
-                Button("Apply") {
+                Button("Update Draft") {
                     applyJson()
                 }
             }

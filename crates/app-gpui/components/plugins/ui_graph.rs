@@ -125,6 +125,8 @@ impl PlayerView {
             let canvas_for_dblclick = canvas.clone();
             let state_for_change = self.state.clone();
             let canvas_for_change = canvas.clone();
+            let state_for_menu = self.state.clone();
+            let canvas_for_menu = canvas.clone();
 
             canvas.update(cx, |canvas, _cx| {
                 canvas.set_theme(workflow_theme);
@@ -176,6 +178,33 @@ impl PlayerView {
                                 Some(crate::app::types::PluginUpdateType::Structural);
                             state.app.plugin_state.plugin_graph_modified = true;
                         });
+                    });
+                });
+
+                // Per-node right-click context menu: mirror the rack's
+                // per-plugin actions (Edit, Solo, Bypass, Remove). The
+                // canvas only fires this for plugin nodes that registered
+                // a `plugin_node_id` in user_data; non-plugin nodes
+                // (Player / Input / Output) fall through to the default
+                // canvas menu so the user can still add/replace devices.
+                canvas.set_node_menu_items(|node_data| {
+                    let is_plugin = node_data
+                        .user_data
+                        .get("node_type")
+                        .and_then(|v| v.as_str())
+                        == Some(NODE_TYPE_PLUGIN);
+                    if is_plugin {
+                        Some(plugin_node_menu_items())
+                    } else {
+                        None
+                    }
+                });
+                canvas.set_on_node_menu_select(move |menu_id, node_id, _window, cx| {
+                    let canvas = canvas_for_menu.clone();
+                    let state = state_for_menu.clone();
+                    let menu_id = menu_id.clone();
+                    cx.defer(move |cx| {
+                        dispatch_plugin_node_action(&canvas, &state, &menu_id, node_id, cx);
                     });
                 });
             });
@@ -949,6 +978,106 @@ fn create_workflow_theme(theme: &Theme) -> WorkflowTheme {
         },
         selection_border: theme.accent,
     }
+}
+
+// ============================================================================
+// Per-Node Context Menu (Edit / Solo / Bypass / Remove)
+// ============================================================================
+//
+// Mirrors the rack's per-plugin actions. Edit is also available via
+// double-click; the menu is the discoverable variant. Solo / Bypass / Remove
+// have no other entry point in the graph view, so the menu is the only way
+// to reach them.
+
+const NODE_MENU_EDIT: &str = "node-edit";
+const NODE_MENU_SOLO: &str = "node-solo";
+const NODE_MENU_BYPASS: &str = "node-bypass";
+const NODE_MENU_REMOVE: &str = "node-remove";
+
+fn plugin_node_menu_items() -> Vec<MenuItem> {
+    vec![
+        MenuItem::new(NODE_MENU_EDIT, "Edit Parameters"),
+        MenuItem::separator(),
+        MenuItem::new(NODE_MENU_BYPASS, "Bypass / Activate"),
+        MenuItem::new(NODE_MENU_SOLO, "Solo"),
+        MenuItem::separator(),
+        MenuItem::new(NODE_MENU_REMOVE, "Remove"),
+    ]
+}
+
+/// Resolve the workflow node id to a `(plugin_uuid, linear_index)` pair so
+/// the same dispatch can address the plugin via either its stable UUID
+/// (used by `editing_graph_node_uuid`) or its linear index (used by
+/// `PluginEditingManager::toggle_plugin` etc.). Returns None if the
+/// workflow node isn't a plugin node — the menu was registered only for
+/// plugin nodes, but this defensively handles user_data drift.
+fn resolve_plugin_node(
+    canvas: &Entity<WorkflowCanvas>,
+    state: &Entity<crate::app::AppState>,
+    node_id: NodeId,
+    cx: &mut App,
+) -> Option<(sotf_audio_player::GraphNodeId, usize)> {
+    let plugin_uuid = canvas
+        .read(cx)
+        .graph()
+        .nodes
+        .get(&node_id)
+        .and_then(|n| n.user_data.get("plugin_node_id"))
+        .and_then(|v| v.as_str())
+        .and_then(|s| sotf_audio_player::GraphNodeId::parse_str(s).ok())?;
+
+    let plugin_index = state
+        .read(cx)
+        .app
+        .plugin_state
+        .graph
+        .plugins_linear()?
+        .iter()
+        .position(|n| n.id == plugin_uuid)?;
+
+    Some((plugin_uuid, plugin_index))
+}
+
+fn dispatch_plugin_node_action(
+    canvas: &Entity<WorkflowCanvas>,
+    state: &Entity<crate::app::AppState>,
+    menu_id: &SharedString,
+    node_id: NodeId,
+    cx: &mut App,
+) {
+    use crate::components::plugins::editing::PluginEditingManager;
+
+    let menu_id = menu_id.as_ref();
+
+    // Edit doesn't need an index — it sets the editing target by both
+    // workflow node id and plugin UUID, just like the double-click path.
+    if menu_id == NODE_MENU_EDIT {
+        let plugin_uuid = canvas
+            .read(cx)
+            .graph()
+            .nodes
+            .get(&node_id)
+            .and_then(|n| n.user_data.get("plugin_node_id"))
+            .and_then(|v| v.as_str())
+            .and_then(|s| sotf_audio_player::GraphNodeId::parse_str(s).ok());
+        state.update(cx, |state, _cx| {
+            state.app.plugin_state.editing_plugin_node = Some(node_id);
+            state.app.plugin_state.editing_graph_node_uuid = plugin_uuid;
+            state.app.ui_state.input_mode = crate::app::InputMode::EditingPluginNode;
+        });
+        return;
+    }
+
+    let Some((_uuid, index)) = resolve_plugin_node(canvas, state, node_id, cx) else {
+        return;
+    };
+
+    state.update(cx, |state, _cx| match menu_id {
+        NODE_MENU_BYPASS => state.app.toggle_plugin(index),
+        NODE_MENU_SOLO => state.app.toggle_plugin_solo(index),
+        NODE_MENU_REMOVE => state.app.remove_plugin(index),
+        _ => {}
+    });
 }
 
 /// Build menu items for the workflow canvas context menu

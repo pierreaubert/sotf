@@ -191,6 +191,42 @@ fn swift_daemon_config_requests_go_through_coreaudio_reconfiguration() {
 }
 
 #[test]
+fn swift_property_notifications_are_gated_by_coreaudio_object_lifecycle() {
+    let source =
+        read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/SotFHALDriver.swift");
+    let state_body = function_body(&source, "final class DriverState");
+    let notify = function_body(&source, "private func notifyPropertyChanged");
+    let create = function_body(&source, "private func driverCreateDevice");
+    let destroy = function_body(&source, "private func driverDestroyDevice");
+    let has_property = function_body(&source, "private func driverHasProperty");
+    let get_size = function_body(&source, "private func driverGetPropertyDataSize");
+    let get_data = function_body(&source, "private func driverGetPropertyData(");
+
+    assert!(
+        state_body.contains("deviceObjectCreated")
+            && state_body.contains("observedStreamObjects")
+            && state_body.contains("canNotifyPropertyChange"),
+        "HAL must track which CoreAudio objects are valid before notifying property changes"
+    );
+    assert!(
+        notify.contains("canNotifyPropertyChange(objectID: objectID)")
+            && notify.contains("Skipping PropertiesChanged"),
+        "PropertiesChanged must be skipped for invalid or undiscovered objects"
+    );
+    assert!(
+        create.contains("markDeviceCreated(kDeviceObjectID)")
+            && destroy.contains("markDeviceDestroyed(deviceObjectID)"),
+        "CreateDevice/DestroyDevice must update notification object lifecycle"
+    );
+    assert!(
+        has_property.contains("noteObjectAccess(objectID)")
+            && get_size.contains("noteObjectAccess(objectID)")
+            && get_data.contains("noteObjectAccess(objectID)"),
+        "stream objects should become notifiable only after CoreAudio probes them"
+    );
+}
+
+#[test]
 fn swift_reports_legal_zero_time_stamp_period() {
     let source =
         read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/SotFHALDriver.swift");

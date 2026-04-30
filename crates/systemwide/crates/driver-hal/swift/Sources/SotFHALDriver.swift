@@ -222,6 +222,9 @@ final class DriverState {
     private var maintenanceTimer: DispatchSourceTimer?
     private let pendingDaemonConfigLock = NSLock()
     private var pendingDaemonConfig: PendingDaemonConfig?
+    private let objectLifecycleLock = NSLock()
+    private var deviceObjectCreated = false
+    private var observedStreamObjects = Set<AudioObjectID>()
 
     /// Attempt to re-initialise shared memory if we're not connected.
     /// Throttled to one call per second. Safe to call from any thread.
@@ -383,6 +386,58 @@ final class DriverState {
         return true
     }
 
+    func resetObjectLifecycle() {
+        objectLifecycleLock.lock()
+        deviceObjectCreated = false
+        observedStreamObjects.removeAll()
+        objectLifecycleLock.unlock()
+        isDisposed = false
+    }
+
+    func markDeviceCreated(_ objectID: AudioObjectID) {
+        guard objectID == kDeviceObjectID else { return }
+        objectLifecycleLock.lock()
+        deviceObjectCreated = true
+        observedStreamObjects.removeAll()
+        objectLifecycleLock.unlock()
+        isDisposed = false
+    }
+
+    func markDeviceDestroyed(_ objectID: AudioObjectID) {
+        guard objectID == kDeviceObjectID else { return }
+        objectLifecycleLock.lock()
+        deviceObjectCreated = false
+        observedStreamObjects.removeAll()
+        objectLifecycleLock.unlock()
+        isDisposed = true
+    }
+
+    func noteObjectAccess(_ objectID: AudioObjectID) {
+        guard objectID == kOutputStreamObjectID || objectID == kInputStreamObjectID else { return }
+
+        objectLifecycleLock.lock()
+        if deviceObjectCreated {
+            observedStreamObjects.insert(objectID)
+        }
+        objectLifecycleLock.unlock()
+    }
+
+    func canNotifyPropertyChange(objectID: AudioObjectID) -> Bool {
+        objectLifecycleLock.lock()
+        defer { objectLifecycleLock.unlock() }
+
+        switch objectID {
+        case kPlugInObjectID:
+            return host != nil
+        case kDeviceObjectID:
+            return host != nil && deviceObjectCreated
+        case kInputStreamObjectID, kOutputStreamObjectID:
+            return host != nil && deviceObjectCreated && observedStreamObjects.contains(objectID)
+        default:
+            return false
+        }
+    }
+
     func abortPendingDaemonConfigChange() {
         clearPendingDaemonConfig()
         sharedAudio.acknowledgeConfigChange(
@@ -445,10 +500,11 @@ private func driverInitialize(
     _ host: AudioServerPlugInHostRef
 ) -> OSStatus {
     halLog("Initialize called - VERSION 2026-02-01-A")
-    DriverState.shared.host = host
+    let state = DriverState.shared
+    state.host = host
+    state.resetObjectLifecycle()
 
     // Initialize shared memory for Rust engine communication
-    let state = DriverState.shared
     halLog("Initializing SharedMemory: sampleRate=\(state.sampleRate), bufferFrames=\(state.bufferFrameSize), channels=\(state.channelCount)")
 
     let success = state.sharedAudio.initialize(
@@ -477,11 +533,13 @@ private func driverCreateDevice(
 ) -> OSStatus {
     halLog("CreateDevice called")
     deviceObjectID.pointee = kDeviceObjectID
+    DriverState.shared.markDeviceCreated(kDeviceObjectID)
     return noErr
 }
 
 private func driverDestroyDevice(_ driver: AudioServerPlugInDriverRef, _ deviceObjectID: AudioObjectID) -> OSStatus {
     halLog("DestroyDevice: \(deviceObjectID)")
+    DriverState.shared.markDeviceDestroyed(deviceObjectID)
     return noErr
 }
 
@@ -529,6 +587,7 @@ private func driverAbortDeviceConfigurationChange(_ driver: AudioServerPlugInDri
 private func driverHasProperty(_ driver: AudioServerPlugInDriverRef, _ objectID: AudioObjectID, _ clientPID: pid_t, _ address: UnsafePointer<AudioObjectPropertyAddress>) -> DarwinBoolean {
     let sel = address.pointee.mSelector
     let scope = address.pointee.mScope
+    DriverState.shared.noteObjectAccess(objectID)
 
     // Common properties for all objects
     let commonProps: Set<UInt32> = [
@@ -603,6 +662,7 @@ private func driverGetPropertyDataSize(_ driver: AudioServerPlugInDriverRef, _ o
     let sel = address.pointee.mSelector
     let scope = address.pointee.mScope
     let element = address.pointee.mElement
+    DriverState.shared.noteObjectAccess(objectID)
     halDebugLog("[PROBE] GetSize sel='\(fourCC(sel))' scope=\(scopeName(scope)) elem=\(element) obj=\(getObjectType(objectID)) pid=\(clientPID)")
 
     // UInt32 properties
@@ -712,6 +772,7 @@ private func driverGetPropertyData(_ driver: AudioServerPlugInDriverRef, _ objec
     let scope = address.pointee.mScope
     let element = address.pointee.mElement
     let state = DriverState.shared
+    state.noteObjectAccess(objectID)
     halDebugLog("[PROBE] GetData sel='\(fourCC(sel))' scope=\(scopeName(scope)) elem=\(element) obj=\(getObjectType(objectID)) pid=\(clientPID) inSize=\(inDataSize)")
 
     switch sel {
@@ -1009,6 +1070,7 @@ private func driverSetPropertyData(_ driver: AudioServerPlugInDriverRef, _ objec
     let scope = address.pointee.mScope
     let element = address.pointee.mElement
     let state = DriverState.shared
+    state.noteObjectAccess(objectID)
     halDebugLog("[PROBE] SetData sel='\(fourCC(sel))' scope=\(scopeName(scope)) elem=\(element) obj=\(getObjectType(objectID)) pid=\(clientPID) dataSize=\(dataSize)")
 
     switch sel {
@@ -1064,7 +1126,12 @@ private func driverSetPropertyData(_ driver: AudioServerPlugInDriverRef, _ objec
 // MARK: - Property Change Notification
 
 private func notifyPropertyChanged(objectID: AudioObjectID, selector: UInt32, scope: UInt32 = kScope_Global, element: UInt32 = 0) {
-    guard let host = DriverState.shared.host else { return }
+    let state = DriverState.shared
+    guard state.canNotifyPropertyChange(objectID: objectID) else {
+        halDebugLog("Skipping PropertiesChanged for invalid or undiscovered object \(getObjectType(objectID)) selector '\(fourCC(selector))'")
+        return
+    }
+    guard let host = state.host else { return }
 
     var address = AudioObjectPropertyAddress(
         mSelector: selector,

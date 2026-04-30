@@ -1470,6 +1470,21 @@ struct ConfigurationView: View {
     let sampleRateOptions: [UInt32] = [44100, 48000, 96000]
     let bufferFramesOptions: [UInt32] = [128, 256, 512, 1024, 2048]
 
+    private var selectedOutputDevice: AudioEngineClient.AudioDevice? {
+        physicalOutputDevices.first { $0.name == selectedDevice }
+    }
+
+    private var selectedOutputDeviceChannelLimit: Int? {
+        guard let channels = selectedOutputDevice?.channels, channels > 0 else {
+            return nil
+        }
+        return min(max(channels, 1), 16)
+    }
+
+    private var outputChannelOptions: [Int] {
+        Array(1...(selectedOutputDeviceChannelLimit ?? 16))
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             // Left level meter (input monitor)
@@ -1599,45 +1614,58 @@ struct ConfigurationView: View {
             // Audio Output Section
             GroupBox(label: Label("Audio Output (to speakers)", systemImage: "hifispeaker")) {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Output Device:")
-                        .font(.headline)
+                    HStack {
+                        Text("Output Device:")
+                            .font(.headline)
 
-                    Picker("Device", selection: $selectedDevice) {
-                        if physicalOutputDevices.isEmpty {
-                            Text("No hardware output devices").tag("")
-                        }
-
-                        ForEach(physicalOutputDevices, id: \.name) { device in
-                            HStack {
-                                Text(device.name)
-                                if device.is_default {
-                                    Text("(default)")
-                                        .foregroundColor(.secondary)
-                                        .font(.caption)
-                                }
-                                if let channels = device.channels, let sampleRate = device.sample_rate {
-                                    Text("- \(channels)ch @ \(sampleRate/1000)kHz")
-                                        .foregroundColor(.secondary)
-                                        .font(.caption)
-                                }
+                        Picker("Device", selection: $selectedDevice) {
+                            if physicalOutputDevices.isEmpty {
+                                Text("No hardware output devices").tag("")
                             }
-                            .tag(device.name)
+
+                            ForEach(physicalOutputDevices, id: \.name) { device in
+                                HStack {
+                                    Text(device.name)
+                                    if device.is_default {
+                                        Text("(default)")
+                                            .foregroundColor(.secondary)
+                                            .font(.caption)
+                                    }
+                                    if let channels = device.channels, let sampleRate = device.sample_rate {
+                                        Text("- \(channels)ch @ \(sampleRate/1000)kHz")
+                                            .foregroundColor(.secondary)
+                                            .font(.caption)
+                                    }
+                                }
+                                .tag(device.name)
+                            }
                         }
-                    }
-                    .pickerStyle(.menu)
-                    .onChange(of: selectedDevice) { _, newDevice in
-                        guard !newDevice.isEmpty else { return }
-                        guard !isVirtualDevice(newDevice) else {
-                            errorMessage = "Virtual audio devices cannot be used as Systemwide speaker output. Select hardware speakers/headphones here, and select SotF Virtual Audio in macOS Sound Output."
-                            showingError = true
+                        .pickerStyle(.menu)
+                        .onChange(of: selectedDevice) { _, newDevice in
+                            guard !newDevice.isEmpty else { return }
+                            guard !isVirtualDevice(newDevice) else {
+                                errorMessage = "Virtual audio devices cannot be used as Systemwide speaker output. Select hardware speakers/headphones here, and select SotF Virtual Audio in macOS Sound Output."
+                                showingError = true
+                                loadDevices()
+                                return
+                            }
+                            if client.setDevice(newDevice) {
+                                syncOutputChannelsToSelectedDevice(applyChange: true)
+                            } else {
+                                errorMessage = "Failed to set output device: \(newDevice)"
+                                showingError = true
+                                loadDevices()
+                            }
+                        }
+
+                        Button(action: {
                             loadDevices()
-                            return
+                        }) {
+                            Image(systemName: loadingDevices ? "hourglass" : "arrow.clockwise")
                         }
-                        if !client.setDevice(newDevice) {
-                            errorMessage = "Failed to set output device: \(newDevice)"
-                            showingError = true
-                            loadDevices()
-                        }
+                        .buttonStyle(.borderless)
+                        .disabled(loadingDevices)
+                        .help("Refresh output devices")
                     }
                     .onAppear {
                         loadDevices()
@@ -1650,7 +1678,7 @@ struct ConfigurationView: View {
                             .font(.headline)
 
                         Picker("", selection: $halOutputChannels) {
-                            ForEach(channelOptions, id: \.self) { count in
+                            ForEach(outputChannelOptions, id: \.self) { count in
                                 Text("\(count) channel\(count == 1 ? "" : "s")").tag(count)
                             }
                         }
@@ -1665,7 +1693,7 @@ struct ConfigurationView: View {
                         HStack(spacing: 4) {
                             Image(systemName: "info.circle")
                                 .foregroundColor(.blue)
-                            Text("2=stereo, 5=5.0 surround, 6=5.1")
+                            Text(outputChannelsHelpText)
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
@@ -1706,6 +1734,7 @@ struct ConfigurationView: View {
                     PluginRackView(
                         client: client,
                         outputChannels: halOutputChannels,
+                        availableOutputChannels: selectedOutputDeviceChannelLimit,
                         refreshTrigger: pluginRackRefreshToken
                     )
                 }
@@ -2106,6 +2135,13 @@ struct ConfigurationView: View {
         devices.filter { !isVirtualDevice($0.name) }
     }
 
+    private var outputChannelsHelpText: String {
+        if let limit = selectedOutputDeviceChannelLimit {
+            return "Selected interface supports \(limit) channel\(limit == 1 ? "" : "s")"
+        }
+        return "2=stereo, 5=5.0 surround, 6=5.1"
+    }
+
     private func loadDevices() {
         guard !loadingDevices else { return }
         loadingDevices = true
@@ -2127,11 +2163,14 @@ struct ConfigurationView: View {
     private func applyLoadedDevices() {
         // Filter out virtual devices for output selection
         let physicalDevices = physicalOutputDevices
+        let previousDevice = selectedDevice
 
-        // Prefer a physical device as output, avoiding virtual devices (HAL, BlackHole)
+        // Follow the current system default output device when CoreAudio reports one.
         if let physicalDefault = physicalDevices.first(where: { $0.is_default }) {
-            // Use the physical default device
             selectedDevice = physicalDefault.name
+        } else if !previousDevice.isEmpty,
+                  physicalDevices.contains(where: { $0.name == previousDevice }) {
+            selectedDevice = previousDevice
         } else if let firstPhysical = physicalDevices.first {
             // Use the first physical device
             selectedDevice = firstPhysical.name
@@ -2139,8 +2178,20 @@ struct ConfigurationView: View {
             selectedDevice = ""
         }
 
+        syncOutputChannelsToSelectedDevice(applyChange: true)
+
         // Also detect available audio sources
         detectAvailableSources()
+    }
+
+    private func syncOutputChannelsToSelectedDevice(applyChange: Bool) {
+        guard let limit = selectedOutputDeviceChannelLimit else { return }
+        guard halOutputChannels > limit else { return }
+
+        halOutputChannels = limit
+        if applyChange {
+            applyHALConfiguration()
+        }
     }
 
     /// Detect which audio sources (HAL driver, BlackHole) are available on the system

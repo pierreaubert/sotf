@@ -1,3 +1,9 @@
+# 0.6.18
+
+## Fixes
+
+- **Workflow**: debug Bulk-connect
+
 # 0.6.17
 
 ## Features

@@ -1816,6 +1816,58 @@ impl PluginGraph {
                 node.output_channels = current_channels;
             }
         }
+
+        // Channel counts on adjacent nodes have just been re-aligned. The
+        // existing per-port connections were established for the *previous*
+        // channel counts, so a chain that now carries 8 channels through a
+        // node still only has the original 2 wires. Rewire each adjacent
+        // pair so every channel that flows through the chain has its own
+        // explicit port-to-port connection. This is what the user sees in
+        // the graph view and what the engine's connection-driven routing
+        // expects.
+        self.rewire_linear_chain_per_channel();
+    }
+
+    /// Walk the linear chain and ensure every adjacent pair of nodes is
+    /// fully connected port-by-port up to the smaller of the two channel
+    /// counts. Drops connections whose port indices are now out of range
+    /// (e.g., after a Matrix output count is shrunk) and adds connections
+    /// that are missing (e.g., after a 2→8 upmixer was introduced and the
+    /// downstream plugins propagated to 8 channels). Non-linear graphs are
+    /// left untouched — the user is responsible for explicit wiring.
+    fn rewire_linear_chain_per_channel(&mut self) {
+        let Some(order) = self.linear_order() else {
+            return;
+        };
+
+        for pair in order.windows(2) {
+            let from = pair[0];
+            let to = pair[1];
+            let target_ports = self
+                .node_output_channels(from)
+                .min(self.node_input_channels(to));
+
+            // Drop any existing from→to connections whose port indices are
+            // now out of range so a previously-wider link stops carrying
+            // signal on phantom ports.
+            self.connections.retain(|c| {
+                !(c.from_node == from
+                    && c.to_node == to
+                    && (c.from_port >= target_ports || c.to_port >= target_ports))
+            });
+
+            for port in 0..target_ports {
+                let already = self.connections.iter().any(|c| {
+                    c.from_node == from
+                        && c.to_node == to
+                        && c.from_port == port
+                        && c.to_port == port
+                });
+                if !already {
+                    let _ = self.add_connection(from, port, to, port);
+                }
+            }
+        }
     }
 
     // =========================================================================
@@ -2518,6 +2570,50 @@ mod tests {
         assert_eq!(plugins[1].role, NodeRole::ReplayGain);
         assert_eq!(plugins[2].role, NodeRole::Matrix);
         assert_eq!(plugins[3].role, NodeRole::OutputMonitor);
+    }
+
+    #[test]
+    fn test_upmixer_propagates_per_channel_connections_through_chain() {
+        // Reproduces the user-visible bug where a chain that contained an
+        // upmixer (or a Matrix configured 2→N) only routed 2 channels to
+        // every plugin downstream, even though the downstream plugins'
+        // input/output port counts had been propagated up to N. The fix
+        // is for `update_channel_dependent_plugins` to re-establish a
+        // per-channel connection for every port the chain now carries.
+        let mut g = PluginGraph::with_default_rack();
+        let upmixer_id = g.add_user_plugin(&PluginType::Upmixer).unwrap();
+
+        // The default Upmixer config is 5.1 (6 channels).
+        g.update_channel_dependent_plugins();
+
+        let order = g.linear_order().expect("chain must stay linear");
+        let upmixer_pos = order
+            .iter()
+            .position(|&id| id == upmixer_id)
+            .expect("upmixer in chain");
+        let next_id = order[upmixer_pos + 1];
+
+        let upmixer_out = g.node_output_channels(upmixer_id);
+        let next_in = g.node_input_channels(next_id);
+        assert!(upmixer_out >= 5, "upmixer should produce >2 channels");
+        assert_eq!(
+            next_in, upmixer_out,
+            "downstream plugin should adopt upmixer's channel count"
+        );
+
+        // Every port that the upmixer outputs must have a connection to
+        // the next plugin's matching input port.
+        for port in 0..upmixer_out {
+            assert!(
+                g.connections.iter().any(|c| {
+                    c.from_node == upmixer_id
+                        && c.to_node == next_id
+                        && c.from_port == port
+                        && c.to_port == port
+                }),
+                "missing connection on port {port} after upmixer"
+            );
+        }
     }
 
     #[test]

@@ -67,3 +67,144 @@ fn daemon_plugin_reload_uses_hot_update_path() {
         "full driver playback restart should be reserved for the no-engine fallback"
     );
 }
+
+#[test]
+fn daemon_pkg_preinstall_quiesces_running_daemon_before_upgrade() {
+    let source = include_str!("../../../../../scripts/build-systemwide.sh");
+    let preinstall_start = source
+        .find("cat > \"$pkg_scripts/preinstall\"")
+        .expect("app package preinstall should exist");
+    let hal_preinstall_start = source
+        .find("cat > \"$hal_pkg_scripts/preinstall\"")
+        .expect("HAL package preinstall should exist");
+    let preinstall_source = &source[preinstall_start..hal_preinstall_start];
+
+    assert!(
+        preinstall_source.contains("{\"command\":\"shutdown\"}"),
+        "preinstall should request a graceful daemon shutdown over the control socket"
+    );
+    assert!(
+        preinstall_source.contains("getconf DARWIN_USER_TEMP_DIR")
+            && preinstall_source.contains("/tmp/sotf-${console_uid}/daemon.sock")
+            && preinstall_source.contains("/tmp/autoeq_audio.sock"),
+        "preinstall should try the daemon's current secure socket paths plus the legacy socket"
+    );
+    assert!(
+        preinstall_source.contains("/usr/bin/pgrep -x \"sotf-daemon\""),
+        "preinstall should wait for sotf-daemon to exit"
+    );
+    assert!(
+        preinstall_source.matches("wait_for_daemon_exit 2").count() >= 2,
+        "preinstall should wait 2 seconds after shutdown and after TERM"
+    );
+    assert!(
+        preinstall_source.contains("/usr/bin/pkill -TERM -x \"sotf-daemon\"")
+            && preinstall_source.contains("/usr/bin/pkill -KILL -x \"sotf-daemon\""),
+        "preinstall should escalate from TERM to KILL as a last resort"
+    );
+}
+
+#[test]
+fn systemwide_app_icon_uses_configbar_svg_source() {
+    let source = include_str!("../../../../../scripts/build-systemwide.sh");
+    let create_icon_start = source
+        .find("create_app_icon()")
+        .expect("Systemwide package script should create an app icon");
+    let create_icon_source = &source[create_icon_start..];
+
+    assert!(
+        create_icon_source.contains("CONFIGBAR_DIR/assets/icon.svg"),
+        "Systemwide app icon should come from configbar/assets/icon.svg"
+    );
+    assert!(
+        create_icon_source.contains("rsvg-convert") && create_icon_source.contains("magick"),
+        "Systemwide app icon should rasterize the SVG without depending on the app-gpui artwork"
+    );
+    assert!(
+        !create_icon_source.contains("crates/app-gpui/assets/sotf.jpg"),
+        "Systemwide app icon should not reuse the GPUI app artwork"
+    );
+}
+
+#[test]
+fn configbar_output_device_refresh_tracks_channel_limits() {
+    let configbar = include_str!("../configbar/src/ConfigBar.swift");
+    let rack = include_str!("../configbar/src/PluginRackView.swift");
+
+    assert!(
+        configbar.contains("Button(action: {\n                            loadDevices()\n                        })"),
+        "output device selector should expose a refresh button next to the picker"
+    );
+    assert!(
+        configbar.contains("ForEach(outputChannelOptions"),
+        "output channel menu should be constrained by the selected interface"
+    );
+    assert!(
+        configbar.contains("syncOutputChannelsToSelectedDevice(applyChange: true)"),
+        "device refresh/selection should clamp the channel selection when metadata changes"
+    );
+    let default_selection = configbar
+        .find("if let physicalDefault = physicalDevices.first(where: { $0.is_default })")
+        .expect("device discovery should prefer the system default output");
+    let previous_selection = configbar
+        .find("physicalDevices.contains(where: { $0.name == previousDevice })")
+        .expect("device discovery should still fall back to the previous selection");
+    assert!(
+        default_selection < previous_selection,
+        "system default output should take priority over a stale previous toolbar selection"
+    );
+    assert!(
+        configbar.contains("availableOutputChannels: selectedOutputDeviceChannelLimit"),
+        "plugin rack should receive the selected output device channel limit"
+    );
+    assert!(
+        rack.contains("channelCompatibilityWarning")
+            && rack.contains("exclamationmark.triangle.fill")
+            && rack.contains("speakerConfigChannels"),
+        "plugin rack should warn when plugin layouts exceed the interface channels"
+    );
+}
+
+#[test]
+fn configbar_plugin_edit_sheet_batches_parameter_edits_until_apply_or_close() {
+    let source = include_str!("../configbar/src/PluginRackView.swift");
+    let sheet_start = source
+        .find("struct PluginEditSheet")
+        .expect("PluginEditSheet should exist");
+    let add_sheet_start = source
+        .find("struct AddPluginSheet")
+        .expect("AddPluginSheet should exist");
+    let sheet_source = &source[sheet_start..add_sheet_start];
+
+    assert!(
+        sheet_source.contains("@State private var draftParameters"),
+        "plugin editor should keep a local draft"
+    );
+    assert!(
+        sheet_source.contains("onApply: @escaping ([String: Any]) -> Bool"),
+        "apply should report whether daemon update succeeded"
+    );
+    for label in ["Load", "Save", "Apply", "Cancel", "Close"] {
+        assert!(
+            sheet_source.contains(&format!("Button(\"{label}\")")),
+            "plugin editor should include a {label} button"
+        );
+    }
+    assert!(
+        !sheet_source.contains("Button(\"Done\")"),
+        "top Done button should be removed"
+    );
+    assert!(
+        sheet_source.contains("draftParameters = newParameters"),
+        "per-control edits should update only the draft"
+    );
+    assert!(
+        !source.contains("updateDebounceTask"),
+        "per-control edits should no longer debounce daemon update_plugin calls"
+    );
+    assert!(
+        source.contains("applyPluginUpdate(at: index, parameters: newParams)")
+            && source.contains("client.updatePlugin(at: index, parameters: parameters)"),
+        "only Apply/Close should send parameters to the daemon"
+    );
+}

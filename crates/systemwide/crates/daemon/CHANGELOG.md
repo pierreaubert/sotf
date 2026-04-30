@@ -1,3 +1,39 @@
+# Unreleased
+
+## Systemwide package upgrade and app identity
+
+- The Systemwide package preinstall now asks a running `sotf-daemon` to shut
+  down over its Unix control socket, waits for it to exit, then escalates to
+  `TERM` and finally `KILL` only if it is still alive. This avoids replacing the
+  daemon while CoreAudio is still using the old process during package upgrades.
+- The Systemwide build entry point is now `scripts/build-systemwide.sh`.
+- The Systemwide app icon is generated from the configbar SVG artwork instead
+  of reusing the GPUI app artwork.
+
+## Toolbar output device and plugin editing
+
+- The toolbar now selects the current system default physical output device
+  when CoreAudio reports one, and keeps the previous selection only as a
+  fallback.
+- Added a refresh button next to the output device picker.
+- The output channel picker is now constrained by the selected output
+  interface's reported channel count, and refresh/selection changes clamp the
+  requested HAL output channels when needed.
+- The plugin rack now warns when the plugin chain or a plugin's output layout
+  asks for more channels than the selected output device exposes.
+- Plugin edit sheets now keep parameter edits in a local draft until `Apply` or
+  `Close`; `Cancel` dismisses without applying. The bottom button row now
+  provides `Load`, `Save`, `Apply`, `Cancel`, and `Close`, with JSON as the
+  default parameter file format.
+- Added regression coverage for daemon package quiescing, Systemwide icon
+  source selection, output-device channel clamping, default-device selection,
+  plugin channel warnings, and batched plugin parameter edits.
+
+Verified:
+- `CARGO_TARGET_DIR=/Volumes/home_tmp/tmp/target-sotf cargo test -p sotf-daemon --test daemon_state_tests`
+- `swiftc -typecheck crates/systemwide/crates/daemon/configbar/src/*.swift -framework SwiftUI -framework AppKit -framework UserNotifications -framework CoreAudio -framework WebKit`
+- `bash -n scripts/build-systemwide.sh scripts/build-dmg-sotf.sh scripts/sign-macos.sh scripts/build-release-local.sh`
+
 # 0.1.36
 
 ## Driver HAL streaming configuration

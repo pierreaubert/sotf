@@ -21,6 +21,22 @@ use std::collections::HashMap;
 /// Callback type for node double-click events
 pub type NodeDoubleClickCallback = Box<dyn Fn(NodeId, &mut Window, &mut App) + 'static>;
 
+/// Callback fired after the canvas graph mutates (node/connection added or
+/// removed, paste, undo/redo). Receives an `App` context so the parent can
+/// reconcile its own data model and trigger an engine update.
+pub type GraphChangeCallback = Box<dyn Fn(&mut App) + 'static>;
+
+/// Callback fired when a node-context-menu item is selected. Receives the
+/// menu item id, the node that was right-clicked, the window, and the app.
+pub type NodeMenuSelectCallback =
+    Box<dyn Fn(&SharedString, NodeId, &mut Window, &mut App) + 'static>;
+
+/// Callback that returns the menu items for a given node, or None to fall
+/// through to the canvas-level menu. Lets the parent show different menus
+/// for different kinds of nodes (e.g., plugin vs Player vs Output).
+pub type NodeMenuItemsCallback =
+    Box<dyn Fn(&super::state::WorkflowNodeData) -> Option<Vec<MenuItem>> + 'static>;
+
 /// Workflow canvas component
 ///
 /// A ReactFlow-like canvas for editing node-based workflows.
@@ -37,8 +53,16 @@ pub struct WorkflowCanvas {
     clipboard: Option<String>,
     /// Custom context menu items (if None, uses default menu)
     custom_menu_items: Option<Vec<MenuItem>>,
+    /// Resolves which menu items to show when right-clicking on a node.
+    /// Returning None for a given node falls through to the canvas-level
+    /// menu, so different node types can opt out of the per-node menu.
+    node_menu_items: Option<NodeMenuItemsCallback>,
     /// Callback for node double-click
     on_node_double_click: Option<NodeDoubleClickCallback>,
+    /// Callback fired after the underlying graph mutates structurally
+    on_graph_change: Option<GraphChangeCallback>,
+    /// Callback for node-context-menu item selection
+    on_node_menu_select: Option<NodeMenuSelectCallback>,
 }
 
 impl WorkflowCanvas {
@@ -52,7 +76,10 @@ impl WorkflowCanvas {
             focus_handle: cx.focus_handle(),
             clipboard: None,
             custom_menu_items: None,
+            node_menu_items: None,
             on_node_double_click: None,
+            on_graph_change: None,
+            on_node_menu_select: None,
         }
     }
 
@@ -67,7 +94,10 @@ impl WorkflowCanvas {
             focus_handle: cx.focus_handle(),
             clipboard: None,
             custom_menu_items: None,
+            node_menu_items: None,
             on_node_double_click: None,
+            on_graph_change: None,
+            on_node_menu_select: None,
         }
     }
 
@@ -82,12 +112,47 @@ impl WorkflowCanvas {
         self.custom_menu_items = Some(items);
     }
 
+    /// Set the resolver that returns context-menu items for a right-clicked
+    /// node, or `None` to fall back to the canvas-level menu for that node.
+    /// This lets different kinds of nodes (e.g., plugin vs special I/O)
+    /// surface different menus without the canvas needing domain knowledge.
+    /// Combine with `set_on_node_menu_select` to handle the per-node action.
+    pub fn set_node_menu_items(
+        &mut self,
+        callback: impl Fn(&super::state::WorkflowNodeData) -> Option<Vec<MenuItem>> + 'static,
+    ) {
+        self.node_menu_items = Some(Box::new(callback));
+    }
+
+    /// Set callback fired when a node-context-menu item is selected.
+    /// The callback receives the menu item id and the right-clicked node id.
+    pub fn set_on_node_menu_select(
+        &mut self,
+        callback: impl Fn(&SharedString, NodeId, &mut Window, &mut App) + 'static,
+    ) {
+        self.on_node_menu_select = Some(Box::new(callback));
+    }
+
     /// Set callback for node double-click events
     pub fn set_on_node_double_click(
         &mut self,
         callback: impl Fn(NodeId, &mut Window, &mut App) + 'static,
     ) {
         self.on_node_double_click = Some(Box::new(callback));
+    }
+
+    /// Set callback fired whenever the canvas graph mutates structurally
+    /// (node added/removed, connection added/removed, paste, undo/redo,
+    /// clear). The parent uses this to reconcile its own data model.
+    pub fn set_on_graph_change(&mut self, callback: impl Fn(&mut App) + 'static) {
+        self.on_graph_change = Some(Box::new(callback));
+    }
+
+    /// Internal helper: fire the graph-change observer if one is set.
+    fn fire_graph_change(&self, cx: &mut App) {
+        if let Some(ref callback) = self.on_graph_change {
+            callback(cx);
+        }
     }
 
     // === Public API ===
@@ -188,6 +253,7 @@ impl WorkflowCanvas {
     pub fn undo(&mut self, cx: &mut Context<Self>) -> bool {
         let result = self.history.undo(&mut self.state.graph);
         if result {
+            self.fire_graph_change(cx);
             cx.notify();
         }
         result
@@ -197,6 +263,7 @@ impl WorkflowCanvas {
     pub fn redo(&mut self, cx: &mut Context<Self>) -> bool {
         let result = self.history.redo(&mut self.state.graph);
         if result {
+            self.fire_graph_change(cx);
             cx.notify();
         }
         result
@@ -315,12 +382,14 @@ impl WorkflowCanvas {
     /// Add a node (with notification)
     pub fn add_node_notify(&mut self, node: WorkflowNodeData, cx: &mut Context<Self>) {
         self.add_node(node);
+        self.fire_graph_change(cx);
         cx.notify();
     }
 
     /// Delete selected items (with notification)
     pub fn delete_selected(&mut self, cx: &mut Context<Self>) {
         self.remove_selected();
+        self.fire_graph_change(cx);
         cx.notify();
     }
 
@@ -330,6 +399,7 @@ impl WorkflowCanvas {
         self.state.graph.connections.clear();
         self.state.selection.clear();
         self.history.clear();
+        self.fire_graph_change(cx);
         cx.notify();
     }
 
@@ -498,6 +568,11 @@ impl WorkflowCanvas {
     }
 
     fn handle_mouse_up(&mut self, position: Position, cx: &mut Context<Self>) {
+        // Track whether the graph changed structurally during this mouse-up
+        // (connection added, bulk-connect, or node moved). We notify the
+        // observer once at the end so observers get a single signal even if
+        // multiple commands ran.
+        let mut graph_changed = false;
         // position is in screen coordinates (relative to canvas element)
 
         match self.state.mode {
@@ -522,6 +597,9 @@ impl WorkflowCanvas {
                         if moved {
                             // Don't execute, just record (positions are already updated)
                             self.history.record(Box::new(MoveNodesCommand { moves }));
+                            // Position changes are visual-only — no engine
+                            // reconfiguration needed, so don't fire the
+                            // graph-change observer.
                         }
                     }
                 }
@@ -565,6 +643,7 @@ impl WorkflowCanvas {
                                 // Record for undo
                                 self.history
                                     .record(Box::new(AddConnectionCommand { connection: conn }));
+                                graph_changed = true;
                             }
                         }
                     }
@@ -577,10 +656,11 @@ impl WorkflowCanvas {
                         &self.state.graph,
                         &self.state.viewport,
                     );
-                    if let HitTestResult::Node(target_id) = hit {
-                        if target_id != drag.from_node {
-                            self.execute_bulk_connect(drag.from_node, target_id);
-                        }
+                    if let HitTestResult::Node(target_id) = hit
+                        && target_id != drag.from_node
+                        && self.execute_bulk_connect(drag.from_node, target_id)
+                    {
+                        graph_changed = true;
                     }
                 }
             }
@@ -598,18 +678,38 @@ impl WorkflowCanvas {
         }
 
         self.state.mode = InteractionMode::None;
+        if graph_changed {
+            self.fire_graph_change(cx);
+        }
         cx.notify();
     }
 
     fn handle_right_click(&mut self, position: Position, cx: &mut Context<Self>) {
-        // Show context menu at click position
-        // position is in screen coordinates relative to canvas element
-        // Since the menu is rendered as a child of the relative canvas div,
-        // we can use the relative position directly.
+        // Show context menu at click position.
+        // `position` is in screen coordinates relative to the canvas element;
+        // the menu is rendered as a child of the relative canvas div, so the
+        // relative position can be used directly for menu placement.
+        //
+        // We hit-test using the same screen-coordinate path as the mouse-down
+        // handler so that node body, ports, and connections all resolve
+        // consistently. If a node is hit, store its id on the menu state so
+        // the parent can dispatch per-node actions.
+        let hit = self.hit_tester.hit_test_with_viewport(
+            position,
+            &self.state.graph,
+            &self.state.viewport,
+        );
+        let target_node = match hit {
+            HitTestResult::Node(id)
+            | HitTestResult::InputPort(id, _)
+            | HitTestResult::OutputPort(id, _) => Some(id),
+            _ => None,
+        };
 
         self.state.context_menu = Some(ContextMenuState {
             position,
             visible: true,
+            target_node,
         });
         cx.notify();
     }
@@ -632,19 +732,20 @@ impl WorkflowCanvas {
 
     /// Bulk-connect: wire source output[i] → target input[i] for all matching ports.
     /// Grows the target's input_count if allowed by max_input_count.
-    fn execute_bulk_connect(&mut self, source_id: NodeId, target_id: NodeId) {
+    /// Returns `true` if any commands were actually executed against the graph.
+    fn execute_bulk_connect(&mut self, source_id: NodeId, target_id: NodeId) -> bool {
         let source = match self.state.graph.nodes.get(&source_id) {
             Some(n) => n.clone(),
-            None => return,
+            None => return false,
         };
         let target = match self.state.graph.nodes.get(&target_id) {
             Some(n) => n.clone(),
-            None => return,
+            None => return false,
         };
 
         let source_outputs = source.output_count;
         if source_outputs == 0 {
-            return;
+            return false;
         }
 
         // Would adding any edge create a cycle?
@@ -653,14 +754,14 @@ impl WorkflowCanvas {
             .graph
             .would_create_cycle(source_id, target_id)
         {
-            return;
+            return false;
         }
 
         // How many connections can we make?
         let max_target = target.max_input_count.unwrap_or(usize::MAX);
         let connect_count = source_outputs.min(max_target);
         if connect_count == 0 {
-            return;
+            return false;
         }
 
         let mut composite = CompositeCommand::new("Bulk connect");
@@ -698,10 +799,13 @@ impl WorkflowCanvas {
             composite.add(Box::new(AddConnectionCommand { connection: conn }));
         }
 
-        if !composite.commands.is_empty() {
-            self.history
-                .execute(Box::new(composite), &mut self.state.graph);
+        if composite.commands.is_empty() {
+            return false;
         }
+
+        self.history
+            .execute(Box::new(composite), &mut self.state.graph);
+        true
     }
 
     fn handle_add_node_menu(&mut self, node_type: &SharedString, cx: &mut Context<Self>) {
@@ -725,6 +829,7 @@ impl WorkflowCanvas {
 
             self.add_node(node);
             self.state.context_menu = None;
+            self.fire_graph_change(cx);
             cx.notify();
         }
     }
@@ -742,6 +847,7 @@ impl WorkflowCanvas {
             key if key == "backspace" || key == "delete" => {
                 if !self.state.selection.is_empty() {
                     self.remove_selected();
+                    self.fire_graph_change(cx);
                     cx.notify();
                 }
             }
@@ -768,6 +874,7 @@ impl WorkflowCanvas {
                 if let Some(data) = self.copy_selection() {
                     self.clipboard = Some(data);
                     self.remove_selected();
+                    self.fire_graph_change(cx);
                     cx.notify();
                 }
             }
@@ -781,6 +888,7 @@ impl WorkflowCanvas {
                     );
                     let canvas_center = self.state.viewport.screen_to_canvas(center.x, center.y);
                     self.paste(data, canvas_center);
+                    self.fire_graph_change(cx);
                     cx.notify();
                 }
             }
@@ -1100,31 +1208,75 @@ impl Render for WorkflowCanvas {
             })
             .collect();
 
-        // Build context menu
+        // Build context menu.
+        //
+        // When the right-click hit a node and the parent has registered
+        // node-specific menu items, show those instead of the canvas menu so
+        // per-node actions (edit / solo / bypass / remove) can be dispatched.
         let context_menu = if let Some(menu_state) = &self.state.context_menu {
             let entity = cx.entity().clone();
 
-            // Use custom menu items if provided, otherwise use defaults
-            let menu_items = if let Some(custom_items) = &self.custom_menu_items {
-                custom_items.clone()
+            // Ask the resolver whether this specific node has a per-node
+            // menu — falls through to canvas menu if the resolver returns
+            // None or no resolver is registered.
+            let node_menu = menu_state.target_node.and_then(|id| {
+                let node_data = self.state.graph.nodes.get(&id)?;
+                let items = self.node_menu_items.as_ref()?(node_data)?;
+                if items.is_empty() {
+                    None
+                } else {
+                    Some((id, items))
+                }
+            });
+
+            let (menu_items, target_node, is_node_menu) = if let Some((id, items)) = node_menu {
+                (items, Some(id), true)
+            } else if let Some(custom_items) = &self.custom_menu_items {
+                (custom_items.clone(), None, false)
             } else {
-                vec![
-                    MenuItem::new("process", "Process Node"),
-                    MenuItem::new("input", "Input Node").with_icon("→"),
-                    MenuItem::new("filter", "Filter Node").with_icon("⚡"),
-                    MenuItem::new("transform", "Transform Node").with_icon("🔄"),
-                    MenuItem::new("mix", "Mix Node").with_icon("🔀"),
-                    MenuItem::separator(),
-                    MenuItem::new("output", "Output Node").with_icon("🔊"),
-                ]
+                (
+                    vec![
+                        MenuItem::new("process", "Process Node"),
+                        MenuItem::new("input", "Input Node").with_icon("→"),
+                        MenuItem::new("filter", "Filter Node").with_icon("⚡"),
+                        MenuItem::new("transform", "Transform Node").with_icon("🔄"),
+                        MenuItem::new("mix", "Mix Node").with_icon("🔀"),
+                        MenuItem::separator(),
+                        MenuItem::new("output", "Output Node").with_icon("🔊"),
+                    ],
+                    None,
+                    false,
+                )
             };
 
-            let menu =
-                Menu::new("workflow-context-menu", menu_items).on_select(move |id, _window, cx| {
-                    entity.update(cx, |this, cx| {
-                        this.handle_add_node_menu(id, cx);
-                    });
-                });
+            let menu = Menu::new("workflow-context-menu", menu_items).on_select({
+                let entity = entity.clone();
+                move |id, window, cx| {
+                    if is_node_menu {
+                        if let Some(node_id) = target_node {
+                            // Read+take callback to invoke without holding a
+                            // mutable borrow of the canvas, then close menu.
+                            let cb_taken = entity.update(cx, |this, _| {
+                                this.state.context_menu = None;
+                                this.on_node_menu_select.take()
+                            });
+                            if let Some(cb) = cb_taken {
+                                cb(id, node_id, window, cx);
+                                entity.update(cx, |this, _| {
+                                    if this.on_node_menu_select.is_none() {
+                                        this.on_node_menu_select = Some(cb);
+                                    }
+                                });
+                            }
+                            entity.update(cx, |_, cx| cx.notify());
+                        }
+                    } else {
+                        entity.update(cx, |this, cx| {
+                            this.handle_add_node_menu(id, cx);
+                        });
+                    }
+                }
+            });
 
             Some(
                 div()

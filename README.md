@@ -97,13 +97,13 @@ Since it is a rust stack, the binaries are generated in `target/release/` direct
 In order to build signed binaries (required on MacOS):
 If you are a developper, you can self sign them with
 ```shell
-./scripts/build-dmg-daemon.sh
+./scripts/build-systemwide.sh
 ./scripts/build-dmg-sotf.sh
 ```
 
 In order to publish them, you need to have an Apple developper ID:
 ```shell
-./scripts/build-dmg-daemon.sh --sign --notorized
+./scripts/build-systemwide.sh --sign --notorized
 ./scripts/build-dmg-sotf.sh --sign --notorized
 ```
 
@@ -279,5 +279,4 @@ Status: almost working.
 
 ![Upmixer 2.0->5.1.4](./site/public/images/0.5.11/sotf-gpui-v0.5.11-upmixer.png)
 ![Upmixer 2.0->5.1.4](./site/public/images/0.5.11/sotf-tui-v0.5.11-upmixer.png)
-
 

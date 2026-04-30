@@ -535,6 +535,9 @@ impl BoxSelection {
 pub struct ContextMenuState {
     pub position: Position,
     pub visible: bool,
+    /// If the right-click hit a node, this is set so the canvas can show
+    /// node-specific menu items and the parent can dispatch per-node actions.
+    pub target_node: Option<NodeId>,
 }
 
 /// Complete canvas state

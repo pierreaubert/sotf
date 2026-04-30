@@ -1,5 +1,23 @@
 # Unreleased
 
+## COM lifetime and CoreAudio object notifications
+
+- Fixed the Swift HAL COM `QueryInterface` / `AddRef` / `Release` balance so
+  repeated `IUnknown` queries on the factory-provided interface no longer leak
+  `gRefCount`; `QueryInterface` now only calls `AddRef` when it returns a
+  distinct interface pointer.
+- Property-change notifications are now gated by the CoreAudio object lifecycle.
+  The HAL tracks device creation/destruction and stream discovery, then skips
+  `PropertiesChanged` callbacks for invalid or undiscovered objects to avoid
+  CoreAudio `HALS_PlugIn::HostInterface_PropertiesChanged: the object is not
+  valid` errors.
+- Added a Swift regression guard for object-lifecycle-gated property
+  notifications.
+
+Verified:
+- `swiftc -typecheck crates/systemwide/crates/driver-hal/swift/Sources/*.swift`
+- `CARGO_TARGET_DIR=/Volumes/home_tmp/tmp/target-sotf cargo test -p driver-hal --test streaming_regression_tests`
+
 ## HAL shared-memory ownership and streaming regressions
 
 - The Rust HAL driver now prepares the shared-memory file from the daemon side
