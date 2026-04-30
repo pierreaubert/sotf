@@ -353,22 +353,23 @@ RSYNC_EXCLUDES=(
     --exclude='/target'
     --exclude='/target-static'
     --exclude='/.docker-target'
-    --exclude='/dist/'
-    --exclude='/tools/'
-    --exclude='/certs/'
-    --exclude='/coverage/'
-    --exclude='/mutants.out/'
+    --exclude='/dist'
+    --exclude='/tools'
+    --exclude='/certs'
+    --exclude='/coverage'
+    --exclude='/mutants.out'
     --exclude='/appimage-builder-*'
+    --exclude='/site/dist'
     # Python
-    --exclude='/venv/'
-    --exclude='/.venv/'
+    --exclude='/venv'
+    --exclude='/.venv'
     --exclude='__pycache__'
     # Generated data
-    --exclude='/data/'
-    --exclude='/data_cached/'
-    --exclude='/data_generated/'
+    --exclude='/data'
+    --exclude='/data_cached'
+    --exclude='/data_generated'
     # Node
-    --exclude='node_modules/'
+    --exclude='node_modules'
     # Git and editor
     --exclude='.git/'
     --exclude='.DS_Store'
@@ -390,6 +391,7 @@ RSYNC_EXCLUDES=(
 handle_rsync_status() {
     local status="$1"
     local label="$2"
+    local allow_partial="${3:-false}"
 
     if [ "$status" -eq 0 ]; then
         return 0
@@ -400,6 +402,15 @@ handle_rsync_status() {
     # release build sync.
     if [ "$status" -eq 24 ]; then
         log_warning "$label completed with vanished source files (rsync exit 24); continuing"
+        return 0
+    fi
+
+    # Exit 23 is a partial transfer. During the Windows source sync this is
+    # usually a non-critical POSIX metadata/symlink mismatch on the receiver;
+    # the subsequent cargo build will still fail if a required source file did
+    # not arrive.
+    if [ "$status" -eq 23 ] && [ "$allow_partial" = true ]; then
+        log_warning "$label completed with partial transfer warnings (rsync exit 23); continuing"
         return 0
     fi
 
@@ -428,11 +439,12 @@ rsync_to_win() {
     local remote_dir="$4"
     build_ssh_transport "$port" "$key"
     rsync -avz --delete \
+        --no-perms --no-owner --no-group --omit-dir-times \
         "${RSYNC_EXCLUDES[@]}" \
         -e "${SSH_TRANSPORT_CMD[*]}" \
         --rsync-path="$WIN_RSYNC_PATH" \
         "$PROJECT_ROOT/" "${host}:${remote_dir}/"
-    handle_rsync_status "$?" "rsync to ${host}:${remote_dir}"
+    handle_rsync_status "$?" "rsync to ${host}:${remote_dir}" true
 }
 
 rsync_from() {

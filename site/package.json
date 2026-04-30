@@ -9,10 +9,10 @@
     "upgrade": "npx npm-check-updates -u"
   },
   "dependencies": {
-    "@astrojs/starlight": "^0.38.2",
-    "@tailwindcss/postcss": "4.2.2",
-    "astro": "6.0.8",
-    "npm-check-updates": "19.6.5",
-    "tailwindcss": "4.2.2"
+    "@astrojs/starlight": "^0.38.4",
+    "@tailwindcss/postcss": "4.2.4",
+    "astro": "6.2.1",
+    "npm-check-updates": "22.0.1",
+    "tailwindcss": "4.2.4"
   }
 }
