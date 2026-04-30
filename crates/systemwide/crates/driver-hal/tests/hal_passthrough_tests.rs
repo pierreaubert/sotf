@@ -15,8 +15,8 @@ use tempfile::NamedTempFile;
 
 /// Magic number for shared memory header validation: 'SOTF'
 const SHARED_MEMORY_MAGIC: u32 = 0x534F5446;
-/// Version 3: Added config negotiation fields
-const SHARED_MEMORY_VERSION: u32 = 3;
+/// Version 4: Added daemon heartbeat for stale-engine detection
+const SHARED_MEMORY_VERSION: u32 = 4;
 
 /// Shared audio header structure (must match driver_hal::SharedAudioHeader)
 #[repr(C)]
@@ -44,6 +44,9 @@ struct SharedAudioHeader {
     config_status: AtomicU32,
     config_source: AtomicU32,
     config_error_code: u32,
+    // Statistics
+    encryption_overflow_count: AtomicU64,
+    daemon_heartbeat_ms: AtomicU64,
 }
 
 /// Create a mock shared memory file for testing
@@ -83,6 +86,9 @@ fn create_mock_shared_memory(
         config_status: AtomicU32::new(0),
         config_source: AtomicU32::new(0),
         config_error_code: 0,
+        // Statistics
+        encryption_overflow_count: AtomicU64::new(0),
+        daemon_heartbeat_ms: AtomicU64::new(0),
     };
 
     let header_bytes: &[u8] =

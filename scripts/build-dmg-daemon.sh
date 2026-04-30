@@ -2,12 +2,14 @@
 #
 # Build script for SotF macOS distribution
 #
-# Creates an UNSIGNED installer package (.pkg) containing:
+# Creates an installer package (.pkg) containing:
 #   - SotF Systemwide.app (menu bar app) -> /Applications/
 #   - SotFHAL.driver (HAL audio driver) -> /Library/Audio/Plug-Ins/HAL/
 #   - sotf-daemon (embedded in app)
 #
-# Signing and notarization live in ./scripts/sign-macos.sh — run that after build.
+# If DEVELOPER_ID is set, app/daemon/HAL payload code is signed before
+# packaging. Installer-container signing and notarization live in
+# ./scripts/sign-macos.sh — run that after build.
 #
 # Bundle identifiers:
 #   - org.spinorama.sotf-systemwide  (menu bar app)
@@ -15,7 +17,7 @@
 #   - org.spinorama.sotf-daemon   (background daemon)
 #
 # Usage:
-#   ./build-dmg-daemon.sh         # Build unsigned pkg (default)
+#   ./build-dmg-daemon.sh         # Build pkg (default; payload signed if DEVELOPER_ID is set)
 #   ./build-dmg-daemon.sh --dmg   # Build DMG instead of pkg (legacy)
 #
 # Prerequisites:
@@ -150,7 +152,102 @@ check_prerequisites() {
         exit 1
     fi
 
+    if [ ! -x /usr/sbin/pkgutil ] || [ ! -x /usr/bin/lsbom ]; then
+        log_error "macOS package tools not found"
+        exit 1
+    fi
+
     log_success "Prerequisites check passed"
+}
+
+is_macho_file() {
+    local file_path="$1"
+    [ -f "$file_path" ] && file "$file_path" | grep -q "Mach-O"
+}
+
+sign_macho_file() {
+    local file_path="$1"
+
+    codesign --force --sign "$DEVELOPER_ID" \
+        --options runtime \
+        --timestamp \
+        "$file_path"
+}
+
+sign_code_bundle() {
+    local bundle_path="$1"
+
+    codesign --force --deep --sign "$DEVELOPER_ID" \
+        --options runtime \
+        --timestamp \
+        "$bundle_path"
+    codesign --verify --verbose=2 --strict "$bundle_path"
+}
+
+sign_payload_code() {
+    local root_dir="$1"
+
+    log_info "Signing Mach-O payloads under ${root_dir#$PROJECT_ROOT/}..."
+    while IFS= read -r -d '' candidate; do
+        if is_macho_file "$candidate"; then
+            sign_macho_file "$candidate"
+            log_info "  Signed Mach-O: ${candidate#$root_dir/}"
+        fi
+    done < <(find "$root_dir" -type f -print0)
+
+    log_info "Signing code bundles under ${root_dir#$PROJECT_ROOT/}..."
+    while IFS= read -r bundle; do
+        [ -d "$bundle" ] || continue
+        sign_code_bundle "$bundle"
+        log_info "  Signed bundle: ${bundle#$root_dir/}"
+    done < <(
+        find "$root_dir" -type d \( \
+            -name "*.app" -o \
+            -name "*.appex" -o \
+            -name "*.bundle" -o \
+            -name "*.driver" -o \
+            -name "*.framework" -o \
+            -name "*.xpc" \
+        \) -print | awk '{ print length($0) "\t" $0 }' | sort -rn | cut -f2-
+    )
+}
+
+sign_release_payloads() {
+    if [ -z "${DEVELOPER_ID:-}" ]; then
+        log_warning "DEVELOPER_ID not set; app/daemon/HAL payloads will not be Developer ID signed"
+        return
+    fi
+
+    log_info "Signing release payloads with: $DEVELOPER_ID"
+    if [ -d "$DRIVER_BUNDLE" ]; then
+        sign_payload_code "$DRIVER_BUNDLE"
+    fi
+    if [ -d "$APP_BUNDLE" ]; then
+        sign_payload_code "$APP_BUNDLE"
+    fi
+    log_success "Release payloads signed"
+}
+
+validate_pkg_payload() {
+    local pkg_path="$1"
+    local expanded_parent expanded_dir
+    expanded_parent=$(mktemp -d)
+    expanded_dir="$expanded_parent/pkg"
+
+    /usr/sbin/pkgutil --expand "$pkg_path" "$expanded_dir"
+
+    if $BUILD_HAL; then
+        local hal_bom="$expanded_dir/SotFHAL.pkg/Bom"
+        if [ ! -f "$hal_bom" ] ||
+           ! /usr/bin/lsbom -s "$hal_bom" | grep -qx "./$DRIVER_NAME/Contents/MacOS/SotFHAL"; then
+            rm -rf "$expanded_parent"
+            log_error "HAL component payload is missing $DRIVER_NAME/Contents/MacOS/SotFHAL"
+            exit 1
+        fi
+    fi
+
+    rm -rf "$expanded_parent"
+    log_success "Package payload validated"
 }
 
 # Clean build artifacts
@@ -787,10 +884,84 @@ LAUNCHSCRIPT
         --scripts "$launch_scripts" \
         "$pkg_components/SotFAutoLaunch.pkg"
 
-    # Create preinstall script to remove old versions
+    # Create preinstall script to quiesce daemon and remove old versions
     cat > "$pkg_scripts/preinstall" << 'PREINSTALL'
 #!/bin/bash
 # Pre-installation script for SotF Systemwide app
+
+daemon_is_running() {
+    /usr/bin/pgrep -x "sotf-daemon" >/dev/null 2>&1
+}
+
+wait_for_daemon_exit() {
+    local timeout="$1"
+    local elapsed=0
+
+    while daemon_is_running && [ "$elapsed" -lt "$timeout" ]; do
+        /bin/sleep 1
+        elapsed=$((elapsed + 1))
+    done
+
+    ! daemon_is_running
+}
+
+daemon_socket_candidates() {
+    local console_user
+    local console_uid
+    local user_tmpdir
+
+    console_user="$(/usr/bin/stat -f "%Su" /dev/console 2>/dev/null || true)"
+    if [ -n "$console_user" ] && [ "$console_user" != "root" ]; then
+        console_uid="$(/usr/bin/id -u "$console_user" 2>/dev/null || true)"
+    fi
+
+    if [ -n "$console_uid" ]; then
+        # Matches the daemon's macOS $TMPDIR path, if it was launched from the GUI session.
+        user_tmpdir="$(/usr/bin/sudo -u "$console_user" /usr/bin/getconf DARWIN_USER_TEMP_DIR 2>/dev/null || true)"
+        if [ -n "$user_tmpdir" ]; then
+            printf '%s\n' "${user_tmpdir%/}/sotf-daemon.sock"
+        fi
+
+        # Matches the daemon's secure fallback path from get_secure_socket_path().
+        printf '%s\n' "/tmp/sotf-${console_uid}/daemon.sock"
+    fi
+
+    # Legacy compatibility socket from sotf_daemon.rs.
+    printf '%s\n' "/tmp/autoeq_audio.sock"
+}
+
+send_daemon_shutdown() {
+    local socket_path="$1"
+
+    [ -S "$socket_path" ] || return 0
+
+    echo "Requesting sotf-daemon shutdown via $socket_path"
+
+    if [ -x /usr/bin/python3 ]; then
+        /usr/bin/python3 -c 'import socket, sys; s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); s.settimeout(0.2); s.connect(sys.argv[1]); s.sendall(b"{\"command\":\"shutdown\"}\n"); s.close()' "$socket_path" >/dev/null 2>&1 && return 0
+    fi
+
+    if [ -x /usr/bin/nc ]; then
+        printf '{"command":"shutdown"}\n' | /usr/bin/nc -U -w 1 "$socket_path" >/dev/null 2>&1 || true
+    fi
+}
+
+quiesce_sotf_daemon() {
+    while IFS= read -r socket_path; do
+        send_daemon_shutdown "$socket_path"
+    done < <(daemon_socket_candidates)
+
+    wait_for_daemon_exit 2 && return 0
+
+    echo "sotf-daemon still running; sending TERM"
+    /usr/bin/pkill -TERM -x "sotf-daemon" >/dev/null 2>&1 || true
+    wait_for_daemon_exit 2 && return 0
+
+    echo "sotf-daemon still running; sending KILL"
+    /usr/bin/pkill -KILL -x "sotf-daemon" >/dev/null 2>&1 || true
+}
+
+quiesce_sotf_daemon
 
 # Remove old menu bar app names so Systemwide replaces Toolbar/ConfigBar cleanly
 for app in "/Applications/SotF Toolbar.app" "/Applications/SotF ConfigBar.app"; do
@@ -1060,14 +1231,16 @@ WELCOME
 </html>
 CONCLUSION
 
-    # Build the distribution package (unsigned — sign via ./scripts/sign-macos.sh)
+    # Build the distribution package. The payload may already be signed; the
+    # installer container remains unsigned until ./scripts/sign-macos.sh runs.
     log_info "Building distribution package..."
     productbuild \
         --distribution "$DMG_DIR/distribution.xml" \
         --package-path "$pkg_components" \
         --resources "$DMG_DIR" \
         "$pkg_path"
-    log_success "Installer package created (unsigned)"
+    log_success "Installer package created (container unsigned)"
+    validate_pkg_payload "$pkg_path"
 
     # Cleanup
     rm -rf "$pkg_root" "$pkg_scripts" "$hal_pkg_scripts" "$pkg_components"
@@ -1098,6 +1271,7 @@ main() {
     copy_hal_driver
     setup_systemwide_bundle
     create_app_bundle
+    sign_release_payloads
 
     if $BUILD_DMG; then
         # Legacy DMG build

@@ -321,6 +321,67 @@ fn swift_tracks_io_clients_by_client_id() {
 }
 
 #[test]
+fn swift_supports_hal_listener_bookkeeping_properties() {
+    let source =
+        read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/SotFHALDriver.swift");
+    let has_property = function_body(&source, "private func driverHasProperty");
+    let settable = function_body(&source, "private func driverIsPropertySettable");
+    let set_data = function_body(&source, "private func driverSetPropertyData");
+
+    assert!(
+        source.contains("kSelector_Creator")
+            && source.contains("kSelector_ListenerAdded")
+            && source.contains("kSelector_ListenerRemoved"),
+        "HAL should declare inherited AudioObject creator/listener bookkeeping selectors"
+    );
+    assert!(
+        has_property.contains("kSelector_ListenerAdded")
+            && has_property.contains("kSelector_ListenerRemoved"),
+        "HAL must report listener add/remove properties as inherited common properties"
+    );
+    assert!(
+        settable.contains("kSelector_ListenerAdded")
+            && settable.contains("kSelector_ListenerRemoved"),
+        "HAL shell notifies listener changes through SetPropertyData"
+    );
+    assert!(
+        set_data.contains("case kSelector_ListenerAdded, kSelector_ListenerRemoved:"),
+        "listener add/remove notifications should be accepted as no-op SetPropertyData calls"
+    );
+}
+
+#[test]
+fn swift_probe_logging_is_gated_off_by_default() {
+    let source =
+        read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/SotFHALDriver.swift");
+    let has_property = function_body(&source, "private func driverHasProperty");
+    let get_data = function_body(&source, "private func driverGetPropertyData(");
+    let will_do = function_body(&source, "private func driverWillDoIOOperation");
+    let io_body = function_body(&source, "private func driverDoIOOperation");
+
+    assert!(
+        source.contains("private let kEnableVerboseHALProbeLogging = false"),
+        "HAL probe logging should be disabled by default in coreaudiod"
+    );
+    assert!(
+        has_property.contains("halDebugLog(\"[PROBE]")
+            && get_data.contains("halDebugLog(\"[PROBE]")
+            && !has_property.contains("halLog(\"[PROBE]")
+            && !get_data.contains("halLog(\"[PROBE]"),
+        "property probe logs must be gated behind debug logging"
+    );
+    assert!(
+        will_do.contains("halDebugLog(\"WillDoIOOperation"),
+        "WillDoIOOperation is queried during stream setup and should not always log"
+    );
+    assert!(
+        io_body.contains("kEnableVerboseHALProbeLogging && (DiagCounter.count % 200) == 0")
+            && !io_body.contains("TEMP DEBUG"),
+        "WriteMix diagnostics should be gated off the audio callback hot path"
+    );
+}
+
+#[test]
 fn swift_write_mix_falls_back_to_secondary_buffer() {
     let source =
         read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/SotFHALDriver.swift");

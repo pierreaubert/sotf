@@ -44,3 +44,26 @@ fn test_device_matching_priority_logic() {
     let err = result.err().unwrap();
     assert!(err.contains("not found"));
 }
+
+#[test]
+fn daemon_plugin_reload_uses_hot_update_path() {
+    let source = include_str!("../bin/sotf_daemon.rs");
+    let reload_start = source
+        .find("async fn reload_plugins")
+        .expect("reload_plugins should exist");
+    let reload_body = &source[reload_start..];
+
+    assert!(
+        source.contains("fn build_driver_plugin_chain"),
+        "daemon should build the injected metering chain in one shared helper"
+    );
+    assert!(
+        reload_body.contains("manager.update_plugin_chain(final_plugins)"),
+        "plugin add/remove/update/reorder should hot-update the running engine"
+    );
+    assert!(
+        reload_body.contains("No engine running")
+            && reload_body.contains("handle_load_plugins_with_channels"),
+        "full driver playback restart should be reserved for the no-engine fallback"
+    );
+}

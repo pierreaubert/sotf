@@ -9,10 +9,15 @@ import os.log
 // MARK: - Logging
 
 private let logger = OSLog(subsystem: "org.spinorama.sotf-hal", category: "HALDriver")
+private let kEnableVerboseHALProbeLogging = false
 
 func halLog(_ message: String) {
-    os_log("%{public}@", log: logger, type: .error, message)
-    NSLog("SotF: %@", message)
+    os_log("%{public}@", log: logger, type: .default, message)
+}
+
+func halDebugLog(_ message: @autoclosure () -> String) {
+    guard kEnableVerboseHALProbeLogging else { return }
+    os_log("%{public}@", log: logger, type: .debug, message())
 }
 
 private func fourCC(_ value: UInt32) -> String {
@@ -25,7 +30,6 @@ private func fourCC(_ value: UInt32) -> String {
     return String(chars)
 }
 
-// TEMP DEBUG: REMOVE AFTER DIAGNOSIS — used by [PROBE] logs in property handlers
 private func scopeName(_ scope: UInt32) -> String {
     switch scope {
     case 0x676C6F62: return "glob"
@@ -47,6 +51,9 @@ private let kOutputStreamObjectID: AudioObjectID = 4
 // MARK: - Property Selectors (FourCC codes)
 
 // Object properties
+private let kSelector_Creator: UInt32             = 0x6F706C67  // 'oplg'
+private let kSelector_ListenerAdded: UInt32       = 0x6C697361  // 'lisa'
+private let kSelector_ListenerRemoved: UInt32     = 0x6C697372  // 'lisr'
 private let kSelector_BaseClass: UInt32           = 0x62636C73  // 'bcls'
 private let kSelector_Class: UInt32               = 0x636C6173  // 'clas'
 private let kSelector_Owner: UInt32               = 0x73746476  // 'stdv'
@@ -525,6 +532,7 @@ private func driverHasProperty(_ driver: AudioServerPlugInDriverRef, _ objectID:
 
     // Common properties for all objects
     let commonProps: Set<UInt32> = [
+        kSelector_Creator, kSelector_ListenerAdded, kSelector_ListenerRemoved,
         kSelector_BaseClass, kSelector_Class, kSelector_Owner,
         kSelector_Name, kSelector_Manufacturer, kSelector_OwnedObjects
     ]
@@ -564,8 +572,7 @@ private func driverHasProperty(_ driver: AudioServerPlugInDriverRef, _ objectID:
         result = false
     }
 
-    // TEMP DEBUG: REMOVE AFTER DIAGNOSIS
-    halLog("[PROBE] HasProp sel='\(fourCC(sel))' scope=\(scopeName(scope)) obj=\(getObjectType(objectID)) pid=\(clientPID) -> \(result)")
+    halDebugLog("[PROBE] HasProp sel='\(fourCC(sel))' scope=\(scopeName(scope)) obj=\(getObjectType(objectID)) pid=\(clientPID) -> \(result)")
     return DarwinBoolean(result)
 }
 
@@ -576,6 +583,8 @@ private func driverIsPropertySettable(_ driver: AudioServerPlugInDriverRef, _ ob
     let scope = address.pointee.mScope
 
     let settableProps: Set<UInt32> = [
+        kSelector_ListenerAdded,
+        kSelector_ListenerRemoved,
         kSelector_NominalSampleRate,
         kSelector_BufferFrameSize,
         kSelector_VirtualFormat,
@@ -584,8 +593,7 @@ private func driverIsPropertySettable(_ driver: AudioServerPlugInDriverRef, _ ob
 
     let settable = settableProps.contains(sel)
     outIsSettable.pointee = DarwinBoolean(settable)
-    // TEMP DEBUG: REMOVE AFTER DIAGNOSIS
-    halLog("[PROBE] IsSettable sel='\(fourCC(sel))' scope=\(scopeName(scope)) obj=\(getObjectType(objectID)) pid=\(clientPID) -> \(settable)")
+    halDebugLog("[PROBE] IsSettable sel='\(fourCC(sel))' scope=\(scopeName(scope)) obj=\(getObjectType(objectID)) pid=\(clientPID) -> \(settable)")
     return noErr
 }
 
@@ -595,8 +603,7 @@ private func driverGetPropertyDataSize(_ driver: AudioServerPlugInDriverRef, _ o
     let sel = address.pointee.mSelector
     let scope = address.pointee.mScope
     let element = address.pointee.mElement
-    // TEMP DEBUG: REMOVE AFTER DIAGNOSIS
-    halLog("[PROBE] GetSize sel='\(fourCC(sel))' scope=\(scopeName(scope)) elem=\(element) obj=\(getObjectType(objectID)) pid=\(clientPID)")
+    halDebugLog("[PROBE] GetSize sel='\(fourCC(sel))' scope=\(scopeName(scope)) elem=\(element) obj=\(getObjectType(objectID)) pid=\(clientPID)")
 
     // UInt32 properties
     let uint32Props: Set<UInt32> = [
@@ -622,7 +629,7 @@ private func driverGetPropertyDataSize(_ driver: AudioServerPlugInDriverRef, _ o
 
     // CFString properties
     let cfstringProps: Set<UInt32> = [
-        kSelector_Name, kSelector_Manufacturer, kSelector_DeviceUID, kSelector_ModelUID,
+        kSelector_Creator, kSelector_Name, kSelector_Manufacturer, kSelector_DeviceUID, kSelector_ModelUID,
         kSelector_ResourceBundle, kSelector_BundleID, kSelector_SerialNumber,
         kSelector_FirmwareVersion, kSelector_ConfigApp
     ]
@@ -634,6 +641,9 @@ private func driverGetPropertyDataSize(_ driver: AudioServerPlugInDriverRef, _ o
 
     // Special cases
     switch sel {
+    case kSelector_ListenerAdded, kSelector_ListenerRemoved:
+        outDataSize.pointee = UInt32(MemoryLayout<AudioObjectPropertyAddress>.size)
+
     case kSelector_DeviceList:
         outDataSize.pointee = UInt32(MemoryLayout<AudioObjectID>.size)  // 1 device
 
@@ -702,8 +712,7 @@ private func driverGetPropertyData(_ driver: AudioServerPlugInDriverRef, _ objec
     let scope = address.pointee.mScope
     let element = address.pointee.mElement
     let state = DriverState.shared
-    // TEMP DEBUG: REMOVE AFTER DIAGNOSIS
-    halLog("[PROBE] GetData sel='\(fourCC(sel))' scope=\(scopeName(scope)) elem=\(element) obj=\(getObjectType(objectID)) pid=\(clientPID) inSize=\(inDataSize)")
+    halDebugLog("[PROBE] GetData sel='\(fourCC(sel))' scope=\(scopeName(scope)) elem=\(element) obj=\(getObjectType(objectID)) pid=\(clientPID) inSize=\(inDataSize)")
 
     switch sel {
     // Class IDs
@@ -761,7 +770,7 @@ private func driverGetPropertyData(_ driver: AudioServerPlugInDriverRef, _ objec
         outData.storeBytes(of: cfStr.toOpaque(), as: UnsafeRawPointer.self)
         outDataSize.pointee = UInt32(MemoryLayout<CFString>.size)
 
-    case kSelector_BundleID:
+    case kSelector_Creator, kSelector_BundleID:
         let cfStr = createCFString("org.spinorama.sotf-hal")
         outData.storeBytes(of: cfStr.toOpaque(), as: UnsafeRawPointer.self)
         outDataSize.pointee = UInt32(MemoryLayout<CFString>.size)
@@ -776,6 +785,15 @@ private func driverGetPropertyData(_ driver: AudioServerPlugInDriverRef, _ objec
         outData.storeBytes(of: kDeviceObjectID, as: AudioObjectID.self)
         outDataSize.pointee = 4
         halLog("Returning device list: [\(kDeviceObjectID)]")
+
+    case kSelector_ListenerAdded, kSelector_ListenerRemoved:
+        let listenerAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioObjectPropertySelectorWildcard,
+            mScope: kAudioObjectPropertyScopeWildcard,
+            mElement: kAudioObjectPropertyElementWildcard
+        )
+        outData.storeBytes(of: listenerAddress, as: AudioObjectPropertyAddress.self)
+        outDataSize.pointee = UInt32(MemoryLayout<AudioObjectPropertyAddress>.size)
 
     // Owned objects
     case kSelector_OwnedObjects:
@@ -991,10 +1009,15 @@ private func driverSetPropertyData(_ driver: AudioServerPlugInDriverRef, _ objec
     let scope = address.pointee.mScope
     let element = address.pointee.mElement
     let state = DriverState.shared
-    // TEMP DEBUG: REMOVE AFTER DIAGNOSIS
-    halLog("[PROBE] SetData sel='\(fourCC(sel))' scope=\(scopeName(scope)) elem=\(element) obj=\(getObjectType(objectID)) pid=\(clientPID) dataSize=\(dataSize)")
+    halDebugLog("[PROBE] SetData sel='\(fourCC(sel))' scope=\(scopeName(scope)) elem=\(element) obj=\(getObjectType(objectID)) pid=\(clientPID) dataSize=\(dataSize)")
 
     switch sel {
+    case kSelector_ListenerAdded, kSelector_ListenerRemoved:
+        if dataSize >= UInt32(MemoryLayout<AudioObjectPropertyAddress>.size) {
+            let listenerAddress = data.load(as: AudioObjectPropertyAddress.self)
+            halDebugLog("Listener \(sel == kSelector_ListenerAdded ? "added" : "removed"): obj=\(getObjectType(objectID)) sel='\(fourCC(listenerAddress.mSelector))' scope=\(scopeName(listenerAddress.mScope)) elem=\(listenerAddress.mElement)")
+        }
+
     case kSelector_NominalSampleRate:
         let newRate = data.load(as: Float64.self)
         if kSupportedSampleRates.contains(newRate) {
@@ -1126,7 +1149,7 @@ private func driverGetZeroTimeStamp(_ driver: AudioServerPlugInDriverRef, _ devi
     }
     ZeroTimeLogger.callCount += 1
     if ZeroTimeLogger.callCount == 1 || ZeroTimeLogger.callCount % 1000 == 0 {
-        halLog("GetZeroTimeStamp[#\(ZeroTimeLogger.callCount)]: sampleTime=\(sampleTime), hostTime=\(hostTime), seed=\(seed)")
+        halDebugLog("GetZeroTimeStamp[#\(ZeroTimeLogger.callCount)]: sampleTime=\(sampleTime), hostTime=\(hostTime), seed=\(seed)")
     }
 
     return noErr
@@ -1159,9 +1182,8 @@ private func driverWillDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ dev
     outWillDo.pointee = DarwinBoolean(willDo)
     outWillDoInPlace.pointee = DarwinBoolean(true)
 
-    // ALWAYS log every call for debugging
     let opName = ioOperationName(operationID)
-    halLog("WillDoIOOperation: op=\(opName) (0x\(String(format: "%08X", operationID)) '\(fourCC(operationID))'), willDo=\(willDo)")
+    halDebugLog("WillDoIOOperation: op=\(opName) (0x\(String(format: "%08X", operationID)) '\(fourCC(operationID))'), willDo=\(willDo)")
 
     return noErr
 }
@@ -1258,19 +1280,18 @@ private func driverDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ deviceO
             halLog("WriteMix: FIRST CALL - frameCount=\(frameCount), channels=\(channelCount), sampleCount=\(sampleCount)")
         }
 
-        let shouldLogDiag = (DiagCounter.count % 200) == 0
+        let shouldLogDiag = kEnableVerboseHALProbeLogging && (DiagCounter.count % 200) == 0
 
         let isConnected = state.sharedAudio.isConnected
         let engineReady = state.sharedAudio.engineReady
 
-        // TEMP DEBUG: REMOVE AFTER DIAGNOSIS — log the moment engineReady changes
         struct EngineReadyTracker {
             static var lastValue: Bool = false
             static var initialized: Bool = false
         }
-        if !EngineReadyTracker.initialized || engineReady != EngineReadyTracker.lastValue {
+        if kEnableVerboseHALProbeLogging && (!EngineReadyTracker.initialized || engineReady != EngineReadyTracker.lastValue) {
             os_log("[ENGINE_READY FLIP] %{public}d -> %{public}d (isConnected=%{public}d)",
-                   log: logger, type: .error,
+                   log: logger, type: .debug,
                    EngineReadyTracker.lastValue ? 1 : 0,
                    engineReady ? 1 : 0,
                    isConnected ? 1 : 0)
@@ -1310,7 +1331,7 @@ private func driverDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ deviceO
             }
 
             os_log("[DIAG] WriteMix: conn=%{public}d eng=%{public}d mainRMS=%{public}.6f mainPeak=%{public}.6f secRMS=%{public}.6f secPeak=%{public}.6f frames=%{public}d sec=%{public}d selectedSec=%{public}d",
-                   log: logger, type: .error,
+                   log: logger, type: .debug,
                    isConnected ? 1 : 0,
                    engineReady ? 1 : 0,
                    mainRms, mainPeak, secRms, secPeak, frameCount,
@@ -1324,15 +1345,15 @@ private func driverDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ deviceO
             // TRACE: Log frames received from macOS apps and written to shared memory
             if framesWritten > 0 {
                 if shouldLogDiag {
-                    os_log("[AUDIO FLOW] HAL WriteMix: %d frames from app -> shm", log: logger, type: .error, framesWritten)
+                    os_log("[AUDIO FLOW] HAL WriteMix: %d frames from app -> shm", log: logger, type: .debug, framesWritten)
                 }
-            } else if framesWritten == 0 {
-                os_log("[AUDIO FLOW] HAL WriteMix: shared-memory write returned 0 for %d frames", log: logger, type: .error, frameCount)
+            } else if framesWritten == 0 && shouldLogDiag {
+                os_log("[AUDIO FLOW] HAL WriteMix: shared-memory write returned 0 for %d frames", log: logger, type: .debug, frameCount)
             }
         } else if shouldLogDiag {
             // Log why we're not sending to daemon
             os_log("[AUDIO FLOW] HAL WriteMix: NOT sending to daemon (isConnected=%{public}d, engineReady=%{public}d)",
-                   log: logger, type: .error,
+                   log: logger, type: .debug,
                    isConnected ? 1 : 0,
                    engineReady ? 1 : 0)
         }

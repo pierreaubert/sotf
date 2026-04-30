@@ -2,7 +2,10 @@
 #
 # Sign and notarize macOS artifacts in dist/
 #
-# Signs DMGs, app bundles, and pkg files produced by the build scripts.
+# Signs DMGs, app bundles inside DMGs, and pkg containers produced by the
+# build scripts. Package payload code must be signed before pkgbuild; for
+# Systemwide packages this is handled by build-dmg-daemon.sh when DEVELOPER_ID
+# is set.
 # Run this AFTER build-dmg-sotf.sh and/or build-dmg-daemon.sh.
 #
 # Usage:
@@ -13,7 +16,7 @@
 # Environment variables:
 #   DEVELOPER_ID             - Developer ID Application certificate name
 #                              Example: "Developer ID Application: Your Name (TEAMID)"
-#   INSTALLER_DEVELOPER_ID   - Developer ID Installer certificate (for .pkg files)
+#   INSTALLER_DEVELOPER_ID   - Developer ID Installer certificate (for .pkg containers)
 #   APPLE_ID                 - Apple ID email for notarization
 #
 
@@ -91,6 +94,68 @@ check_prerequisites() {
         log_error "codesign not found (Xcode Command Line Tools required)"
         exit 1
     fi
+
+    if ! /usr/sbin/pkgutil --help &> /dev/null; then
+        log_error "pkgutil not found (Xcode Command Line Tools required)"
+        exit 1
+    fi
+
+    if [ -n "${INSTALLER_DEVELOPER_ID:-}" ] && ! command -v productsign &> /dev/null; then
+        log_error "productsign not found (Xcode Command Line Tools required)"
+        exit 1
+    fi
+}
+
+is_macho_file() {
+    local file_path="$1"
+    [ -f "$file_path" ] && file "$file_path" | grep -q "Mach-O"
+}
+
+sign_macho_file() {
+    local file_path="$1"
+
+    codesign --force --sign "$DEVELOPER_ID" \
+        --options runtime \
+        --timestamp \
+        "$file_path"
+}
+
+sign_code_bundle() {
+    local bundle_path="$1"
+
+    codesign --force --deep --sign "$DEVELOPER_ID" \
+        --options runtime \
+        --timestamp \
+        "$bundle_path"
+    codesign --verify --verbose=2 --strict "$bundle_path"
+}
+
+sign_payload_code() {
+    local root_dir="$1"
+
+    log_info "  Signing nested Mach-O payloads..."
+    while IFS= read -r -d '' candidate; do
+        if is_macho_file "$candidate"; then
+            sign_macho_file "$candidate"
+            log_info "    Signed Mach-O: ${candidate#$root_dir/}"
+        fi
+    done < <(find "$root_dir" -type f -print0)
+
+    log_info "  Signing code bundles..."
+    while IFS= read -r bundle; do
+        [ -d "$bundle" ] || continue
+        sign_code_bundle "$bundle"
+        log_info "    Signed bundle: ${bundle#$root_dir/}"
+    done < <(
+        find "$root_dir" -type d \( \
+            -name "*.app" -o \
+            -name "*.appex" -o \
+            -name "*.bundle" -o \
+            -name "*.driver" -o \
+            -name "*.framework" -o \
+            -name "*.xpc" \
+        \) -print | awk '{ print length($0) "\t" $0 }' | sort -rn | cut -f2-
+    )
 }
 
 # Sign a DMG file (signs the app bundle inside, then recreates the DMG)
@@ -144,37 +209,7 @@ sign_dmg() {
 
     local staged_app="$staging_dir/$app_name"
 
-    # Sign frameworks/dylibs first (inside-out signing)
-    local frameworks_dir="$staged_app/Contents/Frameworks"
-    if [ -d "$frameworks_dir" ]; then
-        for dylib in "$frameworks_dir"/*; do
-            if [ -f "$dylib" ]; then
-                codesign --force --sign "$DEVELOPER_ID" \
-                    --options runtime \
-                    --timestamp \
-                    "$dylib"
-                log_info "  Signed dylib: $(basename "$dylib")"
-            fi
-        done
-    fi
-
-    # Sign the main binary with hardened runtime + timestamp
-    local binary="$staged_app/Contents/MacOS/"*
-    for bin in $binary; do
-        if [ -f "$bin" ] && file "$bin" | grep -q "Mach-O"; then
-            codesign --force --sign "$DEVELOPER_ID" \
-                --options runtime \
-                --timestamp \
-                "$bin"
-            log_info "  Signed binary: $(basename "$bin")"
-        fi
-    done
-
-    # Sign the whole app bundle
-    codesign --force --sign "$DEVELOPER_ID" \
-        --options runtime \
-        --timestamp \
-        "$staged_app"
+    sign_payload_code "$staging_dir"
 
     # Verify the app bundle signature
     codesign --verify --verbose=2 --strict "$staged_app"
@@ -206,6 +241,11 @@ sign_pkg() {
     fi
 
     log_info "Signing pkg: $(basename "$pkg_path")"
+    log_info "  Payload code must be signed before pkgbuild; signing installer container only."
+    if ! /usr/sbin/pkgutil --payload-files "$pkg_path" >/dev/null; then
+        log_error "Package payload is not readable; rebuild the pkg before signing"
+        exit 1
+    fi
 
     # pkg files use productsign, not codesign
     local signed_pkg="${pkg_path%.pkg}-signed.pkg"

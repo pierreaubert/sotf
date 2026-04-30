@@ -260,6 +260,47 @@ fn plugin_parameter_descriptors(settings: &sotf_audio::PluginSettings) -> Vec<Va
         .collect()
 }
 
+fn sanitize_user_plugins(plugins: Vec<PluginConfig>) -> Vec<PluginConfig> {
+    plugins
+        .into_iter()
+        .filter(|p| {
+            let pt = p.plugin_type.as_str();
+            if pt == "hal_input" || pt == "hal_output" {
+                log::warn!(
+                    "Stripping obsolete '{}' plugin from chain - decoder thread handles driver I/O directly",
+                    pt
+                );
+                false
+            } else if pt == "loudness_monitor" {
+                log::warn!("Stripping user-supplied loudness_monitor - daemon injects metering");
+                false
+            } else {
+                true
+            }
+        })
+        .collect()
+}
+
+fn build_driver_plugin_chain(plugins: Vec<PluginConfig>) -> (Vec<PluginConfig>, usize, usize) {
+    let mut final_plugins = Vec::with_capacity(plugins.len() + 2);
+
+    let input_monitor_index = 0;
+    final_plugins.push(PluginConfig {
+        plugin_type: "loudness_monitor".to_string(),
+        parameters: serde_json::json!({}),
+    });
+
+    final_plugins.extend(plugins);
+
+    let output_monitor_index = final_plugins.len();
+    final_plugins.push(PluginConfig {
+        plugin_type: "loudness_monitor".to_string(),
+        parameters: serde_json::json!({}),
+    });
+
+    (final_plugins, input_monitor_index, output_monitor_index)
+}
+
 #[derive(Clone)]
 struct AudioDaemon {
     manager: Arc<Mutex<AudioEngineManager>>,
@@ -520,25 +561,7 @@ impl AudioDaemon {
         plugins: Vec<PluginConfig>,
         output_channels: usize,
     ) -> Response {
-        // Strip obsolete hal_input/hal_output plugins (toolbar may still send them)
-        let plugins: Vec<PluginConfig> = plugins
-            .into_iter()
-            .filter(|p| {
-                let pt = p.plugin_type.as_str();
-                if pt == "hal_input" || pt == "hal_output" {
-                    log::warn!("Stripping obsolete '{}' plugin from chain — decoder thread handles driver I/O directly", pt);
-                    false
-                } else {
-                    true
-                }
-            })
-            .collect();
-
-        // Also strip loudness_monitor — we auto-inject them at known positions
-        let plugins: Vec<PluginConfig> = plugins
-            .into_iter()
-            .filter(|p| p.plugin_type != "loudness_monitor")
-            .collect();
+        let plugins = sanitize_user_plugins(plugins);
 
         // Store user's plugin configuration BEFORE adding monitors
         *self.current_plugins.lock() = plugins.clone();
@@ -571,7 +594,10 @@ impl AudioDaemon {
             .map(|d| is_safe_output_device_name(d))
             .unwrap_or(false)
         {
-            log::info!("Using selected output device for driver playback: {:?}", output_device);
+            log::info!(
+                "Using selected output device for driver playback: {:?}",
+                output_device
+            );
         } else if output_device.is_some() {
             log::warn!(
                 "Ignoring virtual output device selection {:?}; playback thread will choose a safe device",
@@ -583,25 +609,8 @@ impl AudioDaemon {
         // Stop current playback if running
         let _ = manager.stop();
 
-        // Build final plugin chain: input_monitor + user plugins + output_monitor
-        let mut final_plugins = Vec::with_capacity(plugins.len() + 2);
-
-        // Index 0: input loudness monitor (measures signal before processing)
-        let input_monitor_index = 0;
-        final_plugins.push(PluginConfig {
-            plugin_type: "loudness_monitor".to_string(),
-            parameters: serde_json::json!({}),
-        });
-
-        // User's processing plugins
-        final_plugins.extend(plugins);
-
-        // Last: output loudness monitor (measures signal after processing)
-        let output_monitor_index = final_plugins.len();
-        final_plugins.push(PluginConfig {
-            plugin_type: "loudness_monitor".to_string(),
-            parameters: serde_json::json!({}),
-        });
+        let (final_plugins, input_monitor_index, output_monitor_index) =
+            build_driver_plugin_chain(plugins);
 
         // Store monitor indices for get_metering
         *self.input_loudness_index.lock() = Some(input_monitor_index);
@@ -825,10 +834,38 @@ impl AudioDaemon {
 
     /// Reload the plugin chain from current_plugins (re-injects monitors)
     async fn reload_plugins(&self) -> Response {
-        let plugins = self.current_plugins.lock().clone();
+        let plugins = sanitize_user_plugins(self.current_plugins.lock().clone());
+        *self.current_plugins.lock() = plugins.clone();
         let output_channels = *self.current_output_channels.lock();
-        self.handle_load_plugins_with_channels(plugins, output_channels)
-            .await
+        let (final_plugins, input_monitor_index, output_monitor_index) =
+            build_driver_plugin_chain(plugins.clone());
+
+        *self.input_loudness_index.lock() = Some(input_monitor_index);
+        *self.output_loudness_index.lock() = Some(output_monitor_index);
+
+        let result = {
+            let manager = self.manager.lock();
+            manager.update_plugin_chain(final_plugins)
+        };
+
+        match result {
+            Ok(()) => {
+                self.manager
+                    .lock()
+                    .set_loudness_plugin_index(output_monitor_index);
+                log::info!("Driver plugin chain hot-updated successfully");
+                Response::ok_empty()
+            }
+            Err(e) if e == "No engine running" => {
+                log::info!("No running driver engine; starting driver playback");
+                self.handle_load_plugins_with_channels(plugins, output_channels)
+                    .await
+            }
+            Err(e) => {
+                log::error!("Failed to hot-update plugin chain: {}", e);
+                Response::err(format!("Failed to update plugin chain: {}", e))
+            }
+        }
     }
 
     async fn handle_driver_status(&self) -> Response {

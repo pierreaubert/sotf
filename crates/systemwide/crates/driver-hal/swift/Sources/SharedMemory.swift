@@ -7,6 +7,7 @@
 // - The HAL driver (running as _coreaudiod) gets the console user's UID
 //   to determine which shared memory region to use
 
+import Darwin
 import Foundation
 import SystemConfiguration
 
@@ -16,12 +17,18 @@ private let kSharedMemoryMagic: UInt32 = 0x534F5446
 /// Current protocol version
 /// Version 2: Added encryption fields (encrypted, key_fingerprint, frame_counter)
 /// Version 3: Added config negotiation fields for bidirectional HAL-Daemon sync
-private let kSharedMemoryVersion: UInt32 = 3
+/// Version 4: Added daemon heartbeat for stale-engine detection in the HAL driver
+private let kSharedMemoryVersion: UInt32 = 4
+private let kDaemonHeartbeatTimeoutMs: UInt64 = 3_000
 
 /// Encrypted audio record magic: 'SEA1' (SotF Encrypted Audio v1)
 private let kEncryptedRecordMagic: UInt32 = 0x5345_4131
 private let kEncryptedRecordHeaderBytes = 24
 private let kEncryptedRecordHeaderFloats = kEncryptedRecordHeaderBytes / 4
+
+private func currentUnixMillis() -> UInt64 {
+    return clock_gettime_nsec_np(CLOCK_REALTIME) / 1_000_000
+}
 
 /// Get the shared memory path for the current console user
 ///
@@ -81,6 +88,7 @@ struct SharedAudioHeader {
 
     // Statistics
     var encryptionOverflowCount: UInt64 // Encrypted write drops due to insufficient ring space
+    var daemonHeartbeatMs: UInt64       // Daemon liveness heartbeat in Unix epoch milliseconds
 }
 
 private struct EncryptedRecordMetadata {
@@ -135,7 +143,27 @@ final class SharedAudioBuffer {
     /// because Swift treats `nil != 0` as true for optional comparisons —
     /// callers then see `engineReady=1, isConnected=0` which is nonsense.
     var engineReady: Bool {
-        return (header?.pointee.engineReady ?? 0) != 0
+        guard let header = header, header.pointee.engineReady != 0 else {
+            return false
+        }
+
+        // Protocol v4 treats engineReady as valid only while the daemon keeps
+        // refreshing its heartbeat. This prevents CoreAudio from filling the
+        // ring forever after a daemon crash/stall leaves engineReady stuck at 1.
+        if header.pointee.version < 4 {
+            return true
+        }
+
+        let heartbeat = header.pointee.daemonHeartbeatMs
+        guard heartbeat != 0 else {
+            return false
+        }
+
+        let now = currentUnixMillis()
+        if now < heartbeat {
+            return true
+        }
+        return now - heartbeat <= kDaemonHeartbeatTimeoutMs
     }
 
     /// Debug: get connection state details
@@ -144,8 +172,17 @@ final class SharedAudioBuffer {
         let magic = header?.pointee.magic ?? 0
         let expectedMagic = kSharedMemoryMagic
         let magicMatch = magic == expectedMagic
+        let version = header?.pointee.version ?? 0
         let engineFlag = header?.pointee.engineReady ?? 0
-        return "mem=\(hasMem), magic=0x\(String(format: "%08X", magic)) (expected 0x\(String(format: "%08X", expectedMagic))), magicMatch=\(magicMatch), engineReady=\(engineFlag)"
+        let heartbeat = (version >= 4) ? (header?.pointee.daemonHeartbeatMs ?? 0) : 0
+        let heartbeatAge: String
+        if heartbeat == 0 {
+            heartbeatAge = "none"
+        } else {
+            let now = currentUnixMillis()
+            heartbeatAge = now >= heartbeat ? "\(now - heartbeat)ms" : "future"
+        }
+        return "mem=\(hasMem), magic=0x\(String(format: "%08X", magic)) (expected 0x\(String(format: "%08X", expectedMagic))), magicMatch=\(magicMatch), version=\(version), engineReadyFlag=\(engineFlag), engineReady=\(engineReady), daemonHeartbeatMs=\(heartbeat), daemonHeartbeatAge=\(heartbeatAge)"
     }
 
     /// Initialize shared memory

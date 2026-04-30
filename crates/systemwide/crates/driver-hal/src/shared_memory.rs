@@ -16,12 +16,20 @@ const SHARED_MEMORY_MAGIC: u32 = 0x534F5446;
 /// Current protocol version
 /// Version 2: Added encryption fields (encrypted, key_fingerprint, frame_counter)
 /// Version 3: Added config negotiation fields for bidirectional HAL-Daemon sync
-const SHARED_MEMORY_VERSION: u32 = 3;
+/// Version 4: Added daemon heartbeat for stale-engine detection in the HAL driver
+const SHARED_MEMORY_VERSION: u32 = 4;
 
 /// Encrypted audio record magic: 'SEA1' (SotF Encrypted Audio v1)
 const ENCRYPTED_RECORD_MAGIC: u32 = 0x5345_4131;
 const ENCRYPTED_RECORD_HEADER_BYTES: usize = 24;
 const ENCRYPTED_RECORD_HEADER_SLOTS: usize = ENCRYPTED_RECORD_HEADER_BYTES / 4;
+
+fn current_unix_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
+}
 
 #[derive(Debug, Clone, Copy)]
 struct EncryptedRecordHeader {
@@ -185,6 +193,8 @@ pub struct SharedAudioHeader {
     // Statistics
     /// Number of times encrypted write failed due to insufficient buffer space
     pub encryption_overflow_count: AtomicU64,
+    /// Daemon liveness heartbeat in Unix epoch milliseconds.
+    pub daemon_heartbeat_ms: AtomicU64,
 }
 
 /// Shared audio buffer for communication with Swift HAL driver
@@ -277,6 +287,7 @@ impl SharedAudioBuffer {
         header.config_source.store(0, Ordering::Release);
         header.config_error_code = 0;
         header.encryption_overflow_count.store(0, Ordering::Release);
+        header.daemon_heartbeat_ms.store(0, Ordering::Release);
     }
 
     /// Create or open the shared memory file and initialize it when needed.
@@ -474,9 +485,22 @@ impl SharedAudioBuffer {
 
     /// Set engine ready flag
     pub fn set_engine_ready(&self, ready: bool) {
+        let heartbeat = if ready { current_unix_millis() } else { 0 };
+        self.header()
+            .daemon_heartbeat_ms
+            .store(heartbeat, Ordering::Release);
         self.header()
             .engine_ready
             .store(if ready { 1 } else { 0 }, Ordering::Release);
+    }
+
+    /// Refresh the daemon liveness heartbeat read by the HAL driver.
+    pub fn refresh_daemon_heartbeat(&self) {
+        if self.header().engine_ready.load(Ordering::Acquire) != 0 {
+            self.header()
+                .daemon_heartbeat_ms
+                .store(current_unix_millis(), Ordering::Release);
+        }
     }
 
     /// Get sample rate
@@ -1553,6 +1577,7 @@ impl HalInputReader {
         let count = READ_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         if let Some(buf) = &self.buffer {
+            buf.refresh_daemon_heartbeat();
             // Log state every 100 reads (~2 seconds)
             if count.is_multiple_of(100) {
                 let header = buf.header();
@@ -1564,8 +1589,12 @@ impl HalInputReader {
                     .load(std::sync::atomic::Ordering::Acquire);
                 let available_frames = buf.available_read_frames();
 
+                let daemon_heartbeat_ms = header
+                    .daemon_heartbeat_ms
+                    .load(std::sync::atomic::Ordering::Acquire);
+
                 log::info!(
-                    "[HAL INPUT] State: wpos={}, rpos={}, available={} frames, driver_ready={}, engine_ready={}, active={}",
+                    "[HAL INPUT] State: wpos={}, rpos={}, available={} frames, driver_ready={}, engine_ready={}, active={}, heartbeat_ms={}",
                     write_pos,
                     read_pos,
                     available_frames,
@@ -1577,7 +1606,8 @@ impl HalInputReader {
                         .engine_ready
                         .load(std::sync::atomic::Ordering::Acquire)
                         != 0,
-                    header.active.load(std::sync::atomic::Ordering::Acquire) != 0
+                    header.active.load(std::sync::atomic::Ordering::Acquire) != 0,
+                    daemon_heartbeat_ms
                 );
             }
 
@@ -1659,7 +1689,10 @@ impl HalInputReader {
         let shared_frames = self
             .buffer
             .as_ref()
-            .map(|b| b.available_read_frames())
+            .map(|b| {
+                b.refresh_daemon_heartbeat();
+                b.available_read_frames()
+            })
             .unwrap_or(0);
         let pending_samples = self
             .pending_decrypted_samples
@@ -1887,7 +1920,7 @@ mod tests {
     #[test]
     fn test_header_size() {
         // Ensure header is packed correctly
-        // Version 3 added config negotiation fields, so header grew
+        // Version 4 added daemon heartbeat after config negotiation fields.
         assert!(std::mem::size_of::<SharedAudioHeader>() <= 192);
     }
 
@@ -1931,6 +1964,7 @@ mod tests {
             config_error_code: 0,
             // Statistics
             encryption_overflow_count: AtomicU64::new(0),
+            daemon_heartbeat_ms: AtomicU64::new(0),
         };
 
         // Create buffer with header bytes
@@ -2789,11 +2823,25 @@ mod tests {
         buffer.set_engine_ready(true);
         let engine_ready = buffer.header().engine_ready.load(Ordering::Acquire);
         assert_eq!(engine_ready, 1, "Engine should now be ready");
+        let first_heartbeat = buffer.header().daemon_heartbeat_ms.load(Ordering::Acquire);
+        assert!(
+            first_heartbeat > 0,
+            "Engine ready should publish a daemon heartbeat"
+        );
+
+        buffer.refresh_daemon_heartbeat();
+        let refreshed_heartbeat = buffer.header().daemon_heartbeat_ms.load(Ordering::Acquire);
+        assert!(
+            refreshed_heartbeat >= first_heartbeat,
+            "Heartbeat should be monotonic while engine is ready"
+        );
 
         // Clear engine ready
         buffer.set_engine_ready(false);
         let engine_ready = buffer.header().engine_ready.load(Ordering::Acquire);
         assert_eq!(engine_ready, 0, "Engine should now be not ready");
+        let heartbeat = buffer.header().daemon_heartbeat_ms.load(Ordering::Acquire);
+        assert_eq!(heartbeat, 0, "Engine not ready should clear heartbeat");
     }
 
     #[test]

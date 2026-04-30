@@ -67,13 +67,21 @@ class AudioEngineClient {
     /// Legacy socket path for backwards compatibility
     private static let legacySocketPath = "/tmp/autoeq_audio.sock"
 
+    static func socketPaths() -> [String] {
+        let securePath = getSecureSocketPath()
+        if securePath == legacySocketPath {
+            return [securePath]
+        }
+        return [securePath, legacySocketPath]
+    }
+
     /// Try secure path first, then legacy path
     private var socketPath: String {
-        let securePath = Self.getSecureSocketPath()
-        if FileManager.default.fileExists(atPath: securePath) {
-            return securePath
+        for path in Self.socketPaths() {
+            if FileManager.default.fileExists(atPath: path) {
+                return path
+            }
         }
-        // Fall back to legacy path (might be a symlink to secure path)
         return Self.legacySocketPath
     }
 
@@ -759,6 +767,14 @@ class DaemonManager {
         }
     }
 
+    private func removeStaleSockets() {
+        for path in AudioEngineClient.socketPaths() {
+            if FileManager.default.fileExists(atPath: path) {
+                try? FileManager.default.removeItem(atPath: path)
+            }
+        }
+    }
+
     /// Start the daemon if not already running
     func startDaemon() {
         guard !isShuttingDown else { return }
@@ -771,6 +787,7 @@ class DaemonManager {
 
         // Kill any existing daemon processes not managed by us
         killExistingDaemons()
+        removeStaleSockets()
 
         // Check if daemon exists
         guard FileManager.default.isExecutableFile(atPath: daemonPath) else {
@@ -2094,7 +2111,10 @@ struct ConfigurationView: View {
         loadingDevices = true
 
         DispatchQueue.global(qos: .utility).async {
-            let loadedDevices = AudioEngineClient().listDevices()
+            var loadedDevices = AudioEngineClient().listDevices()
+            if loadedDevices.isEmpty {
+                loadedDevices = detectOutputDevicesViaCoreAudio()
+            }
 
             DispatchQueue.main.async {
                 loadingDevices = false
@@ -2194,6 +2214,155 @@ struct ConfigurationView: View {
                 }
             }
         }
+    }
+
+    /// Enumerate output devices directly through CoreAudio when the daemon is not reachable.
+    private func detectOutputDevicesViaCoreAudio() -> [AudioEngineClient.AudioDevice] {
+        var propertyAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        var dataSize: UInt32 = 0
+        var status = AudioObjectGetPropertyDataSize(
+            AudioObjectID(kAudioObjectSystemObject),
+            &propertyAddress,
+            0,
+            nil,
+            &dataSize
+        )
+
+        guard status == noErr else {
+            print("Failed to get CoreAudio device list size: \(status)")
+            return []
+        }
+
+        let deviceCount = Int(dataSize) / MemoryLayout<AudioDeviceID>.size
+        var deviceIDs = [AudioDeviceID](repeating: 0, count: deviceCount)
+
+        status = AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &propertyAddress,
+            0,
+            nil,
+            &dataSize,
+            &deviceIDs
+        )
+
+        guard status == noErr else {
+            print("Failed to get CoreAudio device list: \(status)")
+            return []
+        }
+
+        let defaultOutputDevice = getDefaultOutputDeviceID()
+        var outputDevices: [AudioEngineClient.AudioDevice] = []
+        var seenNames = Set<String>()
+
+        for deviceID in deviceIDs {
+            let channels = getOutputChannelCount(deviceID: deviceID)
+            guard channels > 0,
+                  let name = getDeviceName(deviceID: deviceID),
+                  !seenNames.contains(name) else {
+                continue
+            }
+
+            seenNames.insert(name)
+            outputDevices.append(AudioEngineClient.AudioDevice(
+                name: name,
+                is_default: deviceID == defaultOutputDevice,
+                channels: channels,
+                sample_rate: getNominalSampleRate(deviceID: deviceID)
+            ))
+        }
+
+        return outputDevices
+    }
+
+    private func getDefaultOutputDeviceID() -> AudioDeviceID {
+        var propertyAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        var deviceID = AudioDeviceID(0)
+        var dataSize = UInt32(MemoryLayout<AudioDeviceID>.size)
+        let status = AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &propertyAddress,
+            0,
+            nil,
+            &dataSize,
+            &deviceID
+        )
+
+        return status == noErr ? deviceID : AudioDeviceID(0)
+    }
+
+    private func getOutputChannelCount(deviceID: AudioDeviceID) -> Int {
+        var propertyAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyStreamConfiguration,
+            mScope: kAudioDevicePropertyScopeOutput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        var dataSize: UInt32 = 0
+        var status = AudioObjectGetPropertyDataSize(
+            deviceID,
+            &propertyAddress,
+            0,
+            nil,
+            &dataSize
+        )
+
+        guard status == noErr, dataSize >= UInt32(MemoryLayout<AudioBufferList>.size) else {
+            return 0
+        }
+
+        let bufferListPointer = UnsafeMutableRawPointer.allocate(
+            byteCount: Int(dataSize),
+            alignment: MemoryLayout<AudioBufferList>.alignment
+        )
+        defer { bufferListPointer.deallocate() }
+
+        status = AudioObjectGetPropertyData(
+            deviceID,
+            &propertyAddress,
+            0,
+            nil,
+            &dataSize,
+            bufferListPointer
+        )
+
+        guard status == noErr else {
+            return 0
+        }
+
+        let audioBufferList = bufferListPointer.bindMemory(to: AudioBufferList.self, capacity: 1)
+        return UnsafeMutableAudioBufferListPointer(audioBufferList)
+            .reduce(0) { $0 + Int($1.mNumberChannels) }
+    }
+
+    private func getNominalSampleRate(deviceID: AudioDeviceID) -> Int? {
+        var propertyAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyNominalSampleRate,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        var sampleRate = Float64(0)
+        var dataSize = UInt32(MemoryLayout<Float64>.size)
+        let status = AudioObjectGetPropertyData(
+            deviceID,
+            &propertyAddress,
+            0,
+            nil,
+            &dataSize,
+            &sampleRate
+        )
+
+        return status == noErr && sampleRate > 0 ? Int(sampleRate.rounded()) : nil
     }
 
     /// Get the name of an audio device by its ID
