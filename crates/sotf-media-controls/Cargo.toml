@@ -1,9 +1,9 @@
 [package]
 name = "sotf-media-controls"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
 description = "Cross-platform OS media controls (NowPlaying / MPRIS / SMTC) for SOTF apps."
-license = "MIT"
+license.workspace = true
 
 [dependencies]
 log = { workspace = true }

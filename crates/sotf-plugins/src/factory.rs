@@ -116,8 +116,16 @@ pub fn create_plugin(
         }
 
         "downmix" => {
-            let params: DownmixPluginParams = serde_json::from_value(parameters.clone())
+            let mut params: DownmixPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse downmix params: {e}"))?;
+            if params.input_channels != channels {
+                log::info!(
+                    "[factory:downmix] Adapting input_channels from {} to current chain width {}",
+                    params.input_channels,
+                    channels
+                );
+                params.input_channels = channels;
+            }
             let plugin = DownmixPlugin::from_params(params);
             Ok(Box::new(plugin))
         }

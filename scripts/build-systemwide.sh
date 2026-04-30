@@ -424,6 +424,8 @@ create_app_bundle() {
     <string>APPL</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
+    <key>CFBundleIconName</key>
+    <string>AppIcon</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>LSUIElement</key>
@@ -457,7 +459,74 @@ EOF
     # Create app icon
     create_app_icon
 
+    # Compile sotf-systemwide.icon (Icon Composer Liquid Glass bundle) if
+    # present. This produces an Assets.car alongside the legacy .icns so
+    # macOS 26+ uses the modern icon while older systems fall back to icns.
+    compile_modern_app_icon
+
     log_success "App bundle created at $APP_BUNDLE"
+}
+
+# Compile Icon Composer .icon bundle into Assets.car using actool.
+# Falls through silently if the .icon bundle hasn't been authored yet —
+# in that case the .icns produced by create_app_icon is the only icon.
+compile_modern_app_icon() {
+    local icon_bundle="$CONFIGBAR_DIR/assets/sotf-systemwide.icon"
+
+    if [ ! -d "$icon_bundle" ]; then
+        log_info "No sotf-systemwide.icon bundle found; using .icns only"
+        return 0
+    fi
+
+    if ! xcrun --find actool >/dev/null 2>&1; then
+        log_warning "actool not found (install Xcode); skipping .icon compilation"
+        return 0
+    fi
+
+    log_info "Compiling sotf-systemwide.icon via actool..."
+
+    # actool requires an Assets.xcassets parent. Stage one in a tmp dir
+    # with the icon renamed to AppIcon.icon so CFBundleIconName=AppIcon
+    # resolves it.
+    local tmp_assets
+    tmp_assets="$(mktemp -d)/Assets.xcassets"
+    mkdir -p "$tmp_assets"
+    cat > "$tmp_assets/Contents.json" << 'JSON'
+{
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}
+JSON
+    /usr/bin/ditto "$icon_bundle" "$tmp_assets/AppIcon.icon"
+
+    local partial_plist
+    partial_plist="$(mktemp)"
+
+    if ! xcrun actool \
+        --compile "$APP_BUNDLE/Contents/Resources" \
+        --platform macosx \
+        --minimum-deployment-target 13.0 \
+        --app-icon AppIcon \
+        --include-all-app-icons \
+        --output-partial-info-plist "$partial_plist" \
+        --target-device mac \
+        "$tmp_assets" 2>&1 | sed 's/^/    /'; then
+        log_warning "actool failed to compile sotf-systemwide.icon; .icns fallback will be used"
+        rm -rf "$(dirname "$tmp_assets")"
+        rm -f "$partial_plist"
+        return 0
+    fi
+
+    rm -rf "$(dirname "$tmp_assets")"
+    rm -f "$partial_plist"
+
+    if [ -f "$APP_BUNDLE/Contents/Resources/Assets.car" ]; then
+        log_success "Liquid Glass icon compiled to Assets.car"
+    else
+        log_warning "actool succeeded but no Assets.car produced"
+    fi
 }
 
 # Create app icon

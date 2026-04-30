@@ -1011,77 +1011,50 @@ class StatusBarController: NSObject, ObservableObject {
         }
     }
 
-    /// Build a vector template image so AppKit can tint it for the menu bar appearance.
+    /// Load the menu bar icon from the bundled PNG assets so updates to
+    /// crates/systemwide/crates/daemon/configbar/assets/* propagate without
+    /// editing Swift. Combines the 1x and @2x reps into a single template
+    /// NSImage; AppKit picks the correct rep for the screen and tints it
+    /// for the menu bar appearance.
     private func makeMenuBarIcon() -> NSImage {
-        let iconSize = NSSize(width: 22, height: 22)
-        let image = NSImage(size: iconSize, flipped: false) { rect in
-            let viewBox: CGFloat = 24
-            let scale = min(rect.width, rect.height) / viewBox
-            let xOffset = rect.minX + (rect.width - viewBox * scale) / 2
-            let yOffset = rect.minY + (rect.height - viewBox * scale) / 2
+        let logicalSize = NSSize(width: 22, height: 22)
+        let image = NSImage(size: logicalSize)
 
-            func point(_ x: CGFloat, _ y: CGFloat) -> NSPoint {
-                NSPoint(x: xOffset + x * scale, y: yOffset + (viewBox - y) * scale)
+        let bundle = Bundle.main
+        let names: [(String, String)] = [
+            ("icon_22", "png"),
+            ("icon_22@2x", "png"),
+        ]
+
+        var added = 0
+        for (name, ext) in names {
+            guard
+                let path = bundle.path(forResource: name, ofType: ext),
+                let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+                let rep = NSBitmapImageRep(data: data)
+            else {
+                continue
             }
-
-            func svgRect(x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat) -> NSRect {
-                NSRect(
-                    x: xOffset + x * scale,
-                    y: yOffset + (viewBox - y - height) * scale,
-                    width: width * scale,
-                    height: height * scale
-                )
-            }
-
-            let strokeColor = NSColor.black
-            strokeColor.setStroke()
-            strokeColor.setFill()
-
-            let strokeWidth = 2.0 * scale
-
-            let headband = NSBezierPath()
-            headband.lineWidth = strokeWidth
-            headband.lineCapStyle = .round
-            headband.lineJoinStyle = .round
-            headband.move(to: point(3, 11.5))
-            headband.curve(
-                to: point(21, 11.5),
-                controlPoint1: point(3.5, 3.6),
-                controlPoint2: point(20.5, 3.6)
-            )
-            headband.stroke()
-
-            for rectSpec in [
-                (x: CGFloat(1), y: CGFloat(11.5), width: CGFloat(4), height: CGFloat(7), radius: CGFloat(2)),
-                (x: CGFloat(19), y: CGFloat(11.5), width: CGFloat(4), height: CGFloat(7), radius: CGFloat(2)),
-                (x: CGFloat(8), y: CGFloat(7), width: CGFloat(8), height: CGFloat(13), radius: CGFloat(1)),
-            ] {
-                let path = NSBezierPath(
-                    roundedRect: svgRect(
-                        x: rectSpec.x,
-                        y: rectSpec.y,
-                        width: rectSpec.width,
-                        height: rectSpec.height
-                    ),
-                    xRadius: rectSpec.radius * scale,
-                    yRadius: rectSpec.radius * scale
-                )
-                path.lineWidth = strokeWidth
-                path.stroke()
-            }
-
-            NSBezierPath(
-                ovalIn: svgRect(x: 11, y: 9, width: 2, height: 2)
-            ).fill()
-
-            let dial = NSBezierPath(
-                ovalIn: svgRect(x: 10, y: 13, width: 4, height: 4)
-            )
-            dial.lineWidth = strokeWidth
-            dial.stroke()
-
-            return true
+            // Logical (point) size stays 22x22 for both reps; the @2x rep
+            // keeps its 44x44 pixel backing because pixelsWide/pixelsHigh
+            // are inferred from the file.
+            rep.size = logicalSize
+            image.addRepresentation(rep)
+            added += 1
         }
+
+        if added == 0 {
+            // Asset files missing — fall back to a system symbol so the
+            // status item still has something visible.
+            if let fallback = NSImage(
+                systemSymbolName: "headphones",
+                accessibilityDescription: "SotF"
+            ) {
+                fallback.isTemplate = true
+                return fallback
+            }
+        }
+
         image.isTemplate = true
         return image
     }
@@ -1593,7 +1566,8 @@ struct ConfigurationView: View {
                         }
                         .pickerStyle(.menu)
                         .frame(width: 150)
-                        .onChange(of: halInputChannels) { _, _ in
+                        .onChange(of: halInputChannels) { _, newValue in
+                            syncMeterArrays(inputChannels: newValue)
                             applyHALConfiguration()
                         }
 
@@ -1684,7 +1658,8 @@ struct ConfigurationView: View {
                         }
                         .pickerStyle(.menu)
                         .frame(width: 150)
-                        .onChange(of: halOutputChannels) { _, _ in
+                        .onChange(of: halOutputChannels) { _, newValue in
+                            syncMeterArrays(outputChannels: min(max(newValue, 1), 32))
                             applyHALConfiguration()
                         }
 
@@ -2085,8 +2060,30 @@ struct ConfigurationView: View {
         outputPeaks = nextOutputPeaks
     }
 
+    private func syncMeterArrays(inputChannels: Int? = nil, outputChannels: Int? = nil) {
+        if let inputChannels {
+            inputPeaks = resizedPeaks(inputPeaks, count: inputChannels)
+            inputPeakHolds = resizedPeaks(inputPeakHolds, count: inputChannels)
+        }
+        if let outputChannels {
+            outputPeaks = resizedPeaks(outputPeaks, count: outputChannels)
+            outputPeakHolds = resizedPeaks(outputPeakHolds, count: outputChannels)
+        }
+    }
+
+    private func resizedPeaks(_ peaks: [Double], count: Int) -> [Double] {
+        let target = min(max(count, 1), 32)
+        if peaks.count == target {
+            return peaks
+        }
+        if peaks.count > target {
+            return Array(peaks.prefix(target))
+        }
+        return peaks + Array(repeating: 0.0, count: target - peaks.count)
+    }
+
     private func sanitizedPeaks(_ peaks: [Double]) -> [Double] {
-        peaks.map { peak in
+        peaks.prefix(32).map { peak in
             guard peak.isFinite, peak > 0 else {
                 return 0.0
             }
@@ -2757,6 +2754,7 @@ struct ConfigurationView: View {
                     }
                     if config.channelCount != 0 {
                         halInputChannels = Int(config.channelCount)
+                        syncMeterArrays(inputChannels: Int(config.channelCount))
                     }
                 } else {
                     halConfigError = "Failed to get HAL config (daemon may not be running)"

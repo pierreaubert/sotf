@@ -10,6 +10,10 @@
   layouts does not leave the HAL stuck at 2 channels.
 - The toolbar input/output channel controls now expose up to 32 channels and
   send the selected HAL input channel count to the daemon.
+- The Systemwide configuration meters now keep N-channel meter slots visible
+  before analyzer data arrives, the loudness analyzer reports up to 32
+  per-channel meter values, and runtime Downmix creation adapts to the current
+  chain width so adding Downmix reduces the post-chain monitor to 2 channels.
 
 ## Systemwide package upgrade and app identity
 

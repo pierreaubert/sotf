@@ -1384,8 +1384,16 @@ fn create_plugin_legacy(
         "downmix" => {
             use sotf_plugins::{DownmixPlugin, DownmixPluginParams};
 
-            let params: DownmixPluginParams = serde_json::from_value(parameters.clone())
+            let mut params: DownmixPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse downmix parameters: {}", e))?;
+            if params.input_channels != channels {
+                log::info!(
+                    "[create_plugin:downmix] Adapting input_channels from {} to current chain width {}",
+                    params.input_channels,
+                    channels
+                );
+                params.input_channels = channels;
+            }
 
             let plugin = DownmixPlugin::from_params(params);
             Ok(Box::new(plugin))
@@ -1571,6 +1579,27 @@ mod tests {
                 ),
             }
         }
+    }
+
+    #[test]
+    fn test_downmix_adapts_to_current_chain_channel_count() {
+        let sample_rate = 48000;
+        let settings = PluginSettings::default_for(&PluginType::Downmix);
+        let config = settings.to_plugin_config(sample_rate as f64);
+
+        let plugin = create_plugin(&config.plugin_type, &config.parameters, 10, sample_rate)
+            .expect("downmix should adapt default parameters to the chain width");
+        assert_eq!(plugin.input_channels(), 10);
+        assert_eq!(plugin.output_channels(), 2);
+
+        let (host, warnings) = build_plugin_host(std::slice::from_ref(&config), sample_rate, 10)
+            .expect("host should load adaptive downmix");
+        assert!(
+            warnings.is_empty(),
+            "adaptive downmix should not be skipped: {:?}",
+            warnings
+        );
+        assert_eq!(host.output_channels(), 2);
     }
 
     #[test]

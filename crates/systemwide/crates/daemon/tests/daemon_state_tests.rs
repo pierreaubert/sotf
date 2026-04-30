@@ -90,6 +90,19 @@ fn daemon_load_plugins_carries_hal_input_channels() {
 }
 
 #[test]
+fn daemon_metering_returns_channel_sized_fallbacks() {
+    let source = include_str!("../bin/sotf_daemon.rs");
+
+    assert!(
+        source.contains("fn empty_loudness_json(channels: usize)")
+            && source.contains("\"channel_peaks\": vec![0.0; channels]")
+            && source.contains("empty_loudness_json(fallback_input_channels)")
+            && source.contains("empty_loudness_json(fallback_output_channels)"),
+        "get_metering should return zeroed N-channel meter payloads until analyzer data is available"
+    );
+}
+
+#[test]
 fn daemon_pkg_preinstall_quiesces_running_daemon_before_upgrade() {
     let source = include_str!("../../../../../scripts/build-systemwide.sh");
     let preinstall_start = source
@@ -188,6 +201,12 @@ fn configbar_output_device_refresh_tracks_channel_limits() {
             && rack.contains("exclamationmark.triangle.fill")
             && rack.contains("speakerConfigChannels"),
         "plugin rack should warn when plugin layouts exceed the interface channels"
+    );
+    assert!(
+        configbar.contains("syncMeterArrays(inputChannels: newValue)")
+            && configbar.contains("private func resizedPeaks")
+            && configbar.contains("peaks.prefix(32)"),
+        "toolbar meters should resize and clamp to the current N-channel layout"
     );
 }
 

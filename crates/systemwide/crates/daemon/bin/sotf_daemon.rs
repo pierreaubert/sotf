@@ -189,6 +189,19 @@ fn loudness_info_to_json(info: &sotf_audio::LoudnessInfo) -> Value {
     })
 }
 
+fn empty_loudness_json(channels: usize) -> Value {
+    let channels = channels.clamp(1, MAX_HAL_CHANNELS);
+    serde_json::json!({
+        "momentary": -60.0,
+        "short_term": -60.0,
+        "integrated": -60.0,
+        "peak": 0.0,
+        "channel_peaks": vec![0.0; channels],
+        "true_peaks_dbtp": vec![-120.0; channels],
+        "correlation_lr": null,
+    })
+}
+
 fn parameter_descriptor_to_json(spec: &sotf_plugins::param_specs::ParamSpec) -> Value {
     use sotf_plugins::param_specs::{ParamType, UpdateMode};
 
@@ -736,6 +749,8 @@ impl AudioDaemon {
         let manager = self.manager.lock();
         let input_idx = *self.input_loudness_index.lock();
         let output_idx = *self.output_loudness_index.lock();
+        let fallback_input_channels = *self.current_input_channels.lock();
+        let fallback_output_channels = manager.get_engine_state().num_channels;
 
         let input_data = input_idx.and_then(|idx| {
             manager
@@ -752,11 +767,11 @@ impl AudioDaemon {
         let input_json = input_data
             .as_ref()
             .map(loudness_data_to_json)
-            .unwrap_or(serde_json::json!(null));
+            .unwrap_or_else(|| empty_loudness_json(fallback_input_channels));
         let output_json = output_data
             .as_ref()
             .map(loudness_data_to_json)
-            .unwrap_or(serde_json::json!(null));
+            .unwrap_or_else(|| empty_loudness_json(fallback_output_channels));
 
         Response::ok(serde_json::json!({
             "input": input_json,

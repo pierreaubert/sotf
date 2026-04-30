@@ -69,10 +69,10 @@ impl LoudnessMonitor {
         d.integrated_lufs = self.ebur128.loudness_global().unwrap_or(-120.0);
 
         // Pre-allocate temporary slices on stack for speed
-        let mut peaks = [0.0f64; 16];
-        let mut tps = [0.0f64; 16];
+        let mut peaks = [0.0f64; 32];
+        let mut tps = [0.0f64; 32];
         let nc = self.channels as usize;
-        let nc_clamped = nc.min(16);
+        let nc_clamped = nc.min(32);
 
         for ch in 0..nc_clamped {
             peaks[ch] = self.ebur128.prev_sample_peak(ch as u32).unwrap_or(0.0);

@@ -54,6 +54,28 @@ fn test_loudness_monitor_stereo() {
 }
 
 #[test]
+fn test_loudness_monitor_keeps_32_channel_peak_slots() {
+    let channels = 32;
+    let mut monitor = LoudnessMonitorPlugin::new(channels).unwrap();
+    monitor.initialize(48000).unwrap();
+
+    let num_frames = 1024;
+    let input = vec![0.05_f32; num_frames * channels];
+    let mut output = vec![0.0; input.len()];
+    let context = ProcessContext {
+        sample_rate: 48000,
+        num_frames,
+    };
+
+    monitor.process(&input, &mut output, &context).unwrap();
+
+    let data = monitor.get_data().unwrap();
+    let loudness = data.downcast_ref::<LoudnessData>().unwrap();
+    assert_eq!(loudness.channel_peaks.len(), channels);
+    assert_eq!(loudness.true_peaks_dbtp.len(), channels);
+}
+
+#[test]
 fn test_spectrum_analyzer_stereo() {
     // Create a spectrum analyzer for stereo audio
     let config = SpectrumConfig {
