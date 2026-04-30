@@ -258,12 +258,12 @@ EOF
 
     cat >> "$release_file" << EOF
 \`\`\`bash
-codesign -dv --verbose=2 SotF-macos-arm64-${VERSION}.dmg
+codesign -dv --verbose=2 SotF-${VERSION}-macos-arm64.dmg
 \`\`\`
 
 Verify notarization:
 \`\`\`bash
-spctl -a -vv --type install SotF-macos-arm64-${VERSION}.dmg
+spctl -a -vv --type install SotF-${VERSION}-macos-arm64.dmg
 \`\`\`
 
 For the app bundle inside the DMG:
@@ -282,10 +282,10 @@ EOF
 
     cat >> "$release_file" << EOF
 \`\`\`bash
-cosign verify-blob --bundle SotF-${VERSION}-aarch64.AppImage.bundle \\
+cosign verify-blob --bundle SotF-${VERSION}-linux-aarch64.AppImage.bundle \\
   --certificate-identity=pierre0aubert@gmail.com \\
   --certificate-oidc-issuer=https://accounts.google.com \\
-  SotF-${VERSION}-aarch64.AppImage
+  SotF-${VERSION}-linux-aarch64.AppImage
 \`\`\`
 EOF
 
@@ -314,22 +314,22 @@ append_release_row() {
     local files=""
     case "$key" in
         macos-arm64)
-            files="SotF-macos-arm64-${VERSION}.dmg:DMG sotf-tui-macos-arm64-${VERSION}:TUI%20binary"
+            files="SotF-${VERSION}-macos-arm64.dmg:DMG sotf-tui-${VERSION}-macos-arm64:TUI%20binary"
             ;;
         macos-x86_64)
-            files="SotF-macos-x86_64-${VERSION}.dmg:DMG sotf-tui-macos-x86_64-${VERSION}:TUI%20binary"
+            files="SotF-${VERSION}-macos-x86_64.dmg:DMG sotf-tui-${VERSION}-macos-x86_64:TUI%20binary"
             ;;
         linux-arm64)
-            files="SotF-${VERSION}-linux-arm64.tar.gz:tarball SotF-${VERSION}-aarch64.AppImage:AppImage"
+            files="SotF-${VERSION}-linux-arm64.tar.gz:tarball SotF-${VERSION}-linux-aarch64.AppImage:AppImage"
             ;;
         linux-x86_64)
-            files="SotF-${VERSION}-linux-x86_64.tar.gz:tarball SotF-${VERSION}-x86_64.AppImage:AppImage"
+            files="SotF-${VERSION}-linux-x86_64.tar.gz:tarball SotF-${VERSION}-linux-x86_64.AppImage:AppImage"
             ;;
         windows-arm64)
-            files="sotf-tui-windows-arm64-${VERSION}.exe:TUI%20exe"
+            files="sotf-tui-${VERSION}-windows-arm64.exe:TUI%20exe"
             ;;
         windows-x86_64)
-            files="sotf-tui-windows-x86_64-${VERSION}.exe:TUI%20exe"
+            files="sotf-tui-${VERSION}-windows-x86_64.exe:TUI%20exe"
             ;;
     esac
 
@@ -386,12 +386,12 @@ const builds = [
     icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>`,
     variants: [
       { arch: 'ARM64 (Apple Silicon)', quality: 'beta', signature: 'Apple Developer ID', files: [
-        { label: 'DMG', file: `SotF-macos-arm64-${version}.dmg` },
-        { label: 'TUI binary', file: `sotf-tui-macos-arm64-${version}` },
+        { label: 'DMG', file: `SotF-${version}-macos-arm64.dmg` },
+        { label: 'TUI binary', file: `sotf-tui-${version}-macos-arm64` },
       ]},
       { arch: 'x86_64 (Intel)', quality: 'alpha', signature: 'Apple Developer ID', files: [
-        { label: 'DMG', file: `SotF-macos-x86_64-${version}.dmg` },
-        { label: 'TUI binary', file: `sotf-tui-macos-x86_64-${version}` },
+        { label: 'DMG', file: `SotF-${version}-macos-x86_64.dmg` },
+        { label: 'TUI binary', file: `sotf-tui-${version}-macos-x86_64` },
       ]},
     ],
   },
@@ -400,11 +400,11 @@ const builds = [
     icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12.504 0c-.155 0-.315.008-.48.021-4.226.333-3.105 4.807-3.17 6.298-.076 1.092-.3 1.953-1.05 3.02-.885 1.051-2.127 2.75-2.716 4.521-.278.832-.41 1.684-.287 2.489a.424.424 0 00-.11.135c-.26.268-.45.6-.663.839-.199.199-.485.267-.797.4-.313.136-.658.269-.864.68-.09.189-.136.394-.132.602 0 .199.027.4.055.536.058.399.116.728.04.97-.249.68-.28 1.145-.106 1.484.174.334.535.47.94.601.81.2 1.91.135 2.774.6.926.466 1.866.67 2.616.47.526-.116.97-.464 1.208-.946.587-.003 1.23-.269 2.26-.334.699-.058 1.574.267 2.577.2a.42.42 0 00.114.333l.003.003c.391.778 1.113 1.368 1.884 1.43.39.033.77-.396 1.164-.664.136-.468.085-.1.003-.146-.246-.86.356-.165.535-.066.12.262-.06.609-.003.79.18.18.396.27.637.27.36 0 .756-.2 1.052-.394.296-.199.526-.465.656-.73.237-.563.03-1.204.087-1.55.057-.33.153-.577.253-.868.138-.413-.1-.763-.32-.902-.248-.098-.51-.137-.536-.316-.04-.247.135-.725.272-1.1.157-.51.303-1.136-.03-1.533l-.001-.002c-.17-.232-.484-.2-.703-.034-.186.248-.343.523-.484.84-.094.194-.192.38-.3.498-.052.063-.11.092-.171.116a.46.46 0 01-.065-.096c-.198-.398-.332-.726-.465-1.03-.135-.31-.27-.606-.428-.87-.088-.15-.23-.286-.354-.446-.125-.16-.235-.323-.236-.417 0-.056.017-.074.08-.074h.004c.218 0 .47.018.674.064l.003.001c.282.067.546.2.762.372a.65.65 0 00.03-.128c.037-.27-.01-.517-.16-.606a1.357 1.357 0 00-.399-.113l-.002-.001a5.32 5.32 0 00-.754-.057c-.283 0-.559.036-.773.098a4.4 4.4 0 01-.065-.38c-.02-.156-.033-.32-.033-.467 0-.291.035-.492.118-.63l.003-.005c.076-.112.17-.163.295-.163.104 0 .225.037.344.084l.003.002c.252.114.503.257.703.387l.13.08c.093.053.157.068.214.068.152 0 .233-.148.233-.309 0-.133-.07-.334-.18-.465-.265-.363-.603-.602-.91-.724l-.006-.003c-.27-.111-.604-.17-.887-.17-.348 0-.71.063-1 .194-.01-.097-.01-.197-.01-.3 0-1.16.224-2.173.65-3.02.416-.83 1.014-1.47 1.74-1.906a.425.425 0 00.207-.368c0-.22-.18-.4-.4-.4a.404.404 0 00-.176.04c-.837.491-1.504 1.206-1.957 2.108-.455.897-.697 1.986-.697 3.247 0 .16.003.32.013.48-.377.254-.732.574-1.019.971-.35-.178-.738-.28-1.13-.3a1.975 1.975 0 00-.34-.006 2.44 2.44 0 00-.32.031c-.095-.28-.153-.478-.153-.605 0-.159.024-.295.104-.495l.004-.005c.058-.123.165-.322.304-.557.138-.234.302-.495.459-.751l.002-.002c.306-.504.606-1.02.75-1.468.144-.454.162-.887-.085-1.148l-.001-.002c-.17-.175-.465-.268-.782-.268-.318 0-.607.093-.804.268l-.001.001c-.263.214-.45.498-.555.81-.247.76-.26 1.537-.216 2.37-.157.24-.289.469-.38.686a2.58 2.58 0 00-.204.834c-.007.164-.009.33.004.5-.293.05-.556.12-.78.22l-.127.063c-.2-.47-.406-.94-.556-1.413-.22-.61-.35-1.24-.35-1.725 0-.625.124-1.114.363-1.468l.002-.003c.238-.342.572-.567.983-.697.412-.133.928-.177 1.488-.177h.012c.728 0 1.551.084 2.166.33.618.239 1.048.642 1.048 1.377 0 .237-.078.465-.196.672l-.005.008a.401.401 0 00-.018.39.399.399 0 00.527.163l.005-.003c.296-.152.5-.383.65-.648.15-.267.243-.573.243-.89 0-.58-.22-1.072-.589-1.455-.368-.382-.87-.63-1.407-.794l-.005-.002c-.677-.2-1.483-.296-2.362-.296-.629 0-1.203.049-1.712.215a2.62 2.62 0 00-1.337.928c-.356.485-.539 1.108-.539 1.877 0 .58.149 1.277.38 1.935.19.558.43 1.094.652 1.576-.075.082-.137.17-.183.265l-.005.011c-.156.348-.217.74-.23 1.14-.014.405.017.828.07 1.214-.197.323-.345.67-.424 1.033-.12.561-.097 1.152.23 1.618l.008.012.009.01c.23.25.527.377.83.412a3.252 3.252 0 001.06-.053c.126.078.259.148.392.209.165.075.333.137.497.184a2.455 2.455 0 00-.163.667c-.026.303.008.604.087.87a.423.423 0 00.532.27l.002-.001c.157-.049.29-.11.427-.19.136-.078.26-.175.34-.295l.002-.003c.211-.337.19-.708.1-1.021a2.606 2.606 0 00-.32-.645l-.007-.01a4.13 4.13 0 01-.14-.246c.14-.097.26-.208.36-.337.143-.183.237-.395.283-.638l.005.002c.184.065.37.113.55.137l.007.001c.455.065.877-.065 1.178-.359.115.248.262.485.438.705.264.335.592.607.974.773.02.008.04.014.06.023.044.29.128.576.272.838a.424.424 0 00.564.179l.002-.001c.258-.133.41-.34.497-.572.087-.232.107-.497.06-.763l-.002-.007c-.06-.341-.197-.677-.359-.975l-.002-.004a1.42 1.42 0 01.068-.07c.176-.2.314-.412.37-.638.06-.228.04-.44-.05-.627z"/></svg>`,
     variants: [
       { arch: 'ARM64', quality: 'alpha', signature: 'cosign (Sigstore)', files: [
-        { label: 'AppImage', file: `SotF-${version}-aarch64.AppImage` },
+        { label: 'AppImage', file: `SotF-${version}-linux-aarch64.AppImage` },
         { label: 'tarball', file: `SotF-${version}-linux-arm64.tar.gz` },
       ]},
       { arch: 'x86_64', quality: 'alpha', signature: 'cosign (Sigstore)', files: [
-        { label: 'AppImage', file: `SotF-${version}-x86_64.AppImage` },
+        { label: 'AppImage', file: `SotF-${version}-linux-x86_64.AppImage` },
         { label: 'tarball', file: `SotF-${version}-linux-x86_64.tar.gz` },
       ]},
     ],
@@ -414,10 +414,10 @@ const builds = [
     icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M3 12V6.5l8-1.1V12H3zm0 .5h8v6.6l-8-1.1V12.5zm9 0h9V3l-9 1.2V12.5zm0 .5v6.3L21 21v-8H12z"/></svg>`,
     variants: [
       { arch: 'ARM64', quality: 'alpha', signature: 'self-signed', files: [
-        { label: 'TUI exe', file: `sotf-tui-windows-arm64-${version}.exe` },
+        { label: 'TUI exe', file: `sotf-tui-${version}-windows-arm64.exe` },
       ]},
       { arch: 'x86_64', quality: 'alpha', signature: 'self-signed', files: [
-        { label: 'TUI exe', file: `sotf-tui-windows-x86_64-${version}.exe` },
+        { label: 'TUI exe', file: `sotf-tui-${version}-windows-x86_64.exe` },
       ]},
     ],
   },

@@ -96,7 +96,7 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           mkdir -p dist
           cargo build --release -p sotf-tui --bin sotf-tui
-          cp target/release/sotf-tui.exe "dist/sotf-tui-windows-x86_64-${VERSION}.exe"
+          cp target/release/sotf-tui.exe "dist/sotf-tui-${VERSION}-windows-x86_64.exe"
 
       - name: Build MSIX package
         shell: bash

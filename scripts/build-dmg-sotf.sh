@@ -73,11 +73,12 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Build DMG filename with optional arch
+# Build DMG filename: <product>-<version>-<os>-<arch>.dmg
+# When no arch is given, build a universal binary and tag it as such.
 if [ -n "$ARCH" ]; then
-    DMG_FILENAME="$APP_NAME-macos-${ARCH}-${VERSION}.dmg"
+    DMG_FILENAME="$APP_NAME-${VERSION}-macos-${ARCH}.dmg"
 else
-    DMG_FILENAME="$APP_NAME-${VERSION}.dmg"
+    DMG_FILENAME="$APP_NAME-${VERSION}-macos-universal.dmg"
 fi
 
 # Color output

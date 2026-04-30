@@ -75,12 +75,12 @@ jobs:
         with:
           name: macos-artifacts
           path: |
-            dist/SotF-macos-arm64-*.dmg
-            dist/SotF-macos-x86_64-*.dmg
-            dist/sotf-tui-macos-arm64-*
-            dist/sotf-tui-macos-x86_64-*
-            dist/SotF-macos-arm64-*[!.dmg]
-            dist/SotF-macos-x86_64-*[!.dmg]
+            dist/SotF-*-macos-arm64.dmg
+            dist/SotF-*-macos-x86_64.dmg
+            dist/sotf-tui-*-macos-arm64
+            dist/sotf-tui-*-macos-x86_64
+            dist/SotF-*-macos-arm64
+            dist/SotF-*-macos-x86_64
             dist/au/SOTFAudioUnits-*.zip
           retention-days: 7
 
@@ -140,8 +140,8 @@ jobs:
           name: linux-artifacts
           path: |
             dist/SotF-*-linux-*.tar.gz
-            dist/SotF-*-x86_64.AppImage
-            dist/SotF-*-aarch64.AppImage
+            dist/SotF-*-linux-x86_64.AppImage
+            dist/SotF-*-linux-aarch64.AppImage
             dist/*.bundle
           retention-days: 7
 
@@ -175,7 +175,7 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           mkdir -p dist
           cargo build --release -p sotf-tui --bin sotf-tui
-          cp target/release/sotf-tui.exe "dist/sotf-tui-windows-x86_64-${VERSION}.exe"
+          cp target/release/sotf-tui.exe "dist/sotf-tui-${VERSION}-windows-x86_64.exe"
 
       - name: Sign Windows executables
         if: env.WINDOWS_CERT_THUMBPRINT != ''
@@ -197,7 +197,7 @@ jobs:
         with:
           name: windows-artifacts
           path: |
-            dist/sotf-tui-windows-x86_64-*.exe
+            dist/sotf-tui-*-windows-x86_64.exe
             dist/SotF-*-windows-x64.msix
           retention-days: 7
 

@@ -499,7 +499,7 @@ create_appimage() {
     # Build AppImage with linuxdeploy
     local arch
     arch=$(uname -m)
-    export OUTPUT="$DIST_DIR/${APP_NAME}-${VERSION}-${arch}.AppImage"
+    export OUTPUT="$DIST_DIR/${APP_NAME}-${VERSION}-linux-${arch}.AppImage"
 
     local deploy_args=(
         --appdir "$appdir"
@@ -766,8 +766,8 @@ main() {
         log_info "Size: $(du -h "$DIST_DIR/${tarball_name}.tar.gz" | cut -f1)"
     fi
 
-    if $CREATE_APPIMAGE && [ -f "$DIST_DIR/${APP_NAME}-${VERSION}-$(uname -m).AppImage" ]; then
-        log_info "AppImage: $DIST_DIR/${APP_NAME}-${VERSION}-$(uname -m).AppImage"
+    if $CREATE_APPIMAGE && [ -f "$DIST_DIR/${APP_NAME}-${VERSION}-linux-$(uname -m).AppImage" ]; then
+        log_info "AppImage: $DIST_DIR/${APP_NAME}-${VERSION}-linux-$(uname -m).AppImage"
     fi
 
     local deb_file="$DIST_DIR/sotf_${VERSION}_${deb_arch}.deb"

@@ -19,6 +19,7 @@
 #   ./build-release-local.sh --skip-sign         # Skip all signing
 #   ./build-release-local.sh --skip-site         # Skip site/docs update
 #   ./build-release-local.sh --post-only         # Only post-build steps (sign, checksums, site)
+#   ./build-release-local.sh --clean-remote      # Wipe target/, dist/, etc. on remote builders before building
 #   ./build-release-local.sh --config <file>     # Use alternate config file
 #
 # Configuration:
@@ -63,6 +64,7 @@ SKIP_MACOS=false
 SKIP_SIGN=false
 SKIP_SITE=false
 POST_ONLY=false
+CLEAN_REMOTE=false
 INIT_CONFIG=false
 
 # Parse arguments
@@ -75,6 +77,7 @@ while [[ $# -gt 0 ]]; do
         --skip-sign)     SKIP_SIGN=true; shift ;;
         --skip-site)     SKIP_SITE=true; shift ;;
         --post-only)     POST_ONLY=true; shift ;;
+        --clean-remote)  CLEAN_REMOTE=true; shift ;;
         --init-config)   INIT_CONFIG=true; shift ;;
         --config)        CONFIG_FILE="$2"; shift 2 ;;
         --help|-h)
@@ -278,6 +281,8 @@ detect_win_rsync() {
         candidates+=(
             "/c/msys64/usr/bin/rsync"
             "/c/msys64/mingw64/bin/rsync"
+            "/c/msys64/ucrt64/bin/rsync"
+            "/c/cygwin64/bin/rsync"
             "/usr/bin/rsync"
             "/mingw64/bin/rsync"
             "/c/Program Files/Git/usr/bin/rsync"
@@ -658,7 +663,9 @@ build_linux() {
     log_step "Syncing source to ${host}:${remote_dir}..."
     if $DRY_RUN; then
         log_dry "rsync project to ${host}:${remote_dir}"
-        log_dry "ssh ${host} 'rm -rf ${remote_dir}/{target,target-static,node_modules,dist,venv}'"
+        if $CLEAN_REMOTE; then
+            log_dry "ssh ${host} 'rm -rf ${remote_dir}/{target,target-static,node_modules,dist,venv}'"
+        fi
     else
         # Ensure remote directory exists
         ssh_cmd "$host" "$port" "$key" "mkdir -p '$remote_dir'"
@@ -667,11 +674,14 @@ build_linux() {
             record_result "Linux sync: FAILED"
             return
         fi
-        # Remove build artifacts on remote so we start clean
-        log_step "Cleaning build artifacts on remote..."
-        ssh_cmd "$host" "$port" "$key" \
-            "rm -rf '$remote_dir/target' '$remote_dir/target-static' '$remote_dir/node_modules' '$remote_dir/dist' '$remote_dir/venv'" \
-            || log_warning "Remote cleanup failed (non-fatal)"
+        if $CLEAN_REMOTE; then
+            log_step "Cleaning build artifacts on remote (--clean-remote)..."
+            ssh_cmd "$host" "$port" "$key" \
+                "rm -rf '$remote_dir/target' '$remote_dir/target-static' '$remote_dir/node_modules' '$remote_dir/dist' '$remote_dir/venv'" \
+                || log_warning "Remote cleanup failed (non-fatal)"
+        else
+            log_info "Reusing remote build artifacts (pass --clean-remote to wipe)"
+        fi
         log_success "Source synced"
     fi
 
@@ -771,7 +781,9 @@ build_windows() {
     log_step "Syncing source to ${host}:${remote_dir}..."
     if $DRY_RUN; then
         log_dry "rsync project to ${host}:${remote_dir}"
-        log_dry "win_ssh_cmd ${host} 'rm -rf ${remote_dir}/{target,target-static,node_modules,dist,venv}'"
+        if $CLEAN_REMOTE; then
+            log_dry "win_ssh_cmd ${host} 'rm -rf ${remote_dir}/{target,target-static,node_modules,dist,venv}'"
+        fi
     else
         # Create remote directory via Git Bash
         win_ssh_cmd "$host" "$port" "$key" "mkdir -p ${remote_dir}" 2>/dev/null || true
@@ -781,11 +793,14 @@ build_windows() {
             record_result "Windows sync: FAILED"
             return
         fi
-        # Remove build artifacts on remote so we start clean
-        log_step "Cleaning build artifacts on remote..."
-        win_ssh_cmd "$host" "$port" "$key" \
-            "rm -rf ${remote_dir}/target ${remote_dir}/target-static ${remote_dir}/node_modules ${remote_dir}/dist ${remote_dir}/venv" \
-            || log_warning "Remote cleanup failed (non-fatal)"
+        if $CLEAN_REMOTE; then
+            log_step "Cleaning build artifacts on remote (--clean-remote)..."
+            win_ssh_cmd "$host" "$port" "$key" \
+                "rm -rf ${remote_dir}/target ${remote_dir}/target-static ${remote_dir}/node_modules ${remote_dir}/dist ${remote_dir}/venv" \
+                || log_warning "Remote cleanup failed (non-fatal)"
+        else
+            log_info "Reusing remote build artifacts (pass --clean-remote to wipe)"
+        fi
         log_success "Source synced"
     fi
 
@@ -793,7 +808,8 @@ build_windows() {
     log_step "Building Windows x86_64 (native MSVC on remote)..."
     local win_build_cmd="cd ${remote_dir} && mkdir -p dist"
     win_build_cmd+=" && cargo build --release -p sotf-tui --bin sotf-tui"
-    win_build_cmd+=" && cp target/release/sotf-tui.exe dist/sotf-tui-windows-x86_64-${VERSION}.exe"
+    # Canonical artifact naming: <product>-<version>-<os>-<arch>.<ext>
+    win_build_cmd+=" && cp target/release/sotf-tui.exe dist/sotf-tui-${VERSION}-windows-x86_64.exe"
 
     if $DRY_RUN; then
         log_dry "win_ssh_cmd ${host} '${win_build_cmd}'"
@@ -864,6 +880,11 @@ post_build() {
     log_phase "Phase 4: Post-Build (signing, checksums, site)"
     start_timer
 
+    # --- Normalize artifact filenames to <product>-<version>-<os>-<arch>.<ext> ---
+    # Some helper scripts (e.g. build-dmg-sotf.sh) emit <product>-<os>-<arch>-<version>.<ext>;
+    # rename them here so checksums and cosign signatures use the canonical name.
+    normalize_artifact_names
+
     # --- Cosign non-Apple artifacts ---
     if ! $SKIP_SIGN; then
         sign_with_cosign
@@ -881,6 +902,51 @@ post_build() {
     fi
 
     log_success "Post-build complete ($(elapsed))"
+}
+
+normalize_artifact_names() {
+    log_step "Normalizing artifact filenames..."
+
+    if $DRY_RUN; then
+        log_dry "Rename any <product>-<os>-<arch>-<version>.<ext> in dist/ to <product>-<version>-<os>-<arch>.<ext>"
+        return
+    fi
+
+    # Match: <product>-<os>-<arch>-<version>.<ext>
+    # Use bash regex with BASH_REMATCH; .ext intentionally greedy so .tar.gz survives.
+    local pattern='^(.+)-(macos|darwin|linux|windows|win)-(arm64|aarch64|x86_64|amd64|x86|arm)-([0-9]+\.[0-9]+\.[0-9]+)(\..+)$'
+    local renamed=0
+    shopt -s nullglob
+    for f in "$DIST_DIR"/*; do
+        [ -f "$f" ] || continue
+        local base
+        base=$(basename "$f")
+        if [[ "$base" =~ $pattern ]]; then
+            local product="${BASH_REMATCH[1]}"
+            local os="${BASH_REMATCH[2]}"
+            local arch="${BASH_REMATCH[3]}"
+            local ver="${BASH_REMATCH[4]}"
+            local ext="${BASH_REMATCH[5]}"
+            local newname="${product}-${ver}-${os}-${arch}${ext}"
+            if [ "$base" = "$newname" ]; then
+                continue
+            fi
+            if [ -e "$DIST_DIR/$newname" ]; then
+                log_warning "Skip rename: target exists ($newname)"
+                continue
+            fi
+            log_info "Renaming: $base → $newname"
+            mv "$f" "$DIST_DIR/$newname"
+            renamed=$((renamed + 1))
+        fi
+    done
+    shopt -u nullglob
+
+    if [ "$renamed" -gt 0 ]; then
+        log_success "Renamed $renamed artifact(s) to canonical naming"
+    else
+        log_info "No artifacts needed renaming"
+    fi
 }
 
 sign_with_cosign() {
@@ -923,9 +989,10 @@ sign_with_cosign() {
             *) continue ;;
         esac
 
-        # Respect --skip-* flags: only sign artifacts for platforms we built
+        # Respect --skip-* flags: only sign artifacts for platforms we built.
+        # Canonical naming carries the OS segment, so a single substring match suffices.
         case "$name" in
-            *linux*|*aarch64*|*x86_64*.AppImage)
+            *linux*)
                 if $SKIP_LINUX; then continue; fi ;;
             *windows*|*.exe|*.msix)
                 if $SKIP_WINDOWS; then continue; fi ;;

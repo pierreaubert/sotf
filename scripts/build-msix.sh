@@ -29,6 +29,37 @@
 
 set -euo pipefail
 
+# When invoked over SSH on Windows (Git Bash), tools installed via MSYS2's
+# pacman live under /c/msys64/usr/bin and are NOT on Git Bash's default PATH.
+# Prepend known MSYS2 / Cygwin bin dirs so `command -v zip` etc. succeed.
+for msys_bin in \
+    /c/msys64/usr/bin \
+    /c/msys64/mingw64/bin \
+    /c/msys64/ucrt64/bin \
+    /c/cygwin64/bin \
+    "/c/Program Files/Git/usr/bin"; do
+    if [ -d "$msys_bin" ] && [[ ":$PATH:" != *":$msys_bin:"* ]]; then
+        PATH="$msys_bin:$PATH"
+    fi
+done
+export PATH
+
+# Suggest the right install command for whichever environment we're running in.
+install_hint() {
+    local pkg="$1"
+    if command -v pacman &> /dev/null; then
+        echo "pacman -S $pkg"
+    elif command -v apt &> /dev/null; then
+        echo "apt install $pkg"
+    elif command -v dnf &> /dev/null; then
+        echo "dnf install $pkg"
+    elif command -v brew &> /dev/null; then
+        echo "brew install $pkg"
+    else
+        echo "(install $pkg via your OS package manager)"
+    fi
+}
+
 # Paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -179,7 +210,7 @@ resolve_certificate() {
     # Priority 3: generate a new self-signed cert
     if ! command -v openssl &> /dev/null; then
         log_error "openssl is required to generate a self-signed certificate"
-        log_info "Install with: apt install openssl"
+        log_info "Install with: $(install_hint openssl)"
         exit 1
     fi
 
@@ -208,14 +239,15 @@ check_prerequisites() {
 
     if ! command -v zip &> /dev/null; then
         log_error "zip is required but not found"
-        log_info "Install with: apt install zip"
+        log_info "Searched PATH: $PATH"
+        log_info "Install with: $(install_hint zip)"
         exit 1
     fi
 
     if $SIGN; then
         if ! command -v osslsigncode &> /dev/null; then
             log_error "osslsigncode is required for signing but not found"
-            log_info "Install with: apt install osslsigncode"
+            log_info "Install with: $(install_hint osslsigncode)"
             exit 1
         fi
         resolve_certificate

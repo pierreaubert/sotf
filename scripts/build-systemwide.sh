@@ -814,7 +814,7 @@ UNINSTALL_SCRIPT
 create_dmg_file() {
     log_info "Creating DMG..."
 
-    local dmg_path="$DMG_DIR/SotF-Systemwide-$VERSION.dmg"
+    local dmg_path="$DMG_DIR/SotF-Systemwide-$VERSION-macos.dmg"
     local dmg_temp="$DMG_DIR/temp.dmg"
 
     rm -f "$dmg_path" "$dmg_temp"
@@ -898,7 +898,7 @@ create_dmg_hdiutil() {
 create_pkg() {
     log_info "Creating installer package..."
 
-    local pkg_path="$DMG_DIR/SotF-Systemwide-$VERSION.pkg"
+    local pkg_path="$DMG_DIR/SotF-Systemwide-$VERSION-macos.pkg"
     local pkg_root="$DMG_DIR/pkg-root"
     local pkg_scripts="$DMG_DIR/pkg-scripts"
     local hal_pkg_scripts="$DMG_DIR/pkg-scripts-hal"
@@ -1365,7 +1365,7 @@ main() {
         log_success "Build complete!"
         log_info "=========================================="
 
-        local dmg_path="$DMG_DIR/SotF-Systemwide-$VERSION.dmg"
+        local dmg_path="$DMG_DIR/SotF-Systemwide-$VERSION-macos.dmg"
         if [ -f "$dmg_path" ]; then
             mkdir -p "$PROJECT_ROOT/dist"
             cp "$dmg_path" "$PROJECT_ROOT/dist/"
@@ -1383,7 +1383,7 @@ main() {
         log_success "Build complete!"
         log_info "=========================================="
 
-        local pkg_path="$DMG_DIR/SotF-Systemwide-$VERSION.pkg"
+        local pkg_path="$DMG_DIR/SotF-Systemwide-$VERSION-macos.pkg"
         if [ -f "$pkg_path" ]; then
             mkdir -p "$PROJECT_ROOT/dist"
             cp "$pkg_path" "$PROJECT_ROOT/dist/"
