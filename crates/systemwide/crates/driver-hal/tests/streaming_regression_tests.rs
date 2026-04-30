@@ -382,6 +382,44 @@ fn swift_probe_logging_is_gated_off_by_default() {
 }
 
 #[test]
+fn swift_query_interface_does_not_leak_iunknown_refs() {
+    let source =
+        read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/SotFHALDriver.swift");
+    let query_interface = function_body(&source, "private func queryInterface");
+    let release = function_body(&source, "private func release");
+    let iunknown_start = query_interface
+        .find("uuidBytesEqual(iid, kIUnknownUUIDBytes)")
+        .expect("QueryInterface must handle IUnknown explicitly");
+    let driver_start = query_interface
+        .find("uuidBytesEqual(iid, kAudioServerPlugInDriverInterfaceUUIDBytes)")
+        .expect("QueryInterface must handle the CoreAudio driver interface explicitly");
+    let iunknown_branch = &query_interface[iunknown_start..driver_start];
+
+    assert!(
+        iunknown_branch.contains("ppv.pointee = self_"),
+        "IUnknown queries should return the existing factory interface"
+    );
+    assert!(
+        !iunknown_branch.contains("addRef")
+            && !iunknown_branch.contains("OSAtomicIncrement32(&gRefCount)"),
+        "IUnknown queries on the factory interface must not bump gRefCount"
+    );
+    assert!(
+        query_interface.contains("if driverInterface != self_")
+            && query_interface.contains("_ = addRef(driverInterface)"),
+        "QueryInterface should AddRef only when returning a different interface pointer"
+    );
+    assert!(
+        query_interface.contains("return kHRESULTNoInterface"),
+        "unsupported interface IDs must not be accepted or retained"
+    );
+    assert!(
+        release.contains("if newCount < 0") && release.contains("OSAtomicIncrement32(&gRefCount)"),
+        "Release must not leave gRefCount negative after an unmatched release"
+    );
+}
+
+#[test]
 fn swift_write_mix_falls_back_to_secondary_buffer() {
     let source =
         read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/SotFHALDriver.swift");

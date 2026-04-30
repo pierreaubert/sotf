@@ -1375,12 +1375,68 @@ private func driverEndIOOperation(_ driver: AudioServerPlugInDriverRef, _ device
 // Multiple CoreAudio clients can call AddRef/Release concurrently
 private var gRefCount: Int32 = 1
 
+private let kHRESULTOK: HRESULT = 0
+private let kHRESULTNoInterface = HRESULT(bitPattern: 0x80000004)
+private let kHRESULTPointer = HRESULT(bitPattern: 0x80000005)
+
+private let kIUnknownUUIDBytes = CFUUIDBytes(
+    byte0: 0x00, byte1: 0x00, byte2: 0x00, byte3: 0x00,
+    byte4: 0x00, byte5: 0x00, byte6: 0x00, byte7: 0x00,
+    byte8: 0xC0, byte9: 0x00, byte10: 0x00, byte11: 0x00,
+    byte12: 0x00, byte13: 0x00, byte14: 0x00, byte15: 0x46
+)
+
+private let kAudioServerPlugInDriverInterfaceUUIDBytes = CFUUIDBytes(
+    byte0: 0xEE, byte1: 0xA5, byte2: 0x77, byte3: 0x3D,
+    byte4: 0xCC, byte5: 0x43, byte6: 0x49, byte7: 0xF1,
+    byte8: 0x8E, byte9: 0x00, byte10: 0x8F, byte11: 0x96,
+    byte12: 0xE7, byte13: 0xD2, byte14: 0x3B, byte15: 0x17
+)
+
+private func uuidBytesEqual(_ lhs: CFUUIDBytes, _ rhs: CFUUIDBytes) -> Bool {
+    return lhs.byte0 == rhs.byte0 &&
+        lhs.byte1 == rhs.byte1 &&
+        lhs.byte2 == rhs.byte2 &&
+        lhs.byte3 == rhs.byte3 &&
+        lhs.byte4 == rhs.byte4 &&
+        lhs.byte5 == rhs.byte5 &&
+        lhs.byte6 == rhs.byte6 &&
+        lhs.byte7 == rhs.byte7 &&
+        lhs.byte8 == rhs.byte8 &&
+        lhs.byte9 == rhs.byte9 &&
+        lhs.byte10 == rhs.byte10 &&
+        lhs.byte11 == rhs.byte11 &&
+        lhs.byte12 == rhs.byte12 &&
+        lhs.byte13 == rhs.byte13 &&
+        lhs.byte14 == rhs.byte14 &&
+        lhs.byte15 == rhs.byte15
+}
+
 private func queryInterface(_ self_: UnsafeMutableRawPointer?, _ iid: REFIID, _ ppv: UnsafeMutablePointer<LPVOID?>?) -> HRESULT {
     halLog("QueryInterface")
-    guard let ppv = ppv else { return -2147467261 }  // E_POINTER
-    ppv.pointee = self_
-    OSAtomicIncrement32(&gRefCount)
-    return 0  // S_OK
+    guard let ppv = ppv else { return kHRESULTPointer }
+
+    ppv.pointee = nil
+    guard let self_ = self_ else { return kHRESULTPointer }
+
+    if uuidBytesEqual(iid, kIUnknownUUIDBytes) {
+        ppv.pointee = self_
+        return kHRESULTOK
+    }
+
+    if uuidBytesEqual(iid, kAudioServerPlugInDriverInterfaceUUIDBytes) {
+        guard let driverRef = gDriverRef else { return kHRESULTPointer }
+        let driverInterface = UnsafeMutableRawPointer(driverRef)
+        ppv.pointee = driverInterface
+
+        if driverInterface != self_ {
+            _ = addRef(driverInterface)
+        }
+
+        return kHRESULTOK
+    }
+
+    return kHRESULTNoInterface
 }
 
 private func addRef(_ self_: UnsafeMutableRawPointer?) -> ULONG {
@@ -1390,7 +1446,11 @@ private func addRef(_ self_: UnsafeMutableRawPointer?) -> ULONG {
 
 private func release(_ self_: UnsafeMutableRawPointer?) -> ULONG {
     let newCount = OSAtomicDecrement32(&gRefCount)
-    return ULONG(max(0, newCount))
+    if newCount < 0 {
+        _ = OSAtomicIncrement32(&gRefCount)
+        return 0
+    }
+    return ULONG(newCount)
 }
 
 // MARK: - Driver Interface
