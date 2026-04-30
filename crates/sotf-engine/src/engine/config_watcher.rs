@@ -9,7 +9,7 @@
 // - Unix signals: SIGHUP (reload), SIGTERM/SIGINT (shutdown)
 // - Windows: File watching only (no signal support)
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -48,6 +48,7 @@ impl ConfigWatcher {
         let (event_tx, event_rx) = channel();
         let (shutdown_tx, shutdown_rx) = channel();
         let shutdown_tx_thread = shutdown_tx.clone();
+        let (startup_tx, startup_rx) = channel();
 
         let thread_handle = thread::Builder::new()
             .name("config-watcher".to_string())
@@ -58,11 +59,24 @@ impl ConfigWatcher {
                     event_tx,
                     shutdown_tx_thread,
                     shutdown_rx,
+                    startup_tx,
                 ) {
                     log::debug!("[Config Watcher] Error: {}", e);
                 }
             })
             .map_err(|e| format!("Failed to spawn config watcher thread: {}", e))?;
+
+        match startup_rx.recv() {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                thread_handle.join().ok();
+                return Err(e);
+            }
+            Err(_) => {
+                thread_handle.join().ok();
+                return Err("Config watcher thread exited before startup completed".to_string());
+            }
+        }
 
         Ok(Self {
             event_rx,
@@ -103,6 +117,7 @@ fn run_config_watcher(
     event_tx: Sender<ConfigEvent>,
     shutdown_tx: Sender<()>,
     shutdown_rx: Receiver<()>,
+    startup_tx: Sender<Result<(), String>>,
 ) -> Result<(), String> {
     log::debug!("[Config Watcher] Starting");
     log::debug!("[Config Watcher]   Config file: {:?}", config_path);
@@ -110,7 +125,13 @@ fn run_config_watcher(
 
     // Setup file watcher if config path provided
     let _file_watcher = if let Some(ref path) = config_path {
-        Some(setup_file_watcher(path.clone(), event_tx.clone())?)
+        match setup_file_watcher(path.clone(), event_tx.clone()) {
+            Ok(watcher) => Some(watcher),
+            Err(e) => {
+                startup_tx.send(Err(e.clone())).ok();
+                return Err(e);
+            }
+        }
     } else {
         None
     };
@@ -118,7 +139,13 @@ fn run_config_watcher(
     // Setup signal handler if requested (Unix only)
     #[cfg(unix)]
     let signal_flags = if watch_signals {
-        Some(setup_signal_handler()?)
+        match setup_signal_handler() {
+            Ok(flags) => Some(flags),
+            Err(e) => {
+                startup_tx.send(Err(e.clone())).ok();
+                return Err(e);
+            }
+        }
     } else {
         None
     };
@@ -129,6 +156,7 @@ fn run_config_watcher(
     }
 
     log::debug!("[Config Watcher] Ready");
+    startup_tx.send(Ok(())).ok();
 
     // Main loop - check for signals and shutdown requests
     loop {
@@ -169,11 +197,13 @@ fn setup_file_watcher(
     config_path: PathBuf,
     event_tx: Sender<ConfigEvent>,
 ) -> Result<notify::RecommendedWatcher, String> {
-    use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+    use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 
     log::debug!("[Config Watcher] Watching file: {:?}", config_path);
 
-    let config_path_clone = config_path.clone();
+    let event_config_path = config_path.clone();
+    let match_config_path = normalized_config_path(&config_path);
+    let config_path_clone = match_config_path.clone();
 
     // Debouncing state: tracks the last event time and if event is pending
     #[derive(Clone, Copy)]
@@ -190,7 +220,7 @@ fn setup_file_watcher(
     }));
 
     let debounce_event_tx = event_tx.clone();
-    let debounce_config_path = config_path.clone();
+    let debounce_config_path = event_config_path;
 
     // Spawn a debouncing thread that checks periodically
     let debounce_state_clone = Arc::clone(&debounce_state);
@@ -234,21 +264,19 @@ fn setup_file_watcher(
         move |res: Result<Event, notify::Error>| {
             match res {
                 Ok(event) => {
-                    // Only trigger on modify/write events
-                    match event.kind {
-                        EventKind::Modify(_) | EventKind::Create(_) => {
-                            log::debug!(
-                                "[Config Watcher] File changed: {:?} (debouncing)",
-                                config_path_clone
-                            );
-                            // Update the debounce state
-                            let mut state = debounce_state.lock().unwrap();
-                            state.last_event_time = Instant::now();
-                            state.event_pending = true;
-                        }
-                        _ => {
-                            // Ignore other events (access, etc.)
-                        }
+                    if !event_paths_match_config(&event, &config_path_clone) {
+                        return;
+                    }
+
+                    if is_config_change_event(event.kind) {
+                        log::debug!(
+                            "[Config Watcher] File changed: {:?} (debouncing)",
+                            config_path_clone
+                        );
+                        // Update the debounce state
+                        let mut state = debounce_state.lock().unwrap();
+                        state.last_event_time = Instant::now();
+                        state.event_pending = true;
                     }
                 }
                 Err(e) => {
@@ -260,24 +288,95 @@ fn setup_file_watcher(
     )
     .map_err(|e| format!("Failed to create file watcher: {}", e))?;
 
-    // Watch the file (or its parent directory if file doesn't exist yet)
-    let watch_path = if config_path.exists() {
-        config_path.clone()
-    } else if let Some(parent) = config_path.parent() {
+    let Some(parent) = match_config_path.parent() else {
+        return Err("Invalid config path".to_string());
+    };
+
+    if match_config_path.exists() {
+        watcher
+            .watch(&match_config_path, RecursiveMode::NonRecursive)
+            .map_err(|e| format!("Failed to watch config path: {}", e))?;
+    } else {
         log::info!(
             "[Config Watcher] File doesn't exist, watching parent directory: {:?}",
             parent
         );
-        parent.to_path_buf()
-    } else {
-        return Err("Invalid config path".to_string());
-    };
+    }
+
+    // Also watch the parent directory and filter events for the config path.
+    // Some editors replace files atomically via parent-directory operations.
+    let watch_path = parent.to_path_buf();
 
     watcher
         .watch(&watch_path, RecursiveMode::NonRecursive)
         .map_err(|e| format!("Failed to watch path: {}", e))?;
 
     Ok(watcher)
+}
+
+fn normalized_config_path(config_path: &Path) -> PathBuf {
+    if let Ok(canonical_path) = config_path.canonicalize() {
+        return canonical_path;
+    }
+
+    let Some(parent) = config_path.parent() else {
+        return config_path.to_path_buf();
+    };
+    let Some(file_name) = config_path.file_name() else {
+        return config_path.to_path_buf();
+    };
+
+    parent
+        .canonicalize()
+        .map(|canonical_parent| canonical_parent.join(file_name))
+        .unwrap_or_else(|_| config_path.to_path_buf())
+}
+
+fn event_paths_match_config(event: &notify::Event, config_path: &Path) -> bool {
+    event.paths.is_empty()
+        || event
+            .paths
+            .iter()
+            .any(|path| path_matches_config(path, config_path))
+}
+
+fn path_matches_config(path: &Path, config_path: &Path) -> bool {
+    if path == config_path
+        || path
+            .canonicalize()
+            .is_ok_and(|canonical_path| canonical_path == config_path)
+    {
+        return true;
+    }
+
+    if path.file_name() != config_path.file_name() {
+        return false;
+    }
+
+    match (path.parent(), config_path.parent()) {
+        (Some(path_parent), Some(config_parent)) => {
+            path_parent == config_parent
+                || path_parent
+                    .canonicalize()
+                    .is_ok_and(|canonical_parent| canonical_parent == config_parent)
+        }
+        _ => false,
+    }
+}
+
+fn is_config_change_event(kind: notify::EventKind) -> bool {
+    use notify::EventKind;
+    use notify::event::{AccessKind, AccessMode};
+
+    matches!(
+        kind,
+        EventKind::Create(_)
+            | EventKind::Modify(_)
+            | EventKind::Remove(_)
+            | EventKind::Access(AccessKind::Close(
+                AccessMode::Any | AccessMode::Write | AccessMode::Other
+            ))
+    )
 }
 
 /// Signal handler flags
@@ -346,11 +445,16 @@ mod tests {
         file.sync_all().unwrap();
         drop(file);
 
-        // Give watcher time to detect change
-        thread::sleep(Duration::from_millis(SPIN_MS_SLEEP_WATCHER));
+        let deadline = Instant::now() + Duration::from_millis(SPIN_MS_SLEEP_WATCHER * 5);
+        let mut event = None;
+        while Instant::now() < deadline {
+            if let Some(next_event) = watcher.try_recv() {
+                event = Some(next_event);
+                break;
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
 
-        // Check for event
-        let event = watcher.try_recv();
         assert!(event.is_some());
         match event.unwrap() {
             ConfigEvent::ConfigChanged(path) => {

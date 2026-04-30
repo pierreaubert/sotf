@@ -531,7 +531,7 @@ fn test_speaker_configuration_from_channel_count() {
 #[test]
 fn test_speaker_configuration_all() {
     let all = SpeakerConfiguration::all();
-    assert_eq!(all.len(), 14);
+    assert_eq!(all.len(), 15);
     assert!(all.contains(&SpeakerConfiguration::Stereo));
     assert!(all.contains(&SpeakerConfiguration::Custom));
 }

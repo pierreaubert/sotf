@@ -720,8 +720,10 @@ mod tests {
             _ => panic!("Expected BinauralDecoder plugin"),
         };
 
-        // Adjust numeric / boolean parameters via adjust_selected_param
-        for idx in 1..5 {
+        // Adjust mutable boolean/numeric parameters via adjust_selected_param.
+        // input_channels is derived from the chain and stays synchronized by
+        // update_channel_dependent_plugins().
+        for idx in 2..5 {
             app.plugin_param_selection = idx;
             assert!(app.adjust_selected_param(1.0));
         }
@@ -737,7 +739,7 @@ mod tests {
         } = &plugin.settings
         {
             assert_eq!(*sofa_file, orig_sofa); // unchanged by adjust_selected_param
-            assert_ne!(*input_channels, orig_channels);
+            assert_eq!(*input_channels, orig_channels);
             assert_ne!(*enable_optimization, orig_opt);
             assert_ne!(*externalization, orig_ext);
             assert_ne!(*near_field_strength, orig_near);

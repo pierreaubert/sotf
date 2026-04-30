@@ -267,10 +267,35 @@ detect_win_rsync() {
     local port="$2"
     local key="$3"
 
-    # Ask Git Bash where rsync is
+    # Ask Git Bash for rsync, but do not trust the first PATH hit blindly:
+    # Git for Windows can have a stale/broken rsync while MSYS2 has a working
+    # one installed at /c/msys64/usr/bin/rsync.
     local rsync_path
-    rsync_path=$(win_ssh_cmd "$host" "$port" "$key" "command -v rsync 2>/dev/null || true" 2>/dev/null)
-    rsync_path=$(echo "$rsync_path" | tr -d '\r\n')
+    rsync_path=$(win_ssh_cmd "$host" "$port" "$key" '
+        candidates=()
+        path_rsync=$(command -v rsync 2>/dev/null || true)
+        [ -n "$path_rsync" ] && candidates+=("$path_rsync")
+        candidates+=(
+            "/c/msys64/usr/bin/rsync"
+            "/c/msys64/mingw64/bin/rsync"
+            "/usr/bin/rsync"
+            "/mingw64/bin/rsync"
+            "/c/Program Files/Git/usr/bin/rsync"
+        )
+
+        seen=":"
+        for candidate in "${candidates[@]}"; do
+            [ -n "$candidate" ] || continue
+            case "$seen" in *:"$candidate":*) continue ;; esac
+            seen="${seen}${candidate}:"
+            if [ -x "$candidate" ] && "$candidate" --version >/dev/null 2>&1; then
+                printf "%s\n" "$candidate"
+                exit 0
+            fi
+        done
+        exit 1
+    ' 2>/dev/null)
+    rsync_path=$(echo "$rsync_path" | tr -d '\r' | tail -n 1)
 
     if [ -z "$rsync_path" ]; then
         log_error "rsync not found on remote Windows"
@@ -294,7 +319,7 @@ detect_win_rsync() {
     # --rsync-path. The remote SSH shell is cmd.exe, so using 8.3 paths avoids
     # quote-sensitive spaces like "C:\Program Files\...".
     local win_rsync
-    win_rsync=$(win_ssh_cmd "$host" "$port" "$key" "cygpath -w -s '$rsync_path' 2>/dev/null || cygpath -w '$rsync_path' 2>/dev/null || echo '$rsync_path'" 2>/dev/null)
+    win_rsync=$(win_ssh_cmd "$host" "$port" "$key" "cygpath -m -s '$rsync_path' 2>/dev/null || cygpath -m '$rsync_path' 2>/dev/null || echo '$rsync_path'" 2>/dev/null)
     WIN_RSYNC_PATH=$(echo "$win_rsync" | tr -d '\r\n')
     log_info "Found rsync at: $WIN_RSYNC_PATH"
     return 0
@@ -324,9 +349,10 @@ win_ssh_cmd() {
 # Using an array avoids repeating between rsync_to and rsync_to_win.
 RSYNC_EXCLUDES=(
     # Build artifacts
-    --exclude='/target/'
-    --exclude='/target-static/'
-    --exclude='/.docker-target/'
+    # No trailing slash: these may be symlinks to external build volumes.
+    --exclude='/target'
+    --exclude='/target-static'
+    --exclude='/.docker-target'
     --exclude='/dist/'
     --exclude='/tools/'
     --exclude='/certs/'
