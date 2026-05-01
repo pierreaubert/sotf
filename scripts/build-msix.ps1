@@ -46,6 +46,17 @@ param(
     [string]$BuildDir,
     [switch]$Sign,
 
+    # Code-signing inputs. CLI params take precedence over the same-named
+    # WINDOWS_CERT_* environment variables. Params exist so a remote driver
+    # (e.g. scripts/build-release-local.sh on macOS, SSH'ing to Windows) can
+    # pass credentials through cleanly -- $env:WINDOWS_CERT_* doesn't survive
+    # an SSH hop unless the sshd is configured with AcceptEnv, which it
+    # usually isn't on Windows OpenSSH.
+    [string]$CertThumbprint,
+    [string]$CertFile,
+    [string]$CertPassword,
+    [string]$TimestampUrl,
+
     # Turn on PowerShell's built-in line-level tracer (Set-PSDebug -Trace 1).
     # Useful when you want to see exactly which line the script is on when
     # something fails. Use -TraceLevel 2 for very chatty (every assignment).
@@ -167,7 +178,7 @@ function Get-SignToolPath { return (Find-SdkTool 'signtool.exe') }
 # pack time:
 #   - XML well-formedness
 #   - <Capabilities> children must be in xs:sequence order:
-#       Capability -> uap*:Capability -> DeviceCapability -> rescap*:Capability
+#       Capability -> uap*:Capability -> rescap*:Capability -> DeviceCapability
 #   - Identity Version must be Major.Minor.Build.Revision
 #   - ProcessorArchitecture must be x64|x86|arm64|arm|neutral
 #   - runFullTrust required when any Application uses Windows.FullTrustApplication
@@ -208,13 +219,13 @@ function Test-AppxManifest([string]$Path) {
             $ns    = $node.NamespaceURI
             if     ($local -eq 'Capability'       -and $ns -like '*foundation/windows10' -and $ns -notlike '*restrictedcapabilities*') { $cls = 1; $tag = 'Capability' }
             elseif ($local -eq 'Capability'       -and $ns -like '*/uap*/windows10')       { $cls = 2; $tag = 'uap:Capability' }
-            elseif ($local -eq 'DeviceCapability'                                        ) { $cls = 3; $tag = 'DeviceCapability' }
-            elseif ($local -eq 'Capability'       -and $ns -like '*restrictedcapabilities*') { $cls = 4; $tag = 'rescap:Capability' }
+            elseif ($local -eq 'Capability'       -and $ns -like '*restrictedcapabilities*') { $cls = 3; $tag = 'rescap:Capability' }
+            elseif ($local -eq 'DeviceCapability'                                        ) { $cls = 4; $tag = 'DeviceCapability' }
             else { $cls = 99; $tag = $local }
             if ($cls -lt $last) {
                 Write-Err "AppxManifest.xml: <Capabilities> children out of order"
                 Write-Err "  Found <$tag> after <$lastTag>"
-                Write-Err "  Required order (xs:sequence): Capability -> uap*:Capability -> DeviceCapability -> rescap*:Capability"
+                Write-Err "  Required order (xs:sequence): Capability -> uap*:Capability -> rescap*:Capability -> DeviceCapability"
                 $issues++
             }
             $last = $cls; $lastTag = $tag
@@ -356,40 +367,27 @@ while ($srcBytes.Length - $bomLen -ge 3 -and
 }
 $srcManifest = [System.Text.Encoding]::UTF8.GetString($srcBytes, $bomLen, $srcBytes.Length - $bomLen)
 
-# --- Diagnostic: trace bytes through read -> render -> write so we can pinpoint
-#     where (if anywhere) leading junk creeps in front of `<?xml`. Logs only;
-#     remove once the BOM mystery is resolved.
-$srcHex = (($srcManifest[0..3] | ForEach-Object { '{0:X4}' -f [int][char]$_ }) -join ' ')
-Write-Info ("Manifest read: src bytes={0}, stripped BOM bytes={1}, decoded chars={2}, first 4 (hex) = {3}" `
-    -f $srcBytes.Length, $bomLen, $srcManifest.Length, $srcHex)
-
+# Use -creplace (case-sensitive). PowerShell's default -replace is
+# case-INSENSITIVE, which makes `Version="[^"]+"` also match the XML
+# declaration's lowercase `version="1.0"` -- corrupting it to `Version="x.y.z.w"`
+# and producing "Syntax for an XML declaration is invalid. Line 1, position 7."
+# at Load() time. The source manifest uses capital V only on <Identity>, so
+# case-sensitive matching disambiguates cleanly. Same for ProcessorArchitecture
+# (only declared on <Identity>) -- kept -creplace for symmetry.
 $rendered = $srcManifest `
-    -replace '(\s)Version="[^"]+"', "`$1Version=`"$MsixVersion`"" `
-    -replace 'ProcessorArchitecture="[^"]+"', "ProcessorArchitecture=`"$MsixArch`""
-
-$renderedHex = (($rendered[0..3] | ForEach-Object { '{0:X4}' -f [int][char]$_ }) -join ' ')
-Write-Info ("Manifest rendered: chars={0}, first 4 (hex) = {1}" -f $rendered.Length, $renderedHex)
+    -creplace '(\s)Version="[^"]+"', "`$1Version=`"$MsixVersion`"" `
+    -creplace 'ProcessorArchitecture="[^"]+"', "ProcessorArchitecture=`"$MsixArch`""
 
 # Write WITHOUT a UTF-8 BOM. `Set-Content -Encoding UTF8` in Windows
 # PowerShell 5.1 prepends a 3-byte BOM (EF BB BF), which then breaks
 # `[xml](Get-Content -Raw $path)` because the BOM ends up as a leading
-# string character and XmlDocument.LoadXml rejects it ("Syntax for an XML
-# declaration is invalid. Line 1, position 7."). MakeAppx is also pickier
-# than the spec about a BOM in front of `<?xml` for AppxManifest.xml.
+# string character and XmlDocument.LoadXml rejects it. MakeAppx is also
+# pickier than the spec about a BOM in front of `<?xml` for AppxManifest.xml.
 [System.IO.File]::WriteAllText(
     "$Staging\AppxManifest.xml",
     $rendered,
     (New-Object System.Text.UTF8Encoding($false))
 )
-
-# Read the staged file back and log the first 16 bytes. Pinpoints whether
-# leading junk lives in the rendered string, in WriteAllText, or in some
-# external interceptor (AV / filesystem filter / OneDrive sync) between
-# WriteAllText and the Test-AppxManifest read.
-$stagedBytes = [System.IO.File]::ReadAllBytes("$Staging\AppxManifest.xml")
-$headLen     = [Math]::Min(16, $stagedBytes.Length)
-$stagedHex   = (($stagedBytes[0..($headLen-1)] | ForEach-Object { '{0:X2}' -f $_ }) -join ' ')
-Write-Info ("Manifest staged: bytes={0}, first {1} (hex) = {2}" -f $stagedBytes.Length, $headLen, $stagedHex)
 
 # Pre-flight validation
 if (-not (Test-AppxManifest "$Staging\AppxManifest.xml")) {
@@ -408,23 +406,57 @@ if ($Sign) {
         Write-Err "SignTool.exe not found (Windows SDK)."
         exit 1
     }
-    $tsUrl = if ($env:WINDOWS_TIMESTAMP_URL) { $env:WINDOWS_TIMESTAMP_URL } else { 'http://timestamp.digicert.com' }
-    $signArgs = @('sign','/fd','SHA256','/td','SHA256','/tr',$tsUrl)
-    if ($env:WINDOWS_CERT_THUMBPRINT) {
-        $signArgs += @('/sha1', $env:WINDOWS_CERT_THUMBPRINT, '/sm')
-    } elseif ($env:WINDOWS_CERT_FILE) {
-        $signArgs += @('/f', $env:WINDOWS_CERT_FILE)
-        if ($env:WINDOWS_CERT_PASSWORD) { $signArgs += @('/p', $env:WINDOWS_CERT_PASSWORD) }
+    # Resolve cert inputs: CLI param wins over env var. Lets a remote driver
+    # pass credentials as flags (which survive the SSH hop) while local users
+    # can still rely on $env:WINDOWS_CERT_*.
+    $cThumb = if ($CertThumbprint) { $CertThumbprint } else { $env:WINDOWS_CERT_THUMBPRINT }
+    $cFile  = if ($CertFile)       { $CertFile }       else { $env:WINDOWS_CERT_FILE }
+    $cPass  = if ($CertPassword)   { $CertPassword }   else { $env:WINDOWS_CERT_PASSWORD }
+    $cTs    = if ($TimestampUrl)   { $TimestampUrl }   else { $env:WINDOWS_TIMESTAMP_URL }
+
+    # Timestamping: by default use DigiCert's RFC3161 server. Set
+    # -TimestampUrl 'none' (or WINDOWS_TIMESTAMP_URL='none') to skip /tr
+    # entirely -- useful for offline signing, behind corporate proxies, or
+    # to isolate timestamp-server failures during diagnosis. A signature
+    # without a timestamp still works, it just expires when the cert expires.
+    $signArgs = @('sign','/fd','SHA256')
+    if (-not $cTs) { $cTs = 'http://timestamp.digicert.com' }
+    if ($cTs -ne 'none') {
+        $signArgs += @('/td','SHA256','/tr',$cTs)
     } else {
-        Write-Err "Set either WINDOWS_CERT_THUMBPRINT or WINDOWS_CERT_FILE for signing."
+        Write-Warn "Timestamping disabled (TimestampUrl=none). Signature will expire when the cert expires."
+    }
+    if ($cThumb) {
+        $signArgs += @('/sha1', $cThumb, '/sm')
+    } elseif ($cFile) {
+        if (-not (Test-Path $cFile)) {
+            Write-Err "Cert file not found: $cFile"
+            exit 1
+        }
+        $signArgs += @('/f', $cFile)
+        if ($cPass) { $signArgs += @('/p', $cPass) }
+    } else {
+        Write-Err "Set -CertThumbprint / -CertFile (or `$env:WINDOWS_CERT_THUMBPRINT / `$env:WINDOWS_CERT_FILE) for signing."
         exit 1
     }
     foreach ($bin in @('sotf-desktop.exe','sotf-tui.exe')) {
         $p = Join-Path $Staging $bin
         if (Test-Path $p) {
             Write-Info "Signing $bin..."
-            & $signtool @signArgs $p
-            if ($LASTEXITCODE -ne 0) { Write-Err "SignTool failed for $bin"; exit 1 }
+            # Capture both streams so signtool's actual error text reaches the
+            # transcript. Without 2>&1 the failure mode (wrong password, RFC3161
+            # timestamp server unreachable, missing private key, etc.) is
+            # invisible and only the wrapper "SignTool failed" line shows up.
+            & $signtool @signArgs $p 2>&1 | ForEach-Object { Write-Host "  $_" }
+            if ($LASTEXITCODE -ne 0) {
+                Write-Err "SignTool failed for $bin (exit $LASTEXITCODE)"
+                Write-Err "Common causes:"
+                Write-Err "  - WINDOWS_CERT_PASSWORD wrong / cert key not exportable"
+                Write-Err "  - Timestamp server unreachable (set `$env:WINDOWS_TIMESTAMP_URL='none' to skip /tr)"
+                Write-Err "  - Cert lacks Code Signing EKU"
+                Write-Err "  - SDK signtool too old (use signtool from a recent Windows 10/11 SDK)"
+                exit 1
+            }
         }
     }
 }

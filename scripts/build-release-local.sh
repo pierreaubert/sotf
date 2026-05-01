@@ -884,6 +884,21 @@ build_windows() {
     local ps_sign=""
     if ! $SKIP_SIGN; then
         ps_sign=" -Sign"
+        # Forward cert credentials to the remote PowerShell. SSH usually
+        # strips env vars (no AcceptEnv on Windows OpenSSH by default), so
+        # we pass them as explicit -CertThumbprint / -CertFile / etc. flags
+        # which build-msix.ps1 prefers over $env:WINDOWS_CERT_*.
+        if [ -n "${WINDOWS_CERT_THUMBPRINT:-}" ]; then
+            ps_sign+=" -CertThumbprint ${WINDOWS_CERT_THUMBPRINT}"
+        elif [ -n "${WINDOWS_CERT_FILE:-}" ]; then
+            ps_sign+=" -CertFile '${WINDOWS_CERT_FILE}'"
+            if [ -n "${WINDOWS_CERT_PASSWORD:-}" ]; then
+                ps_sign+=" -CertPassword '${WINDOWS_CERT_PASSWORD}'"
+            fi
+        fi
+        if [ -n "${WINDOWS_TIMESTAMP_URL:-}" ]; then
+            ps_sign+=" -TimestampUrl '${WINDOWS_TIMESTAMP_URL}'"
+        fi
     fi
     local msix_cleanup="cd ${remote_dir} && rm -f dist/sotf-desktop-${VERSION}-windows-*.msix"
     local msix_powershell="powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-msix.ps1 -Arch x86_64${ps_sign}"
