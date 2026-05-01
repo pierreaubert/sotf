@@ -1,8 +1,121 @@
 // Metaheuristics-specific optimization code
 
+use super::backend::{AlgorithmType, ConstraintCapabilities, FilterOptimizer};
 use super::callback::{ProgressTracker, format_param_summary};
-use super::{ObjectiveData, PenaltyMode, compute_fitness_penalties_ref};
+use super::constraints_install::install_constraints;
+use super::params::OptimParams;
+use super::{ObjectiveData, OptimProgressCallback, PenaltyMode, compute_fitness_penalties_ref};
 use ndarray::Array1;
+
+/// Metaheuristics-backed `FilterOptimizer` (one instance per algorithm
+/// variant: de, pso, rga, tlbo, firefly).
+pub struct MhBackend {
+    name: &'static str,
+    algo_suffix: &'static str,
+    fallback_mode: PenaltyMode,
+}
+
+impl MhBackend {
+    pub fn new_de(name: &'static str) -> Self {
+        Self {
+            name,
+            algo_suffix: "de",
+            fallback_mode: PenaltyMode::Standard,
+        }
+    }
+    pub fn new_pso(name: &'static str) -> Self {
+        Self {
+            name,
+            algo_suffix: "pso",
+            fallback_mode: PenaltyMode::Pso,
+        }
+    }
+    pub fn new_rga(name: &'static str) -> Self {
+        Self {
+            name,
+            algo_suffix: "rga",
+            fallback_mode: PenaltyMode::Standard,
+        }
+    }
+    pub fn new_tlbo(name: &'static str) -> Self {
+        Self {
+            name,
+            algo_suffix: "tlbo",
+            fallback_mode: PenaltyMode::Standard,
+        }
+    }
+    pub fn new_firefly(name: &'static str) -> Self {
+        Self {
+            name,
+            algo_suffix: "firefly",
+            fallback_mode: PenaltyMode::Standard,
+        }
+    }
+}
+
+impl FilterOptimizer for MhBackend {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+    fn library(&self) -> &'static str {
+        "Metaheuristics"
+    }
+    fn algorithm_type(&self) -> AlgorithmType {
+        AlgorithmType::Global
+    }
+    fn capabilities(&self) -> ConstraintCapabilities {
+        ConstraintCapabilities {
+            nonlinear_ineq: false,
+            nonlinear_eq: false,
+            linear: false,
+            iteration_callback: true,
+            fallback_penalty_mode: self.fallback_mode,
+        }
+    }
+    fn optimize(
+        &self,
+        x: &mut [f64],
+        lower: &[f64],
+        upper: &[f64],
+        objective: ObjectiveData,
+        params: &OptimParams,
+        callback: Option<OptimProgressCallback>,
+    ) -> Result<(String, f64), (String, f64)> {
+        let mut objective = objective;
+        // MH has no native nonlinear constraints — install_constraints will
+        // configure penalty weights matching `self.fallback_mode`.
+        let _ = install_constraints(self.capabilities(), &mut objective);
+
+        match callback {
+            Some(mut user_cb) => {
+                // Adapt the unified `OptimProgressCallback` to MH's
+                // intermediate type. EPA progress is `None` here (only the
+                // AutoEQ DE path computes EPA mid-run).
+                let mh_cb: Box<dyn FnMut(&MHIntermediate) -> CallbackAction + Send> =
+                    Box::new(move |im| user_cb(im.iter, im.fun, None));
+                optimize_filters_mh_with_callback(
+                    x,
+                    lower,
+                    upper,
+                    objective,
+                    self.algo_suffix,
+                    params.population,
+                    params.maxeval,
+                    mh_cb,
+                )
+            }
+            None => optimize_filters_mh(
+                x,
+                lower,
+                upper,
+                objective,
+                self.algo_suffix,
+                params.population,
+                params.maxeval,
+            ),
+        }
+    }
+}
 
 #[allow(unused_imports)]
 use metaheuristics_nature as mh;

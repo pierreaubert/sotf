@@ -15,10 +15,7 @@
 //! You should have received a copy of the GNU General Public License
 //! along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use self::de::{optimize_filters_autoeq, optimize_filters_autoeq_with_callback};
-use self::mh::{optimize_filters_mh, optimize_filters_mh_with_callback};
-#[cfg(feature = "nlopt")]
-use self::nlopt::optimize_filters_nlopt;
+use self::de::optimize_filters_autoeq_with_callback;
 use super::cli::PeqModel;
 use super::constraints::{viol_ceiling_from_spl, viol_min_gain_from_xs, viol_spacing_from_xs};
 use super::loss::{
@@ -27,27 +24,35 @@ use super::loss::{
 };
 use super::x2peq::x2spl;
 use crate::Curve;
-#[cfg(feature = "nlopt")]
-use ::nlopt::Algorithm;
 use ndarray::Array1;
 
+/// Unified optimizer backend trait and capability descriptors.
+pub mod backend;
 /// Shared callback utilities for optimization
 pub mod callback;
+/// Pure-Rust COBYLA backend (replaces NLopt's COBYLA when nlopt feature is off).
+pub mod cobyla;
+/// Centralised constraint installation (native vs penalty).
+pub mod constraints_install;
 /// AutoEQ DE-specific optimization code
 pub mod de;
+/// Pure-Rust ISRES backend.
+pub mod isres;
 /// Metaheuristics-specific optimization code
 pub mod mh;
-/// NLOPT-specific optimization code
-#[cfg(feature = "nlopt")]
-pub mod nlopt;
 /// Shared optimization parameters (decoupled from CLI args)
 pub mod params;
 /// Pareto front analysis
 pub mod pareto;
+/// Algorithm registry — string name → backend.
+pub mod registry;
 /// Shared optimization setup (bounds, initial guess, objective data)
 pub mod setup;
 
-/// Algorithm metadata structure
+pub use backend::{AlgorithmType, ConstraintCapabilities, FilterOptimizer};
+
+/// Algorithm metadata structure (legacy public surface — derived from the
+/// registry now, kept for callers in `cli.rs` that print algorithm tables).
 #[derive(Debug, Clone)]
 pub struct AlgorithmInfo {
     /// Algorithm name with library prefix (e.g., "nlopt:isres", "mh:de", "autoeq:de")
@@ -62,211 +67,30 @@ pub struct AlgorithmInfo {
     pub supports_nonlinear_constraints: bool,
 }
 
-/// Algorithm classification
-#[derive(Debug, Clone, PartialEq)]
-pub enum AlgorithmType {
-    /// Global optimization algorithm - explores entire solution space, good for finding global optimum
-    Global,
-    /// Local optimization algorithm - refines solution from starting point, fast but may get trapped in local optimum
-    Local,
-}
-
-/// Get all available algorithms with their metadata
-pub fn get_all_algorithms() -> Vec<AlgorithmInfo> {
-    let algorithms = vec![
-        #[cfg(feature = "nlopt")]
-        // NLOPT algorithms - Global with nonlinear constraint support
-        AlgorithmInfo {
-            name: "nlopt:isres",
-            library: "NLOPT",
-            algorithm_type: AlgorithmType::Global,
-            supports_linear_constraints: true,
-            supports_nonlinear_constraints: true,
-        },
-        #[cfg(feature = "nlopt")]
-        AlgorithmInfo {
-            name: "nlopt:ags",
-            library: "NLOPT",
-            algorithm_type: AlgorithmType::Global,
-            supports_linear_constraints: false,
-            supports_nonlinear_constraints: true,
-        },
-        #[cfg(feature = "nlopt")]
-        AlgorithmInfo {
-            name: "nlopt:origdirect",
-            library: "NLOPT",
-            algorithm_type: AlgorithmType::Global,
-            supports_linear_constraints: false,
-            supports_nonlinear_constraints: true,
-        },
-        #[cfg(feature = "nlopt")]
-        // NLOPT algorithms - Global without nonlinear constraint support
-        AlgorithmInfo {
-            name: "nlopt:crs2lm",
-            library: "NLOPT",
-            algorithm_type: AlgorithmType::Global,
-            supports_linear_constraints: false,
-            supports_nonlinear_constraints: false,
-        },
-        #[cfg(feature = "nlopt")]
-        AlgorithmInfo {
-            name: "nlopt:direct",
-            library: "NLOPT",
-            algorithm_type: AlgorithmType::Global,
-            supports_linear_constraints: false,
-            supports_nonlinear_constraints: false,
-        },
-        #[cfg(feature = "nlopt")]
-        AlgorithmInfo {
-            name: "nlopt:directl",
-            library: "NLOPT",
-            algorithm_type: AlgorithmType::Global,
-            supports_linear_constraints: false,
-            supports_nonlinear_constraints: false,
-        },
-        #[cfg(feature = "nlopt")]
-        AlgorithmInfo {
-            name: "nlopt:gmlsl",
-            library: "NLOPT",
-            algorithm_type: AlgorithmType::Global,
-            supports_linear_constraints: false,
-            supports_nonlinear_constraints: false,
-        },
-        #[cfg(feature = "nlopt")]
-        AlgorithmInfo {
-            name: "nlopt:gmlsllds",
-            library: "NLOPT",
-            algorithm_type: AlgorithmType::Global,
-            supports_linear_constraints: false,
-            supports_nonlinear_constraints: false,
-        },
-        #[cfg(feature = "nlopt")]
-        AlgorithmInfo {
-            name: "nlopt:sbplx",
-            library: "NLOPT",
-            algorithm_type: AlgorithmType::Local,
-            supports_linear_constraints: false,
-            supports_nonlinear_constraints: false,
-        },
-        #[cfg(feature = "nlopt")]
-        AlgorithmInfo {
-            name: "nlopt:slsqp",
-            library: "NLOPT",
-            algorithm_type: AlgorithmType::Local,
-            supports_linear_constraints: true,
-            supports_nonlinear_constraints: true,
-        },
-        #[cfg(feature = "nlopt")]
-        AlgorithmInfo {
-            name: "nlopt:stogo",
-            library: "NLOPT",
-            algorithm_type: AlgorithmType::Global,
-            supports_linear_constraints: false,
-            supports_nonlinear_constraints: false,
-        },
-        #[cfg(feature = "nlopt")]
-        AlgorithmInfo {
-            name: "nlopt:stogorand",
-            library: "NLOPT",
-            algorithm_type: AlgorithmType::Global,
-            supports_linear_constraints: false,
-            supports_nonlinear_constraints: false,
-        },
-        #[cfg(feature = "nlopt")]
-        // NLOPT algorithms - Local
-        AlgorithmInfo {
-            name: "nlopt:bobyqa",
-            library: "NLOPT",
-            algorithm_type: AlgorithmType::Local,
-            supports_linear_constraints: false,
-            supports_nonlinear_constraints: false,
-        },
-        #[cfg(feature = "nlopt")]
-        AlgorithmInfo {
-            name: "nlopt:cobyla",
-            library: "NLOPT",
-            algorithm_type: AlgorithmType::Local,
-            supports_linear_constraints: true,
-            supports_nonlinear_constraints: true,
-        },
-        #[cfg(feature = "nlopt")]
-        AlgorithmInfo {
-            name: "nlopt:neldermead",
-            library: "NLOPT",
-            algorithm_type: AlgorithmType::Local,
-            supports_linear_constraints: false,
-            supports_nonlinear_constraints: false,
-        },
-        // Metaheuristics algorithms (all global, no constraint support)
-        AlgorithmInfo {
-            name: "mh:de",
-            library: "Metaheuristics",
-            algorithm_type: AlgorithmType::Global,
-            supports_linear_constraints: false,
-            supports_nonlinear_constraints: false,
-        },
-        AlgorithmInfo {
-            name: "mh:pso",
-            library: "Metaheuristics",
-            algorithm_type: AlgorithmType::Global,
-            supports_linear_constraints: false,
-            supports_nonlinear_constraints: false,
-        },
-        AlgorithmInfo {
-            name: "mh:rga",
-            library: "Metaheuristics",
-            algorithm_type: AlgorithmType::Global,
-            supports_linear_constraints: false,
-            supports_nonlinear_constraints: false,
-        },
-        AlgorithmInfo {
-            name: "mh:tlbo",
-            library: "Metaheuristics",
-            algorithm_type: AlgorithmType::Global,
-            supports_linear_constraints: false,
-            supports_nonlinear_constraints: false,
-        },
-        AlgorithmInfo {
-            name: "mh:firefly",
-            library: "Metaheuristics",
-            algorithm_type: AlgorithmType::Global,
-            supports_linear_constraints: false,
-            supports_nonlinear_constraints: false,
-        },
-        AlgorithmInfo {
-            name: "autoeq:de",
-            library: "AutoEQ",
-            algorithm_type: AlgorithmType::Global,
-            supports_linear_constraints: true,
-            supports_nonlinear_constraints: true,
-        },
-    ];
-    algorithms
-}
-
-/// Find algorithm info by name (supports both prefixed and unprefixed names for backward compatibility)
-pub fn find_algorithm_info(name: &str) -> Option<AlgorithmInfo> {
-    let algorithms = get_all_algorithms();
-
-    // First try exact match
-    if let Some(algo) = algorithms
-        .iter()
-        .find(|a| a.name.eq_ignore_ascii_case(name))
-    {
-        return Some(algo.clone());
-    }
-
-    // Then try without prefix for backward compatibility
-    let name_lower = name.to_lowercase();
-    for algo in &algorithms {
-        if let Some(suffix) = algo.name.split(':').nth(1)
-            && suffix.eq_ignore_ascii_case(&name_lower)
-        {
-            return Some(algo.clone());
+impl AlgorithmInfo {
+    fn from_backend(backend: &dyn FilterOptimizer) -> Self {
+        let caps = backend.capabilities();
+        Self {
+            name: backend.name(),
+            library: backend.library(),
+            algorithm_type: backend.algorithm_type(),
+            supports_linear_constraints: caps.linear,
+            supports_nonlinear_constraints: caps.nonlinear_ineq,
         }
     }
+}
 
-    None
+/// Get all available algorithms with their metadata.
+pub fn get_all_algorithms() -> Vec<AlgorithmInfo> {
+    registry::all_algorithms()
+        .iter()
+        .map(|b| AlgorithmInfo::from_backend(b.as_ref()))
+        .collect()
+}
+
+/// Find algorithm metadata by name (prefixed or unprefixed legacy form).
+pub fn find_algorithm_info(name: &str) -> Option<AlgorithmInfo> {
+    registry::resolve(name).map(|b| AlgorithmInfo::from_backend(b.as_ref()))
 }
 
 /// Data structure for holding objective function parameters
@@ -444,57 +268,10 @@ impl ObjectiveData {
     }
 }
 
-/// Determine algorithm type and return normalized name
-#[derive(Debug, Clone)]
-pub enum AlgorithmCategory {
-    /// NLOPT library algorithm with specific algorithm type
-    #[cfg(feature = "nlopt")]
-    Nlopt(Algorithm),
-    /// Metaheuristics library algorithm with algorithm name
-    Metaheuristics(String),
-    /// AutoEQ custom algorithm with algorithm name
-    AutoEQ(String),
-}
-
-/// Parse algorithm name and return category with normalized name
-pub fn parse_algorithm_name(name: &str) -> Option<AlgorithmCategory> {
-    if let Some(algo_info) = find_algorithm_info(name) {
-        let normalized_name = algo_info.name;
-
-        #[cfg(feature = "nlopt")]
-        if normalized_name.starts_with("nlopt:") {
-            let nlopt_name = normalized_name.strip_prefix("nlopt:").unwrap();
-            let nlopt_algo = match nlopt_name {
-                "bobyqa" => Algorithm::Bobyqa,
-                "cobyla" => Algorithm::Cobyla,
-                "neldermead" => Algorithm::Neldermead,
-                "isres" => Algorithm::Isres,
-                "ags" => Algorithm::Ags,
-                "origdirect" => Algorithm::OrigDirect,
-                "crs2lm" => Algorithm::Crs2Lm,
-                "direct" => Algorithm::Direct,
-                "directl" => Algorithm::DirectL,
-                "gmlsl" => Algorithm::GMlsl,
-                "gmlsllds" => Algorithm::GMlslLds,
-                "sbplx" => Algorithm::Sbplx,
-                "slsqp" => Algorithm::Slsqp,
-                "stogo" => Algorithm::StoGo,
-                "stogorand" => Algorithm::StoGoRand,
-                _ => Algorithm::Isres, // fallback
-            };
-            return Some(AlgorithmCategory::Nlopt(nlopt_algo));
-        }
-        if normalized_name.starts_with("mh:") {
-            let mh_name = normalized_name.strip_prefix("mh:").unwrap();
-            return Some(AlgorithmCategory::Metaheuristics(mh_name.to_string()));
-        } else if normalized_name.starts_with("autoeq:") {
-            let autoeq_name = normalized_name.strip_prefix("autoeq:").unwrap();
-            return Some(AlgorithmCategory::AutoEQ(autoeq_name.to_string()));
-        }
-    }
-
-    None
-}
+// `AlgorithmCategory` and `parse_algorithm_name` were removed in the
+// optimizer-trait refactor — callers now go through [`registry::resolve`]
+// which returns a `Box<dyn FilterOptimizer>` directly. If you need
+// algorithm metadata (without dispatching), use [`find_algorithm_info`].
 
 /// Compute multi-objective fitness across multiple measurement curves.
 ///
@@ -1048,18 +825,12 @@ pub fn optimize_filters(
     optimize_filters_with_algo_override(x, lower_bounds, upper_bounds, objective_data, params, None)
 }
 
-/// Optimize filter parameters with optional algorithm override
+/// Optimize filter parameters with optional algorithm override.
 ///
-/// # Arguments
-/// * `x` - Initial parameter vector to optimize (modified in place)
-/// * `lower_bounds` - Lower bounds for each parameter
-/// * `upper_bounds` - Upper bounds for each parameter
-/// * `objective_data` - Data structure containing optimization parameters
-/// * `cli_args` - CLI arguments containing algorithm, population, maxeval, and other parameters
-/// * `algo_override` - Optional algorithm override (e.g., for local refinement)
-///
-/// # Returns
-/// * Result containing (status, optimal value) or (error, value)
+/// `algo_override` is used by the local-refine step in
+/// [`setup::perform_optimization`] to switch from the global algorithm
+/// (`params.algo`) to a local one (`params.local_algo`) without rebuilding
+/// the params struct.
 pub fn optimize_filters_with_algo_override(
     x: &mut [f64],
     lower_bounds: &[f64],
@@ -1068,42 +839,10 @@ pub fn optimize_filters_with_algo_override(
     params: &crate::OptimParams,
     algo_override: Option<&str>,
 ) -> Result<(String, f64), (String, f64)> {
-    // Extract parameters from params
     let algo = algo_override.unwrap_or(&params.algo);
-    let population = params.population;
-    let maxeval = params.maxeval;
-
-    // Parse algorithm and dispatch to appropriate function
-    match parse_algorithm_name(algo) {
-        #[cfg(feature = "nlopt")]
-        Some(AlgorithmCategory::Nlopt(nlopt_algo)) => optimize_filters_nlopt(
-            x,
-            lower_bounds,
-            upper_bounds,
-            objective_data,
-            nlopt_algo,
-            population,
-            maxeval,
-        ),
-        Some(AlgorithmCategory::Metaheuristics(mh_name)) => optimize_filters_mh(
-            x,
-            lower_bounds,
-            upper_bounds,
-            objective_data,
-            &mh_name,
-            population,
-            maxeval,
-        ),
-        Some(AlgorithmCategory::AutoEQ(autoeq_name)) => optimize_filters_autoeq(
-            x,
-            lower_bounds,
-            upper_bounds,
-            objective_data,
-            &autoeq_name,
-            params,
-        ),
-        None => Err((format!("Unknown algorithm: {}", algo), f64::INFINITY)),
-    }
+    let backend = registry::resolve(algo)
+        .ok_or_else(|| (format!("Unknown algorithm: {}", algo), f64::INFINITY))?;
+    backend.optimize(x, lower_bounds, upper_bounds, objective_data, params, None)
 }
 
 /// Progress callback: (iteration, best_loss, epa_preference) -> continue/stop
@@ -1115,112 +854,130 @@ pub type OptimProgressCallback =
 
 /// Optimize filter parameters with a progress callback for per-iteration updates.
 ///
-/// Wraps the simple `(iteration, loss)` callback into the library-specific
-/// intermediate types expected by DE and MH optimizers. NLopt has no callback
-/// support so the callback is ignored for NLopt algorithms.
-#[allow(clippy::too_many_arguments)]
+/// Backends that report iteration progress (`autoeq:*`, `mh:*`) invoke the
+/// callback; NLopt silently drops it. The `autoeq:*` path is specialised
+/// here to compute the EPA preference score every 10 iterations and pass
+/// it as the third argument of `OptimProgressCallback` — that bookkeeping
+/// is loss-specific, so it stays in this dispatcher rather than the
+/// generic trait. All other backends go through [`registry::resolve`].
 pub fn optimize_filters_with_callback(
     x: &mut [f64],
     lower_bounds: &[f64],
     upper_bounds: &[f64],
     objective_data: ObjectiveData,
     params: &crate::OptimParams,
+    callback: OptimProgressCallback,
+) -> Result<(String, f64), (String, f64)> {
+    let backend = registry::resolve(&params.algo).ok_or_else(|| {
+        (
+            format!("Unknown algorithm: {}", params.algo),
+            f64::INFINITY,
+        )
+    })?;
+
+    // Specialised EPA-aware path: only meaningful for the AutoEQ DE
+    // backend (the only backend that exposes per-iteration `DEIntermediate`
+    // states the EPA wrapper consumes).
+    //
+    // Match by exact name — earlier this checked `library() == "AutoEQ"`,
+    // which now also matches `autoeq:cobyla` and `autoeq:isres` and would
+    // silently route them through DE instead of the chosen backend.
+    if backend.name().eq_ignore_ascii_case("autoeq:de") {
+        return run_autoeq_de_with_epa_callback(
+            x,
+            lower_bounds,
+            upper_bounds,
+            objective_data,
+            params,
+            backend.name(),
+            callback,
+        );
+    }
+
+    // Generic path: delegate to the trait. Backends without callback
+    // capability (NLopt) silently drop the callback inside `optimize`.
+    let cb_for_backend: Option<OptimProgressCallback> = if backend.capabilities().iteration_callback
+    {
+        Some(callback)
+    } else {
+        None
+    };
+    backend.optimize(
+        x,
+        lower_bounds,
+        upper_bounds,
+        objective_data,
+        params,
+        cb_for_backend,
+    )
+}
+
+/// Run the AutoEQ DE backend with an EPA-aware per-iteration callback.
+///
+/// EPA preference is recomputed every [`EPA_INTERVAL`] generations from the
+/// current best parameter vector. This matches the previous behaviour in
+/// `optimize_filters_with_callback`'s `AlgorithmCategory::AutoEQ` arm.
+fn run_autoeq_de_with_epa_callback(
+    x: &mut [f64],
+    lower_bounds: &[f64],
+    upper_bounds: &[f64],
+    objective_data: ObjectiveData,
+    params: &crate::OptimParams,
+    autoeq_name: &str,
     mut callback: OptimProgressCallback,
 ) -> Result<(String, f64), (String, f64)> {
-    let algo = &params.algo;
-    let population = params.population;
-    let maxeval = params.maxeval;
+    const EPA_INTERVAL: usize = 10;
 
-    match parse_algorithm_name(algo) {
-        #[cfg(feature = "nlopt")]
-        Some(AlgorithmCategory::Nlopt(nlopt_algo)) => {
-            // NLopt does not support iteration callbacks — run without one
-            optimize_filters_nlopt(
-                x,
-                lower_bounds,
-                upper_bounds,
-                objective_data,
-                nlopt_algo,
-                population,
-                maxeval,
-            )
-        }
-        Some(AlgorithmCategory::Metaheuristics(mh_name)) => {
-            let mh_cb: Box<
-                dyn FnMut(&super::optim_mh::MHIntermediate) -> crate::de::CallbackAction + Send,
-            > = Box::new(move |intermediate| callback(intermediate.iter, intermediate.fun, None));
-            optimize_filters_mh_with_callback(
-                x,
-                lower_bounds,
-                upper_bounds,
-                objective_data,
-                &mh_name,
-                population,
-                maxeval,
-                mh_cb,
-            )
-        }
-        Some(AlgorithmCategory::AutoEQ(autoeq_name)) => {
-            // Clone data needed for EPA computation inside the DE callback.
-            let epa_config = objective_data.epa_config.clone();
-            let epa_freqs =
-                ndarray::Array1::from(objective_data.freqs.iter().copied().collect::<Vec<f64>>());
-            // The normalized measurement is: target - deviation
-            // (since deviation = target - normalized_measurement).
-            // The corrected response after applying PEQ is:
-            //   corrected = normalized + peq = (target - deviation) + peq
-            let epa_normalized: Vec<f64> = objective_data
-                .target
-                .iter()
-                .zip(objective_data.deviation.iter())
-                .map(|(&t, &d)| t - d)
-                .collect();
-            let epa_srate = objective_data.srate;
-            let epa_model = objective_data.peq_model;
-            let mut epa_gen_counter: usize = 0;
-            const EPA_INTERVAL: usize = 10;
+    let epa_config = objective_data.epa_config.clone();
+    let epa_freqs =
+        ndarray::Array1::from(objective_data.freqs.iter().copied().collect::<Vec<f64>>());
+    // Reconstruct the normalised measurement: target − deviation.
+    let epa_normalized: Vec<f64> = objective_data
+        .target
+        .iter()
+        .zip(objective_data.deviation.iter())
+        .map(|(&t, &d)| t - d)
+        .collect();
+    let epa_srate = objective_data.srate;
+    let epa_model = objective_data.peq_model;
+    let mut epa_gen_counter: usize = 0;
 
-            let de_cb: Box<
-                dyn FnMut(&crate::de::DEIntermediate) -> crate::de::CallbackAction + Send,
-            > = Box::new(move |intermediate| {
-                epa_gen_counter += 1;
-                let epa = if epa_gen_counter % EPA_INTERVAL == 0 {
-                    // Corrected = normalized_measurement + PEQ response
-                    let peq_spl = x2spl(
-                        &epa_freqs,
-                        intermediate.x.as_slice().unwrap(),
-                        epa_srate,
-                        epa_model,
-                    );
-                    let corrected: Vec<f64> = epa_normalized
-                        .iter()
-                        .enumerate()
-                        .map(|(i, &n)| n + peq_spl[i])
-                        .collect();
-                    let cfg = epa_config.clone().unwrap_or_default();
-                    let score = crate::loss::epa::score::compute_epa_normalized(
-                        epa_freqs.as_slice().unwrap(),
-                        &corrected,
-                        &cfg,
-                    );
-                    Some(score.preference)
-                } else {
-                    None
-                };
-                callback(intermediate.iter, intermediate.fun, epa)
-            });
-            optimize_filters_autoeq_with_callback(
-                x,
-                lower_bounds,
-                upper_bounds,
-                objective_data,
-                &autoeq_name,
-                params,
-                de_cb,
-            )
-        }
-        None => Err((format!("Unknown algorithm: {}", algo), f64::INFINITY)),
-    }
+    let de_cb: Box<dyn FnMut(&crate::de::DEIntermediate) -> crate::de::CallbackAction + Send> =
+        Box::new(move |intermediate| {
+            epa_gen_counter += 1;
+            let epa = if epa_gen_counter.is_multiple_of(EPA_INTERVAL) {
+                let peq_spl = x2spl(
+                    &epa_freqs,
+                    intermediate.x.as_slice().unwrap(),
+                    epa_srate,
+                    epa_model,
+                );
+                let corrected: Vec<f64> = epa_normalized
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &n)| n + peq_spl[i])
+                    .collect();
+                let cfg = epa_config.clone().unwrap_or_default();
+                let score = crate::loss::epa::score::compute_epa_normalized(
+                    epa_freqs.as_slice().unwrap(),
+                    &corrected,
+                    &cfg,
+                );
+                Some(score.preference)
+            } else {
+                None
+            };
+            callback(intermediate.iter, intermediate.fun, epa)
+        });
+    optimize_filters_autoeq_with_callback(
+        x,
+        lower_bounds,
+        upper_bounds,
+        objective_data,
+        autoeq_name,
+        params,
+        de_cb,
+    )
 }
 
 /// Extract sorted center frequencies from parameter vector and compute adjacent spacings in octaves.
@@ -1244,6 +1001,37 @@ pub fn compute_sorted_freqs_and_adjacent_octave_spacings(
             .collect()
     };
     (freqs, spacings)
+}
+
+#[cfg(test)]
+mod dispatch_tests {
+    use super::*;
+
+    /// Bug C reproducer: `optimize_filters_with_callback` previously
+    /// dispatched on `backend.library() == "AutoEQ"`, which now matches
+    /// `autoeq:de`, `autoeq:cobyla`, AND `autoeq:isres` — silently
+    /// routing the latter two through the DE EPA wrapper instead of
+    /// running the requested algorithm. Verify each `autoeq:*` backend
+    /// resolves to its OWN registry entry, not DE.
+    #[test]
+    fn autoeq_cobyla_and_isres_have_own_names() {
+        let cobyla = registry::resolve("autoeq:cobyla").expect("autoeq:cobyla missing");
+        assert_eq!(cobyla.name(), "autoeq:cobyla");
+        assert_eq!(cobyla.library(), "AutoEQ");
+
+        let isres = registry::resolve("autoeq:isres").expect("autoeq:isres missing");
+        assert_eq!(isres.name(), "autoeq:isres");
+        assert_eq!(isres.library(), "AutoEQ");
+
+        let de = registry::resolve("autoeq:de").expect("autoeq:de missing");
+        assert_eq!(de.name(), "autoeq:de");
+        assert_eq!(de.library(), "AutoEQ");
+
+        // The dispatcher must distinguish them by NAME, not library — the
+        // EPA wrapper is DE-specific.
+        assert_ne!(cobyla.name(), de.name());
+        assert_ne!(isres.name(), de.name());
+    }
 }
 
 #[cfg(test)]

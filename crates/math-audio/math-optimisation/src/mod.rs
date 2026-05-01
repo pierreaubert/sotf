@@ -80,6 +80,19 @@ pub use levenberg_marquardt::{
     levenberg_marquardt,
 };
 
+/// Pure-Rust COBYLA local optimizer.
+///
+/// Hand-translated from NLopt 2.7.1's `cobyla.c` (Powell 1994) — see
+/// [`cobyla_native`] for the implementation. The public API lives in
+/// [`cobyla`].
+pub mod cobyla;
+mod cobyla_native;
+pub use cobyla::{CobylaConfig, CobylaConstraint, CobylaReport, CobylaStopTols};
+
+/// Pure-Rust ISRES global constrained optimizer.
+pub mod isres;
+pub use isres::{IsresConfig, IsresConstraint, IsresReport, isres};
+
 use std::fmt;
 use std::str::FromStr;
 use std::sync::Arc;

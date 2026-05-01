@@ -637,14 +637,20 @@ pub fn perform_optimization_with_callback(
         callback,
     );
 
-    match result {
-        Ok((_status, _val)) => {}
+    let global_fun = match result {
+        Ok((_status, val)) => val,
         Err((e, _final_value)) => {
             return Err(std::io::Error::other(e).into());
         }
     };
 
     if params.refine {
+        // Snapshot the global optimum before refine — local optimizers
+        // are not guaranteed to monotonically improve the input. If the
+        // refine ends up at a worse point (cobyla can wander outside the
+        // basin DE found, e.g. small_stereo_2_2_group with the pure-Rust
+        // cobyla path), restore the DE result rather than ship a regression.
+        let x_pre_refine = x.clone();
         let local_result = optimize_filters_with_algo_override(
             &mut x,
             &lower_bounds,
@@ -654,7 +660,19 @@ pub fn perform_optimization_with_callback(
             Some(&params.local_algo),
         );
         match local_result {
-            Ok((_local_status, _local_val)) => {}
+            Ok((_local_status, local_val)) => {
+                if !local_val.is_finite() || local_val > global_fun {
+                    if !params.quiet {
+                        log::warn!(
+                            "Local refine ({}) regressed: {:.6} -> {:.6}; keeping global result.",
+                            params.local_algo,
+                            global_fun,
+                            local_val,
+                        );
+                    }
+                    x = x_pre_refine;
+                }
+            }
             Err((e, _final_value)) => {
                 return Err(std::io::Error::other(e).into());
             }
