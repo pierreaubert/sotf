@@ -1,54 +1,57 @@
-FROM --platform=linux/amd64 ubuntu:22.04
+# Multi-stage build: Builder stage
+FROM ubuntu:24.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Etc/UTC
 
-# System packages
-RUN apt-get update && apt-get install -y \
+# Install build dependencies - combined into single layer
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
     curl \
+    git \
     build-essential \
+    gcc \
+    g++ \
     pkg-config \
+    ca-certificates \
     cmake \
     ninja-build \
-    ca-certificates \
-    xz-utils \
-    zip \
-    openssl \
-    osslsigncode \
-    && rm -rf /var/lib/apt/lists/*
+    perl \
+    libssl-dev \
+    mingw-w64 \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# Install Rust
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none
+# Install Rust 1.95 (pinned version for compatibility)
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+    sh -s -- -y --default-toolchain 1.95.0 --profile minimal && \
+    rm -rf /root/.cargo/registry /root/.cargo/git
+
 ENV PATH="/root/.cargo/bin:${PATH}"
 
-# Install the exact Rust version required by rust-toolchain.toml with all components
-RUN rustup toolchain install 1.95.0-x86_64-unknown-linux-gnu --component cargo,clippy,llvm-tools-preview,rust-analyzer,rust-src,rust-std,rustc,rustc-dev,rustfmt && \
-    rustup target add --toolchain 1.95.0-x86_64-unknown-linux-gnu x86_64-pc-windows-gnullvm && \
-    rustup default 1.95.0-x86_64-unknown-linux-gnu
+# Add the Windows target
+RUN rustup target add x86_64-pc-windows-gnullvm
 
-# Pin toolchain to override rust-toolchain.toml
-ENV RUSTUP_TOOLCHAIN=1.95.0-x86_64-unknown-linux-gnu
+# Install just
+RUN cargo install just --locked && \
+    rm -rf /root/.cargo/registry /root/.cargo/git
 
-RUN mkdir -p /root/.rustup/tmp /root/.rustup/downloads && \
-    chmod -R 777 /root/.rustup/tmp /root/.rustup/downloads
-
-# Install llvm-mingw (provides x86_64-w64-mingw32 toolchain)
-RUN cd /opt && \
-    curl -L -o llvm-mingw.tar.xz \
-        https://github.com/mstorsjo/llvm-mingw/releases/download/20260311/llvm-mingw-20260311-ucrt-ubuntu-22.04-x86_64.tar.xz && \
-    tar xf llvm-mingw.tar.xz && \
-    rm llvm-mingw.tar.xz && \
-    mv llvm-mingw-* llvm-mingw
-
-ENV PATH="/opt/llvm-mingw/bin:${PATH}"
-
-RUN cargo install just --locked
-
-# Repair rustup state (cached layers may have stale component manifests)
-RUN rustup component remove clippy 2>/dev/null; rustup component add clippy
-
-# Pre-fetch cargo dependencies (cached per Cargo.lock)
 WORKDIR /project
-COPY . /project/
-RUN cargo fetch --locked --target x86_64-pc-windows-gnullvm
-RUN rm -rf /project/*
+
+# Copy source with .dockerignore in place
+COPY . .
+
+# Build release binary for Windows
+ARG APP_NAME=app-cli
+RUN cargo build --release --target x86_64-pc-windows-gnullvm && \
+    find target/x86_64-pc-windows-gnullvm/release -maxdepth 1 -type f -executable | xargs strip -v 2>/dev/null || true && \
+    rm -rf target/.rustc_info.json target/.fingerprint target/x86_64-pc-windows-gnullvm/release/deps/*.d
+
+# Runtime stage: Alpine for Windows binaries (minimal, used for extraction only)
+FROM alpine:latest
+
+# Copy only the compiled Windows binary from builder
+ARG APP_NAME=app-cli
+COPY --from=builder /project/target/x86_64-pc-windows-gnullvm/release/${APP_NAME}.exe /output/app.exe
+
+# Keep binary accessible for extraction
+WORKDIR /output

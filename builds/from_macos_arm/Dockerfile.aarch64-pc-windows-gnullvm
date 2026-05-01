@@ -1,10 +1,57 @@
-FROM sotf-base-win-arm64
+# Multi-stage build: Builder stage for Windows cross-compilation
+FROM ubuntu:24.04 AS builder
 
-ENV CARGO_BUILD_TARGET=aarch64-pc-windows-gnullvm
-ENV CC_aarch64_pc_windows_gnullvm=aarch64-w64-mingw32-gcc
-ENV CXX_aarch64_pc_windows_gnullvm=aarch64-w64-mingw32-g++
-ENV AR_aarch64_pc_windows_gnullvm=aarch64-w64-mingw32-ar
-ENV CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_LINKER=aarch64-w64-mingw32-clang
-ENV OPENSSL_STATIC=1
-ENV OPENSSL_VENDORED=1
-ENV AUTOEQ_DIR=/project
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Etc/UTC
+
+# Install build dependencies - combined into single layer
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    curl \
+    git \
+    build-essential \
+    gcc \
+    g++ \
+    pkg-config \
+    ca-certificates \
+    cmake \
+    ninja-build \
+    perl \
+    libssl-dev \
+    mingw-w64 \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Install Rust 1.95 (pinned version for compatibility)
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+    sh -s -- -y --default-toolchain 1.95.0 --profile minimal && \
+    rm -rf /root/.cargo/registry /root/.cargo/git
+
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Add the Windows target
+RUN rustup target add aarch64-pc-windows-gnullvm
+
+# Install just
+RUN cargo install just --locked && \
+    rm -rf /root/.cargo/registry /root/.cargo/git
+
+WORKDIR /project
+
+# Copy source with .dockerignore in place
+COPY . .
+
+# Build release binary for Windows
+ARG APP_NAME=app-cli
+RUN cargo build --release --target aarch64-pc-windows-gnullvm && \
+    find target/aarch64-pc-windows-gnullvm/release -maxdepth 1 -type f -executable | xargs strip -v 2>/dev/null || true && \
+    rm -rf target/.rustc_info.json target/.fingerprint target/aarch64-pc-windows-gnullvm/release/deps/*.d
+
+# Runtime stage: Alpine for Windows binaries (minimal, used for extraction only)
+FROM alpine:latest
+
+# Copy only the compiled Windows binary from builder
+ARG APP_NAME=app-cli
+COPY --from=builder /project/target/aarch64-pc-windows-gnullvm/release/${APP_NAME}.exe /output/app.exe
+
+# Keep binary accessible for extraction
+WORKDIR /output

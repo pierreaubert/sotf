@@ -1,6 +1,17 @@
 # ----------------------------------------------------------------------
 # plugins-au: macOS Audio Unit v3 plugins
 # ----------------------------------------------------------------------
+# Per-architecture pipeline. Each arch builds its own FFI/GPUI staticlib,
+# its own Xcode .app (isolated -derivedDataPath), and produces an
+# independently signable / notarizable / distributable bundle. The
+# top-level recipes (build-au-all, sign-au, etc.) run both arches in
+# sequence — the Resources/.a files are overwritten between archs but
+# each xcodebuild step finishes before the next arch's cargo build
+# replaces them, so the link inputs always match the arch under build.
+#
+# Outputs live at:
+#   {{au_dir}}/build/au-arm64/Build/Products/Release/SOTFAudioUnits.app
+#   {{au_dir}}/build/au-x86_64/Build/Products/Release/SOTFAudioUnits.app
 
 au_dir := "crates/sotf-plugins/crates/plugins-au"
 plugin_crates_dir := "crates/sotf-plugins/crates"
@@ -53,77 +64,177 @@ sync-au-versions:
 	sed -i '' "s/MARKETING_VERSION: .*/MARKETING_VERSION: $WS_VERSION/" "$AU_DIR/project.yml"
 	echo "  project.yml MARKETING_VERSION → $WS_VERSION"
 
-# Build GPUI AU rendering library (universal binary)
+# ----------------------------------------------------------------------
+# GPUI AU rendering staticlib (per-arch)
+# ----------------------------------------------------------------------
+
+# Build the gpui-au staticlib for arm64 and stage it for the Xcode project.
 [group('build-macos')]
-build-au-gpui:
+build-au-gpui-arm64:
 	#!/usr/bin/env bash
 	set -euo pipefail
-	echo "Building gpui-au for x86_64 + aarch64..."
-	cargo build --release -p gpui-au --target x86_64-apple-darwin
+	echo "Building gpui-au for aarch64..."
 	cargo build --release -p gpui-au --target aarch64-apple-darwin
-	mkdir -p crates/sotf-plugins/crates/plugins-au/Resources
-	lipo -create \
-		target/x86_64-apple-darwin/release/libgpui_au.a \
-		target/aarch64-apple-darwin/release/libgpui_au.a \
-		-output crates/sotf-plugins/crates/plugins-au/Resources/libsotf_gpui_au.a
-	echo "Universal GPUI AU library: crates/sotf-plugins/crates/plugins-au/Resources/libsotf_gpui_au.a"
+	mkdir -p {{au_dir}}/Resources
+	cp target/aarch64-apple-darwin/release/libgpui_au.a \
+		{{au_dir}}/Resources/libsotf_gpui_au.a
+	echo "✅ GPUI AU library (arm64): {{au_dir}}/Resources/libsotf_gpui_au.a"
 
-# Build Rust FFI library for Audio Units (universal binary)
+# Build the gpui-au staticlib for x86_64 and stage it for the Xcode project.
 [group('build-macos')]
-build-au-ffi:
+build-au-gpui-x86_64:
 	#!/usr/bin/env bash
 	set -euo pipefail
-	echo "Building plugins-ffi for x86_64 + aarch64..."
-	cargo build --release -p plugins-ffi --target x86_64-apple-darwin
+	echo "Building gpui-au for x86_64..."
+	cargo build --release -p gpui-au --target x86_64-apple-darwin
+	mkdir -p {{au_dir}}/Resources
+	cp target/x86_64-apple-darwin/release/libgpui_au.a \
+		{{au_dir}}/Resources/libsotf_gpui_au.a
+	echo "✅ GPUI AU library (x86_64): {{au_dir}}/Resources/libsotf_gpui_au.a"
+
+# ----------------------------------------------------------------------
+# Rust FFI staticlib (per-arch)
+# ----------------------------------------------------------------------
+# cargo emits target/<triple>/release/libplugins_ffi.a (crate name is
+# `plugins-ffi`); the Xcode project links -lsotf_audio_plugins_ffi
+# (project.yml:39), so we copy under that name into Resources/.
+
+# Build the plugins-ffi staticlib for arm64 and stage it for the Xcode project.
+[group('build-macos')]
+build-au-ffi-arm64:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	echo "Building plugins-ffi for aarch64..."
 	cargo build --release -p plugins-ffi --target aarch64-apple-darwin
-	mkdir -p crates/sotf-plugins/crates/plugins-au/Resources
-	lipo -create \
-		target/x86_64-apple-darwin/release/libplugins_ffi.a \
-		target/aarch64-apple-darwin/release/libplugins_ffi.a \
-		-output crates/sotf-plugins/crates/plugins-au/Resources/libsotf_audio_plugins_ffi.a
-	echo "Universal FFI library: crates/sotf-plugins/crates/plugins-au/Resources/libsotf_audio_plugins_ffi.a"
+	mkdir -p {{au_dir}}/Resources
+	cp target/aarch64-apple-darwin/release/libplugins_ffi.a \
+		{{au_dir}}/Resources/libsotf_audio_plugins_ffi.a
+	echo "✅ FFI library (arm64): {{au_dir}}/Resources/libsotf_audio_plugins_ffi.a"
 
-# Generate Xcode project and build all AU extensions
+# Build the plugins-ffi staticlib for x86_64 and stage it for the Xcode project.
 [group('build-macos')]
-build-au-xcode: sync-au-versions build-au-ffi
+build-au-ffi-x86_64:
 	#!/usr/bin/env bash
 	set -euo pipefail
-	cd crates/sotf-plugins/crates/plugins-au
-	# Generate Xcode project with XcodeGen
+	echo "Building plugins-ffi for x86_64..."
+	cargo build --release -p plugins-ffi --target x86_64-apple-darwin
+	mkdir -p {{au_dir}}/Resources
+	cp target/x86_64-apple-darwin/release/libplugins_ffi.a \
+		{{au_dir}}/Resources/libsotf_audio_plugins_ffi.a
+	echo "✅ FFI library (x86_64): {{au_dir}}/Resources/libsotf_audio_plugins_ffi.a"
+
+# ----------------------------------------------------------------------
+# Xcode build (per-arch)
+# ----------------------------------------------------------------------
+
+# Build all AU extensions for arm64 (Xcode, isolated DerivedData).
+[group('build-macos')]
+build-au-xcode-arm64: sync-au-versions build-au-ffi-arm64
+	#!/usr/bin/env bash
+	set -euo pipefail
+	cd {{au_dir}}
 	if [ ! -d "SOTFAudioUnits.xcodeproj" ] || [ "project.yml" -nt "SOTFAudioUnits.xcodeproj/project.pbxproj" ]; then
 		echo "Generating Xcode project..."
 		xcodegen generate
 	fi
-	# Build all AU targets
+	rm -rf build/au-arm64
 	xcodebuild -project SOTFAudioUnits.xcodeproj \
 		-scheme SOTFAudioUnits \
 		-configuration Release \
+		-derivedDataPath build/au-arm64 \
+		ARCHS=arm64 \
+		ONLY_ACTIVE_ARCH=NO \
 		build
-	echo "All Audio Units built"
+	echo "✅ All Audio Units built for arm64: build/au-arm64/Build/Products/Release/SOTFAudioUnits.app"
 
-# Build complete AU pipeline (FFI + Xcode)
+# Build all AU extensions for x86_64 (Xcode, isolated DerivedData).
 [group('build-macos')]
-build-au-all: build-au-xcode sync-au-versions
-
-# Install Audio Units to system
-[group('build-macos')]
-install-au-all: build-au-all
+build-au-xcode-x86_64: sync-au-versions build-au-ffi-x86_64
 	#!/usr/bin/env bash
 	set -euo pipefail
-	XCODE_APP=$(find ~/Library/Developer/Xcode/DerivedData/SOTFAudioUnits-*/Build/Products/Release/SOTFAudioUnits.app -maxdepth 0 2>/dev/null | head -1)
-	if [ -n "$XCODE_APP" ] && [ -d "$XCODE_APP" ]; then
-		rm -rf ~/Applications/SOTFAudioUnits.app
-		mkdir -p ~/Applications
-		cp -r "$XCODE_APP" ~/Applications/
-		echo "SOTF Audio Units installed to ~/Applications/"
-		echo "Launch the app once to register AU extensions with the system"
-	else
-		echo "No build found. Run 'just build-au-all' first."
+	cd {{au_dir}}
+	if [ ! -d "SOTFAudioUnits.xcodeproj" ] || [ "project.yml" -nt "SOTFAudioUnits.xcodeproj/project.pbxproj" ]; then
+		echo "Generating Xcode project..."
+		xcodegen generate
+	fi
+	rm -rf build/au-x86_64
+	xcodebuild -project SOTFAudioUnits.xcodeproj \
+		-scheme SOTFAudioUnits \
+		-configuration Release \
+		-derivedDataPath build/au-x86_64 \
+		ARCHS=x86_64 \
+		ONLY_ACTIVE_ARCH=NO \
+		build
+	echo "✅ All Audio Units built for x86_64: build/au-x86_64/Build/Products/Release/SOTFAudioUnits.app"
+
+# ----------------------------------------------------------------------
+# Full build pipelines (per-arch)
+# ----------------------------------------------------------------------
+
+# Build the complete AU pipeline (FFI + Xcode) for arm64.
+[group('build-macos')]
+build-au-all-arm64: build-au-xcode-arm64 sync-au-versions
+
+# Build the complete AU pipeline (FFI + Xcode) for x86_64.
+[group('build-macos')]
+build-au-all-x86_64: build-au-xcode-x86_64 sync-au-versions
+
+# Build the complete AU pipeline for both archs sequentially.
+[group('build-macos')]
+build-au-all: build-au-all-arm64 build-au-all-x86_64
+	@echo "✅ AU packages built for arm64 and x86_64"
+
+# ----------------------------------------------------------------------
+# Install (per-arch + host-arch dispatch)
+# ----------------------------------------------------------------------
+
+# Install the arm64 AU bundle into ~/Applications.
+[group('build-macos')]
+install-au-all-arm64: build-au-all-arm64
+	#!/usr/bin/env bash
+	set -euo pipefail
+	APP="{{au_dir}}/build/au-arm64/Build/Products/Release/SOTFAudioUnits.app"
+	if [ ! -d "$APP" ]; then
+		echo "No build found at $APP. Run 'just build-au-all-arm64' first."
 		exit 1
 	fi
+	rm -rf ~/Applications/SOTFAudioUnits.app
+	mkdir -p ~/Applications
+	cp -R "$APP" ~/Applications/
+	echo "✅ SOTF Audio Units (arm64) installed to ~/Applications/"
+	echo "Launch the app once to register AU extensions with the system"
 	killall -9 AudioComponentRegistrar coreaudiod 2>/dev/null || true
 
-# Validate all Audio Units with auval
+# Install the x86_64 AU bundle into ~/Applications.
+[group('build-macos')]
+install-au-all-x86_64: build-au-all-x86_64
+	#!/usr/bin/env bash
+	set -euo pipefail
+	APP="{{au_dir}}/build/au-x86_64/Build/Products/Release/SOTFAudioUnits.app"
+	if [ ! -d "$APP" ]; then
+		echo "No build found at $APP. Run 'just build-au-all-x86_64' first."
+		exit 1
+	fi
+	rm -rf ~/Applications/SOTFAudioUnits.app
+	mkdir -p ~/Applications
+	cp -R "$APP" ~/Applications/
+	echo "✅ SOTF Audio Units (x86_64) installed to ~/Applications/"
+	echo "Launch the app once to register AU extensions with the system"
+	killall -9 AudioComponentRegistrar coreaudiod 2>/dev/null || true
+
+# Install the AU bundle matching the host architecture.
+[group('build-macos')]
+install-au-all:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	HOST_ARCH=$(uname -m)
+	case "$HOST_ARCH" in
+		arm64)  just install-au-all-arm64 ;;
+		x86_64) just install-au-all-x86_64 ;;
+		*)      echo "Unsupported host arch: $HOST_ARCH"; exit 1 ;;
+	esac
+
+# Validate all Audio Units with auval (against whichever arch is currently registered).
 [group('build-macos')]
 validate-au-all:
 	#!/usr/bin/env bash
@@ -146,95 +257,302 @@ validate-au-all:
 	fi
 	echo "All Audio Units validated"
 
-# Sign AU bundle with Developer ID (inside-out: appex first, then container)
+# ----------------------------------------------------------------------
+# Sign (per-arch + sign both)
+# ----------------------------------------------------------------------
+# Signs the per-arch BUILD output directly (not the installed app), so
+# each arch ends up with a signed bundle ready for notarization and
+# distribution. Inside-out: appex first, then container.
 # Requires: export DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)"
+
+# Sign the arm64 AU bundle.
 [group('build-macos')]
-sign-au:
+sign-au-arm64:
 	#!/usr/bin/env bash
 	set -euo pipefail
-	APP="$HOME/Applications/SOTFAudioUnits.app"
+	APP="{{au_dir}}/build/au-arm64/Build/Products/Release/SOTFAudioUnits.app"
 	if [ ! -d "$APP" ]; then
-		echo "No app bundle at $APP — run 'just install-au-all' first"
+		echo "No app bundle at $APP — run 'just build-au-all-arm64' first"
 		exit 1
 	fi
 	if [ -z "${DEVELOPER_ID:-}" ]; then
 		echo "DEVELOPER_ID not set. Usage:"
 		echo "  export DEVELOPER_ID='Developer ID Application: Your Name (TEAMID)'"
-		echo "  just sign-au"
+		echo "  just sign-au-arm64"
 		exit 1
 	fi
-	# 1. Sign each AU extension (inside-out)
 	for appex in "$APP"/Contents/PlugIns/*.appex; do
 		echo "Signing $(basename "$appex")..."
-		codesign --force --sign "$DEVELOPER_ID" \
-			--options runtime \
-			--timestamp \
-			"$appex"
+		codesign --force --sign "$DEVELOPER_ID" --options runtime --timestamp "$appex"
 	done
-	# 2. Sign the container app
-	echo "Signing SOTFAudioUnits.app..."
-	codesign --force --sign "$DEVELOPER_ID" \
-		--options runtime \
-		--timestamp \
-		"$APP"
-	# 3. Verify
+	echo "Signing SOTFAudioUnits.app (arm64)..."
+	codesign --force --sign "$DEVELOPER_ID" --options runtime --timestamp "$APP"
 	codesign --verify --verbose=2 --strict "$APP"
-	echo "All AU plugins signed and verified"
+	echo "✅ arm64 AU bundle signed and verified"
 
-# Sign and notarize AU bundle with Apple
-# Requires: DEVELOPER_ID + APPLE_ID + keychain profile "autoeq-notarization"
+# Sign the x86_64 AU bundle.
 [group('build-macos')]
-sign-au-notarize: sign-au
+sign-au-x86_64:
 	#!/usr/bin/env bash
 	set -euo pipefail
-	APP="$HOME/Applications/SOTFAudioUnits.app"
+	APP="{{au_dir}}/build/au-x86_64/Build/Products/Release/SOTFAudioUnits.app"
+	if [ ! -d "$APP" ]; then
+		echo "No app bundle at $APP — run 'just build-au-all-x86_64' first"
+		exit 1
+	fi
+	if [ -z "${DEVELOPER_ID:-}" ]; then
+		echo "DEVELOPER_ID not set. Usage:"
+		echo "  export DEVELOPER_ID='Developer ID Application: Your Name (TEAMID)'"
+		echo "  just sign-au-x86_64"
+		exit 1
+	fi
+	for appex in "$APP"/Contents/PlugIns/*.appex; do
+		echo "Signing $(basename "$appex")..."
+		codesign --force --sign "$DEVELOPER_ID" --options runtime --timestamp "$appex"
+	done
+	echo "Signing SOTFAudioUnits.app (x86_64)..."
+	codesign --force --sign "$DEVELOPER_ID" --options runtime --timestamp "$APP"
+	codesign --verify --verbose=2 --strict "$APP"
+	echo "✅ x86_64 AU bundle signed and verified"
+
+# Sign both per-arch AU bundles.
+[group('build-macos')]
+sign-au: sign-au-arm64 sign-au-x86_64
+	@echo "✅ Both per-arch AU bundles signed"
+
+# ----------------------------------------------------------------------
+# Notarize + package as .pkg (per-arch + both)
+# ----------------------------------------------------------------------
+# Each recipe: notarize + staple the .app, then build/sign/notarize/staple
+# a Developer ID Installer .pkg into dist/au/.
+# Requires: DEVELOPER_ID + INSTALLER_DEVELOPER_ID + APPLE_ID + keychain profile "autoeq-notarization"
+#   DEVELOPER_ID           = "Developer ID Application: Your Name (TEAMID)"
+#   INSTALLER_DEVELOPER_ID = "Developer ID Installer: Your Name (TEAMID)"
+
+# Notarize and package the arm64 AU bundle into a signed/notarized .pkg.
+[group('build-macos')]
+sign-au-notarize-arm64: sign-au-arm64
+	#!/usr/bin/env bash
+	set -euo pipefail
+	APP="{{au_dir}}/build/au-arm64/Build/Products/Release/SOTFAudioUnits.app"
 	if [ -z "${APPLE_ID:-}" ]; then
 		echo "APPLE_ID not set for notarization"
 		exit 1
 	fi
-	# Zip for notarization submission (notarytool requires zip/dmg/pkg)
-	ZIP="/tmp/SOTFAudioUnits.zip"
-	ditto -c -k --keepParent "$APP" "$ZIP"
-	echo "Submitting for notarization..."
-	xcrun notarytool submit "$ZIP" \
+	if [ -z "${INSTALLER_DEVELOPER_ID:-}" ]; then
+		echo "INSTALLER_DEVELOPER_ID not set. Usage:"
+		echo "  export INSTALLER_DEVELOPER_ID='Developer ID Installer: Your Name (TEAMID)'"
+		exit 1
+	fi
+
+	VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+	BUNDLE_ID=$(/usr/bin/plutil -extract CFBundleIdentifier raw "$APP/Contents/Info.plist")
+
+	# 1. Notarize and staple the .app (ticket embedded for offline Gatekeeper trust).
+	APP_ZIP="/tmp/SOTFAudioUnits-arm64.zip"
+	ditto -c -k --keepParent "$APP" "$APP_ZIP"
+	echo "Submitting arm64 .app for notarization..."
+	xcrun notarytool submit "$APP_ZIP" \
 		--apple-id "$APPLE_ID" \
 		--keychain-profile "autoeq-notarization" \
 		--wait
-	rm -f "$ZIP"
-	# Staple the ticket to the app
+	rm -f "$APP_ZIP"
 	xcrun stapler staple "$APP"
 	xcrun stapler validate "$APP"
-	echo "AU bundle notarized and stapled"
 
-# Package signed AU bundle into dist/au/ for distribution
-# Creates a zip with the notarization ticket stapled in, ready for direct download.
+	# 2. Build, sign, notarize, staple the installer .pkg.
+	mkdir -p dist/au
+	PKG="dist/au/SOTFAudioUnits-${VERSION}-macos-arm64.pkg"
+	UNSIGNED_PKG="/tmp/SOTFAudioUnits-arm64-unsigned.pkg"
+	/usr/bin/pkgbuild \
+		--component "$APP" \
+		--install-location "/Applications" \
+		--identifier "${BUNDLE_ID}.arm64.pkg" \
+		--version "$VERSION" \
+		"$UNSIGNED_PKG"
+	/usr/bin/productsign \
+		--sign "$INSTALLER_DEVELOPER_ID" \
+		"$UNSIGNED_PKG" \
+		"$PKG"
+	rm -f "$UNSIGNED_PKG"
+	/usr/sbin/pkgutil --check-signature "$PKG"
+
+	echo "Submitting arm64 .pkg for notarization..."
+	xcrun notarytool submit "$PKG" \
+		--apple-id "$APPLE_ID" \
+		--keychain-profile "autoeq-notarization" \
+		--wait
+	xcrun stapler staple "$PKG"
+	xcrun stapler validate "$PKG"
+	echo "✅ arm64 .pkg notarized and stapled: $PKG"
+
+# Notarize and package the x86_64 AU bundle into a signed/notarized .pkg.
 [group('build-macos')]
-dist-au:
+sign-au-notarize-x86_64: sign-au-x86_64
+	#!/usr/bin/env bash
+	set -euo pipefail
+	APP="{{au_dir}}/build/au-x86_64/Build/Products/Release/SOTFAudioUnits.app"
+	if [ -z "${APPLE_ID:-}" ]; then
+		echo "APPLE_ID not set for notarization"
+		exit 1
+	fi
+	if [ -z "${INSTALLER_DEVELOPER_ID:-}" ]; then
+		echo "INSTALLER_DEVELOPER_ID not set. Usage:"
+		echo "  export INSTALLER_DEVELOPER_ID='Developer ID Installer: Your Name (TEAMID)'"
+		exit 1
+	fi
+
+	VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+	BUNDLE_ID=$(/usr/bin/plutil -extract CFBundleIdentifier raw "$APP/Contents/Info.plist")
+
+	# 1. Notarize and staple the .app.
+	APP_ZIP="/tmp/SOTFAudioUnits-x86_64.zip"
+	ditto -c -k --keepParent "$APP" "$APP_ZIP"
+	echo "Submitting x86_64 .app for notarization..."
+	xcrun notarytool submit "$APP_ZIP" \
+		--apple-id "$APPLE_ID" \
+		--keychain-profile "autoeq-notarization" \
+		--wait
+	rm -f "$APP_ZIP"
+	xcrun stapler staple "$APP"
+	xcrun stapler validate "$APP"
+
+	# 2. Build, sign, notarize, staple the installer .pkg.
+	mkdir -p dist/au
+	PKG="dist/au/SOTFAudioUnits-${VERSION}-macos-x86_64.pkg"
+	UNSIGNED_PKG="/tmp/SOTFAudioUnits-x86_64-unsigned.pkg"
+	/usr/bin/pkgbuild \
+		--component "$APP" \
+		--install-location "/Applications" \
+		--identifier "${BUNDLE_ID}.x86_64.pkg" \
+		--version "$VERSION" \
+		"$UNSIGNED_PKG"
+	/usr/bin/productsign \
+		--sign "$INSTALLER_DEVELOPER_ID" \
+		"$UNSIGNED_PKG" \
+		"$PKG"
+	rm -f "$UNSIGNED_PKG"
+	/usr/sbin/pkgutil --check-signature "$PKG"
+
+	echo "Submitting x86_64 .pkg for notarization..."
+	xcrun notarytool submit "$PKG" \
+		--apple-id "$APPLE_ID" \
+		--keychain-profile "autoeq-notarization" \
+		--wait
+	xcrun stapler staple "$PKG"
+	xcrun stapler validate "$PKG"
+	echo "✅ x86_64 .pkg notarized and stapled: $PKG"
+
+# Notarize + package both per-arch AU bundles.
+[group('build-macos')]
+sign-au-notarize: sign-au-notarize-arm64 sign-au-notarize-x86_64
+	@echo "✅ Both per-arch .pkg installers notarized in dist/au/"
+
+# ----------------------------------------------------------------------
+# Distribute (per-arch .pkg installers into dist/au/)
+# ----------------------------------------------------------------------
+# If INSTALLER_DEVELOPER_ID is set, the pkg is signed; otherwise unsigned.
+# For a fully signed + notarized pkg, use 'just sign-au-notarize' instead.
+
+# Package the arm64 AU bundle into dist/au/ as a .pkg installer.
+[group('build-macos')]
+dist-au-arm64:
 	#!/usr/bin/env bash
 	set -euo pipefail
 	VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
-	APP="$HOME/Applications/SOTFAudioUnits.app"
+	APP="{{au_dir}}/build/au-arm64/Build/Products/Release/SOTFAudioUnits.app"
 	if [ ! -d "$APP" ]; then
-		echo "No app bundle at $APP — run 'just install-au-all' first"
+		echo "No app bundle at $APP — run 'just build-au-all-arm64' first"
 		exit 1
 	fi
-	# Verify signing
+	BUNDLE_ID=$(/usr/bin/plutil -extract CFBundleIdentifier raw "$APP/Contents/Info.plist")
 	if ! codesign --verify --strict "$APP" 2>/dev/null; then
-		echo "WARNING: App bundle is not signed. Run 'just sign-au' first for distribution."
+		echo "WARNING: arm64 bundle is not signed. Run 'just sign-au-arm64' first for distribution."
 		echo "Packaging unsigned bundle anyway..."
 	fi
 	mkdir -p dist/au
-	# Create zip preserving resource forks and extended attributes (required for notarization tickets)
-	ditto -c -k --keepParent "$APP" "dist/au/SOTFAudioUnits-${VERSION}.zip"
-	# Also copy the raw .app for direct use
-	rm -rf "dist/au/SOTFAudioUnits.app"
-	cp -R "$APP" "dist/au/SOTFAudioUnits.app"
-	echo ""
-	echo "Packaged to dist/au/:"
-	ls -lh "dist/au/SOTFAudioUnits-${VERSION}.zip"
-	echo ""
-	echo "Distribution: users download the zip, extract, and move SOTFAudioUnits.app"
-	echo "to /Applications or ~/Applications, then launch it once to register the AUs."
+	PKG="dist/au/SOTFAudioUnits-${VERSION}-macos-arm64.pkg"
+
+	if [ -n "${INSTALLER_DEVELOPER_ID:-}" ]; then
+		UNSIGNED_PKG="/tmp/SOTFAudioUnits-arm64-unsigned.pkg"
+		/usr/bin/pkgbuild \
+			--component "$APP" \
+			--install-location "/Applications" \
+			--identifier "${BUNDLE_ID}.arm64.pkg" \
+			--version "$VERSION" \
+			"$UNSIGNED_PKG"
+		/usr/bin/productsign \
+			--sign "$INSTALLER_DEVELOPER_ID" \
+			"$UNSIGNED_PKG" \
+			"$PKG"
+		rm -f "$UNSIGNED_PKG"
+		/usr/sbin/pkgutil --check-signature "$PKG"
+	else
+		echo "WARNING: INSTALLER_DEVELOPER_ID not set; building unsigned pkg."
+		/usr/bin/pkgbuild \
+			--component "$APP" \
+			--install-location "/Applications" \
+			--identifier "${BUNDLE_ID}.arm64.pkg" \
+			--version "$VERSION" \
+			"$PKG"
+	fi
+
+	ls -lh "$PKG"
+	echo "✅ Packaged: $PKG"
+
+# Package the x86_64 AU bundle into dist/au/ as a .pkg installer.
+[group('build-macos')]
+dist-au-x86_64:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+	APP="{{au_dir}}/build/au-x86_64/Build/Products/Release/SOTFAudioUnits.app"
+	if [ ! -d "$APP" ]; then
+		echo "No app bundle at $APP — run 'just build-au-all-x86_64' first"
+		exit 1
+	fi
+	BUNDLE_ID=$(/usr/bin/plutil -extract CFBundleIdentifier raw "$APP/Contents/Info.plist")
+	if ! codesign --verify --strict "$APP" 2>/dev/null; then
+		echo "WARNING: x86_64 bundle is not signed. Run 'just sign-au-x86_64' first for distribution."
+		echo "Packaging unsigned bundle anyway..."
+	fi
+	mkdir -p dist/au
+	PKG="dist/au/SOTFAudioUnits-${VERSION}-macos-x86_64.pkg"
+
+	if [ -n "${INSTALLER_DEVELOPER_ID:-}" ]; then
+		UNSIGNED_PKG="/tmp/SOTFAudioUnits-x86_64-unsigned.pkg"
+		/usr/bin/pkgbuild \
+			--component "$APP" \
+			--install-location "/Applications" \
+			--identifier "${BUNDLE_ID}.x86_64.pkg" \
+			--version "$VERSION" \
+			"$UNSIGNED_PKG"
+		/usr/bin/productsign \
+			--sign "$INSTALLER_DEVELOPER_ID" \
+			"$UNSIGNED_PKG" \
+			"$PKG"
+		rm -f "$UNSIGNED_PKG"
+		/usr/sbin/pkgutil --check-signature "$PKG"
+	else
+		echo "WARNING: INSTALLER_DEVELOPER_ID not set; building unsigned pkg."
+		/usr/bin/pkgbuild \
+			--component "$APP" \
+			--install-location "/Applications" \
+			--identifier "${BUNDLE_ID}.x86_64.pkg" \
+			--version "$VERSION" \
+			"$PKG"
+	fi
+
+	ls -lh "$PKG"
+	echo "✅ Packaged: $PKG"
+
+# Package both per-arch AU bundles into dist/au/ as .pkg installers.
+[group('build-macos')]
+dist-au: dist-au-arm64 dist-au-x86_64
+	@echo ""
+	@echo "Distribution: users download the .pkg matching their Mac's architecture"
+	@echo "and double-click to install. Installs to /Applications/SOTFAudioUnits.app —"
+	@echo "launch it once to register the AUs."
 
 # List registered SOTF Audio Units
 [group('build-macos')]

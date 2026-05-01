@@ -1,6 +1,40 @@
-FROM sotf-base-build-linux-x86-gnu
+# Build stage - inherits build context from build.x86_64-unknown-linux-gnu
+# This image is meant to be used as: FROM sotf-build-linux-x86-gnu
+FROM ubuntu:24.04
 
-# Build for GNU target - dynamically linked, bundled as AppImage
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Etc/UTC
 ENV OPENSSL_STATIC=1
 ENV OPENSSL_VENDORED=1
 ENV AUTOEQ_DIR=/project
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    curl \
+    git \
+    build-essential \
+    gcc \
+    g++ \
+    pkg-config \
+    ca-certificates \
+    cmake \
+    ninja-build \
+    perl \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Install Rust 1.90 (pinned version for compatibility)
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+    sh -s -- -y --default-toolchain 1.90.0 --profile minimal && \
+    rm -rf /root/.cargo/registry /root/.cargo/git
+
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Add the target
+RUN rustup target add x86_64-unknown-linux-gnu
+
+# Install just (command runner)
+RUN cargo install just --locked && \
+    rm -rf /root/.cargo/registry /root/.cargo/git
+
+WORKDIR /project

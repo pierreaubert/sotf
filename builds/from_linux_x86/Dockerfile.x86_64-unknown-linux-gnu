@@ -1,11 +1,13 @@
-FROM ubuntu:24.04
+# Multi-stage build: Builder stage
+FROM ubuntu:24.04 AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-# Install base build dependencies
+# Combine all package updates into single layer to reduce image size
 RUN apt-get update && \
-    apt-get install -y \
+    apt-get install -y --no-install-recommends \
     curl \
+    git \
     build-essential \
     gcc \
     g++ \
@@ -15,21 +17,6 @@ RUN apt-get update && \
     cmake \
     ninja-build \
     perl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Rust 1.90 (pinned version for compatibility)
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.90.0 --profile minimal
-ENV PATH="/root/.cargo/bin:${PATH}"
-
-# Add the target
-RUN rustup target add x86_64-unknown-linux-gnu
-
-# Install just (command runner)
-RUN cargo install just --locked
-
-# Install GTK and WebKit dependencies for Tauri
-RUN apt-get update && \
-    apt-get install -y \
     libglib2.0-dev \
     libgtk-3-dev \
     libwebkit2gtk-4.1-dev \
@@ -38,20 +25,73 @@ RUN apt-get update && \
     patchelf \
     libopenblas-dev \
     gfortran \
-    chromium-browser \
-    chromium-chromedriver \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# Set up pkg-config paths
+# Install Rust (pinned for reproducibility)
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+    sh -s -- -y --default-toolchain 1.90.0 --profile minimal && \
+    rm -rf /root/.cargo/registry /root/.cargo/git
+
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Install rustup target and just
+RUN rustup target add x86_64-unknown-linux-gnu && \
+    cargo install just --locked && \
+    rm -rf /root/.cargo/registry /root/.cargo/git
+
+# Configure build environment
 ENV PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig
 ENV PKG_CONFIG_ALLOW_CROSS=1
-
-# Use vendored OpenSSL to avoid OpenSSL 3.0 compatibility issues
 ENV OPENSSL_STATIC=1
 ENV OPENSSL_VENDORED=1
-
-# Set browser and webdriver paths for plotly_static
-ENV BROWSER_PATH=/usr/bin/chromium-browser
-ENV WEBDRIVER_PATH=/usr/bin/chromedriver
+ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 
 WORKDIR /project
+
+# Copy source with .dockerignore in place (excludes target/, .git, etc.)
+COPY . .
+
+# Build release binary (adjust APP_NAME if needed)
+ARG APP_NAME=app-cli
+RUN cargo build --release --target x86_64-unknown-linux-gnu && \
+    find target/x86_64-unknown-linux-gnu/release -maxdepth 1 -type f -executable | xargs strip -v 2>/dev/null || true && \
+    rm -rf target/.rustc_info.json target/.fingerprint target/x86_64-unknown-linux-gnu/release/deps/*.d
+
+# Runtime stage: minimal base
+FROM ubuntu:24.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Install only runtime dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    ca-certificates \
+    libssl3 \
+    libglib2.0-0 \
+    libgtk-3-0 \
+    libwebkit2gtk-4.1-0 \
+    libayatana-appindicator3-1 \
+    librsvg2-2 \
+    libblas3 \
+    libgfortran5 \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Create non-root user for security
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+WORKDIR /home/appuser
+
+# Copy only the compiled binary from builder
+ARG APP_NAME=app-cli
+COPY --from=builder --chown=appuser:appuser /project/target/x86_64-unknown-linux-gnu/release/${APP_NAME} /usr/local/bin/app
+
+# Switch to non-root user
+USER appuser
+
+# Health check (optional, adjust as needed)
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD app --version || exit 1
+
+# Set entrypoint
+ENTRYPOINT ["app"]
+CMD ["--help"]

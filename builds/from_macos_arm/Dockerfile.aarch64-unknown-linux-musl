@@ -1,14 +1,65 @@
-FROM sotf-base-linux-arm64
+# Multi-stage build: Builder stage
+FROM messense/rust-musl-cross:aarch64-musl AS builder
 
-# Build for GNU target (not musl) — dynamically linked, bundled as AppImage
-ENV CARGO_BUILD_TARGET=aarch64-unknown-linux-gnu
-# Override the musl CC that the base image sets for the GNU target
-ENV CC=gcc
-ENV CXX=g++
-ENV CC_aarch64_unknown_linux_gnu=gcc
-ENV CXX_aarch64_unknown_linux_gnu=g++
-ENV TARGET_CC=gcc
-ENV TARGET_CXX=g++
+# Install additional dependencies for audio and build tools - combined into single layer
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    git \
+    cmake \
+    ninja-build \
+    perl \
+    pkg-config \
+    gfortran \
+    make \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Install just (command runner)
+RUN cargo install just --locked && \
+    rm -rf /root/.cargo/registry /root/.cargo/git
+
+# Set up environment for static linking
+ENV RUSTFLAGS="-C target-feature=+crt-static"
+ENV PKG_CONFIG_ALL_STATIC=1
+ENV PKG_CONFIG_ALLOW_CROSS=1
 ENV OPENSSL_STATIC=1
 ENV OPENSSL_VENDORED=1
-ENV AUTOEQ_DIR=/project
+
+WORKDIR /project
+
+# Copy source with .dockerignore in place
+COPY . .
+
+# Build release binary
+ARG APP_NAME=app-cli
+RUN cargo build --release --target aarch64-unknown-linux-musl && \
+    find target/aarch64-unknown-linux-musl/release -maxdepth 1 -type f -executable | xargs strip -v 2>/dev/null || true && \
+    rm -rf target/.rustc_info.json target/.fingerprint target/aarch64-unknown-linux-musl/release/deps/*.d
+
+# Runtime stage: Alpine for musl
+FROM alpine:latest
+
+# Install only runtime dependencies (minimal for musl static builds)
+RUN apk add --no-cache \
+    ca-certificates \
+    libgfortran \
+    && rm -rf /tmp/* /var/tmp/*
+
+# Create non-root user for security
+RUN addgroup -S appuser && adduser -S appuser -G appuser
+
+WORKDIR /home/appuser
+
+# Copy only the compiled binary from builder
+ARG APP_NAME=app-cli
+COPY --from=builder --chown=appuser:appuser /project/target/aarch64-unknown-linux-musl/release/${APP_NAME} /usr/local/bin/app
+
+# Switch to non-root user
+USER appuser
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD app --version || exit 1
+
+# Set entrypoint
+ENTRYPOINT ["app"]
+CMD ["--help"]

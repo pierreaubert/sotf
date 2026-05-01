@@ -7,10 +7,14 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		002783D73844C39572D88B0C /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 82F118DB7D46C822F49D3621 /* AppKit.framework */; };
 		008BD238E498C99E9995A4DA /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
+		00EF02D528C8B06B9C7A6D51 /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
 		00FFF8C7279C0E668FFF41B3 /* CoreText.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76D771F8888A691145817DA7 /* CoreText.framework */; };
 		0141B0A14547FBC2B1BDBF31 /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
 		016677FEC997C9E2A763A61E /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D770D9CB6824792EA77791E5 /* Foundation.framework */; };
+		02320EFDA1573821531F191A /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
+		0255AB3A868CCFB8BA9476F0 /* DitherViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B464BE7D8358A7664B37C4B /* DitherViewController.swift */; };
 		03599D3F5A1916D513552F3F /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
 		039EF7EEB3FBDDACB450D464 /* CrossfeedAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDA465EEF386C1A242ED3903 /* CrossfeedAudioUnit.swift */; };
 		03DAFEC5158486E273054555 /* MatrixAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1590C4CC38B793ABF185AED6 /* MatrixAudioUnit.swift */; };
@@ -21,8 +25,11 @@
 		04F3E06108F9AE2EE9CA68BD /* PNDAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 1F43688BDA82EC4FADDEF061 /* PNDAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		05018DF8F641E7EE1C4F6073 /* GPUIAUView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */; };
 		05378EF41331C4FF77CBD9D1 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D770D9CB6824792EA77791E5 /* Foundation.framework */; };
+		0559566448A238839BF9AA92 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3B05ED3B0BD4BAA79BBC66D2 /* CoreGraphics.framework */; };
 		059628707D06155854898BC3 /* CoreText.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76D771F8888A691145817DA7 /* CoreText.framework */; };
+		05FBD311334D0DF315BA26FC /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		0664B1A4ED65E65050C3F046 /* GPUIAUView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */; };
+		06944F40809A38D3183E54C2 /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 81040B0C6232F74F439E7F88 /* Carbon.framework */; };
 		069D03F06DC906A69D726B7C /* LimiterViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1447E3F9F03477A6FA414DC /* LimiterViewController.swift */; };
 		069F33FE6C7621E14D7B50D2 /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
 		06A9E9942F3CCCB78850E48E /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 82F118DB7D46C822F49D3621 /* AppKit.framework */; };
@@ -31,8 +38,12 @@
 		07271CFA185CFCC524C4F792 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3B05ED3B0BD4BAA79BBC66D2 /* CoreGraphics.framework */; };
 		072BCEED032FECC808ECE0C2 /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 82F118DB7D46C822F49D3621 /* AppKit.framework */; };
 		0762986804F618379F904F4A /* GateAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44C68A3F49BB297EC1CB97C7 /* GateAudioUnit.swift */; };
+		07E6B8E53047F0ACE1F78E5E /* DeclickAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B1F2F7876A3B6B58D9D7BACC /* DeclickAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		09E2358B315B7F72636E1A9F /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		09E2A102594C8E28913F91F3 /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E26C3EB86A19D2F34253BAC6 /* IOKit.framework */; };
+		0A18794C61593F4A105FAEBB /* DitherAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7D1CAEB550716DFA0E063D98 /* DitherAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		0A400B4B21C946DF311F6CD6 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3B05ED3B0BD4BAA79BBC66D2 /* CoreGraphics.framework */; };
+		0B26DA45DD5C32E400BA6DBF /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		0BAE0423B293617D30CF9209 /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
 		0C228893927893940D8827F8 /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E26C3EB86A19D2F34253BAC6 /* IOKit.framework */; };
 		0C5579C2E0FD1B0478721717 /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
@@ -46,6 +57,7 @@
 		1029081EA5462928D16522C1 /* UpmixerAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EE59CBE2168FF6A45DD6F26 /* UpmixerAudioUnit.swift */; };
 		1061023FC46B8877BB1D2E8C /* GPUIAUView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */; };
 		110058D74BF008B703BF7C3D /* GPUIAUView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */; };
+		1168859A0D9C79952DAED35F /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 81040B0C6232F74F439E7F88 /* Carbon.framework */; };
 		118EF1D2001A1CCD148D681A /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 82F118DB7D46C822F49D3621 /* AppKit.framework */; };
 		11AD641D064C31CD9E0F2E2C /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 82F118DB7D46C822F49D3621 /* AppKit.framework */; };
 		11AE84B296801A55432C2DF0 /* LinearPhaseEQAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 49F250A49D472C9E606C7B3F /* LinearPhaseEQAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -55,6 +67,7 @@
 		1250A08B21777A311360E026 /* GPUIAUView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */; };
 		12C5A94E29C433B03F5A227F /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E26C3EB86A19D2F34253BAC6 /* IOKit.framework */; };
 		1302C8D8F43B85C5BFF7D44E /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
+		133097D423DE75F4488FFBB2 /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		1357BC221C8D03F8A0FE50FD /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 457263BB248DEAD103BA54E3 /* QuartzCore.framework */; };
 		137663EE32A18C9CA07ED5D8 /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E26C3EB86A19D2F34253BAC6 /* IOKit.framework */; };
 		13EF9301F6B0A2412CD3083A /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 457263BB248DEAD103BA54E3 /* QuartzCore.framework */; };
@@ -65,12 +78,15 @@
 		15BD9AC6E5D00920AC9E0E06 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
 		15E2D809211C4C771A557AD4 /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAF03F86229FD1071E868186 /* IOSurface.framework */; };
 		16A6D7C8DF3701F653833154 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 457263BB248DEAD103BA54E3 /* QuartzCore.framework */; };
+		16BA5C6CC49CA93438BC25E8 /* HissReducerAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B69BB145BF3CB6C70343BE4 /* HissReducerAudioUnit.swift */; };
 		16CD60596611B223B07D973B /* GPUIAUView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */; };
 		16E043AD949AF20A0ABBBC60 /* GPUIAUView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */; };
 		1740369F9A0243E7A58EE26B /* CoreText.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76D771F8888A691145817DA7 /* CoreText.framework */; };
+		17ABE8D5C8EC0E157FA49AE9 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 457263BB248DEAD103BA54E3 /* QuartzCore.framework */; };
 		17C9B4919EB65EDE2FE0754D /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
 		1807947A79A12F3B20A7EF79 /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 82F118DB7D46C822F49D3621 /* AppKit.framework */; };
 		18301BE20FA262BCBCD5B594 /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
+		18A0F9DA8315A55A28C18010 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D770D9CB6824792EA77791E5 /* Foundation.framework */; };
 		18B5FE5A4A4FB7D884F4D69E /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 81040B0C6232F74F439E7F88 /* Carbon.framework */; };
 		18C70A5F02B486EB45562FA4 /* LoudnessCompensationAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = BEEBD9352FCD48CA080F9A19 /* LoudnessCompensationAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		192628D784155269B599FD4D /* DynamicEQAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 581CAA9385373A60133DCD58 /* DynamicEQAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -78,6 +94,7 @@
 		1AFD743C3E2FA56408862799 /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
 		1B6457E8844406F34B1BE9CD /* GPUIAUView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */; };
 		1BBA896A35C7759F0112D1EF /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 035D71E4C857BDF4A14F8836 /* Metal.framework */; };
+		1BDAF8C173ECBD6BFDCD79A0 /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		1CB0E5AA2FC899D708EE36A1 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 457263BB248DEAD103BA54E3 /* QuartzCore.framework */; };
 		1DD0EB0388CFBE890D7DA482 /* DelayAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = BD2889964AD6542E5D891773 /* DelayAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		1DE71B1F3DEC7ABFE4CD5700 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3B05ED3B0BD4BAA79BBC66D2 /* CoreGraphics.framework */; };
@@ -86,6 +103,7 @@
 		1EAFA47FDAD2F17CFF331AC6 /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAF03F86229FD1071E868186 /* IOSurface.framework */; };
 		1EE277FE69442901442CF1A1 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D770D9CB6824792EA77791E5 /* Foundation.framework */; };
 		1EE88224456E2591FB587135 /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
+		1F83F6FE91A18AF2B976301E /* CoreText.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76D771F8888A691145817DA7 /* CoreText.framework */; };
 		205092137DC40B6F55A35F6A /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71C42DBA3E8C368B60556A63 /* AppDelegate.swift */; };
 		205733BB196EFE8E6DA76BE7 /* CoreText.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76D771F8888A691145817DA7 /* CoreText.framework */; };
 		20F276920436526F76B7281E /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 035D71E4C857BDF4A14F8836 /* Metal.framework */; };
@@ -93,6 +111,7 @@
 		21F1B26581DD8FCB718DB4FB /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
 		222AA205D4A06D7E208C0755 /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
 		222C9A18DEF6495899076761 /* BeamformerViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9993A1D6802D1B70116B497D /* BeamformerViewController.swift */; };
+		225CD0D24DC153790EF0F867 /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E26C3EB86A19D2F34253BAC6 /* IOKit.framework */; };
 		22D60D0C8A78EA213994105A /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
 		23C3099987052B9A62752229 /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 81040B0C6232F74F439E7F88 /* Carbon.framework */; };
 		23CEABC087703212AC389C86 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 457263BB248DEAD103BA54E3 /* QuartzCore.framework */; };
@@ -100,13 +119,16 @@
 		250F73F30ACFE972D24EF760 /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 81040B0C6232F74F439E7F88 /* Carbon.framework */; };
 		25427F0B04935C81E5CE2C77 /* DynamicEQViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63B01C76E74ED14429240AD1 /* DynamicEQViewController.swift */; };
 		255665CF0ED1DED4F7A69BC3 /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E26C3EB86A19D2F34253BAC6 /* IOKit.framework */; };
+		25D012A6846F8AC7B71DD52B /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
 		26320AA80FFE7008110D19AA /* GPUIAUView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */; };
 		26B233A6C7888EC5ADA71486 /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAF03F86229FD1071E868186 /* IOSurface.framework */; };
 		26E4009001A29AF1A3C2D1AE /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 81040B0C6232F74F439E7F88 /* Carbon.framework */; };
 		26F37F9D033C27BE65FDC0F9 /* CoreText.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76D771F8888A691145817DA7 /* CoreText.framework */; };
 		282B1CA5518E1990C18B0888 /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
+		28513EA8B546A998900A00AD /* SpeechDenoiserAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 34B132766BEA18AFF7DEF1DA /* SpeechDenoiserAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		287AB6134A6A498EFC72BE5A /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 457263BB248DEAD103BA54E3 /* QuartzCore.framework */; };
 		2880DF7BB5BE6F9A88D7E8EA /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E26C3EB86A19D2F34253BAC6 /* IOKit.framework */; };
+		28B05DA686CA387FD64A95E5 /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		28BB652445931A0FA22A5A10 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3B05ED3B0BD4BAA79BBC66D2 /* CoreGraphics.framework */; };
 		292CD1A4B22B8E942432E690 /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAF03F86229FD1071E868186 /* IOSurface.framework */; };
 		29771BC0F0AF335E739972DD /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
@@ -131,10 +153,12 @@
 		332BD999CA6BF2A68C1C4572 /* GPUIAUView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */; };
 		3333A84C93688FD36175B593 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3B05ED3B0BD4BAA79BBC66D2 /* CoreGraphics.framework */; };
 		3465E78D50304616B61BF590 /* ExpanderAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEE2860890D815F174FC110A /* ExpanderAudioUnit.swift */; };
+		34A7F7E956194B50EB7BF6B8 /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		34EFF963F03BC9C13EE57590 /* SaturationAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 204C3F430461C6D45FD241E4 /* SaturationAudioUnit.swift */; };
 		352016CA1FA79F66DF895B33 /* ConvolutionAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAFF576E9C158E48DB06D29C /* ConvolutionAudioUnit.swift */; };
 		359DD398B42584FBB5675E3F /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
 		361E2B04BA1043AEE169F408 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D770D9CB6824792EA77791E5 /* Foundation.framework */; };
+		36BA3FBDCCD3D15BCC7FA7DD /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E26C3EB86A19D2F34253BAC6 /* IOKit.framework */; };
 		36C103E916DCBE4D44433499 /* SpectralCompressorViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B03E64046694B692EF6E8B8 /* SpectralCompressorViewController.swift */; };
 		36F2C77B8B0DDDEC81A99172 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D770D9CB6824792EA77791E5 /* Foundation.framework */; };
 		3777F7FAFD777376C1BA8064 /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
@@ -160,12 +184,15 @@
 		3F12975BCE6CF45F118991F9 /* CoreText.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76D771F8888A691145817DA7 /* CoreText.framework */; };
 		3F52AAB4E4B4CE8CBFADDE68 /* ChannelMuteSoloViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35514B8E89E5BD9FB57A26C7 /* ChannelMuteSoloViewController.swift */; };
 		3F84CB9719DD2BF08D66AA02 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 457263BB248DEAD103BA54E3 /* QuartzCore.framework */; };
+		40427445D9595F4368D50512 /* GPUIAUView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */; };
 		404C635C136F8ED1FB2B91EE /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 035D71E4C857BDF4A14F8836 /* Metal.framework */; };
 		4067766C55784AD1A071FCB3 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 457263BB248DEAD103BA54E3 /* QuartzCore.framework */; };
+		4073715B9A8EB1A41BA6DC5F /* GPUIAUView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */; };
 		4098FD2E756E1615A5F9F64A /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 82F118DB7D46C822F49D3621 /* AppKit.framework */; };
 		409F7205B693B43ECBC67BDE /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E26C3EB86A19D2F34253BAC6 /* IOKit.framework */; };
 		40DFA29358344E9BA8EEFE4D /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
 		40E259E1A7F5D5CA8FFB69EC /* GPUIAUView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */; };
+		40E3E367616E89F6F1ACD8FA /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		40E51D445E2091777420C75E /* BandSplitViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3A2598BA41F73EF422F3C49 /* BandSplitViewController.swift */; };
 		40FE69074FA792A73F08608E /* GPUIAUView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */; };
 		4140C02B1EF93DAEDF4F42A2 /* CoreText.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76D771F8888A691145817DA7 /* CoreText.framework */; };
@@ -182,6 +209,7 @@
 		44DD569AB4C44F1F44AEC0DE /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
 		4532FE1C25583BBBB877783F /* EQViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC4FB5E50EE778B07B255779 /* EQViewController.swift */; };
 		4566B539A4B8D2FF194B1164 /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
+		46304F6A6A2105612C9A4EA1 /* CoreText.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76D771F8888A691145817DA7 /* CoreText.framework */; };
 		46AF5AD52C7D914E3D41EE50 /* GPUIAUView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */; };
 		46D963F02F925F64D07F3025 /* MultibandCompressorAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A25048D9CB7EC682360B61F7 /* MultibandCompressorAudioUnit.swift */; };
 		4798480553F387606CFFB3E2 /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAF03F86229FD1071E868186 /* IOSurface.framework */; };
@@ -190,12 +218,16 @@
 		48853D7F4BED7B630E4AD40F /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 81040B0C6232F74F439E7F88 /* Carbon.framework */; };
 		48E7F8B6A223DA8FC429888D /* EQAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = DD7BE16A411963C349D2A41D /* EQAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		4916F5D53BB4416983BFE292 /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E26C3EB86A19D2F34253BAC6 /* IOKit.framework */; };
+		49684C0C7FDC0E227B56289C /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
+		49A4A84A8280E2BF2997C3E6 /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAF03F86229FD1071E868186 /* IOSurface.framework */; };
+		4A1B3225C3029259B87D7FA7 /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		4AA2BD4573E0BCBBD18514ED /* GPUIAUView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */; };
 		4AA9CA079101E1A472F37603 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D770D9CB6824792EA77791E5 /* Foundation.framework */; };
 		4B0269B42C63049D26B61332 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D770D9CB6824792EA77791E5 /* Foundation.framework */; };
 		4B35F4A60FEAEE003AB06B71 /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
 		4B45DAC78D47FC0DA3286ACF /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAF03F86229FD1071E868186 /* IOSurface.framework */; };
 		4BF029AE5DE13D1A673D93BF /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
+		4C2414DD513C42EAD1AB9154 /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		4C5FD715EFCFB111D5D5FCF5 /* PNDViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D077896875BFAF3515B67594 /* PNDViewController.swift */; };
 		4C79B2DE13740E6988E76EF1 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 457263BB248DEAD103BA54E3 /* QuartzCore.framework */; };
 		4CF411DE68C76F6E6003F582 /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 82F118DB7D46C822F49D3621 /* AppKit.framework */; };
@@ -215,18 +247,22 @@
 		52D445F643F4D9E1EF5FEF07 /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAF03F86229FD1071E868186 /* IOSurface.framework */; };
 		537F1E32DDE6B83AAF446B32 /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAF03F86229FD1071E868186 /* IOSurface.framework */; };
 		539E1AACEA6CB0AE3A19B91D /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
+		53AD6F14A296FBBACACD9613 /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
 		53C1C28016F534E40AC5D2B6 /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
 		54E5BA442032771BDECF1BBF /* CompressorAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B6F3FAE3B4C7A8813A06F7DB /* CompressorAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		57076E496B1616BE05A4A886 /* CrossoverAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 55E705990E93120C6BC1B0A6 /* CrossoverAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		57C9F53995B9841F6A9E5F24 /* ABCompareAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5266031750AA9139688B6B0E /* ABCompareAudioUnit.swift */; };
 		57FDA4EC364FB1B65C121A86 /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E26C3EB86A19D2F34253BAC6 /* IOKit.framework */; };
+		580E383A2ADD806D7713AC61 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D770D9CB6824792EA77791E5 /* Foundation.framework */; };
 		580F3BDBCCF1D8578DE3CF95 /* LoudnessCompensationViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8A30C14BBA63DF4C18B330D /* LoudnessCompensationViewController.swift */; };
+		581C3049C8ED3E3F862DDC68 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
 		58566163517CD60BA90E1D02 /* CoreText.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76D771F8888A691145817DA7 /* CoreText.framework */; };
 		59039D4583AAA422272C9F02 /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 82F118DB7D46C822F49D3621 /* AppKit.framework */; };
 		5951371D0C4B295FD576609E /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D770D9CB6824792EA77791E5 /* Foundation.framework */; };
 		59C69F08BD2A0D032F731298 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
 		5A5D2AE6F276A5770EEF63A1 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D770D9CB6824792EA77791E5 /* Foundation.framework */; };
 		5A77E3A5FBF7DA492E443859 /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
+		5B10A52E8DF689C44A3186A5 /* GPUIAUView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */; };
 		5B5847AC041E62E71B5A882C /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
 		5B83017A5BA478679C4FD736 /* AAEAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84F424E97597F9665384E120 /* AAEAudioUnit.swift */; };
 		5CC9249F4C7EB3260EA9C9BE /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAF03F86229FD1071E868186 /* IOSurface.framework */; };
@@ -234,6 +270,8 @@
 		5D7EFF804658F47435DCEBBF /* CoreText.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76D771F8888A691145817DA7 /* CoreText.framework */; };
 		5DC83FDA0E3933F5FA85F1C6 /* AECViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF962BF70C4B32ADB0EFE8C8 /* AECViewController.swift */; };
 		5E4E801090F82317D23FFEF5 /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 81040B0C6232F74F439E7F88 /* Carbon.framework */; };
+		5E686A98846918A7AA373DFB /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
+		5E8D3E2CBEA5845D6C04A309 /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAF03F86229FD1071E868186 /* IOSurface.framework */; };
 		5EB88860F735DCCECB821C5B /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D770D9CB6824792EA77791E5 /* Foundation.framework */; };
 		5F7DD2EE23586EF0462376E4 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D770D9CB6824792EA77791E5 /* Foundation.framework */; };
 		600585C598EBF7CFDAABC024 /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 81040B0C6232F74F439E7F88 /* Carbon.framework */; };
@@ -241,6 +279,7 @@
 		60EEE76700A2F22E101FE990 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D770D9CB6824792EA77791E5 /* Foundation.framework */; };
 		6121BA6055787A83F59B8A7C /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 457263BB248DEAD103BA54E3 /* QuartzCore.framework */; };
 		61627A6E219E4DAA4B5B3370 /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E26C3EB86A19D2F34253BAC6 /* IOKit.framework */; };
+		619610B4AB15BCD112BBDC94 /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		61E4C3D101DB28A66FFD0482 /* GPUIAUView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */; };
 		6203C5D18CE0186BD9F7A2B2 /* BandMergeAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 5380B274418EF3918EC5705F /* BandMergeAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		624732A70A9896D5A5B40C2A /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
@@ -259,10 +298,12 @@
 		65C58CEECE67A9C8B91098A3 /* GPUIAUView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */; };
 		666DBA2094B733E9F1DF3E42 /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
 		66ABCD6A984525BD832C58EF /* AAEViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9D93F3DA2E03A2A4DEE3753 /* AAEViewController.swift */; };
+		670D3B199B7DCDBA8843A681 /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 82F118DB7D46C822F49D3621 /* AppKit.framework */; };
 		674BAD937FE8A1ED41C253E0 /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 81040B0C6232F74F439E7F88 /* Carbon.framework */; };
 		67CEBB940AE450C508910DBA /* CoreText.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76D771F8888A691145817DA7 /* CoreText.framework */; };
 		67F1C99FD1C6E4423CB5190B /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 81040B0C6232F74F439E7F88 /* Carbon.framework */; };
 		68062B56815A76BDFDCA9642 /* CoreText.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76D771F8888A691145817DA7 /* CoreText.framework */; };
+		681399305300F021B4C98C2D /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		68175B14A99E7CA76216AA01 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
 		68C5FC58BF67D28D5E9BC99C /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E26C3EB86A19D2F34253BAC6 /* IOKit.framework */; };
 		693991F12924438A4418226F /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3B05ED3B0BD4BAA79BBC66D2 /* CoreGraphics.framework */; };
@@ -272,6 +313,7 @@
 		69B335800FDFDAB69CC7FACA /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAF03F86229FD1071E868186 /* IOSurface.framework */; };
 		6A4D85BCCD637EE0C0156927 /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E26C3EB86A19D2F34253BAC6 /* IOKit.framework */; };
 		6AB2CAD4F8C5920A7D3DA431 /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
+		6AD8235D9FB34F047B3CE344 /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		6AE020346A1B3CD200A846A9 /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
 		6B2F0F2203DD1F88AA7B8CDA /* GPUIAUView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */; };
 		6B7672BD7F5BCCE3FE785BCE /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 81040B0C6232F74F439E7F88 /* Carbon.framework */; };
@@ -300,6 +342,8 @@
 		721B99C4146120D93C4C28E4 /* MultibandCompressorViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3139BA9345DCFEF8E88632E4 /* MultibandCompressorViewController.swift */; };
 		721BCB381FCAE8988023D1A2 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 457263BB248DEAD103BA54E3 /* QuartzCore.framework */; };
 		7227115D787C5C240009D07F /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 81040B0C6232F74F439E7F88 /* Carbon.framework */; };
+		724E555534AACC3C490436CE /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 81040B0C6232F74F439E7F88 /* Carbon.framework */; };
+		7264C2DB4CFDD64AD34257D6 /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		72C1FB38A93FDDCF93B0CE99 /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
 		72CFC70EDEC69917327CBFF3 /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
 		73DEFF1AE1239A0415EE8C4F /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 035D71E4C857BDF4A14F8836 /* Metal.framework */; };
@@ -321,15 +365,18 @@
 		7AA23C4CFE936BCD5B12BED1 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
 		7ACDBD53D746745872A00088 /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
 		7ACE2AECA8EB1CC93B405424 /* BandSplitAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = B51EF669426123BF89535799 /* BandSplitAudioUnit.swift */; };
+		7B1C3BC589710A8E8A8F57B1 /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
 		7B1DEFC812ACDDFA192F7BC0 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 035D71E4C857BDF4A14F8836 /* Metal.framework */; };
 		7BB8291F7BB3F76386B02412 /* CoreText.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76D771F8888A691145817DA7 /* CoreText.framework */; };
 		7BEC3F35375C7CE81D923ED6 /* BandMergeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA51DB028516C10B52C06BF5 /* BandMergeViewController.swift */; };
 		7C0A9F37FD9B08A01B2E8340 /* LoudnessMonitorViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D96A417D204E4B107777F41 /* LoudnessMonitorViewController.swift */; };
 		7C8B07A2AC2703A4F58584F2 /* GPUIAUView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */; };
+		7CB962D5131CF0AA1C4168A0 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D770D9CB6824792EA77791E5 /* Foundation.framework */; };
 		7D2B0DD52C29E58D067EF2F7 /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E26C3EB86A19D2F34253BAC6 /* IOKit.framework */; };
 		7D4DE399C6D92F79114679B3 /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E26C3EB86A19D2F34253BAC6 /* IOKit.framework */; };
 		7DBBB34B32E78D0784639E9C /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 457263BB248DEAD103BA54E3 /* QuartzCore.framework */; };
 		7DBE9498F288C09AF043DA24 /* CompressorViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F84F775148978093A4924846 /* CompressorViewController.swift */; };
+		7E1B761B413B2D0405A753A7 /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		7E4BE5B359DDE5C26D3B0433 /* TransientShaperAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37531F372C55487DF3645535 /* TransientShaperAudioUnit.swift */; };
 		7E7FE6F2F668A6DF3AA09734 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
 		7EC062D9807C64FF2602E7A2 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 035D71E4C857BDF4A14F8836 /* Metal.framework */; };
@@ -338,10 +385,12 @@
 		8139E349C858B3B88292C5AE /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 457263BB248DEAD103BA54E3 /* QuartzCore.framework */; };
 		8141F290EF00F1903B36F7CF /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
 		81493B7D2680489457670703 /* DownmixAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C04DF3334AFEC25E00BF9C4 /* DownmixAudioUnit.swift */; };
+		817AF28A8F94271EF68EA4CE /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 035D71E4C857BDF4A14F8836 /* Metal.framework */; };
 		81D61CD97DDA5397ED9D7BDB /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
 		81F2980B6380636D59A5D3FF /* MatrixViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D17B6DE153FED779B048B74B /* MatrixViewController.swift */; };
 		81F4F2557155459093394C3C /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
 		820FB710A2F1F04008B71D87 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D770D9CB6824792EA77791E5 /* Foundation.framework */; };
+		829677F1629645F255B2ED5E /* DeclickViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = E34BD2E79F64BDBC6446EFE9 /* DeclickViewController.swift */; };
 		82D5A4DB1498F4BFB7FEC99F /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
 		8335A7BB7A371742C8FCE31F /* DynamicEQAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CF0284E33ADCDB8EBAF51D3 /* DynamicEQAudioUnit.swift */; };
 		845CFC6633DB1CE07EA26878 /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 81040B0C6232F74F439E7F88 /* Carbon.framework */; };
@@ -361,6 +410,7 @@
 		87F80F18B132E0A9961EBDD0 /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 81040B0C6232F74F439E7F88 /* Carbon.framework */; };
 		8888BF23918C0E8A389392B9 /* DenoiserAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 5AD285771CAFDA68606F738F /* DenoiserAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		88BBADB054082E4A0774126D /* ChannelMuteSoloAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A626ABD2C7CA39AD14D6C3F9 /* ChannelMuteSoloAudioUnit.swift */; };
+		88DA96E3096A774843FF7991 /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		8932A1CF0EB0E83E283C7173 /* LoudnessMonitorAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 77F163B49896AC973935052A /* LoudnessMonitorAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		8946CEA5C2110F1B960B767E /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 035D71E4C857BDF4A14F8836 /* Metal.framework */; };
 		8970CA4DB0BBA0C9F8061A4C /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 82F118DB7D46C822F49D3621 /* AppKit.framework */; };
@@ -377,16 +427,20 @@
 		8D00084E4272EB350ECC241D /* StereoImagerViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E2A51F2D6A0009096FFB977 /* StereoImagerViewController.swift */; };
 		8D1D5BFEA4A228F07FB1C664 /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E26C3EB86A19D2F34253BAC6 /* IOKit.framework */; };
 		8D3146852DC6B49ACB1CECD3 /* FletcherMunsonViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95C7298F17806A7DE085DF39 /* FletcherMunsonViewController.swift */; };
+		8DF73E27DC8D050E042EE0BD /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
 		8E2D241893DAF9D7FEB945BF /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3B05ED3B0BD4BAA79BBC66D2 /* CoreGraphics.framework */; };
+		8E7F26764A91442A1B2D4B3E /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		8EEEE73E0475814F6E412C97 /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 81040B0C6232F74F439E7F88 /* Carbon.framework */; };
 		8F1F4236CC2A7BC12F619285 /* CrossoverAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEB7569225BD4865A2D2ECA4 /* CrossoverAudioUnit.swift */; };
 		8F2930068AB538739881C8E0 /* CoreText.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76D771F8888A691145817DA7 /* CoreText.framework */; };
 		903398259FE2672E4E764C02 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D770D9CB6824792EA77791E5 /* Foundation.framework */; };
+		91D313DEA74772E92834273E /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		91EC61C84D338BEB958040E7 /* CoreText.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76D771F8888A691145817DA7 /* CoreText.framework */; };
 		92399C5B0F5AA8EE4324E690 /* CoreText.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76D771F8888A691145817DA7 /* CoreText.framework */; };
 		930733EFA79F55605D94D92F /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E26C3EB86A19D2F34253BAC6 /* IOKit.framework */; };
 		9315BE4F1ED6F96A0F0B9749 /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E26C3EB86A19D2F34253BAC6 /* IOKit.framework */; };
 		9329A6428B9AFE62D6130858 /* CrossfeedViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B7C2A1EC105EE3095E7055A /* CrossfeedViewController.swift */; };
+		93444A1E34843762F7BA4733 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
 		93CFFAC4F8200627CA01D076 /* MultibandExpanderAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAEE7E434D60B0699789ECE9 /* MultibandExpanderAudioUnit.swift */; };
 		940A880890E193C080B6BEC4 /* LoudnessCompensationAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A83F447CFD5C39D11211477F /* LoudnessCompensationAudioUnit.swift */; };
 		94A6D94FF0F786DE4BF9C703 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
@@ -398,6 +452,8 @@
 		9628C2F739AB01AC71825415 /* CoreText.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76D771F8888A691145817DA7 /* CoreText.framework */; };
 		969EAA481CC3186CDAD8FF89 /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
 		969F5C61744B592134AC5F1F /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
+		96B747383E2A1A4EAB38B24D /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E26C3EB86A19D2F34253BAC6 /* IOKit.framework */; };
+		96C3E20A4039B687BCEF0EC2 /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		97111E8A55979A9541C8FF1D /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
 		975A27A5F2867CEEF983DBD0 /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 82F118DB7D46C822F49D3621 /* AppKit.framework */; };
 		9762E5F58C4F87A1C529BA1A /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
@@ -405,26 +461,35 @@
 		978597942B60E8701603216C /* MonoToStereoAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = C63A08AA57C0F01DB25C572F /* MonoToStereoAudioUnit.swift */; };
 		97C298BA8E80F851C7441E11 /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
 		9832489BD2C38072A93031A8 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D770D9CB6824792EA77791E5 /* Foundation.framework */; };
+		983E8EC36049F70C20D6F04C /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 82F118DB7D46C822F49D3621 /* AppKit.framework */; };
 		984D13D4B6AD48980AFC8502 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3B05ED3B0BD4BAA79BBC66D2 /* CoreGraphics.framework */; };
 		98DE956E400F7C3EA2D4F82A /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 035D71E4C857BDF4A14F8836 /* Metal.framework */; };
 		991CA13B33DECCF83599CF5F /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
+		99283482955217FE2516B334 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 457263BB248DEAD103BA54E3 /* QuartzCore.framework */; };
 		992A4ECF717B2E97791E6544 /* GPUIAUView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */; };
 		99665D708BAB415690757C73 /* BinauralViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0B86092AA52B92DE304074 /* BinauralViewController.swift */; };
 		9979878D4D2912BD149FCB0C /* DelayAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4017E4669B2700E9C0A9063B /* DelayAudioUnit.swift */; };
+		997F81B32BE1079C8856BC17 /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
 		999E5A91864B0A028CB779EF /* TransientShaperAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = CD9834EA409BE2BB5B596E1B /* TransientShaperAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		99D1B44EC82B0114501D5BB7 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 457263BB248DEAD103BA54E3 /* QuartzCore.framework */; };
 		9AD549660CC87D79DAC2311C /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
 		9BA2ECBCD5286F5A802CFEF8 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
 		9BCCAD16250FA175E6D5CAA9 /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAF03F86229FD1071E868186 /* IOSurface.framework */; };
+		9C60FC46D145A23FE232C996 /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		9D8A46AB61CD0BF948717BD7 /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAF03F86229FD1071E868186 /* IOSurface.framework */; };
 		9DC2F7EFB265F079AB11234B /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
 		9E2CC3D081EA19301B661CF6 /* MonoToStereoAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 2275FFA9DFFCD79BC1AB20BE /* MonoToStereoAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		9EC949040A94F72FB3B3B0E3 /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
 		9ECAC6BC3989E805926D88ED /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 81040B0C6232F74F439E7F88 /* Carbon.framework */; };
 		9ECC508C92A1F9E1F0A02BF0 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 035D71E4C857BDF4A14F8836 /* Metal.framework */; };
+		9F4C8D95F58F0D0123D24097 /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
+		9F5318E92141CB1888DC9F39 /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
+		9F942F914AB58AB6084BE1FD /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
+		9F952B1757B34F36AEDE1667 /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		9FFFF65FF4B58E95706DEA05 /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 82F118DB7D46C822F49D3621 /* AppKit.framework */; };
 		A010163B7A23D8BE0B598EC8 /* CoreText.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76D771F8888A691145817DA7 /* CoreText.framework */; };
 		A038B286389ED27A5E83D25A /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 457263BB248DEAD103BA54E3 /* QuartzCore.framework */; };
+		A06A51898684A5C993425E15 /* CoreText.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76D771F8888A691145817DA7 /* CoreText.framework */; };
 		A06E81101C77BE61FCF2965D /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
 		A130C51A17C79E6A1B132064 /* GPUIAUView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */; };
 		A1955AF295F2F7BA4A01F785 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 035D71E4C857BDF4A14F8836 /* Metal.framework */; };
@@ -441,7 +506,10 @@
 		A47FC6AB903F651E79ED6C3D /* GPUIAUView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */; };
 		A4B07D4704B94584A6B434FD /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAF03F86229FD1071E868186 /* IOSurface.framework */; };
 		A4D7A2D96F55E5A53027BED0 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3B05ED3B0BD4BAA79BBC66D2 /* CoreGraphics.framework */; };
+		A534E747953F3895C71F4106 /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
+		A53F8487B62090A83ADEFC51 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3B05ED3B0BD4BAA79BBC66D2 /* CoreGraphics.framework */; };
 		A565A9321D104A55FB219460 /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 81040B0C6232F74F439E7F88 /* Carbon.framework */; };
+		A5859484A9DB994E54C63E4B /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		A5973D941C069715B32BE24E /* GainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7F1A54794105DD6AA1901B4 /* GainViewController.swift */; };
 		A5E556339882D455E6C883F2 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
 		A60F8F754CA08A4A3DD00E90 /* GPUIAUView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */; };
@@ -449,11 +517,16 @@
 		A6F38FBC2DE6E120F0CF436E /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3B05ED3B0BD4BAA79BBC66D2 /* CoreGraphics.framework */; };
 		A72A45510EE49D3AA5CA830E /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAF03F86229FD1071E868186 /* IOSurface.framework */; };
 		A76B2D2E47F2CCE0E180A3B7 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 035D71E4C857BDF4A14F8836 /* Metal.framework */; };
+		A7D654D982E683B17DF13AD8 /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		A7DEA9CBCBA9FC5F9D83F32E /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 584BB2AEC6B0994DFE571F9F /* Main.storyboard */; };
+		A86A102EBE87AFB28E6CD80D /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
+		A8B78D475EE426FC40D15AC5 /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		A8EBEEDE2C0CA0AE08EC668C /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 82F118DB7D46C822F49D3621 /* AppKit.framework */; };
+		A8F5DE4CC5EF3FE33BF7995E /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		A906695CA0E79B683238E730 /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
 		A94A8CCD679FF4CE04D1F3ED /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
 		A9715B1053E746E24028ACD9 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D770D9CB6824792EA77791E5 /* Foundation.framework */; };
+		AA49AD8B5DA34292FD07091F /* HissReducerAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 629B0BB7BAE9705914E7514A /* HissReducerAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		AA7F74206A03C8E76FD6E58B /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
 		AB270C9666C59B4BA8C50086 /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E26C3EB86A19D2F34253BAC6 /* IOKit.framework */; };
 		AB34A0DF2559128879E296C5 /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
@@ -479,24 +552,32 @@
 		B1D39E57D5179191CCE21A3B /* BeamformerAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 543B73151F282E261BF3008B /* BeamformerAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		B1FEF063E1E31403C80063B9 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 035D71E4C857BDF4A14F8836 /* Metal.framework */; };
 		B24AD952C447A2913A7CDBD2 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3B05ED3B0BD4BAA79BBC66D2 /* CoreGraphics.framework */; };
+		B2E1618860B56D567D0DF458 /* SpeechDenoiserViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F407EBF6A3FFED4841CDCF90 /* SpeechDenoiserViewController.swift */; };
 		B2EDBF2ECF9CB5B9D4E43977 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
 		B3134978C31DFA5305981E04 /* SpectrumAnalyzerAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AFD00DE88BFFBBB84A5C0B69 /* SpectrumAnalyzerAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		B3489F8272219A22A83861E1 /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAF03F86229FD1071E868186 /* IOSurface.framework */; };
 		B390D2B2DF311E01B43E3EAE /* UpmixerAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D9A635B84B22CB4C96D21DCE /* UpmixerAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		B436F2B571E9A4536383FBEA /* AmbisonicsAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 05851178927F15A0C90F195F /* AmbisonicsAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		B43905CCFBF712F554DF28C5 /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		B4493A0D139AD37A2DED06BD /* CoreText.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76D771F8888A691145817DA7 /* CoreText.framework */; };
+		B4CE924A23E6EDC86CFC5397 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 035D71E4C857BDF4A14F8836 /* Metal.framework */; };
 		B4DC291258222AE08E93E471 /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAF03F86229FD1071E868186 /* IOSurface.framework */; };
 		B4E1B2561E3159B3205A5706 /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E26C3EB86A19D2F34253BAC6 /* IOKit.framework */; };
+		B505D75C28BBC79F102D8928 /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		B555DC4206254351810E1B54 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D770D9CB6824792EA77791E5 /* Foundation.framework */; };
 		B5E1867D0DCAC6BC38C9750C /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 035D71E4C857BDF4A14F8836 /* Metal.framework */; };
 		B6189A533B1DC6CFD0E3F820 /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 82F118DB7D46C822F49D3621 /* AppKit.framework */; };
 		B67C5C3E3B943374F5716775 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D770D9CB6824792EA77791E5 /* Foundation.framework */; };
 		B6BA1F19C1517D5D67221CD4 /* CompressorAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = B251BC66F81685B8B725F553 /* CompressorAudioUnit.swift */; };
 		B76BDF25AD7B4E1A16081282 /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
+		B7BB4824696EEF46A0A768B4 /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		B819F900CB0605FAA2BD784C /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 81040B0C6232F74F439E7F88 /* Carbon.framework */; };
 		B850B2E90D27CDC7C242FF7C /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 82F118DB7D46C822F49D3621 /* AppKit.framework */; };
+		B86AE3EF213ED40BC2B7054F /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		B86FF800FF8FC59C8C97B58A /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E26C3EB86A19D2F34253BAC6 /* IOKit.framework */; };
 		B8C55DF4BB6241F4357A1384 /* GPUIAUView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */; };
+		B9692C0240C6136CDB0F4C72 /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
+		B9FF3F7AB9C5B39391298963 /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
 		BA3B6717A1DB62F4AA2765AD /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 035D71E4C857BDF4A14F8836 /* Metal.framework */; };
 		BA8AFCBBFD6B0E5DB9A07901 /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 82F118DB7D46C822F49D3621 /* AppKit.framework */; };
 		BB6E5C587EA5883C0581300A /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
@@ -504,40 +585,50 @@
 		BBEF54C2C1B84A31430B24E9 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3B05ED3B0BD4BAA79BBC66D2 /* CoreGraphics.framework */; };
 		BC39A5727147455C0FAB1245 /* DeEsserViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F5181EFEB46EAF9E7F7AA67 /* DeEsserViewController.swift */; };
 		BC49BF5769FF3179ECC11B53 /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAF03F86229FD1071E868186 /* IOSurface.framework */; };
+		BC91E889F18DE457703386CD /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 035D71E4C857BDF4A14F8836 /* Metal.framework */; };
 		BD4861BC93B4924EDD12CEA0 /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E26C3EB86A19D2F34253BAC6 /* IOKit.framework */; };
 		BE52CA22891DC9F8F7C88A49 /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
 		BE8D86A21ABEB987BA59CFA2 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 457263BB248DEAD103BA54E3 /* QuartzCore.framework */; };
 		C01036C2E4E8E4BFD90D3026 /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
+		C01DE2A5B59B2232D792BEC7 /* CoreText.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76D771F8888A691145817DA7 /* CoreText.framework */; };
 		C02ADFEAF42D667E4DFA54D3 /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
 		C0AC40DE3CB1CBF7C0930685 /* XTCAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 5EC50B04A50E01B76A56156C /* XTCAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		C1139D1D295FB7109616794D /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 035D71E4C857BDF4A14F8836 /* Metal.framework */; };
 		C13CE8BF653F7F617FF517A5 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 035D71E4C857BDF4A14F8836 /* Metal.framework */; };
+		C18BDE196559D33C9098A52D /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		C224E9056B7FC0FEE13E2909 /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 81040B0C6232F74F439E7F88 /* Carbon.framework */; };
 		C2706B2C2CB2896CC756A612 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
 		C32F8CE75FE660DF457D25A3 /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
 		C44FBBDF2A89C0008DC07F44 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
 		C48E3B06C5AD3A4E23DFF440 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 035D71E4C857BDF4A14F8836 /* Metal.framework */; };
+		C4FA7910662F3E16EF91145B /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D770D9CB6824792EA77791E5 /* Foundation.framework */; };
 		C5483DFCFE4CE6B32BDE06C7 /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
 		C557D32D77A5CFAF0844FDA4 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D770D9CB6824792EA77791E5 /* Foundation.framework */; };
 		C5D70D2AB12DC1518EBF9F38 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 457263BB248DEAD103BA54E3 /* QuartzCore.framework */; };
 		C62B77385DE94D325333D3B0 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
+		C78CE5A165ABBC35897FD2DA /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAF03F86229FD1071E868186 /* IOSurface.framework */; };
 		C7F80E21CAC804DE3813144B /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E26C3EB86A19D2F34253BAC6 /* IOKit.framework */; };
 		C82A895CD4B69A9C5D00936B /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D770D9CB6824792EA77791E5 /* Foundation.framework */; };
 		C84364A6D2B6A2F956D5FEFF /* StereoImagerAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = FF138D1B59EE6DBC7D06FAC7 /* StereoImagerAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		C87BF0900025482B28CECB74 /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E26C3EB86A19D2F34253BAC6 /* IOKit.framework */; };
 		C899C085441139D5B9D5D6C0 /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
 		C8A32B3B76193E425AA9DFAE /* GateViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 616C27B2D26892F80ED2E2B2 /* GateViewController.swift */; };
 		C8D4EBC42B2F55C4099CAADC /* GPUIAUView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */; };
 		C90664F87430A623C631BC45 /* GPUIAUView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */; };
+		C96233D524216E60A838CA11 /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
 		C9B98C3CB7E7181E4617CB44 /* GPUIAUView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */; };
 		CA6803A28499A94E63AEB851 /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAF03F86229FD1071E868186 /* IOSurface.framework */; };
+		CA8F4F45AC95A81B59B11661 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3B05ED3B0BD4BAA79BBC66D2 /* CoreGraphics.framework */; };
 		CAA37B041E4537F87B369AAD /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAF03F86229FD1071E868186 /* IOSurface.framework */; };
 		CB02E2E99A39391BA7E455B1 /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
 		CB3DEB59637B0B075728AB70 /* XTCViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56540C2A88E469320D8EFE79 /* XTCViewController.swift */; };
 		CB43EDA82BCE8BA6B3F223C5 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D770D9CB6824792EA77791E5 /* Foundation.framework */; };
 		CB9E03472EE50D2F10E7945E /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E26C3EB86A19D2F34253BAC6 /* IOKit.framework */; };
+		CC48E56519F3A2A5DEF5F5FF /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
 		CC4CE159F24E227D5B90A1AD /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
 		CC63E14952DA1987B3D907D4 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 457263BB248DEAD103BA54E3 /* QuartzCore.framework */; };
 		CC74CDAFC160CF198B270BE9 /* CoreText.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76D771F8888A691145817DA7 /* CoreText.framework */; };
+		CCA5886AB99A54B0F88068CE /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAF03F86229FD1071E868186 /* IOSurface.framework */; };
 		CCCCC1EBB0C37AD04F6248B2 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 457263BB248DEAD103BA54E3 /* QuartzCore.framework */; };
 		CD3EE133BF317B66B5453E3A /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAF03F86229FD1071E868186 /* IOSurface.framework */; };
 		CDC7AB20068A8D476C59F639 /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
@@ -546,7 +637,9 @@
 		CE650B4D4DEE6A328DB8F5C3 /* GainAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 0D43EAE3E478F712584F82C7 /* GainAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		CEB96190FE94B55C3BAEB545 /* ChannelMuteSoloAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = DB2933AE58E04CD210D02AC9 /* ChannelMuteSoloAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		CEBEFFE9CC1DCE8DEC7145D4 /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 81040B0C6232F74F439E7F88 /* Carbon.framework */; };
+		CF4C32E95E982B8462343FC3 /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		CF69F13B3B76D494BE9EFC27 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 035D71E4C857BDF4A14F8836 /* Metal.framework */; };
+		CF91C23F786D64C33C71E913 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 457263BB248DEAD103BA54E3 /* QuartzCore.framework */; };
 		D0516A4208F278B9B95C1943 /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
 		D07F291B68C67013F17D8E16 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3B05ED3B0BD4BAA79BBC66D2 /* CoreGraphics.framework */; };
 		D0B44AFFE1337CAD438F57CE /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3B05ED3B0BD4BAA79BBC66D2 /* CoreGraphics.framework */; };
@@ -555,6 +648,7 @@
 		D183A9335309F737C71EC308 /* TransientShaperViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D86630C1CEDF1845A923EC0 /* TransientShaperViewController.swift */; };
 		D1A8F086537965AD66A62D4E /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3B05ED3B0BD4BAA79BBC66D2 /* CoreGraphics.framework */; };
 		D2041FB5A53E62918754B2DD /* LimiterAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 380AAE23EA83890F36A42573 /* LimiterAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		D225DE18722AA6ECB8506D64 /* DitherAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A9FE3F5D5D3B47963EB09F3 /* DitherAudioUnit.swift */; };
 		D25E4904FF91CF4809AE3917 /* AECAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E5C91CE17A1656EE82FBDCB1 /* AECAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D288698A1307FD9294ECEFCE /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 035D71E4C857BDF4A14F8836 /* Metal.framework */; };
 		D2C9E2416445481522E29ACD /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 81040B0C6232F74F439E7F88 /* Carbon.framework */; };
@@ -580,6 +674,7 @@
 		DA9200D8A627BC8EE933554E /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAF03F86229FD1071E868186 /* IOSurface.framework */; };
 		DAED8FC7E6725AE65DB414AA /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 82F118DB7D46C822F49D3621 /* AppKit.framework */; };
 		DB1EEDCED05E08EC9CC58A90 /* CoreText.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76D771F8888A691145817DA7 /* CoreText.framework */; };
+		DB453FED848C460C8CB04B77 /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 81040B0C6232F74F439E7F88 /* Carbon.framework */; };
 		DB9045C6A1877D2D9983891C /* CoreText.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76D771F8888A691145817DA7 /* CoreText.framework */; };
 		DBDCBFC099A6C4D38913E337 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3B05ED3B0BD4BAA79BBC66D2 /* CoreGraphics.framework */; };
 		DC141E4306E7B4EB75803B82 /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 82F118DB7D46C822F49D3621 /* AppKit.framework */; };
@@ -617,16 +712,21 @@
 		E4A86D2B93549EBBC4897BCA /* AmbisonicsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54E9497C7FD4EE0314925C50 /* AmbisonicsViewController.swift */; };
 		E4C6F4FDACABC6C6E6DFCC37 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 457263BB248DEAD103BA54E3 /* QuartzCore.framework */; };
 		E526F0F17E0F5C6FD8ABFF54 /* ConvolutionAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = CAE624A9D39101F20B8C2767 /* ConvolutionAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		E5E08B9F11E74CC9BCCE4330 /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		E6159B31C2EE7C330C7DC29F /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
 		E620606D929D3D70280176CE /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
 		E63A3622768414F4F3D6EEAE /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
+		E675D96A5468E78C69DD100D /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
+		E6A165A792CBEA4B5B77E17B /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 035D71E4C857BDF4A14F8836 /* Metal.framework */; };
 		E6A6D1627D89555EE12C4606 /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
 		E6E11A5ECE24956BD6914565 /* GateAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 341D66E33B7AD4BB1C27198F /* GateAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		E7D28C393ADB7718030D1DA5 /* DeclickAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBFA5DF7E94098BAD751DEC4 /* DeclickAudioUnit.swift */; };
 		E87F45A2A39200D21FC728D8 /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
 		E8F8B788C3BD6DDB0D31E02E /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
 		E95C8BEA695FF42BCB775653 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 035D71E4C857BDF4A14F8836 /* Metal.framework */; };
 		EA7D2514E332EA9A0F5B0EA1 /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E26C3EB86A19D2F34253BAC6 /* IOKit.framework */; };
 		EADCAB2BB5981AEB77FB666E /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 457263BB248DEAD103BA54E3 /* QuartzCore.framework */; };
+		EB9447F8DCFBCCB2B88ED38F /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
 		EBEDEDD177200BFEF93900CB /* BeamformerAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = D628AECEA29B7739FD2065E3 /* BeamformerAudioUnit.swift */; };
 		ECA7150BC4943F5A5F8192E6 /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 82F118DB7D46C822F49D3621 /* AppKit.framework */; };
 		ECB69876797DFA3686AE6ECE /* SpectrumAnalyzerViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50B8F374B1F75EB28CD7877D /* SpectrumAnalyzerViewController.swift */; };
@@ -635,15 +735,18 @@
 		EF14D797688C825F968D8A5C /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
 		EF2D08683325B676FA19B15C /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E26C3EB86A19D2F34253BAC6 /* IOKit.framework */; };
 		EF3CC0619FD1E5D2006C4B0B /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 81040B0C6232F74F439E7F88 /* Carbon.framework */; };
+		EFDEF54943D0147526C563A3 /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 82F118DB7D46C822F49D3621 /* AppKit.framework */; };
 		F04DADCCBC1B1AE16028AC8D /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
 		F068DB289EA2DEE0C0798D6A /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 81040B0C6232F74F439E7F88 /* Carbon.framework */; };
 		F08E6C02130AE1A05A35D98B /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D770D9CB6824792EA77791E5 /* Foundation.framework */; };
 		F0BFA5DC4CBCD81CB8962AAE /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
+		F0CB69E4A69AC799A512D83D /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 457263BB248DEAD103BA54E3 /* QuartzCore.framework */; };
 		F135891D21CAF9747D9D2E1F /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3B05ED3B0BD4BAA79BBC66D2 /* CoreGraphics.framework */; };
 		F17E16931E86CB3AC8282F09 /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 81040B0C6232F74F439E7F88 /* Carbon.framework */; };
 		F1B4F6EA0B87537646B417EC /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 81040B0C6232F74F439E7F88 /* Carbon.framework */; };
 		F1CFAD88EA133CEFEE0C8169 /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAF03F86229FD1071E868186 /* IOSurface.framework */; };
 		F1DA99E97F6F262DCB73DA43 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 457263BB248DEAD103BA54E3 /* QuartzCore.framework */; };
+		F227C9761C5C446D7FC709A9 /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		F2D8120C86043F94DF9F04DD /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
 		F2DD31290F7DEF4383045345 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 035D71E4C857BDF4A14F8836 /* Metal.framework */; };
 		F2E679BAC399704980CA1BA9 /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 82F118DB7D46C822F49D3621 /* AppKit.framework */; };
@@ -651,24 +754,32 @@
 		F3A05903ED50DEDAE0A3BE24 /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 82F118DB7D46C822F49D3621 /* AppKit.framework */; };
 		F3AE8F7D66BF611D4AD735AB /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 035D71E4C857BDF4A14F8836 /* Metal.framework */; };
 		F3B6BFDFE5C3D5EE4EA9F09E /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAF03F86229FD1071E868186 /* IOSurface.framework */; };
+		F3BE58A185DEA4E65CAE00F1 /* SpeechDenoiserAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F7078B6360B562A084CFD89 /* SpeechDenoiserAudioUnit.swift */; };
 		F464F54FB13646B6F843D672 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3B05ED3B0BD4BAA79BBC66D2 /* CoreGraphics.framework */; };
 		F4C39F06BF67ADAEB71C8A5E /* CrossoverViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89FDA279B5562E27A9086264 /* CrossoverViewController.swift */; };
 		F4CF444E23A774B1F3236BB2 /* CoreText.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76D771F8888A691145817DA7 /* CoreText.framework */; };
+		F4E534DA4FEFD04F6C472A34 /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
 		F5A6CF1B5FCC5FFDE1B6F06D /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
 		F5C7F289497E4945A8778645 /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 81040B0C6232F74F439E7F88 /* Carbon.framework */; };
 		F5D399C4CB292C80F67C5A32 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3B05ED3B0BD4BAA79BBC66D2 /* CoreGraphics.framework */; };
+		F6C4403F05632B2F3CB4B323 /* GPUIAUView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */; };
 		F7315DBB2D2A328B457E5C20 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 457263BB248DEAD103BA54E3 /* QuartzCore.framework */; };
 		F7E3C62D246925340EB54868 /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
 		F7E79B76F7358FAC6C62E1F8 /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 81040B0C6232F74F439E7F88 /* Carbon.framework */; };
 		F7F345F474EFC29EE9018282 /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
 		F89B1152B988A66B0372DC0E /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 035D71E4C857BDF4A14F8836 /* Metal.framework */; };
 		F8EC607E5803BB7A3680C51D /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 82F118DB7D46C822F49D3621 /* AppKit.framework */; };
+		F9862DF6B4035AE0B91AAE42 /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
 		FA06C41258D94274E95FD58A /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D770D9CB6824792EA77791E5 /* Foundation.framework */; };
 		FA2B87B0585995BB961BF19F /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 82F118DB7D46C822F49D3621 /* AppKit.framework */; };
 		FA65F5907FF92EB78E937314 /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 82F118DB7D46C822F49D3621 /* AppKit.framework */; };
+		FA89774CDF905B48D1FA9B04 /* HissReducerViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A504F2150E042A86F7219FAC /* HissReducerViewController.swift */; };
 		FAC1951071E046441CD1012E /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAF03F86229FD1071E868186 /* IOSurface.framework */; };
 		FBB7F479CB7CDCDAD8285E4A /* GPUIAUView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */; };
 		FBBE091FDC35A5B047B05A54 /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
+		FC90FAB2681E1DF3C230E4FE /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3B05ED3B0BD4BAA79BBC66D2 /* CoreGraphics.framework */; };
+		FCB711F188355263CDCD504C /* GenericRustViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */; };
+		FDB7BE9559BD810CB1354150 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
 		FDEAEF5D0DF57BCF89AB8B8A /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAF03F86229FD1071E868186 /* IOSurface.framework */; };
 		FEE0ECDEB78000EA89AB1674 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 457263BB248DEAD103BA54E3 /* QuartzCore.framework */; };
 		FF8B1F4FC01D80119D242B08 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
@@ -725,6 +836,13 @@
 			remoteGlobalIDString = 63843F596563880D8358DF34;
 			remoteInfo = DynamicEQAudioUnit;
 		};
+		2B5D4255D0A7FD2A44BA02CE /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 276DEC5F2AEE49D20BB0748F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A0D23D82C5767D117A799E18;
+			remoteInfo = DitherAudioUnit;
+		};
 		332F78554A86C2E51D7376E0 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 276DEC5F2AEE49D20BB0748F /* Project object */;
@@ -759,6 +877,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = B2E9850B01781946DC2046A9;
 			remoteInfo = FletcherMunsonAudioUnit;
+		};
+		52A17794B1B4E0629F103B77 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 276DEC5F2AEE49D20BB0748F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AEFBA070783F4C3FDC372E42;
+			remoteInfo = SpeechDenoiserAudioUnit;
 		};
 		53FF8F88C197A2AD2FE50B46 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -893,6 +1018,20 @@
 			remoteGlobalIDString = 568F94A182E080C60E865B90;
 			remoteInfo = CrossoverAudioUnit;
 		};
+		D521527B0BC5993905F88257 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 276DEC5F2AEE49D20BB0748F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 74198072FE128D962B7AF07E;
+			remoteInfo = DeclickAudioUnit;
+		};
+		D5463E003DEC3435D052BC6E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 276DEC5F2AEE49D20BB0748F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 97BD9D5165B8B2E669B59EF2;
+			remoteInfo = HissReducerAudioUnit;
+		};
 		E0BA997C8995653CABBD8FFC /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 276DEC5F2AEE49D20BB0748F /* Project object */;
@@ -997,6 +1136,10 @@
 				8932A1CF0EB0E83E283C7173 /* LoudnessMonitorAudioUnit.appex in Embed Foundation Extensions */,
 				B3134978C31DFA5305981E04 /* SpectrumAnalyzerAudioUnit.appex in Embed Foundation Extensions */,
 				B436F2B571E9A4536383FBEA /* AmbisonicsAudioUnit.appex in Embed Foundation Extensions */,
+				07E6B8E53047F0ACE1F78E5E /* DeclickAudioUnit.appex in Embed Foundation Extensions */,
+				AA49AD8B5DA34292FD07091F /* HissReducerAudioUnit.appex in Embed Foundation Extensions */,
+				28513EA8B546A998900A00AD /* SpeechDenoiserAudioUnit.appex in Embed Foundation Extensions */,
+				0A18794C61593F4A105FAEBB /* DitherAudioUnit.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1011,6 +1154,7 @@
 		07ED0EE6728FED317985601C /* SOTFAudioUnits.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SOTFAudioUnits.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		08498B1C74D01FD17EAA45DB /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		099EFFA8CC4193DD43EC4E07 /* SpectralCompressorAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SpectralCompressorAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		0B464BE7D8358A7664B37C4B /* DitherViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DitherViewController.swift; sourceTree = "<group>"; };
 		0C04DF3334AFEC25E00BF9C4 /* DownmixAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownmixAudioUnit.swift; sourceTree = "<group>"; };
 		0D43EAE3E478F712584F82C7 /* GainAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = GainAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		0D97A7E27D56B39EEC7D0F9F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -1020,6 +1164,7 @@
 		1590C4CC38B793ABF185AED6 /* MatrixAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatrixAudioUnit.swift; sourceTree = "<group>"; };
 		167D60B8D460812A0FF9F10B /* FletcherMunsonAudioUnit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FletcherMunsonAudioUnit.entitlements; sourceTree = "<group>"; };
 		19E7274C44C4B9DBB745E47D /* BinauralAudioUnit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = BinauralAudioUnit.entitlements; sourceTree = "<group>"; };
+		1A9FE3F5D5D3B47963EB09F3 /* DitherAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DitherAudioUnit.swift; sourceTree = "<group>"; };
 		1AC45A89CB9E8E242A851491 /* ExpanderAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ExpanderAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		1E44E932277311CA3801BF79 /* MultibandCompressorAudioUnit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MultibandCompressorAudioUnit.entitlements; sourceTree = "<group>"; };
 		1EE59CBE2168FF6A45DD6F26 /* UpmixerAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpmixerAudioUnit.swift; sourceTree = "<group>"; };
@@ -1049,9 +1194,11 @@
 		33944180469D97D52776B8BA /* DownmixAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DownmixAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		33F64EDDFBD95752DA855F23 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		341D66E33B7AD4BB1C27198F /* GateAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = GateAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		34B132766BEA18AFF7DEF1DA /* SpeechDenoiserAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SpeechDenoiserAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		35514B8E89E5BD9FB57A26C7 /* ChannelMuteSoloViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelMuteSoloViewController.swift; sourceTree = "<group>"; };
 		35BAA94A4BACD643BF050F45 /* ExpanderAudioUnit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ExpanderAudioUnit.entitlements; sourceTree = "<group>"; };
 		362CB68B363B6FEB4A23FF2B /* EQAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EQAudioUnit.swift; sourceTree = "<group>"; };
+		36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenericRustViewController.swift; sourceTree = "<group>"; };
 		37531F372C55487DF3645535 /* TransientShaperAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransientShaperAudioUnit.swift; sourceTree = "<group>"; };
 		380AAE23EA83890F36A42573 /* LimiterAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LimiterAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		39DEEE6F81F6F1250D2C74E9 /* PNDAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PNDAudioUnit.swift; sourceTree = "<group>"; };
@@ -1059,15 +1206,18 @@
 		3B05ED3B0BD4BAA79BBC66D2 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
 		3B0CAEAF18D20D3B8AAB218F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		3B7C2A1EC105EE3095E7055A /* CrossfeedViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrossfeedViewController.swift; sourceTree = "<group>"; };
+		3B8B2014AFF8DC519CD97CE8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		3E904A95796283CDF370CA06 /* BinauralAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BinauralAudioUnit.swift; sourceTree = "<group>"; };
 		3F4413DBEB09BAFCF6C895A9 /* MultibandExpanderViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultibandExpanderViewController.swift; sourceTree = "<group>"; };
 		4017E4669B2700E9C0A9063B /* DelayAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DelayAudioUnit.swift; sourceTree = "<group>"; };
 		42F36D0A99BB26DFAC1EE493 /* LinearPhaseEQViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinearPhaseEQViewController.swift; sourceTree = "<group>"; };
 		42F490EAB629D9DD1EF9D82D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		44C68A3F49BB297EC1CB97C7 /* GateAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GateAudioUnit.swift; sourceTree = "<group>"; };
+		451FAE191B6209FF264955D0 /* HissReducerAudioUnit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HissReducerAudioUnit.entitlements; sourceTree = "<group>"; };
 		4521A52628F795784F52576F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		457263BB248DEAD103BA54E3 /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
 		49F250A49D472C9E606C7B3F /* LinearPhaseEQAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LinearPhaseEQAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		4A6838DFA776389D39BA122E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		4B57DCE6B58AB203A356BD54 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		50B8F374B1F75EB28CD7877D /* SpectrumAnalyzerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpectrumAnalyzerViewController.swift; sourceTree = "<group>"; };
 		50D59739943E8B584F538395 /* ABCompareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ABCompareViewController.swift; sourceTree = "<group>"; };
@@ -1084,12 +1234,15 @@
 		58991E9B8007864E908DA77C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		5AD285771CAFDA68606F738F /* DenoiserAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DenoiserAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		5AE4946CEBD5DDDC9B8997BA /* CrossfeedAudioUnit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CrossfeedAudioUnit.entitlements; sourceTree = "<group>"; };
+		5B69BB145BF3CB6C70343BE4 /* HissReducerAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HissReducerAudioUnit.swift; sourceTree = "<group>"; };
 		5E19E71C7AD1876500A8949B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		5E2A51F2D6A0009096FFB977 /* StereoImagerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StereoImagerViewController.swift; sourceTree = "<group>"; };
 		5EC50B04A50E01B76A56156C /* XTCAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = XTCAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		5F7078B6360B562A084CFD89 /* SpeechDenoiserAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechDenoiserAudioUnit.swift; sourceTree = "<group>"; };
 		60C67110F8DE979703B74113 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		61051D946C7BC2BFC8F1D61A /* MonoToStereoAudioUnit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MonoToStereoAudioUnit.entitlements; sourceTree = "<group>"; };
 		616C27B2D26892F80ED2E2B2 /* GateViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GateViewController.swift; sourceTree = "<group>"; };
+		629B0BB7BAE9705914E7514A /* HissReducerAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = HissReducerAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		63B01C76E74ED14429240AD1 /* DynamicEQViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DynamicEQViewController.swift; sourceTree = "<group>"; };
 		6459FC1A7B05FD0CD4C75F56 /* SpectralCompressorAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpectralCompressorAudioUnit.swift; sourceTree = "<group>"; };
 		64900F3FAB211778FD501485 /* ConvolutionAudioUnit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ConvolutionAudioUnit.entitlements; sourceTree = "<group>"; };
@@ -1108,6 +1261,7 @@
 		76D771F8888A691145817DA7 /* CoreText.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreText.framework; path = System/Library/Frameworks/CoreText.framework; sourceTree = SDKROOT; };
 		77F163B49896AC973935052A /* LoudnessMonitorAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LoudnessMonitorAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		7B03E64046694B692EF6E8B8 /* SpectralCompressorViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpectralCompressorViewController.swift; sourceTree = "<group>"; };
+		7D1CAEB550716DFA0E063D98 /* DitherAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DitherAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		7D86630C1CEDF1845A923EC0 /* TransientShaperViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransientShaperViewController.swift; sourceTree = "<group>"; };
 		7D96A417D204E4B107777F41 /* LoudnessMonitorViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoudnessMonitorViewController.swift; sourceTree = "<group>"; };
 		7FEC73A2E5E490DA4739074E /* MatrixAudioUnit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MatrixAudioUnit.entitlements; sourceTree = "<group>"; };
@@ -1130,6 +1284,7 @@
 		9703D0799FB858F9E2C0A5A4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		9761A7CFF664C93D68AC9252 /* DeEsserAudioUnit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DeEsserAudioUnit.entitlements; sourceTree = "<group>"; };
 		9993A1D6802D1B70116B497D /* BeamformerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeamformerViewController.swift; sourceTree = "<group>"; };
+		9B3BA9D8A9836D886B61F04B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		9CB6205818E33CE1DDF9C6F7 /* AAEAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AAEAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		9CF0284E33ADCDB8EBAF51D3 /* DynamicEQAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DynamicEQAudioUnit.swift; sourceTree = "<group>"; };
 		9D92961E925B0A0984AD58B0 /* sotf_audio_plugin_ffi.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = sotf_audio_plugin_ffi.h; sourceTree = "<group>"; };
@@ -1142,6 +1297,7 @@
 		A25048D9CB7EC682360B61F7 /* MultibandCompressorAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultibandCompressorAudioUnit.swift; sourceTree = "<group>"; };
 		A32667BBD26EF2A020942906 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		A3695907D89822A12B6956DE /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		A504F2150E042A86F7219FAC /* HissReducerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HissReducerViewController.swift; sourceTree = "<group>"; };
 		A626ABD2C7CA39AD14D6C3F9 /* ChannelMuteSoloAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelMuteSoloAudioUnit.swift; sourceTree = "<group>"; };
 		A744BFECB6A48FABB810528E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		A83F447CFD5C39D11211477F /* LoudnessCompensationAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoudnessCompensationAudioUnit.swift; sourceTree = "<group>"; };
@@ -1149,11 +1305,13 @@
 		AA160B3F3F3357033AA85B7E /* DenoiserAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DenoiserAudioUnit.swift; sourceTree = "<group>"; };
 		AA2E2BC88EFB38D3E298629D /* LoudnessMonitorAudioUnit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LoudnessMonitorAudioUnit.entitlements; sourceTree = "<group>"; };
 		AB881C6493C247E98B476CE3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		AC23EAE8B41BEAE87831C0E6 /* DitherAudioUnit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DitherAudioUnit.entitlements; sourceTree = "<group>"; };
 		AC31ECD54F1736A3A570BC38 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		ACF8C62BBABD94C51FD408C3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		AFD00DE88BFFBBB84A5C0B69 /* SpectrumAnalyzerAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SpectrumAnalyzerAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		B0F7143C88AA437BAEBA48B1 /* BandMergeAudioUnit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = BandMergeAudioUnit.entitlements; sourceTree = "<group>"; };
 		B16AD5A02ABBA56E6FB9A53F /* ChannelMuteSoloAudioUnit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ChannelMuteSoloAudioUnit.entitlements; sourceTree = "<group>"; };
+		B1F2F7876A3B6B58D9D7BACC /* DeclickAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DeclickAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		B251BC66F81685B8B725F553 /* CompressorAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompressorAudioUnit.swift; sourceTree = "<group>"; };
 		B324D9E06B15AE6304E9B7EE /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		B3B60DCD203882C294E49825 /* BandMergeAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BandMergeAudioUnit.swift; sourceTree = "<group>"; };
@@ -1166,6 +1324,7 @@
 		B8FBFAB7CBCEED4BDCB56360 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		BB097C78294968CE77C4F724 /* CrossoverAudioUnit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CrossoverAudioUnit.entitlements; sourceTree = "<group>"; };
 		BBBDE3EE9DA38AA8018F3F9B /* DenoiserViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DenoiserViewController.swift; sourceTree = "<group>"; };
+		BBFA5DF7E94098BAD751DEC4 /* DeclickAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeclickAudioUnit.swift; sourceTree = "<group>"; };
 		BC009CE78DC1FEAF730DDEC8 /* DelayViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DelayViewController.swift; sourceTree = "<group>"; };
 		BC4FB5E50EE778B07B255779 /* EQViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EQViewController.swift; sourceTree = "<group>"; };
 		BCAB171E9913FA549503CFB2 /* FletcherMunsonAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FletcherMunsonAudioUnit.swift; sourceTree = "<group>"; };
@@ -1177,9 +1336,11 @@
 		C02F0C91B44515034AF8678F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		C251037B7D20FCF709526734 /* XTCAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XTCAudioUnit.swift; sourceTree = "<group>"; };
 		C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
+		C3E425D25805C61C1253CEA2 /* SpeechDenoiserAudioUnit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SpeechDenoiserAudioUnit.entitlements; sourceTree = "<group>"; };
 		C487B29D2A8843C4E312521F /* GainAudioUnit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GainAudioUnit.entitlements; sourceTree = "<group>"; };
 		C63A08AA57C0F01DB25C572F /* MonoToStereoAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonoToStereoAudioUnit.swift; sourceTree = "<group>"; };
 		C701BE4D484D74A35D8CF7C6 /* LinearPhaseEQAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinearPhaseEQAudioUnit.swift; sourceTree = "<group>"; };
+		C86969056DEFEDF6CD604CC9 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		C98081D9B97F89E126996D11 /* XTCAudioUnit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = XTCAudioUnit.entitlements; sourceTree = "<group>"; };
 		CAE624A9D39101F20B8C2767 /* ConvolutionAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ConvolutionAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		CD9834EA409BE2BB5B596E1B /* TransientShaperAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = TransientShaperAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -1202,6 +1363,7 @@
 		DEE2860890D815F174FC110A /* ExpanderAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpanderAudioUnit.swift; sourceTree = "<group>"; };
 		E045DE3FCD9EA62FBA39BF13 /* MonoToStereoViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonoToStereoViewController.swift; sourceTree = "<group>"; };
 		E26C3EB86A19D2F34253BAC6 /* IOKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = IOKit.framework; path = System/Library/Frameworks/IOKit.framework; sourceTree = SDKROOT; };
+		E34BD2E79F64BDBC6446EFE9 /* DeclickViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeclickViewController.swift; sourceTree = "<group>"; };
 		E3E71CD0793640F01B551CC5 /* FletcherMunsonAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FletcherMunsonAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		E52B015F19F509B7AF2CF3D4 /* SaturationAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SaturationAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		E5C91CE17A1656EE82FBDCB1 /* AECAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AECAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -1211,7 +1373,9 @@
 		EF962BF70C4B32ADB0EFE8C8 /* AECViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AECViewController.swift; sourceTree = "<group>"; };
 		EFE8ED0E76E1E51D16AD1389 /* LoudnessMonitorAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoudnessMonitorAudioUnit.swift; sourceTree = "<group>"; };
 		F0F5B0727123B5D4C746DB53 /* LimiterAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LimiterAudioUnit.swift; sourceTree = "<group>"; };
+		F1E8D08ACE05093E4EC868A9 /* DeclickAudioUnit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DeclickAudioUnit.entitlements; sourceTree = "<group>"; };
 		F3A2598BA41F73EF422F3C49 /* BandSplitViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BandSplitViewController.swift; sourceTree = "<group>"; };
+		F407EBF6A3FFED4841CDCF90 /* SpeechDenoiserViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechDenoiserViewController.swift; sourceTree = "<group>"; };
 		F7F1A54794105DD6AA1901B4 /* GainViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GainViewController.swift; sourceTree = "<group>"; };
 		F84F775148978093A4924846 /* CompressorViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompressorViewController.swift; sourceTree = "<group>"; };
 		F88C27459C6C99ACB6561A5D /* AmbisonicsAudioUnit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AmbisonicsAudioUnit.entitlements; sourceTree = "<group>"; };
@@ -1298,6 +1462,25 @@
 				3AEBED68F28AFD92C63E5170 /* Foundation.framework in Frameworks */,
 				CB9E03472EE50D2F10E7945E /* IOKit.framework in Frameworks */,
 				B08B85FA916BE73CBFE3D976 /* IOSurface.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		42CEC38CE71FAA869419772A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FDB7BE9559BD810CB1354150 /* AVFoundation.framework in Frameworks */,
+				25D012A6846F8AC7B71DD52B /* AudioToolbox.framework in Frameworks */,
+				53AD6F14A296FBBACACD9613 /* CoreAudioKit.framework in Frameworks */,
+				BC91E889F18DE457703386CD /* Metal.framework in Frameworks */,
+				17ABE8D5C8EC0E157FA49AE9 /* QuartzCore.framework in Frameworks */,
+				EFDEF54943D0147526C563A3 /* AppKit.framework in Frameworks */,
+				724E555534AACC3C490436CE /* Carbon.framework in Frameworks */,
+				FC90FAB2681E1DF3C230E4FE /* CoreGraphics.framework in Frameworks */,
+				C01DE2A5B59B2232D792BEC7 /* CoreText.framework in Frameworks */,
+				580E383A2ADD806D7713AC61 /* Foundation.framework in Frameworks */,
+				225CD0D24DC153790EF0F867 /* IOKit.framework in Frameworks */,
+				49A4A84A8280E2BF2997C3E6 /* IOSurface.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1662,6 +1845,25 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		889A3B793713202A4C9E7DC3 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				93444A1E34843762F7BA4733 /* AVFoundation.framework in Frameworks */,
+				B9FF3F7AB9C5B39391298963 /* AudioToolbox.framework in Frameworks */,
+				C96233D524216E60A838CA11 /* CoreAudioKit.framework in Frameworks */,
+				E6A165A792CBEA4B5B77E17B /* Metal.framework in Frameworks */,
+				F0CB69E4A69AC799A512D83D /* QuartzCore.framework in Frameworks */,
+				983E8EC36049F70C20D6F04C /* AppKit.framework in Frameworks */,
+				1168859A0D9C79952DAED35F /* Carbon.framework in Frameworks */,
+				CA8F4F45AC95A81B59B11661 /* CoreGraphics.framework in Frameworks */,
+				1F83F6FE91A18AF2B976301E /* CoreText.framework in Frameworks */,
+				18A0F9DA8315A55A28C18010 /* Foundation.framework in Frameworks */,
+				36BA3FBDCCD3D15BCC7FA7DD /* IOKit.framework in Frameworks */,
+				5E8D3E2CBEA5845D6C04A309 /* IOSurface.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		95C66E36E58874585CD5F2EF /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -1928,6 +2130,25 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E4AAC2808440EC09A0271980 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				581C3049C8ED3E3F862DDC68 /* AVFoundation.framework in Frameworks */,
+				EB9447F8DCFBCCB2B88ED38F /* AudioToolbox.framework in Frameworks */,
+				8DF73E27DC8D050E042EE0BD /* CoreAudioKit.framework in Frameworks */,
+				817AF28A8F94271EF68EA4CE /* Metal.framework in Frameworks */,
+				CF91C23F786D64C33C71E913 /* QuartzCore.framework in Frameworks */,
+				002783D73844C39572D88B0C /* AppKit.framework in Frameworks */,
+				DB453FED848C460C8CB04B77 /* Carbon.framework in Frameworks */,
+				0559566448A238839BF9AA92 /* CoreGraphics.framework in Frameworks */,
+				A06A51898684A5C993425E15 /* CoreText.framework in Frameworks */,
+				7CB962D5131CF0AA1C4168A0 /* Foundation.framework in Frameworks */,
+				C87BF0900025482B28CECB74 /* IOKit.framework in Frameworks */,
+				C78CE5A165ABBC35897FD2DA /* IOSurface.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		E8534C8A5961403D35A99FE0 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -1963,6 +2184,25 @@
 				36F2C77B8B0DDDEC81A99172 /* Foundation.framework in Frameworks */,
 				9315BE4F1ED6F96A0F0B9749 /* IOKit.framework in Frameworks */,
 				A4B07D4704B94584A6B434FD /* IOSurface.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FDCC1C96374CFB9DD873D053 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CC48E56519F3A2A5DEF5F5FF /* AVFoundation.framework in Frameworks */,
+				997F81B32BE1079C8856BC17 /* AudioToolbox.framework in Frameworks */,
+				9F942F914AB58AB6084BE1FD /* CoreAudioKit.framework in Frameworks */,
+				B4CE924A23E6EDC86CFC5397 /* Metal.framework in Frameworks */,
+				99283482955217FE2516B334 /* QuartzCore.framework in Frameworks */,
+				670D3B199B7DCDBA8843A681 /* AppKit.framework in Frameworks */,
+				06944F40809A38D3183E54C2 /* Carbon.framework in Frameworks */,
+				A53F8487B62090A83ADEFC51 /* CoreGraphics.framework in Frameworks */,
+				46304F6A6A2105612C9A4EA1 /* CoreText.framework in Frameworks */,
+				C4FA7910662F3E16EF91145B /* Foundation.framework in Frameworks */,
+				96B747383E2A1A4EAB38B24D /* IOKit.framework in Frameworks */,
+				CCA5886AB99A54B0F88068CE /* IOSurface.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2034,9 +2274,11 @@
 				4DCFB52DE243D93BB59D7D4A /* ConvolutionAudioUnit */,
 				A81520F601D2CE6E8BCB9FA2 /* CrossfeedAudioUnit */,
 				6624976EB8DA55BDE51F9D72 /* CrossoverAudioUnit */,
+				AB01FA7C3FC342D1EEBAC396 /* DeclickAudioUnit */,
 				E97DC2AF13B38FAA1C321DC6 /* DeEsserAudioUnit */,
 				5E4B7F36D35D73948191B167 /* DelayAudioUnit */,
 				5C6638641EEC978FE1ECEEAB /* DenoiserAudioUnit */,
+				31B367DE2FE9354B351AAD00 /* DitherAudioUnit */,
 				7CB649973155B42FCCE6F6EA /* DownmixAudioUnit */,
 				068ACA8B90AF48E52092178E /* DynamicEQAudioUnit */,
 				CB32BACEBBE16D1C430FDA06 /* EQAudioUnit */,
@@ -2045,6 +2287,7 @@
 				5545D6CE9C63464AF116DA08 /* GainAudioUnit */,
 				C39A78FDFCA19BAF76D589D3 /* GateAudioUnit */,
 				770C78E311B7E68B28AC859C /* GenericAU */,
+				DA068B69CCDD2126C41A6EDE /* HissReducerAudioUnit */,
 				AA15A1BF586E9EB29E5B75EB /* LimiterAudioUnit */,
 				DB8D79F5EDDAB651F0592F15 /* LinearPhaseEQAudioUnit */,
 				AEA4F3C22C94B5ACAA730D72 /* LoudnessCompensationAudioUnit */,
@@ -2058,6 +2301,7 @@
 				253FD71DE205C0B738E243D6 /* Shared */,
 				C6F21CDFCF524766118E3A3C /* SpectralCompressorAudioUnit */,
 				D8AD50EA3FE02F253F9459AE /* SpectrumAnalyzerAudioUnit */,
+				1A3FBBA35A6DABB763F49187 /* SpeechDenoiserAudioUnit */,
 				364FB058DAFC3BEEAFFB377E /* StereoImagerAudioUnit */,
 				1FACF92F5F63AFBD61A0B4F8 /* TransientShaperAudioUnit */,
 				F6ADB83EBB987BE699303FDA /* UpmixerAudioUnit */,
@@ -2077,6 +2321,18 @@
 			);
 			name = ChannelMuteSoloAudioUnit;
 			path = ChannelMuteSoloAudioUnit;
+			sourceTree = "<group>";
+		};
+		1A3FBBA35A6DABB763F49187 /* SpeechDenoiserAudioUnit */ = {
+			isa = PBXGroup;
+			children = (
+				3B8B2014AFF8DC519CD97CE8 /* Info.plist */,
+				C3E425D25805C61C1253CEA2 /* SpeechDenoiserAudioUnit.entitlements */,
+				5F7078B6360B562A084CFD89 /* SpeechDenoiserAudioUnit.swift */,
+				F407EBF6A3FFED4841CDCF90 /* SpeechDenoiserViewController.swift */,
+			);
+			name = SpeechDenoiserAudioUnit;
+			path = SpeechDenoiserAudioUnit;
 			sourceTree = "<group>";
 		};
 		1FACF92F5F63AFBD61A0B4F8 /* TransientShaperAudioUnit */ = {
@@ -2112,6 +2368,18 @@
 			);
 			name = BeamformerAudioUnit;
 			path = BeamformerAudioUnit;
+			sourceTree = "<group>";
+		};
+		31B367DE2FE9354B351AAD00 /* DitherAudioUnit */ = {
+			isa = PBXGroup;
+			children = (
+				AC23EAE8B41BEAE87831C0E6 /* DitherAudioUnit.entitlements */,
+				1A9FE3F5D5D3B47963EB09F3 /* DitherAudioUnit.swift */,
+				0B464BE7D8358A7664B37C4B /* DitherViewController.swift */,
+				4A6838DFA776389D39BA122E /* Info.plist */,
+			);
+			name = DitherAudioUnit;
+			path = DitherAudioUnit;
 			sourceTree = "<group>";
 		};
 		364FB058DAFC3BEEAFFB377E /* StereoImagerAudioUnit */ = {
@@ -2190,9 +2458,11 @@
 				CAE624A9D39101F20B8C2767 /* ConvolutionAudioUnit.appex */,
 				6D7AB3A46478BFC4389AC60C /* CrossfeedAudioUnit.appex */,
 				55E705990E93120C6BC1B0A6 /* CrossoverAudioUnit.appex */,
+				B1F2F7876A3B6B58D9D7BACC /* DeclickAudioUnit.appex */,
 				E7DDA3D41689860919FBBB3A /* DeEsserAudioUnit.appex */,
 				BD2889964AD6542E5D891773 /* DelayAudioUnit.appex */,
 				5AD285771CAFDA68606F738F /* DenoiserAudioUnit.appex */,
+				7D1CAEB550716DFA0E063D98 /* DitherAudioUnit.appex */,
 				33944180469D97D52776B8BA /* DownmixAudioUnit.appex */,
 				581CAA9385373A60133DCD58 /* DynamicEQAudioUnit.appex */,
 				DD7BE16A411963C349D2A41D /* EQAudioUnit.appex */,
@@ -2200,6 +2470,7 @@
 				E3E71CD0793640F01B551CC5 /* FletcherMunsonAudioUnit.appex */,
 				0D43EAE3E478F712584F82C7 /* GainAudioUnit.appex */,
 				341D66E33B7AD4BB1C27198F /* GateAudioUnit.appex */,
+				629B0BB7BAE9705914E7514A /* HissReducerAudioUnit.appex */,
 				380AAE23EA83890F36A42573 /* LimiterAudioUnit.appex */,
 				49F250A49D472C9E606C7B3F /* LinearPhaseEQAudioUnit.appex */,
 				BEEBD9352FCD48CA080F9A19 /* LoudnessCompensationAudioUnit.appex */,
@@ -2213,6 +2484,7 @@
 				07ED0EE6728FED317985601C /* SOTFAudioUnits.app */,
 				099EFFA8CC4193DD43EC4E07 /* SpectralCompressorAudioUnit.appex */,
 				AFD00DE88BFFBBB84A5C0B69 /* SpectrumAnalyzerAudioUnit.appex */,
+				34B132766BEA18AFF7DEF1DA /* SpeechDenoiserAudioUnit.appex */,
 				FF138D1B59EE6DBC7D06FAC7 /* StereoImagerAudioUnit.appex */,
 				CD9834EA409BE2BB5B596E1B /* TransientShaperAudioUnit.appex */,
 				D9A635B84B22CB4C96D21DCE /* UpmixerAudioUnit.appex */,
@@ -2309,6 +2581,7 @@
 			isa = PBXGroup;
 			children = (
 				663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */,
+				36D8A78CEDCED9DB959F5966 /* GenericRustViewController.swift */,
 				25B9E186B9F036A53D669BC7 /* GPUIAUView.swift */,
 			);
 			name = GenericAU;
@@ -2397,6 +2670,18 @@
 			);
 			name = XTCAudioUnit;
 			path = XTCAudioUnit;
+			sourceTree = "<group>";
+		};
+		AB01FA7C3FC342D1EEBAC396 /* DeclickAudioUnit */ = {
+			isa = PBXGroup;
+			children = (
+				F1E8D08ACE05093E4EC868A9 /* DeclickAudioUnit.entitlements */,
+				BBFA5DF7E94098BAD751DEC4 /* DeclickAudioUnit.swift */,
+				E34BD2E79F64BDBC6446EFE9 /* DeclickViewController.swift */,
+				C86969056DEFEDF6CD604CC9 /* Info.plist */,
+			);
+			name = DeclickAudioUnit;
+			path = DeclickAudioUnit;
 			sourceTree = "<group>";
 		};
 		AEA4F3C22C94B5ACAA730D72 /* LoudnessCompensationAudioUnit */ = {
@@ -2512,6 +2797,18 @@
 			);
 			name = SpectrumAnalyzerAudioUnit;
 			path = SpectrumAnalyzerAudioUnit;
+			sourceTree = "<group>";
+		};
+		DA068B69CCDD2126C41A6EDE /* HissReducerAudioUnit */ = {
+			isa = PBXGroup;
+			children = (
+				451FAE191B6209FF264955D0 /* HissReducerAudioUnit.entitlements */,
+				5B69BB145BF3CB6C70343BE4 /* HissReducerAudioUnit.swift */,
+				A504F2150E042A86F7219FAC /* HissReducerViewController.swift */,
+				9B3BA9D8A9836D886B61F04B /* Info.plist */,
+			);
+			name = HissReducerAudioUnit;
+			path = HissReducerAudioUnit;
 			sourceTree = "<group>";
 		};
 		DB8D79F5EDDAB651F0592F15 /* LinearPhaseEQAudioUnit */ = {
@@ -2877,6 +3174,24 @@
 			productReference = 9CB6205818E33CE1DDF9C6F7 /* AAEAudioUnit.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		74198072FE128D962B7AF07E /* DeclickAudioUnit */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 8F0DE8E4F63E890215C48775 /* Build configuration list for PBXNativeTarget "DeclickAudioUnit" */;
+			buildPhases = (
+				AC688D107ABBF5883F24726E /* Sources */,
+				FDCC1C96374CFB9DD873D053 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = DeclickAudioUnit;
+			packageProductDependencies = (
+			);
+			productName = DeclickAudioUnit;
+			productReference = B1F2F7876A3B6B58D9D7BACC /* DeclickAudioUnit.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		7562CD3DB32BDF3E90D1BFC2 /* LoudnessMonitorAudioUnit */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 623DDAC589780C71CA3EED89 /* Build configuration list for PBXNativeTarget "LoudnessMonitorAudioUnit" */;
@@ -2985,6 +3300,24 @@
 			productReference = 341D66E33B7AD4BB1C27198F /* GateAudioUnit.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		97BD9D5165B8B2E669B59EF2 /* HissReducerAudioUnit */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B5C364CCBD28C2BEA1924877 /* Build configuration list for PBXNativeTarget "HissReducerAudioUnit" */;
+			buildPhases = (
+				583B0288D58A06F474D32B36 /* Sources */,
+				E4AAC2808440EC09A0271980 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = HissReducerAudioUnit;
+			packageProductDependencies = (
+			);
+			productName = HissReducerAudioUnit;
+			productReference = 629B0BB7BAE9705914E7514A /* HissReducerAudioUnit.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		9D2F167A6E67C956BD8AD9D3 /* CrossfeedAudioUnit */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 4BAF4472ADF3303524D5F9D4 /* Build configuration list for PBXNativeTarget "CrossfeedAudioUnit" */;
@@ -3001,6 +3334,24 @@
 			);
 			productName = CrossfeedAudioUnit;
 			productReference = 6D7AB3A46478BFC4389AC60C /* CrossfeedAudioUnit.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		A0D23D82C5767D117A799E18 /* DitherAudioUnit */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A2A6E4CD08BBF4C2FE9818F0 /* Build configuration list for PBXNativeTarget "DitherAudioUnit" */;
+			buildPhases = (
+				B0D14994DE0BE5A66A79CD94 /* Sources */,
+				42CEC38CE71FAA869419772A /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = DitherAudioUnit;
+			packageProductDependencies = (
+			);
+			productName = DitherAudioUnit;
+			productReference = 7D1CAEB550716DFA0E063D98 /* DitherAudioUnit.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
 		A151C0A7D5C9D55E3D5C17C6 /* MatrixAudioUnit */ = {
@@ -3037,6 +3388,24 @@
 			);
 			productName = UpmixerAudioUnit;
 			productReference = D9A635B84B22CB4C96D21DCE /* UpmixerAudioUnit.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		AEFBA070783F4C3FDC372E42 /* SpeechDenoiserAudioUnit */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 99EF759DFCA2EA2D26E744CD /* Build configuration list for PBXNativeTarget "SpeechDenoiserAudioUnit" */;
+			buildPhases = (
+				525EB610CBA4197612D7B958 /* Sources */,
+				889A3B793713202A4C9E7DC3 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SpeechDenoiserAudioUnit;
+			packageProductDependencies = (
+			);
+			productName = SpeechDenoiserAudioUnit;
+			productReference = 34B132766BEA18AFF7DEF1DA /* SpeechDenoiserAudioUnit.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
 		B1787818C785C54BD416C645 /* AmbisonicsAudioUnit */ = {
@@ -3287,6 +3656,10 @@
 				04B5CE421D78201BCDEC2923 /* PBXTargetDependency */,
 				77B85BE678D88638981030CA /* PBXTargetDependency */,
 				F20517520E8C685998B66DB7 /* PBXTargetDependency */,
+				83DB74B37B4A85C307F46239 /* PBXTargetDependency */,
+				777A8EC4DDC9316838530976 /* PBXTargetDependency */,
+				777126367C75149F2189046E /* PBXTargetDependency */,
+				478EE487D7627AAD07D3E492 /* PBXTargetDependency */,
 			);
 			name = SOTFAudioUnits;
 			packageProductDependencies = (
@@ -3406,6 +3779,9 @@
 					6B865694139292EF0681AF3F = {
 						ProvisioningStyle = Automatic;
 					};
+					74198072FE128D962B7AF07E = {
+						ProvisioningStyle = Automatic;
+					};
 					7562CD3DB32BDF3E90D1BFC2 = {
 						ProvisioningStyle = Automatic;
 					};
@@ -3424,13 +3800,22 @@
 					915E564E4F3A2DBFE6217258 = {
 						ProvisioningStyle = Automatic;
 					};
+					97BD9D5165B8B2E669B59EF2 = {
+						ProvisioningStyle = Automatic;
+					};
 					9D2F167A6E67C956BD8AD9D3 = {
+						ProvisioningStyle = Automatic;
+					};
+					A0D23D82C5767D117A799E18 = {
 						ProvisioningStyle = Automatic;
 					};
 					A151C0A7D5C9D55E3D5C17C6 = {
 						ProvisioningStyle = Automatic;
 					};
 					A9BE216FA7F136BBE6AC10A9 = {
+						ProvisioningStyle = Automatic;
+					};
+					AEFBA070783F4C3FDC372E42 = {
 						ProvisioningStyle = Automatic;
 					};
 					B1787818C785C54BD416C645 = {
@@ -3508,8 +3893,10 @@
 				9D2F167A6E67C956BD8AD9D3 /* CrossfeedAudioUnit */,
 				568F94A182E080C60E865B90 /* CrossoverAudioUnit */,
 				36D08457F5A75BBF79E7556A /* DeEsserAudioUnit */,
+				74198072FE128D962B7AF07E /* DeclickAudioUnit */,
 				C88189D3A29E75A0A32155A7 /* DelayAudioUnit */,
 				46A1C2DA717CBF22EBF0D4AF /* DenoiserAudioUnit */,
+				A0D23D82C5767D117A799E18 /* DitherAudioUnit */,
 				C77D2A52DB54B31E2FA60FF7 /* DownmixAudioUnit */,
 				63843F596563880D8358DF34 /* DynamicEQAudioUnit */,
 				7BEB67E9BB65AFCF96BAC5D6 /* EQAudioUnit */,
@@ -3517,6 +3904,7 @@
 				B2E9850B01781946DC2046A9 /* FletcherMunsonAudioUnit */,
 				D1A4212137548F299946D49F /* GainAudioUnit */,
 				915E564E4F3A2DBFE6217258 /* GateAudioUnit */,
+				97BD9D5165B8B2E669B59EF2 /* HissReducerAudioUnit */,
 				378FD01D4213BBDF3E24B54F /* LimiterAudioUnit */,
 				C62BB722C7643C72DB417784 /* LinearPhaseEQAudioUnit */,
 				4B9F3A7107E5A0D4D27FBCDA /* LoudnessCompensationAudioUnit */,
@@ -3530,6 +3918,7 @@
 				FBB7DBD56BB8B16FFDF8A260 /* SaturationAudioUnit */,
 				3699048E88D1806561E7EBD9 /* SpectralCompressorAudioUnit */,
 				3E2B68185B9E5316B8130CC2 /* SpectrumAnalyzerAudioUnit */,
+				AEFBA070783F4C3FDC372E42 /* SpeechDenoiserAudioUnit */,
 				D423F4A83E25AAFFAD243825 /* StereoImagerAudioUnit */,
 				256A4F7E78E7E8D31A87D424 /* TransientShaperAudioUnit */,
 				A9BE216FA7F136BBE6AC10A9 /* UpmixerAudioUnit */,
@@ -3558,6 +3947,7 @@
 				9329A6428B9AFE62D6130858 /* CrossfeedViewController.swift in Sources */,
 				40FE69074FA792A73F08608E /* GPUIAUView.swift in Sources */,
 				81D61CD97DDA5397ED9D7BDB /* GenericRustAudioUnit.swift in Sources */,
+				7E1B761B413B2D0405A753A7 /* GenericRustViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3567,6 +3957,7 @@
 			files = (
 				656212AECB817082B6A0F0FA /* GPUIAUView.swift in Sources */,
 				8709DCC7D0CB9C524A9C56FF /* GenericRustAudioUnit.swift in Sources */,
+				F9862DF6B4035AE0B91AAE42 /* GenericRustViewController.swift in Sources */,
 				978597942B60E8701603216C /* MonoToStereoAudioUnit.swift in Sources */,
 				63F3B7DF006241458D6974E4 /* MonoToStereoViewController.swift in Sources */,
 			);
@@ -3578,6 +3969,7 @@
 			files = (
 				40E259E1A7F5D5CA8FFB69EC /* GPUIAUView.swift in Sources */,
 				8141F290EF00F1903B36F7CF /* GenericRustAudioUnit.swift in Sources */,
+				8E7F26764A91442A1B2D4B3E /* GenericRustViewController.swift in Sources */,
 				2F5BC36E39D1D9D7B9E13B39 /* SpectrumAnalyzerAudioUnit.swift in Sources */,
 				ECB69876797DFA3686AE6ECE /* SpectrumAnalyzerViewController.swift in Sources */,
 			);
@@ -3589,6 +3981,7 @@
 			files = (
 				6EC6CBF7E574D4AD7DE402BF /* GPUIAUView.swift in Sources */,
 				74D215F519B7CD262E6C5E16 /* GenericRustAudioUnit.swift in Sources */,
+				02320EFDA1573821531F191A /* GenericRustViewController.swift in Sources */,
 				A6A90860621437747732040C /* SpectralCompressorAudioUnit.swift in Sources */,
 				36C103E916DCBE4D44433499 /* SpectralCompressorViewController.swift in Sources */,
 			);
@@ -3600,6 +3993,7 @@
 			files = (
 				332BD999CA6BF2A68C1C4572 /* GPUIAUView.swift in Sources */,
 				43C4C358793F23CCAF673F78 /* GenericRustAudioUnit.swift in Sources */,
+				A7D654D982E683B17DF13AD8 /* GenericRustViewController.swift in Sources */,
 				46D963F02F925F64D07F3025 /* MultibandCompressorAudioUnit.swift in Sources */,
 				721B99C4146120D93C4C28E4 /* MultibandCompressorViewController.swift in Sources */,
 			);
@@ -3613,6 +4007,7 @@
 				BC39A5727147455C0FAB1245 /* DeEsserViewController.swift in Sources */,
 				A419CF0AC19E3DF04C179DE1 /* GPUIAUView.swift in Sources */,
 				5A77E3A5FBF7DA492E443859 /* GenericRustAudioUnit.swift in Sources */,
+				FCB711F188355263CDCD504C /* GenericRustViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3624,6 +4019,7 @@
 				3F52AAB4E4B4CE8CBFADDE68 /* ChannelMuteSoloViewController.swift in Sources */,
 				1B6457E8844406F34B1BE9CD /* GPUIAUView.swift in Sources */,
 				A94A8CCD679FF4CE04D1F3ED /* GenericRustAudioUnit.swift in Sources */,
+				133097D423DE75F4488FFBB2 /* GenericRustViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3633,6 +4029,7 @@
 			files = (
 				16CD60596611B223B07D973B /* GPUIAUView.swift in Sources */,
 				9EC949040A94F72FB3B3B0E3 /* GenericRustAudioUnit.swift in Sources */,
+				96C3E20A4039B687BCEF0EC2 /* GenericRustViewController.swift in Sources */,
 				AF1BFF77DC58BCD46C9D20FC /* LinearPhaseEQAudioUnit.swift in Sources */,
 				749CC85E26328608981A31D5 /* LinearPhaseEQViewController.swift in Sources */,
 			);
@@ -3646,6 +4043,7 @@
 				2CA5CE37017C9FBB2B863693 /* ConvolutionViewController.swift in Sources */,
 				81010CD0FF79500CD6474DA7 /* GPUIAUView.swift in Sources */,
 				E620606D929D3D70280176CE /* GenericRustAudioUnit.swift in Sources */,
+				A8B78D475EE426FC40D15AC5 /* GenericRustViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3655,6 +4053,7 @@
 			files = (
 				110058D74BF008B703BF7C3D /* GPUIAUView.swift in Sources */,
 				DEC5312E9C00E415FDC38430 /* GenericRustAudioUnit.swift in Sources */,
+				1BDAF8C173ECBD6BFDCD79A0 /* GenericRustViewController.swift in Sources */,
 				34EFF963F03BC9C13EE57590 /* SaturationAudioUnit.swift in Sources */,
 				5066EC4086EFA07AE5F7EBD2 /* SaturationViewController.swift in Sources */,
 			);
@@ -3666,6 +4065,7 @@
 			files = (
 				1250A08B21777A311360E026 /* GPUIAUView.swift in Sources */,
 				72C1FB38A93FDDCF93B0CE99 /* GenericRustAudioUnit.swift in Sources */,
+				E5E08B9F11E74CC9BCCE4330 /* GenericRustViewController.swift in Sources */,
 				A2A7D1DBB2C72ED76E9EFA55 /* LimiterAudioUnit.swift in Sources */,
 				069D03F06DC906A69D726B7C /* LimiterViewController.swift in Sources */,
 			);
@@ -3677,6 +4077,7 @@
 			files = (
 				0DB1F7995A08B645652F04DC /* GPUIAUView.swift in Sources */,
 				03599D3F5A1916D513552F3F /* GenericRustAudioUnit.swift in Sources */,
+				5E686A98846918A7AA373DFB /* GenericRustViewController.swift in Sources */,
 				940A880890E193C080B6BEC4 /* LoudnessCompensationAudioUnit.swift in Sources */,
 				580F3BDBCCF1D8578DE3CF95 /* LoudnessCompensationViewController.swift in Sources */,
 			);
@@ -3690,6 +4091,7 @@
 				ADB6A8E0AD8F3058A06E66AC /* ExpanderViewController.swift in Sources */,
 				31EBF4E26C9F32984B7B6E51 /* GPUIAUView.swift in Sources */,
 				E87F45A2A39200D21FC728D8 /* GenericRustAudioUnit.swift in Sources */,
+				9F5318E92141CB1888DC9F39 /* GenericRustViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3699,6 +4101,7 @@
 			files = (
 				6B2F0F2203DD1F88AA7B8CDA /* GPUIAUView.swift in Sources */,
 				D72C80EE963BEC9A9AD740C6 /* GenericRustAudioUnit.swift in Sources */,
+				9C60FC46D145A23FE232C996 /* GenericRustViewController.swift in Sources */,
 				D694BB4D0F7D6DE69CF9EEA1 /* XTCAudioUnit.swift in Sources */,
 				CB3DEB59637B0B075728AB70 /* XTCViewController.swift in Sources */,
 			);
@@ -3712,6 +4115,7 @@
 				DD495AF2545421E5F042BA3A /* DownmixViewController.swift in Sources */,
 				FBB7F479CB7CDCDAD8285E4A /* GPUIAUView.swift in Sources */,
 				D14A94594393622F564E5F26 /* GenericRustAudioUnit.swift in Sources */,
+				88DA96E3096A774843FF7991 /* GenericRustViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3723,6 +4127,7 @@
 				0762986804F618379F904F4A /* GateAudioUnit.swift in Sources */,
 				C8A32B3B76193E425AA9DFAE /* GateViewController.swift in Sources */,
 				53C1C28016F534E40AC5D2B6 /* GenericRustAudioUnit.swift in Sources */,
+				A8F5DE4CC5EF3FE33BF7995E /* GenericRustViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3732,8 +4137,21 @@
 			files = (
 				DF85F71A1BA60040D7FD70EE /* GPUIAUView.swift in Sources */,
 				51929E4D82DA13AFE580DC95 /* GenericRustAudioUnit.swift in Sources */,
+				40E3E367616E89F6F1ACD8FA /* GenericRustViewController.swift in Sources */,
 				7E4BE5B359DDE5C26D3B0433 /* TransientShaperAudioUnit.swift in Sources */,
 				D183A9335309F737C71EC308 /* TransientShaperViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		525EB610CBA4197612D7B958 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				40427445D9595F4368D50512 /* GPUIAUView.swift in Sources */,
+				B9692C0240C6136CDB0F4C72 /* GenericRustAudioUnit.swift in Sources */,
+				681399305300F021B4C98C2D /* GenericRustViewController.swift in Sources */,
+				F3BE58A185DEA4E65CAE00F1 /* SpeechDenoiserAudioUnit.swift in Sources */,
+				B2E1618860B56D567D0DF458 /* SpeechDenoiserViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3745,6 +4163,19 @@
 				7DBE9498F288C09AF043DA24 /* CompressorViewController.swift in Sources */,
 				DA3CCC832E5800EDDBE46732 /* GPUIAUView.swift in Sources */,
 				A2E723AD2E26F1108DF833B4 /* GenericRustAudioUnit.swift in Sources */,
+				619610B4AB15BCD112BBDC94 /* GenericRustViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		583B0288D58A06F474D32B36 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4073715B9A8EB1A41BA6DC5F /* GPUIAUView.swift in Sources */,
+				00EF02D528C8B06B9C7A6D51 /* GenericRustAudioUnit.swift in Sources */,
+				05FBD311334D0DF315BA26FC /* GenericRustViewController.swift in Sources */,
+				16BA5C6CC49CA93438BC25E8 /* HissReducerAudioUnit.swift in Sources */,
+				FA89774CDF905B48D1FA9B04 /* HissReducerViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3756,6 +4187,7 @@
 				25427F0B04935C81E5CE2C77 /* DynamicEQViewController.swift in Sources */,
 				7C8B07A2AC2703A4F58584F2 /* GPUIAUView.swift in Sources */,
 				359DD398B42584FBB5675E3F /* GenericRustAudioUnit.swift in Sources */,
+				34A7F7E956194B50EB7BF6B8 /* GenericRustViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3776,6 +4208,7 @@
 				E4A86D2B93549EBBC4897BCA /* AmbisonicsViewController.swift in Sources */,
 				0664B1A4ED65E65050C3F046 /* GPUIAUView.swift in Sources */,
 				B19BBD1012A0075AB9EBBA95 /* GenericRustAudioUnit.swift in Sources */,
+				49684C0C7FDC0E227B56289C /* GenericRustViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3787,6 +4220,7 @@
 				32879E09F0F4F4D0FD5993DD /* DenoiserViewController.swift in Sources */,
 				39D14FE825409F8D0DEA8F2B /* GPUIAUView.swift in Sources */,
 				DE3E9D9BDAEF811871E87CE3 /* GenericRustAudioUnit.swift in Sources */,
+				0B26DA45DD5C32E400BA6DBF /* GenericRustViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3798,6 +4232,7 @@
 				4532FE1C25583BBBB877783F /* EQViewController.swift in Sources */,
 				16E043AD949AF20A0ABBBC60 /* GPUIAUView.swift in Sources */,
 				1E4A767480870F1B8B845290 /* GenericRustAudioUnit.swift in Sources */,
+				28B05DA686CA387FD64A95E5 /* GenericRustViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3809,6 +4244,7 @@
 				99665D708BAB415690757C73 /* BinauralViewController.swift in Sources */,
 				61E4C3D101DB28A66FFD0482 /* GPUIAUView.swift in Sources */,
 				E6A6D1627D89555EE12C4606 /* GenericRustAudioUnit.swift in Sources */,
+				7264C2DB4CFDD64AD34257D6 /* GenericRustViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3818,6 +4254,7 @@
 			files = (
 				C90664F87430A623C631BC45 /* GPUIAUView.swift in Sources */,
 				6E69DA9AE1E939FF2B4FA8C4 /* GenericRustAudioUnit.swift in Sources */,
+				B86AE3EF213ED40BC2B7054F /* GenericRustViewController.swift in Sources */,
 				1029081EA5462928D16522C1 /* UpmixerAudioUnit.swift in Sources */,
 				E096A8ECECBEE712314E38E3 /* UpmixerViewController.swift in Sources */,
 			);
@@ -3829,6 +4266,7 @@
 			files = (
 				B8C55DF4BB6241F4357A1384 /* GPUIAUView.swift in Sources */,
 				18301BE20FA262BCBCD5B594 /* GenericRustAudioUnit.swift in Sources */,
+				CF4C32E95E982B8462343FC3 /* GenericRustViewController.swift in Sources */,
 				D4159976EA2D01DA689A337B /* StereoImagerAudioUnit.swift in Sources */,
 				8D00084E4272EB350ECC241D /* StereoImagerViewController.swift in Sources */,
 			);
@@ -3840,6 +4278,7 @@
 			files = (
 				46AF5AD52C7D914E3D41EE50 /* GPUIAUView.swift in Sources */,
 				CDFD0FBEFDEA35548F044FC9 /* GenericRustAudioUnit.swift in Sources */,
+				9F952B1757B34F36AEDE1667 /* GenericRustViewController.swift in Sources */,
 				8B10CBF4DF8FC18F8EC23190 /* PNDAudioUnit.swift in Sources */,
 				4C5FD715EFCFB111D5D5FCF5 /* PNDViewController.swift in Sources */,
 			);
@@ -3853,6 +4292,31 @@
 				4354A6F5A7FD00054EBD71C0 /* GainAudioUnit.swift in Sources */,
 				A5973D941C069715B32BE24E /* GainViewController.swift in Sources */,
 				7550D5AB525E85287CD023E3 /* GenericRustAudioUnit.swift in Sources */,
+				A5859484A9DB994E54C63E4B /* GenericRustViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AC688D107ABBF5883F24726E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E7D28C393ADB7718030D1DA5 /* DeclickAudioUnit.swift in Sources */,
+				829677F1629645F255B2ED5E /* DeclickViewController.swift in Sources */,
+				F6C4403F05632B2F3CB4B323 /* GPUIAUView.swift in Sources */,
+				F4E534DA4FEFD04F6C472A34 /* GenericRustAudioUnit.swift in Sources */,
+				91D313DEA74772E92834273E /* GenericRustViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B0D14994DE0BE5A66A79CD94 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D225DE18722AA6ECB8506D64 /* DitherAudioUnit.swift in Sources */,
+				0255AB3A868CCFB8BA9476F0 /* DitherViewController.swift in Sources */,
+				5B10A52E8DF689C44A3186A5 /* GPUIAUView.swift in Sources */,
+				7B1C3BC589710A8E8A8F57B1 /* GenericRustAudioUnit.swift in Sources */,
+				A86A102EBE87AFB28E6CD80D /* GenericRustViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3864,6 +4328,7 @@
 				40E51D445E2091777420C75E /* BandSplitViewController.swift in Sources */,
 				A60F8F754CA08A4A3DD00E90 /* GPUIAUView.swift in Sources */,
 				47B8A428BC92D4F71EB16BB2 /* GenericRustAudioUnit.swift in Sources */,
+				9F4C8D95F58F0D0123D24097 /* GenericRustViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3873,6 +4338,7 @@
 			files = (
 				1061023FC46B8877BB1D2E8C /* GPUIAUView.swift in Sources */,
 				E63A3622768414F4F3D6EEAE /* GenericRustAudioUnit.swift in Sources */,
+				B43905CCFBF712F554DF28C5 /* GenericRustViewController.swift in Sources */,
 				03DAFEC5158486E273054555 /* MatrixAudioUnit.swift in Sources */,
 				81F2980B6380636D59A5D3FF /* MatrixViewController.swift in Sources */,
 			);
@@ -3884,6 +4350,7 @@
 			files = (
 				C8D4EBC42B2F55C4099CAADC /* GPUIAUView.swift in Sources */,
 				BB6E5C587EA5883C0581300A /* GenericRustAudioUnit.swift in Sources */,
+				B505D75C28BBC79F102D8928 /* GenericRustViewController.swift in Sources */,
 				93CFFAC4F8200627CA01D076 /* MultibandExpanderAudioUnit.swift in Sources */,
 				1A7D464AE009F3434D37DDD0 /* MultibandExpanderViewController.swift in Sources */,
 			);
@@ -3897,6 +4364,7 @@
 				66ABCD6A984525BD832C58EF /* AAEViewController.swift in Sources */,
 				C9B98C3CB7E7181E4617CB44 /* GPUIAUView.swift in Sources */,
 				741E9AC106CA29872CAC2FEC /* GenericRustAudioUnit.swift in Sources */,
+				09E2358B315B7F72636E1A9F /* GenericRustViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3908,6 +4376,7 @@
 				7BEC3F35375C7CE81D923ED6 /* BandMergeViewController.swift in Sources */,
 				05018DF8F641E7EE1C4F6073 /* GPUIAUView.swift in Sources */,
 				4566B539A4B8D2FF194B1164 /* GenericRustAudioUnit.swift in Sources */,
+				F227C9761C5C446D7FC709A9 /* GenericRustViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3919,6 +4388,7 @@
 				6D1DD5E44CCE03814ED291ED /* DelayViewController.swift in Sources */,
 				23F49C0BCDDA25906E70CA8F /* GPUIAUView.swift in Sources */,
 				F7E3C62D246925340EB54868 /* GenericRustAudioUnit.swift in Sources */,
+				E675D96A5468E78C69DD100D /* GenericRustViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3930,6 +4400,7 @@
 				F4C39F06BF67ADAEB71C8A5E /* CrossoverViewController.swift in Sources */,
 				D6BDF6B28F4DBB4C153A73CE /* GPUIAUView.swift in Sources */,
 				C5483DFCFE4CE6B32BDE06C7 /* GenericRustAudioUnit.swift in Sources */,
+				B7BB4824696EEF46A0A768B4 /* GenericRustViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3939,6 +4410,7 @@
 			files = (
 				26320AA80FFE7008110D19AA /* GPUIAUView.swift in Sources */,
 				E3C998479EF95997A73CBDAF /* GenericRustAudioUnit.swift in Sources */,
+				C18BDE196559D33C9098A52D /* GenericRustViewController.swift in Sources */,
 				6BE77138E8CAF81E5AB5B27D /* LoudnessMonitorAudioUnit.swift in Sources */,
 				7C0A9F37FD9B08A01B2E8340 /* LoudnessMonitorViewController.swift in Sources */,
 			);
@@ -3952,6 +4424,7 @@
 				222C9A18DEF6495899076761 /* BeamformerViewController.swift in Sources */,
 				65C58CEECE67A9C8B91098A3 /* GPUIAUView.swift in Sources */,
 				F7F345F474EFC29EE9018282 /* GenericRustAudioUnit.swift in Sources */,
+				6AD8235D9FB34F047B3CE344 /* GenericRustViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3963,6 +4436,7 @@
 				2F59AB5785AD6B2102404EF3 /* ABCompareViewController.swift in Sources */,
 				4AA2BD4573E0BCBBD18514ED /* GPUIAUView.swift in Sources */,
 				CB02E2E99A39391BA7E455B1 /* GenericRustAudioUnit.swift in Sources */,
+				4C2414DD513C42EAD1AB9154 /* GenericRustViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3974,6 +4448,7 @@
 				5DC83FDA0E3933F5FA85F1C6 /* AECViewController.swift in Sources */,
 				A47FC6AB903F651E79ED6C3D /* GPUIAUView.swift in Sources */,
 				0C5579C2E0FD1B0478721717 /* GenericRustAudioUnit.swift in Sources */,
+				A534E747953F3895C71F4106 /* GenericRustViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3985,6 +4460,7 @@
 				8D3146852DC6B49ACB1CECD3 /* FletcherMunsonViewController.swift in Sources */,
 				6D9F3D67E10C904D9078CB81 /* GPUIAUView.swift in Sources */,
 				7ACDBD53D746745872A00088 /* GenericRustAudioUnit.swift in Sources */,
+				4A1B3225C3029259B87D7FA7 /* GenericRustViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -4030,6 +4506,11 @@
 			isa = PBXTargetDependency;
 			target = 46A1C2DA717CBF22EBF0D4AF /* DenoiserAudioUnit */;
 			targetProxy = 49791542FF3E2A39400BEFF2 /* PBXContainerItemProxy */;
+		};
+		478EE487D7627AAD07D3E492 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A0D23D82C5767D117A799E18 /* DitherAudioUnit */;
+			targetProxy = 2B5D4255D0A7FD2A44BA02CE /* PBXContainerItemProxy */;
 		};
 		47E7462779335BF4C30C14A7 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -4101,10 +4582,25 @@
 			target = 7BEB67E9BB65AFCF96BAC5D6 /* EQAudioUnit */;
 			targetProxy = 089F3B19040C963429A8C583 /* PBXContainerItemProxy */;
 		};
+		777126367C75149F2189046E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AEFBA070783F4C3FDC372E42 /* SpeechDenoiserAudioUnit */;
+			targetProxy = 52A17794B1B4E0629F103B77 /* PBXContainerItemProxy */;
+		};
+		777A8EC4DDC9316838530976 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 97BD9D5165B8B2E669B59EF2 /* HissReducerAudioUnit */;
+			targetProxy = D5463E003DEC3435D052BC6E /* PBXContainerItemProxy */;
+		};
 		77B85BE678D88638981030CA /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 3E2B68185B9E5316B8130CC2 /* SpectrumAnalyzerAudioUnit */;
 			targetProxy = 53FF8F88C197A2AD2FE50B46 /* PBXContainerItemProxy */;
+		};
+		83DB74B37B4A85C307F46239 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 74198072FE128D962B7AF07E /* DeclickAudioUnit */;
+			targetProxy = D521527B0BC5993905F88257 /* PBXContainerItemProxy */;
 		};
 		84A5F559635C49E6E1948097 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -4400,6 +4896,37 @@
 					"-lsotf_audio_plugins_ffi",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = org.spinorama.SOTFAudioUnits.ChannelMuteSoloAudioUnit;
+				SDKROOT = macosx;
+				SKIP_INSTALL = NO;
+				SWIFT_OBJC_BRIDGING_HEADER = Shared/BridgingHeader.h;
+			};
+			name = Debug;
+		};
+		1846C234494B468632E8AA15 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = DitherAudioUnit/DitherAudioUnit.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				EXTENSION_SAFE_API_ONLY = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Shared",
+				);
+				INFOPLIST_FILE = DitherAudioUnit/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Resources",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				OTHER_LDFLAGS = (
+					"-lsotf_audio_plugins_ffi",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.spinorama.SOTFAudioUnits.DitherAudioUnit;
 				SDKROOT = macosx;
 				SKIP_INSTALL = NO;
 				SWIFT_OBJC_BRIDGING_HEADER = Shared/BridgingHeader.h;
@@ -4839,6 +5366,37 @@
 				SWIFT_OBJC_BRIDGING_HEADER = Shared/BridgingHeader.h;
 			};
 			name = Debug;
+		};
+		48B7446E069EE9BCE626E558 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = HissReducerAudioUnit/HissReducerAudioUnit.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				EXTENSION_SAFE_API_ONLY = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Shared",
+				);
+				INFOPLIST_FILE = HissReducerAudioUnit/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Resources",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				OTHER_LDFLAGS = (
+					"-lsotf_audio_plugins_ffi",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.spinorama.SOTFAudioUnits.HissReducerAudioUnit;
+				SDKROOT = macosx;
+				SKIP_INSTALL = NO;
+				SWIFT_OBJC_BRIDGING_HEADER = Shared/BridgingHeader.h;
+			};
+			name = Release;
 		};
 		4B59BB8AB885ED6AB99B4080 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -5448,6 +6006,68 @@
 			};
 			name = Release;
 		};
+		82B3DDC53E905B7A4E6CBB31 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = HissReducerAudioUnit/HissReducerAudioUnit.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				EXTENSION_SAFE_API_ONLY = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Shared",
+				);
+				INFOPLIST_FILE = HissReducerAudioUnit/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Resources",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				OTHER_LDFLAGS = (
+					"-lsotf_audio_plugins_ffi",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.spinorama.SOTFAudioUnits.HissReducerAudioUnit;
+				SDKROOT = macosx;
+				SKIP_INSTALL = NO;
+				SWIFT_OBJC_BRIDGING_HEADER = Shared/BridgingHeader.h;
+			};
+			name = Debug;
+		};
+		865DA2A43ACDA91B114B415C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = SpeechDenoiserAudioUnit/SpeechDenoiserAudioUnit.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				EXTENSION_SAFE_API_ONLY = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Shared",
+				);
+				INFOPLIST_FILE = SpeechDenoiserAudioUnit/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Resources",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				OTHER_LDFLAGS = (
+					"-lsotf_audio_plugins_ffi",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.spinorama.SOTFAudioUnits.SpeechDenoiserAudioUnit;
+				SDKROOT = macosx;
+				SKIP_INSTALL = NO;
+				SWIFT_OBJC_BRIDGING_HEADER = Shared/BridgingHeader.h;
+			};
+			name = Release;
+		};
 		8B60ACD9F7E2A385B5F7C044 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -5541,6 +6161,37 @@
 			};
 			name = Release;
 		};
+		90206C2FEC4639FBE50A17A1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = DitherAudioUnit/DitherAudioUnit.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				EXTENSION_SAFE_API_ONLY = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Shared",
+				);
+				INFOPLIST_FILE = DitherAudioUnit/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Resources",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				OTHER_LDFLAGS = (
+					"-lsotf_audio_plugins_ffi",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.spinorama.SOTFAudioUnits.DitherAudioUnit;
+				SDKROOT = macosx;
+				SKIP_INSTALL = NO;
+				SWIFT_OBJC_BRIDGING_HEADER = Shared/BridgingHeader.h;
+			};
+			name = Release;
+		};
 		96BE47B59484B5B23D0AD3E0 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -5594,7 +6245,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 0.5.15;
+				MARKETING_VERSION = 0.6.1;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -5827,7 +6478,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 0.5.15;
+				MARKETING_VERSION = 0.6.1;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -5930,6 +6581,99 @@
 				SWIFT_OBJC_BRIDGING_HEADER = Shared/BridgingHeader.h;
 			};
 			name = Debug;
+		};
+		B735A13840A68C845AABBFEE /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = DeclickAudioUnit/DeclickAudioUnit.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				EXTENSION_SAFE_API_ONLY = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Shared",
+				);
+				INFOPLIST_FILE = DeclickAudioUnit/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Resources",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				OTHER_LDFLAGS = (
+					"-lsotf_audio_plugins_ffi",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.spinorama.SOTFAudioUnits.DeclickAudioUnit;
+				SDKROOT = macosx;
+				SKIP_INSTALL = NO;
+				SWIFT_OBJC_BRIDGING_HEADER = Shared/BridgingHeader.h;
+			};
+			name = Debug;
+		};
+		BCC8F12084888B99206E0C14 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = SpeechDenoiserAudioUnit/SpeechDenoiserAudioUnit.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				EXTENSION_SAFE_API_ONLY = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Shared",
+				);
+				INFOPLIST_FILE = SpeechDenoiserAudioUnit/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Resources",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				OTHER_LDFLAGS = (
+					"-lsotf_audio_plugins_ffi",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.spinorama.SOTFAudioUnits.SpeechDenoiserAudioUnit;
+				SDKROOT = macosx;
+				SKIP_INSTALL = NO;
+				SWIFT_OBJC_BRIDGING_HEADER = Shared/BridgingHeader.h;
+			};
+			name = Debug;
+		};
+		C1351F3392070800E44F4C0A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = DeclickAudioUnit/DeclickAudioUnit.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				EXTENSION_SAFE_API_ONLY = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Shared",
+				);
+				INFOPLIST_FILE = DeclickAudioUnit/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Resources",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				OTHER_LDFLAGS = (
+					"-lsotf_audio_plugins_ffi",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.spinorama.SOTFAudioUnits.DeclickAudioUnit;
+				SDKROOT = macosx;
+				SKIP_INSTALL = NO;
+				SWIFT_OBJC_BRIDGING_HEADER = Shared/BridgingHeader.h;
+			};
+			name = Release;
 		};
 		C1FE0A7B74C505A8E89D9ACF /* Release */ = {
 			isa = XCBuildConfiguration;
@@ -6987,6 +7731,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
+		8F0DE8E4F63E890215C48775 /* Build configuration list for PBXNativeTarget "DeclickAudioUnit" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B735A13840A68C845AABBFEE /* Debug */,
+				C1351F3392070800E44F4C0A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		9509D26A3F50885E16D3F301 /* Build configuration list for PBXNativeTarget "DynamicEQAudioUnit" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -7005,11 +7758,29 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
+		99EF759DFCA2EA2D26E744CD /* Build configuration list for PBXNativeTarget "SpeechDenoiserAudioUnit" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BCC8F12084888B99206E0C14 /* Debug */,
+				865DA2A43ACDA91B114B415C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		A0AB8FA0BD244EF2E9875163 /* Build configuration list for PBXNativeTarget "XTCAudioUnit" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				AD4003FC28B0F76A8202B991 /* Debug */,
 				B02717C75A9C09B2E3639364 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		A2A6E4CD08BBF4C2FE9818F0 /* Build configuration list for PBXNativeTarget "DitherAudioUnit" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1846C234494B468632E8AA15 /* Debug */,
+				90206C2FEC4639FBE50A17A1 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
@@ -7046,6 +7817,15 @@
 			buildConfigurations = (
 				3EB7EB5A80F5C9C099C3D2B5 /* Debug */,
 				8C0B6FC2D5D7149EA8ADA838 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		B5C364CCBD28C2BEA1924877 /* Build configuration list for PBXNativeTarget "HissReducerAudioUnit" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				82B3DDC53E905B7A4E6CBB31 /* Debug */,
+				48B7446E069EE9BCE626E558 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

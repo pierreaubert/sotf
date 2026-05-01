@@ -1,473 +1,288 @@
-# SOTF Audio Units - Complete Setup Guide
+# SOTF Audio Units — Complete Setup Guide
 
-This guide walks you through creating macOS Audio Unit (AUv3) plugins from your SOTF Rust audio processing code.
+This guide walks through the full development pipeline for the macOS Audio Unit (AUv3) wrapper around the SOTF plugin suite. For the 5-minute happy path, see `QUICKSTART.md`.
 
 ## Overview
 
-You now have a complete Audio Unit framework that:
+The Audio Unit framework:
 
-- ✅ Reuses all your existing Rust DSP code (EqPlugin, etc.)
-- ✅ Provides C FFI bindings for macOS integration
-- ✅ Includes native SwiftUI user interfaces
-- ✅ Supports proper AU host integration (Logic Pro, GarageBand, etc.)
-- ✅ Has automated build scripts via `just`
+- Reuses every plugin in `sotf-plugins` via the `plugins-ffi` C FFI staticlib
+- Provides SwiftUI views per AU extension (`<Name>AudioUnit/`)
+- Builds **per architecture** (arm64 + x86_64) — no lipo, no universal binary
+- Each arch produces an independently signable, notarizable, distributable bundle
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│  Logic Pro / GarageBand (AU Host)                   │
-│  - Loads .appex bundles from Components folder      │
-│  - Provides audio stream and automation             │
-└──────────────────┬──────────────────────────────────┘
-                   │
-                   ▼
-┌──────────────────────────────────────────────────────┐
-│  EQAudioUnit.appex (Audio Unit Extension)           │
-│  ┌────────────────────────────────────────────────┐ │
-│  │  Swift Layer (EQAudioUnit.swift)               │ │
-│  │  - AUAudioUnit subclass                        │ │
-│  │  - internalRenderBlock (audio processing)      │ │
-│  │  - Parameter management (AUParameterTree)      │ │
-│  │  - SwiftUI UI (EQViewController.swift)         │ │
-│  └──────────────┬─────────────────────────────────┘ │
-│                 │ C FFI calls                        │
-│  ┌──────────────▼─────────────────────────────────┐ │
-│  │  C Header (BridgingHeader.h)                   │ │
-│  │  - plugin_create()                             │ │
-│  │  - plugin_process()                            │ │
-│  │  - plugin_set_parameter()                      │ │
-│  └──────────────┬─────────────────────────────────┘ │
-└─────────────────┼───────────────────────────────────┘
-                  │ links to static library
-┌─────────────────▼───────────────────────────────────┐
-│  libsotf_audio_ffi.a (Rust Static Library)          │
-│  ┌────────────────────────────────────────────────┐ │
-│  │  FFI Layer (src-audio-ffi/src/lib.rs)         │ │
-│  │  - PluginHandle (opaque pointer)              │ │
-│  │  - plugin_create/destroy/process               │ │
-│  │  - Parameter mapping (normalized 0-1)         │ │
-│  ├────────────────────────────────────────────────┤ │
-│  │  Plugin Factory (plugin_factory.rs)           │ │
-│  │  - Creates plugins from JSON configs          │ │
-│  │  - Supports: EQ, Compressor, etc.             │ │
-│  ├────────────────────────────────────────────────┤ │
-│  │  Your Existing Plugins (src-audio)            │ │
-│  │  - EqPlugin (plugin_eq.rs)                    │ │
-│  │  - CompressorPlugin (plugin_compressor.rs)    │ │
-│  │  - All other SOTF plugins                     │ │
-│  └────────────────────────────────────────────────┘ │
-└──────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────┐
+│  AU host (Logic Pro, GarageBand, third-party DAWs)         │
+│  Loads .appex extensions registered from SOTFAudioUnits.app │
+└──────────────────────────────┬─────────────────────────────┘
+                               │
+                               ▼
+┌────────────────────────────────────────────────────────────┐
+│  SOTFAudioUnits.app (container, ~/Applications/)            │
+│   └── Contents/PlugIns/<Name>AudioUnit.appex (× many)       │
+│         ┌──────────────────────────────────────────────┐    │
+│         │ Swift/AUv3 layer (<Name>AudioUnit, GenericAU) │    │
+│         │  - AUAudioUnit subclass + parameter tree     │    │
+│         │  - SwiftUI view controller                    │    │
+│         └────────────────┬─────────────────────────────┘    │
+│                          │ C FFI calls                       │
+│         ┌────────────────▼─────────────────────────────┐    │
+│         │ Shared/BridgingHeader.h + sotf_audio_plugin… │    │
+│         │  plugin_create / process / set_parameter …  │    │
+│         └────────────────┬─────────────────────────────┘    │
+└──────────────────────────┼─────────────────────────────────┘
+                           │ statically links
+┌──────────────────────────▼─────────────────────────────────┐
+│  libsotf_audio_plugins_ffi.a (per-arch in Resources/)       │
+│  = compiled `plugins-ffi` crate                              │
+│  → wraps every plugin in `sotf-plugins`                      │
+└────────────────────────────────────────────────────────────┘
 ```
 
-## Files Created
-
-### Rust FFI Layer (`src-audio-ffi/`)
+## Repository Layout
 
 ```
-src-audio-ffi/
-├── Cargo.toml                  # FFI crate config (staticlib + cdylib)
-├── build.rs                    # Generates C header via cbindgen
-├── cbindgen.toml              # cbindgen configuration
-├── src/
-│   ├── lib.rs                 # Main FFI functions (plugin_create, etc.)
-│   ├── plugin_factory.rs      # Creates plugins from JSON
-│   └── parameter_map.rs       # Parameter mapping (normalized 0-1)
-└── sotf_audio_ffi.h           # Generated C header (auto-created)
+crates/sotf-plugins/crates/
+├── plugins-ffi/                # C FFI bindings (staticlib + cdylib)
+│   ├── src/
+│   │   ├── lib.rs              # plugin_create / destroy / process / get/set_parameter
+│   │   ├── plugin_factory.rs   # JSON config → concrete Plugin
+│   │   └── parameter_map.rs    # native params ↔ normalized 0..1 + metadata
+│   └── sotf_audio_plugin_ffi.h # generated by cbindgen
+│
+└── plugins-au/                 # this directory — Audio Unit wrapper
+    ├── project.yml             # XcodeGen spec (one target per AU + container)
+    ├── SOTFAudioUnits.xcodeproj/  # generated by xcodegen
+    ├── Shared/
+    │   ├── BridgingHeader.h
+    │   └── sotf_audio_plugin_ffi.h     # copied from plugins-ffi
+    ├── GenericAU/              # shared Swift base class for every extension
+    ├── EQAudioUnit/            # one dir per AU extension target
+    ├── CompressorAudioUnit/
+    ├── …
+    ├── App/                    # SwiftUI container app (registers all extensions)
+    ├── Resources/
+    │   ├── libsotf_audio_plugins_ffi.a   # per-arch (overwritten between builds)
+    │   └── libsotf_gpui_au.a              # per-arch (overwritten between builds)
+    └── build/                  # isolated per-arch DerivedData
+        ├── au-arm64/Build/Products/Release/SOTFAudioUnits.app
+        └── au-x86_64/Build/Products/Release/SOTFAudioUnits.app
 ```
 
-**Key functions:**
-- `plugin_create()` - Create plugin instance
-- `plugin_destroy()` - Destroy plugin
-- `plugin_process()` - Process audio (real-time safe)
-- `plugin_set_parameter()` - Set parameter (normalized 0.0-1.0)
-- `plugin_get_parameter()` - Get parameter value
+## just Recipes
 
-### Audio Unit Extension (`SOTFAudioUnits/`)
+The `plugins-au/Justfile` defines the canonical pipeline. Every action has both per-arch variants and a "do both" entry point. Recipes run from the workspace root.
 
-```
-SOTFAudioUnits/
-├── README.md                   # This file
-├── SETUP_GUIDE.md             # Comprehensive setup instructions
-├── create_xcode_project.sh    # Helper script with instructions
-├── Shared/
-│   └── BridgingHeader.h       # C FFI interface for Swift
-├── EQAudioUnit/
-│   ├── Info.plist             # AU extension metadata
-│   ├── EQAudioUnit.swift      # AUAudioUnit subclass
-│   └── EQViewController.swift # SwiftUI UI
-└── Resources/
-    └── libsotf_audio_ffi.a    # Universal binary (x86_64 + arm64)
-```
+| Action | Both archs | arm64 only | x86_64 only |
+|---|---|---|---|
+| Stage FFI staticlib | — | `build-au-ffi-arm64` | `build-au-ffi-x86_64` |
+| Stage GPUI AU staticlib | — | `build-au-gpui-arm64` | `build-au-gpui-x86_64` |
+| Build full `SOTFAudioUnits.app` | `build-au-all` | `build-au-all-arm64` | `build-au-all-x86_64` |
+| Install into `~/Applications/` | `install-au-all` (host) | `install-au-all-arm64` | `install-au-all-x86_64` |
+| Sign | `sign-au` | `sign-au-arm64` | `sign-au-x86_64` |
+| Notarize + staple | `sign-au-notarize` | `sign-au-notarize-arm64` | `sign-au-notarize-x86_64` |
+| Zip into `dist/au/` | `dist-au` | `dist-au-arm64` | `dist-au-x86_64` |
+| Validate via `auval` | `validate-au-all` | — | — |
+| List registered AUs | `list-au` | — | — |
+| Sync version metadata | `sync-au-versions` | — | — |
 
-### Build Scripts
+The workspace `builds/macos.just` also ships a single-AU pipeline focused on the EQ scheme (`build-au-rust-{arm64,x86_64}` → `build-au-swift-{arm64,x86_64}` → `build-au-{arm64,x86_64}` / `build-au`). Use that for fast iteration on the EQ alone; use `build-au-all` for everything.
 
-**Justfile targets:**
-- `just build-au-rust` - Build Rust FFI as universal binary
-- `just build-au-swift` - Build Audio Unit in Xcode
-- `just build-au` - Complete build pipeline
-- `just install-au` - Install to system
-- `just validate-au` - Validate with auval
+## Step-by-Step (per-arch flow)
 
-## Step-by-Step Setup
-
-### 1. Build Rust FFI Library
+### 1. Build the staticlib + Xcode app for one arch
 
 ```bash
-cd /home/user/sotf
-just build-au-rust
+just build-au-all-arm64
 ```
 
-This:
-1. Compiles `src-audio-ffi` for x86_64 and arm64
-2. Creates universal binary with `lipo`
-3. Generates C header with `cbindgen`
-4. Copies everything to `SOTFAudioUnits/Resources/`
+That recipe does:
 
-**Output:**
-- `SOTFAudioUnits/Resources/libsotf_audio_ffi.a` (universal binary)
-- `SOTFAudioUnits/Shared/sotf_audio_ffi.h` (C header)
+1. `sync-au-versions` — propagates the workspace `Cargo.toml` version into every `<Name>AudioUnit/Info.plist` and `project.yml:MARKETING_VERSION`
+2. `build-au-ffi-arm64` — `cargo build --release -p plugins-ffi --target aarch64-apple-darwin`, then copies the resulting `target/aarch64-apple-darwin/release/libplugins_ffi.a` to `Resources/libsotf_audio_plugins_ffi.a` (the name the Xcode project links against via `-lsotf_audio_plugins_ffi`)
+3. `xcodegen generate` if `project.yml` is newer than `SOTFAudioUnits.xcodeproj`
+4. `xcodebuild` against the `SOTFAudioUnits` scheme with:
+   - `-derivedDataPath build/au-arm64` (so the two arches don't clobber each other)
+   - `ARCHS=arm64 ONLY_ACTIVE_ARCH=NO`
 
-### 2. Create Xcode Project
+Output: `crates/sotf-plugins/crates/plugins-au/build/au-arm64/Build/Products/Release/SOTFAudioUnits.app`
 
-You need to manually create the Xcode project (can't be scripted):
+Run `just build-au-all` to do the same for both arches sequentially. Resources/`*.a` is overwritten between archs, but each `xcodebuild` finishes before the next arch's cargo build runs, so the link inputs always match.
+
+### 2. Install into `~/Applications/`
 
 ```bash
-cd SOTFAudioUnits
-./create_xcode_project.sh
+just install-au-all                # picks host arch automatically
+just install-au-all-arm64          # force arm64
+just install-au-all-x86_64         # force x86_64
 ```
 
-Follow the detailed instructions to:
-1. Create App + Audio Unit Extension targets
-2. Configure build settings (library search paths, bridging header)
-3. Link `libsotf_audio_ffi.a`
-4. Add Swift source files
-5. Update Info.plist
+This copies the `.app` to `~/Applications/` and kicks `AudioComponentRegistrar` + `coreaudiod`. **Launch the app once** so macOS picks up every bundled `.appex` extension. After that, the AUs appear in any AUv3 host (Logic, GarageBand, Ableton, etc.).
 
-**Important settings:**
-
-- **Library Search Paths:** `$(PROJECT_DIR)/Resources`
-- **Header Search Paths:** `$(PROJECT_DIR)/Shared`
-- **Bridging Header:** `Shared/BridgingHeader.h`
-- **Deployment Target:** macOS 15.0
-
-### 3. Build Audio Unit
+### 3. Validate
 
 ```bash
-just build-au-swift
+just validate-au-all     # runs auval -v aufx <subtype> SOTF for every SOTF AU
+just list-au             # pluginkit listing of registered AUs
 ```
 
-Or in Xcode:
-1. Select **EQAudioUnit** scheme
-2. Product → Build (⌘B)
-
-### 4. Install to System
+For one specific AU:
 
 ```bash
-just install-au
+auval -v aufx SOEQ SOTF      # EQ
+auval -v aufx SOCP SOTF      # Compressor
+# … see validate-au-all for the full subtype/name list
 ```
 
-This copies `EQAudioUnit.appex` to:
-```
-~/Library/Audio/Plug-Ins/Components/
-```
-
-### 5. Test
-
-**In a DAW:**
-1. Open Logic Pro or GarageBand
-2. Insert audio effect
-3. Look for "SOTF: Parametric EQ"
-
-**Command-line validation:**
-```bash
-just validate-au
-```
-
-Or manually:
-```bash
-auval -v aufx SOEQ SOTF
-```
-
-Where:
-- `aufx` = Audio Unit Effect
-- `SOEQ` = Subtype (SOTF EQ)
-- `SOTF` = Manufacturer code
-
-## Adding More Plugins
-
-To add another plugin (e.g., Compressor):
-
-### 1. Update Rust FFI Factory
-
-Edit `src-audio-ffi/src/plugin_factory.rs`:
-
-```rust
-pub fn create_plugin(...) -> Result<Box<dyn Plugin>, String> {
-    match config.plugin_type.as_str() {
-        "EQ" => create_eq_plugin(config, input_channels, output_channels),
-        "Compressor" => create_compressor_plugin(...), // Add this
-        _ => Err(format!("Unknown plugin type: {}", config.plugin_type)),
-    }
-}
-
-fn create_compressor_plugin(...) -> Result<Box<dyn Plugin>, String> {
-    // Similar to create_eq_plugin
-    let params: CompressorPluginParams = serde_json::from_value(...)?;
-    let plugin = CompressorPlugin::from_params(...)?;
-    Ok(Box::new(plugin))
-}
-```
-
-### 2. Create Xcode Target
-
-1. Duplicate **EQAudioUnit** target
-2. Rename to **CompressorAudioUnit**
-3. Update bundle identifier
-4. Update Info.plist (subtype: `SOCO`, name: "SOTF: Compressor")
-
-### 3. Update Swift Code
-
-Copy and modify:
-- `CompressorAudioUnit.swift`
-- `CompressorViewController.swift`
-
-Change plugin creation:
-```swift
-plugin_create("Compressor", config_json, ...)
-```
-
-### 4. Rebuild
+### 4. Sign and notarize (for distribution)
 
 ```bash
-just build-au-rust  # Rebuild FFI with new factory code
-just build-au-swift # Build all targets
+export DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)"
+export APPLE_ID="you@example.com"
+
+just sign-au                 # signs both arch bundles in build/au-{arm64,x86_64}/...
+just sign-au-notarize        # submits both to notarytool, staples each
 ```
 
-## Development Workflow
+Signing operates on the **build output**, not on `~/Applications/SOTFAudioUnits.app`. Inside-out order: every `.appex` first, then the container `.app`, both with `--options runtime --timestamp`. The script verifies with `codesign --verify --strict` before exiting.
 
-### Typical Development Cycle
+Notarization needs a keychain profile named `autoeq-notarization`. Set it up once with:
 
-1. **Modify Rust DSP code** (e.g., add filter type to EQ)
-   ```bash
-   # Edit src-audio/src/plugins/plugin_eq.rs
+```bash
+xcrun notarytool store-credentials autoeq-notarization \
+  --apple-id "$APPLE_ID" \
+  --team-id   <YOUR_TEAM_ID> \
+  --password  <APP_SPECIFIC_PASSWORD>
+```
+
+### 5. Distribute
+
+```bash
+just dist-au
+# → dist/au/SOTFAudioUnits-<VERSION>-macos-arm64.zip
+# → dist/au/SOTFAudioUnits-<VERSION>-macos-x86_64.zip
+```
+
+`dist-au` warns (but does not stop) if a bundle isn't signed. Each zip is created with `ditto -c -k --keepParent` so resource forks and the notarization ticket survive transit.
+
+End users download the zip matching their Mac's CPU, drag `SOTFAudioUnits.app` into `/Applications` (or `~/Applications`), and launch it once to register the extensions.
+
+## Adding a New Audio Unit
+
+1. **Add a new plugin crate** under `crates/sotf-plugins/crates/sotf-plugin-<name>/` and re-export it from `sotf-plugins`. Implement `Plugin` (or `InPlacePlugin`).
+
+2. **Wire it into the FFI factory** (`crates/sotf-plugins/crates/plugins-ffi/src/plugin_factory.rs`):
+
+   ```rust
+   match config.plugin_type.as_str() {
+       "EQ" => create_eq_plugin(...),
+       "MyNew" => create_my_new_plugin(...),    // ← add
+       _ => Err(format!("Unknown plugin type: {}", config.plugin_type)),
+   }
    ```
 
-2. **Rebuild FFI library**
+3. **Add an Audio Unit target** to `project.yml` (mirror an existing entry — e.g. `EQAudioUnit`). Pick a unique 4-character subtype code for the `Info.plist`.
+
+4. **Create the source dir** `<NewName>AudioUnit/` with:
+   - `Info.plist` (subtype, name, manufacturer = `SOTF`)
+   - One Swift file subclassing the shared `GenericAU` base class
+
+5. **Update version sync** if the AU isn't a generic case. The `sync-au-versions` recipe globs `*AudioUnit/Info.plist`, so you usually don't need to touch it.
+
+6. **Regenerate + rebuild**:
+
    ```bash
-   just build-au-rust
+   just build-au-all
+   just install-au-all
    ```
 
-3. **Rebuild Audio Unit** (if Swift code changed)
-   ```bash
-   just build-au-swift
-   ```
-   Or just rebuild in Xcode (⌘B)
-
-4. **Reinstall**
-   ```bash
-   just install-au
-   ```
-
-5. **Test**
-   - Restart DAW
-   - Or use `auval` for quick validation
-
-### Debugging
-
-**Console logs:**
-```bash
-log stream --predicate 'process == "Logic Pro X"' --level debug
-```
-
-**Check for crashes:**
-```bash
-open ~/Library/Logs/DiagnosticReports/
-```
-
-**Common issues:**
-
-1. **Plugin not found:**
-   - Check installation: `ls ~/Library/Audio/Plug-Ins/Components/`
-   - Restart audio component registrar: `killall AudioComponentRegistrar`
-
-2. **Build errors:**
-   - Verify `libsotf_audio_ffi.a` exists in Resources/
-   - Check library search paths in Xcode
-   - Ensure bridging header path is correct
-
-3. **Runtime crashes:**
-   - Enable Address Sanitizer in Xcode scheme
-   - Check FFI boundary (null pointers, memory safety)
-   - Verify audio buffer sizes match expectations
+XcodeGen will rewrite `SOTFAudioUnits.xcodeproj` from `project.yml` automatically.
 
 ## Parameter System
 
-### How Parameters Work
+### How parameters flow
 
-1. **Rust plugin** has native parameters (e.g., `frequency: f64`, `q: f64`, `gain_db: f64`)
+1. **Rust plugin** declares native parameters (e.g. `frequency: f64`, `q: f64`, `gain_db: f64`) and exposes them via the `Plugin::parameters()` impl with min/max/default/units metadata.
+2. **FFI layer** (`parameter_map.rs`) maps to a normalized representation:
+   - `0.0 = min`, `1.0 = max`
+   - String IDs (e.g. `"band0_freq"`)
+   - Min/max/default + step count + unit string for the host UI
+3. **Swift layer** (`GenericAU`) builds an `AUParameterTree` from the FFI metadata at instantiation time. Every parameter is exposed for AU-host automation. Setting a parameter calls back through the FFI into the Rust plugin.
 
-2. **FFI layer** (`parameter_map.rs`) maps to generic system:
-   - Normalized values (0.0 = min, 1.0 = max)
-   - String IDs (e.g., `"band0_freq"`)
-   - Min/max ranges
-   - Units (Hz, dB, etc.)
+### Adding a parameter
 
-3. **Swift layer** creates `AUParameter` objects:
-   - Exposes to AU host for automation
-   - Handles UI bindings
-   - Converts to/from FFI calls
+1. Add the field + `Parameter` entry to your Rust plugin (matching `min/max/default/unit`).
+2. Make sure the parameter is registered in **all three** of `rebuild_cached_parameters`, `set_parameter`, and `get_parameter`. Missing the cache causes silent rejection at the FFI boundary.
+3. Add a corresponding entry to `parameter_map.rs` (id, range, steps, unit).
+4. Rebuild: `just build-au-all` (or just the FFI staticlib + Xcode for the host arch).
 
-### Adding New Parameters
+The SwiftUI view picks up the new parameter automatically because the views bind against the dynamic parameter tree. Custom UI (sliders, knobs) lives in each `<Name>AudioUnit/<Name>ViewController.swift`.
 
-**Example: Add "bypass" parameter to EQ**
+## Real-time safety
 
-1. **Update Rust plugin** (`plugin_eq.rs`):
-   ```rust
-   pub struct EqPlugin {
-       bypass: bool,
-       // ...
-   }
+`plugin_process()` runs on the audio thread:
 
-   impl Plugin for EqPlugin {
-       fn parameters(&self) -> Vec<Parameter> {
-           vec![
-               Parameter::new_bool("bypass", "Bypass", false)
-                   .with_description("Bypass the plugin")
-                   .with_group("General")
-                   .with_importance(ParameterImportance::Useful)
-           ]
-       }
-   }
-   ```
+- **No allocations** — pre-allocate buffers in `build()` / `init()` and reuse.
+- **No locks** — parameter updates use lock-free smoothing (`sotf-host/smoothing.rs`).
+- **No logging** — `println!`, `eprintln!`, and `log::*` are off-limits in `process`.
 
-2. **Update parameter map** (`parameter_map.rs`):
-   ```rust
-   parameters.push(ParameterMetadata {
-       id: "bypass".to_string(),
-       name: "Bypass".to_string(),
-       min_value: 0.0,
-       max_value: 1.0,
-       steps: 1, // Boolean: 0 or 1
-       // ...
-   });
-   ```
+The `plugins-ffi` crate is built with `lto = true`, `opt-level = 3`, `codegen-units = 1` (workspace `[profile.release]`).
 
-3. **Update UI** (`EQViewController.swift`):
-   ```swift
-   Toggle("Bypass", isOn: $viewModel.bypass)
-   ```
-
-4. Rebuild and reinstall
-
-## Performance Considerations
-
-### Real-Time Safety
-
-The `plugin_process()` function is called in the audio thread:
-
-- ✅ **No allocations** (pre-allocated buffers)
-- ✅ **No locks** (lock-free parameter updates)
-- ✅ **Fast** (direct FFI call to Rust)
-- ❌ Avoid `println!()` or logging in process()
-- ❌ Don't allocate memory
-- ❌ Don't use Mutex/RwLock
-
-### Optimization
-
-Rust FFI is compiled with:
-```toml
-[profile.release]
-lto = true              # Link-time optimization
-opt-level = 3           # Maximum optimization
-codegen-units = 1       # Single codegen unit for better optimization
-```
-
-### Latency
-
-- IIR filters: ~0 samples latency
-- FFT-based processing: Depends on block size
-- Report via `plugin.latency_samples()` → Swift → AU host
+Latency is reported through the FFI (`plugin.latency_samples()`) and surfaced to the AU host so DAWs can compensate.
 
 ## Troubleshooting
 
-### Plugin validation fails
+### `auval` fails
 
 ```bash
 auval -v aufx SOEQ SOTF
 ```
 
-**Common errors:**
-
-- **"Cannot find component"**: Not installed or wrong identifier
-  - Check: `ls ~/Library/Audio/Plug-Ins/Components/`
-  - Verify Info.plist: type=`aufx`, subtype=`SOEQ`, manufacturer=`SOTF`
-
-- **"Audio unit not initialized"**: Plugin creation failed
-  - Check Console.app for Rust error messages
-  - Verify JSON config is valid
-
-- **"Render callback failed"**: Processing error
-  - Check buffer sizes
-  - Verify channel counts match
+| Symptom | Cause / fix |
+|---|---|
+| "Cannot find component" | App not registered. Launch `~/Applications/SOTFAudioUnits.app` once, then `killall -9 AudioComponentRegistrar coreaudiod`. |
+| "Audio unit not initialized" | Plugin creation failed — check Console.app for errors from `plugin_create`. Verify the JSON config is valid. |
+| "Render callback failed" | Buffer size or channel-count mismatch. Verify `kAudioUnitProperty_StreamFormat` matches what the plugin expects. |
 
 ### Build failures
 
-**"Undefined symbols for architecture arm64":**
-- Rebuild FFI: `just build-au-rust`
-- Verify universal binary: `lipo -info Resources/libsotf_audio_ffi.a`
+| Error | Fix |
+|---|---|
+| `Undefined symbols for architecture arm64` | The staged staticlib is the wrong arch. Re-run `just build-au-ffi-arm64` (or `…-x86_64`) before `xcodebuild`. The `build-au-xcode-<arch>` recipe always does this for you. |
+| `lipo: can't open input file: …` | You're on an old recipe. The current pipeline does not use `lipo`. Pull the latest `Justfile` / `builds/macos.just`. |
+| `Bridging header not found` | `Shared/BridgingHeader.h` is referenced by `project.yml`. Re-run `xcodegen generate`. |
+| `Library not loaded` at runtime | The static library is meant to be **statically** linked. Check Xcode → Build Phases → "Link Binary With Libraries" and `OTHER_LDFLAGS: -lsotf_audio_plugins_ffi`. |
 
-**"Bridging header not found":**
-- Check Xcode Build Settings → Swift Compiler → Bridging Header
-- Should be: `Shared/BridgingHeader.h`
+### Confirm the staged staticlib's arch
 
-**"Library not loaded":**
-- Static library must be linked, not loaded
-- Verify in Build Phases → Link Binary With Libraries
+```bash
+file crates/sotf-plugins/crates/plugins-au/Resources/libsotf_audio_plugins_ffi.a
+```
 
-## Next Steps
+The `.a` is per-arch, not universal. Whatever arch is staged is the one the next `xcodebuild` will produce.
 
-### Extend to More Plugins
+### Console + crash logs
 
-Create Audio Units for:
-- ✅ **EQ** (done)
-- ⏳ **Compressor** (follow "Adding More Plugins" section)
-- ⏳ **Limiter**
-- ⏳ **Gate**
-- ⏳ **Upmixer** (stereo → surround)
+```bash
+log stream --predicate 'process == "Logic Pro" || process == "GarageBand"' --level debug
+open ~/Library/Logs/DiagnosticReports/
+```
 
-### Advanced Features
+## Distribution Checklist
 
-- **Preset management**: Implement `fullState` for DAW preset saving
-- **Spectrum analyzer**: Add visual feedback (FFT display)
-- **MIDI control**: Map MIDI CC to parameters
-- **Sidechain**: Support multi-input busses
-
-### Distribution
-
-1. **Code signing**:
-   ```bash
-   codesign --force --sign "Developer ID Application: Your Name" \
-            EQAudioUnit.appex
-   ```
-
-2. **Notarization** (for distribution outside Mac App Store)
-
-3. **Installer**: Create .pkg with `pkgbuild`
+1. `just build-au-all` — both arches build cleanly
+2. `just sign-au` — both bundles signed with Developer ID Application
+3. `just sign-au-notarize` — notarytool returns `Accepted` for both
+4. `just dist-au` — `dist/au/SOTFAudioUnits-<v>-macos-{arm64,x86_64}.zip` exist
+5. (Optional) Sanity-check the zips elsewhere — e.g. `xcrun stapler validate` on a freshly extracted `.app`
 
 ## References
 
-- [Apple: Creating an Audio Unit Extension](https://developer.apple.com/documentation/avfaudio/audio_engine/audio_units/creating_an_audio_unit_extension/)
-- [AUv3 Developer Docs](https://developer.apple.com/documentation/audiounit)
-- [Audio Unit Programming Guide](https://developer.apple.com/library/archive/documentation/MusicAudio/Conceptual/AudioUnitProgrammingGuide/)
-
-## Support
-
-For issues:
-1. Check Console.app for crash logs
-2. Run with `auval -v aufx SOEQ SOTF` for detailed validation
-3. Enable Xcode debugging with Audio Unit hosting app
-
----
-
-Built with ❤️ using Rust + Swift
+- [Apple — Creating an Audio Unit Extension](https://developer.apple.com/documentation/avfaudio/audio_engine/audio_units/creating_an_audio_unit_extension/)
+- [AUv3 reference](https://developer.apple.com/documentation/audiounit)
+- [Audio Unit Programming Guide (archive)](https://developer.apple.com/library/archive/documentation/MusicAudio/Conceptual/AudioUnitProgrammingGuide/)
+- [`xcodegen` project spec reference](https://github.com/yonaskolb/XcodeGen/blob/master/Docs/ProjectSpec.md)
+- [`notarytool` docs](https://developer.apple.com/documentation/security/notarizing_macos_software_before_distribution/customizing_the_notarization_workflow)
