@@ -1,7 +1,7 @@
 {
   "name": "sotf-website",
   "type": "module",
-  "version": "0.5.13",
+  "version": "0.6.1",
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",

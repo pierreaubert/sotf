@@ -21,7 +21,7 @@ The Audio Unit framework:
                                │
                                ▼
 ┌────────────────────────────────────────────────────────────┐
-│  SOTFAudioUnits.app (container, ~/Applications/)            │
+│  SOTFAudioUnits.app (container, /Applications/)             │
 │   └── Contents/PlugIns/<Name>AudioUnit.appex (× many)       │
 │         ┌──────────────────────────────────────────────┐    │
 │         │ Swift/AUv3 layer (<Name>AudioUnit, GenericAU) │    │
@@ -81,13 +81,14 @@ The `plugins-au/Justfile` defines the canonical pipeline. Every action has both 
 | Stage FFI staticlib | — | `build-au-ffi-arm64` | `build-au-ffi-x86_64` |
 | Stage GPUI AU staticlib | — | `build-au-gpui-arm64` | `build-au-gpui-x86_64` |
 | Build full `SOTFAudioUnits.app` | `build-au-all` | `build-au-all-arm64` | `build-au-all-x86_64` |
-| Install into `~/Applications/` | `install-au-all` (host) | `install-au-all-arm64` | `install-au-all-x86_64` |
 | Sign | `sign-au` | `sign-au-arm64` | `sign-au-x86_64` |
 | Notarize + staple | `sign-au-notarize` | `sign-au-notarize-arm64` | `sign-au-notarize-x86_64` |
-| Zip into `dist/au/` | `dist-au` | `dist-au-arm64` | `dist-au-x86_64` |
+| Package as `.pkg` into `dist/au/` | `dist-au` | `dist-au-arm64` | `dist-au-x86_64` |
 | Validate via `auval` | `validate-au-all` | — | — |
 | List registered AUs | `list-au` | — | — |
 | Sync version metadata | `sync-au-versions` | — | — |
+
+There is no separate "install" recipe. To install locally for testing, build the `.pkg` via `just dist-au-<arch>` and double-click it (or `installer -pkg dist/au/SOTFAudioUnits-<v>-macos-<arch>.pkg -target /`) — that puts `/Applications/SOTFAudioUnits.app` in place. Launch it once so macOS registers the bundled `.appex` extensions.
 
 The workspace `builds/macos.just` also ships a single-AU pipeline focused on the EQ scheme (`build-au-rust-{arm64,x86_64}` → `build-au-swift-{arm64,x86_64}` → `build-au-{arm64,x86_64}` / `build-au`). Use that for fast iteration on the EQ alone; use `build-au-all` for everything.
 
@@ -112,15 +113,23 @@ Output: `crates/sotf-plugins/crates/plugins-au/build/au-arm64/Build/Products/Rel
 
 Run `just build-au-all` to do the same for both arches sequentially. Resources/`*.a` is overwritten between archs, but each `xcodebuild` finishes before the next arch's cargo build runs, so the link inputs always match.
 
-### 2. Install into `~/Applications/`
+### 2. Package into `dist/au/` and install locally
 
 ```bash
-just install-au-all                # picks host arch automatically
-just install-au-all-arm64          # force arm64
-just install-au-all-x86_64         # force x86_64
+just dist-au-arm64                  # → dist/au/SOTFAudioUnits-<v>-macos-arm64.pkg
+just dist-au-x86_64                 # → dist/au/SOTFAudioUnits-<v>-macos-x86_64.pkg
+just dist-au                        # both arches
 ```
 
-This copies the `.app` to `~/Applications/` and kicks `AudioComponentRegistrar` + `coreaudiod`. **Launch the app once** so macOS picks up every bundled `.appex` extension. After that, the AUs appear in any AUv3 host (Logic, GarageBand, Ableton, etc.).
+Then install the `.pkg` matching your CPU. From the GUI: double-click. From a shell:
+
+```bash
+sudo installer -pkg dist/au/SOTFAudioUnits-*-macos-arm64.pkg -target /
+killall -9 AudioComponentRegistrar coreaudiod 2>/dev/null || true
+open /Applications/SOTFAudioUnits.app   # launch once so macOS picks up the .appex extensions
+```
+
+After that, the AUs appear in any AUv3 host (Logic, GarageBand, Ableton, etc.).
 
 ### 3. Validate
 
@@ -147,7 +156,7 @@ just sign-au                 # signs both arch bundles in build/au-{arm64,x86_64
 just sign-au-notarize        # submits both to notarytool, staples each
 ```
 
-Signing operates on the **build output**, not on `~/Applications/SOTFAudioUnits.app`. Inside-out order: every `.appex` first, then the container `.app`, both with `--options runtime --timestamp`. The script verifies with `codesign --verify --strict` before exiting.
+Signing operates on the **build output** under `crates/sotf-plugins/crates/plugins-au/build/au-<arch>/`, not on the installed app. Inside-out order: every `.appex` first, then the container `.app`, both with `--options runtime --timestamp`. The script verifies with `codesign --verify --strict` before exiting.
 
 Notarization needs a keychain profile named `autoeq-notarization`. Set it up once with:
 
@@ -162,13 +171,13 @@ xcrun notarytool store-credentials autoeq-notarization \
 
 ```bash
 just dist-au
-# → dist/au/SOTFAudioUnits-<VERSION>-macos-arm64.zip
-# → dist/au/SOTFAudioUnits-<VERSION>-macos-x86_64.zip
+# → dist/au/SOTFAudioUnits-<VERSION>-macos-arm64.pkg
+# → dist/au/SOTFAudioUnits-<VERSION>-macos-x86_64.pkg
 ```
 
-`dist-au` warns (but does not stop) if a bundle isn't signed. Each zip is created with `ditto -c -k --keepParent` so resource forks and the notarization ticket survive transit.
+`dist-au` warns (but does not stop) if a bundle isn't signed. Each `.pkg` is built with `pkgbuild --install-location /Applications` and signed with `INSTALLER_DEVELOPER_ID` when set. For a fully signed-and-notarized `.pkg`, run `just sign-au-notarize` instead — it submits the `.app` and the `.pkg` to `notarytool` and staples the result.
 
-End users download the zip matching their Mac's CPU, drag `SOTFAudioUnits.app` into `/Applications` (or `~/Applications`), and launch it once to register the extensions.
+End users download the `.pkg` matching their Mac's CPU and double-click to install under `/Applications/SOTFAudioUnits.app`. They launch the app once so macOS registers the bundled `.appex` extensions.
 
 ## Adding a New Audio Unit
 
@@ -195,8 +204,9 @@ End users download the zip matching their Mac's CPU, drag `SOTFAudioUnits.app` i
 6. **Regenerate + rebuild**:
 
    ```bash
-   just build-au-all
-   just install-au-all
+   just build-au-all          # both arches
+   just dist-au-arm64         # package + install via .pkg
+   sudo installer -pkg dist/au/SOTFAudioUnits-*-macos-arm64.pkg -target /
    ```
 
 XcodeGen will rewrite `SOTFAudioUnits.xcodeproj` from `project.yml` automatically.
@@ -243,7 +253,7 @@ auval -v aufx SOEQ SOTF
 
 | Symptom | Cause / fix |
 |---|---|
-| "Cannot find component" | App not registered. Launch `~/Applications/SOTFAudioUnits.app` once, then `killall -9 AudioComponentRegistrar coreaudiod`. |
+| "Cannot find component" | App not registered. Install the `.pkg` from `dist/au/`, launch `/Applications/SOTFAudioUnits.app` once, then `killall -9 AudioComponentRegistrar coreaudiod`. |
 | "Audio unit not initialized" | Plugin creation failed — check Console.app for errors from `plugin_create`. Verify the JSON config is valid. |
 | "Render callback failed" | Buffer size or channel-count mismatch. Verify `kAudioUnitProperty_StreamFormat` matches what the plugin expects. |
 

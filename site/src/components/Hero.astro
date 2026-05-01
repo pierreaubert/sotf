@@ -2,23 +2,20 @@
 ---
 
 <section class="relative min-h-screen flex items-center justify-center pt-16 overflow-hidden">
-  <!-- Background grid + gradient -->
+  <!-- Background grid + spotlight (theme-aware via CSS vars) -->
   <div class="absolute inset-0">
-    <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_rgba(34,211,238,0.08)_0%,_transparent_70%)]"></div>
-    <div
-      class="absolute inset-0 opacity-[0.04]"
-      style="background-image: linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px); background-size: 64px 64px;"
-    ></div>
+    <div class="hero-spotlight absolute inset-0"></div>
+    <div class="hero-grid absolute inset-0"></div>
   </div>
 
   <div class="relative z-10 max-w-4xl mx-auto px-4 sm:px-6 text-center">
     <h1 class="text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight mb-6">
-      <span class="bg-gradient-to-r from-white via-cyan-200 to-accent bg-clip-text text-transparent">
+      <span class="bg-gradient-to-r from-grad-start via-grad-mid to-grad-end bg-clip-text text-transparent">
         Sound of the Future
       </span>
     </h1>
 
-    <p class="text-lg sm:text-xl text-gray-400 max-w-2xl mx-auto mb-8">
+    <p class="text-lg sm:text-xl text-fg-muted max-w-2xl mx-auto mb-8">
       Your room, your headphones, your sound — scientifically optimized.<br />
       Free. Open source.
     </p>
@@ -26,7 +23,7 @@
     <div class="flex flex-col sm:flex-row items-center justify-center gap-4 mb-10">
       <a
         href="#download"
-        class="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-accent text-gray-900 font-semibold hover:bg-accent-hover transition-colors"
+        class="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-accent text-accent-on font-semibold hover:bg-accent-hover transition-colors"
       >
         Download Free
       </a>
@@ -34,13 +31,13 @@
         href="https://github.com/pierreaubert/sotf"
         target="_blank"
         rel="noopener noreferrer"
-        class="inline-flex items-center gap-2 px-6 py-3 rounded-lg border border-border text-gray-300 hover:border-gray-500 hover:text-white transition-colors"
+        class="inline-flex items-center gap-2 px-6 py-3 rounded-lg border border-border text-fg-secondary hover:border-fg-subtle hover:text-fg transition-colors"
       >
         View on GitHub
       </a>
     </div>
 
-    <div class="flex flex-wrap items-center justify-center gap-3 text-sm text-gray-500">
+    <div class="flex flex-wrap items-center justify-center gap-3 text-sm text-fg-subtle">
       <span class="px-3 py-1 rounded-full border border-border">GPL-3.0</span>
       <span class="px-3 py-1 rounded-full border border-border">macOS</span>
       <span class="px-3 py-1 rounded-full border border-border">Windows</span>
@@ -50,8 +47,21 @@
 
   <!-- Scroll indicator -->
   <div class="absolute bottom-8 left-1/2 -translate-x-1/2 animate-bounce-slow">
-    <svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+    <svg class="w-6 h-6 text-fg-faint" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
       <path stroke-linecap="round" stroke-linejoin="round" d="M19 14l-7 7m0 0l-7-7" />
     </svg>
   </div>
 </section>
+
+<style>
+  .hero-spotlight {
+    background: radial-gradient(ellipse at center, var(--color-spotlight) 0%, transparent 70%);
+  }
+  .hero-grid {
+    opacity: 0.4;
+    background-image:
+      linear-gradient(var(--color-grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--color-grid-line) 1px, transparent 1px);
+    background-size: 64px 64px;
+  }
+</style>

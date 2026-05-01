@@ -1,11 +1,94 @@
 @import "tailwindcss";
 
+/* Theme is signalled by [data-theme="dark"|"light"] on <html>. We use the
+   same attribute Starlight uses, and the same `starlight-theme` localStorage
+   key, so a single toggle controls both the marketing site and the docs. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+@custom-variant light (&:where([data-theme="light"], [data-theme="light"] *));
+
+/* Dark theme is the default — all values referenced by Tailwind utilities
+   live as CSS variables, so the override block below can flip them at
+   runtime without a rebuild. */
 @theme {
   --color-bg: #030712;
   --color-card: #111827;
   --color-border: #1f2937;
+
+  /* Foreground levels (used to be plain text-white / text-gray-*) */
+  --color-fg: #ffffff;
+  --color-fg-secondary: #d1d5db;
+  --color-fg-muted: #9ca3af;
+  --color-fg-subtle: #6b7280;
+  --color-fg-faint: #4b5563;
+
   --color-accent: #22d3ee;
   --color-accent-hover: #06b6d4;
+  /* Text drawn on top of accent backgrounds; same dark color in both
+     themes because the accent stays bright-cyan in both. */
+  --color-accent-on: #111827;
+
+  /* Hero title gradient — bright on dark. */
+  --color-grad-start: #ffffff;
+  --color-grad-mid: #a5f3fc;
+  --color-grad-end: #22d3ee;
+
+  /* Decorative overlays (grid lines + radial spotlight) tuned per theme. */
+  --color-grid-line: rgb(255 255 255 / 0.1);
+  --color-spotlight: rgb(34 211 238 / 0.08);
+
   --font-sans: 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
+}
+
+:root[data-theme="light"] {
+  --color-bg: #ffffff;
+  --color-card: #f3f4f6;
+  --color-border: #e5e7eb;
+
+  --color-fg: #111827;
+  --color-fg-secondary: #374151;
+  --color-fg-muted: #4b5563;
+  --color-fg-subtle: #6b7280;
+  --color-fg-faint: #9ca3af;
+
+  --color-accent: #0891b2;
+  --color-accent-hover: #0e7490;
+  --color-accent-on: #ffffff;
+
+  /* Deep-to-bright cyan reads against the white page; the previous
+     from-white start becomes invisible in light mode. */
+  --color-grad-start: #155e75;
+  --color-grad-mid: #0891b2;
+  --color-grad-end: #06b6d4;
+
+  --color-grid-line: rgb(15 23 42 / 0.06);
+  --color-spotlight: rgb(8 145 178 / 0.06);
+}
+
+/* Honour OS preference on first visit if the user has not made a choice.
+   The pre-paint script in BaseLayout runs the same logic; this rule is the
+   no-JS fallback. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --color-bg: #ffffff;
+    --color-card: #f3f4f6;
+    --color-border: #e5e7eb;
+
+    --color-fg: #111827;
+    --color-fg-secondary: #374151;
+    --color-fg-muted: #4b5563;
+    --color-fg-subtle: #6b7280;
+    --color-fg-faint: #9ca3af;
+
+    --color-accent: #0891b2;
+    --color-accent-hover: #0e7490;
+    --color-accent-on: #ffffff;
+
+    --color-grad-start: #155e75;
+    --color-grad-mid: #0891b2;
+    --color-grad-end: #06b6d4;
+
+    --color-grid-line: rgb(15 23 42 / 0.06);
+    --color-spotlight: rgb(8 145 178 / 0.06);
+  }
 }

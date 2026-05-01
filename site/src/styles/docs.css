@@ -1,8 +1,13 @@
-/* SotF docs theme — dark mode matching the marketing site */
-:root {
+/* SotF docs theme — overrides Starlight's variables to match the marketing
+   site palette. Dark + light scope to [data-theme] so the existing Starlight
+   theme switcher (and the marketing-site Nav toggle, which writes the same
+   `starlight-theme` localStorage key) drive both surfaces in lockstep. */
+
+:root[data-theme='dark'] {
   --sl-color-accent-low: #083344;
   --sl-color-accent: #22d3ee;
   --sl-color-accent-high: #a5f3fc;
+
   --sl-color-white: #f8fafc;
   --sl-color-gray-1: #e2e8f0;
   --sl-color-gray-2: #94a3b8;
@@ -11,6 +16,29 @@
   --sl-color-gray-5: #1e293b;
   --sl-color-gray-6: #111827;
   --sl-color-black: #030712;
+
+  --sl-font-system: 'Inter', system-ui, sans-serif;
+  --sl-font-system-mono: 'JetBrains Mono', monospace;
+}
+
+:root[data-theme='light'] {
+  /* Cyan accent in both modes — same brand as the marketing site, slightly
+     darker shade for contrast against a white page. */
+  --sl-color-accent-low: #cffafe;
+  --sl-color-accent: #0891b2;
+  --sl-color-accent-high: #155e75;
+
+  /* Light grayscale. Starlight derives bg/text/hairline from this. */
+  --sl-color-white: #030712;
+  --sl-color-gray-1: #111827;
+  --sl-color-gray-2: #374151;
+  --sl-color-gray-3: #4b5563;
+  --sl-color-gray-4: #6b7280;
+  --sl-color-gray-5: #d1d5db;
+  --sl-color-gray-6: #e5e7eb;
+  --sl-color-gray-7: #f3f4f6;
+  --sl-color-black: #ffffff;
+
   --sl-font-system: 'Inter', system-ui, sans-serif;
   --sl-font-system-mono: 'JetBrains Mono', monospace;
 }

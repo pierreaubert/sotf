@@ -12,7 +12,7 @@ Headphone crossfeed that simulates speaker spacing. Supports Bauer, Meier, and m
 
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
-| Mode | Choice (Disable, Bauer, Meier, Multiband) | 4 options | Disable | - | Crossfeed algorithm selection |
+| Mode | Choice (Disable, Bauer, Meier, Multiband) | 4 options | Multiband | - | Crossfeed algorithm selection |
 | Preset | Choice (Default, Cmoy, Meier, Mb, Off) | 5 options | Default | - | Load preset parameter values |
 | Enabled | Bool | On / Off | On | - | Enable crossfeed processing |
 | Mix | Float | 0 .. 1 | 1 | % | Dry/wet blend |

@@ -11,9 +11,6 @@ macOS only.
 This is a Swift/Xcode project, not a Rust crate. Driven by `Justfile` recipes.
 
 ```bash
-# Build (host arch) + install to ~/Applications/SOTFAudioUnits.app
-just install-au-all
-
 # Build a specific arch only
 just build-au-all-arm64
 just build-au-all-x86_64
@@ -21,29 +18,41 @@ just build-au-all-x86_64
 # Build both arches (release flow)
 just build-au-all
 
+# Build + package as a .pkg installer in dist/au/
+just dist-au-arm64
+just dist-au-x86_64
+just dist-au                # both arches
+
 # Validate registered AUs
 just validate-au-all
 ```
 
-After install, **launch `~/Applications/SOTFAudioUnits.app` once** so macOS registers each `.appex` extension. The AUs then appear in any AUv3 host (Logic, GarageBand, Ableton, etc.).
+To install locally for testing in a DAW: build the .pkg via `just dist-au-<arch>`, then double-click `dist/au/SOTFAudioUnits-<v>-macos-<arch>.pkg`. macOS installs it under `/Applications/SOTFAudioUnits.app`; **launch that app once** so macOS registers each `.appex` extension. The AUs then appear in any AUv3 host (Logic, GarageBand, Ableton, etc.).
 
-Per-arch outputs land at:
+Per-arch BUILD outputs land at:
 
 ```
 crates/sotf-plugins/crates/plugins-au/build/au-arm64/Build/Products/Release/SOTFAudioUnits.app
 crates/sotf-plugins/crates/plugins-au/build/au-x86_64/Build/Products/Release/SOTFAudioUnits.app
 ```
 
+Per-arch DIST outputs land at:
+
+```
+dist/au/SOTFAudioUnits-<version>-macos-arm64.pkg
+dist/au/SOTFAudioUnits-<version>-macos-x86_64.pkg
+```
+
 ## Sign / notarize / distribute
 
-Operates on the per-arch BUILD output, not on `~/Applications/...`:
+Operates on the per-arch BUILD output (not on the installed app):
 
 ```bash
 DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)" \
   just sign-au               # both arches
 APPLE_ID="you@example.com" \
-  just sign-au-notarize      # both arches
-just dist-au                 # → dist/au/SOTFAudioUnits-<v>-macos-{arm64,x86_64}.zip
+  just sign-au-notarize      # both arches → signed + notarized .pkg in dist/au/
+just dist-au                 # → dist/au/SOTFAudioUnits-<v>-macos-{arm64,x86_64}.pkg
 ```
 
 Per-arch variants exist for each step (`sign-au-arm64`, `dist-au-x86_64`, etc.) — see `Justfile`.

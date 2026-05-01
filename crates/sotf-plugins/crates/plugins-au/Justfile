@@ -184,56 +184,6 @@ build-au-all-x86_64: build-au-xcode-x86_64 sync-au-versions
 build-au-all: build-au-all-arm64 build-au-all-x86_64
 	@echo "✅ AU packages built for arm64 and x86_64"
 
-# ----------------------------------------------------------------------
-# Install (per-arch + host-arch dispatch)
-# ----------------------------------------------------------------------
-
-# Install the arm64 AU bundle into ~/Applications.
-[group('build-macos')]
-install-au-all-arm64: build-au-all-arm64
-	#!/usr/bin/env bash
-	set -euo pipefail
-	APP="{{au_dir}}/build/au-arm64/Build/Products/Release/SOTFAudioUnits.app"
-	if [ ! -d "$APP" ]; then
-		echo "No build found at $APP. Run 'just build-au-all-arm64' first."
-		exit 1
-	fi
-	rm -rf ~/Applications/SOTFAudioUnits.app
-	mkdir -p ~/Applications
-	cp -R "$APP" ~/Applications/
-	echo "✅ SOTF Audio Units (arm64) installed to ~/Applications/"
-	echo "Launch the app once to register AU extensions with the system"
-	killall -9 AudioComponentRegistrar coreaudiod 2>/dev/null || true
-
-# Install the x86_64 AU bundle into ~/Applications.
-[group('build-macos')]
-install-au-all-x86_64: build-au-all-x86_64
-	#!/usr/bin/env bash
-	set -euo pipefail
-	APP="{{au_dir}}/build/au-x86_64/Build/Products/Release/SOTFAudioUnits.app"
-	if [ ! -d "$APP" ]; then
-		echo "No build found at $APP. Run 'just build-au-all-x86_64' first."
-		exit 1
-	fi
-	rm -rf ~/Applications/SOTFAudioUnits.app
-	mkdir -p ~/Applications
-	cp -R "$APP" ~/Applications/
-	echo "✅ SOTF Audio Units (x86_64) installed to ~/Applications/"
-	echo "Launch the app once to register AU extensions with the system"
-	killall -9 AudioComponentRegistrar coreaudiod 2>/dev/null || true
-
-# Install the AU bundle matching the host architecture.
-[group('build-macos')]
-install-au-all:
-	#!/usr/bin/env bash
-	set -euo pipefail
-	HOST_ARCH=$(uname -m)
-	case "$HOST_ARCH" in
-		arm64)  just install-au-all-arm64 ;;
-		x86_64) just install-au-all-x86_64 ;;
-		*)      echo "Unsupported host arch: $HOST_ARCH"; exit 1 ;;
-	esac
-
 # Validate all Audio Units with auval (against whichever arch is currently registered).
 [group('build-macos')]
 validate-au-all:

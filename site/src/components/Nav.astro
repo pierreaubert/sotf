@@ -20,19 +20,33 @@ const links = [
   <div class="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
     <a href="/" class="flex items-center gap-2">
       <img src="/images/sotf-icon.png" alt="SotF" class="w-8 h-8 rounded" />
-      <span class="font-semibold text-white text-lg">SotF</span>
+      <span class="font-semibold text-fg text-lg">SotF</span>
     </a>
 
     <!-- Desktop links -->
-    <div class="hidden md:flex items-center gap-8">
+    <div class="hidden md:flex items-center gap-6">
       {links.map((link) => (
-        <a href={link.href} class="text-sm text-gray-400 hover:text-white transition-colors">
+        <a href={link.href} class="text-sm text-fg-muted hover:text-fg transition-colors">
           {link.label}
         </a>
       ))}
+      <button
+        id="theme-toggle"
+        type="button"
+        class="theme-toggle p-2 rounded-lg text-fg-muted hover:text-fg hover:bg-card transition-colors"
+        aria-label="Toggle dark mode"
+      >
+        <svg class="theme-toggle-moon w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+        </svg>
+        <svg class="theme-toggle-sun w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+        </svg>
+      </button>
       <a
         href={`${base}#download`}
-        class="text-sm font-medium px-4 py-2 rounded-lg bg-accent text-gray-900 hover:bg-accent-hover transition-colors"
+        class="text-sm font-medium px-4 py-2 rounded-lg bg-accent text-accent-on hover:bg-accent-hover transition-colors"
       >
         Download
       </a>
@@ -41,17 +55,25 @@ const links = [
     <!-- Mobile hamburger (no JS) -->
     <details class="md:hidden relative">
       <summary class="list-none cursor-pointer p-2">
-        <svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <svg class="w-6 h-6 text-fg-muted" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
         </svg>
       </summary>
       <div class="absolute right-0 top-full mt-2 w-48 bg-card border border-border rounded-lg shadow-xl py-2">
         {links.map((link) => (
-          <a href={link.href} class="block px-4 py-2 text-sm text-gray-300 hover:text-white hover:bg-border/50">
+          <a href={link.href} class="block px-4 py-2 text-sm text-fg-secondary hover:text-fg hover:bg-border/50">
             {link.label}
           </a>
         ))}
         <hr class="border-border my-2" />
+        <button
+          type="button"
+          class="theme-toggle-mobile w-full text-left px-4 py-2 text-sm text-fg-secondary hover:text-fg hover:bg-border/50 flex items-center gap-2"
+        >
+          <span class="theme-toggle-moon-mobile">🌙</span>
+          <span class="theme-toggle-sun-mobile">☀️</span>
+          <span class="theme-toggle-label">Theme</span>
+        </button>
         <a href={`${base}#download`} class="block px-4 py-2 text-sm font-medium text-accent">
           Download
         </a>
@@ -59,3 +81,27 @@ const links = [
     </details>
   </div>
 </nav>
+
+<style is:global>
+  /* Show only the icon for the active theme. */
+  :root[data-theme="dark"] .theme-toggle-sun,
+  :root[data-theme="dark"] .theme-toggle-sun-mobile { display: none; }
+  :root[data-theme="light"] .theme-toggle-moon,
+  :root[data-theme="light"] .theme-toggle-moon-mobile { display: none; }
+</style>
+
+<script is:inline>
+  (function () {
+    function setTheme(next) {
+      document.documentElement.setAttribute('data-theme', next);
+      try { localStorage.setItem('starlight-theme', next); } catch (_) {}
+    }
+    function toggle() {
+      var current = document.documentElement.getAttribute('data-theme');
+      setTheme(current === 'light' ? 'dark' : 'light');
+    }
+    document.querySelectorAll('#theme-toggle, .theme-toggle-mobile').forEach(function (el) {
+      el.addEventListener('click', toggle);
+    });
+  })();
+</script>

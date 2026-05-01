@@ -15,7 +15,25 @@ const { title, description } = Astro.props;
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={description} />
-    <meta name="theme-color" content="#030712" />
+    <meta name="theme-color" content="#030712" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <!-- Theme bootstrap: must run before paint to avoid a flash. Reads the
+         same localStorage key Starlight writes (`starlight-theme`) so the
+         choice survives marketing↔docs navigation in either direction. -->
+    <script is:inline>
+      (function () {
+        try {
+          var stored = localStorage.getItem('starlight-theme');
+          var prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
+          var theme = stored === 'light' || stored === 'dark'
+            ? stored
+            : (prefersLight ? 'light' : 'dark');
+          document.documentElement.setAttribute('data-theme', theme);
+        } catch (_) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      })();
+    </script>
     <link rel="icon" type="image/png" href="/images/sotf-icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -55,7 +73,7 @@ const { title, description } = Astro.props;
       }
     </style>
   </head>
-  <body class="bg-bg text-gray-200 font-sans antialiased">
+  <body class="bg-bg text-fg-secondary font-sans antialiased">
     <slot />
     <script>
       const observer = new IntersectionObserver(

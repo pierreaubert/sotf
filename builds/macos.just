@@ -177,58 +177,6 @@ build-au-arm64: build-au-swift-arm64
 build-au-x86_64: build-au-swift-x86_64
 	@echo "✅ Audio Unit x86_64 package ready"
 
-# Install the arm64 AU package into ~/Applications.
-[group('build-macos')]
-install-au-arm64: build-au-arm64
-	#!/usr/bin/env bash
-	set -euxo pipefail
-	AU_APP="crates/sotf-plugins/crates/plugins-au/build/au-arm64/Build/Products/Release/SOTFAudioUnits.app"
-	if [ ! -d "$AU_APP" ]; then
-		echo "⚠️  $AU_APP not found — run 'just build-au-arm64' first"
-		exit 1
-	fi
-	rm -rf ~/Applications/SOTFAudioUnits.app
-	mkdir -p ~/Applications
-	cp -r "$AU_APP" ~/Applications/
-	echo "✅ SOTF Audio Units (arm64) installed to ~/Applications/"
-	echo ""
-	echo "IMPORTANT: You must launch ~/Applications/SOTFAudioUnits.app once to register the AU"
-	echo "           Then it will be available in DAWs as 'SOTF: Parametric EQ'"
-	echo ""
-	killall -9 AudioComponentRegistrar coreaudiod 2>/dev/null || true
-
-# Install the x86_64 AU package into ~/Applications.
-[group('build-macos')]
-install-au-x86_64: build-au-x86_64
-	#!/usr/bin/env bash
-	set -euxo pipefail
-	AU_APP="crates/sotf-plugins/crates/plugins-au/build/au-x86_64/Build/Products/Release/SOTFAudioUnits.app"
-	if [ ! -d "$AU_APP" ]; then
-		echo "⚠️  $AU_APP not found — run 'just build-au-x86_64' first"
-		exit 1
-	fi
-	rm -rf ~/Applications/SOTFAudioUnits.app
-	mkdir -p ~/Applications
-	cp -r "$AU_APP" ~/Applications/
-	echo "✅ SOTF Audio Units (x86_64) installed to ~/Applications/"
-	echo ""
-	echo "IMPORTANT: You must launch ~/Applications/SOTFAudioUnits.app once to register the AU"
-	echo "           Then it will be available in DAWs as 'SOTF: Parametric EQ'"
-	echo ""
-	killall -9 AudioComponentRegistrar coreaudiod 2>/dev/null || true
-
-# Install the AU package matching the host architecture.
-[group('build-macos')]
-install-au:
-	#!/usr/bin/env bash
-	set -euxo pipefail
-	HOST_ARCH=$(uname -m)
-	case "$HOST_ARCH" in
-		arm64)  just install-au-arm64 ;;
-		x86_64) just install-au-x86_64 ;;
-		*)      echo "Unsupported host arch: $HOST_ARCH"; exit 1 ;;
-	esac
-
 # Validate Audio Unit
 [group('build-macos')]
 validate-au:

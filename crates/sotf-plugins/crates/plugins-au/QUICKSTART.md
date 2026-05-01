@@ -17,22 +17,23 @@ Get the SOTF Audio Unit suite running as macOS Audio Units (AUv3).
 
 The build pipeline produces **two independent packages**, one per architecture, instead of a universal binary. Use the host-arch recipes for local development; use the explicit-arch recipes when you need both.
 
-### 1. Build (host arch)
+### 1. Build + package
 
 ```bash
-just install-au-all
+just dist-au-arm64        # or dist-au-x86_64 for Intel
 ```
 
-That single recipe will:
-1. Build `plugins-ffi` for the host arch and stage `libsotf_audio_plugins_ffi.a` into `Resources/`
+That recipe will:
+1. Build `plugins-ffi` for the target arch and stage `libsotf_audio_plugins_ffi.a` into `Resources/`
 2. Run `xcodegen` if `project.yml` is newer than the generated project
-3. Run `xcodebuild` against the `SOTFAudioUnits` scheme with `ARCHS=<host>`, isolating its `DerivedData` under `crates/sotf-plugins/crates/plugins-au/build/au-<host>/`
-4. Copy the resulting `SOTFAudioUnits.app` to `~/Applications/`
-5. Kick `AudioComponentRegistrar` and `coreaudiod` so the new extensions show up
+3. Run `xcodebuild` against the `SOTFAudioUnits` scheme with `ARCHS=<arch>`, isolating its `DerivedData` under `crates/sotf-plugins/crates/plugins-au/build/au-<arch>/`
+4. Wrap the resulting `SOTFAudioUnits.app` into `dist/au/SOTFAudioUnits-<version>-macos-<arch>.pkg`
 
-Then **launch `~/Applications/SOTFAudioUnits.app` once** so macOS registers each `.appex` extension with the system.
+### 2. Install + register
 
-### 2. Test
+Double-click the `.pkg` to install to `/Applications/`, then **launch `/Applications/SOTFAudioUnits.app` once** so macOS registers each `.appex` extension with the system.
+
+### 3. Test
 
 ```bash
 just validate-au-all      # Run auval against every SOTF subtype
@@ -50,8 +51,8 @@ just build-au-all                  # Build both per-arch packages
 DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)" \
   just sign-au                     # Sign both arches
 APPLE_ID="you@example.com" \
-  just sign-au-notarize            # Notarize and staple both arches
-just dist-au                       # → dist/au/SOTFAudioUnits-<v>-macos-{arm64,x86_64}.zip
+  just sign-au-notarize            # Notarize, staple, and emit signed .pkg into dist/au/
+just dist-au                       # Unsigned-or-Developer-ID-signed .pkg into dist/au/
 ```
 
 Each step has per-arch variants if you want one architecture only:
@@ -59,7 +60,6 @@ Each step has per-arch variants if you want one architecture only:
 | Action | Both | Per-arch |
 |---|---|---|
 | Build | `build-au-all` | `build-au-all-{arm64,x86_64}` |
-| Install | `install-au-all` (host) | `install-au-all-{arm64,x86_64}` |
 | Sign | `sign-au` | `sign-au-{arm64,x86_64}` |
 | Notarize | `sign-au-notarize` | `sign-au-notarize-{arm64,x86_64}` |
 | Distribute | `dist-au` | `dist-au-{arm64,x86_64}` |
@@ -69,6 +69,13 @@ Build outputs land at:
 ```
 crates/sotf-plugins/crates/plugins-au/build/au-arm64/Build/Products/Release/SOTFAudioUnits.app
 crates/sotf-plugins/crates/plugins-au/build/au-x86_64/Build/Products/Release/SOTFAudioUnits.app
+```
+
+Distributable installer packages land at:
+
+```
+dist/au/SOTFAudioUnits-<version>-macos-arm64.pkg
+dist/au/SOTFAudioUnits-<version>-macos-x86_64.pkg
 ```
 
 ## What You Get
@@ -81,10 +88,10 @@ crates/sotf-plugins/crates/plugins-au/build/au-x86_64/Build/Products/Release/SOT
 
 **Plugins not showing up in the DAW?**
 ```bash
-ls -d ~/Applications/SOTFAudioUnits.app
+ls -d /Applications/SOTFAudioUnits.app
 just list-au
 killall -9 AudioComponentRegistrar coreaudiod
-open ~/Applications/SOTFAudioUnits.app   # launch once to register
+open /Applications/SOTFAudioUnits.app   # launch once to register
 ```
 
 **Build errors about missing libraries?**
@@ -95,7 +102,5 @@ file crates/sotf-plugins/crates/plugins-au/Resources/libsotf_audio_plugins_ffi.a
 ```
 
 **`xcodegen` complaining about `project.yml`?** Versions in `Info.plist`s and `project.yml` are kept in sync from `Cargo.toml` by the `sync-au-versions` recipe (called automatically before each build).
-
-**Both arches building but install picks the wrong one?** `install-au-all` always picks the host arch. Use `install-au-all-arm64` / `install-au-all-x86_64` to force a specific package.
 
 For deeper architecture and parameter-system docs, see `SETUP_GUIDE.md`.

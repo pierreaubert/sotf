@@ -32,12 +32,12 @@ crates/sotf-plugins/crates/plugins-au/
 ### Host arch (fast iteration)
 
 ```bash
-just install-au-all
+just dist-au-arm64        # or dist-au-x86_64 for Intel
 ```
 
-Builds the FFI staticlib for the host arch, runs `xcodegen` if needed, runs `xcodebuild` for the `SOTFAudioUnits` scheme, and copies `SOTFAudioUnits.app` to `~/Applications/`.
+Builds the FFI staticlib for the target arch, runs `xcodegen` if needed, runs `xcodebuild` for the `SOTFAudioUnits` scheme, and wraps `SOTFAudioUnits.app` into `dist/au/SOTFAudioUnits-<version>-macos-<arch>.pkg`.
 
-**Then launch the app once** so macOS registers each bundled `.appex` extension.
+**Then double-click the .pkg** to install under `/Applications/SOTFAudioUnits.app`, and launch that app once so macOS registers each bundled `.appex` extension.
 
 ### Both arches (release flow)
 
@@ -46,15 +46,15 @@ just build-au-all                    # build both
 DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)" \
   just sign-au                       # sign both
 APPLE_ID="you@example.com" \
-  just sign-au-notarize              # notarize + staple both
-just dist-au                         # zip both into dist/au/
+  just sign-au-notarize              # notarize + staple both → signed .pkg in dist/au/
+just dist-au                         # both .pkg into dist/au/
 ```
 
 Each step has per-arch variants (`build-au-all-arm64`, `sign-au-x86_64`, `dist-au-arm64`, etc.). Run `just --list | grep au` to see them all.
 
 ## Testing
 
-After installing and launching `~/Applications/SOTFAudioUnits.app`:
+After installing the .pkg and launching `/Applications/SOTFAudioUnits.app`:
 
 - **In a DAW** (Logic Pro / GarageBand / Reaper / Ableton): insert an audio effect and look under "SOTF: …".
 - **From the terminal**:
@@ -77,7 +77,7 @@ auval -v aufx SOEQ SOTF      # Audio Unit Effect, subtype SOEQ, manufacturer SOT
 └──────────────────────────────┬───────────────────────┘
                                ▼
 ┌──────────────────────────────────────────────────────┐
-│  ~/Applications/SOTFAudioUnits.app (container)       │
+│  /Applications/SOTFAudioUnits.app (container)        │
 │   └── Contents/PlugIns/<Name>AudioUnit.appex (× many)│
 │         ┌─────────────────────────────────────────┐  │
 │         │ Swift / AUv3 (GenericAU subclass)       │  │
@@ -104,7 +104,7 @@ auval -v aufx SOEQ SOTF      # Audio Unit Effect, subtype SOEQ, manufacturer SOT
 2. Wire it into `crates/sotf-plugins/crates/plugins-ffi/src/plugin_factory.rs` (`match` on `plugin_type`).
 3. Add a target in `project.yml` mirroring an existing AU. Pick a unique 4-character `Info.plist` subtype.
 4. Create `<NewName>AudioUnit/` with `Info.plist` and a Swift file subclassing `GenericAU`.
-5. Rebuild: `just build-au-all` (or one arch) and re-install.
+5. Rebuild: `just dist-au-arm64` (or one arch), reinstall the .pkg.
 
 XcodeGen rewrites `SOTFAudioUnits.xcodeproj` automatically when `project.yml` changes.
 
@@ -113,10 +113,10 @@ XcodeGen rewrites `SOTFAudioUnits.xcodeproj` automatically when `project.yml` ch
 ### Plugins not showing in the DAW
 
 ```bash
-ls -d ~/Applications/SOTFAudioUnits.app
+ls -d /Applications/SOTFAudioUnits.app
 just list-au
 killall -9 AudioComponentRegistrar coreaudiod
-open ~/Applications/SOTFAudioUnits.app   # launch once to register
+open /Applications/SOTFAudioUnits.app   # launch once to register
 ```
 
 ### Build errors
@@ -143,12 +143,12 @@ If you see `lipo: can't open input file`, you're on a stale recipe. The current 
 
 ## Distribution
 
-Output zips live in `dist/au/`:
+Output installers live in `dist/au/`:
 
-- `SOTFAudioUnits-<VERSION>-macos-arm64.zip`
-- `SOTFAudioUnits-<VERSION>-macos-x86_64.zip`
+- `SOTFAudioUnits-<VERSION>-macos-arm64.pkg`
+- `SOTFAudioUnits-<VERSION>-macos-x86_64.pkg`
 
-Each is built with `ditto -c -k --keepParent` so resource forks and the notarization ticket survive transit. End users download the zip matching their Mac's CPU, drag `SOTFAudioUnits.app` into `/Applications` (or `~/Applications`), and launch it once to register the extensions.
+Each `.pkg` is built with `pkgbuild` + `productsign`, signed with `INSTALLER_DEVELOPER_ID` (Developer ID Installer) when set, and stapled with the notarization ticket via `xcrun stapler`. End users download the `.pkg` matching their Mac's CPU, double-click to install under `/Applications/SOTFAudioUnits.app`, and launch that app once to register the extensions.
 
 ## References
 
