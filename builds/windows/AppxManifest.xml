@@ -9,7 +9,7 @@
   <Identity
     Name="org.spinorama.sotf"
     Publisher="CN=Pierre Aubert, O=Spinorama, C=FR"
-    Version="0.5.15.0"
+    Version="0.6.2.0"
     ProcessorArchitecture="x64" />
 
   <Properties>
@@ -78,17 +78,30 @@
   </Applications>
 
   <Capabilities>
-    <!-- Microphone access for recording -->
+    <!-- The schema for <Capabilities> is an xs:sequence (not xs:choice), so
+         children MUST appear in this order:
+            1. <Capability>            (foundation)
+            2. <uap:Capability>        (and other uapN namespaces)
+            3. <DeviceCapability>      (foundation)
+            4. <rescap:Capability>     (restricted)
+         Out-of-order entries make MakeAppx reject the manifest with
+         "Element ... is unexpected ... Expecting: DeviceCapability". -->
+
+    <!-- 1. Foundation general capabilities -->
+    <Capability Name="internetClient" />
+
+    <!-- 2. UAP capabilities -->
+    <uap:Capability Name="musicLibrary" />
+
+    <!-- 3. Foundation device capabilities -->
     <DeviceCapability Name="microphone" />
 
-    <!-- Audio playback through audio interfaces -->
-    <Capability Name="musicLibrary" />
-
-    <!-- Read files from disk (user-selected files) -->
-    <uap:Capability Name="broadFileSystemAccess" />
-
-    <!-- Internet for spinorama.org API -->
-    <Capability Name="internetClient" />
+    <!-- 4. Restricted capabilities. runFullTrust is required for any app
+         that uses EntryPoint="Windows.FullTrustApplication" (packaged Win32).
+         broadFileSystemAccess gives the app read access to user-selected
+         files outside the package container. -->
+    <rescap:Capability Name="runFullTrust" />
+    <rescap:Capability Name="broadFileSystemAccess" />
   </Capabilities>
 
 </Package>

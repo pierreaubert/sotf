@@ -8,7 +8,7 @@
 #   ./build-msix.sh                          # Build unsigned MSIX
 #   ./build-msix.sh --sign                   # Sign with self-signed cert (auto-generated)
 #   ./build-msix.sh --build-dir <path>       # Custom build directory
-#   ./build-msix.sh --arch x64               # Specify architecture (x64 or arm64)
+#   ./build-msix.sh --arch x86_64            # Specify architecture (x86_64 or arm64)
 #
 # Signing:
 #   When --sign is used, the script looks for a certificate in this order:
@@ -31,18 +31,191 @@ set -euo pipefail
 
 # When invoked over SSH on Windows (Git Bash), tools installed via MSYS2's
 # pacman live under /c/msys64/usr/bin and are NOT on Git Bash's default PATH.
-# Prepend known MSYS2 / Cygwin bin dirs so `command -v zip` etc. succeed.
+# Prepend known MSYS2 / Cygwin / Git-for-Windows-SDK bin dirs so
+# `command -v zip` etc. succeed.
 for msys_bin in \
     /c/msys64/usr/bin \
     /c/msys64/mingw64/bin \
     /c/msys64/ucrt64/bin \
     /c/cygwin64/bin \
+    /c/git-sdk-64/usr/bin \
+    /c/git-sdk-64/mingw64/bin \
     "/c/Program Files/Git/usr/bin"; do
     if [ -d "$msys_bin" ] && [[ ":$PATH:" != *":$msys_bin:"* ]]; then
         PATH="$msys_bin:$PATH"
     fi
 done
 export PATH
+
+# Locate MakeAppx.exe on a Windows machine — it lives under the Windows SDK
+# tree at ".../Windows Kits/10/bin/<sdkver>/<arch>/makeappx.exe". We try (in
+# order): $MAKEAPPX env override, anything on PATH, then the latest sub-version
+# under the standard Win10 SDK install. Echoes the path on stdout (empty if
+# nothing was found).
+find_makeappx() {
+    if [ -n "${MAKEAPPX:-}" ] && [ -x "$MAKEAPPX" ]; then
+        printf '%s\n' "$MAKEAPPX"; return 0
+    fi
+    if command -v makeappx.exe &> /dev/null; then
+        command -v makeappx.exe; return 0
+    fi
+    if command -v MakeAppx.exe &> /dev/null; then
+        command -v MakeAppx.exe; return 0
+    fi
+    local sdk_root
+    for sdk_root in \
+        "/c/Program Files (x86)/Windows Kits/10/bin" \
+        "/c/Program Files/Windows Kits/10/bin"; do
+        if [ -d "$sdk_root" ]; then
+            # Pick the highest sdk version dir with a working x64/makeappx.exe.
+            local candidate
+            candidate=$(find "$sdk_root" -maxdepth 3 -type f -iname 'makeappx.exe' \
+                -path '*/x64/*' 2>/dev/null | sort -V | tail -1)
+            if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+                printf '%s\n' "$candidate"; return 0
+            fi
+        fi
+    done
+    return 1
+}
+
+# Pre-flight check on the rendered AppxManifest.xml. Catches the common
+# breakages that otherwise only surface inside MakeAppx (slow round-trip when
+# the manifest sits on a remote Windows machine):
+#
+#   1. XML well-formedness (xmllint --noout).
+#   2. Capabilities child ordering — the schema for <Capabilities> is an
+#      xs:sequence, NOT xs:choice, so the children must appear in this order:
+#          <Capability>             (foundation)
+#          <uap*:Capability>        (uap, uap2, uap3, …)
+#          <DeviceCapability>       (foundation)
+#          <rescap*:Capability>     (restricted)
+#      MakeAppx fails with "Element ... is unexpected ... Expecting:
+#      DeviceCapability" when this is wrong.
+#   3. Sanity checks on the elements we know break things if missing/wrong
+#      (Identity Version is 4-part, ProcessorArchitecture is one of the
+#      accepted values, runFullTrust is declared when any Application uses
+#      Windows.FullTrustApplication).
+#
+# Returns 0 on success, non-zero on the first failure (logged).
+validate_appx_manifest() {
+    local manifest="$1"
+    local issues=0
+
+    if [ ! -f "$manifest" ]; then
+        log_error "validate_appx_manifest: no such file: $manifest"
+        return 1
+    fi
+
+    # 1. XML well-formedness
+    if command -v xmllint &> /dev/null; then
+        if ! xmllint --noout "$manifest" 2>&1; then
+            log_error "AppxManifest.xml is not well-formed XML"
+            return 1
+        fi
+        log_info "AppxManifest.xml: well-formed XML ✓"
+    else
+        log_warning "xmllint not found; skipping XML well-formedness check"
+        log_info "  Install with: $(install_hint libxml2)"
+    fi
+
+    # 2. Capabilities child ordering. Strip XML comments first so that the
+    # example elements in the schema-documentation comment don't show up as
+    # real entries.
+    local cap_order
+    cap_order=$(awk '
+        BEGIN { in_c = 0 }
+        {
+            s = $0
+            while (1) {
+                if (in_c) {
+                    e = index(s, "-->")
+                    if (e == 0) { s = ""; break }
+                    s = substr(s, e + 3); in_c = 0
+                }
+                b = index(s, "<!--")
+                if (b == 0) break
+                rest = substr(s, b + 4)
+                e = index(rest, "-->")
+                if (e == 0) { s = substr(s, 1, b - 1); in_c = 1; break }
+                s = substr(s, 1, b - 1) substr(rest, e + 3)
+            }
+            print s
+        }' "$manifest" \
+        | awk '/<Capabilities>/{f=1;next} /<\/Capabilities>/{f=0} f' \
+        | grep -oE '<[A-Za-z0-9]+:?[A-Za-z0-9]*Capability\b' \
+        | sed 's/^<//')
+    local last_class=0 last_elem=""
+    while IFS= read -r elem; do
+        [ -n "$elem" ] || continue
+        local class
+        case "$elem" in
+            Capability)            class=1 ;;
+            uap*:Capability)       class=2 ;;
+            DeviceCapability)      class=3 ;;
+            rescap*:Capability)    class=4 ;;
+            *)                     class=99 ;;
+        esac
+        if [ "$class" -lt "$last_class" ]; then
+            log_error "AppxManifest.xml: <Capabilities> children out of order"
+            log_error "  Found <$elem> after <$last_elem>"
+            log_error "  Required order (xs:sequence): Capability → uap*:Capability → DeviceCapability → rescap*:Capability"
+            issues=$((issues + 1))
+        fi
+        last_class="$class"
+        last_elem="$elem"
+    done <<< "$cap_order"
+    if [ "$issues" -eq 0 ]; then
+        log_info "AppxManifest.xml: <Capabilities> ordering ✓"
+    fi
+
+    # 3a. Identity Version must be a 4-part dotted number (M.m.b.r)
+    local version_attr
+    version_attr=$(grep -oE '[[:space:]]Version="[^"]+"' "$manifest" | head -1 \
+        | sed 's/.*Version="\([^"]*\)".*/\1/')
+    if [ -z "$version_attr" ]; then
+        log_error "AppxManifest.xml: Identity has no Version attribute"
+        issues=$((issues + 1))
+    elif ! echo "$version_attr" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+        log_error "AppxManifest.xml: Identity Version must be Major.Minor.Build.Revision (got '$version_attr')"
+        issues=$((issues + 1))
+    else
+        log_info "AppxManifest.xml: Identity Version=$version_attr ✓"
+    fi
+
+    # 3b. ProcessorArchitecture must be one of x64 | x86 | arm64 | arm | neutral
+    local proc_arch
+    proc_arch=$(grep -oE 'ProcessorArchitecture="[^"]+"' "$manifest" | head -1 \
+        | sed 's/.*="\([^"]*\)".*/\1/')
+    case "$proc_arch" in
+        x64|x86|arm64|arm|neutral)
+            log_info "AppxManifest.xml: ProcessorArchitecture=$proc_arch ✓"
+            ;;
+        "")
+            log_error "AppxManifest.xml: Identity has no ProcessorArchitecture"
+            issues=$((issues + 1))
+            ;;
+        *)
+            log_error "AppxManifest.xml: ProcessorArchitecture must be x64|x86|arm64|arm|neutral (got '$proc_arch')"
+            issues=$((issues + 1))
+            ;;
+    esac
+
+    # 3c. runFullTrust required when any Application uses
+    # EntryPoint="Windows.FullTrustApplication"
+    if grep -qE 'EntryPoint="Windows\.FullTrustApplication"' "$manifest" \
+       && ! grep -qE '<rescap:Capability[[:space:]]+Name="runFullTrust"' "$manifest"; then
+        log_error "AppxManifest.xml: an Application uses EntryPoint=\"Windows.FullTrustApplication\""
+        log_error "  but the package does not declare <rescap:Capability Name=\"runFullTrust\"/>"
+        issues=$((issues + 1))
+    fi
+
+    if [ "$issues" -gt 0 ]; then
+        log_error "AppxManifest.xml: $issues validation issue(s) — see above"
+        return 1
+    fi
+    return 0
+}
 
 # Suggest the right install command for whichever environment we're running in.
 install_hint() {
@@ -78,12 +251,34 @@ if [ -z "$VERSION" ]; then
 fi
 MSIX_VERSION="${VERSION}.0"
 
-# Defaults
-ARCH="x64"
+# Defaults — ARCH is the dist filename suffix (matches the
+# `name-version-os-arch.format` convention); MSIX_ARCH is the value the
+# AppxManifest needs for ProcessorArchitecture.
+ARCH="x86_64"
+MSIX_ARCH="x64"
 BUILD_DIR=""
 DIST_DIR="$PROJECT_ROOT/dist"
 SIGN=false
 TIMESTAMP_URL="${WINDOWS_TIMESTAMP_URL:-http://timestamp.digicert.com}"
+
+# Map an input arch label (the dist filename convention OR Microsoft's manifest
+# convention) to (ARCH, MSIX_ARCH).
+set_arch() {
+    case "$1" in
+        x86_64|x64)
+            ARCH="x86_64"
+            MSIX_ARCH="x64"
+            ;;
+        arm64|aarch64)
+            ARCH="arm64"
+            MSIX_ARCH="arm64"
+            ;;
+        *)
+            echo "ERROR: --arch must be x86_64, x64, arm64 or aarch64; got '$1'"
+            exit 1
+            ;;
+    esac
+}
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -93,7 +288,7 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --arch)
-            ARCH="$2"
+            set_arch "$2"
             shift 2
             ;;
         --sign)
@@ -105,7 +300,8 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  --build-dir <path>   Directory containing built Windows binaries"
-            echo "  --arch <x64|arm64>   Target architecture (default: x64)"
+            echo "  --arch <x86_64|arm64>  Target architecture (default: x86_64;"
+            echo "                       'x64' is accepted as an alias for x86_64)"
             echo "  --sign               Sign binaries and MSIX with osslsigncode"
             echo "  --help               Show this help message"
             echo ""
@@ -328,14 +524,79 @@ build_msix() {
         log_info "Copied icon assets"
     fi
 
-    # Generate AppxManifest.xml with correct version and architecture
-    sed -e "s/Version=\"[^\"]*\"/Version=\"${MSIX_VERSION}\"/" \
-        -e "s/ProcessorArchitecture=\"[^\"]*\"/ProcessorArchitecture=\"${ARCH}\"/" \
+    # Generate AppxManifest.xml with correct version and architecture.
+    # The leading [[:space:]] in the Version pattern is critical: without it
+    # sed also matches the substring `Version="..."` inside `MinVersion="..."`
+    # and `MaxVersionTested="..."` on the <TargetDeviceFamily> line and
+    # corrupts those attributes (a non-Win10-class MinVersion makes the package
+    # fail install with "error in parsing the app package").
+    sed -e "s/\\([[:space:]]\\)Version=\"[^\"]*\"/\\1Version=\"${MSIX_VERSION}\"/" \
+        -e "s/ProcessorArchitecture=\"[^\"]*\"/ProcessorArchitecture=\"${MSIX_ARCH}\"/" \
         "$PROJECT_ROOT/builds/windows/AppxManifest.xml" > "$staging/AppxManifest.xml"
 
-    # Create MSIX (it's a ZIP with .msix extension)
+    # Pre-flight validation on the rendered manifest. Catches XML
+    # well-formedness errors, Capabilities mis-ordering, broken Version /
+    # ProcessorArchitecture, and missing runFullTrust *before* invoking
+    # MakeAppx (which is slow when it lives on a remote Windows machine).
+    if ! validate_appx_manifest "$staging/AppxManifest.xml"; then
+        log_error "Aborting MSIX build — manifest validation failed."
+        rm -rf "$staging"
+        exit 1
+    fi
+
+    # Build the .msix.
+    #
+    # A real MSIX is NOT just a ZIP — it must contain `[Content_Types].xml`
+    # (MIME registry) and `AppxBlockMap.xml` (SHA256 hashes of every file
+    # block) generated by the packaging tool. Without those Windows refuses
+    # the install with "error in parsing the app package".
+    #
+    # We use Microsoft's MakeAppx.exe (Windows SDK) when available; that's
+    # the only tool that emits a fully-spec-compliant package. Plain `zip`
+    # is left as a last-resort fallback that prints a loud warning.
     rm -f "$output"
-    (cd "$staging" && zip -r "$output" .)
+
+    local makeappx
+    makeappx=$(find_makeappx)
+
+    if [ -n "$makeappx" ]; then
+        log_info "Packing with MakeAppx.exe: $makeappx"
+        # /o overwrites the output. /v makes it verbose. We deliberately do
+        # NOT pass /nv: leaving manifest validation enabled surfaces broken
+        # capabilities, missing assets, etc. at pack time rather than at
+        # install time.
+        #
+        # Two MSYS/Git Bash gotchas we have to defend against:
+        #   1. Flags like `/o`, `/v`, `/d`, `/p` look like Unix absolute paths
+        #      to MSYS, which rewrites them to `O:/`, `V:/`, … before makeappx
+        #      ever sees them ("Unknown command line option: O:/").
+        #   2. The two REAL paths (staging dir, output file) come in as
+        #      `/c/Users/...` MSYS form, which makeappx (a native Win32 binary)
+        #      can't open.
+        # Fix: convert the paths ourselves with cygpath, then run the command
+        # with MSYS_NO_PATHCONV=1 so MSYS leaves the flags alone.
+        local staging_win output_win
+        staging_win=$(cygpath -w "$staging" 2>/dev/null || printf '%s' "$staging")
+        output_win=$(cygpath -w  "$output"  2>/dev/null || printf '%s' "$output")
+        MSYS_NO_PATHCONV=1 "$makeappx" pack /o /v /d "$staging_win" /p "$output_win"
+    elif command -v makemsix &> /dev/null; then
+        # Microsoft's open-source MSIX SDK build (https://github.com/microsoft/msix-packaging)
+        log_info "Packing with makemsix (msix-packaging-tool)"
+        makemsix pack -d "$staging" -p "$output"
+    else
+        log_error "Neither MakeAppx.exe nor makemsix is available."
+        log_error "MSIX requires a real packaging tool — a plain ZIP fails Windows"
+        log_error "validation with 'error in parsing the app package'."
+        log_info ""
+        log_info "Install MakeAppx.exe (Windows SDK):"
+        log_info "  https://developer.microsoft.com/windows/downloads/windows-sdk/"
+        log_info "  Then it will be at C:\\Program Files (x86)\\Windows Kits\\10\\bin\\<ver>\\x64\\makeappx.exe"
+        log_info ""
+        log_info "Or install Microsoft's open-source makemsix:"
+        log_info "  https://github.com/microsoft/msix-packaging/releases"
+        rm -rf "$staging"
+        exit 1
+    fi
 
     # Cleanup staging
     rm -rf "$staging"

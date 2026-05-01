@@ -47,6 +47,7 @@ GITHUB_RELEASE_URL="https://github.com/pierreaubert/sotf/releases/download/v${VE
 
 # Options
 SKIP_BUILD=false
+SKIP_SITE=false
 SIGN=false
 PLATFORM=""  # empty = all
 ARCH=""      # empty = all, "arm" or "x86"
@@ -56,6 +57,10 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --skip-build)
             SKIP_BUILD=true
+            shift
+            ;;
+        --skip-site)
+            SKIP_SITE=true
             shift
             ;;
         --sign)
@@ -79,6 +84,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  --skip-build         Only generate release notes and update site"
+            echo "  --skip-site          Do not rewrite site/src/components/Download.astro"
             echo "  --sign               Sign all artifacts after building"
             echo "  --platform <name>    Build only one platform: macos, linux, windows"
             echo "  --arch <name>        Build only one architecture: arm, x86"
@@ -138,13 +144,27 @@ build_all() {
     mkdir -p "$DIST_DIR"
 
     if should_build "macos"; then
+        # We deliberately do not invoke `just cross-macos-{arm64,x86}` here:
+        # those recipes also build a DMG via `./scripts/build-dmg-sotf.sh`,
+        # which rebuilds the GPUI binary statically (target-feature=+crt-static
+        # into ./target-static/). That static binary cannot be signed/notarized
+        # cleanly and the resulting DMG does not run, so the release pipeline
+        # ships dynamically-linked binaries directly.
         if should_build_arch "arm"; then
-            log_info "=== macOS ARM64 ==="
-            just cross-macos-arm64
+            log_info "=== macOS ARM64 (dynamic) ==="
+            rustup target add aarch64-apple-darwin 2>/dev/null || true
+            cargo build --release --target aarch64-apple-darwin -p sotf-tui --features hal,onnx
+            cargo build --release --target aarch64-apple-darwin -p sotf-gpui --features hal,onnx
+            cp "target/aarch64-apple-darwin/release/sotf-tui"     "$DIST_DIR/sotf-tui-${VERSION}-macos-arm64"
+            cp "target/aarch64-apple-darwin/release/sotf-desktop" "$DIST_DIR/sotf-desktop-${VERSION}-macos-arm64"
         fi
         if should_build_arch "x86"; then
-            log_info "=== macOS x86_64 ==="
-            just cross-macos-x86
+            log_info "=== macOS x86_64 (dynamic) ==="
+            rustup target add x86_64-apple-darwin 2>/dev/null || true
+            cargo build --release --target x86_64-apple-darwin -p sotf-tui --features hal
+            cargo build --release --target x86_64-apple-darwin -p sotf-gpui --features hal
+            cp "target/x86_64-apple-darwin/release/sotf-tui"     "$DIST_DIR/sotf-tui-${VERSION}-macos-x86_64"
+            cp "target/x86_64-apple-darwin/release/sotf-desktop" "$DIST_DIR/sotf-desktop-${VERSION}-macos-x86_64"
         fi
     fi
 
@@ -238,15 +258,20 @@ EOF
 ## Installation
 
 ### macOS
-Download the DMG, open it and drag sotf-desktop to Applications.
-For the TUI player, download the binary and run from Terminal.
+Download the `sotf-desktop-*` binary for your CPU and the `sotf-tui-*` binary
+for the terminal UI. Make them executable (`chmod +x sotf-desktop-*`) and run
+from Terminal. The first run may require right-click → Open to bypass
+Gatekeeper if Apple notarization is unavailable.
 
 ### Linux
 Download the AppImage or tarball. For AppImage: `chmod +x sotf-desktop-*.AppImage && ./sotf-desktop-*.AppImage`.
 For the tarball: extract and run `./sotf-desktop` or `./sotf-tui`.
 
 ### Windows
-Download the `.exe` and run from a terminal (PowerShell or cmd).
+Desktop player: download the `sotf-desktop-*.msix` matching your CPU and
+double-click to install. The first run may require accepting the developer
+certificate (the package is self-signed).
+Terminal player: download the `sotf-tui-*.exe` and run from PowerShell or cmd.
 
 ## Verification
 
@@ -258,17 +283,12 @@ EOF
 
     cat >> "$release_file" << EOF
 \`\`\`bash
-codesign -dv --verbose=2 sotf-desktop-${VERSION}-macos-arm64.dmg
+codesign -dv --verbose=2 sotf-desktop-${VERSION}-macos-arm64
 \`\`\`
 
 Verify notarization:
 \`\`\`bash
-spctl -a -vv --type install sotf-desktop-${VERSION}-macos-arm64.dmg
-\`\`\`
-
-For the app bundle inside the DMG:
-\`\`\`bash
-codesign --verify --verbose=2 --strict /Volumes/sotf-desktop/sotf-desktop.app
+spctl -a -vv --type execute sotf-desktop-${VERSION}-macos-arm64
 \`\`\`
 EOF
 
@@ -314,10 +334,10 @@ append_release_row() {
     local files=""
     case "$key" in
         macos-arm64)
-            files="sotf-desktop-${VERSION}-macos-arm64.dmg:DMG sotf-tui-${VERSION}-macos-arm64:TUI%20binary"
+            files="sotf-desktop-${VERSION}-macos-arm64:GPUI%20binary sotf-tui-${VERSION}-macos-arm64:TUI%20binary"
             ;;
         macos-x86_64)
-            files="sotf-desktop-${VERSION}-macos-x86_64.dmg:DMG sotf-tui-${VERSION}-macos-x86_64:TUI%20binary"
+            files="sotf-desktop-${VERSION}-macos-x86_64:GPUI%20binary sotf-tui-${VERSION}-macos-x86_64:TUI%20binary"
             ;;
         linux-arm64)
             files="sotf-desktop-${VERSION}-linux-arm64.tar.gz:tarball sotf-desktop-${VERSION}-linux-arm64.AppImage:AppImage"
@@ -326,10 +346,10 @@ append_release_row() {
             files="sotf-desktop-${VERSION}-linux-x86_64.tar.gz:tarball sotf-desktop-${VERSION}-linux-x86_64.AppImage:AppImage"
             ;;
         windows-arm64)
-            files="sotf-tui-${VERSION}-windows-arm64.exe:TUI%20exe"
+            files="sotf-desktop-${VERSION}-windows-arm64.msix:MSIX sotf-tui-${VERSION}-windows-arm64.exe:TUI%20exe"
             ;;
         windows-x86_64)
-            files="sotf-tui-${VERSION}-windows-x86_64.exe:TUI%20exe"
+            files="sotf-desktop-${VERSION}-windows-x86_64.msix:MSIX sotf-tui-${VERSION}-windows-x86_64.exe:TUI%20exe"
             ;;
     esac
 
@@ -375,7 +395,13 @@ ASTRO_HEADER
     cat >> "$download_file" << EOF
 const version = '${VERSION}';
 const releaseUrl = 'https://github.com/pierreaubert/sotf/releases';
-const downloadBase = '${GITHUB_RELEASE_URL}';
+// Each release artifact is published in TWO places: the GitHub Release
+// (canonical, signed via the build pipeline) and a mirror under
+// sotf.spinorama.org/downloads/ (rsynced by site/update_prod.sh). The UI
+// surfaces both sources per file so users can pick whichever is faster /
+// reachable from their network.
+const githubBase = \`https://github.com/pierreaubert/sotf/releases/download/v\${version}\`;
+const mirrorBase = 'https://sotf.spinorama.org/downloads';
 EOF
 
     cat >> "$download_file" << 'ASTRO_BODY'
@@ -386,12 +412,12 @@ const builds = [
     icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>`,
     variants: [
       { arch: 'ARM64 (Apple Silicon)', quality: 'beta', signature: 'Apple Developer ID', files: [
-        { label: 'DMG', file: `sotf-desktop-${version}-macos-arm64.dmg` },
-        { label: 'TUI binary', file: `sotf-tui-${version}-macos-arm64` },
+        { label: 'GPUI binary', file: `sotf-desktop-${version}-macos-arm64` },
+        { label: 'TUI binary',  file: `sotf-tui-${version}-macos-arm64` },
       ]},
       { arch: 'x86_64 (Intel)', quality: 'alpha', signature: 'Apple Developer ID', files: [
-        { label: 'DMG', file: `sotf-desktop-${version}-macos-x86_64.dmg` },
-        { label: 'TUI binary', file: `sotf-tui-${version}-macos-x86_64` },
+        { label: 'GPUI binary', file: `sotf-desktop-${version}-macos-x86_64` },
+        { label: 'TUI binary',  file: `sotf-tui-${version}-macos-x86_64` },
       ]},
     ],
   },
@@ -414,9 +440,11 @@ const builds = [
     icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M3 12V6.5l8-1.1V12H3zm0 .5h8v6.6l-8-1.1V12.5zm9 0h9V3l-9 1.2V12.5zm0 .5v6.3L21 21v-8H12z"/></svg>`,
     variants: [
       { arch: 'ARM64', quality: 'alpha', signature: 'self-signed', files: [
+        { label: 'MSIX',    file: `sotf-desktop-${version}-windows-arm64.msix` },
         { label: 'TUI exe', file: `sotf-tui-${version}-windows-arm64.exe` },
       ]},
       { arch: 'x86_64', quality: 'alpha', signature: 'self-signed', files: [
+        { label: 'MSIX',    file: `sotf-desktop-${version}-windows-x86_64.msix` },
         { label: 'TUI exe', file: `sotf-tui-${version}-windows-x86_64.exe` },
       ]},
     ],
@@ -462,14 +490,25 @@ const qualityColors: Record<string, string> = {
                 ) : null}
                 <td class="py-3 px-4 text-gray-300">{variant.arch}</td>
                 <td class="py-3 px-4">
-                  <div class="flex flex-wrap gap-2">
+                  <div class="space-y-1.5">
                     {variant.files.map((dl) => (
-                      <a
-                        href={`${downloadBase}/${dl.file}`}
-                        class="inline-flex items-center gap-1 px-2 py-1 text-xs bg-accent/10 text-accent border border-accent/20 rounded hover:bg-accent/20 transition-colors"
-                      >
-                        {dl.label}
-                      </a>
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <span class="text-xs font-medium text-gray-300 min-w-20">{dl.label}</span>
+                        <a
+                          href={`${githubBase}/${dl.file}`}
+                          class="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-accent/10 text-accent border border-accent/20 rounded hover:bg-accent/20 transition-colors"
+                          title={`Download ${dl.file} from GitHub Releases`}
+                        >
+                          GitHub
+                        </a>
+                        <a
+                          href={`${mirrorBase}/${dl.file}`}
+                          class="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-accent/10 text-accent border border-accent/20 rounded hover:bg-accent/20 transition-colors"
+                          title={`Download ${dl.file} from sotf.spinorama.org mirror`}
+                        >
+                          Mirror
+                        </a>
+                      </div>
                     ))}
                   </div>
                 </td>
@@ -519,7 +558,9 @@ main() {
     fi
 
     generate_release_md
-    update_site
+    if ! $SKIP_SITE; then
+        update_site
+    fi
 
     log_info "=========================================="
     log_success "Release v${VERSION} preparation complete!"
@@ -527,7 +568,9 @@ main() {
     log_info ""
     log_info "Artifacts:     $DIST_DIR/"
     log_info "Release notes: $DIST_DIR/release-${VERSION}.md"
-    log_info "Site updated:  site/src/components/Download.astro"
+    if ! $SKIP_SITE; then
+        log_info "Site updated:  site/src/components/Download.astro"
+    fi
     log_info ""
     log_info "Next steps:"
     log_info "  1. Review $DIST_DIR/release-${VERSION}.md and add changelog"

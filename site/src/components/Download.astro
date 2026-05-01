@@ -1,19 +1,13 @@
 ---
 const version = '0.6.2';
 const releaseUrl = 'https://github.com/pierreaubert/sotf/releases';
-
-// Two sources expose the same set of binaries:
-//   1. GitHub Releases (canonical, built by CI)
-//   2. spinorama.org website mirror, populated by `update_prod.sh` from the
-//      project-level dist/ on each release.
-// The website source is a relative path so it works in dev and prod alike.
+// Each release artifact is published in TWO places: the GitHub Release
+// (canonical, signed via the build pipeline) and a mirror under
+// sotf.spinorama.org/downloads/ (rsynced by site/update_prod.sh). The UI
+// surfaces both sources per file so users can pick whichever is faster /
+// reachable from their network.
 const githubBase = `https://github.com/pierreaubert/sotf/releases/download/v${version}`;
-const websiteBase = '/downloads';
-
-const sources = [
-  { id: 'github',  title: 'From GitHub Releases',     base: githubBase  },
-  { id: 'website', title: 'From spinorama.org mirror', base: websiteBase },
-];
+const mirrorBase = 'https://sotf.spinorama.org/downloads';
 
 const builds = [
   {
@@ -21,12 +15,12 @@ const builds = [
     icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>`,
     variants: [
       { arch: 'ARM64 (Apple Silicon)', quality: 'beta', signature: 'Apple Developer ID', files: [
-        { label: 'Desktop', file: `sotf-desktop-${version}-macos-arm64.dmg` },
-        { label: 'Terminal', file: `sotf-tui-${version}-macos-arm64` },
+        { label: 'GPUI binary', file: `sotf-desktop-${version}-macos-arm64` },
+        { label: 'TUI binary',  file: `sotf-tui-${version}-macos-arm64` },
       ]},
       { arch: 'x86_64 (Intel)', quality: 'alpha', signature: 'Apple Developer ID', files: [
-        { label: 'Desktop', file: `sotf-desktop-${version}-macos-x86_64.dmg` },
-        { label: 'Terminal', file: `sotf-tui-${version}-macos-x86_64` },
+        { label: 'GPUI binary', file: `sotf-desktop-${version}-macos-x86_64` },
+        { label: 'TUI binary',  file: `sotf-tui-${version}-macos-x86_64` },
       ]},
     ],
   },
@@ -49,90 +43,96 @@ const builds = [
     icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M3 12V6.5l8-1.1V12H3zm0 .5h8v6.6l-8-1.1V12.5zm9 0h9V3l-9 1.2V12.5zm0 .5v6.3L21 21v-8H12z"/></svg>`,
     variants: [
       { arch: 'ARM64', quality: 'alpha', signature: 'self-signed', files: [
-        { label: 'Desktop', file: `sotf-desktop-${version}-windows-arm64.msix` },
-        { label: 'Terminal', file: `sotf-tui-${version}-windows-arm64.exe` },
+        { label: 'MSIX',    file: `sotf-desktop-${version}-windows-arm64.msix` },
+        { label: 'TUI exe', file: `sotf-tui-${version}-windows-arm64.exe` },
       ]},
       { arch: 'x86_64', quality: 'alpha', signature: 'self-signed', files: [
-        { label: 'Desktop', file: `sotf-desktop-${version}-windows-x86_64.msix` },
-        { label: 'Terminal', file: `sotf-tui-${version}-windows-x86_64.exe` },
+        { label: 'MSIX',    file: `sotf-desktop-${version}-windows-x86_64.msix` },
+        { label: 'TUI exe', file: `sotf-tui-${version}-windows-x86_64.exe` },
       ]},
     ],
   },
 ];
 
 const qualityColors: Record<string, string> = {
-  'good': 'text-status-good bg-status-good/10 border-status-good/20',
-  'beta': 'text-status-beta bg-status-beta/10 border-status-beta/20',
-  'alpha': 'text-status-alpha bg-status-alpha/10 border-status-alpha/20',
+  'good': 'text-green-400 bg-green-400/10 border-green-400/20',
+  'beta': 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20',
+  'alpha': 'text-orange-400 bg-orange-400/10 border-orange-400/20',
 };
 ---
 
 <section id="download" class="py-24 px-4 sm:px-6 fade-section">
   <div class="max-w-4xl mx-auto text-center">
-    <h2 class="text-3xl sm:text-4xl font-bold text-fg mb-4">Download SotF</h2>
+    <h2 class="text-3xl sm:text-4xl font-bold text-white mb-4">Download SotF</h2>
     <span class="inline-block px-3 py-1 rounded-full text-sm font-mono bg-accent/10 text-accent border border-accent/20 mb-8">
       v{version}
     </span>
 
-    {sources.map((source) => (
-      <div class="mb-12">
-        <h3 class="text-xl font-semibold text-fg text-left mb-4">{source.title}</h3>
-        <div class="overflow-x-auto">
-          <table class="w-full text-left text-sm">
-            <thead>
-              <tr class="border-b border-border text-fg-muted">
-                <th class="py-3 px-4">OS</th>
-                <th class="py-3 px-4">Architecture</th>
-                <th class="py-3 px-4">Download</th>
-                <th class="py-3 px-4">Quality</th>
-                <th class="py-3 px-4">Signature</th>
-              </tr>
-            </thead>
-            <tbody>
-              {builds.map((platform) =>
-                platform.variants.map((variant, i) => (
-                  <tr class="border-b border-border/50 hover:bg-card/50 transition-colors">
-                    {i === 0 ? (
-                      <td class="py-3 px-4 font-medium text-fg" rowspan={platform.variants.length}>
-                        <div class="flex items-center gap-2">
-                          <Fragment set:html={platform.icon} />
-                          {platform.os}
-                        </div>
-                      </td>
-                    ) : null}
-                    <td class="py-3 px-4 text-fg-secondary">{variant.arch}</td>
-                    <td class="py-3 px-4">
-                      <div class="flex flex-wrap gap-2">
-                        {variant.files.map((dl) => (
-                          <a
-                            href={`${source.base}/${dl.file}`}
-                            class="inline-flex items-center gap-1 px-2 py-1 text-xs bg-accent/10 text-accent border border-accent/20 rounded hover:bg-accent/20 transition-colors"
-                          >
-                            {dl.label}
-                          </a>
-                        ))}
+    <div class="overflow-x-auto mb-8">
+      <table class="w-full text-left text-sm">
+        <thead>
+          <tr class="border-b border-border text-gray-400">
+            <th class="py-3 px-4">OS</th>
+            <th class="py-3 px-4">Architecture</th>
+            <th class="py-3 px-4">Download</th>
+            <th class="py-3 px-4">Quality</th>
+            <th class="py-3 px-4">Signature</th>
+          </tr>
+        </thead>
+        <tbody>
+          {builds.map((platform) =>
+            platform.variants.map((variant, i) => (
+              <tr class="border-b border-border/50 hover:bg-card/50 transition-colors">
+                {i === 0 ? (
+                  <td class="py-3 px-4 font-medium text-white" rowspan={platform.variants.length}>
+                    <div class="flex items-center gap-2">
+                      <Fragment set:html={platform.icon} />
+                      {platform.os}
+                    </div>
+                  </td>
+                ) : null}
+                <td class="py-3 px-4 text-gray-300">{variant.arch}</td>
+                <td class="py-3 px-4">
+                  <div class="space-y-1.5">
+                    {variant.files.map((dl) => (
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <span class="text-xs font-medium text-gray-300 min-w-20">{dl.label}</span>
+                        <a
+                          href={`${githubBase}/${dl.file}`}
+                          class="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-accent/10 text-accent border border-accent/20 rounded hover:bg-accent/20 transition-colors"
+                          title={`Download ${dl.file} from GitHub Releases`}
+                        >
+                          GitHub
+                        </a>
+                        <a
+                          href={`${mirrorBase}/${dl.file}`}
+                          class="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-accent/10 text-accent border border-accent/20 rounded hover:bg-accent/20 transition-colors"
+                          title={`Download ${dl.file} from sotf.spinorama.org mirror`}
+                        >
+                          Mirror
+                        </a>
                       </div>
-                    </td>
-                    <td class="py-3 px-4">
-                      <span class={`inline-block px-2 py-0.5 text-xs rounded-full border ${qualityColors[variant.quality] || 'text-fg-muted'}`}>
-                        {variant.quality}
-                      </span>
-                    </td>
-                    <td class="py-3 px-4 text-fg-muted text-xs">{variant.signature}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    ))}
+                    ))}
+                  </div>
+                </td>
+                <td class="py-3 px-4">
+                  <span class={`inline-block px-2 py-0.5 text-xs rounded-full border ${qualityColors[variant.quality] || 'text-gray-400'}`}>
+                    {variant.quality}
+                  </span>
+                </td>
+                <td class="py-3 px-4 text-gray-400 text-xs">{variant.signature}</td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
 
     <a
       href={releaseUrl}
       target="_blank"
       rel="noopener noreferrer"
-      class="text-sm text-fg-muted hover:text-accent transition-colors"
+      class="text-sm text-gray-400 hover:text-accent transition-colors"
     >
       All releases &rarr;
     </a>

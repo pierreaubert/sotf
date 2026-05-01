@@ -188,11 +188,10 @@ jobs:
           .\scripts\sign-windows.ps1 -CertificateThumbprint "$env:WINDOWS_CERT_THUMBPRINT"
 
       - name: Build MSIX package
-        shell: bash
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          # Build MSIX (uses zip, works on Windows Git Bash)
-          ./scripts/build-msix.sh --arch x64 --sign
+        shell: pwsh
+        # Native PowerShell — uses MakeAppx.exe directly. No Git Bash, no
+        # MSYS path conversion, no third-party zip dependency.
+        run: .\scripts\build-msix.ps1 -Arch x86_64 -Sign
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -200,7 +199,7 @@ jobs:
           name: windows-artifacts
           path: |
             dist/sotf-tui-*-windows-x86_64.exe
-            dist/sotf-desktop-*-windows-x64.msix
+            dist/sotf-desktop-*-windows-x86_64.msix
           retention-days: 7
 
   # -------------------------------------------------------------------

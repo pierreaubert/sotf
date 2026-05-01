@@ -388,7 +388,14 @@ RSYNC_EXCLUDES=(
     --exclude='/.fleet/'
     --exclude='/.qwen/'
     --exclude='/.worktrees/'
+    # AI assistant / code-graph state — large, machine-specific, never needed
+    # on remote builders.
+    --exclude='/.claude/'
     --exclude='/.tokensave/'
+    --exclude='/.serena/'
+    # Per-arch Xcode DerivedData for the AU plugins (gigabytes of host-arch
+    # binaries, intermediates, and ModuleCache; rebuilt remotely anyway).
+    --exclude='/crates/sotf-plugins/crates/plugins-au/build/'
     # Object files
     --exclude='*.o'
     --exclude='*.d'
@@ -587,25 +594,42 @@ build_macos() {
 
     cd "$PROJECT_ROOT"
 
+    # We deliberately do NOT use `just cross-macos-{arm64,x86}` here — that
+    # recipe also runs `./scripts/build-dmg-sotf.sh`, which rebuilds the GPUI
+    # binary with `RUSTFLAGS="-C target-feature=+crt-static"` into
+    # `./target-static/` and wraps it in a DMG. The static binary cannot be
+    # signed/notarized cleanly and the resulting DMG does not run, so the
+    # release pipeline ships the dynamically-linked binaries directly.
+
     # --- macOS ARM64 ---
-    log_step "Building macOS ARM64..."
+    log_step "Building macOS ARM64 (dynamic) ..."
     if $DRY_RUN; then
-        log_dry "just cross-macos-arm64"
+        log_dry "cargo build --release --target aarch64-apple-darwin (sotf-tui, sotf-desktop)"
     else
-        just cross-macos-arm64
+        rustup target add aarch64-apple-darwin 2>/dev/null || true
+        cargo build --release --target aarch64-apple-darwin -p sotf-tui --features hal,onnx
+        cargo build --release --target aarch64-apple-darwin -p sotf-gpui --features hal,onnx
+        mkdir -p "$DIST_DIR"
+        cp "target/aarch64-apple-darwin/release/sotf-tui"     "$DIST_DIR/sotf-tui-${VERSION}-macos-arm64"
+        cp "target/aarch64-apple-darwin/release/sotf-desktop" "$DIST_DIR/sotf-desktop-${VERSION}-macos-arm64"
         record_result "macOS ARM64: OK"
     fi
 
     # --- macOS x86_64 ---
-    log_step "Building macOS x86_64..."
+    log_step "Building macOS x86_64 (dynamic) ..."
     if $DRY_RUN; then
-        log_dry "just cross-macos-x86"
+        log_dry "cargo build --release --target x86_64-apple-darwin (sotf-tui, sotf-desktop)"
     else
-        just cross-macos-x86
+        rustup target add x86_64-apple-darwin 2>/dev/null || true
+        cargo build --release --target x86_64-apple-darwin -p sotf-tui --features hal
+        cargo build --release --target x86_64-apple-darwin -p sotf-gpui --features hal
+        mkdir -p "$DIST_DIR"
+        cp "target/x86_64-apple-darwin/release/sotf-tui"     "$DIST_DIR/sotf-tui-${VERSION}-macos-x86_64"
+        cp "target/x86_64-apple-darwin/release/sotf-desktop" "$DIST_DIR/sotf-desktop-${VERSION}-macos-x86_64"
         record_result "macOS x86_64: OK"
     fi
 
-    # --- macOS daemon pkg ---
+    # --- macOS Systemwide pkg ---
     log_step "Building macOS Systemwide pkg..."
     if $DRY_RUN; then
         log_dry "./scripts/build-systemwide.sh"
@@ -641,32 +665,7 @@ build_macos() {
         record_result "macOS signing: SKIPPED (no DEVELOPER_ID)"
     fi
 
-    # Drop the raw Mach-O binaries that cross-macos-{arm64,x86} drop in dist/.
-    # The signed + notarized DMG is the canonical macOS deliverable; the bare
-    # binaries are intermediate and should not ship in the GitHub release.
-    cleanup_macos_intermediates
-
     log_success "macOS builds complete ($(elapsed))"
-}
-
-cleanup_macos_intermediates() {
-    local removed=0
-    for raw in \
-        "$DIST_DIR/sotf-desktop-${VERSION}-macos-arm64" \
-        "$DIST_DIR/sotf-desktop-${VERSION}-macos-x86_64"; do
-        if [ -f "$raw" ]; then
-            if $DRY_RUN; then
-                log_dry "rm $raw"
-            else
-                rm -f "$raw"
-                log_info "Removed intermediate: $(basename "$raw")"
-            fi
-            removed=$((removed + 1))
-        fi
-    done
-    if [ "$removed" -eq 0 ]; then
-        log_info "No macOS intermediates to clean"
-    fi
 }
 
 # -----------------------------------------------------------------------
@@ -869,11 +868,29 @@ build_windows() {
         fi
     fi
 
-    # Build MSIX package on remote
+    # Build MSIX package on remote. Honour --skip-sign so the test path
+    # doesn't try to invoke SignTool / a code-signing cert.
+    #
+    # Pre-clean any stale Windows artifacts for this version on the remote so
+    # that arch suffix changes (e.g. the historical x64 → x86_64 rename) don't
+    # leave both names in dist/ and get rsynced back into the local dist/.
+    #
+    # We invoke build-msix.ps1 directly via powershell.exe rather than the
+    # bash port via Git Bash. Native PowerShell sees `/o`, `/v`, `/d`, `/p`
+    # for what they are (MakeAppx flags) instead of MSYS path-style args, and
+    # has no need for cygpath, MSYS_NO_PATHCONV, or a third-party `zip.exe`
+    # on PATH.
     log_step "Building MSIX package..."
-    local msix_cmd="cd ${remote_dir} && ./scripts/build-msix.sh --sign --arch x64"
+    local ps_sign=""
+    if ! $SKIP_SIGN; then
+        ps_sign=" -Sign"
+    fi
+    local msix_cleanup="cd ${remote_dir} && rm -f dist/sotf-desktop-${VERSION}-windows-*.msix"
+    local msix_powershell="powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-msix.ps1 -Arch x86_64${ps_sign}"
+    local msix_cmd="${msix_cleanup} && ${msix_powershell}"
     if $DRY_RUN; then
-        log_dry "win_ssh_cmd ${host} build-msix.sh"
+        log_dry "win_ssh_cmd ${host} '${msix_cleanup}'"
+        log_dry "win_ssh_cmd ${host} '${msix_powershell}'"
     else
         if win_ssh_cmd "$host" "$port" "$key" "$msix_cmd"; then
             record_result "Windows MSIX: OK"
@@ -1098,13 +1115,21 @@ generate_checksums() {
 generate_release_notes() {
     log_step "Generating release notes..."
 
+    # Forward our --skip-site to build-release.sh so it doesn't rewrite
+    # site/src/components/Download.astro when the user has asked us to leave
+    # the site alone.
+    local args=(--skip-build)
+    if $SKIP_SITE; then
+        args+=(--skip-site)
+    fi
+
     if $DRY_RUN; then
-        log_dry "./scripts/build-release.sh --skip-build"
+        log_dry "./scripts/build-release.sh ${args[*]}"
         return
     fi
 
     # Reuse the existing release notes generator
-    ./scripts/build-release.sh --skip-build
+    ./scripts/build-release.sh "${args[@]}"
 
     record_result "Release notes: OK"
 }

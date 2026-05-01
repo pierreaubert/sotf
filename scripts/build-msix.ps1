@@ -1,283 +1,477 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Build MSIX package for SotF Player
+    Build the SotF MSIX package on Windows (native PowerShell).
 
 .DESCRIPTION
-    Creates an MSIX package from pre-built Windows binaries.
-    Run build-windows.ps1 first to produce the binaries.
+    Native Windows port of scripts/build-msix.sh. Runs as a real Windows
+    process so we don't need Git Bash / cygpath / MSYS_NO_PATHCONV / a
+    third-party `zip.exe` on PATH -- MakeAppx.exe and SignTool.exe live in the
+    Windows SDK and are invoked directly with their normal `/o` / `/v` /
+    `/d` / `/p` flags.
 
-.PARAMETER CertPath
-    Path to the .pfx signing certificate. If not provided, creates a
-    self-signed certificate for local testing.
+    Pipeline:
+      1. Locate MakeAppx.exe (Windows SDK).
+      2. Stage <staging> with the Windows binaries, app assets, icons, and a
+         rendered AppxManifest.xml (Version + ProcessorArchitecture injected).
+      3. Validate the manifest (well-formed XML; xs:sequence ordering of
+         <Capabilities>; Identity Version is 4-part; runFullTrust is declared
+         when an Application uses Windows.FullTrustApplication).
+      4. (-Sign) Sign the staged .exe files with SignTool.exe.
+      5. Pack via `MakeAppx.exe pack /o /v /d <staging> /p <output>`.
+      6. (-Sign) Sign the resulting .msix.
 
-.PARAMETER CertPassword
-    Password for the .pfx certificate (if password-protected).
+.PARAMETER Arch
+    Target arch for the dist filename: x86_64 (default) or arm64. The
+    AppxManifest's ProcessorArchitecture is set to the Windows-native synonym
+    (x64 for x86_64; arm64 for arm64). x64 / aarch64 are accepted as aliases.
 
-.PARAMETER SkipSign
-    Skip code signing (produces unsigned MSIX for testing only).
+.PARAMETER BuildDir
+    Directory containing the pre-built sotf-desktop.exe / sotf-tui.exe. If
+    not given, common cargo target dirs are searched.
 
-.PARAMETER Help
-    Show this help message.
+.PARAMETER Sign
+    Authenticode-sign the exe files and the resulting .msix. Requires either
+    $env:WINDOWS_CERT_THUMBPRINT (cert in CurrentUser\My) OR
+    $env:WINDOWS_CERT_FILE (+ optional WINDOWS_CERT_PASSWORD).
 
 .EXAMPLE
-    .\build-msix.ps1
-    Build MSIX with self-signed certificate for local testing
-
-.EXAMPLE
-    .\build-msix.ps1 -CertPath .\sotf.pfx -CertPassword "secret"
-    Build MSIX signed with provided certificate
-
-.EXAMPLE
-    .\build-msix.ps1 -SkipSign
-    Build unsigned MSIX package
+    .\build-msix.ps1 -Arch x86_64
+    .\build-msix.ps1 -Arch x86_64 -Sign
 #>
-
 [CmdletBinding()]
 param(
-    [string]$CertPath,
-    [string]$CertPassword,
-    [switch]$SkipSign,
-    [switch]$Help
+    [ValidateSet('x86_64','x64','arm64','aarch64')]
+    [string]$Arch = 'x86_64',
+    [string]$BuildDir,
+    [switch]$Sign,
+
+    # Turn on PowerShell's built-in line-level tracer (Set-PSDebug -Trace 1).
+    # Useful when you want to see exactly which line the script is on when
+    # something fails. Use -TraceLevel 2 for very chatty (every assignment).
+    [switch]$Trace,
+
+    [ValidateRange(0,2)]
+    [int]$TraceLevel = 1,
+
+    # Path to a transcript log. Defaults to
+    # dist/build-msix-<version>-<arch>.log. Use $null to disable.
+    [string]$LogFile
 )
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = 'Stop'
 
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ProjectRoot = (Resolve-Path "$ScriptDir\..").Path
+# Honour -Verbose / $VerbosePreference. Without this, Write-Verbose calls
+# inside the script's helper functions stay silent under the SSH-launched
+# process unless the caller explicitly forwards $VerbosePreference.
+if ($PSBoundParameters.ContainsKey('Verbose')) {
+    $VerbosePreference = if ($PSBoundParameters['Verbose']) { 'Continue' } else { 'SilentlyContinue' }
+}
 
-# Extract version from Cargo.toml
-$CargoToml = Get-Content "$ProjectRoot\Cargo.toml" -Raw
-if ($CargoToml -match 'version\s*=\s*"([^"]+)"') {
-    $Version = $Matches[1]
-} else {
-    Write-Error "Could not extract version from Cargo.toml"
+# ---------------------------------------------------------------------------
+# Paths and version
+# ---------------------------------------------------------------------------
+$ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ProjectRoot = (Resolve-Path (Join-Path $ScriptDir '..')).Path
+$DistDir     = Join-Path $ProjectRoot 'dist'
+
+$cargoToml = Join-Path $ProjectRoot 'Cargo.toml'
+$Version = (Get-Content $cargoToml | Where-Object { $_ -match '^version = "([^"]+)"' } |
+            Select-Object -First 1 |
+            ForEach-Object { $Matches[1] })
+if (-not $Version) {
+    throw "Could not extract version from $cargoToml"
+}
+$MsixVersion = "$Version.0"   # MSIX requires Major.Minor.Build.Revision
+
+# Map -Arch (filename convention) -> (DistArch, MsixArch)
+switch ($Arch) {
+    'x86_64'  { $DistArch = 'x86_64'; $MsixArch = 'x64' }
+    'x64'     { $DistArch = 'x86_64'; $MsixArch = 'x64' }
+    'arm64'   { $DistArch = 'arm64';  $MsixArch = 'arm64' }
+    'aarch64' { $DistArch = 'arm64';  $MsixArch = 'arm64' }
+    default   { throw "Unsupported arch: $Arch" }
+}
+
+# ---------------------------------------------------------------------------
+# Observability: transcript log + optional line-level tracer
+# ---------------------------------------------------------------------------
+# Default log path uses the version + arch so concurrent builds don't clobber
+# each other. -LogFile '' (empty string) or $null disables it. Stop-Transcript
+# runs in a finally{} so the log is closed even when the script throws.
+if (-not $PSBoundParameters.ContainsKey('LogFile')) {
+    $LogFile = Join-Path $DistDir "build-msix-$Version-$DistArch.log"
+}
+$transcriptStarted = $false
+if ($LogFile) {
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $LogFile) | Out-Null
+    try {
+        Start-Transcript -Path $LogFile -Force | Out-Null
+        $transcriptStarted = $true
+        Write-Host "[INFO] Transcript: $LogFile" -ForegroundColor Cyan
+    } catch {
+        Write-Host "[WARN] Could not start transcript at $LogFile -- $_" -ForegroundColor Yellow
+    }
+}
+
+# `-Trace` enables Set-PSDebug -Trace which prints each line as it runs:
+#   1 = each statement (default; reasonable signal-to-noise)
+#   2 = each statement plus every variable assignment (very chatty)
+if ($Trace) {
+    Write-Host "[INFO] Tracer enabled (level $TraceLevel) -- expect verbose output" -ForegroundColor Cyan
+    Set-PSDebug -Trace $TraceLevel
+}
+
+# Always print the resolved parameter set up front so the transcript is
+# self-contained. Pulled from PSBoundParameters so we capture defaults too.
+Write-Host "[INFO] build-msix.ps1 -- v$Version, arch=$DistArch (manifest=$MsixArch), sign=$Sign" -ForegroundColor Cyan
+Write-Verbose ("Parameters: " + ($PSBoundParameters | Out-String).Trim())
+Write-Verbose "ProjectRoot: $ProjectRoot"
+Write-Verbose "DistDir:     $DistDir"
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+function Write-Info([string]$msg) { Write-Host "[INFO] $msg" -ForegroundColor Cyan }
+function Write-Ok([string]$msg)   { Write-Host "[OK]   $msg" -ForegroundColor Green }
+function Write-Warn([string]$msg) { Write-Host "[WARN] $msg" -ForegroundColor Yellow }
+function Write-Err([string]$msg)  { Write-Host "[ERR]  $msg" -ForegroundColor Red }
+
+# Locate a Windows SDK tool under "Windows Kits\10\bin\<sdkver>\<arch>\".
+# Picks the highest sdk version with a working x64 build of the tool.
+function Find-SdkTool([string]$Name) {
+    $cmd = Get-Command $Name -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    foreach ($root in @(
+        'C:\Program Files (x86)\Windows Kits\10\bin',
+        'C:\Program Files\Windows Kits\10\bin'
+    )) {
+        if (-not (Test-Path $root)) { continue }
+        $candidate = Get-ChildItem -Path $root -Recurse -Filter $Name -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -like '*\x64\*' } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+        if ($candidate) { return $candidate.FullName }
+    }
+    return $null
+}
+
+function Get-MakeAppxPath {
+    if ($env:MAKEAPPX -and (Test-Path $env:MAKEAPPX)) { return $env:MAKEAPPX }
+    return (Find-SdkTool 'makeappx.exe')
+}
+function Get-SignToolPath { return (Find-SdkTool 'signtool.exe') }
+
+# ---------------------------------------------------------------------------
+# Manifest validation. Catches the gotchas that MakeAppx surfaces only at
+# pack time:
+#   - XML well-formedness
+#   - <Capabilities> children must be in xs:sequence order:
+#       Capability -> uap*:Capability -> DeviceCapability -> rescap*:Capability
+#   - Identity Version must be Major.Minor.Build.Revision
+#   - ProcessorArchitecture must be x64|x86|arm64|arm|neutral
+#   - runFullTrust required when any Application uses Windows.FullTrustApplication
+# ---------------------------------------------------------------------------
+function Test-AppxManifest([string]$Path) {
+    if (-not (Test-Path $Path)) {
+        Write-Err "Test-AppxManifest: no such file: $Path"
+        return $false
+    }
+    $issues = 0
+
+    # Use XmlDocument.Load(path) instead of [xml](Get-Content -Raw): Load()
+    # reads the file as bytes and detects the encoding from the XML
+    # declaration / BOM, while the [xml] cast on a -Raw string trips over a
+    # leading UTF-8 BOM ("Syntax for an XML declaration is invalid. Line 1,
+    # position 7.").
+    try {
+        $xml = New-Object System.Xml.XmlDocument
+        $xml.Load($Path)
+        Write-Info "AppxManifest.xml: well-formed XML"
+    } catch {
+        Write-Err "AppxManifest.xml: not well-formed XML -- $_"
+        return $false
+    }
+
+    $nsm = New-Object System.Xml.XmlNamespaceManager $xml.NameTable
+    $nsm.AddNamespace('a',      'http://schemas.microsoft.com/appx/manifest/foundation/windows10')
+    $nsm.AddNamespace('uap',    'http://schemas.microsoft.com/appx/manifest/uap/windows10')
+    $nsm.AddNamespace('rescap', 'http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities')
+
+    # Capabilities ordering
+    $caps = $xml.SelectSingleNode('//a:Capabilities', $nsm)
+    if ($caps) {
+        $last = 0; $lastTag = ''
+        foreach ($node in $caps.ChildNodes) {
+            if ($node.NodeType -ne 'Element') { continue }
+            $local = $node.LocalName
+            $ns    = $node.NamespaceURI
+            if     ($local -eq 'Capability'       -and $ns -like '*foundation/windows10' -and $ns -notlike '*restrictedcapabilities*') { $cls = 1; $tag = 'Capability' }
+            elseif ($local -eq 'Capability'       -and $ns -like '*/uap*/windows10')       { $cls = 2; $tag = 'uap:Capability' }
+            elseif ($local -eq 'DeviceCapability'                                        ) { $cls = 3; $tag = 'DeviceCapability' }
+            elseif ($local -eq 'Capability'       -and $ns -like '*restrictedcapabilities*') { $cls = 4; $tag = 'rescap:Capability' }
+            else { $cls = 99; $tag = $local }
+            if ($cls -lt $last) {
+                Write-Err "AppxManifest.xml: <Capabilities> children out of order"
+                Write-Err "  Found <$tag> after <$lastTag>"
+                Write-Err "  Required order (xs:sequence): Capability -> uap*:Capability -> DeviceCapability -> rescap*:Capability"
+                $issues++
+            }
+            $last = $cls; $lastTag = $tag
+        }
+        if ($issues -eq 0) { Write-Info "AppxManifest.xml: <Capabilities> ordering ok" }
+    }
+
+    # Identity Version + ProcessorArchitecture
+    $identity = $xml.SelectSingleNode('//a:Identity', $nsm)
+    if (-not $identity) {
+        Write-Err "AppxManifest.xml: <Identity> element missing"
+        $issues++
+    } else {
+        $v = $identity.Version
+        if ($v -notmatch '^\d+\.\d+\.\d+\.\d+$') {
+            Write-Err "AppxManifest.xml: Identity Version must be 4-part (got '$v')"
+            $issues++
+        } else {
+            Write-Info "AppxManifest.xml: Identity Version=$v"
+        }
+        $pa = $identity.ProcessorArchitecture
+        if ($pa -notin @('x64','x86','arm64','arm','neutral')) {
+            Write-Err "AppxManifest.xml: ProcessorArchitecture must be x64|x86|arm64|arm|neutral (got '$pa')"
+            $issues++
+        } else {
+            Write-Info "AppxManifest.xml: ProcessorArchitecture=$pa"
+        }
+    }
+
+    # runFullTrust if any Application uses Windows.FullTrustApplication
+    $fullTrustApps = $xml.SelectNodes('//a:Application[@EntryPoint="Windows.FullTrustApplication"]', $nsm)
+    if ($fullTrustApps.Count -gt 0) {
+        $hasFullTrust = $xml.SelectSingleNode('//rescap:Capability[@Name="runFullTrust"]', $nsm)
+        if (-not $hasFullTrust) {
+            Write-Err "AppxManifest.xml: $($fullTrustApps.Count) Application(s) use Windows.FullTrustApplication"
+            Write-Err "  but the package does not declare <rescap:Capability Name=`"runFullTrust`"/>"
+            $issues++
+        }
+    }
+
+    if ($issues -gt 0) {
+        Write-Err "AppxManifest.xml: $issues validation issue(s) -- see above"
+        return $false
+    }
+    return $true
+}
+
+# ---------------------------------------------------------------------------
+# Main script body. Wrapped in try/finally so we always close the transcript
+# and turn the tracer back off, even on a hard failure or exit.
+# ---------------------------------------------------------------------------
+try {
+
+# ---------------------------------------------------------------------------
+# Locate the build directory containing the .exe files.
+# ---------------------------------------------------------------------------
+if (-not $BuildDir) {
+    $cargoTargetDir = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $ProjectRoot 'target' }
+    foreach ($triple in @(
+        'x86_64-pc-windows-gnullvm','x86_64-pc-windows-gnu','x86_64-pc-windows-msvc',
+        'aarch64-pc-windows-gnullvm','aarch64-pc-windows-gnu','aarch64-pc-windows-msvc'
+    )) {
+        $cand = Join-Path $cargoTargetDir "$triple\release"
+        if (Test-Path (Join-Path $cand 'sotf-tui.exe')) { $BuildDir = $cand; break }
+    }
+    if (-not $BuildDir) { $BuildDir = Join-Path $cargoTargetDir 'release' }
+}
+Write-Info "Build dir: $BuildDir"
+$found = $false
+foreach ($bin in @('sotf-desktop.exe','sotf-tui.exe')) {
+    if (Test-Path (Join-Path $BuildDir $bin)) {
+        Write-Info "  Found $bin"
+        $found = $true
+    }
+}
+if (-not $found) {
+    Write-Err "No Windows binaries found in $BuildDir"
+    Write-Info "Build them first with: cargo build --release -p sotf-tui --bin sotf-tui (etc.)"
     exit 1
 }
-# MSIX requires 4-part version
-$MsixVersion = "$Version.0"
 
-# Detect architecture
-$Arch = if ([Environment]::Is64BitOperatingSystem) {
-    if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64" -or $env:PROCESSOR_IDENTIFIER -like "*ARM*") {
-        "arm64"
-    } else {
-        "x64"
+# ---------------------------------------------------------------------------
+# Stage
+# ---------------------------------------------------------------------------
+Write-Info "Building MSIX package v$Version ($DistArch)..."
+$Staging = Join-Path $DistDir 'msix-staging'
+$Output  = Join-Path $DistDir "sotf-desktop-$Version-windows-$DistArch.msix"
+
+if (Test-Path $Staging) { Remove-Item -Recurse -Force $Staging }
+New-Item -ItemType Directory -Force -Path "$Staging\assets" | Out-Null
+
+foreach ($bin in @('sotf-desktop.exe','sotf-tui.exe')) {
+    $src = Join-Path $BuildDir $bin
+    if (Test-Path $src) {
+        Copy-Item $src (Join-Path $Staging $bin)
+        Write-Info "Added $bin"
     }
-} else {
-    "x86"
+}
+$nlopt = Join-Path $BuildDir 'nlopt.dll'
+if (Test-Path $nlopt) { Copy-Item $nlopt (Join-Path $Staging 'nlopt.dll'); Write-Info "Added nlopt.dll" }
+
+# Copy app assets (fonts, icons, headphone-targets -- not demo-audio)
+$assetsSrc = Join-Path $ProjectRoot 'crates\app-gpui\assets'
+if (Test-Path $assetsSrc) {
+    foreach ($subdir in @('fonts','icons','headphone-targets')) {
+        $src = Join-Path $assetsSrc $subdir
+        if (Test-Path $src) { Copy-Item -Recurse $src "$Staging\assets\" }
+    }
+    $sotfPng = Join-Path $assetsSrc 'sotf.png'
+    if (Test-Path $sotfPng) {
+        foreach ($name in @('sotf-44x44.png','sotf-150x150.png','sotf-310x150.png')) {
+            Copy-Item $sotfPng (Join-Path "$Staging\assets" $name)
+        }
+        Write-Info "Copied icon assets"
+    }
 }
 
-$BuildDir = "$ProjectRoot\target\release"
-$MsixStaging = "$ProjectRoot\dist\msix-staging"
-$MsixOutput = "$ProjectRoot\dist\SotF-$Version-windows-$Arch.msix"
+# Render AppxManifest.xml. Substitute Identity Version and
+# ProcessorArchitecture. The leading `\s` capture in the Version regex is
+# critical: without it the substring `Version="..."` inside `MinVersion="..."`
+# on <TargetDeviceFamily> also matches and corrupts that attribute (a sub-Win10
+# MinVersion makes the package fail install).
+# Read as raw UTF-8 bytes and strip any BOM(s) before doing string substitutions.
+# `Get-Content -Raw` decodes the file using PS5.1's encoding heuristics, which
+# can leave a U+FEFF char at the start of the string when the source has a BOM
+# -- and then WriteAllText below re-encodes that as EF BB BF bytes, on top of
+# any BOM the no-BOM encoder would otherwise omit, yielding a doubled BOM that
+# fails XmlDocument.Load() with "Syntax for an XML declaration is invalid.
+# Line 1, position 7." The fix: read bytes ourselves, strip leading BOM(s),
+# decode as UTF-8.
+$srcManifestPath = Join-Path $ProjectRoot 'builds\windows\AppxManifest.xml'
+$srcBytes = [System.IO.File]::ReadAllBytes($srcManifestPath)
+$bomLen = 0
+while ($srcBytes.Length - $bomLen -ge 3 -and
+       $srcBytes[$bomLen]   -eq 0xEF -and
+       $srcBytes[$bomLen+1] -eq 0xBB -and
+       $srcBytes[$bomLen+2] -eq 0xBF) {
+    $bomLen += 3
+}
+$srcManifest = [System.Text.Encoding]::UTF8.GetString($srcBytes, $bomLen, $srcBytes.Length - $bomLen)
 
-$Publisher = "CN=Pierre Aubert, O=Spinorama, C=FR"
+# --- Diagnostic: trace bytes through read -> render -> write so we can pinpoint
+#     where (if anywhere) leading junk creeps in front of `<?xml`. Logs only;
+#     remove once the BOM mystery is resolved.
+$srcHex = (($srcManifest[0..3] | ForEach-Object { '{0:X4}' -f [int][char]$_ }) -join ' ')
+Write-Info ("Manifest read: src bytes={0}, stripped BOM bytes={1}, decoded chars={2}, first 4 (hex) = {3}" `
+    -f $srcBytes.Length, $bomLen, $srcManifest.Length, $srcHex)
 
-function Write-Info { param($Message) Write-Host "[INFO] $Message" -ForegroundColor Blue }
-function Write-Success { param($Message) Write-Host "[SUCCESS] $Message" -ForegroundColor Green }
-function Write-Err { param($Message) Write-Host "[ERROR] $Message" -ForegroundColor Red }
+$rendered = $srcManifest `
+    -replace '(\s)Version="[^"]+"', "`$1Version=`"$MsixVersion`"" `
+    -replace 'ProcessorArchitecture="[^"]+"', "ProcessorArchitecture=`"$MsixArch`""
 
-function Show-Help {
-    Get-Help $MyInvocation.PSCommandPath -Detailed
-    exit 0
+$renderedHex = (($rendered[0..3] | ForEach-Object { '{0:X4}' -f [int][char]$_ }) -join ' ')
+Write-Info ("Manifest rendered: chars={0}, first 4 (hex) = {1}" -f $rendered.Length, $renderedHex)
+
+# Write WITHOUT a UTF-8 BOM. `Set-Content -Encoding UTF8` in Windows
+# PowerShell 5.1 prepends a 3-byte BOM (EF BB BF), which then breaks
+# `[xml](Get-Content -Raw $path)` because the BOM ends up as a leading
+# string character and XmlDocument.LoadXml rejects it ("Syntax for an XML
+# declaration is invalid. Line 1, position 7."). MakeAppx is also pickier
+# than the spec about a BOM in front of `<?xml` for AppxManifest.xml.
+[System.IO.File]::WriteAllText(
+    "$Staging\AppxManifest.xml",
+    $rendered,
+    (New-Object System.Text.UTF8Encoding($false))
+)
+
+# Read the staged file back and log the first 16 bytes. Pinpoints whether
+# leading junk lives in the rendered string, in WriteAllText, or in some
+# external interceptor (AV / filesystem filter / OneDrive sync) between
+# WriteAllText and the Test-AppxManifest read.
+$stagedBytes = [System.IO.File]::ReadAllBytes("$Staging\AppxManifest.xml")
+$headLen     = [Math]::Min(16, $stagedBytes.Length)
+$stagedHex   = (($stagedBytes[0..($headLen-1)] | ForEach-Object { '{0:X2}' -f $_ }) -join ' ')
+Write-Info ("Manifest staged: bytes={0}, first {1} (hex) = {2}" -f $stagedBytes.Length, $headLen, $stagedHex)
+
+# Pre-flight validation
+if (-not (Test-AppxManifest "$Staging\AppxManifest.xml")) {
+    Write-Err "Aborting MSIX build -- manifest validation failed."
+    Remove-Item -Recurse -Force $Staging
+    exit 1
 }
 
-function Test-Prerequisites {
-    Write-Info "Checking prerequisites..."
-
-    # Check makeappx
-    $makeappx = Get-Command makeappx.exe -ErrorAction SilentlyContinue
-    if (-not $makeappx) {
-        # Try Windows SDK paths
-        $sdkPaths = @(
-            "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\$Arch\makeappx.exe"
-            "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\makeappx.exe"
-        )
-        foreach ($pattern in $sdkPaths) {
-            $found = Get-Item $pattern -ErrorAction SilentlyContinue | Sort-Object -Descending | Select-Object -First 1
-            if ($found) {
-                $script:MakeAppx = $found.FullName
-                $script:SignTool = Join-Path (Split-Path $found.FullName) "signtool.exe"
-                break
-            }
-        }
-        if (-not $script:MakeAppx) {
-            Write-Err "makeappx.exe not found. Install Windows 10 SDK."
-            Write-Info "Download: https://developer.microsoft.com/windows/downloads/windows-sdk/"
-            exit 1
-        }
-    } else {
-        $script:MakeAppx = $makeappx.Source
-        $script:SignTool = Join-Path (Split-Path $makeappx.Source) "signtool.exe"
-    }
-    Write-Info "Using makeappx: $($script:MakeAppx)"
-
-    # Check binaries exist
-    foreach ($bin in @("SotF.exe", "sotf-tui.exe")) {
-        if (-not (Test-Path "$BuildDir\$bin")) {
-            Write-Err "$bin not found in $BuildDir"
-            Write-Info "Run build-windows.ps1 first to build the binaries."
-            exit 1
-        }
-    }
-
-    Write-Success "Prerequisites OK"
-}
-
-function New-StagingDirectory {
-    Write-Info "Preparing MSIX staging directory..."
-
-    if (Test-Path $MsixStaging) {
-        Remove-Item -Recurse -Force $MsixStaging
-    }
-    New-Item -ItemType Directory -Force -Path $MsixStaging | Out-Null
-    New-Item -ItemType Directory -Force -Path "$MsixStaging\assets" | Out-Null
-
-    # Copy binaries
-    Copy-Item "$BuildDir\SotF.exe" -Destination $MsixStaging
-    Copy-Item "$BuildDir\sotf-tui.exe" -Destination $MsixStaging
-
-    # Copy nlopt.dll if present (dynamic builds)
-    if (Test-Path "$BuildDir\nlopt.dll") {
-        Copy-Item "$BuildDir\nlopt.dll" -Destination $MsixStaging
-    }
-
-    # Copy app assets (fonts, icons, targets - but not demo-audio)
-    $assetsSource = "$ProjectRoot\crates\app-gpui\assets"
-    if (Test-Path $assetsSource) {
-        # Copy selectively - fonts, icons, headphone-targets
-        foreach ($subdir in @("fonts", "icons", "headphone-targets")) {
-            $src = "$assetsSource\$subdir"
-            if (Test-Path $src) {
-                Copy-Item -Recurse $src -Destination "$MsixStaging\assets\$subdir"
-            }
-        }
-    }
-
-    # Generate MSIX icon assets from source PNG
-    # MSIX requires specific sizes: 44x44, 150x150, 310x150
-    $sourcePng = "$assetsSource\sotf.png"
-    if (Test-Path $sourcePng) {
-        Copy-Item $sourcePng -Destination "$MsixStaging\assets\sotf-44x44.png"
-        Copy-Item $sourcePng -Destination "$MsixStaging\assets\sotf-150x150.png"
-        Copy-Item $sourcePng -Destination "$MsixStaging\assets\sotf-310x150.png"
-        Write-Info "Copied icon assets (resize to exact dimensions for Store submission)"
-    } else {
-        Write-Err "Source icon not found at $sourcePng"
-        Write-Info "MSIX requires icon assets. Add sotf.png to crates/app-gpui/assets/"
+# ---------------------------------------------------------------------------
+# Optional signing of the staged exe files (before packaging)
+# ---------------------------------------------------------------------------
+$signtool = $null
+if ($Sign) {
+    $signtool = Get-SignToolPath
+    if (-not $signtool) {
+        Write-Err "SignTool.exe not found (Windows SDK)."
         exit 1
     }
-
-    # Generate AppxManifest.xml with correct version and architecture
-    $manifestTemplate = Get-Content "$ProjectRoot\builds\windows\AppxManifest.xml" -Raw
-    $manifest = $manifestTemplate -replace 'Version="[^"]*"', "Version=`"$MsixVersion`""
-    $manifest = $manifest -replace 'ProcessorArchitecture="[^"]*"', "ProcessorArchitecture=`"$Arch`""
-    $manifest | Out-File -FilePath "$MsixStaging\AppxManifest.xml" -Encoding UTF8
-
-    Write-Success "Staging directory ready: $MsixStaging"
-}
-
-function New-SelfSignedCert {
-    Write-Info "Creating self-signed certificate for testing..."
-
-    $cert = New-SelfSignedCertificate `
-        -Type Custom `
-        -Subject $Publisher `
-        -KeyUsage DigitalSignature `
-        -FriendlyName "SotF MSIX Signing (Test)" `
-        -CertStoreLocation "Cert:\CurrentUser\My" `
-        -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.19={text}")
-
-    $script:CertThumbprint = $cert.Thumbprint
-    Write-Info "Certificate thumbprint: $($cert.Thumbprint)"
-    Write-Info "To trust this certificate on other machines, export and install it."
-    Write-Success "Self-signed certificate created"
-
-    return $cert.Thumbprint
-}
-
-function Build-Msix {
-    Write-Info "Building MSIX package..."
-
-    $distDir = Split-Path $MsixOutput
-    New-Item -ItemType Directory -Force -Path $distDir | Out-Null
-
-    if (Test-Path $MsixOutput) {
-        Remove-Item $MsixOutput
-    }
-
-    & $script:MakeAppx pack /d $MsixStaging /p $MsixOutput /o
-    if ($LASTEXITCODE -ne 0) {
-        Write-Err "makeappx pack failed"
-        exit 1
-    }
-
-    Write-Success "MSIX package created: $MsixOutput"
-}
-
-function Sign-Msix {
-    if ($SkipSign) {
-        Write-Info "Skipping code signing (unsigned package)"
-        return
-    }
-
-    Write-Info "Signing MSIX package..."
-
-    if ($CertPath) {
-        # Sign with provided certificate
-        $signArgs = @("sign", "/fd", "SHA256", "/f", $CertPath)
-        if ($CertPassword) {
-            $signArgs += @("/p", $CertPassword)
-        }
-        $signArgs += @("/t", "http://timestamp.digicert.com", $MsixOutput)
+    $tsUrl = if ($env:WINDOWS_TIMESTAMP_URL) { $env:WINDOWS_TIMESTAMP_URL } else { 'http://timestamp.digicert.com' }
+    $signArgs = @('sign','/fd','SHA256','/td','SHA256','/tr',$tsUrl)
+    if ($env:WINDOWS_CERT_THUMBPRINT) {
+        $signArgs += @('/sha1', $env:WINDOWS_CERT_THUMBPRINT, '/sm')
+    } elseif ($env:WINDOWS_CERT_FILE) {
+        $signArgs += @('/f', $env:WINDOWS_CERT_FILE)
+        if ($env:WINDOWS_CERT_PASSWORD) { $signArgs += @('/p', $env:WINDOWS_CERT_PASSWORD) }
     } else {
-        # Sign with self-signed certificate
-        $thumbprint = New-SelfSignedCert
-        $signArgs = @("sign", "/fd", "SHA256", "/sha1", $thumbprint, "/t", "http://timestamp.digicert.com", $MsixOutput)
-    }
-
-    & $script:SignTool @signArgs
-    if ($LASTEXITCODE -ne 0) {
-        Write-Err "signtool failed"
+        Write-Err "Set either WINDOWS_CERT_THUMBPRINT or WINDOWS_CERT_FILE for signing."
         exit 1
     }
-
-    Write-Success "MSIX package signed"
-}
-
-function Main {
-    if ($Help) {
-        Show-Help
-        return
-    }
-
-    Write-Info "=========================================="
-    Write-Info "Building SotF MSIX v$Version ($Arch)"
-    Write-Info "=========================================="
-
-    Test-Prerequisites
-    New-StagingDirectory
-    Build-Msix
-    Sign-Msix
-
-    # Cleanup staging
-    Remove-Item -Recurse -Force $MsixStaging
-
-    Write-Info "=========================================="
-    Write-Success "MSIX build complete!"
-    Write-Info "=========================================="
-
-    if (Test-Path $MsixOutput) {
-        $size = (Get-Item $MsixOutput).Length / 1MB
-        Write-Info "Package: $MsixOutput"
-        Write-Info ("Size: {0:N2} MB" -f $size)
-        Write-Info ""
-        Write-Info "To install locally (requires trusted certificate):"
-        Write-Info "  Add-AppxPackage -Path $MsixOutput"
-        Write-Info ""
-        Write-Info "For Store submission, use a trusted code signing certificate."
+    foreach ($bin in @('sotf-desktop.exe','sotf-tui.exe')) {
+        $p = Join-Path $Staging $bin
+        if (Test-Path $p) {
+            Write-Info "Signing $bin..."
+            & $signtool @signArgs $p
+            if ($LASTEXITCODE -ne 0) { Write-Err "SignTool failed for $bin"; exit 1 }
+        }
     }
 }
 
-Main
+# ---------------------------------------------------------------------------
+# Pack
+# ---------------------------------------------------------------------------
+$makeappx = Get-MakeAppxPath
+if (-not $makeappx) {
+    Write-Err "MakeAppx.exe not found. Install the Windows SDK:"
+    Write-Err "  https://developer.microsoft.com/windows/downloads/windows-sdk/"
+    Write-Err "It then lives at C:\Program Files (x86)\Windows Kits\10\bin\<sdkver>\x64\makeappx.exe"
+    exit 1
+}
+Write-Info "Packing with MakeAppx.exe: $makeappx"
+if (Test-Path $Output) { Remove-Item -Force $Output }
+
+& $makeappx pack /o /v /d $Staging /p $Output
+if ($LASTEXITCODE -ne 0) {
+    Write-Err "MakeAppx pack failed (exit $LASTEXITCODE)"
+    exit $LASTEXITCODE
+}
+
+# ---------------------------------------------------------------------------
+# Sign the .msix itself
+# ---------------------------------------------------------------------------
+if ($Sign) {
+    Write-Info ("Signing " + (Split-Path -Leaf $Output) + "...")
+    & $signtool @signArgs $Output
+    if ($LASTEXITCODE -ne 0) { Write-Err "SignTool failed for .msix"; exit 1 }
+    Write-Ok "MSIX signed."
+}
+
+Remove-Item -Recurse -Force $Staging
+
+$size = "{0:N1} MB" -f ((Get-Item $Output).Length / 1MB)
+Write-Ok "MSIX created: $Output  ($size)"
+if (-not $Sign) {
+    Write-Info ""
+    Write-Info "Package is UNSIGNED. Re-run with -Sign to sign."
+}
+
+} finally {
+    # Always tear down observability instrumentation, even on exit/throw.
+    if ($Trace) { Set-PSDebug -Off }
+    if ($transcriptStarted) {
+        try { Stop-Transcript | Out-Null } catch { }
+        Write-Host "[INFO] Transcript closed: $LogFile" -ForegroundColor Cyan
+    }
+}

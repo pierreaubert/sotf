@@ -311,7 +311,19 @@ sign_file() {
             notarize_file "$file_path"
             ;;
         *)
-            log_warning "Unknown file type, skipping: $(basename "$file_path")"
+            # Bare Mach-O binaries (sotf-desktop-VERSION-macos-*,
+            # sotf-tui-VERSION-macos-*) — these are the canonical macOS
+            # deliverables now that the broken static DMG path is gone.
+            if is_macho_file "$file_path"; then
+                sign_macho_file "$file_path"
+                codesign --verify --verbose=2 --strict "$file_path"
+                # notarytool can ingest a single Mach-O wrapped in a zip; the
+                # ticket is verified at runtime via online check (Mach-O has no
+                # place to staple a ticket).
+                notarize_file "$file_path"
+            else
+                log_warning "Unknown file type, skipping: $(basename "$file_path")"
+            fi
             ;;
     esac
 }
@@ -329,18 +341,26 @@ main() {
             sign_file "$f"
         done
     else
-        # Sign current-version macOS artifacts in dist/
+        # Sign current-version macOS artifacts in dist/. We sign:
+        #   - any .dmg / .pkg containers
+        #   - bare Mach-O binaries with the macos-{arm64,x86_64} suffix
+        #     (sotf-desktop-VERSION-macos-arm64, sotf-tui-VERSION-macos-x86_64, …)
         local found=false
-        for f in "$DIST_DIR"/*"$VERSION"*.dmg "$DIST_DIR"/*"$VERSION"*.pkg; do
+        shopt -s nullglob
+        for f in "$DIST_DIR"/*"$VERSION"*.dmg \
+                 "$DIST_DIR"/*"$VERSION"*.pkg \
+                 "$DIST_DIR"/*"$VERSION"-macos-arm64 \
+                 "$DIST_DIR"/*"$VERSION"-macos-x86_64; do
             if [ -f "$f" ]; then
                 sign_file "$f"
                 found=true
             fi
         done
+        shopt -u nullglob
 
         if ! $found; then
-            log_warning "No DMG or pkg files for v${VERSION} found in $DIST_DIR"
-            log_info "Run build-dmg-sotf.sh or build-systemwide.sh first"
+            log_warning "No macOS artifacts for v${VERSION} found in $DIST_DIR"
+            log_info "Run build-release-local.sh or build-systemwide.sh first"
             exit 1
         fi
     fi

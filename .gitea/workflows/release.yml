@@ -99,5 +99,7 @@ jobs:
           cp target/release/sotf-tui.exe "dist/sotf-tui-${VERSION}-windows-x86_64.exe"
 
       - name: Build MSIX package
-        shell: bash
-        run: ./scripts/build-msix.sh --arch x64 --sign
+        shell: pwsh
+        # Native PowerShell — uses MakeAppx.exe directly. No Git Bash, no
+        # MSYS path conversion, no third-party zip dependency.
+        run: .\scripts\build-msix.ps1 -Arch x86_64 -Sign

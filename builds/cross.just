@@ -161,7 +161,7 @@ docker-windows-x86: docker-base-win-x86
 		[ -n "${WINDOWS_TIMESTAMP_URL:-}" ] && docker_env+=(-e WINDOWS_TIMESTAMP_URL)
 	fi
 	docker run --rm --platform linux/amd64 -v "$(pwd)":/project -v sotf-target-win-x86:/build-target -w /project "${docker_env[@]}" sotf-win-x86 \
-		bash -c 'cargo build --release --target x86_64-pc-windows-gnullvm -p sotf-tui --bin sotf-tui && ./scripts/build-msix.sh --sign --build-dir /build-target/x86_64-pc-windows-gnullvm/release --arch x64 && cp /build-target/x86_64-pc-windows-gnullvm/release/sotf-tui.exe dist/'
+		bash -c 'cargo build --release --target x86_64-pc-windows-gnullvm -p sotf-tui --bin sotf-tui && ./scripts/build-msix.sh --sign --build-dir /build-target/x86_64-pc-windows-gnullvm/release --arch x86_64 && cp /build-target/x86_64-pc-windows-gnullvm/release/sotf-tui.exe dist/'
 	mv "dist/sotf-tui.exe" "dist/sotf-tui-${VERSION}-windows-x86_64.exe"
 	echo "Done! dist/sotf-tui-${VERSION}-windows-x86_64.exe + MSIX in dist/"
 
