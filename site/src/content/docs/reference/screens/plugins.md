@@ -4,11 +4,11 @@ description: Add, configure, reorder, and remove audio processing plugins.
 ---
 
 The Plugins screen manages the audio processing chain. Plugins process audio in the
-order they appear — top to bottom (TUI) or left to right in rack view (Desktop).
+order they appear — top to bottom (Terminal) or left to right in rack view (Desktop).
 
 ## Navigation
 
-| Key (TUI) | Action |
+| Key (Terminal) | Action |
 |-----------|--------|
 | `j` / `↓` | Move selection down |
 | `k` / `↑` | Move selection up |

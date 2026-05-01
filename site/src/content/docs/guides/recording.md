@@ -9,7 +9,7 @@ be used in the Convolution plugin or fed into the Room EQ optimizer.
 
 ## What You Need
 
-- SotF (TUI or Desktop)
+- SotF (Terminal or Desktop)
 - A calibrated measurement microphone (e.g., miniDSP UMIK-1, Dayton Audio UMM-6)
 - The microphone's calibration file (.txt or .csv)
 - Your speakers connected and at their final positions

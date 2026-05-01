@@ -3,6 +3,9 @@
   "type": "module",
   "version": "0.6.1",
   "scripts": {
+    "gen-data": "node scripts/gen-export-formats.mjs",
+    "predev": "npm run gen-data",
+    "prebuild": "npm run gen-data",
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",

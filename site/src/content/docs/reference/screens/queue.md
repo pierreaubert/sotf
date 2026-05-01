@@ -13,7 +13,7 @@ Progress through the queue advances automatically when each track ends.
 
 ## Navigation
 
-| Key (TUI) | Action |
+| Key (Terminal) | Action |
 |-----------|--------|
 | `j` / `↓` | Move selection down |
 | `k` / `↑` | Move selection up |

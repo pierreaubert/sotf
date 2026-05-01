@@ -1,0 +1,48 @@
+{
+  "source": "crates/autoeq/src/roomeq/export.rs",
+  "generatedAt": "2026-05-01T10:53:03.879Z",
+  "formats": [
+    {
+      "id": "CamillaDsp",
+      "cliName": "camilladsp",
+      "label": "CamillaDSP",
+      "extension": "yaml",
+      "description": "CamillaDSP YAML configuration"
+    },
+    {
+      "id": "EqualizerApo",
+      "cliName": "apo",
+      "label": "Equalizer APO",
+      "extension": "txt",
+      "description": "Equalizer APO / Peace GUI text format (also works with PipeWire parametric-equalizer module)"
+    },
+    {
+      "id": "EasyEffects",
+      "cliName": "easyeffects",
+      "label": "EasyEffects",
+      "extension": "json",
+      "description": "EasyEffects JSON preset"
+    },
+    {
+      "id": "Wavelet",
+      "cliName": "wavelet",
+      "label": "Wavelet",
+      "extension": "txt",
+      "description": "Wavelet GraphicEQ text format"
+    },
+    {
+      "id": "PipeWire",
+      "cliName": "pipewire",
+      "label": "PipeWire",
+      "extension": "conf",
+      "description": "PipeWire filter-chain SPA-JSON configuration"
+    },
+    {
+      "id": "RoonDsp",
+      "cliName": "roon",
+      "label": "Roon",
+      "extension": "json",
+      "description": "Roon DSP Engine preset (JSON)"
+    }
+  ]
+}

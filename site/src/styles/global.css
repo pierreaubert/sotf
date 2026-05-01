@@ -35,6 +35,13 @@
   /* Decorative overlays (grid lines + radial spotlight) tuned per theme. */
   --color-grid-line: rgb(255 255 255 / 0.1);
   --color-spotlight: rgb(34 211 238 / 0.08);
+  /* Cyan glow on hover; subtle on dark, slightly stronger on light. */
+  --color-glow: rgb(34 211 238 / 0.08);
+
+  /* Status badges (Download.astro quality labels). */
+  --color-status-good: #4ade80;
+  --color-status-beta: #facc15;
+  --color-status-alpha: #fb923c;
 
   --font-sans: 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
@@ -63,6 +70,13 @@
 
   --color-grid-line: rgb(15 23 42 / 0.06);
   --color-spotlight: rgb(8 145 178 / 0.06);
+  /* Stronger alpha so the glow remains visible against a white card. */
+  --color-glow: rgb(8 145 178 / 0.18);
+
+  /* Status badges — slightly darker hues for white-page contrast. */
+  --color-status-good: #16a34a;
+  --color-status-beta: #ca8a04;
+  --color-status-alpha: #ea580c;
 }
 
 /* Honour OS preference on first visit if the user has not made a choice.
@@ -90,5 +104,10 @@
 
     --color-grid-line: rgb(15 23 42 / 0.06);
     --color-spotlight: rgb(8 145 178 / 0.06);
+    --color-glow: rgb(8 145 178 / 0.18);
+
+    --color-status-good: #16a34a;
+    --color-status-beta: #ca8a04;
+    --color-status-alpha: #ea580c;
   }
 }

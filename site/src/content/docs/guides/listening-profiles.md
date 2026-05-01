@@ -20,7 +20,7 @@ Profiles let you switch your entire audio setup in seconds.
 ## Creating a Profile
 
 1. Set up your plugin chain for the scenario you want to save
-2. Open the **Plugins** screen (TUI) or **Plugin Rack** (Desktop)
+2. Open the **Plugins** screen (Terminal) or **Plugin Rack** (Desktop)
 3. Save the current chain as a preset file — use a descriptive name:
    ```
    headphones-hifiman-he400se.json
@@ -32,12 +32,12 @@ See the [Plugin Presets guide](/guides/plugin-presets/) for detailed save/load i
 
 ## Switching Profiles
 
-### TUI
+### Terminal
 
 Press `l` on the Plugins screen to open the load dialog and navigate to any preset file.
 The switch takes effect immediately with no audio interruption (SotF cross-fades between chains).
 
-### Desktop (GPUI)
+### Desktop
 
 Use **Import → Load Preset** from the Plugin Rack, or set up keyboard shortcuts for
 frequently used presets in Settings.

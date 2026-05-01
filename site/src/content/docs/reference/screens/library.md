@@ -16,7 +16,7 @@ The screen is split into three panels:
 
 ## Navigation
 
-| Key (TUI) | Action |
+| Key (Terminal) | Action |
 |-----------|--------|
 | `j` / `↓` | Move selection down |
 | `k` / `↑` | Move selection up |

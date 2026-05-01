@@ -1,4 +1,14 @@
 ---
+import exportFormats from '../data/export-formats.json';
+
+// "Export Everywhere" label is built from the autoeq ExportFormat enum.
+// site/scripts/gen-export-formats.mjs regenerates the JSON before each build
+// (via the prebuild npm script) so this list cannot drift from the Rust source.
+const exportFormatLabels: string =
+  (exportFormats.formats as { label: string }[])
+    .map((f) => f.label)
+    .join(', ') + '.';
+
 const features = [
   {
     icon: '/icons/music.svg',
@@ -38,7 +48,7 @@ const features = [
   {
     icon: '/icons/settings.svg',
     title: 'Export Everywhere',
-    description: 'APO, RME, macOS Audio Units, JSON.',
+    description: exportFormatLabels,
   },
 ];
 ---
@@ -53,8 +63,12 @@ const features = [
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
       {features.map((feature) => (
         <div class="group p-6 bg-card border border-border rounded-xl hover:border-accent/30 transition-colors">
-          <div class="w-10 h-10 mb-4 flex items-center justify-center rounded-lg bg-accent/10 text-accent">
-            <img src={feature.icon} alt="" class="w-5 h-5 [filter:invert(85%)_sepia(40%)_saturate(2000%)_hue-rotate(155deg)_brightness(100%)]" />
+          <div class="w-10 h-10 mb-4 flex items-center justify-center rounded-lg bg-accent/10">
+            <span
+              class="feature-icon w-5 h-5 bg-accent block"
+              style={`--icon-url: url(${feature.icon})`}
+              aria-hidden="true"
+            ></span>
           </div>
           <h3 class="text-fg font-semibold mb-2">{feature.title}</h3>
           <p class="text-sm text-fg-muted leading-relaxed">{feature.description}</p>
@@ -63,3 +77,12 @@ const features = [
     </div>
   </div>
 </section>
+
+<style>
+  /* SVG icons rendered as a CSS mask so the colour comes from `bg-accent`
+     (a CSS variable that flips per theme) instead of a baked-in filter. */
+  .feature-icon {
+    -webkit-mask: var(--icon-url) center / contain no-repeat;
+    mask: var(--icon-url) center / contain no-repeat;
+  }
+</style>

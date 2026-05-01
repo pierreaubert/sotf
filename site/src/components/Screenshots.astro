@@ -2,22 +2,22 @@
 const tuiScreenshots = [
   {
     src: '/images/0.5.12/sotf-tui-v0.5.12-player.png',
-    alt: 'SotF TUI — music player view',
+    alt: 'SotF Terminal — music player view',
     caption: 'Music player with library and queue',
   },
   {
     src: '/images/0.5.12/sotf-tui-v0.5.12-plugins.png',
-    alt: 'SotF TUI — plugin chain',
+    alt: 'SotF Terminal — plugin chain',
     caption: 'Plugin chain manager',
   },
   {
     src: '/images/0.5.12/sotf-tui-v0.5.12-upmixer.png',
-    alt: 'SotF TUI — upmixer plugin',
+    alt: 'SotF Terminal — upmixer plugin',
     caption: 'Stereo-to-surround upmixer',
   },
   {
     src: '/images/0.5.12/sotf-tui-v0.5.12-headphone.png',
-    alt: 'SotF TUI — headphone EQ',
+    alt: 'SotF Terminal — headphone EQ',
     caption: 'Headphone EQ optimization',
   },
 ];
@@ -58,16 +58,16 @@ const gpuiScreenshots = [
       See SotF in action.
     </p>
 
-    <!-- TUI -->
+    <!-- Terminal -->
     <div class="mb-16">
       <h3 class="text-lg font-semibold text-fg-secondary mb-6 flex items-center gap-2">
         <span class="px-2 py-0.5 text-xs font-mono rounded bg-accent/10 text-accent border border-accent/20">Terminal</span>
-        TUI Player
+        Terminal Player
       </h3>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
         {tuiScreenshots.map((shot) => (
           <figure class="group">
-            <div class="overflow-hidden rounded-xl border border-border group-hover:border-accent/30 transition-all group-hover:shadow-[0_0_30px_rgba(34,211,238,0.08)]">
+            <div class="overflow-hidden rounded-xl border border-border group-hover:border-accent/30 transition-all group-hover:shadow-[0_0_30px_var(--color-glow)]">
               <img src={shot.src} alt={shot.alt} class="w-full h-auto" loading="lazy" />
             </div>
             <figcaption class="mt-3 text-sm text-fg-subtle text-center">{shot.caption}</figcaption>
@@ -80,12 +80,12 @@ const gpuiScreenshots = [
     <div>
       <h3 class="text-lg font-semibold text-fg-secondary mb-6 flex items-center gap-2">
         <span class="px-2 py-0.5 text-xs font-mono rounded bg-accent/10 text-accent border border-accent/20">Desktop</span>
-        GPUI App
+        Desktop App
       </h3>
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {gpuiScreenshots.map((shot) => (
           <figure class="group">
-            <div class="overflow-hidden rounded-xl border border-border group-hover:border-accent/30 transition-all group-hover:shadow-[0_0_30px_rgba(34,211,238,0.08)]">
+            <div class="overflow-hidden rounded-xl border border-border group-hover:border-accent/30 transition-all group-hover:shadow-[0_0_30px_var(--color-glow)]">
               <img src={shot.src} alt={shot.alt} class="w-full h-auto" loading="lazy" />
             </div>
             <figcaption class="mt-3 text-sm text-fg-subtle text-center">{shot.caption}</figcaption>

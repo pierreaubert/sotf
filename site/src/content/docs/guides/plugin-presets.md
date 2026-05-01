@@ -9,13 +9,13 @@ and share configurations with others.
 
 ## Saving a Preset
 
-### TUI
+### Terminal
 
 1. Navigate to the **Plugins** screen
 2. Press `s` (or the keybinding shown in the help overlay)
 3. Enter a filename and confirm
 
-### Desktop (GPUI)
+### Desktop
 
 1. Open the **Plugin Rack** or **Plugin Graph** screen
 2. Use the **Export** menu → **Save Preset**
@@ -26,13 +26,13 @@ a specific directory.
 
 ## Loading a Preset
 
-### TUI
+### Terminal
 
 1. Navigate to the **Plugins** screen
 2. Press `l` to open the load dialog
 3. Browse to your preset file and confirm
 
-### Desktop (GPUI)
+### Desktop
 
 1. Open the **Plugin Rack**
 2. Use the **Import** menu → **Load Preset**
