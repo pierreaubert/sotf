@@ -638,7 +638,32 @@ build_macos() {
         record_result "macOS signing: SKIPPED (no DEVELOPER_ID)"
     fi
 
+    # Drop the raw Mach-O binaries that cross-macos-{arm64,x86} drop in dist/.
+    # The signed + notarized DMG is the canonical macOS deliverable; the bare
+    # binaries are intermediate and should not ship in the GitHub release.
+    cleanup_macos_intermediates
+
     log_success "macOS builds complete ($(elapsed))"
+}
+
+cleanup_macos_intermediates() {
+    local removed=0
+    for raw in \
+        "$DIST_DIR/SotF-${VERSION}-macos-arm64" \
+        "$DIST_DIR/SotF-${VERSION}-macos-x86_64"; do
+        if [ -f "$raw" ]; then
+            if $DRY_RUN; then
+                log_dry "rm $raw"
+            else
+                rm -f "$raw"
+                log_info "Removed intermediate: $(basename "$raw")"
+            fi
+            removed=$((removed + 1))
+        fi
+    done
+    if [ "$removed" -eq 0 ]; then
+        log_info "No macOS intermediates to clean"
+    fi
 }
 
 # -----------------------------------------------------------------------
@@ -1166,7 +1191,7 @@ print_summary() {
     echo "  2. Add changelog entries"
     echo "  3. Create GitHub release:"
     echo "     git tag v${VERSION}"
-    echo "     git push origin v${VERSION}"
+    echo "     git push github v${VERSION}"
     echo "     gh release create v${VERSION} --title 'SotF v${VERSION}' \\"
     echo "       --notes-file $DIST_DIR/release-${VERSION}.md \\"
     echo "       $DIST_DIR/*${VERSION}* $DIST_DIR/SHA256SUMS"
