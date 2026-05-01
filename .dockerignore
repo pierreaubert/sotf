@@ -8,3 +8,11 @@ data_generated/
 data_tests/
 venv/
 *.md
+# AI assistant / code-graph state — large, machine-specific, never needed in
+# the build container.
+.claude/
+.tokensave/
+.serena/
+# Per-arch Xcode DerivedData for the AU plugins (host-arch binaries +
+# intermediates; never relevant inside a Linux/Windows build container).
+crates/sotf-plugins/crates/plugins-au/build/
