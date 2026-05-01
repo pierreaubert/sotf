@@ -18,6 +18,7 @@
 #   ./build-release-local.sh --skip-macos        # Skip macOS builds
 #   ./build-release-local.sh --skip-sign         # Skip all signing
 #   ./build-release-local.sh --skip-site         # Skip site/docs update
+#   ./build-release-local.sh --deploy-site        # Also push site + binaries to the VPS via update_prod.sh
 #   ./build-release-local.sh --post-only         # Only post-build steps (sign, checksums, site)
 #   ./build-release-local.sh --clean-remote      # Wipe target/, dist/, etc. on remote builders before building
 #   ./build-release-local.sh --config <file>     # Use alternate config file
@@ -63,6 +64,7 @@ SKIP_WINDOWS=false
 SKIP_MACOS=false
 SKIP_SIGN=false
 SKIP_SITE=false
+DEPLOY_SITE=false
 POST_ONLY=false
 CLEAN_REMOTE=false
 INIT_CONFIG=false
@@ -76,6 +78,7 @@ while [[ $# -gt 0 ]]; do
         --skip-macos)    SKIP_MACOS=true; shift ;;
         --skip-sign)     SKIP_SIGN=true; shift ;;
         --skip-site)     SKIP_SITE=true; shift ;;
+        --deploy-site)   DEPLOY_SITE=true; shift ;;
         --post-only)     POST_ONLY=true; shift ;;
         --clean-remote)  CLEAN_REMOTE=true; shift ;;
         --init-config)   INIT_CONFIG=true; shift ;;
@@ -649,8 +652,8 @@ build_macos() {
 cleanup_macos_intermediates() {
     local removed=0
     for raw in \
-        "$DIST_DIR/SotF-${VERSION}-macos-arm64" \
-        "$DIST_DIR/SotF-${VERSION}-macos-x86_64"; do
+        "$DIST_DIR/sotf-desktop-${VERSION}-macos-arm64" \
+        "$DIST_DIR/sotf-desktop-${VERSION}-macos-x86_64"; do
         if [ -f "$raw" ]; then
             if $DRY_RUN; then
                 log_dry "rm $raw"
@@ -727,10 +730,10 @@ build_linux() {
     # Build Linux ARM64 via Docker on the remote
     log_step "Building Linux ARM64 (Docker on remote)..."
     if $DRY_RUN; then
-        log_dry "ssh ${host} 'cd ${remote_dir} && just cross-linux-arm64'"
+        log_dry "ssh ${host} 'cd ${remote_dir} && just docker-linux-arm64'"
     else
         if ssh_cmd "$host" "$port" "$key" \
-            "cd '$remote_dir' && just cross-linux-arm64"; then
+            "cd '$remote_dir' && just docker-linux-arm64"; then
             record_result "Linux ARM64: OK"
         else
             log_warning "Linux ARM64 build failed (continuing)"
@@ -1130,10 +1133,25 @@ update_site() {
 
     log_success "Site built"
 
-    if [ -n "${SITE_DEPLOY_TARGET:-}" ]; then
+    if $DEPLOY_SITE; then
+        if [ ! -x "$site_dir/update_prod.sh" ]; then
+            log_warning "$site_dir/update_prod.sh missing or not executable; skipping deploy"
+            record_result "Site deploy: SKIPPED (script not found)"
+        else
+            log_step "Deploying site + release binaries via update_prod.sh..."
+            cd "$site_dir"
+            if ./update_prod.sh; then
+                log_success "Site + binaries deployed"
+                record_result "Site deploy: OK"
+            else
+                log_error "update_prod.sh failed"
+                record_result "Site deploy: FAILED"
+            fi
+            cd "$PROJECT_ROOT"
+        fi
+    elif [ -n "${SITE_DEPLOY_TARGET:-}" ]; then
         log_info "Site deploy target: $SITE_DEPLOY_TARGET"
-        log_info "Deploy manually with: cd site && rsync -avrz dist/* ${SITE_DEPLOY_TARGET}"
-        log_info "Or run: ./site/update_prod.sh"
+        log_info "Re-run with --deploy-site to push, or manually: ./site/update_prod.sh"
     fi
 
     record_result "Site update: OK"

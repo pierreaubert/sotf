@@ -44,7 +44,8 @@ LEGACY_TOOLBAR_PLIST="${LAUNCHAGENTS_DIR}/org.spinorama.sotf-toolbar.plist"
 LEGACY_DAEMON_PLIST="${LAUNCHAGENTS_DIR}/org.spinorama.sotf.daemon.plist"
 LEGACY_CONFIGBAR_PLIST="${LAUNCHAGENTS_DIR}/org.spinorama.sotf.configbar.plist"
 
-SYSTEMWIDE_APP="/Applications/SotF Systemwide.app"
+SYSTEMWIDE_APP="/Applications/sotf-systemwide.app"
+LEGACY_SYSTEMWIDE_APP="/Applications/SotF Systemwide.app"
 LEGACY_TOOLBAR_APP="/Applications/SotF Toolbar.app"
 LEGACY_CONFIGBAR_APP="/Applications/SotF ConfigBar.app"
 DAEMON_BIN="/usr/local/bin/sotf-daemon"
@@ -210,6 +211,12 @@ if [ -d "${SYSTEMWIDE_APP}" ]; then
     log_success "Systemwide app removed"
 else
     log_info "Systemwide app not found"
+fi
+
+# Remove legacy Systemwide app (pre-rename: "/Applications/SotF Systemwide.app")
+if [ -d "${LEGACY_SYSTEMWIDE_APP}" ]; then
+    rm -rf "${LEGACY_SYSTEMWIDE_APP}"
+    log_success "Legacy Systemwide app removed"
 fi
 
 # Remove legacy Toolbar app

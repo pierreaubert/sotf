@@ -22,8 +22,10 @@
 set -euo pipefail
 
 # Configuration
-APP_NAME="SotF"
-GPUI_BINARY="SotF.exe"
+# APP_NAME is the dist filename prefix.
+# GPUI_BINARY must match the [[bin]] name in crates/app-gpui/Cargo.toml + ".exe".
+APP_NAME="sotf-desktop"
+GPUI_BINARY="sotf-desktop.exe"
 GPUI_PACKAGE="sotf-gpui"
 TUI_BINARY="sotf-tui.exe"
 TUI_PACKAGE="sotf-tui"
@@ -161,7 +163,7 @@ build_binaries() {
 
     # Build GPUI
     log_info "Building $GPUI_PACKAGE..."
-    cargo build --release --target "$TARGET" -p "$GPUI_PACKAGE" --bin SotF
+    cargo build --release --target "$TARGET" -p "$GPUI_PACKAGE" --bin sotf-desktop
     if [ ! -f "$BUILD_DIR/$GPUI_BINARY" ]; then
         log_error "GPUI binary not found at $BUILD_DIR/$GPUI_BINARY"
         exit 1
@@ -198,7 +200,7 @@ sign_binary() {
 create_distribution() {
     log_info "Creating distribution package..."
 
-    local dist_name="sotf-${VERSION}-windows-x64"
+    local dist_name="sotf-desktop-${VERSION}-windows-x86_64"
     local staging_dir="$DIST_DIR/$dist_name"
 
     mkdir -p "$DIST_DIR"
@@ -230,19 +232,19 @@ create_distribution() {
 
     # Create README
     cat > "$staging_dir/README.txt" << EOF
-SotF Player v${VERSION}
-======================
+sotf-desktop v${VERSION}
+========================
 
 A high-quality audio player with advanced EQ and upmixing capabilities.
 
 Included Binaries
 -----------------
-- SotF.exe      : GPUI-based graphical player
-- sotf-tui.exe  : Terminal UI player
+- sotf-desktop.exe : GPUI-based graphical player
+- sotf-tui.exe     : Terminal UI player
 
 Running
 -------
-GUI: Double-click SotF.exe
+GUI: Double-click sotf-desktop.exe
 TUI: Run sotf-tui.exe from command line or PowerShell
 
 Requirements
@@ -307,7 +309,7 @@ main() {
     log_success "Build complete!"
     log_info "=========================================="
 
-    local dist_name="sotf-${VERSION}-windows-x64"
+    local dist_name="sotf-desktop-${VERSION}-windows-x86_64"
     for ext in zip tar.gz; do
         local pkg="$DIST_DIR/${dist_name}.${ext}"
         if [ -f "$pkg" ]; then

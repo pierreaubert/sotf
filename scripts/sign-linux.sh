@@ -9,7 +9,7 @@
 #   ./sign-linux.sh                          # Sign current-version Linux artifacts in dist/ (keyless via OIDC)
 #   ./sign-linux.sh --key cosign.key         # Sign with a local key
 #   ./sign-linux.sh --key hashivault://sotf  # Sign with a KMS-backed key (Vault/AWS/GCP/Azure)
-#   ./sign-linux.sh dist/SotF-*.tar.gz       # Sign specific files
+#   ./sign-linux.sh dist/sotf-desktop-*.tar.gz  # Sign specific files
 #
 # Prerequisites:
 #   - cosign: https://docs.sigstore.dev/cosign/system_config/installation/
@@ -64,7 +64,7 @@ while [[ $# -gt 0 ]]; do
             echo "Examples:"
             echo "  $0                              # Keyless sign current-version Linux artifacts in dist/"
             echo "  $0 --key cosign.key             # Key-based sign current-version Linux artifacts"
-            echo "  $0 dist/SotF-${VERSION}-linux-arm64.tar.gz  # Sign a specific file"
+            echo "  $0 dist/sotf-desktop-${VERSION}-linux-arm64.tar.gz  # Sign a specific file"
             echo ""
             echo "Verification:"
             echo "  # Keyless:"
@@ -225,7 +225,7 @@ main() {
 
         if ! $found; then
             log_warning "No Linux artifacts for v${VERSION} found in $DIST_DIR"
-            log_info "Run 'just cross-linux-arm64' or 'just cross-linux-x86' first"
+            log_info "Run 'just docker-linux-arm64' or 'just docker-linux-x86' first"
             exit 1
         fi
     fi

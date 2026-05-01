@@ -14,9 +14,9 @@ import Footer from '../../components/Footer.astro';
 
       <!-- Hero -->
       <section id="intro" class="mb-16">
-        <a href="/" class="text-sm text-gray-500 hover:text-accent transition-colors mb-4 inline-block">&larr; Back to homepage</a>
-        <h1 class="text-4xl sm:text-5xl font-bold text-white mb-6">Desktop App Tutorial</h1>
-        <p class="text-lg text-gray-400 leading-relaxed">
+        <a href="/" class="text-sm text-fg-subtle hover:text-accent transition-colors mb-4 inline-block">&larr; Back to homepage</a>
+        <h1 class="text-4xl sm:text-5xl font-bold text-fg mb-6">Desktop App Tutorial</h1>
+        <p class="text-lg text-fg-muted leading-relaxed">
           The SotF desktop app gives you a modern graphical interface for music playback and audio
           optimization. Built with GPUI for native performance, it features a visual plugin rack,
           real-time spectrum analyzer, and guided EQ workflows.
@@ -25,86 +25,86 @@ import Footer from '../../components/Footer.astro';
 
       <!-- Installation -->
       <section id="installation" class="mb-16">
-        <h2 class="text-2xl font-bold text-white mb-6">Installation</h2>
-        <p class="text-gray-400 mb-4">Download the latest release for your platform from the
+        <h2 class="text-2xl font-bold text-fg mb-6">Installation</h2>
+        <p class="text-fg-muted mb-4">Download the latest release for your platform from the
           <a href="https://github.com/pierreaubert/sotf/releases" target="_blank" rel="noopener noreferrer" class="text-accent hover:text-accent-hover transition-colors">GitHub releases</a> page,
           or build from source:</p>
         <div class="font-mono bg-card border border-border rounded-lg p-4 overflow-x-auto">
-          <code class="text-sm text-gray-300">cargo build --release --bin sotf-desktop</code>
+          <code class="text-sm text-fg-secondary">cargo build --release --bin sotf-desktop</code>
         </div>
       </section>
 
       <!-- Quick Start -->
       <section id="quick-start" class="mb-16">
-        <h2 class="text-2xl font-bold text-white mb-6">Quick Start</h2>
-        <ol class="space-y-4 text-gray-400">
+        <h2 class="text-2xl font-bold text-fg mb-6">Quick Start</h2>
+        <ol class="space-y-4 text-fg-muted">
           <li class="flex gap-3">
             <span class="flex-shrink-0 w-7 h-7 rounded-full bg-accent/10 text-accent text-sm font-semibold flex items-center justify-center">1</span>
-            <span>Launch <strong class="text-white">SotF</strong> from your Applications folder or terminal.</span>
+            <span>Launch <strong class="text-fg">SotF</strong> from your Applications folder or terminal.</span>
           </li>
           <li class="flex gap-3">
             <span class="flex-shrink-0 w-7 h-7 rounded-full bg-accent/10 text-accent text-sm font-semibold flex items-center justify-center">2</span>
-            <span>Open <strong class="text-white">Settings</strong> and add your music directories.</span>
+            <span>Open <strong class="text-fg">Settings</strong> and add your music directories.</span>
           </li>
           <li class="flex gap-3">
             <span class="flex-shrink-0 w-7 h-7 rounded-full bg-accent/10 text-accent text-sm font-semibold flex items-center justify-center">3</span>
-            <span>Navigate to the <strong class="text-white">Library</strong> screen to browse and play your music.</span>
+            <span>Navigate to the <strong class="text-fg">Library</strong> screen to browse and play your music.</span>
           </li>
         </ol>
       </section>
 
       <!-- Screens Overview -->
       <section id="screens" class="mb-16">
-        <h2 class="text-2xl font-bold text-white mb-6">Screens Overview</h2>
-        <p class="text-gray-400 mb-6">Switch between screens using the sidebar or keyboard shortcuts <kbd class="px-2 py-0.5 bg-card border border-border rounded text-accent font-mono text-xs">1</kbd>-<kbd class="px-2 py-0.5 bg-card border border-border rounded text-accent font-mono text-xs">9</kbd>:</p>
+        <h2 class="text-2xl font-bold text-fg mb-6">Screens Overview</h2>
+        <p class="text-fg-muted mb-6">Switch between screens using the sidebar or keyboard shortcuts <kbd class="px-2 py-0.5 bg-card border border-border rounded text-accent font-mono text-xs">1</kbd>-<kbd class="px-2 py-0.5 bg-card border border-border rounded text-accent font-mono text-xs">9</kbd>:</p>
         <div class="overflow-x-auto">
           <table class="w-full text-sm border border-border rounded-lg overflow-hidden">
             <thead>
               <tr class="bg-card">
-                <th class="text-left px-4 py-3 text-gray-300 font-semibold border-b border-border">Screen</th>
-                <th class="text-left px-4 py-3 text-gray-300 font-semibold border-b border-border">Description</th>
+                <th class="text-left px-4 py-3 text-fg-secondary font-semibold border-b border-border">Screen</th>
+                <th class="text-left px-4 py-3 text-fg-secondary font-semibold border-b border-border">Description</th>
               </tr>
             </thead>
             <tbody>
               <tr class="border-b border-border">
-                <td class="px-4 py-3 text-white font-mono">Library</td>
-                <td class="px-4 py-3 text-gray-400">Browse, search, and manage your music collection</td>
+                <td class="px-4 py-3 text-fg font-mono">Library</td>
+                <td class="px-4 py-3 text-fg-muted">Browse, search, and manage your music collection</td>
               </tr>
               <tr class="border-b border-border bg-card/50">
-                <td class="px-4 py-3 text-white font-mono">Queue</td>
-                <td class="px-4 py-3 text-gray-400">Current playback queue with drag-and-drop reordering</td>
+                <td class="px-4 py-3 text-fg font-mono">Queue</td>
+                <td class="px-4 py-3 text-fg-muted">Current playback queue with drag-and-drop reordering</td>
               </tr>
               <tr class="border-b border-border">
-                <td class="px-4 py-3 text-white font-mono">Spectrum</td>
-                <td class="px-4 py-3 text-gray-400">Real-time frequency spectrum analyzer</td>
+                <td class="px-4 py-3 text-fg font-mono">Spectrum</td>
+                <td class="px-4 py-3 text-fg-muted">Real-time frequency spectrum analyzer</td>
               </tr>
               <tr class="border-b border-border bg-card/50">
-                <td class="px-4 py-3 text-white font-mono">Studio</td>
-                <td class="px-4 py-3 text-gray-400">Channel mixer and master output controls</td>
+                <td class="px-4 py-3 text-fg font-mono">Studio</td>
+                <td class="px-4 py-3 text-fg-muted">Channel mixer and master output controls</td>
               </tr>
               <tr class="border-b border-border">
-                <td class="px-4 py-3 text-white font-mono">Plugin Graph</td>
-                <td class="px-4 py-3 text-gray-400">Visual DAG editor for advanced plugin routing</td>
+                <td class="px-4 py-3 text-fg font-mono">Plugin Graph</td>
+                <td class="px-4 py-3 text-fg-muted">Visual DAG editor for advanced plugin routing</td>
               </tr>
               <tr class="border-b border-border bg-card/50">
-                <td class="px-4 py-3 text-white font-mono">Headphone EQ</td>
-                <td class="px-4 py-3 text-gray-400">Optimize headphone frequency response with target curves</td>
+                <td class="px-4 py-3 text-fg font-mono">Headphone EQ</td>
+                <td class="px-4 py-3 text-fg-muted">Optimize headphone frequency response with target curves</td>
               </tr>
               <tr class="border-b border-border">
-                <td class="px-4 py-3 text-white font-mono">Room EQ</td>
-                <td class="px-4 py-3 text-gray-400">Room correction wizard for stereo to 9.1.6 Atmos</td>
+                <td class="px-4 py-3 text-fg font-mono">Room EQ</td>
+                <td class="px-4 py-3 text-fg-muted">Room correction wizard for stereo to 9.1.6 Atmos</td>
               </tr>
               <tr class="border-b border-border bg-card/50">
-                <td class="px-4 py-3 text-white font-mono">Recording</td>
-                <td class="px-4 py-3 text-gray-400">Record audio input for measurement and analysis</td>
+                <td class="px-4 py-3 text-fg font-mono">Recording</td>
+                <td class="px-4 py-3 text-fg-muted">Record audio input for measurement and analysis</td>
               </tr>
               <tr class="border-b border-border">
-                <td class="px-4 py-3 text-white font-mono">Spinorama</td>
-                <td class="px-4 py-3 text-gray-400">Browse spinorama.org speaker data and apply EQ presets</td>
+                <td class="px-4 py-3 text-fg font-mono">Spinorama</td>
+                <td class="px-4 py-3 text-fg-muted">Browse spinorama.org speaker data and apply EQ presets</td>
               </tr>
               <tr>
-                <td class="px-4 py-3 text-white font-mono">Settings</td>
-                <td class="px-4 py-3 text-gray-400">Audio devices, directories, preferences</td>
+                <td class="px-4 py-3 text-fg font-mono">Settings</td>
+                <td class="px-4 py-3 text-fg-muted">Audio devices, directories, preferences</td>
               </tr>
             </tbody>
           </table>
@@ -113,42 +113,42 @@ import Footer from '../../components/Footer.astro';
 
       <!-- Keyboard Shortcuts -->
       <section id="keyboard-shortcuts" class="mb-16">
-        <h2 class="text-2xl font-bold text-white mb-6">Keyboard Shortcuts</h2>
+        <h2 class="text-2xl font-bold text-fg mb-6">Keyboard Shortcuts</h2>
         <div class="overflow-x-auto">
           <table class="w-full text-sm border border-border rounded-lg overflow-hidden">
             <thead>
               <tr class="bg-card">
-                <th class="text-left px-4 py-3 text-gray-300 font-semibold border-b border-border">Key</th>
-                <th class="text-left px-4 py-3 text-gray-300 font-semibold border-b border-border">Action</th>
+                <th class="text-left px-4 py-3 text-fg-secondary font-semibold border-b border-border">Key</th>
+                <th class="text-left px-4 py-3 text-fg-secondary font-semibold border-b border-border">Action</th>
               </tr>
             </thead>
             <tbody>
               <tr class="border-b border-border">
                 <td class="px-4 py-3"><kbd class="px-2 py-1 bg-card border border-border rounded text-accent font-mono text-xs">Space</kbd></td>
-                <td class="px-4 py-3 text-gray-400">Play / Pause</td>
+                <td class="px-4 py-3 text-fg-muted">Play / Pause</td>
               </tr>
               <tr class="border-b border-border bg-card/50">
                 <td class="px-4 py-3"><kbd class="px-2 py-1 bg-card border border-border rounded text-accent font-mono text-xs">N</kbd></td>
-                <td class="px-4 py-3 text-gray-400">Next track</td>
+                <td class="px-4 py-3 text-fg-muted">Next track</td>
               </tr>
               <tr class="border-b border-border">
                 <td class="px-4 py-3"><kbd class="px-2 py-1 bg-card border border-border rounded text-accent font-mono text-xs">P</kbd></td>
-                <td class="px-4 py-3 text-gray-400">Previous track</td>
+                <td class="px-4 py-3 text-fg-muted">Previous track</td>
               </tr>
               <tr class="border-b border-border bg-card/50">
                 <td class="px-4 py-3">
                   <kbd class="px-2 py-1 bg-card border border-border rounded text-accent font-mono text-xs">+</kbd>
                   <kbd class="px-2 py-1 bg-card border border-border rounded text-accent font-mono text-xs ml-1">-</kbd>
                 </td>
-                <td class="px-4 py-3 text-gray-400">Volume up / down</td>
+                <td class="px-4 py-3 text-fg-muted">Volume up / down</td>
               </tr>
               <tr class="border-b border-border">
                 <td class="px-4 py-3"><kbd class="px-2 py-1 bg-card border border-border rounded text-accent font-mono text-xs">1</kbd>-<kbd class="px-2 py-1 bg-card border border-border rounded text-accent font-mono text-xs">9</kbd></td>
-                <td class="px-4 py-3 text-gray-400">Switch to screen 1–9</td>
+                <td class="px-4 py-3 text-fg-muted">Switch to screen 1–9</td>
               </tr>
               <tr>
                 <td class="px-4 py-3"><kbd class="px-2 py-1 bg-card border border-border rounded text-accent font-mono text-xs">Cmd+K</kbd></td>
-                <td class="px-4 py-3 text-gray-400">Open search</td>
+                <td class="px-4 py-3 text-fg-muted">Open search</td>
               </tr>
             </tbody>
           </table>
@@ -157,27 +157,27 @@ import Footer from '../../components/Footer.astro';
 
       <!-- Headphone EQ Tutorial -->
       <section id="headphone-eq" class="mb-16">
-        <h2 class="text-2xl font-bold text-white mb-6">Headphone EQ</h2>
-        <p class="text-gray-400 mb-6">Optimize your headphone's frequency response in three steps:</p>
-        <ol class="space-y-4 text-gray-400">
+        <h2 class="text-2xl font-bold text-fg mb-6">Headphone EQ</h2>
+        <p class="text-fg-muted mb-6">Optimize your headphone's frequency response in three steps:</p>
+        <ol class="space-y-4 text-fg-muted">
           <li class="flex gap-3">
             <span class="flex-shrink-0 w-7 h-7 rounded-full bg-accent/10 text-accent text-sm font-semibold flex items-center justify-center">1</span>
             <div>
-              <strong class="text-white">Load measurements</strong> — Select your headphone model from the built-in database
+              <strong class="text-fg">Load measurements</strong> — Select your headphone model from the built-in database
               or import a frequency response file. SotF includes data for hundreds of popular headphones.
             </div>
           </li>
           <li class="flex gap-3">
             <span class="flex-shrink-0 w-7 h-7 rounded-full bg-accent/10 text-accent text-sm font-semibold flex items-center justify-center">2</span>
             <div>
-              <strong class="text-white">Optimize</strong> — Choose a target curve (Harman, diffuse-field, or custom) and
+              <strong class="text-fg">Optimize</strong> — Choose a target curve (Harman, diffuse-field, or custom) and
               run the optimizer. SotF calculates the optimal parametric EQ filters to match your target.
             </div>
           </li>
           <li class="flex gap-3">
             <span class="flex-shrink-0 w-7 h-7 rounded-full bg-accent/10 text-accent text-sm font-semibold flex items-center justify-center">3</span>
             <div>
-              <strong class="text-white">A/B compare</strong> — Toggle the EQ on and off in real-time to hear the difference.
+              <strong class="text-fg">A/B compare</strong> — Toggle the EQ on and off in real-time to hear the difference.
               Fine-tune individual bands if desired, then save your preset.
             </div>
           </li>
@@ -186,48 +186,48 @@ import Footer from '../../components/Footer.astro';
 
       <!-- Room EQ Tutorial -->
       <section id="room-eq" class="mb-16">
-        <h2 class="text-2xl font-bold text-white mb-6">Room EQ</h2>
-        <p class="text-gray-400 mb-6">Correct your room's acoustics with the guided wizard:</p>
-        <ol class="space-y-4 text-gray-400">
+        <h2 class="text-2xl font-bold text-fg mb-6">Room EQ</h2>
+        <p class="text-fg-muted mb-6">Correct your room's acoustics with the guided wizard:</p>
+        <ol class="space-y-4 text-fg-muted">
           <li class="flex gap-3">
             <span class="flex-shrink-0 w-7 h-7 rounded-full bg-accent/10 text-accent text-sm font-semibold flex items-center justify-center">1</span>
             <div>
-              <strong class="text-white">Load speaker data</strong> — Select your speakers from the spinorama.org database
+              <strong class="text-fg">Load speaker data</strong> — Select your speakers from the spinorama.org database
               or import measurement files.
             </div>
           </li>
           <li class="flex gap-3">
             <span class="flex-shrink-0 w-7 h-7 rounded-full bg-accent/10 text-accent text-sm font-semibold flex items-center justify-center">2</span>
             <div>
-              <strong class="text-white">Room configuration</strong> — Define your room layout: speaker positions, listener
+              <strong class="text-fg">Room configuration</strong> — Define your room layout: speaker positions, listener
               position, and channel configuration (stereo up to 9.1.6 Atmos).
             </div>
           </li>
           <li class="flex gap-3">
             <span class="flex-shrink-0 w-7 h-7 rounded-full bg-accent/10 text-accent text-sm font-semibold flex items-center justify-center">3</span>
             <div>
-              <strong class="text-white">Configure parameters</strong> — Set target curve preferences, frequency range,
+              <strong class="text-fg">Configure parameters</strong> — Set target curve preferences, frequency range,
               and maximum EQ boost/cut limits.
             </div>
           </li>
           <li class="flex gap-3">
             <span class="flex-shrink-0 w-7 h-7 rounded-full bg-accent/10 text-accent text-sm font-semibold flex items-center justify-center">4</span>
             <div>
-              <strong class="text-white">Optimize</strong> — Run the room EQ optimizer. SotF calculates per-channel
+              <strong class="text-fg">Optimize</strong> — Run the room EQ optimizer. SotF calculates per-channel
               parametric EQ filters to flatten your in-room response.
             </div>
           </li>
           <li class="flex gap-3">
             <span class="flex-shrink-0 w-7 h-7 rounded-full bg-accent/10 text-accent text-sm font-semibold flex items-center justify-center">5</span>
             <div>
-              <strong class="text-white">Review</strong> — Inspect the before/after frequency response curves for each
+              <strong class="text-fg">Review</strong> — Inspect the before/after frequency response curves for each
               channel. Adjust individual filters if needed.
             </div>
           </li>
           <li class="flex gap-3">
             <span class="flex-shrink-0 w-7 h-7 rounded-full bg-accent/10 text-accent text-sm font-semibold flex items-center justify-center">6</span>
             <div>
-              <strong class="text-white">Export</strong> — Apply the EQ live, or export to APO, RME TotalMix, macOS Audio
+              <strong class="text-fg">Export</strong> — Apply the EQ live, or export to APO, RME TotalMix, macOS Audio
               Units, or JSON for use in other systems.
             </div>
           </li>
@@ -236,22 +236,22 @@ import Footer from '../../components/Footer.astro';
 
       <!-- Plugin Rack & Graph -->
       <section id="plugin-rack" class="mb-16">
-        <h2 class="text-2xl font-bold text-white mb-6">Plugin Rack & Graph</h2>
-        <p class="text-gray-400 mb-4">
+        <h2 class="text-2xl font-bold text-fg mb-6">Plugin Rack & Graph</h2>
+        <p class="text-fg-muted mb-4">
           SotF offers two ways to manage your audio processing chain:
         </p>
         <div class="space-y-6">
           <div class="p-6 bg-card border border-border rounded-xl">
-            <h3 class="text-white font-semibold mb-2">Linear Rack View</h3>
-            <p class="text-sm text-gray-400">
+            <h3 class="text-fg font-semibold mb-2">Linear Rack View</h3>
+            <p class="text-sm text-fg-muted">
               A simple top-to-bottom plugin chain. Drag to reorder, click to configure,
               toggle individual plugins on/off for A/B comparison. Great for straightforward
               setups like EQ → compressor → limiter.
             </p>
           </div>
           <div class="p-6 bg-card border border-border rounded-xl">
-            <h3 class="text-white font-semibold mb-2">DAG Graph Editor</h3>
-            <p class="text-sm text-gray-400">
+            <h3 class="text-fg font-semibold mb-2">DAG Graph Editor</h3>
+            <p class="text-sm text-fg-muted">
               A visual node-based editor for advanced routing. Split signals, process channels
               independently, merge them back — perfect for complex setups like binaural processing,
               multi-band compression, or surround upmixing.

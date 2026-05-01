@@ -27,7 +27,7 @@ That recipe will:
 1. Build `plugins-ffi` for the target arch and stage `libsotf_audio_plugins_ffi.a` into `Resources/`
 2. Run `xcodegen` if `project.yml` is newer than the generated project
 3. Run `xcodebuild` against the `SOTFAudioUnits` scheme with `ARCHS=<arch>`, isolating its `DerivedData` under `crates/sotf-plugins/crates/plugins-au/build/au-<arch>/`
-4. Wrap the resulting `SOTFAudioUnits.app` into `dist/au/SOTFAudioUnits-<version>-macos-<arch>.pkg`
+4. Wrap the resulting `SOTFAudioUnits.app` into `dist/au/sotf-audio-units-<version>-macos-<arch>.pkg`
 
 ### 2. Install + register
 
@@ -74,8 +74,8 @@ crates/sotf-plugins/crates/plugins-au/build/au-x86_64/Build/Products/Release/SOT
 Distributable installer packages land at:
 
 ```
-dist/au/SOTFAudioUnits-<version>-macos-arm64.pkg
-dist/au/SOTFAudioUnits-<version>-macos-x86_64.pkg
+dist/au/sotf-audio-units-<version>-macos-arm64.pkg
+dist/au/sotf-audio-units-<version>-macos-x86_64.pkg
 ```
 
 ## What You Get

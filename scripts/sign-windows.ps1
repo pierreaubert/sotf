@@ -248,7 +248,7 @@ function Main {
 
         if (-not $found) {
             Write-Warn "No Windows artifacts found in $DistDir"
-            Write-Info "Run 'just cross-windows-arm64' or 'just cross-windows-x86' first"
+            Write-Info "Run 'just docker-windows-arm64' or 'just docker-windows-x86' first"
             exit 1
         }
     }

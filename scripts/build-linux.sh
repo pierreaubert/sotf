@@ -22,8 +22,10 @@
 set -euo pipefail
 
 # Configuration
-APP_NAME="SotF"
-BINARY_NAME="SotF"
+# APP_NAME is used as the dist filename prefix (lowercase, hyphenated).
+# BINARY_NAME must match the [[bin]] name in crates/app-gpui/Cargo.toml.
+APP_NAME="sotf-desktop"
+BINARY_NAME="sotf-desktop"
 PACKAGE_NAME="sotf-gpui"
 TUI_BINARY_NAME="sotf-tui"
 TUI_PACKAGE_NAME="sotf-tui"
@@ -354,7 +356,7 @@ create_tarball() {
     # Create install script for desktop integration
     cat > "$staging_dir/install-desktop.sh" << 'INSTALL_EOF'
 #!/bin/sh
-# Install SotF desktop integration (icon + .desktop file)
+# Install sotf-desktop desktop integration (icon + .desktop file)
 # Run as: ./install-desktop.sh [--uninstall]
 set -e
 
@@ -365,9 +367,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 if [ "$1" = "--uninstall" ]; then
     rm -f "$PREFIX/applications/org.spinorama.sotf.desktop"
     rm -f "$PREFIX/icons/hicolor/256x256/apps/org.spinorama.sotf.png"
-    rm -f "$BIN_DIR/SotF"
+    rm -f "$BIN_DIR/sotf-desktop"
     rm -f "$BIN_DIR/sotf-tui"
-    echo "SotF desktop integration removed."
+    echo "sotf-desktop integration removed."
     exit 0
 fi
 
@@ -376,15 +378,15 @@ mkdir -p "$PREFIX/icons/hicolor/256x256/apps"
 mkdir -p "$BIN_DIR"
 
 # Install binaries
-cp "$SCRIPT_DIR/SotF" "$BIN_DIR/SotF"
-chmod +x "$BIN_DIR/SotF"
+cp "$SCRIPT_DIR/sotf-desktop" "$BIN_DIR/sotf-desktop"
+chmod +x "$BIN_DIR/sotf-desktop"
 if [ -f "$SCRIPT_DIR/sotf-tui" ]; then
     cp "$SCRIPT_DIR/sotf-tui" "$BIN_DIR/sotf-tui"
     chmod +x "$BIN_DIR/sotf-tui"
 fi
 
-# Install desktop file — patch Exec to use installed path
-sed "s|Exec=SotF|Exec=$BIN_DIR/SotF|" "$SCRIPT_DIR/org.spinorama.sotf.desktop" \
+# Install desktop file — patch Exec to use the absolute installed path
+sed "s|Exec=sotf-desktop|Exec=$BIN_DIR/sotf-desktop|" "$SCRIPT_DIR/org.spinorama.sotf.desktop" \
     > "$PREFIX/applications/org.spinorama.sotf.desktop"
 
 # Install icon
@@ -400,21 +402,21 @@ if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database "$PREFIX/applications" 2>/dev/null || true
 fi
 
-echo "SotF installed to $BIN_DIR/SotF"
+echo "sotf-desktop installed to $BIN_DIR/sotf-desktop"
 echo "Desktop integration installed. You may need to log out and back in for the icon to appear."
 INSTALL_EOF
     chmod +x "$staging_dir/install-desktop.sh"
 
     # Create a simple README
     cat > "$staging_dir/README.txt" << EOF
-SotF Player v${VERSION}
-======================
+sotf-desktop v${VERSION}
+========================
 
 A high-quality audio player with advanced EQ and upmixing capabilities.
 
 Running
 -------
-./SotF
+./sotf-desktop
 
 Desktop Integration (KDE/GNOME)
 --------------------------------
@@ -422,7 +424,7 @@ Run the install script to integrate with your desktop environment:
 
     ./install-desktop.sh
 
-This installs the binary, icon, and .desktop file so SotF appears in
+This installs the binary, icon, and .desktop file so sotf-desktop appears in
 your application menu and taskbar with proper icon and name.
 
 To uninstall:
@@ -496,9 +498,15 @@ create_appimage() {
         fi
     fi
 
-    # Build AppImage with linuxdeploy
+    # Build AppImage with linuxdeploy.
+    # Normalize arch label to match the rest of the dist artifacts (arm64/x86_64,
+    # not aarch64).
     local arch
-    arch=$(uname -m)
+    case "$(uname -m)" in
+        aarch64|arm64) arch="arm64" ;;
+        x86_64)        arch="x86_64" ;;
+        *)             arch="$(uname -m)" ;;
+    esac
     export OUTPUT="$DIST_DIR/${APP_NAME}-${VERSION}-linux-${arch}.AppImage"
 
     local deploy_args=(
@@ -561,7 +569,7 @@ create_deb() {
         esac
     fi
 
-    local deb_name="sotf_${VERSION}_${deb_arch}"
+    local deb_name="sotf-desktop_${VERSION}_${deb_arch}"
     local deb_dir="$DIST_DIR/${deb_name}"
 
     rm -rf "$deb_dir"
@@ -573,15 +581,15 @@ create_deb() {
     mkdir -p "$deb_dir/usr/share/doc/sotf"
 
     # Copy binaries
-    cp "$BUILD_DIR/$BINARY_NAME" "$deb_dir/usr/bin/sotf"
-    chmod 755 "$deb_dir/usr/bin/sotf"
+    cp "$BUILD_DIR/$BINARY_NAME" "$deb_dir/usr/bin/sotf-desktop"
+    chmod 755 "$deb_dir/usr/bin/sotf-desktop"
     cp "$BUILD_DIR/$TUI_BINARY_NAME" "$deb_dir/usr/bin/$TUI_BINARY_NAME"
     chmod 755 "$deb_dir/usr/bin/$TUI_BINARY_NAME"
 
-    # Install desktop file — filename must match app_id for WM integration
-    # Patch Exec to use the deb binary name (sotf, lowercase)
-    sed 's|Exec=SotF|Exec=sotf|' "$ASSETS_DIR/org.spinorama.sotf.desktop" \
-        > "$deb_dir/usr/share/applications/org.spinorama.sotf.desktop"
+    # Install desktop file — filename must match app_id for WM integration.
+    # The .desktop already ships with `Exec=sotf-desktop`, so just copy it.
+    cp "$ASSETS_DIR/org.spinorama.sotf.desktop" \
+        "$deb_dir/usr/share/applications/org.spinorama.sotf.desktop"
 
     # Install icon — name must match Icon= field in desktop file
     if [ -f "$ASSETS_DIR/sotf.png" ]; then
@@ -766,11 +774,11 @@ main() {
         log_info "Size: $(du -h "$DIST_DIR/${tarball_name}.tar.gz" | cut -f1)"
     fi
 
-    if $CREATE_APPIMAGE && [ -f "$DIST_DIR/${APP_NAME}-${VERSION}-linux-$(uname -m).AppImage" ]; then
-        log_info "AppImage: $DIST_DIR/${APP_NAME}-${VERSION}-linux-$(uname -m).AppImage"
+    if $CREATE_APPIMAGE && [ -f "$DIST_DIR/${APP_NAME}-${VERSION}-linux-${arch}.AppImage" ]; then
+        log_info "AppImage: $DIST_DIR/${APP_NAME}-${VERSION}-linux-${arch}.AppImage"
     fi
 
-    local deb_file="$DIST_DIR/sotf_${VERSION}_${deb_arch}.deb"
+    local deb_file="$DIST_DIR/sotf-desktop_${VERSION}_${deb_arch}.deb"
     if $CREATE_DEB && [ -f "$deb_file" ]; then
         log_info ".deb: $deb_file"
         log_info "Size: $(du -h "$deb_file" | cut -f1)"

@@ -1,4 +1,4 @@
-# app-gpui (lib: `sotf_audio_player_gpui`, binary: `SotF`)
+# app-gpui (lib: `sotf_audio_player_gpui`, binary: `sotf-desktop`)
 
 GPUI-based desktop music player with GPU-accelerated rendering.
 
@@ -37,7 +37,7 @@ Extensive testing: e2e, negative, proptest, component, lifecycle, event_integrat
 ## Running
 
 ```bash
-cargo run --bin SotF --release
+cargo run --bin sotf-desktop --release
 ```
 
 ## Design-token drift guard

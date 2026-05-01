@@ -312,8 +312,8 @@ sign-au-notarize-arm64: sign-au-arm64
 
 	# 2. Build, sign, notarize, staple the installer .pkg.
 	mkdir -p dist/au
-	PKG="dist/au/SOTFAudioUnits-${VERSION}-macos-arm64.pkg"
-	UNSIGNED_PKG="/tmp/SOTFAudioUnits-arm64-unsigned.pkg"
+	PKG="dist/au/sotf-audio-units-${VERSION}-macos-arm64.pkg"
+	UNSIGNED_PKG="/tmp/sotf-audio-units-arm64-unsigned.pkg"
 	/usr/bin/pkgbuild \
 		--component "$APP" \
 		--install-location "/Applications" \
@@ -369,8 +369,8 @@ sign-au-notarize-x86_64: sign-au-x86_64
 
 	# 2. Build, sign, notarize, staple the installer .pkg.
 	mkdir -p dist/au
-	PKG="dist/au/SOTFAudioUnits-${VERSION}-macos-x86_64.pkg"
-	UNSIGNED_PKG="/tmp/SOTFAudioUnits-x86_64-unsigned.pkg"
+	PKG="dist/au/sotf-audio-units-${VERSION}-macos-x86_64.pkg"
+	UNSIGNED_PKG="/tmp/sotf-audio-units-x86_64-unsigned.pkg"
 	/usr/bin/pkgbuild \
 		--component "$APP" \
 		--install-location "/Applications" \
@@ -421,10 +421,10 @@ dist-au-arm64:
 		echo "Packaging unsigned bundle anyway..."
 	fi
 	mkdir -p dist/au
-	PKG="dist/au/SOTFAudioUnits-${VERSION}-macos-arm64.pkg"
+	PKG="dist/au/sotf-audio-units-${VERSION}-macos-arm64.pkg"
 
 	if [ -n "${INSTALLER_DEVELOPER_ID:-}" ]; then
-		UNSIGNED_PKG="/tmp/SOTFAudioUnits-arm64-unsigned.pkg"
+		UNSIGNED_PKG="/tmp/sotf-audio-units-arm64-unsigned.pkg"
 		/usr/bin/pkgbuild \
 			--component "$APP" \
 			--install-location "/Applications" \
@@ -467,10 +467,10 @@ dist-au-x86_64:
 		echo "Packaging unsigned bundle anyway..."
 	fi
 	mkdir -p dist/au
-	PKG="dist/au/SOTFAudioUnits-${VERSION}-macos-x86_64.pkg"
+	PKG="dist/au/sotf-audio-units-${VERSION}-macos-x86_64.pkg"
 
 	if [ -n "${INSTALLER_DEVELOPER_ID:-}" ]; then
-		UNSIGNED_PKG="/tmp/SOTFAudioUnits-x86_64-unsigned.pkg"
+		UNSIGNED_PKG="/tmp/sotf-audio-units-x86_64-unsigned.pkg"
 		/usr/bin/pkgbuild \
 			--component "$APP" \
 			--install-location "/Applications" \

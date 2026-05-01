@@ -35,7 +35,7 @@ crates/sotf-plugins/crates/plugins-au/
 just dist-au-arm64        # or dist-au-x86_64 for Intel
 ```
 
-Builds the FFI staticlib for the target arch, runs `xcodegen` if needed, runs `xcodebuild` for the `SOTFAudioUnits` scheme, and wraps `SOTFAudioUnits.app` into `dist/au/SOTFAudioUnits-<version>-macos-<arch>.pkg`.
+Builds the FFI staticlib for the target arch, runs `xcodegen` if needed, runs `xcodebuild` for the `SOTFAudioUnits` scheme, and wraps `SOTFAudioUnits.app` into `dist/au/sotf-audio-units-<version>-macos-<arch>.pkg`.
 
 **Then double-click the .pkg** to install under `/Applications/SOTFAudioUnits.app`, and launch that app once so macOS registers each bundled `.appex` extension.
 
@@ -145,8 +145,8 @@ If you see `lipo: can't open input file`, you're on a stale recipe. The current 
 
 Output installers live in `dist/au/`:
 
-- `SOTFAudioUnits-<VERSION>-macos-arm64.pkg`
-- `SOTFAudioUnits-<VERSION>-macos-x86_64.pkg`
+- `sotf-audio-units-<VERSION>-macos-arm64.pkg`
+- `sotf-audio-units-<VERSION>-macos-x86_64.pkg`
 
 Each `.pkg` is built with `pkgbuild` + `productsign`, signed with `INSTALLER_DEVELOPER_ID` (Developer ID Installer) when set, and stapled with the notarization ticket via `xcrun stapler`. End users download the `.pkg` matching their Mac's CPU, double-click to install under `/Applications/SOTFAudioUnits.app`, and launch that app once to register the extensions.
 

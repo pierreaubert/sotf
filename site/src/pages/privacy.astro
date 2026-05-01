@@ -1,0 +1,82 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Nav from '../components/Nav.astro';
+import Footer from '../components/Footer.astro';
+
+// Update this date when the policy changes. Today's date is the safest
+// default since it's the only signal users have that the page is current.
+const lastUpdated = '2026-05-01';
+---
+
+<BaseLayout
+  title="Privacy — SotF"
+  description="SotF collects no user data. No analytics, no cookies, no tracking — for the application or the website."
+>
+  <Nav />
+  <main class="pt-24 pb-16 px-4 sm:px-6">
+    <div class="max-w-3xl mx-auto">
+      <header class="mb-12">
+        <h1 class="text-4xl sm:text-5xl font-bold text-fg mb-4">Privacy</h1>
+        <p class="text-fg-muted text-lg">
+          Short version: we do not collect any user data. No analytics, no cookies, no tracking — for the application or for this website.
+        </p>
+      </header>
+
+      <section class="mb-10">
+        <h2 class="text-2xl font-semibold text-fg mb-4">What we don't do</h2>
+        <ul class="space-y-2 text-fg-secondary leading-relaxed list-disc list-inside">
+          <li>No analytics, telemetry, or usage reporting.</li>
+          <li>No cookies set by SotF or this website.</li>
+          <li>No tracking pixels, fingerprinting, or third-party trackers.</li>
+          <li>No advertising, no ad networks, no ad identifiers.</li>
+          <li>No account system. There is nothing to sign up for, and no profile to maintain.</li>
+          <li>No data is sold, shared, or transferred to anyone.</li>
+        </ul>
+      </section>
+
+      <section class="mb-10">
+        <h2 class="text-2xl font-semibold text-fg mb-4">The application</h2>
+        <p class="text-fg-secondary leading-relaxed mb-4">
+          SotF is an open-source audio player and optimizer that runs entirely on your machine. The full source is published at
+          <a href="https://github.com/pierreaubert/sotf" target="_blank" rel="noopener noreferrer" class="text-accent hover:text-accent-hover transition-colors">github.com/pierreaubert/sotf</a>;
+          you can inspect or build it yourself.
+        </p>
+        <p class="text-fg-secondary leading-relaxed mb-4">
+          The app reads audio files from directories you choose. It does not upload music, listening history, or any other personal information anywhere.
+        </p>
+        <p class="text-fg-secondary leading-relaxed">
+          When you explicitly use the speaker EQ feature, SotF queries the public
+          <a href="https://api.spinorama.org" target="_blank" rel="noopener noreferrer" class="text-accent hover:text-accent-hover transition-colors">spinorama.org</a>
+          API for measurement data. That request contains no information beyond the speaker model you searched for; nothing identifies you. You can avoid the request entirely by not using that feature.
+        </p>
+      </section>
+
+      <section class="mb-10">
+        <h2 class="text-2xl font-semibold text-fg mb-4">This website</h2>
+        <p class="text-fg-secondary leading-relaxed mb-4">
+          The site you are reading is statically generated and served as plain HTML, CSS, and a small amount of JavaScript. It runs no analytics, sets no cookies, and contacts no third parties at runtime.
+        </p>
+        <p class="text-fg-secondary leading-relaxed mb-4">
+          The only browser-side storage we use is a <code class="font-mono text-sm bg-card border border-border px-1.5 py-0.5 rounded">localStorage</code> entry that remembers your light/dark theme preference. It stays on your device, is not transmitted, and you can clear it at any time from your browser settings.
+        </p>
+        <p class="text-fg-secondary leading-relaxed">
+          Two outbound network requests happen on first load: web fonts from Google Fonts and the SotF download files hosted on GitHub Releases. Both are made by your browser to those services and are subject to their own privacy policies; SotF passes no information to either of them beyond the standard request your browser would make to fetch a public URL.
+        </p>
+      </section>
+
+      <section class="mb-10">
+        <h2 class="text-2xl font-semibold text-fg mb-4">Questions or concerns</h2>
+        <p class="text-fg-secondary leading-relaxed">
+          Open an issue on
+          <a href="https://github.com/pierreaubert/sotf/issues" target="_blank" rel="noopener noreferrer" class="text-accent hover:text-accent-hover transition-colors">GitHub</a>
+          or start a thread in
+          <a href="https://github.com/pierreaubert/sotf/discussions" target="_blank" rel="noopener noreferrer" class="text-accent hover:text-accent-hover transition-colors">Discussions</a>.
+          The codebase is open; if anything in this statement does not match what the code actually does, that's a bug — please tell us.
+        </p>
+      </section>
+
+      <p class="text-sm text-fg-faint">Last updated: {lastUpdated}</p>
+    </div>
+  </main>
+  <Footer />
+</BaseLayout>

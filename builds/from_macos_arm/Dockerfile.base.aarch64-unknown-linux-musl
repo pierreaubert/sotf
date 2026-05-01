@@ -47,37 +47,6 @@ WORKDIR /project
 COPY . .
 
 # Build release binary for musl
-ARG APP_NAME=app-cli
 RUN cargo build --release --target aarch64-unknown-linux-musl && \
     find target/aarch64-unknown-linux-musl/release -maxdepth 1 -type f -executable | xargs strip -v 2>/dev/null || true && \
     rm -rf target/.rustc_info.json target/.fingerprint target/aarch64-unknown-linux-musl/release/deps/*.d
-
-# Runtime stage: Alpine for musl static builds
-FROM alpine:latest
-
-# Install only runtime dependencies (minimal for musl static builds)
-RUN apk add --no-cache \
-    ca-certificates \
-    libgfortran \
-    imagemagick \
-    && rm -rf /tmp/* /var/tmp/*
-
-# Create non-root user for security
-RUN addgroup -S appuser && adduser -S appuser -G appuser
-
-WORKDIR /home/appuser
-
-# Copy only the compiled binary from builder
-ARG APP_NAME=app-cli
-COPY --from=builder --chown=appuser:appuser /project/target/aarch64-unknown-linux-musl/release/${APP_NAME} /usr/local/bin/app
-
-# Switch to non-root user
-USER appuser
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD app --version || exit 1
-
-# Set entrypoint
-ENTRYPOINT ["app"]
-CMD ["--help"]

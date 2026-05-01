@@ -29,8 +29,8 @@
 
   <Applications>
     <!-- SotF GPUI Player -->
-    <Application Id="SotF"
-      Executable="SotF.exe"
+    <Application Id="SotFDesktop"
+      Executable="sotf-desktop.exe"
       EntryPoint="Windows.FullTrustApplication">
 
       <uap:VisualElements

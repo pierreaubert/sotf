@@ -84,7 +84,8 @@ Workspace runner: `just` (install with `cargo install just`). See `justfile`.
 
 ### Conventions
 
-- Binaries: `snake_case` (`sotf_player_cli`, `autoeq_download_speakers`).
+- Binaries: `kebab-case` for user-facing dist artifacts (`sotf-desktop`, `sotf-tui`, `sotf-systemwide`); `snake_case` for internal CLI tools (`autoeq_download_speakers`).
+- Dist artifacts: lowercase `name-version-os-arch.format` (e.g. `sotf-desktop-0.5.15-macos-arm64.dmg`). Debian `.deb` keeps Debian's `_`-separated convention (`sotf-desktop_0.5.15_amd64.deb`).
 - Crates: `kebab-case` (`math-iir`, `sotf-plugins`).
 - Module files: `snake_case` (`signal_analysis.rs`, `plugin_eq.rs`).
 

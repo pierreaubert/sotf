@@ -1,17 +1,23 @@
 # ----------------------------------------------------------------------
-# CROSS-COMPILATION (Docker-based, no `cross` tool needed)
+# RELEASE BUILDS for non-host platforms
+#   - Linux + Windows are produced via Docker (`docker-*` recipes below).
+#   - macOS is built natively on the host (`cross-macos-*` recipes below).
 #
-# On an ARM machine:  just cross-arm    (linux-arm64 + windows-arm64 + macos-arm64)
-# On an x86 machine:  just cross-x86    (linux-x86 + windows-x86 + macos-x86)
+# Umbrella recipes orchestrate both:
+#   On an ARM machine:  just cross-arm    (docker linux-arm64 + windows-arm64 + native macos-arm64)
+#   On an x86 machine:  just cross-x86    (docker linux-x86   + windows-x86   + native macos-x86)
+#
+# Naming: anything that runs `docker build` / `docker run` is `docker-*`.
+# Native macOS builds keep `cross-macos-*` (no docker involved).
 # ----------------------------------------------------------------------
 
 # Build all 3 binaries for ARM
 [group('cross')]
-cross-arm: cross-linux-arm64 cross-windows-arm64 cross-macos-arm64
+cross-arm: docker-linux-arm64 docker-windows-arm64 cross-macos-arm64
 
 # Build all 3 binaries for x86
 [group('cross')]
-cross-x86: cross-linux-x86 cross-windows-x86 cross-macos-x86
+cross-x86: docker-linux-x86 docker-windows-x86 cross-macos-x86
 
 # Default: build for current arch
 [group('cross')]
@@ -29,38 +35,38 @@ cross:
 # BASE DOCKER IMAGES (system deps + rust + cargo fetch, cached per Cargo.lock)
 # ----------------------------------------------------------------------
 
-[group('cross')]
-cross-base-linux-arm64:
+[group('docker')]
+docker-base-linux-arm64:
 	@echo "Building base Docker image for Linux ARM64..."
 	docker build -t sotf-base-linux-arm64 \
 		-f ./builds/from_macos_arm/Dockerfile.base.aarch64-unknown-linux-musl .
 
-[group('cross')]
-cross-base-linux-x86:
+[group('docker')]
+docker-base-linux-x86:
 	@echo "Building base Docker image for Linux x86_64..."
 	docker build --platform linux/amd64 -t sotf-base-linux-x86 \
 		-f ./builds/from_macos_arm/Dockerfile.base.x86_64-unknown-linux-musl .
 
-[group('cross')]
-cross-base-linux-arm64-gnu:
+[group('docker')]
+docker-base-linux-arm64-gnu:
 	@echo "Building base Docker image for Linux ARM64 (gnu)..."
 	docker build -t sotf-base-linux-arm64-gnu \
 		-f ./builds/from_macos_arm/Dockerfile.base.aarch64-unknown-linux-gnu .
 
-[group('cross')]
-cross-base-linux-x86-gnu:
+[group('docker')]
+docker-base-linux-x86-gnu:
 	@echo "Building base Docker image for Linux x86_64 (gnu)..."
 	docker build -t sotf-base-linux-x86-gnu \
 		-f ./builds/from_macos_arm/Dockerfile.base.x86_64-unknown-linux-gnu .
 
-[group('cross')]
-cross-base-win-arm64:
+[group('docker')]
+docker-base-win-arm64:
 	@echo "Building base Docker image for Windows ARM64..."
 	docker build -t sotf-base-win-arm64 \
 		-f ./builds/from_macos_arm/Dockerfile.base.aarch64-pc-windows-gnullvm .
 
-[group('cross')]
-cross-base-win-x86:
+[group('docker')]
+docker-base-win-x86:
 	@echo "Building base Docker image for Windows x86_64..."
 	docker build --platform linux/amd64 -t sotf-base-win-x86 \
 		-f ./builds/from_macos_arm/Dockerfile.base.x86_64-pc-windows-gnullvm .
@@ -70,8 +76,8 @@ cross-base-win-x86:
 # ----------------------------------------------------------------------
 
 # Linux ARM64: AppImage + tarball → dist/
-[group('cross')]
-cross-linux-arm64: cross-base-linux-arm64
+[group('docker')]
+docker-linux-arm64: docker-base-linux-arm64
 	@echo "Building Docker image..."
 	docker build -t sotf-linux-arm64 -f ./builds/from_macos_arm/Dockerfile.aarch64-unknown-linux-musl .
 	@echo "Building in Docker container..."
@@ -82,8 +88,8 @@ cross-linux-arm64: cross-base-linux-arm64
 
 # Linux x86_64: AppImage + tarball → dist/
 # On native x86_64: full build with AppImage. On ARM (macOS): TUI-only tarball via QEMU.
-[group('cross')]
-cross-linux-x86: cross-base-linux-x86
+[group('docker')]
+docker-linux-x86: docker-base-linux-x86
 	#!/usr/bin/env bash
 	set -euo pipefail
 	host_arch=$(uname -m)
@@ -104,8 +110,8 @@ cross-linux-x86: cross-base-linux-x86
 	echo "Done! Output in: dist/"
 
 # Debug: open interactive shell in Linux x86 container
-[group('cross')]
-cross-debug-linux-x86: cross-base-linux-x86-gnu
+[group('docker')]
+docker-debug-linux-x86: docker-base-linux-x86-gnu
 	@echo "Building Docker image..."
 	docker build -t sotf-linux-x86-gnu -f ./builds/from_macos_arm/Dockerfile.x86_64-unknown-linux-gnu .
 	@echo "Starting interactive shell..."
@@ -117,8 +123,8 @@ cross-debug-linux-x86: cross-base-linux-x86-gnu
 
 # Windows ARM64: sotf-tui.exe + signed MSIX → dist/
 # Set WINDOWS_CERT_FILE and WINDOWS_CERT_PASSWORD to use a CA cert; otherwise self-signed is auto-generated
-[group('cross')]
-cross-windows-arm64: cross-base-win-arm64
+[group('docker')]
+docker-windows-arm64: docker-base-win-arm64
 	#!/usr/bin/env bash
 	set -euo pipefail
 	VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
@@ -139,8 +145,8 @@ cross-windows-arm64: cross-base-win-arm64
 
 # Windows x86_64: sotf-tui.exe + signed MSIX → dist/
 # Set WINDOWS_CERT_FILE and WINDOWS_CERT_PASSWORD to use a CA cert; otherwise self-signed is auto-generated
-[group('cross')]
-cross-windows-x86: cross-base-win-x86
+[group('docker')]
+docker-windows-x86: docker-base-win-x86
 	#!/usr/bin/env bash
 	set -euo pipefail
 	VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
@@ -175,7 +181,7 @@ cross-macos-arm64:
 	cargo build --release --target aarch64-apple-darwin -p sotf-gpui --features hal,onnx
 	mkdir -p dist
 	cp target/aarch64-apple-darwin/release/sotf-tui "dist/sotf-tui-${VERSION}-macos-arm64"
-	cp target/aarch64-apple-darwin/release/SotF "dist/SotF-${VERSION}-macos-arm64"
+	cp target/aarch64-apple-darwin/release/sotf-desktop "dist/sotf-desktop-${VERSION}-macos-arm64"
 	echo "Building DMG..."
 	./scripts/build-dmg-sotf.sh --arch arm64
 	echo "Done! Binaries and DMG copied to dist/"
@@ -192,7 +198,7 @@ cross-macos-x86:
 	cargo build --release --target x86_64-apple-darwin -p sotf-gpui --features hal
 	mkdir -p dist
 	cp target/x86_64-apple-darwin/release/sotf-tui "dist/sotf-tui-${VERSION}-macos-x86_64"
-	cp target/x86_64-apple-darwin/release/SotF "dist/SotF-${VERSION}-macos-x86_64"
+	cp target/x86_64-apple-darwin/release/sotf-desktop "dist/sotf-desktop-${VERSION}-macos-x86_64"
 	echo "Building DMG..."
 	./scripts/build-dmg-sotf.sh --arch x86_64
 	echo "Done! Binaries and DMG copied to dist/"

@@ -10,7 +10,7 @@
     <key>CFBundleDisplayName</key>
     <string>SotF Player</string>
     <key>CFBundleExecutable</key>
-    <string>SotF</string>
+    <string>sotf-desktop</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
 

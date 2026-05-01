@@ -75,13 +75,14 @@ jobs:
         with:
           name: macos-artifacts
           path: |
-            dist/SotF-*-macos-arm64.dmg
-            dist/SotF-*-macos-x86_64.dmg
+            dist/sotf-desktop-*-macos-arm64.dmg
+            dist/sotf-desktop-*-macos-x86_64.dmg
+            dist/sotf-desktop-*-macos-arm64
+            dist/sotf-desktop-*-macos-x86_64
             dist/sotf-tui-*-macos-arm64
             dist/sotf-tui-*-macos-x86_64
-            dist/SotF-*-macos-arm64
-            dist/SotF-*-macos-x86_64
-            dist/au/SOTFAudioUnits-*.zip
+            dist/sotf-systemwide-*-macos-universal.pkg
+            dist/au/sotf-audio-units-*.pkg
           retention-days: 7
 
   # -------------------------------------------------------------------
@@ -121,7 +122,7 @@ jobs:
         run: ./scripts/build-linux.sh --appimage
 
       - name: Build Linux ARM64 (Docker)
-        run: just cross-linux-arm64
+        run: just docker-linux-arm64
         continue-on-error: true
 
       - name: Sign Linux artifacts
@@ -139,9 +140,10 @@ jobs:
         with:
           name: linux-artifacts
           path: |
-            dist/SotF-*-linux-*.tar.gz
-            dist/SotF-*-linux-x86_64.AppImage
-            dist/SotF-*-linux-aarch64.AppImage
+            dist/sotf-desktop-*-linux-*.tar.gz
+            dist/sotf-desktop-*-linux-arm64.AppImage
+            dist/sotf-desktop-*-linux-x86_64.AppImage
+            dist/sotf-desktop_*_*.deb
             dist/*.bundle
           retention-days: 7
 
@@ -198,7 +200,7 @@ jobs:
           name: windows-artifacts
           path: |
             dist/sotf-tui-*-windows-x86_64.exe
-            dist/SotF-*-windows-x64.msix
+            dist/sotf-desktop-*-windows-x64.msix
           retention-days: 7
 
   # -------------------------------------------------------------------

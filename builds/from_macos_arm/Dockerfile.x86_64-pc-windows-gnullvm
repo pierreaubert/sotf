@@ -41,17 +41,6 @@ WORKDIR /project
 COPY . .
 
 # Build release binary for Windows
-ARG APP_NAME=app-cli
 RUN cargo build --release --target x86_64-pc-windows-gnullvm && \
     find target/x86_64-pc-windows-gnullvm/release -maxdepth 1 -type f -executable | xargs strip -v 2>/dev/null || true && \
     rm -rf target/.rustc_info.json target/.fingerprint target/x86_64-pc-windows-gnullvm/release/deps/*.d
-
-# Runtime stage: Alpine for Windows binaries (minimal, used for extraction only)
-FROM alpine:latest
-
-# Copy only the compiled Windows binary from builder
-ARG APP_NAME=app-cli
-COPY --from=builder /project/target/x86_64-pc-windows-gnullvm/release/${APP_NAME}.exe /output/app.exe
-
-# Keep binary accessible for extraction
-WORKDIR /output

@@ -88,7 +88,7 @@ The `plugins-au/Justfile` defines the canonical pipeline. Every action has both 
 | List registered AUs | `list-au` | — | — |
 | Sync version metadata | `sync-au-versions` | — | — |
 
-There is no separate "install" recipe. To install locally for testing, build the `.pkg` via `just dist-au-<arch>` and double-click it (or `installer -pkg dist/au/SOTFAudioUnits-<v>-macos-<arch>.pkg -target /`) — that puts `/Applications/SOTFAudioUnits.app` in place. Launch it once so macOS registers the bundled `.appex` extensions.
+There is no separate "install" recipe. To install locally for testing, build the `.pkg` via `just dist-au-<arch>` and double-click it (or `installer -pkg dist/au/sotf-audio-units-<v>-macos-<arch>.pkg -target /`) — that puts `/Applications/SOTFAudioUnits.app` in place. Launch it once so macOS registers the bundled `.appex` extensions.
 
 The workspace `builds/macos.just` also ships a single-AU pipeline focused on the EQ scheme (`build-au-rust-{arm64,x86_64}` → `build-au-swift-{arm64,x86_64}` → `build-au-{arm64,x86_64}` / `build-au`). Use that for fast iteration on the EQ alone; use `build-au-all` for everything.
 
@@ -116,15 +116,15 @@ Run `just build-au-all` to do the same for both arches sequentially. Resources/`
 ### 2. Package into `dist/au/` and install locally
 
 ```bash
-just dist-au-arm64                  # → dist/au/SOTFAudioUnits-<v>-macos-arm64.pkg
-just dist-au-x86_64                 # → dist/au/SOTFAudioUnits-<v>-macos-x86_64.pkg
+just dist-au-arm64                  # → dist/au/sotf-audio-units-<v>-macos-arm64.pkg
+just dist-au-x86_64                 # → dist/au/sotf-audio-units-<v>-macos-x86_64.pkg
 just dist-au                        # both arches
 ```
 
 Then install the `.pkg` matching your CPU. From the GUI: double-click. From a shell:
 
 ```bash
-sudo installer -pkg dist/au/SOTFAudioUnits-*-macos-arm64.pkg -target /
+sudo installer -pkg dist/au/sotf-audio-units-*-macos-arm64.pkg -target /
 killall -9 AudioComponentRegistrar coreaudiod 2>/dev/null || true
 open /Applications/SOTFAudioUnits.app   # launch once so macOS picks up the .appex extensions
 ```
@@ -171,8 +171,8 @@ xcrun notarytool store-credentials autoeq-notarization \
 
 ```bash
 just dist-au
-# → dist/au/SOTFAudioUnits-<VERSION>-macos-arm64.pkg
-# → dist/au/SOTFAudioUnits-<VERSION>-macos-x86_64.pkg
+# → dist/au/sotf-audio-units-<VERSION>-macos-arm64.pkg
+# → dist/au/sotf-audio-units-<VERSION>-macos-x86_64.pkg
 ```
 
 `dist-au` warns (but does not stop) if a bundle isn't signed. Each `.pkg` is built with `pkgbuild --install-location /Applications` and signed with `INSTALLER_DEVELOPER_ID` when set. For a fully signed-and-notarized `.pkg`, run `just sign-au-notarize` instead — it submits the `.app` and the `.pkg` to `notarytool` and staples the result.
@@ -206,7 +206,7 @@ End users download the `.pkg` matching their Mac's CPU and double-click to insta
    ```bash
    just build-au-all          # both arches
    just dist-au-arm64         # package + install via .pkg
-   sudo installer -pkg dist/au/SOTFAudioUnits-*-macos-arm64.pkg -target /
+   sudo installer -pkg dist/au/sotf-audio-units-*-macos-arm64.pkg -target /
    ```
 
 XcodeGen will rewrite `SOTFAudioUnits.xcodeproj` from `project.yml` automatically.
@@ -286,7 +286,7 @@ open ~/Library/Logs/DiagnosticReports/
 1. `just build-au-all` — both arches build cleanly
 2. `just sign-au` — both bundles signed with Developer ID Application
 3. `just sign-au-notarize` — notarytool returns `Accepted` for both
-4. `just dist-au` — `dist/au/SOTFAudioUnits-<v>-macos-{arm64,x86_64}.zip` exist
+4. `just dist-au` — `dist/au/sotf-audio-units-<v>-macos-{arm64,x86_64}.pkg` exist
 5. (Optional) Sanity-check the zips elsewhere — e.g. `xcrun stapler validate` on a freshly extracted `.app`
 
 ## References

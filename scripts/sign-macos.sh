@@ -11,7 +11,7 @@
 # Usage:
 #   ./sign-macos.sh                    # Sign all artifacts in dist/
 #   ./sign-macos.sh --notarize         # Sign and notarize
-#   ./sign-macos.sh dist/SotF-X.Y.Z-macos-arm64.dmg  # Sign a specific file
+#   ./sign-macos.sh dist/sotf-desktop-X.Y.Z-macos-arm64.dmg  # Sign a specific file
 #
 # Environment variables:
 #   DEVELOPER_ID             - Developer ID Application certificate name

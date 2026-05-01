@@ -3,7 +3,7 @@
 # Build script for SotF macOS distribution
 #
 # Creates an installer package (.pkg) containing:
-#   - SotF Systemwide.app (menu bar app) -> /Applications/
+#   - sotf-systemwide.app (menu bar app) -> /Applications/
 #   - SotFHAL.driver (HAL audio driver) -> /Library/Audio/Plug-Ins/HAL/
 #   - sotf-daemon (embedded in app)
 #
@@ -29,7 +29,10 @@
 set -euo pipefail
 
 # Configuration
-APP_NAME="SotF Systemwide"
+# APP_NAME is the .app bundle directory name and dist filename prefix.
+# DRIVER_NAME is the system-extension HAL driver bundle name (kept as-is —
+# changing it would invalidate user installations).
+APP_NAME="sotf-systemwide"
 DRIVER_NAME="SotFHAL.driver"
 DAEMON_BINARY="sotf-daemon"
 SYSTEMWIDE_BINARY="sotf-systemwide"
@@ -590,7 +593,7 @@ SotF Systemwide - Sound of the Future Audio Engine
 
 INSTALLATION
 ============
-1. Drag "SotF Systemwide.app" to your Applications folder
+1. Drag "sotf-systemwide.app" to your Applications folder
 2. Launch the app from Applications
 3. The daemon will start automatically when the app launches
 4. A speaker icon will appear in your menu bar
@@ -606,7 +609,7 @@ HAL DRIVER (Optional)
 The HAL driver provides a virtual audio device for system-wide audio capture.
 To install:
 1. Open Terminal
-2. Run: /Applications/SotF\ Systemwide.app/Contents/Resources/install-hal.sh
+2. Run: /Applications/sotf-systemwide.app/Contents/Resources/install-hal.sh
 
 Alternatively, you can use BlackHole as the audio source.
 
@@ -622,7 +625,7 @@ UNINSTALLATION
 1. Quit the app from the menu bar icon
 2. Delete the app from Applications
 3. To remove HAL driver:
-   /Applications/SotF\ Systemwide.app/Contents/Resources/uninstall-hal.sh
+   /Applications/sotf-systemwide.app/Contents/Resources/uninstall-hal.sh
 4. Remove LaunchAgent (if installed):
    rm ~/Library/LaunchAgents/org.spinorama.sotf-*.plist
 
@@ -814,7 +817,7 @@ UNINSTALL_SCRIPT
 create_dmg_file() {
     log_info "Creating DMG..."
 
-    local dmg_path="$DMG_DIR/SotF-Systemwide-$VERSION-macos.dmg"
+    local dmg_path="$DMG_DIR/sotf-systemwide-$VERSION-macos-universal.dmg"
     local dmg_temp="$DMG_DIR/temp.dmg"
 
     rm -f "$dmg_path" "$dmg_temp"
@@ -898,7 +901,7 @@ create_dmg_hdiutil() {
 create_pkg() {
     log_info "Creating installer package..."
 
-    local pkg_path="$DMG_DIR/SotF-Systemwide-$VERSION-macos.pkg"
+    local pkg_path="$DMG_DIR/sotf-systemwide-$VERSION-macos-universal.pkg"
     local pkg_root="$DMG_DIR/pkg-root"
     local pkg_scripts="$DMG_DIR/pkg-scripts"
     local hal_pkg_scripts="$DMG_DIR/pkg-scripts-hal"
@@ -945,7 +948,7 @@ CONSOLE_USER=$(stat -f "%Su" /dev/console)
 if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ]; then
     echo "Launching SotF Systemwide for user: $CONSOLE_USER"
     # Use launchctl to run as the console user
-    sudo -u "$CONSOLE_USER" open -a "/Applications/SotF Systemwide.app" &
+    sudo -u "$CONSOLE_USER" open -a "/Applications/sotf-systemwide.app" &
 else
     echo "No console user found, skipping auto-launch"
 fi
@@ -1365,7 +1368,7 @@ main() {
         log_success "Build complete!"
         log_info "=========================================="
 
-        local dmg_path="$DMG_DIR/SotF-Systemwide-$VERSION-macos.dmg"
+        local dmg_path="$DMG_DIR/sotf-systemwide-$VERSION-macos-universal.dmg"
         if [ -f "$dmg_path" ]; then
             mkdir -p "$PROJECT_ROOT/dist"
             cp "$dmg_path" "$PROJECT_ROOT/dist/"
@@ -1383,7 +1386,7 @@ main() {
         log_success "Build complete!"
         log_info "=========================================="
 
-        local pkg_path="$DMG_DIR/SotF-Systemwide-$VERSION-macos.pkg"
+        local pkg_path="$DMG_DIR/sotf-systemwide-$VERSION-macos-universal.pkg"
         if [ -f "$pkg_path" ]; then
             mkdir -p "$PROJECT_ROOT/dist"
             cp "$pkg_path" "$PROJECT_ROOT/dist/"

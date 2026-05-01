@@ -224,7 +224,7 @@ check_prerequisites() {
     log_info "Checking for Windows binaries in $BUILD_DIR..."
 
     local found_any=false
-    for bin in SotF.exe sotf-tui.exe; do
+    for bin in sotf-desktop.exe sotf-tui.exe; do
         if [ -f "$BUILD_DIR/$bin" ]; then
             log_info "Found $bin"
             found_any=true
@@ -233,7 +233,7 @@ check_prerequisites() {
 
     if ! $found_any; then
         log_error "No Windows binaries found in $BUILD_DIR"
-        log_info "Build them first with: just cross-windows-x86"
+        log_info "Build them first with: just docker-windows-x86"
         exit 1
     fi
 
@@ -281,13 +281,13 @@ build_msix() {
     log_info "Building MSIX package v${VERSION} (${ARCH})..."
 
     local staging="$DIST_DIR/msix-staging"
-    local output="$DIST_DIR/SotF-${VERSION}-windows-${ARCH}.msix"
+    local output="$DIST_DIR/sotf-desktop-${VERSION}-windows-${ARCH}.msix"
 
     rm -rf "$staging"
     mkdir -p "$staging/assets"
 
     # Copy binaries
-    for bin in SotF.exe sotf-tui.exe; do
+    for bin in sotf-desktop.exe sotf-tui.exe; do
         if [ -f "$BUILD_DIR/$bin" ]; then
             cp "$BUILD_DIR/$bin" "$staging/"
             log_info "Added $bin"
@@ -302,7 +302,7 @@ build_msix() {
 
     # Sign executables before packaging into MSIX
     if $SIGN; then
-        for bin in SotF.exe sotf-tui.exe; do
+        for bin in sotf-desktop.exe sotf-tui.exe; do
             if [ -f "$staging/$bin" ]; then
                 sign_file "$staging/$bin" "SotF Player"
             fi

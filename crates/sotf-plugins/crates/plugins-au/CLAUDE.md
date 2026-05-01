@@ -27,7 +27,7 @@ just dist-au                # both arches
 just validate-au-all
 ```
 
-To install locally for testing in a DAW: build the .pkg via `just dist-au-<arch>`, then double-click `dist/au/SOTFAudioUnits-<v>-macos-<arch>.pkg`. macOS installs it under `/Applications/SOTFAudioUnits.app`; **launch that app once** so macOS registers each `.appex` extension. The AUs then appear in any AUv3 host (Logic, GarageBand, Ableton, etc.).
+To install locally for testing in a DAW: build the .pkg via `just dist-au-<arch>`, then double-click `dist/au/sotf-audio-units-<v>-macos-<arch>.pkg`. macOS installs it under `/Applications/SOTFAudioUnits.app`; **launch that app once** so macOS registers each `.appex` extension. The AUs then appear in any AUv3 host (Logic, GarageBand, Ableton, etc.).
 
 Per-arch BUILD outputs land at:
 
@@ -39,8 +39,8 @@ crates/sotf-plugins/crates/plugins-au/build/au-x86_64/Build/Products/Release/SOT
 Per-arch DIST outputs land at:
 
 ```
-dist/au/SOTFAudioUnits-<version>-macos-arm64.pkg
-dist/au/SOTFAudioUnits-<version>-macos-x86_64.pkg
+dist/au/sotf-audio-units-<version>-macos-arm64.pkg
+dist/au/sotf-audio-units-<version>-macos-x86_64.pkg
 ```
 
 ## Sign / notarize / distribute
@@ -52,7 +52,7 @@ DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)" \
   just sign-au               # both arches
 APPLE_ID="you@example.com" \
   just sign-au-notarize      # both arches → signed + notarized .pkg in dist/au/
-just dist-au                 # → dist/au/SOTFAudioUnits-<v>-macos-{arm64,x86_64}.pkg
+just dist-au                 # → dist/au/sotf-audio-units-<v>-macos-{arm64,x86_64}.pkg
 ```
 
 Per-arch variants exist for each step (`sign-au-arm64`, `dist-au-x86_64`, etc.) — see `Justfile`.

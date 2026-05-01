@@ -15,9 +15,12 @@
 set -euo pipefail
 
 # Configuration
-APP_NAME="SotF"
+# APP_NAME is the .app bundle name AND the dist filename prefix.
+# BINARY_NAME is the cargo-produced executable (must match [[bin]] name in
+# crates/app-gpui/Cargo.toml and CFBundleExecutable in the plist).
+APP_NAME="sotf-desktop"
 BUNDLE_ID="org.spinorama.sotf"
-BINARY_NAME="SotF"
+BINARY_NAME="sotf-desktop"
 BUILD_NUMBER="1"
 
 # Paths
