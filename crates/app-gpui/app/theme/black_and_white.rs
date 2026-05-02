@@ -192,7 +192,7 @@ impl Theme {
             separator_size: 20.0,
 
             // Font family
-            font_family: "B612".into(),
+            font_family: Some("B612".into()),
             design_tokens: Default::default(),
         }
     }

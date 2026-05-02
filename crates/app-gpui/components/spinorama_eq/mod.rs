@@ -410,7 +410,7 @@ impl PlayerView {
             WizardStep::new("export", "Export"),
         ];
 
-        let ui_kit_theme = theme.to_ui_kit_theme(theme_id);
+        let ui_kit_theme = theme.to_ui_kit_theme(theme_id, cx);
         let wizard_theme = WizardTheme::from(&ui_kit_theme);
         let button_theme = ButtonTheme::from(&ui_kit_theme);
 

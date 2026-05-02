@@ -15,7 +15,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let theme_id = state.app.ui_state.theme_id;
-        let button_theme = ButtonTheme::from(&theme.to_ui_kit_theme(theme_id));
+        let button_theme = ButtonTheme::from(&theme.to_ui_kit_theme(theme_id, cx));
         let headphone_eq = &state.app.measurement_state.headphone_eq_state;
         let has_result = headphone_eq.result.is_some();
         let export_format = headphone_eq.export_format.clone();

@@ -162,7 +162,7 @@ impl Render for PlayerView {
 
         // Keep gpui-ui-kit global theme in sync with app theme so components get consistent defaults.
         // This allows builder overrides but ensures out-of-the-box colors match the app theme.
-        let ui_kit_theme: gpui_ui_kit::Theme = theme.to_ui_kit_theme(theme_id);
+        let ui_kit_theme: gpui_ui_kit::Theme = theme.to_ui_kit_theme(theme_id, cx);
         cx.set_global(UiKitThemeState {
             theme: ui_kit_theme,
         });
@@ -511,7 +511,7 @@ impl Render for PlayerView {
             .flex()
             .flex_col()
             .size_full()
-            .font_family(theme.font_family.clone())
+            .font_family(theme.resolved_font_family(cx))
             .bg(theme.background)
             .text_color(theme.text_primary)
             // Apply safe area insets on iOS/tvOS to avoid the notch / overscan

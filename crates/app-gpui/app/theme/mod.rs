@@ -5,7 +5,8 @@
 // Allow approximate math constants in color values
 #![allow(clippy::approx_constant)]
 
-use gpui::{Rgba, SharedString};
+use gpui::{App, Rgba, SharedString};
+use gpui_design::DesignExt;
 use gpui_ui_kit::theme::{Theme as UiKitTheme, ThemeVariant as UiKitThemeVariant};
 use serde::{Deserialize, Serialize};
 
@@ -220,8 +221,10 @@ pub struct Theme {
     // Layout sizes
     pub separator_size: f32,
 
-    // Font family
-    pub font_family: SharedString,
+    // Font family. `None` falls back to `cx.design().typography.font_family`,
+    // letting the active design system (Apple HIG / Fluent / Material3 / Neutral)
+    // pick a platform-native font. `Some(name)` overrides per theme.
+    pub font_family: Option<SharedString>,
 
     // Design system tokens for platform-adaptive component geometry
     pub design_tokens: gpui_ui_kit::audio_design_tokens::AudioDesignTokens,
@@ -229,7 +232,7 @@ pub struct Theme {
 
 impl Theme {
     /// Convert the app theme to the ui-kit theme so defaults are consistent without per-call overrides.
-    pub fn to_ui_kit_theme(&self, id: ThemeId) -> UiKitTheme {
+    pub fn to_ui_kit_theme(&self, id: ThemeId, cx: &App) -> UiKitTheme {
         UiKitTheme {
             variant: UiKitThemeVariant::from(id),
             background: self.background,
@@ -258,7 +261,7 @@ impl Theme {
             border: self.border,
             border_hover: self.border_focused,
             // Typography
-            font_family: self.font_family.clone(),
+            font_family: self.resolved_font_family(cx),
             // Badge colors - derive from semantic colors
             badge_primary_bg: Self::opacity_20pct(self.accent),
             badge_primary_text: self.accent,
@@ -278,6 +281,14 @@ impl Theme {
             // Code text
             code_text: self.accent,
         }
+    }
+
+    /// Resolve the font family to use for this theme, falling back to the
+    /// active design system's typography font when the theme has no override.
+    pub fn resolved_font_family(&self, cx: &App) -> SharedString {
+        self.font_family
+            .clone()
+            .unwrap_or_else(|| SharedString::from(cx.design().typography.font_family))
     }
 
     /// Create theme from ThemeId

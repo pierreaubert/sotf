@@ -25,7 +25,7 @@ impl PlayerView {
         let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let theme_id = state.app.ui_state.theme_id;
-        let button_theme = ButtonTheme::from(&theme.to_ui_kit_theme(theme_id));
+        let button_theme = ButtonTheme::from(&theme.to_ui_kit_theme(theme_id, cx));
         let spinorama = &state.app.measurement_state.spinorama_eq_state;
         let app_width = state.app.ui_state.window_width;
 
