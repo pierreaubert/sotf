@@ -5,7 +5,7 @@ mod utils;
 
 use app::SpinoramaApp;
 use gpui::AppContext as _;
-use gpui_ui_kit::{MiniApp, MiniAppConfig};
+use gpui_miniapp::{MiniApp, MiniAppConfig};
 
 fn main() {
     MiniApp::run(

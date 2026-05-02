@@ -15,19 +15,14 @@ gpui-pretext = { workspace = true }
 # GPUI deps are optional, enabled by the `gpui` feature for the showcase binary.
 gpui = { workspace = true, optional = true }
 gpui-ui-kit = { workspace = true, optional = true }
+gpui-miniapp = { workspace = true, optional = true }
 
-[target.'cfg(target_os = "macos")'.dependencies]
-gpui_macos = { workspace = true, optional = true }
-
-[target.'cfg(target_os = "linux")'.dependencies]
-gpui_linux = { workspace = true, optional = true }
-
-[target.'cfg(target_os = "windows")'.dependencies]
-gpui_windows = { workspace = true, optional = true }
+# Platform GPUI backends (gpui_macos, gpui_linux, gpui_windows) come in
+# transitively via gpui-miniapp.
 
 [features]
 default = []
-showcase = ["dep:gpui", "dep:gpui-ui-kit", "dep:gpui-design", "gpui-design/gpui", "dep:gpui_macos", "dep:gpui_linux", "dep:gpui_windows"]
+showcase = ["dep:gpui", "dep:gpui-ui-kit", "dep:gpui-miniapp", "dep:gpui-design", "gpui-design/gpui"]
 
 [[bin]]
 name = "layout-showcase"

@@ -10,8 +10,8 @@ use gpui_builder::{
 use gpui_design::{DesignExt, DesignSystem};
 use gpui_px::interaction::{InteractiveChart, InteractiveChartConfig, InteractiveChartState};
 use gpui_px::*;
+use gpui_miniapp::{MiniApp, MiniAppConfig};
 use gpui_ui_kit::theme::{Theme, ThemeExt};
-use gpui_ui_kit::{MiniApp, MiniAppConfig};
 
 fn main() {
     MiniApp::run(

@@ -20,8 +20,9 @@ use gpui_px::interaction::{InteractiveChart, InteractiveChartConfig, Interactive
 use gpui_px::{
     ColorScale, Colormap, LegendPosition, ScaleType, Surface3DState, heatmap, line, surface3d,
 };
+use gpui_miniapp::{MiniApp, MiniAppConfig};
 use gpui_ui_kit::theme::ThemeExt;
-use gpui_ui_kit::{MiniApp, MiniAppConfig, SelectOption, Spinner, SpinnerSize};
+use gpui_ui_kit::{SelectOption, Spinner, SpinnerSize};
 use tokio::runtime::Runtime;
 
 fn main() {

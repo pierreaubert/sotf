@@ -5,7 +5,7 @@
 
 use gpui::AppContext;
 use gpui_themes::ThemeEditor;
-use gpui_ui_kit::{MiniApp, MiniAppConfig};
+use gpui_miniapp::{MiniApp, MiniAppConfig};
 
 fn main() {
     MiniApp::run(

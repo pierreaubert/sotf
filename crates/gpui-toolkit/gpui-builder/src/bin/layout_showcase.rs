@@ -18,6 +18,7 @@ use gpui_builder::{
     Axis, ContainerNode, DisplayTier, LayoutNode, Sizing, SlotNode, SolvedNode, solve,
 };
 use gpui_design::DesignExt;
+use gpui_miniapp::{MiniApp, MiniAppConfig};
 use gpui_ui_kit::theme::ThemeExt;
 use gpui_ui_kit::*;
 

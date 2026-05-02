@@ -3798,11 +3798,9 @@ version = "0.6.1"
 dependencies = [
  "gpui",
  "gpui-design",
+ "gpui-miniapp",
  "gpui-pretext",
  "gpui-ui-kit",
- "gpui_linux",
- "gpui_macos",
- "gpui_windows",
 ]
 
 [[package]]
@@ -3818,10 +3816,8 @@ dependencies = [
  "gpui",
  "gpui-builder",
  "gpui-design",
+ "gpui-miniapp",
  "gpui-ui-kit",
- "gpui_linux",
- "gpui_macos",
- "gpui_windows",
  "image",
  "math-delaunay",
  "ndarray",
@@ -3877,6 +3873,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "gpui-miniapp"
+version = "0.6.0"
+dependencies = [
+ "gpui",
+ "gpui-design",
+ "gpui-ui-kit",
+ "gpui_linux",
+ "gpui_macos",
+ "gpui_windows",
+]
+
+[[package]]
 name = "gpui-pretext"
 version = "0.6.2"
 dependencies = [
@@ -3892,6 +3900,7 @@ dependencies = [
  "gpui-builder",
  "gpui-d3rs",
  "gpui-design",
+ "gpui-miniapp",
  "gpui-ui-kit",
  "reqwest 0.13.3",
  "thiserror 2.0.18",
@@ -3905,6 +3914,7 @@ version = "0.6.2"
 dependencies = [
  "gpui",
  "gpui-design",
+ "gpui-miniapp",
  "gpui-ui-kit",
  "serde",
  "serde_json",
@@ -3917,10 +3927,8 @@ dependencies = [
  "block2",
  "gpui",
  "gpui-design",
+ "gpui-miniapp",
  "gpui-ui-kit-macros",
- "gpui_linux",
- "gpui_macos",
- "gpui_windows",
  "nokhwa",
  "objc",
  "qrcode",

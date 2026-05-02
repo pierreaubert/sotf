@@ -13,6 +13,7 @@ use gpui::*;
 use gpui_ui_kit::theme::ThemeExt;
 use gpui_ui_kit::workflow::{Position, WorkflowCanvas, WorkflowGraph, WorkflowNodeData};
 use gpui_ui_kit::*;
+use gpui_miniapp::{MiniApp, MiniAppConfig};
 
 /// Main debug application
 pub struct WorkflowDebug {

@@ -4,7 +4,7 @@
 
 use gpui::*;
 use gpui_px::*;
-use gpui_ui_kit::{MiniApp, MiniAppConfig};
+use gpui_miniapp::{MiniApp, MiniAppConfig};
 
 fn main() {
     MiniApp::run(

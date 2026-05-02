@@ -8,10 +8,6 @@
 // Allow to_* methods that take self by reference - matches GPUI patterns
 #![allow(clippy::wrong_self_convention)]
 
-// Application templates
-#[path = "../src-app/mod.rs"]
-pub mod app;
-
 // Theme, animation, i18n, and accessibility
 pub mod accessibility;
 pub mod animation;
@@ -184,9 +180,6 @@ pub use stack::{
 
 // Status bar
 pub use status_bar::{StatusBar, StatusBarPosition, StatusBarTheme};
-
-// Application templates
-pub use app::{MiniApp, MiniAppConfig};
 
 // Animation
 pub use animation::{

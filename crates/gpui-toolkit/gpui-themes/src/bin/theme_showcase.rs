@@ -6,9 +6,9 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_design::DesignExt;
 use gpui_themes::{ComponentShowcase, EditorTheme};
+use gpui_miniapp::{MiniApp, MiniAppConfig};
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, HStack, MiniApp, MiniAppConfig, StackSpacing, Text,
-    TextSize, TextWeight, VStack,
+    Button, ButtonSize, ButtonVariant, HStack, StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 
 /// Available theme presets

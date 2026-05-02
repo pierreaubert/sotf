@@ -30,18 +30,18 @@ smol = { workspace = true }
 # Proc macros for theme generation
 gpui-ui-kit-macros = { workspace = true }
 
-[target.'cfg(target_os = "macos")'.dependencies]
-gpui_macos = { workspace = true }
-
-[target.'cfg(target_os = "linux")'.dependencies]
-gpui_linux = { workspace = true }
-
-[target.'cfg(target_os = "windows")'.dependencies]
-gpui_windows = { workspace = true }
+# Platform backends (gpui_macos, gpui_linux, gpui_windows, gpui-ios) are NOT
+# declared here. They live only in zed-industries/zed's git tree (or, for
+# gpui-ios, the local workspace) with no crates.io release, so depending on
+# them would make this crate unpublishable. Application shells live in the
+# sibling `gpui-miniapp` crate (publish = false).
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
 rqrr = { workspace = true }
+# Examples in `examples/` use the MiniApp shell, which lives in a workspace-
+# only crate (it transitively pulls in non-publishable platform backends).
+gpui-miniapp = { workspace = true }
 
 [target.'cfg(not(any(target_os = "ios", target_os = "tvos")))'.dev-dependencies]
 nokhwa = { workspace = true, features = ["input-native"] }

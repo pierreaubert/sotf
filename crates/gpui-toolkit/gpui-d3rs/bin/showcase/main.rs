@@ -8,8 +8,8 @@ use gpui_builder::{
     Axis, ContainerNode, LayoutNode, Sizing, SlotNode, SolvedNode, solve, types::LayoutPreferences,
 };
 use gpui_design::DesignExt;
+use gpui_miniapp::{MiniApp, MiniAppConfig};
 use gpui_ui_kit::theme::ThemeExt;
-use gpui_ui_kit::{MiniApp, MiniAppConfig};
 
 mod showcase_modules;
 

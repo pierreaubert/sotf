@@ -12,6 +12,7 @@ use gpui_ui_kit::accordion::{Accordion, AccordionItem, AccordionMode, AccordionO
 use gpui_ui_kit::i18n::{I18nExt, TranslationKey};
 use gpui_ui_kit::theme::ThemeExt;
 use gpui_ui_kit::*;
+use gpui_miniapp::{MiniApp, MiniAppConfig};
 
 /// Demo state
 pub struct AccordionDebug {

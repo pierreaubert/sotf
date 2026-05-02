@@ -13,6 +13,7 @@ use gpui_ui_kit::theme::ThemeExt;
 use gpui_ui_kit::wizard::StepStatus;
 use gpui_ui_kit::workflow::{WorkflowCanvas, WorkflowGraph};
 use gpui_ui_kit::*;
+use gpui_miniapp::{MiniApp, MiniAppConfig};
 use std::collections::HashSet;
 
 #[derive(Clone, Debug)]
