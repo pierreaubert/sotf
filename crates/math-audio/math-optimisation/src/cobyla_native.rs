@@ -1230,6 +1230,15 @@ fn trstlp(
                     state = TrLoopState::DeleteFromActive;
                     continue;
                 }
+                // No room: active set already spans R^n. Any further constraint
+                // is linearly dependent on the current basis, so the trust-region
+                // step from the existing active set is the best feasible solution.
+                // Without this guard, the AddNew path would index `z_ws` and
+                // `zdota` at column/index `n`, which is out of bounds.
+                if nact >= n {
+                    state = TrLoopState::L490Dispatch;
+                    continue;
+                }
                 let kk = iact[icon];
                 for i in 0..n {
                     dxnew[i] = a_mat[idx2(i, kk, n)];
