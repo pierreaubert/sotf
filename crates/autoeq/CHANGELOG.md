@@ -1,3 +1,7 @@
+# 0.4.39
+
+- Removed nlopt as a dependency and used the new math-optimisation algorithms instead
+
 # 0.4.38
 
 Bug hunting party

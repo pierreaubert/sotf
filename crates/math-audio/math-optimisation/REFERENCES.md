@@ -65,3 +65,102 @@
   keywords={Genetic mutations;Programmable control;Adaptive control;Convergence;Automatic control;Evolutionary computation;Feedback;Robustness;Particle swarm optimization;Performance analysis;Adaptive parameter control;differential evolution;evolutionary optimization;external archive},
   doi={10.1109/TEVC.2009.2014613}}
 ```
+
+## Levenberg-Marquardt
+
+Damped least-squares method for nonlinear least-squares problems. Levenberg's 1944 formulation and Marquardt's 1963 algorithmic refinement; Moré's 1978 paper documents the trust-region implementation that became the basis for MINPACK and most modern solvers.
+
+```bibtex
+@article{levenberg1944method,
+  author  = {Levenberg, Kenneth},
+  title   = {A Method for the Solution of Certain Non-Linear Problems in Least Squares},
+  journal = {Quarterly of Applied Mathematics},
+  volume  = {2},
+  number  = {2},
+  pages   = {164--168},
+  year    = {1944},
+  doi     = {10.1090/qam/10666}
+}
+
+@article{marquardt1963algorithm,
+  author  = {Marquardt, Donald W.},
+  title   = {An Algorithm for Least-Squares Estimation of Nonlinear Parameters},
+  journal = {Journal of the Society for Industrial and Applied Mathematics},
+  volume  = {11},
+  number  = {2},
+  pages   = {431--441},
+  year    = {1963},
+  doi     = {10.1137/0111030}
+}
+
+@incollection{more1978levenberg,
+  author    = {Mor{\'e}, Jorge J.},
+  title     = {The Levenberg-Marquardt algorithm: Implementation and theory},
+  booktitle = {Numerical Analysis},
+  editor    = {Watson, G. A.},
+  series    = {Lecture Notes in Mathematics},
+  volume    = {630},
+  pages     = {105--116},
+  publisher = {Springer Berlin Heidelberg},
+  year      = {1978},
+  doi       = {10.1007/BFb0067700}
+}
+```
+
+## COBYLA
+
+Constrained Optimization BY Linear Approximation — derivative-free trust-region method by M. J. D. Powell.
+
+```bibtex
+@incollection{powell1994cobyla,
+  author    = {Powell, M. J. D.},
+  title     = {A Direct Search Optimization Method That Models the Objective and Constraint Functions by Linear Interpolation},
+  booktitle = {Advances in Optimization and Numerical Analysis},
+  editor    = {Gomez, Susana and Hennart, Jean-Pierre},
+  series    = {Mathematics and Its Applications},
+  volume    = {275},
+  pages     = {51--67},
+  publisher = {Springer Netherlands},
+  address   = {Dordrecht},
+  year      = {1994},
+  doi       = {10.1007/978-94-015-8330-5_4},
+  isbn      = {978-94-015-8330-5}
+}
+
+@techreport{powell1998cobyla,
+  author      = {Powell, M. J. D.},
+  title       = {Direct search algorithms for optimization calculations},
+  institution = {Department of Applied Mathematics and Theoretical Physics, University of Cambridge},
+  number      = {DAMTP 1998/NA04},
+  year        = {1998},
+  note        = {Acta Numerica 7, 287--336}
+}
+```
+
+## ISRES
+
+Improved Stochastic Ranking Evolution Strategy — constrained nonlinear optimization via stochastic ranking by Runarsson and Yao.
+
+```bibtex
+@ARTICLE{1255569,
+  author  = {Runarsson, Thomas P. and Yao, Xin},
+  journal = {IEEE Transactions on Systems, Man, and Cybernetics, Part C (Applications and Reviews)},
+  title   = {Search Biases in Constrained Evolutionary Optimization},
+  year    = {2005},
+  volume  = {35},
+  number  = {2},
+  pages   = {233--243},
+  doi     = {10.1109/TSMCC.2004.841906}
+}
+
+@ARTICLE{873238,
+  author  = {Runarsson, Thomas P. and Yao, Xin},
+  journal = {IEEE Transactions on Evolutionary Computation},
+  title   = {Stochastic ranking for constrained evolutionary optimization},
+  year    = {2000},
+  volume  = {4},
+  number  = {3},
+  pages   = {284--294},
+  doi     = {10.1109/4235.873238}
+}
+```

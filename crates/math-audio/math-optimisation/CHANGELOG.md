@@ -1,3 +1,7 @@
+# 0.5.5
+
+- Added ISRES and Cobyla. Used them to drop the dependency to nlopt.
+
 # 0.5.4
 
 ## Switch to oxiblas-ndarray for BLAS operations
