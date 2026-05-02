@@ -289,23 +289,21 @@ if (-not $BuildDir) {
         'aarch64-pc-windows-gnullvm','aarch64-pc-windows-gnu','aarch64-pc-windows-msvc'
     )) {
         $cand = Join-Path $cargoTargetDir "$triple\release"
-        if (Test-Path (Join-Path $cand 'sotf-tui.exe')) { $BuildDir = $cand; break }
+        if (Test-Path (Join-Path $cand 'sotf-desktop.exe')) { $BuildDir = $cand; break }
     }
     if (-not $BuildDir) { $BuildDir = Join-Path $cargoTargetDir 'release' }
 }
 Write-Info "Build dir: $BuildDir"
-$found = $false
-foreach ($bin in @('sotf-desktop.exe','sotf-tui.exe')) {
-    if (Test-Path (Join-Path $BuildDir $bin)) {
-        Write-Info "  Found $bin"
-        $found = $true
-    }
-}
-if (-not $found) {
-    Write-Err "No Windows binaries found in $BuildDir"
-    Write-Info "Build them first with: cargo build --release -p sotf-tui --bin sotf-tui (etc.)"
+# The MSIX ships only sotf-desktop.exe (the GPUI app). sotf-tui.exe is
+# distributed separately as a standalone .exe download from spinorama.org;
+# bundling it here would either force AppListEntry="none" + Microsoft's
+# HeadlessAppBypass waiver, or clutter the Start menu with a duplicate tile.
+if (-not (Test-Path (Join-Path $BuildDir 'sotf-desktop.exe'))) {
+    Write-Err "sotf-desktop.exe not found in $BuildDir"
+    Write-Info "Build it first with: cargo build --release -p app-gpui --bin sotf-desktop"
     exit 1
 }
+Write-Info "  Found sotf-desktop.exe"
 
 # ---------------------------------------------------------------------------
 # Stage
@@ -317,13 +315,9 @@ $Output  = Join-Path $DistDir "sotf-desktop-$Version-windows-$DistArch.msix"
 if (Test-Path $Staging) { Remove-Item -Recurse -Force $Staging }
 New-Item -ItemType Directory -Force -Path "$Staging\assets" | Out-Null
 
-foreach ($bin in @('sotf-desktop.exe','sotf-tui.exe')) {
-    $src = Join-Path $BuildDir $bin
-    if (Test-Path $src) {
-        Copy-Item $src (Join-Path $Staging $bin)
-        Write-Info "Added $bin"
-    }
-}
+$src = Join-Path $BuildDir 'sotf-desktop.exe'
+Copy-Item $src (Join-Path $Staging 'sotf-desktop.exe')
+Write-Info "Added sotf-desktop.exe"
 $nlopt = Join-Path $BuildDir 'nlopt.dll'
 if (Test-Path $nlopt) { Copy-Item $nlopt (Join-Path $Staging 'nlopt.dll'); Write-Info "Added nlopt.dll" }
 
@@ -439,7 +433,7 @@ if ($Sign) {
         Write-Err "Set -CertThumbprint / -CertFile (or `$env:WINDOWS_CERT_THUMBPRINT / `$env:WINDOWS_CERT_FILE) for signing."
         exit 1
     }
-    foreach ($bin in @('sotf-desktop.exe','sotf-tui.exe')) {
+    foreach ($bin in @('sotf-desktop.exe')) {
         $p = Join-Path $Staging $bin
         if (Test-Path $p) {
             Write-Info "Signing $bin..."

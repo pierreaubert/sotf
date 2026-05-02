@@ -125,21 +125,21 @@ doc:
 # 127.0.0.1:7777 (override via SOTF_DEV_API_PORT). Release builds never include it.
 [group('run')]
 run-gpui:
-	cargo build --bin SotF --features "onnx, hal, gpu-2d, gpu-3d, iamf, dev-api"
+	cargo build --bin sotf-desktop --features "onnx, hal, gpu-2d, gpu-3d, iamf, dev-api"
 	codesign --force --deep --sign - --entitlements scripts/debug.entitlements target/debug/SotF
 	./target/debug/SotF
 
 # Run the GPUI player (release mode)
 [group('run')]
 run-gpui-release:
-	cargo build --release --bin SotF --features "onnx, hal, gpu-2d, gpu-3d, iamf"
+	cargo build --release --bin sotf-desktop --features "onnx, hal, gpu-2d, gpu-3d, iamf"
 	codesign --force --deep --sign - --entitlements scripts/entitlements.plist target/release/SotF
 	./target/release/SotF
 
 # Run the GPUI player (release mode)
 [group('run')]
 run-gpui-leaks:
-	RUSTFLAGS="-C debuginfo=2" cargo build --release --bin SotF --features "onnx, hal, gpu-2d, gpu-3d, iamf"
+	RUSTFLAGS="-C debuginfo=2" cargo build --release --bin sotf-desktop --features "onnx, hal, gpu-2d, gpu-3d, iamf"
 	codesign --force --deep --sign - --entitlements scripts/entitlements.plist target/release/SotF
 	./target/release/SotF
 
@@ -201,7 +201,7 @@ prod-sotf-player: prod-sotf-tui prod-sotf-gpui
 
 [group('build')]
 prod-sotf-gpui:
-	cargo build --release --bin SotF -p sotf-gpui --features onnx
+	cargo build --release --bin sotf-desktop -p sotf-gpui --features onnx
 
 [group('build')]
 prod-sotf-tui:
@@ -234,7 +234,7 @@ tui:
 
 [group('build')]
 gpui:
-	cargo run --release --bin SotF -p sotf-gpui --features "onnx,hal,gpu-2d,gpu-3d,iamf"
+	cargo run --release --bin sotf-desktop -p sotf-gpui --features "onnx,hal,gpu-2d,gpu-3d,iamf"
 
 # ----------------------------------------------------------------------
 # CLEAN
@@ -254,7 +254,7 @@ clean:
 # Release builds (`prod-*`, `run-gpui-release`) intentionally omit `dev-api`.
 dev:
 	cargo build --workspace
-	cargo build -p sotf-gpui --bin SotF --features "onnx, hal, gpu-2d, gpu-3d, iamf, dev-api"
+	cargo build -p sotf-gpui --bin sotf-desktop --features "onnx, hal, gpu-2d, gpu-3d, iamf, dev-api"
 	cargo build -p sotf-dev-driver
 
 # ----------------------------------------------------------------------

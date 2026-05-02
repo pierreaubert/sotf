@@ -473,6 +473,127 @@ sign_file() {
     log_success "Signed: $filename"
 }
 
+xml_escape() {
+    local value="$1"
+    value=${value//&/&amp;}
+    value=${value//</&lt;}
+    value=${value//>/&gt;}
+    value=${value//\"/&quot;}
+    printf '%s' "$value"
+}
+
+file_size_bytes() {
+    stat -c '%s' "$1" 2>/dev/null || stat -f '%z' "$1"
+}
+
+string_size_bytes() {
+    LC_ALL=C printf '%s' "$1" | wc -c | tr -d ' '
+}
+
+content_type_for_extension() {
+    case "$1" in
+        csv)  printf 'text/csv' ;;
+        dll)  printf 'application/x-msdownload' ;;
+        exe)  printf 'application/x-msdownload' ;;
+        ico)  printf 'image/x-icon' ;;
+        jpg|jpeg) printf 'image/jpeg' ;;
+        json) printf 'application/json' ;;
+        otf)  printf 'font/otf' ;;
+        png)  printf 'image/png' ;;
+        svg)  printf 'image/svg+xml' ;;
+        ttf)  printf 'font/ttf' ;;
+        txt)  printf 'text/plain' ;;
+        webp) printf 'image/webp' ;;
+        woff) printf 'font/woff' ;;
+        woff2) printf 'font/woff2' ;;
+        xml)  printf 'application/xml' ;;
+        *)    printf 'application/octet-stream' ;;
+    esac
+}
+
+generate_content_types() {
+    local staging="$1"
+    local ext ext_lc content_type
+
+    printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>'
+    printf '%s\n' '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+
+    find "$staging" -type f ! -name 'AppxBlockMap.xml' -print0 \
+        | while IFS= read -r -d '' file; do
+            local rel="${file#$staging/}"
+            local name="${rel##*/}"
+            [[ "$name" == *.* ]] || continue
+            ext="${name##*.}"
+            ext_lc=$(printf '%s' "$ext" | tr '[:upper:]' '[:lower:]')
+            printf '%s\n' "$ext_lc"
+        done \
+        | sort -u \
+        | while IFS= read -r ext; do
+        content_type=$(content_type_for_extension "$ext")
+        printf '  <Default Extension="%s" ContentType="%s"/>\n' \
+            "$(xml_escape "$ext")" "$(xml_escape "$content_type")"
+    done
+
+    printf '%s\n' '  <Override PartName="/AppxManifest.xml" ContentType="application/vnd.ms-appx.manifest+xml"/>'
+    printf '%s\n' '  <Override PartName="/AppxBlockMap.xml" ContentType="application/vnd.ms-appx.blockmap+xml"/>'
+    printf '%s\n' '</Types>'
+}
+
+generate_block_map() {
+    local staging="$1"
+    local block_size=65536
+
+    printf '%s\n' '<?xml version="1.0" encoding="UTF-8" standalone="no"?>'
+    printf '%s\n' '<BlockMap xmlns="http://schemas.microsoft.com/appx/2010/blockmap" HashMethod="http://www.w3.org/2001/04/xmlenc#sha256">'
+
+    while IFS= read -r -d '' file; do
+        local rel="${file#$staging/}"
+        local size lfh_size block_index hash
+        size=$(file_size_bytes "$file")
+        lfh_size=$((30 + $(string_size_bytes "$rel")))
+
+        printf '  <File Name="%s" Size="%s" LfhSize="%s">\n' \
+            "$(xml_escape "$rel")" "$size" "$lfh_size"
+
+        block_index=0
+        while [ $((block_index * block_size)) -lt "$size" ]; do
+            hash=$(dd if="$file" bs="$block_size" skip="$block_index" count=1 2>/dev/null \
+                | openssl dgst -sha256 -binary \
+                | openssl base64 -A)
+            printf '    <Block Hash="%s"/>\n' "$hash"
+            block_index=$((block_index + 1))
+        done
+
+        printf '%s\n' '  </File>'
+    done < <(find "$staging" -type f ! -name 'AppxBlockMap.xml' -print0 | sort -z)
+
+    printf '%s\n' '</BlockMap>'
+}
+
+pack_msix_with_zip() {
+    local staging="$1"
+    local output="$2"
+
+    if ! command -v openssl &> /dev/null; then
+        log_error "openssl is required for built-in MSIX metadata generation"
+        log_info "Install with: $(install_hint openssl)"
+        exit 1
+    fi
+
+    generate_content_types "$staging" > "$staging/[Content_Types].xml"
+    generate_block_map "$staging" > "$staging/AppxBlockMap.xml"
+
+    (
+        cd "$staging"
+        find . -type f -print0 \
+            | sort -z \
+            | while IFS= read -r -d '' file; do
+                printf '%s\n' "${file#./}"
+            done \
+            | zip -X -0 -q "$output" -@
+    )
+}
+
 build_msix() {
     log_info "Building MSIX package v${VERSION} (${ARCH})..."
 
@@ -557,7 +678,7 @@ build_msix() {
     rm -f "$output"
 
     local makeappx
-    makeappx=$(find_makeappx)
+    makeappx=$(find_makeappx || true)
 
     if [ -n "$makeappx" ]; then
         log_info "Packing with MakeAppx.exe: $makeappx"
@@ -584,18 +705,9 @@ build_msix() {
         log_info "Packing with makemsix (msix-packaging-tool)"
         makemsix pack -d "$staging" -p "$output"
     else
-        log_error "Neither MakeAppx.exe nor makemsix is available."
-        log_error "MSIX requires a real packaging tool — a plain ZIP fails Windows"
-        log_error "validation with 'error in parsing the app package'."
-        log_info ""
-        log_info "Install MakeAppx.exe (Windows SDK):"
-        log_info "  https://developer.microsoft.com/windows/downloads/windows-sdk/"
-        log_info "  Then it will be at C:\\Program Files (x86)\\Windows Kits\\10\\bin\\<ver>\\x64\\makeappx.exe"
-        log_info ""
-        log_info "Or install Microsoft's open-source makemsix:"
-        log_info "  https://github.com/microsoft/msix-packaging/releases"
-        rm -rf "$staging"
-        exit 1
+        log_warning "Neither MakeAppx.exe nor makemsix is available."
+        log_warning "Packing with the built-in uncompressed ZIP fallback."
+        pack_msix_with_zip "$staging" "$output"
     fi
 
     # Cleanup staging

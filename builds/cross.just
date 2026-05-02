@@ -37,9 +37,9 @@ cross:
 
 [group('docker')]
 docker-base-linux-arm64:
-	@echo "Building base Docker image for Linux ARM64..."
+	@echo "Building base Docker image for Linux ARM64 (gnu)..."
 	docker build -t sotf-base-linux-arm64 \
-		-f ./builds/from_macos_arm/Dockerfile.base.aarch64-unknown-linux-musl .
+		-f ./builds/from_macos_arm/Dockerfile.base.aarch64-unknown-linux-gnu .
 
 [group('docker')]
 docker-base-linux-x86:
@@ -76,10 +76,12 @@ docker-base-win-x86:
 # ----------------------------------------------------------------------
 
 # Linux ARM64: AppImage + tarball → dist/
+# Use the GNU/Linux image for release packaging. The static musl image cannot
+# provide the ALSA pkg-config metadata needed by cpal/alsa-sys.
 [group('docker')]
 docker-linux-arm64: docker-base-linux-arm64
 	@echo "Building Docker image..."
-	docker build -t sotf-linux-arm64 -f ./builds/from_macos_arm/Dockerfile.aarch64-unknown-linux-musl .
+	docker build -t sotf-linux-arm64 -f ./builds/from_macos_arm/Dockerfile.aarch64-unknown-linux-gnu .
 	@echo "Building in Docker container..."
 	docker run --rm -v "$(pwd)":/project -v sotf-target-linux-arm64:/build-target -w /project \
 		-e CARGO_TARGET_DIR=/build-target \
@@ -183,7 +185,7 @@ cross-macos-arm64:
 	cp target/aarch64-apple-darwin/release/sotf-tui "dist/sotf-tui-${VERSION}-macos-arm64"
 	cp target/aarch64-apple-darwin/release/sotf-desktop "dist/sotf-desktop-${VERSION}-macos-arm64"
 	echo "Building DMG..."
-	./scripts/build-dmg-sotf.sh --arch arm64
+	./scripts/build-dmg-sotf.sh --arch arm64 --binary target/aarch64-apple-darwin/release/sotf-desktop
 	echo "Done! Binaries and DMG copied to dist/"
 
 # macOS x86_64: SotF DMG + sotf-tui → dist/
@@ -200,7 +202,7 @@ cross-macos-x86:
 	cp target/x86_64-apple-darwin/release/sotf-tui "dist/sotf-tui-${VERSION}-macos-x86_64"
 	cp target/x86_64-apple-darwin/release/sotf-desktop "dist/sotf-desktop-${VERSION}-macos-x86_64"
 	echo "Building DMG..."
-	./scripts/build-dmg-sotf.sh --arch x86_64
+	./scripts/build-dmg-sotf.sh --arch x86_64 --binary target/x86_64-apple-darwin/release/sotf-desktop
 	echo "Done! Binaries and DMG copied to dist/"
 
 # macOS DMG (build only, sign separately with sign-macos.sh)

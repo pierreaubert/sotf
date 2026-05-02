@@ -200,6 +200,14 @@ install_linuxdeploy() {
     log_success "linuxdeploy installed to $tool_path"
 }
 
+run_linuxdeploy() {
+    if [ -f /.dockerenv ] || [ ! -e /dev/fuse ]; then
+        APPIMAGE_EXTRACT_AND_RUN=1 "$LINUXDEPLOY_BIN" "$@"
+    else
+        "$LINUXDEPLOY_BIN" "$@"
+    fi
+}
+
 # Check prerequisites
 check_prerequisites() {
     log_info "Checking prerequisites..."
@@ -520,14 +528,14 @@ create_appimage() {
         deploy_args+=(--icon-file "$icon_file")
     fi
 
-    "$LINUXDEPLOY_BIN" "${deploy_args[@]}"
+    run_linuxdeploy "${deploy_args[@]}"
 
     # Add TUI binary (linuxdeploy only handles one executable, add the second manually)
     cp "$BUILD_DIR/$TUI_BINARY_NAME" "$appdir/usr/bin/"
     chmod +x "$appdir/usr/bin/$TUI_BINARY_NAME"
 
     # Rebuild AppImage with both binaries
-    "$LINUXDEPLOY_BIN" "${deploy_args[@]}"
+    run_linuxdeploy "${deploy_args[@]}"
 
     rm -rf "$appdir"
     # Don't delete the canonical desktop file — it's a repo asset, not a temp file

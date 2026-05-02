@@ -144,12 +144,11 @@ build_all() {
     mkdir -p "$DIST_DIR"
 
     if should_build "macos"; then
-        # We deliberately do not invoke `just cross-macos-{arm64,x86}` here:
-        # those recipes also build a DMG via `./scripts/build-dmg-sotf.sh`,
-        # which rebuilds the GPUI binary statically (target-feature=+crt-static
-        # into ./target-static/). That static binary cannot be signed/notarized
-        # cleanly and the resulting DMG does not run, so the release pipeline
-        # ships dynamically-linked binaries directly.
+        # We deliberately do not invoke `just cross-macos-{arm64,x86}` here.
+        # Those recipes historically rebuilt the GPUI binary statically before
+        # wrapping it in a DMG. That static binary cannot be signed/notarized
+        # cleanly, so the release pipeline builds the dynamically-linked binary
+        # first and then asks the DMG script to package that exact binary.
         if should_build_arch "arm"; then
             log_info "=== macOS ARM64 (dynamic) ==="
             rustup target add aarch64-apple-darwin 2>/dev/null || true
@@ -157,6 +156,7 @@ build_all() {
             cargo build --release --target aarch64-apple-darwin -p sotf-gpui --features hal,onnx
             cp "target/aarch64-apple-darwin/release/sotf-tui"     "$DIST_DIR/sotf-tui-${VERSION}-macos-arm64"
             cp "target/aarch64-apple-darwin/release/sotf-desktop" "$DIST_DIR/sotf-desktop-${VERSION}-macos-arm64"
+            ./scripts/build-dmg-sotf.sh --arch arm64 --binary "target/aarch64-apple-darwin/release/sotf-desktop"
         fi
         if should_build_arch "x86"; then
             log_info "=== macOS x86_64 (dynamic) ==="
@@ -165,6 +165,7 @@ build_all() {
             cargo build --release --target x86_64-apple-darwin -p sotf-gpui --features hal
             cp "target/x86_64-apple-darwin/release/sotf-tui"     "$DIST_DIR/sotf-tui-${VERSION}-macos-x86_64"
             cp "target/x86_64-apple-darwin/release/sotf-desktop" "$DIST_DIR/sotf-desktop-${VERSION}-macos-x86_64"
+            ./scripts/build-dmg-sotf.sh --arch x86_64 --binary "target/x86_64-apple-darwin/release/sotf-desktop"
         fi
     fi
 
@@ -258,10 +259,10 @@ EOF
 ## Installation
 
 ### macOS
-Download the `sotf-desktop-*` binary for your CPU and the `sotf-tui-*` binary
-for the terminal UI. Make them executable (`chmod +x sotf-desktop-*`) and run
-from Terminal. The first run may require right-click → Open to bypass
-Gatekeeper if Apple notarization is unavailable.
+Download the `sotf-desktop-*.dmg` for your CPU for the desktop app and the
+`sotf-tui-*` binary for the terminal UI. For bare binaries, make them executable
+(`chmod +x sotf-*`) and run from Terminal. The first run may require
+right-click → Open to bypass Gatekeeper if Apple notarization is unavailable.
 
 ### Linux
 Download the AppImage or tarball. For AppImage: `chmod +x sotf-desktop-*.AppImage && ./sotf-desktop-*.AppImage`.
@@ -334,10 +335,10 @@ append_release_row() {
     local files=""
     case "$key" in
         macos-arm64)
-            files="sotf-desktop-${VERSION}-macos-arm64:GPUI%20binary sotf-tui-${VERSION}-macos-arm64:TUI%20binary"
+            files="sotf-desktop-${VERSION}-macos-arm64.dmg:DMG sotf-desktop-${VERSION}-macos-arm64:GPUI%20binary sotf-tui-${VERSION}-macos-arm64:TUI%20binary"
             ;;
         macos-x86_64)
-            files="sotf-desktop-${VERSION}-macos-x86_64:GPUI%20binary sotf-tui-${VERSION}-macos-x86_64:TUI%20binary"
+            files="sotf-desktop-${VERSION}-macos-x86_64.dmg:DMG sotf-desktop-${VERSION}-macos-x86_64:GPUI%20binary sotf-tui-${VERSION}-macos-x86_64:TUI%20binary"
             ;;
         linux-arm64)
             files="sotf-desktop-${VERSION}-linux-arm64.tar.gz:tarball sotf-desktop-${VERSION}-linux-arm64.AppImage:AppImage"
@@ -412,10 +413,12 @@ const builds = [
     icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>`,
     variants: [
       { arch: 'ARM64 (Apple Silicon)', quality: 'beta', signature: 'Apple Developer ID', files: [
+        { label: 'DMG',         file: `sotf-desktop-${version}-macos-arm64.dmg` },
         { label: 'GPUI binary', file: `sotf-desktop-${version}-macos-arm64` },
         { label: 'TUI binary',  file: `sotf-tui-${version}-macos-arm64` },
       ]},
       { arch: 'x86_64 (Intel)', quality: 'alpha', signature: 'Apple Developer ID', files: [
+        { label: 'DMG',         file: `sotf-desktop-${version}-macos-x86_64.dmg` },
         { label: 'GPUI binary', file: `sotf-desktop-${version}-macos-x86_64` },
         { label: 'TUI binary',  file: `sotf-tui-${version}-macos-x86_64` },
       ]},

@@ -312,8 +312,8 @@ sign_file() {
             ;;
         *)
             # Bare Mach-O binaries (sotf-desktop-VERSION-macos-*,
-            # sotf-tui-VERSION-macos-*) — these are the canonical macOS
-            # deliverables now that the broken static DMG path is gone.
+            # sotf-tui-VERSION-macos-*) are signed alongside DMG/pkg
+            # containers so direct-download artifacts remain valid.
             if is_macho_file "$file_path"; then
                 sign_macho_file "$file_path"
                 codesign --verify --verbose=2 --strict "$file_path"

@@ -6,6 +6,7 @@
 # Usage:
 #   ./build-dmg-sotf.sh                    # Build DMG
 #   ./build-dmg-sotf.sh --universal        # Build universal binary (Intel + Apple Silicon)
+#   ./build-dmg-sotf.sh --binary <path>    # Package an already-built binary
 #   ./build-dmg-sotf.sh --clean            # Clean before building
 #
 # Signing:
@@ -41,6 +42,7 @@ APP_BUNDLE="$DMG_DIR/$APP_NAME.app"
 UNIVERSAL=false
 CLEAN=false
 ARCH=""
+SOURCE_BINARY=""
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -54,7 +56,19 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --arch)
+            if [ $# -lt 2 ]; then
+                echo "ERROR: --arch requires a value"
+                exit 1
+            fi
             ARCH="$2"
+            shift 2
+            ;;
+        --binary)
+            if [ $# -lt 2 ]; then
+                echo "ERROR: --binary requires a path"
+                exit 1
+            fi
+            SOURCE_BINARY="$2"
             shift 2
             ;;
         --help|-h)
@@ -63,6 +77,7 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --universal   Build universal binary (Intel + Apple Silicon)"
             echo "  --arch <arch> Architecture label for DMG name (e.g., arm64, x86_64)"
+            echo "  --binary <path> Package an existing sotf-desktop binary instead of rebuilding"
             echo "  --clean       Clean build directory before building"
             echo "  --help        Show this help message"
             echo ""
@@ -124,12 +139,41 @@ clean_build() {
     if $CLEAN; then
         log_info "Cleaning build directory..."
         rm -rf "$DMG_DIR"
-        cargo clean -p sotf-gpui
+        if [ -z "$SOURCE_BINARY" ]; then
+            cargo clean -p sotf-gpui
+        else
+            log_info "Skipping cargo clean because --binary was provided"
+        fi
     fi
 }
 
 # Build the binary
 build_binary() {
+    if [ -n "$SOURCE_BINARY" ]; then
+        log_info "Staging existing release binary..."
+
+        local source_binary="$SOURCE_BINARY"
+        case "$source_binary" in
+            /*) ;;
+            *) source_binary="$PROJECT_ROOT/$source_binary" ;;
+        esac
+
+        if [ ! -f "$source_binary" ]; then
+            log_error "Binary not found at $source_binary"
+            exit 1
+        fi
+
+        mkdir -p "$BUILD_DIR"
+        local staged_binary="$BUILD_DIR/$BINARY_NAME"
+        if [ "$source_binary" != "$staged_binary" ]; then
+            cp "$source_binary" "$staged_binary"
+        fi
+        chmod +x "$staged_binary"
+
+        log_success "Existing binary staged successfully"
+        return
+    fi
+
     log_info "Building release binary..."
 
     cd "$PROJECT_ROOT"

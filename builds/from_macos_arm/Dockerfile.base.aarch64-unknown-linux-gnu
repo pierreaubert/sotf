@@ -53,5 +53,5 @@ COPY . .
 
 # Build release binary
 RUN cargo build --release --target aarch64-unknown-linux-gnu && \
-    find target/aarch64-unknown-linux-gnu/release -maxdepth 1 -type f -executable | xargs strip -v 2>/dev/null || true && \
+    (find target/aarch64-unknown-linux-gnu/release -maxdepth 1 -type f -executable | xargs strip -v 2>/dev/null || true) && \
     rm -rf target/.rustc_info.json target/.fingerprint target/aarch64-unknown-linux-gnu/release/deps/*.d

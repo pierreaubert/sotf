@@ -594,17 +594,18 @@ build_macos() {
 
     cd "$PROJECT_ROOT"
 
-    # We deliberately do NOT use `just cross-macos-{arm64,x86}` here — that
-    # recipe also runs `./scripts/build-dmg-sotf.sh`, which rebuilds the GPUI
-    # binary with `RUSTFLAGS="-C target-feature=+crt-static"` into
-    # `./target-static/` and wraps it in a DMG. The static binary cannot be
-    # signed/notarized cleanly and the resulting DMG does not run, so the
-    # release pipeline ships the dynamically-linked binaries directly.
+    # We deliberately do NOT use `just cross-macos-{arm64,x86}` here. Those
+    # recipes historically rebuilt the GPUI binary with
+    # `RUSTFLAGS="-C target-feature=+crt-static"` into `./target-static/` before
+    # wrapping it in a DMG. The static binary cannot be signed/notarized
+    # cleanly, so this pipeline builds the dynamically-linked binary first and
+    # then asks the DMG script to package that exact binary.
 
     # --- macOS ARM64 ---
     log_step "Building macOS ARM64 (dynamic) ..."
     if $DRY_RUN; then
         log_dry "cargo build --release --target aarch64-apple-darwin (sotf-tui, sotf-desktop)"
+        log_dry "./scripts/build-dmg-sotf.sh --arch arm64 --binary target/aarch64-apple-darwin/release/sotf-desktop"
     else
         rustup target add aarch64-apple-darwin 2>/dev/null || true
         cargo build --release --target aarch64-apple-darwin -p sotf-tui --features hal,onnx
@@ -613,12 +614,20 @@ build_macos() {
         cp "target/aarch64-apple-darwin/release/sotf-tui"     "$DIST_DIR/sotf-tui-${VERSION}-macos-arm64"
         cp "target/aarch64-apple-darwin/release/sotf-desktop" "$DIST_DIR/sotf-desktop-${VERSION}-macos-arm64"
         record_result "macOS ARM64: OK"
+        if ./scripts/build-dmg-sotf.sh --arch arm64 --binary "target/aarch64-apple-darwin/release/sotf-desktop"; then
+            record_result "macOS ARM64 DMG: OK"
+        else
+            log_error "macOS ARM64 DMG packaging failed"
+            record_result "macOS ARM64 DMG: FAILED"
+            exit 1
+        fi
     fi
 
     # --- macOS x86_64 ---
     log_step "Building macOS x86_64 (dynamic) ..."
     if $DRY_RUN; then
         log_dry "cargo build --release --target x86_64-apple-darwin (sotf-tui, sotf-desktop)"
+        log_dry "./scripts/build-dmg-sotf.sh --arch x86_64 --binary target/x86_64-apple-darwin/release/sotf-desktop"
     else
         rustup target add x86_64-apple-darwin 2>/dev/null || true
         cargo build --release --target x86_64-apple-darwin -p sotf-tui --features hal
@@ -627,6 +636,13 @@ build_macos() {
         cp "target/x86_64-apple-darwin/release/sotf-tui"     "$DIST_DIR/sotf-tui-${VERSION}-macos-x86_64"
         cp "target/x86_64-apple-darwin/release/sotf-desktop" "$DIST_DIR/sotf-desktop-${VERSION}-macos-x86_64"
         record_result "macOS x86_64: OK"
+        if ./scripts/build-dmg-sotf.sh --arch x86_64 --binary "target/x86_64-apple-darwin/release/sotf-desktop"; then
+            record_result "macOS x86_64 DMG: OK"
+        else
+            log_error "macOS x86_64 DMG packaging failed"
+            record_result "macOS x86_64 DMG: FAILED"
+            exit 1
+        fi
     fi
 
     # --- macOS Systemwide pkg ---

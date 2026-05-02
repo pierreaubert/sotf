@@ -6,6 +6,9 @@ dist/
 data_cached/
 data_generated/
 data_tests/
+!data_tests/
+!data_tests/targets/
+!data_tests/targets/*.csv
 venv/
 *.md
 # AI assistant / code-graph state — large, machine-specific, never needed in
