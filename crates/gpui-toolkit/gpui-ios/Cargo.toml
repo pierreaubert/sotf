@@ -7,6 +7,11 @@ keywords.workspace = true
 categories.workspace = true
 description = "iOS platform backend for GPUI (vendored from gpui-mobile)"
 license = "ISC"
+# Not publishable: depends on `gpui_wgpu`, which is an internal Zed sub-crate
+# only available via the zed-industries/zed git repo (no crates.io release).
+# `cargo publish` fails with "no matching package named gpui_wgpu found" until
+# Zed publishes that crate to crates.io.
+publish = false
 
 [lib]
 crate-type = ["rlib"]
