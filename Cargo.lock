@@ -795,7 +795,7 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "autoeq"
-version = "0.4.39"
+version = "0.4.40"
 dependencies = [
  "anyhow",
  "assert_fs",
@@ -3917,7 +3917,6 @@ dependencies = [
  "block2",
  "gpui",
  "gpui-design",
- "gpui-ios",
  "gpui-ui-kit-macros",
  "gpui_linux",
  "gpui_macos",

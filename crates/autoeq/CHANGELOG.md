@@ -1,3 +1,15 @@
+# 0.4.40
+
+## Refactor
+
+- Added proper abstractio for tasks pipeline with an consistent observer pattern
+- Refactor the code into smaller modules
+- Added compatible API so no change for now in app-*
+
+## Bug fixes
+
+- Fixed an initialisation bug in the new cobyla code
+
 # 0.4.39
 
 - Removed nlopt as a dependency and used the new math-optimisation algorithms instead
