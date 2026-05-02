@@ -48,6 +48,13 @@ pub use autoeq::roomeq::{
     ChannelOptimizationResult,
     DspChainOutput,
     PluginConfigWrapper,
+    PipelineControl,
+    PipelineEvent,
+    PipelineObserver,
+    PipelineStepId,
+    PipelineStepStatus,
+    RoomPipeline,
+    RoomPipelineRequest,
     RoomOptimizationCallback,
     RoomOptimizationProgress,
     RoomOptimizationResult,
@@ -103,7 +110,14 @@ pub fn run_room_optimization(
     sample_rate: f64,
     callback: Option<RoomOptimizationCallback>,
 ) -> Result<RoomOptimizationResult, String> {
-    optimize_room(config, sample_rate, callback, None).map_err(|e| e.to_string())
+    RoomPipeline::new(RoomPipelineRequest {
+        config,
+        sample_rate,
+        output_dir: None,
+        probe_arrival_overrides: None,
+    })
+    .run(callback.map(room_callback_observer))
+    .map_err(|e| e.to_string())
 }
 
 /// Run room optimization with per-channel probe-based arrival times.
@@ -122,8 +136,24 @@ pub fn run_room_optimization_with_probe_arrivals(
     callback: Option<RoomOptimizationCallback>,
     probe_arrival_ms: &HashMap<String, f64>,
 ) -> Result<RoomOptimizationResult, String> {
-    optimize_room_with_probe_arrivals(config, sample_rate, callback, None, probe_arrival_ms)
-        .map_err(|e| e.to_string())
+    RoomPipeline::new(RoomPipelineRequest {
+        config,
+        sample_rate,
+        output_dir: None,
+        probe_arrival_overrides: Some(probe_arrival_ms),
+    })
+    .run(callback.map(room_callback_observer))
+    .map_err(|e| e.to_string())
+}
+
+fn room_callback_observer(mut callback: RoomOptimizationCallback) -> Box<dyn PipelineObserver> {
+    Box::new(move |event: &PipelineEvent| {
+        let progress = RoomOptimizationProgress::from(event);
+        match callback(&progress) {
+            CallbackAction::Continue => PipelineControl::Continue,
+            CallbackAction::Stop => PipelineControl::Stop,
+        }
+    })
 }
 
 /// Convert RoomOptimizationResult to legacy SingleSpeakerResult format
@@ -263,6 +293,16 @@ pub struct MultiSpeakerProgress {
 pub type MultiSpeakerOptimizationCallback =
     Box<dyn FnMut(&MultiSpeakerProgress) -> autoeq::de::CallbackAction + Send>;
 
+fn multi_speaker_progress_from_pipeline_event(event: &PipelineEvent) -> MultiSpeakerProgress {
+    MultiSpeakerProgress {
+        iteration: event.iteration.unwrap_or(0),
+        combined_loss: event.loss.unwrap_or(0.0),
+        max_iterations: event.max_iterations.unwrap_or(0),
+        stage: OptimizationStage::Eq,
+        convergence: 0.0,
+    }
+}
+
 // ============================================================================
 // Legacy Entry Point (uses roomeq internally)
 // ============================================================================
@@ -357,35 +397,25 @@ pub fn run_multi_speaker_optimization(
         cea2034_cache: None,
     };
 
-    // Wrap legacy callback
-    // Note: autoeq::de::CallbackAction and autoeq::roomeq::CallbackAction are different types
-    // with the same variants, so we need to convert between them
-    let callback_wrapped: Option<RoomOptimizationCallback> = callback.map(|mut cb| {
-        let cb_wrapped: RoomOptimizationCallback =
-            Box::new(move |progress: &RoomOptimizationProgress| {
-                let legacy_progress = MultiSpeakerProgress {
-                    iteration: progress.iteration,
-                    combined_loss: progress.loss,
-                    max_iterations: progress.max_iterations,
-                    stage: OptimizationStage::Eq,
-                    convergence: 0.0,
-                };
-                // Convert from de::CallbackAction to roomeq::CallbackAction
-                match cb(&legacy_progress) {
-                    autoeq::de::CallbackAction::Continue => CallbackAction::Continue,
-                    autoeq::de::CallbackAction::Stop => CallbackAction::Stop,
-                }
-            });
-        cb_wrapped
+    let observer: Option<Box<dyn PipelineObserver>> = callback.map(|mut cb| {
+        let observer: Box<dyn PipelineObserver> = Box::new(move |event: &PipelineEvent| {
+            let legacy_progress = multi_speaker_progress_from_pipeline_event(event);
+            match cb(&legacy_progress) {
+                autoeq::de::CallbackAction::Continue => PipelineControl::Continue,
+                autoeq::de::CallbackAction::Stop => PipelineControl::Stop,
+            }
+        });
+        observer
     });
 
     // Run optimization using roomeq
-    let result = optimize_room(
-        &room_config,
-        config.args.sample_rate,
-        callback_wrapped,
-        None,
-    )
+    let result = RoomPipeline::new(RoomPipelineRequest {
+        config: &room_config,
+        sample_rate: config.args.sample_rate,
+        output_dir: None,
+        probe_arrival_overrides: None,
+    })
+    .run(observer)
     .map_err(|e| e.to_string())?;
 
     // Convert result to legacy format
@@ -612,5 +642,49 @@ mod tests {
         assert_eq!(opt_config.num_filters, args.num_filters);
         assert!((opt_config.min_freq - args.min_freq).abs() < 0.001);
         assert!((opt_config.max_freq - args.max_freq).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_pipeline_event_maps_to_legacy_multi_speaker_progress() {
+        let event = PipelineEvent::new(
+            PipelineStepId::GenericChannelOptimization,
+            PipelineStepStatus::InProgress,
+        )
+        .with_iteration(42, 100)
+        .with_loss(1.25)
+        .with_overall_progress(0.5);
+
+        let progress = multi_speaker_progress_from_pipeline_event(&event);
+
+        assert_eq!(progress.iteration, 42);
+        assert_eq!(progress.max_iterations, 100);
+        assert!((progress.combined_loss - 1.25).abs() < f64::EPSILON);
+        assert!(matches!(progress.stage, OptimizationStage::Eq));
+        assert!((progress.convergence - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_pipeline_event_maps_to_room_progress_for_callback_adapter() {
+        let event = PipelineEvent::new(
+            PipelineStepId::GenericChannelOptimization,
+            PipelineStepStatus::InProgress,
+        )
+        .with_channel("left")
+        .with_channels(1, 2)
+        .with_iteration(7, 50)
+        .with_loss(0.75)
+        .with_overall_progress(0.25)
+        .with_epa_preference(Some(5.0));
+
+        let progress = RoomOptimizationProgress::from(&event);
+
+        assert_eq!(progress.current_speaker, "left");
+        assert_eq!(progress.speaker_index, 1);
+        assert_eq!(progress.total_speakers, 2);
+        assert_eq!(progress.iteration, 7);
+        assert_eq!(progress.max_iterations, 50);
+        assert!((progress.loss - 0.75).abs() < f64::EPSILON);
+        assert!((progress.overall_progress - 0.25).abs() < f64::EPSILON);
+        assert_eq!(progress.epa_preference, Some(5.0));
     }
 }

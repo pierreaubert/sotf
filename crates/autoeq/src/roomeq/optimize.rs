@@ -17,6 +17,10 @@ use super::config::validate_room_config;
 use super::fir;
 use super::output;
 use super::phase_alignment;
+use super::pipeline::{
+    PipelineControl, PipelineEvent, PipelineObserver, PipelineStepId, PipelineStepStatus,
+    RoomPipeline, RoomPipelineRequest,
+};
 use super::types::{
     ChannelDspChain, DspChainOutput, MeasurementSource, OptimizationMetadata, OptimizerConfig,
     PerceptualMetrics, ProcessingMode, RoomConfig, SpeakerConfig, SystemModel, TargetCurveConfig,
@@ -779,6 +783,22 @@ pub struct RoomOptimizationProgress {
     pub epa_preference: Option<f64>,
 }
 
+impl From<&PipelineEvent> for RoomOptimizationProgress {
+    fn from(event: &PipelineEvent) -> Self {
+        Self {
+            current_speaker: event.channel.clone().unwrap_or_default(),
+            speaker_index: event.channel_index.unwrap_or(0),
+            total_speakers: event.total_channels.unwrap_or(0),
+            iteration: event.iteration.unwrap_or(0),
+            max_iterations: event.max_iterations.unwrap_or(0),
+            loss: event.loss.unwrap_or(0.0),
+            overall_progress: event.overall_progress,
+            message: event.message.clone(),
+            epa_preference: event.epa_preference,
+        }
+    }
+}
+
 /// Callback type for room optimization progress
 pub type RoomOptimizationCallback =
     Box<dyn FnMut(&RoomOptimizationProgress) -> CallbackAction + Send>;
@@ -873,7 +893,13 @@ pub fn optimize_room(
     callback: Option<RoomOptimizationCallback>,
     output_dir: Option<&Path>,
 ) -> Result<RoomOptimizationResult> {
-    optimize_room_impl(config, sample_rate, callback, output_dir, None)
+    RoomPipeline::new(RoomPipelineRequest {
+        config,
+        sample_rate,
+        output_dir,
+        probe_arrival_overrides: None,
+    })
+    .run(callback.map(callback_pipeline_observer))
 }
 
 /// Same as [`optimize_room`] but accepts per-channel probe-based arrival times.
@@ -889,13 +915,89 @@ pub fn optimize_room_with_probe_arrivals(
     output_dir: Option<&Path>,
     probe_arrival_ms: &HashMap<String, f64>,
 ) -> Result<RoomOptimizationResult> {
-    optimize_room_impl(
+    RoomPipeline::new(RoomPipelineRequest {
         config,
         sample_rate,
-        callback,
         output_dir,
-        Some(probe_arrival_ms),
+        probe_arrival_overrides: Some(probe_arrival_ms),
+    })
+    .run(callback.map(callback_pipeline_observer))
+}
+
+pub(super) fn optimize_room_pipeline_impl(
+    request: RoomPipelineRequest<'_>,
+    observer: Option<Box<dyn PipelineObserver>>,
+) -> Result<RoomOptimizationResult> {
+    optimize_room_impl(
+        request.config,
+        request.sample_rate,
+        request.output_dir,
+        request.probe_arrival_overrides,
+        observer,
     )
+}
+
+fn callback_pipeline_observer(callback: RoomOptimizationCallback) -> Box<dyn PipelineObserver> {
+    Box::new(RoomOptimizationCallbackObserver { callback })
+}
+
+struct RoomOptimizationCallbackObserver {
+    callback: RoomOptimizationCallback,
+}
+
+impl PipelineObserver for RoomOptimizationCallbackObserver {
+    fn on_event(&mut self, event: &PipelineEvent) -> PipelineControl {
+        let progress = RoomOptimizationProgress::from(event);
+        match (self.callback)(&progress) {
+            CallbackAction::Continue => PipelineControl::Continue,
+            CallbackAction::Stop => PipelineControl::Stop,
+        }
+    }
+}
+
+type SharedPipelineObserver = Arc<Mutex<Option<Box<dyn PipelineObserver>>>>;
+
+fn pipeline_stopped_error(step_id: PipelineStepId) -> AutoeqError {
+    AutoeqError::OptimizationFailed {
+        message: format!("Room optimization stopped by observer during {:?}", step_id),
+    }
+}
+
+fn emit_pipeline_event(observer: &SharedPipelineObserver, event: PipelineEvent) -> Result<()> {
+    let step_id = event.step_id;
+    let mut guard = observer.lock().unwrap();
+    if let Some(observer) = guard.as_mut()
+        && observer.on_event(&event) == PipelineControl::Stop
+    {
+        return Err(pipeline_stopped_error(step_id));
+    }
+    Ok(())
+}
+
+fn progress_event(
+    step_id: PipelineStepId,
+    status: PipelineStepStatus,
+    progress: &RoomOptimizationProgress,
+) -> PipelineEvent {
+    let mut event = PipelineEvent::new(step_id, status)
+        .with_overall_progress(progress.overall_progress)
+        .with_epa_preference(progress.epa_preference);
+    if !progress.current_speaker.is_empty() {
+        event = event.with_channel(progress.current_speaker.clone());
+    }
+    if progress.total_speakers > 0 {
+        event = event.with_channels(progress.speaker_index, progress.total_speakers);
+    }
+    if progress.max_iterations > 0 || progress.iteration > 0 {
+        event = event.with_iteration(progress.iteration, progress.max_iterations);
+    }
+    if progress.loss != 0.0 {
+        event = event.with_loss(progress.loss);
+    }
+    if let Some(message) = &progress.message {
+        event = event.with_message(message.clone());
+    }
+    event
 }
 
 /// I6 — debug-only sanity invariants on the final `RoomOptimizationResult`.
@@ -962,10 +1064,20 @@ fn sanity_check_result(result: &RoomOptimizationResult) -> Result<()> {
 fn optimize_room_impl(
     config: &RoomConfig,
     sample_rate: f64,
-    mut callback: Option<RoomOptimizationCallback>,
     output_dir: Option<&Path>,
     probe_arrival_overrides: Option<&HashMap<String, f64>>,
+    observer: Option<Box<dyn PipelineObserver>>,
 ) -> Result<RoomOptimizationResult> {
+    let observer_shared: SharedPipelineObserver = Arc::new(Mutex::new(observer));
+
+    emit_pipeline_event(
+        &observer_shared,
+        PipelineEvent::started(
+            PipelineStepId::ConfigPreparation,
+            "Preparing room optimization configuration",
+        ),
+    )?;
+
     let mut config = config.clone();
 
     // Pre-fetch CEA2034 data for all speakers when speaker pre-correction is enabled
@@ -985,9 +1097,21 @@ fn optimize_room_impl(
         }
     }
 
+    emit_pipeline_event(
+        &observer_shared,
+        PipelineEvent::completed(
+            PipelineStepId::ConfigPreparation,
+            "Room optimization configuration prepared",
+        ),
+    )?;
+
     let config = &config;
 
     // Validate configuration
+    emit_pipeline_event(
+        &observer_shared,
+        PipelineEvent::started(PipelineStepId::Validation, "Validating room configuration"),
+    )?;
     let validation = validate_room_config(config);
     validation.print_results();
     if !validation.is_valid {
@@ -998,18 +1122,28 @@ fn optimize_room_impl(
             ),
         });
     }
+    emit_pipeline_event(
+        &observer_shared,
+        PipelineEvent::completed(PipelineStepId::Validation, "Room configuration validated"),
+    )?;
 
-    /// Helper to invoke the callback if present, returning true if Stop was requested.
+    /// Helper to invoke the observer if present.
     fn send_progress(
-        cb: &mut Option<RoomOptimizationCallback>,
+        observer: &SharedPipelineObserver,
+        step_id: PipelineStepId,
+        status: PipelineStepStatus,
         progress: &RoomOptimizationProgress,
-    ) -> bool {
-        if let Some(f) = cb {
-            f(progress) == CallbackAction::Stop
-        } else {
-            false
-        }
+    ) -> Result<()> {
+        emit_pipeline_event(observer, progress_event(step_id, status, progress))
     }
+
+    emit_pipeline_event(
+        &observer_shared,
+        PipelineEvent::started(
+            PipelineStepId::TopologyRouteSelection,
+            "Selecting Room EQ topology route",
+        ),
+    )?;
 
     // Dispatch to specific workflows based on topology
     if let Some(sys) = &config.system {
@@ -1043,8 +1177,17 @@ fn optimize_room_impl(
 
             // Send pre-workflow progress message
             if sys.model != SystemModel::Custom {
+                emit_pipeline_event(
+                    &observer_shared,
+                    PipelineEvent::completed(
+                        PipelineStepId::TopologyRouteSelection,
+                        format!("Selected {} workflow", workflow_name),
+                    ),
+                )?;
                 send_progress(
-                    &mut callback,
+                    &observer_shared,
+                    PipelineStepId::TopologyWorkflowExecution,
+                    PipelineStepStatus::Started,
                     &RoomOptimizationProgress {
                         current_speaker: String::new(),
                         speaker_index: 0,
@@ -1060,7 +1203,7 @@ fn optimize_room_impl(
                         )),
                         epa_preference: None,
                     },
-                );
+                )?;
             }
 
             let workflow_result = match sys.model {
@@ -1103,7 +1246,9 @@ fn optimize_room_impl(
                     })
                     .collect();
                 send_progress(
-                    &mut callback,
+                    &observer_shared,
+                    PipelineStepId::TopologyWorkflowExecution,
+                    PipelineStepStatus::Completed,
                     &RoomOptimizationProgress {
                         current_speaker: String::new(),
                         speaker_index: result.channel_results.len(),
@@ -1119,7 +1264,7 @@ fn optimize_room_impl(
                         )),
                         epa_preference: None,
                     },
-                );
+                )?;
                 // Workflows only do IIR. If FIR/Hybrid mode is requested, post-generate
                 // full FIR coefficients for each channel.
                 if matches!(
@@ -1127,7 +1272,9 @@ fn optimize_room_impl(
                     ProcessingMode::PhaseLinear | ProcessingMode::Hybrid
                 ) {
                     send_progress(
-                        &mut callback,
+                        &observer_shared,
+                        PipelineStepId::FirGeneration,
+                        PipelineStepStatus::Started,
                         &RoomOptimizationProgress {
                             current_speaker: "FIR generation".to_string(),
                             speaker_index: 0,
@@ -1139,7 +1286,7 @@ fn optimize_room_impl(
                             message: Some("Generating FIR coefficients...".to_string()),
                             epa_preference: None,
                         },
-                    );
+                    )?;
                     let out_dir = output_dir.unwrap_or(Path::new("."));
                     let names: Vec<String> = result.channel_results.keys().cloned().collect();
                     for name in names {
@@ -1186,7 +1333,9 @@ fn optimize_room_impl(
                 // and add convolution plugin to the DSP chain.
                 if config.optimizer.processing_mode == ProcessingMode::MixedPhase {
                     send_progress(
-                        &mut callback,
+                        &observer_shared,
+                        PipelineStepId::MixedPhaseFirGeneration,
+                        PipelineStepStatus::Started,
                         &RoomOptimizationProgress {
                             current_speaker: "Mixed-phase FIR".to_string(),
                             speaker_index: 0,
@@ -1198,7 +1347,7 @@ fn optimize_room_impl(
                             message: Some("Generating mixed-phase FIR...".to_string()),
                             epa_preference: None,
                         },
-                    );
+                    )?;
                     let out_dir = output_dir.unwrap_or(Path::new("."));
                     let names: Vec<String> = result.channel_results.keys().cloned().collect();
                     for name in names {
@@ -1242,7 +1391,9 @@ fn optimize_room_impl(
                 // Standalone phase correction (rePhase-style)
                 if config.optimizer.phase_correction.is_some() {
                     send_progress(
-                        &mut callback,
+                        &observer_shared,
+                        PipelineStepId::PhaseCorrection,
+                        PipelineStepStatus::Started,
                         &RoomOptimizationProgress {
                             current_speaker: "Phase correction".to_string(),
                             speaker_index: 0,
@@ -1254,7 +1405,7 @@ fn optimize_room_impl(
                             message: Some("Phase correction...".to_string()),
                             epa_preference: None,
                         },
-                    );
+                    )?;
                 }
                 if let Some(ref pc_config) = config.optimizer.phase_correction {
                     let out_dir = output_dir.unwrap_or(Path::new("."));
@@ -1279,7 +1430,9 @@ fn optimize_room_impl(
 
                 // Compute IR waveforms for the workflow result
                 send_progress(
-                    &mut callback,
+                    &observer_shared,
+                    PipelineStepId::ImpulseResponseComputation,
+                    PipelineStepStatus::Started,
                     &RoomOptimizationProgress {
                         current_speaker: "IR computation".to_string(),
                         speaker_index: 0,
@@ -1291,7 +1444,7 @@ fn optimize_room_impl(
                         message: Some("Computing impulse responses...".to_string()),
                         epa_preference: None,
                     },
-                );
+                )?;
                 for (channel_name, ch_result) in &result.channel_results {
                     let delay_ms = result
                         .channels
@@ -1316,7 +1469,9 @@ fn optimize_room_impl(
                 // Compute inter-channel deviation and optionally correct it
                 if result.channel_results.len() > 1 {
                     send_progress(
-                        &mut callback,
+                        &observer_shared,
+                        PipelineStepId::ChannelMatching,
+                        PipelineStepStatus::Started,
                         &RoomOptimizationProgress {
                             current_speaker: "Channel matching".to_string(),
                             speaker_index: 0,
@@ -1328,7 +1483,7 @@ fn optimize_room_impl(
                             message: Some("Channel matching analysis...".to_string()),
                             epa_preference: None,
                         },
-                    );
+                    )?;
                     let plugin_count_before_icd: usize = result
                         .channels
                         .values()
@@ -1342,6 +1497,10 @@ fn optimize_room_impl(
                         .sum();
                     workflow_refresh_needed |= plugin_count_after_icd != plugin_count_before_icd;
                 }
+                emit_pipeline_event(
+                    &observer_shared,
+                    PipelineEvent::started(PipelineStepId::MetadataRefresh, "Refreshing reports"),
+                )?;
                 if workflow_refresh_needed {
                     refresh_final_reports(&mut result, config, sample_rate);
                 }
@@ -1350,12 +1509,38 @@ fn optimize_room_impl(
                     Some(&result.channels),
                     Some(config),
                 );
+                emit_pipeline_event(
+                    &observer_shared,
+                    PipelineEvent::completed(PipelineStepId::MetadataRefresh, "Reports refreshed"),
+                )?;
 
+                emit_pipeline_event(
+                    &observer_shared,
+                    PipelineEvent::started(
+                        PipelineStepId::SanityCheck,
+                        "Checking final optimization result",
+                    ),
+                )?;
                 sanity_check_result(&result)?;
+                emit_pipeline_event(
+                    &observer_shared,
+                    PipelineEvent::completed(
+                        PipelineStepId::SanityCheck,
+                        "Final optimization result checked",
+                    ),
+                )?;
                 return Ok(result);
             }
         }
     }
+
+    emit_pipeline_event(
+        &observer_shared,
+        PipelineEvent::completed(
+            PipelineStepId::TopologyRouteSelection,
+            "Selected generic channel optimization",
+        ),
+    )?;
 
     // Determine channels to process based on system config or legacy config
     // Returns list of (output_channel_name, speaker_config)
@@ -1438,7 +1623,9 @@ fn optimize_room_impl(
     };
 
     send_progress(
-        &mut callback,
+        &observer_shared,
+        PipelineStepId::GenericChannelOptimization,
+        PipelineStepStatus::Started,
         &RoomOptimizationProgress {
             current_speaker: String::new(),
             speaker_index: 0,
@@ -1453,10 +1640,10 @@ fn optimize_room_impl(
             )),
             epa_preference: None,
         },
-    );
+    )?;
 
     // Process each speaker sequentially so we can report progress.
-    // Wrap callback in Arc<Mutex> so we can create per-speaker OptimProgressCallbacks.
+    // Wrap the observer in Arc<Mutex> so we can create per-speaker OptimProgressCallbacks.
     //
     // Compute actual DE generation budget for accurate progress display.
     // The DE callback reports generation numbers, not function evals.
@@ -1504,38 +1691,32 @@ fn optimize_room_impl(
         "DE budget: {} params, population_size={}, max_generations={} (from max_iter={}, floor={} when budget allows)",
         n_params, population_size, max_iterations, config.optimizer.max_iter, DE_GENERATIONS_FLOOR,
     );
-    let callback_shared: Arc<Mutex<Option<RoomOptimizationCallback>>> =
-        Arc::new(Mutex::new(callback));
 
     let mut results: Vec<SpeakerProcessResult> = Vec::with_capacity(total_speakers);
     for (speaker_idx, (channel_name, speaker_config)) in channels_to_process.into_iter().enumerate()
     {
         info!("Processing channel: {}", channel_name);
 
-        {
-            let mut guard = callback_shared.lock().unwrap();
-            let stop = send_progress(
-                &mut guard,
-                &RoomOptimizationProgress {
-                    current_speaker: channel_name.clone(),
-                    speaker_index: speaker_idx,
-                    total_speakers,
-                    iteration: 0,
-                    max_iterations: 0,
-                    loss: 0.0,
-                    overall_progress: speaker_idx as f64 / total_speakers as f64,
-                    message: Some(format!("Processing channel: {}", channel_name)),
-                    epa_preference: None,
-                },
-            );
-            if stop {
-                break;
-            }
-        }
+        send_progress(
+            &observer_shared,
+            PipelineStepId::GenericChannelOptimization,
+            PipelineStepStatus::InProgress,
+            &RoomOptimizationProgress {
+                current_speaker: channel_name.clone(),
+                speaker_index: speaker_idx,
+                total_speakers,
+                iteration: 0,
+                max_iterations: 0,
+                loss: 0.0,
+                overall_progress: speaker_idx as f64 / total_speakers as f64,
+                message: Some(format!("Processing channel: {}", channel_name)),
+                epa_preference: None,
+            },
+        )?;
 
-        // Create a per-speaker OptimProgressCallback that forwards to the room callback
+        // Create a per-speaker OptimProgressCallback that forwards to the pipeline observer.
         let eq_callback: Option<crate::optim::OptimProgressCallback> = {
-            let cb = Arc::clone(&callback_shared);
+            let observer = Arc::clone(&observer_shared);
             let name = channel_name.clone();
             let si = speaker_idx;
             let ts = total_speakers;
@@ -1545,10 +1726,11 @@ fn optimize_room_impl(
                 let speaker_progress = if mi > 0 { iter as f64 / mi as f64 } else { 0.0 };
                 let overall = (base_progress + speaker_progress / ts as f64).min(1.0);
 
-                if let Ok(mut guard) = cb.lock()
-                    && let Some(room_cb) = guard.as_mut()
-                {
-                    let action = room_cb(&RoomOptimizationProgress {
+                match send_progress(
+                    &observer,
+                    PipelineStepId::GenericChannelOptimization,
+                    PipelineStepStatus::InProgress,
+                    &RoomOptimizationProgress {
                         current_speaker: name.clone(),
                         speaker_index: si,
                         total_speakers: ts,
@@ -1558,13 +1740,11 @@ fn optimize_room_impl(
                         overall_progress: overall,
                         message: None,
                         epa_preference: epa,
-                    });
-                    return match action {
-                        CallbackAction::Continue => crate::de::CallbackAction::Continue,
-                        CallbackAction::Stop => crate::de::CallbackAction::Stop,
-                    };
+                    },
+                ) {
+                    Ok(()) => crate::de::CallbackAction::Continue,
+                    Err(_) => crate::de::CallbackAction::Stop,
                 }
-                crate::de::CallbackAction::Continue
             }))
         };
 
@@ -1591,29 +1771,25 @@ fn optimize_room_impl(
                 arrival_time_ms,
                 fir_coeffs,
             )) => {
-                {
-                    let mut guard = callback_shared.lock().unwrap();
-                    let stop = send_progress(
-                        &mut guard,
-                        &RoomOptimizationProgress {
-                            current_speaker: channel_name.clone(),
-                            speaker_index: speaker_idx,
-                            total_speakers,
-                            iteration: 0,
-                            max_iterations: 0,
-                            loss: post_score,
-                            overall_progress: (speaker_idx + 1) as f64 / total_speakers as f64,
-                            message: Some(format!(
-                                "Channel {}: {:.4} -> {:.4}",
-                                channel_name, pre_score, post_score
-                            )),
-                            epa_preference: None,
-                        },
-                    );
-                    // Note: can't break here since we're inside a match arm.
-                    // The stop signal is handled by the per-iteration callback.
-                    let _ = stop;
-                }
+                send_progress(
+                    &observer_shared,
+                    PipelineStepId::GenericChannelOptimization,
+                    PipelineStepStatus::InProgress,
+                    &RoomOptimizationProgress {
+                        current_speaker: channel_name.clone(),
+                        speaker_index: speaker_idx,
+                        total_speakers,
+                        iteration: 0,
+                        max_iterations: 0,
+                        loss: post_score,
+                        overall_progress: (speaker_idx + 1) as f64 / total_speakers as f64,
+                        message: Some(format!(
+                            "Channel {}: {:.4} -> {:.4}",
+                            channel_name, pre_score, post_score
+                        )),
+                        epa_preference: None,
+                    },
+                )?;
 
                 results.push(Ok((
                     channel_name,
@@ -1633,6 +1809,23 @@ fn optimize_room_impl(
             }
         }
     }
+
+    send_progress(
+        &observer_shared,
+        PipelineStepId::GenericChannelOptimization,
+        PipelineStepStatus::Completed,
+        &RoomOptimizationProgress {
+            current_speaker: String::new(),
+            speaker_index: total_speakers,
+            total_speakers,
+            iteration: 0,
+            max_iterations: 0,
+            loss: 0.0,
+            overall_progress: 0.90,
+            message: Some(format!("Optimized {} channels", total_speakers)),
+            epa_preference: None,
+        },
+    )?;
 
     // Collect results
     let mut channel_chains: HashMap<String, ChannelDspChain> = HashMap::new();
@@ -1675,7 +1868,9 @@ fn optimize_room_impl(
                 ProcessingMode::LowLatency | ProcessingMode::MixedPhase
             ) {
             send_progress(
-                &mut callback_shared.lock().unwrap(),
+                &observer_shared,
+                PipelineStepId::FirGeneration,
+                PipelineStepStatus::Started,
                 &RoomOptimizationProgress {
                     current_speaker: format!("FIR: {}", channel_name),
                     speaker_index: 0,
@@ -1690,7 +1885,7 @@ fn optimize_room_impl(
                     )),
                     epa_preference: None,
                 },
-            );
+            )?;
             let generated = post_generate_fir(
                 &channel_name,
                 &initial_curve,
@@ -1769,6 +1964,10 @@ fn optimize_room_impl(
     // Time alignment: add delay plugins to align all channels to the slowest one
     // This is done PRE-EQ by inserting at the beginning of the plugin chain
     if (config.optimizer.allow_delay() || phase_ir_sync) && channel_arrivals.len() > 1 {
+        emit_pipeline_event(
+            &observer_shared,
+            PipelineEvent::started(PipelineStepId::TimeAlignment, "Aligning channel timing"),
+        )?;
         let arrivals: Vec<f64> = channel_arrivals.values().copied().collect();
         let min_arrival = arrivals.iter().cloned().fold(f64::INFINITY, f64::min);
         let max_arrival = arrivals.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
@@ -1818,8 +2017,24 @@ fn optimize_room_impl(
             }
         }
         curves = collect_current_final_curves(&channel_results);
+        emit_pipeline_event(
+            &observer_shared,
+            PipelineEvent::completed(PipelineStepId::TimeAlignment, "Channel timing aligned"),
+        )?;
     } else if channel_arrivals.is_empty() && config.speakers.len() > 1 {
         info!("No arrival time data (WAV or phase) available for time alignment. Skipping.");
+        emit_pipeline_event(
+            &observer_shared,
+            PipelineEvent::skipped(
+                PipelineStepId::TimeAlignment,
+                "No arrival time data available for time alignment",
+            ),
+        )?;
+    } else {
+        emit_pipeline_event(
+            &observer_shared,
+            PipelineEvent::skipped(PipelineStepId::TimeAlignment, "Time alignment not needed"),
+        )?;
     }
 
     // Spectral channel alignment: fit low-shelf + high-shelf + flat gain to each
@@ -1832,7 +2047,9 @@ fn optimize_room_impl(
         .collect();
     if spectral_curves.len() > 1 {
         send_progress(
-            &mut callback_shared.lock().unwrap(),
+            &observer_shared,
+            PipelineStepId::SpectralAlignment,
+            PipelineStepStatus::Started,
             &RoomOptimizationProgress {
                 current_speaker: "Spectral alignment".to_string(),
                 speaker_index: 0,
@@ -1844,7 +2061,7 @@ fn optimize_room_impl(
                 message: Some("Spectral channel alignment...".to_string()),
                 epa_preference: None,
             },
-        );
+        )?;
         let min_freq = config.optimizer.min_freq;
         let max_freq = config.optimizer.max_freq;
         let sample_rate = config
@@ -1960,6 +2177,21 @@ fn optimize_room_impl(
             }
         }
         curves = collect_current_final_curves(&channel_results);
+        emit_pipeline_event(
+            &observer_shared,
+            PipelineEvent::completed(
+                PipelineStepId::SpectralAlignment,
+                "Spectral channel alignment complete",
+            ),
+        )?;
+    } else {
+        emit_pipeline_event(
+            &observer_shared,
+            PipelineEvent::skipped(
+                PipelineStepId::SpectralAlignment,
+                "Spectral channel alignment not needed",
+            ),
+        )?;
     }
 
     // ========================================================================
@@ -1969,7 +2201,9 @@ fn optimize_room_impl(
         && vog_config.enabled
     {
         send_progress(
-            &mut callback_shared.lock().unwrap(),
+            &observer_shared,
+            PipelineStepId::VoiceOfGodAlignment,
+            PipelineStepStatus::Started,
             &RoomOptimizationProgress {
                 current_speaker: "Voice of God".to_string(),
                 speaker_index: 0,
@@ -1984,7 +2218,7 @@ fn optimize_room_impl(
                 )),
                 epa_preference: None,
             },
-        );
+        )?;
         info!(
             "Running Voice of God alignment (reference: '{}')...",
             vog_config.reference_channel
@@ -2042,6 +2276,23 @@ fn optimize_room_impl(
             }
         }
     }
+    if config.optimizer.vog.as_ref().is_some_and(|v| v.enabled) {
+        emit_pipeline_event(
+            &observer_shared,
+            PipelineEvent::completed(
+                PipelineStepId::VoiceOfGodAlignment,
+                "Voice of God alignment complete",
+            ),
+        )?;
+    } else {
+        emit_pipeline_event(
+            &observer_shared,
+            PipelineEvent::skipped(
+                PipelineStepId::VoiceOfGodAlignment,
+                "Voice of God alignment not enabled",
+            ),
+        )?;
+    }
 
     // ========================================================================
     // Phase Alignment Optimization (Scenario A: WITH Subwoofers)
@@ -2063,7 +2314,9 @@ fn optimize_room_impl(
         } else {
             info!("Running phase alignment optimization...");
             send_progress(
-                &mut callback_shared.lock().unwrap(),
+                &observer_shared,
+                PipelineStepId::PhaseAlignment,
+                PipelineStepStatus::Started,
                 &RoomOptimizationProgress {
                     current_speaker: String::new(),
                     speaker_index: 0,
@@ -2075,7 +2328,7 @@ fn optimize_room_impl(
                     message: Some("Running phase alignment...".to_string()),
                     epa_preference: None,
                 },
-            );
+            )?;
 
             for (sub_name, main_name) in &pairings {
                 let sub_curve = match curves.get(sub_name) {
@@ -2165,6 +2418,18 @@ fn optimize_room_impl(
     );
     if !phase_alignment_results.is_empty() {
         curves = collect_current_final_curves(&channel_results);
+        emit_pipeline_event(
+            &observer_shared,
+            PipelineEvent::completed(PipelineStepId::PhaseAlignment, "Phase alignment complete"),
+        )?;
+    } else {
+        emit_pipeline_event(
+            &observer_shared,
+            PipelineEvent::skipped(
+                PipelineStepId::PhaseAlignment,
+                "Phase alignment not applied",
+            ),
+        )?;
     }
 
     // Group Delay Optimization (GD-Opt v1) was removed in the 2.0 simplification
@@ -2174,7 +2439,9 @@ fn optimize_room_impl(
     // Standalone phase correction (rePhase-style)
     if config.optimizer.phase_correction.is_some() {
         send_progress(
-            &mut callback_shared.lock().unwrap(),
+            &observer_shared,
+            PipelineStepId::PhaseCorrection,
+            PipelineStepStatus::Started,
             &RoomOptimizationProgress {
                 current_speaker: "Phase correction".to_string(),
                 speaker_index: 0,
@@ -2186,7 +2453,7 @@ fn optimize_room_impl(
                 message: Some("Phase correction...".to_string()),
                 epa_preference: None,
             },
-        );
+        )?;
     }
     if let Some(ref pc_config) = config.optimizer.phase_correction {
         let names: Vec<String> = channel_results.keys().cloned().collect();
@@ -2197,21 +2464,49 @@ fn optimize_room_impl(
                 apply_phase_correction(name, ch, chain, pc_config, sample_rate, output_dir);
             }
         }
+        emit_pipeline_event(
+            &observer_shared,
+            PipelineEvent::completed(PipelineStepId::PhaseCorrection, "Phase correction complete"),
+        )?;
+    } else {
+        emit_pipeline_event(
+            &observer_shared,
+            PipelineEvent::skipped(
+                PipelineStepId::PhaseCorrection,
+                "Phase correction not enabled",
+            ),
+        )?;
     }
 
     // ─── GD-Opt v2 integration (Phase GD-5) ──────────────────────────────
     // Run after all earlier phase/EQ stages have updated final_curve, but
     // before IR/EPA/metadata so exported reports reflect the audible chain.
+    emit_pipeline_event(
+        &observer_shared,
+        PipelineEvent::started(
+            PipelineStepId::GroupDelayOptimization,
+            "Running GD optimization",
+        ),
+    )?;
     let group_delay_summary = try_run_gd_opt(
         config,
         &mut channel_results,
         &mut channel_chains,
         sample_rate,
     );
+    emit_pipeline_event(
+        &observer_shared,
+        PipelineEvent::completed(
+            PipelineStepId::GroupDelayOptimization,
+            "GD optimization complete",
+        ),
+    )?;
 
     // Compute IR waveforms (pre- and post-correction) for each channel
     send_progress(
-        &mut callback_shared.lock().unwrap(),
+        &observer_shared,
+        PipelineStepId::ImpulseResponseComputation,
+        PipelineStepStatus::Started,
         &RoomOptimizationProgress {
             current_speaker: "IR computation".to_string(),
             speaker_index: 0,
@@ -2223,7 +2518,7 @@ fn optimize_room_impl(
             message: Some("Computing impulse responses...".to_string()),
             epa_preference: None,
         },
-    );
+    )?;
     for (channel_name, result) in &channel_results {
         let delay_ms = channel_chains
             .get(channel_name)
@@ -2242,6 +2537,13 @@ fn optimize_room_impl(
             chain.post_ir = Some(post_ir);
         }
     }
+    emit_pipeline_event(
+        &observer_shared,
+        PipelineEvent::completed(
+            PipelineStepId::ImpulseResponseComputation,
+            "Impulse responses computed",
+        ),
+    )?;
 
     // Aggregate scores
     let avg_pre_score = if !pre_scores.is_empty() {
@@ -2303,7 +2605,9 @@ fn optimize_room_impl(
     // Compute inter-channel deviation and optionally correct it
     if curves.len() > 1 {
         send_progress(
-            &mut callback_shared.lock().unwrap(),
+            &observer_shared,
+            PipelineStepId::ChannelMatching,
+            PipelineStepStatus::Started,
             &RoomOptimizationProgress {
                 current_speaker: "Channel matching".to_string(),
                 speaker_index: 0,
@@ -2315,12 +2619,47 @@ fn optimize_room_impl(
                 message: Some("Channel matching analysis...".to_string()),
                 epa_preference: None,
             },
-        );
+        )?;
         compute_and_correct_icd(&mut result, config, sample_rate);
+        emit_pipeline_event(
+            &observer_shared,
+            PipelineEvent::completed(PipelineStepId::ChannelMatching, "Channel matching complete"),
+        )?;
+    } else {
+        emit_pipeline_event(
+            &observer_shared,
+            PipelineEvent::skipped(
+                PipelineStepId::ChannelMatching,
+                "Channel matching not needed",
+            ),
+        )?;
     }
-    refresh_final_reports(&mut result, config, sample_rate);
 
+    emit_pipeline_event(
+        &observer_shared,
+        PipelineEvent::started(PipelineStepId::MetadataRefresh, "Refreshing reports"),
+    )?;
+    refresh_final_reports(&mut result, config, sample_rate);
+    emit_pipeline_event(
+        &observer_shared,
+        PipelineEvent::completed(PipelineStepId::MetadataRefresh, "Reports refreshed"),
+    )?;
+
+    emit_pipeline_event(
+        &observer_shared,
+        PipelineEvent::started(
+            PipelineStepId::SanityCheck,
+            "Checking final optimization result",
+        ),
+    )?;
     sanity_check_result(&result)?;
+    emit_pipeline_event(
+        &observer_shared,
+        PipelineEvent::completed(
+            PipelineStepId::SanityCheck,
+            "Final optimization result checked",
+        ),
+    )?;
     Ok(result)
 }
 
