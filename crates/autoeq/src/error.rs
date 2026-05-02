@@ -97,14 +97,6 @@ pub enum AutoeqError {
         detail: String,
     },
 
-    /// NLopt-specific error.
-    #[cfg(feature = "nlopt")]
-    #[error("NLopt error: {message}")]
-    NloptError {
-        /// Error message from NLopt.
-        message: String,
-    },
-
     /// I/O error wrapper.
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
@@ -139,10 +131,6 @@ impl AutoeqError {
 
     /// Returns true if this is an optimization error.
     pub fn is_optimization_error(&self) -> bool {
-        #[cfg(feature = "nlopt")]
-        if matches!(self, AutoeqError::NloptError { .. }) {
-            return true;
-        }
         matches!(self, AutoeqError::OptimizationFailed { .. })
     }
 

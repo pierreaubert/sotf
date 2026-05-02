@@ -70,8 +70,6 @@ pub mod roomeq;
 pub use optim::callback as optim_callback;
 pub use optim::de as optim_de;
 pub use optim::mh as optim_mh;
-#[cfg(feature = "nlopt")]
-pub use optim::nlopt as optim_nlopt;
 pub use optim::params as optim_params;
 
 // Re-export commonly used items

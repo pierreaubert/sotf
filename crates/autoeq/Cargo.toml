@@ -46,13 +46,11 @@ ndarray = { workspace = true }
 oxiblas-ndarray = { workspace = true }
 
 # Optional features
-nlopt = { workspace = true, optional = true }
 plotly_static = { version = "0.1", features = ["chromedriver", "webdriver_download"], optional = true }
 rayon.workspace = true
 
 [features]
-default = ["nlopt"]
-nlopt = ["dep:nlopt"]
+default = []
 plotly_static = ["dep:plotly_static"]
 
 [target.'cfg(target_os = "macos")'.dependencies]

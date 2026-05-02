@@ -1,7 +1,7 @@
 [package]
 name = "math-optimisation"
 version = "0.5.4"
-description = "Non linear optimisation library with own DE solvers and interface to NLOpt and MetaHeuristics"
+description = "Pure-Rust nonlinear optimization: Differential Evolution, Levenberg-Marquardt, COBYLA, and ISRES solvers"
 edition = { workspace = true }
 keywords.workspace = true
 categories.workspace = true
@@ -21,6 +21,9 @@ directories = { workspace = true }
 plotly = { workspace = true }
 math-test-functions = { workspace = true }
 plotly_static = { workspace = true, optional = true }
+# (No external optimization dependencies — the COBYLA implementation
+# in `src/cobyla_native.rs` is a hand-translation of NLopt 2.7.1's
+# cobyla.c, fully self-contained.)
 
 [features]
 default = []

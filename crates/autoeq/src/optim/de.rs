@@ -3,8 +3,10 @@
 use ndarray::Array1;
 use std::sync::Arc;
 
+use super::backend::{AlgorithmType, ConstraintCapabilities, FilterOptimizer};
 use super::callback::{ProgressTracker, format_param_summary};
-use super::{ObjectiveData, PenaltyMode, compute_fitness_penalties_ref};
+use super::params::OptimParams as BackendOptimParams;
+use super::{ObjectiveData, OptimProgressCallback, PenaltyMode, compute_fitness_penalties_ref};
 use crate::constraints::{
     CeilingConstraintData, MinGainConstraintData, SpacingConstraintData, constraint_ceiling,
     constraint_min_gain, constraint_spacing,
@@ -15,6 +17,82 @@ use crate::de::{
     NonlinearConstraintHelper, ParallelConfig, Strategy, differential_evolution,
 };
 use crate::initial_guess::{SmartInitConfig, create_smart_initial_guesses};
+
+/// AutoEQ DE-backed `FilterOptimizer`. Single instance — name is `"autoeq:de"`
+/// today; the strategy variants (best1bin, lshadebin, …) are picked from
+/// `OptimParams::strategy` inside `optimize_filters_autoeq`.
+pub struct AutoeqDeBackend {
+    name: &'static str,
+}
+
+impl AutoeqDeBackend {
+    pub fn new(name: &'static str) -> Self {
+        Self { name }
+    }
+}
+
+impl FilterOptimizer for AutoeqDeBackend {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+    fn library(&self) -> &'static str {
+        "AutoEQ"
+    }
+    fn algorithm_type(&self) -> AlgorithmType {
+        AlgorithmType::Global
+    }
+    fn capabilities(&self) -> ConstraintCapabilities {
+        ConstraintCapabilities {
+            nonlinear_ineq: true,
+            nonlinear_eq: true,
+            linear: true,
+            iteration_callback: true,
+            // Unused (nonlinear_ineq=true means install_constraints disables penalties)
+            // but keep a sensible value for completeness.
+            fallback_penalty_mode: PenaltyMode::Disabled,
+        }
+    }
+    fn optimize(
+        &self,
+        x: &mut [f64],
+        lower: &[f64],
+        upper: &[f64],
+        objective: ObjectiveData,
+        params: &BackendOptimParams,
+        callback: Option<OptimProgressCallback>,
+    ) -> Result<(String, f64), (String, f64)> {
+        match callback {
+            Some(user_cb) => {
+                // Adapt unified callback to DE's typed callback. EPA mid-run
+                // computation (the original behaviour from optim.rs:1163-1211)
+                // is performed by the caller wrapping `user_cb` before passing
+                // it in — the trait stays generic; EPA is autoeq-loss-specific.
+                let de_cb: Box<dyn FnMut(&DEIntermediate) -> CallbackAction + Send> = {
+                    let mut user_cb = user_cb;
+                    Box::new(move |im| user_cb(im.iter, im.fun, None))
+                };
+                optimize_filters_autoeq_with_callback(
+                    x,
+                    lower,
+                    upper,
+                    objective,
+                    self.name,
+                    params,
+                    de_cb,
+                )
+            }
+            None => optimize_filters_autoeq(x, lower, upper, objective, self.name, params),
+        }
+    }
+}
+
+/// Re-exported for the optim.rs wrapper that adds EPA progress to callbacks.
+///
+/// The unified [`FilterOptimizer::optimize`] passes callbacks through with
+/// `epa = None`. The EPA-aware wrapper in [`super::optimize_filters_with_callback`]
+/// builds its own typed `DEIntermediate` callback and calls this entry point
+/// directly, bypassing the trait.
+pub use self::optimize_filters_autoeq_with_callback as autoeq_de_with_callback_typed;
 
 /// Common setup for DE-based optimization
 ///

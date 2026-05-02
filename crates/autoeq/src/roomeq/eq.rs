@@ -1287,13 +1287,21 @@ fn optimize_channel_eq_multi_inner(
         }
     };
 
-    // Local refinement (COBYLA) to polish the global solution
+    // Local refinement (COBYLA) to polish the global solution.
+    //
+    // Local optimizers are not guaranteed to monotonically improve their
+    // input — for some seeds the cobyla refine produces a worse point
+    // than DE found (regression surfaced by the multi-channel
+    // small_stereo_2_2_group QA case after the C-FFI nlopt → pure-Rust
+    // cobyla swap). Snapshot the global result and roll back if the
+    // refine regresses.
     let final_loss = if let Some(refine_data) = primary_for_refine {
         log::info!(
             "  Running local refinement ({}) from global loss={:.6}",
             config.local_algo,
             global_loss
         );
+        let x_before_refine = x.to_vec();
         let local_result = crate::optim::optimize_filters_with_algo_override(
             &mut x,
             &lower_bounds,
@@ -1302,20 +1310,29 @@ fn optimize_channel_eq_multi_inner(
             &optim_params,
             Some(&optim_params.local_algo),
         );
-        match local_result {
-            Ok((_msg, loss)) => {
-                log::info!(
-                    "  Local refinement: {:.6} -> {:.6} (improved {:.6})",
-                    global_loss,
-                    loss,
-                    global_loss - loss
-                );
-                loss
-            }
+        let local_loss = match local_result {
+            Ok((_msg, loss)) => loss,
             Err((msg, loss)) => {
                 log::warn!("  Local refinement did not converge: {}", msg);
                 loss
             }
+        };
+        if local_loss.is_finite() && local_loss < global_loss {
+            log::info!(
+                "  Local refinement: {:.6} -> {:.6} (improved {:.6})",
+                global_loss,
+                local_loss,
+                global_loss - local_loss
+            );
+            local_loss
+        } else {
+            log::info!(
+                "  Local refinement did not improve ({:.6} -> {:.6}), keeping global result",
+                global_loss,
+                local_loss
+            );
+            x.copy_from_slice(&x_before_refine);
+            global_loss
         }
     } else {
         global_loss
