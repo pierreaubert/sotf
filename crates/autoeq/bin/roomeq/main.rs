@@ -23,8 +23,8 @@ use std::path::PathBuf;
 
 // Use the library types
 use autoeq::roomeq::{
-    CallbackAction, DspChainOutput, ExportFormat, RoomConfig, RoomOptimizationCallback,
-    RoomOptimizationProgress, export_dsp_chain, load_config, optimize_room, save_dsp_chain,
+    DspChainOutput, ExportFormat, PipelineControl, PipelineEvent, PipelineObserver, RoomConfig,
+    RoomPipeline, RoomPipelineRequest, export_dsp_chain, load_config, save_dsp_chain,
     validate_room_config,
 };
 
@@ -146,34 +146,36 @@ fn main() -> Result<()> {
     )
 }
 
-/// Progress callback that logs to stderr
-fn create_progress_callback() -> RoomOptimizationCallback {
-    Box::new(|progress: &RoomOptimizationProgress| {
+/// Pipeline observer that logs to stderr.
+fn create_progress_observer() -> Box<dyn PipelineObserver> {
+    Box::new(|event: &PipelineEvent| {
         // Status messages (no real iteration data) — log the message directly
-        if let Some(msg) = &progress.message {
+        if let Some(msg) = &event.message {
             info!("  {}", msg);
-            return CallbackAction::Continue;
+            return PipelineControl::Continue;
         }
 
-        let pct = if progress.max_iterations > 0 {
-            (progress.iteration as f64 / progress.max_iterations as f64) * 100.0
+        let iteration = event.iteration.unwrap_or(0);
+        let max_iterations = event.max_iterations.unwrap_or(0);
+        let pct = if max_iterations > 0 {
+            (iteration as f64 / max_iterations as f64) * 100.0
         } else {
             0.0
         };
         // Log every 100 iterations
-        if progress.iteration.is_multiple_of(100) {
+        if iteration.is_multiple_of(100) {
             info!(
                 "  [{}] ({}/{}) {:.1}% | iter {}/{} | loss: {:.6}",
-                progress.current_speaker,
-                progress.speaker_index + 1,
-                progress.total_speakers,
+                event.channel.as_deref().unwrap_or(""),
+                event.channel_index.unwrap_or(0) + 1,
+                event.total_channels.unwrap_or(0),
                 pct,
-                progress.iteration,
-                progress.max_iterations,
-                progress.loss
+                iteration,
+                max_iterations,
+                event.loss.unwrap_or(0.0)
             );
         }
-        CallbackAction::Continue
+        PipelineControl::Continue
     })
 }
 
@@ -193,11 +195,17 @@ fn run(
     info!("Found {} speakers", room_config.speakers.len());
 
     // Run optimization using the library
-    let callback = create_progress_callback();
+    let observer = create_progress_observer();
     let out_dir = output_path.parent();
-    let result = optimize_room(&room_config, sample_rate, Some(callback), out_dir)
-        .map_err(|e| anyhow!("{}", e))
-        .with_context(|| "Room optimization failed")?;
+    let result = RoomPipeline::new(RoomPipelineRequest {
+        config: &room_config,
+        sample_rate,
+        output_dir: out_dir,
+        probe_arrival_overrides: None,
+    })
+    .run(Some(observer))
+    .map_err(|e| anyhow!("{}", e))
+    .with_context(|| "Room optimization failed")?;
 
     // Log summary
     info!(

@@ -44,6 +44,12 @@ mod config;
 pub use config::{ValidationResult, validate_room_config};
 
 // Main optimization entry points
+mod pipeline;
+pub use pipeline::{
+    PipelineControl, PipelineEvent, PipelineObserver, PipelineStepId, PipelineStepStatus,
+    RoomPipeline, RoomPipelineRequest,
+};
+
 mod optimize;
 pub use optimize::{
     CallbackAction, ChannelOptimizationResult, RoomOptimizationCallback, RoomOptimizationProgress,
