@@ -7,7 +7,7 @@
 
 use serial_test::serial;
 use std::alloc::{GlobalAlloc, Layout, System};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::cell::Cell;
 
 use sotf_plugins::{
     ABComparePlugin, AutoGain, AutoGainParams, BandMergePlugin, BandSplitPlugin,
@@ -23,17 +23,27 @@ use sotf_plugins::{
 // ============================================================================
 // Counting Allocator
 // ============================================================================
+//
+// Per-thread counters: only allocations on a thread that has opted in via
+// `assert_no_allocs` are counted. This makes the test robust against background
+// threads (rayon workers, etc.) that may allocate while the measurement window
+// is open, especially under heavy parallel load (e.g. `cargo nextest run`).
 
-static ALLOC_COUNT: AtomicUsize = AtomicUsize::new(0);
-static COUNTING_ENABLED: AtomicBool = AtomicBool::new(false);
+thread_local! {
+    static ALLOC_COUNT: Cell<usize> = const { Cell::new(0) };
+    static COUNTING_ENABLED: Cell<bool> = const { Cell::new(false) };
+}
 
 struct CountingAlloc;
 
 unsafe impl GlobalAlloc for CountingAlloc {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        if COUNTING_ENABLED.load(Ordering::Relaxed) {
-            ALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
-        }
+        // `try_with` avoids re-entrancy panics if TLS is being initialized.
+        let _ = COUNTING_ENABLED.try_with(|enabled| {
+            if enabled.get() {
+                let _ = ALLOC_COUNT.try_with(|c| c.set(c.get() + 1));
+            }
+        });
         unsafe { System.alloc(layout) }
     }
 
@@ -45,15 +55,15 @@ unsafe impl GlobalAlloc for CountingAlloc {
 #[global_allocator]
 static A: CountingAlloc = CountingAlloc;
 
-/// Run a closure and assert it performs zero heap allocations.
+/// Run a closure and assert it performs zero heap allocations on the current thread.
 fn assert_no_allocs<F: FnOnce()>(label: &str, f: F) {
-    // Ensure any pending allocations from setup are done
+    // Ensure any pending allocations from setup are done.
     std::thread::sleep(std::time::Duration::from_millis(100));
-    ALLOC_COUNT.store(0, Ordering::SeqCst);
-    COUNTING_ENABLED.store(true, Ordering::SeqCst);
+    ALLOC_COUNT.with(|c| c.set(0));
+    COUNTING_ENABLED.with(|c| c.set(true));
     f();
-    COUNTING_ENABLED.store(false, Ordering::SeqCst);
-    let count = ALLOC_COUNT.load(Ordering::SeqCst);
+    COUNTING_ENABLED.with(|c| c.set(false));
+    let count = ALLOC_COUNT.with(|c| c.get());
     assert!(
         count == 0,
         "{label}: {count} allocations detected in hot path (expected 0)"

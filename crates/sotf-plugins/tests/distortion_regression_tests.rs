@@ -1,4 +1,6 @@
 #![allow(clippy::field_reassign_with_default)]
+#![cfg(any(feature = "qa", debug_assertions))]
+
 use sotf_plugins::{
     Plugin, ProcessContext, UpmixerPlugin, UpmixerPluginParams, XtcPlugin, XtcPluginParams,
     test_utils::{SignalGen, measure_rms_db},

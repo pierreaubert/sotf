@@ -1,4 +1,5 @@
-#[cfg(test)]
+#![cfg(any(feature = "qa", debug_assertions))]
+
 mod tests {
     use sotf_plugins::{CompressorPlugin, GainPlugin, InPlacePluginAdapter, PerformanceProfiler};
 
