@@ -1,0 +1,160 @@
+I worked hard on a room EQ system recently and I summarised what I learnt in this article. I tried to explain concepts as simply as possible with references when the reader wants to understand in more details. All feedback and corrections are welcome. The software that implements the room EQ system is almost ready for release and you will be able to play with it. I am very interested to see if it does audibly deliver.
+
+Pierre
+
+[I]Notes:[/I] You can find the [URL=https://github.com/pierreaubert/sotf/tree/master/crates/autoeq/docs/asr-202604.md]latest version[/URL] on GitHub and a more detailed documentation of how roomEQ is working is [URL=https://github.com/pierreaubert/sotf/blob/master/crates/autoeq/docs/roomeq_explained.md]here[/URL].
+
+[HEADING=1]Room Equalization: From Brute-Force Flattening to Perceptual Optimization[/HEADING]
+
+[HEADING=2]A Brief History of Room EQ[/HEADING]
+
+The idea of correcting a room's acoustic damage is almost as old as high-fidelity itself. In the 1970s and 1980s, the weapon of choice was the analog graphic equalizer -- typically a bank of 31 sliders corresponding to ISO 1/3-octave center frequencies. You would set up a calibrated microphone at the listening position, fire pink noise through your speakers, stare at a real-time analyzer (RTA), and nudge sliders until the RTA showed something approximating a flat line. If the room had a 10 dB peak at 63 Hz, you pulled 63 Hz down 10 dB. If it had a 12 dB null at 125 Hz, you pushed 125 Hz up 12 dB. Simple, intuitive, and almost entirely wrong.
+
+The problem was twofold. First, 1/3-octave resolution is far too coarse to distinguish a room mode (a narrow resonance, typically Q of 5-15 in furnished rooms) from a broad shelf in the speaker's native response. The RTA smoothed everything into the same bucket. Second, and more importantly, nobody questioned the assumption that a flat measurement at one point in space meant flat everywhere -- or that flat was even what listeners preferred.
+
+The digital era brought the first generation of automatic room correction. TaCT RCS / Lyngdorf (around late 1990s), Audyssey MultEQ (introduced around 2004), Pioneer's MCACC, and later Dirac Live promised to remove the guesswork. These systems measured the room response, computed an inverse filter, and applied it in the digital domain -- often with FIR filters that could simultaneously correct magnitude and phase. Audyssey's contribution was bringing multi-point measurement to the consumer market: it averaged several microphone positions to build a correction that worked over a wider listening area rather than a single sweet spot. But the target was still "flat." The system would attempt to flatten the response at every frequency, boosting into nulls and cutting into peaks with equal aggression.
+
+The results were... mixed. Many listeners reported that auto-EQ sounded "lifeless" or "thin." Bass often lost its punch. The system spent DSP headroom fighting physics it could not win. And measurements at different positions sometimes contradicted each other in ways that averaging could not resolve.
+
+The shift began in the mid-2000s, driven primarily by the work of Floyd Toole at Harman International and by psychoacoustic researchers like Sean Olive. Their insight was deceptively simple: the human ear does not perceive the room the way a microphone does. A measurement captures a single, time-integrated snapshot of all acoustic energy at a point. The ear, by contrast, separates the direct sound from the reflected sound using temporal processing. Correcting the room as if it were a single transfer function ignores this separation -- and worse, it can damage the parts of the sound the ear cares about most.
+
+This realization launched what we might call the perceptual era of room EQ: systems that measure more carefully, analyze more deeply, and correct more selectively. The goal shifted from "make the measurement flat" to "make the perceived sound preferred." (For a comprehensive survey of digital room equalization methods spanning this transition, see Mourjopoulos [16] and Cecchi et al. [17].)
+
+[HEADING=2]Why "Flat" Isn't Enough[/HEADING]
+
+To understand why flat-at-a-point fails, you need to understand that a room creates two distinct sound fields, and your ear treats them differently.
+
+The [B]direct sound[/B] arrives first. It travels the shortest path from the speaker to your ear, and its spectrum is determined almost entirely by the speaker's frequency response and its radiation pattern. The [B]reverberant field[/B] is everything else: first reflections off walls, floor, and ceiling, followed by a dense tail of diffuse energy that decays exponentially. Toole's research [1, 7, 8] showed that the direct sound dominates your perception of timbre -- what an instrument "sounds like" -- while the reverberant field contributes to your sense of spaciousness, envelopment, and tonal warmth.
+
+The [B]precedence effect[/B] [24] (also called the Haas effect, though the naming priority is disputed) is the mechanism: the auditory system fuses the direct sound with reflections arriving within roughly 1-5 ms, and suppresses the directional information of reflections arriving within a content-dependent window (1-5 ms for transients, up to 40 ms or more for speech [24]). You hear the timbre of the first arrival and the spaciousness of the room. A single microphone measurement captures the sum of both, smearing them together.
+
+Now consider what happens above and below the [B]Schroeder frequency[/B] [9, 10] -- the transition frequency where room modes give way to a statistical diffuse field. For a typical domestic room (say, 4 x 5 x 2.5 meters with an RT60 of 0.4 seconds), the Schroeder frequency falls around 150-200 Hz. Below it, the room's acoustic behavior is dominated by a sparse set of standing wave patterns (axial, tangential, and oblique modes). These modes create peaks and dips that are spatially specific: move the microphone 30 cm and the response can change by 20 dB. Above the Schroeder frequency, the mode density becomes so high that the field is effectively statistical and relatively stable across positions.
+
+This distinction has a critical implication for equalization. Peaks caused by room modes represent real resonant energy storage -- the room is ringing at that frequency. EQ can absorb that energy by applying a narrow notch filter. Dips (nulls), on the other hand, are caused by destructive interference: two wavefronts arriving at the measurement point in opposite phase. Boosting a null does not fill it -- it just drives more energy into the room, which still cancels at that point and now causes excessive level everywhere else. Boosting into a null is like trying to fill a hole in the ocean by pouring in more water. (Welti and Devantier [14] showed that multiple subwoofers with optimized placement reduce modal variance far more effectively than equalization alone.)
+
+So what do listeners actually prefer? The Harman research program, led by Sean Olive [4, 5, 25], answered this with controlled listening tests involving thousands of subjects. The preferred in-room response is [I]not flat[/I]. Listeners consistently prefer a gentle downward tilt from bass to treble -- roughly -0.5 to -1 dB/octave with frequency-dependent shaping (more bass emphasis, less treble roll-off than a simple tilt). This is the in-room curve that a well behaved speaker exhibit naturally. Modern systems like Dirac Live and REW's house curve feature are converging toward. The Olive preference score, which predicts listener preference from objective measurements, rewards this tilt and penalizes both excessive brightness and bass bloat.
+
+The lesson is clear: [B]the target matters as much as the correction[/B]. Flat-at-a-point optimizes for the wrong thing at the wrong resolution.
+
+[HEADING=2]The Perceptual Revolution[/HEADING]
+
+Once you accept that the ear is not a microphone, the question becomes: what does the ear care about, and how can we optimize for it?
+
+[B]Frequency-dependent sensitivity to modal decay.[/B] Not all room modes are equally audible. Psychometric studies [11, 12, 13] have established that the ear's sensitivity to resonant ringing varies dramatically with frequency. At 32 Hz, a mode can ring for nearly 900 ms (T60 equivalent) before it becomes audible as a separate artifact. At 100 Hz, the threshold drops to about 250 ms. At 250 Hz, it is only 150 ms. This means a correction system should prioritize modes whose decay times exceed the perceptual threshold at their frequency -- not just modes that are large in the frequency domain. A 6 dB peak at 40 Hz with a fast decay may be less objectionable than a 3 dB peak at 150 Hz with a slow one.
+
+[B]Asymmetric correction.[/B] The physics of nulls, combined with the precedence effect, leads to a fundamental asymmetry in correction strategy. Peaks should be cut aggressively -- they represent real energy that the ear perceives and that causes audible ringing. Dips should be left largely alone, or at most gently filled with broad, low-Q filters. A practical heuristic (used in the sotf autoeq system described in Section 4, tuned empirically against listening tests) is roughly 5:1: for every 5 dB of cut applied to a peak, allow only 1 dB of boost into a dip. The specific ratio is a design choice, not a universal constant, but the asymmetry itself reflects the physics: nulls are position-dependent interference patterns that will shift with any change in listener position, while peaks are room resonances that persist across the listening area.
+
+[B]Bark scale and critical bands.[/B] Human frequency resolution is not uniform. The cochlea divides the audible spectrum into 24 critical bands (the Bark scale, formalized by Zwicker [2]; the related ERB scale by Moore and Glasberg offers higher accuracy at low frequencies). Below about 500 Hz, the critical bandwidth is approximately constant at ~100 Hz. Above 500 Hz, bandwidth scales proportionally with frequency -- each band is about 20% of its center frequency. This means the ear has higher relative resolution in the bass (where room modes live) and lower resolution in the treble (where the response is already smooth). An EQ system that operates on a linear frequency scale wastes filter resolution in the treble and starves it in the bass. Warped IIR filters [18, 27] -- whose frequency axis is transformed via the bilinear-like Bark warp -- naturally concentrate correction effort where the ear is most sensitive.
+
+[B]The EPA model.[/B] Sound quality research has adapted the Evaluation-Potency-Activity framework (originating from Osgood's 1957 semantic differential theory in psychology, applied to sound quality by Susini, McAdams, and others) as a way to map psychoacoustic metrics onto a single preference score. Evaluation captures overall pleasantness -- driven primarily by sharpness (high-frequency emphasis) and spectral balance. Potency maps to perceived loudness and "body." Activity reflects temporal complexity and roughness. A good room EQ should maximize Evaluation (pleasant timbre), maintain moderate Potency (sufficient loudness without bloat), and minimize Activity (low roughness, clean transients). The composite score becomes a loss function that the optimizer can minimize directly.
+
+[B]CDT and the ear's own nonlinearity.[/B] The cochlea is not a linear transducer. It generates Cubic Distortion Tones (CDTs) -- intermodulation products at frequencies like 2f1 - f2 -- as a byproduct of its active amplification mechanism (the outer hair cells) [2]. These distortion products (measurable as Distortion Product Otoacoustic Emissions, DPOAEs) are part of normal cochlear function, though their perceptual contribution to complex tone perception remains an active research question. One hypothesis -- still speculative -- is that aggressive room correction can alter the spectral balance feeding these nonlinear mechanisms, contributing to the "sterile" quality some listeners report. More established explanations for this sterility include over-correction of the reverberant field (stripping room warmth) and boosting into position-dependent nulls. Regardless of mechanism, the practical lesson holds: a gentle target tilt and conservative correction limits tend to produce more natural results than ruler-flat inversion.
+
+[HEADING=2]Modern Room EQ Architecture[/HEADING]
+
+To make these perceptual principles actionable, a modern room EQ system needs a pipeline that goes well beyond "measure, invert, apply." The sotf autoeq/roomeq system (the author's own open-source implementation) provides a concrete example of what this architecture looks like in practice. The details below describe this specific system; other implementations may make different engineering choices while following similar perceptual principles.
+
+[HEADING=3]Measurement[/HEADING]
+
+Traditional room measurement uses a logarithmic swept sine (log chirp) from 20 Hz to 20 kHz, deconvolved to extract the impulse response. This works, but it has limitations: it requires silence during the sweep, it captures the full room response in a single time-integrated snapshot, and extracting per-channel delay information from a multi-speaker system requires sequential sweeps with careful bookkeeping.
+
+An alternative approach, based on Johnston and Smirnov's work [23], uses [B]allpass probes with Hilbert envelope detection[/B]. The idea: instead of a broadband chirp, play a narrowband probe signal (typically 800-2000 Hz) on each channel sequentially. The probe is designed so that its Hilbert envelope (the analytic signal magnitude) has a sharp, unambiguous peak. Cross-correlating the recorded signal with the known probe yields a clean delay estimate without the ambiguity of broadband correlation. The narrowband probe (800-2000 Hz) gives precise delay measurements; a subsequent wideband probe captures the full frequency response. Sequential multi-channel probing means you can measure a 7.1.4 system without requiring silence between channels -- each channel gets its own time slot.
+
+[HEADING=3]Analysis: SSIR[/HEADING]
+
+Raw impulse responses contain everything jumbled together. [B]Spatial Segmentation of Impulse Response (SSIR)[/B] [28] -- separates the impulse response into three temporal regions: direct sound (the first arrival, typically 0-2 ms after onset), early reflections (2-20 ms, the discrete echoes off walls and floor), and the reverberant tail (20 ms onward, the diffuse decay). By windowing the IR into these regions and computing the frequency response of each, you get separate correction targets per time segment. The direct sound window tells you about the speaker itself. The early reflection window tells you about the room's geometry. The reverberant tail tells you about absorption and diffusion.
+
+This decomposition drives the correction strategy: correct aggressively in the direct sound region (you are fixing the speaker), gently in the reverberant region (you are treating the room's character), and cautiously in the early reflection region (those reflections are position-dependent and will shift if the listener moves).
+
+[HEADING=3]Correction Strategy[/HEADING]
+
+The correction divides cleanly at the Schroeder/transition frequency, typically around 250 Hz.
+
+[B]Below the transition (~250 Hz): Correct the room.[/B] This is mode territory. The system detects room modes by scanning for peaks with Q > 3 and prominence > 3 dB. Peaks are cut aggressively using a 5:1 asymmetry ratio -- for every 5 dB of cut, only 1 dB of boost is permitted. The correction respects the perceptual temporal decay thresholds: a mode at 50 Hz with a decay time under 600 ms is left alone (it is inaudible as ringing), while a mode at 100 Hz ringing for 400 ms (above the 250 ms threshold) is targeted.
+
+For surgical mode correction, the system employs [B]Kautz filters[/B] [19] -- orthogonal IIR basis functions with poles placed at the detected mode frequencies. A Kautz filter with a pole at the mode frequency naturally matches the resonance's shape, providing a more efficient correction than a generic biquad. The system detects modes from the impulse analysis, constructs a Kautz filter bank with poles at those frequencies, optimizes the gain coefficients against the measured response, and then converts the Kautz sections to equivalent peak biquads for export to standard DSP hardware.
+
+[B]Above the transition: Correct the speaker.[/B] Here the response is smooth (high mode density) and the corrections should be broad and gentle. The system uses warped IIR filters whose frequency axis is transformed via the Bark-scale lambda parameter. This warp concentrates filter resolution in the critical bands where the ear is most sensitive -- lots of resolution below 1 kHz where modes and crossover artifacts live, less resolution above 5 kHz where the ear is relatively tolerant. Boost is limited by a frequency-dependent envelope: no more than 2-3 dB of boost above the transition, with the limit tapering further above 10 kHz where small errors in microphone placement can cause large apparent dips.
+
+[B]First-reflection cancellation.[/B] Based on Johnston's LP-filtered IIR echo subtraction technique, the system can partially cancel the first strong reflection below 500 Hz. The algorithm is straightforward: y[n] = x[n] - g * LP(x[n - d]), where g is the reflection's relative gain, d is its delay in samples (determined from the SSIR analysis), and LP is a 4th-order Butterworth lowpass at 500 Hz. The lowpass filter is critical -- canceling reflections above 500 Hz would create a sweet spot measured in centimeters, not the ~15 cm (half-foot) radius that Johnston showed is practical. The maximum attenuation is capped at 6 dB; partial cancellation avoids bizarre artifacts for listeners outside the sweet spot.
+
+[B]Channel matching.[/B] Before per-channel optimization begins, a shared mean SPL pre-pass computes the spectral alignment across all channels. This ensures that Left and Right (and Center, surrounds, heights) all optimize toward the same target level. Without this step, each channel's optimizer would independently find its own "flat," potentially creating inter-channel level mismatches of several dB that manifest as phantom image shifts.
+
+[HEADING=3]Optimization[/HEADING]
+
+The optimizer uses [B]Differential Evolution (DE)[/B] [21] -- a population-based metaheuristic that excels in high-dimensional, non-convex search spaces. For a typical 10-filter correction with frequency, gain, and Q as free parameters per filter, the search space is 30-dimensional with many local minima. DE's mutation-and-crossover strategy explores this space efficiently without requiring gradient information.
+
+The loss function is where perceptual modeling pays off. The system implements an EPA-based composite loss combining four terms:
+
+[LIST]
+[*][B]Spectral flatness (40%):[/B] Deviation from the target curve, using asymmetric weighting (peaks penalized more than dips).
+[*][B]Sharpness penalty (30%):[/B] Deviation of Zwicker sharpness [31] from the target value (1.2 acum for natural-sounding broadband content). Penalizes both excessive brightness and dullness.
+[*][B]Roughness penalty (20%):[/B] Spectral roughness [26] above the 0.5 asper threshold. Penalizes harsh, grating tonal interactions -- typically caused by closely spaced peaks or residual modes.
+[*][B]Loudness balance (10%):[/B] Uniformity of specific loudness [29, 30] across Bark bands. Rewards even energy distribution; penalizes spectral holes or bumps that might escape the flatness metric.
+[/LIST]
+
+The weights (0.4, 0.3, 0.2, 0.1) were tuned empirically against the Harman preference data. The flatness term dominates because spectral accuracy is the foundation, but the perceptual terms prevent the optimizer from finding solutions that are technically flat but subjectively unpleasant -- for example, a response that is flat but has a sharp 6 dB notch at 3 kHz followed by a 6 dB peak at 4 kHz (flat on average, rough in practice).
+
+Population size scales with the number of free parameters (4-10x the dimensionality, following Storn and Price's recommendations [21]), and the optimizer runs for a minimum of 5,000 generations. Convergence is monitored by both relative and absolute tolerance (0.001 and 0.0001 respectively). For production use, typical optimization times are 5-15 seconds per channel on a modern CPU.
+
+[HEADING=2]What's Next[/HEADING]
+
+Room correction is converging with two adjacent technologies in ways that will reshape the field over the next decade.
+
+[B]Active Room Treatment (ART)[/B] takes a fundamentally different approach: instead of correcting the signal before the speaker, it uses additional loudspeakers to actively cancel room modes. Dirac's ART system and Trinnov's WaveForming technology both operate on this principle. Think of it as noise cancellation for standing waves. The advantage is that ART cancels the mode itself -- not just its effect at one point -- so the improvement is consistent across a wide listening area. The challenge is that it requires precise knowledge of the room's geometry and mode structure, additional amplification channels, and careful calibration to avoid instabilities. Early commercial implementations are promising but expensive. As DSP power becomes cheaper and room modeling improves, expect ART to move downstream from professional mastering studios into enthusiast systems.
+
+[B]HRTF personalization[/B] addresses a different problem: spatial audio reproduction over headphones. Current binaural rendering uses generic Head-Related Transfer Functions that approximate the average human's pinna and head geometry. Personalized HRTFs -- measured individually or estimated from ear photographs using machine learning -- dramatically improve externalization and spatial accuracy. The relevance to room correction is that as spatial audio formats like Dolby Atmos and IAMF become mainstream for music delivery, the room correction system must interact with the binaural renderer. Getting the room right matters less if the binaural rendering places you in a virtual room anyway; but getting the speaker's response right matters even more, because binaural encoding amplifies any timbral errors.
+
+[B]Real-time adaptive correction[/B] is perhaps the most ambitious frontier. Current systems measure once (or a few times) and compute a static filter. But rooms change -- windows open, people move, temperature shifts alter the speed of sound and thus the mode frequencies. Adaptive systems would continuously analyze the music signal itself (no test tones needed) to estimate the room's current transfer function and adjust correction filters in real time. The technical hurdles are significant: you need robust system identification from non-stationary, correlated input (music is the worst case for adaptive filters), sub-millisecond update rates to avoid audible artifacts, and enough computational headroom to run the adaptation alongside the audio processing. Early research (mostly in automotive audio, where the "room" changes constantly as passengers move) shows that it is feasible with modern DSP hardware, but consumer implementations are still years out.
+
+Finally, the convergence of room correction and spatial audio may render the entire paradigm moot -- or at least transform it beyond recognition. If your listening system knows the room's impulse response (from correction measurements), the speaker positions (from calibration), and your head position (from tracking), it has everything needed to render a complete virtual acoustic environment that replaces the room rather than correcting it. The room becomes a canvas, not a constraint. We are not there yet. But the building blocks -- perceptual optimization, modal analysis, time-domain decomposition, and HRTF rendering -- are all falling into place.
+
+For now, the practical takeaway is simpler: do not just flatten the curve. Measure carefully. Separate the direct sound from the room. Cut peaks, leave dips. Respect the Schroeder frequency. And optimize for what the ear actually prefers, not what the microphone says is "flat." The era of brute-force equalization is over. The era of perceptual optimization has arrived.
+
+[HEADING=2]References[/HEADING]
+
+[HEADING=3]Books[/HEADING]
+
+[LIST=1]
+[*]Toole, F. E. (2008). [I]Sound Reproduction: The Acoustics and Psychoacoustics of Loudspeakers and Rooms[/I]. Focal Press/Elsevier. ISBN 978-0-240-52009-4.
+[*]Zwicker, E. and Fastl, H. (2007). [I]Psychoacoustics: Facts and Models[/I], 3rd ed. Springer. ISBN 978-3-540-23159-2.
+[*]Kuttruff, H. (2009). [I]Room Acoustics[/I], 5th ed. Spon Press. ISBN 978-0-415-48021-5.
+[/LIST]
+
+[HEADING=3]Peer-Reviewed Papers and AES Publications[/HEADING]
+
+[LIST=1, start=4]
+[*]Olive, S. E. (2004). "A Multiple Regression Model for Predicting Loudspeaker Preference Using Objective Measurements: Part I -- Listening Test Results." [I]JAES[/I], 52(1/2), pp. 2-25.
+[*]Olive, S. E. (2004). "A Multiple Regression Model for Predicting Loudspeaker Preference Using Objective Measurements: Part II -- Development of the Model." [I]JAES[/I], 52(12), pp. 1230-1244.
+[*]Olive, S. E., Jackson, J., Devantier, A., Hunt, D., and Hess, S. M. (2009). "The Subjective and Objective Evaluation of Room Correction Products." [I]AES 127th Convention[/I], Paper 7960.
+[*]Toole, F. E. (1986). "Loudspeaker Measurements and Their Relationship to Listener Preferences: Part 1." [I]JAES[/I], 34(4), pp. 227-235.
+[*]Toole, F. E. (1986). "Loudspeaker Measurements and Their Relationship to Listener Preferences: Part 2." [I]JAES[/I], 34(5), pp. 323-348.
+[*]Schroeder, M. R. (1965). "New Method of Measuring Reverberation Time." [I]JASA[/I], 37(3), pp. 409-412.
+[*]Schroeder, M. R. and Kuttruff, H. (1962). "On Frequency Response Curves in Rooms." [I]JASA[/I], 34(1), pp. 76-80.
+[*]Karjalainen, M., Antsalo, P., Mäkivirta, A., and Välimäki, V. (2004). "Perception of Temporal Decay of Low-Frequency Room Modes." [I]AES 116th Convention[/I], Paper 6083.
+[*]Fazenda, B. M., Avis, M., and Davies, W. J. (2005). "Perception of Modal Distribution Metrics in Critical Listening Spaces -- Dependence on Room Aspect Ratios." [I]JAES[/I], 53(12), pp. 1128-1141.
+[*]Fazenda, B. M., Stephenson, M., and Goldberg, A. (2015). "Perceptual Thresholds for the Effects of Room Modes as a Function of Modal Decay." [I]JASA[/I], 137(3), pp. 1088-1098.
+[*]Welti, T. and Devantier, A. (2006). "Low-Frequency Optimization Using Multiple Subwoofers." [I]JAES[/I], 54(5), pp. 347-364.
+[*]Makivirta, A., Antsalo, P., Karjalainen, M., and Välimäki, V. (2003). "Modal Equalization of Loudspeaker-Room Responses at Low Frequencies." [I]JAES[/I], 51(5), pp. 324-343.
+[*]Mourjopoulos, J. N. (2003). "Digital Equalization of Room Acoustics." [I]JAES[/I], 51(6), pp. 589-608.
+[*]Cecchi, S., Carini, A., and Spors, S. (2018). "Room Response Equalization -- A Review." [I]Applied Sciences[/I], 8(1), Article 16. doi:10.3390/app8010016.
+[*]Härmä, A., Karjalainen, M., Savioja, L., Välimäki, V., Laine, U. K., and Huopaniemi, J. (2000). "Frequency-Warped Signal Processing for Audio Applications." [I]JAES[/I], 48(11), pp. 1011-1031.
+[*]Bank, B. (2008). "Perceptually Motivated Audio Equalization Using Fixed-Pole Parallel Second-Order Filters." [I]IEEE Signal Processing Letters[/I], 15, pp. 477-480.
+[*]Kemp, D. T. (1978). "Stimulated Acoustic Emissions from within the Human Auditory System." [I]JASA[/I], 64(5), pp. 1386-1391. (Discovery of otoacoustic emissions including CDTs.)
+[*]Storn, R. and Price, K. (1997). "Differential Evolution -- A Simple and Efficient Heuristic for Global Optimization over Continuous Spaces." [I]Journal of Global Optimization[/I], 11, pp. 341-359.
+[*]Susini, P., McAdams, S., Winsberg, S., Perry, I., Vieillard, S., and Rodet, X. (2004). "Characterizing the Sound Quality of Air-Conditioning Noise." [I]Applied Acoustics[/I], 65(8), pp. 763-790. (EPA-based sound quality assessment.)
+[*]Johnston, J. D. and Smirnov, S. (2008). "Acoustic and Psychoacoustic Issues in Room Correction." [I]AES 124th Convention[/I], Paper 7295.
+[*]Litovsky, R. Y., Colburn, H. S., Yost, W. A., and Guzman, S. J. (1999). "The Precedence Effect." [I]JASA[/I], 106(4), pp. 1633-1654.
+[*]Olive, S. E., Jackson, J., Welti, T., and Khashaba, N. (2018). "A New Reference Listening Room for Consumer, Automotive, and Communications Audio Research." [I]AES 145th Convention[/I], Paper 10104.
+[*]Daniel, P. and Weber, R. (1997). "Psychoacoustical Roughness: Implementation of an Optimized Model." [I]Acustica[/I], 83(1), pp. 113-123.
+[*]Smith, J. O. and Abel, J. S. (1999). "Bark and ERB Bilinear Transforms." [I]IEEE Transactions on Speech and Audio Processing[/I], 7(6), pp. 697-708.
+[*]Laborie, A., Bruno, R., and Montoya, S. (2003). "A New Comprehensive Approach of Surround Sound Recording." [I]AES 114th Convention[/I], Paper 5717.
+[/LIST]
+
+[HEADING=3]Standards[/HEADING]
+
+[LIST=1, start=29]
+[*]ISO 226:2003. [I]Acoustics -- Normal equal-loudness-level contours[/I].
+[*]ITU-R BS.1770-4. [I]Algorithms to measure audio programme loudness and true-peak audio level[/I].
+[*]DIN 45692:2009. [I]Measurement technique for the simulation of the auditory sensation of sharpness[/I].
+[/LIST]
