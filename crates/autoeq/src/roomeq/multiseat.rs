@@ -828,6 +828,10 @@ fn decode_mso_params(params: &[f64], num_subs: usize, options: MsoSearchOptions)
     (gains, delays, polarities, allpass_filters)
 }
 
+#[allow(
+    clippy::type_complexity,
+    reason = "extracting a type alias for this dyn Fn requires explicit lifetimes that pollute every call site"
+)]
 fn optimize_continuous_mso(
     num_subs: usize,
     options: MsoSearchOptions,

@@ -10,6 +10,7 @@ use crate::read as load;
 use crate::response;
 use log::{debug, info, warn};
 use math_audio_dsp::analysis::compute_average_response;
+use math_audio_dsp::signals::{gen_dirac, gen_mls};
 use math_audio_iir_fir::Biquad;
 use ndarray::Array1;
 use std::path::Path;
@@ -46,6 +47,49 @@ pub(super) type MixedModeResult = (
     Option<f64>,
     Option<Vec<f64>>,
 );
+
+const DEFAULT_MLS_ORDER: u8 = 16;
+
+fn normalize_recording_signal_type(signal_type: &str) -> String {
+    signal_type
+        .trim()
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '-' && *c != '_')
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+fn matched_reference_from_recording_config(
+    room_config: &RoomConfig,
+    fallback_sample_rate: f64,
+) -> Option<(&'static str, Vec<f32>, u32)> {
+    let recording = room_config.recording_config.as_ref()?;
+    let signal_type = recording.signal_type.as_deref()?;
+    let signal_type = normalize_recording_signal_type(signal_type);
+
+    let sample_rate = recording.recording_sample_rate.unwrap_or_else(|| {
+        if fallback_sample_rate.is_finite() && fallback_sample_rate > 0.0 {
+            fallback_sample_rate.round() as u32
+        } else {
+            48_000
+        }
+    });
+    let amp = 10.0_f32.powf(recording.signal_level_db.unwrap_or(0.0) / 20.0);
+
+    match signal_type.as_str() {
+        "mls" | "maximumlengthsequence" | "maximumlengthsequences" => {
+            Some(("MLS", gen_mls(DEFAULT_MLS_ORDER, amp), sample_rate))
+        }
+        "dirac" | "impulse" => {
+            let duration = recording
+                .signal_duration_secs
+                .unwrap_or(1.0)
+                .max(1.0 / sample_rate as f32);
+            Some(("Dirac", gen_dirac(amp, sample_rate, duration), sample_rate))
+        }
+        _ => None,
+    }
+}
 
 pub(super) fn optimize_eq_maybe_multi(
     source: &MeasurementSource,
@@ -201,6 +245,35 @@ pub(super) fn process_single_speaker(
         extract_wav_path(source).and_then(|wav_path| {
             let path = std::path::Path::new(&wav_path);
             if path.exists() {
+                if let Some((reference_name, reference_signal, reference_sample_rate)) =
+                    matched_reference_from_recording_config(room_config, sample_rate)
+                    && !reference_signal.is_empty()
+                {
+                    match super::time_align::find_arrival_time_with_reference(
+                        path,
+                        &reference_signal,
+                        reference_sample_rate,
+                    ) {
+                        Ok(result) => {
+                            debug!(
+                                "  {} matched arrival for '{}': {:.2} ms (peak at sample {}, SNR {:.1} dB)",
+                                reference_name,
+                                channel_name,
+                                result.arrival_ms,
+                                result.arrival_samples,
+                                result.detection_snr_db
+                            );
+                            return Some(result.arrival_ms);
+                        }
+                        Err(e) => {
+                            debug!(
+                                "  Could not determine {} matched arrival for '{}': {}; falling back to WAV onset",
+                                reference_name, channel_name, e
+                            );
+                        }
+                    }
+                }
+
                 match super::time_align::find_arrival_time(path, None) {
                     Ok(result) => {
                         debug!(

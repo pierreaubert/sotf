@@ -565,6 +565,7 @@ fn progress_event(
 ///      initial and final curves).
 ///   2. No NaN or infinite SPL values in the final curve — they signal
 ///      optimiser divergence.
+///
 /// Runs in both debug AND release. Debug panics (via `debug_assert!`) so
 /// tests surface the exact violated invariant; release returns a clean
 /// `Err` so fuzz / QA runs report divergence instead of shipping a

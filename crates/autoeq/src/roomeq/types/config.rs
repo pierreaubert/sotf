@@ -581,6 +581,10 @@ pub struct SystemConfig {
 /// doesn't have, so they are tried first. `Single` is last as a catch-all.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "SpeakerConfig::Single is the dominant variant in 100+ call sites; boxing would create churn for marginal memory savings"
+)]
 pub enum SpeakerConfig {
     /// Group of measurements (multi-driver case)
     Group(SpeakerGroup),

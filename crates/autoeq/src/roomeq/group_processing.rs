@@ -134,11 +134,7 @@ pub(super) fn process_speaker_group(
 
     let fixed_freqs: Option<Vec<f64>> = if let Some(ref freqs) = crossover_config.frequencies {
         Some(freqs.clone())
-    } else if let Some(freq) = crossover_config.frequency {
-        Some(vec![freq])
-    } else {
-        None
-    };
+    } else { crossover_config.frequency.map(|freq| vec![freq]) };
 
     // 6. Compute pre-score (using linearized drivers)
     let n_drivers = linearized_drivers.len();

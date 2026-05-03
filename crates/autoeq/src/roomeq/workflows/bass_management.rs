@@ -870,18 +870,16 @@ fn optimize_home_cinema_joint_group_crossovers(
         ));
     }
 
-    let min_delay = decoded
+    let min_delay = if decoded
         .iter()
         .flat_map(|(_, _, _, _, main_delay, bass_delay, _, _)| [*main_delay, *bass_delay])
         .fold(f64::INFINITY, f64::min)
-        .is_finite()
-        .then(|| {
+        .is_finite() { {
             decoded
                 .iter()
                 .flat_map(|(_, _, _, _, main_delay, bass_delay, _, _)| [*main_delay, *bass_delay])
                 .fold(f64::INFINITY, f64::min)
-        })
-        .unwrap_or(0.0);
+        } } else { 0.0 };
 
     for (_, input, freq, xover_type, main_delay, bass_delay, inverted, trim) in decoded {
         let objective_before_curve = predict_bass_management_sum(
@@ -1549,8 +1547,8 @@ pub(super) fn optimize_bass_management_joint_solution(
         let optimization = joint_bass_management_report_from_parts(&groups, &outputs);
         let graph =
             crate::roomeq::home_cinema::bass_management_routing_graph(config, Some(&optimization));
-        if let Some(effective) = crate::roomeq::home_cinema::effective_bass_management(config) {
-            if let Some(headroom) = crate::roomeq::home_cinema::simulate_bass_bus_headroom(
+        if let Some(effective) = crate::roomeq::home_cinema::effective_bass_management(config)
+            && let Some(headroom) = crate::roomeq::home_cinema::simulate_bass_bus_headroom(
                 graph.as_ref(),
                 &effective.config.headroom_model,
                 effective.config.headroom_margin_db,
@@ -1559,7 +1557,6 @@ pub(super) fn optimize_bass_management_joint_solution(
                 let headroom_excess = (-headroom.margin_db).max(0.0);
                 total += headroom_excess * headroom_excess * 2.0;
             }
-        }
         total
     };
 

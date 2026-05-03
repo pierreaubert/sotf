@@ -633,8 +633,7 @@ fn compare_scorecards(
     // 4. Sharpness: absolute bounds, but skip if baseline already violates
     //    (candidate matching or improving on a pre-existing violation is not a regression)
     if let (Some(c_sharp), Some(b_sharp)) = (candidate.epa_sharpness, baseline.epa_sharpness) {
-        let in_range = c_sharp >= SCORECARD_SHARPNESS_MIN
-            && c_sharp <= SCORECARD_SHARPNESS_MAX + SCORECARD_SHARPNESS_EPSILON;
+        let in_range = (SCORECARD_SHARPNESS_MIN..=SCORECARD_SHARPNESS_MAX + SCORECARD_SHARPNESS_EPSILON).contains(&c_sharp);
         let baseline_already_violated =
             !(SCORECARD_SHARPNESS_MIN..=SCORECARD_SHARPNESS_MAX).contains(&b_sharp);
         let no_worse = c_sharp <= b_sharp + 0.05; // small tolerance for optimizer noise

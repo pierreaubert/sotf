@@ -20,6 +20,38 @@ pub struct ArrivalTimeResult {
     pub peak_amplitude: f32,
 }
 
+fn load_wav_first_channel(wav_path: &Path) -> Result<(Vec<f32>, u32), String> {
+    let mut reader = WavReader::open(wav_path)
+        .map_err(|e| format!("Failed to open WAV file {:?}: {}", wav_path, e))?;
+
+    let spec = reader.spec();
+    let sample_rate = spec.sample_rate;
+    let channels = spec.channels as usize;
+
+    let samples: Vec<f32> = match spec.sample_format {
+        hound::SampleFormat::Int => {
+            let bits = spec.bits_per_sample;
+            let max_val = (1u32 << (bits - 1)) as f32;
+            reader
+                .samples::<i32>()
+                .enumerate()
+                .filter(|(i, _)| i % channels == 0)
+                .map(|(_, s)| s.map(|v| v as f32 / max_val))
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| format!("Failed to read samples: {}", e))?
+        }
+        hound::SampleFormat::Float => reader
+            .samples::<f32>()
+            .enumerate()
+            .filter(|(i, _)| i % channels == 0)
+            .map(|(_, s)| s)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Failed to read samples: {}", e))?,
+    };
+
+    Ok((samples, sample_rate))
+}
+
 /// Find the arrival time (signal onset) in a WAV file
 ///
 /// This function loads a WAV file and finds the first point where the signal
@@ -37,36 +69,7 @@ pub fn find_arrival_time(
     threshold_db: Option<f64>,
 ) -> Result<ArrivalTimeResult, String> {
     let threshold_db = threshold_db.unwrap_or(-40.0);
-
-    // Load WAV file
-    let mut reader = WavReader::open(wav_path)
-        .map_err(|e| format!("Failed to open WAV file {:?}: {}", wav_path, e))?;
-
-    let spec = reader.spec();
-    let sample_rate = spec.sample_rate;
-    let channels = spec.channels as usize;
-
-    // Read samples (convert to f32, take first channel if stereo)
-    let samples: Vec<f32> = match spec.sample_format {
-        hound::SampleFormat::Int => {
-            let bits = spec.bits_per_sample;
-            let max_val = (1u32 << (bits - 1)) as f32;
-            reader
-                .samples::<i32>()
-                .enumerate()
-                .filter(|(i, _)| i % channels == 0) // Take first channel only
-                .map(|(_, s)| s.map(|v| v as f32 / max_val))
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|e| format!("Failed to read samples: {}", e))?
-        }
-        hound::SampleFormat::Float => reader
-            .samples::<f32>()
-            .enumerate()
-            .filter(|(i, _)| i % channels == 0)
-            .map(|(_, s)| s)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| format!("Failed to read samples: {}", e))?,
-    };
+    let (samples, sample_rate) = load_wav_first_channel(wav_path)?;
 
     if samples.is_empty() {
         return Err("WAV file contains no samples".to_string());
@@ -236,6 +239,36 @@ pub fn detect_delay_with_probe(
     detect_delay_with_probe_inner(probe, recorded, sample_rate, auto_peak)
 }
 
+/// Detect arrival time in a recorded WAV using a known reference signal.
+///
+/// This is the same matched-filter path as [`detect_delay_with_probe`], but it
+/// owns the WAV loading step so callers that only have persisted recordings can
+/// recover the correlation peak directly from disk.
+pub fn find_arrival_time_with_reference(
+    wav_path: &Path,
+    reference_signal: &[f32],
+    reference_sample_rate: u32,
+) -> Result<ProbeDelayResult, String> {
+    if reference_signal.is_empty() {
+        return Err("Reference signal is empty".to_string());
+    }
+
+    let (recorded, wav_sample_rate) = load_wav_first_channel(wav_path)?;
+    if recorded.is_empty() {
+        return Err("WAV file contains no samples".to_string());
+    }
+
+    if reference_sample_rate != 0 && reference_sample_rate != wav_sample_rate {
+        log::debug!(
+            "[find_arrival_time_with_reference] WAV sample rate {}Hz differs from reference {}Hz; using WAV rate for timing",
+            wav_sample_rate,
+            reference_sample_rate
+        );
+    }
+
+    detect_delay_with_probe(reference_signal, &recorded, wav_sample_rate)
+}
+
 /// Inner implementation that accepts a precomputed autocorrelation peak,
 /// avoiding redundant FFT computation when called in a loop.
 fn detect_delay_with_probe_inner(
@@ -334,6 +367,22 @@ pub fn detect_delays_multi_channel(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn write_mono_wav(samples: &[f32], sample_rate: u32) -> tempfile::NamedTempFile {
+        let temp_file = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate,
+            bits_per_sample: 32,
+            sample_format: hound::SampleFormat::Float,
+        };
+        let mut writer = hound::WavWriter::create(temp_file.path(), spec).unwrap();
+        for &sample in samples {
+            writer.write_sample(sample).unwrap();
+        }
+        writer.finalize().unwrap();
+        temp_file
+    }
 
     #[test]
     fn test_calculate_alignment_delays() {
@@ -495,6 +544,51 @@ mod tests {
             "Expected gain ~{:.1}dB, got {:.1}dB",
             expected_gain_db,
             result.gain_db
+        );
+    }
+
+    #[test]
+    fn test_find_arrival_time_with_reference_mls_wav() {
+        let sr = 48000_u32;
+        let reference = math_audio_dsp::signals::gen_mls(10, 0.5);
+        let delay = 321_usize;
+        let mut recorded = vec![0.0_f32; reference.len() + delay + 256];
+        for (i, &sample) in reference.iter().enumerate() {
+            recorded[i + delay] += sample * 0.6;
+        }
+
+        let wav = write_mono_wav(&recorded, sr);
+        let result = find_arrival_time_with_reference(wav.path(), &reference, sr).unwrap();
+        let expected_ms = delay as f64 * 1000.0 / sr as f64;
+
+        assert!(
+            (result.arrival_ms - expected_ms).abs() < 0.15,
+            "Expected {:.3}ms, got {:.3}ms",
+            expected_ms,
+            result.arrival_ms
+        );
+        assert!(result.detection_snr_db > 20.0);
+    }
+
+    #[test]
+    fn test_find_arrival_time_with_reference_dirac_wav() {
+        let sr = 48000_u32;
+        let reference = math_audio_dsp::signals::gen_dirac(0.5, sr, 0.01);
+        let delay = 96_usize;
+        let mut recorded = vec![0.0_f32; reference.len() + delay + 256];
+        for (i, &sample) in reference.iter().enumerate() {
+            recorded[i + delay] += sample * 0.8;
+        }
+
+        let wav = write_mono_wav(&recorded, sr);
+        let result = find_arrival_time_with_reference(wav.path(), &reference, sr).unwrap();
+        let expected_ms = delay as f64 * 1000.0 / sr as f64;
+
+        assert!(
+            (result.arrival_ms - expected_ms).abs() < 0.15,
+            "Expected {:.3}ms, got {:.3}ms",
+            expected_ms,
+            result.arrival_ms
         );
     }
 

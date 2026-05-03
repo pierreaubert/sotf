@@ -644,8 +644,8 @@ fn prepare_single_channel_eq(
         let key_freqs = [30.0, 55.0, 80.0, 100.0, 150.0, 200.0, 300.0];
         let mut diag = String::from("  Deviation at key freqs:");
         for &kf in &key_freqs {
-            if kf >= effective_min_freq && kf <= effective_max_freq {
-                if let Some(idx) = deviation_curve
+            if kf >= effective_min_freq && kf <= effective_max_freq
+                && let Some(idx) = deviation_curve
                     .freq
                     .iter()
                     .position(|&f| f >= kf * 0.95 && f <= kf * 1.05)
@@ -655,7 +655,6 @@ fn prepare_single_channel_eq(
                         deviation_curve.freq[idx], deviation_curve.spl[idx]
                     ));
                 }
-            }
         }
         log::info!("{}", diag);
     }

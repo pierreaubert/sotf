@@ -43,7 +43,7 @@ use std::f64::consts::PI;
 ///
 /// # Arguments
 /// * `freq` - Frequency points in Hz, monotonically increasing,
-///            strictly positive.
+///   strictly positive.
 /// * `spl`  - SPL values in dB at those frequencies.
 ///
 /// # Returns

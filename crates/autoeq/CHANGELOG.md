@@ -6,6 +6,14 @@
 - Refactor the code into smaller modules
 - Added compatible API so no change for now in app-*
 
+## Documentation
+
+- Added a [guide](docs/roomeq_explained.md) for roomeq
+
+## New features
+
+- Added partial support for Dirac signal and MLS signal for delay detections
+
 ## Bug fixes
 
 - Fixed an initialisation bug in the new cobyla code

@@ -80,12 +80,11 @@ fn ensure_external_export_supported(
     format: ExportFormat,
 ) -> anyhow::Result<()> {
     if output.global_plugins.is_empty()
-        && !output
+        && output
             .metadata
             .as_ref()
             .and_then(|metadata| metadata.bass_management.as_ref())
-            .and_then(|report| report.routing_graph.as_ref())
-            .is_some_and(|graph| !graph.routes.is_empty())
+            .and_then(|report| report.routing_graph.as_ref()).is_none_or(|graph| graph.routes.is_empty())
     {
         return Ok(());
     }
