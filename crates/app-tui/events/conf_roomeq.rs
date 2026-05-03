@@ -233,10 +233,8 @@ fn handle_configure_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
                 app.room_eq.step_tab_focused = true;
             }
         }
-        KeyCode::Down => {
-            if app.room_eq.selected_field < ROOM_EQ_FIELD_COUNT - 1 {
-                app.room_eq.selected_field += 1;
-            }
+        KeyCode::Down if app.room_eq.selected_field < ROOM_EQ_FIELD_COUNT - 1 => {
+            app.room_eq.selected_field += 1;
         }
         KeyCode::Left | KeyCode::Char('-') => {
             adjust_room_eq_field(app, -1);
@@ -281,10 +279,8 @@ fn handle_optimize_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
                 app.room_eq.step_tab_focused = true;
             }
         }
-        KeyCode::Down | KeyCode::Char('j') => {
-            if app.room_eq.opt_log_scroll > 0 {
-                app.room_eq.opt_log_scroll -= 1;
-            }
+        KeyCode::Down | KeyCode::Char('j') if app.room_eq.opt_log_scroll > 0 => {
+            app.room_eq.opt_log_scroll -= 1;
         }
         KeyCode::Home => {
             app.room_eq.opt_log_scroll = app.room_eq.opt_log_lines.len().saturating_sub(1);
@@ -318,12 +314,11 @@ fn handle_review_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
                 app.room_eq.step_tab_focused = true;
             }
         }
-        KeyCode::Down => {
+        KeyCode::Down
             if !app.room_eq.channel_results.is_empty()
-                && app.room_eq.selected_channel < app.room_eq.channel_results.len() - 1
-            {
-                app.room_eq.selected_channel += 1;
-            }
+                && app.room_eq.selected_channel < app.room_eq.channel_results.len() - 1 =>
+        {
+            app.room_eq.selected_channel += 1;
         }
         KeyCode::BackTab => {
             app.room_eq.step = RoomEqStep::Optimize;

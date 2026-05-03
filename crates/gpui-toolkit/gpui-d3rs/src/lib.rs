@@ -90,8 +90,8 @@ pub mod prelude {
     #[cfg(all(feature = "gpui", not(test)))]
     pub use crate::shape::{
         BarConfig, BarDatum, CurveType, GroupedBarConfig, GroupedBarDatum, GroupedBarMeta,
-        LineConfig, LinePoint, ScatterConfig, ScatterPoint, StrokeDashArray,
-        analyze_grouped_data, render_bars, render_grouped_bars, render_line, render_scatter,
+        LineConfig, LinePoint, ScatterConfig, ScatterPoint, StrokeDashArray, analyze_grouped_data,
+        render_bars, render_grouped_bars, render_line, render_scatter,
     };
     #[cfg(all(feature = "gpui", not(test)))]
     pub use crate::surface::{

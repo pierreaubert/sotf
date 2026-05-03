@@ -558,6 +558,17 @@ impl PlayerView {
             let max_title_chars = state.app.max_chars_now_playing_title(layout);
             let max_artist_chars = state.app.max_chars_now_playing_artist(layout);
 
+            // Adaptive album art: collapse entirely below a width threshold,
+            // shrink in the medium range, full size when wide.
+            let center_w = state.app.center_panel_width(layout);
+            let art_size_rems: Option<f32> = if center_w < 220.0 {
+                None
+            } else if center_w < 380.0 {
+                Some(4.5)
+            } else {
+                Some(7.5)
+            };
+
             let album_title = if album_title_full.chars().count() > max_title_chars {
                 album_title_full
                     .chars()
@@ -596,32 +607,34 @@ impl PlayerView {
                         .flex()
                         .gap(d.section)
                         .mb(d.section)
-                        // Album art (smaller, top-left)
-                        .child({
-                            let art_div = div()
-                                .w(rems(7.5))
-                                .h(rems(7.5))
-                                .bg(theme.surface)
-                                .rounded(d.r_lg)
-                                .overflow_hidden()
-                                .flex_shrink_0();
+                        // Album art (omitted entirely when the centre panel is too narrow)
+                        .when_some(art_size_rems, |row, size_rems| {
+                            row.child({
+                                let art_div = div()
+                                    .w(rems(size_rems))
+                                    .h(rems(size_rems))
+                                    .bg(theme.surface)
+                                    .rounded(d.r_lg)
+                                    .overflow_hidden()
+                                    .flex_shrink_0();
 
-                            if let Some(path) = art_path {
-                                art_div.child(
-                                    img(path)
-                                        .w_full()
-                                        .h_full()
-                                        .object_fit(gpui::ObjectFit::Cover),
-                                )
-                            } else {
-                                art_div
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .text_color(theme.text_muted)
-                                    .text_size(d.text_lg)
-                                    .child("♪")
-                            }
+                                if let Some(path) = art_path {
+                                    art_div.child(
+                                        img(path)
+                                            .w_full()
+                                            .h_full()
+                                            .object_fit(gpui::ObjectFit::Cover),
+                                    )
+                                } else {
+                                    art_div
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .text_color(theme.text_muted)
+                                        .text_size(d.text_lg)
+                                        .child("♪")
+                                }
+                            })
                         })
                         // Album info (right of art)
                         .child(

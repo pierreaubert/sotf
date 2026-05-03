@@ -45,10 +45,8 @@ pub(super) fn handle_server_keys(app: &mut App, key: KeyEvent) -> Option<PlayerC
             };
             state.selected_field = 0;
         }
-        KeyCode::Up => {
-            if state.selected_field > 0 {
-                state.selected_field -= 1;
-            }
+        KeyCode::Up if state.selected_field > 0 => {
+            state.selected_field -= 1;
         }
         KeyCode::Down => {
             let max = field_count(state.selected_section);

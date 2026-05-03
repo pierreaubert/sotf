@@ -1094,11 +1094,11 @@ fn run_playback_thread(
             } else {
                 0
             };
-            let fill = if buffer_capacity > 0 {
+            let fill = {
                 let slots = producer.slots();
-                ((buffer_capacity - slots) * 100) / buffer_capacity
-            } else {
-                0
+                ((buffer_capacity - slots) * 100)
+                    .checked_div(buffer_capacity)
+                    .unwrap_or(0)
             };
             log::debug!(
                 "[Playback Thread] PERIODIC: callbacks={}, effective={}Hz (expected {}Hz), \
@@ -1308,11 +1308,9 @@ fn run_playback_thread(
                         && start.elapsed() > drain_timeout
                     {
                         let current_slots = producer.slots();
-                        let drain_percent = if buffer_capacity > 0 {
-                            (current_slots * 100) / buffer_capacity
-                        } else {
-                            100
-                        };
+                        let drain_percent = (current_slots * 100)
+                            .checked_div(buffer_capacity)
+                            .unwrap_or(100);
                         if drain_percent < 80 {
                             // Buffer is still mostly full — cpal callbacks are not consuming.
                             // This is not a normal end-of-stream, it's a playback failure.
@@ -1359,11 +1357,9 @@ fn run_playback_thread(
                         }
                         if drain_start.elapsed() > drain_timeout {
                             let current_slots = producer.slots();
-                            let drain_percent = if buffer_capacity > 0 {
-                                (current_slots * 100) / buffer_capacity
-                            } else {
-                                100
-                            };
+                            let drain_percent = (current_slots * 100)
+                                .checked_div(buffer_capacity)
+                                .unwrap_or(100);
                             if drain_percent < 80 {
                                 let msg = format!(
                                     "Playback stalled after disconnect: ring buffer {}% full after drain timeout. Device: '{}'",
@@ -1407,11 +1403,7 @@ fn run_playback_thread(
         0
     };
     let audio_duration = total_frames as f64 / sample_rate as f64;
-    let avg_samples_per_callback = if total_callbacks > 0 {
-        total_samples / total_callbacks
-    } else {
-        0
-    };
+    let avg_samples_per_callback = total_samples.checked_div(total_callbacks).unwrap_or(0);
     log::warn!(
         "[Playback Thread] CALLBACK RATE: {} callbacks, {} total samples ({} frames) in {:.3}s = {} effective Hz (expected {}Hz), audio_duration={:.3}s, avg_samples/callback={}, channels={}",
         total_callbacks,
@@ -1650,11 +1642,7 @@ fn read_ring_buffer(
             state.flush_requested.store(false, Ordering::Relaxed);
         }
 
-        let fill_percent = if capacity > 0 {
-            (consumer.slots() * 100) / capacity
-        } else {
-            0
-        };
+        let fill_percent = (consumer.slots() * 100).checked_div(capacity).unwrap_or(0);
         state
             .last_buffer_level
             .store(fill_percent as u64, Ordering::Relaxed);
@@ -1707,11 +1695,7 @@ fn read_ring_buffer(
 
     // Update buffer level metric
     let slots = consumer.slots();
-    let fill_percent = if capacity > 0 {
-        (slots * 100) / capacity
-    } else {
-        0
-    };
+    let fill_percent = (slots * 100).checked_div(capacity).unwrap_or(0);
     state
         .last_buffer_level
         .store(fill_percent as u64, Ordering::Relaxed);

@@ -9,7 +9,6 @@ pub mod warped_biquad;
 pub use biquad::{Biquad, BiquadCoefficients, BiquadFilterType, Peq};
 pub use biquad_bank::BiquadBank;
 pub use kautz::{KautzFilter, KautzSection};
-pub use warped_biquad::{WarpedBiquad, bark_lambda, unwarp_frequency, warp_frequency};
 pub use peq::{
     FilterRow, compute_peq_response, peq_allpass, peq_butterworth_highpass,
     peq_butterworth_lowpass, peq_butterworth_q, peq_equal, peq_format_apo, peq_format_aupreset,
@@ -18,3 +17,4 @@ pub use peq::{
     peq_linkwitzriley_lowpass, peq_linkwitzriley_q, peq_loudness_gain, peq_preamp_gain,
     peq_preamp_gain_max, peq_print, peq_spl,
 };
+pub use warped_biquad::{WarpedBiquad, bark_lambda, unwarp_frequency, warp_frequency};

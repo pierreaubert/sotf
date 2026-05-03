@@ -1638,40 +1638,36 @@ impl PluginGraph {
                     max_filters,
                     tdf2,
                     topology,
-                } => {
-                    if *channels != current_channels {
-                        let ch_filters_match = channel_filters
-                            .as_ref()
-                            .is_none_or(|cf| cf.len() == current_channels);
-                        let (new_channel_filters, new_per_channel_mode) =
-                            if *per_channel_mode && !ch_filters_match {
-                                (None, false)
-                            } else {
-                                (channel_filters.clone(), *per_channel_mode)
-                            };
-                        updated_settings = Some(PluginSettings::EQ {
-                            channels: current_channels,
-                            filters: filters.clone(),
-                            channel_filters: new_channel_filters,
-                            per_channel_mode: new_per_channel_mode,
-                            max_filters: *max_filters,
-                            tdf2: *tdf2,
-                            topology: *topology,
-                        });
-                    }
+                } if *channels != current_channels => {
+                    let ch_filters_match = channel_filters
+                        .as_ref()
+                        .is_none_or(|cf| cf.len() == current_channels);
+                    let (new_channel_filters, new_per_channel_mode) =
+                        if *per_channel_mode && !ch_filters_match {
+                            (None, false)
+                        } else {
+                            (channel_filters.clone(), *per_channel_mode)
+                        };
+                    updated_settings = Some(PluginSettings::EQ {
+                        channels: current_channels,
+                        filters: filters.clone(),
+                        channel_filters: new_channel_filters,
+                        per_channel_mode: new_per_channel_mode,
+                        max_filters: *max_filters,
+                        tdf2: *tdf2,
+                        topology: *topology,
+                    });
                 }
                 PluginSettings::Gain {
                     channels,
                     gain_db,
                     smoothing_ms,
-                } => {
-                    if *channels != current_channels {
-                        updated_settings = Some(PluginSettings::Gain {
-                            channels: current_channels,
-                            gain_db: *gain_db,
-                            smoothing_ms: *smoothing_ms,
-                        });
-                    }
+                } if *channels != current_channels => {
+                    updated_settings = Some(PluginSettings::Gain {
+                        channels: current_channels,
+                        gain_db: *gain_db,
+                        smoothing_ms: *smoothing_ms,
+                    });
                 }
                 PluginSettings::BinauralDecoder {
                     sofa_file,
@@ -1685,47 +1681,43 @@ impl PluginGraph {
                     late_reverb_rt60,
                     late_reverb_damping,
                     headphone_eq_enabled,
-                } => {
-                    if *input_channels != current_channels {
-                        updated_settings = Some(PluginSettings::BinauralDecoder {
-                            sofa_file: sofa_file.clone(),
-                            input_channels: current_channels,
-                            enable_optimization: *enable_optimization,
-                            externalization: *externalization,
-                            near_field_strength: *near_field_strength,
-                            crossfade_mode: *crossfade_mode,
-                            late_reverb_enabled: *late_reverb_enabled,
-                            late_reverb_mix: *late_reverb_mix,
-                            late_reverb_rt60: *late_reverb_rt60,
-                            late_reverb_damping: *late_reverb_damping,
-                            headphone_eq_enabled: *headphone_eq_enabled,
-                        });
-                    }
+                } if *input_channels != current_channels => {
+                    updated_settings = Some(PluginSettings::BinauralDecoder {
+                        sofa_file: sofa_file.clone(),
+                        input_channels: current_channels,
+                        enable_optimization: *enable_optimization,
+                        externalization: *externalization,
+                        near_field_strength: *near_field_strength,
+                        crossfade_mode: *crossfade_mode,
+                        late_reverb_enabled: *late_reverb_enabled,
+                        late_reverb_mix: *late_reverb_mix,
+                        late_reverb_rt60: *late_reverb_rt60,
+                        late_reverb_damping: *late_reverb_damping,
+                        headphone_eq_enabled: *headphone_eq_enabled,
+                    });
                 }
                 PluginSettings::Matrix {
                     input_channels,
                     output_channels,
                     matrix,
                     channel_states,
-                } => {
-                    if *input_channels != current_channels {
-                        let mut new_matrix = matrix.clone();
-                        resize_matrix(
-                            &mut new_matrix,
-                            *input_channels,
-                            *output_channels,
-                            current_channels,
-                            current_channels,
-                        );
-                        let mut new_states = channel_states.clone();
-                        new_states.resize(current_channels, sotf_plugins::ChannelState::default());
-                        updated_settings = Some(PluginSettings::Matrix {
-                            input_channels: current_channels,
-                            output_channels: current_channels,
-                            matrix: new_matrix,
-                            channel_states: new_states,
-                        });
-                    }
+                } if *input_channels != current_channels => {
+                    let mut new_matrix = matrix.clone();
+                    resize_matrix(
+                        &mut new_matrix,
+                        *input_channels,
+                        *output_channels,
+                        current_channels,
+                        current_channels,
+                    );
+                    let mut new_states = channel_states.clone();
+                    new_states.resize(current_channels, sotf_plugins::ChannelState::default());
+                    updated_settings = Some(PluginSettings::Matrix {
+                        input_channels: current_channels,
+                        output_channels: current_channels,
+                        matrix: new_matrix,
+                        channel_states: new_states,
+                    });
                 }
                 PluginSettings::Downmix {
                     input_channels,
@@ -1737,41 +1729,35 @@ impl PluginGraph {
                     phase_blend_low_hz,
                     phase_blend_high_hz,
                     itu_mode,
-                } => {
-                    if *input_channels != current_channels {
-                        updated_settings = Some(PluginSettings::Downmix {
-                            input_channels: current_channels,
-                            center_gain_db: *center_gain_db,
-                            surround_gain_db: *surround_gain_db,
-                            height_gain_db: *height_gain_db,
-                            lfe_gain_db: *lfe_gain_db,
-                            phase_coherence: *phase_coherence,
-                            phase_blend_low_hz: *phase_blend_low_hz,
-                            phase_blend_high_hz: *phase_blend_high_hz,
-                            itu_mode: *itu_mode,
-                        });
-                    }
+                } if *input_channels != current_channels => {
+                    updated_settings = Some(PluginSettings::Downmix {
+                        input_channels: current_channels,
+                        center_gain_db: *center_gain_db,
+                        surround_gain_db: *surround_gain_db,
+                        height_gain_db: *height_gain_db,
+                        lfe_gain_db: *lfe_gain_db,
+                        phase_coherence: *phase_coherence,
+                        phase_blend_low_hz: *phase_blend_low_hz,
+                        phase_blend_high_hz: *phase_blend_high_hz,
+                        itu_mode: *itu_mode,
+                    });
                 }
                 PluginSettings::BandSplit {
                     channels,
                     frequency,
                     crossover_type,
-                } => {
-                    if *channels != current_channels {
-                        updated_settings = Some(PluginSettings::BandSplit {
-                            channels: current_channels,
-                            frequency: *frequency,
-                            crossover_type: crossover_type.clone(),
-                        });
-                    }
+                } if *channels != current_channels => {
+                    updated_settings = Some(PluginSettings::BandSplit {
+                        channels: current_channels,
+                        frequency: *frequency,
+                        crossover_type: crossover_type.clone(),
+                    });
                 }
-                PluginSettings::BandMerge { channels, bands } => {
-                    if *channels != current_channels {
-                        updated_settings = Some(PluginSettings::BandMerge {
-                            channels: current_channels,
-                            bands: *bands,
-                        });
-                    }
+                PluginSettings::BandMerge { channels, bands } if *channels != current_channels => {
+                    updated_settings = Some(PluginSettings::BandMerge {
+                        channels: current_channels,
+                        bands: *bands,
+                    });
                 }
                 _ => {}
             }

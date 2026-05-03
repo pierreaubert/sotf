@@ -191,13 +191,16 @@ impl PlayerView {
                                         view.cancel_room_eq_optimization(cx);
                                     }))
                             } else {
-                                Button::new("start_optimization", translations.roomeq_start_optimization)
-                                    .variant(ButtonVariant::Primary)
-                                    .full_width(true)
-                                    .theme(theme.to_button_theme())
-                                    .on_click_event(cx.listener(|view, _, _, cx| {
-                                        view.start_room_eq_optimization(cx);
-                                    }))
+                                Button::new(
+                                    "start_optimization",
+                                    translations.roomeq_start_optimization,
+                                )
+                                .variant(ButtonVariant::Primary)
+                                .full_width(true)
+                                .theme(theme.to_button_theme())
+                                .on_click_event(cx.listener(|view, _, _, cx| {
+                                    view.start_room_eq_optimization(cx);
+                                }))
                             })
                             .when(show_progress, |vstack| {
                                 let display_progress = if is_completed {
@@ -903,7 +906,12 @@ impl PlayerView {
                     .with_size(700.0, 250.0),
             );
 
-            state.app.measurement_state.room_eq_state.cancel_requested.clone()
+            state
+                .app
+                .measurement_state
+                .room_eq_state
+                .cancel_requested
+                .clone()
         });
 
         let state_clone = self.state.clone();

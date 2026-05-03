@@ -21,15 +21,11 @@ fn handle_list_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         KeyCode::Esc => {
             app.input_mode = InputMode::Configure;
         }
-        KeyCode::Up => {
-            if !state.sources.is_empty() && state.selected_idx > 0 {
-                state.selected_idx -= 1;
-            }
+        KeyCode::Up if !state.sources.is_empty() && state.selected_idx > 0 => {
+            state.selected_idx -= 1;
         }
-        KeyCode::Down => {
-            if state.selected_idx + 1 < state.sources.len() {
-                state.selected_idx += 1;
-            }
+        KeyCode::Down if state.selected_idx + 1 < state.sources.len() => {
+            state.selected_idx += 1;
         }
         KeyCode::Char('a') => {
             ADD_SOURCE_TYPE_IDX.store(0, std::sync::atomic::Ordering::Relaxed);
@@ -112,15 +108,11 @@ fn handle_edit_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             state.edit = None;
             state.mode = FederationMode::List;
         }
-        KeyCode::Up => {
-            if edit.selected_field > 0 {
-                edit.selected_field -= 1;
-            }
+        KeyCode::Up if edit.selected_field > 0 => {
+            edit.selected_field -= 1;
         }
-        KeyCode::Down => {
-            if edit.selected_field + 1 < edit.field_count() {
-                edit.selected_field += 1;
-            }
+        KeyCode::Down if edit.selected_field + 1 < edit.field_count() => {
+            edit.selected_field += 1;
         }
         KeyCode::Enter => {
             edit.edit_buffer = edit.field_value(edit.selected_field);
@@ -160,15 +152,11 @@ fn handle_add_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         KeyCode::Esc => {
             state.mode = FederationMode::List;
         }
-        KeyCode::Up => {
-            if idx > 0 {
-                ADD_SOURCE_TYPE_IDX.store(idx - 1, std::sync::atomic::Ordering::Relaxed);
-            }
+        KeyCode::Up if idx > 0 => {
+            ADD_SOURCE_TYPE_IDX.store(idx - 1, std::sync::atomic::Ordering::Relaxed);
         }
-        KeyCode::Down => {
-            if idx + 1 < SOURCE_TYPE_NAMES.len() {
-                ADD_SOURCE_TYPE_IDX.store(idx + 1, std::sync::atomic::Ordering::Relaxed);
-            }
+        KeyCode::Down if idx + 1 < SOURCE_TYPE_NAMES.len() => {
+            ADD_SOURCE_TYPE_IDX.store(idx + 1, std::sync::atomic::Ordering::Relaxed);
         }
         KeyCode::Enter => {
             let type_name = SOURCE_TYPE_NAMES[idx].0;

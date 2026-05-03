@@ -92,30 +92,21 @@ impl Render for ChordDemo {
 }
 
 fn main() {
-    #[cfg(target_os = "macos")]
-    let platform = std::rc::Rc::new(gpui_macos::MacPlatform::new(false));
-    #[cfg(target_os = "linux")]
-    let platform = gpui_linux::current_platform(false);
-    #[cfg(target_os = "windows")]
-    let platform = std::rc::Rc::new(
-        gpui_windows::WindowsPlatform::new(false).expect("Windows platform creation failed"),
-    );
-    Application::with_platform(platform).run(
-        |cx: &mut App| {
-            cx.open_window(
-                WindowOptions {
-                    window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
-                        None,
-                        size(px(800.0), px(600.0)),
-                        cx,
-                    ))),
-                    ..Default::default()
-                },
-                |_, cx| cx.new(ChordDemo::new),
-            )
-            .unwrap();
+    let platform = gpui_miniapp::current_platform();
+    Application::with_platform(platform).run(|cx: &mut App| {
+        cx.open_window(
+            WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
+                    None,
+                    size(px(800.0), px(600.0)),
+                    cx,
+                ))),
+                ..Default::default()
+            },
+            |_, cx| cx.new(ChordDemo::new),
+        )
+        .unwrap();
 
-            cx.activate(true);
-        },
-    );
+        cx.activate(true);
+    });
 }

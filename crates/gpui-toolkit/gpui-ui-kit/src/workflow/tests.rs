@@ -803,8 +803,7 @@ fn test_grow_inputs_to() {
 
 #[test]
 fn test_grow_inputs_no_limit() {
-    let mut node = WorkflowNodeData::new("N", Position::new(0.0, 0.0))
-        .with_ports(2, 2);
+    let mut node = WorkflowNodeData::new("N", Position::new(0.0, 0.0)).with_ports(2, 2);
     // No max set — grows freely
     assert_eq!(node.grow_inputs_to(10), 10);
     assert_eq!(node.input_count, 10);

@@ -52,8 +52,7 @@ pub fn warp_frequency<T: FilterFloat>(freq_hz: T, sample_rate: T, lambda: T) -> 
     // e^(jω) → e^(jω_w) where:
     //   ω_w = ω + 2·arctan(λ·sin(ω) / (1 - λ·cos(ω)))
     // With λ > 0, this expands LF and compresses HF (Bark-like).
-    let correction = lit::<T>(2.0)
-        * (lambda * omega.sin()).atan2(T::one() - lambda * omega.cos());
+    let correction = lit::<T>(2.0) * (lambda * omega.sin()).atan2(T::one() - lambda * omega.cos());
     let omega_w = omega + correction;
 
     // Convert back to Hz, clamped to [0, Nyquist]
@@ -69,8 +68,8 @@ pub fn unwarp_frequency<T: FilterFloat>(warped_hz: T, sample_rate: T, lambda: T)
     let omega_w = lit::<T>(2.0) * T::PI() * warped_hz / sample_rate;
     // Inverse of warp: use -λ in the same formula
     let neg_lambda = T::zero() - lambda;
-    let correction = lit::<T>(2.0)
-        * (neg_lambda * omega_w.sin()).atan2(T::one() - neg_lambda * omega_w.cos());
+    let correction =
+        lit::<T>(2.0) * (neg_lambda * omega_w.sin()).atan2(T::one() - neg_lambda * omega_w.cos());
     let omega = omega_w + correction;
 
     let hz = omega * sample_rate / (lit::<T>(2.0) * T::PI());
@@ -330,8 +329,7 @@ impl<T: FilterFloat> WarpedBiquad<T> {
             let x_d2 = allpass_step(x_d1, &mut ap_x2_s, lambda);
 
             let ff = b0 * x + b1 * x_d1 + b2 * x_d2;
-            let fb_corr =
-                one_minus_lam_sq * ((a1 + a2 * lambda) * s_y1 + a2 * s_y2);
+            let fb_corr = one_minus_lam_sq * ((a1 + a2 * lambda) * s_y1 + a2 * s_y2);
 
             let y = (ff - fb_corr) * inv_denom;
 
@@ -457,7 +455,10 @@ mod tests {
         // Warping should be monotonically increasing and should expand LF
         // relative to HF (the ratio warped/physical should decrease with frequency)
         let freqs = [50.0, 100.0, 500.0, 1000.0, 5000.0, 10000.0];
-        let warped: Vec<f64> = freqs.iter().map(|&f| warp_frequency(f, 48000.0, lambda)).collect();
+        let warped: Vec<f64> = freqs
+            .iter()
+            .map(|&f| warp_frequency(f, 48000.0, lambda))
+            .collect();
 
         // Monotonic
         for i in 1..warped.len() {
@@ -485,8 +486,7 @@ mod tests {
         // With λ=0 every allpass degenerates to z^-1, so the warped biquad
         // must produce identical output to a standard biquad.
         let mut standard = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, -6.0);
-        let mut warped =
-            WarpedBiquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, -6.0, 0.0);
+        let mut warped = WarpedBiquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, -6.0, 0.0);
 
         let signal: Vec<f64> = (0..1000).map(|i| ((i as f64) * 0.1).sin()).collect();
 
@@ -511,8 +511,7 @@ mod tests {
         let lambda = bark_lambda(48000.0_f64);
         let srate = 48000.0_f64;
 
-        let low_filter =
-            WarpedBiquad::new(BiquadFilterType::Peak, 100.0, srate, 2.0, -6.0, lambda);
+        let low_filter = WarpedBiquad::new(BiquadFilterType::Peak, 100.0, srate, 2.0, -6.0, lambda);
         let high_filter =
             WarpedBiquad::new(BiquadFilterType::Peak, 10000.0, srate, 2.0, -6.0, lambda);
 

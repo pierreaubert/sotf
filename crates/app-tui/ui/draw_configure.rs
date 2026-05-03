@@ -488,15 +488,12 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                 let is_editing_numerical = is_selected && s.editing_value;
                 // Resolve the field identity to know whether this row is
                 // currently in path-edit mode.
-                let field_kind = idx.and_then(|i| {
-                    crate::app::recording_field_at(&app.recording, i)
-                });
+                let field_kind =
+                    idx.and_then(|i| crate::app::recording_field_at(&app.recording, i));
                 let is_editing_path = is_selected
                     && match field_kind {
                         Some(RecordingField::OutputDir) => s.editing_output_dir,
-                        Some(RecordingField::MicCal(ch)) => {
-                            s.editing_mic_cal_channel == Some(ch)
-                        }
+                        Some(RecordingField::MicCal(ch)) => s.editing_mic_cal_channel == Some(ch),
                         _ => false,
                     };
                 let is_editing = is_editing_numerical || is_editing_path;

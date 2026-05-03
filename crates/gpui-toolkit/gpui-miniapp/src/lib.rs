@@ -33,7 +33,14 @@ use gpui_ui_kit::i18n::{I18nState, Language};
 use gpui_ui_kit::theme::{ThemeState, ThemeVariant};
 use std::rc::Rc;
 
-fn current_platform() -> Rc<dyn gpui::Platform> {
+/// Construct the GPUI [`Platform`] backend for the current OS.
+///
+/// Centralizing this here keeps the per-platform `gpui_macos` / `gpui_linux` /
+/// `gpui_windows` deps confined to this single (`publish = false`) crate so
+/// publishable consumers don't have to declare them. Examples and demos that
+/// need a custom `Application::with_platform(...)` should call this helper
+/// instead of inlining the cfg-cascade themselves.
+pub fn current_platform() -> Rc<dyn gpui::Platform> {
     #[cfg(target_os = "macos")]
     {
         Rc::new(gpui_macos::MacPlatform::new(false))

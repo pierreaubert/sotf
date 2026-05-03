@@ -103,28 +103,26 @@ impl PlayerView {
                             rec.probe_capture.input_channel = next.max(0) as u16;
                         },
                     ))
-                    .child(
-                        HStack::new().spacing(StackSpacing::Sm).child(if running {
-                            Button::new("probe_cancel", translations.general_cancel)
-                                .variant(ButtonVariant::Secondary)
-                                .size(ButtonSize::Sm)
-                                .theme(theme.to_button_theme())
-                                .on_click_event(cx.listener(|view, _, _, cx| {
-                                    view.cancel_probe_capture(cx);
-                                }))
-                        } else {
-                            Button::new("probe_run", translations.recording_run_probe)
-                                .variant(ButtonVariant::Primary)
-                                .size(ButtonSize::Sm)
-                                .theme(theme.to_button_theme())
-                                .on_click_event(cx.listener(move |view, _, _, cx| {
-                                    if !has_capture {
-                                        return;
-                                    }
-                                    view.start_probe_capture(cx);
-                                }))
-                        }),
-                    ),
+                    .child(HStack::new().spacing(StackSpacing::Sm).child(if running {
+                        Button::new("probe_cancel", translations.general_cancel)
+                            .variant(ButtonVariant::Secondary)
+                            .size(ButtonSize::Sm)
+                            .theme(theme.to_button_theme())
+                            .on_click_event(cx.listener(|view, _, _, cx| {
+                                view.cancel_probe_capture(cx);
+                            }))
+                    } else {
+                        Button::new("probe_run", translations.recording_run_probe)
+                            .variant(ButtonVariant::Primary)
+                            .size(ButtonSize::Sm)
+                            .theme(theme.to_button_theme())
+                            .on_click_event(cx.listener(move |view, _, _, cx| {
+                                if !has_capture {
+                                    return;
+                                }
+                                view.start_probe_capture(cx);
+                            }))
+                    })),
             );
         let _ = view; // silence unused warning if the closure didn't capture
 
@@ -175,8 +173,8 @@ impl PlayerView {
                     // estimate can drift if the probe sequence runs longer
                     // than predicted, so we clamp to 0..=1.0 in the
                     // Progress component itself.
-                    content = content
-                        .child(Progress::new(p.clamp(0.0, 1.0)).size(ProgressSize::Sm));
+                    content =
+                        content.child(Progress::new(p.clamp(0.0, 1.0)).size(ProgressSize::Sm));
                 } else if matches!(pc.status, ProbeCaptureStatus::Running { .. }) {
                     // No fraction available yet (e.g. estimated_total=0) —
                     // show an indeterminate Spinner so the user sees the

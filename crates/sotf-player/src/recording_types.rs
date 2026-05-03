@@ -788,6 +788,8 @@ pub enum RecordingSignalType {
     Sweep,
     WhiteNoise,
     PinkNoise,
+    Mls,
+    Dirac,
     /// Narrowband allpass probe for delay/gain detection (800-2000Hz)
     DelayProbe,
 }
@@ -798,6 +800,8 @@ impl RecordingSignalType {
             RecordingSignalType::Sweep => "Sweep",
             RecordingSignalType::WhiteNoise => "White Noise",
             RecordingSignalType::PinkNoise => "Pink Noise",
+            RecordingSignalType::Mls => "MLS",
+            RecordingSignalType::Dirac => "Dirac",
             RecordingSignalType::DelayProbe => "Delay Probe",
         }
     }
@@ -810,6 +814,8 @@ impl RecordingSignalType {
             RecordingSignalType::Sweep,
             RecordingSignalType::WhiteNoise,
             RecordingSignalType::PinkNoise,
+            RecordingSignalType::Mls,
+            RecordingSignalType::Dirac,
         ]
     }
 }

@@ -8,10 +8,10 @@
 //! is available, a clear error message is shown with instructions.
 
 use gpui::*;
+use gpui_miniapp::{MiniApp, MiniAppConfig};
 use gpui_ui_kit::qr::AnimatedQrCode;
 use gpui_ui_kit::theme::ThemeExt;
 use gpui_ui_kit::*;
-use gpui_miniapp::{MiniApp, MiniAppConfig};
 use nokhwa::Camera;
 use nokhwa::pixel_format::RgbFormat;
 use nokhwa::utils::{

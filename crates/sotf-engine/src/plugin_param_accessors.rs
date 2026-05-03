@@ -82,10 +82,7 @@ fn aae_room_preset_to_index(preset: &str) -> f64 {
 
 fn index_to_aae_room_preset(index: f64) -> String {
     let idx = index as usize;
-    aae_room_presets()
-        .get(idx)
-        .unwrap_or(&"medium")
-        .to_string()
+    aae_room_presets().get(idx).unwrap_or(&"medium").to_string()
 }
 
 fn crossfeed_mode_to_index(mode: &CrossfeedMode) -> f64 {
@@ -813,12 +810,8 @@ impl PluginSettings {
                     Self::Upmixer { speaker_config, .. } if index == 0 => {
                         Some(speaker_config.clone())
                     }
-                    Self::AAE { speaker_config, .. } if index == 0 => {
-                        Some(speaker_config.clone())
-                    }
-                    Self::AAE { room_preset, .. } if index == 6 => {
-                        Some(room_preset.clone())
-                    }
+                    Self::AAE { speaker_config, .. } if index == 0 => Some(speaker_config.clone()),
+                    Self::AAE { room_preset, .. } if index == 6 => Some(room_preset.clone()),
                     Self::AmbisonicsDecoder { target_layout, .. } if index == 1 => {
                         Some(target_layout.clone())
                     }
@@ -930,8 +923,7 @@ mod tests {
     fn validate_engine_keys_exist_in_dsp_plugin() {
         use sotf_plugins::param_specs::{ParamType, UpdateMode};
 
-        let known_gaps: std::collections::HashSet<(&str, &str)> =
-            std::collections::HashSet::new();
+        let known_gaps: std::collections::HashSet<(&str, &str)> = std::collections::HashSet::new();
 
         let mut all_errors = Vec::new();
         for pt in PluginType::all() {

@@ -344,7 +344,11 @@ impl PluginLayout {
         };
         check_controls(self.config, "config", &mut errors);
         for group in self.main {
-            check_controls(group.controls, &format!("main/{}", group.title), &mut errors);
+            check_controls(
+                group.controls,
+                &format!("main/{}", group.title),
+                &mut errors,
+            );
         }
         check_controls(self.output, "output", &mut errors);
         for tab in self.tabs {

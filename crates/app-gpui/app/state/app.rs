@@ -1446,7 +1446,7 @@ impl App {
     }
 
     /// Calculate the width of the center panel (remaining after queue list and meters).
-    fn center_panel_width(&self, layout: &LayoutState) -> f32 {
+    pub fn center_panel_width(&self, layout: &LayoutState) -> f32 {
         let center_ratio = 1.0 - layout.queue_list_ratio - layout.meters_panel_ratio;
         self.ui_state.window_width * center_ratio
     }
@@ -1463,12 +1463,12 @@ impl App {
 
     /// Maximum characters for Now Playing album title (text_lg ~9px).
     pub fn max_chars_now_playing_title(&self, layout: &LayoutState) -> usize {
-        Self::calculate_max_chars(self.center_panel_width(layout), 192.0, 100.0, 9.0, 20, 150)
+        Self::calculate_max_chars(self.center_panel_width(layout), 60.0, 0.0, 9.0, 6, 150)
     }
 
     /// Maximum characters for Now Playing artist (text_sm ~7px).
     pub fn max_chars_now_playing_artist(&self, layout: &LayoutState) -> usize {
-        Self::calculate_max_chars(self.center_panel_width(layout), 192.0, 100.0, 7.0, 20, 180)
+        Self::calculate_max_chars(self.center_panel_width(layout), 60.0, 0.0, 7.0, 6, 180)
     }
 
     /// Maximum characters for track titles (text_sm ~7px).

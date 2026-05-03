@@ -233,8 +233,11 @@ impl TuiEditablePlugin for PluginSettings {
                         0 => *num_filters,
                         1 => *fir_length,
                         2 => {
-                            return global_specs[2]
-                                .format_value(if *auto_gain { 1.0 } else { 0.0 });
+                            return global_specs[2].format_value(if *auto_gain {
+                                1.0
+                            } else {
+                                0.0
+                            });
                         }
                         3 => *mix,
                         _ => return String::new(),
@@ -250,8 +253,9 @@ impl TuiEditablePlugin for PluginSettings {
                             1 => format!("{:.0}", filter.frequency),
                             2 => format!("{:.2}", filter.q),
                             3 => format!("{:.1}", filter.gain_db),
-                            4 => band_template[4]
-                                .format_value(if filter.muted { 0.0 } else { 1.0 }),
+                            4 => {
+                                band_template[4].format_value(if filter.muted { 0.0 } else { 1.0 })
+                            }
                             _ => String::new(),
                         }
                     } else {
@@ -559,8 +563,7 @@ impl TuiEditablePlugin for PluginSettings {
                             }
                         }
                         1 => {
-                            *fir_length =
-                                ((*fir_length as i64) + delta as i64).clamp(0, 3) as f64;
+                            *fir_length = ((*fir_length as i64) + delta as i64).clamp(0, 3) as f64;
                         }
                         2 => *auto_gain = !*auto_gain,
                         3 => *mix = (*mix + delta * 0.01).clamp(0.0, 1.0),

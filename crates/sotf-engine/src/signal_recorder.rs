@@ -42,6 +42,8 @@ pub enum SignalType {
     WhiteNoise,
     PinkNoise,
     MNoise,
+    Mls,
+    Dirac,
 }
 
 impl SignalType {
@@ -53,6 +55,8 @@ impl SignalType {
             Self::WhiteNoise => "white-noise",
             Self::PinkNoise => "pink-noise",
             Self::MNoise => "m-noise",
+            Self::Mls => "mls",
+            Self::Dirac => "dirac",
         }
     }
 }
@@ -68,10 +72,18 @@ impl FromStr for SignalType {
             "white-noise" | "white_noise" | "whitenoise" => Ok(Self::WhiteNoise),
             "pink-noise" | "pink_noise" | "pinknoise" => Ok(Self::PinkNoise),
             "m-noise" | "m_noise" | "mnoise" => Ok(Self::MNoise),
+            "mls"
+            | "maximum-length-sequence"
+            | "maximum_length_sequence"
+            | "maximumlengthsequence" => Ok(Self::Mls),
+            "dirac" | "impulse" => Ok(Self::Dirac),
             _ => Err(format!("Unknown signal type: {}", s)),
         }
     }
 }
+
+/// Default MLS order for recording workflows.
+pub const DEFAULT_MLS_ORDER: u8 = 16;
 
 /// Parameters for signal generation
 #[derive(Debug, Clone)]
@@ -110,6 +122,13 @@ pub enum SignalParams {
     Noise {
         amp: f32,
     },
+    Mls {
+        order: u8,
+        amp: f32,
+    },
+    Dirac {
+        amp: f32,
+    },
 }
 
 /// Build an octave-scaled sweep surrounded by silence windows.
@@ -133,10 +152,15 @@ fn build_octave_sweep_with_silence(
     let min_sweep_dur = 1.0_f32;
 
     let sweep = gen_log_sweep_octave_scaled(
-        start_freq, end_freq, amp, sample_rate, bass_dur, min_sweep_dur,
+        start_freq,
+        end_freq,
+        amp,
+        sample_rate,
+        bass_dur,
+        min_sweep_dur,
     );
 
-    let pre_n  = (pre_silence_s.max(0.0)  * sample_rate as f32).round() as usize;
+    let pre_n = (pre_silence_s.max(0.0) * sample_rate as f32).round() as usize;
     let post_n = (post_silence_s.max(0.0) * sample_rate as f32).round() as usize;
 
     let total = pre_n + sweep.len() + post_n;
@@ -203,6 +227,8 @@ pub fn generate_signal(
         (SignalType::MNoise, SignalParams::Noise { amp }) => {
             gen_m_noise(*amp, sample_rate, duration)
         }
+        (SignalType::Mls, SignalParams::Mls { order, amp }) => gen_mls(*order, *amp),
+        (SignalType::Dirac, SignalParams::Dirac { amp }) => gen_dirac(*amp, sample_rate, duration),
         _ => {
             return Err(format!(
                 "Signal type {:?} does not match parameters {:?}",
@@ -1703,8 +1729,7 @@ fn probe_channel_delays_core(
     )?;
     let auto_peak = auto_result.peak_value as f64;
 
-    let analysis_segment_len =
-        capture.analysis_silence_samples + capture.analysis_signal_samples;
+    let analysis_segment_len = capture.analysis_silence_samples + capture.analysis_signal_samples;
 
     let mut arrivals_ms = Vec::with_capacity(num_channels);
     let mut channel_results = Vec::with_capacity(num_channels);
@@ -1797,7 +1822,6 @@ fn probe_channel_delays_core(
         input_sr,
     ))
 }
-
 
 // ---------------------------------------------------------------------------
 // GD-Opt v2 Phase GD-1e — bass anchor capture
@@ -1973,8 +1997,7 @@ pub fn analyze_bass_anchor_recording(
             ));
         }
         let segment = &recorded[start..end];
-        let r =
-            math_audio_dsp::signals::extract_tone_phase(segment, bass_freq_hz, sample_rate);
+        let r = math_audio_dsp::signals::extract_tone_phase(segment, bass_freq_hz, sample_rate);
         channels.push(BassAnchorChannelResult {
             channel_name: name.clone(),
             channel_index: channel_indices[i] as usize,
@@ -2019,12 +2042,8 @@ fn run_bass_anchor_core(
     }
 
     // Generate the tone burst at the playback sample rate.
-    let burst = math_audio_dsp::signals::gen_bass_tone_burst(
-        bass_freq_hz,
-        bass_cycles,
-        sample_rate,
-        0.5,
-    );
+    let burst =
+        math_audio_dsp::signals::gen_bass_tone_burst(bass_freq_hz, bass_cycles, sample_rate, 0.5);
     if burst.is_empty() {
         return Err("gen_bass_tone_burst returned empty".to_string());
     }
@@ -2130,7 +2149,9 @@ pub fn run_spl_calibration(
         ));
     }
     if !duration_s.is_finite() || duration_s <= 0.3 {
-        return Err(format!("SPL cal duration must be > 0.3 s, got {duration_s}"));
+        return Err(format!(
+            "SPL cal duration must be > 0.3 s, got {duration_s}"
+        ));
     }
     if !amp.is_finite() || !(0.0..=1.0).contains(&amp) {
         return Err(format!("SPL cal amplitude must be in (0, 1], got {amp}"));
@@ -2556,7 +2577,7 @@ pub fn validate_signal_params(
     duration: f32,
     sample_rate: u32,
 ) -> Result<(), String> {
-    if duration <= 0.0 {
+    if signal_type != SignalType::Mls && duration <= 0.0 {
         return Err("Duration must be positive".to_string());
     }
 
@@ -2632,7 +2653,18 @@ pub fn validate_signal_params(
                 return Err(format!("Amplitude {} must be in range (0, 1]", amp));
             }
         }
-        (_, SignalParams::Noise { amp }) => {
+        (_, SignalParams::Noise { amp }) if (*amp <= 0.0 || *amp > 1.0) => {
+            return Err(format!("Amplitude {} must be in range (0, 1]", amp));
+        }
+        (SignalType::Mls, SignalParams::Mls { order, amp }) => {
+            if !(2..=24).contains(order) {
+                return Err(format!("MLS order {} must be in range [2, 24]", order));
+            }
+            if *amp <= 0.0 || *amp > 1.0 {
+                return Err(format!("Amplitude {} must be in range (0, 1]", amp));
+            }
+        }
+        (SignalType::Dirac, SignalParams::Dirac { amp }) => {
             if *amp <= 0.0 || *amp > 1.0 {
                 return Err(format!("Amplitude {} must be in range (0, 1]", amp));
             }
@@ -2751,6 +2783,12 @@ mod tests {
             SignalType::from_str("white-noise").unwrap(),
             SignalType::WhiteNoise
         );
+        assert_eq!(SignalType::from_str("mls").unwrap(), SignalType::Mls);
+        assert_eq!(
+            SignalType::from_str("maximum-length-sequence").unwrap(),
+            SignalType::Mls
+        );
+        assert_eq!(SignalType::from_str("dirac").unwrap(), SignalType::Dirac);
         assert!(SignalType::from_str("invalid").is_err());
     }
 
@@ -2884,6 +2922,30 @@ mod tests {
     }
 
     #[test]
+    fn test_generate_signal_mls() {
+        let params = SignalParams::Mls {
+            order: DEFAULT_MLS_ORDER,
+            amp: 0.5,
+        };
+        let signal =
+            generate_signal(SignalType::Mls, &params, 0.0, 48000).expect("Failed to generate MLS");
+
+        assert_eq!(signal.len(), 65_535);
+        assert!(signal.iter().all(|&s| s == 0.5 || s == -0.5));
+    }
+
+    #[test]
+    fn test_generate_signal_dirac() {
+        let params = SignalParams::Dirac { amp: 0.5 };
+        let signal = generate_signal(SignalType::Dirac, &params, 0.1, 48000)
+            .expect("Failed to generate Dirac");
+
+        assert_eq!(signal.len(), 4800);
+        assert_eq!(signal[0], 0.5);
+        assert!(signal[1..].iter().all(|&s| s == 0.0));
+    }
+
+    #[test]
     fn test_generate_signal_type_mismatch() {
         // Wrong params for signal type should fail
         let params = SignalParams::Tone {
@@ -2992,6 +3054,49 @@ mod tests {
         // Invalid duration
         assert!(validate_signal_params(SignalType::Tone, &params, 0.0, 48000).is_err());
         assert!(validate_signal_params(SignalType::Tone, &params, -1.0, 48000).is_err());
+    }
+
+    #[test]
+    fn test_validate_signal_params_mls() {
+        let params = SignalParams::Mls {
+            order: DEFAULT_MLS_ORDER,
+            amp: 0.5,
+        };
+        assert!(validate_signal_params(SignalType::Mls, &params, 0.0, 48000).is_ok());
+
+        let bad_order = SignalParams::Mls {
+            order: 25,
+            amp: 0.5,
+        };
+        assert!(validate_signal_params(SignalType::Mls, &bad_order, 1.0, 48000).is_err());
+
+        let bad_amp = SignalParams::Mls {
+            order: DEFAULT_MLS_ORDER,
+            amp: 2.0,
+        };
+        assert!(validate_signal_params(SignalType::Mls, &bad_amp, 1.0, 48000).is_err());
+    }
+
+    #[test]
+    fn test_validate_signal_params_dirac() {
+        assert!(
+            validate_signal_params(
+                SignalType::Dirac,
+                &SignalParams::Dirac { amp: 0.5 },
+                0.1,
+                48000
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_signal_params(
+                SignalType::Dirac,
+                &SignalParams::Dirac { amp: 0.0 },
+                0.1,
+                48000
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -3182,12 +3287,9 @@ mod tests {
             2000.0,
         );
 
-        let auto_result = math_audio_dsp::analysis::cross_correlate_envelope(
-            &probe,
-            &probe,
-            sample_rate,
-        )
-        .expect("autocorrelation failed");
+        let auto_result =
+            math_audio_dsp::analysis::cross_correlate_envelope(&probe, &probe, sample_rate)
+                .expect("autocorrelation failed");
         let auto_peak = auto_result.peak_value as f64;
         eprintln!("Probe autocorrelation peak: {:.6}", auto_peak);
 
@@ -3203,12 +3305,9 @@ mod tests {
             let end = (expected + segment_len).min(mono.len());
             let segment = &mono[expected..end];
 
-            let xcorr = math_audio_dsp::analysis::cross_correlate_envelope(
-                &probe,
-                segment,
-                sample_rate,
-            )
-            .expect("channel xcorr failed");
+            let xcorr =
+                math_audio_dsp::analysis::cross_correlate_envelope(&probe, segment, sample_rate)
+                    .expect("channel xcorr failed");
 
             let arrival_ms = xcorr.peak_sample_refined / sample_rate as f64 * 1000.0;
 
@@ -3270,14 +3369,12 @@ mod tests {
         // The returned signal must have the structure:
         //   [pre_n zeros | sweep | post_n zeros]
         let sr = 48000_u32;
-        let pre_s  = 2.0_f32;
+        let pre_s = 2.0_f32;
         let post_s = 1.5_f32;
 
-        let out = build_octave_sweep_with_silence(
-            10.0, 20_000.0, 0.5, 3.0, pre_s, post_s, sr,
-        );
+        let out = build_octave_sweep_with_silence(10.0, 20_000.0, 0.5, 3.0, pre_s, post_s, sr);
 
-        let pre_n  = (pre_s  * sr as f32).round() as usize;
+        let pre_n = (pre_s * sr as f32).round() as usize;
         let post_n = (post_s * sr as f32).round() as usize;
 
         // Pre-silence window must be all zeros.
@@ -3299,10 +3396,7 @@ mod tests {
 
     #[test]
     fn test_sweep_params_from_config_octave_path() {
-        let params = sweep_params_from_config(
-            10.0, 20_000.0, 0.5,
-            Some(3.0), Some(2.0), Some(1.5),
-        );
+        let params = sweep_params_from_config(10.0, 20_000.0, 0.5, Some(3.0), Some(2.0), Some(1.5));
         match params {
             SignalParams::OctaveSweep {
                 start_freq,
@@ -3345,12 +3439,20 @@ mod tests {
             post_silence_s: 0.1,
         };
         let result = generate_signal(SignalType::Sweep, &params, 0.0, 48000);
-        assert!(result.is_ok(), "generate_signal returned error: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "generate_signal returned error: {:?}",
+            result.err()
+        );
         let signal = result.unwrap();
         assert!(!signal.is_empty(), "OctaveSweep signal should not be empty");
         // The signal must be longer than just the silence windows (sweep content present).
         let min_expected = (0.2_f32 * 48000_f32).round() as usize + 1;
-        assert!(signal.len() > min_expected, "Signal too short: {} samples", signal.len());
+        assert!(
+            signal.len() > min_expected,
+            "Signal too short: {} samples",
+            signal.len()
+        );
     }
 
     #[test]
@@ -3361,7 +3463,11 @@ mod tests {
         let out_clamped = build_octave_sweep_with_silence(20.0, 20_000.0, 0.5, 0.1, 0.0, 0.0, sr);
         // 1.0 explicit.
         let out_min = build_octave_sweep_with_silence(20.0, 20_000.0, 0.5, 1.0, 0.0, 0.0, sr);
-        assert_eq!(out_clamped.len(), out_min.len(), "Clamped and min-1.0 lengths differ");
+        assert_eq!(
+            out_clamped.len(),
+            out_min.len(),
+            "Clamped and min-1.0 lengths differ"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -3386,7 +3492,8 @@ mod tests {
         // Inject a known phase shift per channel (degrees).
         let injected_phases_deg = [0.0_f32, 30.0, -45.0];
 
-        let burst_samples = ((bass_cycles as f32 / bass_freq) * sample_rate as f32).round() as usize;
+        let burst_samples =
+            ((bass_cycles as f32 / bass_freq) * sample_rate as f32).round() as usize;
         let silence_samples = (silence_ms / 1000.0 * sample_rate as f32) as usize;
         let segment_len = silence_samples + burst_samples;
         let total_frames = silence_samples + channel_indices.len() * segment_len;
@@ -3434,8 +3541,12 @@ mod tests {
             let got = cr.bass_anchor_phase_deg;
             // Wrap difference to (−180°, 180°] for robust comparison.
             let mut diff = got - expected;
-            while diff > 180.0 { diff -= 360.0; }
-            while diff <= -180.0 { diff += 360.0; }
+            while diff > 180.0 {
+                diff -= 360.0;
+            }
+            while diff <= -180.0 {
+                diff += 360.0;
+            }
             assert!(
                 diff.abs() < 2.0,
                 "Channel {} ({}): expected {:+.1}°, got {:+.2}° (error {:+.2}°)",

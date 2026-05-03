@@ -199,7 +199,10 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     // letters like `C` go into the name instead of switching to Configure.
     use crate::app::PlaylistMode;
     if app.current_screen == Screen::Playlists
-        && matches!(app.playlist_mode, PlaylistMode::Create | PlaylistMode::Rename)
+        && matches!(
+            app.playlist_mode,
+            PlaylistMode::Create | PlaylistMode::Rename
+        )
     {
         return playlists::handle_playlists_keys(app, key);
     }

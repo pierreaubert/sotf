@@ -13,7 +13,10 @@ pub struct DevReply {
 
 impl DevReply {
     pub fn ok() -> Self {
-        Self { ok: true, error: None }
+        Self {
+            ok: true,
+            error: None,
+        }
     }
 
     pub fn err(msg: impl Into<String>) -> Self {

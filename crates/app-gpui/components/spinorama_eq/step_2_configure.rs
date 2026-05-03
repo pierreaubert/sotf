@@ -975,17 +975,14 @@ impl PlayerView {
                                         view.cancel_spinorama_optimization(cx);
                                     }))
                             } else {
-                                Button::new(
-                                    "start_spinorama_optimization",
-                                    "Generate Speaker EQ",
-                                )
-                                .variant(ButtonVariant::Primary)
-                                .size(ButtonSize::Md)
-                                .full_width(true)
-                                .theme(theme.to_button_theme())
-                                .on_click_event(cx.listener(|view, _, _, cx| {
-                                    view.start_spinorama_optimization(cx);
-                                }))
+                                Button::new("start_spinorama_optimization", "Generate Speaker EQ")
+                                    .variant(ButtonVariant::Primary)
+                                    .size(ButtonSize::Md)
+                                    .full_width(true)
+                                    .theme(theme.to_button_theme())
+                                    .on_click_event(cx.listener(|view, _, _, cx| {
+                                        view.start_spinorama_optimization(cx);
+                                    }))
                             })
                             .when(show_progress, |vstack| {
                                 let display_progress = if is_completed {

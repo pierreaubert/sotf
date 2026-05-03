@@ -72,13 +72,7 @@ impl FilterOptimizer for AutoeqDeBackend {
                     Box::new(move |im| user_cb(im.iter, im.fun, None))
                 };
                 optimize_filters_autoeq_with_callback(
-                    x,
-                    lower,
-                    upper,
-                    objective,
-                    self.name,
-                    params,
-                    de_cb,
+                    x, lower, upper, objective, self.name, params, de_cb,
                 )
             }
             None => optimize_filters_autoeq(x, lower, upper, objective, self.name, params),

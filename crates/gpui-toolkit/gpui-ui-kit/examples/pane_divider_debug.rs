@@ -10,11 +10,11 @@
 
 use gpui::prelude::FluentBuilder;
 use gpui::*;
+use gpui_miniapp::{MiniApp, MiniAppConfig};
 use gpui_ui_kit::i18n::{I18nExt, TranslationKey};
 use gpui_ui_kit::pane_divider::{CollapseDirection, PaneDivider, PaneDividerTheme};
 use gpui_ui_kit::theme::ThemeExt;
 use gpui_ui_kit::*;
-use gpui_miniapp::{MiniApp, MiniAppConfig};
 
 /// Which divider is currently being dragged
 #[derive(Debug, Clone, Copy, PartialEq)]

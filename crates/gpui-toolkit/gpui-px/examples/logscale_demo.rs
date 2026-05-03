@@ -3,8 +3,8 @@
 //! Run with: cargo run --example logscale_demo --features gpui
 
 use gpui::*;
-use gpui_px::*;
 use gpui_miniapp::{MiniApp, MiniAppConfig};
+use gpui_px::*;
 
 fn main() {
     MiniApp::run(

@@ -1,7 +1,7 @@
 use gpui::KeyBinding;
 
 use crate::{
-    detect_conflicts, DocumentedKeybinding, KeyConflict, KeybindingProvider, KeymapPreset,
+    DocumentedKeybinding, KeyConflict, KeybindingProvider, KeymapPreset, detect_conflicts,
 };
 
 /// Collects keybindings from multiple providers and aggregates them.

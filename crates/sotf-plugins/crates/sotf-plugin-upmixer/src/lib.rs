@@ -1518,18 +1518,16 @@ impl Plugin for UpmixerPlugin {
                 self.generate_decorrelation_filters();
                 self.prev_decorrelation_strength = -1.0;
             }
-            20 => {
+            20
                 // velvet_noise_duration_ms: regenerate if in velvet mode
-                if self.decorrelation_mode == 0 {
+                if self.decorrelation_mode == 0 => {
                     self.generate_velvet_noise_decorrelators();
                 }
-            }
-            21 => {
+            21
                 // velvet_noise_density: regenerate if in velvet mode
-                if self.decorrelation_mode == 0 {
+                if self.decorrelation_mode == 0 => {
                     self.generate_velvet_noise_decorrelators();
                 }
-            }
             29 | 30 => self.recache_bin_indices(), // voice_freq_min/max_hz
             31..=33 => self.recache_dialogue_weights(), // dialogue sub-weights
             35 => {

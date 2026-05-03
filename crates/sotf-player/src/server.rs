@@ -305,10 +305,8 @@ impl PlayerAdapter for MpdPlayerAdapter {
 
         for album in &library.albums {
             match tag_lower.as_str() {
-                "album" => {
-                    if !values.contains(&album.title) {
-                        values.push(album.title.clone());
-                    }
+                "album" if !values.contains(&album.title) => {
+                    values.push(album.title.clone());
                 }
                 "artist" | "albumartist" => {
                     let artist = album.artist();

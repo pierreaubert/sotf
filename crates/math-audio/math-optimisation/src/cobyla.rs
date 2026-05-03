@@ -253,7 +253,15 @@ where
         .collect();
 
     let mut x_buf: Vec<f64> = config.x0.to_vec();
-    let report = native::cobyla_native(n, f_native, &cons_native, &config.bounds, &mut x_buf, &dx, &stop)?;
+    let report = native::cobyla_native(
+        n,
+        f_native,
+        &cons_native,
+        &config.bounds,
+        &mut x_buf,
+        &dx,
+        &stop,
+    )?;
 
     Ok(CobylaReport {
         x: Array1::from(report.x),

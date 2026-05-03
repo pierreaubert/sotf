@@ -301,7 +301,9 @@ impl MultibandCompressorPlugin {
             sidechain_tilt_db: params.sidechain_tilt_db,
             link_amount: params.link_amount.clamp(0.0, 1.0),
             sidechain_hpf_hz: params.sidechain_hpf_hz.unwrap_or(80.0),
-            sidechain_hpf_order: params.sidechain_hpf_order.unwrap_or_else(|| "2nd".to_string()),
+            sidechain_hpf_order: params
+                .sidechain_hpf_order
+                .unwrap_or_else(|| "2nd".to_string()),
             detection_mode: params.detection_mode.unwrap_or_else(|| "peak".to_string()),
             program_dependent_release: params.program_dependent_release.unwrap_or(false),
             sidechain_external: params.sidechain_external.unwrap_or(false),
@@ -421,7 +423,11 @@ impl MultibandCompressorPlugin {
             .with_group("Sidechain"),
         );
         {
-            let idx = if self.sidechain_hpf_order == "4th" { 1 } else { 0 };
+            let idx = if self.sidechain_hpf_order == "4th" {
+                1
+            } else {
+                0
+            };
             params.push(
                 Parameter::new_int("sidechain_hpf_order", "Sidechain HPF Order", idx, 0, 1)
                     .with_group("Sidechain"),
@@ -919,7 +925,11 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                 return Some(ParameterValue::Float(self.sidechain_hpf_hz));
             }
             "sidechain_hpf_order" => {
-                let idx = if self.sidechain_hpf_order == "4th" { 1 } else { 0 };
+                let idx = if self.sidechain_hpf_order == "4th" {
+                    1
+                } else {
+                    0
+                };
                 return Some(ParameterValue::Int(idx));
             }
             "detection_mode" => {

@@ -180,24 +180,23 @@ impl MusicDatabase {
         let now = current_timestamp();
 
         // Get the next position (max + 1)
-        let mut next_position: i64 = self.conn.query_row(
+        let start_position: i64 = self.conn.query_row(
             "SELECT COALESCE(MAX(position), -1) + 1 FROM playlist_tracks WHERE playlist_id = ?1",
             params![playlist_id],
             |row| row.get(0),
         )?;
 
-        for track_path in track_paths {
+        for (offset, track_path) in track_paths.iter().enumerate() {
             self.conn.execute(
                 "INSERT OR IGNORE INTO playlist_tracks (playlist_id, track_path, position, added_at)
                  VALUES (?1, ?2, ?3, ?4)",
                 params![
                     playlist_id,
                     track_path.to_str().unwrap(),
-                    next_position,
+                    start_position + offset as i64,
                     now
                 ],
             )?;
-            next_position += 1;
         }
 
         // Update playlist's updated_at

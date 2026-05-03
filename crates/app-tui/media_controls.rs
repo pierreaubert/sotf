@@ -1,4 +1,6 @@
-use sotf_media_controls::{MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, PlatformConfig};
+use sotf_media_controls::{
+    MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, PlatformConfig,
+};
 use std::sync::mpsc;
 use std::time::Duration;
 

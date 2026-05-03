@@ -29,12 +29,12 @@ pub mod test_utils;
 pub mod vbap;
 
 // Re-export math-dsp modules (previously separate single-line files)
+pub use math_audio_dsp::stft as stft_common;
+pub use math_audio_dsp::true_peak;
 pub use math_audio_dsp::{
     adaa, auto_makeup, channel_linking, dc_blocker, delta_monitor, detector, dynamics_core,
     envelope, envelope_follower, lookahead, simd, smoothing,
 };
-pub use math_audio_dsp::stft as stft_common;
-pub use math_audio_dsp::true_peak;
 
 // Re-export math-iir-fir modules
 pub use math_audio_iir_fir::{fir_crossover, lr4_crossover};
@@ -43,11 +43,11 @@ pub use math_audio_iir_fir::{fir_crossover, lr4_crossover};
 pub use gpui_design as design_system;
 
 // Flat re-exports for commonly used types
+pub use analyzer::{AnalyzerData, LoudnessData, SpectrumData};
 pub use math_audio_dsp::adaa::{
     Adaa1, Adaa2, adaa1_hardclip, adaa1_softclip, adaa1_tanh, adaa2_hardclip, adaa2_softclip,
     adaa2_tanh,
 };
-pub use analyzer::{AnalyzerData, LoudnessData, SpectrumData};
 
 /// Function signature for plugin factories.
 /// Takes (plugin_type, parameters, channels, sample_rate) and returns a boxed Plugin.
@@ -63,6 +63,8 @@ pub use analyzer_spectrum::{
     TiltReferenceFreq,
 };
 pub use auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, AutoGainParams};
+pub use host::{DawHost, GraphEdge, Host};
+pub use lufs_target::LufsTarget;
 pub use math_audio_dsp::auto_makeup::MeasuredMakeup;
 pub use math_audio_dsp::channel_linking::{compute_linked_levels, link_stereo};
 pub use math_audio_dsp::dc_blocker::DcBlocker;
@@ -76,8 +78,6 @@ pub use math_audio_dsp::simd::enable_ftz_daz;
 pub use math_audio_dsp::true_peak::TruePeakDetector;
 pub use math_audio_iir_fir::fir_crossover::{FirCrossover, MultibandFirCrossover};
 pub use math_audio_iir_fir::lr4_crossover::{Lr4Crossover, MultibandLr4Crossover};
-pub use host::{DawHost, GraphEdge, Host};
-pub use lufs_target::LufsTarget;
 pub use oversampling::{
     OversampledPlugin, Oversampler, interleaved_to_planar, planar_to_interleaved,
 };

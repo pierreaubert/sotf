@@ -145,7 +145,15 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                 .iter()
                 .map(|&(ci, name, _)| {
                     let c = colors[ci];
-                    LegendItem::color(name, d3rs::color::D3Color { r: c.r, g: c.g, b: c.b, a: c.a })
+                    LegendItem::color(
+                        name,
+                        d3rs::color::D3Color {
+                            r: c.r,
+                            g: c.g,
+                            b: c.b,
+                            a: c.a,
+                        },
+                    )
                 })
                 .collect(),
         );
@@ -192,8 +200,13 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                 )),
         )
         .child(
-            render_legend(&legend_config, chart_w, theme.text_primary, Some(theme.muted))
-                .mb_2(),
+            render_legend(
+                &legend_config,
+                chart_w,
+                theme.text_primary,
+                Some(theme.muted),
+            )
+            .mb_2(),
         )
         .child(
             div()

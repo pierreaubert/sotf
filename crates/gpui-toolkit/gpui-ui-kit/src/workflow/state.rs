@@ -81,11 +81,7 @@ impl WorkflowNodeData {
     }
 
     /// Set maximum port counts (None = no limit)
-    pub fn with_max_ports(
-        mut self,
-        max_inputs: Option<usize>,
-        max_outputs: Option<usize>,
-    ) -> Self {
+    pub fn with_max_ports(mut self, max_inputs: Option<usize>, max_outputs: Option<usize>) -> Self {
         self.max_input_count = max_inputs;
         self.max_output_count = max_outputs;
         self

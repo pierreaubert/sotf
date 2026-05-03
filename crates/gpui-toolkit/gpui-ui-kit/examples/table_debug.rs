@@ -1,7 +1,7 @@
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::table::{Column, PaginationState, SelectionMode, SortDirection, SortState, Table};
 use gpui_miniapp::{MiniApp, MiniAppConfig};
+use gpui_ui_kit::table::{Column, PaginationState, SelectionMode, SortDirection, SortState, Table};
 use gpui_ui_kit::{HStack, StackSpacing, Text, ThemeExt, VStack};
 use std::collections::HashSet;
 

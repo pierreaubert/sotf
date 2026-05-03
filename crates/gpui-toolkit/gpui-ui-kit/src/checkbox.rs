@@ -254,8 +254,7 @@ impl RenderOnce for Checkbox {
             .or_else(|| self.label.clone())
             .unwrap_or_default();
         let role = self.aria_role.unwrap_or(AriaRole::Checkbox);
-        let mut props = AriaProps::with_role(role)
-            .maybe_state(self.disabled, AriaState::Disabled);
+        let mut props = AriaProps::with_role(role).maybe_state(self.disabled, AriaState::Disabled);
         if self.indeterminate {
             props = props.state(AriaState::Mixed);
         } else {

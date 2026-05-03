@@ -6,6 +6,8 @@ edition.workspace = true
 description = "Drives sotf-gpui's dev-api over HTTP from line-based scenario scripts"
 license.workspace = true
 repository.workspace = true
+keywords = ["audio", "testing"]
+categories = ["development-tools"]
 
 [dependencies]
 anyhow = { workspace = true }

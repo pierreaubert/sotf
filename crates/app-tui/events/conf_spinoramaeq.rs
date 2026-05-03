@@ -174,10 +174,8 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                         app.spinorama_eq.step_tab_focused = true;
                     }
                 }
-                KeyCode::Down => {
-                    if app.spinorama_eq.selected_field < 24 {
-                        app.spinorama_eq.selected_field += 1;
-                    }
+                KeyCode::Down if app.spinorama_eq.selected_field < 24 => {
+                    app.spinorama_eq.selected_field += 1;
                 }
                 KeyCode::Left | KeyCode::Char('-') => {
                     adjust_spinorama_field(app, -1);

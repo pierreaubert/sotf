@@ -150,15 +150,9 @@ pub fn connection_path_avoiding(
 
     // Combined bounding box of all blocking obstacles
     let obs_top = blocking.iter().map(|o| o.y).fold(f32::MAX, f32::min);
-    let obs_bottom = blocking
-        .iter()
-        .map(|o| o.bottom())
-        .fold(f32::MIN, f32::max);
+    let obs_bottom = blocking.iter().map(|o| o.bottom()).fold(f32::MIN, f32::max);
     let obs_left = blocking.iter().map(|o| o.x).fold(f32::MAX, f32::min);
-    let obs_right = blocking
-        .iter()
-        .map(|o| o.right())
-        .fold(f32::MIN, f32::max);
+    let obs_right = blocking.iter().map(|o| o.right()).fold(f32::MIN, f32::max);
 
     // Pick the closer side (above or below)
     let avg_y = (from.y + to.y) * 0.5;

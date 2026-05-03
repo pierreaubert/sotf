@@ -436,9 +436,7 @@ impl RenderOnce for IconButton {
         // Keyboard activation — Enter and Space mirror the click handler
         // with a synthesized `ClickEvent::Keyboard` payload. Required for
         // WCAG 2.1.1 (Keyboard accessible).
-        if !disabled
-            && let Some(handler) = on_click_for_kbd
-        {
+        if !disabled && let Some(handler) = on_click_for_kbd {
             el = el.on_key_down(move |event: &KeyDownEvent, window, cx| {
                 let key = event.keystroke.key.as_str();
                 if key == "enter" || key == "space" {

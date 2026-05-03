@@ -245,34 +245,25 @@ impl Render for DemoView {
 }
 
 fn main() {
-    #[cfg(target_os = "macos")]
-    let platform = std::rc::Rc::new(gpui_macos::MacPlatform::new(false));
-    #[cfg(target_os = "linux")]
-    let platform = gpui_linux::current_platform(false);
-    #[cfg(target_os = "windows")]
-    let platform = std::rc::Rc::new(
-        gpui_windows::WindowsPlatform::new(false).expect("Windows platform creation failed"),
-    );
-    gpui::Application::with_platform(platform).run(
-        move |cx: &mut gpui::App| {
-            cx.open_window(
-                WindowOptions {
-                    window_bounds: Some(WindowBounds::Windowed(Bounds {
-                        origin: Point::new(px(100.0), px(100.0)),
-                        size: Size {
-                            width: px(1200.0),
-                            height: px(800.0),
-                        },
-                    })),
-                    titlebar: Some(TitlebarOptions {
-                        title: Some(SharedString::from("Sphere Gallery Demo")),
-                        ..Default::default()
-                    }),
+    let platform = gpui_miniapp::current_platform();
+    gpui::Application::with_platform(platform).run(move |cx: &mut gpui::App| {
+        cx.open_window(
+            WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(Bounds {
+                    origin: Point::new(px(100.0), px(100.0)),
+                    size: Size {
+                        width: px(1200.0),
+                        height: px(800.0),
+                    },
+                })),
+                titlebar: Some(TitlebarOptions {
+                    title: Some(SharedString::from("Sphere Gallery Demo")),
                     ..Default::default()
-                },
-                |_, cx| cx.new(DemoView::new),
-            )
-            .unwrap();
-        },
-    );
+                }),
+                ..Default::default()
+            },
+            |_, cx| cx.new(DemoView::new),
+        )
+        .unwrap();
+    });
 }

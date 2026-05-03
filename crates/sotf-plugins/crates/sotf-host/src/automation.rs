@@ -298,11 +298,9 @@ pub mod automation_utils {
                 values,
                 samples_per_step,
             } => {
-                let step = if *samples_per_step > 0 {
-                    sample / *samples_per_step
-                } else {
-                    sample / num_frames
-                };
+                let step = sample
+                    .checked_div(*samples_per_step)
+                    .unwrap_or_else(|| sample / num_frames);
                 values
                     .get(step)
                     .copied()

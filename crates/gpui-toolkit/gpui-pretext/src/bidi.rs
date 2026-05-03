@@ -131,10 +131,8 @@ fn compute_bidi_levels(s: &str) -> Option<Vec<i8>> {
     last_type = sor;
     for t in &mut types {
         match *t {
-            EN => {
-                if last_type == AL {
-                    *t = AN;
-                }
+            EN if last_type == AL => {
+                *t = AN;
             }
             R | L | AL => {
                 last_type = *t;
@@ -182,10 +180,8 @@ fn compute_bidi_levels(s: &str) -> Option<Vec<i8>> {
     last_type = sor;
     for t in &mut types {
         match *t {
-            EN => {
-                if last_type == L {
-                    *t = L;
-                }
+            EN if last_type == L => {
+                *t = L;
             }
             R | L => {
                 last_type = *t;

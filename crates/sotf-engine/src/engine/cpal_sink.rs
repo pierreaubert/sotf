@@ -612,11 +612,7 @@ fn read_ring_buffer(
         if consumer.slots() == 0 {
             state.flush_requested.store(false, Ordering::Relaxed);
         }
-        let fill_percent = if capacity > 0 {
-            (consumer.slots() * 100) / capacity
-        } else {
-            0
-        };
+        let fill_percent = (consumer.slots() * 100).checked_div(capacity).unwrap_or(0);
         state
             .last_buffer_level
             .store(fill_percent as u64, Ordering::Relaxed);
@@ -658,11 +654,7 @@ fn read_ring_buffer(
     }
 
     let slots = consumer.slots();
-    let fill_percent = if capacity > 0 {
-        (slots * 100) / capacity
-    } else {
-        0
-    };
+    let fill_percent = (slots * 100).checked_div(capacity).unwrap_or(0);
     state
         .last_buffer_level
         .store(fill_percent as u64, Ordering::Relaxed);

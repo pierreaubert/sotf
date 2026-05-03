@@ -113,6 +113,10 @@ impl From<&CallbackConfig> for ProgressCallbackConfig {
 
 /// Source of measurement data
 #[derive(Debug, Clone)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "Curve variant is large but the enum is used in vec collections, not hot paths; boxing every constructor would be churn"
+)]
 pub enum MeasurementInput {
     /// CSV file path
     CsvFile(PathBuf),

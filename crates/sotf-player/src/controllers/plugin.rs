@@ -326,25 +326,21 @@ impl PluginController {
                     }
                     _ => {}
                 },
-                PluginSettings::Convolution { ir_file, .. } => {
-                    if param_idx == 0 {
-                        if !value.is_empty() {
-                            crate::security::validate_plugin_file_path(Path::new(&value))
-                                .map_err(|e| e.to_string())?;
-                        }
-                        *ir_file = value;
-                        update_needed = true;
+                PluginSettings::Convolution { ir_file, .. } if param_idx == 0 => {
+                    if !value.is_empty() {
+                        crate::security::validate_plugin_file_path(Path::new(&value))
+                            .map_err(|e| e.to_string())?;
                     }
+                    *ir_file = value;
+                    update_needed = true;
                 }
-                PluginSettings::BinauralDecoder { sofa_file, .. } => {
-                    if param_idx == 0 {
-                        if !value.is_empty() {
-                            crate::security::validate_plugin_file_path(Path::new(&value))
-                                .map_err(|e| e.to_string())?;
-                        }
-                        *sofa_file = value;
-                        update_needed = true;
+                PluginSettings::BinauralDecoder { sofa_file, .. } if param_idx == 0 => {
+                    if !value.is_empty() {
+                        crate::security::validate_plugin_file_path(Path::new(&value))
+                            .map_err(|e| e.to_string())?;
                     }
+                    *sofa_file = value;
+                    update_needed = true;
                 }
                 _ => {}
             }
@@ -389,25 +385,21 @@ impl PluginController {
                     }
                     _ => {}
                 },
-                PluginSettings::Convolution { ir_file, .. } => {
-                    if param_idx == 0 {
-                        if !value.is_empty() {
-                            crate::security::validate_plugin_file_path(Path::new(&value))
-                                .map_err(|e| e.to_string())?;
-                        }
-                        *ir_file = value;
-                        update_needed = true;
+                PluginSettings::Convolution { ir_file, .. } if param_idx == 0 => {
+                    if !value.is_empty() {
+                        crate::security::validate_plugin_file_path(Path::new(&value))
+                            .map_err(|e| e.to_string())?;
                     }
+                    *ir_file = value;
+                    update_needed = true;
                 }
-                PluginSettings::BinauralDecoder { sofa_file, .. } => {
-                    if param_idx == 0 {
-                        if !value.is_empty() {
-                            crate::security::validate_plugin_file_path(Path::new(&value))
-                                .map_err(|e| e.to_string())?;
-                        }
-                        *sofa_file = value;
-                        update_needed = true;
+                PluginSettings::BinauralDecoder { sofa_file, .. } if param_idx == 0 => {
+                    if !value.is_empty() {
+                        crate::security::validate_plugin_file_path(Path::new(&value))
+                            .map_err(|e| e.to_string())?;
                     }
+                    *sofa_file = value;
+                    update_needed = true;
                 }
                 _ => {}
             }
@@ -1846,8 +1838,8 @@ fn apply_structural_side_effects(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin_graph::{NodePosition, PluginGraph};
     use crate::PluginType;
+    use crate::plugin_graph::{NodePosition, PluginGraph};
 
     /// Build a controller with a single non-permanent EQ plugin and return
     /// its graph node id. Mirrors how the room-EQ-as-graph apply path leaves

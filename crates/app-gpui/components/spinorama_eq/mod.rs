@@ -1401,8 +1401,7 @@ impl PlayerView {
                 let result_ready = lock!(SPINORAMA_RESULT).take();
 
                 if let Some((success, result, full_result, error)) = result_ready {
-                    let was_cancelled =
-                        cancel_for_poll.load(std::sync::atomic::Ordering::Relaxed);
+                    let was_cancelled = cancel_for_poll.load(std::sync::atomic::Ordering::Relaxed);
                     state_for_poll.update(cx, |state, cx| {
                         if was_cancelled {
                             // The optimizer may have returned Ok with partial

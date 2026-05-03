@@ -10,7 +10,10 @@ mod stub;
 
 pub(crate) type EventHandler = Box<dyn FnMut(MediaControlEvent) + Send + 'static>;
 
-#[allow(clippy::large_enum_variant)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "platform backends differ in size; only one variant is constructed per build"
+)]
 pub(crate) enum Backend {
     #[cfg(target_os = "macos")]
     Macos(macos::MacosBackend),
@@ -31,7 +34,10 @@ impl Backend {
             return mpris::MprisBackend::new(&config).map(Backend::Mpris);
         }
 
-        #[allow(unreachable_code)]
+        #[allow(
+            unreachable_code,
+            reason = "fall-through stub backend for platforms without macos/linux/freebsd"
+        )]
         {
             let _ = config;
             stub::StubBackend::new().map(Backend::Stub)

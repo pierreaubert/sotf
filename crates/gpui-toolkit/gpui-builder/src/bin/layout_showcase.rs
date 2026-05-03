@@ -443,11 +443,9 @@ impl ShowcaseView {
                 // Sidebar divider
                 .child(self.divider_v("sidebar", divider_color, accent, cx))
                 // Main
-                .child(
-                    div().flex_1().h_full().overflow_hidden().child(
-                        self.main_panel(main_n, main_bg, fg, tabs, theme, &ds, large_sz, small_sz),
-                    ),
-                )
+                .child(div().flex_1().h_full().overflow_hidden().child(
+                    self.main_panel(main_n, main_bg, fg, tabs, theme, &ds, large_sz, small_sz),
+                ))
                 // Inspector divider + panel
                 .when(inspector.visible, |d: Stateful<Div>| {
                     d.child(self.divider_v("inspector", divider_color, accent, cx))
@@ -491,11 +489,9 @@ impl ShowcaseView {
                     )
                 })
                 .child(self.divider_h("sidebar", divider_color, accent, cx))
-                .child(
-                    div().flex_1().w_full().overflow_hidden().child(
-                        self.main_panel(main_n, main_bg, fg, tabs, theme, &ds, large_sz, small_sz),
-                    ),
-                )
+                .child(div().flex_1().w_full().overflow_hidden().child(
+                    self.main_panel(main_n, main_bg, fg, tabs, theme, &ds, large_sz, small_sz),
+                ))
                 .when(inspector.visible, |d: Stateful<Div>| {
                     d.child(self.divider_h("inspector", divider_color, accent, cx))
                         .child(

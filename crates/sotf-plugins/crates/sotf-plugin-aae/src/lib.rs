@@ -422,13 +422,13 @@ impl Plugin for AaePlugin {
                 }
             }
             "speaker_config" => {
-                if let Some(v) = value.as_string() {
-                    if let Some(cfg) = get_speaker_config(v) {
-                        self.params.speaker_config = v.to_string();
-                        self.speaker_config = cfg;
-                        self.num_output_channels = cfg.total_channels;
-                        self.precompute_gains();
-                    }
+                if let Some(v) = value.as_string()
+                    && let Some(cfg) = get_speaker_config(v)
+                {
+                    self.params.speaker_config = v.to_string();
+                    self.speaker_config = cfg;
+                    self.num_output_channels = cfg.total_channels;
+                    self.precompute_gains();
                 }
             }
             "envelopment" => {

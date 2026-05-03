@@ -83,16 +83,16 @@ impl PlayerView {
                             .spacing(StackSpacing::Sm)
                             .child(
                                 Text::new(translations.roomeq_backup_rack_help)
-                                .size(TextSize::Xs)
-                                .color(theme.text_secondary),
+                                    .size(TextSize::Xs)
+                                    .color(theme.text_secondary),
                             )
                             .child(
                                 Button::new("backup_rack", translations.roomeq_save_rack_backup)
                                     .variant(ButtonVariant::Secondary)
                                     .theme(theme.to_button_theme())
                                     .on_click_event(cx.listener(|view, _, _, cx| {
-                                            view.save_rack_backup(cx);
-                                        })),
+                                        view.save_rack_backup(cx);
+                                    })),
                             ),
                     ),
             )
@@ -146,8 +146,11 @@ impl PlayerView {
                                             }),
                                         )
                                         .child(
-                                            Text::label(format!("{} (.{})", format_name, format_ext))
-                                                .color(theme.text_primary),
+                                            Text::label(format!(
+                                                "{} (.{})",
+                                                format_name, format_ext
+                                            ))
+                                            .color(theme.text_primary),
                                         ),
                                 )
                                 .child(
@@ -156,8 +159,8 @@ impl PlayerView {
                                         .size(ButtonSize::Sm)
                                         .theme(theme.to_button_theme())
                                         .on_click_event(cx.listener(|view, _, _, cx| {
-                                                view.export_room_eq_format(cx);
-                                            })),
+                                            view.export_room_eq_format(cx);
+                                        })),
                                 ),
                         );
 
@@ -179,10 +182,7 @@ impl PlayerView {
                                             let name = name.to_string();
                                             let ext = ext.to_string();
                                             div()
-                                                .id(SharedString::from(format!(
-                                                    "export-fmt-{}",
-                                                    i
-                                                )))
+                                                .id(SharedString::from(format!("export-fmt-{}", i)))
                                                 .px(px(10.0)) // intentional: compact dropdown item padding, no matching token
                                                 .py(px(5.0)) // intentional: compact dropdown item padding, no matching token
                                                 .cursor_pointer()
@@ -235,7 +235,11 @@ impl PlayerView {
                     .background(theme.surface)
                     .header_background(theme.background_secondary)
                     .border(theme.border)
-                    .header(Text::new(translations.roomeq_apply_to_rack).color(theme.text_primary).weight(TextWeight::Semibold))
+                    .header(
+                        Text::new(translations.roomeq_apply_to_rack)
+                            .color(theme.text_primary)
+                            .weight(TextWeight::Semibold),
+                    )
                     .content(
                         VStack::new()
                             .spacing(StackSpacing::Sm)
@@ -253,8 +257,8 @@ impl PlayerView {
                                     .variant(ButtonVariant::Secondary)
                                     .theme(theme.to_button_theme())
                                     .on_click_event(cx.listener(|view, _, _, cx| {
-                                            view.apply_room_eq_to_player(cx);
-                                        })),
+                                        view.apply_room_eq_to_player(cx);
+                                    })),
                             ),
                     ),
             );
@@ -265,22 +269,26 @@ impl PlayerView {
                     .background(theme.surface)
                     .header_background(theme.background_secondary)
                     .border(theme.border)
-                    .header(Text::new(translations.roomeq_apply_as_graph).color(theme.text_primary).weight(TextWeight::Semibold))
+                    .header(
+                        Text::new(translations.roomeq_apply_as_graph)
+                            .color(theme.text_primary)
+                            .weight(TextWeight::Semibold),
+                    )
                     .content(
                         VStack::new()
                             .spacing(StackSpacing::Sm)
                             .child(
                                 Text::new(translations.roomeq_apply_graph_help)
-                                .size(TextSize::Xs)
-                                .color(theme.text_secondary),
+                                    .size(TextSize::Xs)
+                                    .color(theme.text_secondary),
                             )
                             .child(
                                 Button::new("apply_as_graph", translations.roomeq_apply_as_graph)
                                     .variant(ButtonVariant::Secondary)
                                     .theme(theme.to_button_theme())
                                     .on_click_event(cx.listener(|view, _, _, cx| {
-                                            view.apply_room_eq_as_graph(cx);
-                                        })),
+                                        view.apply_room_eq_as_graph(cx);
+                                    })),
                             ),
                     ),
             );

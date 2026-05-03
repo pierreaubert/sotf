@@ -265,12 +265,11 @@ fn parse_mdns_response(
         }
 
         match rtype {
-            33 => {
+            33
                 // SRV record: priority(2) + weight(2) + port(2) + target
-                if rdlength >= 6 {
+                if rdlength >= 6 => {
                     port = u16::from_be_bytes([data[pos + 4], data[pos + 5]]);
                 }
-            }
             16 => {
                 // TXT record: one or more length-prefixed strings
                 let mut tpos = pos;
@@ -292,12 +291,11 @@ fn parse_mdns_response(
                     name = friendly.clone();
                 }
             }
-            1 => {
+            1
                 // A record: 4 bytes IPv4
-                if rdlength == 4 {
+                if rdlength == 4 => {
                     address = Ipv4Addr::new(data[pos], data[pos + 1], data[pos + 2], data[pos + 3]);
                 }
-            }
             12 => {
                 // PTR record: extract instance name
                 if name.is_empty()

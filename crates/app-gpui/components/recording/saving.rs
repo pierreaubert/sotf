@@ -195,7 +195,9 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(Text::eyebrow(translations.recording_save_location_eyebrow).color(theme.accent))
+                .child(
+                    Text::eyebrow(translations.recording_save_location_eyebrow).color(theme.accent),
+                )
                 .child(
                     HStack::new()
                         .spacing(StackSpacing::Sm)
@@ -556,7 +558,10 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(Text::eyebrow(translations.recording_setup_description_label).color(theme.accent))
+                .child(
+                    Text::eyebrow(translations.recording_setup_description_label)
+                        .color(theme.accent),
+                )
                 .child(Text::caption(translations.recording_setup_description_help))
                 .child(
                     div()
@@ -634,7 +639,9 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(Text::eyebrow(translations.recording_speakers_per_channel).color(theme.accent))
+                .child(
+                    Text::eyebrow(translations.recording_speakers_per_channel).color(theme.accent),
+                )
                 .child(Text::caption(if is_loading {
                     translations.recording_speakers_loading_catalog
                 } else if catalog.is_empty() {
@@ -673,7 +680,9 @@ impl PlayerView {
                                                 row
                                             )))
                                             .value(current.clone())
-                                            .placeholder(translations.recording_speakers_placeholder)
+                                            .placeholder(
+                                                translations.recording_speakers_placeholder,
+                                            )
                                             .on_text_change({
                                                 let view = view.clone();
                                                 move |value, _window, cx| {

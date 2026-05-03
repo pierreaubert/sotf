@@ -134,6 +134,8 @@ impl PlayerView {
                                     "Sweep" => RecordingSignalType::Sweep,
                                     "White Noise" => RecordingSignalType::WhiteNoise,
                                     "Pink Noise" => RecordingSignalType::PinkNoise,
+                                    "MLS" => RecordingSignalType::Mls,
+                                    "Dirac" => RecordingSignalType::Dirac,
                                     _ => RecordingSignalType::Sweep,
                                 };
                             state
@@ -253,7 +255,10 @@ impl PlayerView {
             .content(
                 VStack::new()
                     .spacing(StackSpacing::Sm)
-                    .child(Text::eyebrow(translations.recording_channel_frequency_range).color(theme.accent))
+                    .child(
+                        Text::eyebrow(translations.recording_channel_frequency_range)
+                            .color(theme.accent),
+                    )
                     .children(
                         channel_data
                             .iter()
@@ -442,30 +447,40 @@ impl PlayerView {
             .content(
                 VStack::new()
                     .spacing(StackSpacing::Sm)
-                    .child(Text::eyebrow(translations.recording_channel_metrics).color(theme.accent))
+                    .child(
+                        Text::eyebrow(translations.recording_channel_metrics).color(theme.accent),
+                    )
                     // Header row
                     .child(
                         HStack::new()
                             .spacing(StackSpacing::Sm)
                             .align(StackAlign::Center)
                             .child(
-                                div().w(px(100.0)).child( // intentional: metrics-table column width
-                                    Text::label(translations.recording_channel_column).color(theme.text_secondary),
+                                div().w(px(100.0)).child(
+                                    // intentional: metrics-table column width
+                                    Text::label(translations.recording_channel_column)
+                                        .color(theme.text_secondary),
                                 ),
                             )
                             .child(
-                                div().w(px(60.0)).child( // intentional: metrics-table column width
-                                    Text::label(translations.recording_mic_in).color(theme.text_secondary),
+                                div().w(px(60.0)).child(
+                                    // intentional: metrics-table column width
+                                    Text::label(translations.recording_mic_in)
+                                        .color(theme.text_secondary),
                                 ),
                             )
                             .child(
-                                div().w(px(80.0)).child( // intentional: metrics-table column width
-                                    Text::label(translations.recording_avg_spl).color(theme.text_secondary),
+                                div().w(px(80.0)).child(
+                                    // intentional: metrics-table column width
+                                    Text::label(translations.recording_avg_spl)
+                                        .color(theme.text_secondary),
                                 ),
                             )
                             .child(
-                                div().w(px(80.0)).child( // intentional: metrics-table column width
-                                    Text::label(translations.recording_noise_floor).color(theme.text_secondary),
+                                div().w(px(80.0)).child(
+                                    // intentional: metrics-table column width
+                                    Text::label(translations.recording_noise_floor)
+                                        .color(theme.text_secondary),
                                 ),
                             ),
                     )
@@ -549,7 +564,10 @@ impl PlayerView {
                         .spacing(StackSpacing::Sm)
                         .justify(StackJustify::SpaceBetween)
                         .align(StackAlign::Center)
-                        .child(Text::eyebrow(translations.recording_channel_status).color(theme.accent))
+                        .child(
+                            Text::eyebrow(translations.recording_channel_status)
+                                .color(theme.accent),
+                        )
                         .child(
                             HStack::new()
                                 .spacing(StackSpacing::Xs)
@@ -950,7 +968,7 @@ impl PlayerView {
     #[allow(clippy::type_complexity)]
     pub fn start_recording_channel(&mut self, channel_idx: usize, cx: &mut Context<Self>) {
         use sotf_audio_player::signal_recorder::{
-            SignalParams, SignalType, generate_signal, write_temp_wav,
+            DEFAULT_MLS_ORDER, SignalParams, SignalType, generate_signal, write_temp_wav,
         };
 
         // --- Gather parameters from state ---
@@ -1039,6 +1057,8 @@ impl PlayerView {
                 RecordingSignalType::Sweep => SignalType::Sweep,
                 RecordingSignalType::WhiteNoise => SignalType::WhiteNoise,
                 RecordingSignalType::PinkNoise => SignalType::PinkNoise,
+                RecordingSignalType::Mls => SignalType::Mls,
+                RecordingSignalType::Dirac => SignalType::Dirac,
                 RecordingSignalType::DelayProbe => {
                     log::warn!(
                         "DelayProbe selected in per-channel mode; use probe_channel_delays() instead. Falling back to Sweep."
@@ -1175,6 +1195,11 @@ impl PlayerView {
             SignalType::WhiteNoise | SignalType::PinkNoise => {
                 SignalParams::Noise { amp: amplitude }
             }
+            SignalType::Mls => SignalParams::Mls {
+                order: DEFAULT_MLS_ORDER,
+                amp: amplitude,
+            },
+            SignalType::Dirac => SignalParams::Dirac { amp: amplitude },
             _ => SignalParams::Sweep {
                 start_freq: params.sweep_start_freq,
                 end_freq: params.sweep_end_freq,
@@ -2596,10 +2621,7 @@ impl PlayerView {
     /// Render the "move microphones to next position" modal. Same
     /// manual-modal pattern as `render_migration_modal` (the comment
     /// there explains why we don't use the `Dialog` component here).
-    pub(crate) fn render_move_position_modal(
-        &self,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    pub(crate) fn render_move_position_modal(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
@@ -2734,8 +2756,7 @@ impl PlayerView {
                 rec_state.auto_record_remaining = false;
                 None
             } else {
-                rec_state.status_message =
-                    format!("Recording position {}...", next_pos + 1);
+                rec_state.status_message = format!("Recording position {}...", next_pos + 1);
                 rec_state.next_channel_in_position(next_pos)
             }
         });

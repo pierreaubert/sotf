@@ -663,7 +663,7 @@ impl MultibandExpanderPlugin {
                 let idx = if self.detection_mode == "rms" { 1 } else { 0 };
                 Some(idx as f64)
             }
-            17 => Some(self.lookahead_ms as f64),                     // lookahead_ms
+            17 => Some(self.lookahead_ms as f64), // lookahead_ms
             _ => None,
         }
     }
@@ -1327,11 +1327,7 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                         self.lookahead_buffers.push(
                             (0..self.channels)
                                 .map(|_| {
-                                    LookaheadBuffer::from_ms(
-                                        MAX_LOOKAHEAD_MS,
-                                        self.sample_rate,
-                                        1,
-                                    )
+                                    LookaheadBuffer::from_ms(MAX_LOOKAHEAD_MS, self.sample_rate, 1)
                                 })
                                 .collect(),
                         );

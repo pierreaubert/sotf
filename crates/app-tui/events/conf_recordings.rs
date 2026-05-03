@@ -244,7 +244,7 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 return None;
             }
 
-            use crate::app::{recording_field_at, recording_field_count, RecordingField};
+            use crate::app::{RecordingField, recording_field_at, recording_field_count};
             let total_fields = recording_field_count(&app.recording);
             match key.code {
                 KeyCode::Up => {
@@ -254,10 +254,8 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                         app.recording.selected_field -= 1;
                     }
                 }
-                KeyCode::Down => {
-                    if app.recording.selected_field + 1 < total_fields {
-                        app.recording.selected_field += 1;
-                    }
+                KeyCode::Down if app.recording.selected_field + 1 < total_fields => {
+                    app.recording.selected_field += 1;
                 }
                 KeyCode::Enter => {
                     match recording_field_at(&app.recording, app.recording.selected_field) {
@@ -828,12 +826,7 @@ pub(crate) fn is_recording_field_numerical_kind(field: &RecordingField) -> bool 
     use RecordingField::*;
     matches!(
         field,
-        Duration
-            | Level
-            | SweepStart
-            | SweepEnd
-            | NumRecordingChannels
-            | ChannelInput(_)
+        Duration | Level | SweepStart | SweepEnd | NumRecordingChannels | ChannelInput(_)
     )
 }
 
@@ -1091,7 +1084,7 @@ static RECORDING_RESULT: std::sync::OnceLock<RecordingResultSlot> = std::sync::O
 fn start_recording_channel(app: &mut App, channel_idx: usize) {
     use sotf_audio_player::recording_types::ChannelRecordingState;
     use sotf_audio_player::signal_recorder::{
-        SignalParams, SignalType, generate_signal, write_temp_wav,
+        DEFAULT_MLS_ORDER, SignalParams, SignalType, generate_signal, write_temp_wav,
     };
 
     let ch = match app.recording.channel_recordings.get_mut(channel_idx) {
@@ -1108,6 +1101,8 @@ fn start_recording_channel(app: &mut App, channel_idx: usize) {
             SignalType::WhiteNoise
         }
         sotf_audio_player::recording_types::RecordingSignalType::PinkNoise => SignalType::PinkNoise,
+        sotf_audio_player::recording_types::RecordingSignalType::Mls => SignalType::Mls,
+        sotf_audio_player::recording_types::RecordingSignalType::Dirac => SignalType::Dirac,
         sotf_audio_player::recording_types::RecordingSignalType::DelayProbe => {
             log::warn!(
                 "DelayProbe selected in per-channel mode; use probe_channel_delays() instead. Falling back to Sweep."
@@ -1167,6 +1162,11 @@ fn start_recording_channel(app: &mut App, channel_idx: usize) {
             amp: amplitude,
         },
         SignalType::WhiteNoise | SignalType::PinkNoise => SignalParams::Noise { amp: amplitude },
+        SignalType::Mls => SignalParams::Mls {
+            order: DEFAULT_MLS_ORDER,
+            amp: amplitude,
+        },
+        SignalType::Dirac => SignalParams::Dirac { amp: amplitude },
         _ => SignalParams::Sweep {
             start_freq: sweep_start_freq,
             end_freq: sweep_end_freq,

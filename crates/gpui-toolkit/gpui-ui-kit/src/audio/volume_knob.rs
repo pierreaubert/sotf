@@ -402,8 +402,11 @@ impl RenderOnce for VolumeKnob {
         cx.register_accessible(AccessibilityNode {
             element_id: self.id.clone(),
             label: effective_label,
-            props: AriaProps::with_role(self.aria_role.unwrap_or(AriaRole::Slider))
-                .value_range(self.value as f64, 0.0, 1.0),
+            props: AriaProps::with_role(self.aria_role.unwrap_or(AriaRole::Slider)).value_range(
+                self.value as f64,
+                0.0,
+                1.0,
+            ),
         });
 
         // Resolve DefiniteLength to Pixels using window's rem_size

@@ -6,6 +6,8 @@ edition.workspace = true
 description = "Theme editor and management for GPUI applications"
 license.workspace = true
 repository.workspace = true
+keywords = ["gpui", "theme", "ui"]
+categories = ["gui"]
 
 [dependencies]
 # GPUI framework

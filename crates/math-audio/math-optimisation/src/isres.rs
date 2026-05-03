@@ -145,11 +145,7 @@ struct Individual {
 }
 
 /// Run ISRES.
-pub fn isres<F>(
-    f: &F,
-    constraints: &[IsresConstraint],
-    config: IsresConfig,
-) -> Result<IsresReport>
+pub fn isres<F>(f: &F, constraints: &[IsresConstraint], config: IsresConfig) -> Result<IsresReport>
 where
     F: Fn(&Array1<f64>) -> f64 + Sync,
 {
@@ -170,11 +166,17 @@ where
         }
     }
     if config.mu < 2 {
-        return Err(DEError::PopulationTooSmall { pop_size: config.mu });
+        return Err(DEError::PopulationTooSmall {
+            pop_size: config.mu,
+        });
     }
 
     let mu = config.mu;
-    let lambda = if config.lambda == 0 { 7 * mu } else { config.lambda };
+    let lambda = if config.lambda == 0 {
+        7 * mu
+    } else {
+        config.lambda
+    };
     if lambda < mu {
         return Err(DEError::PopulationTooSmall { pop_size: lambda });
     }

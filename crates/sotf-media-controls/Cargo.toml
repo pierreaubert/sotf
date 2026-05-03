@@ -1,9 +1,13 @@
 [package]
 name = "sotf-media-controls"
 version = "0.1.0"
+authors.workspace = true
 edition.workspace = true
 description = "Cross-platform OS media controls (NowPlaying / MPRIS / SMTC) for SOTF apps."
 license.workspace = true
+repository.workspace = true
+keywords = ["audio", "media", "controls"]
+categories = ["multimedia::audio"]
 
 [dependencies]
 log = { workspace = true }

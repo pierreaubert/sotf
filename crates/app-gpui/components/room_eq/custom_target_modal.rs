@@ -315,35 +315,40 @@ impl PlayerView {
                             .flex()
                             .justify_between()
                             .items_center()
-                            .child(Text::section_header(translations.roomeq_custom_target_editor))
+                            .child(Text::section_header(
+                                translations.roomeq_custom_target_editor,
+                            ))
                             .child(
                                 div()
                                     .relative()
                                     .child(
-                                        Button::new("presets-curve", translations.roomeq_presets_button)
-                                            .variant(ButtonVariant::Secondary)
-                                            .size(ButtonSize::Sm)
-                                            .theme(theme.to_button_theme())
-                                            .on_click({
-                                                let state = state_entity.clone();
-                                                move |_event, cx| {
-                                                    state.update(cx, |state, cx| {
-                                                        let open = !state
-                                                            .app
-                                                            .measurement_state
-                                                            .room_eq_state
-                                                            .dropdowns
-                                                            .custom_target_presets_open;
-                                                        state
-                                                            .app
-                                                            .measurement_state
-                                                            .room_eq_state
-                                                            .dropdowns
-                                                            .custom_target_presets_open = open;
-                                                        cx.notify();
-                                                    });
-                                                }
-                                            }),
+                                        Button::new(
+                                            "presets-curve",
+                                            translations.roomeq_presets_button,
+                                        )
+                                        .variant(ButtonVariant::Secondary)
+                                        .size(ButtonSize::Sm)
+                                        .theme(theme.to_button_theme())
+                                        .on_click({
+                                            let state = state_entity.clone();
+                                            move |_event, cx| {
+                                                state.update(cx, |state, cx| {
+                                                    let open = !state
+                                                        .app
+                                                        .measurement_state
+                                                        .room_eq_state
+                                                        .dropdowns
+                                                        .custom_target_presets_open;
+                                                    state
+                                                        .app
+                                                        .measurement_state
+                                                        .room_eq_state
+                                                        .dropdowns
+                                                        .custom_target_presets_open = open;
+                                                    cx.notify();
+                                                });
+                                            }
+                                        }),
                                     )
                                     .when(is_presets_open, |parent| {
                                         parent.child(

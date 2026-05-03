@@ -80,7 +80,7 @@ impl SourceRegistry {
                 })
             })
             .collect();
-        result.sort_by(|a, b| b.2.cmp(&a.2)); // highest priority first
+        result.sort_by_key(|b| std::cmp::Reverse(b.2)); // highest priority first
         result
     }
 

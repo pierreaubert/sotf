@@ -138,7 +138,7 @@ impl<T: FilterFloat> KautzSection<T> {
         // Implemented as TDF-II with constant numerator b0 = norm*(1-a2).
         // This matches basis_response() in the frequency domain exactly.
         let norm = (T::one() - a2).sqrt(); // sqrt(1 - r²)
-        let b0 = norm * (T::one() - a2);   // sqrt(1-r²) * (1-r²)
+        let b0 = norm * (T::one() - a2); // sqrt(1-r²) * (1-r²)
         let basis_out = b0 * x + self.b_s1;
         self.b_s1 = -a1 * basis_out + self.b_s2;
         self.b_s2 = -a2 * basis_out;
@@ -278,9 +278,7 @@ impl KautzFilter<f64> {
         // This ensures each gain has the same scale (dB boost/cut at the pole)
         // and makes the sign relationship intuitive: negative gain = attenuation.
         for j in 0..m {
-            let col_max = (0..n)
-                .map(|i| phi[i * m + j])
-                .fold(0.0f64, f64::max);
+            let col_max = (0..n).map(|i| phi[i * m + j]).fold(0.0f64, f64::max);
             if col_max > 1.0e-20 {
                 for i in 0..n {
                     phi[i * m + j] /= col_max;
@@ -304,9 +302,7 @@ impl KautzFilter<f64> {
         // Regularization: add a small ridge to ensure numerical stability.
         // λ = 1e-6 * max diagonal element prevents division by near-zero values
         // when sections have very similar responses.
-        let max_diag = (0..m)
-            .map(|i| a_mat[i * m + i])
-            .fold(0.0f64, f64::max);
+        let max_diag = (0..m).map(|i| a_mat[i * m + i]).fold(0.0f64, f64::max);
         let lambda = 1.0e-6 * max_diag.max(1.0);
         for i in 0..m {
             a_mat[i * m + i] += lambda;
@@ -560,7 +556,10 @@ mod tests {
         let db = filter.np_log_result(&freqs);
         assert_eq!(db.len(), 3);
         // With gain=1, all values should be finite and not -400.0 at 100 Hz (near pole)
-        assert!(db[1] > -100.0, "response at pole frequency should be nonzero");
+        assert!(
+            db[1] > -100.0,
+            "response at pole frequency should be nonzero"
+        );
     }
 
     #[test]
@@ -598,7 +597,10 @@ mod tests {
         assert!(
             ratio > 0.5 && ratio < 2.0,
             "process/predict mismatch at {}Hz: process_peak={:.6}, predicted={:.6}, ratio={:.2}",
-            test_freq, process_peak, predicted, ratio
+            test_freq,
+            process_peak,
+            predicted,
+            ratio
         );
     }
 }

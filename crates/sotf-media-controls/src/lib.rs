@@ -13,6 +13,24 @@
 //!
 //! [`souvlaki`]: https://crates.io/crates/souvlaki
 
+// FFI wrapper crate: every "unsafe" is a thin pass-through to the Apple
+// MediaPlayer / mpris-server APIs whose preconditions are documented at the
+// framework level, not per call site. The pedantic lints below produce noise
+// that obscures the actual structure rather than catching bugs here.
+#![allow(
+    clippy::missing_errors_doc,
+    clippy::must_use_candidate,
+    clippy::needless_pass_by_value,
+    clippy::unused_self,
+    clippy::unnecessary_wraps,
+    clippy::items_after_statements,
+    clippy::semicolon_outside_block,
+    clippy::undocumented_unsafe_blocks,
+    clippy::unnecessary_safety_comment,
+    clippy::clone_on_ref_ptr,
+    reason = "pedantic noise on a thin FFI wrapper crate; see crate docs"
+)]
+
 use std::time::Duration;
 
 mod backend;
@@ -84,6 +102,7 @@ impl MediaControls {
 /// Convenience helper used by callers that want to construct a `MediaPosition`
 /// from a `f64` of seconds without depending on `Duration` directly.
 impl MediaPosition {
+    #[must_use]
     pub fn from_secs_f64(secs: f64) -> Self {
         Self(Duration::from_secs_f64(secs.max(0.0)))
     }

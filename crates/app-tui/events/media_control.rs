@@ -41,7 +41,9 @@ pub fn handle_media_control_event(
                 Some(PlayerCommand::Stop)
             }
         }
-        sotf_media_controls::MediaControlEvent::Previous => app.previous_track().map(PlayerCommand::Play),
+        sotf_media_controls::MediaControlEvent::Previous => {
+            app.previous_track().map(PlayerCommand::Play)
+        }
         sotf_media_controls::MediaControlEvent::Stop => {
             app.is_playing = false;
             Some(PlayerCommand::Stop)

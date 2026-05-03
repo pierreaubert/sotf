@@ -432,10 +432,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     // the frozen "iter 0/0 | loss: 0.0000".
                     if s.opt_iteration == 0 && s.opt_max_iter == 0 {
                         if let Some(msg) = &s.opt_status_message {
-                            (
-                                msg.clone(),
-                                Style::default().fg(app.theme.accent_primary),
-                            )
+                            (msg.clone(), Style::default().fg(app.theme.accent_primary))
                         } else if !s.opt_current_speaker.is_empty() {
                             (
                                 format!("{}...", s.opt_current_speaker),

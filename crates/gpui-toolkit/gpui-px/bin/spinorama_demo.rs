@@ -16,11 +16,11 @@ use autoeq::{Curve, DirectivityData};
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_design::DesignExt;
+use gpui_miniapp::{MiniApp, MiniAppConfig};
 use gpui_px::interaction::{InteractiveChart, InteractiveChartConfig, InteractiveChartState};
 use gpui_px::{
     ColorScale, Colormap, LegendPosition, ScaleType, Surface3DState, heatmap, line, surface3d,
 };
-use gpui_miniapp::{MiniApp, MiniAppConfig};
 use gpui_ui_kit::theme::ThemeExt;
 use gpui_ui_kit::{SelectOption, Spinner, SpinnerSize};
 use tokio::runtime::Runtime;
@@ -407,7 +407,12 @@ impl SpinoramaApp {
                     .flex()
                     .items_center()
                     .gap(px(ds.spacing.control_gap))
-                    .child(div().text_size(px(ds.typography.small_size)).text_color(theme.text_secondary).child("Speaker:"))
+                    .child(
+                        div()
+                            .text_size(px(ds.typography.small_size))
+                            .text_color(theme.text_secondary)
+                            .child("Speaker:"),
+                    )
                     .child(if is_loading_speakers {
                         div()
                             .id("speaker-loading")
@@ -437,7 +442,12 @@ impl SpinoramaApp {
                         .flex()
                         .items_center()
                         .gap(px(ds.spacing.control_gap))
-                        .child(div().text_size(px(ds.typography.small_size)).text_color(theme.text_secondary).child("Version:"))
+                        .child(
+                            div()
+                                .text_size(px(ds.typography.small_size))
+                                .text_color(theme.text_secondary)
+                                .child("Version:"),
+                        )
                         .child(if is_loading_versions {
                             div()
                                 .id("version-loading")
@@ -467,7 +477,12 @@ impl SpinoramaApp {
                     .flex()
                     .items_center()
                     .gap(px(ds.spacing.control_gap))
-                    .child(div().text_size(px(ds.typography.small_size)).text_color(theme.text_secondary).child("Plot:"))
+                    .child(
+                        div()
+                            .text_size(px(ds.typography.small_size))
+                            .text_color(theme.text_secondary)
+                            .child("Plot:"),
+                    )
                     .child(self.render_section_dropdown(
                         section_options,
                         current_section,
@@ -485,7 +500,12 @@ impl SpinoramaApp {
                             .flex()
                             .items_center()
                             .gap(px(ds.spacing.control_gap))
-                            .child(div().text_size(px(ds.typography.small_size)).text_color(theme.text_secondary).child("Colormap:"))
+                            .child(
+                                div()
+                                    .text_size(px(ds.typography.small_size))
+                                    .text_color(theme.text_secondary)
+                                    .child("Colormap:"),
+                            )
                             .child(self.render_colormap_dropdown(cx)),
                     )
                 },
@@ -553,7 +573,12 @@ impl SpinoramaApp {
                                     .unwrap_or_else(|| "Select speaker...".into()),
                             ),
                     )
-                    .child(div().text_size(px(ds.typography.small_size * 0.85)).text_color(theme.text_secondary).child("v"))
+                    .child(
+                        div()
+                            .text_size(px(ds.typography.small_size * 0.85))
+                            .text_color(theme.text_secondary)
+                            .child("v"),
+                    )
                     .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
                         entity_for_toggle.update(cx, |this, cx| {
                             this.speaker_dropdown_open = !this.speaker_dropdown_open;
@@ -596,7 +621,8 @@ impl SpinoramaApp {
                                         el.bg(theme.accent).text_color(theme.text_on_accent)
                                     })
                                     .when(!is_selected, |el: Stateful<Div>| {
-                                        el.text_color(theme.text_secondary).hover(|s| s.bg(theme.surface_hover))
+                                        el.text_color(theme.text_secondary)
+                                            .hover(|s| s.bg(theme.surface_hover))
                                     })
                                     .child(opt.label)
                                     .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
@@ -662,7 +688,12 @@ impl SpinoramaApp {
                                     .unwrap_or_else(|| "Select version...".into()),
                             ),
                     )
-                    .child(div().text_size(px(ds.typography.small_size * 0.85)).text_color(theme.text_secondary).child("v"))
+                    .child(
+                        div()
+                            .text_size(px(ds.typography.small_size * 0.85))
+                            .text_color(theme.text_secondary)
+                            .child("v"),
+                    )
                     .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
                         entity_for_toggle.update(cx, |this, cx| {
                             this.version_dropdown_open = !this.version_dropdown_open;
@@ -705,7 +736,8 @@ impl SpinoramaApp {
                                         el.bg(theme.accent).text_color(theme.text_on_accent)
                                     })
                                     .when(!is_selected, |el: Stateful<Div>| {
-                                        el.text_color(theme.text_secondary).hover(|s| s.bg(theme.surface_hover))
+                                        el.text_color(theme.text_secondary)
+                                            .hover(|s| s.bg(theme.surface_hover))
                                     })
                                     .child(opt.label)
                                     .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
@@ -755,7 +787,12 @@ impl SpinoramaApp {
                     .text_size(px(ds.typography.small_size))
                     .hover(|s| s.border_color(theme.accent))
                     .child(div().text_color(theme.text_primary).child(current))
-                    .child(div().text_size(px(ds.typography.small_size * 0.85)).text_color(theme.text_secondary).child("v"))
+                    .child(
+                        div()
+                            .text_size(px(ds.typography.small_size * 0.85))
+                            .text_color(theme.text_secondary)
+                            .child("v"),
+                    )
                     .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
                         entity_for_toggle.update(cx, |this, cx| {
                             this.section_dropdown_open = !this.section_dropdown_open;
@@ -796,7 +833,8 @@ impl SpinoramaApp {
                                         el.bg(theme.accent).text_color(theme.text_on_accent)
                                     })
                                     .when(!is_selected, |el: Stateful<Div>| {
-                                        el.text_color(theme.text_secondary).hover(|s| s.bg(theme.surface_hover))
+                                        el.text_color(theme.text_secondary)
+                                            .hover(|s| s.bg(theme.surface_hover))
                                     })
                                     .child(opt.label)
                                     .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
@@ -858,7 +896,12 @@ impl SpinoramaApp {
                     .text_size(px(ds.typography.small_size))
                     .hover(|s| s.border_color(theme.accent))
                     .child(div().text_color(theme.text_primary).child(current_label))
-                    .child(div().text_size(px(ds.typography.small_size * 0.85)).text_color(theme.text_secondary).child("v"))
+                    .child(
+                        div()
+                            .text_size(px(ds.typography.small_size * 0.85))
+                            .text_color(theme.text_secondary)
+                            .child("v"),
+                    )
                     .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
                         entity_for_toggle.update(cx, |this, cx| {
                             this.colormap_dropdown_open = !this.colormap_dropdown_open;
@@ -1499,18 +1542,33 @@ impl SpinoramaApp {
                             .p(px(ds.spacing.card_padding))
                             .bg(theme.muted)
                             .rounded(px(ds.corners.md))
-                            .child(div().text_size(px(ds.typography.small_size)).text_color(theme.text_secondary).child(format!(
-                                "X: Frequency ({:.0} Hz - {:.0} Hz, log scale)",
-                                freq_min, freq_max
-                            )))
-                            .child(div().text_size(px(ds.typography.small_size)).text_color(theme.text_secondary).child(format!(
-                                "Y: Angle ({:.0}° to {:.0}°)",
-                                angle_min, angle_max
-                            )))
-                            .child(div().text_size(px(ds.typography.small_size)).text_color(theme.text_secondary).child(format!(
-                                "SPL range: {:.1} dB to {:.1} dB",
-                                spl_min, spl_max
-                            )))
+                            .child(
+                                div()
+                                    .text_size(px(ds.typography.small_size))
+                                    .text_color(theme.text_secondary)
+                                    .child(format!(
+                                        "X: Frequency ({:.0} Hz - {:.0} Hz, log scale)",
+                                        freq_min, freq_max
+                                    )),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(ds.typography.small_size))
+                                    .text_color(theme.text_secondary)
+                                    .child(format!(
+                                        "Y: Angle ({:.0}° to {:.0}°)",
+                                        angle_min, angle_max
+                                    )),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(ds.typography.small_size))
+                                    .text_color(theme.text_secondary)
+                                    .child(format!(
+                                        "SPL range: {:.1} dB to {:.1} dB",
+                                        spl_min, spl_max
+                                    )),
+                            )
                             .child(
                                 div()
                                     .text_size(px(ds.typography.small_size))
@@ -1692,22 +1750,40 @@ impl SpinoramaApp {
                             .p(px(ds.spacing.card_padding))
                             .bg(theme.muted)
                             .rounded(px(ds.corners.md))
-                            .child(div().text_size(px(ds.typography.small_size)).text_color(theme.text_secondary).child(format!(
-                                "X: Frequency ({:.0} Hz - {:.0} Hz, log scale)",
-                                freq_min, freq_max
-                            )))
-                            .child(div().text_size(px(ds.typography.small_size)).text_color(theme.text_secondary).child(format!(
-                                "Y: Angle ({:.0}° to {:.0}°)",
-                                angle_min, angle_max
-                            )))
-                            .child(div().text_size(px(ds.typography.small_size)).text_color(theme.text_secondary).child(format!(
-                                "Z: SPL range ({:.1} dB to {:.1} dB)",
-                                spl_min, spl_max
-                            )))
                             .child(
-                                div().text_size(px(ds.typography.small_size)).text_color(theme.text_muted).child(
-                                    "Drag to rotate • Scroll to zoom • Double-click to reset",
-                                ),
+                                div()
+                                    .text_size(px(ds.typography.small_size))
+                                    .text_color(theme.text_secondary)
+                                    .child(format!(
+                                        "X: Frequency ({:.0} Hz - {:.0} Hz, log scale)",
+                                        freq_min, freq_max
+                                    )),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(ds.typography.small_size))
+                                    .text_color(theme.text_secondary)
+                                    .child(format!(
+                                        "Y: Angle ({:.0}° to {:.0}°)",
+                                        angle_min, angle_max
+                                    )),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(ds.typography.small_size))
+                                    .text_color(theme.text_secondary)
+                                    .child(format!(
+                                        "Z: SPL range ({:.1} dB to {:.1} dB)",
+                                        spl_min, spl_max
+                                    )),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(ds.typography.small_size))
+                                    .text_color(theme.text_muted)
+                                    .child(
+                                        "Drag to rotate • Scroll to zoom • Double-click to reset",
+                                    ),
                             ),
                     )
             }

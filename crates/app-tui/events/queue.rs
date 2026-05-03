@@ -112,13 +112,9 @@ pub(super) fn handle_queue_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                 app.status_message = Some("Open a playlist first (Y screen)".to_string());
                 return None;
             }
-            let Some(db) = app.library.get_database() else {
-                return None;
-            };
+            let db = app.library.get_database()?;
             let idx = app.selected_queue_index;
-            let Some(entry) = app.queue.get(idx) else {
-                return None;
-            };
+            let entry = app.queue.get(idx)?;
 
             if let Some(t_idx) = app.selected_queue_track_index
                 && let Some(track) = entry.item.album.tracks.get(t_idx)
@@ -129,9 +125,7 @@ pub(super) fn handle_queue_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                     .unwrap_or_else(|| format!("Track {}", t_idx + 1));
                 let path = track.path.clone();
                 match app.playlist_controller.add_tracks(db, &[path]) {
-                    Ok(()) => {
-                        app.status_message = Some(format!("Added '{}' to playlist", title))
-                    }
+                    Ok(()) => app.status_message = Some(format!("Added '{}' to playlist", title)),
                     Err(e) => app.status_message = Some(format!("Error: {}", e)),
                 }
             } else {

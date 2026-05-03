@@ -248,8 +248,7 @@ impl PlayerView {
                             let n = (value as usize).max(1);
                             let _ = view.update(cx, |this, cx| {
                                 this.state.update(cx, |state, _| {
-                                    let rs =
-                                        &mut state.app.measurement_state.recording_state;
+                                    let rs = &mut state.app.measurement_state.recording_state;
                                     rs.recording_config.num_positions = n;
                                     rs.init_channel_recordings();
                                     rs.sync_channel_speakers_length();
@@ -1135,130 +1134,139 @@ impl PlayerView {
         const NAME_WIDTH: f32 = 140.0;
 
         let speaker_count = speaker_data.len();
-        let stack = VStack::new()
-            .spacing(StackSpacing::Xs)
-            .children(speaker_data.iter().enumerate().map(
-                |(speaker_idx, (interface_channels, group_name))| {
-                    let view = view.clone();
-                    let theme = theme.clone();
-                    let interface_channels = interface_channels.clone();
-                    let group_name = group_name.clone();
-                    let is_multi = interface_channels.len() > 1;
+        let stack =
+            VStack::new()
+                .spacing(StackSpacing::Xs)
+                .children(speaker_data.iter().enumerate().map(
+                    |(speaker_idx, (interface_channels, group_name))| {
+                        let view = view.clone();
+                        let theme = theme.clone();
+                        let interface_channels = interface_channels.clone();
+                        let group_name = group_name.clone();
+                        let is_multi = interface_channels.len() > 1;
 
-                    // For custom config, show text input; otherwise show dropdown
-                    let name_widget = if is_custom {
-                        div()
-                            .w(px(NAME_WIDTH)) // intentional: fixed channel-name column width
-                            .child(self.render_channel_name_input_raw(cx, speaker_idx, &group_name))
-                            .into_any_element()
-                    } else {
-                        self.render_channel_group_dropdown(cx, speaker_idx, &group_name)
-                            .into_any_element()
-                    };
-
-                    // Build the speaker row content
-
-                    if is_multi {
-                        // Multi mode: show header row + channel list below
-                        VStack::new()
-                            .spacing(StackSpacing::Xs)
-                            .child(
-                                // Header row with speaker name, group, and mode toggle
-                                HStack::new()
-                                    .spacing(StackSpacing::Xs)
-                                    .align(StackAlign::Center)
-                                    .child(
-                                        div().w(px(LABEL_WIDTH)).child(
-                                            // intentional: speaker-label column
-                                            Text::new(format!("Speaker {}:", speaker_idx + 1))
-                                                .size(TextSize::Xs)
-                                                .color(theme.text_secondary),
-                                        ),
-                                    )
-                                    .child(name_widget)
-                                    .child(
-                                        self.render_speaker_mode_toggle(cx, speaker_idx, is_multi)
-                                            .into_any_element(),
-                                    ),
-                            )
-                            .child(
-                                // Channel list for multi mode
-                                self.render_multi_channel_list(
+                        // For custom config, show text input; otherwise show dropdown
+                        let name_widget = if is_custom {
+                            div()
+                                .w(px(NAME_WIDTH)) // intentional: fixed channel-name column width
+                                .child(self.render_channel_name_input_raw(
                                     cx,
                                     speaker_idx,
-                                    &interface_channels,
-                                    &theme,
+                                    &group_name,
+                                ))
+                                .into_any_element()
+                        } else {
+                            self.render_channel_group_dropdown(cx, speaker_idx, &group_name)
+                                .into_any_element()
+                        };
+
+                        // Build the speaker row content
+
+                        if is_multi {
+                            // Multi mode: show header row + channel list below
+                            VStack::new()
+                                .spacing(StackSpacing::Xs)
+                                .child(
+                                    // Header row with speaker name, group, and mode toggle
+                                    HStack::new()
+                                        .spacing(StackSpacing::Xs)
+                                        .align(StackAlign::Center)
+                                        .child(
+                                            div().w(px(LABEL_WIDTH)).child(
+                                                // intentional: speaker-label column
+                                                Text::new(format!("Speaker {}:", speaker_idx + 1))
+                                                    .size(TextSize::Xs)
+                                                    .color(theme.text_secondary),
+                                            ),
+                                        )
+                                        .child(name_widget)
+                                        .child(
+                                            self.render_speaker_mode_toggle(
+                                                cx,
+                                                speaker_idx,
+                                                is_multi,
+                                            )
+                                            .into_any_element(),
+                                        ),
                                 )
-                                .into_any_element(),
-                            )
-                            .into_any_element()
-                    } else {
-                        // Single mode: inline interface channel input on same row
-                        let interface_ch = interface_channels.first().copied().unwrap_or(0);
-                        HStack::new()
-                            .spacing(StackSpacing::Xs)
-                            .align(StackAlign::Center)
-                            .child(
-                                div().w(px(LABEL_WIDTH)).child(
-                                    // intentional: speaker-label column
-                                    Text::new(format!("Speaker {}:", speaker_idx + 1))
-                                        .size(TextSize::Xs)
-                                        .color(theme.text_secondary),
-                                ),
-                            )
-                            .child(name_widget)
-                            .child(
-                                self.render_speaker_mode_toggle(cx, speaker_idx, is_multi)
+                                .child(
+                                    // Channel list for multi mode
+                                    self.render_multi_channel_list(
+                                        cx,
+                                        speaker_idx,
+                                        &interface_channels,
+                                        &theme,
+                                    )
                                     .into_any_element(),
-                            )
-                            .child(div().w(px(70.0))) // intentional: align with ch-number input column
-                            .child(Text::caption(translations.recording_ch_short))
-                            .child(div().w(px(30.0))) // intentional: spacer before ch number
-                            .child({
-                                let view = view.clone();
-                                NumberInput::new(SharedString::from(format!(
-                                    "speaker_{}_ch_0",
-                                    speaker_idx
-                                )))
-                                .value((interface_ch + 1) as f64)
-                                .min(1.0)
-                                .max(128.0)
-                                .step(1.0)
-                                .size(NumberInputSize::Md)
-                                .on_change({
+                                )
+                                .into_any_element()
+                        } else {
+                            // Single mode: inline interface channel input on same row
+                            let interface_ch = interface_channels.first().copied().unwrap_or(0);
+                            HStack::new()
+                                .spacing(StackSpacing::Xs)
+                                .align(StackAlign::Center)
+                                .child(
+                                    div().w(px(LABEL_WIDTH)).child(
+                                        // intentional: speaker-label column
+                                        Text::new(format!("Speaker {}:", speaker_idx + 1))
+                                            .size(TextSize::Xs)
+                                            .color(theme.text_secondary),
+                                    ),
+                                )
+                                .child(name_widget)
+                                .child(
+                                    self.render_speaker_mode_toggle(cx, speaker_idx, is_multi)
+                                        .into_any_element(),
+                                )
+                                .child(div().w(px(70.0))) // intentional: align with ch-number input column
+                                .child(Text::caption(translations.recording_ch_short))
+                                .child(div().w(px(30.0))) // intentional: spacer before ch number
+                                .child({
                                     let view = view.clone();
-                                    move |value, _window, cx| {
-                                        let _ = view.update(cx, |this, cx| {
-                                            this.state.update(cx, |state, _| {
-                                                if let Some(m) = state
-                                                    .app
-                                                    .measurement_state
-                                                    .recording_state
-                                                    .playback_config
-                                                    .channel_mappings
-                                                    .get_mut(speaker_idx)
-                                                    && let Some(ch) =
-                                                        m.interface_channels.get_mut(0)
-                                                {
-                                                    *ch = (value as usize).saturating_sub(1);
-                                                }
-                                                // Sync total channel count
-                                                state
-                                                    .app
-                                                    .measurement_state
-                                                    .recording_state
-                                                    .playback_config
-                                                    .sync_channel_count();
+                                    NumberInput::new(SharedString::from(format!(
+                                        "speaker_{}_ch_0",
+                                        speaker_idx
+                                    )))
+                                    .value((interface_ch + 1) as f64)
+                                    .min(1.0)
+                                    .max(128.0)
+                                    .step(1.0)
+                                    .size(NumberInputSize::Md)
+                                    .on_change({
+                                        let view = view.clone();
+                                        move |value, _window, cx| {
+                                            let _ = view.update(cx, |this, cx| {
+                                                this.state.update(cx, |state, _| {
+                                                    if let Some(m) = state
+                                                        .app
+                                                        .measurement_state
+                                                        .recording_state
+                                                        .playback_config
+                                                        .channel_mappings
+                                                        .get_mut(speaker_idx)
+                                                        && let Some(ch) =
+                                                            m.interface_channels.get_mut(0)
+                                                    {
+                                                        *ch = (value as usize).saturating_sub(1);
+                                                    }
+                                                    // Sync total channel count
+                                                    state
+                                                        .app
+                                                        .measurement_state
+                                                        .recording_state
+                                                        .playback_config
+                                                        .sync_channel_count();
+                                                });
+                                                cx.notify();
                                             });
-                                            cx.notify();
-                                        });
-                                    }
+                                        }
+                                    })
                                 })
-                            })
-                            .into_any_element()
-                    }
-                },
-            ));
+                                .into_any_element()
+                        }
+                    },
+                ));
 
         if is_custom {
             let theme_clone = theme.clone();
@@ -1285,12 +1293,10 @@ impl PlayerView {
                                                 .playback_config;
                                             let next_ch = cfg.total_interface_channels();
                                             let idx = cfg.channel_mappings.len() + 1;
-                                            cfg.channel_mappings.push(
-                                                ChannelMapping::single(
-                                                    next_ch,
-                                                    format!("Ch{}", idx),
-                                                ),
-                                            );
+                                            cfg.channel_mappings.push(ChannelMapping::single(
+                                                next_ch,
+                                                format!("Ch{}", idx),
+                                            ));
                                             cfg.sync_channel_count();
                                         });
                                         cx.notify();

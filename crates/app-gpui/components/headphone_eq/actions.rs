@@ -139,7 +139,12 @@ impl PlayerView {
             state.app.measurement_state.headphone_eq_state.result = None;
             state.app.measurement_state.headphone_eq_state.error_message = None;
             cx.notify();
-            state.app.measurement_state.headphone_eq_state.cancel_requested.clone()
+            state
+                .app
+                .measurement_state
+                .headphone_eq_state
+                .cancel_requested
+                .clone()
         });
 
         let state_entity = self.state.clone();

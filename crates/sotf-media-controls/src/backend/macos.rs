@@ -4,7 +4,10 @@
 //! `MPNowPlayingInfoCenter` (now-playing metadata + playback state) through
 //! the modern `objc2-media-player` bindings — no `cocoa-rs` dependency.
 
-#![allow(unsafe_code)]
+#![allow(
+    unsafe_code,
+    reason = "objc2 framework calls are inherently unsafe FFI"
+)]
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -21,8 +24,8 @@ use objc2_media_player::{
 };
 
 use crate::{
-    Error, MediaControlEvent, MediaMetadata, MediaPlayback, MediaPosition,
-    backend::EventHandler, types::PlatformConfig,
+    Error, MediaControlEvent, MediaMetadata, MediaPlayback, MediaPosition, backend::EventHandler,
+    types::PlatformConfig,
 };
 
 /// Shared event-dispatch handle. Cloned into every Objective-C block so the
@@ -98,10 +101,14 @@ unsafe fn wire_commands(handler: &SharedHandler) -> Vec<Retained<AnyObject>> {
     let simple: &[(MediaControlEvent, CmdAccessor)] = &[
         (MediaControlEvent::Play, |c| unsafe { c.playCommand() }),
         (MediaControlEvent::Pause, |c| unsafe { c.pauseCommand() }),
-        (MediaControlEvent::Toggle, |c| unsafe { c.togglePlayPauseCommand() }),
+        (MediaControlEvent::Toggle, |c| unsafe {
+            c.togglePlayPauseCommand()
+        }),
         (MediaControlEvent::Stop, |c| unsafe { c.stopCommand() }),
         (MediaControlEvent::Next, |c| unsafe { c.nextTrackCommand() }),
-        (MediaControlEvent::Previous, |c| unsafe { c.previousTrackCommand() }),
+        (MediaControlEvent::Previous, |c| unsafe {
+            c.previousTrackCommand()
+        }),
     ];
 
     for (event, accessor) in simple {

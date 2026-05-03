@@ -59,7 +59,7 @@ impl VelocityTracker {
         if recent.len() < MIN_SAMPLES_FOR_VELOCITY {
             return (0.0, 0.0);
         }
-        recent.sort_by(|a, b| a.time.cmp(&b.time));
+        recent.sort_by_key(|a| a.time);
         if recent.len() >= 3 {
             let (wvx, wvy) = weighted_velocity(&recent);
             return (clamp_velocity(wvx), clamp_velocity(wvy));

@@ -37,8 +37,12 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
 
     // Scales for the visualization
     let size = (app.content_width * 0.5).min(app.content_height * 0.6);
-    let x_scale = LinearScale::new().domain(0.0, 100.0).range(0.0, size as f64);
-    let y_scale = LinearScale::new().domain(0.0, 100.0).range(0.0, size as f64);
+    let x_scale = LinearScale::new()
+        .domain(0.0, 100.0)
+        .range(0.0, size as f64);
+    let y_scale = LinearScale::new()
+        .domain(0.0, 100.0)
+        .range(0.0, size as f64);
 
     // Collect quadtree bounds for visualization
     let mut bounds_list: Vec<(f64, f64, f64, f64)> = Vec::new();

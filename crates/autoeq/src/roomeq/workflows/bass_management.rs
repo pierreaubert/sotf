@@ -874,12 +874,17 @@ fn optimize_home_cinema_joint_group_crossovers(
         .iter()
         .flat_map(|(_, _, _, _, main_delay, bass_delay, _, _)| [*main_delay, *bass_delay])
         .fold(f64::INFINITY, f64::min)
-        .is_finite() { {
+        .is_finite()
+    {
+        {
             decoded
                 .iter()
                 .flat_map(|(_, _, _, _, main_delay, bass_delay, _, _)| [*main_delay, *bass_delay])
                 .fold(f64::INFINITY, f64::min)
-        } } else { 0.0 };
+        }
+    } else {
+        0.0
+    };
 
     for (_, input, freq, xover_type, main_delay, bass_delay, inverted, trim) in decoded {
         let objective_before_curve = predict_bass_management_sum(
@@ -1553,10 +1558,11 @@ pub(super) fn optimize_bass_management_joint_solution(
                 &effective.config.headroom_model,
                 effective.config.headroom_margin_db,
                 sample_rate,
-            ) {
-                let headroom_excess = (-headroom.margin_db).max(0.0);
-                total += headroom_excess * headroom_excess * 2.0;
-            }
+            )
+        {
+            let headroom_excess = (-headroom.margin_db).max(0.0);
+            total += headroom_excess * headroom_excess * 2.0;
+        }
         total
     };
 

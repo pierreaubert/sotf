@@ -3674,10 +3674,7 @@ fn build_traditional_mode_plugins(
 
         let output_channel_count = get_speaker_config_channels(&plugins.aae.config)?;
 
-        log::info!(
-            "Enabling AAE reverb (stereo-to-{})",
-            plugins.aae.config
-        );
+        log::info!("Enabling AAE reverb (stereo-to-{})", plugins.aae.config);
 
         let aae_plugin = create_aae_plugin_config(&plugins.aae)?;
         plugin_configs.push(aae_plugin);

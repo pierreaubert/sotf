@@ -204,13 +204,17 @@ pub fn gen_log_sweep_octave_scaled(
         octaves_bass * bass_s_oct + octaves_mid * mid_s_oct + octaves_high * high_s_oct;
 
     let total_duration = raw_duration.max(min_total_duration_s as f64);
-    let scale = if raw_duration > 1e-9 { total_duration / raw_duration } else { 1.0 };
+    let scale = if raw_duration > 1e-9 {
+        total_duration / raw_duration
+    } else {
+        1.0
+    };
 
     let n_frames = (total_duration * sr).round() as usize;
 
     // Zone end-times (absolute, after scale).
     let t_bass = octaves_bass * bass_s_oct * scale;
-    let t_mid  = t_bass + octaves_mid * mid_s_oct * scale;
+    let t_mid = t_bass + octaves_mid * mid_s_oct * scale;
 
     // Phase offset accumulated through each zone transition.
     //   φ_zone = coeff * (r - 1)   where r = f_hi / f_lo
@@ -222,15 +226,16 @@ pub fn gen_log_sweep_octave_scaled(
         0.0
     };
 
-    let phase_offset_mid: f64 = phase_offset_bass + if octaves_mid > 1e-9 {
-        let lo = BASS_BOUNDARY.max(f_start);
-        let hi = MID_BOUNDARY.min(f_end);
-        let dur = t_mid - t_bass;
-        let c = 2.0 * std::f64::consts::PI * lo * dur / (hi / lo).ln();
-        c * (hi / lo - 1.0)
-    } else {
-        0.0
-    };
+    let phase_offset_mid: f64 = phase_offset_bass
+        + if octaves_mid > 1e-9 {
+            let lo = BASS_BOUNDARY.max(f_start);
+            let hi = MID_BOUNDARY.min(f_end);
+            let dur = t_mid - t_bass;
+            let c = 2.0 * std::f64::consts::PI * lo * dur / (hi / lo).ln();
+            c * (hi / lo - 1.0)
+        } else {
+            0.0
+        };
 
     let mut signal = Vec::with_capacity(n_frames);
 
@@ -699,7 +704,9 @@ fn gen_probe_spectrum(fft_size: usize, seed: u64) -> Vec<Complex<f32>> {
     let mut phase: f32 = 0.0;
     for bin in spectrum[1..spectrum_size - 1].iter_mut() {
         // LCG step
-        rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        rng_state = rng_state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         let random_u32 = ((rng_state >> 33) ^ rng_state) as u32;
         let delta = (random_u32 as f32 / u32::MAX as f32) * max_delta;
         phase += delta;
@@ -1167,10 +1174,10 @@ mod tests {
         let signal = gen_log_sweep_octave_scaled(10.0, 20_000.0, 0.5, sr, bass_dur, min_dur);
 
         let oct_bass = (100.0_f64 / 10.0_f64).log2();
-        let oct_mid  = (1000.0_f64 / 100.0_f64).log2();
+        let oct_mid = (1000.0_f64 / 100.0_f64).log2();
         let oct_high = (20000.0_f64 / 1000.0_f64).log2();
         let raw = oct_bass * bass_dur as f64
-            + oct_mid  * (bass_dur as f64 * 0.5)
+            + oct_mid * (bass_dur as f64 * 0.5)
             + oct_high * (bass_dur as f64 * 0.25);
         let expected_dur = raw.max(min_dur as f64);
         let expected_n = (expected_dur * sr as f64).round() as usize;
@@ -1179,7 +1186,9 @@ mod tests {
         assert!(
             diff <= 1,
             "Length {} differs from expected {} by {} samples (> 1)",
-            signal.len(), expected_n, diff
+            signal.len(),
+            expected_n,
+            diff
         );
     }
 
@@ -1192,7 +1201,8 @@ mod tests {
         assert!(
             signal.len() >= min_expected,
             "Length {} is below the 10s floor (expected >= {})",
-            signal.len(), min_expected
+            signal.len(),
+            min_expected
         );
     }
 
@@ -1206,10 +1216,10 @@ mod tests {
 
         // Compute time bounds for the 20–40 Hz band inside the bass zone.
         let oct_bass = (100.0_f64 / 10.0_f64).log2();
-        let oct_mid  = (1000.0_f64 / 100.0_f64).log2();
+        let oct_mid = (1000.0_f64 / 100.0_f64).log2();
         let oct_high = (20_000.0_f64 / 1000.0_f64).log2();
         let raw = oct_bass * bass_dur as f64
-            + oct_mid  * (bass_dur as f64 * 0.5)
+            + oct_mid * (bass_dur as f64 * 0.5)
             + oct_high * (bass_dur as f64 * 0.25);
         let total = raw.max(5.0_f64);
         let scale = total / raw;
@@ -1233,7 +1243,10 @@ mod tests {
             n += hop;
         }
 
-        assert!(!band_rms.is_empty(), "No windows found in the 20–40 Hz band");
+        assert!(
+            !band_rms.is_empty(),
+            "No windows found in the 20–40 Hz band"
+        );
 
         let avg: f32 = band_rms.iter().sum::<f32>() / band_rms.len() as f32;
 

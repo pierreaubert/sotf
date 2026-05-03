@@ -1,10 +1,10 @@
-/// 8×8 Hadamard transform using in-place butterfly operations.
-///
-/// The Hadamard matrix is orthogonal and energy-preserving, making it ideal
-/// as the FDN mixing matrix. All eigenvalues have magnitude 1, so stability
-/// depends only on the per-line attenuation coefficients.
-///
-/// Computed via 3 stages of butterfly operations: O(N log N) instead of O(N²).
+//! 8×8 Hadamard transform using in-place butterfly operations.
+//!
+//! The Hadamard matrix is orthogonal and energy-preserving, making it ideal
+//! as the FDN mixing matrix. All eigenvalues have magnitude 1, so stability
+//! depends only on the per-line attenuation coefficients.
+//!
+//! Computed via 3 stages of butterfly operations: O(N log N) instead of O(N²).
 
 /// Apply the normalized 8×8 Hadamard transform in-place.
 ///

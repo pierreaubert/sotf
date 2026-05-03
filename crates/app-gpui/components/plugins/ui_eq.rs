@@ -951,114 +951,40 @@ pub fn render_eq_plugin(
         .gap(ds.section)
         .w_full()
         // Channel Mode Toggle and Channel Selector — hidden in linear-phase mode
-        .when(!is_lp_mode, |container| container.child({
-            let entity_clone = entity.clone();
-            let entity_clone2 = entity.clone();
-            let accent = theme.accent;
-            let text_on_accent = theme.text_on_accent;
-            let text_secondary = theme.text_secondary;
-            let bg_secondary = theme.background_secondary;
-            let surface_hover = theme.surface_hover;
-            let border = theme.border;
+        .when(!is_lp_mode, |container| {
+            container.child({
+                let entity_clone = entity.clone();
+                let entity_clone2 = entity.clone();
+                let accent = theme.accent;
+                let text_on_accent = theme.text_on_accent;
+                let text_secondary = theme.text_secondary;
+                let bg_secondary = theme.background_secondary;
+                let surface_hover = theme.surface_hover;
+                let border = theme.border;
 
-            div()
-                .flex()
-                .items_center()
-                .justify_center()
-                .gap(ds.section)
-                .p(ds.pad_y)
-                .bg(theme.surface)
-                .rounded(ds.r_lg)
-                // Mode toggle buttons
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(ds.grid)
-                        // All Channels button
-                        .child({
-                            let is_selected = !per_channel_mode;
-                            div()
-                                .id("eq-mode-all")
-                                .px(ds.pad_x)
-                                .py(ds.pad_y_half)
-                                .text_size(ds.text_sm)
-                                .rounded(ds.r_md)
-                                .cursor_pointer()
-                                .when(is_selected, |d| {
-                                    d.bg(accent)
-                                        .text_color(text_on_accent)
-                                        .font_weight(FontWeight::SEMIBOLD)
-                                })
-                                .when(!is_selected, |d| {
-                                    d.bg(bg_secondary)
-                                        .text_color(text_secondary)
-                                        .hover(move |s| s.bg(surface_hover))
-                                })
-                                .on_mouse_down(MouseButton::Left, {
-                                    let entity = entity_clone.clone();
-                                    move |_event, _window, cx| {
-                                        entity.update(cx, |state, cx| {
-                                            state.app.set_eq_per_channel_mode(plugin_idx, false);
-                                            cx.notify();
-                                        });
-                                    }
-                                })
-                                .child("All Channels")
-                        })
-                        // Per Channel button
-                        .child({
-                            let is_selected = per_channel_mode;
-                            div()
-                                .id("eq-mode-per-channel")
-                                .px(ds.pad_x)
-                                .py(ds.pad_y_half)
-                                .text_size(ds.text_sm)
-                                .rounded(ds.r_md)
-                                .cursor_pointer()
-                                .when(is_selected, |d| {
-                                    d.bg(accent)
-                                        .text_color(text_on_accent)
-                                        .font_weight(FontWeight::SEMIBOLD)
-                                })
-                                .when(!is_selected, |d| {
-                                    d.bg(bg_secondary)
-                                        .text_color(text_secondary)
-                                        .hover(move |s| s.bg(surface_hover))
-                                })
-                                .on_mouse_down(MouseButton::Left, {
-                                    let entity = entity_clone2.clone();
-                                    move |_event, _window, cx| {
-                                        entity.update(cx, |state, cx| {
-                                            state.app.set_eq_per_channel_mode(plugin_idx, true);
-                                            cx.notify();
-                                        });
-                                    }
-                                })
-                                .child("Per Channel")
-                        }),
-                )
-                // Channel selector (only shown in per-channel mode)
-                .when(per_channel_mode, |d| {
-                    d.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .gap(ds.section)
+                    .p(ds.pad_y)
+                    .bg(theme.surface)
+                    .rounded(ds.r_lg)
+                    // Mode toggle buttons
+                    .child(
                         div()
                             .flex()
                             .items_center()
                             .gap(ds.grid)
-                            .border(px(1.0))
-                            .border_color(border)
-                            .rounded(ds.r_md)
-                            .px(ds.pad_y)
-                            .children((0..channels).map(|ch| {
-                                let entity = entity.clone();
-                                let is_selected = ch == selected_eq_channel;
-                                let ch_name = get_channel_name(ch, channels);
+                            // All Channels button
+                            .child({
+                                let is_selected = !per_channel_mode;
                                 div()
-                                    .id(("eq-channel", ch))
-                                    .px(ds.pad_y)
+                                    .id("eq-mode-all")
+                                    .px(ds.pad_x)
                                     .py(ds.pad_y_half)
                                     .text_size(ds.text_sm)
-                                    .rounded(ds.r_sm)
+                                    .rounded(ds.r_md)
                                     .cursor_pointer()
                                     .when(is_selected, |d| {
                                         d.bg(accent)
@@ -1070,16 +996,97 @@ pub fn render_eq_plugin(
                                             .text_color(text_secondary)
                                             .hover(move |s| s.bg(surface_hover))
                                     })
-                                    .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
-                                        entity.update(cx, |state, _| {
-                                            state.app.plugin_state.selected_eq_channel = ch;
-                                        });
+                                    .on_mouse_down(MouseButton::Left, {
+                                        let entity = entity_clone.clone();
+                                        move |_event, _window, cx| {
+                                            entity.update(cx, |state, cx| {
+                                                state
+                                                    .app
+                                                    .set_eq_per_channel_mode(plugin_idx, false);
+                                                cx.notify();
+                                            });
+                                        }
                                     })
-                                    .child(ch_name)
-                            })),
+                                    .child("All Channels")
+                            })
+                            // Per Channel button
+                            .child({
+                                let is_selected = per_channel_mode;
+                                div()
+                                    .id("eq-mode-per-channel")
+                                    .px(ds.pad_x)
+                                    .py(ds.pad_y_half)
+                                    .text_size(ds.text_sm)
+                                    .rounded(ds.r_md)
+                                    .cursor_pointer()
+                                    .when(is_selected, |d| {
+                                        d.bg(accent)
+                                            .text_color(text_on_accent)
+                                            .font_weight(FontWeight::SEMIBOLD)
+                                    })
+                                    .when(!is_selected, |d| {
+                                        d.bg(bg_secondary)
+                                            .text_color(text_secondary)
+                                            .hover(move |s| s.bg(surface_hover))
+                                    })
+                                    .on_mouse_down(MouseButton::Left, {
+                                        let entity = entity_clone2.clone();
+                                        move |_event, _window, cx| {
+                                            entity.update(cx, |state, cx| {
+                                                state.app.set_eq_per_channel_mode(plugin_idx, true);
+                                                cx.notify();
+                                            });
+                                        }
+                                    })
+                                    .child("Per Channel")
+                            }),
                     )
-                })
-        }))
+                    // Channel selector (only shown in per-channel mode)
+                    .when(per_channel_mode, |d| {
+                        d.child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(ds.grid)
+                                .border(px(1.0))
+                                .border_color(border)
+                                .rounded(ds.r_md)
+                                .px(ds.pad_y)
+                                .children((0..channels).map(|ch| {
+                                    let entity = entity.clone();
+                                    let is_selected = ch == selected_eq_channel;
+                                    let ch_name = get_channel_name(ch, channels);
+                                    div()
+                                        .id(("eq-channel", ch))
+                                        .px(ds.pad_y)
+                                        .py(ds.pad_y_half)
+                                        .text_size(ds.text_sm)
+                                        .rounded(ds.r_sm)
+                                        .cursor_pointer()
+                                        .when(is_selected, |d| {
+                                            d.bg(accent)
+                                                .text_color(text_on_accent)
+                                                .font_weight(FontWeight::SEMIBOLD)
+                                        })
+                                        .when(!is_selected, |d| {
+                                            d.bg(bg_secondary)
+                                                .text_color(text_secondary)
+                                                .hover(move |s| s.bg(surface_hover))
+                                        })
+                                        .on_mouse_down(
+                                            MouseButton::Left,
+                                            move |_event, _window, cx| {
+                                                entity.update(cx, |state, _| {
+                                                    state.app.plugin_state.selected_eq_channel = ch;
+                                                });
+                                            },
+                                        )
+                                        .child(ch_name)
+                                })),
+                        )
+                    })
+            })
+        })
         // Band selector tabs (custom rendering to avoid context issues)
         .child({
             let mut tabs_container = div()

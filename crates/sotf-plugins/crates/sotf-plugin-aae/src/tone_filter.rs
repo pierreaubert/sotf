@@ -1,11 +1,11 @@
-/// First-order shelving filter for frequency-dependent decay in the FDN.
-///
-/// Each FDN delay line needs a different RT60 at bass vs treble frequencies.
-/// This filter sits inside the feedback loop and applies per-sample gain that
-/// varies with frequency, creating the desired frequency-dependent decay.
-///
-/// Design: given target gains at DC (g_dc) and Nyquist (g_ny), compute
-/// first-order IIR coefficients that interpolate between them.
+//! First-order shelving filter for frequency-dependent decay in the FDN.
+//!
+//! Each FDN delay line needs a different RT60 at bass vs treble frequencies.
+//! This filter sits inside the feedback loop and applies per-sample gain that
+//! varies with frequency, creating the desired frequency-dependent decay.
+//!
+//! Design: given target gains at DC (g_dc) and Nyquist (g_ny), compute
+//! first-order IIR coefficients that interpolate between them.
 
 /// First-order IIR tone correction filter.
 ///

@@ -221,31 +221,22 @@ impl Render for DemoView {
 }
 
 fn main() {
-    #[cfg(target_os = "macos")]
-    let platform = std::rc::Rc::new(gpui_macos::MacPlatform::new(false));
-    #[cfg(target_os = "linux")]
-    let platform = gpui_linux::current_platform(false);
-    #[cfg(target_os = "windows")]
-    let platform = std::rc::Rc::new(
-        gpui_windows::WindowsPlatform::new(false).expect("Windows platform creation failed"),
-    );
-    Application::with_platform(platform).run(
-        |cx: &mut App| {
-            let bounds = Bounds::centered(None, size(px(900.0), px(550.0)), cx);
-            cx.open_window(
-                WindowOptions {
-                    window_bounds: Some(WindowBounds::Windowed(bounds)),
-                    titlebar: Some(TitlebarOptions {
-                        title: Some("GPU 2D Contour Demo".into()),
-                        ..Default::default()
-                    }),
+    let platform = gpui_miniapp::current_platform();
+    Application::with_platform(platform).run(|cx: &mut App| {
+        let bounds = Bounds::centered(None, size(px(900.0), px(550.0)), cx);
+        cx.open_window(
+            WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(bounds)),
+                titlebar: Some(TitlebarOptions {
+                    title: Some("GPU 2D Contour Demo".into()),
                     ..Default::default()
-                },
-                |_, cx| cx.new(|_| DemoView),
-            )
-            .unwrap();
+                }),
+                ..Default::default()
+            },
+            |_, cx| cx.new(|_| DemoView),
+        )
+        .unwrap();
 
-            cx.activate(true);
-        },
-    );
+        cx.activate(true);
+    });
 }

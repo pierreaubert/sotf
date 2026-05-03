@@ -99,15 +99,33 @@ mod tests {
 
     #[test]
     fn test_vim_navigation() {
-        assert_eq!(navigation_key(NavigationAction::Up, KeymapPreset::Vim), Some("k"));
-        assert_eq!(navigation_key(NavigationAction::Down, KeymapPreset::Vim), Some("j"));
-        assert_eq!(navigation_key(NavigationAction::Left, KeymapPreset::Vim), Some("h"));
-        assert_eq!(navigation_key(NavigationAction::Right, KeymapPreset::Vim), Some("l"));
+        assert_eq!(
+            navigation_key(NavigationAction::Up, KeymapPreset::Vim),
+            Some("k")
+        );
+        assert_eq!(
+            navigation_key(NavigationAction::Down, KeymapPreset::Vim),
+            Some("j")
+        );
+        assert_eq!(
+            navigation_key(NavigationAction::Left, KeymapPreset::Vim),
+            Some("h")
+        );
+        assert_eq!(
+            navigation_key(NavigationAction::Right, KeymapPreset::Vim),
+            Some("l")
+        );
     }
 
     #[test]
     fn test_emacs_navigation() {
-        assert_eq!(navigation_key(NavigationAction::Up, KeymapPreset::Emacs), Some("ctrl-p"));
-        assert_eq!(navigation_key(NavigationAction::Down, KeymapPreset::Emacs), Some("ctrl-n"));
+        assert_eq!(
+            navigation_key(NavigationAction::Up, KeymapPreset::Emacs),
+            Some("ctrl-p")
+        );
+        assert_eq!(
+            navigation_key(NavigationAction::Down, KeymapPreset::Emacs),
+            Some("ctrl-n")
+        );
     }
 }

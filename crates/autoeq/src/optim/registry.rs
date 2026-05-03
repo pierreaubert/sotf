@@ -58,8 +58,8 @@ fn nlopt_deprecation_map(name: &str) -> Option<&'static str> {
         "nlopt:isres" | "nlopt:ags" | "nlopt:origdirect" => "autoeq:isres",
         // Global optimizers without constraint support → autoeq:de (better
         // than ISRES on these unconstrained-style problems and our default).
-        "nlopt:crs2lm" | "nlopt:direct" | "nlopt:directl" | "nlopt:gmlsl"
-        | "nlopt:gmlsllds" | "nlopt:stogo" | "nlopt:stogorand" => "autoeq:de",
+        "nlopt:crs2lm" | "nlopt:direct" | "nlopt:directl" | "nlopt:gmlsl" | "nlopt:gmlsllds"
+        | "nlopt:stogo" | "nlopt:stogorand" => "autoeq:de",
         _ => return None,
     };
     Some(mapped)
@@ -76,7 +76,10 @@ fn nlopt_deprecation_map(name: &str) -> Option<&'static str> {
 pub fn resolve(name: &str) -> Option<Box<dyn FilterOptimizer>> {
     let mut algos = all_algorithms();
 
-    if let Some(idx) = algos.iter().position(|a| a.name().eq_ignore_ascii_case(name)) {
+    if let Some(idx) = algos
+        .iter()
+        .position(|a| a.name().eq_ignore_ascii_case(name))
+    {
         return Some(algos.swap_remove(idx));
     }
 

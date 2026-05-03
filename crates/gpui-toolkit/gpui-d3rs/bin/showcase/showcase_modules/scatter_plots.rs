@@ -8,8 +8,12 @@ pub fn render(app: &ShowcaseApp) -> Div {
     let theme = DefaultAxisTheme;
     let width = app.content_width * 0.7;
     let height = (width * 0.5).min(app.content_height * 0.4);
-    let x_scale = LinearScale::new().domain(0.0, 100.0).range(0.0, width as f64);
-    let y_scale = LinearScale::new().domain(0.0, 100.0).range(0.0, height as f64);
+    let x_scale = LinearScale::new()
+        .domain(0.0, 100.0)
+        .range(0.0, width as f64);
+    let y_scale = LinearScale::new()
+        .domain(0.0, 100.0)
+        .range(0.0, height as f64);
     let scheme = ColorScheme::category10();
 
     let data1 = vec![

@@ -2483,19 +2483,21 @@ fn build_linear_room_eq_graph(
     let channel_count = output.channels.len().max(2);
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
-    let mut next_id = 0usize;
     let mut prev = None;
 
-    for plugin in output.global_plugins.iter().chain(
-        output
-            .channels
-            .values()
-            .next()
-            .into_iter()
-            .flat_map(|ch| ch.plugins.iter()),
-    ) {
-        let id = next_id;
-        next_id += 1;
+    for (id, plugin) in output
+        .global_plugins
+        .iter()
+        .chain(
+            output
+                .channels
+                .values()
+                .next()
+                .into_iter()
+                .flat_map(|ch| ch.plugins.iter()),
+        )
+        .enumerate()
+    {
         nodes.push(PluginGraphNodeConfig {
             id,
             plugin_type: plugin.plugin_type.clone(),

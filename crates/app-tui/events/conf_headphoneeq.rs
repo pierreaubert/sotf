@@ -153,17 +153,13 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                             }
                         }
                     }
-                    KeyCode::Down => {
-                        if !app.headphone_eq.filtered_headphones.is_empty() {
-                            app.headphone_eq.selected_headphone_idx =
-                                (app.headphone_eq.selected_headphone_idx + 1)
-                                    .min(app.headphone_eq.filtered_headphones.len() - 1);
-                        }
+                    KeyCode::Down if !app.headphone_eq.filtered_headphones.is_empty() => {
+                        app.headphone_eq.selected_headphone_idx =
+                            (app.headphone_eq.selected_headphone_idx + 1)
+                                .min(app.headphone_eq.filtered_headphones.len() - 1);
                     }
-                    KeyCode::Up => {
-                        if app.headphone_eq.selected_headphone_idx > 0 {
-                            app.headphone_eq.selected_headphone_idx -= 1;
-                        }
+                    KeyCode::Up if app.headphone_eq.selected_headphone_idx > 0 => {
+                        app.headphone_eq.selected_headphone_idx -= 1;
                     }
                     KeyCode::Backspace => {
                         app.headphone_eq.search_query.pop();
@@ -310,10 +306,8 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                         app.headphone_eq.step_tab_focused = true;
                     }
                 }
-                KeyCode::Down => {
-                    if app.headphone_eq.selected_field < max_field {
-                        app.headphone_eq.selected_field += 1;
-                    }
+                KeyCode::Down if app.headphone_eq.selected_field < max_field => {
+                    app.headphone_eq.selected_field += 1;
                 }
                 KeyCode::Enter => {
                     use sotf_audio_player::headphone_eq_types::HeadphoneMeasurementSource;

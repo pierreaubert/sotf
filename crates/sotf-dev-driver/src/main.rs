@@ -263,10 +263,7 @@ fn verb_click(rest: &str, ctx: &Ctx) -> Result<()> {
 }
 
 fn verb_elements(ctx: &Ctx) -> Result<()> {
-    let resp = ctx
-        .client
-        .get(format!("{}/elements", ctx.base))
-        .send()?;
+    let resp = ctx.client.get(format!("{}/elements", ctx.base)).send()?;
     let json: Value = resp.json()?;
     let list = json
         .get("elements")

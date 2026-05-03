@@ -10,7 +10,9 @@ pub fn render(app: &ShowcaseApp) -> Div {
     let width = app.content_width * 0.7;
     let height = (width * 0.5).min(app.content_height * 0.4);
     let x_scale = LinearScale::new().domain(0.0, 6.0).range(0.0, width as f64);
-    let y_scale = LinearScale::new().domain(0.0, 100.0).range(0.0, height as f64);
+    let y_scale = LinearScale::new()
+        .domain(0.0, 100.0)
+        .range(0.0, height as f64);
     let scheme = ColorScheme::category10();
 
     let data = vec![
@@ -29,7 +31,9 @@ pub fn render(app: &ShowcaseApp) -> Div {
         BarDatum::new("D", -25.0),
         BarDatum::new("E", 60.0),
     ];
-    let mixed_y_scale = LinearScale::new().domain(-30.0, 70.0).range(0.0, height as f64);
+    let mixed_y_scale = LinearScale::new()
+        .domain(-30.0, 70.0)
+        .range(0.0, height as f64);
     let mixed_x_scale = LinearScale::new().domain(0.0, 5.0).range(0.0, width as f64);
 
     // Grouped bar data - quarterly sales by product

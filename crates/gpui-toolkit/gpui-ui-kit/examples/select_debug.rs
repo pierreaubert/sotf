@@ -9,12 +9,12 @@
 //! Solution: Use gpui::deferred() and gpui::anchored() for proper overlay rendering
 
 use gpui::*;
+use gpui_miniapp::{MiniApp, MiniAppConfig};
 use gpui_ui_kit::button_set::{ButtonSet, ButtonSetOption, ButtonSetSize};
 use gpui_ui_kit::i18n::{I18nExt, TranslationKey};
 use gpui_ui_kit::select::{Select, SelectOption};
 use gpui_ui_kit::theme::ThemeExt;
 use gpui_ui_kit::*;
-use gpui_miniapp::{MiniApp, MiniAppConfig};
 
 pub struct SelectDebug {
     select1_value: Option<SharedString>,

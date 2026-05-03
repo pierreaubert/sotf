@@ -868,12 +868,8 @@ pub fn optimize_filters_with_callback(
     params: &crate::OptimParams,
     callback: OptimProgressCallback,
 ) -> Result<(String, f64), (String, f64)> {
-    let backend = registry::resolve(&params.algo).ok_or_else(|| {
-        (
-            format!("Unknown algorithm: {}", params.algo),
-            f64::INFINITY,
-        )
-    })?;
+    let backend = registry::resolve(&params.algo)
+        .ok_or_else(|| (format!("Unknown algorithm: {}", params.algo), f64::INFINITY))?;
 
     // Specialised EPA-aware path: only meaningful for the AutoEQ DE
     // backend (the only backend that exposes per-iteration `DEIntermediate`

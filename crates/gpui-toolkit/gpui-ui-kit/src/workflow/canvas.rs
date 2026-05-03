@@ -1,6 +1,6 @@
 //! Main workflow canvas component
 
-use super::bezier::{connection_path, connection_path_avoiding, ObstacleRect};
+use super::bezier::{ObstacleRect, connection_path, connection_path_avoiding};
 use super::history::{
     AddConnectionCommand, AddNodeCommand, ChangePortCountsCommand, CompositeCommand,
     HistoryManager, MoveNodesCommand, RemoveConnectionCommand, RemoveNodeCommand,
@@ -490,9 +490,7 @@ impl WorkflowCanvas {
                         .collect();
                     let original_positions: HashMap<NodeId, Position> = dragging_nodes
                         .iter()
-                        .filter_map(|id| {
-                            self.state.graph.nodes.get(id).map(|n| (*id, n.position))
-                        })
+                        .filter_map(|id| self.state.graph.nodes.get(id).map(|n| (*id, n.position)))
                         .collect();
 
                     self.state.mode = InteractionMode::DraggingNodes;
@@ -749,11 +747,7 @@ impl WorkflowCanvas {
         }
 
         // Would adding any edge create a cycle?
-        if self
-            .state
-            .graph
-            .would_create_cycle(source_id, target_id)
-        {
+        if self.state.graph.would_create_cycle(source_id, target_id) {
             return false;
         }
 
@@ -854,12 +848,10 @@ impl WorkflowCanvas {
 
         match &event.keystroke.key {
             // Delete selected
-            key if key == "backspace" || key == "delete" => {
-                if !self.state.selection.is_empty() {
-                    self.remove_selected();
-                    self.fire_graph_change(cx);
-                    cx.notify();
-                }
+            key if (key == "backspace" || key == "delete") && !self.state.selection.is_empty() => {
+                self.remove_selected();
+                self.fire_graph_change(cx);
+                cx.notify();
             }
             // Ctrl+Z or Cmd+Z: Undo
             key if key == "z" && modifiers.platform && !modifiers.shift => {
@@ -1019,7 +1011,14 @@ impl Render for WorkflowCanvas {
                 let to_pos = port_screen_position(to_node, conn.to_port, true, &viewport);
                 let selected = self.state.selection.is_connection_selected(conn.id);
                 let link_type = conn.link_type;
-                Some((from_pos, to_pos, selected, link_type, conn.from_node, conn.to_node))
+                Some((
+                    from_pos,
+                    to_pos,
+                    selected,
+                    link_type,
+                    conn.from_node,
+                    conn.to_node,
+                ))
             })
             .collect();
 
@@ -1033,7 +1032,12 @@ impl Render for WorkflowCanvas {
                 let sp = viewport.canvas_to_screen(&node.position);
                 (
                     node.id,
-                    ObstacleRect::new(sp.x, sp.y, node.width * viewport.zoom, node.height * viewport.zoom),
+                    ObstacleRect::new(
+                        sp.x,
+                        sp.y,
+                        node.width * viewport.zoom,
+                        node.height * viewport.zoom,
+                    ),
                 )
             })
             .collect();
@@ -1073,7 +1077,14 @@ impl Render for WorkflowCanvas {
                 )
             },
             move |_,
-                  (connections, connection_drag, bulk_connect_drag, graph, bounds, node_screen_rects),
+                  (
+                connections,
+                connection_drag,
+                bulk_connect_drag,
+                graph,
+                bounds,
+                node_screen_rects,
+            ),
                   window,
                   _| {
                 // Use fresh bounds from callback - bounds.origin gives us the canvas element position
@@ -1428,7 +1439,8 @@ fn draw_connection(
     let shortened_to = Position::new(to.x - nx * port_radius, to.y - ny * port_radius);
 
     let margin = 15.0;
-    let path_points = connection_path_avoiding(shortened_from, shortened_to, obstacles, margin, 2.0);
+    let path_points =
+        connection_path_avoiding(shortened_from, shortened_to, obstacles, margin, 2.0);
 
     if path_points.len() < 2 {
         return;

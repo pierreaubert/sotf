@@ -572,15 +572,19 @@ fn test_recording_signal_type_as_str() {
     assert_eq!(RecordingSignalType::Sweep.as_str(), "Sweep");
     assert_eq!(RecordingSignalType::WhiteNoise.as_str(), "White Noise");
     assert_eq!(RecordingSignalType::PinkNoise.as_str(), "Pink Noise");
+    assert_eq!(RecordingSignalType::Mls.as_str(), "MLS");
+    assert_eq!(RecordingSignalType::Dirac.as_str(), "Dirac");
 }
 
 #[test]
 fn test_recording_signal_type_all() {
     let all = RecordingSignalType::all();
-    assert_eq!(all.len(), 3);
+    assert_eq!(all.len(), 5);
     assert!(all.contains(&RecordingSignalType::Sweep));
     assert!(all.contains(&RecordingSignalType::WhiteNoise));
     assert!(all.contains(&RecordingSignalType::PinkNoise));
+    assert!(all.contains(&RecordingSignalType::Mls));
+    assert!(all.contains(&RecordingSignalType::Dirac));
 }
 
 // ============================================================================
@@ -873,10 +877,16 @@ fn test_recording_state_init_multi_position_multi_mic() {
     state.init_channel_recordings();
 
     assert_eq!(state.channel_recordings.len(), 8);
-    assert_eq!(state.channel_recordings[0].channel_name, "L (Pos 1 / Mic 1)");
+    assert_eq!(
+        state.channel_recordings[0].channel_name,
+        "L (Pos 1 / Mic 1)"
+    );
     assert_eq!(state.channel_recordings[0].mic_index, 0);
     assert_eq!(state.channel_recordings[0].mic_position_index, 0);
-    assert_eq!(state.channel_recordings[7].channel_name, "R (Pos 2 / Mic 2)");
+    assert_eq!(
+        state.channel_recordings[7].channel_name,
+        "R (Pos 2 / Mic 2)"
+    );
     assert_eq!(state.channel_recordings[7].mic_index, 1);
     assert_eq!(state.channel_recordings[7].mic_position_index, 1);
 }

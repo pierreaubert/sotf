@@ -631,13 +631,11 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                                 // routed bass management. Same fix as the
                                 // GPUI app's structural-flush path.
                                 let result = if app.plugin_graph.is_linear() {
-                                    let plugins =
-                                        app.plugin_graph.to_plugin_configs(sample_rate);
+                                    let plugins = app.plugin_graph.to_plugin_configs(sample_rate);
                                     player.update_plugins(plugins)
                                 } else {
-                                    let config = app
-                                        .plugin_graph
-                                        .to_plugin_graph_config(sample_rate);
+                                    let config =
+                                        app.plugin_graph.to_plugin_graph_config(sample_rate);
                                     log::info!(
                                         "[TUI] Plugin update (graph): {} nodes, {} edges",
                                         config.nodes.len(),

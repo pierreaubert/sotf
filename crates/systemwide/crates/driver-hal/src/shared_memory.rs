@@ -353,14 +353,14 @@ impl SharedAudioBuffer {
         let (_, max_audio_capacity, total_size) =
             Self::audio_layout(max_buffer_frames, max_channel_count)?;
 
-        if let Some(parent) = path.parent() {
-            if !parent.exists() {
-                std::fs::create_dir_all(parent)?;
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o777))?;
-                }
+        if let Some(parent) = path.parent()
+            && !parent.exists()
+        {
+            std::fs::create_dir_all(parent)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o777))?;
             }
         }
 
@@ -1798,11 +1798,7 @@ impl HalInputReader {
             .len()
             .saturating_sub(self.pending_sample_offset);
         let channels = self.channel_count() as usize;
-        if channels == 0 {
-            shared_frames
-        } else {
-            shared_frames + pending_samples / channels
-        }
+        shared_frames + pending_samples.checked_div(channels).unwrap_or(0)
     }
 }
 

@@ -753,9 +753,7 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<ArcSwap<AudioEngineState>
         ThreadEvent::PlaybackUnderrun(underruns) => {
             let mut new_state = (**state.load()).clone();
             new_state.underruns = underruns;
-            if underruns == 1 {
-                log::warn!("[Manager Thread] Playback underrun count: {}", underruns);
-            } else if underruns <= 1000 && underruns.is_multiple_of(100) {
+            if underruns == 1 || (underruns <= 1000 && underruns.is_multiple_of(100)) {
                 log::warn!("[Manager Thread] Playback underrun count: {}", underruns);
             } else if underruns.is_multiple_of(10000) {
                 log::debug!("[Manager Thread] Playback underrun count: {}", underruns);

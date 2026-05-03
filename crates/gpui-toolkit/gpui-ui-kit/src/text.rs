@@ -164,11 +164,13 @@ impl Text {
     /// otherwise leaves as the explicit
     /// `weight(if is_selected { Semibold } else { Normal })` form.
     pub fn selectable(content: impl Into<SharedString>, is_selected: bool) -> Self {
-        Self::new(content).size(TextSize::Xs).weight(if is_selected {
-            TextWeight::Semibold
-        } else {
-            TextWeight::Normal
-        })
+        Self::new(content)
+            .size(TextSize::Xs)
+            .weight(if is_selected {
+                TextWeight::Semibold
+            } else {
+                TextWeight::Normal
+            })
     }
 
     /// Set theme

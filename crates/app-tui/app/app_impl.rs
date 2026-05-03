@@ -514,8 +514,7 @@ impl App {
         let path = Path::new(&self.apo_file_input);
 
         // Validate path before reading
-        sotf_audio_player::security::validate_plugin_file_path(path)
-            .map_err(|e| e.to_string())?;
+        sotf_audio_player::security::validate_plugin_file_path(path).map_err(|e| e.to_string())?;
 
         // Load filters from APO file
         let filters = EQFilter::from_apo_file(path)?;

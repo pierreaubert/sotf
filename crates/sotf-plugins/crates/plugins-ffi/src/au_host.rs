@@ -132,14 +132,10 @@ impl AuHostState {
     /// Get current band count from the first global param (which is typically `max_filters`/`num_bands`).
     fn band_count(&self) -> usize {
         match &self.band_layout {
-            Some(layout) => {
-                if !self.param_snapshot.is_empty() {
-                    (self.param_snapshot[0] as usize).min(layout.max_bands)
-                } else {
-                    0
-                }
+            Some(layout) if !self.param_snapshot.is_empty() => {
+                (self.param_snapshot[0] as usize).min(layout.max_bands)
             }
-            None => 0,
+            _ => 0,
         }
     }
 

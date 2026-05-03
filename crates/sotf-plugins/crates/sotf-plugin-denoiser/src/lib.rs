@@ -804,18 +804,16 @@ impl InPlacePlugin for DenoiserPlugin {
                 // attack_ms or release_ms -> recompute envelope coefficients
                 self.update_envelope_coefficients();
             }
-            20 => {
+            20
                 // learn_noise (trigger param)
-                if value.as_bool().unwrap_or(false) {
+                if value.as_bool().unwrap_or(false) => {
                     self.start_learning();
                 }
-            }
-            22 => {
+            22
                 // clear_profile (trigger param)
-                if value.as_bool().unwrap_or(false) {
+                if value.as_bool().unwrap_or(false) => {
                     self.clear_noise_profile();
                 }
-            }
             25 => {
                 // multi_resolution -> allocate/deallocate state
                 if self.multi_resolution && self.multi_res_state.is_none() {

@@ -1,7 +1,7 @@
-/// Interpolated delay line with allpass fractional-sample interpolation.
-///
-/// Used by the FDN and early reflection generator. Supports time-variant
-/// modulation of the delay length (Griesinger's key LARES innovation).
+//! Interpolated delay line with allpass fractional-sample interpolation.
+//!
+//! Used by the FDN and early reflection generator. Supports time-variant
+//! modulation of the delay length (Griesinger's key LARES innovation).
 
 /// Circular buffer delay line with allpass interpolation for fractional delays.
 ///
@@ -38,7 +38,7 @@ impl DelayLine {
     #[inline]
     pub fn read(&self, delay: usize) -> f32 {
         let delay = delay.min(self.max_delay_samples());
-        let pos = if self.write_pos >= delay + 1 {
+        let pos = if self.write_pos > delay {
             self.write_pos - delay - 1
         } else {
             self.length + self.write_pos - delay - 1

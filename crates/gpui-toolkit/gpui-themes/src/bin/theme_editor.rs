@@ -4,8 +4,8 @@
 //! It allows editing theme colors with live preview and exporting to JSON or Rust.
 
 use gpui::AppContext;
-use gpui_themes::ThemeEditor;
 use gpui_miniapp::{MiniApp, MiniAppConfig};
+use gpui_themes::ThemeEditor;
 
 fn main() {
     MiniApp::run(

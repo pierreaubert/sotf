@@ -8,9 +8,9 @@ use gpui_builder::{
     Axis, ContainerNode, LayoutNode, Sizing, SlotNode, SolvedNode, solve, types::LayoutPreferences,
 };
 use gpui_design::{DesignExt, DesignSystem};
+use gpui_miniapp::{MiniApp, MiniAppConfig};
 use gpui_px::interaction::{InteractiveChart, InteractiveChartConfig, InteractiveChartState};
 use gpui_px::*;
-use gpui_miniapp::{MiniApp, MiniAppConfig};
 use gpui_ui_kit::theme::{Theme, ThemeExt};
 
 fn main() {
@@ -373,7 +373,11 @@ impl ShowcaseApp {
                     .font_weight(FontWeight::SEMIBOLD)
                     .child(format!("{title}:")),
             )
-            .child(div().text_color(theme.text_secondary).child(desc.to_string()))
+            .child(
+                div()
+                    .text_color(theme.text_secondary)
+                    .child(desc.to_string()),
+            )
     }
 
     fn code_block(&self, code: &str, theme: &Theme, ds: &DesignSystem) -> Div {
@@ -984,7 +988,12 @@ impl ShowcaseApp {
     // Heatmap Section
     // ========================================================================
 
-    fn render_heatmap_demo(&mut self, theme: &Theme, ds: &DesignSystem, cx: &mut Context<Self>) -> Div {
+    fn render_heatmap_demo(
+        &mut self,
+        theme: &Theme,
+        ds: &DesignSystem,
+        cx: &mut Context<Self>,
+    ) -> Div {
         let entity = cx.entity().clone();
 
         let accent = theme.accent;
@@ -1105,7 +1114,12 @@ impl ShowcaseApp {
     // Contour Section
     // ========================================================================
 
-    fn render_contour_demo(&mut self, theme: &Theme, ds: &DesignSystem, cx: &mut Context<Self>) -> Div {
+    fn render_contour_demo(
+        &mut self,
+        theme: &Theme,
+        ds: &DesignSystem,
+        cx: &mut Context<Self>,
+    ) -> Div {
         let entity = cx.entity().clone();
 
         let accent = theme.accent;

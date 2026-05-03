@@ -19,9 +19,7 @@
 //! and ensures the TUI sees the same behavior as the GPUI app.
 
 use crate::plugin_graph::{NodePosition, PluginGraph, SpecialNodeType};
-use crate::room_eq_types::{
-    ChannelDspChain, DspChainOutput, parse_eq_filters_from_json,
-};
+use crate::room_eq_types::{ChannelDspChain, DspChainOutput, parse_eq_filters_from_json};
 use sotf_audio::engine::PluginGraphConfig;
 use sotf_audio::plugins::{PluginSettings, PluginType};
 
@@ -60,7 +58,9 @@ pub struct GraphApplyOutcome {
 /// `"broadband"` (see `autoeq::roomeq::spectral_align::create_alignment_plugins`),
 /// and other stages (`cea2034`, `user_preference`, `channel_matching`) are
 /// not user-editable and are filtered out.
-pub fn classify_channel_eq_filters(channel_dsp: &ChannelDspChain) -> (Vec<EQFilter>, Vec<EQFilter>) {
+pub fn classify_channel_eq_filters(
+    channel_dsp: &ChannelDspChain,
+) -> (Vec<EQFilter>, Vec<EQFilter>) {
     let mut main_filters: Vec<EQFilter> = Vec::new();
     let mut bb_filters: Vec<EQFilter> = Vec::new();
 
@@ -232,8 +232,7 @@ pub fn apply_room_eq_rack_to_chain(
     let mut per_channel_broadband: Vec<Vec<EQFilter>> = Vec::with_capacity(channel_names.len());
     for channel_name in channel_names {
         if let Some(channel_dsp) = dsp_output.channels.get(channel_name) {
-            let (channel_eq_filters, channel_bb_filters) =
-                classify_channel_eq_filters(channel_dsp);
+            let (channel_eq_filters, channel_bb_filters) = classify_channel_eq_filters(channel_dsp);
             log::info!(
                 "Channel '{}': {} EQ filters, {} broadband filters",
                 channel_name,
@@ -368,8 +367,7 @@ pub fn build_ui_graph_from_config(config: &PluginGraphConfig) -> PluginGraph {
     let y_spacing = 120.0;
 
     // Topological layout: depth from longest-incoming-path BFS.
-    let mut node_depth: std::collections::HashMap<usize, usize> =
-        std::collections::HashMap::new();
+    let mut node_depth: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
     for node in &config.nodes {
         node_depth.entry(node.id).or_insert(0);
     }
@@ -396,8 +394,7 @@ pub fn build_ui_graph_from_config(config: &PluginGraphConfig) -> PluginGraph {
         let y = 100.0 + (*y_index as f32) * y_spacing;
         *y_index += 1;
 
-        let plugin_type =
-            PluginType::from_name(&node_config.plugin_type).unwrap_or(PluginType::EQ);
+        let plugin_type = PluginType::from_name(&node_config.plugin_type).unwrap_or(PluginType::EQ);
 
         let node_id = graph.add_plugin_node(&plugin_type, NodePosition::new(x, y));
 
@@ -426,9 +423,7 @@ pub fn build_ui_graph_from_config(config: &PluginGraphConfig) -> PluginGraph {
 
     // Wire connections between plugin nodes.
     for edge in &config.edges {
-        if let (Some(&from), Some(&to)) =
-            (id_map.get(&edge.from_node), id_map.get(&edge.to_node))
-        {
+        if let (Some(&from), Some(&to)) = (id_map.get(&edge.from_node), id_map.get(&edge.to_node)) {
             for ch in 0..graph_channels {
                 let _ = graph.add_connection(from, ch, to, ch);
             }
@@ -581,8 +576,7 @@ mod tests {
             ),
         ]);
         let names = vec!["FL".to_string(), "FR".to_string()];
-        let outcome =
-            apply_room_eq_rack_to_chain(&mut graph, &dsp, &names);
+        let outcome = apply_room_eq_rack_to_chain(&mut graph, &dsp, &names);
         assert!(outcome.total_broadband >= 2);
         let bb_idx = graph.find_plugin_index_by_name("Broadband EQ").unwrap();
         let main_idx = graph.find_plugin_index_by_name("Room EQ").unwrap();

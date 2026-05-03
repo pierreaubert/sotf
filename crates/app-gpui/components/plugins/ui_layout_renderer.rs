@@ -263,7 +263,11 @@ fn render_main_column(
 
         let groups_container =
             if solved.group_direction == sotf_plugins::layout_solver::Direction::Row {
-                div().flex().gap(d.section_lg).items_start().justify_center()
+                div()
+                    .flex()
+                    .gap(d.section_lg)
+                    .items_start()
+                    .justify_center()
             } else {
                 div().flex().flex_col().gap(d.section)
             };
@@ -290,9 +294,7 @@ fn render_main_column(
                     .labels
                     .iter()
                     .any(|l| l.eq_ignore_ascii_case(&title_upper));
-                if is_exclusive
-                    && active_label_upper.as_deref() != Some(title_upper.as_str())
-                {
+                if is_exclusive && active_label_upper.as_deref() != Some(title_upper.as_str()) {
                     continue;
                 }
             }
@@ -1328,9 +1330,7 @@ fn detect_mode_selector(
         // Confirm at least one later group title matches a label — otherwise
         // this isn't really a mode selector and we should leave the layout alone.
         let aliases_any_group = layout.main.iter().enumerate().any(|(j, g)| {
-            j != i
-                && !g.title.is_empty()
-                && labels.iter().any(|l| l.eq_ignore_ascii_case(g.title))
+            j != i && !g.title.is_empty() && labels.iter().any(|l| l.eq_ignore_ascii_case(g.title))
         });
         if !aliases_any_group {
             continue;

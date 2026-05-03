@@ -1383,7 +1383,10 @@ fn strip_duplicate_prefixes_windows(devices: Vec<AudioDevice>) -> Vec<AudioDevic
         .into_iter()
         .map(|mut device| {
             if let Some(prefix) = extract_prefix(&device.name) {
-                let count = prefix_counts.get(&prefix.to_uppercase()).copied().unwrap_or(0);
+                let count = prefix_counts
+                    .get(&prefix.to_uppercase())
+                    .copied()
+                    .unwrap_or(0);
                 if count > 1 {
                     if let Some(content) = extract_paren_content(&device.name) {
                         log::debug!(
@@ -1426,10 +1429,7 @@ fn deduplicate_linux_devices(devices: Vec<AudioDevice>) -> Vec<AudioDevice> {
     // Extract the CARD name from ALSA device IDs/names like "front:CARD=PCH,DEV=0"
     fn extract_card_key(device: &AudioDevice) -> String {
         // Try the device_id first, then the name
-        let source = device
-            .device_id
-            .as_deref()
-            .unwrap_or(&device.name);
+        let source = device.device_id.as_deref().unwrap_or(&device.name);
 
         // Look for "CARD=<name>" pattern
         if let Some(card_start) = source.find("CARD=") {

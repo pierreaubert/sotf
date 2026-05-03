@@ -6,7 +6,7 @@ use std::str::FromStr;
 #[command(name = "sotf_recorder")]
 #[command(about = "Generate and record test signals with analysis", long_about = None)]
 struct Cli {
-    /// Signal type: tone, two-tone, sweep, white-noise, pink-noise, m-noise
+    /// Signal type: tone, two-tone, sweep, white-noise, pink-noise, m-noise, mls, dirac
     #[arg(long)]
     signal: Option<String>,
 
@@ -74,6 +74,10 @@ struct Cli {
     /// Second amplitude (0.0-1.0, for two-tone signal)
     #[arg(long)]
     amp2: Option<f32>,
+
+    /// MLS order (2-24, for MLS signal)
+    #[arg(long)]
+    mls_order: Option<u8>,
 
     /// Microphone compensation file (freq/SPL pairs in CSV format)
     /// When provided, inverse compensation is applied to the CSV output.
@@ -157,6 +161,7 @@ fn main() {
         cli.amp,
         cli.amp1,
         cli.amp2,
+        cli.mls_order,
         cli.microphone_compensation,
         mic_calibration_map,
     ) {
@@ -273,6 +278,7 @@ pub fn record_signal(
     amp: Option<f32>,
     amp1: Option<f32>,
     amp2: Option<f32>,
+    mls_order: Option<u8>,
     microphone_compensation: Option<String>,
     mic_calibration_map: std::collections::HashMap<usize, String>,
 ) -> Result<(), String> {
@@ -348,6 +354,15 @@ pub fn record_signal(
         SignalType::WhiteNoise | SignalType::PinkNoise | SignalType::MNoise => {
             let amp = amp.unwrap_or(0.5).clamp(0.0, 1.0);
             SignalParams::Noise { amp }
+        }
+        SignalType::Mls => {
+            let order = mls_order.unwrap_or(DEFAULT_MLS_ORDER);
+            let amp = amp.unwrap_or(0.5).clamp(0.0, 1.0);
+            SignalParams::Mls { order, amp }
+        }
+        SignalType::Dirac => {
+            let amp = amp.unwrap_or(0.5).clamp(0.0, 1.0);
+            SignalParams::Dirac { amp }
         }
     };
 

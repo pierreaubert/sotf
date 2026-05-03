@@ -1,11 +1,17 @@
-/// 8-line Feedback Delay Network with time-variant modulation.
-///
-/// Core of the LARES-inspired reverb. Implements:
-/// - 8 delay lines with mutually-prime lengths
-/// - Hadamard mixing matrix (energy-preserving, O(N log N))
-/// - Per-line tone correction filters (frequency-dependent RT60)
-/// - Time-variant delay modulation (Griesinger's key innovation)
-/// - Safety limiter in the feedback path
+//! 8-line Feedback Delay Network with time-variant modulation.
+//!
+//! Core of the LARES-inspired reverb. Implements:
+//! - 8 delay lines with mutually-prime lengths
+//! - Hadamard mixing matrix (energy-preserving, O(N log N))
+//! - Per-line tone correction filters (frequency-dependent RT60)
+//! - Time-variant delay modulation (Griesinger's key innovation)
+//! - Safety limiter in the feedback path
+
+#![allow(
+    clippy::needless_range_loop,
+    reason = "fixed-size DSP loops over FDN_SIZE; the index is also used to access multiple parallel arrays"
+)]
+
 use crate::delay_line::DelayLine;
 use crate::hadamard::hadamard8;
 use crate::tone_filter::ToneFilter;

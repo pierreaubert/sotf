@@ -64,7 +64,11 @@ async fn consume_commands(rx: Receiver<DevCommand>, window: AnyWindowHandle, cx:
 
 fn process_command(cmd: DevCommand, window: AnyWindowHandle, cx: &mut AsyncApp) {
     match cmd {
-        DevCommand::Action { name, payload, reply } => {
+        DevCommand::Action {
+            name,
+            payload,
+            reply,
+        } => {
             let result = cx.update(|cx| dispatch_action(&name, payload, window, cx));
             let dev_reply = match result {
                 Ok(()) => DevReply::ok(),
@@ -101,8 +105,8 @@ fn process_command(cmd: DevCommand, window: AnyWindowHandle, cx: &mut AsyncApp) 
 }
 
 fn dispatch_key(keystroke_str: &str, window: AnyWindowHandle, cx: &mut App) -> Result<()> {
-    let keystroke =
-        Keystroke::parse(keystroke_str).map_err(|e| anyhow!("invalid keystroke `{keystroke_str}`: {e:?}"))?;
+    let keystroke = Keystroke::parse(keystroke_str)
+        .map_err(|e| anyhow!("invalid keystroke `{keystroke_str}`: {e:?}"))?;
     window
         .update(cx, |_view, window, cx| {
             window.dispatch_keystroke(keystroke, cx);

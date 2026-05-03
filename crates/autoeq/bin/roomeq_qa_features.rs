@@ -305,12 +305,13 @@ fn validate_pass(pass_name: &str, results: &[StepResult], enforce_flat_slope: bo
             // decrease vs baseline.
             if !step.allows_perceptual_tradeoff
                 && let (Some(baseline), Some(current)) = (baseline_epa, step.epa_preference)
-                && current < baseline * 0.95 {
-                    errors.push(format!(
+                && current < baseline * 0.95
+            {
+                errors.push(format!(
                         "  {} step '{}': EPA preference {:.3} < baseline {:.3} * 0.95 — perceptual regression",
                         pass_name, step.name, current, baseline
                     ));
-                }
+            }
         } else {
             // No loss change yet — flat-score checks are valid.
 
@@ -349,12 +350,13 @@ fn validate_pass(pass_name: &str, results: &[StepResult], enforce_flat_slope: bo
 
     // End-of-pass: baseline step must improve over raw measurement
     if let Some(baseline) = results.first()
-        && baseline.post_score >= baseline.pre_score {
-            errors.push(format!(
-                "  {} step '{}': post_score {:.4} >= pre_score {:.4} — EQ did not improve over raw",
-                pass_name, baseline.name, baseline.post_score, baseline.pre_score
-            ));
-        }
+        && baseline.post_score >= baseline.pre_score
+    {
+        errors.push(format!(
+            "  {} step '{}': post_score {:.4} >= pre_score {:.4} — EQ did not improve over raw",
+            pass_name, baseline.name, baseline.post_score, baseline.pre_score
+        ));
+    }
 
     errors
 }

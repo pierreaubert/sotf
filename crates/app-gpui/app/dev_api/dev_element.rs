@@ -70,8 +70,15 @@ impl<E: Element> Element for DevTrack<E> {
         window: &mut Window,
         cx: &mut App,
     ) {
-        self.inner
-            .paint(id, inspector_id, bounds, request_layout, prepaint, window, cx)
+        self.inner.paint(
+            id,
+            inspector_id,
+            bounds,
+            request_layout,
+            prepaint,
+            window,
+            cx,
+        )
     }
 }
 

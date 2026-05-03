@@ -101,11 +101,13 @@ pub fn render_legend(
             let item = &items[idx];
             let swatch_color = item.color.to_rgba();
             let swatch = match item.symbol {
-                LegendSymbol::Line | LegendSymbol::DashedLine | LegendSymbol::LineWithMarker => div()
-                    .w(px(symbol_size))
-                    .h(px(2.0))
-                    .bg(swatch_color)
-                    .my_auto(),
+                LegendSymbol::Line | LegendSymbol::DashedLine | LegendSymbol::LineWithMarker => {
+                    div()
+                        .w(px(symbol_size))
+                        .h(px(2.0))
+                        .bg(swatch_color)
+                        .my_auto()
+                }
                 _ => div()
                     .w(px(symbol_size * 0.8))
                     .h(px(symbol_size * 0.8))

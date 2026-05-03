@@ -125,8 +125,8 @@ pub const PARAMS: &[ParamSpec] = &[
 /// Single-band expander UI layout (backward compat, referencing PARAMS indices).
 pub const SINGLE_BAND_LAYOUT: PluginLayout = PluginLayout {
     config: &[
-        ControlSpec::toggle(10),  // link_channels
-        ControlSpec::knob(11),    // sidechain_hpf_hz
+        ControlSpec::toggle(10),   // link_channels
+        ControlSpec::knob(11),     // sidechain_hpf_hz
         ControlSpec::selector(13), // detection_mode
     ],
     main: &[

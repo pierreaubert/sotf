@@ -40,8 +40,7 @@ fn main() {
             .join("plugins-au")
             .join("Shared")
             .join("gpui_au_ffi.h");
-        std::fs::write(&gpui_au_header, GPUI_AU_FFI_HEADER)
-            .expect("Unable to write gpui_au_ffi.h");
+        std::fs::write(&gpui_au_header, GPUI_AU_FFI_HEADER).expect("Unable to write gpui_au_ffi.h");
 
         println!("cargo:rerun-if-changed=src/lib.rs");
         println!("cargo:rerun-if-changed=src/plugin_factory.rs");

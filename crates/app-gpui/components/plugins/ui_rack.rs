@@ -291,44 +291,49 @@ impl PlayerView {
                 !self.state.read(cx).app.plugin_state.is_rack_available(),
                 |d| d.child(self.render_non_linear_chain_notice(cx)),
             )
-            .when(self.state.read(cx).app.plugin_state.is_rack_available(), |d| {
-                d
-                    // Plugin Rack Strip (top) - only show if not collapsed
-                    .when(!self.state.read(cx).app.rack_detail_collapsed, |d| {
-                        d.child(self.render_plugin_rack(cx))
-                    })
-                    // Horizontal divider between rack and detail panel
-                    .child({
-                        let divider_theme = PaneDividerTheme {
-                            background: theme.background,
-                            background_hover: theme.surface_hover,
-                            background_collapsed: theme.surface,
-                            foreground: theme.text_muted,
-                            foreground_hover: theme.text_secondary,
-                            border: theme.border,
-                        };
-                        let state = self.state.clone();
-                        let is_collapsed = self.state.read(cx).app.rack_detail_collapsed;
-                        PaneDivider::horizontal("rack-detail-divider", CollapseDirection::Up)
-                            .label("Signal Chain")
-                            .theme(divider_theme)
-                            .thickness(px(4.0))
-                            .collapsed(is_collapsed)
-                            .on_toggle(move |collapsed, _window, cx| {
-                                state.update(cx, |s, _| {
-                                    s.app.rack_detail_collapsed = collapsed;
-                                });
-                            })
-                    })
-                    // Parameter Panel (bottom, fills remaining space)
-                    .child(self.render_plugin_detail_panel(cx))
-            })
+            .when(
+                self.state.read(cx).app.plugin_state.is_rack_available(),
+                |d| {
+                    d
+                        // Plugin Rack Strip (top) - only show if not collapsed
+                        .when(!self.state.read(cx).app.rack_detail_collapsed, |d| {
+                            d.child(self.render_plugin_rack(cx))
+                        })
+                        // Horizontal divider between rack and detail panel
+                        .child({
+                            let divider_theme = PaneDividerTheme {
+                                background: theme.background,
+                                background_hover: theme.surface_hover,
+                                background_collapsed: theme.surface,
+                                foreground: theme.text_muted,
+                                foreground_hover: theme.text_secondary,
+                                border: theme.border,
+                            };
+                            let state = self.state.clone();
+                            let is_collapsed = self.state.read(cx).app.rack_detail_collapsed;
+                            PaneDivider::horizontal("rack-detail-divider", CollapseDirection::Up)
+                                .label("Signal Chain")
+                                .theme(divider_theme)
+                                .thickness(px(4.0))
+                                .collapsed(is_collapsed)
+                                .on_toggle(move |collapsed, _window, cx| {
+                                    state.update(cx, |s, _| {
+                                        s.app.rack_detail_collapsed = collapsed;
+                                    });
+                                })
+                        })
+                        // Parameter Panel (bottom, fills remaining space)
+                        .child(self.render_plugin_detail_panel(cx))
+                },
+            )
     }
 
     /// Render the empty-state notice shown in Studio when the plugin graph
     /// has a non-linear topology that the rack strip can't render.
     fn render_non_linear_chain_notice(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        use gpui_ui_kit::{Button, ButtonVariant, Card, StackSpacing, Text, TextSize, TextWeight, VStack};
+        use gpui_ui_kit::{
+            Button, ButtonVariant, Card, StackSpacing, Text, TextSize, TextWeight, VStack,
+        };
         let d = Ds::from_cx(cx);
         let theme = self.state.read(cx).app.ui_state.theme.clone();
 
@@ -366,8 +371,7 @@ impl PlayerView {
                                     .theme(theme.to_button_theme())
                                     .on_click_event(cx.listener(|view, _, _, cx| {
                                         view.state.update(cx, |state, _| {
-                                            state.app.ui_state.current_screen =
-                                                Screen::PluginGraph;
+                                            state.app.ui_state.current_screen = Screen::PluginGraph;
                                         });
                                         cx.notify();
                                     })),

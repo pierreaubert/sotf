@@ -138,8 +138,7 @@ pub(crate) fn draw_available_plugins(f: &mut Frame, area: Rect, app: &App) {
         );
         for plugin_type in cat.plugins {
             display_for_selectable.push(items.len());
-            let content =
-                format!("  {} - {}", plugin_type.name(), plugin_type.description());
+            let content = format!("  {} - {}", plugin_type.name(), plugin_type.description());
             items.push(ListItem::new(content).style(Style::default().fg(app.theme.accent_primary)));
         }
     }
@@ -171,9 +170,7 @@ pub(crate) fn draw_available_plugins(f: &mut Frame, area: Rect, app: &App) {
         );
 
     let mut state = ListState::default();
-    if is_selecting
-        && let Some(&row) = display_for_selectable.get(app.add_plugin_selected_index)
-    {
+    if is_selecting && let Some(&row) = display_for_selectable.get(app.add_plugin_selected_index) {
         state.select(Some(row));
     }
 

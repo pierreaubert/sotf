@@ -10,10 +10,10 @@
 //! Parent components only need to provide callbacks for value changes.
 
 use gpui::*;
+use gpui_miniapp::{MiniApp, MiniAppConfig};
 use gpui_ui_kit::input::{Input, InputSize, InputVariant};
 use gpui_ui_kit::theme::ThemeExt;
 use gpui_ui_kit::*;
-use gpui_miniapp::{MiniApp, MiniAppConfig};
 
 pub struct InputDebug {
     // Just store the confirmed values - Input handles editing internally

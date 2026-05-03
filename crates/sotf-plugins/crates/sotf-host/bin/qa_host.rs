@@ -1,13 +1,13 @@
-use sotf_host::{
-    CountingAlloc, InPlacePlugin, InPlacePluginAdapter, Plugin, ProcessContext, assert_no_allocs,
-    run_standard_tests,
-};
 use sotf_host::analyzer_loudness_monitor::LoudnessMonitorPlugin;
 use sotf_host::analyzer_spectrum::SpectrumAnalyzerPlugin;
 use sotf_host::auto_gain::AutoGain;
 use sotf_host::oversampling::OversampledPlugin;
-use sotf_host::plugin::{PluginInfo, PluginResult};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
+use sotf_host::plugin::{PluginInfo, PluginResult};
+use sotf_host::{
+    CountingAlloc, InPlacePlugin, InPlacePluginAdapter, Plugin, ProcessContext, assert_no_allocs,
+    run_standard_tests,
+};
 use std::time::Instant;
 
 #[global_allocator]
@@ -42,7 +42,10 @@ fn qa_spectrum_analyzer() {
     let num_blocks = (48000 * 50) / block_size;
     let input = vec![0.1_f32; block_size * 2];
     let mut output = vec![0.0_f32; block_size * 2];
-    let ctx = ProcessContext { sample_rate: 48000, num_frames: block_size };
+    let ctx = ProcessContext {
+        sample_rate: 48000,
+        num_frames: block_size,
+    };
 
     for _ in 0..num_blocks {
         plugin.process(&input, &mut output, &ctx).unwrap();
@@ -76,7 +79,10 @@ fn qa_loudness_monitor() {
     let num_blocks = (48000 * 50) / block_size;
     let input = vec![0.1_f32; block_size * 2];
     let mut output = vec![0.0_f32; block_size * 2];
-    let ctx = ProcessContext { sample_rate: 48000, num_frames: block_size };
+    let ctx = ProcessContext {
+        sample_rate: 48000,
+        num_frames: block_size,
+    };
 
     for _ in 0..num_blocks {
         plugin.process(&input, &mut output, &ctx).unwrap();
@@ -118,7 +124,11 @@ impl InPlacePlugin for PassthroughPlugin {
         Ok(())
     }
     fn reset(&mut self) {}
-    fn process_in_place(&mut self, _buffer: &mut [f32], ctx: &ProcessContext) -> PluginResult<usize> {
+    fn process_in_place(
+        &mut self,
+        _buffer: &mut [f32],
+        ctx: &ProcessContext,
+    ) -> PluginResult<usize> {
         Ok(ctx.num_frames)
     }
 }
@@ -139,7 +149,10 @@ fn qa_oversampled_plugin() {
     let num_blocks = (48000 * 50) / block_size;
     let input = vec![0.1_f32; block_size * 2];
     let mut output = vec![0.0_f32; block_size * 2];
-    let ctx = ProcessContext { sample_rate: 48000, num_frames: block_size };
+    let ctx = ProcessContext {
+        sample_rate: 48000,
+        num_frames: block_size,
+    };
 
     for _ in 0..num_blocks {
         plugin.process(&input, &mut output, &ctx).unwrap();

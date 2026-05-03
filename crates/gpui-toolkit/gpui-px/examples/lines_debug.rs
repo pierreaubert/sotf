@@ -4,8 +4,8 @@
 //! and the slider to adjust graph ratio.
 
 use gpui::*;
-use gpui_px::*;
 use gpui_miniapp::{MiniApp, MiniAppConfig};
+use gpui_px::*;
 
 fn main() {
     MiniApp::run(

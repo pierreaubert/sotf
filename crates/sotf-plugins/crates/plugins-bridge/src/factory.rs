@@ -299,15 +299,13 @@ pub fn create_plugin(
         }
 
         "BandSplit" | "band_split" => {
-            let params: sotf_plugin_band_split::BandSplitPluginParams =
-                parse_params(config_json)?;
+            let params: sotf_plugin_band_split::BandSplitPluginParams = parse_params(config_json)?;
             let plugin = sotf_plugin_band_split::BandSplitPlugin::from_params(channels, &params)?;
             Ok(Box::new(plugin))
         }
 
         "BandMerge" | "band_merge" => {
-            let params: sotf_plugin_band_merge::BandMergePluginParams =
-                parse_params(config_json)?;
+            let params: sotf_plugin_band_merge::BandMergePluginParams = parse_params(config_json)?;
             let plugin = sotf_plugin_band_merge::BandMergePlugin::from_params(channels, &params)?;
             Ok(Box::new(plugin))
         }
@@ -319,8 +317,7 @@ pub fn create_plugin(
         }
 
         "Beamformer" | "beamformer" => {
-            let params: sotf_plugin_beamformer::BeamformerPluginParams =
-                parse_params(config_json)?;
+            let params: sotf_plugin_beamformer::BeamformerPluginParams = parse_params(config_json)?;
             let plugin = sotf_plugin_beamformer::BeamformerPlugin::from_params(sample_rate, params);
             Ok(Box::new(plugin))
         }

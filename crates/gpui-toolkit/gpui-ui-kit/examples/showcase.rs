@@ -5,6 +5,7 @@
 //! Use Language menu to switch between languages.
 
 use gpui::*;
+use gpui_miniapp::{MiniApp, MiniAppConfig};
 use gpui_ui_kit::accordion::AccordionOrientation;
 use gpui_ui_kit::i18n::{I18nExt, TranslationKey};
 use gpui_ui_kit::menu::{Menu, MenuItem};
@@ -13,7 +14,6 @@ use gpui_ui_kit::theme::ThemeExt;
 use gpui_ui_kit::wizard::StepStatus;
 use gpui_ui_kit::workflow::{WorkflowCanvas, WorkflowGraph};
 use gpui_ui_kit::*;
-use gpui_miniapp::{MiniApp, MiniAppConfig};
 use std::collections::HashSet;
 
 #[derive(Clone, Debug)]

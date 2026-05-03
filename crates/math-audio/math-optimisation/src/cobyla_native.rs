@@ -626,8 +626,7 @@ where
                     datmat[idx2(m, np - 1, mpp)] + parmu * datmat[idx2(mpp - 1, np - 1, mpp)];
                 nbest = np - 1;
                 for j in 0..n {
-                    let temp =
-                        datmat[idx2(m, j, mpp)] + parmu * datmat[idx2(mpp - 1, j, mpp)];
+                    let temp = datmat[idx2(m, j, mpp)] + parmu * datmat[idx2(mpp - 1, j, mpp)];
                     if temp < phimin {
                         nbest = j;
                         phimin = temp;
@@ -811,8 +810,8 @@ where
             // -----------------------------------------------------------
             BodyState::SolveLp => {
                 let lp_status = trstlp(
-                    n, m, a_mat, con, rho, dx, &mut ifull, iact, z_ws, zdota, vmultc,
-                    sdirn, dxnew, vmultd,
+                    n, m, a_mat, con, rho, dx, &mut ifull, iact, z_ws, zdota, vmultc, sdirn, dxnew,
+                    vmultd,
                 );
                 if lp_status != Status::Success {
                     break lp_status;
@@ -876,12 +875,11 @@ where
                 }
                 if parmu < barmu * 1.5 {
                     parmu = barmu * 2.0;
-                    let phi = datmat[idx2(m, np - 1, mpp)]
-                        + parmu * datmat[idx2(mpp - 1, np - 1, mpp)];
+                    let phi =
+                        datmat[idx2(m, np - 1, mpp)] + parmu * datmat[idx2(mpp - 1, np - 1, mpp)];
                     let mut restart = false;
                     for j in 0..n {
-                        let temp =
-                            datmat[idx2(m, j, mpp)] + parmu * datmat[idx2(mpp - 1, j, mpp)];
+                        let temp = datmat[idx2(m, j, mpp)] + parmu * datmat[idx2(mpp - 1, j, mpp)];
                         if temp < phi {
                             restart = true;
                             break;
@@ -913,8 +911,8 @@ where
             // L440 — post-trial accept/reject + simplex update.
             // -----------------------------------------------------------
             BodyState::PostTrial => {
-                let vmold = datmat[idx2(m, np - 1, mpp)]
-                    + parmu * datmat[idx2(mpp - 1, np - 1, mpp)];
+                let vmold =
+                    datmat[idx2(m, np - 1, mpp)] + parmu * datmat[idx2(mpp - 1, np - 1, mpp)];
                 let vmnew = f + parmu * resmax;
                 let mut trured = vmold - vmnew;
                 if parmu == 0.0 && f == datmat[idx2(m, np - 1, mpp)] {
@@ -1268,8 +1266,7 @@ fn trstlp(
                         let beta = tot / temp;
                         tot = temp;
                         for i in 0..n {
-                            let t =
-                                alpha * z_ws[idx2(i, kix, n)] + beta * z_ws[idx2(i, kp, n)];
+                            let t = alpha * z_ws[idx2(i, kix, n)] + beta * z_ws[idx2(i, kp, n)];
                             z_ws[idx2(i, kp, n)] =
                                 alpha * z_ws[idx2(i, kp, n)] - beta * z_ws[idx2(i, kix, n)];
                             z_ws[idx2(i, kix, n)] = t;
@@ -1348,8 +1345,7 @@ fn trstlp(
                         zdota[kp] = alpha * zdota[k];
                         zdota[k] = temp;
                         for i in 0..n {
-                            let t =
-                                alpha * z_ws[idx2(i, kp, n)] + beta * z_ws[idx2(i, k, n)];
+                            let t = alpha * z_ws[idx2(i, kp, n)] + beta * z_ws[idx2(i, k, n)];
                             z_ws[idx2(i, kp, n)] =
                                 alpha * z_ws[idx2(i, k, n)] - beta * z_ws[idx2(i, kp, n)];
                             z_ws[idx2(i, k, n)] = t;
@@ -1427,8 +1423,7 @@ fn trstlp(
                         zdota[kp] = alpha * zdota[k];
                         zdota[k] = temp;
                         for i in 0..n {
-                            let t =
-                                alpha * z_ws[idx2(i, kp, n)] + beta * z_ws[idx2(i, k, n)];
+                            let t = alpha * z_ws[idx2(i, kp, n)] + beta * z_ws[idx2(i, k, n)];
                             z_ws[idx2(i, kp, n)] =
                                 alpha * z_ws[idx2(i, k, n)] - beta * z_ws[idx2(i, kp, n)];
                             z_ws[idx2(i, k, n)] = t;
@@ -1718,8 +1713,8 @@ mod tests {
             maxeval: 500,
             ..Default::default()
         };
-        let report = cobyla_native(2, f, &cons, &bounds, &mut x, &dx, &stop)
-            .expect("cobyla failed");
+        let report =
+            cobyla_native(2, f, &cons, &bounds, &mut x, &dx, &stop).expect("cobyla failed");
         assert!(
             report.fun < 1e-3,
             "fun = {} should converge near 0 (status: {})",
@@ -1745,8 +1740,8 @@ mod tests {
             maxeval: 5000,
             ..Default::default()
         };
-        let report = cobyla_native(2, f, &cons, &bounds, &mut x, &dx, &stop)
-            .expect("cobyla failed");
+        let report =
+            cobyla_native(2, f, &cons, &bounds, &mut x, &dx, &stop).expect("cobyla failed");
         eprintln!(
             "bug1b (isotropic): x = {:?}, fun = {}, nfev = {}, status = {}",
             report.x, report.fun, report.nfev, report.message
@@ -1786,8 +1781,8 @@ mod tests {
             maxeval: 2000,
             ..Default::default()
         };
-        let report = cobyla_native(2, f, &cons, &bounds, &mut x, &dx, &stop)
-            .expect("cobyla failed");
+        let report =
+            cobyla_native(2, f, &cons, &bounds, &mut x, &dx, &stop).expect("cobyla failed");
         eprintln!(
             "bug1: x = {:?}, fun = {}, nfev = {}, status = {}, max_v = {}",
             report.x, report.fun, report.nfev, report.message, report.max_violation
@@ -1829,16 +1824,27 @@ mod tests {
             maxeval: 500,
             ..Default::default()
         };
-        let report = cobyla_native(2, f, &cons, &bounds, &mut x, &dx, &stop)
-            .expect("cobyla failed");
+        let report =
+            cobyla_native(2, f, &cons, &bounds, &mut x, &dx, &stop).expect("cobyla failed");
         eprintln!(
             "bug_a: x = {:?}, fun = {:.3e}, nfev = {}, status = {}",
             report.x, report.fun, report.nfev, report.message
         );
         // Expected: x0 stays at 0.5, x1 → -0.3, f → 0.
-        assert!(report.fun.is_finite(), "fun = {} should be finite", report.fun);
-        assert!((report.x[0] - 0.5).abs() < 1e-6, "x0 must stay fixed at 0.5");
-        assert!(report.fun < 1e-3, "fun = {} should converge near 0", report.fun);
+        assert!(
+            report.fun.is_finite(),
+            "fun = {} should be finite",
+            report.fun
+        );
+        assert!(
+            (report.x[0] - 0.5).abs() < 1e-6,
+            "x0 must stay fixed at 0.5"
+        );
+        assert!(
+            report.fun < 1e-3,
+            "fun = {} should converge near 0",
+            report.fun
+        );
     }
 
     /// Bug B reproducer: when the trial step would cross a lower bound,
@@ -1860,8 +1866,8 @@ mod tests {
             maxeval: 1000,
             ..Default::default()
         };
-        let report = cobyla_native(2, f, &cons, &bounds, &mut x, &dx, &stop)
-            .expect("cobyla failed");
+        let report =
+            cobyla_native(2, f, &cons, &bounds, &mut x, &dx, &stop).expect("cobyla failed");
         eprintln!(
             "bug_b: x = {:?}, fun = {:.3e}, nfev = {}, status = {}",
             report.x, report.fun, report.nfev, report.message
@@ -1872,7 +1878,11 @@ mod tests {
             "x0 = {} should be near -1.0 (active lower bound)",
             report.x[0]
         );
-        assert!(report.x[1].abs() < 0.01, "x1 = {} should be near 0", report.x[1]);
+        assert!(
+            report.x[1].abs() < 0.01,
+            "x1 = {} should be near 0",
+            report.x[1]
+        );
         assert!(
             (report.fun - 16.0).abs() < 0.5,
             "fun = {} should be near 16",
@@ -1957,8 +1967,8 @@ mod tests {
             maxeval: 1000,
             ..Default::default()
         };
-        let report = cobyla_native(2, f, &cons, &bounds, &mut x, &dx, &stop)
-            .expect("cobyla failed");
+        let report =
+            cobyla_native(2, f, &cons, &bounds, &mut x, &dx, &stop).expect("cobyla failed");
         assert!(
             report.x[0] >= -1e-3,
             "x0 = {} should respect x0 >= 0",

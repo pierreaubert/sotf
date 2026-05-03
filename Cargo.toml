@@ -173,10 +173,6 @@ rustfft = "6.4"
 realfft = "3.5"
 nalgebra = { version = "0.33", default-features = false, features = ["std"] }
 metaheuristics-nature = "10.1"
-# `cobyla = "1.0"` was previously used; we now vendor the algorithm
-# (see `crates/math-audio/math-optimisation/src/cobyla_nlopt.rs`) and
-# rewrite the wrapper so per-constraint tolerances and stopval can be
-# set — both were hardcoded by the upstream crate.
 
 # using crates version
 math-test-functions = { path = "crates/math-audio/math-test-functions", version = "0.5", default-features = false }
@@ -422,7 +418,6 @@ map_err_ignore = "warn"
 redundant_type_annotations = "warn"
 renamed_function_params = "warn"
 semicolon_outside_block = "warn"
-string_to_string = "warn"
 undocumented_unsafe_blocks = "warn"
 unnecessary_safety_comment = "warn"
 unnecessary_safety_doc = "warn"
@@ -431,6 +426,13 @@ unused_result_ok = "warn"
 
 # May cause issues with structured logging otherwise.
 literal_string_with_formatting_args = "allow"
+# Transitive dependency conflicts (e.g. wit-bindgen 0.51 vs 0.57) are not
+# fixable from this workspace.
+multiple_crate_versions = "allow"
+# `if denom > 0 { a / denom } else { fallback }` reads more clearly than
+# `a.checked_div(denom).unwrap_or(fallback)` for percent / rate computations
+# scattered across the audio engine.
+manual_checked_ops = "allow"
 
 [profile.dev]
 opt-level = 1
