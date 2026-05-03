@@ -1,3 +1,7 @@
+# 0.5.14
+
+- Added new signals: Dirac and MLS
+
 # 0.5.13
 
 ## Switch to oxiblas-ndarray for BLAS operations

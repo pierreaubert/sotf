@@ -614,13 +614,10 @@ fn biquad_to_rme_type(filter_type: BiquadFilterType, pos: usize) -> f64 {
                 -1.0
             }
         }
-        BiquadFilterType::Lowshelf | BiquadFilterType::Highshelf => {
-            if pos == 1 || pos == 3 || pos == 9 {
+        BiquadFilterType::Lowshelf | BiquadFilterType::Highshelf
+            if (pos == 1 || pos == 3 || pos == 9) => {
                 1.0
-            } else {
-                -1.0
             }
-        }
         _ => -1.0,
     }
 }

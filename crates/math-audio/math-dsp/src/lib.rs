@@ -60,9 +60,9 @@ pub use analysis::{
 
 pub use signals::{
     add_silence_padding, apply_fade_in, apply_fade_out, clip, frames_for, gen_allpass_probe,
-    gen_log_sweep, gen_m_noise, gen_narrowband_probe, gen_pink_noise, gen_tone, gen_two_tone,
-    gen_white_noise, interleave_per_channel, mono_to_stereo, prepare_signal_for_playback,
-    prepare_signal_for_playback_channels, replicate_mono,
+    gen_dirac, gen_log_sweep, gen_m_noise, gen_mls, gen_narrowband_probe, gen_pink_noise, gen_tone,
+    gen_two_tone, gen_white_noise, interleave_per_channel, mono_to_stereo,
+    prepare_signal_for_playback, prepare_signal_for_playback_channels, replicate_mono,
 };
 
 pub use replaygain::{ReplayGainAnalyzer, ReplayGainInfo, ReplayGainTrackData, compute_album_gain};

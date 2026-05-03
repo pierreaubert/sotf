@@ -1731,8 +1731,7 @@ pub fn compute_windowed_fr(
             let freqs: Vec<f32> = (0..num_output_points)
                 .map(|i| {
                     (log_start
-                        + (log_end - log_start) * i as f32
-                            / (num_output_points.max(2) - 1) as f32)
+                        + (log_end - log_start) * i as f32 / (num_output_points.max(2) - 1) as f32)
                         .exp()
                 })
                 .collect();
@@ -2307,13 +2306,9 @@ pub fn compute_rt60_broadband(impulse: &[f32], sample_rate: f32) -> f32 {
     let t_minus_25 = decay_db.iter().position(|&v| v < -25.0);
 
     match (t_minus_5, t_minus_25) {
-        (Some(start), Some(end)) => {
-            if end > start {
-                let dt = (end - start) as f32 / sample_rate; // Time for 20dB decay
-                dt * 3.0 // Extrapolate to 60dB (T20 * 3)
-            } else {
-                0.0
-            }
+        (Some(start), Some(end)) if end > start => {
+            let dt = (end - start) as f32 / sample_rate; // Time for 20dB decay
+            dt * 3.0 // Extrapolate to 60dB (T20 * 3)
         }
         _ => 0.0,
     }
@@ -2918,8 +2913,7 @@ pub fn estimate_noise_floor_db_from_silence(silence: &[f32], _sample_rate: u32) 
         .iter()
         .enumerate()
         .map(|(k, &s)| {
-            let w =
-                0.5 * (1.0 - (2.0 * std::f32::consts::PI * k as f32 / (n as f32 - 1.0)).cos());
+            let w = 0.5 * (1.0 - (2.0 * std::f32::consts::PI * k as f32 / (n as f32 - 1.0)).cos());
             Complex::new(s * w, 0.0)
         })
         .collect();
@@ -2967,7 +2961,10 @@ mod gd_1c_tests {
             // A single realization is trivially "coherent with itself"
             // — γ² = 1 by construction. Callers must enforce N ≥ 4
             // at a higher level.
-            assert!((c - 1.0).abs() < 1e-6, "single-realization γ² should be 1, got {c}");
+            assert!(
+                (c - 1.0).abs() < 1e-6,
+                "single-realization γ² should be 1, got {c}"
+            );
         }
     }
 
@@ -2981,7 +2978,10 @@ mod gd_1c_tests {
         let realizations = vec![r.clone(), r.clone(), r.clone(), r];
         let coh = compute_coherence_from_realizations(&realizations).unwrap();
         for c in coh {
-            assert!((c - 1.0).abs() < 1e-6, "identical realizations → γ² = 1, got {c}");
+            assert!(
+                (c - 1.0).abs() < 1e-6,
+                "identical realizations → γ² = 1, got {c}"
+            );
         }
     }
 
@@ -3085,13 +3085,21 @@ mod gd_1c_tests {
         // Find the peak bin in a small bracket around the target.
         let mut peak_db = f32::NEG_INFINITY;
         let mut peak_bin = 0;
-        for (k, v) in nf.iter().enumerate().take(target_bin + 3).skip(target_bin - 2) {
+        for (k, v) in nf
+            .iter()
+            .enumerate()
+            .take(target_bin + 3)
+            .skip(target_bin - 2)
+        {
             if *v > peak_db {
                 peak_db = *v;
                 peak_bin = k;
             }
         }
-        assert_eq!(peak_bin, target_bin, "peak bin should be at the tone frequency");
+        assert_eq!(
+            peak_bin, target_bin,
+            "peak bin should be at the tone frequency"
+        );
         assert!(
             (peak_db - amp_db).abs() < 1.5,
             "peak dB {peak_db} should be within ±1.5 dB of target {amp_db}"
