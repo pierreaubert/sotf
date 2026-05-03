@@ -1598,7 +1598,14 @@ fn trstlp(
 
                 if let Some(ic) = new_icon {
                     icon = ic;
-                    state = TrLoopState::OuterStart;
+                    // L440 in the reference: `goto L70` — re-enter the stall-progress
+                    // check WITHOUT resetting `optold`/`icount`. Going to OuterStart
+                    // (L60) resets `icount = 0`, which means the next iteration's
+                    // `icount == 0` branch would set it back to 3, and the stall
+                    // counter could never decrement to trigger termination. On
+                    // pathological inputs this caused trstlp (and therefore the
+                    // whole COBYLA refinement step) to spin forever.
+                    state = TrLoopState::Cycle;
                     continue;
                 }
                 if step == stpful {

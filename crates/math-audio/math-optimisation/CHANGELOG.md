@@ -1,3 +1,7 @@
+# 0.5.6
+
+- Fix a 1 line bug in the new cobyla implementation.
+
 # 0.5.5
 
 - Added ISRES and Cobyla. Used them to drop the dependency to nlopt.

@@ -1,6 +1,6 @@
 [package]
 name = "math-optimisation"
-version = "0.5.5"
+version = "0.5.6"
 description = "Pure-Rust nonlinear optimization: Differential Evolution, Levenberg-Marquardt, COBYLA, and ISRES solvers"
 edition = { workspace = true }
 keywords.workspace = true

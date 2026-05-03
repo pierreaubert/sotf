@@ -1,3 +1,9 @@
+# 0.4.41
+
+## Bug fixes
+
+- Fixed an initialisation bug in the new cobyla code (v2)
+
 # 0.4.40
 
 ## Refactor
