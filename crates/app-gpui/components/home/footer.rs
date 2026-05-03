@@ -989,7 +989,8 @@ impl PlayerView {
                                     )
                                     .child(
                                         div()
-                                            .text_size(d.text_lg)
+                                            // intentional: 2× d.text_lg (1.125 rem) per UX request
+                                            .text_size(rems(2.25))
                                             .text_color(theme_header.text_muted)
                                             .child("⟳"),
                                     ),
@@ -1069,6 +1070,7 @@ impl PlayerView {
                 let selected_cast = state.app.audio_device_state.selected_cast_device;
                 let theme_cast = theme.clone();
 
+                let theme_cast_header = theme_cast.clone();
                 let mut section = div()
                     .flex()
                     .flex_col()
@@ -1078,16 +1080,46 @@ impl PlayerView {
                     .pt(d.pad_y_half)
                     .child(
                         div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
                             .px(d.pad_x)
                             .py(d.pad_y_half)
-                            .text_size(d.text_xs)
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(theme_cast.text_muted)
-                            .child(if cast_running {
-                                "Cast Devices (scanning...)"
-                            } else {
-                                "Cast Devices"
-                            }),
+                            .child(
+                                div()
+                                    .text_size(d.text_xs)
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(theme_cast_header.text_muted)
+                                    .child(if cast_running {
+                                        "Cast Devices (scanning...)"
+                                    } else {
+                                        "Cast Devices"
+                                    }),
+                            )
+                            .child(
+                                div()
+                                    .id("refresh-cast-devices")
+                                    .cursor_pointer()
+                                    .p(d.grid)
+                                    .rounded(d.r_sm)
+                                    .hover(|s| s.bg(theme_cast_header.surface_hover))
+                                    .on_mouse_up(
+                                        MouseButton::Left,
+                                        cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                                            view.state.update(cx, |state, _cx| {
+                                                state.app.start_cast_discovery();
+                                            });
+                                            cx.notify();
+                                        }),
+                                    )
+                                    .child(
+                                        div()
+                                            // intentional: 2× d.text_lg (1.125 rem), matches top refresh icon
+                                            .text_size(rems(2.25))
+                                            .text_color(theme_cast_header.text_muted)
+                                            .child("⟳"),
+                                    ),
+                            ),
                     );
 
                 if cast_devices.is_empty() && !cast_running {
@@ -1231,7 +1263,7 @@ impl PlayerView {
                 MenuItem::separator(),
                 MenuItem::new("tutorial", "Show Tutorial"),
                 MenuItem::separator(),
-                MenuItem::new("settings", translations.screen_settings),
+                MenuItem::new("settings", translations.screen_settings).with_shortcut("⌘,"),
             ],
         )
         .theme(theme.to_menu_theme())

@@ -102,7 +102,12 @@ impl PlayerView {
                             .text_size(d.text_sm)
                             .font_weight(FontWeight::BOLD)
                             .text_color(theme.text_primary)
-                            .child(translations.queue_title.to_string()),
+                            .child(format!(
+                                "{} ({} {})",
+                                translations.queue_title,
+                                state.app.queue_state.len(),
+                                translations.queue_albums
+                            )),
                     ),
             )
             // Main content area
@@ -123,12 +128,9 @@ impl PlayerView {
                         .border_r_1()
                         .border_color(theme.border)
                         .child(
-                            div().mb(d.gap).child(Heading::h4(format!(
-                                "{} ({} {})",
-                                translations.queue_title,
-                                state.app.queue_state.len(),
-                                translations.queue_albums
-                            ))),
+                            div()
+                                .mb(d.gap)
+                                .child(Heading::h4(translations.queue_title.to_string())),
                         )
                         .child(
                             div()
