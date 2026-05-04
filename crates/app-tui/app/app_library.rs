@@ -1,6 +1,7 @@
 use super::app_impl::App;
 use super::types::{
-    ArtistNode, ChannelFilter, LibrarySortOrder, LibraryViewMode, QueueEntry, QueueItem, TreeItem,
+    ArtistNode, CastDeviceInfo, ChannelFilter, LibrarySortOrder, LibraryViewMode, QueueEntry,
+    QueueItem, TreeItem,
 };
 use sotf_audio::devices::AudioDevice;
 use sotf_audio_player::Album;
@@ -95,6 +96,86 @@ impl App {
                 self.current_output_device_name = output_devices[default_idx].name.clone().into();
             }
         }
+    }
+
+    /// Spawn a background mDNS scan for AirPlay + Chromecast receivers.
+    /// Idempotent: returns immediately if a scan is already in flight.
+    pub fn start_cast_discovery(&mut self) {
+        if self.cast_discovery_running {
+            return;
+        }
+        self.cast_discovery_running = true;
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.cast_discovery_receiver = Some(rx);
+
+        std::thread::Builder::new()
+            .name("tui-cast-discovery".into())
+            .spawn(move || {
+                let rt = match tokio::runtime::Runtime::new() {
+                    Ok(rt) => rt,
+                    Err(e) => {
+                        log::warn!("Cast discovery: failed to create tokio runtime: {e}");
+                        let _ = tx.send(Vec::new());
+                        return;
+                    }
+                };
+                let devices = rt.block_on(async {
+                    let timeout = std::time::Duration::from_secs(3);
+                    match sotf_cast::CastDiscovery::discover_all(timeout).await {
+                        Ok(devices) => devices
+                            .into_iter()
+                            .map(|d| CastDeviceInfo {
+                                name: d.name.clone(),
+                                device_type: match d.device_type {
+                                    sotf_cast::CastDeviceType::AirPlay => "AirPlay".to_string(),
+                                    sotf_cast::CastDeviceType::Chromecast => {
+                                        "Chromecast".to_string()
+                                    }
+                                },
+                                address: d.address.to_string(),
+                                port: d.port,
+                            })
+                            .collect(),
+                        Err(e) => {
+                            log::warn!("Cast discovery failed: {e}");
+                            Vec::new()
+                        }
+                    }
+                });
+                let _ = tx.send(devices);
+            })
+            .expect("spawn cast discovery thread");
+    }
+
+    /// Drain the cast-discovery channel; returns true if state changed and the
+    /// devices screen should redraw.
+    pub fn poll_cast_discovery(&mut self) -> bool {
+        let rx = match &self.cast_discovery_receiver {
+            Some(rx) => rx,
+            None => return false,
+        };
+        match rx.try_recv() {
+            Ok(devices) => {
+                log::info!("Cast discovery found {} device(s)", devices.len());
+                self.cast_devices = devices;
+                self.cast_discovery_running = false;
+                self.cast_discovery_receiver = None;
+                true
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => false,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.cast_discovery_running = false;
+                self.cast_discovery_receiver = None;
+                true
+            }
+        }
+    }
+
+    /// Reload local output devices and kick off a cast-device rescan.
+    pub fn reload_all_devices(&mut self) {
+        self.load_output_devices();
+        self.start_cast_discovery();
     }
 
     pub fn load_recording_devices(&mut self) {

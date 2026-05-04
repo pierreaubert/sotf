@@ -4,14 +4,20 @@ pub(crate) fn draw_devices_screen(f: &mut Frame, area: Rect, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // Help box
-            Constraint::Min(0),    // Device list
+            Constraint::Length(3),     // Help box
+            Constraint::Percentage(60), // Output devices
+            Constraint::Min(5),         // Cast devices
         ])
         .split(area);
 
-    draw_help_box_with_text(f, chunks[0], app, "↑↓=Navigate  Enter=Select  Esc=Back");
+    draw_help_box_with_text(
+        f,
+        chunks[0],
+        app,
+        "↑↓=Navigate  Enter=Select  R=Reload  Esc=Back",
+    );
 
-    // Device list
+    // --- Output devices block ----------------------------------------------
     let items: Vec<ListItem> = app
         .output_devices
         .iter()
@@ -70,7 +76,7 @@ pub(crate) fn draw_devices_screen(f: &mut Frame, area: Rect, app: &App) {
         })
         .collect();
 
-    let title = if app.output_devices.is_empty() {
+    let output_title = if app.output_devices.is_empty() {
         " Output Devices (none found) ".to_string()
     } else {
         format!(" Output Devices ({}) ", app.output_devices.len())
@@ -79,13 +85,13 @@ pub(crate) fn draw_devices_screen(f: &mut Frame, area: Rect, app: &App) {
     let mut list_state = ListState::default();
     list_state.select(Some(app.selected_output_device_index));
 
-    let list = List::new(items)
+    let output_list = List::new(items)
         .block(
             Block::default()
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(app.theme.border_color))
-                .title(title),
+                .title(output_title),
         )
         .highlight_style(
             Style::default()
@@ -94,7 +100,52 @@ pub(crate) fn draw_devices_screen(f: &mut Frame, area: Rect, app: &App) {
                 .add_modifier(Modifier::BOLD),
         );
 
-    f.render_stateful_widget(list, chunks[1], &mut list_state);
+    f.render_stateful_widget(output_list, chunks[1], &mut list_state);
+
+    // --- Cast devices block ------------------------------------------------
+    let cast_items: Vec<ListItem> = app
+        .cast_devices
+        .iter()
+        .map(|device| {
+            let line = Line::from(vec![
+                Span::styled(
+                    "   ",
+                    Style::default().fg(app.theme.accent_primary),
+                ),
+                Span::styled(
+                    device.name.clone(),
+                    Style::default().fg(app.theme.fg_primary),
+                ),
+                Span::styled(
+                    format!(" [{}]", device.device_type),
+                    Style::default().fg(app.theme.accent_primary),
+                ),
+                Span::styled(
+                    format!(" {}:{}", device.address, device.port),
+                    Style::default().fg(app.theme.fg_secondary),
+                ),
+            ]);
+            ListItem::new(line)
+        })
+        .collect();
+
+    let cast_title = if app.cast_discovery_running {
+        " Cast Devices (scanning…) ".to_string()
+    } else if app.cast_devices.is_empty() {
+        " Cast Devices (none found — press R to scan) ".to_string()
+    } else {
+        format!(" Cast Devices ({}) ", app.cast_devices.len())
+    };
+
+    let cast_list = List::new(cast_items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(app.theme.border_color))
+            .title(cast_title),
+    );
+
+    f.render_widget(cast_list, chunks[2]);
 }
 
 pub(crate) fn draw_configure_screen(f: &mut Frame, area: Rect, app: &App) {

@@ -10,8 +10,9 @@ use std::sync::atomic::AtomicBool;
 // Import types from sibling modules
 use super::parameters::TuiEditablePlugin;
 use super::types::{
-    ArtistNode, ChannelFilter, ChannelGroup, FilePickerMode, FilePickerOrigin, InputMode,
-    LibrarySortOrder, LibraryViewMode, MatrixEditMode, PendingParameterUpdate, QueueEntry, Screen,
+    ArtistNode, CastDeviceInfo, ChannelFilter, ChannelGroup, FilePickerMode, FilePickerOrigin,
+    InputMode, LibrarySortOrder, LibraryViewMode, MatrixEditMode, PendingParameterUpdate,
+    QueueEntry, Screen,
 };
 
 pub struct App {
@@ -118,6 +119,11 @@ pub struct App {
     pub output_devices: Vec<AudioDevice>,
     pub selected_output_device_index: usize,
     pub current_output_device_name: Option<String>,
+
+    // Cast devices (Chromecast / AirPlay) discovered on the local network
+    pub cast_devices: Vec<CastDeviceInfo>,
+    pub cast_discovery_running: bool,
+    pub cast_discovery_receiver: Option<std::sync::mpsc::Receiver<Vec<CastDeviceInfo>>>,
 
     // Loading screen animation
     pub loading_tick: u16,
@@ -313,6 +319,9 @@ impl App {
             output_devices: Vec::new(),
             selected_output_device_index: 0,
             current_output_device_name: None,
+            cast_devices: Vec::new(),
+            cast_discovery_running: false,
+            cast_discovery_receiver: None,
             loading_tick: 0,
             read_only,
             should_quit: false,

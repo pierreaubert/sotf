@@ -460,6 +460,9 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                     if poll_federation_test(app) {
                         app.needs_redraw = true;
                     }
+                    if app.poll_cast_discovery() {
+                        app.needs_redraw = true;
+                    }
 
                     let state = player.get_playback_state();
 

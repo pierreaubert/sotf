@@ -25,6 +25,15 @@ pub enum Screen {
     Configure,
 }
 
+/// A discovered Cast device (Chromecast or AirPlay) on the local network.
+#[derive(Debug, Clone)]
+pub struct CastDeviceInfo {
+    pub name: String,
+    pub device_type: String,
+    pub address: String,
+    pub port: u16,
+}
+
 /// Sub-mode within the Playlists screen
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlaylistMode {

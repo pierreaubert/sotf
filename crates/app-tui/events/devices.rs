@@ -17,6 +17,14 @@ pub(super) fn handle_devices_keys(app: &mut App, key: KeyEvent) -> Option<Player
             app.get_selected_output_device()
                 .map(|device| PlayerCommand::SetOutputDevice(device.name.clone()))
         }
+        KeyCode::Char('r') | KeyCode::Char('R') => {
+            // Rescan local output devices and re-trigger Cast (AirPlay /
+            // Chromecast) discovery on the local network.
+            app.reload_all_devices();
+            app.status_message = Some("Rescanning audio + cast devices…".to_string());
+            app.needs_redraw = true;
+            None
+        }
         _ => None,
     }
 }
