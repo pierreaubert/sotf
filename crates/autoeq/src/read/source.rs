@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 /// Inline measurement data (frequencies, SPL, phase)
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct InlineMeasurement {
     /// Frequency points in Hz
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -29,6 +30,33 @@ pub struct InlineMeasurement {
     /// Optional path to associated CSV file
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub csv_path: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MeasurementRef, MeasurementSource};
+    use std::path::PathBuf;
+
+    #[test]
+    fn measurement_source_object_with_measurements_deserializes_as_multiple() {
+        let source: MeasurementSource = serde_json::from_value(serde_json::json!({
+            "measurements": ["pos0.csv", "pos1.csv"],
+            "speaker_name": "Test Speaker"
+        }))
+        .expect("multiple measurement source should deserialize");
+
+        match source {
+            MeasurementSource::Multiple(multiple) => {
+                assert_eq!(multiple.speaker_name.as_deref(), Some("Test Speaker"));
+                assert_eq!(multiple.measurements.len(), 2);
+                assert!(matches!(
+                    &multiple.measurements[0],
+                    MeasurementRef::Path(path) if path == &PathBuf::from("pos0.csv")
+                ));
+            }
+            _ => panic!("expected multiple measurement source"),
+        }
+    }
 }
 
 impl InlineMeasurement {

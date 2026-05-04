@@ -652,8 +652,9 @@ fn generate_random_source(
         };
         let path = output_dir.join(filename);
         generate_measurement_csv(&path, &speaker_config, idx, count)?;
+        let config_path = path.canonicalize()?;
 
-        file_strings.push(path.to_string_lossy().to_string());
+        file_strings.push(config_path.to_string_lossy().to_string());
         paths.push(path);
     }
 

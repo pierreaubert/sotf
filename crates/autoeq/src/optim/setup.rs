@@ -497,6 +497,17 @@ pub fn setup_bounds(params: &crate::OptimParams) -> (Vec<f64>, Vec<f64>) {
         }
     }
 
+    // Model-specific fixed HP/LP/shelf constraints above can push anchor
+    // frequencies outside narrow optimization ranges (for example a high
+    // shelf in a 20-400 Hz driver-linearization pass). Keep every frequency
+    // dimension valid so initial guesses and optimizers cannot panic.
+    for i in 0..params.num_filters {
+        let freq_idx = if ppf == 3 { i * ppf } else { i * ppf + 1 };
+        if lower_bounds[freq_idx] > upper_bounds[freq_idx] {
+            upper_bounds[freq_idx] = lower_bounds[freq_idx];
+        }
+    }
+
     // Debug: Display bounds for each filter (unless in QA mode)
     if !params.quiet {
         log::info!("\n📏 Parameter Bounds (Model: {}):", model);
@@ -960,4 +971,31 @@ pub fn setup_multisub_bounds(
 /// Vector of `n_drivers * 2` zeros (gains followed by delays).
 pub fn multisub_initial_guess(n_drivers: usize) -> Vec<f64> {
     vec![0.0; n_drivers * 2]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{initial_guess, setup_bounds};
+    use crate::OptimParams;
+    use crate::roomeq::OptimizerConfig;
+
+    #[test]
+    fn setup_bounds_keeps_shelf_filters_valid_in_narrow_ranges() {
+        let config = OptimizerConfig {
+            peq_model: "ls-pk-hs".to_string(),
+            num_filters: 2,
+            min_freq: 20.0,
+            max_freq: 400.0,
+            ..OptimizerConfig::default()
+        };
+        let params = OptimParams::from(&config);
+        let (lower_bounds, upper_bounds) = setup_bounds(&params);
+
+        for (lower, upper) in lower_bounds.iter().zip(&upper_bounds) {
+            assert!(lower <= upper, "inverted bound: {lower} > {upper}");
+        }
+
+        let guess = initial_guess(&params, &lower_bounds, &upper_bounds);
+        assert_eq!(guess.len(), params.num_filters * 3);
+    }
 }
