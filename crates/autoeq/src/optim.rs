@@ -30,6 +30,8 @@ use ndarray::Array1;
 pub mod backend;
 /// Shared callback utilities for optimization
 pub mod callback;
+/// Pure-Rust CMA-ES backend.
+pub mod cmaes;
 /// Pure-Rust COBYLA backend (replaces NLopt's COBYLA when nlopt feature is off).
 pub mod cobyla;
 /// Centralised constraint installation (native vs penalty).
@@ -40,6 +42,8 @@ pub mod de;
 pub mod isres;
 /// Metaheuristics-specific optimization code
 pub mod mh;
+/// Pure-Rust NSGA-II/III Pareto backends.
+pub mod nsga;
 /// Shared optimization parameters (decoupled from CLI args)
 pub mod params;
 /// Pareto front analysis
@@ -312,6 +316,27 @@ fn compute_multi_objective_fitness(x: &[f64], mo: &MultiObjectiveData) -> f64 {
             unreachable!("SpatialRobustness strategy should not use multi-objective loss path")
         }
     }
+}
+
+/// Compute the objective vector used by Pareto optimizers.
+///
+/// For multi-measurement data this returns the per-measurement losses before
+/// scalarisation, with any shared AutoEQ penalty added to each component. For
+/// ordinary scalar objectives it returns a one-element vector containing the
+/// penalised scalar loss.
+pub fn compute_pareto_objectives(x: &[f64], data: &ObjectiveData) -> Vec<f64> {
+    if let Some(ref mo) = data.multi_objective {
+        let base_scalar = compute_multi_objective_fitness(x, mo);
+        let penalized_scalar = compute_fitness_penalties_ref(x, data);
+        let shared_penalty = (penalized_scalar - base_scalar).max(0.0);
+        return mo
+            .objectives
+            .iter()
+            .map(|obj| compute_base_fitness_single(x, obj) + shared_penalty)
+            .collect();
+    }
+
+    vec![compute_fitness_penalties_ref(x, data)]
 }
 
 /// Clamp positive filter gains in the parameter vector using a frequency-dependent envelope.
@@ -1005,8 +1030,8 @@ mod dispatch_tests {
 
     /// Bug C reproducer: `optimize_filters_with_callback` previously
     /// dispatched on `backend.library() == "AutoEQ"`, which now matches
-    /// `autoeq:de`, `autoeq:cobyla`, AND `autoeq:isres` — silently
-    /// routing the latter two through the DE EPA wrapper instead of
+    /// all pure-Rust AutoEQ backends — silently
+    /// routing non-DE backends through the DE EPA wrapper instead of
     /// running the requested algorithm. Verify each `autoeq:*` backend
     /// resolves to its OWN registry entry, not DE.
     #[test]
@@ -1019,6 +1044,24 @@ mod dispatch_tests {
         assert_eq!(isres.name(), "autoeq:isres");
         assert_eq!(isres.library(), "AutoEQ");
 
+        let cmaes = registry::resolve("autoeq:cmaes").expect("autoeq:cmaes missing");
+        assert_eq!(cmaes.name(), "autoeq:cmaes");
+        assert_eq!(cmaes.library(), "AutoEQ");
+        let cmaes_alias = registry::resolve("cma-es").expect("cma-es alias missing");
+        assert_eq!(cmaes_alias.name(), "autoeq:cmaes");
+
+        let nsga2 = registry::resolve("autoeq:nsga2").expect("autoeq:nsga2 missing");
+        assert_eq!(nsga2.name(), "autoeq:nsga2");
+        assert_eq!(nsga2.library(), "AutoEQ");
+        let nsga2_alias = registry::resolve("nsga-ii").expect("nsga-ii alias missing");
+        assert_eq!(nsga2_alias.name(), "autoeq:nsga2");
+
+        let nsga3 = registry::resolve("autoeq:nsga3").expect("autoeq:nsga3 missing");
+        assert_eq!(nsga3.name(), "autoeq:nsga3");
+        assert_eq!(nsga3.library(), "AutoEQ");
+        let nsga3_alias = registry::resolve("nsga-iii").expect("nsga-iii alias missing");
+        assert_eq!(nsga3_alias.name(), "autoeq:nsga3");
+
         let de = registry::resolve("autoeq:de").expect("autoeq:de missing");
         assert_eq!(de.name(), "autoeq:de");
         assert_eq!(de.library(), "AutoEQ");
@@ -1027,6 +1070,9 @@ mod dispatch_tests {
         // EPA wrapper is DE-specific.
         assert_ne!(cobyla.name(), de.name());
         assert_ne!(isres.name(), de.name());
+        assert_ne!(cmaes.name(), de.name());
+        assert_ne!(nsga2.name(), de.name());
+        assert_ne!(nsga3.name(), de.name());
     }
 }
 

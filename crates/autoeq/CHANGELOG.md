@@ -1,3 +1,17 @@
+# 0.4.42
+
+## RoomEQ improvements
+
+- Added Frequency-Dependent Windowing (FDW) support for measured impulse
+  responses. RoomEQ now uses FDW direct-energy ratios from long bass windows
+  and progressively shorter high-frequency windows to drive per-frequency
+  correction depth when `ssir_wav_path` is available.
+- Decomposed correction now feeds FDW-gated magnitude and FDW-scaled room-mode
+  seeds into the smart initial-guess pipeline, reducing reflection-driven
+  correction above the modal region while preserving strong mode correction.
+- Added decomposed-correction config controls for FDW enablement, cycle count,
+  min/max window length, and smoothing width.
+
 # 0.4.41
 
 ## RoomEQ improvements

@@ -960,6 +960,7 @@ fn apply_option_override(config: &mut RoomConfig, option: &OptionOverride) {
                 mode_correction_weight: 1.0,
                 early_reflection_weight: 0.3,
                 steady_state_weight: 0.5,
+                ..Default::default()
             });
         }
     }

@@ -12,7 +12,7 @@ demo: demo-d3rs demo-px demo-ui-kit demo-headphone-loss
 examples: examples-autoeq examples-math examples-ui-kit
 
 [group('download')]
-download-once: download-sofa download-speakers generate-audio-tests generate-roomeq-tests generate-ml-dataset-muslan generate-ml-dataset-ava
+download-once: download-sofa download-speakers generate-audio-tests generate-ml-dataset-muslan generate-ml-dataset-ava
 
 alias build := prod
 

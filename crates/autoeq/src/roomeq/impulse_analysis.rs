@@ -49,6 +49,26 @@ pub struct DecomposedCorrectionConfig {
     /// Transition width around Schroeder frequency in octaves.
     /// Default: 0.5 octaves
     pub transition_width_oct: f64,
+
+    /// Enable frequency-dependent windowing when an impulse response is available.
+    /// Default: true
+    pub fdw_enabled: bool,
+
+    /// FDW analysis window length in cycles before min/max clamping.
+    /// Default: 8.0
+    pub fdw_cycles: f64,
+
+    /// Minimum FDW window length in milliseconds.
+    /// Default: 3.0
+    pub fdw_min_window_ms: f64,
+
+    /// Maximum FDW window length in milliseconds.
+    /// Default: 500.0
+    pub fdw_max_window_ms: f64,
+
+    /// FDW output smoothing width in octaves.
+    /// Default: 1/24 octave
+    pub fdw_smoothing_octaves: f64,
 }
 
 impl Default for DecomposedCorrectionConfig {
@@ -61,6 +81,11 @@ impl Default for DecomposedCorrectionConfig {
             early_reflection_weight: 0.3,
             steady_state_weight: 0.4,
             transition_width_oct: 0.5,
+            fdw_enabled: true,
+            fdw_cycles: 8.0,
+            fdw_min_window_ms: 3.0,
+            fdw_max_window_ms: 500.0,
+            fdw_smoothing_octaves: 1.0 / 24.0,
         }
     }
 }
@@ -90,6 +115,12 @@ pub struct DecomposedCorrectionResult {
 
     /// Schroeder frequency used for the analysis
     pub schroeder_freq: f64,
+
+    /// FDW direct/total energy ratio interpolated to the correction grid.
+    pub fdw_direct_energy_ratio: Option<Array1<f64>>,
+
+    /// FDW-gated magnitude curve interpolated to the correction grid.
+    pub fdw_magnitude_db: Option<Array1<f64>>,
 }
 
 /// Analyze a frequency response to build decomposed correction weights.
@@ -114,6 +145,8 @@ pub fn analyze_decomposed_correction(
         room_modes,
         correction_weights,
         schroeder_freq: config.schroeder_freq,
+        fdw_direct_energy_ratio: None,
+        fdw_magnitude_db: None,
     }
 }
 
@@ -556,14 +589,30 @@ pub fn build_ssir_correction_weights(
     freq: &Array1<f64>,
     spl: &Array1<f64>,
     ssir_result: &math_rir::SsirResult,
+    impulse_response: Option<&[f32]>,
+    impulse_sample_rate: f64,
     config: &DecomposedCorrectionConfig,
 ) -> DecomposedCorrectionResult {
     let n = freq.len();
 
-    // 1. Detect room modes from frequency-domain data (same as before)
-    let room_modes = detect_room_modes(freq, spl, config);
+    // 1. Run FDW when an impulse response is available. FDW provides a
+    //    per-frequency "how direct is this energy?" curve and a gated
+    //    magnitude curve that is less polluted by high-frequency reflections.
+    let (fdw_direct_energy_ratio, fdw_magnitude_db) = compute_fdw_curves(
+        freq,
+        ssir_result,
+        impulse_response,
+        impulse_sample_rate,
+        config,
+    );
 
-    // 2. Boundary between modal region and diffuse region.
+    // 2. Detect room modes. Prefer the FDW-gated magnitude when present so
+    //    smart-init seeds are driven by the time-frequency gated response
+    //    rather than by reflection-heavy full-window magnitude.
+    let mode_spl = fdw_magnitude_db.as_ref().unwrap_or(spl);
+    let room_modes = detect_room_modes(freq, mode_spl, config);
+
+    // 3. Boundary between modal region and diffuse region.
     //
     //    Previous versions derived this from the SSIR mixing time via a
     //    `1 / T_mix` heuristic, but that is dimensionally wrong: mixing
@@ -589,7 +638,7 @@ pub fn build_ssir_correction_weights(
     //    heuristic was broken by physics regardless of input.
     let ssir_boundary_freq = config.schroeder_freq;
 
-    // 3. Determine the time extent of early reflections for energy-based weighting.
+    // 4. Determine the time extent of early reflections for energy-based weighting.
     //    If SSIR detected many reflections, the early sound field is rich and
     //    position-dependent → lower correction weight above the modal region.
     //    If few reflections (dry room), we can correct more aggressively.
@@ -604,7 +653,7 @@ pub fn build_ssir_correction_weights(
         config.early_reflection_weight * 1.5_f64.min(1.0)
     };
 
-    // 4. Build per-frequency correction weights using the SSIR-derived boundary
+    // 5. Build per-frequency correction weights using the SSIR-derived boundary
     let mut weights = Array1::zeros(n);
 
     let boundary_log = ssir_boundary_freq.log2();
@@ -622,15 +671,21 @@ pub fn build_ssir_correction_weights(
             1.0 / (1.0 + (-x).exp())
         };
 
-        // Below boundary: early_reflection_weight (modal region)
-        // Above boundary: steady_state_weight (diffuse field)
-        let base_weight =
-            reflection_weight + (config.steady_state_weight - reflection_weight) * blend;
-
-        weights[i] = base_weight;
+        weights[i] = if let Some(fdw_depth) = &fdw_direct_energy_ratio {
+            // FDW turns "directness" into correction depth. A frequency whose
+            // energy is mostly inside the FDW gate can be corrected strongly;
+            // reflection-dominated frequencies are held near the early
+            // reflection floor. Room modes are still boosted below.
+            reflection_weight
+                + (config.mode_correction_weight - reflection_weight) * fdw_depth[i].clamp(0.0, 1.0)
+        } else {
+            // Below boundary: early_reflection_weight (modal region)
+            // Above boundary: steady_state_weight (diffuse field)
+            reflection_weight + (config.steady_state_weight - reflection_weight) * blend
+        };
     }
 
-    // 5. Boost weights at detected room mode frequencies (full correction)
+    // 6. Boost weights at detected room mode frequencies (full correction)
     for mode in &room_modes {
         let bandwidth = mode.frequency / mode.q;
         let f_low = mode.frequency - bandwidth / 2.0;
@@ -647,7 +702,154 @@ pub fn build_ssir_correction_weights(
         room_modes,
         correction_weights: weights,
         schroeder_freq: ssir_boundary_freq,
+        fdw_direct_energy_ratio,
+        fdw_magnitude_db,
     }
+}
+
+fn compute_fdw_curves(
+    freq: &Array1<f64>,
+    ssir_result: &math_rir::SsirResult,
+    impulse_response: Option<&[f32]>,
+    impulse_sample_rate: f64,
+    config: &DecomposedCorrectionConfig,
+) -> (Option<Array1<f64>>, Option<Array1<f64>>) {
+    if !config.fdw_enabled || freq.is_empty() {
+        return (None, None);
+    }
+    let Some(ir) = impulse_response else {
+        return (None, None);
+    };
+    if ir.is_empty() || impulse_sample_rate <= 0.0 {
+        return (None, None);
+    }
+
+    let min_freq = freq
+        .iter()
+        .copied()
+        .find(|f| *f > 0.0 && f.is_finite())
+        .unwrap_or(20.0);
+    let max_freq = freq
+        .iter()
+        .rev()
+        .copied()
+        .find(|f| *f > 0.0 && f.is_finite())
+        .unwrap_or(20_000.0);
+    if min_freq >= max_freq {
+        return (None, None);
+    }
+
+    let direct_sample = ssir_result
+        .direct_sound()
+        .map(|segment| segment.toa_sample)
+        .unwrap_or_else(|| {
+            ir.iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| {
+                    a.abs()
+                        .partial_cmp(&b.abs())
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .map(|(idx, _)| idx)
+                .unwrap_or(0)
+        });
+
+    let fdw_config = math_audio_dsp::FdwConfig {
+        num_points: freq.len().max(64),
+        min_freq_hz: min_freq as f32,
+        max_freq_hz: max_freq as f32,
+        cycles: config.fdw_cycles as f32,
+        min_window_ms: config.fdw_min_window_ms as f32,
+        max_window_ms: config.fdw_max_window_ms as f32,
+        smoothing_octaves: config.fdw_smoothing_octaves as f32,
+        ..Default::default()
+    };
+
+    let analysis = match math_audio_dsp::analyze_impulse_response_fdw(
+        ir,
+        impulse_sample_rate as f32,
+        Some(direct_sample),
+        &fdw_config,
+    ) {
+        Ok(analysis) => analysis,
+        Err(err) => {
+            log::debug!("  FDW analysis skipped: {err}");
+            return (None, None);
+        }
+    };
+
+    let direct_ratio = interpolate_fdw_to_grid(
+        &analysis.frequencies,
+        &analysis.direct_energy_ratio,
+        freq,
+        1.0,
+    )
+    .mapv(|v| v.clamp(0.0, 1.0));
+    let magnitude_db =
+        interpolate_fdw_to_grid(&analysis.frequencies, &analysis.magnitude_db, freq, -200.0);
+
+    let mean_depth = direct_ratio.iter().copied().sum::<f64>() / direct_ratio.len() as f64;
+    log::info!(
+        "  FDW analysis: direct sample={}, mean direct energy={:.2}, windows={:.1}-{:.1} ms",
+        analysis.direct_sound_sample,
+        mean_depth,
+        analysis
+            .window_ms
+            .iter()
+            .copied()
+            .fold(f32::INFINITY, f32::min),
+        analysis
+            .window_ms
+            .iter()
+            .copied()
+            .fold(f32::NEG_INFINITY, f32::max),
+    );
+
+    (Some(direct_ratio), Some(magnitude_db))
+}
+
+fn interpolate_fdw_to_grid(
+    src_freq: &[f32],
+    src_values: &[f32],
+    target_freq: &Array1<f64>,
+    fallback: f64,
+) -> Array1<f64> {
+    if src_freq.is_empty() || src_values.is_empty() || src_freq.len() != src_values.len() {
+        return Array1::from_elem(target_freq.len(), fallback);
+    }
+
+    let values: Vec<f64> = target_freq
+        .iter()
+        .map(|&target| {
+            if !target.is_finite() || target <= 0.0 {
+                return fallback;
+            }
+            if target <= src_freq[0] as f64 {
+                return src_values[0] as f64;
+            }
+            let last = src_freq.len() - 1;
+            if target >= src_freq[last] as f64 {
+                return src_values[last] as f64;
+            }
+
+            let idx = match src_freq.binary_search_by(|f| (*f as f64).partial_cmp(&target).unwrap())
+            {
+                Ok(i) => return src_values[i] as f64,
+                Err(i) => i,
+            };
+
+            let f0 = src_freq[idx - 1] as f64;
+            let f1 = src_freq[idx] as f64;
+            let denom = f1.ln() - f0.ln();
+            if denom.abs() <= 1e-12 {
+                return src_values[idx] as f64;
+            }
+            let t = ((target.ln() - f0.ln()) / denom).clamp(0.0, 1.0);
+            src_values[idx - 1] as f64 + t * (src_values[idx] as f64 - src_values[idx - 1] as f64)
+        })
+        .collect();
+
+    Array1::from_vec(values)
 }
 
 #[cfg(test)]
@@ -991,6 +1193,56 @@ mod tests {
         assert_eq!(config.mode_correction_weight, 1.0);
         assert_eq!(config.early_reflection_weight, 0.3);
         assert_eq!(config.transition_width_oct, 0.5);
+        assert!(config.fdw_enabled);
+        assert_eq!(config.fdw_cycles, 8.0);
+        assert_eq!(config.fdw_min_window_ms, 3.0);
+        assert_eq!(config.fdw_max_window_ms, 500.0);
+        assert_eq!(config.fdw_smoothing_octaves, 1.0 / 24.0);
+    }
+
+    #[test]
+    fn test_ssir_weights_use_fdw_direct_energy_ratio() {
+        let sample_rate = 48_000.0;
+        let mut ir = vec![0.0_f32; 8192];
+        ir[128] = 1.0;
+        ir[128 + (0.010 * sample_rate) as usize] = 0.8;
+
+        let ssir = math_rir::SsirResult {
+            segments: vec![math_rir::RirSegment {
+                onset_sample: 0,
+                end_sample: 128 + 192,
+                toa_sample: 128,
+                doa: None,
+                peak_energy: 1.0,
+                is_direct_sound: true,
+            }],
+            mixing_time_samples: (0.040 * sample_rate) as usize,
+            sample_rate,
+        };
+
+        let freq = Array1::from_vec(vec![80.0, 4000.0]);
+        let spl = Array1::from_elem(2, 80.0);
+        let config = DecomposedCorrectionConfig {
+            schroeder_freq: 200.0,
+            fdw_smoothing_octaves: 0.0,
+            ..Default::default()
+        };
+
+        let result =
+            build_ssir_correction_weights(&freq, &spl, &ssir, Some(&ir), sample_rate, &config);
+        let fdw = result
+            .fdw_direct_energy_ratio
+            .as_ref()
+            .expect("FDW direct energy ratio should be present");
+
+        assert!(
+            fdw[0] > fdw[1],
+            "bass should be more direct than HF when the reflection is outside the HF FDW gate"
+        );
+        assert!(
+            result.correction_weights[0] > result.correction_weights[1],
+            "FDW directness should drive correction depth"
+        );
     }
 
     // --- narrow-null detection ---

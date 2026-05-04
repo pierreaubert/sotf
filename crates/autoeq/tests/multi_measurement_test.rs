@@ -2,7 +2,9 @@
 
 use autoeq::LossType;
 use autoeq::cli::PeqModel;
-use autoeq::optim::{MultiObjectiveData, ObjectiveData, compute_base_fitness};
+use autoeq::optim::{
+    MultiObjectiveData, ObjectiveData, compute_base_fitness, compute_pareto_objectives,
+};
 use autoeq::roomeq::MultiMeasurementStrategy;
 use ndarray::{Array1, array};
 
@@ -139,6 +141,28 @@ fn minimax_returns_worst_case() {
         multi_loss,
         loss2
     );
+}
+
+#[test]
+fn pareto_objectives_return_per_measurement_losses() {
+    let obj1 = make_objective(array![1.0, 1.0, 1.0]);
+    let obj2 = make_objective(array![5.0, 5.0, 5.0]);
+    let x = zero_filters(1);
+    let loss1 = compute_base_fitness(&x, &obj1);
+    let loss2 = compute_base_fitness(&x, &obj2);
+
+    let mut primary = obj1.clone();
+    primary.multi_objective = Some(MultiObjectiveData {
+        objectives: vec![obj1, obj2],
+        strategy: MultiMeasurementStrategy::WeightedSum,
+        weights: vec![0.5, 0.5],
+        variance_lambda: 1.0,
+    });
+
+    let objectives = compute_pareto_objectives(&x, &primary);
+    assert_eq!(objectives.len(), 2);
+    assert!((objectives[0] - loss1).abs() < 1e-10);
+    assert!((objectives[1] - loss2).abs() < 1e-10);
 }
 
 #[test]

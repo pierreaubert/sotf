@@ -1662,6 +1662,21 @@ pub struct DecomposedCorrectionSerdeConfig {
     /// Correction weight for steady-state above Schroeder (0.0-1.0). Default: 0.4
     #[serde(default = "default_decomposed_steady_weight")]
     pub steady_state_weight: f64,
+    /// Enable Frequency-Dependent Windowing when `ssir_wav_path` provides an IR.
+    #[serde(default = "default_true")]
+    pub fdw_enabled: bool,
+    /// FDW window length in cycles before min/max clamping. Default: 8.0
+    #[serde(default = "default_fdw_cycles")]
+    pub fdw_cycles: f64,
+    /// Minimum FDW window length in milliseconds. Default: 3.0
+    #[serde(default = "default_fdw_min_window_ms")]
+    pub fdw_min_window_ms: f64,
+    /// Maximum FDW window length in milliseconds. Default: 500.0
+    #[serde(default = "default_fdw_max_window_ms")]
+    pub fdw_max_window_ms: f64,
+    /// FDW smoothing width in octaves. Default: 1/24 octave
+    #[serde(default = "default_fdw_smoothing_octaves")]
+    pub fdw_smoothing_octaves: f64,
 }
 
 fn default_decomposed_schroeder() -> f64 {
@@ -1682,6 +1697,18 @@ fn default_decomposed_reflection_weight() -> f64 {
 fn default_decomposed_steady_weight() -> f64 {
     0.4
 }
+fn default_fdw_cycles() -> f64 {
+    8.0
+}
+fn default_fdw_min_window_ms() -> f64 {
+    3.0
+}
+fn default_fdw_max_window_ms() -> f64 {
+    500.0
+}
+fn default_fdw_smoothing_octaves() -> f64 {
+    1.0 / 24.0
+}
 
 impl Default for DecomposedCorrectionSerdeConfig {
     fn default() -> Self {
@@ -1694,6 +1721,11 @@ impl Default for DecomposedCorrectionSerdeConfig {
             mode_correction_weight: default_decomposed_mode_weight(),
             early_reflection_weight: default_decomposed_reflection_weight(),
             steady_state_weight: default_decomposed_steady_weight(),
+            fdw_enabled: true,
+            fdw_cycles: default_fdw_cycles(),
+            fdw_min_window_ms: default_fdw_min_window_ms(),
+            fdw_max_window_ms: default_fdw_max_window_ms(),
+            fdw_smoothing_octaves: default_fdw_smoothing_octaves(),
         }
     }
 }
@@ -2302,6 +2334,11 @@ mod tests {
         assert_eq!(dc.min_mode_prominence_db, 3.0);
         assert_eq!(dc.mode_correction_weight, 1.0);
         assert_eq!(dc.early_reflection_weight, 0.3);
+        assert!(dc.fdw_enabled);
+        assert_eq!(dc.fdw_cycles, 8.0);
+        assert_eq!(dc.fdw_min_window_ms, 3.0);
+        assert_eq!(dc.fdw_max_window_ms, 500.0);
+        assert_eq!(dc.fdw_smoothing_octaves, 1.0 / 24.0);
     }
 
     #[test]

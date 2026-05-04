@@ -31,6 +31,13 @@ pub fn all_algorithms() -> Vec<Box<dyn FilterOptimizer>> {
     use super::isres::AutoeqIsresBackend;
     algos.push(Box::new(AutoeqIsresBackend::new("autoeq:isres")));
 
+    use super::cmaes::AutoeqCmaEsBackend;
+    algos.push(Box::new(AutoeqCmaEsBackend::new("autoeq:cmaes")));
+
+    use super::nsga::AutoeqNsgaBackend;
+    algos.push(Box::new(AutoeqNsgaBackend::new_nsga2("autoeq:nsga2")));
+    algos.push(Box::new(AutoeqNsgaBackend::new_nsga3("autoeq:nsga3")));
+
     use super::de::AutoeqDeBackend;
     algos.push(Box::new(AutoeqDeBackend::new("autoeq:de")));
 
@@ -94,6 +101,10 @@ pub fn resolve(name: &str) -> Option<Box<dyn FilterOptimizer>> {
         return Some(algos.swap_remove(idx));
     }
 
+    if let Some(alias) = canonical_alias(name) {
+        return resolve(alias);
+    }
+
     if let Some(replacement) = nlopt_deprecation_map(name) {
         warn_deprecated_once(name, replacement);
         // Re-enter resolve once with the replacement name. Bounded
@@ -102,6 +113,16 @@ pub fn resolve(name: &str) -> Option<Box<dyn FilterOptimizer>> {
     }
 
     None
+}
+
+fn canonical_alias(name: &str) -> Option<&'static str> {
+    let lower = name.to_lowercase();
+    match lower.as_str() {
+        "cma-es" | "cma_es" | "autoeq:cma-es" | "autoeq:cma_es" => Some("autoeq:cmaes"),
+        "nsga-ii" | "nsga_ii" | "autoeq:nsga-ii" | "autoeq:nsga_ii" => Some("autoeq:nsga2"),
+        "nsga-iii" | "nsga_iii" | "autoeq:nsga-iii" | "autoeq:nsga_iii" => Some("autoeq:nsga3"),
+        _ => None,
+    }
 }
 
 /// One-shot deprecation logger keyed by the removed name. Prevents log
