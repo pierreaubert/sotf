@@ -1663,6 +1663,185 @@ mod tests {
         }
     }
 
+    fn make_fdw_e2e_curve() -> Curve {
+        let n = 600;
+        let log_min = 20.0_f64.ln();
+        let log_max = 20_000.0_f64.ln();
+        let freqs: Vec<f64> = (0..n)
+            .map(|i| (log_min + (log_max - log_min) * i as f64 / (n - 1) as f64).exp())
+            .collect();
+        let spl: Vec<f64> = freqs
+            .iter()
+            .map(|&f| {
+                let modal_peak = 12.0 * (-((f.log2() - 80.0_f64.log2()).powi(2)) / 0.015).exp();
+                let hf_reflection_artifact =
+                    9.0 * (-((f.log2() - 4000.0_f64.log2()).powi(2)) / 0.025).exp();
+                80.0 + modal_peak + hf_reflection_artifact
+            })
+            .collect();
+
+        Curve {
+            freq: Array1::from_vec(freqs),
+            spl: Array1::from_vec(spl),
+            phase: None,
+            ..Default::default()
+        }
+    }
+
+    fn make_fdw_e2e_ir(sample_rate: u32) -> Vec<f32> {
+        let sr = sample_rate as f32;
+        let direct_sample = 128usize;
+        let len = (0.35 * sr) as usize;
+        let mut ir = vec![0.0_f32; len];
+        ir[direct_sample] = 1.0;
+
+        // Bass modal decay: long FDW windows should treat this as correctable
+        // low-frequency room energy rather than reject it like a late HF reflection.
+        let modal_len = (0.22 * sr) as usize;
+        for n in 0..modal_len {
+            let idx = direct_sample + n;
+            if idx >= ir.len() {
+                break;
+            }
+            let t = n as f32 / sr;
+            let envelope = (-t / 0.08).exp();
+            ir[idx] += 0.35 * envelope * (2.0 * std::f32::consts::PI * 80.0 * t).cos();
+        }
+
+        // High-frequency reflection at 10 ms: short HF FDW windows should
+        // reject this as separately perceived reflection energy.
+        let reflection_sample = direct_sample + (0.010 * sr) as usize;
+        ir[reflection_sample] += 0.8;
+
+        ir
+    }
+
+    fn write_mono_wav(samples: &[f32], sample_rate: u32) -> tempfile::NamedTempFile {
+        let temp_file = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate,
+            bits_per_sample: 32,
+            sample_format: hound::SampleFormat::Float,
+        };
+        let mut writer = hound::WavWriter::create(temp_file.path(), spec).unwrap();
+        for &sample in samples {
+            writer.write_sample(sample).unwrap();
+        }
+        writer.finalize().unwrap();
+        temp_file
+    }
+
+    fn fdw_e2e_config(ssir_wav_path: std::path::PathBuf, fdw_enabled: bool) -> OptimizerConfig {
+        OptimizerConfig {
+            psychoacoustic: false,
+            asymmetric_loss: false,
+            min_freq: 20.0,
+            max_freq: 20_000.0,
+            ssir_wav_path: Some(ssir_wav_path),
+            decomposed_correction: Some(DecomposedCorrectionSerdeConfig {
+                enabled: true,
+                schroeder_freq: 250.0,
+                min_mode_q: 2.0,
+                min_mode_prominence_db: 1.5,
+                mode_correction_weight: 1.0,
+                early_reflection_weight: 0.15,
+                steady_state_weight: 1.0,
+                fdw_enabled,
+                fdw_cycles: 8.0,
+                fdw_min_window_ms: 3.0,
+                fdw_max_window_ms: 500.0,
+                fdw_smoothing_octaves: 1.0 / 24.0,
+                ..Default::default()
+            }),
+            ..OptimizerConfig::default()
+        }
+    }
+
+    fn nearest_value(freqs: &Array1<f64>, values: &Array1<f64>, target: f64) -> f64 {
+        let idx = freqs
+            .iter()
+            .enumerate()
+            .min_by(|(_, a), (_, b)| {
+                (*a - target)
+                    .abs()
+                    .partial_cmp(&(*b - target).abs())
+                    .unwrap()
+            })
+            .map(|(idx, _)| idx)
+            .unwrap();
+        values[idx]
+    }
+
+    #[test]
+    fn fdw_e2e_downweights_hf_reflection_but_keeps_bass_mode() {
+        let sample_rate = 48_000;
+        let curve = make_fdw_e2e_curve();
+        let ir = make_fdw_e2e_ir(sample_rate);
+        let wav = write_mono_wav(&ir, sample_rate);
+
+        let fdw_on = fdw_e2e_config(wav.path().to_path_buf(), true);
+        let fdw_off = fdw_e2e_config(wav.path().to_path_buf(), false);
+
+        let prep_on = prepare_single_channel_eq(&curve, &fdw_on, None, sample_rate as f64)
+            .expect("FDW-enabled RoomEQ preparation should succeed");
+        let prep_off = prepare_single_channel_eq(&curve, &fdw_off, None, sample_rate as f64)
+            .expect("FDW-disabled RoomEQ preparation should succeed");
+
+        let bass_on = nearest_value(
+            &prep_on.objective_data.freqs,
+            &prep_on.objective_data.deviation,
+            80.0,
+        )
+        .abs();
+        let bass_off = nearest_value(
+            &prep_off.objective_data.freqs,
+            &prep_off.objective_data.deviation,
+            80.0,
+        )
+        .abs();
+        let hf_on = nearest_value(
+            &prep_on.objective_data.freqs,
+            &prep_on.objective_data.deviation,
+            4000.0,
+        )
+        .abs();
+        let hf_off = nearest_value(
+            &prep_off.objective_data.freqs,
+            &prep_off.objective_data.deviation,
+            4000.0,
+        )
+        .abs();
+
+        assert!(
+            hf_on < hf_off * 0.90,
+            "FDW should reduce the HF reflection-artifact correction: on={hf_on:.3}, off={hf_off:.3}"
+        );
+        assert!(
+            bass_on >= bass_off * 0.75,
+            "FDW should preserve bass/modal correction depth: on={bass_on:.3}, off={bass_off:.3}"
+        );
+
+        assert!(
+            prep_on
+                .objective_data
+                .detected_problems
+                .iter()
+                .any(|(freq, _, gain)| (*freq - 80.0).abs() < 15.0 && gain.abs() >= 1.0),
+            "FDW e2e path should still seed the bass room mode, got {:?}",
+            prep_on.objective_data.detected_problems,
+        );
+        assert!(
+            prep_on
+                .objective_data
+                .detected_problems
+                .iter()
+                .all(|(freq, _, _)| (*freq - 4000.0).abs() > 500.0),
+            "FDW e2e path should not seed the HF reflection artifact, got {:?}",
+            prep_on.objective_data.detected_problems,
+        );
+    }
+
     /// Regression test: refine step must run when config.refine=true.
     /// Bug: optimize_channel_eq_inner called optimize_filters directly,
     /// bypassing perform_optimization which contains the refine path.

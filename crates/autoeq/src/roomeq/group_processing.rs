@@ -64,8 +64,12 @@ pub(super) fn process_speaker_group(
     // 2. Sort drivers by mean frequency (Low to High)
     driver_curves.sort_by(|a, b| {
         let get_mean = |c: &Curve| {
-            let min_f = c.freq.iter().copied().fold(f64::INFINITY, f64::min);
-            let max_f = c.freq.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            let (passband, _) = detect_passband_and_mean(c);
+            let (min_f, max_f) = passband.unwrap_or_else(|| {
+                let min_f = c.freq.iter().copied().fold(f64::INFINITY, f64::min);
+                let max_f = c.freq.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+                (min_f, max_f)
+            });
             (min_f * max_f).sqrt()
         };
         get_mean(a)
