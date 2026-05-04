@@ -103,6 +103,7 @@ pub const MULTI_SEAT_STRATEGY_OPTIONS: &[(&str, &str)] = &[
     ("variance", "Minimize Variance"),
     ("primary", "Primary + Constraints"),
     ("average", "Average Response"),
+    ("modal_basis", "Modal Basis / SFM"),
 ];
 
 /// Algorithm options for optimization

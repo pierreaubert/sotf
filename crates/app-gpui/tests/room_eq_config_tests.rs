@@ -134,6 +134,25 @@ fn test_room_eq_to_room_config_advanced() {
 }
 
 #[test]
+fn test_room_eq_to_room_config_modal_basis_multiseat() {
+    let mut state = RoomEqState::default();
+    state.optimizer_config.multi_seat.enabled = true;
+    state.optimizer_config.multi_seat.strategy = "modal_basis".to_string();
+
+    let config = state.to_room_config();
+    let multi_seat = config
+        .optimizer
+        .multi_seat
+        .as_ref()
+        .expect("multi-seat config should be present");
+
+    assert_eq!(
+        multi_seat.strategy,
+        autoeq::roomeq::MultiSeatStrategy::ModalBasis
+    );
+}
+
+#[test]
 fn test_room_eq_validation() {
     let mut state = RoomEqState::default();
 

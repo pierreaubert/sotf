@@ -1490,6 +1490,7 @@ impl RoomEqOptimizerConfig {
                 autoeq::roomeq::MultiSeatStrategy::MinimizeVariance => "variance".to_string(),
                 autoeq::roomeq::MultiSeatStrategy::PrimaryWithConstraints => "primary".to_string(),
                 autoeq::roomeq::MultiSeatStrategy::Average => "average".to_string(),
+                autoeq::roomeq::MultiSeatStrategy::ModalBasis => "modal_basis".to_string(),
             };
             self.multi_seat.primary_seat = ms.primary_seat;
             self.multi_seat.max_deviation_db = ms.max_deviation_db;
@@ -1687,6 +1688,7 @@ impl RoomEqOptimizerConfig {
             let strategy = match self.multi_seat.strategy.as_str() {
                 "primary" => MultiSeatStrategy::PrimaryWithConstraints,
                 "average" => MultiSeatStrategy::Average,
+                "modal_basis" => MultiSeatStrategy::ModalBasis,
                 _ => MultiSeatStrategy::MinimizeVariance,
             };
             Some(BackendMultiSeatConfig {

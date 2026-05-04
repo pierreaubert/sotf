@@ -10,7 +10,7 @@
 
 use crate::Curve;
 use crate::loss::{CrossoverType, DriverMeasurement, DriversLossData};
-use log::warn;
+use log::{info, warn};
 use std::error::Error;
 
 use super::types::OptimizerConfig;
@@ -188,7 +188,7 @@ pub fn optimize_crossover(
     let sorted_inversions = best.inversions;
     let drivers_data = best.data; // Use the data that produced the best result (includes correct phases)
 
-    eprintln!(
+    info!(
         "  Optimizing crossover for {} drivers ({:?}){}",
         n_drivers,
         crossover_type,
@@ -215,7 +215,7 @@ pub fn optimize_crossover(
         ..Default::default()
     };
 
-    eprintln!(
+    info!(
         "  Crossover optimization: gains={:?}, delays={:?} ms, freqs={:?}, inverts={:?}, final loss={:.6}",
         result
             .gains

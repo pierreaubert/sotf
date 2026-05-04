@@ -7,6 +7,7 @@ use crate::Curve;
 use crate::error::{AutoeqError, Result};
 use log::{debug, info};
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
+use nalgebra::DMatrix;
 use ndarray::Array1;
 use num_complex::Complex64;
 use std::f64::consts::PI;
@@ -23,6 +24,10 @@ const MSO_EXTENSION_DEFICIT_ALLOWANCE_DB: f64 = 1.0;
 const MSO_EXTENSION_DEFICIT_WEIGHT: f64 = 1.25;
 const MSO_EXTENSION_MAX_HZ: f64 = 80.0;
 const MSO_EXTENSION_OCTAVES: f64 = 1.0;
+const SFM_MODAL_ENERGY_CUTOFF: f64 = 0.95;
+const SFM_MAX_MODES: usize = 8;
+const SFM_MODAL_LOSS_WEIGHT: f64 = 10.0;
+const SFM_EPS: f64 = 1e-12;
 
 /// Result of multi-seat optimization
 #[derive(Debug, Clone)]
@@ -212,7 +217,7 @@ pub fn optimize_multiseat(
     let initial_polarities = vec![false; measurements.num_subs];
     let initial_allpass_filters = vec![Vec::new(); measurements.num_subs];
 
-    let initial_responses = compute_combined_responses(
+    let initial_complex_responses = compute_combined_complex_responses(
         &interpolated,
         &freqs,
         &initial_gains,
@@ -223,16 +228,42 @@ pub fn optimize_multiseat(
         eval_min,
         eval_max,
     );
+    let initial_responses = spl_from_complex_responses(&initial_complex_responses);
     let variance_before = variance_from_responses(&initial_responses);
     let objective_context =
         MsoObjectiveContext::from_baseline_with_freqs(&initial_responses, Some(&freqs));
-    let objective_before = objective_from_responses(
-        &initial_responses,
-        config.strategy.clone(),
-        config.primary_seat,
-        config.max_deviation_db,
-        Some(&objective_context),
-    );
+    let modal_basis = if config.strategy == MultiSeatStrategy::ModalBasis {
+        let basis = build_modal_basis(&interpolated, &freqs, eval_min, eval_max);
+        if basis.modes.is_empty() {
+            return Err(AutoeqError::InvalidMeasurement {
+                message: "Modal-basis multi-seat optimization could not extract any non-common complex seat modes from the selected frequency range; check that each sub/seat measurement has valid phase and non-identical complex responses".to_string(),
+            });
+        }
+        info!(
+            "  Modal-basis SFM retained {} modes ({:.1}% snapshot energy)",
+            basis.modes.len(),
+            basis.retained_energy * 100.0
+        );
+        Some(basis)
+    } else {
+        None
+    };
+    let objective_before = if let Some(basis) = modal_basis.as_ref() {
+        modal_basis_objective_from_responses(
+            &initial_complex_responses,
+            &initial_responses,
+            basis,
+            &objective_context,
+        )
+    } else {
+        objective_from_responses(
+            &initial_responses,
+            config.strategy.clone(),
+            config.primary_seat,
+            config.max_deviation_db,
+            Some(&objective_context),
+        )
+    };
 
     info!(
         "  Initial variance across {} seats: {:.2} dB",
@@ -274,9 +305,22 @@ pub fn optimize_multiseat(
                 eval_max,
                 &objective_context,
             ),
+            MultiSeatStrategy::ModalBasis => optimize_modal_basis(
+                &interpolated,
+                &freqs,
+                measurements.num_subs,
+                config,
+                sample_rate,
+                eval_min,
+                eval_max,
+                modal_basis
+                    .as_ref()
+                    .expect("modal basis is built before modal-basis optimization"),
+                &objective_context,
+            ),
         };
 
-    let final_responses = compute_combined_responses(
+    let final_complex_responses = compute_combined_complex_responses(
         &interpolated,
         &freqs,
         &optimal_gains,
@@ -287,14 +331,24 @@ pub fn optimize_multiseat(
         eval_min,
         eval_max,
     );
+    let final_responses = spl_from_complex_responses(&final_complex_responses);
     let variance_after = variance_from_responses(&final_responses);
-    let objective_after = objective_from_responses(
-        &final_responses,
-        config.strategy.clone(),
-        config.primary_seat,
-        config.max_deviation_db,
-        Some(&objective_context),
-    );
+    let objective_after = if let Some(basis) = modal_basis.as_ref() {
+        modal_basis_objective_from_responses(
+            &final_complex_responses,
+            &final_responses,
+            basis,
+            &objective_context,
+        )
+    } else {
+        objective_from_responses(
+            &final_responses,
+            config.strategy.clone(),
+            config.primary_seat,
+            config.max_deviation_db,
+            Some(&objective_context),
+        )
+    };
 
     let objective_improvement_db = objective_before - objective_after;
     let variance_improvement_db = variance_before - variance_after;
@@ -447,8 +501,33 @@ fn compute_combined_responses(
     min_freq: f64,
     max_freq: f64,
 ) -> Vec<Vec<f64>> {
+    let complex = compute_combined_complex_responses(
+        interpolated,
+        freqs,
+        gains,
+        delays,
+        polarities,
+        allpass_filters,
+        sample_rate,
+        min_freq,
+        max_freq,
+    );
+    spl_from_complex_responses(&complex)
+}
+
+fn compute_combined_complex_responses(
+    interpolated: &[Vec<Vec<Complex64>>], // [sub][seat][freq]
+    freqs: &Array1<f64>,
+    gains: &[f64],
+    delays: &[f64],
+    polarities: &[bool],
+    allpass_filters: &[Vec<(f64, f64)>],
+    sample_rate: f64,
+    min_freq: f64,
+    max_freq: f64,
+) -> Vec<Vec<Complex64>> {
     let num_seats = interpolated[0].len();
-    let mut seat_responses: Vec<Vec<f64>> = Vec::with_capacity(num_seats);
+    let mut seat_responses: Vec<Vec<Complex64>> = Vec::with_capacity(num_seats);
     let allpass_biquads: Vec<Vec<Biquad>> = allpass_filters
         .iter()
         .map(|filters| {
@@ -460,7 +539,7 @@ fn compute_combined_responses(
         .collect();
 
     for seat_idx in 0..num_seats {
-        let mut combined_spl = Vec::new();
+        let mut combined_response = Vec::new();
 
         for (freq_idx, &f) in freqs.iter().enumerate() {
             if f < min_freq || f > max_freq {
@@ -497,13 +576,24 @@ fn compute_combined_responses(
                     * allpass_phase;
             }
 
-            combined_spl.push(20.0 * combined.norm().max(1e-12).log10());
+            combined_response.push(combined);
         }
 
-        seat_responses.push(combined_spl);
+        seat_responses.push(combined_response);
     }
 
     seat_responses
+}
+
+fn spl_from_complex_responses(responses: &[Vec<Complex64>]) -> Vec<Vec<f64>> {
+    responses
+        .iter()
+        .map(|seat| {
+            seat.iter()
+                .map(|response| 20.0 * response.norm().max(SFM_EPS).log10())
+                .collect()
+        })
+        .collect()
 }
 
 fn allpass_complex_response(biquad: &Biquad, freq_hz: f64) -> Complex64 {
@@ -516,6 +606,191 @@ fn allpass_complex_response(biquad: &Biquad, freq_hz: f64) -> Complex64 {
     let denominator = 1.0 + a1 * z_inv + a2 * z_inv2;
 
     numerator / denominator
+}
+
+// ============================================================================
+// Complex modal-basis SFM
+// ============================================================================
+
+#[derive(Debug, Clone)]
+struct ModalBasis {
+    modes: Vec<Vec<Complex64>>,
+    #[cfg(test)]
+    singular_values: Vec<f64>,
+    retained_energy: f64,
+}
+
+fn build_modal_basis(
+    interpolated: &[Vec<Vec<Complex64>>],
+    freqs: &Array1<f64>,
+    min_freq: f64,
+    max_freq: f64,
+) -> ModalBasis {
+    let num_subs = interpolated.len();
+    let num_seats = interpolated.first().map(|sub| sub.len()).unwrap_or(0);
+    let max_modes = modal_basis_mode_cap(num_seats, num_subs);
+    if max_modes == 0 {
+        return empty_modal_basis();
+    }
+
+    let mut snapshots = Vec::new();
+    let mut snapshot_count = 0usize;
+
+    for (freq_idx, &freq) in freqs.iter().enumerate() {
+        if freq < min_freq || freq > max_freq {
+            continue;
+        }
+
+        for sub_data in interpolated {
+            let mut snapshot: Vec<Complex64> = (0..num_seats)
+                .map(|seat_idx| sub_data[seat_idx][freq_idx])
+                .collect();
+            let seat_mean = snapshot.iter().copied().sum::<Complex64>() / num_seats as f64;
+            for value in &mut snapshot {
+                *value -= seat_mean;
+            }
+
+            let norm_sq = snapshot.iter().map(|value| value.norm_sqr()).sum::<f64>();
+            if norm_sq <= SFM_EPS {
+                continue;
+            }
+
+            let norm = norm_sq.sqrt();
+            snapshots.extend(snapshot.into_iter().map(|value| value / norm));
+            snapshot_count += 1;
+        }
+    }
+
+    if snapshot_count == 0 {
+        return empty_modal_basis();
+    }
+
+    let matrix = DMatrix::from_column_slice(num_seats, snapshot_count, &snapshots);
+    let svd = matrix.svd(true, false);
+    let singular_values: Vec<f64> = svd.singular_values.iter().copied().collect();
+    let mode_count = select_modal_mode_count(&singular_values, SFM_MODAL_ENERGY_CUTOFF, max_modes);
+    let retained_energy = retained_modal_energy(&singular_values, mode_count);
+    let modes = svd
+        .u
+        .map(|u| {
+            (0..mode_count)
+                .map(|mode_idx| {
+                    (0..num_seats)
+                        .map(|seat_idx| u[(seat_idx, mode_idx)])
+                        .collect()
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    ModalBasis {
+        modes,
+        #[cfg(test)]
+        singular_values,
+        retained_energy,
+    }
+}
+
+fn empty_modal_basis() -> ModalBasis {
+    ModalBasis {
+        modes: Vec::new(),
+        #[cfg(test)]
+        singular_values: Vec::new(),
+        retained_energy: 0.0,
+    }
+}
+
+fn modal_basis_mode_cap(num_seats: usize, num_subs: usize) -> usize {
+    num_seats.saturating_sub(1).min(num_subs).min(SFM_MAX_MODES)
+}
+
+fn select_modal_mode_count(singular_values: &[f64], energy_cutoff: f64, max_modes: usize) -> usize {
+    if max_modes == 0 {
+        return 0;
+    }
+
+    let total_energy = singular_values
+        .iter()
+        .map(|value| value * value)
+        .sum::<f64>();
+    if total_energy <= SFM_EPS {
+        return 0;
+    }
+
+    let mut cumulative_energy = 0.0;
+    for (idx, singular_value) in singular_values.iter().take(max_modes).enumerate() {
+        cumulative_energy += singular_value * singular_value;
+        if cumulative_energy / total_energy >= energy_cutoff {
+            return idx + 1;
+        }
+    }
+
+    singular_values.len().min(max_modes)
+}
+
+fn retained_modal_energy(singular_values: &[f64], mode_count: usize) -> f64 {
+    let total_energy = singular_values
+        .iter()
+        .map(|value| value * value)
+        .sum::<f64>();
+    if total_energy <= SFM_EPS {
+        return 0.0;
+    }
+
+    singular_values
+        .iter()
+        .take(mode_count)
+        .map(|value| value * value)
+        .sum::<f64>()
+        / total_energy
+}
+
+fn modal_projection_loss(responses: &[Vec<Complex64>], basis: &ModalBasis) -> f64 {
+    if basis.modes.is_empty() || responses.is_empty() || responses[0].is_empty() {
+        return 0.0;
+    }
+
+    let num_seats = responses.len();
+    let num_freqs = responses[0].len();
+    let mut total = 0.0;
+
+    for freq_idx in 0..num_freqs {
+        let seat_mean = responses
+            .iter()
+            .map(|seat| seat[freq_idx])
+            .sum::<Complex64>()
+            / num_seats as f64;
+        let total_power = responses
+            .iter()
+            .map(|seat| seat[freq_idx].norm_sqr())
+            .sum::<f64>()
+            .max(SFM_EPS);
+
+        let mut modal_power = 0.0;
+        for mode in &basis.modes {
+            let coefficient = mode
+                .iter()
+                .zip(responses.iter())
+                .map(|(mode_value, seat)| mode_value.conj() * (seat[freq_idx] - seat_mean))
+                .sum::<Complex64>();
+            modal_power += coefficient.norm_sqr();
+        }
+
+        let ratio = (modal_power / total_power).max(0.0);
+        total += 10.0 * (1.0 + ratio).log10();
+    }
+
+    total / num_freqs as f64
+}
+
+fn modal_basis_objective_from_responses(
+    complex_responses: &[Vec<Complex64>],
+    spl_responses: &[Vec<f64>],
+    basis: &ModalBasis,
+    context: &MsoObjectiveContext,
+) -> f64 {
+    SFM_MODAL_LOSS_WEIGHT * modal_projection_loss(complex_responses, basis)
+        + mso_resource_penalty(spl_responses, context)
 }
 
 // ============================================================================
@@ -762,6 +1037,7 @@ fn objective_name(strategy: MultiSeatStrategy) -> &'static str {
         MultiSeatStrategy::MinimizeVariance => "seat_variance",
         MultiSeatStrategy::Average => "average_flatness",
         MultiSeatStrategy::PrimaryWithConstraints => "primary_constrained",
+        MultiSeatStrategy::ModalBasis => "modal_basis",
     }
 }
 
@@ -780,6 +1056,9 @@ fn objective_from_responses(
         MultiSeatStrategy::PrimaryWithConstraints => {
             primary_constrained_from_responses(responses, primary_seat, max_deviation_db, context)
         }
+        MultiSeatStrategy::ModalBasis => context
+            .map(|ctx| mso_resource_penalty(responses, ctx))
+            .unwrap_or_else(|| variance_from_responses(responses)),
     }
 }
 
@@ -1161,6 +1440,45 @@ fn optimize_primary_with_constraints(
     )
 }
 
+/// Optimize a complex modal-basis SFM objective.
+///
+/// The modal term suppresses non-common complex seat-pressure components
+/// projected onto the dominant room modes extracted from the per-sub/per-seat
+/// transfer matrix. Resource penalties preserve output, extension, and
+/// headroom so the optimizer cannot win by simply reducing bass energy.
+fn optimize_modal_basis(
+    interpolated: &[Vec<Vec<Complex64>>],
+    freqs: &Array1<f64>,
+    num_subs: usize,
+    config: &MultiSeatConfig,
+    sample_rate: f64,
+    min_freq: f64,
+    max_freq: f64,
+    basis: &ModalBasis,
+    objective_context: &MsoObjectiveContext,
+) -> MsoSolution {
+    let options = MsoSearchOptions::from_config(config, min_freq, max_freq);
+    optimize_continuous_mso(
+        num_subs,
+        options,
+        &|gains, delays, polarities, allpass_filters| {
+            let complex = compute_combined_complex_responses(
+                interpolated,
+                freqs,
+                gains,
+                delays,
+                polarities,
+                allpass_filters,
+                sample_rate,
+                min_freq,
+                max_freq,
+            );
+            let spl = spl_from_complex_responses(&complex);
+            modal_basis_objective_from_responses(&complex, &spl, basis, objective_context)
+        },
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1441,6 +1759,108 @@ mod tests {
     }
 
     #[test]
+    fn test_modal_mode_count_uses_energy_cutoff_and_cap() {
+        assert_eq!(select_modal_mode_count(&[], 0.95, 8), 0);
+        assert_eq!(select_modal_mode_count(&[10.0, 1.0, 1.0], 0.95, 8), 1);
+        assert_eq!(select_modal_mode_count(&[3.0, 2.0, 1.0], 0.95, 2), 2);
+        assert_eq!(select_modal_mode_count(&[3.0, 2.0, 1.0], 0.95, 0), 0);
+    }
+
+    #[test]
+    fn test_modal_projection_loss_prefers_uniform_pressure() {
+        let inv_sqrt_2 = 1.0 / 2.0_f64.sqrt();
+        let basis = ModalBasis {
+            modes: vec![vec![
+                Complex64::new(inv_sqrt_2, 0.0),
+                Complex64::new(-inv_sqrt_2, 0.0),
+            ]],
+            singular_values: vec![1.0],
+            retained_energy: 1.0,
+        };
+
+        let uniform = vec![
+            vec![Complex64::new(2.0, 0.0), Complex64::new(3.0, 0.0)],
+            vec![Complex64::new(2.0, 0.0), Complex64::new(3.0, 0.0)],
+        ];
+        let nonuniform = vec![
+            vec![Complex64::new(3.0, 0.0), Complex64::new(4.0, 0.0)],
+            vec![Complex64::new(1.0, 0.0), Complex64::new(2.0, 0.0)],
+        ];
+
+        let uniform_loss = modal_projection_loss(&uniform, &basis);
+        let nonuniform_loss = modal_projection_loss(&nonuniform, &basis);
+
+        assert!(uniform_loss < 1e-9, "uniform loss was {uniform_loss}");
+        assert!(
+            nonuniform_loss > uniform_loss + 0.5,
+            "non-uniform pressure should project onto the retained mode; uniform={uniform_loss}, nonuniform={nonuniform_loss}"
+        );
+    }
+
+    #[test]
+    fn test_modal_basis_extraction_uses_complex_snapshots() {
+        let measurements = vec![
+            vec![
+                create_test_curve(0.0, 0.0),
+                create_test_curve(2.0, 35.0),
+                create_test_curve(-1.0, -25.0),
+            ],
+            vec![
+                create_test_curve(-2.0, 90.0),
+                create_test_curve(1.0, -70.0),
+                create_test_curve(3.0, 120.0),
+            ],
+        ];
+        let ms = MultiSeatMeasurements::new(measurements).expect("Should create");
+        let freqs = create_eval_frequency_grid(&ms, 20.0, 120.0);
+        let interpolated = interpolate_all_measurements(&ms, &freqs).expect("Should interpolate");
+
+        let basis = build_modal_basis(&interpolated, &freqs, 20.0, 120.0);
+
+        assert!(
+            !basis.modes.is_empty(),
+            "expected at least one modal basis vector"
+        );
+        assert!(basis.modes.len() <= modal_basis_mode_cap(ms.num_seats, ms.num_subs));
+        assert!(!basis.singular_values.is_empty());
+        assert!(basis.retained_energy > 0.0);
+    }
+
+    #[test]
+    fn test_modal_basis_strategy_runs() {
+        let measurements = vec![
+            vec![
+                create_test_curve(0.0, 0.0),
+                create_test_curve(3.0, 20.0),
+                create_test_curve(-2.0, -30.0),
+            ],
+            vec![
+                create_test_curve(0.0, 80.0),
+                create_test_curve(-2.0, 130.0),
+                create_test_curve(2.0, -90.0),
+            ],
+        ];
+        let ms = MultiSeatMeasurements::new(measurements).expect("Should create");
+        let config = MultiSeatConfig {
+            enabled: true,
+            strategy: MultiSeatStrategy::ModalBasis,
+            ..Default::default()
+        };
+
+        let result =
+            optimize_multiseat(&ms, &config, (20.0, 120.0), 48000.0).expect("Should optimize");
+
+        assert_eq!(result.gains.len(), 2);
+        assert_eq!(result.delays.len(), 2);
+        assert_eq!(result.gains[0], 0.0);
+        assert_eq!(result.delays[0], 0.0);
+        assert_eq!(result.strategy, MultiSeatStrategy::ModalBasis);
+        assert_eq!(result.objective_name, "modal_basis");
+        assert!(result.objective_before.is_finite());
+        assert!(result.objective_after.is_finite());
+    }
+
+    #[test]
     fn test_average_objective_rejects_output_collapse() {
         let baseline = vec![vec![90.0, 90.0, 90.0], vec![90.0, 90.0, 90.0]];
         let collapsed_but_flat = vec![vec![78.0, 78.0, 78.0], vec![78.0, 78.0, 78.0]];
@@ -1514,7 +1934,10 @@ mod tests {
         let fine_ctx = MsoObjectiveContext::from_baseline(&fine_baseline);
         let fine = headroom_pressure_penalty(&fine_candidate, &fine_ctx);
 
-        assert!(coarse > 0.0, "expected non-zero headroom penalty on coarse grid");
+        assert!(
+            coarse > 0.0,
+            "expected non-zero headroom penalty on coarse grid"
+        );
         assert!(
             (coarse - fine).abs() < 1e-9,
             "headroom penalty should be grid-density independent; got coarse={coarse}, fine={fine}"
@@ -1536,7 +1959,10 @@ mod tests {
         let fine_ctx = MsoObjectiveContext::from_baseline(&fine_baseline);
         let fine = null_deficit_penalty_from_responses(&fine_candidate, &fine_ctx);
 
-        assert!(coarse > 0.0, "expected non-zero null-deficit penalty on coarse grid");
+        assert!(
+            coarse > 0.0,
+            "expected non-zero null-deficit penalty on coarse grid"
+        );
         assert!(
             (coarse - fine).abs() < 1e-9,
             "null-deficit penalty should be grid-density independent; got coarse={coarse}, fine={fine}"
@@ -1562,7 +1988,10 @@ mod tests {
             MsoObjectiveContext::from_baseline_with_freqs(&fine_baseline, Some(&fine_freqs));
         let fine = extension_preservation_penalty(&fine_candidate, &fine_ctx);
 
-        assert!(coarse > 0.0, "expected non-zero extension penalty on coarse grid");
+        assert!(
+            coarse > 0.0,
+            "expected non-zero extension penalty on coarse grid"
+        );
         assert!(
             (coarse - fine).abs() < 1e-9,
             "extension penalty should be grid-density independent; got coarse={coarse}, fine={fine}"
