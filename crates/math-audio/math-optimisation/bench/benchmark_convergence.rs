@@ -1,5 +1,8 @@
 use clap::{Arg, Command};
-use math_audio_optimisation::{DEConfigBuilder, Strategy, run_recorded_differential_evolution};
+use math_audio_optimisation::{
+    CmaEsConfig, DEConfigBuilder, LShadeConfig, Strategy, cma_es,
+    run_recorded_differential_evolution,
+};
 use math_audio_test_functions::*;
 use ndarray::Array1;
 use std::collections::HashMap;
@@ -346,8 +349,8 @@ struct BenchmarkConfig {
 
 /// Generate benchmark configurations for all test functions
 #[allow(clippy::vec_init_then_push)]
-fn generate_all_benchmarks() -> HashMap<String, Box<dyn Fn() -> BenchmarkResult>> {
-    let mut benchmarks: HashMap<String, Box<dyn Fn() -> BenchmarkResult>> = HashMap::new();
+fn generate_all_benchmarks() -> HashMap<String, Box<dyn Fn() -> BenchmarkComparison>> {
+    let mut benchmarks: HashMap<String, Box<dyn Fn() -> BenchmarkComparison>> = HashMap::new();
     let _metadata = get_function_metadata();
 
     // Custom configurations for specific functions
@@ -1733,69 +1736,61 @@ fn generate_all_benchmarks() -> HashMap<String, Box<dyn Fn() -> BenchmarkResult>
         let config_clone = config.clone();
         benchmarks.insert(
             config.name.clone(),
-            Box::new(move || {
-                if let Some(function) = FUNCTION_REGISTRY.get(&config_clone.function_name) {
-                    let config = match DEConfigBuilder::new()
-                        .seed(config_clone.seed)
-                        .maxiter(config_clone.maxiter)
-                        .popsize(config_clone.popsize)
-                        .strategy(config_clone.strategy)
-                        .recombination(config_clone.recombination)
-                        .build()
-                    {
-                        Ok(cfg) => cfg,
-                        Err(e) => {
-                            return BenchmarkResult {
-                                name: config_clone.name.clone(),
-                                success: false,
-                                fun_value: f64::INFINITY,
-                                fun_tolerance: config_clone.fun_tolerance,
-                                position_errors: vec![f64::INFINITY],
-                                position_tolerance: config_clone.position_tolerance,
-                                duration: Duration::from_secs(0),
-                                error_message: Some(format!("Config error: {}", e)),
-                            };
-                        }
-                    };
-                    run_benchmark(
-                        &config_clone.name,
-                        function,
-                        config_clone.bounds.clone(),
-                        config,
-                        config_clone.fun_tolerance,
-                        config_clone.expected_optimum.clone(),
-                        config_clone.position_tolerance,
-                    )
-                } else {
-                    BenchmarkResult {
-                        name: config_clone.name.clone(),
-                        success: false,
-                        fun_value: f64::INFINITY,
-                        fun_tolerance: config_clone.fun_tolerance,
-                        position_errors: vec![f64::INFINITY],
-                        position_tolerance: config_clone.position_tolerance,
-                        duration: Duration::from_secs(0),
-                        error_message: Some(format!(
-                            "Function {} not found in registry",
-                            config_clone.function_name
-                        )),
-                    }
-                }
-            }),
+            Box::new(move || run_benchmark_comparison(&config_clone)),
         );
     }
 
     benchmarks
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OptimizerKind {
+    De,
+    CmaEs,
+}
+
+impl OptimizerKind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::De => "L-SHADE",
+            Self::CmaEs => "CMA-ES",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct BenchmarkComparison {
+    name: String,
+    de: BenchmarkResult,
+    cmaes: BenchmarkResult,
+}
+
+struct OptimizerOutcome {
+    x: Array1<f64>,
+    fun: f64,
+    nfev: usize,
+}
+
+impl BenchmarkComparison {
+    fn cmaes_minus_de(&self) -> Option<f64> {
+        finite_diff(Some(self.cmaes.fun_value), Some(self.de.fun_value))
+    }
+
+    fn has_failure(&self) -> bool {
+        !self.de.success || !self.cmaes.success
+    }
+}
+
 #[derive(Debug, Clone)]
 struct BenchmarkResult {
     name: String,
+    optimizer: OptimizerKind,
     success: bool,
     fun_value: f64,
     fun_tolerance: f64,
     position_errors: Vec<f64>,
     position_tolerance: f64,
+    nfev: usize,
     duration: Duration,
     error_message: Option<String>,
 }
@@ -1805,13 +1800,15 @@ impl fmt::Display for BenchmarkResult {
         let status = if self.success { "✅ PASS" } else { "❌ FAIL" };
         write!(
             f,
-            "{} {} (fun: {:.6e} < {:.2e}, pos_errs: max {:.6} < {:.2}, time: {:.2}s)",
+            "{} {:<6} {} (fun: {:.6e} < {:.2e}, pos_errs: max {:.6} < {:.2}, nfev: {}, time: {:.2}s)",
             status,
+            self.optimizer.label(),
             self.name,
             self.fun_value,
             self.fun_tolerance,
             self.position_errors.iter().fold(0.0f64, |a, &b| a.max(b)),
             self.position_tolerance,
+            self.nfev,
             self.duration.as_secs_f64()
         )?;
         if let Some(ref err) = self.error_message {
@@ -1821,77 +1818,342 @@ impl fmt::Display for BenchmarkResult {
     }
 }
 
-/// Run a benchmark with the given parameters and validate results
-fn run_benchmark(
-    name: &str,
+fn run_benchmark_comparison(config: &BenchmarkConfig) -> BenchmarkComparison {
+    let Some(function) = FUNCTION_REGISTRY.get(&config.function_name) else {
+        let message = format!("Function {} not found in registry", config.function_name);
+        return BenchmarkComparison {
+            name: config.name.clone(),
+            de: failed_result(
+                config,
+                OptimizerKind::De,
+                Duration::from_secs(0),
+                message.clone(),
+            ),
+            cmaes: failed_result(
+                config,
+                OptimizerKind::CmaEs,
+                Duration::from_secs(0),
+                message,
+            ),
+        };
+    };
+
+    let de = match build_de_config(config) {
+        Ok(de_config) => run_de_benchmark(config, function, de_config),
+        Err(e) => failed_result(
+            config,
+            OptimizerKind::De,
+            Duration::from_secs(0),
+            format!("Config error: {}", e),
+        ),
+    };
+    let cmaes = run_cmaes_benchmark(config, function);
+
+    BenchmarkComparison {
+        name: config.name.clone(),
+        de,
+        cmaes,
+    }
+}
+
+fn build_de_config(
+    config: &BenchmarkConfig,
+) -> Result<math_audio_optimisation::DEConfig, Box<dyn std::error::Error>> {
+    Ok(DEConfigBuilder::new()
+        .seed(config.seed)
+        .maxiter(config.maxiter)
+        .popsize(config.popsize)
+        .strategy(lshade_strategy(config))
+        .recombination(config.recombination)
+        .lshade(LShadeConfig::default())
+        .build()?)
+}
+
+fn lshade_strategy(config: &BenchmarkConfig) -> Strategy {
+    if matches!(
+        config.strategy,
+        Strategy::Best1Exp
+            | Strategy::Rand1Exp
+            | Strategy::Rand2Exp
+            | Strategy::CurrentToBest1Exp
+            | Strategy::Best2Exp
+            | Strategy::RandToBest1Exp
+            | Strategy::AdaptiveExp
+            | Strategy::LShadeExp
+    ) {
+        Strategy::LShadeExp
+    } else {
+        Strategy::LShadeBin
+    }
+}
+
+/// Run a DE benchmark with the given parameters and validate results.
+fn run_de_benchmark(
+    config: &BenchmarkConfig,
     function: fn(&Array1<f64>) -> f64,
-    bounds: Vec<(f64, f64)>,
-    config: math_audio_optimisation::DEConfig,
-    fun_tolerance: f64,
-    expected_optimum: Vec<f64>,
-    position_tolerance: f64,
+    de_config: math_audio_optimisation::DEConfig,
 ) -> BenchmarkResult {
     let start_time = Instant::now();
 
-    let result = run_recorded_differential_evolution(name, function, &bounds, config);
+    let result =
+        run_recorded_differential_evolution(&config.name, function, &config.bounds, de_config);
     let duration = start_time.elapsed();
 
     match result {
-        Ok((report, _csv_path)) => {
-            let fun_ok = report.fun < fun_tolerance;
-
-            let position_errors: Vec<f64> = report
-                .x
-                .iter()
-                .zip(expected_optimum.iter())
-                .map(|(actual, expected)| (actual - expected).abs())
-                .collect();
-
-            let position_ok = position_errors.iter().all(|&err| err < position_tolerance);
-
-            let success = fun_ok && position_ok;
-            let error_message = if !success {
-                let mut msgs = Vec::new();
-                if !fun_ok {
-                    msgs.push(format!(
-                        "fun value {:.6e} >= {:.2e}",
-                        report.fun, fun_tolerance
-                    ));
-                }
-                if !position_ok {
-                    let max_err = position_errors.iter().fold(0.0f64, |a, &b| a.max(b));
-                    msgs.push(format!(
-                        "max position error {:.6} >= {:.2}",
-                        max_err, position_tolerance
-                    ));
-                }
-                Some(msgs.join(", "))
-            } else {
-                None
-            };
-
-            BenchmarkResult {
-                name: name.to_string(),
-                success,
-                fun_value: report.fun,
-                fun_tolerance,
-                position_errors,
-                position_tolerance,
-                duration,
-                error_message,
-            }
-        }
-        Err(e) => BenchmarkResult {
-            name: name.to_string(),
-            success: false,
-            fun_value: f64::INFINITY,
-            fun_tolerance,
-            position_errors: vec![f64::INFINITY],
-            position_tolerance,
+        Ok((report, _csv_path)) => validate_solution(
+            config,
+            OptimizerKind::De,
+            &report.x,
+            report.fun,
+            report.nfev,
             duration,
-            error_message: Some(format!("Optimization failed: {}", e)),
-        },
+        ),
+        Err(e) => failed_result(
+            config,
+            OptimizerKind::De,
+            duration,
+            format!("Optimization failed: {}", e),
+        ),
     }
+}
+
+/// Run a CMA-ES benchmark against the same evaluation budget as the DE config.
+fn run_cmaes_benchmark(
+    config: &BenchmarkConfig,
+    function: fn(&Array1<f64>) -> f64,
+) -> BenchmarkResult {
+    let start_time = Instant::now();
+    let result = run_budgeted_cmaes(config, function);
+    let duration = start_time.elapsed();
+
+    match result {
+        Ok(outcome) => validate_solution(
+            config,
+            OptimizerKind::CmaEs,
+            &outcome.x,
+            outcome.fun,
+            outcome.nfev,
+            duration,
+        ),
+        Err(e) => failed_result(
+            config,
+            OptimizerKind::CmaEs,
+            duration,
+            format!("Optimization failed: {e}"),
+        ),
+    }
+}
+
+fn run_budgeted_cmaes(
+    config: &BenchmarkConfig,
+    function: fn(&Array1<f64>) -> f64,
+) -> Result<OptimizerOutcome, String> {
+    let mut remaining = cmaes_eval_budget(config);
+    let mut total_nfev = 0usize;
+    let mut restart = 0usize;
+    let mut best_x = None;
+    let mut best_fun = f64::INFINITY;
+
+    while remaining > 0 {
+        let cmaes_config = CmaEsConfig {
+            bounds: config.bounds.clone(),
+            maxeval: remaining,
+            seed: Some(cmaes_restart_seed(config.seed, restart)),
+            target_f: config.fun_tolerance,
+            ..Default::default()
+        };
+
+        let report = cma_es(&function, cmaes_config).map_err(|e| format!("{e}"))?;
+        let consumed = report.nfev.max(1);
+        total_nfev = total_nfev.saturating_add(report.nfev);
+        remaining = remaining.saturating_sub(consumed);
+
+        if report.fun < best_fun {
+            best_fun = report.fun;
+            best_x = Some(report.x.clone());
+        }
+        if solution_within_tolerances(config, &report.x, report.fun) {
+            break;
+        }
+
+        restart = restart.saturating_add(1);
+    }
+
+    let Some(x) = best_x else {
+        return Err("CMA-ES produced no result".to_string());
+    };
+
+    Ok(OptimizerOutcome {
+        x,
+        fun: best_fun,
+        nfev: total_nfev,
+    })
+}
+
+fn cmaes_eval_budget(config: &BenchmarkConfig) -> usize {
+    let dim = config.bounds.len().max(1);
+    config
+        .maxiter
+        .saturating_add(1)
+        .saturating_mul(config.popsize)
+        .saturating_mul(dim)
+        .max(4)
+}
+
+fn cmaes_restart_seed(seed: u64, restart: usize) -> u64 {
+    seed.wrapping_add((restart as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15))
+}
+
+fn solution_within_tolerances(config: &BenchmarkConfig, x: &Array1<f64>, fun_value: f64) -> bool {
+    fun_value < config.fun_tolerance
+        && x.iter()
+            .zip(config.expected_optimum.iter())
+            .all(|(actual, expected)| (actual - expected).abs() < config.position_tolerance)
+}
+
+fn validate_solution(
+    config: &BenchmarkConfig,
+    optimizer: OptimizerKind,
+    x: &Array1<f64>,
+    fun_value: f64,
+    nfev: usize,
+    duration: Duration,
+) -> BenchmarkResult {
+    let fun_ok = fun_value < config.fun_tolerance;
+
+    let position_errors: Vec<f64> = x
+        .iter()
+        .zip(config.expected_optimum.iter())
+        .map(|(actual, expected)| (actual - expected).abs())
+        .collect();
+
+    let position_ok = position_errors
+        .iter()
+        .all(|&err| err < config.position_tolerance);
+
+    let success = fun_ok && position_ok;
+    let error_message = if !success {
+        let mut msgs = Vec::new();
+        if !fun_ok {
+            msgs.push(format!(
+                "fun value {:.6e} >= {:.2e}",
+                fun_value, config.fun_tolerance
+            ));
+        }
+        if !position_ok {
+            let max_err = position_errors.iter().fold(0.0f64, |a, &b| a.max(b));
+            msgs.push(format!(
+                "max position error {:.6} >= {:.2}",
+                max_err, config.position_tolerance
+            ));
+        }
+        Some(msgs.join(", "))
+    } else {
+        None
+    };
+
+    BenchmarkResult {
+        name: config.name.clone(),
+        optimizer,
+        success,
+        fun_value,
+        fun_tolerance: config.fun_tolerance,
+        position_errors,
+        position_tolerance: config.position_tolerance,
+        nfev,
+        duration,
+        error_message,
+    }
+}
+
+fn failed_result(
+    config: &BenchmarkConfig,
+    optimizer: OptimizerKind,
+    duration: Duration,
+    error_message: String,
+) -> BenchmarkResult {
+    BenchmarkResult {
+        name: config.name.clone(),
+        optimizer,
+        success: false,
+        fun_value: f64::INFINITY,
+        fun_tolerance: config.fun_tolerance,
+        position_errors: vec![f64::INFINITY],
+        position_tolerance: config.position_tolerance,
+        nfev: 0,
+        duration,
+        error_message: Some(error_message),
+    }
+}
+
+fn finite_diff(lhs: Option<f64>, rhs: Option<f64>) -> Option<f64> {
+    match (lhs, rhs) {
+        (Some(lhs), Some(rhs)) if lhs.is_finite() && rhs.is_finite() => Some(lhs - rhs),
+        _ => None,
+    }
+}
+
+fn format_delta(delta: Option<f64>) -> String {
+    match delta {
+        Some(value) => format!("{:+.6e}", value),
+        None => "n/a".to_string(),
+    }
+}
+
+fn status_label(result: &BenchmarkResult) -> &'static str {
+    if result.success {
+        "✅ PASS"
+    } else {
+        "❌ FAIL"
+    }
+}
+
+fn print_compact_comparison(comparison: &BenchmarkComparison) {
+    println!(
+        "  L-SHADE: {} fun={:.6e} nfev={} | CMA-ES: {} fun={:.6e} nfev={} | cmaes_minus_lshade={}",
+        status_label(&comparison.de),
+        comparison.de.fun_value,
+        comparison.de.nfev,
+        status_label(&comparison.cmaes),
+        comparison.cmaes.fun_value,
+        comparison.cmaes.nfev,
+        format_delta(comparison.cmaes_minus_de())
+    );
+
+    if let Some(ref err) = comparison.de.error_message {
+        println!("    L-SHADE error: {}", err);
+    }
+    if let Some(ref err) = comparison.cmaes.error_message {
+        println!("    CMA-ES error: {}", err);
+    }
+}
+
+fn print_verbose_comparison(comparison: &BenchmarkComparison) {
+    println!("  {}", comparison.de);
+    println!("  {}", comparison.cmaes);
+    println!(
+        "  cmaes_minus_lshade: {} (negative means CMA-ES found a lower objective)",
+        format_delta(comparison.cmaes_minus_de())
+    );
+}
+
+fn mean_std(data: &[f64]) -> Option<(f64, f64)> {
+    let n = data.len();
+    if n == 0 {
+        return None;
+    }
+    let mean = data.iter().sum::<f64>() / n as f64;
+    if n == 1 {
+        return Some((mean, 0.0));
+    }
+    let var_num: f64 = data
+        .iter()
+        .map(|&x| {
+            let dx = x - mean;
+            dx * dx
+        })
+        .sum();
+    Some((mean, (var_num / (n - 1) as f64).sqrt()))
 }
 
 fn main() {
@@ -1964,40 +2226,58 @@ fn main() {
     for &name in &selected_benchmarks {
         println!("Running {}...", name);
         let benchmark_fn = &benchmarks[name];
-        let result = benchmark_fn();
+        let comparison = benchmark_fn();
 
         if verbose {
-            println!("  {}", result);
-        } else if result.success {
-            println!("  ✅ PASS");
+            print_verbose_comparison(&comparison);
         } else {
-            println!(
-                "  ❌ FAIL - {}",
-                result
-                    .error_message
-                    .as_ref()
-                    .unwrap_or(&"Unknown error".to_string())
-            );
+            print_compact_comparison(&comparison);
         }
 
-        results.push(result);
+        results.push(comparison);
     }
 
     let total_duration = total_start.elapsed();
 
     // Summary
     println!("\n=== BENCHMARK SUMMARY ===");
-    let passed = results.iter().filter(|r| r.success).count();
-    let failed = results.len() - passed;
+    let total = results.len();
+    let de_passed = results.iter().filter(|r| r.de.success).count();
+    let cmaes_passed = results.iter().filter(|r| r.cmaes.success).count();
+    let both_passed = results
+        .iter()
+        .filter(|r| r.de.success && r.cmaes.success)
+        .count();
+    let failed = results.iter().filter(|r| r.has_failure()).count();
+    let failed_optimizer_runs = (total - de_passed) + (total - cmaes_passed);
 
-    println!("Passed: {} / {}", passed, results.len());
-    println!("Failed: {}", failed);
+    println!("L-SHADE passed: {} / {}", de_passed, total);
+    println!("CMA-ES passed: {} / {}", cmaes_passed, total);
+    println!("Both passed: {} / {}", both_passed, total);
+    println!("Comparison failures: {}", failed);
+    println!("Failed optimizer runs: {}", failed_optimizer_runs);
+
+    let deltas: Vec<f64> = results
+        .iter()
+        .filter_map(BenchmarkComparison::cmaes_minus_de)
+        .collect();
+    let cmaes_lower = deltas.iter().filter(|&&d| d < -1e-12).count();
+    let tied = deltas.iter().filter(|&&d| d.abs() <= 1e-12).count();
+    let de_lower = deltas.len() - cmaes_lower - tied;
+    println!(
+        "Final objective, lower is better: CMA-ES lower / tied / L-SHADE lower = {} / {} / {}",
+        cmaes_lower, tied, de_lower
+    );
+    if let Some((mean, std)) = mean_std(&deltas) {
+        println!("cmaes_minus_lshade: mean={:+.6e}, std={:.6e}", mean, std);
+    }
     println!("Total time: {:.2}s", total_duration.as_secs_f64());
 
-    if verbose || failed > 0 {
+    if !verbose && failed > 0 {
         println!("\nDetailed results:");
-        for result in &results {
-            println!("  {}", result);
+        for comparison in &results {
+            println!("  {}", comparison.name);
+            print_verbose_comparison(comparison);
         }
     }
 
@@ -2007,5 +2287,81 @@ fn main() {
     } else {
         println!("\n💥 {} benchmark(s) failed", failed);
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_config() -> BenchmarkConfig {
+        BenchmarkConfig {
+            name: "sample".to_string(),
+            function_name: "sphere".to_string(),
+            bounds: vec![(-5.0, 5.0); 3],
+            expected_optimum: vec![0.0; 3],
+            fun_tolerance: 1e-8,
+            position_tolerance: 1e-4,
+            maxiter: 10,
+            popsize: 4,
+            strategy: Strategy::Best1Bin,
+            recombination: 0.7,
+            seed: 42,
+        }
+    }
+
+    fn sample_result(optimizer: OptimizerKind, fun_value: f64) -> BenchmarkResult {
+        BenchmarkResult {
+            name: "sample".to_string(),
+            optimizer,
+            success: true,
+            fun_value,
+            fun_tolerance: 1e-8,
+            position_errors: vec![0.0],
+            position_tolerance: 1e-4,
+            nfev: 10,
+            duration: Duration::from_secs(0),
+            error_message: None,
+        }
+    }
+
+    #[test]
+    fn cmaes_budget_matches_de_population_budget() {
+        let config = sample_config();
+        assert_eq!(cmaes_eval_budget(&config), 11 * 4 * 3);
+    }
+
+    #[test]
+    fn de_config_uses_lshade_by_default() {
+        let config = sample_config();
+        let de_config = build_de_config(&config).expect("DE config should build");
+        assert!(matches!(de_config.strategy, Strategy::LShadeBin));
+        assert_eq!(de_config.popsize, config.popsize);
+        assert_eq!(de_config.lshade.np_init, LShadeConfig::default().np_init);
+    }
+
+    #[test]
+    fn de_config_preserves_exponential_crossover_with_lshade() {
+        let mut config = sample_config();
+        config.strategy = Strategy::Rand1Exp;
+        let de_config = build_de_config(&config).expect("DE config should build");
+        assert!(matches!(de_config.strategy, Strategy::LShadeExp));
+    }
+
+    #[test]
+    fn finite_diff_requires_finite_inputs() {
+        assert_eq!(finite_diff(Some(2.5), Some(1.0)), Some(1.5));
+        assert_eq!(finite_diff(Some(f64::INFINITY), Some(1.0)), None);
+        assert_eq!(finite_diff(Some(2.5), None), None);
+    }
+
+    #[test]
+    fn comparison_delta_is_cmaes_minus_de() {
+        let comparison = BenchmarkComparison {
+            name: "sample".to_string(),
+            de: sample_result(OptimizerKind::De, 3.0),
+            cmaes: sample_result(OptimizerKind::CmaEs, 1.25),
+        };
+        assert_eq!(comparison.cmaes_minus_de(), Some(-1.75));
     }
 }
