@@ -225,6 +225,11 @@ fn play_selected_playlist(app: &mut App) -> Option<PlayerCommand> {
 }
 
 /// Play all tracks from the active (open) playlist by adding them to queue.
+///
+/// Idempotent on the track-path set: a track already present in the queue is
+/// skipped rather than appended. Without this, repeated `p` presses (or just
+/// pressing `p` once in List mode and again in Tracks mode) would clone the
+/// playlist into the queue every time.
 fn play_active_playlist(app: &mut App) -> Option<PlayerCommand> {
     use crate::app::{QueueEntry, QueueItem};
 
@@ -235,23 +240,44 @@ fn play_active_playlist(app: &mut App) -> Option<PlayerCommand> {
     }
 
     let was_empty = app.queue.is_empty();
+    let mut added = 0usize;
+    let mut skipped = 0usize;
 
-    // Find albums containing these tracks and add them to the queue
     for path in &track_paths {
+        // Skip if this track is already represented by an existing queue entry.
+        let already_queued = app
+            .queue
+            .iter()
+            .any(|e| e.item.album.tracks.iter().any(|t| &t.path == path));
+        if already_queued {
+            skipped += 1;
+            continue;
+        }
+
+        // Find the album that owns this track and push a single-track copy.
         for album in &app.library.albums {
             if album.tracks.iter().any(|t| &t.path == path) {
                 let mut single = album.clone();
                 single.tracks.retain(|t| &t.path == path);
                 if !single.tracks.is_empty() {
                     app.queue.push(QueueEntry::new(QueueItem::new(single)));
+                    added += 1;
                 }
                 break;
             }
         }
     }
 
-    // Auto-play if queue was empty
-    if was_empty {
+    if added == 0 && skipped > 0 {
+        app.status_message = Some(format!(
+            "Playlist already in queue ({} track{})",
+            skipped,
+            if skipped == 1 { "" } else { "s" }
+        ));
+    }
+
+    // Auto-play if the queue was previously empty AND we added something.
+    if was_empty && added > 0 {
         return app.start_queue().map(PlayerCommand::Play);
     }
     None
