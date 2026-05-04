@@ -27,6 +27,7 @@ sotf-player = { workspace = true }
 sotf-plugins = { workspace = true }
 sotf-engine = { workspace = true }
 sotf-federation = { workspace = true }
+sotf-cast = { workspace = true }
 sotf-services = { workspace = true, optional = true }
 math-iir-fir = { workspace = true }
 autoeq = { workspace = true }

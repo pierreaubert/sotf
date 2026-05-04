@@ -3,11 +3,35 @@ use super::*;
 pub(crate) fn draw_playlists_screen(f: &mut Frame, area: Rect, app: &App) {
     // PlaylistMode is available via `use super::*`
 
-    // Split into two columns: playlist list (left) and tracks (right)
+    // Top help line above the two-column body, mirroring the layout of the
+    // Output Devices screen so the keybindings are discoverable without
+    // having to read the bottom border.
+    let outer = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // Help box
+            Constraint::Min(0),    // Body (playlist list + tracks)
+        ])
+        .split(area);
+
+    let help_text = match app.playlist_mode {
+        PlaylistMode::List => {
+            "↑↓=Navigate  Enter=Open  n=New  r=Rename  d=Delete  p=Play  i=Import  e=Export  Esc=Back"
+        }
+        PlaylistMode::Tracks => {
+            "↑↓=Navigate  Enter=Play track  p=Play all  x=Remove  K/J=Move up/down  Esc=Back to list"
+        }
+        PlaylistMode::Create => "Type playlist name  Enter=Create  Esc=Cancel",
+        PlaylistMode::Rename => "Type new name  Enter=Save  Esc=Cancel",
+        PlaylistMode::ConfirmDelete => "y=Confirm delete  n/Esc=Cancel",
+    };
+    draw_help_box_with_text(f, outer[0], app, help_text);
+
+    // Split body into two columns: playlist list (left) and tracks (right)
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(35), Constraint::Percentage(65)])
-        .split(area);
+        .split(outer[1]);
 
     draw_playlist_list(f, chunks[0], app);
     draw_playlist_tracks(f, chunks[1], app);
