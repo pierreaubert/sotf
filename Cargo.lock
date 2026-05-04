@@ -795,7 +795,7 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "autoeq"
-version = "0.4.41"
+version = "0.4.42"
 dependencies = [
  "anyhow",
  "assert_fs",
@@ -5816,7 +5816,7 @@ dependencies = [
 
 [[package]]
 name = "math-dsp"
-version = "0.5.14"
+version = "0.5.15"
 dependencies = [
  "approx",
  "clap",
@@ -5857,6 +5857,7 @@ dependencies = [
  "clap",
  "directories",
  "math-test-functions",
+ "nalgebra",
  "ndarray",
  "oxiblas-ndarray",
  "plotly",

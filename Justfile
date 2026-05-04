@@ -51,30 +51,6 @@ generate-audio-tests:
 	cargo run --bin generate-audio-tests -p sotf-tools --release --no-default-features
 	cargo run --bin generate-upmixer-golden -p sotf-tools --release --no-default-features
 
-[group('download')]
-generate-roomeq-tests: generate-roomeq-tests-bem generate-roomeq-tests-fem
-
-[group('download')]
-generate-roomeq-tests-bem:
-	cargo run --bin generate-roomeq-data --release -- --solver bem --output-dir crates/autoeq/data_tests/roomeq/generated
-
-[group('download')]
-generate-roomeq-tests-fem:
-	cargo run --bin generate-roomeq-data --release -- --solver fem --output-dir crates/autoeq/data_tests/roomeq/generated
-
-[group('download')]
-generate-ml-dataset-muslan:
-	mkdir -p data_cached/com.google.research; \
-	wget -Odata_cached/com.google.research/muslan.tar.gz https://openslr.org/resources/17/musan.tar.gz
-
-[group('download')]
-generate-ml-dataset-ava:
-	mkdir -p data_cached/com.google.research; \
-	wget -Odata_cached/com.google.research/ava_speech_labels_v1.csv \
-	   https://research.google.com/ava/download/ava_speech_labels_v1.csv
-
-
-
 # ----------------------------------------------------------------------
 # TEST
 # ----------------------------------------------------------------------

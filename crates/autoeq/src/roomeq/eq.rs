@@ -417,6 +417,11 @@ fn prepare_single_channel_eq(
                 mode_correction_weight: dc_config.mode_correction_weight,
                 early_reflection_weight: dc_config.early_reflection_weight,
                 steady_state_weight: dc_config.steady_state_weight,
+                fdw_enabled: dc_config.fdw_enabled,
+                fdw_cycles: dc_config.fdw_cycles,
+                fdw_min_window_ms: dc_config.fdw_min_window_ms,
+                fdw_max_window_ms: dc_config.fdw_max_window_ms,
+                fdw_smoothing_octaves: dc_config.fdw_smoothing_octaves,
                 ..Default::default()
             };
 
@@ -456,6 +461,8 @@ fn prepare_single_channel_eq(
                             &normalized_curve_unsmoothed.freq,
                             &normalized_curve_unsmoothed.spl,
                             &ssir_result,
+                            Some(&mono_ir),
+                            ir_sr,
                             &dc_analysis_config,
                         )
                     }
@@ -510,7 +517,21 @@ fn prepare_single_channel_eq(
             let mut v: Vec<(f64, f64, f64)> = r
                 .room_modes
                 .iter()
-                .map(|m| (m.frequency, m.q, -m.prominence_db))
+                .filter_map(|m| {
+                    let fdw_depth = r
+                        .fdw_direct_energy_ratio
+                        .as_ref()
+                        .and_then(|depth| depth.get(m.index))
+                        .copied()
+                        .unwrap_or(1.0)
+                        .clamp(0.0, 1.0);
+                    let gain_db = -m.prominence_db * fdw_depth;
+                    if gain_db.abs() >= 0.5 {
+                        Some((m.frequency, m.q, gain_db))
+                    } else {
+                        None
+                    }
+                })
                 .collect();
             v.sort_by(|a, b| {
                 b.2.abs()

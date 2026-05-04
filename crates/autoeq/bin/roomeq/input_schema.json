@@ -1740,6 +1740,35 @@
           "type": "number",
           "format": "double",
           "default": 0.4
+        },
+        "fdw_enabled": {
+          "description": "Enable Frequency-Dependent Windowing when `ssir_wav_path` provides an IR.",
+          "type": "boolean",
+          "default": true
+        },
+        "fdw_cycles": {
+          "description": "FDW window length in cycles before min/max clamping. Default: 8.0",
+          "type": "number",
+          "format": "double",
+          "default": 8.0
+        },
+        "fdw_min_window_ms": {
+          "description": "Minimum FDW window length in milliseconds. Default: 3.0",
+          "type": "number",
+          "format": "double",
+          "default": 3.0
+        },
+        "fdw_max_window_ms": {
+          "description": "Maximum FDW window length in milliseconds. Default: 500.0",
+          "type": "number",
+          "format": "double",
+          "default": 500.0
+        },
+        "fdw_smoothing_octaves": {
+          "description": "FDW smoothing width in octaves. Default: 1/24 octave",
+          "type": "number",
+          "format": "double",
+          "default": 0.041666666666666664
         }
       }
     },

@@ -366,6 +366,7 @@ fn option_decomposed_correction(config: &mut RoomConfig) {
         mode_correction_weight: 1.0,
         early_reflection_weight: 0.3,
         steady_state_weight: 0.5,
+        ..Default::default()
     });
 }
 
