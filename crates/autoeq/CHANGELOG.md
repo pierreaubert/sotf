@@ -1,5 +1,22 @@
 # 0.4.41
 
+## RoomEQ improvements
+
+- MSO primary-seat and average objectives now penalize peak headroom pressure
+  and low-frequency extension loss directly, so DE can trade variance against
+  headroom and bass extension instead of only preserving broadband level and
+  avoiding new null deficits.
+- Inter-channel deviation correction now uses role-aware matching profiles:
+  front L/R channels are matched more tightly, surrounds/wides use moderate
+  tolerances, and height channels use looser, bandwidth-appropriate matching.
+- All MSO penalty terms (null deficit, headroom pressure, extension loss)
+  are now grid-density independent. They use per-violation RMS instead of
+  per-bin RMS, so the same physical violation produces the same penalty
+  regardless of how finely the response is sampled.
+- `ChannelMatchingCorrectionProfile` now sanitises negative tolerances/weights,
+  swapped min/max bands, and non-finite (NaN/Inf) fields before use, so a
+  malformed profile can no longer produce inverted corrections or NaN gains.
+
 ## Bug fixes
 
 - Fixed an initialisation bug in the new cobyla code (v2)

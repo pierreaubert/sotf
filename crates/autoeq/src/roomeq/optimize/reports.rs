@@ -548,9 +548,75 @@ pub(super) fn channel_matching_role_key(channel_name: &str) -> Option<&'static s
     crate::roomeq::home_cinema::matching_group_key(channel_name)
 }
 
+#[derive(Debug, Clone)]
+pub(super) struct RoleChannelMatchingGroup {
+    pub(super) role_key: &'static str,
+    pub(super) curves: HashMap<String, crate::Curve>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct RoleChannelMatchingProfile {
+    pub(super) rms_threshold_db: f64,
+    pub(super) correction: crate::roomeq::spectral_align::ChannelMatchingCorrectionProfile,
+}
+
+pub(super) fn channel_matching_profile_for_role_key(
+    role_key: &str,
+    base_threshold_db: f64,
+) -> RoleChannelMatchingProfile {
+    let base_threshold_db = base_threshold_db.max(0.05);
+    let (threshold_factor, correction_weight, min_freq_hz, max_freq_hz) = match role_key {
+        "front_lr" => (2.0 / 3.0, 1.0, 80.0, 16_000.0),
+        "side_surrounds" | "rear_surrounds" | "wides" => (1.0, 0.85, 100.0, 12_000.0),
+        "top_front" | "top_middle" | "top_rear" => (4.0 / 3.0, 0.65, 120.0, 10_000.0),
+        _ => (1.0, 0.8, 200.0, 10_000.0),
+    };
+    let rms_threshold_db = base_threshold_db * threshold_factor;
+
+    RoleChannelMatchingProfile {
+        rms_threshold_db,
+        correction: crate::roomeq::spectral_align::ChannelMatchingCorrectionProfile {
+            peak_tolerance_db: rms_threshold_db,
+            correction_weight,
+            min_freq_hz,
+            max_freq_hz,
+        },
+    }
+}
+
+pub(super) fn channel_matching_band_rms_db(
+    icd: &crate::roomeq::types::InterChannelDeviation,
+    band: (f64, f64),
+) -> f64 {
+    let mut sum_sq = 0.0;
+    let mut count = 0usize;
+    for (freq, spread) in &icd.deviation_per_freq {
+        if *freq >= band.0 && *freq <= band.1 {
+            sum_sq += spread * spread;
+            count += 1;
+        }
+    }
+
+    if count > 0 {
+        (sum_sq / count as f64).sqrt()
+    } else {
+        icd.midrange_rms_db
+    }
+}
+
+#[cfg(test)]
 pub(super) fn role_aware_channel_matching_groups(
     final_curves: &HashMap<String, crate::Curve>,
 ) -> Vec<HashMap<String, crate::Curve>> {
+    role_aware_channel_matching_groups_with_keys(final_curves)
+        .into_iter()
+        .map(|group| group.curves)
+        .collect()
+}
+
+pub(super) fn role_aware_channel_matching_groups_with_keys(
+    final_curves: &HashMap<String, crate::Curve>,
+) -> Vec<RoleChannelMatchingGroup> {
     let mut grouped: HashMap<&'static str, HashMap<String, crate::Curve>> = HashMap::new();
 
     for (name, curve) in final_curves {
@@ -575,8 +641,13 @@ pub(super) fn role_aware_channel_matching_groups(
 
     order
         .iter()
-        .filter_map(|key| grouped.remove(key))
-        .filter(|group| group.len() > 1)
+        .filter_map(|key| {
+            grouped.remove(key).map(|curves| RoleChannelMatchingGroup {
+                role_key: key,
+                curves,
+            })
+        })
+        .filter(|group| group.curves.len() > 1)
         .collect()
 }
 
@@ -695,7 +766,7 @@ pub(super) fn compute_and_correct_icd(
     let max_filters = matching_cfg.max_filters;
 
     if enabled {
-        let matching_groups = role_aware_channel_matching_groups(&final_curves);
+        let matching_groups = role_aware_channel_matching_groups_with_keys(&final_curves);
         let mut applied_any = false;
         let baseline_channel_results = result.channel_results.clone();
         let baseline_channels = result.channels.clone();
@@ -705,35 +776,48 @@ pub(super) fn compute_and_correct_icd(
         }
 
         for group in matching_groups {
-            let mut group_names: Vec<_> = group.keys().cloned().collect();
+            let mut group_names: Vec<_> = group.curves.keys().cloned().collect();
             group_names.sort();
+            let profile = channel_matching_profile_for_role_key(group.role_key, threshold);
+            let matching_band = profile.correction.matching_band(f3);
 
             let group_icd =
-                crate::roomeq::spectral_align::compute_inter_channel_deviation(&group, f3);
-            if group_icd.midrange_rms_db <= threshold {
+                crate::roomeq::spectral_align::compute_inter_channel_deviation(&group.curves, f3);
+            let group_rms_db = channel_matching_band_rms_db(&group_icd, matching_band);
+            if group_rms_db <= profile.rms_threshold_db {
                 info!(
-                    "ICD group [{}] midrange_rms={:.2}dB <= threshold={:.1}dB - no correction needed",
+                    "ICD group [{}] role={} rms={:.2}dB over {:.0}-{:.0}Hz <= threshold={:.2}dB - no correction needed",
                     group_names.join(", "),
-                    group_icd.midrange_rms_db,
-                    threshold,
+                    group.role_key,
+                    group_rms_db,
+                    matching_band.0,
+                    matching_band.1,
+                    profile.rms_threshold_db,
                 );
                 continue;
             }
 
             info!(
-                "ICD group [{}] midrange_rms={:.2}dB > threshold={:.1}dB - applying role-aware channel matching (max {} filters/ch)",
+                "ICD group [{}] role={} rms={:.2}dB over {:.0}-{:.0}Hz > threshold={:.2}dB - applying role-aware channel matching (tolerance {:.2}dB, weight {:.2}, max {} filters/ch)",
                 group_names.join(", "),
-                group_icd.midrange_rms_db,
-                threshold,
+                group.role_key,
+                group_rms_db,
+                matching_band.0,
+                matching_band.1,
+                profile.rms_threshold_db,
+                profile.correction.peak_tolerance_db,
+                profile.correction.correction_weight,
                 max_filters,
             );
 
-            let corrections = crate::roomeq::spectral_align::correct_inter_channel_deviation(
-                &group,
-                f3,
-                max_filters,
-                sample_rate,
-            );
+            let corrections =
+                crate::roomeq::spectral_align::correct_inter_channel_deviation_with_profile(
+                    &group.curves,
+                    f3,
+                    max_filters,
+                    sample_rate,
+                    profile.correction,
+                );
 
             for correction in &corrections {
                 if correction.plugin.is_some() {

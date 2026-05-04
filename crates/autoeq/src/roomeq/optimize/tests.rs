@@ -535,6 +535,26 @@ fn role_aware_channel_matching_groups_exclude_center() {
 }
 
 #[test]
+fn channel_matching_profiles_are_tightest_for_front_lr() {
+    let front = channel_matching_profile_for_role_key("front_lr", 0.75);
+    let surrounds = channel_matching_profile_for_role_key("side_surrounds", 0.75);
+    let heights = channel_matching_profile_for_role_key("top_front", 0.75);
+
+    assert!(front.rms_threshold_db < surrounds.rms_threshold_db);
+    assert!(surrounds.rms_threshold_db < heights.rms_threshold_db);
+    assert!(front.correction.peak_tolerance_db < surrounds.correction.peak_tolerance_db);
+    assert!(surrounds.correction.peak_tolerance_db < heights.correction.peak_tolerance_db);
+    assert!(front.correction.correction_weight > surrounds.correction.correction_weight);
+    assert!(surrounds.correction.correction_weight > heights.correction.correction_weight);
+
+    assert_close(front.rms_threshold_db, 0.5);
+    assert_close(surrounds.rms_threshold_db, 0.75);
+    assert_close(heights.rms_threshold_db, 1.0);
+    assert_eq!(front.correction.matching_band(50.0), (80.0, 16_000.0));
+    assert_eq!(heights.correction.matching_band(50.0), (120.0, 10_000.0));
+}
+
+#[test]
 fn phase_alignment_delay_schedule_preserves_shared_sub_constraints() {
     let phase_results = HashMap::from([
         ("L".to_string(), (-5.0, false, "LFE".to_string())),

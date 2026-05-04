@@ -17,6 +17,12 @@ const MSO_MAX_MEAN_OUTPUT_LOSS_DB: f64 = 1.5;
 const MSO_OUTPUT_LOSS_WEIGHT: f64 = 2.0;
 const MSO_NULL_DEFICIT_ALLOWANCE_DB: f64 = 3.0;
 const MSO_NULL_DEFICIT_WEIGHT: f64 = 0.75;
+const MSO_HEADROOM_BOOST_ALLOWANCE_DB: f64 = 0.5;
+const MSO_HEADROOM_BOOST_WEIGHT: f64 = 0.75;
+const MSO_EXTENSION_DEFICIT_ALLOWANCE_DB: f64 = 1.0;
+const MSO_EXTENSION_DEFICIT_WEIGHT: f64 = 1.25;
+const MSO_EXTENSION_MAX_HZ: f64 = 80.0;
+const MSO_EXTENSION_OCTAVES: f64 = 1.0;
 
 /// Result of multi-seat optimization
 #[derive(Debug, Clone)]
@@ -218,7 +224,8 @@ pub fn optimize_multiseat(
         eval_max,
     );
     let variance_before = variance_from_responses(&initial_responses);
-    let objective_context = MsoObjectiveContext::from_baseline(&initial_responses);
+    let objective_context =
+        MsoObjectiveContext::from_baseline_with_freqs(&initial_responses, Some(&freqs));
     let objective_before = objective_from_responses(
         &initial_responses,
         config.strategy.clone(),
@@ -548,16 +555,27 @@ fn average_flatness_from_responses(responses: &[Vec<f64>]) -> f64 {
 #[derive(Debug, Clone)]
 struct MsoObjectiveContext {
     baseline_avg_spl: Vec<f64>,
+    baseline_peak_spl: Vec<f64>,
     baseline_mean_level_db: f64,
+    extension_indices: Vec<usize>,
 }
 
 impl MsoObjectiveContext {
+    #[cfg(test)]
     fn from_baseline(responses: &[Vec<f64>]) -> Self {
+        Self::from_baseline_with_freqs(responses, None)
+    }
+
+    fn from_baseline_with_freqs(responses: &[Vec<f64>], freqs: Option<&Array1<f64>>) -> Self {
         let baseline_avg_spl = mean_response_curve(responses);
+        let baseline_peak_spl = peak_response_curve(responses);
         let baseline_mean_level_db = mean_level(&baseline_avg_spl);
+        let extension_indices = extension_indices(baseline_avg_spl.len(), freqs);
         Self {
             baseline_avg_spl,
+            baseline_peak_spl,
             baseline_mean_level_db,
+            extension_indices,
         }
     }
 }
@@ -570,8 +588,85 @@ fn mean_response_curve(responses: &[Vec<f64>]) -> Vec<f64> {
         .collect()
 }
 
+fn peak_response_curve(responses: &[Vec<f64>]) -> Vec<f64> {
+    let num_freqs = responses[0].len();
+    (0..num_freqs)
+        .map(|fi| {
+            responses
+                .iter()
+                .map(|seat| seat[fi])
+                .fold(f64::NEG_INFINITY, f64::max)
+        })
+        .collect()
+}
+
 fn mean_level(spl: &[f64]) -> f64 {
     spl.iter().sum::<f64>() / spl.len().max(1) as f64
+}
+
+fn extension_indices(num_freqs: usize, freqs: Option<&Array1<f64>>) -> Vec<usize> {
+    if num_freqs == 0 {
+        return Vec::new();
+    }
+
+    if let Some(freqs) = freqs.filter(|freqs| freqs.len() == num_freqs && !freqs.is_empty()) {
+        let first_hz = freqs[0].max(1.0);
+        let extension_max_hz =
+            (first_hz * 2.0_f64.powf(MSO_EXTENSION_OCTAVES)).min(MSO_EXTENSION_MAX_HZ);
+        let mut indices: Vec<usize> = freqs
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, &freq)| {
+                if freq <= extension_max_hz {
+                    Some(idx)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if indices.is_empty() {
+            indices.push(0);
+        }
+        return indices;
+    }
+
+    let count = (num_freqs / 4).max(1);
+    (0..count).collect()
+}
+
+/// RMS of the positive entries of `violations`, normalised by the number of
+/// *violating* bins. Returns 0 when nothing violates.
+///
+/// Why per-violation rather than per-bin: the same physical violation must
+/// score the same on a coarse and a fine frequency grid. Dividing by the
+/// total bin count would let a sharp peak look smaller simply because more
+/// non-violating bins were averaged in.
+fn violation_rms_db<I: IntoIterator<Item = f64>>(violations: I) -> f64 {
+    let mut sum_sq = 0.0;
+    let mut count = 0usize;
+    for v in violations {
+        if v > 0.0 {
+            sum_sq += v * v;
+            count += 1;
+        }
+    }
+    if count > 0 {
+        (sum_sq / count as f64).sqrt()
+    } else {
+        0.0
+    }
+}
+
+fn null_deficit_penalty_from_responses(
+    responses: &[Vec<f64>],
+    context: &MsoObjectiveContext,
+) -> f64 {
+    let avg_spl = mean_response_curve(responses);
+    let violations = avg_spl
+        .iter()
+        .zip(context.baseline_avg_spl.iter())
+        .map(|(c, b)| b - c - MSO_NULL_DEFICIT_ALLOWANCE_DB);
+    violation_rms_db(violations) * MSO_NULL_DEFICIT_WEIGHT
 }
 
 fn output_preservation_penalty(responses: &[Vec<f64>], context: &MsoObjectiveContext) -> f64 {
@@ -581,26 +676,40 @@ fn output_preservation_penalty(responses: &[Vec<f64>], context: &MsoObjectiveCon
     let broadband_loss_penalty =
         (mean_loss - MSO_MAX_MEAN_OUTPUT_LOSS_DB).max(0.0) * MSO_OUTPUT_LOSS_WEIGHT;
 
-    let mut deficit_sum = 0.0;
-    let mut deficit_count = 0usize;
-    for (candidate, baseline) in avg_spl.iter().zip(context.baseline_avg_spl.iter()) {
-        let deficit = baseline - candidate - MSO_NULL_DEFICIT_ALLOWANCE_DB;
-        if deficit > 0.0 {
-            deficit_sum += deficit.powi(2);
-        }
-        deficit_count += 1;
-    }
-    let null_deficit_penalty = if deficit_count > 0 {
-        (deficit_sum / deficit_count as f64).sqrt() * MSO_NULL_DEFICIT_WEIGHT
-    } else {
-        0.0
-    };
+    broadband_loss_penalty + null_deficit_penalty_from_responses(responses, context)
+}
 
-    broadband_loss_penalty + null_deficit_penalty
+fn headroom_pressure_penalty(responses: &[Vec<f64>], context: &MsoObjectiveContext) -> f64 {
+    let candidate_peak_spl = peak_response_curve(responses);
+    let violations = candidate_peak_spl
+        .iter()
+        .zip(context.baseline_peak_spl.iter())
+        .map(|(c, b)| c - b - MSO_HEADROOM_BOOST_ALLOWANCE_DB);
+    violation_rms_db(violations) * MSO_HEADROOM_BOOST_WEIGHT
+}
+
+fn extension_preservation_penalty(responses: &[Vec<f64>], context: &MsoObjectiveContext) -> f64 {
+    if context.extension_indices.is_empty() {
+        return 0.0;
+    }
+
+    let avg_spl = mean_response_curve(responses);
+    let violations = context.extension_indices.iter().filter_map(|&idx| {
+        let candidate = *avg_spl.get(idx)?;
+        let baseline = *context.baseline_avg_spl.get(idx)?;
+        Some(baseline - candidate - MSO_EXTENSION_DEFICIT_ALLOWANCE_DB)
+    });
+    violation_rms_db(violations) * MSO_EXTENSION_DEFICIT_WEIGHT
+}
+
+fn mso_resource_penalty(responses: &[Vec<f64>], context: &MsoObjectiveContext) -> f64 {
+    output_preservation_penalty(responses, context)
+        + headroom_pressure_penalty(responses, context)
+        + extension_preservation_penalty(responses, context)
 }
 
 fn average_perceptual_from_responses(responses: &[Vec<f64>], context: &MsoObjectiveContext) -> f64 {
-    average_flatness_from_responses(responses) + output_preservation_penalty(responses, context)
+    average_flatness_from_responses(responses) + mso_resource_penalty(responses, context)
 }
 
 /// Primary-seat flatness with a quadratic penalty when other seats
@@ -641,11 +750,11 @@ fn primary_constrained_from_responses(
     };
 
     // Weight 10× ensures constraint satisfaction dominates marginal flatness gains
-    let output_penalty = context
-        .map(|ctx| output_preservation_penalty(responses, ctx))
+    let resource_penalty = context
+        .map(|ctx| mso_resource_penalty(responses, ctx))
         .unwrap_or(0.0);
 
-    primary_flatness + 10.0 * penalty + output_penalty
+    primary_flatness + 10.0 * penalty + resource_penalty
 }
 
 fn objective_name(strategy: MultiSeatStrategy) -> &'static str {
@@ -1357,6 +1466,106 @@ mod tests {
             primary_constrained_from_responses(&null_candidate, 0, 6.0, Some(&context))
                 > primary_constrained_from_responses(&safe_candidate, 0, 6.0, Some(&context)),
             "MSO primary objective should penalize new average-response nulls"
+        );
+    }
+
+    #[test]
+    fn test_primary_objective_penalizes_headroom_boost() {
+        let baseline = vec![vec![90.0, 90.0, 90.0], vec![90.0, 90.0, 90.0]];
+        let boosted_flat = vec![vec![94.0, 94.0, 94.0], vec![94.0, 94.0, 94.0]];
+        let preserved_flat = baseline.clone();
+        let context = MsoObjectiveContext::from_baseline(&baseline);
+
+        assert!(
+            primary_constrained_from_responses(&boosted_flat, 0, 6.0, Some(&context))
+                > primary_constrained_from_responses(&preserved_flat, 0, 6.0, Some(&context)),
+            "MSO primary objective should penalize flat response wins that consume headroom"
+        );
+    }
+
+    #[test]
+    fn test_primary_objective_penalizes_low_extension_deficit() {
+        let baseline = vec![vec![90.0, 90.0, 90.0, 90.0], vec![90.0, 90.0, 90.0, 90.0]];
+        let low_extension_loss = vec![vec![86.0, 86.0, 90.0, 90.0], vec![86.0, 86.0, 90.0, 90.0]];
+        let upper_band_loss = vec![vec![90.0, 90.0, 86.0, 86.0], vec![90.0, 90.0, 86.0, 86.0]];
+        let freqs = Array1::from(vec![20.0, 35.0, 80.0, 120.0]);
+        let context = MsoObjectiveContext::from_baseline_with_freqs(&baseline, Some(&freqs));
+
+        assert!(
+            primary_constrained_from_responses(&low_extension_loss, 0, 6.0, Some(&context))
+                > primary_constrained_from_responses(&upper_band_loss, 0, 6.0, Some(&context)),
+            "MSO primary objective should treat low-band extension loss as worse than an equivalent upper-band loss"
+        );
+    }
+
+    #[test]
+    fn headroom_penalty_is_grid_density_independent() {
+        // Same physical violation: a single 5 dB peak boost. The penalty must
+        // not shrink when the response is sampled on a finer grid.
+        let coarse_baseline = vec![vec![90.0, 90.0, 90.0], vec![90.0, 90.0, 90.0]];
+        let coarse_candidate = vec![vec![95.0, 90.0, 90.0], vec![95.0, 90.0, 90.0]];
+        let coarse_ctx = MsoObjectiveContext::from_baseline(&coarse_baseline);
+        let coarse = headroom_pressure_penalty(&coarse_candidate, &coarse_ctx);
+
+        let fine_baseline = vec![vec![90.0; 12], vec![90.0; 12]];
+        let mut fine_row = vec![90.0; 12];
+        fine_row[0] = 95.0;
+        let fine_candidate = vec![fine_row.clone(), fine_row];
+        let fine_ctx = MsoObjectiveContext::from_baseline(&fine_baseline);
+        let fine = headroom_pressure_penalty(&fine_candidate, &fine_ctx);
+
+        assert!(coarse > 0.0, "expected non-zero headroom penalty on coarse grid");
+        assert!(
+            (coarse - fine).abs() < 1e-9,
+            "headroom penalty should be grid-density independent; got coarse={coarse}, fine={fine}"
+        );
+    }
+
+    #[test]
+    fn null_deficit_penalty_is_grid_density_independent() {
+        // Single deep null at one frequency, identical across grids.
+        let coarse_baseline = vec![vec![90.0, 90.0, 90.0], vec![90.0, 90.0, 90.0]];
+        let coarse_candidate = vec![vec![70.0, 90.0, 90.0], vec![70.0, 90.0, 90.0]];
+        let coarse_ctx = MsoObjectiveContext::from_baseline(&coarse_baseline);
+        let coarse = null_deficit_penalty_from_responses(&coarse_candidate, &coarse_ctx);
+
+        let fine_baseline = vec![vec![90.0; 12], vec![90.0; 12]];
+        let mut fine_row = vec![90.0; 12];
+        fine_row[0] = 70.0;
+        let fine_candidate = vec![fine_row.clone(), fine_row];
+        let fine_ctx = MsoObjectiveContext::from_baseline(&fine_baseline);
+        let fine = null_deficit_penalty_from_responses(&fine_candidate, &fine_ctx);
+
+        assert!(coarse > 0.0, "expected non-zero null-deficit penalty on coarse grid");
+        assert!(
+            (coarse - fine).abs() < 1e-9,
+            "null-deficit penalty should be grid-density independent; got coarse={coarse}, fine={fine}"
+        );
+    }
+
+    #[test]
+    fn extension_penalty_is_grid_density_independent() {
+        // Same low-band loss (10 dB at 20 Hz only) on coarse vs fine grid.
+        let coarse_baseline = vec![vec![90.0, 90.0, 90.0], vec![90.0, 90.0, 90.0]];
+        let coarse_candidate = vec![vec![80.0, 90.0, 90.0], vec![80.0, 90.0, 90.0]];
+        let coarse_freqs = Array1::from(vec![20.0, 80.0, 200.0]);
+        let coarse_ctx =
+            MsoObjectiveContext::from_baseline_with_freqs(&coarse_baseline, Some(&coarse_freqs));
+        let coarse = extension_preservation_penalty(&coarse_candidate, &coarse_ctx);
+
+        let fine_baseline = vec![vec![90.0; 6], vec![90.0; 6]];
+        let mut fine_row = vec![90.0; 6];
+        fine_row[0] = 80.0;
+        let fine_candidate = vec![fine_row.clone(), fine_row];
+        let fine_freqs = Array1::from(vec![20.0, 25.0, 30.0, 80.0, 100.0, 200.0]);
+        let fine_ctx =
+            MsoObjectiveContext::from_baseline_with_freqs(&fine_baseline, Some(&fine_freqs));
+        let fine = extension_preservation_penalty(&fine_candidate, &fine_ctx);
+
+        assert!(coarse > 0.0, "expected non-zero extension penalty on coarse grid");
+        assert!(
+            (coarse - fine).abs() < 1e-9,
+            "extension penalty should be grid-density independent; got coarse={coarse}, fine={fine}"
         );
     }
 

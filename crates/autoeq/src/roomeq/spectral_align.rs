@@ -307,6 +307,59 @@ pub struct ChannelMatchingResult {
     pub plugin: Option<super::types::PluginConfigWrapper>,
 }
 
+/// Role-specific channel matching correction limits.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct ChannelMatchingCorrectionProfile {
+    /// Deviation left uncorrected so matching does not over-tighten this role.
+    pub(super) peak_tolerance_db: f64,
+    /// Fraction of the deviation beyond tolerance to correct.
+    pub(super) correction_weight: f64,
+    /// Lower matching band edge; combined with measured F3 at call time.
+    pub(super) min_freq_hz: f64,
+    /// Upper matching band edge for this role.
+    pub(super) max_freq_hz: f64,
+}
+
+impl Default for ChannelMatchingCorrectionProfile {
+    fn default() -> Self {
+        Self {
+            peak_tolerance_db: 1.0,
+            correction_weight: 1.0,
+            min_freq_hz: 0.0,
+            max_freq_hz: 10_000.0,
+        }
+    }
+}
+
+impl ChannelMatchingCorrectionProfile {
+    pub(super) fn matching_band(self, f3_hz: f64) -> (f64, f64) {
+        let min_freq = f3_hz.max(self.min_freq_hz);
+        let max_freq = self.max_freq_hz.max(min_freq);
+        (min_freq, max_freq)
+    }
+
+    /// Clamp fields into well-defined ranges. Negative tolerances/weights
+    /// would invert the correction sign, NaN values would propagate through
+    /// every gain computation, and swapped min/max would silently disable
+    /// the correction band — so we normalise once at the entry point.
+    pub(super) fn sanitized(self) -> Self {
+        fn finite_or_zero(v: f64) -> f64 {
+            if v.is_finite() { v } else { 0.0 }
+        }
+        let peak_tolerance_db = finite_or_zero(self.peak_tolerance_db).max(0.0);
+        let correction_weight = finite_or_zero(self.correction_weight).max(0.0);
+        let min = finite_or_zero(self.min_freq_hz).max(0.0);
+        let max = finite_or_zero(self.max_freq_hz).max(0.0);
+        let (min_freq_hz, max_freq_hz) = if min <= max { (min, max) } else { (max, min) };
+        Self {
+            peak_tolerance_db,
+            correction_weight,
+            min_freq_hz,
+            max_freq_hz,
+        }
+    }
+}
+
 /// Correct inter-channel deviations by adding targeted PEQ filters.
 ///
 /// For each channel, finds the N largest deviations from the group average
@@ -314,12 +367,30 @@ pub struct ChannelMatchingResult {
 /// corrections (if channel is above average → cut, if below → boost).
 ///
 /// Returns one `ChannelMatchingResult` per channel (empty filters if no correction needed).
-pub fn correct_inter_channel_deviation(
+#[cfg(test)]
+fn correct_inter_channel_deviation(
     final_curves: &HashMap<String, crate::Curve>,
     f3_hz: f64,
     max_filters: usize,
     sample_rate: f64,
 ) -> Vec<ChannelMatchingResult> {
+    correct_inter_channel_deviation_with_profile(
+        final_curves,
+        f3_hz,
+        max_filters,
+        sample_rate,
+        ChannelMatchingCorrectionProfile::default(),
+    )
+}
+
+pub(super) fn correct_inter_channel_deviation_with_profile(
+    final_curves: &HashMap<String, crate::Curve>,
+    f3_hz: f64,
+    max_filters: usize,
+    sample_rate: f64,
+    profile: ChannelMatchingCorrectionProfile,
+) -> Vec<ChannelMatchingResult> {
+    let profile = profile.sanitized();
     if final_curves.len() <= 1 || max_filters == 0 {
         return Vec::new();
     }
@@ -337,6 +408,8 @@ pub fn correct_inter_channel_deviation(
         warn!("Channel matching correction skipped: channels do not share the same frequency grid");
         return Vec::new();
     }
+
+    let (matching_min_hz, matching_max_hz) = profile.matching_band(f3_hz);
 
     // Compute pointwise average (reference) — normalize each to its own passband mean first
     let passband_means: HashMap<String, f64> = final_curves
@@ -383,12 +456,12 @@ pub fn correct_inter_channel_deviation(
         let mut peaks: Vec<(usize, f64)> = Vec::new(); // (index, signed_deviation)
         for i in 1..smoothed_diff.len().saturating_sub(1) {
             let f = freq[i];
-            if f < f3_hz || f > 10000.0 {
+            if f < matching_min_hz || f > matching_max_hz {
                 continue;
             }
             let abs_val = smoothed_diff[i].abs();
-            if abs_val < 1.0 {
-                continue; // Skip small deviations
+            if abs_val <= profile.peak_tolerance_db {
+                continue; // Leave role-appropriate deviations uncorrected.
             }
             // Local extremum (peak or dip in deviation)
             let is_peak = smoothed_diff[i].abs() >= smoothed_diff[i - 1].abs()
@@ -419,8 +492,10 @@ pub fn correct_inter_channel_deviation(
         let mut filters = Vec::new();
         for &(idx, dev) in &selected {
             let f = freq[idx];
-            // Correction = negative of deviation (if channel is +3dB above average → -3dB cut)
-            let gain_db = -dev;
+            let gain_db = channel_matching_correction_gain(dev, profile);
+            if gain_db.abs() < MIN_CORRECTION_DB {
+                continue;
+            }
             // Q based on deviation width: narrow for sharp peaks, broader for gentle humps
             let q = estimate_correction_q(&smoothed_diff, freq, idx);
 
@@ -450,6 +525,18 @@ pub fn correct_inter_channel_deviation(
     }
 
     results
+}
+
+fn channel_matching_correction_gain(
+    deviation_db: f64,
+    profile: ChannelMatchingCorrectionProfile,
+) -> f64 {
+    let excess = deviation_db.abs() - profile.peak_tolerance_db;
+    if excess <= 0.0 {
+        0.0
+    } else {
+        -deviation_db.signum() * excess * profile.correction_weight
+    }
 }
 
 /// Simple 1/3 octave smoothing for peak finding (avoids chasing noise).
@@ -996,6 +1083,13 @@ mod tests {
 
     const SAMPLE_RATE: f64 = 48000.0;
 
+    fn assert_close(actual: f64, expected: f64) {
+        assert!(
+            (actual - expected).abs() < 1e-9,
+            "expected {expected}, got {actual}"
+        );
+    }
+
     /// Build a simple Curve at log-spaced frequencies from 20 Hz to 20 kHz
     fn make_curve(spl_fn: impl Fn(f64) -> f64) -> Curve {
         let n = 200;
@@ -1238,6 +1332,87 @@ mod tests {
         left.freq[10] = right.freq[10];
         let matched = HashMap::from([("L".to_string(), left), ("R".to_string(), right)]);
         assert!(!compute_spectral_alignment(&matched, SAMPLE_RATE, 20.0, 20000.0).is_empty());
+    }
+
+    #[test]
+    fn channel_matching_correction_profile_sanitizes_negative_and_swapped_fields() {
+        let bad = ChannelMatchingCorrectionProfile {
+            peak_tolerance_db: -1.5,
+            correction_weight: -0.5,
+            min_freq_hz: 5_000.0,
+            max_freq_hz: 100.0,
+        };
+        let s = bad.sanitized();
+        assert_eq!(s.peak_tolerance_db, 0.0);
+        assert_eq!(s.correction_weight, 0.0);
+        assert_eq!(s.min_freq_hz, 100.0);
+        assert_eq!(s.max_freq_hz, 5_000.0);
+    }
+
+    #[test]
+    fn channel_matching_correction_profile_replaces_nonfinite_with_zero() {
+        let bad = ChannelMatchingCorrectionProfile {
+            peak_tolerance_db: f64::NAN,
+            correction_weight: f64::INFINITY,
+            min_freq_hz: f64::NEG_INFINITY,
+            max_freq_hz: f64::NAN,
+        };
+        let s = bad.sanitized();
+        assert_eq!(s.peak_tolerance_db, 0.0);
+        assert_eq!(s.correction_weight, 0.0);
+        assert_eq!(s.min_freq_hz, 0.0);
+        assert_eq!(s.max_freq_hz, 0.0);
+        assert!(s.matching_band(50.0).0.is_finite());
+        assert!(s.matching_band(50.0).1.is_finite());
+    }
+
+    #[test]
+    fn correct_inter_channel_deviation_with_profile_does_not_panic_on_bad_profile() {
+        // Two flat-but-offset channels so there is a real deviation to correct.
+        let mut curves = HashMap::new();
+        curves.insert("L".to_string(), make_curve(|f| if f >= 200.0 && f <= 4000.0 { 90.0 } else { 80.0 }));
+        curves.insert("R".to_string(), make_curve(|f| if f >= 200.0 && f <= 4000.0 { 95.0 } else { 80.0 }));
+
+        let bad = ChannelMatchingCorrectionProfile {
+            peak_tolerance_db: f64::NAN,
+            correction_weight: -1.0,
+            min_freq_hz: 5_000.0,
+            max_freq_hz: 100.0,
+        };
+        // Must not panic even with malformed profile fields.
+        let results = correct_inter_channel_deviation_with_profile(&curves, 50.0, 4, SAMPLE_RATE, bad);
+        // Sanitized profile has zero correction_weight, so every gain is zero
+        // and every filter is filtered out by MIN_CORRECTION_DB.
+        for result in &results {
+            for filter in &result.filters {
+                assert!(
+                    filter.db_gain.abs() < MIN_CORRECTION_DB,
+                    "sanitized zero-weight profile must produce no real corrections; got {}",
+                    filter.db_gain
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_channel_matching_correction_profile_leaves_role_tolerance() {
+        let tight = ChannelMatchingCorrectionProfile {
+            peak_tolerance_db: 0.5,
+            correction_weight: 1.0,
+            min_freq_hz: 80.0,
+            max_freq_hz: 16_000.0,
+        };
+        let loose = ChannelMatchingCorrectionProfile {
+            peak_tolerance_db: 1.0,
+            correction_weight: 0.65,
+            min_freq_hz: 120.0,
+            max_freq_hz: 10_000.0,
+        };
+
+        assert_close(channel_matching_correction_gain(0.8, loose), 0.0);
+        assert_close(channel_matching_correction_gain(0.8, tight), -0.3);
+        assert_close(channel_matching_correction_gain(-1.5, loose), 0.325);
+        assert_eq!(tight.matching_band(50.0), (80.0, 16_000.0));
     }
 
     #[test]
