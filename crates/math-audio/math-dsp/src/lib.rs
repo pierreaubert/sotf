@@ -24,6 +24,7 @@ pub mod ebur128;
 pub mod esprit;
 pub mod fast_math;
 pub mod fdn;
+pub mod fdw;
 pub mod instantaneous_frequency;
 pub mod replaygain;
 pub mod rtpghi;
@@ -57,6 +58,8 @@ pub use analysis::{
     cross_correlate_envelope, find_db_point, read_analysis_csv, smooth_response_f32,
     smooth_response_f64, write_analysis_csv, write_wav_analysis_csv,
 };
+
+pub use fdw::{FdwAnalysis, FdwConfig, analyze_impulse_response_fdw};
 
 pub use signals::{
     add_silence_padding, apply_fade_in, apply_fade_out, clip, frames_for, gen_allpass_probe,

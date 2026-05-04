@@ -1,3 +1,11 @@
+# 0.5.15
+
+## New features
+
+- Added Frequency-Dependent Windowing (FDW) analysis for impulse responses,
+  including Morlet-style frequency-dependent gates, FDW-gated magnitude, and
+  direct/total time-frequency energy ratios for correction-depth consumers.
+
 # 0.5.14
 
 - Added new signals: Dirac and MLS
