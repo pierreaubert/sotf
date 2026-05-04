@@ -2,7 +2,8 @@
 //!
 //! This crate provides a Rust implementation of the Differential Evolution (DE)
 //! algorithm, a population-based stochastic optimizer for continuous optimization
-//! problems. The implementation is inspired by SciPy's differential_evolution.
+//! problems. It also includes CMA-ES for coupled continuous landscapes and
+//! NSGA-II/NSGA-III for real Pareto multi-objective search.
 //!
 //! # Features
 //!
@@ -15,6 +16,8 @@
 //! - Parallel population evaluation
 //! - Constraint handling via penalty methods
 //! - Latin Hypercube initialization
+//! - CMA-ES with full covariance adaptation
+//! - NSGA-II/III Pareto-front optimizers
 //!
 //! # Example
 //!
@@ -92,6 +95,14 @@ pub use cobyla::{CobylaConfig, CobylaConstraint, CobylaReport, CobylaStopTols};
 /// Pure-Rust ISRES global constrained optimizer.
 pub mod isres;
 pub use isres::{IsresConfig, IsresConstraint, IsresReport, isres};
+
+/// Pure-Rust CMA-ES global optimizer.
+pub mod cmaes;
+pub use cmaes::{CmaEsConfig, CmaEsIntermediate, CmaEsReport, cma_es};
+
+/// Pure-Rust NSGA-II/III multi-objective optimizers.
+pub mod nsga;
+pub use nsga::{NsgaConfig, NsgaReport, NsgaVariant, ParetoSolution, nsga, nsga2, nsga3};
 
 use std::fmt;
 use std::str::FromStr;

@@ -12,6 +12,7 @@ license = { workspace = true }
 [dependencies]
 # Core numerical computing
 ndarray = { workspace = true }
+nalgebra = { workspace = true }
 oxiblas-ndarray = { workspace = true }
 rand = { workspace = true }
 rayon = { workspace = true }
