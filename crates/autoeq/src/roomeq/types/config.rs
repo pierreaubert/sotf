@@ -377,6 +377,8 @@ pub enum MultiSeatStrategy {
     PrimaryWithConstraints,
     /// Optimize for average response across all seats
     Average,
+    /// Complex modal-basis sound-field management across seats
+    ModalBasis,
 }
 
 /// Strategy for handling multiple measurements per speaker

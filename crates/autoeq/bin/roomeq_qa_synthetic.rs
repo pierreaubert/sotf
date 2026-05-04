@@ -867,6 +867,7 @@ fn run_multiseat_strategy_metric_guard(strategy: MultiSeatStrategy) -> TestResul
         MultiSeatStrategy::MinimizeVariance => "seat_variance",
         MultiSeatStrategy::Average => "average_flatness",
         MultiSeatStrategy::PrimaryWithConstraints => "primary_constrained",
+        MultiSeatStrategy::ModalBasis => "modal_basis",
     };
     let test_name = format!("multiseat/api/{}_metrics", expected_name);
 
@@ -1419,12 +1420,27 @@ fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
 
     let args: Vec<String> = std::env::args().collect();
+    let help = args.iter().any(|a| a == "--help" || a == "-h");
     let list_only = args.iter().any(|a| a == "--list");
     let multiseat_guards_only = args.iter().any(|a| a == "--multiseat-guards-only");
     let difficulty_filter = args
         .windows(2)
         .find(|w| w[0] == "--difficulty")
         .map(|w| w[1].clone());
+
+    if help {
+        println!("RoomEQ Synthetic QA");
+        println!();
+        println!("Usage:");
+        println!("  roomeq-qa-synthetic [--list] [--difficulty NAME] [--multiseat-guards-only]");
+        println!();
+        println!("Options:");
+        println!("  --list                   Print the synthetic QA matrix and exit");
+        println!("  --difficulty NAME        Run only one difficulty: easy, medium, hard");
+        println!("  --multiseat-guards-only  Run only multi-seat API guard tests");
+        println!("  --help, -h               Print this help");
+        return Ok(());
+    }
 
     if multiseat_guards_only {
         return report_multiseat_api_guard_tests();

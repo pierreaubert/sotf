@@ -925,9 +925,14 @@ With primary seat constraints:
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `enabled` | boolean | `false` | Enable multi-seat optimization |
-| `strategy` | string | `"minimize_variance"` | Strategy: `"minimize_variance"`, `"primary_with_constraints"`, `"average"` |
+| `strategy` | string | `"minimize_variance"` | Strategy: `"minimize_variance"`, `"primary_with_constraints"`, `"average"`, `"modal_basis"` |
 | `primary_seat` | integer | `0` | Index of primary seat (0-based, used with `primary_with_constraints`) |
 | `max_deviation_db` | number (dB) | `6` | Maximum allowed deviation at non-primary seats |
+
+`modal_basis` uses complex subwoofer transfer functions to extract dominant
+seat-to-seat modal patterns, then optimizes sub gain, delay, polarity, and
+configured all-pass filters against that modal basis. It requires phase data
+for every sub/seat measurement.
 
 ---
 

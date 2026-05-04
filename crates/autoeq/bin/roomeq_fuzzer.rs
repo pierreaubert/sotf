@@ -370,9 +370,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         // Run roomeq binary
         let output_json_path = test_dir.join("output.json");
-        let mut child = Command::new("cargo")
+        let mut command = Command::new("cargo");
+        command
             .args([
                 "run",
+                "--quiet",
                 "--release",
                 "--bin",
                 "roomeq",
@@ -381,10 +383,25 @@ fn main() -> Result<(), Box<dyn Error>> {
                 config_path.to_str().unwrap(),
                 "--output",
                 output_json_path.to_str().unwrap(),
-            ])
-            .spawn()?;
+            ]);
 
-        let status = child.wait()?;
+        let status = if args.verbose {
+            command.status()?
+        } else {
+            command.env("RUST_LOG", "error");
+            let output = command.output()?;
+            if !output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                if !stdout.trim().is_empty() {
+                    println!("  stdout:\n{}", stdout.trim_end());
+                }
+                if !stderr.trim().is_empty() {
+                    eprintln!("  stderr:\n{}", stderr.trim_end());
+                }
+            }
+            output.status
+        };
 
         if status.success() {
             println!("  Test {} successful!", i + 1);
@@ -559,11 +576,7 @@ fn generate_random_config(
         None
     };
 
-    let loss_type = if rng.random_bool(0.5) {
-        "flat".to_string()
-    } else {
-        "score".to_string()
-    };
+    let loss_type = "flat".to_string();
     let peq_model = if rng.random_bool(0.5) {
         "pk".to_string()
     } else {

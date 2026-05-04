@@ -35,6 +35,7 @@ env_logger = { workspace = true }
 log = { workspace = true }
 num_cpus = { workspace = true }
 num-complex = { workspace = true }
+nalgebra = { workspace = true }
 metaheuristics-nature = { workspace = true }
 rustfft = { workspace = true }
 hound = { workspace = true }

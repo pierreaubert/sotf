@@ -389,6 +389,7 @@ In rooms with multiple listening positions, optimizing for one seat often degrad
 | `minimize_variance` | Minimize standard deviation of SPL across all seats |
 | `primary_with_constraints` | Optimize primary seat, constrain others within max_deviation |
 | `average` | Optimize for flattest average response across seats |
+| `modal_basis` | Complex modal-basis SFM: extracts dominant seat modes from per-sub/per-seat transfer functions and optimizes sub gain/delay/polarity/all-pass controls |
 
 **Measurement Setup:**
 

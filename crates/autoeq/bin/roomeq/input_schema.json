@@ -1565,6 +1565,11 @@
           "description": "Optimize for average response across all seats",
           "type": "string",
           "const": "average"
+        },
+        {
+          "description": "Complex modal-basis sound-field management across seats",
+          "type": "string",
+          "const": "modal_basis"
         }
       ]
     },
