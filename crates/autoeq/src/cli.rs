@@ -183,6 +183,26 @@ pub struct Args {
     #[arg(long, default_value = "cobyla")]
     pub local_algo: String,
 
+    /// Bayesian optimization Sobol hot-start samples (0 = automatic)
+    #[arg(long, default_value_t = 0)]
+    pub bo_initial_samples: usize,
+
+    /// Bayesian optimization batch size for parallel expensive evaluations (0 = automatic)
+    #[arg(long, default_value_t = 0)]
+    pub bo_batch_size: usize,
+
+    /// Bayesian optimization posterior-std threshold for local-refiner handoff (0 disables)
+    #[arg(long, default_value_t = 0.0)]
+    pub bo_posterior_std_threshold: f64,
+
+    /// Bayesian optimization acquisition: ei, qei, or thompson
+    #[arg(long, default_value = "qei")]
+    pub bo_acquisition: String,
+
+    /// Use Monte-Carlo qEHVI Bayesian optimization for multi-objective data
+    #[arg(long, default_value_t = false)]
+    pub bo_ehvi: bool,
+
     /// Minimum spacing between filter center frequencies in octaves (0 disables)
     #[arg(long, default_value_t = 0.2)]
     pub min_spacing_oct: f64,
@@ -190,6 +210,23 @@ pub struct Args {
     /// Weight for the spacing penalty in the objective function
     #[arg(long, default_value_t = 20.0)]
     pub spacing_weight: f64,
+
+    /// Second-difference penalty weight on the correction curve (dB/decade^2).
+    /// 0 disables. Suggested starting point: 0.05.
+    #[arg(long, default_value_t = 0.0)]
+    pub smoothness_weight: f64,
+
+    /// L_p exponent for smoothness penalty (1.0 = TV^2/sparsifier, 2.0 = L2).
+    #[arg(long, default_value_t = 1.0)]
+    pub smoothness_exponent: f64,
+
+    /// Schroeder cutoff for relaxed smoothness in the modal region.
+    #[arg(long)]
+    pub smoothness_schroeder_hz: Option<f64>,
+
+    /// Modal-region weight multiplier (0 = exempt modal region entirely).
+    #[arg(long, default_value_t = 0.1)]
+    pub smoothness_modal_scale: f64,
 
     /// Enable smoothing (regularization) of the inverted target curve
     #[arg(long, default_value_t = true)]
@@ -330,10 +367,19 @@ impl Args {
             max_freq: 20000.0,
             min_spacing_oct: 0.5,
             spacing_weight: 20.0,
+            smoothness_weight: 0.0,
+            smoothness_exponent: 1.0,
+            smoothness_schroeder_hz: None,
+            smoothness_modal_scale: 0.1,
             smooth: true,
             smooth_n: 1,
             refine: false,
             local_algo: "cobyla".to_string(),
+            bo_initial_samples: 0,
+            bo_batch_size: 0,
+            bo_posterior_std_threshold: 0.0,
+            bo_acquisition: "qei".to_string(),
+            bo_ehvi: false,
             tolerance: 1e-3,
             atolerance: 1e-4,
             recombination: 0.9,

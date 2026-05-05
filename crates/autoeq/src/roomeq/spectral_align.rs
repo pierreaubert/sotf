@@ -1370,8 +1370,26 @@ mod tests {
     fn correct_inter_channel_deviation_with_profile_does_not_panic_on_bad_profile() {
         // Two flat-but-offset channels so there is a real deviation to correct.
         let mut curves = HashMap::new();
-        curves.insert("L".to_string(), make_curve(|f| if f >= 200.0 && f <= 4000.0 { 90.0 } else { 80.0 }));
-        curves.insert("R".to_string(), make_curve(|f| if f >= 200.0 && f <= 4000.0 { 95.0 } else { 80.0 }));
+        curves.insert(
+            "L".to_string(),
+            make_curve(|f| {
+                if f >= 200.0 && f <= 4000.0 {
+                    90.0
+                } else {
+                    80.0
+                }
+            }),
+        );
+        curves.insert(
+            "R".to_string(),
+            make_curve(|f| {
+                if f >= 200.0 && f <= 4000.0 {
+                    95.0
+                } else {
+                    80.0
+                }
+            }),
+        );
 
         let bad = ChannelMatchingCorrectionProfile {
             peak_tolerance_db: f64::NAN,
@@ -1380,7 +1398,8 @@ mod tests {
             max_freq_hz: 100.0,
         };
         // Must not panic even with malformed profile fields.
-        let results = correct_inter_channel_deviation_with_profile(&curves, 50.0, 4, SAMPLE_RATE, bad);
+        let results =
+            correct_inter_channel_deviation_with_profile(&curves, 50.0, 4, SAMPLE_RATE, bad);
         // Sanitized profile has zero correction_weight, so every gain is zero
         // and every filter is filtered out by MIN_CORRECTION_DB.
         for result in &results {

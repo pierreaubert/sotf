@@ -30,6 +30,16 @@ def infer_mode_name(filepath: Path) -> str:
     being collapsed to `iir` by an earlier substring match.
     """
     known_modes = (
+        "mixed_phase_auto_all",
+        "iir_auto_filters",
+        "iir_auto_bounds",
+        "iir_auto_all",
+        "iir_gd_safety_gate",
+        "iir_gd_adaptive_allpass",
+        "iir_gd_fixed_allpass",
+        "iir_gd_delay_only",
+        "fir_gd_phase_linear",
+        "mixed_phase_gd",
         "mixed_phase_epa",
         "mixed_phase",
         "hybrid_epa",
@@ -80,7 +90,7 @@ Examples:
         type=Path,
         nargs="+",
         metavar="JSON",
-        help="Compare 2 or more roomeq output JSONs (e.g., --compare iir.json fir.json hybrid.json). The report layout adapts to the number of modes — up to 4 modes use a single row of subplots, 5–8 modes switch to a 2-row grid.",
+        help="Compare 2 or more roomeq output JSONs (e.g., --compare iir.json fir.json hybrid.json). The report layout adapts to the number of modes.",
     )
     parser.add_argument(
         "-o", "--output",

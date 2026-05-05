@@ -15,6 +15,7 @@ use math_audio_iir_fir::Biquad;
 use ndarray::Array1;
 use std::path::Path;
 
+use super::auto_tune::{self, AutoOptimizerContext};
 use super::eq;
 use super::excursion;
 use super::fir;
@@ -826,6 +827,30 @@ pub(super) fn process_single_speaker(
             opt.max_q = sub_cfg.max_q;
         }
 
+        if opt.auto_optimizer.as_ref().is_some_and(|auto| auto.enabled) {
+            let detected_f3_hz = match excursion::detect_f3(&curve_for_optim, None) {
+                Ok(f3_result) if f3_result.f3_hz > min_freq && f3_result.f3_hz < max_freq => {
+                    Some(f3_result.f3_hz)
+                }
+                Ok(_) => None,
+                Err(e) => {
+                    debug!("  Auto optimizer: F3 detection skipped: {}", e);
+                    None
+                }
+            };
+
+            let auto_context = AutoOptimizerContext {
+                is_sub_channel,
+                effective_min_freq: min_freq,
+                effective_max_freq: max_freq,
+                detected_f3_hz,
+                schroeder_hz: auto_tune::resolved_schroeder_hz(&opt),
+                target_tilt_active: target_tilt_curve.is_some(),
+                broadband_enabled,
+            };
+            opt = auto_tune::resolve_auto_optimizer_config(&curve_for_optim, &opt, &auto_context);
+        }
+
         opt
     };
 
@@ -1367,8 +1392,7 @@ pub(super) fn process_single_speaker(
             // ================================================================
             // Schroeder Split Optimization (if configured)
             // ================================================================
-            let eq_filters = if let Some(schroeder_config) = &room_config.optimizer.schroeder_split
-            {
+            let eq_filters = if let Some(schroeder_config) = &clamped_optimizer.schroeder_split {
                 if schroeder_config.enabled {
                     let schroeder_freq = if let Some(ref dims) = schroeder_config.room_dimensions {
                         let calculated = dims.schroeder_frequency();

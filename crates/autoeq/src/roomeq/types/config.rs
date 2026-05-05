@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::MeasurementSource;
+use crate::optim::SmoothnessPenaltyConfig;
 
 /// Configuration version (semantic versioning)
 pub fn default_config_version() -> String {
@@ -1331,6 +1332,13 @@ pub struct MultiSeatConfig {
     /// Number of per-sub all-pass filters allowed during MSO.
     #[serde(default)]
     pub allpass_filters_per_sub: usize,
+    /// Optimize a per-subwoofer PEQ from that sub's measurements across all seats
+    /// before the gain/delay/polarity/all-pass MSO pass.
+    #[serde(default = "default_multiseat_per_sub_peq")]
+    pub per_sub_peq: bool,
+    /// Optimize a shared EQ on the post-MSO combined response across all seats.
+    #[serde(default = "default_multiseat_global_eq")]
+    pub global_eq: bool,
     /// Enable all-channel multi-seat correction for non-sub home-cinema channels.
     #[serde(default = "default_all_channel_multiseat_enabled")]
     pub all_channel_enabled: bool,
@@ -1357,6 +1365,12 @@ fn default_all_channel_multiseat_strategy() -> MultiMeasurementStrategy {
 fn default_primary_seat_weight() -> f64 {
     2.0
 }
+fn default_multiseat_per_sub_peq() -> bool {
+    true
+}
+fn default_multiseat_global_eq() -> bool {
+    true
+}
 
 impl Default for MultiSeatConfig {
     fn default() -> Self {
@@ -1367,6 +1381,8 @@ impl Default for MultiSeatConfig {
             max_deviation_db: default_max_deviation_db(),
             optimize_polarity: false,
             allpass_filters_per_sub: 0,
+            per_sub_peq: default_multiseat_per_sub_peq(),
+            global_eq: default_multiseat_global_eq(),
             all_channel_enabled: default_all_channel_multiseat_enabled(),
             all_channel_strategy: default_all_channel_multiseat_strategy(),
             seat_weights: None,
@@ -1536,6 +1552,41 @@ impl Default for SubOptimizerConfig {
             min_db: default_sub_min_db(),
             min_q: default_min_q(),
             max_q: default_sub_max_q(),
+        }
+    }
+}
+
+/// Serializable smoothness-penalty configuration for JSON config files.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SmoothnessPenaltyConfigSerde {
+    /// Penalty weight in loss units per (dB/decade^2)^exponent.
+    #[serde(default)]
+    pub tv2_weight: f64,
+    /// Optional Schroeder cutoff in Hz for reduced modal-region penalty.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schroeder_hz: Option<f64>,
+    /// Multiplier below `schroeder_hz` (0 = modal region exempt).
+    #[serde(default = "default_modal_weight_scale")]
+    pub modal_weight_scale: f64,
+    /// L_p exponent. 1.0 = TV^2-like sparse curvature, 2.0 = L2 smoothing.
+    #[serde(default = "default_smoothness_exponent")]
+    pub exponent: f64,
+}
+
+fn default_modal_weight_scale() -> f64 {
+    0.1
+}
+fn default_smoothness_exponent() -> f64 {
+    1.0
+}
+
+impl From<&SmoothnessPenaltyConfigSerde> for SmoothnessPenaltyConfig {
+    fn from(value: &SmoothnessPenaltyConfigSerde) -> Self {
+        Self {
+            tv2_weight: value.tv2_weight,
+            schroeder_hz: value.schroeder_hz,
+            modal_weight_scale: value.modal_weight_scale,
+            exponent: value.exponent,
         }
     }
 }
@@ -1811,6 +1862,50 @@ impl Default for Cea2034CorrectionConfig {
     }
 }
 
+/// Opt-in automatic room EQ optimizer bound selection.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AutoOptimizerConfig {
+    /// Enable automatic selection for the fields below.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Automatically choose the maximum PEQ filter count.
+    #[serde(default = "default_true")]
+    pub filter_count: bool,
+    /// Automatically choose Q bounds.
+    #[serde(default = "default_true")]
+    pub q_bounds: bool,
+    /// Automatically choose gain bounds and boost envelopes.
+    #[serde(default = "default_true")]
+    pub gain_bounds: bool,
+    /// Minimum filter count when automatic count selection is enabled.
+    #[serde(default = "default_auto_min_filters")]
+    pub min_filters: usize,
+    /// Maximum filter count when automatic count selection is enabled.
+    #[serde(default = "default_auto_max_filters")]
+    pub max_filters: usize,
+}
+
+fn default_auto_min_filters() -> usize {
+    1
+}
+
+fn default_auto_max_filters() -> usize {
+    12
+}
+
+impl Default for AutoOptimizerConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            filter_count: true,
+            q_bounds: true,
+            gain_bounds: true,
+            min_filters: default_auto_min_filters(),
+            max_filters: default_auto_max_filters(),
+        }
+    }
+}
+
 // ============================================================================
 // Configuration for Voice of God
 // ============================================================================
@@ -1915,6 +2010,21 @@ pub struct OptimizerConfig {
     /// Local optimizer algorithm for refinement stage
     #[serde(default = "default_local_algo")]
     pub local_algo: String,
+    /// Bayesian optimization Sobol hot-start samples. `None` uses an automatic default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bo_initial_samples: Option<usize>,
+    /// Bayesian optimization batch size. `None` uses the backend default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bo_batch_size: Option<usize>,
+    /// Posterior standard-deviation threshold for BO local-refiner handoff.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bo_posterior_std_threshold: Option<f64>,
+    /// Bayesian optimization acquisition: `"ei"`, `"qei"`, or `"thompson"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bo_acquisition: Option<String>,
+    /// Use Monte-Carlo qEHVI Bayesian optimization for multi-objective data.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bo_ehvi: Option<bool>,
     /// Enable psychoacoustic preprocessing
     #[serde(default = "default_psychoacoustic")]
     pub psychoacoustic: bool,
@@ -1942,6 +2052,12 @@ pub struct OptimizerConfig {
     /// Schroeder frequency split configuration
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schroeder_split: Option<SchroederSplitConfig>,
+    /// Automatic selection of filter count and optimizer bounds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_optimizer: Option<AutoOptimizerConfig>,
+    /// Smoothness regularizer on the correction curve.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub smoothness_penalty: Option<SmoothnessPenaltyConfigSerde>,
     /// Phase alignment configuration for subwoofer integration
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub phase_alignment: Option<PhaseAlignmentConfig>,
@@ -2082,6 +2198,11 @@ impl Default for OptimizerConfig {
             seed: None,
             refine: default_refine(),
             local_algo: default_local_algo(),
+            bo_initial_samples: None,
+            bo_batch_size: None,
+            bo_posterior_std_threshold: None,
+            bo_acquisition: None,
+            bo_ehvi: None,
             psychoacoustic: default_psychoacoustic(),
             smooth_n: default_smooth_n(),
             asymmetric_loss: default_asymmetric_loss(),
@@ -2091,6 +2212,8 @@ impl Default for OptimizerConfig {
             target_response: None,
             excursion_protection: None,
             schroeder_split: None,
+            auto_optimizer: None,
+            smoothness_penalty: None,
             phase_alignment: None,
             group_delay: None,
             multi_seat: None,

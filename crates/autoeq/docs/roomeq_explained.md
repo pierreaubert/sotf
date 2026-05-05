@@ -69,11 +69,12 @@ flowchart TB
     s3b --> s4([FirGeneration<br/>if PhaseLinear/Hybrid])
     s4 --> s5([MixedPhaseFirGeneration<br/>if MixedPhase])
     s5 --> s6([PhaseCorrection<br/>if configured])
-    s6 --> s7([ImpulseResponseComputation])
-    s7 --> s8([ChannelMatching<br/>≥2 channels])
-    s8 --> s9([MetadataRefresh])
-    s9 --> s10([SanityCheck])
-    s10 --> OUT[(RoomOptimizationResult)]
+    s6 --> s7([GroupDelayOptimization<br/>if configured])
+    s7 --> s8([ImpulseResponseComputation])
+    s8 --> s9([ChannelMatching<br/>≥2 channels])
+    s9 --> s10([MetadataRefresh])
+    s10 --> s11([SanityCheck])
+    s11 --> OUT[(RoomOptimizationResult)]
 ```
 
 `PipelineStepId` is the canonical list of step names. Observers receive
@@ -176,6 +177,7 @@ Each box maps directly to a submodule:
 | Phase alignment | `roomeq/phase_alignment.rs` | `optimize_phase_alignment` |
 | EQ search | `roomeq/speaker_eq/schroeder.rs` | `optimize_eq_with_optional_schroeder` |
 | FIR | `roomeq/fir.rs` | `post_generate_fir` / `post_generate_mixed_phase_fir` |
+| Group delay | `roomeq/gd_opt.rs` | `optimize_group_delay_adaptive` / `build_gd_alignment_target` |
 | Build chain | `roomeq/output.rs` | `build_channel_dsp_chain*` |
 
 ### 3.1 Loading measurements
@@ -260,35 +262,167 @@ where `p ∈ {+1, -1}`. The search is a coarse 0.5 ms grid over
 Phase-aware: requires phase data on both measurements (REW exports
 phase, the WAV-based loader recovers it from the IR).
 
-### 3.5 Multi-seat (MSO) optimization
+### 3.5 Multi-seat / SFM optimization
 
 In rooms with multiple listening positions the modal field varies
 significantly. Optimising for a single seat usually degrades others.
-RoomEQ ports the MSO logic into per-sub gain, delay, polarity, and
-optional all-pass filters, optimising the cross-seat objective:
+RoomEQ exposes two families of multi-sub optimisation:
+
+* **MSO-style magnitude objectives** that fit the summed SPL across
+  seats.
+* **SFM-style modal-basis optimisation** that works in the complex
+  domain and suppresses dominant non-common seat-pressure modes.
+
+Both families use the same control surface: per-sub gain, delay,
+polarity, and optional all-pass filters.
+
+On the production `MultiSubGroup` path this is activated by setting
+`optimizer.multi_seat.enabled = true` and making every subwoofer entry a
+multi-measurement source. The `measurements` arrays are interpreted as
+seat order, so sub 1 seat 0, sub 2 seat 0, etc. must describe the same
+listening position. All subs must have the same seat count and every
+sub/seat curve must include phase.
+
+The production order is:
+
+1. Load the per-sub/per-seat measurement matrix.
+2. Optionally optimise a PEQ for each individual sub across its seat
+   measurements (`multi_seat.per_sub_peq`, default `true`).
+3. Run MSO/SFM over the corrected matrix for per-sub gain, delay,
+   polarity, and configured all-pass filters.
+4. Rebuild the combined response at every seat and optionally optimise
+   a shared EQ across those combined seat responses
+   (`multi_seat.global_eq`, default `true`).
+5. Export per-sub driver chains carrying the per-sub PEQ, gain/polarity,
+   delay, and all-pass filters, plus the shared channel EQ.
 
 ```mermaid
 flowchart TB
     M[Per-sub × per-seat<br/>complex transfer functions H_ij] --> P[Parameters x:<br/>gains, delays, polarities,<br/>allpass freq · Q]
     P --> S[Combined response per seat<br/>S_j = Σ_i x_i · H_ij]
-    S --> OBJ[Objective:<br/>variance / primary+constraints / average]
+    S --> OBJ[Objective:<br/>variance / primary+constraints / average / modal basis]
     OBJ -->|gradient-free DE| P
 ```
 
-Three strategies are exposed:
+Four strategies are exposed through `multi_seat.strategy`:
 
 * **`minimize_variance`** — minimise the standard deviation of SPL
   across seats in the optimisation band.
 * **`primary_with_constraints`** — optimise the primary seat while
   constraining secondary seats within `max_deviation_db`.
 * **`average`** — flatten the cross-seat magnitude average.
+* **`modal_basis`** — extract a complex modal basis from the
+  per-sub/per-seat transfer functions, then minimise the candidate
+  summed response projected onto those dominant non-common modes.
 
-Two extra penalties prevent pathological solutions:
+For `modal_basis`, each sub/frequency snapshot is the complex seat
+vector
+
+$$ h_i(f) = [H_{i1}(f), \ldots, H_{iM}(f)]^T $$
+
+RoomEQ removes the common seat component,
+
+$$ a_i(f) = h_i(f) - \operatorname{mean}_\text{seat}(h_i(f)) \cdot \mathbf{1} $$
+
+normalises the non-zero snapshots, stacks them into a matrix, and runs
+SVD:
+
+$$ A = U \Sigma V^H $$
+
+The retained columns of `U` are the dominant seat modes. The mode count
+is capped at `min(seats - 1, subs, 8)` and normally stops once 95% of
+the singular-value energy is retained. A candidate combined response
+`s(f)` is then centred across seats and penalised by its projection
+onto those modes:
+
+$$ J_\text{modal}(f) = \sum_k \left| u_k^H \left(s(f) - \operatorname{mean}_\text{seat}(s(f)) \cdot \mathbf{1}\right) \right|^2 $$
+
+This makes the optimiser target coupled modal seat-to-seat variation
+instead of only matching magnitudes after the complex summation has
+already happened. Because the basis is complex, `modal_basis` requires
+phase for every sub/seat measurement. If no non-common complex modes
+can be extracted, the configuration is rejected rather than silently
+falling back to a scalar magnitude objective.
+
+Minimal config:
+
+```json
+{
+  "optimizer": {
+    "multi_seat": {
+      "enabled": true,
+      "strategy": "modal_basis"
+    }
+  }
+}
+```
+
+Production multi-sub input shape:
+
+```json
+{
+  "speakers": {
+    "lfe": {
+      "name": "subs",
+      "subwoofers": [
+        {
+          "measurements": [
+            "sub1_seat0.csv",
+            "sub1_seat1.csv"
+          ]
+        },
+        {
+          "measurements": [
+            "sub2_seat0.csv",
+            "sub2_seat1.csv"
+          ]
+        }
+      ]
+    }
+  },
+  "optimizer": {
+    "multi_seat": {
+      "enabled": true,
+      "strategy": "modal_basis",
+      "optimize_polarity": true,
+      "allpass_filters_per_sub": 1,
+      "per_sub_peq": true,
+      "global_eq": true
+    }
+  }
+}
+```
+
+Useful options:
+
+* `optimize_polarity` — include per-sub polarity inversion in the
+  continuous search. Default: `false`.
+* `allpass_filters_per_sub` — add this many all-pass biquads per
+  optimised sub. Frequencies are searched inside the optimisation band,
+  clamped to 20-200 Hz, with Q from 0.3 to 5.0. Default: `0`.
+* `primary_seat` and `max_deviation_db` — only affect
+  `primary_with_constraints`.
+* `per_sub_peq` — fit each sub's PEQ against that sub's measurements
+  across all seats before MSO. Default: `true`.
+* `global_eq` — fit the final shared EQ against the post-MSO combined
+  response across all seats. Default: `true`.
+* `seat_weights` and `primary_seat_weight` — weight seats for the
+  derived multi-measurement PEQ passes; primary weighting is applied
+  when `strategy = "primary_with_constraints"`.
+
+The first sub is the timing/gain reference. Remaining subs are searched
+over gain `[-6, +6] dB`, delay `[0, 20] ms`, optional polarity, and any
+configured all-pass filters.
+
+Shared guardrails prevent pathological solutions:
 
 * `MSO_MAX_MEAN_OUTPUT_LOSS_DB = 1.5` — gives up bass headroom only
-  up to 1.5 dB on average;
+  up to 1.5 dB on average.
 * `MSO_NULL_DEFICIT_ALLOWANCE_DB = 3.0` — does not chase deeper nulls
   by 3 dB more than necessary.
+* headroom-boost and low-frequency-extension penalties keep the search
+  from trading modal suppression for excessive bass boost or lost
+  extension.
 
 ### 3.6 Time alignment (`time_align.rs`)
 
@@ -363,6 +497,23 @@ phase linearisation.
 
 `PhaseCorrection` adds a standalone rePhase-style allpass-only
 correction on top.
+
+When `optimizer.group_delay.enabled = true`, GD-Opt runs after the
+phase/FIR stages and before impulse-response reporting. In
+`LowLatency`, `Hybrid`, and `MixedPhase` modes it exports delay,
+polarity, and all-pass plugins where the configured mode allows them.
+If `adaptive_allpass` is enabled, all-pass filters are accepted only
+when every participating channel supplies matching independent
+multi-measurement sweeps with phase and coherence; otherwise RoomEQ
+downgrades to delay-only and records the
+`allpass_disabled_no_bootstrap_realisations` advisory.
+
+`PhaseLinear` does not emit IIR all-pass or delay plugins for GD-Opt.
+Instead RoomEQ builds a `GdAlignmentTarget` and encodes the optimized
+per-channel delay as a sample shift in the FIR coefficients before
+rewriting the convolution WAV. This keeps the exported chain FIR-native
+while still reflecting group-delay alignment in the reported phase and
+IR waveforms.
 
 ### 3.9 Channel matching (≥ 2 channels)
 
@@ -445,7 +596,12 @@ Highlights:
 ### 4.3 Specialised aggregates
 
 * **`MultiSubGroup`** — multiple subs treated as a single virtual
-  channel; multi-seat MSO runs over the group.
+  channel. With one measurement per sub, the group uses the legacy
+  gain/delay or all-pass-enhanced multisub optimiser. With
+  `optimizer.multi_seat.enabled = true` and per-sub multi-measurement
+  sources, it uses the production multi-seat path described above:
+  per-sub PEQ, MSO/SFM gain-delay-polarity-all-pass, then shared
+  multi-seat EQ on the combined response.
 * **`DBA` (Double Bass Array)** — front-wall sources + delayed
   back-wall sources to cancel the modal field below a target
   frequency.
@@ -473,8 +629,11 @@ flowchart TB
     R3 -->|no| R4
     R3Y --> R4{mixed_phase / phase_correction?}
     R4 -->|yes| R4Y[FIR convolution<br/>mixed-phase or rePhase]
-    R4 -->|no| OUT
-    R4Y --> OUT[(DspChainOutput)]
+    R4 -->|no| R5
+    R4Y --> R5{group_delay?}
+    R5 -->|yes| R5Y[delay / polarity / all-pass<br/>or FIR GD target]
+    R5 -->|no| OUT
+    R5Y --> OUT[(DspChainOutput)]
 ```
 
 * **Decomposed correction** (Laborie/Bruno/Montoya, 2003) splits the
@@ -488,6 +647,10 @@ flowchart TB
   spatial zero-clustering pre-ringing constraint.
 * **Mixed-phase / phase correction** post-generates a short FIR that
   corrects excess phase without doubling latency.
+* **Group-delay optimisation** aligns the summed phase/GD response
+  across channels. IIR-capable modes can emit delay, polarity, and
+  all-pass plugins; `PhaseLinear` folds the delay target into the FIR
+  coefficients instead.
 
 ---
 
@@ -539,7 +702,7 @@ crates/autoeq/src/roomeq/
 ├── eq.rs                     # core EQ search adapter (autoeq::optim wrapper)
 ├── crossover.rs              # crossover filter design (LR / BW)
 ├── time_align.rs             # WAV onset + probe-burst delay detection
-├── multiseat.rs              # MSO variance / constrained / average optimisation
+├── multiseat.rs              # MSO objectives + modal-basis SFM optimisation
 ├── phase_alignment.rs        # sub/main delay+polarity grid+refine
 ├── target_tilt.rs            # build_complete_target_curve
 ├── excursion.rs              # F3 detection + protection HPF
@@ -724,6 +887,16 @@ DOI 10.1109/4235.996017.
 Ramos, López. *Multiobjective Genetic Algorithm Optimization of
 Linkwitz-Riley Crossovers Using Group Delay and Magnitude Response
 Criteria.* AES Conv. 121, 2006.
+
+### Multi-subwoofer sound-field management
+
+Welti, Todd; Devantier, Allan. *Low-Frequency Optimization Using
+Multiple Subwoofers.* JAES 54(5):347-365, 2006.
+
+Used by `roomeq/multiseat.rs` as the practical MSO baseline. The
+`modal_basis` strategy extends the same multi-sub control problem with
+SVD/PCA over complex per-sub/per-seat transfer functions so the
+optimiser can suppress dominant seat modes directly.
 
 ### Optimization algorithms
 

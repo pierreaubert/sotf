@@ -1,0 +1,99 @@
+{
+  "version": "1.1.0",
+  "speakers": {
+    "R": {
+      "name": "R",
+      "wav_path": "R.wav",
+      "csv_path": "R.csv"
+    },
+    "L": {
+      "name": "L",
+      "wav_path": "L.wav",
+      "csv_path": "L.csv"
+    }
+  },
+  "optimizer": {
+    "processing_mode": "low_latency",
+    "loss_type": "flat",
+    "algorithm": "autoeq:de",
+    "strategy": "lshade",
+    "num_filters": 7,
+    "min_filter_improvement": 0.01,
+    "elimination_threshold": 0.005,
+    "min_q": 0.5,
+    "max_q": 3.0,
+    "min_db": -12.0,
+    "max_db": 4.0,
+    "min_freq": 20.0,
+    "max_freq": 1600.0,
+    "max_iter": 50000,
+    "population": 300,
+    "peq_model": "pk",
+    "refine": true,
+    "local_algo": "cobyla",
+    "psychoacoustic": true,
+    "smooth_n": 2,
+    "asymmetric_loss": true,
+    "tolerance": 0.00001,
+    "atolerance": 0.00001,
+    "decomposed_correction": {
+      "enabled": true,
+      "schroeder_freq": 250.0,
+      "min_mode_q": 3.0,
+      "min_mode_prominence_db": 3.0,
+      "mode_correction_weight": 1.0,
+      "early_reflection_weight": 0.3,
+      "steady_state_weight": 0.4
+    }
+  },
+  "recording_config": {
+    "playback_device_name": "EVO8",
+    "playback_device_id": "EVO8",
+    "playback_sample_rate": 48000,
+    "playback_channels": 2,
+    "speaker_configuration": "2.0",
+    "channel_names": [
+      "L",
+      "R"
+    ],
+    "recording_device_name": "EVO8",
+    "recording_device_id": "EVO8",
+    "recording_sample_rate": 48000,
+    "recording_channels": 1,
+    "mic_calibration_path": "/Users/pierrre/src.local/sotf/data_tests/microphones/Bayerdynamics_MM1_12007/calibration.txt",
+    "mic_calibration_paths": [
+      "/Users/pierrre/src.local/sotf/data_tests/microphones/Bayerdynamics_MM1_12007/calibration.txt"
+    ],
+    "recording_directory": "/Users/pierrre/src.local/sotf/data_generated/recording-20260413-163800",
+    "signal_type": "Sweep",
+    "signal_duration_secs": 5.0,
+    "signal_level_db": -10.0,
+    "sweep_start_freq": 20.0,
+    "sweep_end_freq": 20000.0,
+    "setup_description": "office spain",
+    "probe_results": {
+      "channels": [
+        {
+          "channel_name": "L",
+          "channel_index": 0,
+          "arrival_ms": 0.0,
+          "gain_db": -5.920006490122401,
+          "snr_db": 50.05750727952292
+        },
+        {
+          "channel_name": "R",
+          "channel_index": 1,
+          "arrival_ms": 0.0,
+          "gain_db": -5.965722404939245,
+          "snr_db": 49.94347697740351
+        }
+      ],
+      "sample_rate": 48000,
+      "alignment_delays_ms": [
+        0.0,
+        0.0
+      ]
+    },
+    "probe_wav_relative": "probe_all_channels.wav"
+  }
+}

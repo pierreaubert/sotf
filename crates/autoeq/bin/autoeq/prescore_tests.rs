@@ -44,6 +44,7 @@ mod tests {
             epa_config: None,
             detected_problems: Vec::new(),
             null_suppression: None,
+            smoothness_penalty: None,
         }
     }
 

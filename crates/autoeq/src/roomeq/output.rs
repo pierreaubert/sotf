@@ -512,15 +512,70 @@ pub fn build_multisub_dsp_chain_with_allpass(
     allpass_filters: Option<&[(f64, f64)]>,
     sample_rate: f64,
 ) -> ChannelDspChain {
+    let allpass_by_sub = allpass_filters.map(|filters| {
+        filters
+            .iter()
+            .copied()
+            .map(|filter| vec![filter])
+            .collect::<Vec<_>>()
+    });
+    build_multisub_dsp_chain_advanced(
+        channel_name,
+        group_name,
+        n_subs,
+        gains,
+        delays,
+        eq_filters,
+        initial_curve,
+        final_curve,
+        driver_initial_curves,
+        None,
+        None,
+        allpass_by_sub.as_deref(),
+        sample_rate,
+    )
+}
+
+/// Build a DSP chain for multi-sub optimization with optional per-sub PEQ,
+/// polarity inversion, and any number of per-sub all-pass filters.
+#[allow(clippy::too_many_arguments)]
+pub fn build_multisub_dsp_chain_advanced(
+    channel_name: &str,
+    group_name: &str,
+    n_subs: usize,
+    gains: &[f64],
+    delays: &[f64],
+    eq_filters: &[Biquad],
+    initial_curve: Option<&crate::Curve>,
+    final_curve: Option<&crate::Curve>,
+    driver_initial_curves: Option<&[crate::Curve]>,
+    per_sub_eq_filters: Option<&[Vec<Biquad>]>,
+    polarities: Option<&[bool]>,
+    allpass_filters: Option<&[Vec<(f64, f64)>]>,
+    sample_rate: f64,
+) -> ChannelDspChain {
     // Build per-sub chains
     let mut driver_chains = Vec::new();
 
     for i in 0..n_subs {
         let mut sub_plugins = Vec::new();
 
-        // Add gain plugin if non-zero
-        if i < gains.len() && gains[i].abs() > 0.01 {
-            sub_plugins.push(create_gain_plugin(gains[i]));
+        // Add per-sub PEQ before alignment filters.
+        if let Some(filters) = per_sub_eq_filters.and_then(|filters| filters.get(i))
+            && !filters.is_empty()
+        {
+            sub_plugins.push(create_eq_plugin(filters));
+        }
+
+        // Add gain/polarity plugin if non-zero or inverted.
+        let gain = gains.get(i).copied().unwrap_or(0.0);
+        let invert = polarities
+            .and_then(|values| values.get(i).copied())
+            .unwrap_or(false);
+        if invert {
+            sub_plugins.push(create_gain_plugin_with_invert(gain, true));
+        } else if gain.abs() > 0.01 {
+            sub_plugins.push(create_gain_plugin(gain));
         }
 
         // Add delay plugin if non-zero
@@ -528,18 +583,23 @@ pub fn build_multisub_dsp_chain_with_allpass(
             sub_plugins.push(create_delay_plugin(delays[i]));
         }
 
-        // Add all-pass filter if configured
-        if let Some(ap_filters) = allpass_filters
-            && let Some(&(freq, q)) = ap_filters.get(i)
+        // Add all-pass filters if configured.
+        if let Some(ap_filters) = allpass_filters.and_then(|filters| filters.get(i))
+            && !ap_filters.is_empty()
         {
-            let ap_biquad = Biquad::new(
-                math_audio_iir_fir::BiquadFilterType::AllPass,
-                freq,
-                sample_rate,
-                q,
-                0.0,
-            );
-            sub_plugins.push(create_eq_plugin(&[ap_biquad]));
+            let biquads: Vec<Biquad> = ap_filters
+                .iter()
+                .map(|&(freq, q)| {
+                    Biquad::new(
+                        math_audio_iir_fir::BiquadFilterType::AllPass,
+                        freq,
+                        sample_rate,
+                        q,
+                        0.0,
+                    )
+                })
+                .collect();
+            sub_plugins.push(create_eq_plugin(&biquads));
         }
 
         let driver_curve = driver_initial_curves
@@ -1360,5 +1420,67 @@ mod tests {
             "Sub 1 should have 3 plugins (gain+delay+allpass), got {}",
             drivers[1].plugins.len()
         );
+    }
+
+    #[test]
+    fn test_multisub_advanced_chain_exports_per_sub_peq_polarity_and_multi_allpass() {
+        let sample_rate = 48000.0;
+        let sub_filters = vec![
+            vec![Biquad::new(
+                BiquadFilterType::Peak,
+                45.0,
+                sample_rate,
+                2.0,
+                -4.0,
+            )],
+            vec![Biquad::new(
+                BiquadFilterType::Peak,
+                70.0,
+                sample_rate,
+                1.5,
+                -3.0,
+            )],
+        ];
+        let allpass = vec![vec![(50.0, 1.2), (85.0, 2.0)], vec![(60.0, 1.4)]];
+        let chain = build_multisub_dsp_chain_advanced(
+            "LFE",
+            "subs",
+            2,
+            &[0.0, -2.0],
+            &[0.0, 3.0],
+            &[],
+            None,
+            None,
+            None,
+            Some(&sub_filters),
+            Some(&[true, false]),
+            Some(&allpass),
+            sample_rate,
+        );
+
+        let drivers = chain.drivers.unwrap();
+        assert_eq!(drivers.len(), 2);
+        assert_eq!(drivers[0].plugins[0].plugin_type, "eq");
+        assert_eq!(drivers[0].plugins[1].plugin_type, "gain");
+        assert!(
+            drivers[0].plugins[1]
+                .parameters
+                .get("invert")
+                .unwrap()
+                .as_bool()
+                .unwrap()
+        );
+        assert_eq!(drivers[0].plugins[2].plugin_type, "eq");
+        assert_eq!(
+            drivers[0].plugins[2]
+                .parameters
+                .get("filters")
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+        assert!(drivers[1].plugins.iter().any(|p| p.plugin_type == "delay"));
     }
 }

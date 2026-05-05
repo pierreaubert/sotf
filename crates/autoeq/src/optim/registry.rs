@@ -34,6 +34,9 @@ pub fn all_algorithms() -> Vec<Box<dyn FilterOptimizer>> {
     use super::cmaes::AutoeqCmaEsBackend;
     algos.push(Box::new(AutoeqCmaEsBackend::new("autoeq:cmaes")));
 
+    use super::bo::AutoeqBoBackend;
+    algos.push(Box::new(AutoeqBoBackend::new("autoeq:bo")));
+
     use super::nsga::AutoeqNsgaBackend;
     algos.push(Box::new(AutoeqNsgaBackend::new_nsga2("autoeq:nsga2")));
     algos.push(Box::new(AutoeqNsgaBackend::new_nsga3("autoeq:nsga3")));
@@ -119,6 +122,9 @@ fn canonical_alias(name: &str) -> Option<&'static str> {
     let lower = name.to_lowercase();
     match lower.as_str() {
         "cma-es" | "cma_es" | "autoeq:cma-es" | "autoeq:cma_es" => Some("autoeq:cmaes"),
+        "bayes" | "bayesian" | "bayesopt" | "bo-gp" | "autoeq:bayes" | "autoeq:bayesian" => {
+            Some("autoeq:bo")
+        }
         "nsga-ii" | "nsga_ii" | "autoeq:nsga-ii" | "autoeq:nsga_ii" => Some("autoeq:nsga2"),
         "nsga-iii" | "nsga_iii" | "autoeq:nsga-iii" | "autoeq:nsga_iii" => Some("autoeq:nsga3"),
         _ => None,
@@ -141,5 +147,18 @@ fn warn_deprecated_once(removed: &str, replacement: &str) {
             removed,
             replacement,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolves_bayesian_optimizer_aliases() {
+        for name in ["autoeq:bo", "bo", "bayes", "bayesian", "autoeq:bayes"] {
+            let backend = resolve(name).expect("BO backend should resolve");
+            assert_eq!(backend.name(), "autoeq:bo");
+        }
     }
 }

@@ -977,6 +977,42 @@ fn optimize_room_impl(
                     }
                 }
 
+                emit_pipeline_event(
+                    &observer_shared,
+                    PipelineEvent::started(
+                        PipelineStepId::GroupDelayOptimization,
+                        "Running GD optimization",
+                    ),
+                )?;
+                let workflow_group_delay_summary =
+                    if config.optimizer.processing_mode == ProcessingMode::PhaseLinear {
+                        try_run_phase_linear_fir_gd(
+                            config,
+                            &mut result.channel_results,
+                            &mut result.channels,
+                            sample_rate,
+                            output_dir,
+                        )
+                    } else {
+                        try_run_gd_opt(
+                            config,
+                            &mut result.channel_results,
+                            &mut result.channels,
+                            sample_rate,
+                        )
+                    };
+                if let Some(summary) = workflow_group_delay_summary {
+                    workflow_refresh_needed |= summary.applied;
+                    result.metadata.group_delay = Some(summary);
+                }
+                emit_pipeline_event(
+                    &observer_shared,
+                    PipelineEvent::completed(
+                        PipelineStepId::GroupDelayOptimization,
+                        "GD optimization complete",
+                    ),
+                )?;
+
                 // Compute IR waveforms for the workflow result
                 send_progress(
                     &observer_shared,
@@ -2037,12 +2073,22 @@ fn optimize_room_impl(
             "Running GD optimization",
         ),
     )?;
-    let group_delay_summary = try_run_gd_opt(
-        config,
-        &mut channel_results,
-        &mut channel_chains,
-        sample_rate,
-    );
+    let group_delay_summary = if config.optimizer.processing_mode == ProcessingMode::PhaseLinear {
+        try_run_phase_linear_fir_gd(
+            config,
+            &mut channel_results,
+            &mut channel_chains,
+            sample_rate,
+            output_dir,
+        )
+    } else {
+        try_run_gd_opt(
+            config,
+            &mut channel_results,
+            &mut channel_chains,
+            sample_rate,
+        )
+    };
     emit_pipeline_event(
         &observer_shared,
         PipelineEvent::completed(
@@ -2050,6 +2096,12 @@ fn optimize_room_impl(
             "GD optimization complete",
         ),
     )?;
+    if group_delay_summary
+        .as_ref()
+        .is_some_and(|summary| summary.applied)
+    {
+        curves = collect_current_final_curves(&channel_results);
+    }
 
     // Compute IR waveforms (pre- and post-correction) for each channel
     send_progress(

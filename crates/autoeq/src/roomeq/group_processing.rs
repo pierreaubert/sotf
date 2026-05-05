@@ -10,6 +10,7 @@ use crate::response;
 use log::{debug, info, warn};
 use math_audio_dsp::analysis::compute_average_response;
 use math_audio_iir_fir::Biquad;
+use ndarray::Array1;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -17,10 +18,12 @@ use super::crossover;
 use super::dba;
 use super::eq;
 use super::fir;
+use super::multiseat::{self, MultiSeatMeasurements};
 use super::multisub;
 use super::output;
 use super::types::{
-    ChannelDspChain, MixedModeConfig, MultiSubGroup, OptimizerConfig, RoomConfig, SpeakerGroup,
+    ChannelDspChain, MixedModeConfig, MultiMeasurementConfig, MultiSeatConfig, MultiSubGroup,
+    OptimizerConfig, RoomConfig, SpeakerGroup,
 };
 
 // Type aliases from optimize module
@@ -35,6 +38,8 @@ pub(super) type MixedModeResult = (
     Option<f64>,
     Option<Vec<f64>>,
 );
+
+const GLOBAL_EQ_REGRESSION_TOLERANCE: f64 = 1e-6;
 
 // Import helper functions from optimize and speaker_eq modules
 use super::optimize::detect_passband_and_mean;
@@ -337,6 +342,165 @@ mod tests {
             "unexpected error: {err}"
         );
     }
+
+    #[test]
+    fn global_eq_regression_guard_rejects_worse_or_nonfinite_scores() {
+        assert!(eq_score_regressed(1.0, 1.01));
+        assert!(eq_score_regressed(1.0, f64::NAN));
+        assert!(!eq_score_regressed(1.0, 1.0));
+        assert!(!eq_score_regressed(
+            1.0,
+            1.0 + GLOBAL_EQ_REGRESSION_TOLERANCE
+        ));
+    }
+
+    fn phased_sub_curve(spl_offset: f64, phase_offset: f64) -> Curve {
+        let freq = array![20.0, 30.0, 45.0, 67.5, 100.0, 120.0];
+        let spl = freq.mapv(|f| {
+            let mode = if f < 60.0 { 3.0 } else { -1.0 };
+            80.0 + spl_offset + mode
+        });
+        let phase = freq.mapv(|f| -180.0 * f / 100.0 + phase_offset);
+        Curve {
+            freq,
+            spl,
+            phase: Some(phase),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn multisub_uses_production_multiseat_path_when_subs_have_seat_measurements() {
+        let group = MultiSubGroup {
+            name: "subs".to_string(),
+            speaker_name: None,
+            subwoofers: vec![
+                MeasurementSource::InMemoryMultiple(vec![
+                    phased_sub_curve(0.0, 0.0),
+                    phased_sub_curve(2.0, 12.0),
+                ]),
+                MeasurementSource::InMemoryMultiple(vec![
+                    phased_sub_curve(-1.0, 45.0),
+                    phased_sub_curve(1.0, 60.0),
+                ]),
+            ],
+            allpass_optimization: false,
+        };
+        let room_config = RoomConfig {
+            version: super::super::types::default_config_version(),
+            system: None,
+            speakers: HashMap::new(),
+            crossovers: None,
+            target_curve: None,
+            optimizer: OptimizerConfig {
+                min_freq: 20.0,
+                max_freq: 120.0,
+                num_filters: 1,
+                max_iter: 3,
+                population: 4,
+                seed: Some(7),
+                refine: false,
+                multi_seat: Some(MultiSeatConfig {
+                    enabled: true,
+                    per_sub_peq: false,
+                    global_eq: false,
+                    ..Default::default()
+                }),
+                ..OptimizerConfig::default()
+            },
+            recording_config: None,
+            cea2034_cache: None,
+        };
+
+        let (chain, pre_score, post_score, _initial, _final, filters, _mean, _arrival, _fir) =
+            process_multisub_group("LFE", &group, &room_config, 48000.0, Path::new("."))
+                .expect("multi-seat multi-sub processing should succeed");
+
+        assert!(pre_score.is_finite());
+        assert!(post_score.is_finite());
+        assert_ne!(
+            pre_score, post_score,
+            "pre/post scores should include the production MSO stage, not only global EQ"
+        );
+        assert!(
+            filters.is_empty(),
+            "global_eq=false should not emit shared EQ"
+        );
+        assert!(chain.plugins.is_empty());
+        let drivers = chain.drivers.expect("multi-sub output should have drivers");
+        assert_eq!(drivers.len(), 2);
+    }
+
+    #[test]
+    fn production_multiseat_path_emits_per_sub_and_global_eq_when_enabled() {
+        let group = MultiSubGroup {
+            name: "subs".to_string(),
+            speaker_name: None,
+            subwoofers: vec![
+                MeasurementSource::InMemoryMultiple(vec![
+                    phased_sub_curve(0.0, 0.0),
+                    phased_sub_curve(2.0, 12.0),
+                ]),
+                MeasurementSource::InMemoryMultiple(vec![
+                    phased_sub_curve(-1.0, 45.0),
+                    phased_sub_curve(1.0, 60.0),
+                ]),
+            ],
+            allpass_optimization: false,
+        };
+        let room_config = RoomConfig {
+            version: super::super::types::default_config_version(),
+            system: None,
+            speakers: HashMap::new(),
+            crossovers: None,
+            target_curve: None,
+            optimizer: OptimizerConfig {
+                min_freq: 20.0,
+                max_freq: 120.0,
+                num_filters: 1,
+                max_iter: 3,
+                population: 4,
+                seed: Some(11),
+                refine: false,
+                multi_seat: Some(MultiSeatConfig {
+                    enabled: true,
+                    per_sub_peq: true,
+                    global_eq: true,
+                    ..Default::default()
+                }),
+                ..OptimizerConfig::default()
+            },
+            recording_config: None,
+            cea2034_cache: None,
+        };
+
+        let (chain, pre_score, post_score, _initial, _final, filters, _mean, _arrival, _fir) =
+            process_multisub_group("LFE", &group, &room_config, 48000.0, Path::new("."))
+                .expect("multi-seat multi-sub processing should succeed");
+
+        assert!(pre_score.is_finite());
+        assert!(post_score.is_finite());
+        assert!(
+            !filters.is_empty(),
+            "global_eq=true should emit shared EQ filters"
+        );
+        assert!(
+            chain
+                .plugins
+                .iter()
+                .any(|plugin| plugin.plugin_type == "eq"),
+            "global_eq=true should export a channel EQ plugin"
+        );
+        let drivers = chain.drivers.expect("multi-sub output should have drivers");
+        assert_eq!(drivers.len(), 2);
+        assert!(
+            drivers.iter().all(|driver| driver
+                .plugins
+                .iter()
+                .any(|plugin| plugin.plugin_type == "eq")),
+            "per_sub_peq=true should export per-driver EQ plugins"
+        );
+    }
 }
 
 /// Process multi-subwoofer group
@@ -349,6 +513,30 @@ pub(super) fn process_multisub_group(
     sample_rate: f64,
     _output_dir: &Path,
 ) -> Result<MixedModeResult> {
+    if let Some(multi_seat_config) = room_config
+        .optimizer
+        .multi_seat
+        .as_ref()
+        .filter(|config| config.enabled)
+    {
+        match load_multisub_seat_measurements(group)? {
+            Some(seat_measurements) => {
+                return process_multisub_group_multiseat(
+                    channel_name,
+                    group,
+                    room_config,
+                    multi_seat_config,
+                    sample_rate,
+                    seat_measurements,
+                );
+            }
+            None => warn!(
+                "  Multi-seat optimization is enabled for multi-sub group '{}' but subwoofer sources do not contain at least two seat measurements each; using single-seat multi-sub path",
+                group.name
+            ),
+        }
+    }
+
     let (result, combined_curve, allpass_filters) = if group.allpass_optimization {
         // All-pass enhanced optimization
         info!("  Using all-pass enhanced multi-sub optimization");
@@ -388,9 +576,14 @@ pub(super) fn process_multisub_group(
         result.gains, result.delays
     );
 
+    let multisub_eq_optimizer = eq::resolve_multi_measurement_auto_optimizer_config(
+        std::slice::from_ref(&combined_curve),
+        &room_config.optimizer,
+        eq::MultiEqAutoOptimizerContext::sub_channel(),
+    );
     let (eq_filters, post_score) = eq::optimize_channel_eq(
         &combined_curve,
-        &room_config.optimizer,
+        &multisub_eq_optimizer,
         room_config.target_curve.as_ref(),
         sample_rate,
     )
@@ -477,6 +670,379 @@ pub(super) fn process_multisub_group(
         mean_spl,
         None, // No single WAV for multi-sub groups
         None, // IIR-only for multi-sub groups
+    ))
+}
+
+fn load_multisub_seat_measurements(group: &MultiSubGroup) -> Result<Option<Vec<Vec<Curve>>>> {
+    let mut per_sub = Vec::with_capacity(group.subwoofers.len());
+    let mut expected_seats = None;
+    let mut any_multi_seat = false;
+
+    for (sub_idx, source) in group.subwoofers.iter().enumerate() {
+        let curves =
+            load::load_source_individual(source).map_err(|e| AutoeqError::InvalidMeasurement {
+                message: format!(
+                    "Failed to load seat measurements for sub {} in group '{}': {}",
+                    sub_idx, group.name, e
+                ),
+            })?;
+        if curves.len() > 1 {
+            any_multi_seat = true;
+        }
+        match expected_seats {
+            Some(expected) if curves.len() != expected => {
+                return Err(AutoeqError::InvalidConfiguration {
+                    message: format!(
+                        "Multi-seat multi-sub group '{}' has inconsistent seat counts: sub 0 has {}, sub {} has {}",
+                        group.name,
+                        expected,
+                        sub_idx,
+                        curves.len()
+                    ),
+                });
+            }
+            None => expected_seats = Some(curves.len()),
+            _ => {}
+        }
+        per_sub.push(curves);
+    }
+
+    if any_multi_seat && expected_seats.unwrap_or(0) >= 2 {
+        Ok(Some(per_sub))
+    } else {
+        Ok(None)
+    }
+}
+
+fn multiseat_peq_config(policy: &MultiSeatConfig, seat_count: usize) -> MultiMeasurementConfig {
+    let mut weights = match policy.seat_weights.as_ref() {
+        Some(weights) if weights.len() == seat_count => weights.clone(),
+        _ => vec![1.0; seat_count],
+    };
+    for weight in &mut weights {
+        if !weight.is_finite() || *weight < 0.0 {
+            *weight = 0.0;
+        }
+    }
+    if policy.strategy == super::types::MultiSeatStrategy::PrimaryWithConstraints
+        && policy.primary_seat < weights.len()
+    {
+        weights[policy.primary_seat] *= policy.primary_seat_weight.max(1.0);
+    }
+    let weight_sum: f64 = weights.iter().sum();
+    if weight_sum <= f64::EPSILON {
+        weights = vec![1.0 / seat_count.max(1) as f64; seat_count];
+    } else {
+        for weight in &mut weights {
+            *weight /= weight_sum;
+        }
+    }
+
+    MultiMeasurementConfig {
+        strategy: policy.all_channel_strategy.clone(),
+        weights: Some(weights),
+        variance_lambda: 1.0,
+        spatial_robustness: Some(super::types::SpatialRobustnessSerdeConfig {
+            variance_threshold_db: 3.0,
+            transition_width_db: 2.0,
+            min_correction_depth: 0.1,
+            mask_smoothing_octaves: 1.0 / 6.0,
+        }),
+    }
+}
+
+fn apply_per_sub_filters(
+    seat_measurements: &[Vec<Curve>],
+    per_sub_filters: &[Vec<Biquad>],
+    sample_rate: f64,
+) -> Vec<Vec<Curve>> {
+    seat_measurements
+        .iter()
+        .zip(per_sub_filters.iter())
+        .map(|(sub_curves, filters)| {
+            sub_curves
+                .iter()
+                .map(|curve| {
+                    if filters.is_empty() {
+                        curve.clone()
+                    } else {
+                        let resp = response::compute_peq_complex_response(
+                            filters,
+                            &curve.freq,
+                            sample_rate,
+                        );
+                        response::apply_complex_response(curve, &resp)
+                    }
+                })
+                .collect()
+        })
+        .collect()
+}
+
+fn average_power_curve(curves: &[Curve]) -> Result<Curve> {
+    let Some(first) = curves.first() else {
+        return Err(AutoeqError::InvalidMeasurement {
+            message: "Cannot average an empty multi-seat curve set".to_string(),
+        });
+    };
+    let mut power_sum = Array1::<f64>::zeros(first.freq.len());
+    for (idx, curve) in curves.iter().enumerate() {
+        if curve.freq.len() != first.freq.len()
+            || curve
+                .freq
+                .iter()
+                .zip(first.freq.iter())
+                .any(|(a, b)| (a - b).abs() > 1e-6 * b.abs().max(1.0))
+        {
+            return Err(AutoeqError::InvalidMeasurement {
+                message: format!(
+                    "Cannot average multi-seat curves because seat {} has a different frequency grid",
+                    idx
+                ),
+            });
+        }
+        power_sum = power_sum + curve.spl.mapv(|spl| 10.0_f64.powf(spl / 10.0));
+    }
+    let avg_power = power_sum / curves.len() as f64;
+    Ok(Curve {
+        freq: first.freq.clone(),
+        spl: avg_power.mapv(|power| 10.0 * power.max(1e-12).log10()),
+        phase: None,
+        ..Default::default()
+    })
+}
+
+fn flat_loss_score(curve: &Curve, min_freq: f64, max_freq: f64) -> f64 {
+    let freqs_f32: Vec<f32> = curve.freq.iter().map(|&f| f as f32).collect();
+    let spl_f32: Vec<f32> = curve.spl.iter().map(|&s| s as f32).collect();
+    let mean = compute_average_response(
+        &freqs_f32,
+        &spl_f32,
+        Some((min_freq as f32, max_freq as f32)),
+    ) as f64;
+    let normalized_spl = &curve.spl - mean;
+    crate::loss::flat_loss(&curve.freq, &normalized_spl, min_freq, max_freq)
+}
+
+fn eq_score_regressed(pre_score: f64, post_score: f64) -> bool {
+    !post_score.is_finite()
+        || (pre_score.is_finite() && post_score > pre_score + GLOBAL_EQ_REGRESSION_TOLERANCE)
+}
+
+fn identity_multiseat_result(
+    measurements: &MultiSeatMeasurements,
+    policy: &MultiSeatConfig,
+) -> multiseat::MultiSeatOptimizationResult {
+    multiseat::MultiSeatOptimizationResult {
+        gains: vec![0.0; measurements.num_subs],
+        delays: vec![0.0; measurements.num_subs],
+        polarities: vec![false; measurements.num_subs],
+        allpass_filters: vec![Vec::new(); measurements.num_subs],
+        strategy: policy.strategy.clone(),
+        objective_name: "identity".to_string(),
+        objective_before: 0.0,
+        objective_after: 0.0,
+        objective_improvement_db: 0.0,
+        variance_before: 0.0,
+        variance_after: 0.0,
+        variance_improvement_db: 0.0,
+        improvement_db: 0.0,
+    }
+}
+
+fn process_multisub_group_multiseat(
+    channel_name: &str,
+    group: &MultiSubGroup,
+    room_config: &RoomConfig,
+    multi_seat_config: &MultiSeatConfig,
+    sample_rate: f64,
+    seat_measurements: Vec<Vec<Curve>>,
+) -> Result<MixedModeResult> {
+    let seat_count = seat_measurements.first().map(Vec::len).unwrap_or_default();
+    let peq_config = multiseat_peq_config(multi_seat_config, seat_count);
+    let min_freq = room_config.optimizer.min_freq;
+    let max_freq = room_config.optimizer.max_freq;
+
+    let raw_measurements = MultiSeatMeasurements::new(seat_measurements.clone())?;
+    let raw_identity = identity_multiseat_result(&raw_measurements, multi_seat_config);
+    let raw_seat_curves = multiseat::compute_multiseat_combined_curves(
+        &raw_measurements,
+        &raw_identity,
+        (min_freq, max_freq),
+        sample_rate,
+    )?;
+    let raw_combined_curve = average_power_curve(&raw_seat_curves)?;
+    let pre_score = flat_loss_score(&raw_combined_curve, min_freq, max_freq);
+
+    let per_sub_filters = if multi_seat_config.per_sub_peq {
+        let mut filters = Vec::with_capacity(seat_measurements.len());
+        for (sub_idx, sub_curves) in seat_measurements.iter().enumerate() {
+            info!(
+                "  Multi-seat per-sub PEQ: optimizing sub {} across {} seats ({:?})",
+                sub_idx, seat_count, peq_config.strategy
+            );
+            let (sub_filters, sub_loss) = eq::optimize_channel_eq_multi_with_auto_optimizer(
+                sub_curves,
+                &room_config.optimizer,
+                &peq_config,
+                None,
+                sample_rate,
+                eq::MultiEqAutoOptimizerContext::sub_channel(),
+            )
+            .map_err(|e| AutoeqError::OptimizationFailed {
+                message: format!("Per-sub multi-seat PEQ failed for sub {}: {}", sub_idx, e),
+            })?;
+            info!(
+                "  Sub {} per-seat PEQ: {} filters, loss={:.6}",
+                sub_idx,
+                sub_filters.len(),
+                sub_loss
+            );
+            filters.push(sub_filters);
+        }
+        filters
+    } else {
+        vec![Vec::new(); seat_measurements.len()]
+    };
+
+    let corrected_measurements =
+        apply_per_sub_filters(&seat_measurements, &per_sub_filters, sample_rate);
+    let measurements = MultiSeatMeasurements::new(corrected_measurements)?;
+    let mso_result = multiseat::optimize_multiseat(
+        &measurements,
+        multi_seat_config,
+        (
+            room_config.optimizer.min_freq,
+            room_config.optimizer.max_freq,
+        ),
+        sample_rate,
+    )?;
+    info!(
+        "  Multi-seat multi-sub optimization: gains={:?}, delays={:?} ms, polarities={:?}",
+        mso_result.gains, mso_result.delays, mso_result.polarities
+    );
+
+    for (sub_idx, filters) in mso_result.allpass_filters.iter().enumerate() {
+        for (filter_idx, (freq, q)) in filters.iter().enumerate() {
+            info!(
+                "  Sub {} all-pass {}: {:.0} Hz Q={:.2}",
+                sub_idx, filter_idx, freq, q
+            );
+        }
+    }
+
+    let combined_seat_curves = multiseat::compute_multiseat_combined_curves(
+        &measurements,
+        &mso_result,
+        (
+            room_config.optimizer.min_freq,
+            room_config.optimizer.max_freq,
+        ),
+        sample_rate,
+    )?;
+    let combined_curve = average_power_curve(&combined_seat_curves)?;
+
+    let mut eq_filters = if multi_seat_config.global_eq {
+        let (filters, loss) = eq::optimize_channel_eq_multi_with_auto_optimizer(
+            &combined_seat_curves,
+            &room_config.optimizer,
+            &peq_config,
+            room_config.target_curve.as_ref(),
+            sample_rate,
+            eq::MultiEqAutoOptimizerContext::sub_channel(),
+        )
+        .map_err(|e| AutoeqError::OptimizationFailed {
+            message: format!("Global multi-seat EQ failed for multi-sub sum: {}", e),
+        })?;
+        info!(
+            "  Global multi-seat EQ: {} filters, score={:.6}",
+            filters.len(),
+            loss
+        );
+        filters
+    } else {
+        Vec::new()
+    };
+
+    let (norm_range, _passband_mean) = detect_passband_and_mean(&combined_curve);
+
+    let global_eq_pre_score = flat_loss_score(&combined_curve, min_freq, max_freq);
+    let iir_resp =
+        response::compute_peq_complex_response(&eq_filters, &combined_curve.freq, sample_rate);
+    let mut final_curve = response::apply_complex_response(&combined_curve, &iir_resp);
+    let mut post_score = flat_loss_score(&final_curve, min_freq, max_freq);
+    if multi_seat_config.global_eq && eq_score_regressed(global_eq_pre_score, post_score) {
+        warn!(
+            "  Global multi-seat EQ rejected for multi-sub sum: flat loss {:.6} -> {:.6}",
+            global_eq_pre_score, post_score
+        );
+        eq_filters.clear();
+        final_curve = combined_curve.clone();
+        post_score = global_eq_pre_score;
+    }
+    let freqs_f32: Vec<f32> = combined_curve.freq.iter().map(|&f| f as f32).collect();
+    let spl_f32: Vec<f32> = combined_curve.spl.iter().map(|&s| s as f32).collect();
+    let mean_spl = compute_average_response(
+        &freqs_f32,
+        &spl_f32,
+        Some((min_freq as f32, max_freq as f32)),
+    ) as f64;
+
+    let driver_curves_for_display: Vec<Curve> = group
+        .subwoofers
+        .iter()
+        .filter_map(|source| {
+            load::load_source(source)
+                .ok()
+                .map(|c| output::extend_curve_to_full_range(&c))
+        })
+        .collect();
+    let driver_display_ref = if driver_curves_for_display.len() == group.subwoofers.len() {
+        Some(driver_curves_for_display.as_slice())
+    } else {
+        None
+    };
+
+    let mut chain = output::build_multisub_dsp_chain_advanced(
+        channel_name,
+        &group.name,
+        group.subwoofers.len(),
+        &mso_result.gains,
+        &mso_result.delays,
+        &eq_filters,
+        None,
+        None,
+        driver_display_ref,
+        Some(&per_sub_filters),
+        Some(&mso_result.polarities),
+        Some(&mso_result.allpass_filters),
+        sample_rate,
+    );
+
+    let display_initial = output::extend_curve_to_full_range(&combined_curve);
+    let display_resp =
+        response::compute_peq_complex_response(&eq_filters, &display_initial.freq, sample_rate);
+    let display_final = response::apply_complex_response(&display_initial, &display_resp);
+
+    let mut initial_data: super::types::CurveData = (&display_initial).into();
+    initial_data.norm_range = norm_range;
+    let mut final_data: super::types::CurveData = (&display_final).into();
+    final_data.norm_range = norm_range;
+
+    chain.initial_curve = Some(initial_data.clone());
+    chain.final_curve = Some(final_data.clone());
+    chain.eq_response = Some(output::compute_eq_response(&initial_data, &final_data));
+
+    Ok((
+        chain,
+        pre_score,
+        post_score,
+        raw_combined_curve,
+        final_curve,
+        eq_filters,
+        mean_spl,
+        None,
+        None,
     ))
 }
 

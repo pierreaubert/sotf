@@ -161,6 +161,71 @@ fn validate_optimizer_config(opt: &OptimizerConfig, result: &mut ValidationResul
         ));
     }
 
+    if let Some(auto) = &opt.auto_optimizer
+        && auto.enabled
+    {
+        if auto.min_filters == 0 {
+            result.add_error("auto_optimizer.min_filters must be at least 1".to_string());
+        }
+        if auto.max_filters == 0 {
+            result.add_error("auto_optimizer.max_filters must be at least 1".to_string());
+        }
+        if auto.min_filters > auto.max_filters {
+            result.add_error(format!(
+                "auto_optimizer.min_filters ({}) must be <= max_filters ({})",
+                auto.min_filters, auto.max_filters
+            ));
+        }
+        if !auto.filter_count && !auto.q_bounds && !auto.gain_bounds {
+            result.add_warning(
+                "auto_optimizer is enabled but all automatic selection flags are disabled"
+                    .to_string(),
+            );
+        }
+        if auto.filter_count
+            && auto.max_filters < 2
+            && opt
+                .schroeder_split
+                .as_ref()
+                .is_some_and(|split| split.enabled)
+        {
+            result.add_error(
+                "auto_optimizer.max_filters must be at least 2 when schroeder_split is enabled"
+                    .to_string(),
+            );
+        }
+    }
+
+    if let Some(multi_seat) = &opt.multi_seat
+        && multi_seat.enabled
+    {
+        if multi_seat.max_deviation_db < 0.0 {
+            result.add_error(format!(
+                "multi_seat.max_deviation_db ({}) must be non-negative",
+                multi_seat.max_deviation_db
+            ));
+        }
+        if !multi_seat.primary_seat_weight.is_finite() || multi_seat.primary_seat_weight <= 0.0 {
+            result.add_error(format!(
+                "multi_seat.primary_seat_weight ({}) must be positive",
+                multi_seat.primary_seat_weight
+            ));
+        }
+        if let Some(weights) = &multi_seat.seat_weights {
+            if weights.is_empty() {
+                result.add_error("multi_seat.seat_weights must not be empty".to_string());
+            }
+            for (idx, weight) in weights.iter().enumerate() {
+                if !weight.is_finite() || *weight < 0.0 {
+                    result.add_error(format!(
+                        "multi_seat.seat_weights[{}] ({}) must be finite and non-negative",
+                        idx, weight
+                    ));
+                }
+            }
+        }
+    }
+
     if opt.max_iter == 0 {
         result.add_warning("max_iter is 0, optimization will not run".to_string());
     }
@@ -1040,6 +1105,107 @@ mod tests {
                 .any(|w| w.contains("Unknown algorithm")),
             "Unknown algorithm should produce a warning, but warnings: {:?}",
             result.warnings
+        );
+    }
+
+    #[test]
+    fn validate_auto_optimizer_rejects_invalid_filter_range() {
+        let mut config = config_with_algorithm("autoeq:de");
+        config.optimizer.auto_optimizer = Some(AutoOptimizerConfig {
+            enabled: true,
+            min_filters: 8,
+            max_filters: 4,
+            ..Default::default()
+        });
+
+        let result = validate_room_config(&config);
+
+        assert!(!result.is_valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("auto_optimizer.min_filters")),
+            "expected auto optimizer range error, got {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn validate_auto_optimizer_requires_two_filters_for_schroeder_split() {
+        let mut config = config_with_algorithm("autoeq:de");
+        config.optimizer.schroeder_split = Some(SchroederSplitConfig {
+            enabled: true,
+            ..Default::default()
+        });
+        config.optimizer.auto_optimizer = Some(AutoOptimizerConfig {
+            enabled: true,
+            max_filters: 1,
+            ..Default::default()
+        });
+
+        let result = validate_room_config(&config);
+
+        assert!(!result.is_valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("at least 2 when schroeder_split is enabled")),
+            "expected schroeder auto max_filters error, got {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn validate_auto_optimizer_warns_when_no_selectors_enabled() {
+        let mut config = config_with_algorithm("autoeq:de");
+        config.optimizer.auto_optimizer = Some(AutoOptimizerConfig {
+            enabled: true,
+            filter_count: false,
+            q_bounds: false,
+            gain_bounds: false,
+            ..Default::default()
+        });
+
+        let result = validate_room_config(&config);
+
+        assert!(result.is_valid);
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.contains("all automatic selection flags are disabled")),
+            "expected auto optimizer no-op warning, got {:?}",
+            result.warnings
+        );
+    }
+
+    #[test]
+    fn validate_multi_seat_rejects_invalid_weights() {
+        let mut config = config_with_algorithm("autoeq:de");
+        config.optimizer.multi_seat = Some(MultiSeatConfig {
+            enabled: true,
+            seat_weights: Some(vec![1.0, -0.5]),
+            primary_seat_weight: 0.0,
+            ..Default::default()
+        });
+
+        let result = validate_room_config(&config);
+
+        assert!(!result.is_valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("primary_seat_weight")),
+            "expected primary weight error, got {:?}",
+            result.errors
+        );
+        assert!(
+            result.errors.iter().any(|e| e.contains("seat_weights[1]")),
+            "expected seat weight error, got {:?}",
+            result.errors
         );
     }
 

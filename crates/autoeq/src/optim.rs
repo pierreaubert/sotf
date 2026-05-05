@@ -28,6 +28,8 @@ use ndarray::Array1;
 
 /// Unified optimizer backend trait and capability descriptors.
 pub mod backend;
+/// Gaussian-process Bayesian optimisation backend.
+pub mod bo;
 /// Shared callback utilities for optimization
 pub mod callback;
 /// Pure-Rust CMA-ES backend.
@@ -195,6 +197,9 @@ pub struct ObjectiveData {
     /// full `bass_dip_weight` / `dip_weight` of the asymmetric config.
     /// Must have the same length as `freqs` when provided.
     pub null_suppression: Option<Array1<f64>>,
+    /// Optional smoothness regularizer on the correction curve.
+    /// `None` disables the penalty.
+    pub smoothness_penalty: Option<SmoothnessPenaltyConfig>,
 }
 
 /// Data for multi-objective optimization across multiple measurements
@@ -208,6 +213,37 @@ pub struct MultiObjectiveData {
     pub weights: Vec<f64>,
     /// Lambda for VariancePenalized strategy
     pub variance_lambda: f64,
+}
+
+/// Smoothness regularizer on the cascaded biquad magnitude response.
+///
+/// Penalizes curvature (in dB/decade^2) of `peq_spl` on the log-frequency
+/// grid, suppressing wiggle filter pairs that opposite-cancel. Linear
+/// tilts and broad shelves are free; narrow PEQ peaks pay curvature;
+/// opposing peak/dip pairs pay repeatedly across direction reversals.
+#[derive(Debug, Clone)]
+pub struct SmoothnessPenaltyConfig {
+    /// Penalty weight in loss units per (dB/decade^2)^exponent. 0.0 disables.
+    pub tv2_weight: f64,
+    /// Optional Schroeder cutoff in Hz. Below this, weight is scaled by
+    /// `modal_weight_scale` so high-Q modal cuts are less penalized.
+    pub schroeder_hz: Option<f64>,
+    /// Multiplier applied below `schroeder_hz`.
+    pub modal_weight_scale: f64,
+    /// L_p exponent for per-bin penalty. 1.0 = TV^2 style sparsifier,
+    /// 2.0 = L2 smoothing.
+    pub exponent: f64,
+}
+
+impl Default for SmoothnessPenaltyConfig {
+    fn default() -> Self {
+        Self {
+            tv2_weight: 0.0,
+            schroeder_hz: None,
+            modal_weight_scale: 0.1,
+            exponent: 1.0,
+        }
+    }
 }
 
 /// Penalty configuration mode for optimizers.
@@ -390,6 +426,60 @@ fn interpolate_boost_envelope(envelope: &[(f64, f64)], freq_hz: f64) -> f64 {
     envelope[last].1
 }
 
+/// Compute second-difference L1 (or Lp) penalty on cascaded magnitude in
+/// log-frequency. Returns 0.0 when disabled or under-sampled.
+fn compute_smoothness_penalty(
+    y: &Array1<f64>,
+    freqs: &Array1<f64>,
+    min_freq: f64,
+    max_freq: f64,
+    cfg: &SmoothnessPenaltyConfig,
+) -> f64 {
+    if cfg.tv2_weight <= 0.0 || y.len() < 3 || freqs.len() != y.len() {
+        return 0.0;
+    }
+
+    let mut acc = 0.0_f64;
+    for i in 1..(y.len() - 1) {
+        let f_c = freqs[i];
+        if f_c < min_freq
+            || f_c > max_freq
+            || f_c <= 0.0
+            || freqs[i - 1] <= 0.0
+            || freqs[i + 1] <= 0.0
+        {
+            continue;
+        }
+
+        let lf_p = freqs[i + 1].log10();
+        let lf_c = f_c.log10();
+        let lf_m = freqs[i - 1].log10();
+        let dx_fwd = lf_p - lf_c;
+        let dx_bwd = lf_c - lf_m;
+        if dx_fwd <= 0.0 || dx_bwd <= 0.0 {
+            continue;
+        }
+
+        let slope_fwd = (y[i + 1] - y[i]) / dx_fwd;
+        let slope_bwd = (y[i] - y[i - 1]) / dx_bwd;
+        let curvature = (slope_fwd - slope_bwd) / (0.5 * (dx_fwd + dx_bwd));
+        let w = match cfg.schroeder_hz {
+            Some(fs) if f_c < fs => cfg.modal_weight_scale,
+            _ => 1.0,
+        };
+        let term = if (cfg.exponent - 1.0).abs() < 1e-9 {
+            curvature.abs()
+        } else if (cfg.exponent - 2.0).abs() < 1e-9 {
+            curvature * curvature
+        } else {
+            curvature.abs().powf(cfg.exponent)
+        };
+        acc += w * term;
+    }
+
+    cfg.tv2_weight * acc
+}
+
 /// Clamp negative filter gains (cuts) to a frequency-dependent minimum.
 ///
 /// Mirrors `clamp_gains_to_envelope` but for cuts: if a filter's gain is negative
@@ -490,7 +580,7 @@ fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
         LossType::HeadphoneFlat | LossType::SpeakerFlat => {
             let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
             let error = &peq_spl - &data.deviation;
-            if data.smooth {
+            let base_loss = if data.smooth {
                 let curve = Curve {
                     freq: data.freqs.clone(),
                     spl: error,
@@ -501,13 +591,27 @@ fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
                 flat_loss(&data.freqs, &smoothed.spl, data.min_freq, data.max_freq)
             } else {
                 flat_loss(&data.freqs, &error, data.min_freq, data.max_freq)
-            }
+            };
+            let smoothness = data
+                .smoothness_penalty
+                .as_ref()
+                .map(|cfg| {
+                    compute_smoothness_penalty(
+                        &peq_spl,
+                        &data.freqs,
+                        data.min_freq,
+                        data.max_freq,
+                        cfg,
+                    )
+                })
+                .unwrap_or(0.0);
+            base_loss + smoothness
         }
         LossType::SpeakerFlatAsymmetric => {
             let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
             let error = &peq_spl - &data.deviation;
             let null_mask = data.null_suppression.as_ref();
-            if data.smooth {
+            let base_loss = if data.smooth {
                 let curve = Curve {
                     freq: data.freqs.clone(),
                     spl: error,
@@ -524,7 +628,21 @@ fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
                 )
             } else {
                 flat_loss_asymmetric(&data.freqs, &error, data.min_freq, data.max_freq, null_mask)
-            }
+            };
+            let smoothness = data
+                .smoothness_penalty
+                .as_ref()
+                .map(|cfg| {
+                    compute_smoothness_penalty(
+                        &peq_spl,
+                        &data.freqs,
+                        data.min_freq,
+                        data.max_freq,
+                        cfg,
+                    )
+                })
+                .unwrap_or(0.0);
+            base_loss + smoothness
         }
         LossType::SpeakerScore => {
             let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
@@ -535,7 +653,20 @@ fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
                 // SpeakerScore fitness: minimize (100 - score + flatness/3)
                 // - 100.0: reference ceiling for Harman speaker score (typical range 0-100)
                 // - /3.0: reduces flatness weight to ~25% vs score (empirically tuned)
-                100.0 - s + p
+                let smoothness = data
+                    .smoothness_penalty
+                    .as_ref()
+                    .map(|cfg| {
+                        compute_smoothness_penalty(
+                            &peq_spl,
+                            &data.freqs,
+                            data.min_freq,
+                            data.max_freq,
+                            cfg,
+                        )
+                    })
+                    .unwrap_or(0.0);
+                100.0 - s + p + smoothness
             } else {
                 log::error!("speaker score loss requested but score data is missing");
                 f64::INFINITY
@@ -553,7 +684,20 @@ fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
                 };
                 let s = headphone_loss(&error_curve);
                 let p = flat_loss(&data.freqs, &error, data.min_freq, data.max_freq);
-                1000.0 - s + p * 20.0
+                let smoothness = data
+                    .smoothness_penalty
+                    .as_ref()
+                    .map(|cfg| {
+                        compute_smoothness_penalty(
+                            &peq_spl,
+                            &data.freqs,
+                            data.min_freq,
+                            data.max_freq,
+                            cfg,
+                        )
+                    })
+                    .unwrap_or(0.0);
+                1000.0 - s + p * 20.0 + smoothness
             } else {
                 log::error!("headphone score loss requested but headphone data is missing");
                 f64::INFINITY
@@ -586,12 +730,26 @@ fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
             // it is not absolute dB SPL. The normalized helper denormalizes
             // against `epa_config.listening_level_phon` so the loudness /
             // loudness-balance penalties are properly calibrated.
-            crate::loss::epa::score::epa_loss_normalized(
+            let base_loss = crate::loss::epa::score::epa_loss_normalized(
                 &freqs_vec,
                 &corrected_spl,
                 &epa_config,
                 flatness,
-            )
+            );
+            let smoothness = data
+                .smoothness_penalty
+                .as_ref()
+                .map(|cfg| {
+                    compute_smoothness_penalty(
+                        &peq_spl,
+                        &data.freqs,
+                        data.min_freq,
+                        data.max_freq,
+                        cfg,
+                    )
+                })
+                .unwrap_or(0.0);
+            base_loss + smoothness
         }
     }
 }
@@ -1099,5 +1257,98 @@ mod spacing_diag_tests {
             compute_sorted_freqs_and_adjacent_octave_spacings(&x, PeqModel::Pk);
         assert!((spacings[0] - 1.0).abs() < 1e-12);
         assert!((spacings[1] - 1.0).abs() < 1e-12);
+    }
+}
+
+#[cfg(test)]
+mod smoothness_penalty_tests {
+    use super::{SmoothnessPenaltyConfig, compute_smoothness_penalty};
+    use ndarray::Array1;
+
+    fn log_grid(n: usize) -> Array1<f64> {
+        Array1::from_iter((0..n).map(|i| 20.0 * 10f64.powf(i as f64 * 3.0 / (n as f64 - 1.0))))
+    }
+
+    #[test]
+    fn smoothness_penalty_zero_for_flat_curve() {
+        let freqs = log_grid(200);
+        let y = Array1::zeros(200);
+        let cfg = SmoothnessPenaltyConfig {
+            tv2_weight: 1.0,
+            ..Default::default()
+        };
+        let p = compute_smoothness_penalty(&y, &freqs, 20.0, 20_000.0, &cfg);
+        assert!(p < 1e-12, "flat curve must have zero curvature, got {p}");
+    }
+
+    #[test]
+    fn smoothness_penalty_zero_for_linear_log_tilt() {
+        let freqs = log_grid(200);
+        let y = freqs.mapv(|f| -0.8 * f.log10());
+        let cfg = SmoothnessPenaltyConfig {
+            tv2_weight: 1.0,
+            ..Default::default()
+        };
+        let p = compute_smoothness_penalty(&y, &freqs, 20.0, 20_000.0, &cfg);
+        assert!(
+            p < 1e-9,
+            "linear log-freq tilt must have ~zero second derivative, got {p}"
+        );
+    }
+
+    #[test]
+    fn smoothness_penalty_punishes_oscillation() {
+        let freqs = log_grid(200);
+        let y_osc = freqs.mapv(|f| 3.0 * (f.log10() * 20.0).sin());
+        let y_flat = Array1::zeros(200);
+        let cfg = SmoothnessPenaltyConfig {
+            tv2_weight: 1.0,
+            ..Default::default()
+        };
+        let p_osc = compute_smoothness_penalty(&y_osc, &freqs, 20.0, 20_000.0, &cfg);
+        let p_flat = compute_smoothness_penalty(&y_flat, &freqs, 20.0, 20_000.0, &cfg);
+        assert!(p_osc > 1000.0 * (p_flat + 1e-12));
+    }
+
+    #[test]
+    fn smoothness_penalty_modal_region_relaxed() {
+        let freqs = log_grid(200);
+        let y = freqs.mapv(|f| {
+            let s50 = (-((f - 50.0).powi(2) / 25.0)).exp();
+            let s5k = (-((f - 5000.0).powi(2) / 250_000.0)).exp();
+            -6.0 * (s50 + s5k)
+        });
+        let cfg_relaxed = SmoothnessPenaltyConfig {
+            tv2_weight: 1.0,
+            schroeder_hz: Some(300.0),
+            modal_weight_scale: 0.0,
+            exponent: 1.0,
+        };
+        let cfg_strict = SmoothnessPenaltyConfig {
+            tv2_weight: 1.0,
+            schroeder_hz: None,
+            modal_weight_scale: 1.0,
+            exponent: 1.0,
+        };
+        let p_relaxed = compute_smoothness_penalty(&y, &freqs, 20.0, 20_000.0, &cfg_relaxed);
+        let p_strict = compute_smoothness_penalty(&y, &freqs, 20.0, 20_000.0, &cfg_strict);
+        assert!(
+            p_relaxed < 0.6 * p_strict,
+            "modal exemption must reduce penalty: relaxed={p_relaxed}, strict={p_strict}"
+        );
+    }
+
+    #[test]
+    fn smoothness_penalty_disabled_returns_zero() {
+        let freqs = log_grid(200);
+        let y = freqs.mapv(|f| 5.0 * (f.log10() * 30.0).sin());
+        let cfg = SmoothnessPenaltyConfig {
+            tv2_weight: 0.0,
+            ..Default::default()
+        };
+        assert_eq!(
+            compute_smoothness_penalty(&y, &freqs, 20.0, 20_000.0, &cfg),
+            0.0
+        );
     }
 }

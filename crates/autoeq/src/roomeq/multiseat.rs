@@ -5,7 +5,7 @@
 
 use crate::Curve;
 use crate::error::{AutoeqError, Result};
-use log::{debug, info};
+use log::{debug, info, warn};
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use nalgebra::DMatrix;
 use ndarray::Array1;
@@ -24,10 +24,17 @@ const MSO_EXTENSION_DEFICIT_ALLOWANCE_DB: f64 = 1.0;
 const MSO_EXTENSION_DEFICIT_WEIGHT: f64 = 1.25;
 const MSO_EXTENSION_MAX_HZ: f64 = 80.0;
 const MSO_EXTENSION_OCTAVES: f64 = 1.0;
+const MSO_OBJECTIVE_REGRESSION_TOLERANCE: f64 = 1e-6;
 const SFM_MODAL_ENERGY_CUTOFF: f64 = 0.95;
 const SFM_MAX_MODES: usize = 8;
 const SFM_MODAL_LOSS_WEIGHT: f64 = 10.0;
 const SFM_EPS: f64 = 1e-12;
+
+fn mso_objective_regressed(objective_before: f64, objective_after: f64) -> bool {
+    !objective_after.is_finite()
+        || (objective_before.is_finite()
+            && objective_after > objective_before + MSO_OBJECTIVE_REGRESSION_TOLERANCE)
+}
 
 /// Result of multi-seat optimization
 #[derive(Debug, Clone)]
@@ -332,8 +339,8 @@ pub fn optimize_multiseat(
         eval_max,
     );
     let final_responses = spl_from_complex_responses(&final_complex_responses);
-    let variance_after = variance_from_responses(&final_responses);
-    let objective_after = if let Some(basis) = modal_basis.as_ref() {
+    let mut variance_after = variance_from_responses(&final_responses);
+    let mut objective_after = if let Some(basis) = modal_basis.as_ref() {
         modal_basis_objective_from_responses(
             &final_complex_responses,
             &final_responses,
@@ -349,6 +356,25 @@ pub fn optimize_multiseat(
             Some(&objective_context),
         )
     };
+    let mut final_gains = optimal_gains;
+    let mut final_delays = optimal_delays;
+    let mut final_polarities = optimal_polarities;
+    let mut final_allpass_filters = optimal_allpass_filters;
+
+    if mso_objective_regressed(objective_before, objective_after) {
+        warn!(
+            "  MSO result rejected: {} regressed {:.6} -> {:.6}; keeping identity gain/delay/polarity/all-pass state",
+            objective_name(config.strategy.clone()),
+            objective_before,
+            objective_after
+        );
+        final_gains = initial_gains;
+        final_delays = initial_delays;
+        final_polarities = initial_polarities;
+        final_allpass_filters = initial_allpass_filters;
+        objective_after = objective_before;
+        variance_after = variance_before;
+    }
 
     let objective_improvement_db = objective_before - objective_after;
     let variance_improvement_db = variance_before - variance_after;
@@ -366,10 +392,10 @@ pub fn optimize_multiseat(
     );
 
     Ok(MultiSeatOptimizationResult {
-        gains: optimal_gains,
-        delays: optimal_delays,
-        polarities: optimal_polarities,
-        allpass_filters: optimal_allpass_filters,
+        gains: final_gains,
+        delays: final_delays,
+        polarities: final_polarities,
+        allpass_filters: final_allpass_filters,
         strategy: config.strategy.clone(),
         objective_name,
         objective_before,
@@ -380,6 +406,80 @@ pub fn optimize_multiseat(
         variance_improvement_db,
         improvement_db: objective_improvement_db,
     })
+}
+
+/// Compute the per-seat combined subwoofer responses for an optimized
+/// multi-seat solution.
+///
+/// The returned curves share the same log-spaced evaluation grid used by the
+/// MSO optimizer and include the optimized per-sub gain, delay, polarity, and
+/// all-pass filters. SPL is derived from complex summation; phase is retained
+/// for downstream diagnostics and future phase-aware processing.
+pub fn compute_multiseat_combined_curves(
+    measurements: &MultiSeatMeasurements,
+    result: &MultiSeatOptimizationResult,
+    freq_range: (f64, f64),
+    sample_rate: f64,
+) -> Result<Vec<Curve>> {
+    let (min_freq, max_freq) = freq_range;
+    let Some((common_min, common_max)) = super::frequency_grid::common_frequency_range(
+        measurements.measurements.iter().flat_map(|sub| sub.iter()),
+    ) else {
+        return Err(AutoeqError::InvalidMeasurement {
+            message: "MSO measurements do not share a valid overlapping frequency range"
+                .to_string(),
+        });
+    };
+    let eval_min = min_freq.max(common_min);
+    let eval_max = max_freq.min(common_max);
+    if eval_min >= eval_max {
+        return Err(AutoeqError::InvalidMeasurement {
+            message: format!(
+                "MSO frequency range [{:.1}, {:.1}] Hz does not overlap all measurements [{:.1}, {:.1}] Hz",
+                min_freq, max_freq, common_min, common_max
+            ),
+        });
+    }
+
+    let freqs = create_eval_frequency_grid(measurements, eval_min, eval_max);
+    let interpolated = interpolate_all_measurements(measurements, &freqs)?;
+    let complex = compute_combined_complex_responses(
+        &interpolated,
+        &freqs,
+        &result.gains,
+        &result.delays,
+        &result.polarities,
+        &result.allpass_filters,
+        sample_rate,
+        eval_min,
+        eval_max,
+    );
+
+    let eval_freqs: Vec<f64> = freqs
+        .iter()
+        .copied()
+        .filter(|f| *f >= eval_min && *f <= eval_max)
+        .collect();
+
+    Ok(complex
+        .into_iter()
+        .map(|seat| {
+            let spl: Vec<f64> = seat
+                .iter()
+                .map(|response| 20.0 * response.norm().max(SFM_EPS).log10())
+                .collect();
+            let phase: Vec<f64> = seat
+                .iter()
+                .map(|response| response.arg().to_degrees())
+                .collect();
+            Curve {
+                freq: Array1::from(eval_freqs.clone()),
+                spl: Array1::from(spl),
+                phase: Some(Array1::from(phase)),
+                ..Default::default()
+            }
+        })
+        .collect())
 }
 
 /// Create a common frequency grid for evaluation
@@ -1488,6 +1588,17 @@ mod tests {
             (actual - expected).abs() < 1e-9,
             "expected {expected}, got {actual}"
         );
+    }
+
+    #[test]
+    fn mso_regression_guard_rejects_worse_or_nonfinite_objectives() {
+        assert!(mso_objective_regressed(1.0, 1.01));
+        assert!(mso_objective_regressed(1.0, f64::NAN));
+        assert!(!mso_objective_regressed(1.0, 1.0));
+        assert!(!mso_objective_regressed(
+            1.0,
+            1.0 + MSO_OBJECTIVE_REGRESSION_TOLERANCE
+        ));
     }
 
     fn create_test_curve(spl_offset: f64, phase_offset: f64) -> Curve {

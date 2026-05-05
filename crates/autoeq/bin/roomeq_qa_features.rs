@@ -1,6 +1,6 @@
 //! RoomEQ QA: Feature Progression Tests
 //!
-//! For each recording in `bin/roomeq_qa_data/*/recordings.json`, runs two
+//! For each recording in `data_tests/roomeq/measured/*/recordings.json`, runs two
 //! progression passes (flat target, then Harman tilt), enabling features
 //! cumulatively. Validates that:
 //! - Each step's optimization improves over its own pre-score
@@ -366,7 +366,7 @@ fn validate_pass(pass_name: &str, results: &[StepResult], enforce_flat_slope: bo
 // ---------------------------------------------------------------------------
 
 fn discover_recordings(project_root: &Path) -> Result<Vec<(String, PathBuf)>> {
-    let qa_data_dir = project_root.join("crates/autoeq/bin/roomeq_qa_data");
+    let qa_data_dir = project_root.join("crates/autoeq/data_tests/roomeq/measured");
     if !qa_data_dir.exists() {
         return Err(anyhow!("QA data directory not found: {:?}", qa_data_dir));
     }

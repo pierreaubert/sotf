@@ -28,13 +28,16 @@ use autoeq::Curve;
 use autoeq::loss::phase_aware::{compute_group_delay, unwrap_phase_degrees};
 use autoeq::loss::{calculate_standard_deviation_in_range, regression_slope_per_octave_in_range};
 use autoeq::roomeq::{
-    CallbackAction, CurveData, DecomposedCorrectionSerdeConfig, ExcursionProtectionConfig,
-    MixedPhaseSerdeConfig, MultiMeasurementConfig, MultiMeasurementStrategy, PhaseAlignmentConfig,
-    PreRingingSerdeConfig, ProcessingMode, RoomConfig, RoomOptimizationResult,
-    SchroederSplitConfig, SpatialRobustnessSerdeConfig, TargetResponseConfig, TargetShape,
-    VoiceOfGodConfig, load_config, merge_json_objects, optimize_room,
+    CallbackAction, CrossoverConfig, CurveData, DecomposedCorrectionSerdeConfig,
+    ExcursionProtectionConfig, GroupDelayOptimizationConfig, MixedPhaseSerdeConfig,
+    MultiMeasurementConfig, MultiMeasurementStrategy, MultiSeatConfig, MultiSeatStrategy,
+    PhaseAlignmentConfig, PreRingingSerdeConfig, ProcessingMode, RoomConfig,
+    RoomOptimizationResult, SchroederSplitConfig, SpatialRobustnessSerdeConfig, SpeakerConfig,
+    TargetResponseConfig, TargetShape, VoiceOfGodConfig, load_config, merge_json_objects,
+    optimize_room,
 };
 use autoeq::{MeasurementMultiple, MeasurementRef, MeasurementSource};
+use math_audio_iir_fir::{Biquad, BiquadFilterType};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -52,8 +55,8 @@ const SEED: u64 = 42;
 const QA_MAXEVAL: usize = 15_000;
 
 /// Base config directories
-const FEM_DIR: &str = "crates/autoeq/data_tests/roomeq/generated/fem";
-const OPTIM_CONFIG_DIR: &str = "crates/autoeq/data_tests/roomeq/generated/optimiser-config";
+const FEM_DIR: &str = "crates/autoeq/data_tests/roomeq/generate/fem";
+const OPTIM_CONFIG_DIR: &str = "crates/autoeq/data_tests/roomeq/generate/optimiser-config";
 
 // Cross-mode convergence thresholds
 /// Maximum dB difference between any two modes' final curves in passband.
@@ -86,6 +89,14 @@ const OPTION_SCORE_TOLERANCE: f64 = 1.20;
 const VOG_SCORE_TOLERANCE: f64 = 1.50;
 /// Psychoacoustic may trade raw score for perceptual quality
 const PSYCHOACOUSTIC_SCORE_TOLERANCE: f64 = 2.0;
+/// Synthetic confidence used only by GD QA profiles that need to exercise the
+/// trusted polarity/all-pass paths on generated fixtures without coherence CSVs.
+const GD_QA_SYNTHETIC_COHERENCE: f64 = 0.95;
+/// GD optimizer budget for QA option-effect cases. Keep this below the main
+/// magnitude optimizer budget so the added GD matrix stays practical.
+const GD_QA_MAX_ITER: usize = 600;
+/// Small absolute slack for RMS GD comparisons in option-effect checks.
+const GD_QA_RMS_EPSILON_MS: f64 = 0.05;
 
 // Scorecard thresholds (multi-metric QA)
 /// Flat loss may degrade up to 50% vs baseline — new losses intentionally trade flatness
@@ -773,6 +784,37 @@ fn placeholder_scorecard(flat_loss: f64) -> MetricScorecard {
 // Option Override: programmatic config mutation for per-option tests
 // ---------------------------------------------------------------------------
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GroupDelayQaProfile {
+    MissingCoherenceDelayOnly,
+    TrustedDelayOnly,
+    FixedAllPass,
+    AdaptiveAllPass,
+    PhaseLinearFir,
+    MixedPhase,
+}
+
+impl GroupDelayQaProfile {
+    fn label(self) -> &'static str {
+        match self {
+            GroupDelayQaProfile::MissingCoherenceDelayOnly => "missing_coherence_delay_only",
+            GroupDelayQaProfile::TrustedDelayOnly => "trusted_delay_only",
+            GroupDelayQaProfile::FixedAllPass => "fixed_allpass",
+            GroupDelayQaProfile::AdaptiveAllPass => "adaptive_allpass",
+            GroupDelayQaProfile::PhaseLinearFir => "phase_linear_fir",
+            GroupDelayQaProfile::MixedPhase => "mixed_phase",
+        }
+    }
+
+    fn needs_trusted_measurements(self) -> bool {
+        !matches!(self, GroupDelayQaProfile::MissingCoherenceDelayOnly)
+    }
+
+    fn needs_multi_measurement_paths(self) -> bool {
+        matches!(self, GroupDelayQaProfile::AdaptiveAllPass)
+    }
+}
+
 #[derive(Clone, Debug)]
 enum OptionOverride {
     TargetTilt {
@@ -790,6 +832,7 @@ enum OptionOverride {
     PhaseAlignment,
     MultiMeasurementMinimax,
     MultiMeasurementVariancePenalized,
+    ProductionMultiSubMultiSeat,
     VoiceOfGod {
         reference_channel: String,
     },
@@ -797,6 +840,9 @@ enum OptionOverride {
     PreRinging,
     MixedPhaseMode,
     DecomposedCorrection,
+    GroupDelay {
+        profile: GroupDelayQaProfile,
+    },
 }
 
 impl std::fmt::Display for OptionOverride {
@@ -819,6 +865,9 @@ impl std::fmt::Display for OptionOverride {
             OptionOverride::MultiMeasurementVariancePenalized => {
                 write!(f, "multi_measurement_variance")
             }
+            OptionOverride::ProductionMultiSubMultiSeat => {
+                write!(f, "production_multi_sub_multi_seat")
+            }
             OptionOverride::VoiceOfGod { reference_channel } => {
                 write!(f, "voice_of_god(ref={})", reference_channel)
             }
@@ -826,8 +875,61 @@ impl std::fmt::Display for OptionOverride {
             OptionOverride::PreRinging => write!(f, "pre_ringing"),
             OptionOverride::MixedPhaseMode => write!(f, "mixed_phase"),
             OptionOverride::DecomposedCorrection => write!(f, "decomposed_correction"),
+            OptionOverride::GroupDelay { profile } => {
+                write!(f, "group_delay({})", profile.label())
+            }
         }
     }
+}
+
+fn group_delay_qa_config(profile: GroupDelayQaProfile) -> GroupDelayOptimizationConfig {
+    let mut config = GroupDelayOptimizationConfig {
+        enabled: true,
+        max_delay_ms: 25.0,
+        min_improvement_db: -100.0,
+        max_iter: GD_QA_MAX_ITER,
+        popsize: 10,
+        tol: 1e-6,
+        ..Default::default()
+    };
+
+    match profile {
+        GroupDelayQaProfile::MissingCoherenceDelayOnly => {
+            config.ap_per_channel = 2;
+            config.optimize_polarity = true;
+            config.adaptive_allpass = false;
+        }
+        GroupDelayQaProfile::TrustedDelayOnly => {
+            config.ap_per_channel = 0;
+            config.optimize_polarity = false;
+            config.adaptive_allpass = false;
+        }
+        GroupDelayQaProfile::FixedAllPass => {
+            config.ap_per_channel = 1;
+            config.optimize_polarity = true;
+            config.adaptive_allpass = false;
+        }
+        GroupDelayQaProfile::AdaptiveAllPass => {
+            config.ap_per_channel = 2;
+            config.optimize_polarity = false;
+            config.adaptive_allpass = true;
+            config.max_iter = 4000;
+            config.popsize = 25;
+            config.tol = 1e-10;
+        }
+        GroupDelayQaProfile::PhaseLinearFir => {
+            config.ap_per_channel = 0;
+            config.optimize_polarity = false;
+            config.adaptive_allpass = false;
+        }
+        GroupDelayQaProfile::MixedPhase => {
+            config.ap_per_channel = 2;
+            config.optimize_polarity = true;
+            config.adaptive_allpass = false;
+        }
+    }
+
+    config
 }
 
 /// Apply option override to config. Also disables the option for baseline configs.
@@ -902,6 +1004,17 @@ fn apply_option_override(config: &mut RoomConfig, option: &OptionOverride) {
                 ..Default::default()
             });
         }
+        OptionOverride::ProductionMultiSubMultiSeat => {
+            config.optimizer.multi_seat = Some(MultiSeatConfig {
+                enabled: true,
+                strategy: MultiSeatStrategy::MinimizeVariance,
+                optimize_polarity: true,
+                allpass_filters_per_sub: 0,
+                per_sub_peq: true,
+                global_eq: true,
+                ..Default::default()
+            });
+        }
         OptionOverride::VoiceOfGod { reference_channel } => {
             config.optimizer.vog = Some(VoiceOfGodConfig {
                 enabled: true,
@@ -963,6 +1076,31 @@ fn apply_option_override(config: &mut RoomConfig, option: &OptionOverride) {
                 ..Default::default()
             });
         }
+        OptionOverride::GroupDelay { profile } => {
+            config.optimizer.group_delay = Some(group_delay_qa_config(*profile));
+            match profile {
+                GroupDelayQaProfile::PhaseLinearFir => {
+                    config.optimizer.processing_mode = ProcessingMode::PhaseLinear;
+                    config.optimizer.fir = Some(autoeq::roomeq::FirConfig {
+                        taps: 2048,
+                        phase: "linear".to_string(),
+                        correct_excess_phase: false,
+                        phase_smoothing: 0.167,
+                        pre_ringing: None,
+                    });
+                }
+                GroupDelayQaProfile::MixedPhase => {
+                    config.optimizer.processing_mode = ProcessingMode::MixedPhase;
+                    config.optimizer.mixed_phase = Some(MixedPhaseSerdeConfig {
+                        max_fir_length_ms: 10.0,
+                        pre_ringing_threshold_db: -30.0,
+                        min_spatial_depth: 0.5,
+                        phase_smoothing_octaves: 1.0 / 6.0,
+                    });
+                }
+                _ => {}
+            }
+        }
     }
 }
 
@@ -1000,6 +1138,9 @@ fn disable_option(config: &mut RoomConfig, option: &OptionOverride) {
                 ..Default::default()
             });
         }
+        OptionOverride::ProductionMultiSubMultiSeat => {
+            config.optimizer.multi_seat = None;
+        }
         OptionOverride::VoiceOfGod { .. } => {
             config.optimizer.vog = None;
         }
@@ -1020,6 +1161,20 @@ fn disable_option(config: &mut RoomConfig, option: &OptionOverride) {
         }
         OptionOverride::DecomposedCorrection => {
             config.optimizer.decomposed_correction = None;
+        }
+        OptionOverride::GroupDelay { profile } => {
+            config.optimizer.group_delay = None;
+            match profile {
+                GroupDelayQaProfile::PhaseLinearFir => {
+                    config.optimizer.processing_mode = ProcessingMode::LowLatency;
+                    config.optimizer.fir = None;
+                }
+                GroupDelayQaProfile::MixedPhase => {
+                    config.optimizer.processing_mode = ProcessingMode::LowLatency;
+                    config.optimizer.mixed_phase = None;
+                }
+                _ => {}
+            }
         }
     }
 }
@@ -1061,6 +1216,260 @@ fn enable_multi_measurement_paths(config: &mut RoomConfig, fem_dir: &Path, fem_s
 
     for (key, speaker) in new_speakers {
         config.speakers.insert(key, speaker);
+    }
+}
+
+fn enable_multisub_multi_seat_paths(config: &mut RoomConfig, fem_dir: &Path, fem_subdir: &str) {
+    let data_dir = fem_dir.join(fem_subdir);
+
+    for speaker in config.speakers.values_mut() {
+        let SpeakerConfig::MultiSub(group) = speaker else {
+            continue;
+        };
+
+        for (sub_idx, source) in group.subwoofers.iter_mut().enumerate() {
+            if matches!(source, MeasurementSource::Multiple(_)) {
+                continue;
+            }
+
+            let base_path = source_base_measurement_path(source)
+                .unwrap_or_else(|| data_dir.join(format!("sub{}_lp0.csv", sub_idx + 1)));
+            let Some(file_name) = base_path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            let extension = base_path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .unwrap_or("csv");
+            let stem = base_path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or(file_name);
+            let prefix = stem.rfind("_lp").map(|idx| &stem[..idx]).unwrap_or(stem);
+
+            let mut measurements = Vec::new();
+            for lp in 0..4 {
+                let candidate =
+                    base_path.with_file_name(format!("{}_lp{}.{}", prefix, lp, extension));
+                if candidate.exists() {
+                    measurements.push(MeasurementRef::Path(candidate));
+                }
+            }
+
+            if measurements.len() > 1 {
+                *source = MeasurementSource::Multiple(MeasurementMultiple {
+                    measurements,
+                    speaker_name: None,
+                });
+            }
+        }
+    }
+}
+
+fn option_needs_multi_measurement_paths(option: &OptionOverride) -> bool {
+    match option {
+        OptionOverride::MultiMeasurementMinimax
+        | OptionOverride::MultiMeasurementVariancePenalized
+        | OptionOverride::SpatialRobustness => true,
+        OptionOverride::GroupDelay { profile } => profile.needs_multi_measurement_paths(),
+        _ => false,
+    }
+}
+
+fn option_needs_multisub_multi_seat_paths(option: &OptionOverride) -> bool {
+    matches!(option, OptionOverride::ProductionMultiSubMultiSeat)
+}
+
+fn option_needs_gd_trusted_measurements(option: &OptionOverride) -> bool {
+    matches!(
+        option,
+        OptionOverride::GroupDelay { profile } if profile.needs_trusted_measurements()
+    )
+}
+
+fn option_gd_profile(option: &OptionOverride) -> Option<GroupDelayQaProfile> {
+    match option {
+        OptionOverride::GroupDelay { profile } => Some(*profile),
+        _ => None,
+    }
+}
+
+fn option_is_group_delay(option: &OptionOverride) -> bool {
+    matches!(option, OptionOverride::GroupDelay { .. })
+}
+
+fn apply_group_delay_qa_passthrough_eq(config: &mut RoomConfig) {
+    config.optimizer.num_filters = 1;
+    config.optimizer.min_db = 0.0;
+    config.optimizer.max_db = 0.0;
+    config.optimizer.min_filter_improvement = 0.0;
+    config.optimizer.refine = false;
+    config.crossovers = Some(HashMap::from([(
+        "gd_qa".to_string(),
+        CrossoverConfig {
+            crossover_type: "LR24".to_string(),
+            frequency: Some(150.0),
+            frequencies: None,
+            frequency_range: None,
+        },
+    )]));
+}
+
+fn prepare_option_measurement_paths(
+    config: &mut RoomConfig,
+    fem_dir: &Path,
+    fem_subdir: &str,
+    needs_multi_measurement: bool,
+    needs_gd_trusted_measurements: bool,
+    needs_multisub_multi_seat: bool,
+    gd_profile: Option<GroupDelayQaProfile>,
+) -> Result<()> {
+    if needs_multisub_multi_seat {
+        enable_multisub_multi_seat_paths(config, fem_dir, fem_subdir);
+    }
+    if needs_gd_trusted_measurements {
+        enable_gd_trusted_measurements(
+            config,
+            fem_dir,
+            fem_subdir,
+            needs_multi_measurement,
+            gd_profile,
+        )?;
+    } else if needs_multi_measurement {
+        enable_multi_measurement_paths(config, fem_dir, fem_subdir);
+    }
+    Ok(())
+}
+
+fn enable_gd_trusted_measurements(
+    config: &mut RoomConfig,
+    fem_dir: &Path,
+    fem_subdir: &str,
+    multi_position: bool,
+    profile: Option<GroupDelayQaProfile>,
+) -> Result<()> {
+    let data_dir = fem_dir.join(fem_subdir);
+    let speaker_keys: Vec<String> = config.speakers.keys().cloned().collect();
+    let adaptive_ap_key = if profile == Some(GroupDelayQaProfile::AdaptiveAllPass) {
+        let mut keys = speaker_keys.clone();
+        keys.sort();
+        keys.get(1).cloned()
+    } else {
+        None
+    };
+    let mut new_speakers = HashMap::new();
+
+    for key in speaker_keys {
+        let mut curves = Vec::new();
+        for (sweep_idx, path) in
+            gd_trusted_measurement_paths(config, &key, &data_dir, multi_position)
+                .into_iter()
+                .enumerate()
+        {
+            if !path.exists() {
+                continue;
+            }
+
+            let mut curve = autoeq::load_measurement(&MeasurementRef::Path(path.clone()))
+                .map_err(|e| anyhow!("failed to load {}: {}", path.display(), e))?;
+            curve.coherence = Some(ndarray::Array1::from_elem(
+                curve.freq.len(),
+                GD_QA_SYNTHETIC_COHERENCE,
+            ));
+            if adaptive_ap_key.as_deref() == Some(key.as_str()) {
+                set_gd_adaptive_fixture_phase(&mut curve, 2.0 + sweep_idx as f64 * 0.02, true);
+            } else if adaptive_ap_key.is_some() {
+                set_gd_adaptive_fixture_phase(&mut curve, 2.0 + sweep_idx as f64 * 0.02, false);
+            }
+            curves.push(curve);
+        }
+
+        let source = match curves.len() {
+            0 => continue,
+            1 => MeasurementSource::InMemory(curves.remove(0)),
+            _ => MeasurementSource::InMemoryMultiple(curves),
+        };
+        new_speakers.insert(key, autoeq::roomeq::SpeakerConfig::Single(source));
+    }
+
+    if new_speakers.is_empty() {
+        return Err(anyhow!(
+            "no GD trusted measurement files found in {}",
+            data_dir.display()
+        ));
+    }
+
+    for (key, speaker) in new_speakers {
+        config.speakers.insert(key, speaker);
+    }
+
+    Ok(())
+}
+
+fn set_gd_adaptive_fixture_phase(curve: &mut Curve, delay_ms: f64, with_allpass: bool) {
+    let ap = Biquad::new(BiquadFilterType::AllPass, 60.0, SAMPLE_RATE, 2.0, 0.0);
+    let delay_s = delay_ms * 1e-3;
+    let phase = curve.freq.mapv(|freq| {
+        let delay_phase = -360.0 * freq * delay_s;
+        let ap_phase = if with_allpass {
+            ap.complex_response(freq).arg().to_degrees()
+        } else {
+            0.0
+        };
+        delay_phase + ap_phase
+    });
+
+    curve.phase = Some(phase);
+}
+
+fn gd_trusted_measurement_paths(
+    config: &RoomConfig,
+    key: &str,
+    data_dir: &Path,
+    multi_position: bool,
+) -> Vec<PathBuf> {
+    let base_path = config
+        .speakers
+        .get(key)
+        .and_then(|speaker| match speaker {
+            autoeq::roomeq::SpeakerConfig::Single(source) => source_base_measurement_path(source),
+            _ => None,
+        })
+        .unwrap_or_else(|| data_dir.join(format!("{}_lp0.csv", key)));
+
+    if !multi_position {
+        return vec![base_path];
+    }
+
+    let lp_count = 3;
+    let Some(file_name) = base_path.file_name().and_then(|name| name.to_str()) else {
+        return (0..lp_count)
+            .map(|lp| data_dir.join(format!("{}_lp{}.csv", key, lp)))
+            .collect();
+    };
+    let extension = base_path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("csv");
+    let stem = base_path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or(file_name);
+    let prefix = stem.rfind("_lp").map(|idx| &stem[..idx]).unwrap_or(stem);
+
+    (0..lp_count)
+        .map(|lp| base_path.with_file_name(format!("{}_lp{}.{}", prefix, lp, extension)))
+        .collect()
+}
+
+fn source_base_measurement_path(source: &MeasurementSource) -> Option<PathBuf> {
+    match source {
+        MeasurementSource::Single(single) => single.measurement.path().cloned(),
+        MeasurementSource::Multiple(multiple) => multiple
+            .measurements
+            .first()
+            .and_then(|measurement| measurement.path().cloned()),
+        MeasurementSource::InMemory(_) | MeasurementSource::InMemoryMultiple(_) => None,
     }
 }
 
@@ -1234,6 +1643,12 @@ fn all_test_cases() -> Vec<TestCase> {
             optim_subdir: "medium_multi_seat",
             options: vec![OptionOverride::MultiMeasurementVariancePenalized],
         },
+        TestCase::OptionEffect {
+            name: "OE production_multi_sub_multi_seat",
+            fem_subdir: "medium_multi_sub_multi_seat",
+            optim_subdir: "medium_multi_sub_multi_seat",
+            options: vec![OptionOverride::ProductionMultiSubMultiSeat],
+        },
         // --- D.8: Spatial robustness (multi-position correction depth) ---
         TestCase::OptionEffect {
             name: "OE spatial_robustness",
@@ -1261,6 +1676,55 @@ fn all_test_cases() -> Vec<TestCase> {
             fem_subdir: "small_stereo_2_0",
             optim_subdir: "small_stereo_2_0",
             options: vec![OptionOverride::DecomposedCorrection],
+        },
+        // --- D.12: Group-delay optimisation paths ---
+        TestCase::OptionEffect {
+            name: "OE group_delay_missing_coherence_delay_only",
+            fem_subdir: "small_stereo_2_0",
+            optim_subdir: "small_stereo_2_0",
+            options: vec![OptionOverride::GroupDelay {
+                profile: GroupDelayQaProfile::MissingCoherenceDelayOnly,
+            }],
+        },
+        TestCase::OptionEffect {
+            name: "OE group_delay_trusted_delay_only",
+            fem_subdir: "small_stereo_2_0",
+            optim_subdir: "small_stereo_2_0",
+            options: vec![OptionOverride::GroupDelay {
+                profile: GroupDelayQaProfile::TrustedDelayOnly,
+            }],
+        },
+        TestCase::OptionEffect {
+            name: "OE group_delay_fixed_allpass",
+            fem_subdir: "small_stereo_2_0",
+            optim_subdir: "small_stereo_2_0",
+            options: vec![OptionOverride::GroupDelay {
+                profile: GroupDelayQaProfile::FixedAllPass,
+            }],
+        },
+        TestCase::OptionEffect {
+            name: "OE group_delay_adaptive_allpass",
+            fem_subdir: "medium_multi_seat",
+            optim_subdir: "medium_multi_seat",
+            options: vec![OptionOverride::GroupDelay {
+                profile: GroupDelayQaProfile::AdaptiveAllPass,
+            }],
+        },
+        TestCase::OptionEffect {
+            name: "OE group_delay_phase_linear_fir",
+            fem_subdir: "small_stereo_2_0",
+            optim_subdir: "small_stereo_2_0",
+            options: vec![OptionOverride::GroupDelay {
+                profile: GroupDelayQaProfile::PhaseLinearFir,
+            }],
+        },
+        TestCase::OptionEffect {
+            name: "OE group_delay_mixed_phase",
+            fem_subdir: "small_stereo_2_0",
+            optim_subdir: "small_stereo_2_0",
+            options: vec![OptionOverride::GroupDelay {
+                profile: GroupDelayQaProfile::MixedPhase,
+            }],
         },
         // ================================================================
         // Part E: Combination tests — multi-option interaction coverage
@@ -1403,6 +1867,29 @@ fn all_test_cases() -> Vec<TestCase> {
                     high_max_q: 1.0,
                 },
                 OptionOverride::ExcursionProtection,
+            ],
+        },
+        TestCase::OptionEffect {
+            name: "COMBO gd_adaptive+variance+psycho",
+            fem_subdir: "medium_multi_seat",
+            optim_subdir: "medium_multi_seat",
+            options: vec![
+                OptionOverride::GroupDelay {
+                    profile: GroupDelayQaProfile::AdaptiveAllPass,
+                },
+                OptionOverride::MultiMeasurementVariancePenalized,
+                OptionOverride::Psychoacoustic,
+            ],
+        },
+        TestCase::OptionEffect {
+            name: "COMBO gd_fixed+psycho",
+            fem_subdir: "small_stereo_2_0",
+            optim_subdir: "small_stereo_2_0",
+            options: vec![
+                OptionOverride::GroupDelay {
+                    profile: GroupDelayQaProfile::FixedAllPass,
+                },
+                OptionOverride::Psychoacoustic,
             ],
         },
         // --- E.6: Triple+ combos on stereo (interaction stress tests) ---
@@ -1961,14 +2448,11 @@ fn run_option_effect_test(
         None
     };
 
-    let needs_multi_measurement = options.iter().any(|o| {
-        matches!(
-            o,
-            OptionOverride::MultiMeasurementMinimax
-                | OptionOverride::MultiMeasurementVariancePenalized
-                | OptionOverride::SpatialRobustness
-        )
-    });
+    let needs_multi_measurement = options.iter().any(option_needs_multi_measurement_paths);
+    let needs_gd_trusted_measurements = options.iter().any(option_needs_gd_trusted_measurements);
+    let needs_multisub_multi_seat = options.iter().any(option_needs_multisub_multi_seat_paths);
+    let gd_profile = options.iter().find_map(option_gd_profile);
+    let isolate_group_delay = options.iter().any(option_is_group_delay);
 
     // BroadbandTargetMatching needs a target tilt to have something to match.
     // When the combo doesn't include an explicit TargetTilt, both baseline and
@@ -1998,9 +2482,18 @@ fn run_option_effect_test(
     if let Some(ref tr) = default_target_response {
         baseline_config.optimizer.target_response = Some(tr.clone());
     }
-    if needs_multi_measurement {
-        enable_multi_measurement_paths(&mut baseline_config, fem_dir, fem_subdir);
+    if isolate_group_delay {
+        apply_group_delay_qa_passthrough_eq(&mut baseline_config);
     }
+    prepare_option_measurement_paths(
+        &mut baseline_config,
+        fem_dir,
+        fem_subdir,
+        needs_multi_measurement,
+        needs_gd_trusted_measurements,
+        needs_multisub_multi_seat,
+        gd_profile,
+    )?;
 
     let baseline_result =
         run_optimization(&baseline_config).with_context(|| format!("{} baseline", name))?;
@@ -2021,9 +2514,18 @@ fn run_option_effect_test(
     if let Some(ref tr) = default_target_response {
         option_config.optimizer.target_response = Some(tr.clone());
     }
-    if needs_multi_measurement {
-        enable_multi_measurement_paths(&mut option_config, fem_dir, fem_subdir);
+    if isolate_group_delay {
+        apply_group_delay_qa_passthrough_eq(&mut option_config);
     }
+    prepare_option_measurement_paths(
+        &mut option_config,
+        fem_dir,
+        fem_subdir,
+        needs_multi_measurement,
+        needs_gd_trusted_measurements,
+        needs_multisub_multi_seat,
+        gd_profile,
+    )?;
 
     let option_result =
         run_optimization(&option_config).with_context(|| format!("{} with-options", name))?;
@@ -2193,6 +2695,9 @@ fn validate_option_effect(
         OptionOverride::MultiMeasurementVariancePenalized => {
             validate_multi_measurement_variance(baseline_result, option_result, num_options)
         }
+        OptionOverride::ProductionMultiSubMultiSeat => {
+            validate_production_multisub_multiseat(option_config, option_result)
+        }
         OptionOverride::VoiceOfGod { .. } => {
             // VoG: combined score should not be significantly worse than baseline.
             // It may trade raw flatness for spatial/timing consistency, so use a
@@ -2325,7 +2830,365 @@ fn validate_option_effect(
                 )
             }
         }
+        OptionOverride::GroupDelay { profile } => {
+            validate_group_delay_optimization(*profile, option_config, option_result, num_options)
+        }
     }
+}
+
+fn validate_production_multisub_multiseat(
+    option_config: &RoomConfig,
+    option_result: &RoomOptimizationResult,
+) -> (bool, String) {
+    let Some(policy) = option_config.optimizer.multi_seat.as_ref() else {
+        return (false, "multi_seat config was not enabled".to_string());
+    };
+    if !policy.enabled || !policy.per_sub_peq || !policy.global_eq {
+        return (
+            false,
+            format!(
+                "multi_seat policy incomplete: enabled={} per_sub_peq={} global_eq={}",
+                policy.enabled, policy.per_sub_peq, policy.global_eq
+            ),
+        );
+    }
+
+    let multiseat_group_count = option_config
+        .speakers
+        .values()
+        .filter(|speaker| match speaker {
+            SpeakerConfig::MultiSub(group) => {
+                group.subwoofers.len() >= 2
+                    && group.subwoofers.iter().all(|source| match source {
+                        MeasurementSource::Multiple(multiple) => multiple.measurements.len() >= 2,
+                        MeasurementSource::InMemoryMultiple(curves) => curves.len() >= 2,
+                        MeasurementSource::Single(_) | MeasurementSource::InMemory(_) => false,
+                    })
+            }
+            _ => false,
+        })
+        .count();
+    if multiseat_group_count == 0 {
+        return (
+            false,
+            "no multi-sub group had >=2 seat measurements per sub".to_string(),
+        );
+    }
+
+    let Some(chain) = option_result.channels.values().find(|chain| {
+        chain
+            .drivers
+            .as_ref()
+            .is_some_and(|drivers| drivers.len() >= 2)
+    }) else {
+        return (
+            false,
+            "result did not export a multi-sub driver chain".to_string(),
+        );
+    };
+
+    let has_global_eq = chain
+        .plugins
+        .iter()
+        .any(|plugin| plugin.plugin_type == "eq");
+    let Some(drivers) = chain.drivers.as_ref() else {
+        return (
+            false,
+            "result did not export per-sub driver chains".to_string(),
+        );
+    };
+    let per_sub_eq_count = drivers
+        .iter()
+        .filter(|driver| {
+            driver
+                .plugins
+                .iter()
+                .any(|plugin| plugin.plugin_type == "eq")
+        })
+        .count();
+
+    let mut failures = Vec::new();
+    if !has_global_eq {
+        failures.push("shared global EQ plugin missing".to_string());
+    }
+    if !option_result.combined_pre_score.is_finite()
+        || !option_result.combined_post_score.is_finite()
+    {
+        failures.push("combined pre/post scores are not finite".to_string());
+    }
+
+    if failures.is_empty() {
+        (
+            true,
+            format!(
+                "production path OK: groups={} drivers={} per_sub_eq_plugins={} global_eq=true",
+                multiseat_group_count,
+                drivers.len(),
+                per_sub_eq_count
+            ),
+        )
+    } else {
+        (false, failures.join("; "))
+    }
+}
+
+fn validate_group_delay_optimization(
+    profile: GroupDelayQaProfile,
+    option_config: &RoomConfig,
+    option_result: &RoomOptimizationResult,
+    num_options: usize,
+) -> (bool, String) {
+    let Some(gd_config) = option_config.optimizer.group_delay.as_ref() else {
+        return (false, "group_delay config was not enabled".to_string());
+    };
+    if !gd_config.enabled {
+        return (
+            false,
+            "group_delay config exists but enabled=false".to_string(),
+        );
+    }
+
+    let Some(summary) = option_result.metadata.group_delay.as_ref() else {
+        return (
+            false,
+            "optimizer did not emit group_delay metadata".to_string(),
+        );
+    };
+
+    let ap_total: usize = summary.per_channel_ap_count.iter().sum();
+    let exported_ap = count_exported_allpass_filters(option_result);
+    let delay_plugins = count_exported_plugins(option_result, "delay");
+    let convolution_plugins = count_exported_plugins(option_result, "convolution");
+    let fir_channels = option_result
+        .channel_results
+        .values()
+        .filter(|ch| {
+            ch.fir_coeffs
+                .as_ref()
+                .is_some_and(|coeffs| !coeffs.is_empty())
+        })
+        .count();
+    let max_delay = summary
+        .per_channel_delay_ms
+        .iter()
+        .fold(0.0_f64, |max_abs, delay| max_abs.max(delay.abs()));
+
+    let mut failures = Vec::new();
+    if summary.channel_names.len() < 2 {
+        failures.push(format!(
+            "expected >=2 GD channels, got {}",
+            summary.channel_names.len()
+        ));
+    }
+    if summary.per_channel_delay_ms.len() != summary.channel_names.len()
+        || summary.per_channel_ap_count.len() != summary.channel_names.len()
+        || summary.per_channel_polarity_inverted.len() != summary.channel_names.len()
+    {
+        failures.push("per-channel GD vectors do not match channel_names".to_string());
+    }
+    if max_delay > gd_config.max_delay_ms + 1e-6 {
+        failures.push(format!(
+            "max delay {:.2}ms exceeds configured {:.2}ms",
+            max_delay, gd_config.max_delay_ms
+        ));
+    }
+    if summary.sum_gd_pre_rms_ms.is_finite() && summary.sum_gd_post_rms_ms.is_finite() {
+        let tolerance = if num_options > 1 { 1.25 } else { 1.10 };
+        if summary.sum_gd_post_rms_ms > summary.sum_gd_pre_rms_ms * tolerance + GD_QA_RMS_EPSILON_MS
+        {
+            failures.push(format!(
+                "GD RMS regressed: post {:.3}ms > pre {:.3}ms * {:.2}",
+                summary.sum_gd_post_rms_ms, summary.sum_gd_pre_rms_ms, tolerance
+            ));
+        }
+    } else {
+        failures.push("GD RMS metrics are not finite".to_string());
+    }
+
+    let hard_skip = matches!(
+        summary.advisory.as_str(),
+        "no_phase_data"
+            | "insufficient_channels"
+            | "empty_band"
+            | "frequency_grid_mismatch"
+            | "phase_linear_no_target"
+    );
+    if hard_skip {
+        failures.push(format!("GD hard-skip advisory '{}'", summary.advisory));
+    }
+
+    match profile {
+        GroupDelayQaProfile::MissingCoherenceDelayOnly => {
+            if summary.advisory != "missing_coherence_delay_only" {
+                failures.push(format!(
+                    "expected missing_coherence_delay_only advisory, got '{}'",
+                    summary.advisory
+                ));
+            }
+            if ap_total != 0 {
+                failures.push(format!(
+                    "missing-coherence path emitted {ap_total} AP filters"
+                ));
+            }
+            if summary
+                .per_channel_polarity_inverted
+                .iter()
+                .any(|&inverted| inverted)
+            {
+                failures.push("missing-coherence path optimized polarity".to_string());
+            }
+        }
+        GroupDelayQaProfile::TrustedDelayOnly => {
+            validate_gd_trusted_success(summary, &mut failures);
+            if ap_total != 0 {
+                failures.push(format!("delay-only profile emitted {ap_total} AP filters"));
+            }
+            if exported_ap != 0 {
+                failures.push(format!(
+                    "delay-only profile exported {exported_ap} AP filters"
+                ));
+            }
+            if summary
+                .per_channel_polarity_inverted
+                .iter()
+                .any(|&inverted| inverted)
+            {
+                failures.push("delay-only profile inverted polarity".to_string());
+            }
+        }
+        GroupDelayQaProfile::FixedAllPass => {
+            validate_gd_trusted_success(summary, &mut failures);
+            if !summary.applied {
+                failures.push("fixed all-pass summary was not applied to DSP".to_string());
+            }
+            if ap_total == 0 {
+                failures.push("fixed all-pass profile emitted no AP filters".to_string());
+            } else if exported_ap < ap_total {
+                failures.push(format!(
+                    "exported {exported_ap} AP filters but summary reports {ap_total}"
+                ));
+            }
+        }
+        GroupDelayQaProfile::AdaptiveAllPass => {
+            validate_gd_trusted_success(summary, &mut failures);
+            if summary.advisory == "allpass_disabled_no_bootstrap_realisations" {
+                failures.push("adaptive all-pass did not see bootstrap realisations".to_string());
+            }
+            if ap_total == 0 {
+                failures
+                    .push("adaptive all-pass profile emitted no accepted AP filters".to_string());
+            } else if exported_ap < ap_total {
+                failures.push(format!(
+                    "exported {exported_ap} AP filters but summary reports {ap_total}"
+                ));
+            }
+        }
+        GroupDelayQaProfile::PhaseLinearFir => {
+            validate_gd_trusted_success(summary, &mut failures);
+            if option_config.optimizer.processing_mode != ProcessingMode::PhaseLinear {
+                failures.push("PhaseLinear GD profile did not set phase-linear mode".to_string());
+            }
+            if !summary.applied {
+                failures.push("PhaseLinear GD target was not encoded into FIR".to_string());
+            }
+            if ap_total != 0 || exported_ap != 0 {
+                failures.push(format!(
+                    "PhaseLinear GD emitted AP filters (summary={ap_total}, exported={exported_ap})"
+                ));
+            }
+            if delay_plugins != 0 {
+                failures.push(format!(
+                    "PhaseLinear GD exported {delay_plugins} delay plugin(s); expected FIR shift"
+                ));
+            }
+            if convolution_plugins == 0 || fir_channels < 2 {
+                failures.push(format!(
+                    "PhaseLinear GD expected FIR/convolution on >=2 channels, got conv={} fir_channels={}",
+                    convolution_plugins, fir_channels
+                ));
+            }
+        }
+        GroupDelayQaProfile::MixedPhase => {
+            validate_gd_trusted_success(summary, &mut failures);
+            if option_config.optimizer.processing_mode != ProcessingMode::MixedPhase {
+                failures.push("MixedPhase GD profile did not set mixed-phase mode".to_string());
+            }
+            if ap_total > summary.channel_names.len() {
+                failures.push(format!(
+                    "MixedPhase GD should cap AP to <=1/channel, got {ap_total} for {} channels",
+                    summary.channel_names.len()
+                ));
+            }
+            if ap_total > 0 && exported_ap < ap_total {
+                failures.push(format!(
+                    "exported {exported_ap} AP filters but summary reports {ap_total}"
+                ));
+            }
+        }
+    }
+
+    let detail = format!(
+        "{}: advisory={} applied={} pre={:.3}ms post={:.3}ms impr={:.2}dB mean_coh={:.2} ap={}/{} delay_plugins={} conv={} fir_channels={}",
+        profile.label(),
+        summary.advisory,
+        summary.applied,
+        summary.sum_gd_pre_rms_ms,
+        summary.sum_gd_post_rms_ms,
+        summary.improvement_db,
+        summary.mean_coherence,
+        ap_total,
+        exported_ap,
+        delay_plugins,
+        convolution_plugins,
+        fir_channels
+    );
+
+    if failures.is_empty() {
+        (true, detail)
+    } else {
+        (false, format!("{} [{}]", failures.join("; "), detail))
+    }
+}
+
+fn validate_gd_trusted_success(
+    summary: &autoeq::roomeq::gd_opt::GroupDelayOptSummary,
+    failures: &mut Vec<String>,
+) {
+    if summary.advisory != "success" {
+        failures.push(format!(
+            "expected success advisory, got '{}'",
+            summary.advisory
+        ));
+    }
+    if summary.mean_coherence < 0.90 {
+        failures.push(format!(
+            "trusted GD mean coherence {:.2} < 0.90",
+            summary.mean_coherence
+        ));
+    }
+}
+
+fn count_exported_plugins(result: &RoomOptimizationResult, plugin_type: &str) -> usize {
+    result
+        .channels
+        .values()
+        .flat_map(|chain| chain.plugins.iter())
+        .filter(|plugin| plugin.plugin_type == plugin_type)
+        .count()
+}
+
+fn count_exported_allpass_filters(result: &RoomOptimizationResult) -> usize {
+    result
+        .channels
+        .values()
+        .flat_map(|chain| chain.plugins.iter())
+        .filter(|plugin| plugin.plugin_type == "eq")
+        .filter_map(|plugin| plugin.parameters.get("filters").and_then(|v| v.as_array()))
+        .flat_map(|filters| filters.iter())
+        .filter(|filter| {
+            filter.get("filter_type").and_then(|value| value.as_str()) == Some("allpass")
+        })
+        .count()
 }
 
 fn slope_of_curve_data(curve: &CurveData, fmin: f64, fmax: f64) -> Option<f64> {

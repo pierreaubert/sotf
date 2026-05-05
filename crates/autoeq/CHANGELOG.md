@@ -1,7 +1,64 @@
+# 0.4.43
+
+## New features
+
+- Added `autoeq:bo`, a Gaussian-process Bayesian optimisation backend for
+  expensive EPA, multi-seat, and future perceptual objectives. It reuses the
+  existing AutoEQ bounds/objective pipeline, supports Sobol hot starts,
+  EI, real Monte-Carlo q-EI, Thompson acquisition, parallel batch evaluation,
+  optional Monte-Carlo qEHVI multi-objective optimisation, and local COBYLA
+  handoff via the existing refine flow.
+- Added BO configuration through CLI flags and RoomEQ optimizer config:
+  `bo_initial_samples`, `bo_batch_size`, `bo_posterior_std_threshold`,
+  `bo_acquisition`, and `bo_ehvi`.
+- Updated the EPA runtime loudness and roughness path to use the corrected
+  `math-dsp` listening-level calibration and pairwise sensory roughness model.
+
 # 0.4.42
 
 ## RoomEQ improvements
 
+- Added a `modal_basis` multi-seat optimisation strategy for subwoofer/SFM
+  workflows. It derives a complex-domain modal basis from per-sub/per-seat
+  transfer functions and minimises dominant non-common seat modes instead of
+  only fitting scalar magnitude variance.
+- Wired multi-seat multi-sub optimisation into the production `MultiSubGroup`
+  path. When each subwoofer is supplied as a multi-measurement source with the
+  same seat count, RoomEQ now optimises optional per-sub PEQ, MSO
+  gain/delay/polarity/all-pass, and optional shared post-MSO EQ across all
+  combined seat responses before exporting the sub driver chains.
+- Added `multi_seat.per_sub_peq` and `multi_seat.global_eq` controls, both
+  enabled by default, and extended the multisub DSP exporter so per-sub PEQ,
+  polarity, delay, and multiple all-pass filters are first-class output
+  plugins.
+- Corrected production multi-sub multi-seat score reporting so the channel
+  `pre_score` reflects the raw seat-averaged sub sum before per-sub PEQ, MSO,
+  and shared EQ, while the shared-EQ regression guard still compares only the
+  post-MSO curve against the global-EQ result.
+- Added review follow-up coverage for the production multi-sub multi-seat path:
+  focused unit tests now verify score movement and per-sub/global EQ export,
+  `roomeq-qa-quality` has a file-backed production multi-sub multi-seat case,
+  and the generated `medium_multi_sub_multi_seat` fixture now references both
+  subwoofer seat measurements and enables `optimizer.multi_seat`.
+- Integrated GD-Opt with the production FIR path. `PhaseLinear` now builds a
+  FIR group-delay alignment target and encodes the optimized per-channel delay
+  as a sample shift in the convolution coefficients instead of exporting
+  separate delay/all-pass plugins.
+- Adaptive GD all-pass optimization now uses independent multi-measurement
+  sweep realisations when every participating channel provides matching
+  phase/coherence sweeps. If those realisations are absent, RoomEQ keeps the
+  existing safety downgrade to delay-only with the
+  `allpass_disabled_no_bootstrap_realisations` advisory.
+- Tightened GD QA so the adaptive all-pass profile must accept and export
+  all-pass filters, and added the phase-linear FIR GD target test to the
+  `qa-roomeq-gd`, `qa-roomeq-phase-critical`, and `qa-roomeq-ci` Justfile
+  recipes.
+- Modal-basis optimisation now shares the existing MSO resource guardrails,
+  including output-level, headroom-pressure, and low-frequency extension
+  penalties, so the new objective can trade modal cancellation against usable
+  bass output safely.
+- Documented the `modal_basis` strategy in the RoomEQ CLI input format and
+  schema, and added synthetic QA guard coverage for the new multi-seat path.
 - Added Frequency-Dependent Windowing (FDW) support for measured impulse
   responses. RoomEQ now uses FDW direct-energy ratios from long bass windows
   and progressively shorter high-frequency windows to drive per-frequency
@@ -11,6 +68,14 @@
   correction above the modal region while preserving strong mode correction.
 - Added decomposed-correction config controls for FDW enablement, cycle count,
   min/max window length, and smoothing width.
+- Added an optional TV² smoothness regularizer on the correction curve
+  (`smoothness_penalty`) using log-frequency second-difference curvature.
+  It is wired through AutoEQ objective data, CLI flags
+  (`--smoothness-weight`, `--smoothness-exponent`,
+  `--smoothness-schroeder-hz`, `--smoothness-modal-scale`), and RoomEQ JSON
+  config/schema (`optimizer.smoothness_penalty`).
+- RoomEQ now defaults the smoothness modal-relax cutoff to the resolved
+  Schroeder frequency when `smoothness_penalty.schroeder_hz` is omitted.
 
 # 0.4.41
 

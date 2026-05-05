@@ -1,6 +1,6 @@
 //! RoomEQ Full QA: Comprehensive Scenario Testing
 //!
-//! Tests all roomeq scenarios with BEM/FEM solvers × IIR/FIR/Mixed modes.
+//! Tests all roomeq scenarios with the FEM solver × IIR/FIR/Mixed modes.
 //! Validates both the library and CLI binary output.
 //!
 //! Checks performed per test case:
@@ -42,9 +42,8 @@ const SEED: u64 = 42;
 const QA_MAXEVAL: usize = 15000; // Fast mode for QA
 const BASS_MANAGED_CHANNEL_REGRESSION_EPSILON: f64 = 0.25;
 
-const FEM_DIR: &str = "crates/autoeq/data_tests/roomeq/generated/fem";
-const BEM_DIR: &str = "crates/autoeq/data_tests/roomeq/generated/bem";
-const OPTIM_CONFIG_DIR: &str = "crates/autoeq/data_tests/roomeq/generated/optimiser-config";
+const FEM_DIR: &str = "crates/autoeq/data_tests/roomeq/generate/fem";
+const OPTIM_CONFIG_DIR: &str = "crates/autoeq/data_tests/roomeq/generate/optimiser-config";
 
 // ---------------------------------------------------------------------------
 // Room Size Classification & Thresholds
@@ -125,7 +124,7 @@ struct Args {
     #[arg(long)]
     scenario: Option<String>,
 
-    /// Filter by solver (bem, fem, or both)
+    /// Filter by solver (only `fem` is supported; retained for compatibility)
     #[arg(long)]
     solver: Option<String>,
 
@@ -163,21 +162,18 @@ impl Args {
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Solver {
     Fem,
-    Bem,
 }
 
 impl Solver {
     fn name(&self) -> &'static str {
         match self {
             Solver::Fem => "fem",
-            Solver::Bem => "bem",
         }
     }
 
     fn dir(&self) -> &'static str {
         match self {
             Solver::Fem => FEM_DIR,
-            Solver::Bem => BEM_DIR,
         }
     }
 }
@@ -329,11 +325,8 @@ fn build_test_matrix(
     solver_filter: Option<&str>,
     mode_filter: Option<&str>,
 ) -> Vec<TestCase> {
-    let solvers: Vec<Solver> = if quick {
-        vec![Solver::Fem]
-    } else {
-        vec![Solver::Fem, Solver::Bem]
-    };
+    let solvers: Vec<Solver> = vec![Solver::Fem];
+    let _ = quick; // quick previously also restricted solvers; FEM is the only solver now
 
     let methods: Vec<ProcessingMethod> = if quick {
         vec![ProcessingMethod::Iir]
@@ -356,15 +349,10 @@ fn build_test_matrix(
 
     for scenario in scenarios {
         for solver in &solvers {
-            // Skip BEM for multi-seat (too slow for now)
-            if solver == &Solver::Bem && scenario.contains("multi_seat") {
-                continue;
-            }
-
             // Apply solver filter
             if let Some(f) = solver_filter
                 && solver.name() != f
-                && (f != "both" || (solver.name() != "fem" && solver.name() != "bem"))
+                && f != "both"
             {
                 continue;
             }
@@ -581,7 +569,7 @@ fn validate_result(
 
     // Check 3: absolute score ceiling
     let max_post = if has_sub {
-        // Bass-managed BEM surround cases can carry a high flat-loss number on
+        // Bass-managed surround cases can carry a high flat-loss number on
         // the LFE/crossover objective while still improving the main-bed score.
         // Keep this as a broad sanity ceiling; stricter quality thresholds live
         // in roomeq-qa-quality where the scorecard has bass-aware checks.
