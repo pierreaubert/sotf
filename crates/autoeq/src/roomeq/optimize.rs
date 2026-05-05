@@ -522,6 +522,29 @@ fn emit_pipeline_event(observer: &SharedPipelineObserver, event: PipelineEvent) 
     Ok(())
 }
 
+fn apply_ctc_if_enabled(
+    result: &mut RoomOptimizationResult,
+    config: &RoomConfig,
+    sample_rate: f64,
+    output_dir: Option<&Path>,
+) -> Result<()> {
+    let Some(ctc_config) = config.ctc.as_ref().filter(|ctc| ctc.enabled) else {
+        result.metadata.ctc = None;
+        return Ok(());
+    };
+    let sys = config
+        .system
+        .as_ref()
+        .ok_or_else(|| AutoeqError::InvalidConfiguration {
+            message: "ctc.enabled requires system.speakers to define logical speaker roles"
+                .to_string(),
+        })?;
+    let output_dir = output_dir.unwrap_or(Path::new("."));
+    result.metadata.ctc =
+        super::ctc::maybe_generate_recommended_xtc(ctc_config, sys, sample_rate, output_dir)?;
+    Ok(())
+}
+
 fn progress_event(
     step_id: PipelineStepId,
     status: PipelineStepStatus,
@@ -1094,6 +1117,7 @@ fn optimize_room_impl(
                     Some(&result.channels),
                     Some(config),
                 );
+                apply_ctc_if_enabled(&mut result, config, sample_rate, output_dir)?;
                 emit_pipeline_event(
                     &observer_shared,
                     PipelineEvent::completed(PipelineStepId::MetadataRefresh, "Reports refreshed"),
@@ -2193,6 +2217,7 @@ fn optimize_room_impl(
         multi_seat_correction: None,
         bass_management: None,
         timing_diagnostics: build_timing_diagnostics(config, &channel_arrivals, &channel_chains),
+        ctc: None,
     };
 
     let mut result = RoomOptimizationResult {
@@ -2241,6 +2266,7 @@ fn optimize_room_impl(
         PipelineEvent::started(PipelineStepId::MetadataRefresh, "Refreshing reports"),
     )?;
     refresh_final_reports(&mut result, config, sample_rate);
+    apply_ctc_if_enabled(&mut result, config, sample_rate, output_dir)?;
     emit_pipeline_event(
         &observer_shared,
         PipelineEvent::completed(PipelineStepId::MetadataRefresh, "Reports refreshed"),
@@ -2343,6 +2369,7 @@ pub fn optimize_speaker(
         target_curve: target_curve.cloned(),
         optimizer: optimizer_config,
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     };
 

@@ -696,6 +696,7 @@ fn test_mixedphase_with_phase_data() {
             ..OptimizerConfig::default()
         },
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     };
 

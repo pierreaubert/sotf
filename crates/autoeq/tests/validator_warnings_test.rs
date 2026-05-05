@@ -40,6 +40,7 @@ fn base_config(speakers: HashMap<String, SpeakerConfig>, optimizer: OptimizerCon
         target_curve: None,
         optimizer,
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     }
 }

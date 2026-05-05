@@ -161,6 +161,7 @@ fn convert_legacy_to_room_config(legacy: &LegacyMeasurementsFile) -> RoomConfig 
         target_curve: None,
         optimizer: OptimizerConfig::default(),
         recording_config,
+        ctc: None,
         cea2034_cache: None,
     }
 }

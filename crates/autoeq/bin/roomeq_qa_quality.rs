@@ -4143,6 +4143,7 @@ mod tests {
                 multi_seat_correction: None,
                 bass_management: None,
                 timing_diagnostics: None,
+                ctc: None,
             },
         }
     }
@@ -4156,6 +4157,7 @@ mod tests {
             target_curve: None,
             optimizer: Default::default(),
             recording_config: None,
+            ctc: None,
             cea2034_cache: None,
         }
     }

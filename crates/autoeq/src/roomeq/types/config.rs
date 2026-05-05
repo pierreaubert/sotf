@@ -2276,6 +2276,253 @@ impl OptimizerConfig {
 }
 
 // ============================================================================
+// CTC / binaural transfer-matrix configuration
+// ============================================================================
+
+fn default_ctc_matrix_source() -> String {
+    "measured".to_string()
+}
+fn default_ctc_window_type() -> String {
+    "ctc_direct".to_string()
+}
+fn default_ctc_window_start_ms() -> f64 {
+    0.0
+}
+fn default_ctc_window_length_ms() -> f64 {
+    6.0
+}
+fn default_ctc_window_fade_ms() -> f64 {
+    1.0
+}
+fn default_ctc_beta_db() -> f64 {
+    -30.0
+}
+fn default_ctc_max_gain_db() -> f64 {
+    12.0
+}
+fn default_ctc_fir_taps() -> usize {
+    4096
+}
+fn default_ctc_robustness() -> String {
+    "average".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CtcHeadPositionConfig {
+    pub id: String,
+    #[serde(default)]
+    pub x: f64,
+    #[serde(default)]
+    pub y: f64,
+    #[serde(default)]
+    pub z: f64,
+    #[serde(default)]
+    pub yaw_deg: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CtcMeasurementFileConfig {
+    pub head_position: String,
+    pub speaker: String,
+    /// Processed/deconvolved two-channel ear IR WAV.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ir: Option<PathBuf>,
+    /// Raw recorded two-ear sweep WAV. Channel 1 = left ear, channel 2 = right ear.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_sweep: Option<PathBuf>,
+    /// Raw loopback/reference recording WAV used to align the take.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub loopback: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CtcMeasurementConfig {
+    pub speakers: Vec<String>,
+    #[serde(default)]
+    pub mics: Vec<String>,
+    #[serde(default)]
+    pub head_positions: Vec<CtcHeadPositionConfig>,
+    pub files: Vec<CtcMeasurementFileConfig>,
+}
+
+impl CtcMeasurementConfig {
+    pub fn resolve_paths(&mut self, base_dir: &std::path::Path) {
+        for file in &mut self.files {
+            if let Some(ir) = &mut file.ir
+                && ir.is_relative()
+            {
+                *ir = base_dir.join(&*ir);
+            }
+            if let Some(raw_sweep) = &mut file.raw_sweep
+                && raw_sweep.is_relative()
+            {
+                *raw_sweep = base_dir.join(&*raw_sweep);
+            }
+            if let Some(loopback) = &mut file.loopback
+                && loopback.is_relative()
+            {
+                *loopback = base_dir.join(&*loopback);
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CtcHrtfSpeakerConfig {
+    pub speaker: String,
+    pub azimuth_deg: f64,
+    #[serde(default)]
+    pub elevation_deg: f64,
+    #[serde(default = "default_ctc_hrtf_distance_m")]
+    pub distance_m: f64,
+}
+
+fn default_ctc_hrtf_distance_m() -> f64 {
+    2.0
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CtcHrtfConfig {
+    pub hrtf_file: PathBuf,
+    pub speakers: Vec<CtcHrtfSpeakerConfig>,
+}
+
+impl CtcHrtfConfig {
+    pub fn resolve_paths(&mut self, base_dir: &std::path::Path) {
+        if self.hrtf_file.is_relative() {
+            self.hrtf_file = base_dir.join(&self.hrtf_file);
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CtcWindowConfig {
+    #[serde(default = "default_ctc_window_type")]
+    pub window_type: String,
+    #[serde(default = "default_ctc_window_start_ms")]
+    pub start_ms: f64,
+    #[serde(default = "default_ctc_window_length_ms")]
+    pub length_ms: f64,
+    #[serde(default = "default_ctc_window_fade_ms")]
+    pub fade_ms: f64,
+    #[serde(default = "default_ctc_fdw_cycles")]
+    pub fdw_cycles: f64,
+    #[serde(default = "default_ctc_fdw_min_ms")]
+    pub fdw_min_ms: f64,
+    #[serde(default = "default_ctc_fdw_max_ms")]
+    pub fdw_max_ms: f64,
+}
+
+fn default_ctc_fdw_cycles() -> f64 {
+    8.0
+}
+fn default_ctc_fdw_min_ms() -> f64 {
+    3.0
+}
+fn default_ctc_fdw_max_ms() -> f64 {
+    200.0
+}
+
+impl Default for CtcWindowConfig {
+    fn default() -> Self {
+        Self {
+            window_type: default_ctc_window_type(),
+            start_ms: default_ctc_window_start_ms(),
+            length_ms: default_ctc_window_length_ms(),
+            fade_ms: default_ctc_window_fade_ms(),
+            fdw_cycles: default_ctc_fdw_cycles(),
+            fdw_min_ms: default_ctc_fdw_min_ms(),
+            fdw_max_ms: default_ctc_fdw_max_ms(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CtcRegularizationConfig {
+    #[serde(default = "default_ctc_beta_db")]
+    pub beta_db: f64,
+    #[serde(default = "default_ctc_beta_db")]
+    pub beta_lf_db: f64,
+    #[serde(default = "default_ctc_beta_db")]
+    pub beta_hf_db: f64,
+    #[serde(default = "default_ctc_max_gain_db")]
+    pub max_gain_db: f64,
+}
+
+impl Default for CtcRegularizationConfig {
+    fn default() -> Self {
+        Self {
+            beta_db: default_ctc_beta_db(),
+            beta_lf_db: default_ctc_beta_db(),
+            beta_hf_db: default_ctc_beta_db(),
+            max_gain_db: default_ctc_max_gain_db(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CtcConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_ctc_matrix_source")]
+    pub matrix_source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub measurements: Option<CtcMeasurementConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hrtf: Option<CtcHrtfConfig>,
+    #[serde(default)]
+    pub window: CtcWindowConfig,
+    #[serde(default)]
+    pub regularization: CtcRegularizationConfig,
+    #[serde(default = "default_ctc_robustness")]
+    pub robustness: String,
+    #[serde(default = "default_ctc_fir_taps")]
+    pub fir_taps: usize,
+    /// Optional emitted sweep WAV used for raw sweep deconvolution.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference_sweep: Option<PathBuf>,
+    /// Sweep duration in seconds, used to suppress log-sweep harmonic residues.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sweep_duration_s: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sweep_start_hz: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sweep_end_hz: Option<f64>,
+    #[serde(default = "default_ctc_max_harmonic")]
+    pub harmonic_suppression_harmonics: usize,
+    #[serde(default = "default_ctc_harmonic_window_ms")]
+    pub harmonic_suppression_window_ms: f64,
+    #[serde(default = "default_ctc_minimax_iterations")]
+    pub minimax_iterations: usize,
+}
+
+fn default_ctc_max_harmonic() -> usize {
+    5
+}
+fn default_ctc_harmonic_window_ms() -> f64 {
+    2.0
+}
+fn default_ctc_minimax_iterations() -> usize {
+    8
+}
+
+impl CtcConfig {
+    pub fn resolve_paths(&mut self, base_dir: &std::path::Path) {
+        if let Some(measurements) = &mut self.measurements {
+            measurements.resolve_paths(base_dir);
+        }
+        if let Some(hrtf) = &mut self.hrtf {
+            hrtf.resolve_paths(base_dir);
+        }
+        if let Some(reference_sweep) = &mut self.reference_sweep
+            && reference_sweep.is_relative()
+        {
+            *reference_sweep = base_dir.join(&*reference_sweep);
+        }
+    }
+}
+
+// ============================================================================
 // RoomConfig
 // ============================================================================
 
@@ -2302,6 +2549,9 @@ pub struct RoomConfig {
     /// Recording configuration (device settings, signal parameters used during capture)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recording_config: Option<RecordingConfiguration>,
+    /// Cross-talk cancellation / binaural-aware correction configuration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ctc: Option<CtcConfig>,
     /// Pre-fetched CEA2034 data (runtime only, not serialized).
     #[serde(skip)]
     #[schemars(skip)]
@@ -2318,6 +2568,9 @@ impl RoomConfig {
             && path.is_relative()
         {
             *path = base_dir.join(&*path);
+        }
+        if let Some(ctc) = &mut self.ctc {
+            ctc.resolve_paths(base_dir);
         }
     }
 }

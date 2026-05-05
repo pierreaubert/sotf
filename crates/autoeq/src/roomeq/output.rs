@@ -1292,6 +1292,7 @@ mod tests {
             multi_seat_correction: None,
             bass_management: None,
             timing_diagnostics: None,
+            ctc: None,
         };
 
         let output = create_dsp_chain_output(channels, Some(metadata));

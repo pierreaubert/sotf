@@ -59,6 +59,7 @@ fn detects_immersive_layout_from_standard_roles() {
         target_curve: None,
         optimizer: OptimizerConfig::default(),
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     };
 
@@ -101,6 +102,7 @@ fn system_roles_override_measurement_keys() {
         target_curve: None,
         optimizer: OptimizerConfig::default(),
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     };
 
@@ -231,6 +233,7 @@ fn layout_metadata_reports_role_target_profile() {
             ..Default::default()
         },
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     };
 
@@ -273,6 +276,7 @@ fn reports_non_sub_multiseat_coverage() {
         target_curve: None,
         optimizer: OptimizerConfig::default(),
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     };
 
@@ -318,6 +322,7 @@ fn reports_partial_non_sub_multiseat_coverage() {
         target_curve: None,
         optimizer: OptimizerConfig::default(),
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     };
 
@@ -352,6 +357,7 @@ fn derives_all_channel_multiseat_primary_weights() {
         target_curve: None,
         optimizer,
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     };
 
@@ -377,6 +383,7 @@ fn skips_all_channel_multiseat_on_grid_mismatch() {
         target_curve: None,
         optimizer: OptimizerConfig::default(),
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     };
 
@@ -399,6 +406,7 @@ fn skips_all_channel_multiseat_on_invalid_weight_policy() {
         target_curve: None,
         optimizer,
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     };
 
@@ -435,6 +443,7 @@ fn reports_grid_mismatch_as_channel_skip() {
         target_curve: None,
         optimizer: OptimizerConfig::default(),
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     };
     let channel_results = HashMap::from([(
@@ -476,6 +485,7 @@ fn skips_all_channel_multiseat_when_primary_seat_is_invalid() {
         target_curve: None,
         optimizer,
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     };
 
@@ -523,6 +533,7 @@ fn rejects_all_channel_multiseat_when_constraints_fail() {
         target_curve: None,
         optimizer,
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     };
 
@@ -555,6 +566,7 @@ fn rejects_all_channel_multiseat_when_broadband_level_collapses() {
         target_curve: None,
         optimizer: OptimizerConfig::default(),
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     };
 
@@ -587,6 +599,7 @@ fn reports_guardrail_rejection_without_claiming_applied() {
         target_curve: None,
         optimizer: OptimizerConfig::default(),
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     };
     let channel_results = HashMap::from([(
@@ -649,6 +662,7 @@ fn reports_all_channel_multiseat_null_guard() {
         target_curve: None,
         optimizer,
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     };
     let channel_results = HashMap::from([(
@@ -722,6 +736,7 @@ fn reports_all_channel_multiseat_by_role_group_and_excludes_subs() {
         target_curve: None,
         optimizer: OptimizerConfig::default(),
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     };
     let channel_results: HashMap<String, ChannelOptimizationResult> = ["L", "C", "SL", "TFL"]
@@ -834,6 +849,7 @@ fn bass_management_reports_lfe_and_limits_sub_gain() {
         target_curve: None,
         optimizer: OptimizerConfig::default(),
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     };
 
@@ -913,6 +929,7 @@ fn bass_management_report_preserves_optimization_metadata() {
         target_curve: None,
         optimizer: OptimizerConfig::default(),
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     };
     let optimization = BassManagementOptimizationReport {
@@ -1010,6 +1027,7 @@ fn bass_management_routes_use_group_specific_crossovers() {
         target_curve: None,
         optimizer: OptimizerConfig::default(),
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     };
 
@@ -1193,6 +1211,7 @@ fn bass_management_routes_expand_to_physical_sub_outputs() {
         target_curve: None,
         optimizer: OptimizerConfig::default(),
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     };
     let optimization = BassManagementOptimizationReport {
@@ -1318,6 +1337,7 @@ fn bass_management_report_warns_when_highpass_is_not_redirected() {
         target_curve: None,
         optimizer: OptimizerConfig::default(),
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     };
 
@@ -1365,6 +1385,7 @@ fn bass_output_role_uses_configured_lfe_channel() {
         target_curve: None,
         optimizer: OptimizerConfig::default(),
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     };
 

@@ -4,16 +4,75 @@
   "description": "Complete room configuration",
   "type": "object",
   "properties": {
-    "version": {
-      "description": "Configuration version (semantic versioning, e.g. \"1.0.0\")",
-      "type": "string",
-      "default": "2.0.0"
+    "crossovers": {
+      "description": "Optional crossover configuration for multi-driver groups",
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "$ref": "#/$defs/CrossoverConfig"
+      }
     },
-    "system": {
-      "description": "System configuration (v2.1) - Decouples logical roles from measurements",
+    "ctc": {
+      "description": "Cross-talk cancellation / binaural-aware correction configuration.",
       "anyOf": [
         {
-          "$ref": "#/$defs/SystemConfig"
+          "$ref": "#/$defs/CtcConfig"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "optimizer": {
+      "description": "Optimizer configuration",
+      "$ref": "#/$defs/OptimizerConfig",
+      "default": {
+        "algorithm": "autoeq:de",
+        "asymmetric_loss": true,
+        "atolerance": 0.00001,
+        "decomposed_correction": {
+          "early_reflection_weight": 0.3,
+          "enabled": true,
+          "fdw_cycles": 8.0,
+          "fdw_enabled": true,
+          "fdw_max_window_ms": 500.0,
+          "fdw_min_window_ms": 3.0,
+          "fdw_smoothing_octaves": 0.041666666666666664,
+          "min_mode_prominence_db": 3.0,
+          "min_mode_q": 3.0,
+          "mode_correction_weight": 1.0,
+          "schroeder_freq": 250.0,
+          "steady_state_weight": 0.4
+        },
+        "elimination_threshold": 0.005,
+        "local_algo": "cobyla",
+        "loss_type": "flat",
+        "max_db": 4.0,
+        "max_freq": 1600.0,
+        "max_iter": 50000,
+        "max_q": 3.0,
+        "min_db": -12.0,
+        "min_filter_improvement": 0.01,
+        "min_freq": 20.0,
+        "min_q": 0.5,
+        "num_filters": 7,
+        "peq_model": "pk",
+        "population": 300,
+        "processing_mode": "low_latency",
+        "psychoacoustic": true,
+        "refine": true,
+        "smooth_n": 2,
+        "strategy": "lshade",
+        "tolerance": 0.00001
+      }
+    },
+    "recording_config": {
+      "description": "Recording configuration (device settings, signal parameters used during capture)",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RecordingConfiguration"
         },
         {
           "type": "null"
@@ -27,15 +86,16 @@
         "$ref": "#/$defs/SpeakerConfig"
       }
     },
-    "crossovers": {
-      "description": "Optional crossover configuration for multi-driver groups",
-      "type": [
-        "object",
-        "null"
-      ],
-      "additionalProperties": {
-        "$ref": "#/$defs/CrossoverConfig"
-      }
+    "system": {
+      "description": "System configuration (v2.1) - Decouples logical roles from measurements",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SystemConfig"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "target_curve": {
       "description": "Optional target curve (freq, spl)",
@@ -48,64 +108,3023 @@
         }
       ]
     },
-    "optimizer": {
-      "description": "Optimizer configuration",
-      "$ref": "#/$defs/OptimizerConfig",
-      "default": {
-        "processing_mode": "low_latency",
-        "loss_type": "flat",
-        "algorithm": "autoeq:de",
-        "strategy": "lshade",
-        "num_filters": 7,
-        "min_filter_improvement": 0.01,
-        "elimination_threshold": 0.005,
-        "min_q": 0.5,
-        "max_q": 3.0,
-        "min_db": -12.0,
-        "max_db": 4.0,
-        "min_freq": 20.0,
-        "max_freq": 1600.0,
-        "max_iter": 50000,
-        "population": 300,
-        "peq_model": "pk",
-        "refine": true,
-        "local_algo": "cobyla",
-        "psychoacoustic": true,
-        "smooth_n": 2,
-        "asymmetric_loss": true,
-        "tolerance": 0.00001,
-        "atolerance": 0.00001,
-        "decomposed_correction": {
-          "enabled": true,
-          "schroeder_freq": 250.0,
-          "min_mode_q": 3.0,
-          "min_mode_prominence_db": 3.0,
-          "mode_correction_weight": 1.0,
-          "early_reflection_weight": 0.3,
-          "steady_state_weight": 0.4
-        }
-      }
-    },
-    "recording_config": {
-      "description": "Recording configuration (device settings, signal parameters used during capture)",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/RecordingConfiguration"
-        },
-        {
-          "type": "null"
-        }
-      ]
+    "version": {
+      "description": "Configuration version (semantic versioning, e.g. \"1.0.0\")",
+      "type": "string",
+      "default": "2.0.0"
     }
   },
   "required": [
     "speakers"
   ],
   "$defs": {
+    "AutoOptimizerConfig": {
+      "description": "Opt-in automatic room EQ optimizer bound selection.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Enable automatic selection for the fields below.",
+          "type": "boolean",
+          "default": false
+        },
+        "filter_count": {
+          "description": "Automatically choose the maximum PEQ filter count.",
+          "type": "boolean",
+          "default": true
+        },
+        "gain_bounds": {
+          "description": "Automatically choose gain bounds and boost envelopes.",
+          "type": "boolean",
+          "default": true
+        },
+        "max_filters": {
+          "description": "Maximum filter count when automatic count selection is enabled.",
+          "type": "integer",
+          "format": "uint",
+          "default": 12,
+          "minimum": 0
+        },
+        "min_filters": {
+          "description": "Minimum filter count when automatic count selection is enabled.",
+          "type": "integer",
+          "format": "uint",
+          "default": 1,
+          "minimum": 0
+        },
+        "q_bounds": {
+          "description": "Automatically choose Q bounds.",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "BassAnchorChannelResultLegacy": {
+      "description": "Per-channel bass-anchor result (mirror of `BassAnchorChannelResult`).",
+      "type": "object",
+      "properties": {
+        "bass_anchor_magnitude": {
+          "description": "Linear magnitude of the DFT bin at the bass frequency.\nUsed as an SNR proxy.",
+          "type": "number",
+          "format": "double"
+        },
+        "bass_anchor_phase_deg": {
+          "description": "Measured phase of the bass tone at the listening position,\ndegrees in `(−180°, 180°]`, sin-referenced against the emitted\nburst.",
+          "type": "number",
+          "format": "double"
+        },
+        "bass_anchor_stability_deg": {
+          "description": "|phase_half1 − phase_half2| in degrees. Values above the\n`\"bass_anchor_unreliable\"` advisory threshold (§2.8, 20°) mean\nthe GD confidence gate should discard this channel's anchor.",
+          "type": "number",
+          "format": "double"
+        },
+        "channel_index": {
+          "description": "Channel output index used during playback.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "channel_name": {
+          "description": "Channel name (e.g. \"L\", \"R\", \"Sub\").",
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_name",
+        "channel_index",
+        "bass_anchor_phase_deg",
+        "bass_anchor_magnitude",
+        "bass_anchor_stability_deg"
+      ]
+    },
+    "BassAnchorResultsLegacy": {
+      "description": "Serializable mirror of the engine's `BassAnchorResults`. Captures\nthe per-channel phase at the bass anchor frequency so that GD-Opt\nv2's confidence gate (§3.5 of `docs/gd_opt_v2_plan.md`) and\noptimiser (§3.2) can ingest it at config-load time without\ndepending on `sotf-engine`.",
+      "type": "object",
+      "properties": {
+        "bass_cycles": {
+          "description": "Number of cycles in the burst (nominal 5).",
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "bass_freq_hz": {
+          "description": "Tone-burst centre frequency in Hz (nominal 20 Hz).",
+          "type": "number",
+          "format": "float"
+        },
+        "channels": {
+          "description": "Per-channel phase + quality metrics.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BassAnchorChannelResultLegacy"
+          }
+        },
+        "sample_rate": {
+          "description": "Sample rate used for the capture (Hz).",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "channels",
+        "sample_rate",
+        "bass_freq_hz",
+        "bass_cycles"
+      ]
+    },
+    "BassHeadroomModelConfig": {
+      "type": "object",
+      "properties": {
+        "lcr_correlation": {
+          "type": "number",
+          "format": "double",
+          "default": 0.5
+        },
+        "lr_correlation": {
+          "type": "number",
+          "format": "double",
+          "default": 0.75
+        },
+        "model": {
+          "$ref": "#/$defs/BassHeadroomModelKind",
+          "default": "cinema_correlated"
+        },
+        "surround_height_correlation": {
+          "type": "number",
+          "format": "double",
+          "default": 0.35
+        }
+      }
+    },
+    "BassHeadroomModelKind": {
+      "type": "string",
+      "enum": [
+        "cinema_correlated"
+      ]
+    },
+    "BassManagementConfig": {
+      "description": "Home-cinema bass-management policy.\n\nThis describes how RoomEQ should reason about the main high-pass, sub\nlow-pass, redirected bass, and the LFE programme path. The current DSP\nexporter still emits per-output-channel correction chains, so LFE +10 dB\nis reported but not inserted by default: applying it to the physical sub\nchain would also boost redirected bass.",
+      "type": "object",
+      "properties": {
+        "apply_lfe_gain_to_chain": {
+          "description": "Explicitly insert LFE gain in the exported physical sub chain. This is\nnormally false because redirected bass and LFE share the same sub output.",
+          "type": "boolean",
+          "default": false
+        },
+        "enabled": {
+          "description": "Enable bass-management semantics for home-cinema workflows.",
+          "type": "boolean",
+          "default": true
+        },
+        "group_crossovers": {
+          "description": "Optional role-group to crossover-key mapping. Supported built-in group\nids are `lcr`, `surround`, `height`, and `wide`; unknown ids are kept as\ncustom metadata groups.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "headroom_margin_db": {
+          "description": "Headroom reserve expected downstream for bass-managed playback.",
+          "type": "number",
+          "format": "double",
+          "default": 6.0
+        },
+        "headroom_model": {
+          "description": "Programme-correlation model used for bass-bus headroom simulation.",
+          "$ref": "#/$defs/BassHeadroomModelConfig",
+          "default": {
+            "lcr_correlation": 0.5,
+            "lr_correlation": 0.75,
+            "model": "cinema_correlated",
+            "surround_height_correlation": 0.35
+          }
+        },
+        "lfe_channel": {
+          "description": "Logical LFE programme channel name.",
+          "type": "string",
+          "default": "LFE"
+        },
+        "lfe_playback_gain_db": {
+          "description": "Cinema LFE playback calibration gain. Reported in metadata; not applied\nto the sub correction chain unless `apply_lfe_gain_to_chain` is set.",
+          "type": "number",
+          "format": "double",
+          "default": 10.0
+        },
+        "max_sub_boost_db": {
+          "description": "Maximum allowed positive sub boost from RoomEQ bass management.",
+          "type": "number",
+          "format": "double",
+          "default": 6.0
+        },
+        "optimize_groups": {
+          "description": "Optimize crossover settings independently per speaker group.",
+          "type": "boolean",
+          "default": true
+        },
+        "redirect_bass": {
+          "description": "Whether small-speaker bass is redirected to the subwoofer output.",
+          "type": "boolean",
+          "default": true
+        },
+        "sub_trim_db": {
+          "description": "User sub trim applied after crossover/alignment optimization.",
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        }
+      }
+    },
+    "CardioidConfig": {
+      "description": "Configuration for Gradient Cardioid Subwoofer (2 subwoofers)",
+      "type": "object",
+      "properties": {
+        "front": {
+          "description": "Measurement for the front (primary) subwoofer",
+          "$ref": "#/$defs/MeasurementSource"
+        },
+        "name": {
+          "description": "Name of the cardioid system",
+          "type": "string"
+        },
+        "rear": {
+          "description": "Measurement for the rear (cancellation) subwoofer",
+          "$ref": "#/$defs/MeasurementSource"
+        },
+        "separation_meters": {
+          "description": "Physical separation distance in meters (between acoustic centers)",
+          "type": "number",
+          "format": "double"
+        },
+        "speaker_name": {
+          "description": "Optional speaker model name",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "front",
+        "rear",
+        "separation_meters"
+      ]
+    },
+    "Cea2034CorrectionConfig": {
+      "description": "CEA2034 speaker pre-correction configuration",
+      "type": "object",
+      "properties": {
+        "correction_mode": {
+          "description": "Correction mode: flat (nearfield), score (farfield), auto (distance-based)",
+          "$ref": "#/$defs/Cea2034CorrectionMode",
+          "default": "auto"
+        },
+        "enabled": {
+          "description": "Enable CEA2034 speaker pre-correction",
+          "type": "boolean",
+          "default": false
+        },
+        "listening_distance_m": {
+          "description": "Manual listening distance override in meters",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "max_db": {
+          "description": "Maximum boost in dB (default: 3.0)",
+          "type": "number",
+          "format": "double",
+          "default": 3.0
+        },
+        "max_q": {
+          "description": "Maximum Q factor (default: 3.0)",
+          "type": "number",
+          "format": "double",
+          "default": 3.0
+        },
+        "min_db": {
+          "description": "Minimum gain in dB (default: -12.0)",
+          "type": "number",
+          "format": "double",
+          "default": -12.0
+        },
+        "min_freq": {
+          "description": "Override minimum correction frequency in Hz (Schroeder frequency)",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "nearfield_threshold_m": {
+          "description": "Distance threshold in meters for auto mode switch (default: 2.0m)",
+          "type": "number",
+          "format": "double",
+          "default": 2.0
+        },
+        "num_filters": {
+          "description": "Number of PEQ filters for speaker correction (default: 5)",
+          "type": "integer",
+          "format": "uint",
+          "default": 5,
+          "minimum": 0
+        },
+        "speaker_name": {
+          "description": "Speaker name on spinorama.org (overrides speaker_name from MeasurementSource)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "system_latency_ms": {
+          "description": "System round-trip latency in ms (for distance computation from impulse response)",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "version": {
+          "description": "Measurement version on spinorama.org (default: \"asr\")",
+          "type": "string",
+          "default": "asr"
+        }
+      }
+    },
+    "Cea2034CorrectionMode": {
+      "description": "Correction mode for CEA2034 speaker pre-correction",
+      "oneOf": [
+        {
+          "description": "Correct Listening Window toward flat (best for nearfield <2m)",
+          "type": "string",
+          "const": "flat"
+        },
+        {
+          "description": "Optimize full Harman speaker preference score using all CEA2034 curves",
+          "type": "string",
+          "const": "score"
+        },
+        {
+          "description": "Auto-select based on estimated listening distance from impulse response",
+          "type": "string",
+          "const": "auto"
+        }
+      ]
+    },
+    "ChannelMatchingConfig": {
+      "description": "Inter-channel consistency correction configuration",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Enable inter-channel matching correction",
+          "type": "boolean",
+          "default": true
+        },
+        "max_filters": {
+          "description": "Maximum number of additional PEQ filters per channel for matching",
+          "type": "integer",
+          "format": "uint",
+          "default": 5,
+          "minimum": 0
+        },
+        "threshold_db": {
+          "description": "ICD RMS threshold in dB below which no correction is applied",
+          "type": "number",
+          "format": "double",
+          "default": 0.75
+        }
+      }
+    },
+    "CrossoverConfig": {
+      "description": "Crossover configuration",
+      "type": "object",
+      "properties": {
+        "frequencies": {
+          "description": "Crossover frequencies in Hz (for 3-way and above)",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "frequency": {
+          "description": "Crossover frequency in Hz (for 2-way speakers)",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "frequency_range": {
+          "description": "Frequency range for automatic optimization",
+          "type": [
+            "array",
+            "null"
+          ],
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "number",
+              "format": "double"
+            },
+            {
+              "type": "number",
+              "format": "double"
+            }
+          ]
+        },
+        "type": {
+          "description": "Crossover type (e.g. \"LR24\", \"LR48\", \"Butterworth24\")",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ]
+    },
+    "CtcConfig": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "fir_taps": {
+          "type": "integer",
+          "format": "uint",
+          "default": 4096,
+          "minimum": 0
+        },
+        "harmonic_suppression_harmonics": {
+          "type": "integer",
+          "format": "uint",
+          "default": 5,
+          "minimum": 0
+        },
+        "harmonic_suppression_window_ms": {
+          "type": "number",
+          "format": "double",
+          "default": 2.0
+        },
+        "hrtf": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CtcHrtfConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "matrix_source": {
+          "type": "string",
+          "default": "measured"
+        },
+        "measurements": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CtcMeasurementConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "minimax_iterations": {
+          "type": "integer",
+          "format": "uint",
+          "default": 8,
+          "minimum": 0
+        },
+        "reference_sweep": {
+          "description": "Optional emitted sweep WAV used for raw sweep deconvolution.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "regularization": {
+          "$ref": "#/$defs/CtcRegularizationConfig",
+          "default": {
+            "beta_db": -30.0,
+            "beta_hf_db": -30.0,
+            "beta_lf_db": -30.0,
+            "max_gain_db": 12.0
+          }
+        },
+        "robustness": {
+          "type": "string",
+          "default": "average"
+        },
+        "sweep_duration_s": {
+          "description": "Sweep duration in seconds, used to suppress log-sweep harmonic residues.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "sweep_end_hz": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "sweep_start_hz": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "window": {
+          "$ref": "#/$defs/CtcWindowConfig",
+          "default": {
+            "fade_ms": 1.0,
+            "fdw_cycles": 8.0,
+            "fdw_max_ms": 200.0,
+            "fdw_min_ms": 3.0,
+            "length_ms": 6.0,
+            "start_ms": 0.0,
+            "window_type": "ctc_direct"
+          }
+        }
+      }
+    },
+    "CtcHeadPositionConfig": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "x": {
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "y": {
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "yaw_deg": {
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "z": {
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "CtcHrtfConfig": {
+      "type": "object",
+      "properties": {
+        "hrtf_file": {
+          "type": "string"
+        },
+        "speakers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CtcHrtfSpeakerConfig"
+          }
+        }
+      },
+      "required": [
+        "hrtf_file",
+        "speakers"
+      ]
+    },
+    "CtcHrtfSpeakerConfig": {
+      "type": "object",
+      "properties": {
+        "azimuth_deg": {
+          "type": "number",
+          "format": "double"
+        },
+        "distance_m": {
+          "type": "number",
+          "format": "double",
+          "default": 2.0
+        },
+        "elevation_deg": {
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "speaker": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "speaker",
+        "azimuth_deg"
+      ]
+    },
+    "CtcMeasurementConfig": {
+      "type": "object",
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CtcMeasurementFileConfig"
+          }
+        },
+        "head_positions": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/CtcHeadPositionConfig"
+          }
+        },
+        "mics": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "speakers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "speakers",
+        "files"
+      ]
+    },
+    "CtcMeasurementFileConfig": {
+      "type": "object",
+      "properties": {
+        "head_position": {
+          "type": "string"
+        },
+        "ir": {
+          "description": "Processed/deconvolved two-channel ear IR WAV.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "loopback": {
+          "description": "Raw loopback/reference recording WAV used to align the take.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "raw_sweep": {
+          "description": "Raw recorded two-ear sweep WAV. Channel 1 = left ear, channel 2 = right ear.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "speaker": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "head_position",
+        "speaker"
+      ]
+    },
+    "CtcRegularizationConfig": {
+      "type": "object",
+      "properties": {
+        "beta_db": {
+          "type": "number",
+          "format": "double",
+          "default": -30.0
+        },
+        "beta_hf_db": {
+          "type": "number",
+          "format": "double",
+          "default": -30.0
+        },
+        "beta_lf_db": {
+          "type": "number",
+          "format": "double",
+          "default": -30.0
+        },
+        "max_gain_db": {
+          "type": "number",
+          "format": "double",
+          "default": 12.0
+        }
+      }
+    },
+    "CtcWindowConfig": {
+      "type": "object",
+      "properties": {
+        "fade_ms": {
+          "type": "number",
+          "format": "double",
+          "default": 1.0
+        },
+        "fdw_cycles": {
+          "type": "number",
+          "format": "double",
+          "default": 8.0
+        },
+        "fdw_max_ms": {
+          "type": "number",
+          "format": "double",
+          "default": 200.0
+        },
+        "fdw_min_ms": {
+          "type": "number",
+          "format": "double",
+          "default": 3.0
+        },
+        "length_ms": {
+          "type": "number",
+          "format": "double",
+          "default": 6.0
+        },
+        "start_ms": {
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "window_type": {
+          "type": "string",
+          "default": "ctc_direct"
+        }
+      }
+    },
+    "DBAConfig": {
+      "description": "Configuration for Double Bass Array (DBA)",
+      "type": "object",
+      "properties": {
+        "front": {
+          "description": "Measurements for the front array",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MeasurementSource"
+          }
+        },
+        "name": {
+          "description": "Name of the DBA system",
+          "type": "string"
+        },
+        "rear": {
+          "description": "Measurements for the rear array",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MeasurementSource"
+          }
+        },
+        "speaker_name": {
+          "description": "Optional speaker model name",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "front",
+        "rear"
+      ]
+    },
+    "DecomposedCorrectionSerdeConfig": {
+      "description": "Serializable decomposed correction configuration for JSON config files",
+      "type": "object",
+      "properties": {
+        "early_reflection_weight": {
+          "description": "Correction weight for early reflections (0.0-1.0). Default: 0.3",
+          "type": "number",
+          "format": "double",
+          "default": 0.3
+        },
+        "enabled": {
+          "description": "Whether decomposed correction is enabled. Default: true",
+          "type": "boolean",
+          "default": true
+        },
+        "fdw_cycles": {
+          "description": "FDW window length in cycles before min/max clamping. Default: 8.0",
+          "type": "number",
+          "format": "double",
+          "default": 8.0
+        },
+        "fdw_enabled": {
+          "description": "Enable Frequency-Dependent Windowing when `ssir_wav_path` provides an IR.",
+          "type": "boolean",
+          "default": true
+        },
+        "fdw_max_window_ms": {
+          "description": "Maximum FDW window length in milliseconds. Default: 500.0",
+          "type": "number",
+          "format": "double",
+          "default": 500.0
+        },
+        "fdw_min_window_ms": {
+          "description": "Minimum FDW window length in milliseconds. Default: 3.0",
+          "type": "number",
+          "format": "double",
+          "default": 3.0
+        },
+        "fdw_smoothing_octaves": {
+          "description": "FDW smoothing width in octaves. Default: 1/24 octave",
+          "type": "number",
+          "format": "double",
+          "default": 0.041666666666666664
+        },
+        "min_mode_prominence_db": {
+          "description": "Minimum prominence (dB) for mode detection. Default: 3.0",
+          "type": "number",
+          "format": "double",
+          "default": 3.0
+        },
+        "min_mode_q": {
+          "description": "Minimum Q to qualify as a room mode. Default: 3.0",
+          "type": "number",
+          "format": "double",
+          "default": 3.0
+        },
+        "mode_correction_weight": {
+          "description": "Correction weight for detected room modes (0.0-1.0). Default: 1.0",
+          "type": "number",
+          "format": "double",
+          "default": 1.0
+        },
+        "room_dimensions": {
+          "description": "Room dimensions (L × W × H in metres). When present together with\na measured impulse response, enables a measurement-driven\nSchroeder frequency via `RoomDimensions::schroeder_frequency_with_rt60`\nusing the RT60 measured from the IR. When absent, the optimizer\nfalls back to the `schroeder_freq` field above.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RoomDimensions"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schroeder_freq": {
+          "description": "Schroeder frequency (Hz). Below: modal, above: statistical.\n\nWhen `room_dimensions` is also provided AND an impulse response is\navailable, this value is overridden at run time by a\nmeasurement-driven Schroeder frequency: the optimizer measures\nRT60 from the IR via Schroeder backward integration and plugs it\ninto `f_S ≈ 2000 · √(RT60 / V)` with V from `room_dimensions`. In\nthat case this field is used only as the fallback if the RT60 fit\nfails.",
+          "type": "number",
+          "format": "double",
+          "default": 250.0
+        },
+        "steady_state_weight": {
+          "description": "Correction weight for steady-state above Schroeder (0.0-1.0). Default: 0.4",
+          "type": "number",
+          "format": "double",
+          "default": 0.4
+        }
+      }
+    },
+    "EpaConfig": {
+      "description": "Configuration for EPA scoring.",
+      "type": "object",
+      "properties": {
+        "activity_weight": {
+          "type": "number",
+          "format": "double"
+        },
+        "evaluation_weight": {
+          "description": "Weights for the three EPA dimensions in the composite score",
+          "type": "number",
+          "format": "double"
+        },
+        "flatness_band_weight": {
+          "description": "Band weight for the flatness component of the EPA loss.\nDefault 0.0 (see `flatness_erb_weight`).",
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "flatness_band_weights": {
+          "description": "Band weights used for the flatness component of the EPA loss.\nOnly consulted when `flatness_band_weight > 0`.",
+          "$ref": "#/$defs/FrequencyBandWeights",
+          "default": {
+            "bass_max": 200.0,
+            "bass_min": 20.0,
+            "bass_weight": 2.0,
+            "mid_max": 4000.0,
+            "mid_min": 200.0,
+            "mid_weight": 1.0,
+            "treble_max": 20000.0,
+            "treble_min": 4000.0,
+            "treble_weight": 0.8
+          }
+        },
+        "flatness_erb_weight": {
+          "description": "ERB weight for the flatness component of the EPA loss.\nDefault 1.0 (pure ERB) because EPA already has band-sensitive\nsharpness / roughness / loudness_balance terms — adding band\nweighting on top of flatness would double-count frequency bias.",
+          "type": "number",
+          "format": "double",
+          "default": 1.0
+        },
+        "listening_level_phon": {
+          "description": "Listening level in phon (affects loudness computation)",
+          "type": "number",
+          "format": "double"
+        },
+        "max_roughness": {
+          "description": "Maximum acceptable roughness (above this, penalty increases)",
+          "type": "number",
+          "format": "double"
+        },
+        "potency_weight": {
+          "type": "number",
+          "format": "double"
+        },
+        "target_sharpness": {
+          "description": "Target sharpness in acum (1.0 = natural broadband noise character)",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "listening_level_phon",
+        "target_sharpness",
+        "max_roughness",
+        "evaluation_weight",
+        "potency_weight",
+        "activity_weight"
+      ]
+    },
+    "ExcursionProtectionConfig": {
+      "description": "Excursion protection configuration",
+      "type": "object",
+      "properties": {
+        "auto_detect_f3": {
+          "description": "Auto-detect F3 from measurement",
+          "type": "boolean",
+          "default": true
+        },
+        "enabled": {
+          "description": "Enable excursion protection",
+          "type": "boolean",
+          "default": false
+        },
+        "filter_order": {
+          "description": "Filter order (2 = 12dB/oct, 4 = 24dB/oct)",
+          "type": "integer",
+          "format": "uint",
+          "default": 4,
+          "minimum": 0
+        },
+        "filter_type": {
+          "description": "Highpass filter type",
+          "$ref": "#/$defs/HighpassType",
+          "default": "linkwitzriley"
+        },
+        "manual_f3_hz": {
+          "description": "Manual F3 override in Hz (used if auto_detect_f3 is false)",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "margin_octaves": {
+          "description": "Safety margin in octaves below F3 for HPF placement",
+          "type": "number",
+          "format": "double",
+          "default": 0.25
+        }
+      }
+    },
+    "FirConfig": {
+      "description": "FIR filter configuration",
+      "type": "object",
+      "properties": {
+        "correct_excess_phase": {
+          "description": "Whether to correct excess phase (only applies to kirkeby mode)",
+          "type": "boolean",
+          "default": false
+        },
+        "phase": {
+          "description": "Phase response type: \"linear\" or \"kirkeby\"",
+          "type": "string",
+          "default": "kirkeby"
+        },
+        "phase_smoothing": {
+          "description": "Phase smoothing width in octaves (default: 0.167 = 1/6 octave)",
+          "type": "number",
+          "format": "double",
+          "default": 0.167
+        },
+        "pre_ringing": {
+          "description": "Pre-ringing suppression configuration",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PreRingingSerdeConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "taps": {
+          "description": "Number of taps (coefficients)",
+          "type": "integer",
+          "format": "uint",
+          "default": 4096,
+          "minimum": 0
+        }
+      }
+    },
+    "FrequencyBandWeights": {
+      "description": "Frequency band configuration for weighted loss",
+      "type": "object",
+      "properties": {
+        "bass_max": {
+          "description": "Bass band maximum frequency (Hz)",
+          "type": "number",
+          "format": "double"
+        },
+        "bass_min": {
+          "description": "Bass band minimum frequency (Hz)",
+          "type": "number",
+          "format": "double"
+        },
+        "bass_weight": {
+          "description": "Weight for bass band (default: 2.0 - bass is more critical for room correction)",
+          "type": "number",
+          "format": "double"
+        },
+        "mid_max": {
+          "description": "Midrange band maximum frequency (Hz)",
+          "type": "number",
+          "format": "double"
+        },
+        "mid_min": {
+          "description": "Midrange band minimum frequency (Hz)",
+          "type": "number",
+          "format": "double"
+        },
+        "mid_weight": {
+          "description": "Weight for midrange band (default: 1.0)",
+          "type": "number",
+          "format": "double"
+        },
+        "treble_max": {
+          "description": "Treble band maximum frequency (Hz)",
+          "type": "number",
+          "format": "double"
+        },
+        "treble_min": {
+          "description": "Treble band minimum frequency (Hz)",
+          "type": "number",
+          "format": "double"
+        },
+        "treble_weight": {
+          "description": "Weight for treble band (default: 0.8 - less critical for room issues)",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "bass_min",
+        "bass_max",
+        "mid_min",
+        "mid_max",
+        "treble_min",
+        "treble_max",
+        "bass_weight",
+        "mid_weight",
+        "treble_weight"
+      ]
+    },
+    "GroupDelayOptimizationConfig": {
+      "description": "Group-delay optimization configuration.",
+      "type": "object",
+      "properties": {
+        "adaptive_allpass": {
+          "description": "Require adaptive AP bootstrap before emitting all-pass filters.",
+          "type": "boolean",
+          "default": true
+        },
+        "ap_max_q": {
+          "description": "Maximum all-pass Q.",
+          "type": "number",
+          "format": "double",
+          "default": 10.0
+        },
+        "ap_min_q": {
+          "description": "Minimum all-pass Q.",
+          "type": "number",
+          "format": "double",
+          "default": 0.3
+        },
+        "ap_per_channel": {
+          "description": "Maximum all-pass filters per channel. Production may downgrade this to\nzero when bootstrap evidence is unavailable.",
+          "type": "integer",
+          "format": "uint",
+          "default": 2,
+          "minimum": 0
+        },
+        "coherence_threshold": {
+          "description": "Minimum in-band mean coherence for polarity/AP optimization.",
+          "type": "number",
+          "format": "double",
+          "default": 0.8
+        },
+        "enabled": {
+          "description": "Enable GD optimization and apply the resulting phase-only DSP.",
+          "type": "boolean",
+          "default": false
+        },
+        "max_delay_ms": {
+          "description": "Maximum per-channel delay in ms.",
+          "type": "number",
+          "format": "double",
+          "default": 20.0
+        },
+        "max_iter": {
+          "description": "DE maximum iterations.",
+          "type": "integer",
+          "format": "uint",
+          "default": 2000,
+          "minimum": 0
+        },
+        "min_improvement_db": {
+          "description": "Minimum improvement required before applying GD DSP.",
+          "type": "number",
+          "format": "double",
+          "default": 1.0
+        },
+        "optimize_polarity": {
+          "description": "Whether polarity may be optimized when coherence is present.",
+          "type": "boolean",
+          "default": true
+        },
+        "popsize": {
+          "description": "DE population size multiplier.",
+          "type": "integer",
+          "format": "uint",
+          "default": 20,
+          "minimum": 0
+        },
+        "tol": {
+          "description": "DE convergence tolerance.",
+          "type": "number",
+          "format": "double",
+          "default": 1e-8
+        }
+      }
+    },
+    "HighFreqFilterConfig": {
+      "description": "High frequency filter configuration for Schroeder split",
+      "type": "object",
+      "properties": {
+        "max_q": {
+          "description": "Maximum Q factor for high frequency filters (tone controls only)",
+          "type": "number",
+          "format": "double",
+          "default": 1.0
+        },
+        "shelving_only": {
+          "description": "Use shelving filters only",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "HighpassType": {
+      "description": "Highpass filter type for excursion protection",
+      "oneOf": [
+        {
+          "description": "Linkwitz-Riley (4th order = 24dB/oct)",
+          "type": "string",
+          "const": "linkwitzriley"
+        },
+        {
+          "description": "Butterworth",
+          "type": "string",
+          "const": "butterworth"
+        }
+      ]
+    },
+    "InlineMeasurement": {
+      "description": "Inline measurement data (frequencies, SPL, phase)",
+      "type": "object",
+      "properties": {
+        "csv_path": {
+          "description": "Optional path to associated CSV file",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "frequencies": {
+          "description": "Frequency points in Hz",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "magnitude_db": {
+          "description": "Sound Pressure Level in dB",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "name": {
+          "description": "Optional display name",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "phase_deg": {
+          "description": "Phase in degrees (optional)",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "wav_path": {
+          "description": "Optional path to associated WAV file",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "LowFreqFilterConfig": {
+      "description": "Low frequency filter configuration for Schroeder split",
+      "type": "object",
+      "properties": {
+        "allow_boost": {
+          "description": "Allow boost (true) or cuts only (false)",
+          "type": "boolean",
+          "default": false
+        },
+        "max_db": {
+          "description": "Maximum boost/cut in dB for below-Schroeder filters",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "max_q": {
+          "description": "Maximum Q factor for low frequency filters (allow high-Q for modes)",
+          "type": "number",
+          "format": "double",
+          "default": 5.0
+        },
+        "min_q": {
+          "description": "Minimum Q factor",
+          "type": "number",
+          "format": "double",
+          "default": 0.5
+        }
+      }
+    },
+    "MeasurementMultiple": {
+      "description": "Multiple measurements with metadata",
+      "type": "object",
+      "properties": {
+        "measurements": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MeasurementRef"
+          }
+        },
+        "speaker_name": {
+          "description": "Optional speaker name (e.g., \"Genelec 8361A\")",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "measurements"
+      ]
+    },
+    "MeasurementRef": {
+      "description": "Reference to a measurement file",
+      "anyOf": [
+        {
+          "description": "Inline measurement data (stored directly in JSON)",
+          "$ref": "#/$defs/InlineMeasurement"
+        },
+        {
+          "description": "Named measurement with optional metadata",
+          "type": "object",
+          "properties": {
+            "name": {
+              "description": "Optional display name for the measurement.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "path": {
+              "description": "Path to the CSV measurement file.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ]
+        },
+        {
+          "description": "Path to CSV file (freq, spl, phase columns)",
+          "type": "string"
+        }
+      ]
+    },
+    "MeasurementSingle": {
+      "description": "Single measurement with metadata\n\nCustom implementation to support both string path and object with speaker_name",
+      "type": "object",
+      "properties": {
+        "measurement": {
+          "$ref": "#/$defs/MeasurementRef"
+        },
+        "speaker_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "measurement"
+      ]
+    },
+    "MeasurementSource": {
+      "description": "Source of measurements (single file, multiple files for averaging, or in-memory curve)",
+      "anyOf": [
+        {
+          "description": "A single measurement file with optional speaker name",
+          "$ref": "#/$defs/MeasurementSingle"
+        },
+        {
+          "description": "Multiple measurement files to be averaged with optional speaker name",
+          "$ref": "#/$defs/MeasurementMultiple"
+        }
+      ]
+    },
+    "MixedModeConfig": {
+      "description": "Configuration for frequency-based mixed mode crossover",
+      "type": "object",
+      "properties": {
+        "crossover_freq": {
+          "description": "Crossover frequency dividing IIR and FIR bands (Hz)",
+          "type": "number",
+          "format": "double",
+          "default": 300.0
+        },
+        "crossover_type": {
+          "description": "Crossover filter type: \"LR24\", \"LR48\"",
+          "type": "string",
+          "default": "LR24"
+        },
+        "fir_band": {
+          "description": "Which band uses FIR: \"low\" or \"high\" (default: \"low\")",
+          "type": "string",
+          "default": "low"
+        }
+      }
+    },
+    "MixedPhaseSerdeConfig": {
+      "description": "Serializable mixed-phase correction configuration for JSON config files",
+      "type": "object",
+      "properties": {
+        "max_fir_length_ms": {
+          "description": "Maximum FIR length in milliseconds for excess phase correction. Default: 10.0",
+          "type": "number",
+          "format": "double",
+          "default": 10.0
+        },
+        "min_spatial_depth": {
+          "description": "Minimum spatial correction depth for excess phase correction. Default: 0.5",
+          "type": "number",
+          "format": "double",
+          "default": 0.5
+        },
+        "phase_smoothing_octaves": {
+          "description": "Phase smoothing width in octaves. Default: 1/6 octave",
+          "type": "number",
+          "format": "double",
+          "default": 0.16666666666666666
+        },
+        "pre_ringing_threshold_db": {
+          "description": "Pre-ringing threshold in dB. Default: -30.0",
+          "type": "number",
+          "format": "double",
+          "default": -30.0
+        }
+      }
+    },
+    "MultiMeasurementConfig": {
+      "description": "Configuration for multi-measurement optimization",
+      "type": "object",
+      "properties": {
+        "spatial_robustness": {
+          "description": "Spatial robustness configuration (used when strategy = SpatialRobustness)",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SpatialRobustnessSerdeConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "strategy": {
+          "description": "Strategy for combining per-measurement losses",
+          "$ref": "#/$defs/MultiMeasurementStrategy",
+          "default": "average"
+        },
+        "variance_lambda": {
+          "description": "Lambda for VariancePenalized (default 1.0). Higher = more consistent across positions.",
+          "type": "number",
+          "format": "double",
+          "default": 1.0
+        },
+        "weights": {
+          "description": "Weights for WeightedSum (normalized internally). Equal if omitted.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      }
+    },
+    "MultiMeasurementStrategy": {
+      "description": "Strategy for handling multiple measurements per speaker",
+      "oneOf": [
+        {
+          "description": "RMS-average curves, optimize on average (existing behavior)",
+          "type": "string",
+          "const": "average"
+        },
+        {
+          "description": "loss = Σ w_i * loss_i — weighted sum of per-measurement losses",
+          "type": "string",
+          "const": "weighted_sum"
+        },
+        {
+          "description": "loss = max(loss_i) — optimize worst case across all measurements",
+          "type": "string",
+          "const": "minimax"
+        },
+        {
+          "description": "loss = mean(loss_i) + λ * var(loss_i) — balance quality + consistency",
+          "type": "string",
+          "const": "variance_penalized"
+        },
+        {
+          "description": "Spatial robustness: RMS-average + correction depth mask based on spatial variance.\nOnly corrects features consistent across positions.",
+          "type": "string",
+          "const": "spatial_robustness"
+        }
+      ]
+    },
+    "MultiSeatConfig": {
+      "description": "Multi-seat optimization configuration",
+      "type": "object",
+      "properties": {
+        "all_channel_enabled": {
+          "description": "Enable all-channel multi-seat correction for non-sub home-cinema channels.",
+          "type": "boolean",
+          "default": true
+        },
+        "all_channel_strategy": {
+          "description": "Strategy used when deriving per-channel multi-measurement correction.",
+          "$ref": "#/$defs/MultiMeasurementStrategy",
+          "default": "spatial_robustness"
+        },
+        "allpass_filters_per_sub": {
+          "description": "Number of per-sub all-pass filters allowed during MSO.",
+          "type": "integer",
+          "format": "uint",
+          "default": 0,
+          "minimum": 0
+        },
+        "enabled": {
+          "description": "Enable multi-seat optimization",
+          "type": "boolean",
+          "default": false
+        },
+        "global_eq": {
+          "description": "Optimize a shared EQ on the post-MSO combined response across all seats.",
+          "type": "boolean",
+          "default": true
+        },
+        "max_deviation_db": {
+          "description": "Maximum allowed deviation at non-primary seats (dB)",
+          "type": "number",
+          "format": "double",
+          "default": 6.0
+        },
+        "optimize_polarity": {
+          "description": "Enable per-sub polarity search for MSO.",
+          "type": "boolean",
+          "default": false
+        },
+        "per_sub_peq": {
+          "description": "Optimize a per-subwoofer PEQ from that sub's measurements across all seats\nbefore the gain/delay/polarity/all-pass MSO pass.",
+          "type": "boolean",
+          "default": true
+        },
+        "primary_seat": {
+          "description": "Index of primary seat (0-based, used with PrimaryWithConstraints strategy)",
+          "type": "integer",
+          "format": "uint",
+          "default": 0,
+          "minimum": 0
+        },
+        "primary_seat_weight": {
+          "description": "Relative primary-seat weight used with PrimaryWithConstraints.",
+          "type": "number",
+          "format": "double",
+          "default": 2.0
+        },
+        "seat_weights": {
+          "description": "Optional seat weights for all-channel multi-seat correction.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "strategy": {
+          "description": "Optimization strategy",
+          "$ref": "#/$defs/MultiSeatStrategy",
+          "default": "minimize_variance"
+        }
+      }
+    },
+    "MultiSeatStrategy": {
+      "description": "Strategy for multi-seat optimization",
+      "oneOf": [
+        {
+          "description": "Minimize standard deviation across all seats (default)",
+          "type": "string",
+          "const": "minimize_variance"
+        },
+        {
+          "description": "Optimize for primary seat with constraints on others",
+          "type": "string",
+          "const": "primary_with_constraints"
+        },
+        {
+          "description": "Optimize for average response across all seats",
+          "type": "string",
+          "const": "average"
+        },
+        {
+          "description": "Complex modal-basis sound-field management across seats",
+          "type": "string",
+          "const": "modal_basis"
+        }
+      ]
+    },
+    "MultiSubGroup": {
+      "description": "Configuration for multiple subwoofers",
+      "type": "object",
+      "properties": {
+        "allpass_optimization": {
+          "description": "Enable per-subwoofer all-pass filter optimization",
+          "type": "boolean",
+          "default": false
+        },
+        "name": {
+          "description": "Name of the subwoofer group (e.g. \"subs\")",
+          "type": "string"
+        },
+        "speaker_name": {
+          "description": "Optional speaker model name",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "subwoofers": {
+          "description": "Measurements for each subwoofer",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MeasurementSource"
+          }
+        }
+      },
+      "required": [
+        "name",
+        "subwoofers"
+      ]
+    },
+    "OptimizerConfig": {
+      "description": "Optimizer configuration",
+      "type": "object",
+      "properties": {
+        "algorithm": {
+          "description": "Optimization algorithm",
+          "type": "string",
+          "default": "autoeq:de"
+        },
+        "allow_delay": {
+          "description": "Allow inter-speaker delay optimization",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "asymmetric_loss": {
+          "description": "Enable asymmetric loss (peaks penalized 2x more than dips)",
+          "type": "boolean",
+          "default": true
+        },
+        "atolerance": {
+          "description": "Optimization convergence tolerance (absolute)",
+          "type": "number",
+          "format": "double",
+          "default": 0.00001
+        },
+        "auto_optimizer": {
+          "description": "Automatic selection of filter count and optimizer bounds.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AutoOptimizerConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bo_acquisition": {
+          "description": "Bayesian optimization acquisition: `\"ei\"`, `\"qei\"`, or `\"thompson\"`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bo_batch_size": {
+          "description": "Bayesian optimization batch size. `None` uses the backend default.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
+          "minimum": 0
+        },
+        "bo_ehvi": {
+          "description": "Use Monte-Carlo qEHVI Bayesian optimization for multi-objective data.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "bo_initial_samples": {
+          "description": "Bayesian optimization Sobol hot-start samples. `None` uses an automatic default.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
+          "minimum": 0
+        },
+        "bo_posterior_std_threshold": {
+          "description": "Posterior standard-deviation threshold for BO local-refiner handoff.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "cea2034_correction": {
+          "description": "CEA2034 speaker pre-correction configuration",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Cea2034CorrectionConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "channel_matching": {
+          "description": "Inter-channel consistency correction configuration",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChannelMatchingConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decomposed_correction": {
+          "description": "Decomposed correction configuration",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DecomposedCorrectionSerdeConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "elimination_threshold": {
+          "description": "Backward elimination threshold",
+          "type": "number",
+          "format": "double",
+          "default": 0.005
+        },
+        "epa_config": {
+          "description": "EPA loss configuration. Only used when `loss_type == \"epa\"`.\nWhen `None`, the optimizer falls back to\n[`EpaConfig::default`](crate::loss::epa::score::EpaConfig::default).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EpaConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "excursion_protection": {
+          "description": "Excursion protection configuration",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExcursionProtectionConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fir": {
+          "description": "FIR configuration (used when `processing_mode` requires FIR filters)",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FirConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "group_delay": {
+          "description": "Group-delay optimization configuration. Disabled by default.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GroupDelayOptimizationConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "local_algo": {
+          "description": "Local optimizer algorithm for refinement stage",
+          "type": "string",
+          "default": "cobyla"
+        },
+        "loss_type": {
+          "description": "Loss function type. Supported values:\n- `\"flat\"` — minimize deviation from target (default)\n- `\"score\"` — maximize Harman/Olive preference score\n- `\"epa\"` — EPA (Evaluation/Potency/Activity) psychoacoustic\n  loss combining spectral flatness with sharpness, roughness,\n  and loudness-balance penalties derived from Zwicker metrics.\n  When selected, the EPA penalty weights can be customized via\n  the [`epa_config`](Self::epa_config) field; otherwise the\n  defaults from [`EpaConfig::default`](crate::loss::epa::score::EpaConfig::default)\n  are used.",
+          "type": "string",
+          "default": "flat"
+        },
+        "max_boost_envelope": {
+          "description": "Frequency-dependent maximum boost envelope.\nEach entry is (frequency_hz, max_boost_db).\nBetween points, linear interpolation in log-frequency.\nDefault: None (use the existing flat `max_db` limit).\nWhen set, overrides `max_db` on a per-frequency basis.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number",
+                "format": "double"
+              },
+              {
+                "type": "number",
+                "format": "double"
+              }
+            ]
+          }
+        },
+        "max_db": {
+          "description": "Maximum gain in dB",
+          "type": "number",
+          "format": "double",
+          "default": 4.0
+        },
+        "max_freq": {
+          "description": "Maximum frequency in Hz",
+          "type": "number",
+          "format": "double",
+          "default": 1600.0
+        },
+        "max_iter": {
+          "description": "Maximum number of iterations",
+          "type": "integer",
+          "format": "uint",
+          "default": 50000,
+          "minimum": 0
+        },
+        "max_q": {
+          "description": "Maximum Q factor",
+          "type": "number",
+          "format": "double",
+          "default": 3.0
+        },
+        "min_cut_envelope": {
+          "description": "CDT-aware minimum cut envelope: limits how deep the optimizer can cut\nat frequencies where the ear generates Cubic Distortion Tones.\nEach entry is (frequency_hz, max_cut_db) where max_cut_db is negative.\nDefault: None (no CDT protection).",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number",
+                "format": "double"
+              },
+              {
+                "type": "number",
+                "format": "double"
+              }
+            ]
+          }
+        },
+        "min_db": {
+          "description": "Minimum gain in dB",
+          "type": "number",
+          "format": "double",
+          "default": -12.0
+        },
+        "min_filter_improvement": {
+          "description": "Minimum loss improvement to justify adding another filter",
+          "type": "number",
+          "format": "double",
+          "default": 0.01
+        },
+        "min_freq": {
+          "description": "Minimum frequency in Hz",
+          "type": "number",
+          "format": "double",
+          "default": 20.0
+        },
+        "min_q": {
+          "description": "Minimum Q factor",
+          "type": "number",
+          "format": "double",
+          "default": 0.5
+        },
+        "mixed_config": {
+          "description": "Mixed mode configuration (frequency-based crossover)",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MixedModeConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mixed_phase": {
+          "description": "Mixed-phase correction configuration",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MixedPhaseSerdeConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "multi_measurement": {
+          "description": "Multi-measurement optimization configuration",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MultiMeasurementConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "multi_seat": {
+          "description": "Multi-seat optimization configuration",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MultiSeatConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "num_filters": {
+          "description": "Maximum number of PEQ filters per channel",
+          "type": "integer",
+          "format": "uint",
+          "default": 7,
+          "minimum": 0
+        },
+        "peq_model": {
+          "description": "PEQ model (e.g. \"pk\", \"ls-pk-hs\", \"free\")",
+          "type": "string",
+          "default": "pk"
+        },
+        "phase_alignment": {
+          "description": "Phase alignment configuration for subwoofer integration",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PhaseAlignmentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "phase_correction": {
+          "description": "Standalone phase correction (rePhase-style)",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MixedPhaseSerdeConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "population": {
+          "description": "Population size for DE optimizer",
+          "type": "integer",
+          "format": "uint",
+          "default": 300,
+          "minimum": 0
+        },
+        "processing_mode": {
+          "description": "Processing mode — selects the filter class used for correction.",
+          "$ref": "#/$defs/ProcessingMode",
+          "default": "low_latency"
+        },
+        "psychoacoustic": {
+          "description": "Enable psychoacoustic preprocessing",
+          "type": "boolean",
+          "default": true
+        },
+        "refine": {
+          "description": "Whether to run local refinement after global optimization",
+          "type": "boolean",
+          "default": true
+        },
+        "schroeder_split": {
+          "description": "Schroeder frequency split configuration",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SchroederSplitConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "seed": {
+          "description": "Random seed for reproducible results (None for random)",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "smooth_n": {
+          "description": "Loss function smoothing resolution as 1/N octave",
+          "type": "integer",
+          "format": "uint",
+          "default": 2,
+          "minimum": 0
+        },
+        "smoothness_penalty": {
+          "description": "Smoothness regularizer on the correction curve.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SmoothnessPenaltyConfigSerde"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "strategy": {
+          "description": "DE mutation strategy (e.g. \"currenttobest1bin\", \"lshade\", \"best1bin\")",
+          "type": "string",
+          "default": "lshade"
+        },
+        "sub_config": {
+          "description": "Subwoofer-specific optimizer overrides",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SubOptimizerConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "target_response": {
+          "description": "Unified target response configuration (shape + preference shelves + broadband pre-correction)",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TargetResponseConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tolerance": {
+          "description": "Optimization convergence tolerance (relative)",
+          "type": "number",
+          "format": "double",
+          "default": 0.00001
+        },
+        "vog": {
+          "description": "Voice of God optimization configuration (v2)",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VoiceOfGodConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "PhaseAlignmentConfig": {
+      "description": "Phase alignment configuration for subwoofer integration",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Enable phase alignment optimization",
+          "type": "boolean",
+          "default": true
+        },
+        "max_delay_ms": {
+          "description": "Maximum delay in milliseconds",
+          "type": "number",
+          "format": "double",
+          "default": 3.0
+        },
+        "max_freq": {
+          "description": "Maximum frequency for optimization (Hz)",
+          "type": "number",
+          "format": "double",
+          "default": 100.0
+        },
+        "min_freq": {
+          "description": "Minimum frequency for optimization (Hz)",
+          "type": "number",
+          "format": "double",
+          "default": 60.0
+        },
+        "optimize_polarity": {
+          "description": "Optimize polarity (normal vs inverted)",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "PreRingingSerdeConfig": {
+      "description": "Serializable pre-ringing configuration for JSON config files",
+      "type": "object",
+      "properties": {
+        "max_time_s": {
+          "description": "Maximum pre-ringing time in seconds. Default: 0.005 (5 ms)",
+          "type": "number",
+          "format": "double",
+          "default": 0.005
+        },
+        "threshold_db": {
+          "description": "Maximum pre-ringing level in dB relative to main tap. Default: -30.0",
+          "type": "number",
+          "format": "double",
+          "default": -30.0
+        }
+      }
+    },
+    "ProbeChannelResultLegacy": {
+      "description": "Per-channel probe result (mirror of `ProbeDelayChannelResult`).",
+      "type": "object",
+      "properties": {
+        "arrival_ms": {
+          "type": "number",
+          "format": "double"
+        },
+        "channel_index": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "channel_name": {
+          "type": "string"
+        },
+        "gain_db": {
+          "type": "number",
+          "format": "double"
+        },
+        "snr_db": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "channel_name",
+        "channel_index",
+        "arrival_ms",
+        "gain_db",
+        "snr_db"
+      ]
+    },
+    "ProbeResultsLegacy": {
+      "description": "Serializable mirror of the engine's `ProbeDelayResults`. Kept\nin-crate (rather than depending on `sotf-engine` or `sotf-player`)\nso the autoeq crate remains lean. Fields match the engine type\n1:1 so round-trip through serde is lossless.",
+      "type": "object",
+      "properties": {
+        "alignment_delays_ms": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "channels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProbeChannelResultLegacy"
+          }
+        },
+        "sample_rate": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "channels",
+        "sample_rate",
+        "alignment_delays_ms"
+      ]
+    },
+    "ProcessingMode": {
+      "description": "Processing mode for the optimization engine",
+      "oneOf": [
+        {
+          "description": "Low-latency mode (IIR filters only) - < 5ms latency",
+          "type": "string",
+          "const": "low_latency"
+        },
+        {
+          "description": "Phase-linear mode (FIR filters only) - High latency allowed",
+          "type": "string",
+          "const": "phase_linear"
+        },
+        {
+          "description": "Hybrid mode (IIR for bass, FIR for mids/highs) - Variable latency",
+          "type": "string",
+          "const": "hybrid"
+        },
+        {
+          "description": "Mixed-phase mode (IIR for minimum-phase + excess phase FIR)\nRequires phase data in measurements. Low latency (~10ms).",
+          "type": "string",
+          "const": "mixed_phase"
+        },
+        {
+          "description": "Warped IIR mode — biquads designed on a Bark-scale warped frequency axis.\nConcentrates filter resolution in bass/low-mid where room modes live.\nSame latency as LowLatency but perceptually-weighted correction.",
+          "type": "string",
+          "const": "warped_iir"
+        },
+        {
+          "description": "Kautz modal mode — pole-tuned filter targeting detected room modes.\nUses room mode analysis to place filter poles at resonance frequencies.\nGain optimization via linear least-squares (very fast, no DE needed).\nBest for small, highly resonant rooms with clear modal problems.",
+          "type": "string",
+          "const": "kautz_modal"
+        }
+      ]
+    },
+    "RecordingConfiguration": {
+      "description": "Recording configuration stored with measurements\nContains device settings and signal parameters used during measurement capture",
+      "type": "object",
+      "properties": {
+        "bass_anchor_results": {
+          "description": "Bass anchor results captured during the GD-1e BassAnchor\nwizard step — per-channel phase of a low-frequency tone burst\nat `bass_probe_freq_hz`. Populated after the wizard finishes;\nabsent when the user skipped the step.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BassAnchorResultsLegacy"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bass_anchor_wav_relative": {
+          "description": "Relative path (within the recording directory) of the raw\nbass-anchor WAV. `None` when the BassAnchor step was skipped\nor when recording persistence was disabled.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bass_octave_duration_s": {
+          "description": "Per-octave bass sweep duration in seconds. Defaults to 3.0; the\nsweep generator scales total duration so that the band below\n100 Hz receives `bass_octave_duration_s` seconds per octave.\nClamped to `[1.0 .. 10.0]` at load time.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "bass_probe_cycles": {
+          "description": "Number of cycles in the bass tone burst. Default 5.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "bass_probe_freq_hz": {
+          "description": "Centre frequency of the bass tone burst captured by the\nBassAnchor wizard step. Default 20.0 Hz (or\n`1.25 * min_freq`, whichever is higher).",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "channel_names": {
+          "description": "Channel names in order (e.g. [\"L\", \"R\", \"C\", \"LFE\", \"SL\", \"SR\"])",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "channel_speakers": {
+          "description": "Per-channel speaker identity (brand + model) as free-form\nstrings, ideally autocompleted from the spinorama.org catalog.\nKeyed by channel name so it round-trips through reorder/rename.\nNot consumed by the optimizer — metadata only.",
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "coherence_threshold": {
+          "description": "Coherence threshold below which the GD confidence gate declares\nbass phase untrustworthy. Default 0.9. Clamped to `[0.5 .. 0.99]`.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "mic_calibration_path": {
+          "description": "Microphone calibration file path (if used)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mic_calibration_paths": {
+          "description": "Per-channel microphone calibration file paths",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "mic_phase_calibration_path": {
+          "description": "Path to the microphone phase calibration CSV (4 columns:\n`freq, mag_db, phase_deg, coherence`). Magnitude calibration\nalready lives under [`mic_calibration_path`](Self::mic_calibration_path).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mic_phase_calibration_paths": {
+          "description": "Per-channel mic phase calibration files, aligned with\n[`mic_calibration_paths`](Self::mic_calibration_paths).",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "num_positions": {
+          "description": "Number of measurement positions (seats) the user captured. `None`\nor `Some(1)` means a single-position session; `Some(n)` with\n`n >= 2` means each `ChannelMeasurement.multi_mic_measurements`\nholds `n * num_mics - 1` entries in `(position, mic)` order\n(primary measurement is `(0, 0)`).",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
+          "minimum": 0
+        },
+        "num_sweeps": {
+          "description": "Number of sweeps recorded back-to-back for coherence averaging.\nDefault 4. Clamped to `[1 .. 8]` at load time.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0
+        },
+        "playback_channels": {
+          "description": "Playback channel count",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
+          "minimum": 0
+        },
+        "playback_device_id": {
+          "description": "Playback device ID",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "playback_device_name": {
+          "description": "Playback device name",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "playback_sample_rate": {
+          "description": "Playback sample rate in Hz",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "post_silence_s": {
+          "description": "Post-sweep silence window in seconds. Default\n`schroeder_rt60 + 1.0`; falls back to `2.0` if no RT60 estimate\nis available.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "pre_silence_s": {
+          "description": "Pre-sweep silence window in seconds. Used by the coherence\naverager to estimate the noise-floor. Default 2.0.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "probe_results": {
+          "description": "Tone-burst delay probe results captured during the Recording\nwizard's Probe step. Stored here so the `autoeq::roomeq`\npipeline can pick them up at config-load time without requiring\na live measurement. Mirrors the shape of the engine's\n`ProbeDelayResults` for cross-crate serde compatibility.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProbeResultsLegacy"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "probe_wav_relative": {
+          "description": "Relative path (within the recording directory) of the raw\nprobe WAV persisted by `probe_channel_delays_with_recording`.\n`None` for sessions that skipped the Probe step.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "recording_channels": {
+          "description": "Recording channel count",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
+          "minimum": 0
+        },
+        "recording_device_id": {
+          "description": "Recording device ID",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "recording_device_name": {
+          "description": "Recording device name",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "recording_directory": {
+          "description": "Recording output directory",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "recording_sample_rate": {
+          "description": "Recording sample rate in Hz",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "recording_seed": {
+          "description": "Deterministic seed for the sweep / probe generators. QA sets it;\nthe UI hides it. When `None`, the generators use their internal\nfixed seed constants.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "room_dimensions": {
+          "description": "Physical room dimensions (metric — length/width/height in meters)\ncollected from the user at save time. When present these are\nreused by the optimizer's Schroeder-frequency auto-detection; see\n[`RoomDimensions::schroeder_frequency_with_rt60`].",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RoomDimensions"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "setup_description": {
+          "description": "Free-form description of the listening setup (treatment,\nseating, notes about speaker placement, etc.). Not consumed by\nthe optimizer — stored purely for session reproducibility.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "signal_duration_secs": {
+          "description": "Signal duration in seconds",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "signal_level_db": {
+          "description": "Signal level in dB",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "signal_type": {
+          "description": "Signal type used for measurements (e.g. \"Sweep\", \"Pink Noise\")",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "speaker_configuration": {
+          "description": "Speaker configuration (e.g. \"5.1\", \"7.1.4\", \"Stereo\")",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "spl_calibration": {
+          "description": "SPL calibration anchor captured from a pre-sweep reference tone.\nRequired on new recordings by the SplCalibration wizard step;\nstored here so that replayed recordings can re-derive\n`sweep_level_db_spl`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SplCalibration"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sweep_end_freq": {
+          "description": "Sweep end frequency in Hz (only applicable when signal_type is \"Sweep\")",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "sweep_level_db_spl": {
+          "description": "Target sweep level at the listening position in dBSPL. Requires\n[`spl_calibration`](Self::spl_calibration) to be populated.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "sweep_start_freq": {
+          "description": "Sweep start frequency in Hz (only applicable when signal_type is \"Sweep\")",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        }
+      }
+    },
+    "RoleTargetConfig": {
+      "description": "Optional role-aware target adjustments for home-cinema layouts.\n\nThese are deliberately explicit and default to zero change: enabling the\nblock makes the target semantics role-aware without silently changing\nexisting RoomEQ output. The adjustments layer on top of\n[`TargetResponseConfig::preference`].",
+      "type": "object",
+      "properties": {
+        "center_dialog_boost_db": {
+          "description": "Broad, smooth center-channel dialog-band target lift/cut in dB.",
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "center_dialog_high_hz": {
+          "description": "Upper edge of the center dialog emphasis band.",
+          "type": "number",
+          "format": "double",
+          "default": 4000.0
+        },
+        "center_dialog_low_hz": {
+          "description": "Lower edge of the center dialog emphasis band.",
+          "type": "number",
+          "format": "double",
+          "default": 300.0
+        },
+        "center_slope_offset_db_per_octave": {
+          "description": "Extra broadband slope for the center channel, in dB/octave.",
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "center_treble_shelf_db": {
+          "description": "Additional treble shelf applied only to the centre channel.",
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "cinema_reference_distance_m": {
+          "description": "Reference distance for distance-compensated treble rolloff.",
+          "type": "number",
+          "format": "double",
+          "default": 3.0
+        },
+        "cinema_x_curve_db_per_octave": {
+          "description": "Additional high-frequency slope above `cinema_x_curve_start_hz`, in dB/octave.",
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "cinema_x_curve_enabled": {
+          "description": "Enable cinema/X-curve style high-frequency rolloff shaping.",
+          "type": "boolean",
+          "default": false
+        },
+        "cinema_x_curve_start_hz": {
+          "description": "Frequency where cinema/X-curve high-frequency shaping starts.",
+          "type": "number",
+          "format": "double",
+          "default": 2000.0
+        },
+        "distance_treble_rolloff_db_per_doubling": {
+          "description": "Additional HF rolloff per distance doubling beyond the reference distance.",
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "enabled": {
+          "description": "Enable role-aware target adjustment.",
+          "type": "boolean",
+          "default": true
+        },
+        "front_slope_offset_db_per_octave": {
+          "description": "Extra broadband slope for front L/R channels, in dB/octave.",
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "height_slope_offset_db_per_octave": {
+          "description": "Extra broadband slope for height channels, in dB/octave.",
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "height_treble_shelf_db": {
+          "description": "Additional treble shelf applied to height channels.",
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "lfe_bass_shelf_db": {
+          "description": "Additional bass shelf applied to LFE channels.",
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "lfe_slope_offset_db_per_octave": {
+          "description": "Extra broadband slope for LFE channels, in dB/octave.",
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "listening_distance_m": {
+          "description": "Listening distance used for optional distance-compensated treble rolloff.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "subwoofer_bass_shelf_db": {
+          "description": "Additional bass shelf applied to subwoofer channels.",
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "subwoofer_slope_offset_db_per_octave": {
+          "description": "Extra broadband slope for subwoofer channels, in dB/octave.",
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "surround_slope_offset_db_per_octave": {
+          "description": "Extra broadband slope for surround and wide channels, in dB/octave.",
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "surround_treble_shelf_db": {
+          "description": "Additional treble shelf applied to side/rear/wide surrounds.",
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        }
+      }
+    },
+    "RoomDimensions": {
+      "description": "Room dimensions for automatic Schroeder frequency calculation",
+      "type": "object",
+      "properties": {
+        "height": {
+          "description": "Height in meters",
+          "type": "number",
+          "format": "double"
+        },
+        "length": {
+          "description": "Length in meters",
+          "type": "number",
+          "format": "double"
+        },
+        "width": {
+          "description": "Width in meters",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "length",
+        "width",
+        "height"
+      ]
+    },
+    "SchroederSplitConfig": {
+      "description": "Schroeder frequency split configuration",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Enable Schroeder split optimization",
+          "type": "boolean",
+          "default": false
+        },
+        "high_freq_config": {
+          "description": "High frequency filter configuration (above Schroeder)",
+          "$ref": "#/$defs/HighFreqFilterConfig",
+          "default": {
+            "max_q": 1.0,
+            "shelving_only": false
+          }
+        },
+        "low_freq_config": {
+          "description": "Low frequency filter configuration (below Schroeder)",
+          "$ref": "#/$defs/LowFreqFilterConfig",
+          "default": {
+            "allow_boost": false,
+            "max_q": 5.0,
+            "min_q": 0.5
+          }
+        },
+        "room_dimensions": {
+          "description": "Room dimensions for auto-calculation (optional)",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RoomDimensions"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schroeder_freq": {
+          "description": "Schroeder frequency in Hz",
+          "type": "number",
+          "format": "double",
+          "default": 300.0
+        }
+      }
+    },
+    "SmoothnessPenaltyConfigSerde": {
+      "description": "Serializable smoothness-penalty configuration for JSON config files.",
+      "type": "object",
+      "properties": {
+        "exponent": {
+          "description": "L_p exponent. 1.0 = TV^2-like sparse curvature, 2.0 = L2 smoothing.",
+          "type": "number",
+          "format": "double",
+          "default": 1.0
+        },
+        "modal_weight_scale": {
+          "description": "Multiplier below `schroeder_hz` (0 = modal region exempt).",
+          "type": "number",
+          "format": "double",
+          "default": 0.1
+        },
+        "schroeder_hz": {
+          "description": "Optional Schroeder cutoff in Hz for reduced modal-region penalty.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "tv2_weight": {
+          "description": "Penalty weight in loss units per (dB/decade^2)^exponent.",
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        }
+      }
+    },
+    "SpatialRobustnessSerdeConfig": {
+      "description": "Serializable spatial robustness configuration for JSON config files",
+      "type": "object",
+      "properties": {
+        "mask_smoothing_octaves": {
+          "description": "Smoothing width in octaves for the correction depth mask. Default: 1/6 octave.",
+          "type": "number",
+          "format": "double",
+          "default": 0.16666666666666666
+        },
+        "min_correction_depth": {
+          "description": "Minimum correction depth (0.0-1.0). Default: 0.1",
+          "type": "number",
+          "format": "double",
+          "default": 0.1
+        },
+        "transition_width_db": {
+          "description": "Transition width (dB) for sigmoid blending. Default: 2.0",
+          "type": "number",
+          "format": "double",
+          "default": 2.0
+        },
+        "variance_threshold_db": {
+          "description": "Variance threshold (dB) below which full correction is allowed. Default: 3.0",
+          "type": "number",
+          "format": "double",
+          "default": 3.0
+        }
+      }
+    },
+    "SpeakerConfig": {
+      "description": "Speaker configuration (can be single measurement or group)\n\nVariant order matters for serde untagged deserialization: serde tries each variant\nin order. Group/MultiSub/Dba all require a `name` field that `MeasurementSource`\ndoesn't have, so they are tried first. `Single` is last as a catch-all.",
+      "anyOf": [
+        {
+          "description": "Group of measurements (multi-driver case)",
+          "$ref": "#/$defs/SpeakerGroup"
+        },
+        {
+          "description": "Multiple subwoofers optimization",
+          "$ref": "#/$defs/MultiSubGroup"
+        },
+        {
+          "description": "Double Bass Array (DBA) optimization",
+          "$ref": "#/$defs/DBAConfig"
+        },
+        {
+          "description": "Gradient Cardioid subwoofer optimization",
+          "$ref": "#/$defs/CardioidConfig"
+        },
+        {
+          "description": "Single channel (simple case)",
+          "$ref": "#/$defs/MeasurementSource"
+        }
+      ]
+    },
+    "SpeakerGroup": {
+      "description": "Group of measurements for a single speaker (multi-driver)",
+      "type": "object",
+      "properties": {
+        "crossover": {
+          "description": "Crossover configuration for this group",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "measurements": {
+          "description": "Measurements in this group",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MeasurementSource"
+          }
+        },
+        "name": {
+          "description": "Name of the group",
+          "type": "string"
+        },
+        "speaker_name": {
+          "description": "Optional speaker model name",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "measurements"
+      ]
+    },
+    "SplCalibration": {
+      "description": "SPL calibration anchor captured from a pre-sweep reference tone.\n\nMaps the peak sample value observed on the recording ADC during a\nreference tone to a dBSPL reading taken by the user at the listening\nposition with an external meter. Once captured, the sweep playback\nlevel is chosen so the in-band energy at the listening position hits\n[`RecordingConfiguration::sweep_level_db_spl`](RecordingConfiguration::sweep_level_db_spl)\ndeterministically — avoiding the subwoofer driver over-excursion\nthat would otherwise contaminate bass phase with harmonic distortion.",
+      "type": "object",
+      "properties": {
+        "peak_sample_level": {
+          "description": "Peak sample value observed on the recording ADC during the tone,\nin the range `[0.0 .. 1.0]`.",
+          "type": "number",
+          "format": "float"
+        },
+        "reference_freq_hz": {
+          "description": "Frequency of the calibration tone in Hz (default 1000).",
+          "type": "number",
+          "format": "float"
+        },
+        "reported_db_spl": {
+          "description": "User-reported dBSPL at the listening position during calibration.",
+          "type": "number",
+          "format": "float"
+        },
+        "spl_offset_db": {
+          "description": "Offset mapping ADC peak level to dBSPL at the mic:\n`dbspl_at_mic = 20 * log10(peak_sample_value) + spl_offset_db`.",
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "reported_db_spl",
+        "reference_freq_hz",
+        "peak_sample_level",
+        "spl_offset_db"
+      ]
+    },
+    "SubOptimizerConfig": {
+      "description": "Subwoofer-specific optimizer overrides",
+      "type": "object",
+      "properties": {
+        "max_db": {
+          "description": "Maximum boost in dB (room gain can be 15+ dB at resonances)",
+          "type": "number",
+          "format": "double",
+          "default": 18.0
+        },
+        "max_q": {
+          "description": "Maximum Q factor (higher Q for narrow room modes)",
+          "type": "number",
+          "format": "double",
+          "default": 10.0
+        },
+        "min_db": {
+          "description": "Maximum cut in dB",
+          "type": "number",
+          "format": "double",
+          "default": -18.0
+        },
+        "min_q": {
+          "description": "Minimum Q factor",
+          "type": "number",
+          "format": "double",
+          "default": 0.5
+        },
+        "num_filters": {
+          "description": "Number of PEQ filters for subwoofer channels",
+          "type": "integer",
+          "format": "uint",
+          "default": 10,
+          "minimum": 0
+        }
+      }
+    },
+    "SubwooferStrategy": {
+      "description": "Strategy for subwoofer optimization",
+      "oneOf": [
+        {
+          "description": "Single subwoofer optimization (default)",
+          "type": "string",
+          "const": "single"
+        },
+        {
+          "description": "Multi-Sub Optimizer (minimize seat-to-seat variance)",
+          "type": "string",
+          "const": "mso"
+        },
+        {
+          "description": "Double Bass Array (active cancellation)",
+          "type": "string",
+          "const": "dba"
+        }
+      ]
+    },
+    "SubwooferSystemConfig": {
+      "description": "Subwoofer system configuration (part of SystemConfig)",
+      "type": "object",
+      "properties": {
+        "config": {
+          "description": "Strategy for subwoofer optimization",
+          "$ref": "#/$defs/SubwooferStrategy",
+          "default": "single"
+        },
+        "crossover": {
+          "description": "Crossover reference key (points to entry in `crossovers` map)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
     "SystemConfig": {
       "description": "Explicit system configuration mapping logical roles to measurements",
       "type": "object",
       "properties": {
+        "bass_management": {
+          "description": "Home-cinema bass-management policy.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BassManagementConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "model": {
           "description": "System topology model",
           "$ref": "#/$defs/SystemModel",
@@ -143,403 +3162,6 @@
         "custom"
       ]
     },
-    "SubwooferSystemConfig": {
-      "description": "Subwoofer system configuration (part of SystemConfig)",
-      "type": "object",
-      "properties": {
-        "config": {
-          "description": "Strategy for subwoofer optimization",
-          "$ref": "#/$defs/SubwooferStrategy",
-          "default": "single"
-        },
-        "crossover": {
-          "description": "Crossover reference key (points to entry in `crossovers` map)",
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "additionalProperties": {
-        "type": "string"
-      }
-    },
-    "SubwooferStrategy": {
-      "description": "Strategy for subwoofer optimization",
-      "oneOf": [
-        {
-          "description": "Single subwoofer optimization (default)",
-          "type": "string",
-          "const": "single"
-        },
-        {
-          "description": "Multi-Sub Optimizer (minimize seat-to-seat variance)",
-          "type": "string",
-          "const": "mso"
-        },
-        {
-          "description": "Double Bass Array (active cancellation)",
-          "type": "string",
-          "const": "dba"
-        }
-      ]
-    },
-    "SpeakerConfig": {
-      "description": "Speaker configuration (can be single measurement or group)\n\nVariant order matters for serde untagged deserialization: serde tries each variant\nin order. Group/MultiSub/Dba all require a `name` field that `MeasurementSource`\ndoesn't have, so they are tried first. `Single` is last as a catch-all.",
-      "anyOf": [
-        {
-          "description": "Group of measurements (multi-driver case)",
-          "$ref": "#/$defs/SpeakerGroup"
-        },
-        {
-          "description": "Multiple subwoofers optimization",
-          "$ref": "#/$defs/MultiSubGroup"
-        },
-        {
-          "description": "Double Bass Array (DBA) optimization",
-          "$ref": "#/$defs/DBAConfig"
-        },
-        {
-          "description": "Gradient Cardioid subwoofer optimization",
-          "$ref": "#/$defs/CardioidConfig"
-        },
-        {
-          "description": "Single channel (simple case)",
-          "$ref": "#/$defs/MeasurementSource"
-        }
-      ]
-    },
-    "SpeakerGroup": {
-      "description": "Group of measurements for a single speaker (multi-driver)",
-      "type": "object",
-      "properties": {
-        "name": {
-          "description": "Name of the group",
-          "type": "string"
-        },
-        "speaker_name": {
-          "description": "Optional speaker model name",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "measurements": {
-          "description": "Measurements in this group",
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/MeasurementSource"
-          }
-        },
-        "crossover": {
-          "description": "Crossover configuration for this group",
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "name",
-        "measurements"
-      ]
-    },
-    "MeasurementSource": {
-      "description": "Source of measurements (single file, multiple files for averaging, or in-memory curve)",
-      "anyOf": [
-        {
-          "description": "A single measurement file with optional speaker name",
-          "$ref": "#/$defs/MeasurementSingle"
-        },
-        {
-          "description": "Multiple measurement files to be averaged with optional speaker name",
-          "$ref": "#/$defs/MeasurementMultiple"
-        }
-      ]
-    },
-    "MeasurementSingle": {
-      "description": "Single measurement with metadata\n\nCustom implementation to support both string path and object with speaker_name",
-      "type": "object",
-      "properties": {
-        "measurement": {
-          "$ref": "#/$defs/MeasurementRef"
-        },
-        "speaker_name": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "measurement"
-      ]
-    },
-    "MeasurementRef": {
-      "description": "Reference to a measurement file",
-      "anyOf": [
-        {
-          "description": "Inline measurement data (stored directly in JSON)",
-          "$ref": "#/$defs/InlineMeasurement"
-        },
-        {
-          "description": "Named measurement with optional metadata",
-          "type": "object",
-          "properties": {
-            "path": {
-              "description": "Path to the CSV measurement file.",
-              "type": "string"
-            },
-            "name": {
-              "description": "Optional display name for the measurement.",
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          },
-          "required": [
-            "path"
-          ]
-        },
-        {
-          "description": "Path to CSV file (freq, spl, phase columns)",
-          "type": "string"
-        }
-      ]
-    },
-    "InlineMeasurement": {
-      "description": "Inline measurement data (frequencies, SPL, phase)",
-      "type": "object",
-      "properties": {
-        "frequencies": {
-          "description": "Frequency points in Hz",
-          "type": "array",
-          "items": {
-            "type": "number",
-            "format": "double"
-          }
-        },
-        "magnitude_db": {
-          "description": "Sound Pressure Level in dB",
-          "type": "array",
-          "items": {
-            "type": "number",
-            "format": "double"
-          }
-        },
-        "phase_deg": {
-          "description": "Phase in degrees (optional)",
-          "type": [
-            "array",
-            "null"
-          ],
-          "items": {
-            "type": "number",
-            "format": "double"
-          }
-        },
-        "name": {
-          "description": "Optional display name",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "wav_path": {
-          "description": "Optional path to associated WAV file",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "csv_path": {
-          "description": "Optional path to associated CSV file",
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      }
-    },
-    "MeasurementMultiple": {
-      "description": "Multiple measurements with metadata",
-      "type": "object",
-      "properties": {
-        "measurements": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/MeasurementRef"
-          }
-        },
-        "speaker_name": {
-          "description": "Optional speaker name (e.g., \"Genelec 8361A\")",
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "measurements"
-      ]
-    },
-    "MultiSubGroup": {
-      "description": "Configuration for multiple subwoofers",
-      "type": "object",
-      "properties": {
-        "name": {
-          "description": "Name of the subwoofer group (e.g. \"subs\")",
-          "type": "string"
-        },
-        "speaker_name": {
-          "description": "Optional speaker model name",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "subwoofers": {
-          "description": "Measurements for each subwoofer",
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/MeasurementSource"
-          }
-        },
-        "allpass_optimization": {
-          "description": "Enable per-subwoofer all-pass filter optimization",
-          "type": "boolean",
-          "default": false
-        }
-      },
-      "required": [
-        "name",
-        "subwoofers"
-      ]
-    },
-    "DBAConfig": {
-      "description": "Configuration for Double Bass Array (DBA)",
-      "type": "object",
-      "properties": {
-        "name": {
-          "description": "Name of the DBA system",
-          "type": "string"
-        },
-        "speaker_name": {
-          "description": "Optional speaker model name",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "front": {
-          "description": "Measurements for the front array",
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/MeasurementSource"
-          }
-        },
-        "rear": {
-          "description": "Measurements for the rear array",
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/MeasurementSource"
-          }
-        }
-      },
-      "required": [
-        "name",
-        "front",
-        "rear"
-      ]
-    },
-    "CardioidConfig": {
-      "description": "Configuration for Gradient Cardioid Subwoofer (2 subwoofers)",
-      "type": "object",
-      "properties": {
-        "name": {
-          "description": "Name of the cardioid system",
-          "type": "string"
-        },
-        "speaker_name": {
-          "description": "Optional speaker model name",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "front": {
-          "description": "Measurement for the front (primary) subwoofer",
-          "$ref": "#/$defs/MeasurementSource"
-        },
-        "rear": {
-          "description": "Measurement for the rear (cancellation) subwoofer",
-          "$ref": "#/$defs/MeasurementSource"
-        },
-        "separation_meters": {
-          "description": "Physical separation distance in meters (between acoustic centers)",
-          "type": "number",
-          "format": "double"
-        }
-      },
-      "required": [
-        "name",
-        "front",
-        "rear",
-        "separation_meters"
-      ]
-    },
-    "CrossoverConfig": {
-      "description": "Crossover configuration",
-      "type": "object",
-      "properties": {
-        "type": {
-          "description": "Crossover type (e.g. \"LR24\", \"LR48\", \"Butterworth24\")",
-          "type": "string"
-        },
-        "frequency": {
-          "description": "Crossover frequency in Hz (for 2-way speakers)",
-          "type": [
-            "number",
-            "null"
-          ],
-          "format": "double"
-        },
-        "frequencies": {
-          "description": "Crossover frequencies in Hz (for 3-way and above)",
-          "type": [
-            "array",
-            "null"
-          ],
-          "items": {
-            "type": "number",
-            "format": "double"
-          }
-        },
-        "frequency_range": {
-          "description": "Frequency range for automatic optimization",
-          "type": [
-            "array",
-            "null"
-          ],
-          "prefixItems": [
-            {
-              "type": "number",
-              "format": "double"
-            },
-            {
-              "type": "number",
-              "format": "double"
-            }
-          ],
-          "minItems": 2,
-          "maxItems": 2
-        }
-      },
-      "required": [
-        "type"
-      ]
-    },
     "TargetCurveConfig": {
       "description": "Target curve configuration",
       "anyOf": [
@@ -553,699 +3175,14 @@
         }
       ]
     },
-    "OptimizerConfig": {
-      "description": "Optimizer configuration",
-      "type": "object",
-      "properties": {
-        "processing_mode": {
-          "description": "Processing mode — selects the filter class used for correction.",
-          "$ref": "#/$defs/ProcessingMode",
-          "default": "low_latency"
-        },
-        "fir": {
-          "description": "FIR configuration (used when `processing_mode` requires FIR filters)",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/FirConfig"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "mixed_config": {
-          "description": "Mixed mode configuration (frequency-based crossover)",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/MixedModeConfig"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "mixed_phase": {
-          "description": "Mixed-phase correction configuration",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/MixedPhaseSerdeConfig"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "phase_correction": {
-          "description": "Standalone phase correction (rePhase-style)",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/MixedPhaseSerdeConfig"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "loss_type": {
-          "description": "Loss function type. Supported values:\n- `\"flat\"` — minimize deviation from target (default)\n- `\"score\"` — maximize Harman/Olive preference score\n- `\"epa\"` — EPA (Evaluation/Potency/Activity) psychoacoustic\n  loss combining spectral flatness with sharpness, roughness,\n  and loudness-balance penalties derived from Zwicker metrics.\n  When selected, the EPA penalty weights can be customized via\n  the [`epa_config`](Self::epa_config) field; otherwise the\n  defaults from [`EpaConfig::default`](crate::loss::epa::score::EpaConfig::default)\n  are used.",
-          "type": "string",
-          "default": "flat"
-        },
-        "epa_config": {
-          "description": "EPA loss configuration. Only used when `loss_type == \"epa\"`.\nWhen `None`, the optimizer falls back to\n[`EpaConfig::default`](crate::loss::epa::score::EpaConfig::default).",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/EpaConfig"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "algorithm": {
-          "description": "Optimization algorithm",
-          "type": "string",
-          "default": "autoeq:de"
-        },
-        "strategy": {
-          "description": "DE mutation strategy (e.g. \"currenttobest1bin\", \"lshade\", \"best1bin\")",
-          "type": "string",
-          "default": "lshade"
-        },
-        "num_filters": {
-          "description": "Maximum number of PEQ filters per channel",
-          "type": "integer",
-          "format": "uint",
-          "minimum": 0,
-          "default": 7
-        },
-        "min_filter_improvement": {
-          "description": "Minimum loss improvement to justify adding another filter",
-          "type": "number",
-          "format": "double",
-          "default": 0.01
-        },
-        "elimination_threshold": {
-          "description": "Backward elimination threshold",
-          "type": "number",
-          "format": "double",
-          "default": 0.005
-        },
-        "min_q": {
-          "description": "Minimum Q factor",
-          "type": "number",
-          "format": "double",
-          "default": 0.5
-        },
-        "max_q": {
-          "description": "Maximum Q factor",
-          "type": "number",
-          "format": "double",
-          "default": 3.0
-        },
-        "min_db": {
-          "description": "Minimum gain in dB",
-          "type": "number",
-          "format": "double",
-          "default": -12.0
-        },
-        "max_db": {
-          "description": "Maximum gain in dB",
-          "type": "number",
-          "format": "double",
-          "default": 4.0
-        },
-        "min_freq": {
-          "description": "Minimum frequency in Hz",
-          "type": "number",
-          "format": "double",
-          "default": 20.0
-        },
-        "max_freq": {
-          "description": "Maximum frequency in Hz",
-          "type": "number",
-          "format": "double",
-          "default": 1600.0
-        },
-        "max_iter": {
-          "description": "Maximum number of iterations",
-          "type": "integer",
-          "format": "uint",
-          "minimum": 0,
-          "default": 50000
-        },
-        "population": {
-          "description": "Population size for DE optimizer",
-          "type": "integer",
-          "format": "uint",
-          "minimum": 0,
-          "default": 300
-        },
-        "peq_model": {
-          "description": "PEQ model (e.g. \"pk\", \"ls-pk-hs\", \"free\")",
-          "type": "string",
-          "default": "pk"
-        },
-        "seed": {
-          "description": "Random seed for reproducible results (None for random)",
-          "type": [
-            "integer",
-            "null"
-          ],
-          "format": "uint64",
-          "minimum": 0
-        },
-        "refine": {
-          "description": "Whether to run local refinement after global optimization",
-          "type": "boolean",
-          "default": true
-        },
-        "local_algo": {
-          "description": "Local optimizer algorithm for refinement stage",
-          "type": "string",
-          "default": "cobyla"
-        },
-        "psychoacoustic": {
-          "description": "Enable psychoacoustic preprocessing",
-          "type": "boolean",
-          "default": true
-        },
-        "smooth_n": {
-          "description": "Loss function smoothing resolution as 1/N octave",
-          "type": "integer",
-          "format": "uint",
-          "minimum": 0,
-          "default": 2
-        },
-        "asymmetric_loss": {
-          "description": "Enable asymmetric loss (peaks penalized 2x more than dips)",
-          "type": "boolean",
-          "default": true
-        },
-        "tolerance": {
-          "description": "Optimization convergence tolerance (relative)",
-          "type": "number",
-          "format": "double",
-          "default": 0.00001
-        },
-        "atolerance": {
-          "description": "Optimization convergence tolerance (absolute)",
-          "type": "number",
-          "format": "double",
-          "default": 0.00001
-        },
-        "allow_delay": {
-          "description": "Allow inter-speaker delay optimization",
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "target_response": {
-          "description": "Unified target response configuration (shape + preference shelves + broadband pre-correction)",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/TargetResponseConfig"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "excursion_protection": {
-          "description": "Excursion protection configuration",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ExcursionProtectionConfig"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "schroeder_split": {
-          "description": "Schroeder frequency split configuration",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/SchroederSplitConfig"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "auto_optimizer": {
-          "description": "Automatic selection of filter count and optimizer bounds.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/AutoOptimizerConfig"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "smoothness_penalty": {
-          "description": "Smoothness regularizer on the correction curve.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/SmoothnessPenaltyConfigSerde"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "phase_alignment": {
-          "description": "Phase alignment configuration for subwoofer integration",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PhaseAlignmentConfig"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "multi_seat": {
-          "description": "Multi-seat optimization configuration",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/MultiSeatConfig"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "vog": {
-          "description": "Voice of God optimization configuration (v2)",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/VoiceOfGodConfig"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "multi_measurement": {
-          "description": "Multi-measurement optimization configuration",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/MultiMeasurementConfig"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "decomposed_correction": {
-          "description": "Decomposed correction configuration",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/DecomposedCorrectionSerdeConfig"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "cea2034_correction": {
-          "description": "CEA2034 speaker pre-correction configuration",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Cea2034CorrectionConfig"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "sub_config": {
-          "description": "Subwoofer-specific optimizer overrides",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/SubOptimizerConfig"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "channel_matching": {
-          "description": "Inter-channel consistency correction configuration",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ChannelMatchingConfig"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "max_boost_envelope": {
-          "description": "Frequency-dependent maximum boost envelope.\nEach entry is (frequency_hz, max_boost_db).\nBetween points, linear interpolation in log-frequency.\nDefault: None (use the existing flat `max_db` limit).\nWhen set, overrides `max_db` on a per-frequency basis.",
-          "type": [
-            "array",
-            "null"
-          ],
-          "items": {
-            "type": "array",
-            "prefixItems": [
-              {
-                "type": "number",
-                "format": "double"
-              },
-              {
-                "type": "number",
-                "format": "double"
-              }
-            ],
-            "minItems": 2,
-            "maxItems": 2
-          }
-        },
-        "min_cut_envelope": {
-          "description": "CDT-aware minimum cut envelope: limits how deep the optimizer can cut\nat frequencies where the ear generates Cubic Distortion Tones.\nEach entry is (frequency_hz, max_cut_db) where max_cut_db is negative.\nDefault: None (no CDT protection).",
-          "type": [
-            "array",
-            "null"
-          ],
-          "items": {
-            "type": "array",
-            "prefixItems": [
-              {
-                "type": "number",
-                "format": "double"
-              },
-              {
-                "type": "number",
-                "format": "double"
-              }
-            ],
-            "minItems": 2,
-            "maxItems": 2
-          }
-        }
-      }
-    },
-    "ProcessingMode": {
-      "description": "Processing mode for the optimization engine",
-      "oneOf": [
-        {
-          "description": "Low-latency mode (IIR filters only) - < 5ms latency",
-          "type": "string",
-          "const": "low_latency"
-        },
-        {
-          "description": "Phase-linear mode (FIR filters only) - High latency allowed",
-          "type": "string",
-          "const": "phase_linear"
-        },
-        {
-          "description": "Hybrid mode (IIR for bass, FIR for mids/highs) - Variable latency",
-          "type": "string",
-          "const": "hybrid"
-        },
-        {
-          "description": "Mixed-phase mode (IIR for minimum-phase + excess phase FIR)\nRequires phase data in measurements. Low latency (~10ms).",
-          "type": "string",
-          "const": "mixed_phase"
-        },
-        {
-          "description": "Warped IIR mode — biquads designed on a Bark-scale warped frequency axis.\nConcentrates filter resolution in bass/low-mid where room modes live.\nSame latency as LowLatency but perceptually-weighted correction.",
-          "type": "string",
-          "const": "warped_iir"
-        },
-        {
-          "description": "Kautz modal mode — pole-tuned filter targeting detected room modes.\nUses room mode analysis to place filter poles at resonance frequencies.\nGain optimization via linear least-squares (very fast, no DE needed).\nBest for small, highly resonant rooms with clear modal problems.",
-          "type": "string",
-          "const": "kautz_modal"
-        }
-      ]
-    },
-    "FirConfig": {
-      "description": "FIR filter configuration",
-      "type": "object",
-      "properties": {
-        "taps": {
-          "description": "Number of taps (coefficients)",
-          "type": "integer",
-          "format": "uint",
-          "minimum": 0,
-          "default": 4096
-        },
-        "phase": {
-          "description": "Phase response type: \"linear\" or \"kirkeby\"",
-          "type": "string",
-          "default": "kirkeby"
-        },
-        "correct_excess_phase": {
-          "description": "Whether to correct excess phase (only applies to kirkeby mode)",
-          "type": "boolean",
-          "default": false
-        },
-        "phase_smoothing": {
-          "description": "Phase smoothing width in octaves (default: 0.167 = 1/6 octave)",
-          "type": "number",
-          "format": "double",
-          "default": 0.167
-        },
-        "pre_ringing": {
-          "description": "Pre-ringing suppression configuration",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PreRingingSerdeConfig"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      }
-    },
-    "PreRingingSerdeConfig": {
-      "description": "Serializable pre-ringing configuration for JSON config files",
-      "type": "object",
-      "properties": {
-        "threshold_db": {
-          "description": "Maximum pre-ringing level in dB relative to main tap. Default: -30.0",
-          "type": "number",
-          "format": "double",
-          "default": -30.0
-        },
-        "max_time_s": {
-          "description": "Maximum pre-ringing time in seconds. Default: 0.005 (5 ms)",
-          "type": "number",
-          "format": "double",
-          "default": 0.005
-        }
-      }
-    },
-    "MixedModeConfig": {
-      "description": "Configuration for frequency-based mixed mode crossover",
-      "type": "object",
-      "properties": {
-        "crossover_freq": {
-          "description": "Crossover frequency dividing IIR and FIR bands (Hz)",
-          "type": "number",
-          "format": "double",
-          "default": 300.0
-        },
-        "crossover_type": {
-          "description": "Crossover filter type: \"LR24\", \"LR48\"",
-          "type": "string",
-          "default": "LR24"
-        },
-        "fir_band": {
-          "description": "Which band uses FIR: \"low\" or \"high\" (default: \"low\")",
-          "type": "string",
-          "default": "low"
-        }
-      }
-    },
-    "MixedPhaseSerdeConfig": {
-      "description": "Serializable mixed-phase correction configuration for JSON config files",
-      "type": "object",
-      "properties": {
-        "max_fir_length_ms": {
-          "description": "Maximum FIR length in milliseconds for excess phase correction. Default: 10.0",
-          "type": "number",
-          "format": "double",
-          "default": 10.0
-        },
-        "pre_ringing_threshold_db": {
-          "description": "Pre-ringing threshold in dB. Default: -30.0",
-          "type": "number",
-          "format": "double",
-          "default": -30.0
-        },
-        "min_spatial_depth": {
-          "description": "Minimum spatial correction depth for excess phase correction. Default: 0.5",
-          "type": "number",
-          "format": "double",
-          "default": 0.5
-        },
-        "phase_smoothing_octaves": {
-          "description": "Phase smoothing width in octaves. Default: 1/6 octave",
-          "type": "number",
-          "format": "double",
-          "default": 0.16666666666666666
-        }
-      }
-    },
-    "EpaConfig": {
-      "description": "Configuration for EPA scoring.",
-      "type": "object",
-      "properties": {
-        "listening_level_phon": {
-          "description": "Listening level in phon (affects loudness computation)",
-          "type": "number",
-          "format": "double"
-        },
-        "target_sharpness": {
-          "description": "Target sharpness in acum (1.0 = natural broadband noise character)",
-          "type": "number",
-          "format": "double"
-        },
-        "max_roughness": {
-          "description": "Maximum acceptable roughness (above this, penalty increases)",
-          "type": "number",
-          "format": "double"
-        },
-        "evaluation_weight": {
-          "description": "Weights for the three EPA dimensions in the composite score",
-          "type": "number",
-          "format": "double"
-        },
-        "potency_weight": {
-          "type": "number",
-          "format": "double"
-        },
-        "activity_weight": {
-          "type": "number",
-          "format": "double"
-        },
-        "flatness_band_weights": {
-          "description": "Band weights used for the flatness component of the EPA loss.\nOnly consulted when `flatness_band_weight > 0`.",
-          "$ref": "#/$defs/FrequencyBandWeights",
-          "default": {
-            "bass_min": 20.0,
-            "bass_max": 200.0,
-            "mid_min": 200.0,
-            "mid_max": 4000.0,
-            "treble_min": 4000.0,
-            "treble_max": 20000.0,
-            "bass_weight": 2.0,
-            "mid_weight": 1.0,
-            "treble_weight": 0.8
-          }
-        },
-        "flatness_erb_weight": {
-          "description": "ERB weight for the flatness component of the EPA loss.\nDefault 1.0 (pure ERB) because EPA already has band-sensitive\nsharpness / roughness / loudness_balance terms — adding band\nweighting on top of flatness would double-count frequency bias.",
-          "type": "number",
-          "format": "double",
-          "default": 1.0
-        },
-        "flatness_band_weight": {
-          "description": "Band weight for the flatness component of the EPA loss.\nDefault 0.0 (see `flatness_erb_weight`).",
-          "type": "number",
-          "format": "double",
-          "default": 0.0
-        }
-      },
-      "required": [
-        "listening_level_phon",
-        "target_sharpness",
-        "max_roughness",
-        "evaluation_weight",
-        "potency_weight",
-        "activity_weight"
-      ]
-    },
-    "FrequencyBandWeights": {
-      "description": "Frequency band configuration for weighted loss",
-      "type": "object",
-      "properties": {
-        "bass_min": {
-          "description": "Bass band minimum frequency (Hz)",
-          "type": "number",
-          "format": "double"
-        },
-        "bass_max": {
-          "description": "Bass band maximum frequency (Hz)",
-          "type": "number",
-          "format": "double"
-        },
-        "mid_min": {
-          "description": "Midrange band minimum frequency (Hz)",
-          "type": "number",
-          "format": "double"
-        },
-        "mid_max": {
-          "description": "Midrange band maximum frequency (Hz)",
-          "type": "number",
-          "format": "double"
-        },
-        "treble_min": {
-          "description": "Treble band minimum frequency (Hz)",
-          "type": "number",
-          "format": "double"
-        },
-        "treble_max": {
-          "description": "Treble band maximum frequency (Hz)",
-          "type": "number",
-          "format": "double"
-        },
-        "bass_weight": {
-          "description": "Weight for bass band (default: 2.0 - bass is more critical for room correction)",
-          "type": "number",
-          "format": "double"
-        },
-        "mid_weight": {
-          "description": "Weight for midrange band (default: 1.0)",
-          "type": "number",
-          "format": "double"
-        },
-        "treble_weight": {
-          "description": "Weight for treble band (default: 0.8 - less critical for room issues)",
-          "type": "number",
-          "format": "double"
-        }
-      },
-      "required": [
-        "bass_min",
-        "bass_max",
-        "mid_min",
-        "mid_max",
-        "treble_min",
-        "treble_max",
-        "bass_weight",
-        "mid_weight",
-        "treble_weight"
-      ]
-    },
     "TargetResponseConfig": {
       "description": "Unified target response configuration for room correction",
       "type": "object",
       "properties": {
-        "shape": {
-          "description": "Target shape preset",
-          "$ref": "#/$defs/TargetShape",
-          "default": "flat"
-        },
-        "slope_db_per_octave": {
-          "description": "Slope in dB per octave (used when shape == Custom)",
-          "type": "number",
-          "format": "double",
-          "default": -0.8
-        },
-        "reference_freq": {
-          "description": "Reference frequency where target shape equals 0 dB (Hz)",
-          "type": "number",
-          "format": "double",
-          "default": 1000.0
+        "broadband_precorrection": {
+          "description": "Enable broadband pre-correction (shelf+gain fit before fine EQ)",
+          "type": "boolean",
+          "default": false
         },
         "curve_path": {
           "description": "Path to custom target curve CSV (used when shape == File)",
@@ -1264,10 +3201,33 @@
             "treble_shelf_freq": 8000.0
           }
         },
-        "broadband_precorrection": {
-          "description": "Enable broadband pre-correction (shelf+gain fit before fine EQ)",
-          "type": "boolean",
-          "default": false
+        "reference_freq": {
+          "description": "Reference frequency where target shape equals 0 dB (Hz)",
+          "type": "number",
+          "format": "double",
+          "default": 1000.0
+        },
+        "role_targets": {
+          "description": "Optional home-cinema role-aware target adjustments.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RoleTargetConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "shape": {
+          "description": "Target shape preset",
+          "$ref": "#/$defs/TargetShape",
+          "default": "flat"
+        },
+        "slope_db_per_octave": {
+          "description": "Slope in dB per octave (used when shape == Custom)",
+          "type": "number",
+          "format": "double",
+          "default": -0.8
         }
       }
     },
@@ -1331,319 +3291,6 @@
         }
       }
     },
-    "ExcursionProtectionConfig": {
-      "description": "Excursion protection configuration",
-      "type": "object",
-      "properties": {
-        "enabled": {
-          "description": "Enable excursion protection",
-          "type": "boolean",
-          "default": false
-        },
-        "auto_detect_f3": {
-          "description": "Auto-detect F3 from measurement",
-          "type": "boolean",
-          "default": true
-        },
-        "manual_f3_hz": {
-          "description": "Manual F3 override in Hz (used if auto_detect_f3 is false)",
-          "type": [
-            "number",
-            "null"
-          ],
-          "format": "double"
-        },
-        "filter_order": {
-          "description": "Filter order (2 = 12dB/oct, 4 = 24dB/oct)",
-          "type": "integer",
-          "format": "uint",
-          "minimum": 0,
-          "default": 4
-        },
-        "filter_type": {
-          "description": "Highpass filter type",
-          "$ref": "#/$defs/HighpassType",
-          "default": "linkwitzriley"
-        },
-        "margin_octaves": {
-          "description": "Safety margin in octaves below F3 for HPF placement",
-          "type": "number",
-          "format": "double",
-          "default": 0.25
-        }
-      }
-    },
-    "HighpassType": {
-      "description": "Highpass filter type for excursion protection",
-      "oneOf": [
-        {
-          "description": "Linkwitz-Riley (4th order = 24dB/oct)",
-          "type": "string",
-          "const": "linkwitzriley"
-        },
-        {
-          "description": "Butterworth",
-          "type": "string",
-          "const": "butterworth"
-        }
-      ]
-    },
-    "SchroederSplitConfig": {
-      "description": "Schroeder frequency split configuration",
-      "type": "object",
-      "properties": {
-        "enabled": {
-          "description": "Enable Schroeder split optimization",
-          "type": "boolean",
-          "default": false
-        },
-        "schroeder_freq": {
-          "description": "Schroeder frequency in Hz",
-          "type": "number",
-          "format": "double",
-          "default": 300.0
-        },
-        "room_dimensions": {
-          "description": "Room dimensions for auto-calculation (optional)",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/RoomDimensions"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "low_freq_config": {
-          "description": "Low frequency filter configuration (below Schroeder)",
-          "$ref": "#/$defs/LowFreqFilterConfig",
-          "default": {
-            "max_q": 5.0,
-            "min_q": 0.5,
-            "allow_boost": false
-          }
-        },
-        "high_freq_config": {
-          "description": "High frequency filter configuration (above Schroeder)",
-          "$ref": "#/$defs/HighFreqFilterConfig",
-          "default": {
-            "max_q": 1.0,
-            "shelving_only": false
-          }
-        }
-      }
-    },
-    "RoomDimensions": {
-      "description": "Room dimensions for automatic Schroeder frequency calculation",
-      "type": "object",
-      "properties": {
-        "length": {
-          "description": "Length in meters",
-          "type": "number",
-          "format": "double"
-        },
-        "width": {
-          "description": "Width in meters",
-          "type": "number",
-          "format": "double"
-        },
-        "height": {
-          "description": "Height in meters",
-          "type": "number",
-          "format": "double"
-        }
-      },
-      "required": [
-        "length",
-        "width",
-        "height"
-      ]
-    },
-    "LowFreqFilterConfig": {
-      "description": "Low frequency filter configuration for Schroeder split",
-      "type": "object",
-      "properties": {
-        "max_q": {
-          "description": "Maximum Q factor for low frequency filters (allow high-Q for modes)",
-          "type": "number",
-          "format": "double",
-          "default": 5.0
-        },
-        "min_q": {
-          "description": "Minimum Q factor",
-          "type": "number",
-          "format": "double",
-          "default": 0.5
-        },
-        "allow_boost": {
-          "description": "Allow boost (true) or cuts only (false)",
-          "type": "boolean",
-          "default": false
-        },
-        "max_db": {
-          "description": "Maximum boost/cut in dB for below-Schroeder filters",
-          "type": [
-            "number",
-            "null"
-          ],
-          "format": "double"
-        }
-      }
-    },
-    "HighFreqFilterConfig": {
-      "description": "High frequency filter configuration for Schroeder split",
-      "type": "object",
-      "properties": {
-        "max_q": {
-          "description": "Maximum Q factor for high frequency filters (tone controls only)",
-          "type": "number",
-          "format": "double",
-          "default": 1.0
-        },
-        "shelving_only": {
-          "description": "Use shelving filters only",
-          "type": "boolean",
-          "default": false
-        }
-      }
-    },
-    "PhaseAlignmentConfig": {
-      "description": "Phase alignment configuration for subwoofer integration",
-      "type": "object",
-      "properties": {
-        "enabled": {
-          "description": "Enable phase alignment optimization",
-          "type": "boolean",
-          "default": true
-        },
-        "min_freq": {
-          "description": "Minimum frequency for optimization (Hz)",
-          "type": "number",
-          "format": "double",
-          "default": 60.0
-        },
-        "max_freq": {
-          "description": "Maximum frequency for optimization (Hz)",
-          "type": "number",
-          "format": "double",
-          "default": 100.0
-        },
-        "optimize_polarity": {
-          "description": "Optimize polarity (normal vs inverted)",
-          "type": "boolean",
-          "default": true
-        },
-        "max_delay_ms": {
-          "description": "Maximum delay in milliseconds",
-          "type": "number",
-          "format": "double",
-          "default": 3.0
-        }
-      }
-    },
-    "MultiSeatConfig": {
-      "description": "Multi-seat optimization configuration",
-      "type": "object",
-      "properties": {
-        "enabled": {
-          "description": "Enable multi-seat optimization",
-          "type": "boolean",
-          "default": false
-        },
-        "strategy": {
-          "description": "Optimization strategy",
-          "$ref": "#/$defs/MultiSeatStrategy",
-          "default": "minimize_variance"
-        },
-        "primary_seat": {
-          "description": "Index of primary seat (0-based, used with PrimaryWithConstraints strategy)",
-          "type": "integer",
-          "format": "uint",
-          "minimum": 0,
-          "default": 0
-        },
-        "max_deviation_db": {
-          "description": "Maximum allowed deviation at non-primary seats (dB)",
-          "type": "number",
-          "format": "double",
-          "default": 6.0
-        },
-        "optimize_polarity": {
-          "description": "Enable per-sub polarity search for MSO.",
-          "type": "boolean",
-          "default": false
-        },
-        "allpass_filters_per_sub": {
-          "description": "Number of per-sub all-pass filters allowed during MSO.",
-          "type": "integer",
-          "format": "uint",
-          "minimum": 0,
-          "default": 0
-        },
-        "per_sub_peq": {
-          "description": "Optimize a per-subwoofer PEQ from that sub's measurements across all seats before the gain/delay/polarity/all-pass MSO pass.",
-          "type": "boolean",
-          "default": true
-        },
-        "global_eq": {
-          "description": "Optimize a shared EQ on the post-MSO combined response across all seats.",
-          "type": "boolean",
-          "default": true
-        },
-        "all_channel_enabled": {
-          "description": "Enable all-channel multi-seat correction for non-sub home-cinema channels.",
-          "type": "boolean",
-          "default": true
-        },
-        "all_channel_strategy": {
-          "description": "Strategy used when deriving per-channel multi-measurement correction.",
-          "$ref": "#/$defs/MultiMeasurementStrategy",
-          "default": "spatial_robustness"
-        },
-        "seat_weights": {
-          "description": "Optional seat weights for all-channel multi-seat correction.",
-          "type": [
-            "array",
-            "null"
-          ],
-          "items": {
-            "type": "number",
-            "format": "double"
-          }
-        },
-        "primary_seat_weight": {
-          "description": "Relative primary-seat weight used with PrimaryWithConstraints.",
-          "type": "number",
-          "format": "double",
-          "default": 2.0
-        }
-      }
-    },
-    "MultiSeatStrategy": {
-      "description": "Strategy for multi-seat optimization",
-      "oneOf": [
-        {
-          "description": "Minimize standard deviation across all seats (default)",
-          "type": "string",
-          "const": "minimize_variance"
-        },
-        {
-          "description": "Optimize for primary seat with constraints on others",
-          "type": "string",
-          "const": "primary_with_constraints"
-        },
-        {
-          "description": "Optimize for average response across all seats",
-          "type": "string",
-          "const": "average"
-        },
-        {
-          "description": "Complex modal-basis sound-field management across seats",
-          "type": "string",
-          "const": "modal_basis"
-        }
-      ]
-    },
     "VoiceOfGodConfig": {
       "description": "Configuration for Voice of God (Timbre Matching)",
       "type": "object",
@@ -1660,829 +3307,6 @@
       },
       "required": [
         "reference_channel"
-      ]
-    },
-    "MultiMeasurementConfig": {
-      "description": "Configuration for multi-measurement optimization",
-      "type": "object",
-      "properties": {
-        "strategy": {
-          "description": "Strategy for combining per-measurement losses",
-          "$ref": "#/$defs/MultiMeasurementStrategy",
-          "default": "average"
-        },
-        "weights": {
-          "description": "Weights for WeightedSum (normalized internally). Equal if omitted.",
-          "type": [
-            "array",
-            "null"
-          ],
-          "items": {
-            "type": "number",
-            "format": "double"
-          }
-        },
-        "variance_lambda": {
-          "description": "Lambda for VariancePenalized (default 1.0). Higher = more consistent across positions.",
-          "type": "number",
-          "format": "double",
-          "default": 1.0
-        },
-        "spatial_robustness": {
-          "description": "Spatial robustness configuration (used when strategy = SpatialRobustness)",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/SpatialRobustnessSerdeConfig"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      }
-    },
-    "MultiMeasurementStrategy": {
-      "description": "Strategy for handling multiple measurements per speaker",
-      "oneOf": [
-        {
-          "description": "RMS-average curves, optimize on average (existing behavior)",
-          "type": "string",
-          "const": "average"
-        },
-        {
-          "description": "loss = Σ w_i * loss_i — weighted sum of per-measurement losses",
-          "type": "string",
-          "const": "weighted_sum"
-        },
-        {
-          "description": "loss = max(loss_i) — optimize worst case across all measurements",
-          "type": "string",
-          "const": "minimax"
-        },
-        {
-          "description": "loss = mean(loss_i) + λ * var(loss_i) — balance quality + consistency",
-          "type": "string",
-          "const": "variance_penalized"
-        },
-        {
-          "description": "Spatial robustness: RMS-average + correction depth mask based on spatial variance.\nOnly corrects features consistent across positions.",
-          "type": "string",
-          "const": "spatial_robustness"
-        }
-      ]
-    },
-    "SpatialRobustnessSerdeConfig": {
-      "description": "Serializable spatial robustness configuration for JSON config files",
-      "type": "object",
-      "properties": {
-        "variance_threshold_db": {
-          "description": "Variance threshold (dB) below which full correction is allowed. Default: 3.0",
-          "type": "number",
-          "format": "double",
-          "default": 3.0
-        },
-        "transition_width_db": {
-          "description": "Transition width (dB) for sigmoid blending. Default: 2.0",
-          "type": "number",
-          "format": "double",
-          "default": 2.0
-        },
-        "min_correction_depth": {
-          "description": "Minimum correction depth (0.0-1.0). Default: 0.1",
-          "type": "number",
-          "format": "double",
-          "default": 0.1
-        },
-        "mask_smoothing_octaves": {
-          "description": "Smoothing width in octaves for the correction depth mask. Default: 1/6 octave.",
-          "type": "number",
-          "format": "double",
-          "default": 0.16666666666666666
-        }
-      }
-    },
-    "DecomposedCorrectionSerdeConfig": {
-      "description": "Serializable decomposed correction configuration for JSON config files",
-      "type": "object",
-      "properties": {
-        "enabled": {
-          "description": "Whether decomposed correction is enabled. Default: true",
-          "type": "boolean",
-          "default": true
-        },
-        "schroeder_freq": {
-          "description": "Schroeder frequency (Hz). Below: modal, above: statistical.\n\nWhen `room_dimensions` is also provided AND an impulse response is\navailable, this value is overridden at run time by a\nmeasurement-driven Schroeder frequency: the optimizer measures\nRT60 from the IR via Schroeder backward integration and plugs it\ninto `f_S ≈ 2000 · √(RT60 / V)` with V from `room_dimensions`. In\nthat case this field is used only as the fallback if the RT60 fit\nfails.",
-          "type": "number",
-          "format": "double",
-          "default": 250.0
-        },
-        "room_dimensions": {
-          "description": "Room dimensions (L × W × H in metres). When present together with\na measured impulse response, enables a measurement-driven\nSchroeder frequency via `RoomDimensions::schroeder_frequency_with_rt60`\nusing the RT60 measured from the IR. When absent, the optimizer\nfalls back to the `schroeder_freq` field above.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/RoomDimensions"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "min_mode_q": {
-          "description": "Minimum Q to qualify as a room mode. Default: 3.0",
-          "type": "number",
-          "format": "double",
-          "default": 3.0
-        },
-        "min_mode_prominence_db": {
-          "description": "Minimum prominence (dB) for mode detection. Default: 3.0",
-          "type": "number",
-          "format": "double",
-          "default": 3.0
-        },
-        "mode_correction_weight": {
-          "description": "Correction weight for detected room modes (0.0-1.0). Default: 1.0",
-          "type": "number",
-          "format": "double",
-          "default": 1.0
-        },
-        "early_reflection_weight": {
-          "description": "Correction weight for early reflections (0.0-1.0). Default: 0.3",
-          "type": "number",
-          "format": "double",
-          "default": 0.3
-        },
-        "steady_state_weight": {
-          "description": "Correction weight for steady-state above Schroeder (0.0-1.0). Default: 0.4",
-          "type": "number",
-          "format": "double",
-          "default": 0.4
-        },
-        "fdw_enabled": {
-          "description": "Enable Frequency-Dependent Windowing when `ssir_wav_path` provides an IR.",
-          "type": "boolean",
-          "default": true
-        },
-        "fdw_cycles": {
-          "description": "FDW window length in cycles before min/max clamping. Default: 8.0",
-          "type": "number",
-          "format": "double",
-          "default": 8.0
-        },
-        "fdw_min_window_ms": {
-          "description": "Minimum FDW window length in milliseconds. Default: 3.0",
-          "type": "number",
-          "format": "double",
-          "default": 3.0
-        },
-        "fdw_max_window_ms": {
-          "description": "Maximum FDW window length in milliseconds. Default: 500.0",
-          "type": "number",
-          "format": "double",
-          "default": 500.0
-        },
-        "fdw_smoothing_octaves": {
-          "description": "FDW smoothing width in octaves. Default: 1/24 octave",
-          "type": "number",
-          "format": "double",
-          "default": 0.041666666666666664
-        }
-      }
-    },
-    "Cea2034CorrectionConfig": {
-      "description": "CEA2034 speaker pre-correction configuration",
-      "type": "object",
-      "properties": {
-        "enabled": {
-          "description": "Enable CEA2034 speaker pre-correction",
-          "type": "boolean",
-          "default": false
-        },
-        "speaker_name": {
-          "description": "Speaker name on spinorama.org (overrides speaker_name from MeasurementSource)",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "version": {
-          "description": "Measurement version on spinorama.org (default: \"asr\")",
-          "type": "string",
-          "default": "asr"
-        },
-        "correction_mode": {
-          "description": "Correction mode: flat (nearfield), score (farfield), auto (distance-based)",
-          "$ref": "#/$defs/Cea2034CorrectionMode",
-          "default": "auto"
-        },
-        "listening_distance_m": {
-          "description": "Manual listening distance override in meters",
-          "type": [
-            "number",
-            "null"
-          ],
-          "format": "double"
-        },
-        "system_latency_ms": {
-          "description": "System round-trip latency in ms (for distance computation from impulse response)",
-          "type": [
-            "number",
-            "null"
-          ],
-          "format": "double"
-        },
-        "nearfield_threshold_m": {
-          "description": "Distance threshold in meters for auto mode switch (default: 2.0m)",
-          "type": "number",
-          "format": "double",
-          "default": 2.0
-        },
-        "min_freq": {
-          "description": "Override minimum correction frequency in Hz (Schroeder frequency)",
-          "type": [
-            "number",
-            "null"
-          ],
-          "format": "double"
-        },
-        "num_filters": {
-          "description": "Number of PEQ filters for speaker correction (default: 5)",
-          "type": "integer",
-          "format": "uint",
-          "minimum": 0,
-          "default": 5
-        },
-        "max_q": {
-          "description": "Maximum Q factor (default: 3.0)",
-          "type": "number",
-          "format": "double",
-          "default": 3.0
-        },
-        "max_db": {
-          "description": "Maximum boost in dB (default: 3.0)",
-          "type": "number",
-          "format": "double",
-          "default": 3.0
-        },
-        "min_db": {
-          "description": "Minimum gain in dB (default: -12.0)",
-          "type": "number",
-          "format": "double",
-          "default": -12.0
-        }
-      }
-    },
-    "Cea2034CorrectionMode": {
-      "description": "Correction mode for CEA2034 speaker pre-correction",
-      "oneOf": [
-        {
-          "description": "Correct Listening Window toward flat (best for nearfield <2m)",
-          "type": "string",
-          "const": "flat"
-        },
-        {
-          "description": "Optimize full Harman speaker preference score using all CEA2034 curves",
-          "type": "string",
-          "const": "score"
-        },
-        {
-          "description": "Auto-select based on estimated listening distance from impulse response",
-          "type": "string",
-          "const": "auto"
-        }
-      ]
-    },
-    "SubOptimizerConfig": {
-      "description": "Subwoofer-specific optimizer overrides",
-      "type": "object",
-      "properties": {
-        "num_filters": {
-          "description": "Number of PEQ filters for subwoofer channels",
-          "type": "integer",
-          "format": "uint",
-          "minimum": 0,
-          "default": 10
-        },
-        "max_db": {
-          "description": "Maximum boost in dB (room gain can be 15+ dB at resonances)",
-          "type": "number",
-          "format": "double",
-          "default": 18.0
-        },
-        "min_db": {
-          "description": "Maximum cut in dB",
-          "type": "number",
-          "format": "double",
-          "default": -18.0
-        },
-        "min_q": {
-          "description": "Minimum Q factor",
-          "type": "number",
-          "format": "double",
-          "default": 0.5
-        },
-        "max_q": {
-          "description": "Maximum Q factor (higher Q for narrow room modes)",
-          "type": "number",
-          "format": "double",
-          "default": 10.0
-        }
-      }
-    },
-    "AutoOptimizerConfig": {
-      "description": "Opt-in automatic room EQ optimizer bound selection.",
-      "type": "object",
-      "properties": {
-        "enabled": {
-          "description": "Enable automatic selection for the fields below.",
-          "type": "boolean",
-          "default": false
-        },
-        "filter_count": {
-          "description": "Automatically choose the maximum PEQ filter count.",
-          "type": "boolean",
-          "default": true
-        },
-        "q_bounds": {
-          "description": "Automatically choose Q bounds.",
-          "type": "boolean",
-          "default": true
-        },
-        "gain_bounds": {
-          "description": "Automatically choose gain bounds and boost envelopes.",
-          "type": "boolean",
-          "default": true
-        },
-        "min_filters": {
-          "description": "Minimum filter count when automatic count selection is enabled.",
-          "type": "integer",
-          "format": "uint",
-          "minimum": 1,
-          "default": 1
-        },
-        "max_filters": {
-          "description": "Maximum filter count when automatic count selection is enabled.",
-          "type": "integer",
-          "format": "uint",
-          "minimum": 1,
-          "default": 12
-        }
-      }
-    },
-    "SmoothnessPenaltyConfigSerde": {
-      "description": "Serializable smoothness-penalty configuration for JSON config files.",
-      "type": "object",
-      "properties": {
-        "tv2_weight": {
-          "description": "Penalty weight in loss units per (dB/decade^2)^exponent.",
-          "type": "number",
-          "format": "double",
-          "default": 0.0
-        },
-        "schroeder_hz": {
-          "description": "Optional Schroeder cutoff in Hz for reduced modal-region penalty.",
-          "type": [
-            "number",
-            "null"
-          ],
-          "format": "double"
-        },
-        "modal_weight_scale": {
-          "description": "Multiplier below `schroeder_hz` (0 = modal region exempt).",
-          "type": "number",
-          "format": "double",
-          "default": 0.1
-        },
-        "exponent": {
-          "description": "L_p exponent. 1.0 = TV^2-like sparse curvature, 2.0 = L2 smoothing.",
-          "type": "number",
-          "format": "double",
-          "default": 1.0
-        }
-      }
-    },
-    "ChannelMatchingConfig": {
-      "description": "Inter-channel consistency correction configuration",
-      "type": "object",
-      "properties": {
-        "enabled": {
-          "description": "Enable inter-channel matching correction",
-          "type": "boolean",
-          "default": true
-        },
-        "threshold_db": {
-          "description": "ICD RMS threshold in dB below which no correction is applied",
-          "type": "number",
-          "format": "double",
-          "default": 0.75
-        },
-        "max_filters": {
-          "description": "Maximum number of additional PEQ filters per channel for matching",
-          "type": "integer",
-          "format": "uint",
-          "minimum": 0,
-          "default": 5
-        }
-      }
-    },
-    "RecordingConfiguration": {
-      "description": "Recording configuration stored with measurements\nContains device settings and signal parameters used during measurement capture",
-      "type": "object",
-      "properties": {
-        "playback_device_name": {
-          "description": "Playback device name",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "playback_device_id": {
-          "description": "Playback device ID",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "playback_sample_rate": {
-          "description": "Playback sample rate in Hz",
-          "type": [
-            "integer",
-            "null"
-          ],
-          "format": "uint32",
-          "minimum": 0
-        },
-        "playback_channels": {
-          "description": "Playback channel count",
-          "type": [
-            "integer",
-            "null"
-          ],
-          "format": "uint",
-          "minimum": 0
-        },
-        "speaker_configuration": {
-          "description": "Speaker configuration (e.g. \"5.1\", \"7.1.4\", \"Stereo\")",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "channel_names": {
-          "description": "Channel names in order (e.g. [\"L\", \"R\", \"C\", \"LFE\", \"SL\", \"SR\"])",
-          "type": [
-            "array",
-            "null"
-          ],
-          "items": {
-            "type": "string"
-          }
-        },
-        "recording_device_name": {
-          "description": "Recording device name",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "recording_device_id": {
-          "description": "Recording device ID",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "recording_sample_rate": {
-          "description": "Recording sample rate in Hz",
-          "type": [
-            "integer",
-            "null"
-          ],
-          "format": "uint32",
-          "minimum": 0
-        },
-        "recording_channels": {
-          "description": "Recording channel count",
-          "type": [
-            "integer",
-            "null"
-          ],
-          "format": "uint",
-          "minimum": 0
-        },
-        "mic_calibration_path": {
-          "description": "Microphone calibration file path (if used)",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "mic_calibration_paths": {
-          "description": "Per-channel microphone calibration file paths",
-          "type": [
-            "array",
-            "null"
-          ],
-          "items": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "recording_directory": {
-          "description": "Recording output directory",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "signal_type": {
-          "description": "Signal type used for measurements (e.g. \"Sweep\", \"Pink Noise\")",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "signal_duration_secs": {
-          "description": "Signal duration in seconds",
-          "type": [
-            "number",
-            "null"
-          ],
-          "format": "float"
-        },
-        "signal_level_db": {
-          "description": "Signal level in dB",
-          "type": [
-            "number",
-            "null"
-          ],
-          "format": "float"
-        },
-        "sweep_start_freq": {
-          "description": "Sweep start frequency in Hz (only applicable when signal_type is \"Sweep\")",
-          "type": [
-            "number",
-            "null"
-          ],
-          "format": "float"
-        },
-        "sweep_end_freq": {
-          "description": "Sweep end frequency in Hz (only applicable when signal_type is \"Sweep\")",
-          "type": [
-            "number",
-            "null"
-          ],
-          "format": "float"
-        },
-        "room_dimensions": {
-          "description": "Physical room dimensions (metric — length/width/height in meters)\ncollected from the user at save time. When present these are\nreused by the optimizer's Schroeder-frequency auto-detection; see\n[`RoomDimensions::schroeder_frequency_with_rt60`].",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/RoomDimensions"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "setup_description": {
-          "description": "Free-form description of the listening setup (treatment,\nseating, notes about speaker placement, etc.). Not consumed by\nthe optimizer — stored purely for session reproducibility.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "channel_speakers": {
-          "description": "Per-channel speaker identity (brand + model) as free-form\nstrings, ideally autocompleted from the spinorama.org catalog.\nKeyed by channel name so it round-trips through reorder/rename.\nNot consumed by the optimizer — metadata only.",
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": {
-            "type": "string"
-          }
-        },
-        "probe_results": {
-          "description": "Tone-burst delay probe results captured during the Recording\nwizard's Probe step. Stored here so the `autoeq::roomeq`\npipeline can pick them up at config-load time without requiring\na live measurement. Mirrors the shape of the engine's\n`ProbeDelayResults` for cross-crate serde compatibility.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ProbeResultsLegacy"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "probe_wav_relative": {
-          "description": "Relative path (within the recording directory) of the raw\nprobe WAV persisted by `probe_channel_delays_with_recording`.\n`None` for sessions that skipped the Probe step.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "bass_octave_duration_s": {
-          "description": "Per-octave bass sweep duration in seconds. Defaults to 3.0; the\nsweep generator scales total duration so that the band below\n100 Hz receives `bass_octave_duration_s` seconds per octave.\nClamped to `[1.0 .. 10.0]` at load time.",
-          "type": [
-            "number",
-            "null"
-          ],
-          "format": "float"
-        },
-        "pre_silence_s": {
-          "description": "Pre-sweep silence window in seconds. Used by the coherence\naverager to estimate the noise-floor. Default 2.0.",
-          "type": [
-            "number",
-            "null"
-          ],
-          "format": "float"
-        },
-        "post_silence_s": {
-          "description": "Post-sweep silence window in seconds. Default\n`schroeder_rt60 + 1.0`; falls back to `2.0` if no RT60 estimate\nis available.",
-          "type": [
-            "number",
-            "null"
-          ],
-          "format": "float"
-        },
-        "sweep_level_db_spl": {
-          "description": "Target sweep level at the listening position in dBSPL. Requires\n[`spl_calibration`](Self::spl_calibration) to be populated.",
-          "type": [
-            "number",
-            "null"
-          ],
-          "format": "float"
-        },
-        "num_sweeps": {
-          "description": "Number of sweeps recorded back-to-back for coherence averaging.\nDefault 4. Clamped to `[1 .. 8]` at load time.",
-          "type": [
-            "integer",
-            "null"
-          ],
-          "format": "uint8",
-          "minimum": 0,
-          "maximum": 255
-        },
-        "coherence_threshold": {
-          "description": "Coherence threshold below which the GD confidence gate declares\nbass phase untrustworthy. Default 0.9. Clamped to `[0.5 .. 0.99]`.",
-          "type": [
-            "number",
-            "null"
-          ],
-          "format": "float"
-        },
-        "bass_probe_freq_hz": {
-          "description": "Centre frequency of the bass tone burst captured by the\nBassAnchor wizard step. Default 20.0 Hz (or\n`1.25 * min_freq`, whichever is higher).",
-          "type": [
-            "number",
-            "null"
-          ],
-          "format": "float"
-        },
-        "bass_probe_cycles": {
-          "description": "Number of cycles in the bass tone burst. Default 5.",
-          "type": [
-            "integer",
-            "null"
-          ],
-          "format": "uint16",
-          "minimum": 0,
-          "maximum": 65535
-        },
-        "mic_phase_calibration_path": {
-          "description": "Path to the microphone phase calibration CSV (4 columns:\n`freq, mag_db, phase_deg, coherence`). Magnitude calibration\nalready lives under [`mic_calibration_path`](Self::mic_calibration_path).",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "mic_phase_calibration_paths": {
-          "description": "Per-channel mic phase calibration files, aligned with\n[`mic_calibration_paths`](Self::mic_calibration_paths).",
-          "type": [
-            "array",
-            "null"
-          ],
-          "items": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "spl_calibration": {
-          "description": "SPL calibration anchor captured from a pre-sweep reference tone.\nRequired on new recordings by the SplCalibration wizard step;\nstored here so that replayed recordings can re-derive\n`sweep_level_db_spl`.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/SplCalibration"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "recording_seed": {
-          "description": "Deterministic seed for the sweep / probe generators. QA sets it;\nthe UI hides it. When `None`, the generators use their internal\nfixed seed constants.",
-          "type": [
-            "integer",
-            "null"
-          ],
-          "format": "uint64",
-          "minimum": 0
-        }
-      }
-    },
-    "ProbeResultsLegacy": {
-      "description": "Serializable mirror of the engine's `ProbeDelayResults`. Kept\nin-crate (rather than depending on `sotf-engine` or `sotf-player`)\nso the autoeq crate remains lean. Fields match the engine type\n1:1 so round-trip through serde is lossless.",
-      "type": "object",
-      "properties": {
-        "channels": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ProbeChannelResultLegacy"
-          }
-        },
-        "sample_rate": {
-          "type": "integer",
-          "format": "uint32",
-          "minimum": 0
-        },
-        "alignment_delays_ms": {
-          "type": "array",
-          "items": {
-            "type": "number",
-            "format": "double"
-          }
-        }
-      },
-      "required": [
-        "channels",
-        "sample_rate",
-        "alignment_delays_ms"
-      ]
-    },
-    "ProbeChannelResultLegacy": {
-      "description": "Per-channel probe result (mirror of `ProbeDelayChannelResult`).",
-      "type": "object",
-      "properties": {
-        "channel_name": {
-          "type": "string"
-        },
-        "channel_index": {
-          "type": "integer",
-          "format": "uint",
-          "minimum": 0
-        },
-        "arrival_ms": {
-          "type": "number",
-          "format": "double"
-        },
-        "gain_db": {
-          "type": "number",
-          "format": "double"
-        },
-        "snr_db": {
-          "type": "number",
-          "format": "double"
-        }
-      },
-      "required": [
-        "channel_name",
-        "channel_index",
-        "arrival_ms",
-        "gain_db",
-        "snr_db"
-      ]
-    },
-    "SplCalibration": {
-      "description": "SPL calibration anchor captured from a pre-sweep reference tone.\n\nMaps the peak sample value observed on the recording ADC during a\nreference tone to a dBSPL reading taken by the user at the listening\nposition with an external meter. Once captured, the sweep playback\nlevel is chosen so the in-band energy at the listening position hits\n[`RecordingConfiguration::sweep_level_db_spl`](RecordingConfiguration::sweep_level_db_spl)\ndeterministically — avoiding the subwoofer driver over-excursion\nthat would otherwise contaminate bass phase with harmonic distortion.",
-      "type": "object",
-      "properties": {
-        "reported_db_spl": {
-          "description": "User-reported dBSPL at the listening position during calibration.",
-          "type": "number",
-          "format": "float"
-        },
-        "reference_freq_hz": {
-          "description": "Frequency of the calibration tone in Hz (default 1000).",
-          "type": "number",
-          "format": "float"
-        },
-        "peak_sample_level": {
-          "description": "Peak sample value observed on the recording ADC during the tone,\nin the range `[0.0 .. 1.0]`.",
-          "type": "number",
-          "format": "float"
-        },
-        "spl_offset_db": {
-          "description": "Offset mapping ADC peak level to dBSPL at the mic:\n`dbspl_at_mic = 20 * log10(peak_sample_value) + spl_offset_db`.",
-          "type": "number",
-          "format": "float"
-        }
-      },
-      "required": [
-        "reported_db_spl",
-        "reference_freq_hz",
-        "peak_sample_level",
-        "spl_offset_db"
       ]
     }
   }

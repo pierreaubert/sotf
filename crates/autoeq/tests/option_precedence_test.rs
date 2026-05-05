@@ -36,6 +36,7 @@ fn single_speaker_config(
         target_curve,
         optimizer,
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     }
 }

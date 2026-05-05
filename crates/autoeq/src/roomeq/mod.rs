@@ -121,6 +121,9 @@ pub use impulse_analysis::{
 // CEA2034 speaker pre-correction (3-pass pipeline)
 pub mod cea2034_correction;
 
+// Cross-talk cancellation / binaural-aware correction
+pub mod ctc;
+
 // First-reflection cancellation (Johnston IIR filter)
 pub mod reflection_cancel;
 pub use reflection_cancel::{

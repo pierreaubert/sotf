@@ -432,6 +432,7 @@ fn build_config(degraded: &Curve, mode: ProcessingMode) -> RoomConfig {
         target_curve: None,
         optimizer: Default::default(),
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     };
 
@@ -661,6 +662,7 @@ fn build_multisub_config(sub_curves: &[Curve], allpass: bool) -> RoomConfig {
         target_curve: None,
         optimizer: Default::default(),
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     };
 
@@ -1332,6 +1334,7 @@ fn build_multichannel_config(
         target_curve: None,
         optimizer: Default::default(),
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     };
 

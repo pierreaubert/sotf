@@ -23,7 +23,8 @@ check-jsonschema --schemafile input_schema.json your_config.json
   "crossovers": { ... },
   "target_curve": "...",
   "optimizer": { ... },
-  "recording_config": { ... }
+  "recording_config": { ... },
+  "ctc": { ... }
 }
 ```
 
@@ -38,6 +39,89 @@ check-jsonschema --schemafile input_schema.json your_config.json
 | `target_curve` | string | No | - | Target frequency response curve |
 | `optimizer` | object | No | defaults | Optimization parameters |
 | `recording_config` | object | No | - | Recording configuration (device settings, signal parameters used during capture) |
+| `ctc` | object | No | - | Cross-talk cancellation / binaural-aware correction using measured two-ear IRs or HRTF/SOFA data |
+
+---
+
+## Cross-talk Cancellation (CTC)
+
+The optional `ctc` block exports a `recommended_xtc_matrix.json` artifact that can be loaded by the XTC plugin with `source_mode: "roomeq_recommended"`.
+
+```json
+{
+  "ctc": {
+    "enabled": true,
+    "matrix_source": "measured",
+    "measurements": {
+      "speakers": ["L", "R"],
+      "mics": ["left_ear", "right_ear"],
+      "head_positions": [
+        { "id": "primary", "x": 0.0, "y": 0.0, "z": 0.0, "yaw_deg": 0.0 }
+      ],
+      "files": [
+        { "head_position": "primary", "speaker": "L", "ir": "irs/L_primary.wav" },
+        { "head_position": "primary", "speaker": "R", "ir": "irs/R_primary.wav" }
+      ]
+    },
+    "window": {
+      "window_type": "ctc_direct",
+      "start_ms": 0.0,
+      "length_ms": 6.0,
+      "fade_ms": 1.0
+    },
+    "regularization": { "beta_db": -30.0, "beta_lf_db": -20.0, "beta_hf_db": -40.0, "max_gain_db": 12.0 },
+    "robustness": "average",
+    "fir_taps": 4096
+  }
+}
+```
+
+Measured CTC input expects one processed, deconvolved, loopback-aligned stereo IR WAV per speaker and head position. Channel 1 is left ear, channel 2 is right ear.
+
+Raw sweep CTC input can deconvolve and align takes inside roomEQ. Use `matrix_source: "raw_sweep"`, provide the emitted sweep as `reference_sweep`, and provide a two-channel ear recording plus a loopback WAV for each speaker and head position:
+
+```json
+{
+  "ctc": {
+    "enabled": true,
+    "matrix_source": "raw_sweep",
+    "reference_sweep": "sweeps/reference.wav",
+    "sweep_duration_s": 15.0,
+    "sweep_start_hz": 20.0,
+    "sweep_end_hz": 24000.0,
+    "measurements": {
+      "speakers": ["L", "R"],
+      "mics": ["left_ear", "right_ear"],
+      "files": [
+        {
+          "head_position": "primary",
+          "speaker": "L",
+          "raw_sweep": "takes/L_primary_ears.wav",
+          "loopback": "takes/L_primary_loopback.wav"
+        },
+        {
+          "head_position": "primary",
+          "speaker": "R",
+          "raw_sweep": "takes/R_primary_ears.wav",
+          "loopback": "takes/R_primary_loopback.wav"
+        }
+      ]
+    },
+    "window": {
+      "window_type": "fdw",
+      "fdw_cycles": 8.0,
+      "fdw_min_ms": 3.0,
+      "fdw_max_ms": 200.0
+    },
+    "regularization": { "beta_db": -30.0, "beta_lf_db": -20.0, "beta_hf_db": -40.0, "max_gain_db": 12.0 },
+    "robustness": "minimax",
+    "minimax_iterations": 8,
+    "fir_taps": 4096
+  }
+}
+```
+
+`matrix_source: "hrtf_database"` uses `ctc.hrtf.hrtf_file` plus per-speaker azimuth/elevation/distance entries instead. The generated artifact includes FIR taps, latency, condition number, mean/worst reconstruction error, crosstalk residual, and electrical sum-gain/headroom metrics.
 
 ---
 

@@ -51,6 +51,7 @@ fn stereo_config() -> RoomConfig {
             ..OptimizerConfig::default()
         },
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     }
 }

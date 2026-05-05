@@ -2,6 +2,19 @@
 
 ## New features
 
+- Added RoomEQ CTC / binaural-aware correction output. RoomEQ can now ingest
+  measured two-ear IRs, raw two-ear sweep captures with loopback alignment, or
+  SOFA/HRTF speaker positions; solve a regularized 2-ear transfer-matrix
+  inverse with average or minimax robustness over head positions; and export a
+  `recommended_xtc_matrix.json` artifact for the XTC plugin.
+- Added CTC input configuration for raw sweeps, reference sweeps, loopback WAVs,
+  FDW complex windowing, harmonic-residue suppression, minimax iterations, and
+  artifact/report metadata including latency, condition number,
+  reconstruction error, residual crosstalk, electrical sum gain, and headroom
+  limiting.
+- CTC direct-windowing now tracks the measured acoustic direct arrival instead
+  of assuming sample-zero alignment, so loopback-aligned raw sweeps with normal
+  speaker flight time are not clipped by short direct windows.
 - Added `autoeq:bo`, a Gaussian-process Bayesian optimisation backend for
   expensive EPA, multi-seat, and future perceptual objectives. It reuses the
   existing AutoEQ bounds/objective pipeline, supports Sobol hot starts,
