@@ -14,6 +14,7 @@ use sotf_audio_player_tui::events::{
     poll_delay_detection, poll_federation_scan, poll_federation_test, poll_headphone_download,
     poll_headphone_eq_optimization, poll_headphone_list_load, poll_probe_capture, poll_recording,
     poll_room_eq_optimization, poll_spinorama_optimization, poll_spinorama_speaker_load,
+    poll_spl_calibration_capture,
 };
 use sotf_audio_player_tui::media_controls::{self, TuiMediaControls};
 use sotf_audio_player_tui::ui;
@@ -448,6 +449,9 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                         app.needs_redraw = true;
                     }
                     if poll_probe_capture(app) {
+                        app.needs_redraw = true;
+                    }
+                    if poll_spl_calibration_capture(app) {
                         app.needs_redraw = true;
                     }
                     // Poll speaker-load result (non-blocking, no-op when not loading)

@@ -4,8 +4,9 @@ use sotf_audio_player::headphone_eq_types::{
     HeadphoneEqBiquad, HeadphoneEqOptimizerConfig, HeadphoneMeasurementSource,
 };
 use sotf_audio_player::recording_types::{
-    ChannelRecording, PlaybackDeviceConfig, ProbeCaptureState, RecordingDeviceConfig,
-    RecordingSignalType, RecordingStep, RoomDimensionUnit,
+    BassAnchorCaptureState, ChannelRecording, PlaybackDeviceConfig, ProbeCaptureState,
+    RecordingDeviceConfig, RecordingSignalType, RecordingStep, RoomDimensionUnit,
+    SplCalibrationCaptureState,
 };
 use sotf_audio_player::room_eq_types::{
     ChannelMeasurement, ChannelOptResult, DelayDetectionState, OptimizationStatus,
@@ -13,6 +14,8 @@ use sotf_audio_player::room_eq_types::{
 };
 use sotf_audio_player::spinorama_eq_types::{SpinoramaBiquad, SpinoramaOptimizerConfig};
 use std::collections::VecDeque;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
@@ -538,6 +541,21 @@ pub struct RecordingTuiState {
     /// 2=mic channel, 3=Run button.
     pub probe_selected_field: usize,
     pub probe_editing_value: bool,
+    // SPL Calibration step (GD-Opt v2 Phase GD-1e.5). Mirrors the GPUI
+    // wizard surface: capture state + cancel flag + TUI-only cursor /
+    // edit state for the form fields.
+    pub spl_calibration_capture: SplCalibrationCaptureState,
+    pub spl_cancel_requested: Arc<AtomicBool>,
+    /// Form-field cursor for the SPL Calibration step:
+    /// 0=ref freq, 1=tone amp, 2=duration, 3=output ch, 4=input ch,
+    /// 5=Run button, 6=Reported dBSPL meter reading.
+    pub spl_selected_field: usize,
+    pub spl_editing_value: bool,
+    // Bass Anchor step (GD-Opt v2 Phase GD-1e). Read-only display in
+    // the TUI to mirror the GPUI wizard, which exposes status +
+    // results without a Run button. Optional step — skip via wizard
+    // navigation when the system can't reproduce sub-bass.
+    pub bass_anchor_capture: BassAnchorCaptureState,
     // Step 4: evaluate
     pub selected_channel_view: usize,
     // Step 4: save
@@ -596,6 +614,11 @@ impl Default for RecordingTuiState {
             probe_capture: ProbeCaptureState::default(),
             probe_selected_field: 0,
             probe_editing_value: false,
+            spl_calibration_capture: SplCalibrationCaptureState::default(),
+            spl_cancel_requested: Arc::new(AtomicBool::new(false)),
+            spl_selected_field: 0,
+            spl_editing_value: false,
+            bass_anchor_capture: BassAnchorCaptureState::default(),
             selected_channel_view: 0,
             save_name: String::new(),
             editing_save_name: false,

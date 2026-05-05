@@ -4,7 +4,7 @@ pub(crate) fn draw_devices_screen(f: &mut Frame, area: Rect, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),     // Help box
+            Constraint::Length(3),      // Help box
             Constraint::Percentage(60), // Output devices
             Constraint::Min(5),         // Cast devices
         ])
@@ -108,10 +108,7 @@ pub(crate) fn draw_devices_screen(f: &mut Frame, area: Rect, app: &App) {
         .iter()
         .map(|device| {
             let line = Line::from(vec![
-                Span::styled(
-                    "   ",
-                    Style::default().fg(app.theme.accent_primary),
-                ),
+                Span::styled("   ", Style::default().fg(app.theme.accent_primary)),
                 Span::styled(
                     device.name.clone(),
                     Style::default().fg(app.theme.fg_primary),
@@ -728,29 +725,11 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
         }
 
         RecordingStep::BassAnchor => {
-            // GD-Opt v2 Phase GD-1e — minimal textual placeholder in
-            // the TUI. The GPUI wizard carries the full step; the TUI
-            // surface will catch up in a follow-up.
-            use ratatui::widgets::Paragraph;
-            let para = Paragraph::new(
-                "Bass Anchor (GD-Opt v2) — optional. Displayed in the GPUI wizard; \
-                 TUI support arrives with the live capture controller.",
-            )
-            .wrap(ratatui::widgets::Wrap { trim: true });
-            f.render_widget(para, content);
+            draw_recording_bass_anchor_step(f, content, app);
         }
 
         RecordingStep::SplCalibration => {
-            // GD-Opt v2 Phase GD-1e.5 — placeholder; the GPUI wizard
-            // carries the full step. TUI support lands alongside the
-            // reading-entry widget redesign.
-            use ratatui::widgets::Paragraph;
-            let para = Paragraph::new(
-                "SPL Calibration (GD-Opt v2) — optional but recommended. Displayed in the \
-                 GPUI wizard; TUI support arrives with the meter-reading input widget.",
-            )
-            .wrap(ratatui::widgets::Wrap { trim: true });
-            f.render_widget(para, content);
+            draw_recording_spl_calibration_step(f, content, app);
         }
 
         RecordingStep::Evaluating => {
@@ -1313,6 +1292,354 @@ fn draw_recording_probe_step(f: &mut Frame, content: Rect, app: &App) {
         " Type value | Enter=confirm | Esc=cancel"
     } else {
         " Tab=next field  ←→=adjust  r=run  Tab=evaluate"
+    };
+    f.render_widget(
+        Paragraph::new(help).style(Style::default().fg(app.theme.fg_secondary)),
+        inner[3],
+    );
+}
+
+/// Bass-anchor step renderer (GD-Opt v2 Phase GD-1e).
+///
+/// Display-only step that mirrors the GPUI wizard surface — config
+/// summary, status banner, per-channel results table when present.
+/// Optional in the wizard flow: skip with Tab if the system can't
+/// reproduce sub-bass.
+fn draw_recording_bass_anchor_step(f: &mut Frame, content: Rect, app: &App) {
+    use sotf_audio_player::recording_types::BassAnchorCaptureStatus;
+
+    let s = &app.recording;
+    let bac = &s.bass_anchor_capture;
+
+    let inner = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(5), // explainer + config summary
+            Constraint::Length(3), // status banner
+            Constraint::Min(5),    // results
+            Constraint::Length(1), // help
+        ])
+        .split(content);
+
+    // --- Explainer + config summary ------------------------------------
+    let burst_ms = 1000.0 * bac.bass_cycles as f32 / bac.bass_freq_hz;
+    let explainer = vec![
+        Line::from(Span::styled(
+            "Plays a low-frequency tone burst per channel so GD-Opt v2 can anchor the",
+            Style::default().fg(app.theme.fg_secondary),
+        )),
+        Line::from(Span::styled(
+            "first bass bin of the sweep-derived phase. Optional — skip with Tab.",
+            Style::default().fg(app.theme.fg_secondary),
+        )),
+        Line::from(Span::styled(
+            format!(
+                " Burst: {:.0} Hz × {} cycles ({:.0} ms / channel) • silence {:.0} ms • mic ch {}",
+                bac.bass_freq_hz,
+                bac.bass_cycles,
+                burst_ms,
+                bac.silence_duration_ms,
+                bac.input_channel
+            ),
+            Style::default().fg(app.theme.fg_primary),
+        )),
+    ];
+    let para = Paragraph::new(explainer)
+        .wrap(Wrap { trim: false })
+        .block(Block::default().borders(Borders::ALL).title("Bass Anchor"));
+    f.render_widget(para, inner[0]);
+
+    // --- Status banner -------------------------------------------------
+    let (status_text, status_color) = match &bac.status {
+        BassAnchorCaptureStatus::Idle => (
+            format!("Idle — optional step ({:.0} ms / channel).", burst_ms),
+            app.theme.fg_secondary,
+        ),
+        BassAnchorCaptureStatus::Running { .. } => (
+            "Capturing bass anchor…".to_string(),
+            app.theme.accent_primary,
+        ),
+        BassAnchorCaptureStatus::Complete => (
+            format!(
+                "Complete — {} channel(s) analysed",
+                bac.results.as_ref().map(|r| r.channels.len()).unwrap_or(0)
+            ),
+            app.theme.accent_success,
+        ),
+        BassAnchorCaptureStatus::Failed(e) => (format!("Failed: {e}"), app.theme.accent_error),
+    };
+    f.render_widget(
+        Paragraph::new(status_text)
+            .style(Style::default().fg(status_color))
+            .block(Block::default().borders(Borders::ALL).title("Status")),
+        inner[1],
+    );
+
+    // --- Results table -------------------------------------------------
+    if let Some(results) = bac.results.as_ref() {
+        let header = Row::new(vec![
+            Cell::from("Channel"),
+            Cell::from("Phase °"),
+            Cell::from("|mag|"),
+            Cell::from("Stab °"),
+            Cell::from("Quality"),
+        ])
+        .style(
+            Style::default()
+                .fg(app.theme.accent_primary)
+                .add_modifier(Modifier::BOLD),
+        );
+
+        let rows: Vec<Row> = results
+            .channels
+            .iter()
+            .map(|ch| {
+                // 20° advisory threshold (§2.8 of gd_opt_v2_plan.md).
+                let reliable = ch.bass_anchor_stability_deg < 20.0;
+                let (quality, color) = if reliable {
+                    ("OK", app.theme.accent_success)
+                } else {
+                    ("⚠ unreliable (>20°)", app.theme.accent_error)
+                };
+                Row::new(vec![
+                    Cell::from(ch.channel_name.clone()),
+                    Cell::from(format!("{:+.1}", ch.bass_anchor_phase_deg)),
+                    Cell::from(format!("{:.3}", ch.bass_anchor_magnitude)),
+                    Cell::from(format!("{:.1}", ch.bass_anchor_stability_deg)),
+                    Cell::from(quality).style(Style::default().fg(color)),
+                ])
+            })
+            .collect();
+        let table = Table::new(
+            rows,
+            [
+                Constraint::Length(14),
+                Constraint::Length(10),
+                Constraint::Length(10),
+                Constraint::Length(10),
+                Constraint::Min(10),
+            ],
+        )
+        .header(header)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(format!("Results (sample rate {} Hz)", results.sample_rate)),
+        );
+        f.render_widget(table, inner[2]);
+    } else {
+        let empty = Paragraph::new(" No bass-anchor results yet — optional step.")
+            .style(Style::default().fg(app.theme.fg_secondary))
+            .block(Block::default().borders(Borders::ALL).title("Results"));
+        f.render_widget(empty, inner[2]);
+    }
+
+    // --- Help ----------------------------------------------------------
+    let help = " Tab/BackTab=switch step  (display-only — optional)";
+    f.render_widget(
+        Paragraph::new(help).style(Style::default().fg(app.theme.fg_secondary)),
+        inner[3],
+    );
+}
+
+/// SPL Calibration step renderer (GD-Opt v2 Phase GD-1e.5).
+///
+/// Mirrors the GPUI wizard surface (`spl_calibration.rs`):
+///   - Form fields for tone parameters (freq / amp / duration / output ch / input ch).
+///   - Run/Cancel pseudo-button row.
+///   - Engine result + meter-reading input + derived `spl_offset_db`.
+fn draw_recording_spl_calibration_step(f: &mut Frame, content: Rect, app: &App) {
+    use sotf_audio_player::recording_types::SplCalibrationCaptureStatus;
+
+    let s = &app.recording;
+    let cal = &s.spl_calibration_capture;
+
+    let inner = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(10), // form (5 fields + run + meter reading)
+            Constraint::Length(3),  // status
+            Constraint::Min(4),     // result / derived offset
+            Constraint::Length(1),  // help
+        ])
+        .split(content);
+
+    let focused = |idx: usize| -> Style {
+        if s.spl_selected_field == idx {
+            Style::default()
+                .fg(app.theme.accent_primary)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(app.theme.fg_primary)
+        }
+    };
+    let is_editing = |idx: usize| s.spl_editing_value && s.spl_selected_field == idx;
+    let field_text = |idx: usize, val: String, placeholder: &str| -> String {
+        if is_editing(idx) {
+            format!("> {}_", s.edit_buffer)
+        } else if val.is_empty() {
+            format!("<{}>", placeholder)
+        } else {
+            val
+        }
+    };
+
+    let running = matches!(cal.status, SplCalibrationCaptureStatus::Running { .. });
+    let run_label = if running {
+        "[ Cancel tone ]"
+    } else {
+        match cal.status {
+            SplCalibrationCaptureStatus::Idle | SplCalibrationCaptureStatus::Failed(_) => {
+                "[ Play calibration tone ]"
+            }
+            SplCalibrationCaptureStatus::Running { .. } => "[ Playing… ]",
+            SplCalibrationCaptureStatus::Complete => "[ Re-play tone ]",
+        }
+    };
+    let run_state = match &cal.status {
+        SplCalibrationCaptureStatus::Idle => "press r or Enter",
+        SplCalibrationCaptureStatus::Running { .. } => "running…",
+        SplCalibrationCaptureStatus::Complete => "done",
+        SplCalibrationCaptureStatus::Failed(_) => "failed",
+    };
+
+    let reported_str = match cal.reported_db_spl {
+        Some(v) => format!("{:.1}", v),
+        None => String::new(),
+    };
+
+    let form_rows = vec![
+        Row::new(vec![
+            Cell::from("Reference freq (Hz)").style(focused(0)),
+            Cell::from(field_text(
+                0,
+                format!("{:.0}", cal.reference_freq_hz),
+                "1000",
+            ))
+            .style(focused(0)),
+        ]),
+        Row::new(vec![
+            Cell::from("Tone amplitude (0-1)").style(focused(1)),
+            Cell::from(field_text(1, format!("{:.3}", cal.tone_amp), "0.250")).style(focused(1)),
+        ]),
+        Row::new(vec![
+            Cell::from("Duration (s)").style(focused(2)),
+            Cell::from(field_text(2, format!("{:.1}", cal.duration_s), "3.0")).style(focused(2)),
+        ]),
+        Row::new(vec![
+            Cell::from("Output channel").style(focused(3)),
+            Cell::from(field_text(3, format!("{}", cal.output_channel), "0")).style(focused(3)),
+        ]),
+        Row::new(vec![
+            Cell::from("Mic input channel").style(focused(4)),
+            Cell::from(field_text(4, format!("{}", cal.input_channel), "0")).style(focused(4)),
+        ]),
+        Row::new(vec![
+            Cell::from(run_label).style(focused(5)),
+            Cell::from(run_state).style(focused(5)),
+        ]),
+        Row::new(vec![
+            Cell::from("Reported dBSPL").style(focused(6)),
+            Cell::from(field_text(6, reported_str, "type meter reading")).style(focused(6)),
+        ]),
+    ];
+    let form = Table::new(
+        form_rows,
+        [Constraint::Length(24), Constraint::Percentage(60)],
+    )
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("SPL Calibration"),
+    );
+    f.render_widget(form, inner[0]);
+
+    // --- Status banner ------------------------------------------------
+    let (status_text, status_color) = match &cal.status {
+        SplCalibrationCaptureStatus::Idle => (
+            format!(
+                "Ready — {:.0} Hz @ amp {:.3} for {:.1}s on ch {}",
+                cal.reference_freq_hz, cal.tone_amp, cal.duration_s, cal.output_channel
+            ),
+            app.theme.fg_secondary,
+        ),
+        SplCalibrationCaptureStatus::Running { .. } => (
+            "Tone playing — read your SPL meter now…".to_string(),
+            app.theme.accent_primary,
+        ),
+        SplCalibrationCaptureStatus::Complete => (
+            match cal.engine_result.as_ref() {
+                Some(r) => format!(
+                    "Tone captured — peak {:.4}, RMS {:.4}. Enter the dBSPL your meter showed.",
+                    r.peak_sample_level, r.rms_sample_level
+                ),
+                None => "Complete".to_string(),
+            },
+            app.theme.accent_success,
+        ),
+        SplCalibrationCaptureStatus::Failed(e) => (format!("Failed: {e}"), app.theme.accent_error),
+    };
+    f.render_widget(
+        Paragraph::new(status_text)
+            .style(Style::default().fg(status_color))
+            .wrap(Wrap { trim: true })
+            .block(Block::default().borders(Borders::ALL).title("Status")),
+        inner[1],
+    );
+
+    // --- Engine result + derived offset -------------------------------
+    let mut detail_lines: Vec<Line> = Vec::new();
+    if let Some(r) = cal.engine_result.as_ref() {
+        detail_lines.push(Line::from(Span::styled(
+            format!(
+                " Sample rate {} Hz  •  peak {:.4}  •  RMS {:.4}  •  ref {:.0} Hz  •  out ch {}",
+                r.sample_rate,
+                r.peak_sample_level,
+                r.rms_sample_level,
+                r.reference_freq_hz,
+                r.output_channel
+            ),
+            Style::default().fg(app.theme.fg_primary),
+        )));
+        match cal.reported_db_spl {
+            Some(v) => detail_lines.push(Line::from(Span::styled(
+                format!(" Reported dBSPL: {:.1}", v),
+                Style::default().fg(app.theme.fg_primary),
+            ))),
+            None => detail_lines.push(Line::from(Span::styled(
+                " Reported dBSPL: (move to the field below and type your meter reading)",
+                Style::default().fg(app.theme.fg_secondary),
+            ))),
+        }
+        if let Some(out) = cal.to_spl_calibration() {
+            detail_lines.push(Line::from(Span::styled(
+                format!(
+                    " → spl_offset_db = {:.2}  (will be stored on Save)",
+                    out.spl_offset_db
+                ),
+                Style::default().fg(app.theme.accent_success),
+            )));
+        }
+    } else {
+        detail_lines.push(Line::from(Span::styled(
+            " No tone captured yet — press r (or Enter on the Run row) to play the reference tone.",
+            Style::default().fg(app.theme.fg_secondary),
+        )));
+    }
+    f.render_widget(
+        Paragraph::new(detail_lines)
+            .wrap(Wrap { trim: false })
+            .block(Block::default().borders(Borders::ALL).title("Result")),
+        inner[2],
+    );
+
+    // --- Help ---------------------------------------------------------
+    let help = if s.spl_editing_value {
+        " Type value | Enter=confirm | Esc=cancel"
+    } else if running {
+        " r/Enter=cancel  Tab/BackTab=field  ←→=adjust"
+    } else {
+        " Tab=next field  ←→=adjust  Enter=edit/run  r=run  Tab=Capture"
     };
     f.render_widget(
         Paragraph::new(help).style(Style::default().fg(app.theme.fg_secondary)),
