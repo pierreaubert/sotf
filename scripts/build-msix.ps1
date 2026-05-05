@@ -318,8 +318,10 @@ New-Item -ItemType Directory -Force -Path "$Staging\assets" | Out-Null
 $src = Join-Path $BuildDir 'sotf-desktop.exe'
 Copy-Item $src (Join-Path $Staging 'sotf-desktop.exe')
 Write-Info "Added sotf-desktop.exe"
-$nlopt = Join-Path $BuildDir 'nlopt.dll'
-if (Test-Path $nlopt) { Copy-Item $nlopt (Join-Path $Staging 'nlopt.dll'); Write-Info "Added nlopt.dll" }
+# No native runtime DLLs are bundled. cobyla is in pure Rust now (nlopt.dll
+# removed) and the MSVC C/C++ runtime is satisfied via the
+# Microsoft.VCLibs.140.00.UWPDesktop framework dependency declared in
+# AppxManifest.xml.
 
 # Copy app assets (fonts, icons, headphone-targets -- not demo-audio)
 $assetsSrc = Join-Path $ProjectRoot 'crates\app-gpui\assets'
