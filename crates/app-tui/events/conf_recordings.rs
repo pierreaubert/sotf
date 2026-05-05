@@ -393,17 +393,15 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
         }
 
         RecordingStep::BassAnchor => {
-            // GD-Opt v2 Phase GD-1e — display-only in the TUI for now.
-            // Navigation keys fall through to the wizard-level handler
-            // via the outer loop; no step-specific actions yet.
+            // GD-Opt v2 Phase GD-1e — display-only in the TUI to
+            // mirror the GPUI wizard, which renders state but doesn't
+            // expose a Run button. Step-tab navigation comes from the
+            // outer wizard handler.
             None
         }
 
         RecordingStep::SplCalibration => {
-            // GD-Opt v2 Phase GD-1e.5 — display-only in the TUI for
-            // now. The GPUI wizard carries the full step; the TUI
-            // surface will catch up in a follow-up once the meter-
-            // reading input widget is designed.
+            handle_spl_calibration_step_keys(app, key);
             None
         }
 
@@ -670,6 +668,289 @@ fn now_ms() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+}
+
+// ---------------------------------------------------------------------------
+// SPL Calibration step (GD-Opt v2 Phase GD-1e.5)
+// ---------------------------------------------------------------------------
+//
+// Form-field cursor semantics — kept in lockstep with
+// `draw_recording_spl_calibration_step` in `ui/draw_configure.rs`:
+//
+//   0  Reference frequency (Hz)
+//   1  Tone amplitude (0..1)
+//   2  Duration (s)
+//   3  Output channel
+//   4  Mic input channel
+//   5  Run / Cancel pseudo-button
+//   6  Reported dBSPL meter reading
+//
+// Mirrors the GPUI surface: pressing `r` (or Enter on the Run row)
+// kicks off the capture; while running, the same key cancels via the
+// shared `spl_cancel_requested` flag the engine polls every frame.
+
+const SPL_FIELD_REF_FREQ: usize = 0;
+const SPL_FIELD_TONE_AMP: usize = 1;
+const SPL_FIELD_DURATION: usize = 2;
+const SPL_FIELD_OUT_CH: usize = 3;
+const SPL_FIELD_IN_CH: usize = 4;
+const SPL_FIELD_RUN: usize = 5;
+const SPL_FIELD_REPORTED: usize = 6;
+const SPL_FIELD_COUNT: usize = 7;
+
+fn handle_spl_calibration_step_keys(app: &mut App, key: KeyEvent) {
+    use sotf_audio_player::recording_types::SplCalibrationCaptureStatus;
+
+    if app.recording.spl_editing_value {
+        match key.code {
+            KeyCode::Esc => {
+                app.recording.spl_editing_value = false;
+                app.recording.edit_buffer.clear();
+            }
+            KeyCode::Enter => {
+                let parsed = app.recording.edit_buffer.trim().parse::<f32>();
+                let cal = &mut app.recording.spl_calibration_capture;
+                match app.recording.spl_selected_field {
+                    SPL_FIELD_REF_FREQ => {
+                        if let Ok(v) = parsed
+                            && v.is_finite()
+                            && v > 0.0
+                        {
+                            cal.reference_freq_hz = v.clamp(20.0, 20_000.0);
+                        }
+                    }
+                    SPL_FIELD_TONE_AMP => {
+                        if let Ok(v) = parsed
+                            && v.is_finite()
+                        {
+                            cal.tone_amp = v.clamp(0.001, 1.0);
+                        }
+                    }
+                    SPL_FIELD_DURATION => {
+                        if let Ok(v) = parsed
+                            && v.is_finite()
+                        {
+                            cal.duration_s = v.clamp(0.5, 30.0);
+                        }
+                    }
+                    SPL_FIELD_OUT_CH => {
+                        if let Ok(v) = parsed
+                            && v.is_finite()
+                            && v >= 0.0
+                        {
+                            cal.output_channel = v as u16;
+                        }
+                    }
+                    SPL_FIELD_IN_CH => {
+                        if let Ok(v) = parsed
+                            && v.is_finite()
+                            && v >= 0.0
+                        {
+                            cal.input_channel = v as u16;
+                        }
+                    }
+                    SPL_FIELD_REPORTED => {
+                        if let Ok(v) = parsed
+                            && v.is_finite()
+                        {
+                            cal.reported_db_spl = Some(v);
+                        }
+                    }
+                    _ => {}
+                }
+                app.recording.spl_editing_value = false;
+                app.recording.edit_buffer.clear();
+            }
+            KeyCode::Char(c) if c.is_ascii_digit() || c == '.' || c == '-' => {
+                app.recording.edit_buffer.push(c);
+            }
+            KeyCode::Backspace => {
+                app.recording.edit_buffer.pop();
+            }
+            _ => {}
+        }
+        return;
+    }
+
+    let running = matches!(
+        app.recording.spl_calibration_capture.status,
+        SplCalibrationCaptureStatus::Running { .. }
+    );
+
+    match key.code {
+        KeyCode::Tab | KeyCode::Down => {
+            app.recording.spl_selected_field =
+                (app.recording.spl_selected_field + 1) % SPL_FIELD_COUNT;
+        }
+        KeyCode::BackTab | KeyCode::Up => {
+            app.recording.spl_selected_field =
+                (app.recording.spl_selected_field + SPL_FIELD_COUNT - 1) % SPL_FIELD_COUNT;
+        }
+        KeyCode::Char('+') | KeyCode::Right => {
+            adjust_spl_field(app, 1.0);
+        }
+        KeyCode::Char('-') | KeyCode::Left => {
+            adjust_spl_field(app, -1.0);
+        }
+        KeyCode::Enter => {
+            if app.recording.spl_selected_field == SPL_FIELD_RUN {
+                if running {
+                    request_spl_cancel(app);
+                } else {
+                    spawn_spl_calibration_capture(app);
+                }
+            } else {
+                app.recording.spl_editing_value = true;
+                app.recording.edit_buffer.clear();
+            }
+        }
+        KeyCode::Char('r') => {
+            if running {
+                request_spl_cancel(app);
+            } else {
+                spawn_spl_calibration_capture(app);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Nudge the currently selected SPL form-field by `step` (1 == "one
+/// natural unit"). Numeric ranges match the engine's input validation.
+fn adjust_spl_field(app: &mut App, step: f32) {
+    let cal = &mut app.recording.spl_calibration_capture;
+    match app.recording.spl_selected_field {
+        SPL_FIELD_REF_FREQ => {
+            cal.reference_freq_hz = (cal.reference_freq_hz + 100.0 * step).clamp(20.0, 20_000.0);
+        }
+        SPL_FIELD_TONE_AMP => {
+            cal.tone_amp = (cal.tone_amp + 0.05 * step).clamp(0.001, 1.0);
+        }
+        SPL_FIELD_DURATION => {
+            cal.duration_s = (cal.duration_s + 0.5 * step).clamp(0.5, 30.0);
+        }
+        SPL_FIELD_OUT_CH => {
+            if step > 0.0 {
+                cal.output_channel = cal.output_channel.saturating_add(1);
+            } else {
+                cal.output_channel = cal.output_channel.saturating_sub(1);
+            }
+        }
+        SPL_FIELD_IN_CH => {
+            if step > 0.0 {
+                cal.input_channel = cal.input_channel.saturating_add(1);
+            } else {
+                cal.input_channel = cal.input_channel.saturating_sub(1);
+            }
+        }
+        SPL_FIELD_REPORTED => {
+            let cur = cal.reported_db_spl.unwrap_or(80.0);
+            cal.reported_db_spl = Some(cur + step);
+        }
+        _ => {}
+    }
+}
+
+fn request_spl_cancel(app: &mut App) {
+    log::info!("Cancel requested for SPL calibration capture");
+    app.recording
+        .spl_cancel_requested
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Background slot for the SPL calibration capture.
+#[allow(clippy::type_complexity)]
+static SPL_CAPTURE_RESULT: std::sync::OnceLock<
+    Arc<Mutex<Option<Result<sotf_audio::signal_recorder::SplCalibrationResult, String>>>>,
+> = std::sync::OnceLock::new();
+
+/// Spawn the SPL calibration capture on a background thread (mirrors
+/// `spawn_probe_capture`).
+fn spawn_spl_calibration_capture(app: &mut App) {
+    use sotf_audio_player::recording_types::SplCalibrationCaptureStatus;
+
+    let cal = &mut app.recording.spl_calibration_capture;
+    let reference_freq_hz = cal.reference_freq_hz;
+    let tone_amp = cal.tone_amp;
+    let duration_s = cal.duration_s;
+    let sample_rate = cal.sample_rate;
+    let output_channel = cal.output_channel;
+    let input_channel = cal.input_channel;
+    let output_device = Some(app.recording.playback_config.device_name.clone());
+    let input_device = Some(app.recording.recording_config.device_name.clone());
+
+    // Reset the cancel flag and capture status so the new run starts
+    // clean. `engine_result` is cleared on every fresh capture.
+    app.recording
+        .spl_cancel_requested
+        .store(false, std::sync::atomic::Ordering::Relaxed);
+    let cancel_flag = app.recording.spl_cancel_requested.clone();
+
+    let cal = &mut app.recording.spl_calibration_capture;
+    cal.status = SplCalibrationCaptureStatus::Running {
+        started_at_ms: now_ms(),
+    };
+    cal.engine_result = None;
+
+    let slot = SPL_CAPTURE_RESULT
+        .get_or_init(|| Arc::new(Mutex::new(None)))
+        .clone();
+    if let Ok(mut g) = slot.lock() {
+        *g = None;
+    }
+
+    std::thread::spawn(move || {
+        let result = sotf_audio::signal_recorder::run_spl_calibration(
+            output_channel,
+            sample_rate,
+            reference_freq_hz,
+            tone_amp,
+            duration_s,
+            output_device.as_deref(),
+            input_device.as_deref(),
+            input_channel,
+            Some(cancel_flag),
+        );
+        if let Ok(mut g) = slot.lock() {
+            *g = Some(result);
+        }
+    });
+}
+
+/// Drain the SPL calibration capture slot. Returns `true` if state
+/// changed and the UI should redraw.
+pub fn poll_spl_calibration_capture(app: &mut App) -> bool {
+    use sotf_audio_player::recording_types::SplCalibrationCaptureStatus;
+
+    if !matches!(
+        app.recording.spl_calibration_capture.status,
+        SplCalibrationCaptureStatus::Running { .. }
+    ) {
+        return false;
+    }
+    let slot = SPL_CAPTURE_RESULT
+        .get_or_init(|| Arc::new(Mutex::new(None)))
+        .clone();
+    let Ok(mut guard) = slot.lock() else {
+        return false;
+    };
+    let Some(outcome) = guard.take() else {
+        return false;
+    };
+    drop(guard);
+    let cal = &mut app.recording.spl_calibration_capture;
+    match outcome {
+        Ok(res) => cal.apply_engine_result(res),
+        Err(e) if e == sotf_audio::signal_recorder::CANCELLED_ERR => {
+            log::info!("SPL calibration capture cancelled by user");
+            cal.status = SplCalibrationCaptureStatus::Idle;
+        }
+        Err(e) => {
+            log::warn!("SPL calibration capture failed: {e}");
+            cal.status = SplCalibrationCaptureStatus::Failed(e);
+        }
+    }
+    true
 }
 
 /// Key handler for the Save step of the Recording wizard.

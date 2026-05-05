@@ -43,7 +43,7 @@ pub(crate) fn draw_plugin_list(f: &mut Frame, area: Rect, app: &App) {
         let node_count = app.plugin_graph.nodes.len();
         let conn_count = app.plugin_graph.connections.len();
         let msg = format!(
-            "Graph mode: {} plugins, {} connections.\nNon-linear topology (parallel branches).\nUse the GPUI app to edit nodes and connections visually.",
+            "Graph mode: {} plugins, {} connections.\nNon-linear topology (parallel branches).\nUse the desktop app (sotf-desktop) to edit nodes and connections visually.",
             node_count, conn_count
         );
         let para = Paragraph::new(msg)
