@@ -67,6 +67,7 @@ mod tests {
             epa_config: None,
             detected_problems: Vec::new(),
             null_suppression: None,
+            smoothness_penalty: None,
         };
 
         let opt_params = vec![500.0, 2.0, -2.0]; // Example PEQ params

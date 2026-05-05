@@ -2,7 +2,9 @@ use crate::Curve;
 use crate::error::{AutoeqError, Result};
 use crate::response;
 use crate::roomeq::eq;
-use crate::roomeq::types::{OptimizerConfig, SchroederSplitConfig, TargetCurveConfig, TargetShape};
+use crate::roomeq::types::{
+    LowFreqFilterConfig, OptimizerConfig, SchroederSplitConfig, TargetCurveConfig, TargetShape,
+};
 use log::{debug, info};
 use math_audio_iir_fir::Biquad;
 
@@ -99,22 +101,7 @@ pub(in crate::roomeq) fn optimize_with_schroeder_split(
         .as_ref()
         .is_some_and(|tr| tr.shape != TargetShape::Flat);
 
-    let low_max_db = if let Some(configured_max) = low_config.max_db {
-        // Explicit max_db override for below-Schroeder (handles large room modes)
-        configured_max
-    } else if low_config.allow_boost {
-        optimizer.max_db
-    } else if has_non_flat_target {
-        (optimizer.max_db / 2.0).min(3.0) // limited boost for tilt tracking
-    } else {
-        0.0
-    };
-    let low_min_db = if low_config.max_db.is_some() {
-        // When max_db is explicitly set, allow symmetric range
-        -low_max_db.abs()
-    } else {
-        optimizer.min_db
-    };
+    let (low_min_db, low_max_db) = low_freq_gain_bounds(optimizer, low_config, has_non_flat_target);
     let low_optimizer = OptimizerConfig {
         num_filters: low_filters,
         min_freq: optimizer.min_freq,
@@ -171,6 +158,30 @@ pub(in crate::roomeq) fn optimize_with_schroeder_split(
     Ok((low_eq_filters, high_eq_filters))
 }
 
+fn low_freq_gain_bounds(
+    optimizer: &OptimizerConfig,
+    low_config: &LowFreqFilterConfig,
+    has_non_flat_target: bool,
+) -> (f64, f64) {
+    if let Some(configured_max) = low_config.max_db {
+        let configured_abs = configured_max.abs();
+        let max_db = if low_config.allow_boost {
+            configured_abs
+        } else {
+            0.0
+        };
+        return (-configured_abs, max_db);
+    }
+
+    if low_config.allow_boost {
+        (optimizer.min_db, optimizer.max_db)
+    } else if has_non_flat_target {
+        (optimizer.min_db, (optimizer.max_db / 2.0).min(3.0))
+    } else {
+        (optimizer.min_db, 0.0)
+    }
+}
+
 /// Clamp Q values of filters to [min_q, max_q], recomputing biquad coefficients.
 pub(in crate::roomeq) fn clamp_filter_q(
     filters: Vec<Biquad>,
@@ -192,4 +203,43 @@ pub(in crate::roomeq) fn clamp_filter_q(
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn explicit_low_freq_max_db_respects_cuts_only_setting() {
+        let optimizer = OptimizerConfig {
+            min_db: -12.0,
+            max_db: 4.0,
+            ..Default::default()
+        };
+        let low_config = LowFreqFilterConfig {
+            allow_boost: false,
+            max_db: Some(14.0),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            low_freq_gain_bounds(&optimizer, &low_config, false),
+            (-14.0, 0.0)
+        );
+    }
+
+    #[test]
+    fn explicit_low_freq_max_db_allows_symmetric_range_when_boost_enabled() {
+        let optimizer = OptimizerConfig::default();
+        let low_config = LowFreqFilterConfig {
+            allow_boost: true,
+            max_db: Some(14.0),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            low_freq_gain_bounds(&optimizer, &low_config, false),
+            (-14.0, 14.0)
+        );
+    }
 }

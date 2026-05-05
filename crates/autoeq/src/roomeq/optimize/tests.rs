@@ -905,6 +905,132 @@ fn gd_opt_disables_allpass_without_bootstrap_realisations() {
     assert!(summary.per_channel_ap_count.iter().all(|&n| n == 0));
 }
 
+#[test]
+fn gd_opt_uses_multimeasurement_realisations_for_adaptive_allpass() {
+    let coherence = Some(array![0.95, 0.95, 0.95, 0.95, 0.95, 0.95]);
+    let curve_l = gd_test_curve(0.0, coherence.clone());
+    let curve_r = gd_test_curve(2.0, coherence.clone());
+
+    let mut channel_results = HashMap::from([
+        ("L".to_string(), test_channel_result("L", &curve_l)),
+        ("R".to_string(), test_channel_result("R", &curve_r)),
+    ]);
+    let mut channel_chains = HashMap::from([
+        ("L".to_string(), test_chain("L", &curve_l)),
+        ("R".to_string(), test_chain("R", &curve_r)),
+    ]);
+
+    let mut config = test_room_config_with_gd(super::super::types::GroupDelayOptimizationConfig {
+        enabled: true,
+        min_improvement_db: -100.0,
+        max_iter: 300,
+        popsize: 10,
+        adaptive_allpass: true,
+        ap_per_channel: 1,
+        optimize_polarity: false,
+        ..Default::default()
+    });
+    config.speakers.insert(
+        "L".to_string(),
+        SpeakerConfig::Single(MeasurementSource::InMemoryMultiple(vec![
+            gd_test_curve(0.0, coherence.clone()),
+            gd_test_curve(0.1, coherence.clone()),
+        ])),
+    );
+    config.speakers.insert(
+        "R".to_string(),
+        SpeakerConfig::Single(MeasurementSource::InMemoryMultiple(vec![
+            gd_test_curve(2.0, coherence.clone()),
+            gd_test_curve(2.1, coherence),
+        ])),
+    );
+
+    let summary = try_run_gd_opt(&config, &mut channel_results, &mut channel_chains, 48000.0)
+        .expect("GD summary");
+
+    assert_ne!(
+        summary.advisory,
+        "allpass_disabled_no_bootstrap_realisations"
+    );
+}
+
+#[test]
+fn phase_linear_gd_target_is_encoded_into_fir_not_delay_plugin() {
+    let coherence = Some(array![0.95, 0.95, 0.95, 0.95, 0.95, 0.95]);
+    let curve_l = gd_test_curve(0.0, coherence.clone());
+    let curve_r = gd_test_curve(4.0, coherence);
+    let mut result_l = test_channel_result("L", &curve_l);
+    let mut result_r = test_channel_result("R", &curve_r);
+    result_l.fir_coeffs = Some({
+        let mut coeffs = vec![0.0; 512];
+        coeffs[0] = 1.0;
+        coeffs
+    });
+    result_r.fir_coeffs = Some({
+        let mut coeffs = vec![0.0; 512];
+        coeffs[0] = 1.0;
+        coeffs
+    });
+
+    let mut channel_results =
+        HashMap::from([("L".to_string(), result_l), ("R".to_string(), result_r)]);
+    let mut chain_l = test_chain("L", &curve_l);
+    chain_l
+        .plugins
+        .push(output::create_convolution_plugin("L_fir.wav"));
+    let mut chain_r = test_chain("R", &curve_r);
+    chain_r
+        .plugins
+        .push(output::create_convolution_plugin("R_fir.wav"));
+    let mut channel_chains =
+        HashMap::from([("L".to_string(), chain_l), ("R".to_string(), chain_r)]);
+
+    let mut config = test_room_config_with_gd(super::super::types::GroupDelayOptimizationConfig {
+        enabled: true,
+        min_improvement_db: -100.0,
+        max_delay_ms: 8.0,
+        max_iter: 400,
+        popsize: 10,
+        adaptive_allpass: false,
+        ap_per_channel: 0,
+        optimize_polarity: false,
+        ..Default::default()
+    });
+    config.optimizer.processing_mode = ProcessingMode::PhaseLinear;
+    config.optimizer.fir = Some(super::super::types::FirConfig {
+        taps: 512,
+        phase: "linear".to_string(),
+        correct_excess_phase: false,
+        phase_smoothing: 0.167,
+        pre_ringing: None,
+    });
+    let tmp = tempfile::tempdir().expect("tempdir");
+
+    let summary = try_run_phase_linear_fir_gd(
+        &config,
+        &mut channel_results,
+        &mut channel_chains,
+        48000.0,
+        Some(tmp.path()),
+    )
+    .expect("GD summary");
+
+    assert!(summary.applied);
+    assert!(
+        channel_chains.values().all(|chain| chain
+            .plugins
+            .iter()
+            .all(|plugin| plugin.plugin_type != "delay")),
+        "PhaseLinear GD must be encoded in FIR coefficients, not delay plugins"
+    );
+
+    let shifted = channel_results
+        .values()
+        .filter_map(|result| result.fir_coeffs.as_ref())
+        .any(|coeffs| coeffs.iter().position(|v| v.abs() > 0.5).unwrap_or(0) > 0);
+    assert!(shifted, "at least one FIR impulse should be sample-shifted");
+}
+
 fn gd_test_curve(delay_ms: f64, coherence: Option<ndarray::Array1<f64>>) -> Curve {
     let freq = array![20.0, 40.0, 80.0, 120.0, 160.0, 200.0];
     let phase = freq.mapv(|f| -360.0 * f * delay_ms * 1e-3);

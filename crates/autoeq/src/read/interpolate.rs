@@ -84,11 +84,21 @@ pub fn interpolate_log_space(freq_out: &Array1<f64>, curve: &Curve) -> Curve {
         .phase
         .as_ref()
         .map(|p| interpolate_log_space_vals(&log_freq_out, &log_freq_in, p));
+    let coherence_out = curve
+        .coherence
+        .as_ref()
+        .map(|c| interpolate_log_space_vals(&log_freq_out, &log_freq_in, c));
+    let noise_floor_db_out = curve
+        .noise_floor_db
+        .as_ref()
+        .map(|n| interpolate_log_space_vals(&log_freq_out, &log_freq_in, n));
 
     Curve {
         freq: freq_out.clone(),
         spl: spl_out,
         phase: phase_out,
+        coherence: coherence_out,
+        noise_floor_db: noise_floor_db_out,
         ..Default::default()
     }
 }

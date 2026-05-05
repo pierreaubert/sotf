@@ -220,6 +220,81 @@ def _fmt_ms(value: object) -> str:
     return f"{value:.3f} ms" if isinstance(value, (int, float)) else "-"
 
 
+def _eq_filter_counts(data: dict) -> list[int]:
+    channels = data.get("channels") or {}
+    if isinstance(channels, dict):
+        channel_values = channels.values()
+    elif isinstance(channels, list):
+        channel_values = channels
+    else:
+        return []
+
+    counts: list[int] = []
+    for channel in channel_values:
+        if not isinstance(channel, dict):
+            continue
+        total = 0
+        for plugin in channel.get("plugins") or []:
+            if not isinstance(plugin, dict) or plugin.get("plugin_type") != "eq":
+                continue
+            params = plugin.get("parameters") or {}
+            filters = params.get("filters") or plugin.get("filters") or []
+            if isinstance(filters, list):
+                total += len(filters)
+        counts.append(total)
+    return counts
+
+
+def _eq_filter_summary_html(data: dict) -> str:
+    counts = _eq_filter_counts(data)
+    if not counts:
+        return '<td style="color:#999">-</td>'
+    if min(counts) == max(counts):
+        return f"<td>{counts[0]}</td>"
+    avg = sum(counts) / len(counts)
+    return f"<td>{min(counts)}-{max(counts)} (avg {avg:.1f})</td>"
+
+
+def _gd_summary_cells_html(metadata: dict) -> str:
+    """Render comparison-table cells for metadata.group_delay."""
+    gd = metadata.get("group_delay") or {}
+    if not gd:
+        return (
+            '<td style="color:#999">-</td>'
+            '<td style="color:#999">-</td>'
+            '<td style="color:#999">-</td>'
+            '<td style="color:#999">-</td>'
+            '<td style="color:#999">-</td>'
+        )
+
+    advisory = str(gd.get("advisory", "-"))
+    advisory_color = "#2ecc71" if advisory == "success" else "#b9770e"
+    applied = gd.get("applied")
+    applied_str = "yes" if applied is True else "no" if applied is False else "-"
+    applied_color = "#2ecc71" if applied is True else "#999"
+    pre = gd.get("sum_gd_pre_rms_ms")
+    post = gd.get("sum_gd_post_rms_ms")
+    rms_str = f"{_fmt_ms(pre)} → {_fmt_ms(post)}"
+    improvement = gd.get("improvement_db")
+    improvement_str = f"{improvement:+.2f} dB" if isinstance(improvement, (int, float)) else "-"
+    improvement_color = (
+        "#2ecc71" if isinstance(improvement, (int, float)) and improvement >= 0.0 else "#e74c3c"
+    )
+    ap_counts = gd.get("per_channel_ap_count") or []
+    ap_total = sum(v for v in ap_counts if isinstance(v, int))
+    mean_coh = gd.get("mean_coherence")
+    coh_str = f", coh={mean_coh:.2f}" if isinstance(mean_coh, (int, float)) else ""
+    ap_str = f"{ap_total}{coh_str}"
+
+    return (
+        f'<td style="color:{advisory_color};font-weight:600">{escape(advisory)}</td>'
+        f'<td style="color:{applied_color};font-weight:600">{applied_str}</td>'
+        f"<td>{rms_str}</td>"
+        f'<td style="color:{improvement_color};font-weight:600">{improvement_str}</td>'
+        f"<td>{ap_str}</td>"
+    )
+
+
 def _bass_management_summary_html(report: dict) -> str:
     if not report:
         return ""
@@ -945,6 +1020,10 @@ def create_comparison_html_report(
     # --- Summary table ---
     html_parts.append('<div class="plot-container">\n<h2>Summary</h2>\n')
     html_parts.append('<table class="summary-table">\n<thead><tr>')
+    has_gd_summary = any(
+        (data.get("metadata") or {}).get("group_delay") for _, data in mode_datasets
+    )
+    has_auto_summary = any("_auto" in mode_name for mode_name, _ in mode_datasets)
     html_parts.append(
         "<th>Mode</th><th>Loss</th>"
         '<th title="Flat loss before EQ (always computed via compute_flat_loss, regardless of which objective was minimized)">Pre flat-loss</th>'
@@ -952,6 +1031,18 @@ def create_comparison_html_report(
         "<th>Improvement</th>"
         "<th>EPA Pref (pre)</th><th>EPA Pref (post)</th><th>EPA Δ</th>"
     )
+    if has_auto_summary:
+        html_parts.append(
+            '<th title="Per-channel count of emitted EQ filters; ranges show min-max across channels">EQ filters</th>'
+        )
+    if has_gd_summary:
+        html_parts.append(
+            '<th title="Group-delay optimization advisory">GD advisory</th>'
+            '<th title="Whether GD controls were inserted into exported DSP">GD applied</th>'
+            '<th title="Summed in-band GD RMS before and after GD optimization">GD RMS</th>'
+            '<th title="GD RMS improvement, 20*log10(pre/post)">GD Δ</th>'
+            '<th title="Total emitted all-pass filters; coh is mean in-band coherence">GD AP/coh</th>'
+        )
     html_parts.append("</tr></thead>\n<tbody>\n")
 
     mode_scores: list[tuple[str, float, float]] = []
@@ -984,7 +1075,9 @@ def create_comparison_html_report(
             f"{loss_cell}"
             f"<td>{pre:.4f}</td><td>{post:.4f}</td>"
             f'<td class="improvement">{improv:.1f}%</td>'
-            f"{epa_cells}</tr>\n"
+            f"{epa_cells}"
+            f"{_eq_filter_summary_html(data) if has_auto_summary else ''}"
+            f"{_gd_summary_cells_html(meta) if has_gd_summary else ''}</tr>\n"
         )
     html_parts.append("</tbody></table>\n")
 
@@ -1005,6 +1098,23 @@ def create_comparison_html_report(
             "<em>“how flat is the response?”</em> for all modes. For "
             "<em>perceptual</em> outcomes across loss types, the "
             "<strong>EPA Pref</strong> columns are the right place to look."
+            "</p>\n"
+        )
+    if has_gd_summary:
+        html_parts.append(
+            '<p style="color:#555;font-size:0.9em;margin-top:10px;">'
+            "GD columns come from <code>metadata.group_delay</code>. "
+            "A non-success advisory is expected for recordings that do not "
+            "carry coherence or independent sweep realisations; it means the "
+            "production safety gates downgraded or skipped the requested GD path."
+            "</p>\n"
+        )
+    if has_auto_summary:
+        html_parts.append(
+            '<p style="color:#555;font-size:0.9em;margin-top:10px;">'
+            "Auto columns show emitted EQ filter counts from the output JSON. "
+            "Resolved automatic Q and gain bounds are logged by roomeq during the run "
+            "but are not currently persisted in comparison JSON."
             "</p>\n"
         )
 

@@ -18,6 +18,8 @@ Foundational papers, standards, and patents behind the algorithms in `autoeq`. C
 | `roomeq/spatial_robustness.rs`, `roomeq/mixed_phase.rs` | [Brännmark & Sternad — robust room correction + EP2104374B1](#brännmark--sternad--robust-room-correction) |
 | `roomeq/impulse_analysis.rs` | [Laborie, Bruno & Montoya — decomposed correction](#laborie-bruno--montoya--decomposed-room-correction) |
 | `roomeq/reflection_cancel.rs` | [Johnston — first-reflection cancellation](#johnston--first-reflection-cancellation) |
+| `roomeq/group_processing.rs`, `roomeq/multiseat.rs`, `roomeq/multisub.rs`, `roomeq/types/config.rs`, `roomeq/workflows/bass_management.rs` | [Multi-Sub Optimizer (MSO)](#multi-sub-optimizer-mso) |
+| `roomeq/multiseat.rs`, `roomeq/types/config.rs` | [Acoustic multi-channel equalization robustness](#acoustic-multi-channel-equalization-robustness) |
 | `roomeq/eq.rs`, `roomeq/speaker_eq.rs` | [Schroeder frequency](#schroeder-frequency--mode-density-cutoff) |
 | `optim/de.rs`, `optim/init_sobol.rs` | [Sobol quasi-random sequences](#sobol-quasi-random-sequences) |
 | `optim/cobyla.rs`, `optim/isres.rs`, `optim/de.rs` | See [`math-optimisation/REFERENCES.md`](../math-audio/math-optimisation/REFERENCES.md) for COBYLA, ISRES, DE/JADE, Levenberg-Marquardt |
@@ -335,6 +337,38 @@ Foundational papers, standards, and patents behind the algorithms in `autoeq`. C
   booktitle = {Audio Engineering Society Convention 125},
   year      = {2008},
   note      = {The "Johnston (AES)" reference cited in reflection\_cancel.rs}
+}
+```
+
+## Multi-Sub Optimizer (MSO)
+
+`roomeq/multiseat.rs`, `roomeq/multisub.rs`, `roomeq/group_processing.rs`, and `roomeq/workflows/bass_management.rs` implement MSO-style multi-subwoofer gain, delay, polarity, all-pass, and per-sub PEQ optimization across listening positions.
+
+```bibtex
+@manual{carter2026mso,
+  author       = {Carter, Andy},
+  title        = {{Multi-Sub Optimizer Help}},
+  organization = {DIY Audio Engineering},
+  year         = {2026},
+  url          = {https://www.andyc.diy-audio-engineering.org/mso/html/},
+  note         = {Documentation for Multi-Sub Optimizer, including multi-seat subwoofer optimization, SPL/headroom trade-offs, and DSP export.}
+}
+```
+
+## Acoustic multi-channel equalization robustness
+
+`roomeq/multiseat.rs::MultiSeatStrategy::ModalBasis` and the complex modal-basis SFM path use multi-channel room equalization concepts where robustness depends on the conditioning of the room-response inverse problem.
+
+```bibtex
+@article{kodrasi2018multichannel,
+  author  = {Kodrasi, Ina and Doclo, Simon},
+  title   = {Improving the conditioning of the optimization criterion in acoustic multi-channel equalization using shorter reshaping filters},
+  journal = {{EURASIP} Journal on Advances in Signal Processing},
+  volume  = {2018},
+  number  = {11},
+  year    = {2018},
+  doi     = {10.1186/s13634-018-0532-1},
+  url     = {https://asp-eurasipjournals.springeropen.com/articles/10.1186/s13634-018-0532-1}
 }
 ```
 

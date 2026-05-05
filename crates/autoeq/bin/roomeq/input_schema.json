@@ -794,6 +794,28 @@
             }
           ]
         },
+        "auto_optimizer": {
+          "description": "Automatic selection of filter count and optimizer bounds.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AutoOptimizerConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "smoothness_penalty": {
+          "description": "Smoothness regularizer on the correction curve.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SmoothnessPenaltyConfigSerde"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "phase_alignment": {
           "description": "Phase alignment configuration for subwoofer integration",
           "anyOf": [
@@ -1545,6 +1567,55 @@
           "type": "number",
           "format": "double",
           "default": 6.0
+        },
+        "optimize_polarity": {
+          "description": "Enable per-sub polarity search for MSO.",
+          "type": "boolean",
+          "default": false
+        },
+        "allpass_filters_per_sub": {
+          "description": "Number of per-sub all-pass filters allowed during MSO.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0,
+          "default": 0
+        },
+        "per_sub_peq": {
+          "description": "Optimize a per-subwoofer PEQ from that sub's measurements across all seats before the gain/delay/polarity/all-pass MSO pass.",
+          "type": "boolean",
+          "default": true
+        },
+        "global_eq": {
+          "description": "Optimize a shared EQ on the post-MSO combined response across all seats.",
+          "type": "boolean",
+          "default": true
+        },
+        "all_channel_enabled": {
+          "description": "Enable all-channel multi-seat correction for non-sub home-cinema channels.",
+          "type": "boolean",
+          "default": true
+        },
+        "all_channel_strategy": {
+          "description": "Strategy used when deriving per-channel multi-measurement correction.",
+          "$ref": "#/$defs/MultiMeasurementStrategy",
+          "default": "spatial_robustness"
+        },
+        "seat_weights": {
+          "description": "Optional seat weights for all-channel multi-seat correction.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "primary_seat_weight": {
+          "description": "Relative primary-seat weight used with PrimaryWithConstraints.",
+          "type": "number",
+          "format": "double",
+          "default": 2.0
         }
       }
     },
@@ -1914,6 +1985,78 @@
           "type": "number",
           "format": "double",
           "default": 10.0
+        }
+      }
+    },
+    "AutoOptimizerConfig": {
+      "description": "Opt-in automatic room EQ optimizer bound selection.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Enable automatic selection for the fields below.",
+          "type": "boolean",
+          "default": false
+        },
+        "filter_count": {
+          "description": "Automatically choose the maximum PEQ filter count.",
+          "type": "boolean",
+          "default": true
+        },
+        "q_bounds": {
+          "description": "Automatically choose Q bounds.",
+          "type": "boolean",
+          "default": true
+        },
+        "gain_bounds": {
+          "description": "Automatically choose gain bounds and boost envelopes.",
+          "type": "boolean",
+          "default": true
+        },
+        "min_filters": {
+          "description": "Minimum filter count when automatic count selection is enabled.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 1,
+          "default": 1
+        },
+        "max_filters": {
+          "description": "Maximum filter count when automatic count selection is enabled.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 1,
+          "default": 12
+        }
+      }
+    },
+    "SmoothnessPenaltyConfigSerde": {
+      "description": "Serializable smoothness-penalty configuration for JSON config files.",
+      "type": "object",
+      "properties": {
+        "tv2_weight": {
+          "description": "Penalty weight in loss units per (dB/decade^2)^exponent.",
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "schroeder_hz": {
+          "description": "Optional Schroeder cutoff in Hz for reduced modal-region penalty.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "modal_weight_scale": {
+          "description": "Multiplier below `schroeder_hz` (0 = modal region exempt).",
+          "type": "number",
+          "format": "double",
+          "default": 0.1
+        },
+        "exponent": {
+          "description": "L_p exponent. 1.0 = TV^2-like sparse curvature, 2.0 = L2 smoothing.",
+          "type": "number",
+          "format": "double",
+          "default": 1.0
         }
       }
     },

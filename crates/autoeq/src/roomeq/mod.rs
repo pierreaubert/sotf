@@ -58,6 +58,7 @@ pub use optimize::{
 };
 
 // Extracted optimization submodules
+mod auto_tune;
 mod crossover_utils;
 mod group_processing; // Multi-speaker groups, multisub, DBA, cardioid, mixed-mode
 mod speaker_eq; // Single-speaker EQ optimization // Crossover and group consistency utilities

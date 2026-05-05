@@ -90,6 +90,7 @@ pub fn setup_objective_data(
         epa_config: None,
         detected_problems: Vec::new(),
         null_suppression: None,
+        smoothness_penalty: params.smoothness_penalty.clone(),
     };
 
     Ok((objective_data, use_cea))
@@ -137,6 +138,7 @@ pub fn setup_drivers_objective_data(
         epa_config: None,
         detected_problems: Vec::new(),
         null_suppression: None,
+        smoothness_penalty: params.smoothness_penalty.clone(),
     }
 }
 
@@ -372,7 +374,11 @@ pub fn setup_bounds(params: &crate::OptimParams) -> (Vec<f64>, Vec<f64>) {
     let mut upper_bounds = Vec::with_capacity(num_params);
 
     let spacing = 1.0; // Overlap factor - allows adjacent filters to overlap
-    let gain_lower = -3.0 * params.max_db;
+    let gain_lower = if params.min_db < 0.0 {
+        params.min_db
+    } else {
+        -3.0 * params.max_db
+    };
     let q_lower = params.min_q.max(0.1);
     let range = (params.max_freq.log10() - params.min_freq.log10()) / (params.num_filters as f64);
 
@@ -637,16 +643,26 @@ pub fn perform_optimization_with_callback(
     let (lower_bounds, upper_bounds) = setup_bounds(&params);
     let mut x = initial_guess(&params, &lower_bounds, &upper_bounds);
 
-    // Only AutoEQ algorithms currently support callbacks
-    let result = optimize_filters_autoeq_with_callback(
-        &mut x,
-        &lower_bounds,
-        &upper_bounds,
-        objective_data.clone(),
-        &params.algo,
-        &params,
-        callback,
-    );
+    let result = if resolves_to_backend(&params.algo, "autoeq:de") {
+        optimize_filters_autoeq_with_callback(
+            &mut x,
+            &lower_bounds,
+            &upper_bounds,
+            objective_data.clone(),
+            &params.algo,
+            &params,
+            callback,
+        )
+    } else {
+        optimize_filters_with_algo_override(
+            &mut x,
+            &lower_bounds,
+            &upper_bounds,
+            objective_data.clone(),
+            &params,
+            None,
+        )
+    };
 
     let global_fun = match result {
         Ok((_status, val)) => val,
@@ -655,7 +671,7 @@ pub fn perform_optimization_with_callback(
         }
     };
 
-    if params.refine {
+    if params.refine && !resolves_to_backend(&params.algo, "autoeq:bo") {
         // Snapshot the global optimum before refine — local optimizers
         // are not guaranteed to monotonically improve the input. If the
         // refine ends up at a worse point (cobyla can wander outside the
@@ -691,6 +707,12 @@ pub fn perform_optimization_with_callback(
     }
 
     Ok(x)
+}
+
+fn resolves_to_backend(name: &str, canonical: &str) -> bool {
+    super::registry::resolve(name)
+        .map(|backend| backend.name().eq_ignore_ascii_case(canonical))
+        .unwrap_or(false)
 }
 
 /// Progress update sent to callback during optimization
@@ -918,6 +940,7 @@ pub fn setup_multisub_objective_data(
         epa_config: None,
         detected_problems: Vec::new(),
         null_suppression: None,
+        smoothness_penalty: params.smoothness_penalty.clone(),
     }
 }
 
@@ -997,5 +1020,24 @@ mod tests {
 
         let guess = initial_guess(&params, &lower_bounds, &upper_bounds);
         assert_eq!(guess.len(), params.num_filters * 3);
+    }
+
+    #[test]
+    fn setup_bounds_uses_negative_min_db_as_lower_gain_bound() {
+        let config = OptimizerConfig {
+            peq_model: "pk".to_string(),
+            num_filters: 2,
+            min_db: -10.0,
+            max_db: 3.0,
+            ..OptimizerConfig::default()
+        };
+        let params = OptimParams::from(&config);
+        let (lower_bounds, upper_bounds) = setup_bounds(&params);
+
+        for i in 0..params.num_filters {
+            let gain_idx = i * 3 + 2;
+            assert_eq!(lower_bounds[gain_idx], -10.0);
+            assert_eq!(upper_bounds[gain_idx], 3.0);
+        }
     }
 }

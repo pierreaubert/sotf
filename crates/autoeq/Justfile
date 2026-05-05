@@ -169,11 +169,11 @@ qa-roomeq-convergence jobs="":
 [group('qa-roomeq')]
 qa-roomeq-small-stereo-20: ensure-venv
 	@for method in iir fir mixed; do \
-	  for algo in bem fem; do \
+	  for algo in fem; do \
 	      mkdir -p ./data_generated/roomeq/generated/$algo/small_stereo_2_0; \
 	      cargo run --bin roomeq --release -- \
-	        --config       ./crates/autoeq/data_tests/roomeq/generated/$algo/small_stereo_2_0/config.json \
-		    --override-config ./crates/autoeq/data_tests/roomeq/generated/optimiser-config/small_stereo_2_0/optimiser-$method.json \
+	        --config       ./crates/autoeq/data_tests/roomeq/generate/$algo/small_stereo_2_0/config.json \
+		    --override-config ./crates/autoeq/data_tests/roomeq/generate/optimiser-config/small_stereo_2_0/optimiser-$method.json \
 		    --output       ./data_generated/roomeq/generated/$algo/small_stereo_2_0/dsp_$method.json; \
 		  ./venv/bin/python3 ./crates/autoeq/scripts/display-roomeq.py \
 		                   ./data_generated/roomeq/generated/$algo/small_stereo_2_0/dsp_$method.json; \
@@ -187,8 +187,8 @@ qa-roomeq-small-stereo-21: ensure-venv
 	  for algo in fem; do \
 	    mkdir -p ./data_generated/roomeq/generated/$algo/small_stereo_2_1; \
 	    cargo run --bin roomeq --release -- \
-	        --config       ./crates/autoeq/data_tests/roomeq/generated/$algo/small_stereo_2_1/config.json \
-		    --override-config ./crates/autoeq/data_tests/roomeq/generated/optimiser-config/small_stereo_2_1/optimiser-$method.json \
+	        --config       ./crates/autoeq/data_tests/roomeq/generate/$algo/small_stereo_2_1/config.json \
+		    --override-config ./crates/autoeq/data_tests/roomeq/generate/optimiser-config/small_stereo_2_1/optimiser-$method.json \
 		    --output       ./data_generated/roomeq/generated/$algo/small_stereo_2_1/dsp_$method.json; \
 		./venv/bin/python3 ./crates/autoeq/scripts/display-roomeq.py \
 		                   ./data_generated/roomeq/generated/$algo/small_stereo_2_1/dsp_$method.json; \
@@ -202,8 +202,8 @@ qa-roomeq-small-stereo-22: ensure-venv
 	  for algo in fem; do \
 	    mkdir -p ./data_generated/roomeq/generated/$algo/small_stereo_2_2; \
 	    cargo run --bin roomeq --release -- \
-	        --config       ./crates/autoeq/data_tests/roomeq/generated/$algo/small_stereo_2_2/config.json \
-		    --override-config ./crates/autoeq/data_tests/roomeq/generated/optimiser-config/small_stereo_2_2/optimiser-$method.json \
+	        --config       ./crates/autoeq/data_tests/roomeq/generate/$algo/small_stereo_2_2/config.json \
+		    --override-config ./crates/autoeq/data_tests/roomeq/generate/optimiser-config/small_stereo_2_2/optimiser-$method.json \
 		    --output       ./data_generated/roomeq/generated/$algo/small_stereo_2_2/dsp_$method.json; \
 		./venv/bin/python3 ./crates/autoeq/scripts/display-roomeq.py \
 		                   ./data_generated/roomeq/generated/$algo/small_stereo_2_2/dsp_$method.json; \
@@ -216,8 +216,8 @@ qa-roomeq-small-stereo-51: ensure-venv
 	  for algo in fem; do \
 	    mkdir -p ./data_generated/roomeq/generated/$algo/medium_surround_5_1; \
 	    cargo run --bin roomeq --release -- \
-	        --config       ./crates/autoeq/data_tests/roomeq/generated/$algo/medium_surround_5_1/config.json \
-		    --override-config ./crates/autoeq/data_tests/roomeq/generated/optimiser-config/medium_surround_5_1/optimiser-$method.json \
+	        --config       ./crates/autoeq/data_tests/roomeq/generate/$algo/medium_surround_5_1/config.json \
+		    --override-config ./crates/autoeq/data_tests/roomeq/generate/optimiser-config/medium_surround_5_1/optimiser-$method.json \
 		    --output       ./data_generated/roomeq/generated/$algo/medium_surround_5_1/dsp_$method.json; \
 		./venv/bin/python3 ./crates/autoeq/scripts/display-roomeq.py \
 		                   ./data_generated/roomeq/generated/$algo/medium_surround_5_1/dsp_$method.json; \
@@ -239,12 +239,12 @@ qa-roomeq-multi-measurement: \
 [group('qa-roomeq-multi')]
 qa-roomeq-multi-small-stereo-20: ensure-venv
 	@for strategy in minimax weighted_sum variance_penalized; do \
-	  for algo in bem fem; do \
+	  for algo in fem; do \
 	    mkdir -p ./data_generated/roomeq/generated/$algo/small_stereo_2_0; \
 	    echo "=== Multi-measurement $strategy ($algo) small_stereo_2_0 ==="; \
 	    cargo run --bin roomeq --release -- \
-	      --config       ./crates/autoeq/data_tests/roomeq/generated/$algo/small_stereo_2_0/config.json \
-	      --override-config ./crates/autoeq/data_tests/roomeq/generated/optimiser-config/multi_measurement/$strategy.json \
+	      --config       ./crates/autoeq/data_tests/roomeq/generate/$algo/small_stereo_2_0/config.json \
+	      --override-config ./crates/autoeq/data_tests/roomeq/generate/optimiser-config/multi_measurement/$strategy.json \
 	      --output       ./data_generated/roomeq/generated/$algo/small_stereo_2_0/dsp_iir_multi_$strategy.json; \
 	    ./venv/bin/python3 ./crates/autoeq/scripts/display-roomeq.py \
 	                     ./data_generated/roomeq/generated/$algo/small_stereo_2_0/dsp_iir_multi_$strategy.json; \
@@ -258,8 +258,8 @@ qa-roomeq-multi-small-stereo-21: ensure-venv
 	    mkdir -p ./data_generated/roomeq/generated/$algo/small_stereo_2_1; \
 	    echo "=== Multi-measurement $strategy ($algo) small_stereo_2_1 ==="; \
 	    cargo run --bin roomeq --release -- \
-	      --config       ./crates/autoeq/data_tests/roomeq/generated/$algo/small_stereo_2_1/config.json \
-	      --override-config ./crates/autoeq/data_tests/roomeq/generated/optimiser-config/multi_measurement/$strategy.json \
+	      --config       ./crates/autoeq/data_tests/roomeq/generate/$algo/small_stereo_2_1/config.json \
+	      --override-config ./crates/autoeq/data_tests/roomeq/generate/optimiser-config/multi_measurement/$strategy.json \
 	      --output       ./data_generated/roomeq/generated/$algo/small_stereo_2_1/dsp_iir_multi_$strategy.json; \
 	    ./venv/bin/python3 ./crates/autoeq/scripts/display-roomeq.py \
 	                     ./data_generated/roomeq/generated/$algo/small_stereo_2_1/dsp_iir_multi_$strategy.json; \
@@ -273,8 +273,8 @@ qa-roomeq-multi-small-stereo-22-mso: ensure-venv
 	    mkdir -p ./data_generated/roomeq/generated/$algo/small_stereo_2_2_mso; \
 	    echo "=== Multi-measurement $strategy ($algo) small_stereo_2_2_mso ==="; \
 	    cargo run --bin roomeq --release -- \
-	      --config       ./crates/autoeq/data_tests/roomeq/generated/$algo/small_stereo_2_2_mso/config.json \
-	      --override-config ./crates/autoeq/data_tests/roomeq/generated/optimiser-config/multi_measurement/$strategy.json \
+	      --config       ./crates/autoeq/data_tests/roomeq/generate/$algo/small_stereo_2_2_mso/config.json \
+	      --override-config ./crates/autoeq/data_tests/roomeq/generate/optimiser-config/multi_measurement/$strategy.json \
 	      --output       ./data_generated/roomeq/generated/$algo/small_stereo_2_2_mso/dsp_iir_multi_$strategy.json; \
 	    ./venv/bin/python3 ./crates/autoeq/scripts/display-roomeq.py \
 	                     ./data_generated/roomeq/generated/$algo/small_stereo_2_2_mso/dsp_iir_multi_$strategy.json; \
@@ -362,6 +362,7 @@ qa-roomeq-dsp-consistency:
 [group('qa-roomeq')]
 qa-roomeq-phase-critical:
 	cargo test -p autoeq gd_opt -- --nocapture
+	cargo test -p autoeq phase_linear_gd_target --lib -- --nocapture
 	cargo test -p autoeq frequency_grid --lib -- --nocapture
 	cargo run --bin roomeq-qa-synthetic --no-default-features --release -- --multiseat-guards-only
 
@@ -377,6 +378,7 @@ qa-roomeq-perceptual:
 [group('qa-roomeq')]
 qa-roomeq-gd:
 	cargo test -p autoeq gd_opt -- --nocapture
+	cargo test -p autoeq phase_linear_gd_target --lib -- --nocapture
 
 [group('qa-roomeq')]
 qa-roomeq-features:
@@ -391,6 +393,7 @@ qa-roomeq-ci:
 	cargo test -p autoeq reported_ --lib -- --nocapture
 	cargo test -p autoeq timing_diagnostics --lib -- --nocapture
 	cargo test -p autoeq gd_opt -- --nocapture
+	cargo test -p autoeq phase_linear_gd_target --lib -- --nocapture
 	cargo test -p autoeq frequency_grid --lib -- --nocapture
 	cargo run --bin roomeq-qa-synthetic --no-default-features --release -- --multiseat-guards-only
 	cargo test -p autoeq home_cinema --lib -- --nocapture

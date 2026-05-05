@@ -1,117 +1,103 @@
-# autoeq (lib: `autoeq`, version: 0.4.17)
+# autoeq (crate: `autoeq`, version: 0.4.42)
 
-Core automatic equalization system for speakers, headphones, and rooms.
+Core automatic equalization stack for speakers, headphones, and RoomEQ workflows.
 
-## Optimization Workflow
+## High-level workflow
 
-1. **Data Input** (`read/`): Load measurements from spinorama.org API or CSV files
-2. **CEA2034 Scoring** (`cea2034.rs`): Compute preference scores (NBD, LFX, SM PIR)
-3. **Loss Functions** (`loss.rs`): Evaluate EQ quality against targets
-4. **Optimization** (`optim*.rs`): Find optimal filter parameters
-5. **Output** (`x2peq.rs`): Convert solution to parametric EQ filters (uses math-iir-fir::Biquad)
+1. `read/`: ingest + normalize measurement data (CSV / API / recording artifacts)
+2. `loss/`: compute objective losses (`flat`, `score`, `epa`, multi-driver, multi-sub)
+3. `optim/`: run optimizer backends over PEQ params
+4. `x2peq.rs` + `response.rs`: turn solution vectors into DSP filters and responses
+5. `roomeq/`: multi-channel orchestration, reporting, routing, and export
 
-## Loss Functions
+## Loss types
 
-- `speaker-flat` -- Minimize deviation from flat response (ERB + band weighted MSE)
-- `speaker-score` -- Optimize Harman/Olive score (bass boost + PIR flatness)
-- `headphone-flat` -- Minimize deviation from headphone target
-- `headphone-score` -- Target Harman headphone curve
-- `drivers-flat` -- Multi-driver flat response
-- `multi-sub-flat` -- Multi-subwoofer flat response
-- `epa` -- EPA psychoacoustic composite (flatness + Zwicker sharpness/roughness/loudness-balance). Tunable via `OptimizerConfig.epa_config`; see `bin/roomeq/INPUT_FORMAT.md` for the full config schema.
+- `speaker-flat`
+- `speaker-flat-asymmetric`
+- `speaker-score`
+- `headphone-flat`
+- `headphone-score`
+- `drivers-flat`
+- `multi-sub-flat`
+- `epa`
 
-Per-channel pre/post EPA scores are always emitted in the roomeq JSON
-output under `metadata.epa_per_channel`, even when `loss_type != "epa"`.
+## Optimizer backends
 
-## Optimizer Backends
+Registry path: `src/optim/registry.rs`.
 
-- **DE** (`optim_de.rs`): Differential Evolution (global)
-- **NLOPT** (`optim_nlopt.rs`, feature-gated): ISRES, AGS, ORIGDIRECT, COBYLA, Nelder-Mead
-- **MetaHeuristics** (`optim_mh.rs`): PSO and other nature-inspired algorithms
+- `autoeq:de` (DE, supports JADE/L-SHADE strategy variants)
+- `autoeq:cobyla` (pure-Rust COBYLA)
+- `autoeq:isres` (pure-Rust ISRES)
+- `autoeq:cmaes` (CMA-ES)
+- `autoeq:nsga2`, `autoeq:nsga3` (Pareto MO optimizers)
+- `mh:*` backends (e.g. `mh:pso`, `mh:firefly`, etc.)
 
-## Module Layout
+Notes:
+- The old C-FFI NLopt backend is removed. `nlopt:*` names are kept as compatibility aliases and are mapped to pure-Rust backends with warnings.
+- Common bare aliases (`de`, `cobyla`, `isres`, `cma-es`, `nsga-ii`, `nsga-iii`) resolve through the registry.
 
-| Module | Description |
-|---|---|
-| `cea2034.rs` | CEA2034/Spinorama metrics and preference scoring |
-| `cli.rs` | Shared CLI argument definitions |
-| `loss.rs` | Loss function implementations |
-| `loss/` | Enhanced weights, bass boost, phase-aware loss |
-| `workflow.rs` | High-level optimization workflows (speaker, headphone) |
-| `optim.rs` | Objective functions and optimizer interfaces |
-| `optim_de.rs` | Differential Evolution integration |
-| `optim_nlopt.rs` | NLOPT wrapper (feature-gated) |
-| `optim_mh.rs` | MetaHeuristics wrapper |
-| `optim_callback.rs` | Progress callback utilities |
-| `read/` | Spinorama API client, CSV parsing, smoothing, interpolation, normalization |
-| `roomeq/` | Multi-channel room optimization (types, workflows, export, spectral alignment, phase, multi-seat, multi-sub, DBA, FIR, excursion protection) |
-| `plot/` | Visualization (spinorama plots, filter plots, driver plots, result plots) |
-| `constraints/` | Frequency spacing, ceiling, min gain, crossover monotonicity |
-| `x2peq.rs` | Solution vector to PEQ conversion |
-| `param_utils.rs` | PEQ model parameter utilities |
-| `response.rs` | Frequency response utilities |
-| `signal.rs` | Signal processing utilities |
-| `fir.rs` | FIR filter design and optimization |
-| `init_sobol.rs` | Sobol sequence initialization |
-| `initial_guess.rs` | Smart initial guess generation |
-| `error.rs` | Error types (`AutoeqError`) |
+## Key objective controls
 
-## PEQ Filter Models
+- `ObjectiveData` carries single-curve and multi-objective paths.
+- `multi_objective` delegates scalarization over per-curve objectives.
+- `smoothness_penalty` (TV² curvature regularizer in log-frequency) is optional and supported in PEQ-based branches.
+  - Config fields: `tv2_weight`, `schroeder_hz`, `modal_weight_scale`, `exponent`.
+  - CLI flags: `--smoothness-weight`, `--smoothness-exponent`, `--smoothness-schroeder-hz`, `--smoothness-modal-scale`.
+  - RoomEQ JSON path: `optimizer.smoothness_penalty`.
 
-- `pk` -- Peak only
-- `hp-pk` -- Highpass + peaks
-- `hp-pk-lp` -- Highpass + peaks + lowpass
-- `ls-pk-hs` -- Lowshelf + peaks + highshelf
-- `free` -- Any filter type
+## RoomEQ highlights
 
-## Key CLI Parameters
+Main tree: `src/roomeq/`.
 
-- `-n`: Number of PEQ filters
-- `--min-q`, `--max-q`: Q factor bounds
-- `--min-db`, `--max-db`: Gain bounds
-- `--min-freq`, `--max-freq`: Frequency range
-- `--algo`: Optimizer selection (e.g., `autoeq:de`, `cobyla`)
-- `--strategy`: DE mutation strategy (e.g., `currenttobest1bin`)
-- `--loss`: Loss function selection
-- `--model`: PEQ filter model
+- Multi-seat strategies include:
+  - `minimize_variance`
+  - `primary_with_constraints`
+  - `average`
+  - `modal_basis` (complex-domain SFM modal-basis optimization)
+- Multi-measurement strategies include weighted/minimax/variance-penalized paths and spatial robustness mode.
+- Bass-management and routed export logic live under `roomeq/optimize`, `roomeq/workflows`, and `roomeq/output`.
 
-## Features
+## Binary entry points
 
-- `nlopt` (default) -- NLOPT optimization algorithms
-- `plotly_static` -- Static plot generation
+From `Cargo.toml`:
 
-## Binaries
+- `autoeq`
+- `benchmark-autoeq-speaker`
+- `autoeq-download-speakers`
+- `roomeq`
+- `roomeq-fuzzer`
+- `roomeq-qa-quality`
+- `roomeq-qa-coverage`
+- `roomeq-qa-features`
+- `roomeq-qa-synthetic`
+- `convert-recording`
 
-- `autoeq` -- Main optimization CLI
-- `benchmark-autoeq-speaker` -- QA benchmarking (parallel, CSV output)
-- `autoeq-download-speakers` -- Spinorama database downloader
-- `roomeq` -- Room EQ optimizer
-- `roomeq-fuzzer` -- Room EQ fuzzing tool
-- `roomeq-qa-quality` -- Convergence quality tests
-- `roomeq-qa-coverage` -- Configuration coverage tests
-- `roomeq-qa-features` -- Feature-specific QA tests
-- `roomeq-qa-synthetic` -- Synthetic data validation
-- `convert-recording` -- Recording format converter
-
-## Examples
+## Useful commands
 
 ```bash
-cargo run --release --example cea2034_score -p autoeq
-cargo run --release --example headphone_loss_demo -p autoeq
-cargo run --release --example headphone_loss_validation -p autoeq
-```
-
-## Testing
-
-```bash
+cargo check -p autoeq
+cargo clippy -p autoeq --no-deps
 cargo test -p autoeq --lib
-cargo check -p autoeq && cargo clippy -p autoeq
 ```
 
-## QA
+RoomEQ QA:
 
 ```bash
-just qa-autoeq       # AutoEQ speaker benchmarks
-just qa-roomeq       # RoomEQ configuration tests
-just qa-roomeq-quick # Fast RoomEQ run
+just qa-roomeq
+just qa-roomeq-convergence
 ```
+
+Targeted RoomEQ run:
+
+```bash
+cargo run --release --bin roomeq -- \
+  --config crates/autoeq/tests/data/roomeq/test_config_stereo.json \
+  --output /tmp/out.json
+```
+
+## Docs to keep in sync
+
+- `CHANGELOG.md`
+- `docs/roomeq_explained.md`
+- `bin/roomeq/INPUT_FORMAT.md`
+- `bin/roomeq/input_schema.json`

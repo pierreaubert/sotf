@@ -50,6 +50,7 @@ fn create_test_objective_data() -> autoeq::optim::ObjectiveData {
         epa_config: None,
         detected_problems: Vec::new(),
         null_suppression: None,
+        smoothness_penalty: None,
     }
 }
 

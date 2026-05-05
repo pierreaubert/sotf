@@ -1,6 +1,6 @@
-//! Integration tests using BEM-generated room measurement data
+//! Integration tests using FEM-generated room measurement data
 //!
-//! These tests load pre-computed BEM simulation data and verify that
+//! These tests load pre-computed FEM simulation data and verify that
 //! the roomeq optimizer can improve the simulated frequency responses.
 
 use autoeq::roomeq::{FirConfig, MixedPhaseSerdeConfig, ProcessingMode, RoomConfig, optimize_room};
@@ -24,10 +24,10 @@ fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// Run roomeq optimization on a generated BEM scenario and verify improvement
+/// Run roomeq optimization on a generated FEM scenario and verify improvement
 fn run_roomeq_on_generated(scenario_name: &str) {
     let config_path = crate_root()
-        .join("data_tests/roomeq/generated/bem")
+        .join("data_tests/roomeq/generate/fem")
         .join(scenario_name)
         .join("config.json");
 
@@ -275,14 +275,14 @@ fn all_mode_configs() -> Vec<ModeConfig> {
     ]
 }
 
-/// Run roomeq optimization on a BEM scenario with a specific processing mode
+/// Run roomeq optimization on a FEM scenario with a specific processing mode
 fn run_roomeq_with_mode(
     scenario_name: &str,
     mode_config: &ModeConfig,
     output_dir: &Path,
 ) -> autoeq::roomeq::RoomOptimizationResult {
     let config_path = crate_root()
-        .join("data_tests/roomeq/generated/bem")
+        .join("data_tests/roomeq/generate/fem")
         .join(scenario_name)
         .join("config.json");
 

@@ -142,7 +142,6 @@ pub fn generate_fir_correction(
 /// `PhaseLinear` mode to achieve inter-channel GD alignment without IIR AP filters.
 ///
 /// When `gd_target` is `None`, this is equivalent to `generate_fir_correction`.
-#[allow(dead_code)] // Called once optimize_room integrates GD-Opt (Phase GD-5)
 pub fn generate_fir_correction_with_gd_target(
     measurement: &Curve,
     config: &OptimizerConfig,
@@ -166,6 +165,24 @@ pub fn generate_fir_correction_with_gd_target(
     }
 
     Ok(coeffs)
+}
+
+/// Apply a GD-alignment delay to existing FIR coefficients.
+///
+/// This is used when a production path has already generated FIRs before the
+/// room-level GD target is known. It mirrors the delay handling in
+/// `generate_fir_correction_with_gd_target` so both paths encode the same
+/// sample-domain shift into the convolution IR.
+pub(crate) fn apply_gd_delay_to_fir_coefficients(
+    coeffs: &[f64],
+    delay_ms: f64,
+    sample_rate: f64,
+) -> Vec<f64> {
+    if delay_ms.abs() <= 1e-6 {
+        return coeffs.to_vec();
+    }
+    let delay_samples = (delay_ms * 1e-3 * sample_rate).round() as isize;
+    apply_sample_shift(coeffs, delay_samples)
 }
 
 /// Shift FIR coefficients by a given number of samples (positive = later).

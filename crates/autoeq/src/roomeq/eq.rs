@@ -12,6 +12,7 @@ use math_audio_iir_fir::Biquad;
 use ndarray::Array1;
 use std::error::Error;
 
+use super::auto_tune::{self, AutoOptimizerContext};
 use super::impulse_analysis;
 use super::spatial_robustness::{self, SpatialRobustnessConfig};
 use super::types::{
@@ -714,6 +715,15 @@ fn prepare_single_channel_eq(
     // When decomposition is disabled, leave as `None` and the
     // asymmetric bounds are not applied.
     let schroeder_hz = decomposed_result.as_ref().map(|r| r.schroeder_freq);
+    if let Some(cfg) = objective_data.smoothness_penalty.as_mut()
+        && config
+            .smoothness_penalty
+            .as_ref()
+            .is_some_and(|smoothness| smoothness.schroeder_hz.is_none())
+        && let Some(schroeder_hz) = schroeder_hz
+    {
+        cfg.schroeder_hz = Some(schroeder_hz);
+    }
 
     Ok(PreparedSingleChannelEq {
         objective_data,
@@ -1025,6 +1035,101 @@ fn optimize_channel_eq_inner(
     Ok((filters, loss))
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(super) struct MultiEqAutoOptimizerContext {
+    pub is_sub_channel: bool,
+    pub target_tilt_active: bool,
+    pub broadband_enabled: bool,
+}
+
+impl MultiEqAutoOptimizerContext {
+    pub(super) fn sub_channel() -> Self {
+        Self {
+            is_sub_channel: true,
+            target_tilt_active: false,
+            broadband_enabled: false,
+        }
+    }
+}
+
+pub(super) fn resolve_multi_measurement_auto_optimizer_config(
+    curves: &[Curve],
+    config: &OptimizerConfig,
+    context: MultiEqAutoOptimizerContext,
+) -> OptimizerConfig {
+    if !config
+        .auto_optimizer
+        .as_ref()
+        .is_some_and(|auto| auto.enabled)
+        || curves.is_empty()
+    {
+        return config.clone();
+    }
+
+    let representative_curve = representative_multi_measurement_curve(curves);
+    let data_min_freq = representative_curve.freq[0];
+    let data_max_freq = representative_curve.freq[representative_curve.freq.len() - 1];
+    let effective_min_freq = config.min_freq.max(data_min_freq);
+    let effective_max_freq = config.max_freq.min(data_max_freq);
+    let detected_f3_hz = match super::excursion::detect_f3(&representative_curve, None) {
+        Ok(f3_result)
+            if f3_result.f3_hz > effective_min_freq && f3_result.f3_hz < effective_max_freq =>
+        {
+            Some(f3_result.f3_hz)
+        }
+        Ok(_) => None,
+        Err(e) => {
+            debug!(
+                "  Auto optimizer: multi-measurement F3 detection skipped: {}",
+                e
+            );
+            None
+        }
+    };
+
+    let auto_context = AutoOptimizerContext {
+        is_sub_channel: context.is_sub_channel,
+        effective_min_freq,
+        effective_max_freq,
+        detected_f3_hz,
+        schroeder_hz: auto_tune::resolved_schroeder_hz(config),
+        target_tilt_active: context.target_tilt_active,
+        broadband_enabled: context.broadband_enabled,
+    };
+    auto_tune::resolve_auto_optimizer_config(&representative_curve, config, &auto_context)
+}
+
+fn representative_multi_measurement_curve(curves: &[Curve]) -> Curve {
+    let first = curves
+        .first()
+        .expect("representative curve requires at least one curve");
+    let same_grid = curves.iter().all(|curve| {
+        curve.freq.len() == first.freq.len()
+            && curve.spl.len() == first.spl.len()
+            && curve
+                .freq
+                .iter()
+                .zip(first.freq.iter())
+                .all(|(a, b)| (a - b).abs() <= 1e-6 * b.abs().max(1.0))
+    });
+
+    if !same_grid {
+        return first.clone();
+    }
+
+    let mut power_sum = Array1::<f64>::zeros(first.freq.len());
+    for curve in curves {
+        power_sum = power_sum + curve.spl.mapv(|spl| 10.0_f64.powf(spl / 10.0));
+    }
+    let avg_power = power_sum / curves.len() as f64;
+    Curve {
+        freq: first.freq.clone(),
+        spl: avg_power.mapv(|power| 10.0 * power.max(1e-12).log10()),
+        phase: None,
+        ..Default::default()
+    }
+}
+
 /// Optimize EQ filters across multiple measurement curves simultaneously.
 ///
 /// Finds a single shared EQ that works well across all measurements,
@@ -1049,6 +1154,26 @@ pub fn optimize_channel_eq_multi(
     optimize_channel_eq_multi_inner(
         curves,
         config,
+        multi_config,
+        target_config,
+        sample_rate,
+        None,
+    )
+}
+
+pub(super) fn optimize_channel_eq_multi_with_auto_optimizer(
+    curves: &[Curve],
+    config: &OptimizerConfig,
+    multi_config: &MultiMeasurementConfig,
+    target_config: Option<&TargetCurveConfig>,
+    sample_rate: f64,
+    auto_context: MultiEqAutoOptimizerContext,
+) -> Result<(Vec<Biquad>, f64), Box<dyn Error>> {
+    let resolved_config =
+        resolve_multi_measurement_auto_optimizer_config(curves, config, auto_context);
+    optimize_channel_eq_multi_inner(
+        curves,
+        &resolved_config,
         multi_config,
         target_config,
         sample_rate,
@@ -1231,6 +1356,7 @@ fn optimize_channel_eq_multi_inner(
         // ObjectiveData so `compute_base_fitness` uses the user-provided
         // weights when `loss_type == LossType::Epa`.
         objective_data.epa_config = config.epa_config.clone();
+        objective_data.smoothness_penalty = optim_params_multi.smoothness_penalty.clone();
 
         if i == 0 {
             primary_objective = Some(objective_data.clone());
@@ -1583,6 +1709,7 @@ fn optimize_spatial_robustness(
     // Propagate EPA config so compute_base_fitness uses user-provided
     // weights when loss_type == LossType::Epa.
     objective_data.epa_config = config.epa_config.clone();
+    objective_data.smoothness_penalty = optim_params.smoothness_penalty.clone();
 
     let (lower_bounds, upper_bounds) = crate::workflow::setup_bounds(&optim_params);
     let mut x = crate::workflow::initial_guess(&optim_params, &lower_bounds, &upper_bounds);
@@ -1661,6 +1788,45 @@ mod tests {
             phase: None,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn multi_measurement_auto_optimizer_uses_sub_context() {
+        let curve_a = make_synthetic_room_curve();
+        let mut curve_b = curve_a.clone();
+        curve_b.spl = curve_b.spl.mapv(|spl| spl + 1.5);
+        let config = OptimizerConfig {
+            min_freq: 20.0,
+            max_freq: 200.0,
+            num_filters: 1,
+            auto_optimizer: Some(crate::roomeq::types::AutoOptimizerConfig {
+                enabled: true,
+                max_filters: 12,
+                ..Default::default()
+            }),
+            ..OptimizerConfig::default()
+        };
+
+        let resolved = resolve_multi_measurement_auto_optimizer_config(
+            &[curve_a, curve_b],
+            &config,
+            MultiEqAutoOptimizerContext::sub_channel(),
+        );
+
+        assert!(
+            resolved.num_filters > config.num_filters,
+            "sub multi-measurement auto optimizer should increase filter count"
+        );
+        assert!(
+            resolved.max_q >= 6.0,
+            "sub context should allow modal-Q filters, got {:.2}",
+            resolved.max_q
+        );
+        assert!(
+            resolved.max_db <= 6.0,
+            "sub context should cap boost at the sub auto limit, got {:.2}",
+            resolved.max_db
+        );
     }
 
     fn make_fdw_e2e_curve() -> Curve {

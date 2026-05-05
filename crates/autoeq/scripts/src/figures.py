@@ -1351,11 +1351,8 @@ def create_bass_management_headroom_figure(data: dict) -> go.Figure | None:
 # Multi-mode comparison figures
 # ============================================================================
 
-# Color scheme: 8 chromatically distinct colours from the matplotlib
-# tab10 palette (with cyan substituted for the dull gray) so each
-# (processing_mode × loss_type) scenario stands out on its own — busy
-# overlay plots stay readable even at thin line widths where paired
-# light/dark shades of the same hue would smear together.
+# Color scheme: distinct colours from the matplotlib tab20 family so
+# each processing/loss/auto/GD scenario stands out on busy overlay plots.
 MODE_COLORS: dict[str, str] = {
     "iir": "#1f77b4",              # blue
     "iir_epa": "#ff7f0e",          # orange
@@ -1365,6 +1362,16 @@ MODE_COLORS: dict[str, str] = {
     "hybrid_epa": "#8c564b",       # brown
     "mixed_phase": "#e377c2",      # pink
     "mixed_phase_epa": "#17becf",  # cyan
+    "iir_auto_filters": "#393b79",       # indigo
+    "iir_auto_bounds": "#637939",        # olive green
+    "iir_auto_all": "#8c6d31",           # ochre
+    "mixed_phase_auto_all": "#843c39",   # maroon
+    "iir_gd_safety_gate": "#ad494a",     # muted red
+    "iir_gd_delay_only": "#bcbd22",        # olive
+    "iir_gd_fixed_allpass": "#7f7f7f",     # gray
+    "iir_gd_adaptive_allpass": "#1f9e89",  # teal
+    "fir_gd_phase_linear": "#ff9896",      # salmon
+    "mixed_phase_gd": "#c5b0d5",           # lavender
 }
 
 # Display names: every mode includes its loss function in the label so
@@ -1379,6 +1386,16 @@ MODE_DISPLAY_NAMES: dict[str, str] = {
     "hybrid_epa": "Hybrid (EPA)",
     "mixed_phase": "MixedPhase (flat)",
     "mixed_phase_epa": "MixedPhase (EPA)",
+    "iir_auto_filters": "IIR auto filters",
+    "iir_auto_bounds": "IIR auto bounds",
+    "iir_auto_all": "IIR auto all",
+    "mixed_phase_auto_all": "MixedPhase auto all",
+    "iir_gd_safety_gate": "IIR GD safety gate",
+    "iir_gd_delay_only": "IIR GD delay-only",
+    "iir_gd_fixed_allpass": "IIR GD fixed AP",
+    "iir_gd_adaptive_allpass": "IIR GD adaptive AP",
+    "fir_gd_phase_linear": "FIR GD target",
+    "mixed_phase_gd": "MixedPhase + GD",
 }
 
 

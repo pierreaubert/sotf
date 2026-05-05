@@ -1,11 +1,16 @@
 //! Fuzzer for roomeq binary
 //!
-//! Generates random speaker configurations and verifies optimization improves scores.
-//! Includes panic handling and config validation for robust fuzzing.
+//! Generates stratified and random speaker configurations and checks the
+//! roomeq CLI produces structurally valid DSP output. Required scenario
+//! buckets keep feature coverage stable while extra tests continue random
+//! exploration.
 
 use autoeq::roomeq::{
-    CrossoverConfig, DBAConfig, MultiSubGroup, OptimizerConfig, ProcessingMode, RoomConfig,
-    SpeakerConfig, SpeakerGroup, TargetCurveConfig,
+    CardioidConfig, ChannelMatchingConfig, CrossoverConfig, DBAConfig, FirConfig,
+    GroupDelayOptimizationConfig, MixedModeConfig, MixedPhaseSerdeConfig, MultiMeasurementConfig,
+    MultiMeasurementStrategy, MultiSeatConfig, MultiSeatStrategy, MultiSubGroup, OptimizerConfig,
+    ProcessingMode, RoomConfig, SpatialRobustnessSerdeConfig, SpeakerConfig, SpeakerGroup,
+    TargetCurveConfig,
 };
 use clap::Parser;
 use rand::Rng;
@@ -13,7 +18,7 @@ use rand::SeedableRng;
 use rand::seq::IndexedRandom;
 use rand_chacha::ChaCha8Rng;
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -47,6 +52,224 @@ struct Args {
     /// Verbose output
     #[arg(short, long)]
     verbose: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+enum ScenarioKind {
+    SingleLowLatency,
+    SinglePhaseLinear,
+    SingleHybrid,
+    SingleMixedPhase,
+    SingleWarpedIir,
+    SingleKautzModal,
+    Group2Way,
+    Group3Way,
+    MultiSub,
+    MultiSubAllpass,
+    MultiSubMultiSeat,
+    Dba,
+    Cardioid,
+    MultiMeasurementAverage,
+    MultiMeasurementWeightedSum,
+    MultiMeasurementMinimax,
+    MultiMeasurementVariancePenalized,
+    MultiMeasurementSpatialRobustness,
+    ChannelMatching,
+    GroupDelay,
+    RandomMixed,
+}
+
+const REQUIRED_SCENARIOS: &[ScenarioKind] = &[
+    ScenarioKind::SingleLowLatency,
+    ScenarioKind::SinglePhaseLinear,
+    ScenarioKind::SingleHybrid,
+    ScenarioKind::SingleMixedPhase,
+    ScenarioKind::SingleWarpedIir,
+    ScenarioKind::SingleKautzModal,
+    ScenarioKind::Group2Way,
+    ScenarioKind::Group3Way,
+    ScenarioKind::MultiSub,
+    ScenarioKind::MultiSubAllpass,
+    ScenarioKind::MultiSubMultiSeat,
+    ScenarioKind::Dba,
+    ScenarioKind::Cardioid,
+    ScenarioKind::MultiMeasurementAverage,
+    ScenarioKind::MultiMeasurementWeightedSum,
+    ScenarioKind::MultiMeasurementMinimax,
+    ScenarioKind::MultiMeasurementVariancePenalized,
+    ScenarioKind::MultiMeasurementSpatialRobustness,
+    ScenarioKind::ChannelMatching,
+    ScenarioKind::GroupDelay,
+];
+
+impl ScenarioKind {
+    fn for_test(test_idx: usize, rng: &mut ChaCha8Rng) -> Self {
+        if test_idx < REQUIRED_SCENARIOS.len() {
+            REQUIRED_SCENARIOS[test_idx]
+        } else if rng.random_bool(0.2) {
+            ScenarioKind::RandomMixed
+        } else {
+            *REQUIRED_SCENARIOS.choose(rng).unwrap()
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            ScenarioKind::SingleLowLatency => "single_low_latency",
+            ScenarioKind::SinglePhaseLinear => "single_phase_linear",
+            ScenarioKind::SingleHybrid => "single_hybrid",
+            ScenarioKind::SingleMixedPhase => "single_mixed_phase",
+            ScenarioKind::SingleWarpedIir => "single_warped_iir",
+            ScenarioKind::SingleKautzModal => "single_kautz_modal",
+            ScenarioKind::Group2Way => "group_2_way",
+            ScenarioKind::Group3Way => "group_3_way",
+            ScenarioKind::MultiSub => "multi_sub",
+            ScenarioKind::MultiSubAllpass => "multi_sub_allpass",
+            ScenarioKind::MultiSubMultiSeat => "multi_sub_multi_seat",
+            ScenarioKind::Dba => "dba",
+            ScenarioKind::Cardioid => "cardioid",
+            ScenarioKind::MultiMeasurementAverage => "multi_measurement_average",
+            ScenarioKind::MultiMeasurementWeightedSum => "multi_measurement_weighted_sum",
+            ScenarioKind::MultiMeasurementMinimax => "multi_measurement_minimax",
+            ScenarioKind::MultiMeasurementVariancePenalized => {
+                "multi_measurement_variance_penalized"
+            }
+            ScenarioKind::MultiMeasurementSpatialRobustness => {
+                "multi_measurement_spatial_robustness"
+            }
+            ScenarioKind::ChannelMatching => "channel_matching",
+            ScenarioKind::GroupDelay => "group_delay",
+            ScenarioKind::RandomMixed => "random_mixed",
+        }
+    }
+
+    fn processing_mode(self, rng: &mut ChaCha8Rng) -> ProcessingMode {
+        match self {
+            ScenarioKind::SinglePhaseLinear => ProcessingMode::PhaseLinear,
+            ScenarioKind::SingleHybrid => ProcessingMode::Hybrid,
+            ScenarioKind::SingleMixedPhase => ProcessingMode::MixedPhase,
+            ScenarioKind::SingleWarpedIir => ProcessingMode::WarpedIir,
+            ScenarioKind::SingleKautzModal => ProcessingMode::KautzModal,
+            ScenarioKind::RandomMixed => {
+                let modes = [
+                    ProcessingMode::LowLatency,
+                    ProcessingMode::PhaseLinear,
+                    ProcessingMode::Hybrid,
+                    ProcessingMode::MixedPhase,
+                    ProcessingMode::WarpedIir,
+                    ProcessingMode::KautzModal,
+                ];
+                modes.choose(rng).unwrap().clone()
+            }
+            _ => ProcessingMode::LowLatency,
+        }
+    }
+
+    fn multi_measurement_strategy(self) -> Option<MultiMeasurementStrategy> {
+        match self {
+            ScenarioKind::MultiMeasurementAverage => Some(MultiMeasurementStrategy::Average),
+            ScenarioKind::MultiMeasurementWeightedSum => {
+                Some(MultiMeasurementStrategy::WeightedSum)
+            }
+            ScenarioKind::MultiMeasurementMinimax => Some(MultiMeasurementStrategy::Minimax),
+            ScenarioKind::MultiMeasurementVariancePenalized => {
+                Some(MultiMeasurementStrategy::VariancePenalized)
+            }
+            ScenarioKind::MultiMeasurementSpatialRobustness => {
+                Some(MultiMeasurementStrategy::SpatialRobustness)
+            }
+            _ => None,
+        }
+    }
+}
+
+#[derive(Default)]
+struct CoverageCounters {
+    scenario_counts: BTreeMap<ScenarioKind, usize>,
+    mode_counts: BTreeMap<&'static str, usize>,
+    feature_counts: BTreeMap<&'static str, usize>,
+}
+
+impl CoverageCounters {
+    fn record(&mut self, scenario: ScenarioKind, config: &RoomConfig) {
+        *self.scenario_counts.entry(scenario).or_insert(0) += 1;
+        *self
+            .mode_counts
+            .entry(processing_mode_name(&config.optimizer.processing_mode))
+            .or_insert(0) += 1;
+
+        if config.optimizer.multi_measurement.is_some() {
+            *self.feature_counts.entry("multi_measurement").or_insert(0) += 1;
+        }
+        if config.optimizer.multi_seat.is_some() {
+            *self.feature_counts.entry("multi_seat").or_insert(0) += 1;
+        }
+        if config.optimizer.channel_matching.is_some() {
+            *self.feature_counts.entry("channel_matching").or_insert(0) += 1;
+        }
+        if config.optimizer.group_delay.is_some() {
+            *self.feature_counts.entry("group_delay").or_insert(0) += 1;
+        }
+        if config
+            .speakers
+            .values()
+            .any(|speaker| matches!(speaker, SpeakerConfig::MultiSub(group) if group.allpass_optimization))
+        {
+            *self.feature_counts.entry("multi_sub_allpass").or_insert(0) += 1;
+        }
+    }
+
+    fn print(&self) {
+        println!("\nCoverage buckets:");
+        for scenario in REQUIRED_SCENARIOS {
+            println!(
+                "  {:<38} {}",
+                scenario.name(),
+                self.scenario_counts.get(scenario).copied().unwrap_or(0)
+            );
+        }
+        println!(
+            "  {:<38} {}",
+            ScenarioKind::RandomMixed.name(),
+            self.scenario_counts
+                .get(&ScenarioKind::RandomMixed)
+                .copied()
+                .unwrap_or(0)
+        );
+
+        println!("\nProcessing modes:");
+        for (mode, count) in &self.mode_counts {
+            println!("  {:<38} {}", mode, count);
+        }
+
+        println!("\nFeature flags:");
+        for (feature, count) in &self.feature_counts {
+            println!("  {:<38} {}", feature, count);
+        }
+    }
+
+    fn missing_required(&self, num_tests: usize) -> Vec<&'static str> {
+        if num_tests < REQUIRED_SCENARIOS.len() {
+            return Vec::new();
+        }
+
+        REQUIRED_SCENARIOS
+            .iter()
+            .filter(|scenario| self.scenario_counts.get(scenario).copied().unwrap_or(0) == 0)
+            .map(|scenario| scenario.name())
+            .collect()
+    }
+}
+
+fn processing_mode_name(mode: &ProcessingMode) -> &'static str {
+    match mode {
+        ProcessingMode::LowLatency => "low_latency",
+        ProcessingMode::PhaseLinear => "phase_linear",
+        ProcessingMode::Hybrid => "hybrid",
+        ProcessingMode::MixedPhase => "mixed_phase",
+        ProcessingMode::WarpedIir => "warped_iir",
+        ProcessingMode::KautzModal => "kautz_modal",
+    }
 }
 
 /// Filter type for synthetic speaker generation
@@ -316,6 +539,36 @@ fn validate_config(config: &RoomConfig) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_roomeq_output(output_json_path: &Path) -> Result<(), String> {
+    let output_json = fs::read_to_string(output_json_path)
+        .map_err(|e| format!("failed to read output JSON: {}", e))?;
+    let output: serde_json::Value = serde_json::from_str(&output_json)
+        .map_err(|e| format!("failed to parse output JSON: {}", e))?;
+
+    let channels = output
+        .get("channels")
+        .and_then(|value| value.as_object())
+        .ok_or_else(|| "output JSON is missing object field 'channels'".to_string())?;
+    if channels.is_empty() {
+        return Err("output JSON contains no channels".to_string());
+    }
+
+    if let Some(metadata) = output.get("metadata").and_then(|value| value.as_object()) {
+        for key in ["pre_score", "post_score"] {
+            if let Some(value) = metadata.get(key) {
+                let score = value
+                    .as_f64()
+                    .ok_or_else(|| format!("metadata.{} is not numeric", key))?;
+                if !score.is_finite() {
+                    return Err(format!("metadata.{} is not finite", key));
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
@@ -333,6 +586,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut successful_tests = 0;
     let mut failed_tests = 0;
+    let mut coverage = CoverageCounters::default();
 
     // Use seed if provided
     let mut rng = if let Some(seed) = args.seed {
@@ -344,6 +598,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     for i in 0..args.num_tests {
         CURRENT_TEST_INDEX.store(i, Ordering::SeqCst);
         println!("Running test {}/{}...", i + 1, args.num_tests);
+        let scenario_kind = ScenarioKind::for_test(i, &mut rng);
+        println!("  Scenario bucket: {}", scenario_kind.name());
 
         // Create a subdirectory for this test
         let test_dir = output_dir.join(format!("test_{}", i));
@@ -354,7 +610,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         // Generate random configuration and measurements
         let (config, _measurement_files, multi_driver_groups) =
-            generate_random_config(&test_dir, i, &mut rng, args.max_speakers)?;
+            generate_random_config(&test_dir, i, &mut rng, args.max_speakers, scenario_kind)?;
 
         // Validate config
         if let Err(e) = validate_config(&config) {
@@ -367,23 +623,26 @@ fn main() -> Result<(), Box<dyn Error>> {
         let config_path = test_dir.join("config.json");
         let config_json = serde_json::to_string_pretty(&config)?;
         fs::write(&config_path, config_json)?;
+        coverage.record(scenario_kind, &config);
 
         // Run roomeq binary
         let output_json_path = test_dir.join("output.json");
+        let sample_rate_arg = args.sample_rate.to_string();
         let mut command = Command::new("cargo");
-        command
-            .args([
-                "run",
-                "--quiet",
-                "--release",
-                "--bin",
-                "roomeq",
-                "--",
-                "--config",
-                config_path.to_str().unwrap(),
-                "--output",
-                output_json_path.to_str().unwrap(),
-            ]);
+        command.args([
+            "run",
+            "--quiet",
+            "--release",
+            "--bin",
+            "roomeq",
+            "--",
+            "--config",
+            config_path.to_str().unwrap(),
+            "--output",
+            output_json_path.to_str().unwrap(),
+            "--sample-rate",
+            sample_rate_arg.as_str(),
+        ]);
 
         let status = if args.verbose {
             command.status()?
@@ -404,6 +663,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         };
 
         if status.success() {
+            if let Err(e) = validate_roomeq_output(&output_json_path) {
+                println!("  Test {} failed output validation: {}", i + 1, e);
+                failed_tests += 1;
+                continue;
+            }
+
             println!("  Test {} successful!", i + 1);
             successful_tests += 1;
 
@@ -433,6 +698,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("\nFuzzing complete!");
     println!("Successful tests: {}", successful_tests);
     println!("Failed tests: {}", failed_tests);
+    coverage.print();
+
+    let missing_required = coverage.missing_required(args.num_tests);
+    if !missing_required.is_empty() {
+        println!("\nMissing required coverage buckets:");
+        for name in missing_required {
+            println!("  {}", name);
+        }
+        std::process::exit(1);
+    }
 
     if failed_tests > 0 {
         std::process::exit(1);
@@ -444,6 +719,349 @@ fn main() -> Result<(), Box<dyn Error>> {
 /// Generate a random RoomConfig
 #[allow(clippy::type_complexity)]
 fn generate_random_config(
+    output_dir: &Path,
+    test_idx: usize,
+    rng: &mut ChaCha8Rng,
+    max_speakers: usize,
+    scenario_kind: ScenarioKind,
+) -> Result<(RoomConfig, Vec<PathBuf>, Vec<MultiDriverGroupInfo>), Box<dyn Error>> {
+    if scenario_kind == ScenarioKind::RandomMixed {
+        return generate_random_mixed_config(output_dir, test_idx, rng, max_speakers);
+    }
+
+    generate_stratified_config(output_dir, test_idx, rng, scenario_kind)
+}
+
+#[allow(clippy::type_complexity)]
+fn generate_stratified_config(
+    output_dir: &Path,
+    test_idx: usize,
+    rng: &mut ChaCha8Rng,
+    scenario_kind: ScenarioKind,
+) -> Result<(RoomConfig, Vec<PathBuf>, Vec<MultiDriverGroupInfo>), Box<dyn Error>> {
+    let mut speakers = HashMap::new();
+    let mut measurement_files = Vec::new();
+    let mut multi_driver_groups = Vec::new();
+    let mut crossovers = HashMap::new();
+
+    match scenario_kind {
+        ScenarioKind::Group2Way | ScenarioKind::Group3Way => {
+            let channel_name = "L".to_string();
+            let num_drivers = if scenario_kind == ScenarioKind::Group2Way {
+                2
+            } else {
+                3
+            };
+            let mut driver_sources = Vec::new();
+            for d in 0..num_drivers {
+                let (source, paths) = generate_random_source(
+                    rng,
+                    output_dir,
+                    test_idx,
+                    &channel_name,
+                    "driver",
+                    d,
+                    num_drivers,
+                    None,
+                )?;
+                measurement_files.extend(paths);
+                driver_sources.push(source);
+            }
+
+            let xover_id = format!("xover_{}", channel_name);
+            let xover_type = if num_drivers == 2 { "LR24" } else { "LR12" }.to_string();
+            crossovers.insert(
+                xover_id.clone(),
+                CrossoverConfig {
+                    crossover_type: xover_type.clone(),
+                    frequency: None,
+                    frequencies: None,
+                    frequency_range: Some((200.0, 5000.0)),
+                },
+            );
+
+            multi_driver_groups.push(MultiDriverGroupInfo {
+                channel_name: channel_name.clone(),
+                measurement_sources: driver_sources.clone(),
+                crossover_type: xover_type,
+            });
+
+            speakers.insert(
+                channel_name.clone(),
+                SpeakerConfig::Group(SpeakerGroup {
+                    name: channel_name,
+                    speaker_name: Some(random_speaker_name(rng)),
+                    measurements: driver_sources,
+                    crossover: Some(xover_id),
+                }),
+            );
+        }
+        ScenarioKind::MultiSub
+        | ScenarioKind::MultiSubAllpass
+        | ScenarioKind::MultiSubMultiSeat => {
+            let num_subs = if scenario_kind == ScenarioKind::MultiSub {
+                2
+            } else {
+                3
+            };
+            let forced_measurements = if scenario_kind == ScenarioKind::MultiSubMultiSeat {
+                Some(3)
+            } else {
+                None
+            };
+            let mut sub_sources = Vec::new();
+            for d in 0..num_subs {
+                let (source, paths) = generate_random_source(
+                    rng,
+                    output_dir,
+                    test_idx,
+                    "LFE",
+                    "sub",
+                    d,
+                    num_subs,
+                    forced_measurements,
+                )?;
+                measurement_files.extend(paths);
+                sub_sources.push(source);
+            }
+
+            speakers.insert(
+                "LFE".to_string(),
+                SpeakerConfig::MultiSub(MultiSubGroup {
+                    name: "MultiSub".to_string(),
+                    speaker_name: Some(random_speaker_name(rng)),
+                    subwoofers: sub_sources,
+                    allpass_optimization: scenario_kind == ScenarioKind::MultiSubAllpass,
+                }),
+            );
+        }
+        ScenarioKind::Dba => {
+            let (source_f, paths_f) =
+                generate_random_source(rng, output_dir, test_idx, "LFE", "front", 0, 1, None)?;
+            let (source_r, paths_r) =
+                generate_random_source(rng, output_dir, test_idx, "LFE", "rear", 0, 1, None)?;
+            measurement_files.extend(paths_f);
+            measurement_files.extend(paths_r);
+
+            speakers.insert(
+                "LFE".to_string(),
+                SpeakerConfig::Dba(DBAConfig {
+                    name: "DBA".to_string(),
+                    speaker_name: Some(random_speaker_name(rng)),
+                    front: vec![source_f],
+                    rear: vec![source_r],
+                }),
+            );
+        }
+        ScenarioKind::Cardioid => {
+            let (front, paths_f) =
+                generate_random_source(rng, output_dir, test_idx, "LFE", "front", 0, 2, None)?;
+            let (rear, paths_r) =
+                generate_random_source(rng, output_dir, test_idx, "LFE", "rear", 1, 2, None)?;
+            measurement_files.extend(paths_f);
+            measurement_files.extend(paths_r);
+
+            speakers.insert(
+                "LFE".to_string(),
+                SpeakerConfig::Cardioid(Box::new(CardioidConfig {
+                    name: "Cardioid".to_string(),
+                    speaker_name: Some(random_speaker_name(rng)),
+                    front,
+                    rear,
+                    separation_meters: rng.random_range(0.25..1.20),
+                })),
+            );
+        }
+        ScenarioKind::ChannelMatching => {
+            for channel in ["L", "R"] {
+                let (source, paths) =
+                    generate_random_source(rng, output_dir, test_idx, channel, "main", 0, 1, None)?;
+                measurement_files.extend(paths);
+                speakers.insert(channel.to_string(), SpeakerConfig::Single(source));
+            }
+        }
+        ScenarioKind::GroupDelay => {
+            for (idx, channel) in ["L", "R", "C"].iter().enumerate() {
+                let (source, paths) = generate_random_source(
+                    rng, output_dir, test_idx, channel, "main", idx, 1, None,
+                )?;
+                measurement_files.extend(paths);
+                speakers.insert((*channel).to_string(), SpeakerConfig::Single(source));
+            }
+        }
+        ScenarioKind::MultiMeasurementAverage
+        | ScenarioKind::MultiMeasurementWeightedSum
+        | ScenarioKind::MultiMeasurementMinimax
+        | ScenarioKind::MultiMeasurementVariancePenalized
+        | ScenarioKind::MultiMeasurementSpatialRobustness => {
+            let (source, paths) =
+                generate_random_source(rng, output_dir, test_idx, "L", "main", 0, 1, Some(3))?;
+            measurement_files.extend(paths);
+            speakers.insert("L".to_string(), SpeakerConfig::Single(source));
+        }
+        ScenarioKind::SingleLowLatency
+        | ScenarioKind::SinglePhaseLinear
+        | ScenarioKind::SingleHybrid
+        | ScenarioKind::SingleMixedPhase
+        | ScenarioKind::SingleWarpedIir
+        | ScenarioKind::SingleKautzModal
+        | ScenarioKind::RandomMixed => {
+            let (source, paths) =
+                generate_random_source(rng, output_dir, test_idx, "L", "main", 0, 1, None)?;
+            measurement_files.extend(paths);
+            speakers.insert("L".to_string(), SpeakerConfig::Single(source));
+        }
+    }
+
+    let processing_mode = scenario_kind.processing_mode(rng);
+    let mut optimizer = base_optimizer_config(processing_mode, rng);
+
+    if let Some(strategy) = scenario_kind.multi_measurement_strategy() {
+        optimizer.multi_measurement = Some(multi_measurement_config(strategy, 3));
+    }
+
+    if scenario_kind == ScenarioKind::MultiSubMultiSeat {
+        optimizer.multi_seat = Some(MultiSeatConfig {
+            enabled: true,
+            strategy: MultiSeatStrategy::MinimizeVariance,
+            optimize_polarity: true,
+            allpass_filters_per_sub: 1,
+            ..Default::default()
+        });
+    }
+
+    if scenario_kind == ScenarioKind::ChannelMatching {
+        optimizer.channel_matching = Some(ChannelMatchingConfig {
+            enabled: true,
+            threshold_db: 0.1,
+            max_filters: 3,
+        });
+    }
+
+    if scenario_kind == ScenarioKind::GroupDelay {
+        optimizer.group_delay = Some(GroupDelayOptimizationConfig {
+            enabled: true,
+            max_iter: 80,
+            popsize: 8,
+            ap_per_channel: 0,
+            min_improvement_db: 0.0,
+            adaptive_allpass: false,
+            ..Default::default()
+        });
+    }
+
+    let target_curve = if rng.random_bool(0.3) {
+        Some(TargetCurveConfig::Predefined("harman".to_string()))
+    } else {
+        None
+    };
+
+    Ok((
+        RoomConfig {
+            version: autoeq::roomeq::default_config_version(),
+            system: None,
+            speakers,
+            crossovers: if crossovers.is_empty() {
+                None
+            } else {
+                Some(crossovers)
+            },
+            target_curve,
+            optimizer,
+            recording_config: None,
+            cea2034_cache: None,
+        },
+        measurement_files,
+        multi_driver_groups,
+    ))
+}
+
+fn base_optimizer_config(processing_mode: ProcessingMode, rng: &mut ChaCha8Rng) -> OptimizerConfig {
+    let needs_fir = matches!(
+        processing_mode,
+        ProcessingMode::PhaseLinear | ProcessingMode::Hybrid
+    );
+    let needs_mixed_mode = matches!(processing_mode, ProcessingMode::Hybrid);
+    let needs_mixed_phase = matches!(processing_mode, ProcessingMode::MixedPhase);
+
+    OptimizerConfig {
+        algorithm: "autoeq:de".to_string(),
+        num_filters: 7,
+        max_iter: 100,
+        population: 30,
+        min_freq: 20.0,
+        max_freq: 20000.0,
+        min_q: 0.5,
+        max_q: 10.0,
+        min_db: -12.0,
+        max_db: 12.0,
+        loss_type: "flat".to_string(),
+        peq_model: if rng.random_bool(0.5) {
+            "pk".to_string()
+        } else {
+            "ls-pk-hs".to_string()
+        },
+        processing_mode,
+        fir: needs_fir.then(|| fir_config("kirkeby")),
+        mixed_config: needs_mixed_mode.then(MixedModeConfig::default),
+        mixed_phase: needs_mixed_phase.then(mixed_phase_config),
+        seed: Some(rng.random()),
+        ..OptimizerConfig::default()
+    }
+}
+
+fn fir_config(phase: &str) -> FirConfig {
+    FirConfig {
+        taps: 1024,
+        phase: phase.to_string(),
+        correct_excess_phase: phase == "kirkeby",
+        phase_smoothing: 0.167,
+        pre_ringing: None,
+    }
+}
+
+fn mixed_phase_config() -> MixedPhaseSerdeConfig {
+    MixedPhaseSerdeConfig {
+        max_fir_length_ms: 10.0,
+        pre_ringing_threshold_db: -30.0,
+        min_spatial_depth: 0.5,
+        phase_smoothing_octaves: 1.0 / 6.0,
+    }
+}
+
+fn multi_measurement_config(
+    strategy: MultiMeasurementStrategy,
+    measurement_count: usize,
+) -> MultiMeasurementConfig {
+    let weights = if strategy == MultiMeasurementStrategy::WeightedSum {
+        Some(vec![0.55, 0.30, 0.15])
+    } else {
+        None
+    };
+    let spatial_robustness = if strategy == MultiMeasurementStrategy::SpatialRobustness {
+        Some(SpatialRobustnessSerdeConfig {
+            variance_threshold_db: 3.0,
+            transition_width_db: 2.0,
+            min_correction_depth: 0.1,
+            mask_smoothing_octaves: 1.0 / 6.0,
+        })
+    } else {
+        None
+    };
+
+    MultiMeasurementConfig {
+        strategy,
+        weights: weights.map(|mut values| {
+            values.truncate(measurement_count);
+            values
+        }),
+        variance_lambda: 1.0,
+        spatial_robustness,
+    }
+}
+
+#[allow(clippy::type_complexity)]
+fn generate_random_mixed_config(
     output_dir: &Path,
     test_idx: usize,
     rng: &mut ChaCha8Rng,
@@ -465,8 +1083,16 @@ fn generate_random_config(
 
         if speaker_type_roll < 60 {
             // 60% chance: Single speaker
-            let (source, paths) =
-                generate_random_source(rng, output_dir, test_idx, &channel_name, "main", 0, 1)?;
+            let (source, paths) = generate_random_source(
+                rng,
+                output_dir,
+                test_idx,
+                &channel_name,
+                "main",
+                0,
+                1,
+                None,
+            )?;
             measurement_files.extend(paths);
             speakers.insert(channel_name, SpeakerConfig::Single(source));
         } else if speaker_type_roll < 85 {
@@ -482,6 +1108,7 @@ fn generate_random_config(
                     "driver",
                     d,
                     num_drivers,
+                    None,
                 )?;
                 measurement_files.extend(paths);
                 driver_sources.push(source);
@@ -513,7 +1140,7 @@ fn generate_random_config(
                 channel_name.clone(),
                 SpeakerConfig::Group(SpeakerGroup {
                     name: channel_name,
-                    speaker_name: Some(random_speaker_name()),
+                    speaker_name: Some(random_speaker_name(rng)),
                     measurements: driver_sources,
                     crossover: Some(xover_id),
                 }),
@@ -527,12 +1154,12 @@ fn generate_random_config(
                 let mut rear_sources = Vec::new();
 
                 let (source_f, paths_f) =
-                    generate_random_source(rng, output_dir, test_idx, "LFE", "front", 0, 1)?;
+                    generate_random_source(rng, output_dir, test_idx, "LFE", "front", 0, 1, None)?;
                 measurement_files.extend(paths_f);
                 front_sources.push(source_f);
 
                 let (source_r, paths_r) =
-                    generate_random_source(rng, output_dir, test_idx, "LFE", "rear", 0, 1)?;
+                    generate_random_source(rng, output_dir, test_idx, "LFE", "rear", 0, 1, None)?;
                 measurement_files.extend(paths_r);
                 rear_sources.push(source_r);
 
@@ -540,7 +1167,7 @@ fn generate_random_config(
                     "LFE".to_string(),
                     SpeakerConfig::Dba(DBAConfig {
                         name: "DBA".to_string(),
-                        speaker_name: Some(random_speaker_name()),
+                        speaker_name: Some(random_speaker_name(rng)),
                         front: front_sources,
                         rear: rear_sources,
                     }),
@@ -550,7 +1177,7 @@ fn generate_random_config(
                 let mut sub_sources = Vec::new();
                 for d in 0..num_subs {
                     let (source, paths) = generate_random_source(
-                        rng, output_dir, test_idx, "LFE", "sub", d, num_subs,
+                        rng, output_dir, test_idx, "LFE", "sub", d, num_subs, None,
                     )?;
                     measurement_files.extend(paths);
                     sub_sources.push(source);
@@ -560,7 +1187,7 @@ fn generate_random_config(
                     "LFE".to_string(),
                     SpeakerConfig::MultiSub(MultiSubGroup {
                         name: "MultiSub".to_string(),
-                        speaker_name: Some(random_speaker_name()),
+                        speaker_name: Some(random_speaker_name(rng)),
                         subwoofers: sub_sources,
                         allpass_optimization: false,
                     }),
@@ -624,6 +1251,7 @@ fn generate_random_config(
             peq_model,
             processing_mode,
             fir: fir_config,
+            seed: Some(rng.random()),
             ..OptimizerConfig::default()
         },
         recording_config: None,
@@ -642,14 +1270,17 @@ fn generate_random_source(
     role: &str,
     idx: usize,
     count: usize,
+    forced_measurements: Option<usize>,
 ) -> Result<(autoeq::MeasurementSource, Vec<PathBuf>), Box<dyn Error>> {
     let mut paths = Vec::new();
-    let is_multiple = rng.random_bool(0.1); // 10% chance of multiple measurements
-    let num_files = if is_multiple {
-        rng.random_range(2..=3)
-    } else {
-        1
-    };
+    let num_files = forced_measurements.unwrap_or_else(|| {
+        if rng.random_bool(0.1) {
+            rng.random_range(2..=3)
+        } else {
+            1
+        }
+    });
+    let is_multiple = num_files > 1;
 
     let mut file_strings = Vec::new();
 
@@ -664,7 +1295,7 @@ fn generate_random_source(
             format!("test_{}_{}_{}_{}.csv", test_idx, channel, role, idx)
         };
         let path = output_dir.join(filename);
-        generate_measurement_csv(&path, &speaker_config, idx, count)?;
+        generate_measurement_csv(rng, &path, &speaker_config, idx, count)?;
         let config_path = path.canonicalize()?;
 
         file_strings.push(config_path.to_string_lossy().to_string());
@@ -678,7 +1309,7 @@ fn generate_random_source(
                     .into_iter()
                     .map(|s| autoeq::MeasurementRef::Path(PathBuf::from(s)))
                     .collect(),
-                speaker_name: Some(random_speaker_name()),
+                speaker_name: Some(random_speaker_name(rng)),
             }),
             paths,
         ))
@@ -686,7 +1317,7 @@ fn generate_random_source(
         Ok((
             autoeq::MeasurementSource::Single(autoeq::read::MeasurementSingle {
                 measurement: autoeq::MeasurementRef::Path(PathBuf::from(file_strings[0].clone())),
-                speaker_name: Some(random_speaker_name()),
+                speaker_name: Some(random_speaker_name(rng)),
             }),
             paths,
         ))
@@ -694,15 +1325,13 @@ fn generate_random_source(
 }
 
 /// Generate a randomized but valid speaker model name
-fn random_speaker_name() -> String {
+fn random_speaker_name(rng: &mut ChaCha8Rng) -> String {
     let brands = ["Genelec", "Neumann", "JBL", "Kef", "Revel", "Yamaha"];
     let models = ["8361A", "KH-120", "708P", "LS50", "F208", "HS8"];
-    let mut rng = rand::rng();
-    use rand::seq::IndexedRandom;
     format!(
         "{} {}",
-        brands.choose(&mut rng).unwrap(),
-        models.choose(&mut rng).unwrap()
+        brands.choose(rng).unwrap(),
+        models.choose(rng).unwrap()
     )
 }
 
@@ -733,13 +1362,12 @@ fn generate_random_speaker(rng: &mut ChaCha8Rng) -> SyntheticSpeaker {
 /// - Midrange: 400-5000 Hz
 /// - Tweeter: 2000-20000 Hz
 fn generate_measurement_csv(
+    rng: &mut ChaCha8Rng,
     path: &Path,
     config: &SyntheticSpeaker,
     driver_idx: usize,
     num_drivers: usize,
 ) -> Result<(), Box<dyn Error>> {
-    let mut rng = ChaCha8Rng::from_os_rng();
-
     // Generate frequency points (logarithmic spacing)
     let num_points = 200;
     let min_freq: f64 = 20.0;
@@ -758,6 +1386,20 @@ fn generate_measurement_csv(
 
     // Generate delay for phase simulation (0-5 ms)
     let delay_ms = rng.random_range(0.0..5.0);
+    let mode_count = if matches!(driver_type, Some(DriverType::Tweeter)) {
+        1
+    } else {
+        rng.random_range(2..=5)
+    };
+    let room_modes: Vec<(f64, f64, f64)> = (0..mode_count)
+        .map(|_| {
+            (
+                rng.random_range(30.0..450.0),
+                rng.random_range(-10.0..8.0),
+                rng.random_range(0.025..0.10),
+            )
+        })
+        .collect();
 
     for i in 0..num_points {
         let t = i as f64 / (num_points - 1) as f64;
@@ -805,6 +1447,11 @@ fn generate_measurement_csv(
                     }
                 }
             }
+        }
+
+        for (mode_freq, mode_gain_db, width) in &room_modes {
+            let distance = (freq / mode_freq).ln();
+            spl += mode_gain_db * (-0.5 * (distance / width).powi(2)).exp();
         }
 
         // Add some noise

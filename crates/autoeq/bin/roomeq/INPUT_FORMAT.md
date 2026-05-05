@@ -251,6 +251,46 @@ With all-pass optimization:
 }
 ```
 
+With production multi-seat MSO, each subwoofer entry can be a multi-measurement
+source whose `measurements` array is ordered by seat. Every subwoofer must have
+the same number of seat measurements, and each measurement must include phase:
+
+```json
+{
+  "speakers": {
+    "lfe": {
+      "name": "Dual Subwoofers",
+      "subwoofers": [
+        {
+          "measurements": [
+            "measurements/sub1_seat1.csv",
+            "measurements/sub1_seat2.csv",
+            "measurements/sub1_seat3.csv"
+          ]
+        },
+        {
+          "measurements": [
+            "measurements/sub2_seat1.csv",
+            "measurements/sub2_seat2.csv",
+            "measurements/sub2_seat3.csv"
+          ]
+        }
+      ]
+    }
+  },
+  "optimizer": {
+    "multi_seat": {
+      "enabled": true,
+      "strategy": "modal_basis",
+      "optimize_polarity": true,
+      "allpass_filters_per_sub": 1,
+      "per_sub_peq": true,
+      "global_eq": true
+    }
+  }
+}
+```
+
 **MultiSubGroup Fields:**
 
 | Field | Type | Required | Default | Description |
@@ -443,6 +483,8 @@ Controls the optimization algorithm, constraints, and advanced features.
 | `target_response` | object | - | Unified target response configuration (shape, preference shelves, broadband pre-correction) |
 | `excursion_protection` | object | - | Excursion protection for bookshelf speakers |
 | `schroeder_split` | object | - | Different Q constraints above/below Schroeder frequency |
+| `auto_optimizer` | object | - | Opt-in automatic filter count, Q bound, and gain bound selection |
+| `smoothness_penalty` | object | - | TV²-style log-frequency curvature penalty on the correction curve |
 | `phase_alignment` | object | - | Phase alignment for subwoofer integration |
 | `multi_seat` | object | - | Multi-seat variance optimization |
 | `vog` | object | - | Voice of God (timbre matching) |
@@ -865,6 +907,67 @@ With automatic Schroeder frequency from room dimensions:
 
 ---
 
+## Auto Optimizer Configuration
+
+Automatically resolves the maximum PEQ filter count plus Q and gain bounds from
+the measured response, detected F3, Schroeder frequency, target tilt, and
+subwoofer/main-channel role. The final number of active filters can still be
+lower because RoomEQ's adaptive optimizer and backward elimination prune
+low-value filters.
+
+```json
+{
+  "optimizer": {
+    "auto_optimizer": {
+      "enabled": true,
+      "max_filters": 12
+    }
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | boolean | `false` | Enable automatic optimizer parameter selection |
+| `filter_count` | boolean | `true` | Automatically choose the maximum PEQ filter count |
+| `q_bounds` | boolean | `true` | Automatically choose `min_q`, `max_q`, and Schroeder low/high Q bounds |
+| `gain_bounds` | boolean | `true` | Automatically choose `min_db`, `max_db`, below-F3/below-Schroeder boost envelope, and Schroeder low-frequency gain range |
+| `min_filters` | integer | `1` | Lower clamp for automatic filter-count selection |
+| `max_filters` | integer | `12` | Upper clamp for automatic filter-count selection |
+
+---
+
+## Smoothness Penalty Configuration
+
+Adds a second-difference regularizer on the correction curve in log-frequency.
+This discourages narrow opposite-cancel wiggles while preserving broad tilts
+and shelves.
+
+```json
+{
+  "optimizer": {
+    "smoothness_penalty": {
+      "tv2_weight": 0.05,
+      "schroeder_hz": 300.0,
+      "modal_weight_scale": 0.1,
+      "exponent": 1.0
+    }
+  }
+}
+```
+
+If `schroeder_hz` is omitted, RoomEQ derives it from `schroeder_split` when
+available (including room-dimension auto mode); otherwise it remains unset.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `tv2_weight` | number | `0.0` | Penalty weight. `0` disables smoothness regularization. Suggested start: `0.05`. |
+| `schroeder_hz` | number (Hz) | - | Optional cutoff for modal-region relaxation. |
+| `modal_weight_scale` | number | `0.1` | Multiplier below `schroeder_hz` (`0` fully exempts modal region). |
+| `exponent` | number | `1.0` | Per-bin exponent: `1.0` (TV²-like sparse curvature), `2.0` (L2 smoothing). |
+
+---
+
 ## Phase Alignment Configuration
 
 Optimizes delay and polarity to maximize energy sum in the crossover region between subwoofer and main speakers.
@@ -895,7 +998,10 @@ Optimizes delay and polarity to maximize energy sum in the crossover region betw
 
 ## Multi-Seat Configuration
 
-Optimizes subwoofer delays and gains to minimize response variance across multiple listening positions.
+Optimizes subwoofer delay, gain, optional polarity, optional all-pass, and
+optional PEQ across multiple listening positions. In production multi-sub
+workflows this is enabled by providing each subwoofer as a multi-measurement
+source in the `subwoofers` array.
 
 ```json
 {
@@ -928,6 +1034,14 @@ With primary seat constraints:
 | `strategy` | string | `"minimize_variance"` | Strategy: `"minimize_variance"`, `"primary_with_constraints"`, `"average"`, `"modal_basis"` |
 | `primary_seat` | integer | `0` | Index of primary seat (0-based, used with `primary_with_constraints`) |
 | `max_deviation_db` | number (dB) | `6` | Maximum allowed deviation at non-primary seats |
+| `optimize_polarity` | boolean | `false` | Search normal/inverted polarity per subwoofer |
+| `allpass_filters_per_sub` | integer | `0` | Number of per-sub all-pass filters to optimize in the MSO pass |
+| `per_sub_peq` | boolean | `true` | Optimize per-sub PEQ from that sub's seat measurements before MSO |
+| `global_eq` | boolean | `true` | Optimize shared EQ on the post-MSO combined response across seats |
+| `all_channel_enabled` | boolean | `true` | Enable derived multi-seat correction for non-sub home-cinema channels |
+| `all_channel_strategy` | string | `"spatial_robustness"` | Multi-measurement PEQ strategy used for derived all-channel correction and multi-seat sub PEQ |
+| `seat_weights` | array | - | Optional per-seat weights |
+| `primary_seat_weight` | number | `2.0` | Weight multiplier for the primary seat with `primary_with_constraints` |
 
 `modal_basis` uses complex subwoofer transfer functions to extract dominant
 seat-to-seat modal patterns, then optimizes sub gain, delay, polarity, and
