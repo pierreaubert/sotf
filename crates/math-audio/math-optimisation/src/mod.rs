@@ -104,6 +104,13 @@ pub use cmaes::{CmaEsConfig, CmaEsIntermediate, CmaEsReport, cma_es};
 pub mod nsga;
 pub use nsga::{NsgaConfig, NsgaReport, NsgaVariant, ParetoSolution, nsga, nsga2, nsga3};
 
+/// Gaussian-process Bayesian optimizers for expensive objectives.
+pub mod bayesian;
+pub use bayesian::{
+    BayesAcquisition, BayesOptCallback, BayesOptConfig, BayesOptIntermediate, BayesOptParetoReport,
+    BayesOptReport, BayesParetoSolution, bayesian_multi_objective, bayesian_optimization,
+};
+
 use std::fmt;
 use std::str::FromStr;
 use std::sync::Arc;

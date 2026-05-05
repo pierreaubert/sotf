@@ -26,6 +26,7 @@ pub mod fast_math;
 pub mod fdn;
 pub mod fdw;
 pub mod instantaneous_frequency;
+pub mod psychoacoustics;
 pub mod replaygain;
 pub mod rtpghi;
 pub mod signals;
