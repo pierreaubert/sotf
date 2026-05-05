@@ -6,9 +6,6 @@
 .DESCRIPTION
     Creates distributable packages with static binaries for Windows
 
-.PARAMETER InstallDeps
-    Install dependencies using vcpkg
-
 .PARAMETER Clean
     Clean build directory before building
 
@@ -19,7 +16,7 @@
     Build only SotF GPUI (skip TUI)
 
 .PARAMETER Static
-    Build static binaries with static CRT and static libraries
+    Build static binaries with static CRT (no Visual C++ Redistributable / VCLibs needed)
 
 .PARAMETER Help
     Show this help message
@@ -29,21 +26,16 @@
     Build both release binaries (SotF and sotf-tui)
 
 .EXAMPLE
-    .\build-windows.ps1 -InstallDeps
-    Install dependencies and build
-
-.EXAMPLE
     .\build-windows.ps1 -TuiOnly
     Build only the TUI version
 
 .EXAMPLE
     .\build-windows.ps1 -Static
-    Build static binaries (static CRT + static libraries)
+    Build static binaries (static CRT, fully self-contained)
 #>
 
 [CmdletBinding()]
 param(
-    [switch]$InstallDeps,
     [switch]$Clean,
     [switch]$TuiOnly,
     [switch]$GpuiOnly,
@@ -97,28 +89,9 @@ if ($CargoToml -match 'version\s*=\s*"([^"]+)"') {
 $BuildDir = "$ProjectRoot\target\release"
 $DistDir = "$ProjectRoot\dist"
 
-# vcpkg configuration - use C:\vcpkg symlink or VCPKG_ROOT
-$VcpkgRoot = if (Test-Path "C:\vcpkg") {
-    "C:\vcpkg"
-} elseif ($env:VCPKG_ROOT) {
-    $env:VCPKG_ROOT
-} else {
-    "$env:USERPROFILE\vcpkg"
-}
-
-# Select triplet based on static/dynamic build
-if ($Static) {
-    $VcpkgTriplet = "$Arch-windows-static"
-    $BuildType = "static"
-} else {
-    $VcpkgTriplet = "$Arch-windows"
-    $BuildType = "dynamic"
-}
-
-# Required vcpkg packages
-$VcpkgPackages = @(
-    "nlopt:$VcpkgTriplet"
-)
+# Build type label only -- no native deps, no vcpkg. Static = +crt-static so the
+# binary doesn't import VCRUNTIME140.dll/MSVCP140.dll/UCRT.
+$BuildType = if ($Static) { "static" } else { "dynamic" }
 
 # Colors for output
 function Write-Info { param($Message) Write-Host "[INFO] $Message" -ForegroundColor Blue }
@@ -142,17 +115,6 @@ function Test-Prerequisites {
         exit 1
     }
 
-    # Check vcpkg
-    if (-not (Test-Path "$VcpkgRoot\vcpkg.exe")) {
-        Write-Err "vcpkg not found at $VcpkgRoot"
-        Write-Info "Either:"
-        Write-Info "  1. Create symlink: New-Item -ItemType SymbolicLink -Path 'C:\vcpkg' -Target '<your-vcpkg-path>'"
-        Write-Info "  2. Or set VCPKG_ROOT environment variable"
-        exit 1
-    }
-
-    Write-Info "Using vcpkg at: $VcpkgRoot"
-
     # Check Visual Studio Build Tools
     $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
     if (Test-Path $vsWhere) {
@@ -170,35 +132,6 @@ function Test-Prerequisites {
     }
 
     Write-Success "Prerequisites check passed"
-}
-
-function Install-Dependencies {
-    if (-not $InstallDeps) {
-        return
-    }
-
-    Write-Info "Installing dependencies with vcpkg..."
-
-    Push-Location $VcpkgRoot
-    try {
-        foreach ($package in $VcpkgPackages) {
-            Write-Info "Installing $package..."
-            & .\vcpkg.exe install $package
-            if ($LASTEXITCODE -ne 0) {
-                Write-Err "Failed to install $package"
-                exit 1
-            }
-        }
-
-        # Integrate vcpkg with cargo
-        Write-Info "Integrating vcpkg..."
-        & .\vcpkg.exe integrate install
-    }
-    finally {
-        Pop-Location
-    }
-
-    Write-Success "Dependencies installed"
 }
 
 function Clear-Build {
@@ -232,21 +165,17 @@ function Build-Binary {
 
     Push-Location $ProjectRoot
     try {
-        # Set environment for vcpkg integration
-        $env:VCPKG_ROOT = $VcpkgRoot
-        $env:VCPKGRS_TRIPLET = $VcpkgTriplet
-
         if ($Static) {
-            # For static builds, use static CRT and link against static libraries
-            # The static triplet provides static .lib files
-            # Include architecture-specific CPU features for optimal performance
+            # Static CRT only -- no native deps to static-link. CPU features are
+            # already in .cargo/config.toml for the dynamic path; restate them
+            # here so the RUSTFLAGS override doesn't lose them.
             $cpuFeatures = if ($Arch -eq "arm64") {
                 "+neon"
             } else {
                 "+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+avx,+avx2"
             }
-            $env:RUSTFLAGS = "-C target-feature=+crt-static,$cpuFeatures -C link-arg=/LIBPATH:$VcpkgRoot\installed\$VcpkgTriplet\lib -C link-arg=nlopt.lib"
-            Write-Info "Using static linkage with RUSTFLAGS: $($env:RUSTFLAGS)"
+            $env:RUSTFLAGS = "-C target-feature=+crt-static,$cpuFeatures"
+            Write-Info "Using static CRT with RUSTFLAGS: $($env:RUSTFLAGS)"
         }
 
         & cargo build --release --package $BinConfig.Package
@@ -270,20 +199,6 @@ function Build-Binary {
 
     Write-Success "$($BinConfig.Name) built successfully"
     return $true
-}
-
-function Copy-RuntimeDlls {
-    Write-Info "Copying runtime DLLs..."
-
-    # Find and copy nlopt.dll if present (for dynamic builds)
-    if (-not $Static) {
-        $nloptSource = Get-ChildItem -Path "$ProjectRoot\target\release\build" -Recurse -Filter "nlopt.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($nloptSource) {
-            $dest = "$BuildDir\nlopt.dll"
-            Copy-Item $nloptSource.FullName -Destination $dest -Force
-            Write-Info "Copied nlopt.dll to release folder"
-        }
-    }
 }
 
 function New-Distribution {
@@ -311,15 +226,8 @@ function New-Distribution {
         }
     }
 
-    # Copy runtime DLLs
-    $runtimeDlls = @("nlopt.dll")
-    foreach ($dll in $runtimeDlls) {
-        $dllPath = "$BuildDir\$dll"
-        if (Test-Path $dllPath) {
-            Copy-Item $dllPath -Destination $stagingDir
-            Write-Info "Added $dll"
-        }
-    }
+    # No runtime DLLs to ship -- pure-Rust binary, MSVC CRT comes from VCRedist
+    # (dynamic build) or is statically linked (-Static build).
 
     # Copy assets excluding demo-audio (distributed separately as sotf-demo.zip)
     $assetsDir = "$ProjectRoot\crates\app-gpui\assets"
@@ -391,7 +299,6 @@ function Main {
     Write-Info "=========================================="
 
     Test-Prerequisites
-    Install-Dependencies
     Clear-Build
 
     $allSuccess = $true
@@ -405,9 +312,6 @@ function Main {
         Write-Err "Some builds failed"
         exit 1
     }
-
-    # Copy required runtime DLLs to release folder
-    Copy-RuntimeDlls
 
     $zipPath = New-Distribution
 

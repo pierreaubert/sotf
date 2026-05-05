@@ -217,13 +217,7 @@ create_distribution() {
         sign_binary "$staging_dir/$TUI_BINARY" "SotF TUI Player"
     fi
 
-    # Copy runtime DLLs if present
-    for dll in openblas.dll nlopt.dll; do
-        if [ -f "$BUILD_DIR/$dll" ]; then
-            cp "$BUILD_DIR/$dll" "$staging_dir/"
-            log_info "Added $dll"
-        fi
-    done
+    # No runtime DLLs to ship -- pure-Rust binary, no native deps.
 
     # Copy assets if they exist
     if [ -d "$PROJECT_ROOT/crates/app-gpui/assets" ]; then

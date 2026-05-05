@@ -611,11 +611,10 @@ build_msix() {
         fi
     done
 
-    # Copy nlopt.dll if present
-    if [ -f "$BUILD_DIR/nlopt.dll" ]; then
-        cp "$BUILD_DIR/nlopt.dll" "$staging/"
-        log_info "Added nlopt.dll"
-    fi
+    # No native runtime DLLs are bundled. cobyla is pure Rust now (nlopt.dll
+    # removed) and the MSVC C/C++ runtime is satisfied via the
+    # Microsoft.VCLibs.140.00.UWPDesktop framework dependency declared in
+    # AppxManifest.xml.
 
     # Sign executables before packaging into MSIX
     if $SIGN; then
