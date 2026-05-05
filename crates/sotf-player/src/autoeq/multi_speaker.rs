@@ -392,6 +392,8 @@ pub fn run_multi_speaker_optimization(
             min_cut_envelope: None,
             epa_config: None,
             group_delay: None,
+            auto_optimizer: None,
+            smoothness_penalty: None,
         },
         recording_config: None,
         cea2034_cache: None,
@@ -559,6 +561,8 @@ pub fn optimizer_config_from_args(args: &autoeq::Args) -> OptimizerConfig {
         min_cut_envelope: None,
         epa_config: None,
         group_delay: None,
+        auto_optimizer: None,
+        smoothness_penalty: None,
     }
 }
 

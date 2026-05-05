@@ -1698,6 +1698,8 @@ impl RoomEqOptimizerConfig {
                 max_deviation_db: self.multi_seat.max_deviation_db,
                 optimize_polarity: false,
                 allpass_filters_per_sub: 0,
+                per_sub_peq: true,
+                global_eq: true,
                 all_channel_enabled: self.multi_seat.all_channel_enabled,
                 all_channel_strategy: match self.multi_seat.all_channel_strategy.as_str() {
                     "weighted_sum" => autoeq::roomeq::MultiMeasurementStrategy::WeightedSum,
