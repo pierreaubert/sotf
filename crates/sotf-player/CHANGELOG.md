@@ -1,5 +1,17 @@
 # 0.5.122
 
+## Room EQ: expose Bayesian optimizer settings upstream
+
+- Added BO optimizer fields to the player-facing Room EQ config:
+  `bo_initial_samples`, `bo_batch_size`,
+  `bo_posterior_std_threshold`, `bo_acquisition`, and `bo_ehvi`.
+  They now round-trip through `autoeq::roomeq::OptimizerConfig` so
+  GPUI and TUI can drive the new `autoeq:bo` backend without each app
+  knowing the backend schema.
+- Added `RoomEqAlgorithm::BayesianOptimization` and carried the same
+  BO knobs through headphone/spinorama optimizer configs and persisted
+  AutoEQ argument state.
+
 ## Room EQ: follow autoeq 0.4.30 unified `target_response` (breaking)
 
 - `RoomEqConfig` now carries a single `target_response:

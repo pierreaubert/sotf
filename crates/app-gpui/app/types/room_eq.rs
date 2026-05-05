@@ -77,6 +77,8 @@ pub struct RoomEqDropdowns {
     pub strategy_open: bool,
     /// Local algorithm dropdown
     pub local_algo_open: bool,
+    /// Bayesian optimization acquisition dropdown
+    pub bo_acquisition_open: bool,
     /// Loss type dropdown
     pub loss_type_open: bool,
     /// Target curve dropdown
@@ -121,6 +123,7 @@ impl Default for RoomEqDropdowns {
             export_format_open: false,
             strategy_open: false,
             local_algo_open: false,
+            bo_acquisition_open: false,
             loss_type_open: false,
             target_curve_open: false,
             system_type_open: false,

@@ -10,6 +10,10 @@ use serde::{Deserialize, Serialize};
 // Re-export Args from autoeq for direct use
 pub use autoeq::Args as OptimizationParams;
 
+fn default_bo_acquisition() -> String {
+    "qei".to_string()
+}
+
 /// Wrapper around autoeq::Args with serde support for UI state persistence
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OptimizationParamsSerializable {
@@ -33,6 +37,16 @@ pub struct OptimizationParamsSerializable {
     pub adaptive_weight_cr: f64,
     pub tolerance: f64,
     pub abs_tolerance: f64,
+    #[serde(default)]
+    pub bo_initial_samples: usize,
+    #[serde(default)]
+    pub bo_batch_size: usize,
+    #[serde(default)]
+    pub bo_posterior_std_threshold: f64,
+    #[serde(default = "default_bo_acquisition")]
+    pub bo_acquisition: String,
+    #[serde(default)]
+    pub bo_ehvi: bool,
     pub refine: bool,
     pub local_algo: String,
     pub smooth: bool,
@@ -71,6 +85,11 @@ impl From<&autoeq::Args> for OptimizationParamsSerializable {
             adaptive_weight_cr: args.adaptive_weight_cr,
             tolerance: args.tolerance,
             abs_tolerance: args.atolerance,
+            bo_initial_samples: args.bo_initial_samples,
+            bo_batch_size: args.bo_batch_size,
+            bo_posterior_std_threshold: args.bo_posterior_std_threshold,
+            bo_acquisition: args.bo_acquisition.clone(),
+            bo_ehvi: args.bo_ehvi,
             refine: args.refine,
             local_algo: args.local_algo.clone(),
             smooth: args.smooth,
@@ -113,6 +132,11 @@ impl OptimizationParamsSerializable {
         args.adaptive_weight_cr = self.adaptive_weight_cr;
         args.tolerance = self.tolerance;
         args.atolerance = self.abs_tolerance;
+        args.bo_initial_samples = self.bo_initial_samples;
+        args.bo_batch_size = self.bo_batch_size;
+        args.bo_posterior_std_threshold = self.bo_posterior_std_threshold;
+        args.bo_acquisition = self.bo_acquisition.clone();
+        args.bo_ehvi = self.bo_ehvi;
         args.refine = self.refine;
         args.local_algo = self.local_algo.clone();
         args.smooth = self.smooth;

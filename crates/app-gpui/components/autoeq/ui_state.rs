@@ -23,6 +23,8 @@ pub struct AutoEqFormUiState {
     pub strategy_open: bool,
     /// Local algorithm dropdown open state
     pub local_algo_open: bool,
+    /// Bayesian optimization acquisition dropdown open state
+    pub bo_acquisition_open: bool,
     /// Loss type dropdown open state
     pub loss_type_open: bool,
     /// Target curve dropdown open state

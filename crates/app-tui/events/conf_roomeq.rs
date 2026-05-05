@@ -256,7 +256,7 @@ fn handle_configure_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
                 app.room_eq.editing_value = true;
             }
             // Booleans: toggle
-            else if matches!(f, 11 | 13 | 14 | 17 | 19 | 21 | 23) {
+            else if matches!(f, 15 | 16 | 18 | 19 | 22 | 24 | 26 | 28) {
                 adjust_room_eq_field(app, 1);
             }
         }
@@ -408,10 +408,10 @@ fn handle_export_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
 }
 
 /// Total number of adjustable fields in the Room EQ configure step
-const ROOM_EQ_FIELD_COUNT: usize = 24;
+const ROOM_EQ_FIELD_COUNT: usize = 29;
 
 fn is_room_eq_field_numerical(field: usize) -> bool {
-    matches!(field, 0..=6 | 9 | 10 | 18 | 20 | 22)
+    matches!(field, 0..=6 | 9..=13 | 23 | 25 | 27)
 }
 
 fn room_eq_field_value_string(app: &App, field: usize) -> String {
@@ -426,9 +426,12 @@ fn room_eq_field_value_string(app: &App, field: usize) -> String {
         6 => format!("{:.1}", c.max_q),
         9 => c.max_iter.to_string(),
         10 => c.population.to_string(),
-        18 => format!("{:.1}", c.target_response.slope_db_per_octave),
-        20 => format!("{:.0}", c.excursion_protection.manual_f3_hz),
-        22 => format!("{:.0}", c.schroeder_split.schroeder_freq),
+        11 => c.bo_initial_samples.to_string(),
+        12 => c.bo_batch_size.to_string(),
+        13 => format!("{:.3}", c.bo_posterior_std_threshold),
+        23 => format!("{:.1}", c.target_response.slope_db_per_octave),
+        25 => format!("{:.0}", c.excursion_protection.manual_f3_hz),
+        27 => format!("{:.0}", c.schroeder_split.schroeder_freq),
         _ => String::new(),
     }
 }
@@ -479,20 +482,35 @@ fn set_room_eq_field_from_string(app: &mut App) {
         }
         10 => {
             if let Ok(v) = buf.parse::<usize>() {
-                c.population = v.clamp(10, 200);
+                c.population = v.clamp(10, 10000);
             }
         }
-        18 => {
+        11 => {
+            if let Ok(v) = buf.parse::<usize>() {
+                c.bo_initial_samples = v.clamp(0, 10000);
+            }
+        }
+        12 => {
+            if let Ok(v) = buf.parse::<usize>() {
+                c.bo_batch_size = v.clamp(0, 64);
+            }
+        }
+        13 => {
+            if let Ok(v) = buf.parse::<f64>() {
+                c.bo_posterior_std_threshold = v.clamp(0.0, 1.0);
+            }
+        }
+        23 => {
             if let Ok(v) = buf.parse::<f64>() {
                 c.target_response.slope_db_per_octave = v.clamp(-3.0, 0.0);
             }
         }
-        20 => {
+        25 => {
             if let Ok(v) = buf.parse::<f64>() {
                 c.excursion_protection.manual_f3_hz = v.clamp(20.0, 200.0);
             }
         }
-        22 => {
+        27 => {
             if let Ok(v) = buf.parse::<f64>() {
                 c.schroeder_split.schroeder_freq = v.clamp(100.0, 1000.0);
             }
@@ -526,7 +544,7 @@ fn adjust_room_eq_field(app: &mut App, delta: i32) {
         }
         // Optimization
         8 => {
-            let algos = ["cobyla", "autoeq:de", "nelder-mead"];
+            let algos = ["cobyla", "autoeq:de", "autoeq:bo", "nelder-mead"];
             c.algorithm = super::cycle_string(&c.algorithm, &algos, delta);
         }
         9 => {
@@ -535,16 +553,33 @@ fn adjust_room_eq_field(app: &mut App, delta: i32) {
         }
         10 => {
             let n = c.population as i32 + delta * 10;
-            c.population = n.clamp(10, 200) as usize;
+            c.population = n.clamp(10, 10000) as usize;
         }
-        11 => c.refine = !c.refine,
+        11 => {
+            let n = c.bo_initial_samples as i32 + delta;
+            c.bo_initial_samples = n.clamp(0, 10000) as usize;
+        }
         12 => {
+            let n = c.bo_batch_size as i32 + delta;
+            c.bo_batch_size = n.clamp(0, 64) as usize;
+        }
+        13 => {
+            c.bo_posterior_std_threshold =
+                (c.bo_posterior_std_threshold + delta as f64 * 0.001).clamp(0.0, 1.0);
+        }
+        14 => {
+            c.bo_acquisition =
+                super::cycle_string(&c.bo_acquisition, &["qei", "ei", "thompson"], delta);
+        }
+        15 => c.bo_ehvi = !c.bo_ehvi,
+        16 => c.refine = !c.refine,
+        17 => {
             c.local_algo = super::cycle_string(&c.local_algo, &["cobyla", "nelder-mead"], delta);
         }
-        13 => c.psychoacoustic = !c.psychoacoustic,
-        14 => c.asymmetric_loss = !c.asymmetric_loss,
+        18 => c.psychoacoustic = !c.psychoacoustic,
+        19 => c.asymmetric_loss = !c.asymmetric_loss,
         // Mode
-        15 => {
+        20 => {
             let modes = RoomEqOptimizationMode::all();
             let idx = modes.iter().position(|m| *m == c.mode).unwrap_or(0);
             let new_idx = if delta > 0 {
@@ -554,7 +589,7 @@ fn adjust_room_eq_field(app: &mut App, delta: i32) {
             };
             c.mode = modes[new_idx];
         }
-        16 => {
+        21 => {
             let modes = MultiSpeakerMode::all();
             let idx = modes
                 .iter()
@@ -568,25 +603,25 @@ fn adjust_room_eq_field(app: &mut App, delta: i32) {
             c.multi_speaker_mode = modes[new_idx];
         }
         // Target Response
-        17 => c.target_response.enabled = !c.target_response.enabled,
-        18 => {
+        22 => c.target_response.enabled = !c.target_response.enabled,
+        23 => {
             c.target_response.slope_db_per_octave =
                 (c.target_response.slope_db_per_octave + delta as f64 * 0.1).clamp(-3.0, 0.0)
         }
         // Excursion Protection
-        19 => c.excursion_protection.enabled = !c.excursion_protection.enabled,
-        20 => {
+        24 => c.excursion_protection.enabled = !c.excursion_protection.enabled,
+        25 => {
             c.excursion_protection.manual_f3_hz =
                 (c.excursion_protection.manual_f3_hz + delta as f64 * 5.0).clamp(20.0, 200.0)
         }
         // Schroeder Split
-        21 => c.schroeder_split.enabled = !c.schroeder_split.enabled,
-        22 => {
+        26 => c.schroeder_split.enabled = !c.schroeder_split.enabled,
+        27 => {
             c.schroeder_split.schroeder_freq =
                 (c.schroeder_split.schroeder_freq + delta as f64 * 10.0).clamp(100.0, 1000.0)
         }
         // Phase Alignment
-        23 => c.phase_alignment.enabled = !c.phase_alignment.enabled,
+        28 => c.phase_alignment.enabled = !c.phase_alignment.enabled,
         _ => {}
     }
 }

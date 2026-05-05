@@ -1,5 +1,15 @@
 # 0.5.19
 
+## AutoEQ forms: wire Bayesian optimizer controls
+
+- Added `autoeq:bo` to the shared AutoEQ optimizer selector and render
+  BO controls for Sobol hot-start samples, batch size, posterior-std
+  local-refiner handoff, acquisition (`qei` / `ei` / `thompson`), and
+  qEHVI.
+- Wired those controls into Room EQ, headphone EQ, and spinorama EQ
+  state so the selected BO settings reach the optimizer. The Room EQ
+  optimisation step now also summarizes and logs the BO parameters.
+
 ## Room EQ wizard: rename `target_tilt` → `target_response` (breaking)
 
 - Step 3 ("Configure") and the AutoEQ form/render components now

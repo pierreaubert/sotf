@@ -88,6 +88,15 @@ impl RenderOnce for AutoEqForm {
         let on_maxeval_change_rc = self.on_maxeval_change.map(std::rc::Rc::new);
         let on_tolerance_change_rc = self.on_tolerance_change.map(std::rc::Rc::new);
         let on_atolerance_change_rc = self.on_atolerance_change.map(std::rc::Rc::new);
+        let on_bo_initial_samples_change_rc =
+            self.on_bo_initial_samples_change.map(std::rc::Rc::new);
+        let on_bo_batch_size_change_rc = self.on_bo_batch_size_change.map(std::rc::Rc::new);
+        let on_bo_posterior_std_threshold_change_rc = self
+            .on_bo_posterior_std_threshold_change
+            .map(std::rc::Rc::new);
+        let on_bo_acquisition_change_rc = self.on_bo_acquisition_change.map(std::rc::Rc::new);
+        let on_bo_acquisition_toggle_rc = self.on_bo_acquisition_toggle.map(std::rc::Rc::new);
+        let on_bo_ehvi_change_rc = self.on_bo_ehvi_change.map(std::rc::Rc::new);
         let on_de_f_change_rc = self.on_de_f_change.map(std::rc::Rc::new);
         let on_de_cr_change_rc = self.on_de_cr_change.map(std::rc::Rc::new);
         let on_strategy_change_rc = self.on_strategy_change.map(std::rc::Rc::new);

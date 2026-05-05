@@ -49,6 +49,21 @@ impl ParamLimits {
         max: 100000.0,
         step: 100.0,
     };
+    pub const BO_INITIAL_SAMPLES: Self = Self {
+        min: 0.0,
+        max: 10000.0,
+        step: 1.0,
+    };
+    pub const BO_BATCH_SIZE: Self = Self {
+        min: 0.0,
+        max: 64.0,
+        step: 1.0,
+    };
+    pub const BO_POSTERIOR_STD: Self = Self {
+        min: 0.0,
+        max: 1.0,
+        step: 0.001,
+    };
     pub const DE_FACTOR: Self = Self {
         min: 0.0,
         max: 2.0,
@@ -170,6 +185,16 @@ pub struct AutoEqConfig {
     pub tolerance: f64,
     /// Absolute tolerance for convergence
     pub atolerance: f64,
+    /// Bayesian optimization Sobol hot-start samples (0 = automatic)
+    pub bo_initial_samples: usize,
+    /// Bayesian optimization batch size (0 = automatic)
+    pub bo_batch_size: usize,
+    /// Posterior standard-deviation threshold for BO local-refiner handoff (0 = disabled)
+    pub bo_posterior_std_threshold: f64,
+    /// Bayesian optimization acquisition: "ei", "qei", or "thompson"
+    pub bo_acquisition: String,
+    /// Use qEHVI for multi-objective BO where supported
+    pub bo_ehvi: bool,
 
     // DE-specific Parameters
     /// Mutation factor (F) for DE
@@ -346,6 +371,11 @@ impl Default for AutoEqConfig {
             maxeval: 10000,
             tolerance: 0.00001,
             atolerance: 0.00001,
+            bo_initial_samples: 0,
+            bo_batch_size: 0,
+            bo_posterior_std_threshold: 0.0,
+            bo_acquisition: "qei".to_string(),
+            bo_ehvi: false,
             de_f: 0.8,
             de_cr: 0.9,
             strategy: "currenttobest1bin".to_string(),

@@ -157,6 +157,11 @@ pub fn apply_simple_preset(preset: &SimplePresetConfig, config: &mut RoomEqOptim
     config.algorithm = "autoeq:de".to_string();
     config.population = 300;
     config.max_iter = 50_000;
+    config.bo_initial_samples = 0;
+    config.bo_batch_size = 0;
+    config.bo_posterior_std_threshold = 0.0;
+    config.bo_acquisition = default_bo_acquisition();
+    config.bo_ehvi = false;
     config.min_freq = 20.0;
     config.max_freq = 1600.0;
     config.min_db = -12.0;
@@ -660,6 +665,7 @@ pub enum RoomEqAlgorithm {
     #[default]
     Cobyla,
     DifferentialEvolution,
+    BayesianOptimization,
     NelderMead,
 }
 
@@ -668,6 +674,7 @@ impl RoomEqAlgorithm {
         &[
             RoomEqAlgorithm::Cobyla,
             RoomEqAlgorithm::DifferentialEvolution,
+            RoomEqAlgorithm::BayesianOptimization,
             RoomEqAlgorithm::NelderMead,
         ]
     }
@@ -676,6 +683,7 @@ impl RoomEqAlgorithm {
         match self {
             RoomEqAlgorithm::Cobyla => "COBYLA",
             RoomEqAlgorithm::DifferentialEvolution => "Differential Evolution",
+            RoomEqAlgorithm::BayesianOptimization => "Bayesian Optimization",
             RoomEqAlgorithm::NelderMead => "Nelder-Mead",
         }
     }
@@ -684,6 +692,7 @@ impl RoomEqAlgorithm {
         match self {
             RoomEqAlgorithm::Cobyla => "cobyla",
             RoomEqAlgorithm::DifferentialEvolution => "autoeq:de",
+            RoomEqAlgorithm::BayesianOptimization => "autoeq:bo",
             RoomEqAlgorithm::NelderMead => "nelder-mead",
         }
     }
@@ -1132,6 +1141,9 @@ fn default_spacing_weight() -> f64 {
 fn default_min_spacing_oct() -> f64 {
     0.08
 }
+fn default_bo_acquisition() -> String {
+    "qei".to_string()
+}
 fn default_sample_rate() -> usize {
     48000
 }
@@ -1257,6 +1269,16 @@ pub struct RoomEqOptimizerConfig {
     pub max_iter: usize,
     pub peq_model: String,
     pub population: usize,
+    #[serde(default)]
+    pub bo_initial_samples: usize,
+    #[serde(default)]
+    pub bo_batch_size: usize,
+    #[serde(default)]
+    pub bo_posterior_std_threshold: f64,
+    #[serde(default = "default_bo_acquisition")]
+    pub bo_acquisition: String,
+    #[serde(default)]
+    pub bo_ehvi: bool,
     pub refine: bool,
     pub local_algo: String,
     pub loss_type: String,
@@ -1330,6 +1352,11 @@ impl Default for RoomEqOptimizerConfig {
             max_iter: 50000,
             peq_model: "pk".to_string(),
             population: 300,
+            bo_initial_samples: 0,
+            bo_batch_size: 0,
+            bo_posterior_std_threshold: 0.0,
+            bo_acquisition: default_bo_acquisition(),
+            bo_ehvi: false,
             refine: false,
             local_algo: "cobyla".to_string(),
             loss_type: "flat".to_string(),
@@ -1381,6 +1408,14 @@ impl RoomEqOptimizerConfig {
         self.population = backend.population;
         self.peq_model = backend.peq_model.clone();
         self.loss_type = backend.loss_type.clone();
+        self.bo_initial_samples = backend.bo_initial_samples.unwrap_or(0);
+        self.bo_batch_size = backend.bo_batch_size.unwrap_or(0);
+        self.bo_posterior_std_threshold = backend.bo_posterior_std_threshold.unwrap_or(0.0);
+        self.bo_acquisition = backend
+            .bo_acquisition
+            .clone()
+            .unwrap_or_else(default_bo_acquisition);
+        self.bo_ehvi = backend.bo_ehvi.unwrap_or(false);
         self.psychoacoustic = backend.psychoacoustic;
         self.asymmetric_loss = backend.asymmetric_loss;
         self.tolerance = backend.tolerance;
@@ -1771,6 +1806,8 @@ impl RoomEqOptimizerConfig {
         } else {
             None
         };
+        let is_bo_algorithm = self.algorithm.eq_ignore_ascii_case("autoeq:bo")
+            || self.algorithm.eq_ignore_ascii_case("bo");
 
         BackendOptimizerConfig {
             loss_type: self.loss_type.clone(),
@@ -1793,6 +1830,15 @@ impl RoomEqOptimizerConfig {
             seed: self.seed,
             refine: self.refine,
             local_algo: self.local_algo.clone(),
+            bo_initial_samples: (is_bo_algorithm && self.bo_initial_samples > 0)
+                .then_some(self.bo_initial_samples),
+            bo_batch_size: (is_bo_algorithm && self.bo_batch_size > 0)
+                .then_some(self.bo_batch_size),
+            bo_posterior_std_threshold: (is_bo_algorithm && self.bo_posterior_std_threshold > 0.0)
+                .then_some(self.bo_posterior_std_threshold),
+            bo_acquisition: (is_bo_algorithm && !self.bo_acquisition.is_empty())
+                .then(|| self.bo_acquisition.clone()),
+            bo_ehvi: (is_bo_algorithm && self.bo_ehvi).then_some(true),
             psychoacoustic: self.psychoacoustic,
             asymmetric_loss: self.asymmetric_loss,
             tolerance: self.tolerance,

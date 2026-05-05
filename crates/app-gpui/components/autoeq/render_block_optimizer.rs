@@ -6,6 +6,9 @@
 //   toggle_theme (ToggleTheme), hide_tolerance, hide_de_params,
 //   on_algo_change_rc, on_algo_toggle_rc, on_population_change_rc, on_maxeval_change_rc,
 //   on_tolerance_change_rc, on_atolerance_change_rc,
+//   on_bo_initial_samples_change_rc, on_bo_batch_size_change_rc,
+//   on_bo_posterior_std_threshold_change_rc, on_bo_acquisition_change_rc,
+//   on_bo_acquisition_toggle_rc, on_bo_ehvi_change_rc,
 //   on_de_f_change_rc, on_de_cr_change_rc, on_strategy_change_rc, on_strategy_toggle_rc,
 //   on_adaptive_weight_f_change_rc, on_adaptive_weight_cr_change_rc,
 //   on_refine_change_rc, on_local_algo_change_rc, on_local_algo_toggle_rc
@@ -136,6 +139,143 @@ if !hide_tolerance {
                 .spacing(StackSpacing::Md)
                 .child(tolerance_input)
                 .child(atolerance_input),
+        )
+    };
+}
+
+// --- BO-specific settings (conditional) ---
+if config.algo.eq_ignore_ascii_case("autoeq:bo") || config.algo.eq_ignore_ascii_case("bo") {
+    let mut bo_initial_input = NumberInput::new((base_id.clone(), "bo-initial-samples"))
+        .value(config.bo_initial_samples as f64)
+        .min(ParamLimits::BO_INITIAL_SAMPLES.min)
+        .max(ParamLimits::BO_INITIAL_SAMPLES.max)
+        .step(ParamLimits::BO_INITIAL_SAMPLES.step)
+        .decimals(0)
+        .label("BO Initial")
+        .size(NumberInputSize::Sm)
+        .width(100.0)
+        .disabled(disabled)
+        .theme(theme.number_input_theme.clone());
+
+    if let Some(ref handler) = on_bo_initial_samples_change_rc {
+        let h = handler.clone();
+        bo_initial_input =
+            bo_initial_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
+    }
+
+    let mut bo_batch_input = NumberInput::new((base_id.clone(), "bo-batch-size"))
+        .value(config.bo_batch_size as f64)
+        .min(ParamLimits::BO_BATCH_SIZE.min)
+        .max(ParamLimits::BO_BATCH_SIZE.max)
+        .step(ParamLimits::BO_BATCH_SIZE.step)
+        .decimals(0)
+        .label("BO Batch")
+        .size(NumberInputSize::Sm)
+        .width(100.0)
+        .disabled(disabled)
+        .theme(theme.number_input_theme.clone());
+
+    if let Some(ref handler) = on_bo_batch_size_change_rc {
+        let h = handler.clone();
+        bo_batch_input = bo_batch_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
+    }
+
+    let mut bo_std_input = NumberInput::new((base_id.clone(), "bo-posterior-std"))
+        .value(config.bo_posterior_std_threshold)
+        .min(ParamLimits::BO_POSTERIOR_STD.min)
+        .max(ParamLimits::BO_POSTERIOR_STD.max)
+        .step(ParamLimits::BO_POSTERIOR_STD.step)
+        .decimals(3)
+        .label("BO Std Stop")
+        .size(NumberInputSize::Sm)
+        .width(120.0)
+        .disabled(disabled)
+        .theme(theme.number_input_theme.clone());
+
+    if let Some(ref handler) = on_bo_posterior_std_threshold_change_rc {
+        let h = handler.clone();
+        bo_std_input = bo_std_input.on_change(move |v, w, cx| h(v, w, cx));
+    }
+
+    block_out = if is_narrow_layout {
+        block_out
+            .child(bo_initial_input)
+            .child(bo_batch_input)
+            .child(bo_std_input)
+    } else {
+        block_out.child(
+            HStack::new()
+                .spacing(StackSpacing::Md)
+                .child(bo_initial_input)
+                .child(bo_batch_input)
+                .child(bo_std_input),
+        )
+    };
+
+    let bo_acquisition_options: Vec<SelectOption> = BO_ACQUISITION_OPTIONS
+        .iter()
+        .map(|(val, lbl)| SelectOption::new(*val, *lbl))
+        .collect();
+
+    let mut bo_acquisition_select = Select::new((base_id.clone(), "bo-acquisition"))
+        .label("BO Acquisition")
+        .options(bo_acquisition_options)
+        .selected(&config.bo_acquisition)
+        .is_open(ui_state.bo_acquisition_open)
+        .disabled(disabled)
+        .size(SelectSize::Xs)
+        .theme(theme.select_theme.clone());
+
+    if let Some(ref handler) = on_bo_acquisition_toggle_rc {
+        let h = handler.clone();
+        bo_acquisition_select =
+            bo_acquisition_select.on_toggle(move |open, w, cx| h(open, w, cx));
+    }
+
+    if let Some(ref handler) = on_bo_acquisition_change_rc {
+        let h = handler.clone();
+        bo_acquisition_select =
+            bo_acquisition_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
+    }
+
+    let mut bo_ehvi_toggle = Toggle::new((base_id.clone(), "bo-ehvi"))
+        .size(ToggleSize::Sm)
+        .checked(config.bo_ehvi)
+        .theme(toggle_theme.clone());
+
+    if let Some(ref handler) = on_bo_ehvi_change_rc {
+        let h = handler.clone();
+        bo_ehvi_toggle = bo_ehvi_toggle.on_change(move |v, w, cx| h(v, w, cx));
+    }
+
+    block_out = if is_narrow_layout {
+        block_out.child(bo_acquisition_select).child(
+            HStack::new()
+                .spacing(StackSpacing::Md)
+                .justify(StackJustify::SpaceBetween)
+                .child(
+                    Text::new("qEHVI")
+                        .size(TextSize::Xs)
+                        .color(theme.label_color),
+                )
+                .child(bo_ehvi_toggle),
+        )
+    } else {
+        block_out.child(
+            HStack::new()
+                .spacing(StackSpacing::Md)
+                .child(bo_acquisition_select)
+                .child(
+                    HStack::new()
+                        .spacing(StackSpacing::Md)
+                        .justify(StackJustify::SpaceBetween)
+                        .child(
+                            Text::new("qEHVI")
+                                .size(TextSize::Xs)
+                                .color(theme.label_color),
+                        )
+                        .child(bo_ehvi_toggle),
+                ),
         )
     };
 }

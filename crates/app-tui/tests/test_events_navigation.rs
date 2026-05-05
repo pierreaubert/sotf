@@ -1195,7 +1195,7 @@ mod tests {
         assert_eq!(app.room_eq.step, RoomEqStep::Configure);
 
         // Wrap at max field (23)
-        app.room_eq.selected_field = 23;
+        app.room_eq.selected_field = 28;
         send_keys(&mut app, &[KeyCode::Tab]);
         assert_eq!(app.room_eq.selected_field, 0);
         assert_eq!(app.room_eq.step, RoomEqStep::Configure);

@@ -330,6 +330,8 @@ pub fn run_multi_speaker_optimization(
         "Starting multi-speaker optimization: {} speakers",
         config.speakers.len()
     );
+    let is_bo_algorithm = config.args.algo.eq_ignore_ascii_case("autoeq:bo")
+        || config.args.algo.eq_ignore_ascii_case("bo");
 
     // Convert legacy config to RoomConfig
     let mut speakers_map: HashMap<String, SpeakerConfig> = HashMap::new();
@@ -366,6 +368,16 @@ pub fn run_multi_speaker_optimization(
             mixed_config: None,
             refine: true,
             local_algo: "cobyla".to_string(),
+            bo_initial_samples: (is_bo_algorithm && config.args.bo_initial_samples > 0)
+                .then_some(config.args.bo_initial_samples),
+            bo_batch_size: (is_bo_algorithm && config.args.bo_batch_size > 0)
+                .then_some(config.args.bo_batch_size),
+            bo_posterior_std_threshold: (is_bo_algorithm
+                && config.args.bo_posterior_std_threshold > 0.0)
+                .then_some(config.args.bo_posterior_std_threshold),
+            bo_acquisition: (is_bo_algorithm && !config.args.bo_acquisition.is_empty())
+                .then(|| config.args.bo_acquisition.clone()),
+            bo_ehvi: (is_bo_algorithm && config.args.bo_ehvi).then_some(true),
             psychoacoustic: true,
             smooth_n: config.args.smooth_n,
             asymmetric_loss: true,
@@ -515,6 +527,8 @@ pub fn build_room_config_from_curves(
 
 /// Create default optimizer config from autoeq::Args
 pub fn optimizer_config_from_args(args: &autoeq::Args) -> OptimizerConfig {
+    let is_bo_algorithm =
+        args.algo.eq_ignore_ascii_case("autoeq:bo") || args.algo.eq_ignore_ascii_case("bo");
     OptimizerConfig {
         loss_type: format!("{:?}", args.loss).to_lowercase(),
         algorithm: args.algo.clone(),
@@ -537,6 +551,14 @@ pub fn optimizer_config_from_args(args: &autoeq::Args) -> OptimizerConfig {
         phase_correction: None,
         refine: true,
         local_algo: "cobyla".to_string(),
+        bo_initial_samples: (is_bo_algorithm && args.bo_initial_samples > 0)
+            .then_some(args.bo_initial_samples),
+        bo_batch_size: (is_bo_algorithm && args.bo_batch_size > 0).then_some(args.bo_batch_size),
+        bo_posterior_std_threshold: (is_bo_algorithm && args.bo_posterior_std_threshold > 0.0)
+            .then_some(args.bo_posterior_std_threshold),
+        bo_acquisition: (is_bo_algorithm && !args.bo_acquisition.is_empty())
+            .then(|| args.bo_acquisition.clone()),
+        bo_ehvi: (is_bo_algorithm && args.bo_ehvi).then_some(true),
         psychoacoustic: true,
         smooth_n: args.smooth_n,
         asymmetric_loss: true,

@@ -27,6 +27,7 @@ pub struct HeadphoneEqDropdowns {
     pub target_curve_open: bool,
     pub strategy_open: bool,
     pub local_algo_open: bool,
+    pub bo_acquisition_open: bool,
     /// AutoEQ form editing state
     pub autoeq_editing_field: Option<AutoEqField>,
     /// AutoEQ form edit text

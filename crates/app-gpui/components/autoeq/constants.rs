@@ -109,6 +109,7 @@ pub const MULTI_SEAT_STRATEGY_OPTIONS: &[(&str, &str)] = &[
 /// Algorithm options for optimization
 pub const ALGORITHM_OPTIONS: &[(&str, &str)] = &[
     ("autoeq:de", "Auto DE (Recommended)"),
+    ("autoeq:bo", "Bayesian Optimization"),
     ("mh:de", "MH Differential Evolution"),
     ("mh:pso", "MH Particle Swarm"),
     ("mh:rga", "MH Genetic Algorithm"),
@@ -119,6 +120,13 @@ pub const ALGORITHM_OPTIONS: &[(&str, &str)] = &[
     ("nlopt:cobyla", "NLOPT COBYLA"),
     ("nlopt:bobyqa", "NLOPT BOBYQA"),
     ("nlopt:neldermead", "NLOPT Nelder-Mead"),
+];
+
+/// Bayesian optimization acquisition options
+pub const BO_ACQUISITION_OPTIONS: &[(&str, &str)] = &[
+    ("qei", "MC q-EI"),
+    ("ei", "Expected Improvement"),
+    ("thompson", "Thompson Sampling"),
 ];
 
 /// DE strategy options (all variants from math-optimisation Strategy enum)

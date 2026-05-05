@@ -1109,6 +1109,7 @@ impl PlayerView {
         let algo = match optimizer_config.algorithm {
             crate::app::types::RoomEqAlgorithm::Cobyla => "nlopt:cobyla",
             crate::app::types::RoomEqAlgorithm::DifferentialEvolution => "autoeq:de",
+            crate::app::types::RoomEqAlgorithm::BayesianOptimization => "autoeq:bo",
             crate::app::types::RoomEqAlgorithm::NelderMead => "nlopt:neldermead",
         }
         .to_string();
@@ -1188,6 +1189,11 @@ impl PlayerView {
         params.peq_model = sotf_audio_player::autoeq::parse_peq_model(&optimizer_config.peq_model);
         params.tolerance = optimizer_config.tolerance;
         params.atolerance = optimizer_config.atolerance;
+        params.bo_initial_samples = optimizer_config.bo_initial_samples;
+        params.bo_batch_size = optimizer_config.bo_batch_size;
+        params.bo_posterior_std_threshold = optimizer_config.bo_posterior_std_threshold;
+        params.bo_acquisition = optimizer_config.bo_acquisition.clone();
+        params.bo_ehvi = optimizer_config.bo_ehvi;
         params.loss = sotf_audio_player::autoeq::parse_loss_type(&loss);
         params.algo = algo;
         params.curve_name = effective_curve_name.clone();

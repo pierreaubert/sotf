@@ -67,6 +67,10 @@ impl PlayerView {
         let param_max_freq = opt_config.max_freq;
         let param_max_iter = opt_config.max_iter;
         let param_population = opt_config.population;
+        let param_bo_initial_samples = opt_config.bo_initial_samples;
+        let param_bo_batch_size = opt_config.bo_batch_size;
+        let param_bo_acquisition = opt_config.bo_acquisition.clone();
+        let param_bo_ehvi = opt_config.bo_ehvi;
         let param_peq_model = opt_config.peq_model.clone();
         let param_refine = opt_config.refine;
         let param_local_algo = opt_config.local_algo.clone();
@@ -333,7 +337,7 @@ impl PlayerView {
                                     .spacing(StackSpacing::Md)
                                     .child(pair("Channels", channels_text))
                                     .child(pair("Mode", param_mode))
-                                    .child(pair("Algo", param_algorithm))
+                                    .child(pair("Algo", param_algorithm.clone()))
                                     .child(pair("Model", param_peq_model)),
                             )
                             // Row 2: numeric parameters packed together.
@@ -362,6 +366,20 @@ impl PlayerView {
                                 HStack::new()
                                     .spacing(StackSpacing::Md)
                                     .child(pair("Refine", refine_text))
+                                    .when(param_algorithm == "autoeq:bo", |h| {
+                                        h.child(pair(
+                                            "BO",
+                                            format!(
+                                                "init {} / batch {} / {}",
+                                                param_bo_initial_samples,
+                                                param_bo_batch_size,
+                                                param_bo_acquisition
+                                            ),
+                                        ))
+                                    })
+                                    .when(param_algorithm == "autoeq:bo" && param_bo_ehvi, |h| {
+                                        h.child(chip("qEHVI"))
+                                    })
                                     .when(param_psychoacoustic, |h| h.child(chip("Psychoacoustic")))
                                     .when(param_asymmetric_loss, |h| {
                                         h.child(chip("Asymmetric Loss"))
@@ -788,7 +806,8 @@ impl PlayerView {
             log::info!(
                 "Room EQ optimizer config: algo={}, filters={}, freq=[{:.1}, {:.1}], \
                  db=[{:.1}, {:.1}], q=[{:.2}, {:.2}], pop={}, maxiter={}, \
-                 tol={:.2e}, atol={:.2e}, refine={}, psychoacoustic={}, asymmetric={}",
+                 tol={:.2e}, atol={:.2e}, refine={}, psychoacoustic={}, asymmetric={}, \
+                 bo_initial={}, bo_batch={}, bo_std_stop={:.3}, bo_acquisition={}, bo_ehvi={}",
                 cfg.algorithm,
                 cfg.num_filters,
                 cfg.min_freq,
@@ -804,6 +823,11 @@ impl PlayerView {
                 cfg.refine,
                 cfg.psychoacoustic,
                 cfg.asymmetric_loss,
+                cfg.bo_initial_samples,
+                cfg.bo_batch_size,
+                cfg.bo_posterior_std_threshold,
+                cfg.bo_acquisition,
+                cfg.bo_ehvi,
             );
 
             let channel_names: Vec<String> = room_eq
