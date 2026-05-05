@@ -2664,10 +2664,8 @@ pub fn validate_signal_params(
                 return Err(format!("Amplitude {} must be in range (0, 1]", amp));
             }
         }
-        (SignalType::Dirac, SignalParams::Dirac { amp }) => {
-            if *amp <= 0.0 || *amp > 1.0 {
-                return Err(format!("Amplitude {} must be in range (0, 1]", amp));
-            }
+        (SignalType::Dirac, SignalParams::Dirac { amp }) if (*amp <= 0.0 || *amp > 1.0) => {
+            return Err(format!("Amplitude {} must be in range (0, 1]", amp));
         }
         _ => {}
     }
