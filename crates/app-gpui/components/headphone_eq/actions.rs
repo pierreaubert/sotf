@@ -174,6 +174,11 @@ impl PlayerView {
                     params.strategy = config.strategy.clone();
                     params.tolerance = config.tolerance;
                     params.atolerance = config.atolerance;
+                    params.bo_initial_samples = config.bo_initial_samples;
+                    params.bo_batch_size = config.bo_batch_size;
+                    params.bo_posterior_std_threshold = config.bo_posterior_std_threshold;
+                    params.bo_acquisition = config.bo_acquisition.clone();
+                    params.bo_ehvi = config.bo_ehvi;
                     params.refine = config.refine;
                     params.local_algo = config.local_algo.clone();
                     params.smooth = config.smooth;

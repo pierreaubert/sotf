@@ -333,7 +333,8 @@ impl PlayerView {
                                     .import_from_backend(&backend_optimizer);
                                 log::info!(
                                     "Imported optimizer config from file: algo={}, filters={}, pop={}, \
-                                     max_db={}, max_q={}, max_iter={}, refine={}",
+                                     max_db={}, max_q={}, max_iter={}, refine={}, bo_initial={:?}, \
+                                     bo_batch={:?}, bo_acquisition={:?}, bo_ehvi={:?}",
                                     backend_optimizer.algorithm,
                                     backend_optimizer.num_filters,
                                     backend_optimizer.population,
@@ -341,6 +342,10 @@ impl PlayerView {
                                     backend_optimizer.max_q,
                                     backend_optimizer.max_iter,
                                     backend_optimizer.refine,
+                                    backend_optimizer.bo_initial_samples,
+                                    backend_optimizer.bo_batch_size,
+                                    backend_optimizer.bo_acquisition,
+                                    backend_optimizer.bo_ehvi,
                                 );
                                 // Pre-seed the Delay Detection step from recording
                                 // session metadata when the file carries it. Only

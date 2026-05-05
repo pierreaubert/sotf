@@ -58,6 +58,11 @@ impl PlayerView {
             algo: config.algorithm.clone(),
             population: config.population,
             maxeval: config.max_iter,
+            bo_initial_samples: config.bo_initial_samples,
+            bo_batch_size: config.bo_batch_size,
+            bo_posterior_std_threshold: config.bo_posterior_std_threshold,
+            bo_acquisition: config.bo_acquisition.clone(),
+            bo_ehvi: config.bo_ehvi,
             de_f: config.de_f,
             de_cr: config.de_cr,
             strategy: config.strategy.clone(),
@@ -160,6 +165,7 @@ impl PlayerView {
             peq_model_open: room_eq.dropdowns.peq_model_open,
             strategy_open: room_eq.dropdowns.strategy_open,
             local_algo_open: room_eq.dropdowns.local_algo_open,
+            bo_acquisition_open: room_eq.dropdowns.bo_acquisition_open,
             loss_type_open: room_eq.dropdowns.loss_type_open,
             target_curve_open: room_eq.dropdowns.target_curve_open,
             system_type_open: room_eq.dropdowns.system_type_open,
@@ -506,6 +512,96 @@ impl PlayerView {
                             .room_eq_state
                             .optimizer_config
                             .population = value;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_bo_initial_samples_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .bo_initial_samples = value;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_bo_batch_size_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .bo_batch_size = value;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_bo_posterior_std_threshold_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .bo_posterior_std_threshold = value;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_bo_acquisition_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .bo_acquisition = value.to_string();
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .bo_acquisition_open = false;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_bo_acquisition_toggle({
+                let state = self.state.clone();
+                move |open, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .bo_acquisition_open = open;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_bo_ehvi_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .bo_ehvi = value;
                         cx.notify();
                     });
                 }
@@ -1669,6 +1765,11 @@ impl PlayerView {
                                 c.peq_model = params.peq_model;
                                 c.population = params.population;
                                 c.max_iter = params.maxeval;
+                                c.bo_initial_samples = params.bo_initial_samples;
+                                c.bo_batch_size = params.bo_batch_size;
+                                c.bo_posterior_std_threshold = params.bo_posterior_std_threshold;
+                                c.bo_acquisition = params.bo_acquisition.clone();
+                                c.bo_ehvi = params.bo_ehvi;
                                 c.refine = params.refine;
                             }
                         }

@@ -725,7 +725,7 @@ fn test_crossover_type_default() {
 #[test]
 fn test_room_eq_algorithm_all() {
     let all = RoomEqAlgorithm::all();
-    assert_eq!(all.len(), 3);
+    assert_eq!(all.len(), 4);
 }
 
 #[test]
@@ -734,6 +734,10 @@ fn test_room_eq_algorithm_as_str() {
     assert_eq!(
         RoomEqAlgorithm::DifferentialEvolution.as_str(),
         "Differential Evolution"
+    );
+    assert_eq!(
+        RoomEqAlgorithm::BayesianOptimization.as_str(),
+        "Bayesian Optimization"
     );
     assert_eq!(RoomEqAlgorithm::NelderMead.as_str(), "Nelder-Mead");
 }
@@ -744,6 +748,10 @@ fn test_room_eq_algorithm_to_autoeq_string() {
     assert_eq!(
         RoomEqAlgorithm::DifferentialEvolution.to_autoeq_string(),
         "autoeq:de"
+    );
+    assert_eq!(
+        RoomEqAlgorithm::BayesianOptimization.to_autoeq_string(),
+        "autoeq:bo"
     );
     assert_eq!(
         RoomEqAlgorithm::NelderMead.to_autoeq_string(),
@@ -803,6 +811,11 @@ fn test_room_eq_optimizer_config_default() {
     assert_eq!(config.num_filters, 7);
     assert!((config.min_q - 0.5).abs() < 0.001);
     assert!((config.max_q - 6.0).abs() < 0.001);
+    assert_eq!(config.bo_initial_samples, 0);
+    assert_eq!(config.bo_batch_size, 0);
+    assert_eq!(config.bo_posterior_std_threshold, 0.0);
+    assert_eq!(config.bo_acquisition, "qei");
+    assert!(!config.bo_ehvi);
 }
 
 // ============================================================================

@@ -1,5 +1,12 @@
 # 0.5.205
 
+## Room EQ: expose Bayesian optimizer controls
+
+- Added `autoeq:bo` to the Room EQ configure step and exposed BO
+  hot-start samples, batch size, posterior-std stop threshold,
+  acquisition, and qEHVI toggles in the TUI field list. The configure
+  field navigation count was expanded to include the new controls.
+
 ## Room EQ: rename `target_tilt` → `target_response` (breaking)
 
 - `events::conf_roomeq` and the Room EQ draw path (`ui::draw_roomeq`)

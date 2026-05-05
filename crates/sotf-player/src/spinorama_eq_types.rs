@@ -179,9 +179,23 @@ pub struct SpinoramaOptimizerConfig {
     pub min_spacing_oct: f64,
     pub tolerance: f64,
     pub atolerance: f64,
+    #[serde(default)]
+    pub bo_initial_samples: usize,
+    #[serde(default)]
+    pub bo_batch_size: usize,
+    #[serde(default)]
+    pub bo_posterior_std_threshold: f64,
+    #[serde(default = "default_bo_acquisition")]
+    pub bo_acquisition: String,
+    #[serde(default)]
+    pub bo_ehvi: bool,
     pub psychoacoustic: bool,
     /// Loss function: "flat", "flat-asymmetric", or "score"
     pub loss_function: String,
+}
+
+fn default_bo_acquisition() -> String {
+    "qei".to_string()
 }
 
 impl Default for SpinoramaOptimizerConfig {
@@ -216,6 +230,11 @@ impl Default for SpinoramaOptimizerConfig {
             min_spacing_oct: 0.08,
             tolerance: 0.00001,
             atolerance: 0.00001,
+            bo_initial_samples: 0,
+            bo_batch_size: 0,
+            bo_posterior_std_threshold: 0.0,
+            bo_acquisition: default_bo_acquisition(),
+            bo_ehvi: false,
             psychoacoustic: true,
             loss_function: "flat".to_string(),
         }

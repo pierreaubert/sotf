@@ -134,6 +134,12 @@ pub struct AutoEqForm {
     pub(crate) on_maxeval_change: Option<UsizeCallback>,
     pub(crate) on_tolerance_change: Option<F64Callback>,
     pub(crate) on_atolerance_change: Option<F64Callback>,
+    pub(crate) on_bo_initial_samples_change: Option<UsizeCallback>,
+    pub(crate) on_bo_batch_size_change: Option<UsizeCallback>,
+    pub(crate) on_bo_posterior_std_threshold_change: Option<F64Callback>,
+    pub(crate) on_bo_acquisition_change: Option<StringCallback>,
+    pub(crate) on_bo_acquisition_toggle: Option<ToggleCallback>,
+    pub(crate) on_bo_ehvi_change: Option<BoolCallback>,
     pub(crate) on_de_f_change: Option<F64Callback>,
     pub(crate) on_de_cr_change: Option<F64Callback>,
     pub(crate) on_strategy_change: Option<StringCallback>,
@@ -290,6 +296,12 @@ impl AutoEqForm {
             on_maxeval_change: None,
             on_tolerance_change: None,
             on_atolerance_change: None,
+            on_bo_initial_samples_change: None,
+            on_bo_batch_size_change: None,
+            on_bo_posterior_std_threshold_change: None,
+            on_bo_acquisition_change: None,
+            on_bo_acquisition_toggle: None,
+            on_bo_ehvi_change: None,
             on_de_f_change: None,
             on_de_cr_change: None,
             on_strategy_change: None,
@@ -699,6 +711,60 @@ impl AutoEqForm {
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_atolerance_change = Some(Box::new(handler));
+        self
+    }
+
+    /// Set BO initial sample count change handler
+    pub fn on_bo_initial_samples_change(
+        mut self,
+        handler: impl Fn(usize, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_bo_initial_samples_change = Some(Box::new(handler));
+        self
+    }
+
+    /// Set BO batch size change handler
+    pub fn on_bo_batch_size_change(
+        mut self,
+        handler: impl Fn(usize, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_bo_batch_size_change = Some(Box::new(handler));
+        self
+    }
+
+    /// Set BO posterior std handoff threshold change handler
+    pub fn on_bo_posterior_std_threshold_change(
+        mut self,
+        handler: impl Fn(f64, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_bo_posterior_std_threshold_change = Some(Box::new(handler));
+        self
+    }
+
+    /// Set BO acquisition change handler
+    pub fn on_bo_acquisition_change(
+        mut self,
+        handler: impl Fn(&str, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_bo_acquisition_change = Some(Box::new(handler));
+        self
+    }
+
+    /// Set BO acquisition dropdown toggle handler
+    pub fn on_bo_acquisition_toggle(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_bo_acquisition_toggle = Some(Box::new(handler));
+        self
+    }
+
+    /// Set BO qEHVI toggle handler
+    pub fn on_bo_ehvi_change(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_bo_ehvi_change = Some(Box::new(handler));
         self
     }
 

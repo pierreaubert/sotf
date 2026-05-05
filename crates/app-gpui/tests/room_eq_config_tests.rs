@@ -257,6 +257,11 @@ fn make_bare_backend_config() -> autoeq::roomeq::OptimizerConfig {
         seed: None,
         refine: true,
         local_algo: "cobyla".to_string(),
+        bo_initial_samples: None,
+        bo_batch_size: None,
+        bo_posterior_std_threshold: None,
+        bo_acquisition: None,
+        bo_ehvi: None,
         psychoacoustic: true,
         smooth_n: 2,
         asymmetric_loss: true,
@@ -279,6 +284,8 @@ fn make_bare_backend_config() -> autoeq::roomeq::OptimizerConfig {
         phase_correction: None,
         min_filter_improvement: 0.01,
         elimination_threshold: 0.005,
+        auto_optimizer: None,
+        smoothness_penalty: None,
         ssir_wav_path: None,
         max_boost_envelope: None,
         min_cut_envelope: None,
@@ -342,6 +349,36 @@ fn test_import_from_backend_preserves_disabled_features() {
     assert_eq!(config.max_q, 10.0);
     assert_eq!(config.max_db, 12.0);
     assert_eq!(config.max_freq, 12000.0);
+}
+
+#[test]
+fn test_bo_options_roundtrip_to_backend() {
+    let mut config = RoomEqOptimizerConfig {
+        algorithm: "autoeq:bo".to_string(),
+        bo_initial_samples: 32,
+        bo_batch_size: 4,
+        bo_posterior_std_threshold: 0.015,
+        bo_acquisition: "thompson".to_string(),
+        bo_ehvi: true,
+        ..Default::default()
+    };
+
+    let backend = config.to_optimizer_config();
+    assert_eq!(backend.algorithm, "autoeq:bo");
+    assert_eq!(backend.bo_initial_samples, Some(32));
+    assert_eq!(backend.bo_batch_size, Some(4));
+    assert_eq!(backend.bo_posterior_std_threshold, Some(0.015));
+    assert_eq!(backend.bo_acquisition.as_deref(), Some("thompson"));
+    assert_eq!(backend.bo_ehvi, Some(true));
+
+    config = RoomEqOptimizerConfig::default();
+    config.import_from_backend(&backend);
+    assert_eq!(config.algorithm, "autoeq:bo");
+    assert_eq!(config.bo_initial_samples, 32);
+    assert_eq!(config.bo_batch_size, 4);
+    assert_eq!(config.bo_posterior_std_threshold, 0.015);
+    assert_eq!(config.bo_acquisition, "thompson");
+    assert!(config.bo_ehvi);
 }
 
 /// Regression test: After import + apply_smart_defaults, the resulting RoomConfig

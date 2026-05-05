@@ -42,6 +42,7 @@ impl PlayerView {
             peq_model: config.peq_model.clone(),
             algo: match config.algorithm {
                 crate::app::types::RoomEqAlgorithm::DifferentialEvolution => "autoeq:de",
+                crate::app::types::RoomEqAlgorithm::BayesianOptimization => "autoeq:bo",
                 crate::app::types::RoomEqAlgorithm::Cobyla => "nlopt:cobyla",
                 crate::app::types::RoomEqAlgorithm::NelderMead => "nlopt:neldermead",
             }
@@ -55,6 +56,11 @@ impl PlayerView {
             adaptive_weight_cr: config.adaptive_weight_cr,
             tolerance: config.tolerance,
             atolerance: config.atolerance,
+            bo_initial_samples: config.bo_initial_samples,
+            bo_batch_size: config.bo_batch_size,
+            bo_posterior_std_threshold: config.bo_posterior_std_threshold,
+            bo_acquisition: config.bo_acquisition.clone(),
+            bo_ehvi: config.bo_ehvi,
             refine: config.refine,
             local_algo: config.local_algo.clone(),
             smooth: config.smooth,
@@ -77,6 +83,7 @@ impl PlayerView {
             target_curve_open: headphone_eq.dropdowns.target_curve_open,
             strategy_open: headphone_eq.dropdowns.strategy_open,
             local_algo_open: headphone_eq.dropdowns.local_algo_open,
+            bo_acquisition_open: headphone_eq.dropdowns.bo_acquisition_open,
             ..Default::default()
         };
 
@@ -174,6 +181,7 @@ impl PlayerView {
                             .optimizer_config
                             .algorithm = match algo {
                             "autoeq:de" => RoomEqAlgorithm::DifferentialEvolution,
+                            "autoeq:bo" => RoomEqAlgorithm::BayesianOptimization,
                             "nlopt:cobyla" => RoomEqAlgorithm::Cobyla,
                             "nlopt:neldermead" => RoomEqAlgorithm::NelderMead,
                             _ => RoomEqAlgorithm::Cobyla,
@@ -246,6 +254,96 @@ impl PlayerView {
                             .headphone_eq_state
                             .optimizer_config
                             .population = value;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_bo_initial_samples_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .optimizer_config
+                            .bo_initial_samples = value;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_bo_batch_size_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .optimizer_config
+                            .bo_batch_size = value;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_bo_posterior_std_threshold_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .optimizer_config
+                            .bo_posterior_std_threshold = value;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_bo_acquisition_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .optimizer_config
+                            .bo_acquisition = value.to_string();
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .dropdowns
+                            .bo_acquisition_open = false;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_bo_acquisition_toggle({
+                let state = self.state.clone();
+                move |open, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .dropdowns
+                            .bo_acquisition_open = open;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_bo_ehvi_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .optimizer_config
+                            .bo_ehvi = value;
                         cx.notify();
                     });
                 }
@@ -594,6 +692,12 @@ impl PlayerView {
                                 heq.optimizer_config.peq_model = params.peq_model;
                                 heq.optimizer_config.population = params.population;
                                 heq.optimizer_config.max_iter = params.maxeval;
+                                heq.optimizer_config.bo_initial_samples = params.bo_initial_samples;
+                                heq.optimizer_config.bo_batch_size = params.bo_batch_size;
+                                heq.optimizer_config.bo_posterior_std_threshold =
+                                    params.bo_posterior_std_threshold;
+                                heq.optimizer_config.bo_acquisition = params.bo_acquisition.clone();
+                                heq.optimizer_config.bo_ehvi = params.bo_ehvi;
                                 heq.optimizer_config.refine = params.refine;
                                 heq.optimizer_config.smooth = params.smooth;
                                 heq.optimizer_config.smooth_n = params.smooth_n;

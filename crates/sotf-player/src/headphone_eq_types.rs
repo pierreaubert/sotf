@@ -105,6 +105,9 @@ fn default_spacing_weight() -> f64 {
 fn default_min_spacing_oct() -> f64 {
     0.08
 }
+fn default_bo_acquisition() -> String {
+    "qei".to_string()
+}
 
 /// Headphone EQ optimizer configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -148,6 +151,21 @@ pub struct HeadphoneEqOptimizerConfig {
     /// Absolute tolerance for convergence
     #[serde(default = "default_atolerance")]
     pub atolerance: f64,
+    /// Bayesian optimization Sobol hot-start samples (0 = automatic)
+    #[serde(default)]
+    pub bo_initial_samples: usize,
+    /// Bayesian optimization batch size (0 = automatic)
+    #[serde(default)]
+    pub bo_batch_size: usize,
+    /// Posterior standard-deviation threshold for BO local-refiner handoff (0 = disabled)
+    #[serde(default)]
+    pub bo_posterior_std_threshold: f64,
+    /// Bayesian optimization acquisition: "ei", "qei", or "thompson"
+    #[serde(default = "default_bo_acquisition")]
+    pub bo_acquisition: String,
+    /// Use qEHVI for multi-objective BO where supported
+    #[serde(default)]
+    pub bo_ehvi: bool,
     /// Enable local refinement after global optimization
     pub refine: bool,
     /// Local refinement algorithm
@@ -186,6 +204,11 @@ impl Default for HeadphoneEqOptimizerConfig {
             adaptive_weight_cr: 0.7,
             tolerance: 1e-5,
             atolerance: 1e-5,
+            bo_initial_samples: 0,
+            bo_batch_size: 0,
+            bo_posterior_std_threshold: 0.0,
+            bo_acquisition: default_bo_acquisition(),
+            bo_ehvi: false,
             refine: false,
             local_algo: "cobyla".to_string(),
             smooth: false,
