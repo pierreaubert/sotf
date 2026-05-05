@@ -21,6 +21,16 @@
 
   <Dependencies>
     <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
+    <!-- Microsoft Visual C++ 2015-2022 Runtime, framework-package form. The
+         desktop binary is built with -msvc (no +crt-static), so it imports
+         VCRUNTIME140.dll / MSVCP140.dll / UCRT at load time. Declaring this
+         dependency makes deployment refuse to install when VCLibs is missing
+         -- better than a silent "exe won't start" on a fresh Windows box.
+         For sideloaded MSIX, the user installs the VCLibs framework package
+         once (see RELEASE-HOWTO.md). The Store pulls it in automatically. -->
+    <PackageDependency Name="Microsoft.VCLibs.140.00.UWPDesktop"
+                       MinVersion="14.0.30704.0"
+                       Publisher="CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US" />
   </Dependencies>
 
   <Resources>
