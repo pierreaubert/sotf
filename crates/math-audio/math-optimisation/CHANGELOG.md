@@ -1,3 +1,15 @@
+# 0.5.7
+
+## New features
+
+- Added a generic Gaussian-process Bayesian optimisation backend for expensive
+  bounded continuous objectives. It supports Matérn-5/2 ARD kernels with
+  marginal-likelihood lengthscale fitting, Cholesky-based GP solves, latent
+  posterior-uncertainty stopping, Sobol-seeded initial designs, EI, real
+  Monte-Carlo q-EI, Thompson acquisition, parallel batch evaluation through
+  `ParallelConfig`, and real Monte-Carlo qEHVI for small expensive Pareto
+  searches.
+
 # 0.5.6
 
 - Fix a 1 line bug in the new cobyla implementation.

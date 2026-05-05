@@ -67,6 +67,13 @@ pub enum DEError {
         /// Actual dimension provided
         got: usize,
     },
+
+    /// Generic invalid optimizer configuration.
+    #[error("invalid optimizer configuration: {message}")]
+    InvalidConfig {
+        /// Human-readable description of the invalid setting.
+        message: String,
+    },
 }
 
 /// A specialized `Result` type for DE operations.
@@ -93,6 +100,7 @@ impl DEError {
             DEError::PopulationTooSmall { .. }
                 | DEError::InvalidMutationFactor { .. }
                 | DEError::InvalidCrossoverRate { .. }
+                | DEError::InvalidConfig { .. }
         )
     }
 

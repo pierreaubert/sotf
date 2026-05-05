@@ -1,3 +1,12 @@
+# 0.5.16
+
+## New features
+
+- Added reusable psychoacoustic DSP primitives for expensive perceptual losses:
+  Bark-scale conversion and aggregation, Zwicker-style specific/total loudness,
+  sharpness, listening-level calibration, pairwise sensory roughness, cached
+  feature extraction, and stereo HRTF/CTC convolution helpers.
+
 # 0.5.15
 
 ## New features
