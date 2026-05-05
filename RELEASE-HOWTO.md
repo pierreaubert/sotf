@@ -118,4 +118,43 @@ Cosign
 
 ### Windows
 
-Generate a msix
+Generate a msix:
+
+```
+.\scripts\build-msix.ps1 -Arch x86_64 -Sign
+```
+
+#### MSIX runtime dependency (sideload)
+
+The MSIX is built dynamically against the MSVC C/C++ runtime — `sotf-desktop.exe`
+imports `VCRUNTIME140.dll`, `MSVCP140.dll`, and the UCRT. To avoid bundling the
+redistributable, `AppxManifest.xml` declares a framework dependency on
+`Microsoft.VCLibs.140.00.UWPDesktop` (the Visual C++ 2015–2022 Runtime
+framework package).
+
+- **Microsoft Store install**: nothing to do; the Store resolves the framework
+  dependency automatically.
+- **Sideload install**: the target machine must have the VCLibs framework
+  package registered before the MSIX will deploy. On most up-to-date Windows
+  10/11 installs it is already present (any Store app pulls it in). On a fresh
+  box, install it once per architecture:
+
+  ```powershell
+  # x64
+  Invoke-WebRequest https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx `
+      -OutFile $env:TEMP\VCLibs.x64.appx
+  Add-AppxPackage $env:TEMP\VCLibs.x64.appx
+
+  # arm64
+  Invoke-WebRequest https://aka.ms/Microsoft.VCLibs.arm64.14.00.Desktop.appx `
+      -OutFile $env:TEMP\VCLibs.arm64.appx
+  Add-AppxPackage $env:TEMP\VCLibs.arm64.appx
+  ```
+
+  Without VCLibs, `Add-AppxPackage sotf-desktop-*.msix` fails with
+  `0x80073CF3 (PACKAGE_FAILURE_RESOLVING_DEPENDENCY)`. The error names the
+  missing framework package, so it is unambiguous — no silent "exe won't
+  start" failure mode.
+
+Note: nothing else is bundled — `nlopt.dll` is gone (cobyla was rewritten in
+pure Rust). The MSIX ships only `sotf-desktop.exe` plus assets.

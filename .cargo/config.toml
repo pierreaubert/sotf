@@ -44,24 +44,18 @@ rustflags = [
   "-C", 'target-feature=+neon',
 ]
 
-# Windows MSVC x86_64 configuration (dynamic linking)
-# Requires: symlink C:\vcpkg to your vcpkg installation
-# For static builds, use: .\build-windows.ps1 -Static
+# Windows MSVC x86_64 configuration. No native deps -- nlopt was the only
+# vcpkg-provided lib and cobyla is pure Rust now. Default CRT linkage
+# (dynamic) is fine; the MSIX declares the VCLibs framework dependency.
 [target.x86_64-pc-windows-msvc]
 rustflags = [
   "-C", "target-feature=+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+avx,+avx2",
-  "-C", "link-arg=/LIBPATH:C:\\vcpkg\\installed\\x64-windows\\lib",
-  "-C", "link-arg=nlopt.lib"
 ]
 
-# Windows MSVC ARM configuration (dynamic linking)
-# Requires: symlink C:\vcpkg to your vcpkg installation
-# For static builds, use: .\build-windows.ps1 -Static
+# Windows MSVC ARM configuration.
 [target.aarch64-pc-windows-msvc]
 rustflags = [
   "-C", 'target-feature=+neon',
-  "-C", "link-arg=/LIBPATH:C:\\vcpkg\\installed\\arm64-windows\\lib",
-  "-C", "link-arg=nlopt.lib"
 ]
 
 # Windows GNU x86_64 configuration, untested

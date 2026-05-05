@@ -3,6 +3,9 @@
 /target-static
 /coverage
 mutants.out
+/crates/*/fuzzer_output
+/crates/*/*/fuzzer_output
+fuzzer_output/
 
 # installers
 /appimage-builder-*
@@ -10,10 +13,8 @@ mutants.out
 /.docker-target
 /tools
 
-# signing certificates (NEVER commit private keys)
+# signing certificates (NEVER commit private keys), remove everything that looks like a .env
 /certs/
-
-# dont commit env file if any
 .env
 
 # dont let claude and friends change git config
@@ -26,6 +27,7 @@ mutants.out
 __pycache__
 /venv
 /.venv
+/.ruff_cache
 
 # generated data
 /data
@@ -37,10 +39,6 @@ __pycache__
 /*.wav
 /*.json.bz2
 /todos.md
-
-# fuzzer scratch output
-/crates/*/fuzzer_output
-fuzzer_output/
 
 # node
 /site/node_modules
@@ -64,6 +62,9 @@ src/unused.rs
 check_output_*.txt
 /.claude/worktrees/
 /.worktrees/
+/.tokensave
+.qwen
+.opencode
 
 # Logs
 logs
@@ -93,7 +94,3 @@ CTAGS
 *#
 .#*
 .idea
-.qwen
-.worktrees
-
-.tokensave

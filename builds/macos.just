@@ -213,8 +213,8 @@ install-macos: install-macos-brew install-rustup
 	# chromedriver sheanigans
 	brew install chromedriver
 	xattr -d com.apple.quarantine $(which chromedriver)
-	# optimisation library
-	brew install nlopt cmake netcdf opencv chafa
+	# build tools for native deps in the dep tree (skia, etc.)
+	brew install cmake
 
 
 # ----------------------------------------------------------------------
