@@ -46,7 +46,7 @@ use crate::params::PARAMS as XT;
 use arc_swap::ArcSwap;
 use math_audio_dsp::stft::generate_hann_window;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
-use rustfft::num_complex::Complex;
+use rustfft::{FftPlanner, num_complex::Complex};
 use serde::{Deserialize, Serialize};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_gain::{AutoGain, AutoGainData, AutoGainParams};
@@ -178,6 +178,105 @@ fn load_hrtf_for_xtc(
     }))
 }
 
+#[derive(Debug, Deserialize)]
+struct RoomeqRecommendedMatrix {
+    sample_rate: u32,
+    speakers: Vec<String>,
+    ears: Vec<String>,
+    filters: Vec<RoomeqRecommendedFilter>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RoomeqRecommendedFilter {
+    speaker: String,
+    target_ear: String,
+    taps: Vec<f64>,
+}
+
+fn load_roomeq_recommended_filters(
+    artifact_path: &str,
+    sample_rate: u32,
+    num_bins: usize,
+) -> Result<XtcFilters, String> {
+    let bytes = std::fs::read(artifact_path)
+        .map_err(|e| format!("Failed to read roomEQ recommended matrix: {}", e))?;
+    let artifact: RoomeqRecommendedMatrix = serde_json::from_slice(&bytes)
+        .map_err(|e| format!("Invalid roomEQ recommended matrix JSON: {}", e))?;
+    if artifact.sample_rate != sample_rate {
+        return Err(format!(
+            "roomEQ recommended matrix sample rate {} Hz differs from plugin sample rate {} Hz",
+            artifact.sample_rate, sample_rate
+        ));
+    }
+    if artifact.speakers.len() != 2 {
+        return Err(format!(
+            "roomEQ recommended matrix must contain exactly two speakers for the stereo XTC runtime, got {}",
+            artifact.speakers.len()
+        ));
+    }
+    if artifact.ears.len() != 2 {
+        return Err("roomEQ recommended matrix must contain exactly two ears".to_string());
+    }
+
+    let left_speaker = artifact.speakers[0].as_str();
+    let right_speaker = artifact.speakers[1].as_str();
+    let left_ear = artifact.ears[0].as_str();
+    let right_ear = artifact.ears[1].as_str();
+
+    let get_filter = |speaker: &str, target_ear: &str| -> Result<Vec<Complex<f32>>, String> {
+        let filter = artifact
+            .filters
+            .iter()
+            .find(|filter| filter.speaker == speaker && filter.target_ear == target_ear)
+            .ok_or_else(|| {
+                format!(
+                    "roomEQ recommended matrix missing filter speaker='{}', target_ear='{}'",
+                    speaker, target_ear
+                )
+            })?;
+        fir_taps_to_half_spectrum(&filter.taps, num_bins)
+    };
+
+    Ok(XtcFilters {
+        filter_ll: get_filter(left_speaker, left_ear)?,
+        filter_lr: get_filter(left_speaker, right_ear)?,
+        filter_rl: Some(get_filter(right_speaker, left_ear)?),
+        filter_rr: Some(get_filter(right_speaker, right_ear)?),
+        is_symmetric: false,
+    })
+}
+
+fn fir_taps_to_half_spectrum(taps: &[f64], num_bins: usize) -> Result<Vec<Complex<f32>>, String> {
+    if num_bins < 2 {
+        return Err("num_bins must contain at least DC and Nyquist".to_string());
+    }
+    let fft_size = (num_bins - 1) * 2;
+    let mut buffer = vec![Complex::new(0.0_f32, 0.0_f32); fft_size];
+    let copy_len = taps.len().min(fft_size);
+    for idx in 0..copy_len {
+        buffer[idx] = Complex::new(taps[idx] as f32, 0.0);
+    }
+    let mut planner = FftPlanner::<f32>::new();
+    let fft = planner.plan_fft_forward(fft_size);
+    fft.process(&mut buffer);
+    buffer.truncate(num_bins);
+    Ok(buffer)
+}
+
+fn validate_roomeq_recommended_source(
+    params: &XtcPluginParams,
+    sample_rate: u32,
+    num_bins: usize,
+) -> Result<(), String> {
+    if params.source_mode != "roomeq_recommended" {
+        return Ok(());
+    }
+    let matrix_path = params.recommended_matrix_file.as_deref().ok_or_else(|| {
+        "source_mode='roomeq_recommended' requires recommended_matrix_file".to_string()
+    })?;
+    load_roomeq_recommended_filters(matrix_path, sample_rate, num_bins).map(|_| ())
+}
+
 // ============================================================================
 // Helper functions for Optimization 4: Room reflection caching
 // ============================================================================
@@ -204,6 +303,10 @@ fn compute_room_params_hash(params: &XtcPluginParams) -> u64 {
     }
     if let Some(ref hrtf_path) = params.hrtf_file {
         hrtf_path.hash(&mut hasher);
+    }
+    params.source_mode.hash(&mut hasher);
+    if let Some(ref matrix_path) = params.recommended_matrix_file {
+        matrix_path.hash(&mut hasher);
     }
     params.kappa_target.to_bits().hash(&mut hasher);
     hasher.finish()
@@ -459,24 +562,35 @@ impl XtcPlugin {
             None
         };
 
-        // Load HRTF file if specified
-        let hrtf_transfer_functions = if let Some(ref hrtf_path) = params.hrtf_file {
-            load_hrtf_for_xtc(hrtf_path, &params, sample_rate, num_bins)?
+        // Load HRTF file if specified. The roomEQ recommended source bypasses
+        // geometry/HRTF solving and loads its co-designed filters directly.
+        let hrtf_transfer_functions = if params.source_mode != "roomeq_recommended" {
+            if let Some(ref hrtf_path) = params.hrtf_file {
+                load_hrtf_for_xtc(hrtf_path, &params, sample_rate, num_bins)?
+            } else {
+                None
+            }
         } else {
             None
         };
 
-        // Compute geometry cache (Optimization 3)
-        let cache = compute_geometry_cache(&params, sample_rate, num_bins);
-
-        let filters = compute_xtc_filters_full_with_cache_and_hrtf(
-            &params,
-            sample_rate,
-            num_bins,
-            &cache,
-            room_reflection_cache.clone(),
-            hrtf_transfer_functions.as_ref(),
-        );
+        let filters = if params.source_mode == "roomeq_recommended" {
+            let matrix_path = params.recommended_matrix_file.as_deref().ok_or_else(|| {
+                "source_mode='roomeq_recommended' requires recommended_matrix_file".to_string()
+            })?;
+            load_roomeq_recommended_filters(matrix_path, sample_rate, num_bins)?
+        } else {
+            // Compute geometry cache (Optimization 3)
+            let cache = compute_geometry_cache(&params, sample_rate, num_bins);
+            compute_xtc_filters_full_with_cache_and_hrtf(
+                &params,
+                sample_rate,
+                num_bins,
+                &cache,
+                room_reflection_cache.clone(),
+                hrtf_transfer_functions.as_ref(),
+            )
+        };
         let cached_current_filters = Arc::new(filters);
         let filters = Arc::new(ArcSwap::from(Arc::clone(&cached_current_filters)));
 
@@ -669,6 +783,19 @@ impl XtcPlugin {
             self.params.hrtf_file.clone().unwrap_or_default(),
         ));
         self.cached_parameters.push(Parameter::new_string(
+            "source_mode",
+            "Source Mode",
+            self.params.source_mode.clone(),
+        ));
+        self.cached_parameters.push(Parameter::new_string(
+            "recommended_matrix_file",
+            "roomEQ Matrix",
+            self.params
+                .recommended_matrix_file
+                .clone()
+                .unwrap_or_default(),
+        ));
+        self.cached_parameters.push(Parameter::new_string(
             "itd_modeling",
             "ITD Mode",
             self.params.itd_modeling.clone(),
@@ -713,24 +840,40 @@ impl XtcPlugin {
             self.room_reflection_cache = room_data.clone();
             self.room_params_hash = new_hash;
 
-            let hrtf_data = if let Some(ref hrtf_path) = self.params.hrtf_file {
-                load_hrtf_for_xtc(hrtf_path, &self.params, sample_rate, num_bins)
-                    .ok()
-                    .flatten()
+            let hrtf_data = if self.params.source_mode != "roomeq_recommended" {
+                if let Some(ref hrtf_path) = self.params.hrtf_file {
+                    load_hrtf_for_xtc(hrtf_path, &self.params, sample_rate, num_bins)
+                        .ok()
+                        .flatten()
+                } else {
+                    None
+                }
             } else {
                 None
             };
             self.hrtf_transfer_functions = hrtf_data.clone();
 
-            let cache = compute_geometry_cache(&self.params, sample_rate, num_bins);
-            let new_filters = compute_xtc_filters_full_with_cache_and_hrtf(
-                &self.params,
-                sample_rate,
-                num_bins,
-                &cache,
-                room_data.clone(),
-                hrtf_data.as_ref(),
-            );
+            let new_filters = if self.params.source_mode == "roomeq_recommended" {
+                let Some(matrix_path) = self.params.recommended_matrix_file.as_deref() else {
+                    return;
+                };
+                let Ok(filters) =
+                    load_roomeq_recommended_filters(matrix_path, sample_rate, num_bins)
+                else {
+                    return;
+                };
+                filters
+            } else {
+                let cache = compute_geometry_cache(&self.params, sample_rate, num_bins);
+                compute_xtc_filters_full_with_cache_and_hrtf(
+                    &self.params,
+                    sample_rate,
+                    num_bins,
+                    &cache,
+                    room_data.clone(),
+                    hrtf_data.as_ref(),
+                )
+            };
             let new_filters = Arc::new(new_filters);
             self.filters.store(Arc::clone(&new_filters));
             self.cached_current_filters = new_filters;
@@ -750,22 +893,38 @@ impl XtcPlugin {
                 let room_params_hash = compute_room_params_hash(&params);
                 let room_data =
                     compute_room_reflection_data(&params, sample_rate, num_bins, Some(fft_forward));
-                let hrtf_data = if let Some(ref hrtf_path) = params.hrtf_file {
-                    load_hrtf_for_xtc(hrtf_path, &params, sample_rate, num_bins)
-                        .ok()
-                        .flatten()
+                let hrtf_data = if params.source_mode != "roomeq_recommended" {
+                    if let Some(ref hrtf_path) = params.hrtf_file {
+                        load_hrtf_for_xtc(hrtf_path, &params, sample_rate, num_bins)
+                            .ok()
+                            .flatten()
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 };
-                let cache = compute_geometry_cache(&params, sample_rate, num_bins);
-                let new_filters = compute_xtc_filters_full_with_cache_and_hrtf(
-                    &params,
-                    sample_rate,
-                    num_bins,
-                    &cache,
-                    room_data.clone(),
-                    hrtf_data.as_ref(),
-                );
+                let new_filters = if params.source_mode == "roomeq_recommended" {
+                    let Some(matrix_path) = params.recommended_matrix_file.as_deref() else {
+                        return;
+                    };
+                    let Ok(filters) =
+                        load_roomeq_recommended_filters(matrix_path, sample_rate, num_bins)
+                    else {
+                        return;
+                    };
+                    filters
+                } else {
+                    let cache = compute_geometry_cache(&params, sample_rate, num_bins);
+                    compute_xtc_filters_full_with_cache_and_hrtf(
+                        &params,
+                        sample_rate,
+                        num_bins,
+                        &cache,
+                        room_data.clone(),
+                        hrtf_data.as_ref(),
+                    )
+                };
                 if requested_generation.load(Ordering::Acquire) == generation {
                     pending_filter_update.store(Arc::new(Some(PendingFilterUpdate {
                         generation,
@@ -1060,6 +1219,59 @@ impl Plugin for XtcPlugin {
             self.rebuild_cached_parameters();
             return Ok(());
         }
+        if id.0 == "source_mode" {
+            let v = value
+                .as_string()
+                .ok_or_else(|| "source_mode must be a string".to_string())?;
+            match v {
+                "synthetic" | "hrtf_file" | "roomeq_recommended" => {
+                    if v == "roomeq_recommended" {
+                        let mut candidate = self.params.clone();
+                        candidate.source_mode = v.to_string();
+                        validate_roomeq_recommended_source(
+                            &candidate,
+                            self.sample_rate,
+                            self.fft_size / 2 + 1,
+                        )?;
+                    }
+                    self.params.source_mode = v.to_string();
+                }
+                _ => {
+                    return Err(format!(
+                        "source_mode must be 'synthetic', 'hrtf_file', or 'roomeq_recommended', got '{}'",
+                        v
+                    ));
+                }
+            }
+            self.update_filters(false);
+            self.rebuild_cached_parameters();
+            return Ok(());
+        }
+        if id.0 == "recommended_matrix_file" {
+            let v = value
+                .as_string()
+                .ok_or_else(|| "recommended_matrix_file must be a string".to_string())?;
+            if v.is_empty() {
+                self.params.recommended_matrix_file = None;
+            } else {
+                if !std::path::Path::new(v).exists() {
+                    return Err(format!("roomEQ recommended matrix not found: {}", v));
+                }
+                if self.params.source_mode == "roomeq_recommended" {
+                    let mut candidate = self.params.clone();
+                    candidate.recommended_matrix_file = Some(v.to_string());
+                    validate_roomeq_recommended_source(
+                        &candidate,
+                        self.sample_rate,
+                        self.fft_size / 2 + 1,
+                    )?;
+                }
+                self.params.recommended_matrix_file = Some(v.to_string());
+            }
+            self.update_filters(false);
+            self.rebuild_cached_parameters();
+            return Ok(());
+        }
         if id.0 == "itd_modeling" {
             let v = value
                 .as_string()
@@ -1147,6 +1359,17 @@ impl Plugin for XtcPlugin {
         if id.0 == "hrtf_file" {
             return Some(ParameterValue::String(
                 self.params.hrtf_file.clone().unwrap_or_default(),
+            ));
+        }
+        if id.0 == "source_mode" {
+            return Some(ParameterValue::String(self.params.source_mode.clone()));
+        }
+        if id.0 == "recommended_matrix_file" {
+            return Some(ParameterValue::String(
+                self.params
+                    .recommended_matrix_file
+                    .clone()
+                    .unwrap_or_default(),
             ));
         }
         if id.0 == "itd_modeling" {

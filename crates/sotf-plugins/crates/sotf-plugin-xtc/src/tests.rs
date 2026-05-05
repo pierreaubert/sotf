@@ -15,6 +15,70 @@ fn test_xtc_creation() {
 }
 
 #[test]
+fn test_roomeq_recommended_matrix_loader() {
+    let path = std::env::temp_dir().join(format!(
+        "xtc-roomeq-recommended-{}.json",
+        std::process::id()
+    ));
+    let artifact = serde_json::json!({
+        "version": "ctc-recommended-v1",
+        "source": "measured",
+        "sample_rate": 48_000,
+        "speakers": ["L", "R"],
+        "ears": ["left_ear", "right_ear"],
+        "filters": [
+            { "speaker": "L", "target_ear": "left_ear", "taps": [1.0, 0.0, 0.0, 0.0] },
+            { "speaker": "R", "target_ear": "left_ear", "taps": [0.25, 0.0, 0.0, 0.0] },
+            { "speaker": "L", "target_ear": "right_ear", "taps": [0.5, 0.0, 0.0, 0.0] },
+            { "speaker": "R", "target_ear": "right_ear", "taps": [1.0, 0.0, 0.0, 0.0] }
+        ]
+    });
+    std::fs::write(&path, serde_json::to_vec(&artifact).unwrap()).unwrap();
+
+    let filters = load_roomeq_recommended_filters(path.to_str().unwrap(), 48_000, 5).unwrap();
+    assert!(!filters.is_symmetric);
+    assert_eq!(filters.filter_ll.len(), 5);
+    assert!((filters.filter_ll[0].re - 1.0).abs() < 1e-6);
+    assert!((filters.filter_lr[0].re - 0.5).abs() < 1e-6);
+    assert!((filters.filter_rl.as_ref().unwrap()[0].re - 0.25).abs() < 1e-6);
+    assert!((filters.filter_rr.as_ref().unwrap()[0].re - 1.0).abs() < 1e-6);
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn test_roomeq_recommended_matrix_rejects_more_than_two_speakers() {
+    let path = std::env::temp_dir().join(format!(
+        "xtc-roomeq-recommended-n-{}.json",
+        std::process::id()
+    ));
+    let artifact = serde_json::json!({
+        "version": "ctc-recommended-v1",
+        "source": "measured",
+        "sample_rate": 48_000,
+        "speakers": ["L", "R", "C"],
+        "ears": ["left_ear", "right_ear"],
+        "filters": [
+            { "speaker": "L", "target_ear": "left_ear", "taps": [1.0] },
+            { "speaker": "L", "target_ear": "right_ear", "taps": [0.0] },
+            { "speaker": "R", "target_ear": "left_ear", "taps": [0.0] },
+            { "speaker": "R", "target_ear": "right_ear", "taps": [1.0] },
+            { "speaker": "C", "target_ear": "left_ear", "taps": [0.0] },
+            { "speaker": "C", "target_ear": "right_ear", "taps": [0.0] }
+        ]
+    });
+    std::fs::write(&path, serde_json::to_vec(&artifact).unwrap()).unwrap();
+
+    let err = match load_roomeq_recommended_filters(path.to_str().unwrap(), 48_000, 5) {
+        Ok(_) => panic!("N>2 roomEQ recommended matrix should be rejected"),
+        Err(err) => err,
+    };
+    assert!(err.contains("exactly two speakers"));
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
 fn test_xtc_bypass() {
     let mut params = XtcPluginParams::default();
     params.enabled = false;
@@ -1426,6 +1490,81 @@ fn test_itd_modeling_in_parameters_list() {
         found,
         "itd_modeling should appear in the plugin's parameter list"
     );
+}
+
+#[test]
+fn test_roomeq_recommended_source_parameters() {
+    let path = std::env::temp_dir().join(format!(
+        "xtc-roomeq-recommended-params-{}.json",
+        std::process::id()
+    ));
+    let artifact = serde_json::json!({
+        "version": "ctc-recommended-v1",
+        "source": "measured",
+        "sample_rate": 48_000,
+        "speakers": ["L", "R"],
+        "ears": ["left_ear", "right_ear"],
+        "filters": [
+            { "speaker": "L", "target_ear": "left_ear", "taps": [1.0, 0.0, 0.0, 0.0] },
+            { "speaker": "R", "target_ear": "left_ear", "taps": [0.0, 0.0, 0.0, 0.0] },
+            { "speaker": "L", "target_ear": "right_ear", "taps": [0.0, 0.0, 0.0, 0.0] },
+            { "speaker": "R", "target_ear": "right_ear", "taps": [1.0, 0.0, 0.0, 0.0] }
+        ]
+    });
+    std::fs::write(&path, serde_json::to_vec(&artifact).unwrap()).unwrap();
+
+    let mut plugin = XtcPlugin::new(XtcPluginParams::default(), 48_000).unwrap();
+    plugin
+        .set_parameter(
+            ParameterId::from("recommended_matrix_file"),
+            ParameterValue::String(path.to_string_lossy().to_string()),
+        )
+        .unwrap();
+    plugin
+        .set_parameter(
+            ParameterId::from("source_mode"),
+            ParameterValue::String("roomeq_recommended".to_string()),
+        )
+        .unwrap();
+
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("source_mode")),
+        Some(ParameterValue::String("roomeq_recommended".to_string()))
+    );
+    assert!(
+        plugin
+            .parameters()
+            .iter()
+            .any(|p| p.id.as_str() == "recommended_matrix_file")
+    );
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn test_roomeq_recommended_source_rejects_invalid_artifact_on_enable() {
+    let path = std::env::temp_dir().join(format!(
+        "xtc-roomeq-recommended-invalid-{}.json",
+        std::process::id()
+    ));
+    std::fs::write(&path, b"{ invalid json").unwrap();
+
+    let mut plugin = XtcPlugin::new(XtcPluginParams::default(), 48_000).unwrap();
+    plugin
+        .set_parameter(
+            ParameterId::from("recommended_matrix_file"),
+            ParameterValue::String(path.to_string_lossy().to_string()),
+        )
+        .unwrap();
+    let err = plugin
+        .set_parameter(
+            ParameterId::from("source_mode"),
+            ParameterValue::String("roomeq_recommended".to_string()),
+        )
+        .unwrap_err();
+    assert!(err.contains("roomEQ recommended matrix"));
+
+    let _ = std::fs::remove_file(path);
 }
 
 /// Test JSON deserialization of `itd_modeling` field.
