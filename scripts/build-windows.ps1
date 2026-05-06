@@ -1,37 +1,54 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Build script for SotF Player Windows applications
+    Build script for SotF Windows binaries.
 
 .DESCRIPTION
-    Creates distributable packages with static binaries for Windows
+    Builds two binaries with different CRT-linkage policies:
+
+      sotf-tui.exe     -- ALWAYS static CRT (+crt-static). Pure-Rust binary,
+                          no C++ deps, no MSVC DLL imports. Single
+                          self-contained .exe -- no VCRedist / VCLibs needed
+                          on the target machine.
+
+      sotf-desktop.exe -- DYNAMIC CRT by default. Goes into the MSIX, which
+                          declares Microsoft.VCLibs.140.00.UWPDesktop as a
+                          framework dependency. The C++ side of gpui_windows
+                          (Skia) makes a static-CRT GPUI build a less
+                          natural fit. Pass -Static to force +crt-static
+                          for direct (non-MSIX) GPUI distribution.
+
+    Static and dynamic builds use separate target dirs (target\release\ vs
+    target\static-crt\release\) so RUSTFLAGS changes don't cache-bust the
+    other build.
 
 .PARAMETER Clean
-    Clean build directory before building
+    Clean target dirs for the selected packages before building.
 
 .PARAMETER TuiOnly
-    Build only sotf-tui (skip GPUI)
+    Build only sotf-tui (skip the GPUI desktop binary).
 
 .PARAMETER GpuiOnly
-    Build only SotF GPUI (skip TUI)
+    Build only sotf-desktop (skip the TUI binary).
 
 .PARAMETER Static
-    Build static binaries with static CRT (no Visual C++ Redistributable / VCLibs needed)
+    Force static-CRT linkage for sotf-desktop too. The TUI is always static
+    regardless of this flag.
 
 .PARAMETER Help
-    Show this help message
+    Show this help message.
 
 .EXAMPLE
     .\build-windows.ps1
-    Build both release binaries (SotF and sotf-tui)
+    sotf-tui static, sotf-desktop dynamic (MSIX-ready).
 
 .EXAMPLE
     .\build-windows.ps1 -TuiOnly
-    Build only the TUI version
+    Just the static, self-contained sotf-tui.exe.
 
 .EXAMPLE
     .\build-windows.ps1 -Static
-    Build static binaries (static CRT, fully self-contained)
+    Both binaries static-CRT (for non-MSIX direct distribution).
 #>
 
 [CmdletBinding()]
@@ -43,7 +60,6 @@ param(
     [switch]$Help
 )
 
-# Stop on first error
 $ErrorActionPreference = "Stop"
 
 # Detect architecture
@@ -57,24 +73,31 @@ $Arch = if ([Environment]::Is64BitOperatingSystem) {
     "x86"
 }
 
-# Configuration
+# Per-binary configuration. StaticCrt drives the linkage policy:
+#   $true  -> +crt-static, target\static-crt\release\
+#   $false -> default CRT, target\release\
+# sotf-tui is hard-wired static (single self-contained .exe). sotf-desktop
+# follows the -Static flag (default off; MSIX picks up the dynamic build and
+# pulls VCLibs via the framework dependency in AppxManifest.xml).
 $Binaries = @(
     @{
-        Name = "SotF"
-        Binary = "SotF.exe"
-        Package = "sotf-gpui"
-        Skip = $TuiOnly
+        Name      = "sotf-desktop"
+        Binary    = "sotf-desktop.exe"
+        Package   = "sotf-gpui"
+        Skip      = $TuiOnly
+        StaticCrt = [bool]$Static
     },
     @{
-        Name = "sotf-tui"
-        Binary = "sotf-tui.exe"
-        Package = "sotf-tui"
-        Skip = $GpuiOnly
+        Name      = "sotf-tui"
+        Binary    = "sotf-tui.exe"
+        Package   = "sotf-tui"
+        Skip      = $GpuiOnly
+        StaticCrt = $true
     }
 )
 
 # Paths
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = (Resolve-Path "$ScriptDir\..").Path
 
 # Extract version from Cargo.toml
@@ -86,29 +109,31 @@ if ($CargoToml -match 'version\s*=\s*"([^"]+)"') {
     exit 1
 }
 
-$BuildDir = "$ProjectRoot\target\release"
-$DistDir = "$ProjectRoot\dist"
-
-# Build type label only -- no native deps, no vcpkg. Static = +crt-static so the
-# binary doesn't import VCRUNTIME140.dll/MSVCP140.dll/UCRT.
-$BuildType = if ($Static) { "static" } else { "dynamic" }
+$DynamicBuildDir = "$ProjectRoot\target\release"
+$StaticBuildDir  = "$ProjectRoot\target\static-crt\release"
+$DistDir         = "$ProjectRoot\dist"
 
 # Colors for output
-function Write-Info { param($Message) Write-Host "[INFO] $Message" -ForegroundColor Blue }
+function Write-Info    { param($Message) Write-Host "[INFO] $Message"    -ForegroundColor Blue }
 function Write-Success { param($Message) Write-Host "[SUCCESS] $Message" -ForegroundColor Green }
-function Write-Warn { param($Message) Write-Host "[WARNING] $Message" -ForegroundColor Yellow }
-function Write-Err { param($Message) Write-Host "[ERROR] $Message" -ForegroundColor Red }
+function Write-Warn    { param($Message) Write-Host "[WARNING] $Message" -ForegroundColor Yellow }
+function Write-Err     { param($Message) Write-Host "[ERROR] $Message"   -ForegroundColor Red }
 
 function Show-Help {
     Get-Help $MyInvocation.PSCommandPath -Detailed
     exit 0
 }
 
+# Resolve the target/release dir for a given binary based on its linkage.
+function Get-BinaryBuildDir {
+    param($BinConfig)
+    if ($BinConfig.StaticCrt) { return $StaticBuildDir } else { return $DynamicBuildDir }
+}
+
 function Test-Prerequisites {
     Write-Info "Checking prerequisites..."
     Write-Info "Detected architecture: $Arch"
 
-    # Check Rust/Cargo
     if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
         Write-Err "Rust/Cargo is not installed"
         Write-Info "Install from: https://rustup.rs"
@@ -135,17 +160,18 @@ function Test-Prerequisites {
 }
 
 function Clear-Build {
-    if (-not $Clean) {
-        return
-    }
+    if (-not $Clean) { return }
 
-    Write-Info "Cleaning build directory..."
+    Write-Info "Cleaning build artifacts..."
     Push-Location $ProjectRoot
     try {
         foreach ($bin in $Binaries) {
-            if (-not $bin.Skip) {
-                & cargo clean -p $bin.Package
-            }
+            if ($bin.Skip) { continue }
+            # `cargo clean -p` respects --target-dir; clean both possible
+            # target dirs for the package so a previous mode's artifacts
+            # don't linger.
+            & cargo clean -p $bin.Package
+            & cargo clean -p $bin.Package --target-dir "$ProjectRoot\target\static-crt"
         }
     }
     finally {
@@ -161,24 +187,40 @@ function Build-Binary {
         return $true
     }
 
-    Write-Info "Building $($BinConfig.Name) ($BuildType release)..."
+    $linkage = if ($BinConfig.StaticCrt) { "static-CRT" } else { "dynamic-CRT" }
+    Write-Info "Building $($BinConfig.Name) ($linkage release)..."
+
+    # Restate CPU features in RUSTFLAGS when we override it: setting
+    # $env:RUSTFLAGS here completely replaces the rustflags from
+    # .cargo/config.toml's [target.<triple>] block, including the +sse... /
+    # +neon entries. We only do this for the static-CRT path.
+    $cpuFeatures = if ($Arch -eq "arm64") {
+        "+neon"
+    } else {
+        "+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+avx,+avx2"
+    }
 
     Push-Location $ProjectRoot
     try {
-        if ($Static) {
-            # Static CRT only -- no native deps to static-link. CPU features are
-            # already in .cargo/config.toml for the dynamic path; restate them
-            # here so the RUSTFLAGS override doesn't lose them.
-            $cpuFeatures = if ($Arch -eq "arm64") {
-                "+neon"
-            } else {
-                "+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+avx,+avx2"
-            }
+        $cargoArgs = @('build','--release','--package',$BinConfig.Package)
+
+        if ($BinConfig.StaticCrt) {
             $env:RUSTFLAGS = "-C target-feature=+crt-static,$cpuFeatures"
-            Write-Info "Using static CRT with RUSTFLAGS: $($env:RUSTFLAGS)"
+            # Separate target dir so the static and dynamic builds don't
+            # invalidate each other's incremental cache when both binaries
+            # are built in one invocation.
+            $cargoArgs += @('--target-dir', "$ProjectRoot\target\static-crt")
+            Write-Info "  RUSTFLAGS: $($env:RUSTFLAGS)"
+            Write-Info "  target-dir: target\static-crt"
+        } else {
+            # Don't set RUSTFLAGS at all -- let .cargo/config.toml's
+            # [target.x86_64-pc-windows-msvc] / [target.aarch64-pc-windows-msvc]
+            # rustflags apply.
+            $env:RUSTFLAGS = $null
+            Write-Info "  Using default CRT linkage from .cargo/config.toml"
         }
 
-        & cargo build --release --package $BinConfig.Package
+        & cargo @cargoArgs
 
         if ($LASTEXITCODE -ne 0) {
             Write-Err "Build failed for $($BinConfig.Name)"
@@ -186,102 +228,97 @@ function Build-Binary {
         }
     }
     finally {
-        # Clear RUSTFLAGS to avoid affecting other builds
         $env:RUSTFLAGS = $null
         Pop-Location
     }
 
-    $binaryPath = "$BuildDir\$($BinConfig.Binary)"
+    $buildDir   = Get-BinaryBuildDir $BinConfig
+    $binaryPath = "$buildDir\$($BinConfig.Binary)"
     if (-not (Test-Path $binaryPath)) {
         Write-Err "Binary not found at $binaryPath"
         return $false
     }
 
-    Write-Success "$($BinConfig.Name) built successfully"
+    Write-Success "$($BinConfig.Name) built successfully ($linkage)"
     return $true
 }
 
 function New-Distribution {
     Write-Info "Creating distribution package..."
 
+    # The dist suffix reflects the GPUI linkage, since the TUI is always
+    # static -- the user-visible difference between archives is whether
+    # SotF (desktop) needs VCLibs/VCRedist or not.
     $staticSuffix = if ($Static) { "-static" } else { "" }
-    $distName = "sotf-$Version-windows-$Arch$staticSuffix"
-    $stagingDir = "$DistDir\$distName"
+    $distName     = "sotf-$Version-windows-$Arch$staticSuffix"
+    $stagingDir   = "$DistDir\$distName"
 
-    # Create directories
     New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
-    if (Test-Path $stagingDir) {
-        Remove-Item -Recurse -Force $stagingDir
-    }
+    if (Test-Path $stagingDir) { Remove-Item -Recurse -Force $stagingDir }
     New-Item -ItemType Directory -Force -Path $stagingDir | Out-Null
 
-    # Copy binaries
+    # Copy binaries from their respective target dirs.
     foreach ($bin in $Binaries) {
-        if (-not $bin.Skip) {
-            $srcPath = "$BuildDir\$($bin.Binary)"
-            if (Test-Path $srcPath) {
-                Copy-Item $srcPath -Destination $stagingDir
-                Write-Info "Added $($bin.Binary)"
-            }
+        if ($bin.Skip) { continue }
+        $srcPath = "$(Get-BinaryBuildDir $bin)\$($bin.Binary)"
+        if (Test-Path $srcPath) {
+            Copy-Item $srcPath -Destination $stagingDir
+            $tag = if ($bin.StaticCrt) { "static" } else { "dynamic" }
+            Write-Info "Added $($bin.Binary) ($tag)"
         }
     }
 
-    # No runtime DLLs to ship -- pure-Rust binary, MSVC CRT comes from VCRedist
-    # (dynamic build) or is statically linked (-Static build).
+    # No runtime DLLs to ship -- pure-Rust binaries.
 
     # Copy assets excluding demo-audio (distributed separately as sotf-demo.zip)
     $assetsDir = "$ProjectRoot\crates\app-gpui\assets"
     if (Test-Path $assetsDir) {
         Copy-Item -Recurse $assetsDir -Destination "$stagingDir\assets"
-        # Remove demo-audio from the copy
         $demoAudioDir = "$stagingDir\assets\demo-audio"
         if (Test-Path $demoAudioDir) {
             Remove-Item -Recurse -Force $demoAudioDir
         }
     }
 
-    # Create README
-    $buildTypeDesc = if ($Static) { "Static Build (no external dependencies)" } else { "Dynamic Build" }
-    $reqsDesc = if ($Static) {
-        "- Windows 10/11 $Arch"
+    # README. Per-binary requirements: TUI is always self-contained;
+    # sotf-desktop needs VCRedist on the user's box unless built with -Static.
+    $desktopReq = if ($Static) {
+        "  sotf-desktop.exe : self-contained (static CRT)"
     } else {
-        "- Windows 10/11 $Arch`n- Visual C++ Redistributable 2019 or later (usually pre-installed)"
+        "  sotf-desktop.exe : needs Visual C++ Redistributable 2015-2022 (usually pre-installed on Windows 10/11)"
     }
-    $dllNote = ""
     $readme = @"
-SotF Player v$Version ($buildTypeDesc)
-======================
+SotF v$Version (Windows $Arch)
+==============================
 
 A high-quality audio player with advanced EQ and upmixing capabilities.
 
 Included Binaries
 -----------------
-- SotF.exe      : GPUI-based graphical player
-- sotf-tui.exe  : Terminal UI player
-$dllNote
+- sotf-desktop.exe : GPUI-based graphical player
+- sotf-tui.exe     : Terminal UI player
+
 Running
 -------
-GUI: Double-click SotF.exe
+GUI: Double-click sotf-desktop.exe
 TUI: Run sotf-tui.exe from command line or PowerShell
 
 Requirements
 ------------
-$reqsDesc
+- Windows 10/11 $Arch
+  sotf-tui.exe     : self-contained (static CRT, no extra runtime needed)
+$desktopReq
 
 For more information, visit: https://github.com/pierreaubert/sotf
 "@
     $readme | Out-File -FilePath "$stagingDir\README.txt" -Encoding UTF8
 
-    # Create zip file
     $zipPath = "$DistDir\$distName.zip"
-    if (Test-Path $zipPath) {
-        Remove-Item $zipPath
-    }
+    if (Test-Path $zipPath) { Remove-Item $zipPath }
 
     Write-Info "Creating zip archive..."
     Compress-Archive -Path "$stagingDir\*" -DestinationPath $zipPath -CompressionLevel Optimal
 
-    # Clean up staging directory
     Remove-Item -Recurse -Force $stagingDir
 
     Write-Success "Distribution created: $zipPath"
@@ -289,13 +326,12 @@ For more information, visit: https://github.com/pierreaubert/sotf
 }
 
 function Main {
-    if ($Help) {
-        Show-Help
-        return
-    }
+    if ($Help) { Show-Help; return }
 
     Write-Info "=========================================="
-    Write-Info "Building SotF v$Version for Windows $Arch ($BuildType)"
+    Write-Info "Building SotF v$Version for Windows $Arch"
+    Write-Info "  TUI         : static-CRT (always)"
+    Write-Info "  Desktop/MSIX: $(if ($Static) { 'static-CRT (-Static)' } else { 'dynamic-CRT' })"
     Write-Info "=========================================="
 
     Test-Prerequisites
@@ -303,9 +339,7 @@ function Main {
 
     $allSuccess = $true
     foreach ($bin in $Binaries) {
-        if (-not (Build-Binary $bin)) {
-            $allSuccess = $false
-        }
+        if (-not (Build-Binary $bin)) { $allSuccess = $false }
     }
 
     if (-not $allSuccess) {
@@ -326,5 +360,4 @@ function Main {
     }
 }
 
-# Run main
 Main

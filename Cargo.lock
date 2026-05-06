@@ -10134,7 +10134,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-dev-driver"
-version = "0.6.3"
+version = "0.6.4"
 dependencies = [
  "anyhow",
  "clap",
@@ -10155,7 +10155,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-docs-gen"
-version = "0.6.3"
+version = "0.6.4"
 dependencies = [
  "sotf-host",
  "sotf-plugins",
@@ -10238,7 +10238,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-gpui"
-version = "0.6.3"
+version = "0.6.4"
 dependencies = [
  "anyhow",
  "autoeq",
@@ -10944,7 +10944,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugins"
-version = "0.6.3"
+version = "0.6.4"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -11073,7 +11073,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-tls"
-version = "0.6.3"
+version = "0.6.4"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -11198,7 +11198,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-types"
-version = "0.6.3"
+version = "0.6.4"
 dependencies = [
  "log",
  "serde",

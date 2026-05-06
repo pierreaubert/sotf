@@ -300,7 +300,7 @@ Write-Info "Build dir: $BuildDir"
 # HeadlessAppBypass waiver, or clutter the Start menu with a duplicate tile.
 if (-not (Test-Path (Join-Path $BuildDir 'sotf-desktop.exe'))) {
     Write-Err "sotf-desktop.exe not found in $BuildDir"
-    Write-Info "Build it first with: cargo build --release -p app-gpui --bin sotf-desktop"
+    Write-Info "Build it first with: cargo build --release -p sotf-gpui --bin sotf-desktop"
     exit 1
 }
 Write-Info "  Found sotf-desktop.exe"
