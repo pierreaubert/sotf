@@ -165,6 +165,21 @@ pub(crate) struct XtcFilters {
     pub filter_rr: Option<Vec<Complex<f32>>>,
     /// Whether the filter set is symmetric (yaw ~= 0)
     pub is_symmetric: bool,
+    /// Optional RoomEQ-recommended matrix filters.
+    ///
+    /// Shape is `speaker_outputs x 2 input ears`; each entry is an RFFT
+    /// half-spectrum. When present, processing maps stereo ear-intent input to
+    /// N speaker outputs.
+    pub speaker_filters: Option<Vec<[Vec<Complex<f32>>; 2]>>,
+}
+
+impl XtcFilters {
+    pub(crate) fn output_channels(&self) -> usize {
+        self.speaker_filters
+            .as_ref()
+            .map(|filters| filters.len())
+            .unwrap_or(2)
+    }
 }
 
 // ============================================================================
@@ -258,6 +273,7 @@ pub(crate) fn compute_xtc_filters_full_with_cache_and_hrtf(
             filter_rl: None,
             filter_rr: None,
             is_symmetric: true,
+            speaker_filters: None,
         }
     } else {
         // Full asymmetric computation for yaw != 0
@@ -496,6 +512,7 @@ fn compute_xtc_filters_asymmetric_with_cache(
         filter_rl: Some(filter_rl),
         filter_rr: Some(filter_rr),
         is_symmetric: false,
+        speaker_filters: None,
     }
 }
 
@@ -623,6 +640,7 @@ fn compute_xtc_filters_hrtf(
         filter_rl: Some(filter_rl),
         filter_rr: Some(filter_rr),
         is_symmetric: false,
+        speaker_filters: None,
     }
 }
 

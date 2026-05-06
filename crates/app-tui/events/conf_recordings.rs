@@ -3,6 +3,7 @@
 use super::PlayerCommand;
 use crate::app::{App, FilePickerMode, FilePickerOrigin, InputMode};
 use crossterm::event::{KeyCode, KeyEvent};
+use sotf_audio_player::recording_types::CtcMatrixExportStrategy;
 use std::sync::{Arc, Mutex};
 
 fn recording_step_prev_wrap(
@@ -1107,7 +1108,13 @@ pub(crate) fn is_recording_field_numerical_kind(field: &RecordingField) -> bool 
     use RecordingField::*;
     matches!(
         field,
-        Duration | Level | SweepStart | SweepEnd | NumRecordingChannels | ChannelInput(_)
+        Duration
+            | Level
+            | SweepStart
+            | SweepEnd
+            | NumRecordingChannels
+            | CtcLoopbackInput
+            | ChannelInput(_)
     )
 }
 
@@ -1119,6 +1126,12 @@ pub(crate) fn recording_field_value_string_kind(app: &App, field: &RecordingFiel
         SweepStart => format!("{:.0}", app.recording.sweep_start_freq),
         SweepEnd => format!("{:.0}", app.recording.sweep_end_freq),
         NumRecordingChannels => app.recording.recording_config.num_channels.to_string(),
+        CtcLoopbackInput => app
+            .recording
+            .recording_config
+            .ctc_loopback_input_channel
+            .map(|c| (c + 1).to_string())
+            .unwrap_or_else(|| "1".to_string()),
         ChannelInput(i) => app
             .recording
             .recording_config
@@ -1167,6 +1180,12 @@ fn set_recording_field_from_string(app: &mut App) {
                 if app.recording.selected_field > last {
                     app.recording.selected_field = last;
                 }
+            }
+        }
+        CtcLoopbackInput => {
+            if let Ok(v) = buf.parse::<usize>() {
+                app.recording.recording_config.ctc_loopback_input_channel =
+                    Some(v.saturating_sub(1).min(127));
             }
         }
         ChannelInput(i) => {
@@ -1276,6 +1295,22 @@ fn adjust_recording_field(app: &mut App, delta: i32) {
                 app.recording.selected_field = last;
             }
         }
+        CtcStrategy => {
+            app.recording.recording_config.ctc_matrix_strategy =
+                match app.recording.recording_config.ctc_matrix_strategy {
+                    CtcMatrixExportStrategy::ImpulseResponse => CtcMatrixExportStrategy::RawSweep,
+                    CtcMatrixExportStrategy::RawSweep => CtcMatrixExportStrategy::ImpulseResponse,
+                };
+        }
+        CtcLoopbackInput => {
+            let cur = app
+                .recording
+                .recording_config
+                .ctc_loopback_input_channel
+                .unwrap_or(0) as i32;
+            app.recording.recording_config.ctc_loopback_input_channel =
+                Some((cur + delta).clamp(0, 127) as usize);
+        }
         ChannelInput(i) => {
             if let Some(slot) = app.recording.recording_config.channel_mappings.get_mut(i) {
                 let cur = *slot as i32;
@@ -1340,16 +1375,41 @@ pub(crate) fn remove_custom_speaker(app: &mut App) {
 pub(crate) fn init_recording_channels(app: &mut App) {
     use sotf_audio_player::recording_types::ChannelRecording;
 
-    let expected_count = app.recording.playback_config.channel_mappings.len();
+    let num_speakers = app.recording.playback_config.channel_mappings.len();
+    let num_mics = app.recording.recording_config.channel_mappings.len().max(1);
+    let num_positions = app.recording.recording_config.num_positions.max(1);
+    let expected_count = num_speakers * num_mics * num_positions;
     if app.recording.channel_recordings.len() != expected_count {
-        app.recording.channel_recordings = app
-            .recording
-            .playback_config
-            .channel_mappings
-            .iter()
-            .enumerate()
-            .map(|(i, mapping)| ChannelRecording::new(i, mapping.group_name.clone()))
-            .collect();
+        let mut recordings = Vec::with_capacity(expected_count);
+        for position_idx in 0..num_positions {
+            for (speaker_idx, mapping) in app
+                .recording
+                .playback_config
+                .channel_mappings
+                .iter()
+                .enumerate()
+            {
+                for mic_idx in 0..num_mics {
+                    let mut name = mapping.group_name.clone();
+                    if num_positions > 1 && num_mics > 1 {
+                        name = format!("{} (Pos {} / Mic {})", name, position_idx + 1, mic_idx + 1);
+                    } else if num_positions > 1 {
+                        name = format!("{} (Pos {})", name, position_idx + 1);
+                    } else if num_mics > 1 {
+                        name = format!("{} (Mic {})", name, mic_idx + 1);
+                    }
+                    recordings.push(ChannelRecording::with_mic_position(
+                        speaker_idx,
+                        name,
+                        mic_idx,
+                        position_idx,
+                    ));
+                }
+            }
+        }
+        app.recording.channel_recordings = recordings;
+        app.recording.transfer_matrix_loopbacks.clear();
+        app.recording.ctc_reference_sweep_path = None;
         app.recording.current_channel = if expected_count > 0 { Some(0) } else { None };
     }
 }
@@ -1357,10 +1417,46 @@ pub(crate) fn init_recording_channels(app: &mut App) {
 // ---- B2: Actual recording implementation ----
 
 type RecordingResultSlot = Arc<
-    Mutex<Option<Result<(usize, sotf_audio_player::recording_types::RecordingResult), String>>>,
+    Mutex<
+        Option<
+            Result<
+                (
+                    Vec<(usize, sotf_audio_player::recording_types::RecordingResult)>,
+                    Option<sotf_audio_player::recording_types::TransferMatrixLoopbackRecording>,
+                ),
+                String,
+            >,
+        >,
+    >,
 >;
 
 static RECORDING_RESULT: std::sync::OnceLock<RecordingResultSlot> = std::sync::OnceLock::new();
+
+fn ctc_raw_capture_channel_indices(app: &App, channel_idx: usize) -> Vec<usize> {
+    let Some(selected) = app.recording.channel_recordings.get(channel_idx) else {
+        return Vec::new();
+    };
+    let mut indices: Vec<usize> = app
+        .recording
+        .channel_recordings
+        .iter()
+        .enumerate()
+        .filter(|(_, rec)| {
+            rec.channel_index == selected.channel_index
+                && rec.mic_position_index == selected.mic_position_index
+                && rec.mic_index <= 1
+        })
+        .map(|(idx, _)| idx)
+        .collect();
+    indices.sort_by_key(|idx| {
+        app.recording
+            .channel_recordings
+            .get(*idx)
+            .map(|rec| rec.mic_index)
+            .unwrap_or(usize::MAX)
+    });
+    indices
+}
 
 fn start_recording_channel(app: &mut App, channel_idx: usize) {
     use sotf_audio_player::recording_types::ChannelRecordingState;
@@ -1368,12 +1464,39 @@ fn start_recording_channel(app: &mut App, channel_idx: usize) {
         DEFAULT_MLS_ORDER, SignalParams, SignalType, generate_signal, write_temp_wav,
     };
 
-    let ch = match app.recording.channel_recordings.get_mut(channel_idx) {
-        Some(ch) => ch,
+    let selected = match app.recording.channel_recordings.get(channel_idx) {
+        Some(ch) => ch.clone(),
         None => return,
     };
-    ch.state = ChannelRecordingState::Recording;
-    app.recording.status_message = format!("Recording channel {}...", ch.channel_name);
+    let ctc_strategy = app.recording.recording_config.ctc_matrix_strategy;
+    let capture_indices = if ctc_strategy == CtcMatrixExportStrategy::RawSweep {
+        ctc_raw_capture_channel_indices(app, channel_idx)
+    } else {
+        vec![channel_idx]
+    };
+    if ctc_strategy == CtcMatrixExportStrategy::RawSweep && capture_indices.len() < 2 {
+        if let Some(ch) = app.recording.channel_recordings.get_mut(channel_idx) {
+            ch.state = ChannelRecordingState::Error;
+        }
+        app.recording.status_message =
+            "Raw-sweep CTC requires two ear input channels for the selected speaker/position"
+                .to_string();
+        return;
+    }
+
+    for idx in &capture_indices {
+        if let Some(ch) = app.recording.channel_recordings.get_mut(*idx) {
+            ch.state = ChannelRecordingState::Recording;
+            ch.result = None;
+        }
+    }
+    app.recording.status_message = if ctc_strategy == CtcMatrixExportStrategy::RawSweep {
+        format!("Recording CTC ear pair for {}...", selected.channel_name)
+    } else {
+        format!("Recording channel {}...", selected.channel_name)
+    };
+    let speaker_index = selected.channel_index;
+    let mic_index = selected.mic_index;
 
     // Map signal type
     let signal_type = match app.recording.signal_type {
@@ -1394,8 +1517,8 @@ fn start_recording_channel(app: &mut App, channel_idx: usize) {
 
     let duration_secs = app.recording.signal_duration_secs;
     let level_db = app.recording.signal_level_db;
-    let sweep_start_freq = app.recording.sweep_start_freq;
-    let sweep_end_freq = app.recording.sweep_end_freq;
+    let sweep_start_freq = selected.sweep_start_freq;
+    let sweep_end_freq = selected.sweep_end_freq;
     let sample_rate = app.recording.playback_config.sample_rate;
 
     let output_device = app.recording.playback_config.device_name.clone();
@@ -1405,16 +1528,18 @@ fn start_recording_channel(app: &mut App, channel_idx: usize) {
         .recording
         .playback_config
         .channel_mappings
-        .get(channel_idx)
+        .get(speaker_index)
         .map(|m| m.interface_channel())
         .unwrap_or(0) as u16;
     let input_channel = app
         .recording
         .recording_config
         .channel_mappings
-        .first()
+        .get(mic_index)
         .copied()
         .unwrap_or(0) as u16;
+    let loopback_input = app.recording.recording_config.ctc_loopback_input_channel;
+    let position_idx = selected.mic_position_index;
 
     // Per-channel calibration lives in `recording_config.mic_calibration_paths`.
     // The per-channel signal recorder takes a single path and applies it to
@@ -1493,6 +1618,77 @@ fn start_recording_channel(app: &mut App, channel_idx: usize) {
     let recording_dir = std::path::PathBuf::from(&output_directory);
     let recorded_wav_path = recording_dir.join(format!("{}.wav", safe_channel_name));
     let csv_path = recording_dir.join(format!("{}.csv", safe_channel_name));
+    let loopback_wav_path = recording_dir.join(format!("{}_loopback.wav", safe_channel_name));
+    let loopback_csv_path = recording_dir.join(format!("{}_loopback.csv", safe_channel_name));
+
+    let capture_entries: Vec<(
+        usize,
+        std::path::PathBuf,
+        std::path::PathBuf,
+        u16,
+        Option<String>,
+    )> = if ctc_strategy == CtcMatrixExportStrategy::RawSweep {
+        capture_indices
+            .iter()
+            .filter_map(|idx| {
+                let rec = app.recording.channel_recordings.get(*idx)?;
+                let safe_name: String = rec
+                    .channel_name
+                    .chars()
+                    .map(|c| {
+                        if c.is_alphanumeric() || c == '_' || c == '-' {
+                            c
+                        } else {
+                            '_'
+                        }
+                    })
+                    .collect();
+                let input_ch = app
+                    .recording
+                    .recording_config
+                    .channel_mappings
+                    .get(rec.mic_index)
+                    .copied()
+                    .unwrap_or(0) as u16;
+                let calibration = app
+                    .recording
+                    .recording_config
+                    .mic_calibration_paths
+                    .get(input_ch as usize)
+                    .and_then(|o| o.clone())
+                    .filter(|s| !s.is_empty());
+                Some((
+                    *idx,
+                    recording_dir.join(format!("{}.wav", safe_name)),
+                    recording_dir.join(format!("{}.csv", safe_name)),
+                    input_ch,
+                    calibration,
+                ))
+            })
+            .collect()
+    } else {
+        vec![(
+            channel_idx,
+            recorded_wav_path.clone(),
+            csv_path.clone(),
+            input_channel,
+            mic_calibration.clone(),
+        )]
+    };
+    let capture_channel_indices: Vec<usize> = capture_entries.iter().map(|entry| entry.0).collect();
+    let capture_wav_paths: Vec<std::path::PathBuf> = capture_entries
+        .iter()
+        .map(|entry| entry.1.clone())
+        .collect();
+    let capture_csv_paths: Vec<std::path::PathBuf> = capture_entries
+        .iter()
+        .map(|entry| entry.2.clone())
+        .collect();
+    let capture_input_channels: Vec<u16> = capture_entries.iter().map(|entry| entry.3).collect();
+    let capture_calibrations: Vec<Option<String>> = capture_entries
+        .iter()
+        .map(|entry| entry.4.clone())
+        .collect();
 
     // B4: Create output directory before recording
     if let Err(e) = std::fs::create_dir_all(&recording_dir) {
@@ -1501,6 +1697,21 @@ fn start_recording_channel(app: &mut App, channel_idx: usize) {
         }
         app.recording.status_message = format!("Cannot create directory: {}", e);
         return;
+    }
+
+    if ctc_strategy == CtcMatrixExportStrategy::RawSweep {
+        let reference_path = recording_dir.join("ctc_reference_sweep.wav");
+        if let Err(e) = sotf_audio_player::signal_recorder::write_wav_file(
+            &reference_path,
+            &signal,
+            sample_rate,
+            1,
+        ) {
+            app.recording.status_message = format!("Could not write CTC reference sweep: {}", e);
+        } else {
+            app.recording.ctc_reference_sweep_path =
+                Some(reference_path.to_string_lossy().to_string());
+        }
     }
 
     let result_slot = RECORDING_RESULT
@@ -1517,7 +1728,7 @@ fn start_recording_channel(app: &mut App, channel_idx: usize) {
 
     std::thread::spawn(move || {
         use sotf_audio_player::recording_types::RecordingResult;
-        use sotf_audio_player::signal_recorder::record_and_analyze;
+        use sotf_audio_player::signal_recorder::{record_and_analyze, record_and_analyze_multi};
 
         let sweep_range = if signal_type == SignalType::Sweep {
             Some((sweep_start_freq, sweep_end_freq))
@@ -1525,48 +1736,111 @@ fn start_recording_channel(app: &mut App, channel_idx: usize) {
             None
         };
 
-        let result = record_and_analyze(
-            &temp_wav_path,
-            &recorded_wav_path,
-            &reference_signal,
-            sample_rate,
-            &csv_path,
-            output_channel,
-            input_channel,
-            if output_device.is_empty() {
-                None
-            } else {
-                Some(output_device.as_str())
-            },
-            if input_device.is_empty() {
-                None
-            } else {
-                Some(input_device.as_str())
-            },
-            mic_calibration.as_deref(),
-            sweep_range,
-        );
+        let out_dev = if output_device.is_empty() {
+            None
+        } else {
+            Some(output_device.as_str())
+        };
+        let in_dev = if input_device.is_empty() {
+            None
+        } else {
+            Some(input_device.as_str())
+        };
+
+        let result = if ctc_strategy == CtcMatrixExportStrategy::RawSweep {
+            let mut wav_paths = capture_wav_paths.clone();
+            let mut csv_paths = capture_csv_paths.clone();
+            let mut input_channels = capture_input_channels.clone();
+            let mut calibrations = capture_calibrations.clone();
+            if let Some(loopback_input) = loopback_input {
+                wav_paths.push(loopback_wav_path.clone());
+                csv_paths.push(loopback_csv_path);
+                input_channels.push(loopback_input as u16);
+                calibrations.push(None);
+            }
+            record_and_analyze_multi(
+                &temp_wav_path,
+                &wav_paths,
+                &reference_signal,
+                sample_rate,
+                &csv_paths,
+                output_channel,
+                &input_channels,
+                out_dev,
+                in_dev,
+                &calibrations,
+                sweep_range,
+            )
+            .map(|mut results| {
+                if loopback_input.is_some() {
+                    let _ = results.pop();
+                }
+                results
+            })
+        } else {
+            record_and_analyze(
+                &temp_wav_path,
+                &recorded_wav_path,
+                &reference_signal,
+                sample_rate,
+                &csv_path,
+                output_channel,
+                input_channel,
+                out_dev,
+                in_dev,
+                mic_calibration.as_deref(),
+                sweep_range,
+            )
+            .map(|result| vec![result])
+        };
 
         let mapped = result
-            .map(|analysis_result| {
-                let rec_result = RecordingResult {
-                    channel: channel_idx,
-                    wav_path: Some(recorded_wav_path.to_string_lossy().to_string()),
-                    csv_path: Some(csv_path.to_string_lossy().to_string()),
-                    frequencies: analysis_result.frequencies,
-                    magnitude_db: analysis_result.spl_db,
-                    phase_deg: analysis_result.phase_deg,
-                    impulse_response: Some(analysis_result.impulse_response),
-                    impulse_time_ms: Some(analysis_result.impulse_time_ms),
-                    excess_group_delay_ms: Some(analysis_result.excess_group_delay_ms),
-                    thd_percent: Some(analysis_result.thd_percent),
-                    harmonic_distortion_db: Some(analysis_result.harmonic_distortion_db),
-                    rt60_ms: Some(analysis_result.rt60_ms),
-                    clarity_c50_db: Some(analysis_result.clarity_c50_db),
-                    clarity_c80_db: Some(analysis_result.clarity_c80_db),
-                    spectrogram_db: Some(analysis_result.spectrogram_db),
+            .map(|analysis_results| {
+                let rec_results = analysis_results
+                    .into_iter()
+                    .enumerate()
+                    .filter_map(|(idx, analysis_result)| {
+                        let ch_idx = *capture_channel_indices.get(idx)?;
+                        let wav_path = capture_wav_paths.get(idx)?;
+                        let csv_path = capture_csv_paths.get(idx)?;
+                        Some((
+                            ch_idx,
+                            RecordingResult {
+                                channel: ch_idx,
+                                wav_path: Some(wav_path.to_string_lossy().to_string()),
+                                csv_path: Some(csv_path.to_string_lossy().to_string()),
+                                frequencies: analysis_result.frequencies,
+                                magnitude_db: analysis_result.spl_db,
+                                phase_deg: analysis_result.phase_deg,
+                                impulse_response: Some(analysis_result.impulse_response),
+                                impulse_time_ms: Some(analysis_result.impulse_time_ms),
+                                excess_group_delay_ms: Some(analysis_result.excess_group_delay_ms),
+                                thd_percent: Some(analysis_result.thd_percent),
+                                harmonic_distortion_db: Some(
+                                    analysis_result.harmonic_distortion_db,
+                                ),
+                                rt60_ms: Some(analysis_result.rt60_ms),
+                                clarity_c50_db: Some(analysis_result.clarity_c50_db),
+                                clarity_c80_db: Some(analysis_result.clarity_c80_db),
+                                spectrogram_db: Some(analysis_result.spectrogram_db),
+                            },
+                        ))
+                    })
+                    .collect();
+                let loopback = if ctc_strategy == CtcMatrixExportStrategy::RawSweep
+                    && loopback_input.is_some()
+                {
+                    Some(
+                        sotf_audio_player::recording_types::TransferMatrixLoopbackRecording {
+                            speaker_index,
+                            mic_position_index: position_idx,
+                            wav_path: loopback_wav_path.to_string_lossy().to_string(),
+                        },
+                    )
+                } else {
+                    None
                 };
-                (channel_idx, rec_result)
+                (rec_results, loopback)
             })
             .map_err(|e| e.to_string());
 
@@ -1601,13 +1875,30 @@ pub fn poll_recording(app: &mut App) -> bool {
         && let Some(result) = guard.take()
     {
         match result {
-            Ok((ch_idx, rec_result)) => {
-                if let Some(ch) = app.recording.channel_recordings.get_mut(ch_idx) {
-                    ch.state = ChannelRecordingState::Done;
-                    let channel_name = ch.channel_name.clone();
-                    ch.result = Some(rec_result);
-                    app.recording.status_message =
-                        format!("Channel {} recording complete", channel_name);
+            Ok((rec_results, loopback)) => {
+                let mut completed_names = Vec::new();
+                for (ch_idx, rec_result) in rec_results {
+                    if let Some(ch) = app.recording.channel_recordings.get_mut(ch_idx) {
+                        ch.state = ChannelRecordingState::Done;
+                        completed_names.push(ch.channel_name.clone());
+                        ch.result = Some(rec_result);
+                    }
+                }
+                if let Some(loopback) = loopback {
+                    app.recording.transfer_matrix_loopbacks.retain(|r| {
+                        r.speaker_index != loopback.speaker_index
+                            || r.mic_position_index != loopback.mic_position_index
+                    });
+                    app.recording.transfer_matrix_loopbacks.push(loopback);
+                }
+                if !completed_names.is_empty() {
+                    if completed_names.len() == 1 {
+                        app.recording.status_message =
+                            format!("Channel {} recording complete", completed_names[0]);
+                    } else {
+                        app.recording.status_message =
+                            format!("Recorded {} CTC ear channels", completed_names.len());
+                    }
                 }
             }
             Err(e) => {
@@ -1615,7 +1906,6 @@ pub fn poll_recording(app: &mut App) -> bool {
                 for ch in &mut app.recording.channel_recordings {
                     if ch.state == ChannelRecordingState::Recording {
                         ch.state = ChannelRecordingState::Error;
-                        break;
                     }
                 }
                 app.recording.status_message = format!("Recording failed: {}", e);
@@ -1656,17 +1946,153 @@ pub(crate) fn save_recordings(app: &mut App) {
         return;
     }
 
+    let dir = if app.recording.output_directory.is_empty() {
+        ".".to_string()
+    } else {
+        app.recording.output_directory.clone()
+    };
+
+    // B4: Create output directory before saving or exporting matrix WAVs.
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        app.recording.save_error = Some(format!("Cannot create directory: {}", e));
+        return;
+    }
+
     // Build measurements file
-    let channels: Vec<ChannelMeasurement> = completed
-        .iter()
-        .map(|ch| ChannelMeasurement {
-            channel_name: ch.channel_name.clone(),
-            measurement: ch.result.clone().unwrap(),
-            is_group: false,
-            group_drivers: Vec::new(),
-            multi_mic_measurements: Vec::new(),
+    let mut grouped: std::collections::BTreeMap<
+        usize,
+        Vec<&sotf_audio_player::recording_types::ChannelRecording>,
+    > = std::collections::BTreeMap::new();
+    for &ch in &completed {
+        grouped.entry(ch.channel_index).or_default().push(ch);
+    }
+    let channels: Vec<ChannelMeasurement> = grouped
+        .into_values()
+        .filter_map(|mut recordings| {
+            recordings.sort_by_key(|r| (r.mic_position_index, r.mic_index));
+            let primary_idx = recordings
+                .iter()
+                .position(|r| r.mic_position_index == 0 && r.mic_index == 0)
+                .unwrap_or(0);
+            let primary = recordings[primary_idx];
+            let base_name = app
+                .recording
+                .playback_config
+                .channel_mappings
+                .get(primary.channel_index)
+                .map(|m| m.group_name.clone())
+                .unwrap_or_else(|| {
+                    primary
+                        .channel_name
+                        .find(" (")
+                        .map_or(primary.channel_name.as_str(), |pos| {
+                            &primary.channel_name[..pos]
+                        })
+                        .to_string()
+                });
+            let measurement = primary.result.clone()?;
+            let multi_mic_measurements = recordings
+                .into_iter()
+                .enumerate()
+                .filter_map(|(idx, r)| {
+                    if idx == primary_idx {
+                        None
+                    } else {
+                        r.result.clone()
+                    }
+                })
+                .collect();
+            Some(ChannelMeasurement {
+                channel_name: base_name,
+                measurement,
+                is_group: false,
+                group_drivers: Vec::new(),
+                multi_mic_measurements,
+            })
         })
         .collect();
+
+    let channel_names: Vec<String> = app
+        .recording
+        .playback_config
+        .channel_mappings
+        .iter()
+        .map(|m| m.group_name.clone())
+        .collect();
+    let mic_names = vec!["left_ear".to_string(), "right_ear".to_string()];
+    let ctc_strategy = app.recording.recording_config.ctc_matrix_strategy;
+    let mut ctc_reference_sweep = None;
+    let mut ctc_raw_sweep_range = None;
+    let mut ctc_raw_fallback = false;
+    let mut ctc_measurements = if ctc_strategy == CtcMatrixExportStrategy::RawSweep {
+        ctc_reference_sweep = app.recording.ctc_reference_sweep_path.as_ref().map(|path| {
+            std::path::Path::new(path)
+                .strip_prefix(&dir)
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|_| std::path::PathBuf::from(path))
+        });
+        match RoomEqMeasurementsFile::build_ctc_measurements_from_recordings_with_strategy(
+            &app.recording.channel_recordings,
+            &channel_names,
+            &mic_names,
+            app.recording.recording_config.sample_rate,
+            std::path::Path::new(&dir),
+            ctc_strategy,
+            app.recording.recording_config.ctc_loopback_input_channel,
+            &app.recording.transfer_matrix_loopbacks,
+        ) {
+            Ok(Some(measurements)) => {
+                match sotf_audio_player::room_eq_types::ctc_uniform_sweep_range_for_measurements(
+                    &app.recording.channel_recordings,
+                    &channel_names,
+                    &measurements,
+                ) {
+                    Some(range) => {
+                        ctc_raw_sweep_range = Some(range);
+                        Some(measurements)
+                    }
+                    None => {
+                        ctc_raw_fallback = true;
+                        app.recording.status_message =
+                            "Raw-sweep CTC mixes sweep ranges; falling back to measured CTC"
+                                .to_string();
+                        None
+                    }
+                }
+            }
+            Ok(None) => {
+                ctc_raw_fallback = true;
+                app.recording.status_message =
+                    "Raw-sweep CTC incomplete; falling back to measured CTC".to_string();
+                None
+            }
+            Err(e) => {
+                ctc_raw_fallback = true;
+                app.recording.status_message =
+                    format!("Could not export raw-sweep CTC transfer matrix: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+    if ctc_measurements.is_none() {
+        ctc_measurements = match RoomEqMeasurementsFile::build_ctc_measurements_from_recordings(
+            &app.recording.channel_recordings,
+            &channel_names,
+            &mic_names,
+            app.recording.recording_config.sample_rate,
+            std::path::Path::new(&dir),
+        ) {
+            Ok(measurements) => measurements,
+            Err(e) => {
+                app.recording.status_message =
+                    format!("Could not export CTC transfer matrix: {}", e);
+                None
+            }
+        };
+        ctc_reference_sweep = None;
+    }
 
     // B6: Build RecordingConfiguration from current state
     let configuration = RecordingConfiguration {
@@ -1680,13 +2106,7 @@ pub(crate) fn save_recordings(app: &mut App) {
             .speaker_configuration
             .as_str()
             .to_string(),
-        channel_names: app
-            .recording
-            .playback_config
-            .channel_mappings
-            .iter()
-            .map(|m| m.group_name.clone())
-            .collect(),
+        channel_names,
         recording_device_name: app.recording.recording_config.device_name.clone(),
         recording_device_id: app.recording.recording_config.device_id.clone(),
         recording_sample_rate: app.recording.recording_config.sample_rate,
@@ -1735,22 +2155,35 @@ pub(crate) fn save_recordings(app: &mut App) {
             .and_then(|p| std::path::Path::new(p).file_name())
             .map(|f| f.to_string_lossy().to_string()),
         num_positions: app.recording.recording_config.num_positions.max(1),
+        ctc_config: ctc_measurements.clone().map(|measurements| {
+            let raw = ctc_reference_sweep.is_some();
+            autoeq::roomeq::CtcConfig {
+                enabled: true,
+                matrix_source: if raw { "raw_sweep" } else { "measured" }.to_string(),
+                measurements: Some(measurements),
+                reference_sweep: ctc_reference_sweep,
+                sweep_duration_s: if raw {
+                    Some(app.recording.signal_duration_secs as f64)
+                } else {
+                    None
+                },
+                sweep_start_hz: if raw {
+                    ctc_raw_sweep_range.map(|(start, _)| start as f64)
+                } else {
+                    None
+                },
+                sweep_end_hz: if raw {
+                    ctc_raw_sweep_range.map(|(_, end)| end as f64)
+                } else {
+                    None
+                },
+                ..Default::default()
+            }
+        }),
+        ctc_measurements,
     };
 
     let measurements_file = RoomEqMeasurementsFile::with_configuration(channels, configuration);
-
-    // Determine output path
-    let dir = if app.recording.output_directory.is_empty() {
-        ".".to_string()
-    } else {
-        app.recording.output_directory.clone()
-    };
-
-    // B4: Create output directory before saving
-    if let Err(e) = std::fs::create_dir_all(&dir) {
-        app.recording.save_error = Some(format!("Cannot create directory: {}", e));
-        return;
-    }
 
     let path = std::path::PathBuf::from(&dir).join(format!("{}.json", name));
 
@@ -1759,6 +2192,11 @@ pub(crate) fn save_recordings(app: &mut App) {
             Ok(()) => {
                 app.recording.save_success = true;
                 app.recording.save_error = None;
+                if ctc_raw_fallback {
+                    app.recording.status_message =
+                        "Saved with measured CTC fallback; raw-sweep CTC was incomplete"
+                            .to_string();
+                }
             }
             Err(e) => {
                 app.recording.save_error = Some(format!("Write error: {}", e));
@@ -1790,6 +2228,54 @@ mod tests {
         assert_eq!(app.recording.current_channel, Some(0));
         assert_eq!(app.recording.channel_recordings[0].channel_name, "FL");
         assert_eq!(app.recording.channel_recordings[1].channel_name, "FR");
+    }
+
+    #[test]
+    fn init_recording_channels_expands_speaker_mic_position_matrix() {
+        let mut app = make_app();
+        app.recording.playback_config.channel_mappings = vec![
+            ChannelMapping::single(0, "FL"),
+            ChannelMapping::single(1, "FR"),
+        ];
+        app.recording.recording_config.channel_mappings = vec![0, 1];
+        app.recording.recording_config.num_positions = 2;
+
+        init_recording_channels(&mut app);
+
+        assert_eq!(app.recording.channel_recordings.len(), 8);
+        assert_eq!(
+            app.recording.channel_recordings[0].channel_name,
+            "FL (Pos 1 / Mic 1)"
+        );
+        assert_eq!(
+            app.recording.channel_recordings[1].channel_name,
+            "FL (Pos 1 / Mic 2)"
+        );
+        assert_eq!(
+            app.recording.channel_recordings[2].channel_name,
+            "FR (Pos 1 / Mic 1)"
+        );
+        assert_eq!(
+            app.recording.channel_recordings[4].channel_name,
+            "FL (Pos 2 / Mic 1)"
+        );
+        assert_eq!(app.recording.channel_recordings[4].channel_index, 0);
+        assert_eq!(app.recording.channel_recordings[4].mic_position_index, 1);
+    }
+
+    #[test]
+    fn ctc_raw_capture_selects_both_ears_for_same_speaker_position() {
+        let mut app = make_app();
+        app.recording.playback_config.channel_mappings = vec![
+            ChannelMapping::single(0, "FL"),
+            ChannelMapping::single(1, "FR"),
+        ];
+        app.recording.recording_config.channel_mappings = vec![0, 1];
+        app.recording.recording_config.num_positions = 2;
+        init_recording_channels(&mut app);
+
+        assert_eq!(ctc_raw_capture_channel_indices(&app, 1), vec![0, 1]);
+        assert_eq!(ctc_raw_capture_channel_indices(&app, 4), vec![4, 5]);
     }
 
     #[test]

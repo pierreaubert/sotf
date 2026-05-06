@@ -1,11 +1,14 @@
 use autoeq::roomeq::{
-    MeasurementSource, OptimizerConfig, PipelineControl, PipelineEvent, PipelineObserver,
-    PipelineStepId, PipelineStepStatus, ProcessingMode, RoomConfig, RoomPipeline,
-    RoomPipelineRequest, SpeakerConfig, default_config_version, optimize_room,
-    optimize_room_with_probe_arrivals,
+    CtcConfig, CtcMeasurementConfig, CtcMeasurementFileConfig, CtcRegularizationConfig,
+    CtcWindowConfig, MeasurementSource, OptimizerConfig, PipelineControl, PipelineEvent,
+    PipelineObserver, PipelineStepId, PipelineStepStatus, ProcessingMode, RoomConfig, RoomPipeline,
+    RoomPipelineRequest, SpeakerConfig, SystemConfig, SystemModel, default_config_version,
+    optimize_room, optimize_room_with_probe_arrivals,
 };
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
+use tempfile::tempdir;
 
 fn test_curve(base_level: f64) -> autoeq::Curve {
     let n = 80;
@@ -216,4 +219,101 @@ fn compatibility_wrappers_return_pipeline_result_shape() {
         optimize_room_with_probe_arrivals(&config, 48_000.0, None, None, &probe_arrivals)
             .expect("probe wrapper optimization");
     assert_eq!(probe_result.channels.len(), pipeline_result.channels.len());
+}
+
+#[test]
+fn optimize_room_with_ctc_writes_metadata_and_artifact() {
+    let dir = tempdir().unwrap();
+    let left_wav = dir.path().join("ctc_left.wav");
+    let right_wav = dir.path().join("ctc_right.wav");
+    write_stereo_impulse(&left_wav, 30_000, 6_000);
+    write_stereo_impulse(&right_wav, 6_000, 30_000);
+
+    let mut config = stereo_config();
+    config.system = Some(SystemConfig {
+        model: SystemModel::Stereo,
+        speakers: HashMap::from([
+            ("L".to_string(), "left".to_string()),
+            ("R".to_string(), "right".to_string()),
+        ]),
+        subwoofers: None,
+        bass_management: None,
+    });
+    config.ctc = Some(CtcConfig {
+        enabled: true,
+        matrix_source: "measured".to_string(),
+        measurements: Some(CtcMeasurementConfig {
+            speakers: vec!["L".to_string(), "R".to_string()],
+            mics: vec!["left_ear".to_string(), "right_ear".to_string()],
+            head_positions: vec![],
+            files: vec![
+                CtcMeasurementFileConfig {
+                    head_position: "primary".to_string(),
+                    speaker: "L".to_string(),
+                    ir: Some(left_wav),
+                    raw_sweep: None,
+                    loopback: None,
+                },
+                CtcMeasurementFileConfig {
+                    head_position: "primary".to_string(),
+                    speaker: "R".to_string(),
+                    ir: Some(right_wav),
+                    raw_sweep: None,
+                    loopback: None,
+                },
+            ],
+        }),
+        hrtf: None,
+        window: CtcWindowConfig::default(),
+        regularization: CtcRegularizationConfig {
+            beta_db: -60.0,
+            beta_lf_db: -60.0,
+            beta_hf_db: -60.0,
+            max_gain_db: 12.0,
+        },
+        robustness: "average".to_string(),
+        include_room_eq_dsp: true,
+        fir_taps: 64,
+        reference_sweep: None,
+        sweep_duration_s: None,
+        sweep_start_hz: None,
+        sweep_end_hz: None,
+        harmonic_suppression_harmonics: 5,
+        harmonic_suppression_window_ms: 2.0,
+        minimax_iterations: 8,
+    });
+
+    let result =
+        optimize_room(&config, 48_000.0, None, Some(dir.path())).expect("room optimization");
+    let ctc = result.metadata.ctc.expect("ctc metadata");
+    assert_eq!(ctc.source, "measured");
+    assert_eq!(ctc.speakers, vec!["L", "R"]);
+    assert_eq!(ctc.head_positions, 1);
+    assert!(ctc.room_eq_correction_channels.is_empty());
+    assert!(ctc.delivered_response.is_some());
+    assert!(Path::new(&ctc.artifact).exists());
+
+    let artifact: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&ctc.artifact).unwrap()).unwrap();
+    assert_eq!(artifact["version"], "ctc-recommended-v1");
+    assert_eq!(artifact["filters"].as_array().unwrap().len(), 4);
+    assert!(artifact["room_eq_correction_applied"].is_boolean());
+    assert!(artifact["delivered_response"]["mean_crosstalk_db"].is_number());
+}
+
+fn write_stereo_impulse(path: &Path, left: i16, right: i16) {
+    let spec = hound::WavSpec {
+        channels: 2,
+        sample_rate: 48_000,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut writer = hound::WavWriter::create(path, spec).unwrap();
+    writer.write_sample::<i16>(left).unwrap();
+    writer.write_sample::<i16>(right).unwrap();
+    for _ in 1..64 {
+        writer.write_sample::<i16>(0).unwrap();
+        writer.write_sample::<i16>(0).unwrap();
+    }
+    writer.finalize().unwrap();
 }

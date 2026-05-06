@@ -408,6 +408,7 @@ pub fn run_multi_speaker_optimization(
             smoothness_penalty: None,
         },
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     };
 
@@ -521,6 +522,7 @@ pub fn build_room_config_from_curves(
         target_curve: None,
         optimizer,
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     }
 }

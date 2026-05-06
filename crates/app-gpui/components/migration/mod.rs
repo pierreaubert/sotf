@@ -200,6 +200,18 @@ pub fn write_room_config(measurements: &RoomEqMeasurementsFile, path: &Path) -> 
         target_curve: None,
         optimizer: OptimizerConfig::default(),
         recording_config,
+        ctc: measurements.configuration.as_ref().and_then(|cfg| {
+            cfg.ctc_config.clone().or_else(|| {
+                cfg.ctc_measurements
+                    .clone()
+                    .map(|measurements| autoeq::roomeq::CtcConfig {
+                        enabled: true,
+                        matrix_source: "measured".to_string(),
+                        measurements: Some(measurements),
+                        ..Default::default()
+                    })
+            })
+        }),
         cea2034_cache: None,
     };
 

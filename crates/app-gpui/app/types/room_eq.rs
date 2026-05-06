@@ -155,6 +155,10 @@ pub struct RoomEqState {
     pub data_source: RoomEqDataSource,
     /// Loaded channel measurements
     pub channel_measurements: Vec<ChannelMeasurement>,
+    /// Optional measured speaker × ear transfer matrix captured by the
+    /// Recording wizard and forwarded to roomeq CTC optimization.
+    pub ctc_measurements: Option<autoeq::roomeq::CtcMeasurementConfig>,
+    pub ctc_config: Option<autoeq::roomeq::CtcConfig>,
 
     // === Step 2: Delay Detection (tone-burst probe) ===
     /// Shared state for the tone-burst delay-detection step. Business
@@ -243,6 +247,8 @@ impl Default for RoomEqState {
             step: RoomEqStep::LoadData,
             data_source: RoomEqDataSource::FromRecording,
             channel_measurements: Vec::new(),
+            ctc_measurements: None,
+            ctc_config: None,
             delay_detection: DelayDetectionState::default(),
             speaker_configs: Vec::new(),
             optimizer_config: RoomEqOptimizerConfig::default(),
@@ -462,6 +468,113 @@ impl RoomEqState {
             })
             .collect();
 
+        let mut ctc_exported_raw = false;
+        let mut ctc_raw_sweep_range = None;
+        self.ctc_measurements = recording_state
+            .recording_directory
+            .as_ref()
+            .and_then(|dir| {
+                let speaker_names: Vec<String> = recording_state
+                    .playback_config
+                    .channel_mappings
+                    .iter()
+                    .map(|m| m.group_name.clone())
+                    .collect();
+                let mic_names = vec!["left_ear".to_string(), "right_ear".to_string()];
+                let output_dir = std::path::Path::new(dir);
+                if recording_state.recording_config.ctc_matrix_strategy
+                    == sotf_audio_player::recording_types::CtcMatrixExportStrategy::RawSweep
+                {
+                    match RoomEqMeasurementsFile::build_ctc_measurements_from_recordings_with_strategy(
+                        &recording_state.channel_recordings,
+                        &speaker_names,
+                        &mic_names,
+                        recording_state.recording_config.sample_rate,
+                        output_dir,
+                        recording_state.recording_config.ctc_matrix_strategy,
+                        recording_state.recording_config.ctc_loopback_input_channel,
+                        &recording_state.transfer_matrix_loopbacks,
+                    ) {
+                        Ok(Some(measurements)) => match sotf_audio_player::room_eq_types::ctc_uniform_sweep_range_for_measurements(
+                            &recording_state.channel_recordings,
+                            &speaker_names,
+                            &measurements,
+                        ) {
+                            Some(range) => {
+                                ctc_exported_raw = true;
+                                ctc_raw_sweep_range = Some(range);
+                                Some(measurements)
+                            }
+                            None => {
+                                log::warn!(
+                                    "Raw-sweep CTC matrix mixes sweep ranges or references missing recordings; falling back to measured impulse-response export"
+                                );
+                                None
+                            }
+                        },
+                        Ok(None) => {
+                            log::warn!(
+                                "Raw-sweep CTC matrix is incomplete; falling back to measured impulse-response export"
+                            );
+                            None
+                        }
+                        Err(e) => {
+                            log::warn!("Could not export raw-sweep CTC transfer matrix: {}", e);
+                            None
+                        }
+                    }
+                } else {
+                    None
+                }
+                .or_else(|| {
+                    match RoomEqMeasurementsFile::build_ctc_measurements_from_recordings(
+                        &recording_state.channel_recordings,
+                        &speaker_names,
+                        &mic_names,
+                        recording_state.recording_config.sample_rate,
+                        output_dir,
+                    ) {
+                        Ok(measurements) => measurements,
+                        Err(e) => {
+                            log::warn!("Could not export CTC transfer matrix: {}", e);
+                            None
+                        }
+                    }
+                })
+            });
+        self.ctc_config = self.ctc_measurements.clone().map(|measurements| {
+            let raw = ctc_exported_raw && recording_state.ctc_reference_sweep_path.is_some();
+            autoeq::roomeq::CtcConfig {
+                enabled: true,
+                matrix_source: if raw { "raw_sweep" } else { "measured" }.to_string(),
+                measurements: Some(measurements),
+                reference_sweep: if raw {
+                    recording_state
+                        .ctc_reference_sweep_path
+                        .as_ref()
+                        .map(std::path::PathBuf::from)
+                } else {
+                    None
+                },
+                sweep_duration_s: if raw {
+                    Some(recording_state.signal_duration_secs as f64)
+                } else {
+                    None
+                },
+                sweep_start_hz: if raw {
+                    ctc_raw_sweep_range.map(|(start, _)| start as f64)
+                } else {
+                    None
+                },
+                sweep_end_hz: if raw {
+                    ctc_raw_sweep_range.map(|(_, end)| end as f64)
+                } else {
+                    None
+                },
+                ..Default::default()
+            }
+        });
+
         self.data_source = RoomEqDataSource::FromRecording;
         self.init_speaker_configs();
     }
@@ -666,6 +779,16 @@ impl RoomEqState {
             target_curve: None,
             optimizer,
             recording_config: None,
+            ctc: self.ctc_config.clone().or_else(|| {
+                self.ctc_measurements
+                    .clone()
+                    .map(|measurements| autoeq::roomeq::CtcConfig {
+                        enabled: true,
+                        matrix_source: "measured".to_string(),
+                        measurements: Some(measurements),
+                        ..Default::default()
+                    })
+            }),
             cea2034_cache: None,
         }
     }

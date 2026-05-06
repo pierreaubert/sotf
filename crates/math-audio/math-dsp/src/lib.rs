@@ -29,6 +29,7 @@ pub mod fdw;
 pub mod instantaneous_frequency;
 pub mod psychoacoustics;
 pub mod replaygain;
+pub mod response;
 pub mod rtpghi;
 pub mod signals;
 pub mod simd;
@@ -79,4 +80,5 @@ pub use signals::{
 };
 
 pub use replaygain::{ReplayGainAnalyzer, ReplayGainInfo, ReplayGainTrackData, compute_album_gain};
+pub use response::{biquad_complex_response, fir_complex_response, lr4_crossover_response};
 pub use waveform::{WAVEFORM_SAMPLES, compute_waveform};

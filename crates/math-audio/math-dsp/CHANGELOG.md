@@ -15,6 +15,9 @@
   Bark-scale conversion and aggregation, Zwicker-style specific/total loudness,
   sharpness, listening-level calibration, pairwise sensory roughness, cached
   feature extraction, and stereo HRTF/CTC convolution helpers.
+- Added reusable frequency-response helpers for linear DSP modeling: complex
+  biquad response, FIR response, and LR4 low/high crossover response. RoomEQ
+  uses these to align CTC transfer-matrix solving with exported runtime DSP.
 
 # 0.5.15
 

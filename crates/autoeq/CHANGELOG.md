@@ -7,11 +7,25 @@
   SOFA/HRTF speaker positions; solve a regularized 2-ear transfer-matrix
   inverse with average or minimax robustness over head positions; and export a
   `recommended_xtc_matrix.json` artifact for the XTC plugin.
+- `CtcConfig` now has a `Default` implementation so applications can attach
+  measured recording matrices while inheriting the standard CTC solver
+  defaults.
 - Added CTC input configuration for raw sweeps, reference sweeps, loopback WAVs,
-  FDW complex windowing, harmonic-residue suppression, minimax iterations, and
-  artifact/report metadata including latency, condition number,
-  reconstruction error, residual crosstalk, electrical sum gain, and headroom
-  limiting.
+  FDW complex windowing, harmonic-residue suppression, minimax iterations,
+  optional `include_room_eq_dsp` joint solving, and artifact/report metadata
+  including latency, condition number, reconstruction error, residual
+  crosstalk, electrical sum gain, and headroom limiting.
+- CTC artifacts now include delivered-response metrics computed from the
+  exported FIR taps through the acoustic transfer matrix, covering target-ear
+  error, crosstalk residual, and left/right delivered balance after latency
+  compensation.
+- CTC regularization now enforces the configured electrical headroom cap on the
+  summed per-speaker binaural drive, not just individual matrix entries.
+- CTC solving now supports the joint RoomEQ path by folding exported
+  per-channel gain/EQ/delay, convolution FIRs, LR4 crossover branches,
+  mixed FIR/IIR band-splits, and summed driver chains into the acoustic
+  transfer matrix before computing the recommended XTC filters, matching the
+  runtime order of global XTC followed by channel correction.
 - CTC direct-windowing now tracks the measured acoustic direct arrival instead
   of assuming sample-zero alignment, so loopback-aligned raw sweeps with normal
   speaker flight time are not clipped by short direct windows.

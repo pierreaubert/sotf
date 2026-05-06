@@ -1,11 +1,16 @@
 //! Cross-talk cancellation / binaural transfer-matrix support.
 
 use crate::error::{AutoeqError, Result};
-use crate::roomeq::types::{CtcConfig, CtcMeasurementConfig, CtcWindowConfig, SystemConfig};
+use crate::roomeq::types::{
+    ChannelDspChain, CtcConfig, CtcMeasurementConfig, CtcWindowConfig, PluginConfigWrapper,
+    SystemConfig,
+};
 use hound::{SampleFormat, WavReader};
 use math_audio_dsp::{
-    TransferMatrixBin, align_ir_to_reference_peak, deconvolve_sweep_to_ir, direct_peak_sample,
-    direct_peak_windowed_half_spectrum, fdw_complex_half_spectrum, half_spectrum_to_fir,
+    TransferMatrixBin, align_ir_to_reference_peak,
+    biquad_complex_response as dsp_biquad_complex_response, deconvolve_sweep_to_ir,
+    direct_peak_sample, direct_peak_windowed_half_spectrum, fdw_complex_half_spectrum,
+    fir_complex_response, half_spectrum_to_fir, lr4_crossover_response, position_errors,
     solve_minimax_regularized_inverse_bin, solve_regularized_inverse_bin,
     suppress_log_sweep_harmonic_residues,
 };
@@ -15,7 +20,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use sotf_host::sofa::{SofaFile, SourcePosition};
 use std::collections::HashMap;
-use std::path::Path;
+use std::f64::consts::PI;
+use std::path::{Path, PathBuf};
+
+use math_audio_iir_fir::{Biquad, BiquadFilterType};
 
 const CTC_ARTIFACT_VERSION: &str = "ctc-recommended-v1";
 
@@ -37,6 +45,19 @@ pub struct CtcReport {
     pub mean_crosstalk_residual_db: f64,
     pub max_electrical_sum_gain_db: f64,
     pub driver_headroom_limited: bool,
+    pub room_eq_correction_applied: bool,
+    pub room_eq_correction_channels: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivered_response: Option<CtcDeliveredResponseMetrics>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct CtcDeliveredResponseMetrics {
+    pub mean_target_error: f64,
+    pub worst_target_error: f64,
+    pub mean_crosstalk_db: f64,
+    pub worst_crosstalk_db: f64,
+    pub mean_channel_balance_db: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,6 +77,10 @@ struct CtcArtifact {
     mean_crosstalk_residual_db: f64,
     max_electrical_sum_gain_db: f64,
     driver_headroom_limited: bool,
+    room_eq_correction_applied: bool,
+    room_eq_correction_channels: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    delivered_response: Option<CtcDeliveredResponseMetrics>,
     filters: Vec<CtcFirFilterArtifact>,
 }
 
@@ -80,6 +105,7 @@ pub fn maybe_generate_recommended_xtc(
     sys: &SystemConfig,
     sample_rate: f64,
     output_dir: &Path,
+    channels: Option<&HashMap<String, ChannelDspChain>>,
 ) -> Result<Option<CtcReport>> {
     if !config.enabled {
         return Ok(None);
@@ -92,7 +118,7 @@ pub fn maybe_generate_recommended_xtc(
 
     let sample_rate_u32 = checked_sample_rate(sample_rate)?;
     let fft_size = config.fir_taps;
-    let spectrum = match config.matrix_source.as_str() {
+    let mut spectrum = match config.matrix_source.as_str() {
         "measured" => {
             let measurements =
                 config
@@ -149,6 +175,27 @@ pub fn maybe_generate_recommended_xtc(
             message: "ctc requires at least two speaker roles".to_string(),
         });
     }
+    let room_eq_correction_channels = if config.include_room_eq_dsp {
+        if let Some(channels) = channels {
+            apply_room_eq_dsp_to_spectrum(&mut spectrum, sys, channels, sample_rate)?;
+            spectrum
+                .speakers
+                .iter()
+                .filter_map(|speaker| {
+                    let channel_name = sys.speakers.get(speaker)?;
+                    channels
+                        .get(channel_name)
+                        .is_some_and(|chain| !chain.plugins.is_empty())
+                        .then(|| channel_name.clone())
+                })
+                .collect()
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
+    let room_eq_correction_applied = !room_eq_correction_channels.is_empty();
 
     let target = vec![
         Complex64::new(1.0, 0.0),
@@ -161,6 +208,7 @@ pub fn maybe_generate_recommended_xtc(
     let mut max_condition = 0.0_f64;
     let mut total_error = 0.0_f64;
     let mut worst_position_error = 0.0_f64;
+    let mut headroom_was_limited = false;
 
     for bin in 0..num_bins {
         let freq = bin as f64 * sample_rate / fft_size as f64;
@@ -185,9 +233,24 @@ pub fn maybe_generate_recommended_xtc(
             message: format!("ctc inverse failed at bin {}: {}", bin, message),
         })?;
         max_condition = max_condition.max(solved.condition_number);
-        total_error += solved.reconstruction_error;
-        worst_position_error = worst_position_error.max(solved.worst_position_error);
-        solved_bins.push(solved.values);
+        let mut values = solved.values;
+        headroom_was_limited |= enforce_electrical_sum_headroom(
+            &mut values,
+            spectrum.speakers.len(),
+            2,
+            config.regularization.max_gain_db,
+        );
+        let errors = position_errors(&spectrum.bins[bin], &values, &target).map_err(|message| {
+            AutoeqError::OptimizationFailed {
+                message: format!(
+                    "ctc reconstruction scoring failed at bin {}: {}",
+                    bin, message
+                ),
+            }
+        })?;
+        total_error += errors.iter().sum::<f64>() / errors.len().max(1) as f64;
+        worst_position_error = worst_position_error.max(errors.iter().copied().fold(0.0, f64::max));
+        solved_bins.push(values);
     }
 
     let latency_samples = config.fir_taps / 2;
@@ -243,8 +306,10 @@ pub fn maybe_generate_recommended_xtc(
         max_electrical_sum_gain_db = 0.0;
     }
     let mean_crosstalk_residual_db = reconstruction_error_to_db(mean_reconstruction_error);
-    let driver_headroom_limited =
-        max_electrical_sum_gain_db >= config.regularization.max_gain_db - 0.25;
+    let driver_headroom_limited = headroom_was_limited
+        || max_electrical_sum_gain_db >= config.regularization.max_gain_db - 0.25;
+    let delivered_response =
+        compute_delivered_response_metrics(&spectrum, &filters, config.fir_taps, latency_samples)?;
 
     std::fs::create_dir_all(output_dir)?;
     let artifact_path = output_dir.join("recommended_xtc_matrix.json");
@@ -264,6 +329,9 @@ pub fn maybe_generate_recommended_xtc(
         mean_crosstalk_residual_db,
         max_electrical_sum_gain_db,
         driver_headroom_limited,
+        room_eq_correction_applied,
+        room_eq_correction_channels: room_eq_correction_channels.clone(),
+        delivered_response: Some(delivered_response.clone()),
         filters,
     };
     let json = serde_json::to_vec_pretty(&artifact)?;
@@ -286,7 +354,469 @@ pub fn maybe_generate_recommended_xtc(
         mean_crosstalk_residual_db,
         max_electrical_sum_gain_db,
         driver_headroom_limited,
+        room_eq_correction_applied,
+        room_eq_correction_channels,
+        delivered_response: Some(delivered_response),
     }))
+}
+
+fn compute_delivered_response_metrics(
+    spectrum: &MatrixSpectrum,
+    filters: &[CtcFirFilterArtifact],
+    fft_size: usize,
+    latency_samples: usize,
+) -> Result<CtcDeliveredResponseMetrics> {
+    let num_bins = fft_size / 2 + 1;
+    let speakers = spectrum.speakers.len();
+    let mut filter_spectra = Vec::with_capacity(speakers * 2);
+    for speaker in &spectrum.speakers {
+        for ear in &spectrum.ears {
+            let filter = filters
+                .iter()
+                .find(|filter| filter.speaker == *speaker && filter.target_ear == *ear)
+                .ok_or_else(|| AutoeqError::OptimizationFailed {
+                    message: format!(
+                        "ctc delivered-response scoring missing filter speaker='{}', target_ear='{}'",
+                        speaker, ear
+                    ),
+                })?;
+            filter_spectra.push(fft_real_to_half_spectrum_f64(&filter.taps, fft_size));
+        }
+    }
+
+    let mut target_error_sum_sq = 0.0_f64;
+    let mut target_count = 0usize;
+    let mut worst_target_error = 0.0_f64;
+    let mut crosstalk_sum_sq = 0.0_f64;
+    let mut crosstalk_count = 0usize;
+    let mut worst_crosstalk = 0.0_f64;
+    let mut balance_sum_db = 0.0_f64;
+    let mut balance_count = 0usize;
+
+    for bin in 0..num_bins {
+        let latency_phase = 2.0 * PI * bin as f64 * latency_samples as f64 / fft_size as f64;
+        let undo_latency = Complex64::from_polar(1.0, latency_phase);
+
+        for position in &spectrum.bins[bin] {
+            let mut delivered = [Complex64::new(0.0, 0.0); 4];
+            for ear_idx in 0..2 {
+                for target_ear_idx in 0..2 {
+                    let mut sum = Complex64::new(0.0, 0.0);
+                    for speaker_idx in 0..speakers {
+                        let h = position.values[ear_idx * speakers + speaker_idx];
+                        let f = filter_spectra[speaker_idx * 2 + target_ear_idx][bin];
+                        sum += h * f;
+                    }
+                    delivered[ear_idx * 2 + target_ear_idx] = sum * undo_latency;
+                }
+            }
+
+            for ear_idx in 0..2 {
+                let target = delivered[ear_idx * 2 + ear_idx];
+                let error = (target - Complex64::new(1.0, 0.0)).norm();
+                target_error_sum_sq += error * error;
+                worst_target_error = worst_target_error.max(error);
+                target_count += 1;
+            }
+
+            let left_mag = delivered[0].norm();
+            let right_mag = delivered[3].norm();
+            balance_sum_db += (amplitude_to_db(left_mag) - amplitude_to_db(right_mag)).abs();
+            balance_count += 1;
+
+            for (ear_idx, target_ear_idx) in [(0, 1), (1, 0)] {
+                let crosstalk = delivered[ear_idx * 2 + target_ear_idx].norm();
+                crosstalk_sum_sq += crosstalk * crosstalk;
+                worst_crosstalk = worst_crosstalk.max(crosstalk);
+                crosstalk_count += 1;
+            }
+        }
+    }
+
+    let mean_target_error = if target_count == 0 {
+        0.0
+    } else {
+        (target_error_sum_sq / target_count as f64).sqrt()
+    };
+    let mean_crosstalk = if crosstalk_count == 0 {
+        0.0
+    } else {
+        (crosstalk_sum_sq / crosstalk_count as f64).sqrt()
+    };
+    let mean_channel_balance_db = if balance_count == 0 {
+        0.0
+    } else {
+        balance_sum_db / balance_count as f64
+    };
+
+    Ok(CtcDeliveredResponseMetrics {
+        mean_target_error,
+        worst_target_error,
+        mean_crosstalk_db: amplitude_to_db(mean_crosstalk),
+        worst_crosstalk_db: amplitude_to_db(worst_crosstalk),
+        mean_channel_balance_db,
+    })
+}
+
+fn apply_room_eq_dsp_to_spectrum(
+    spectrum: &mut MatrixSpectrum,
+    sys: &SystemConfig,
+    channels: &HashMap<String, ChannelDspChain>,
+    sample_rate: f64,
+) -> Result<()> {
+    let speakers = spectrum.speakers.len();
+    let fft_size = (spectrum.bins.len() - 1) * 2;
+    let mut cache = DspResponseCache::new(checked_sample_rate(sample_rate)?);
+    let mut responses_by_speaker = Vec::with_capacity(speakers);
+    for speaker in &spectrum.speakers {
+        let Some(channel_name) = sys.speakers.get(speaker) else {
+            responses_by_speaker.push(vec![Complex64::new(1.0, 0.0); spectrum.bins.len()]);
+            continue;
+        };
+        let Some(chain) = channels.get(channel_name) else {
+            responses_by_speaker.push(vec![Complex64::new(1.0, 0.0); spectrum.bins.len()]);
+            continue;
+        };
+        let mut responses = Vec::with_capacity(spectrum.bins.len());
+        for bin in 0..spectrum.bins.len() {
+            let freq = bin as f64 * sample_rate / fft_size as f64;
+            responses.push(channel_chain_response(
+                chain,
+                freq,
+                sample_rate,
+                &mut cache,
+            )?);
+        }
+        responses_by_speaker.push(responses);
+    }
+
+    for bin in 0..spectrum.bins.len() {
+        for position in &mut spectrum.bins[bin] {
+            for speaker_idx in 0..speakers {
+                let correction = responses_by_speaker[speaker_idx][bin];
+                for ear_idx in 0..2 {
+                    position.values[ear_idx * speakers + speaker_idx] *= correction;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+struct DspResponseCache {
+    sample_rate: u32,
+    convolution_ir: HashMap<PathBuf, Vec<f64>>,
+}
+
+impl DspResponseCache {
+    fn new(sample_rate: u32) -> Self {
+        Self {
+            sample_rate,
+            convolution_ir: HashMap::new(),
+        }
+    }
+
+    fn convolution_taps(&mut self, path: &Path) -> Result<&[f64]> {
+        if !self.convolution_ir.contains_key(path) {
+            let channels =
+                read_wav_channels_f64(path, self.sample_rate, "RoomEQ convolution IR WAV")?;
+            let Some(first_channel) = channels.into_iter().next() else {
+                return Err(AutoeqError::InvalidMeasurement {
+                    message: format!("convolution IR '{}' has no channels", path.display()),
+                });
+            };
+            self.convolution_ir
+                .insert(path.to_path_buf(), first_channel);
+        }
+        Ok(self
+            .convolution_ir
+            .get(path)
+            .map(Vec::as_slice)
+            .expect("cached convolution IR"))
+    }
+}
+
+fn channel_chain_response(
+    chain: &ChannelDspChain,
+    freq: f64,
+    sample_rate: f64,
+    cache: &mut DspResponseCache,
+) -> Result<Complex64> {
+    let branch_response = if let Some(drivers) = chain.drivers.as_ref() {
+        if drivers.is_empty() {
+            Complex64::new(1.0, 0.0)
+        } else {
+            let mut sum = Complex64::new(0.0, 0.0);
+            for driver in drivers {
+                sum += plugin_chain_response(&driver.plugins, freq, sample_rate, cache)?;
+            }
+            sum
+        }
+    } else {
+        Complex64::new(1.0, 0.0)
+    };
+
+    Ok(branch_response * plugin_chain_response(&chain.plugins, freq, sample_rate, cache)?)
+}
+
+fn plugin_chain_response(
+    plugins: &[PluginConfigWrapper],
+    freq: f64,
+    sample_rate: f64,
+    cache: &mut DspResponseCache,
+) -> Result<Complex64> {
+    let mut response = Complex64::new(1.0, 0.0);
+    let mut idx = 0usize;
+    while idx < plugins.len() {
+        let plugin = &plugins[idx];
+        if plugin.plugin_type == "band_split" {
+            if let Some(merge_offset) = plugins[idx + 1..]
+                .iter()
+                .position(|candidate| candidate.plugin_type == "band_merge")
+            {
+                let merge_idx = idx + 1 + merge_offset;
+                response *= mixed_band_response(
+                    plugin,
+                    &plugins[idx + 1..merge_idx],
+                    freq,
+                    sample_rate,
+                    cache,
+                )?;
+                idx = merge_idx + 1;
+                continue;
+            }
+        }
+        response *= plugin_response(plugin, freq, sample_rate, cache)?;
+        idx += 1;
+    }
+    Ok(response)
+}
+
+fn mixed_band_response(
+    split: &PluginConfigWrapper,
+    plugins: &[PluginConfigWrapper],
+    freq: f64,
+    sample_rate: f64,
+    cache: &mut DspResponseCache,
+) -> Result<Complex64> {
+    let frequency = split
+        .parameters
+        .get("frequency")
+        .and_then(|value| value.as_f64())
+        .unwrap_or(1_000.0);
+    let mut low =
+        lr4_crossover_response("low", frequency, freq, sample_rate).map_err(|message| {
+            AutoeqError::InvalidConfiguration {
+                message: format!("unsupported RoomEQ band_split in CTC joint path: {message}"),
+            }
+        })?;
+    let mut high =
+        lr4_crossover_response("high", frequency, freq, sample_rate).map_err(|message| {
+            AutoeqError::InvalidConfiguration {
+                message: format!("unsupported RoomEQ band_split in CTC joint path: {message}"),
+            }
+        })?;
+
+    for plugin in plugins {
+        let plugin_response = plugin_response(plugin, freq, sample_rate, cache)?;
+        if plugin_affects_mixed_band(plugin, true) {
+            low *= plugin_response;
+        }
+        if plugin_affects_mixed_band(plugin, false) {
+            high *= plugin_response;
+        }
+    }
+
+    Ok(low + high)
+}
+
+fn plugin_affects_mixed_band(plugin: &PluginConfigWrapper, low_band: bool) -> bool {
+    let Some(channels) = plugin
+        .parameters
+        .get("channels")
+        .and_then(|value| value.as_array())
+    else {
+        return true;
+    };
+    channels
+        .iter()
+        .filter_map(|value| value.as_u64())
+        .any(|ch| {
+            if low_band {
+                ch == 0 || ch == 1
+            } else {
+                ch == 2 || ch == 3
+            }
+        })
+}
+
+fn plugin_response(
+    plugin: &PluginConfigWrapper,
+    freq: f64,
+    sample_rate: f64,
+    cache: &mut DspResponseCache,
+) -> Result<Complex64> {
+    match plugin.plugin_type.as_str() {
+        "gain" => {
+            let gain_db = plugin
+                .parameters
+                .get("gain_db")
+                .and_then(|value| value.as_f64())
+                .unwrap_or(0.0);
+            let invert = plugin
+                .parameters
+                .get("invert")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
+            let sign = if invert { -1.0 } else { 1.0 };
+            Ok(Complex64::new(sign * 10.0_f64.powf(gain_db / 20.0), 0.0))
+        }
+        "convolution" => convolution_response(plugin, freq, sample_rate, cache),
+        "crossover" => {
+            let frequency = plugin
+                .parameters
+                .get("frequency")
+                .and_then(|value| value.as_f64())
+                .unwrap_or(1_000.0);
+            let output = plugin
+                .parameters
+                .get("output")
+                .and_then(|value| value.as_str())
+                .unwrap_or("both");
+            lr4_crossover_response(output, frequency, freq, sample_rate).map_err(|message| {
+                AutoeqError::InvalidConfiguration {
+                    message: format!("unsupported RoomEQ crossover in CTC joint path: {message}"),
+                }
+            })
+        }
+        "delay" => {
+            let delay_ms = plugin
+                .parameters
+                .get("delay_ms")
+                .and_then(|value| value.as_f64())
+                .unwrap_or(0.0);
+            let phase = -2.0 * PI * freq * delay_ms / 1000.0;
+            Ok(Complex64::from_polar(1.0, phase))
+        }
+        "eq" => {
+            let mut response = Complex64::new(1.0, 0.0);
+            if let Some(filters) = plugin.parameters.get("filters").and_then(|v| v.as_array()) {
+                for filter in filters {
+                    response *= biquad_filter_response(filter, freq, sample_rate)?;
+                }
+            }
+            Ok(response)
+        }
+        _ => Ok(Complex64::new(1.0, 0.0)),
+    }
+}
+
+fn convolution_response(
+    plugin: &PluginConfigWrapper,
+    freq: f64,
+    sample_rate: f64,
+    cache: &mut DspResponseCache,
+) -> Result<Complex64> {
+    let Some(ir_file) = plugin
+        .parameters
+        .get("ir_file")
+        .and_then(|value| value.as_str())
+    else {
+        return Ok(Complex64::new(1.0, 0.0));
+    };
+    let taps = cache.convolution_taps(Path::new(ir_file))?;
+    let wet = fir_complex_response(taps, freq, sample_rate);
+    let mix = plugin
+        .parameters
+        .get("mix")
+        .and_then(|value| value.as_f64())
+        .unwrap_or(1.0)
+        .clamp(0.0, 1.0);
+    let gain = plugin
+        .parameters
+        .get("gain_db")
+        .and_then(|value| value.as_f64())
+        .map(|gain_db| 10.0_f64.powf(gain_db / 20.0))
+        .unwrap_or(1.0);
+    Ok(Complex64::new(1.0 - mix, 0.0) + wet * (mix * gain))
+}
+
+fn biquad_filter_response(
+    filter: &serde_json::Value,
+    freq: f64,
+    sample_rate: f64,
+) -> Result<Complex64> {
+    let filter_type = filter
+        .get("filter_type")
+        .and_then(|value| value.as_str())
+        .and_then(parse_biquad_filter_type)
+        .ok_or_else(|| AutoeqError::InvalidConfiguration {
+            message: format!(
+                "unsupported RoomEQ biquad filter type in CTC joint path: {}",
+                filter
+            ),
+        })?;
+    let freq_hz = filter
+        .get("freq")
+        .and_then(|value| value.as_f64())
+        .unwrap_or(1000.0);
+    let q = filter
+        .get("q")
+        .and_then(|value| value.as_f64())
+        .unwrap_or(1.0);
+    let db_gain = filter
+        .get("db_gain")
+        .and_then(|value| value.as_f64())
+        .unwrap_or(0.0);
+    Ok(dsp_biquad_complex_response(
+        &Biquad::new(filter_type, freq_hz, sample_rate, q, db_gain),
+        freq,
+    ))
+}
+
+fn parse_biquad_filter_type(value: &str) -> Option<BiquadFilterType> {
+    match value {
+        "lowpass" => Some(BiquadFilterType::Lowpass),
+        "highpass" => Some(BiquadFilterType::Highpass),
+        "highpassvariableq" => Some(BiquadFilterType::HighpassVariableQ),
+        "bandpass" => Some(BiquadFilterType::Bandpass),
+        "peak" => Some(BiquadFilterType::Peak),
+        "notch" => Some(BiquadFilterType::Notch),
+        "lowshelf" => Some(BiquadFilterType::Lowshelf),
+        "highshelf" => Some(BiquadFilterType::Highshelf),
+        "allpass" => Some(BiquadFilterType::AllPass),
+        "lowshelforf" => Some(BiquadFilterType::LowshelfOrf),
+        "highshelforf" => Some(BiquadFilterType::HighshelfOrf),
+        "peakmatched" => Some(BiquadFilterType::PeakMatched),
+        _ => None,
+    }
+}
+
+fn enforce_electrical_sum_headroom(
+    values: &mut [Complex64],
+    speakers: usize,
+    ears: usize,
+    max_gain_db: f64,
+) -> bool {
+    let max_gain = 10.0_f64.powf(max_gain_db / 20.0);
+    let mut limited = false;
+    for speaker_idx in 0..speakers {
+        let row_start = speaker_idx * ears;
+        let row_end = row_start + ears;
+        let row_norm = values[row_start..row_end]
+            .iter()
+            .map(|value| value.norm_sqr())
+            .sum::<f64>()
+            .sqrt();
+        if row_norm > max_gain && row_norm > 0.0 {
+            let scale = max_gain / row_norm;
+            for value in &mut values[row_start..row_end] {
+                *value *= scale;
+            }
+            limited = true;
+        }
+    }
+    limited
 }
 
 fn checked_sample_rate(sample_rate: f64) -> Result<u32> {
@@ -827,6 +1357,10 @@ fn reconstruction_error_to_db(error: f64) -> f64 {
     10.0 * error.max(1e-24).log10()
 }
 
+fn amplitude_to_db(value: f64) -> f64 {
+    20.0 * value.max(1e-12).log10()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -835,6 +1369,7 @@ mod tests {
         CtcWindowConfig, SystemConfig, SystemModel,
     };
     use std::collections::HashMap;
+    use std::f64::consts::PI;
     use tempfile::tempdir;
 
     #[test]
@@ -852,6 +1387,7 @@ mod tests {
                 max_gain_db: 12.0,
             },
             robustness: "average".to_string(),
+            include_room_eq_dsp: true,
             fir_taps: 1024,
             reference_sweep: None,
             sweep_duration_s: None,
@@ -864,6 +1400,111 @@ mod tests {
         assert!((beta_for_frequency(&cfg, 80.0) - 0.1).abs() < 1e-12);
         assert!((beta_for_frequency(&cfg, 1000.0) - 10.0_f64.powf(-30.0 / 20.0)).abs() < 1e-12);
         assert!((beta_for_frequency(&cfg, 8000.0) - 0.01).abs() < 1e-12);
+    }
+
+    #[test]
+    fn electrical_sum_headroom_scales_complete_speaker_rows() {
+        let mut values = vec![
+            Complex64::new(1.0, 0.0),
+            Complex64::new(1.0, 0.0),
+            Complex64::new(0.25, 0.0),
+            Complex64::new(0.5, 0.0),
+        ];
+
+        assert!(enforce_electrical_sum_headroom(&mut values, 2, 2, 0.0));
+
+        let first_row_norm = (values[0].norm_sqr() + values[1].norm_sqr()).sqrt();
+        let second_row_norm = (values[2].norm_sqr() + values[3].norm_sqr()).sqrt();
+        assert!((first_row_norm - 1.0).abs() < 1e-12);
+        assert!((second_row_norm - 0.559016994).abs() < 1e-9);
+        assert!((values[0].re - values[1].re).abs() < 1e-12);
+    }
+
+    #[test]
+    fn joint_room_eq_path_models_convolution_ir_phase() {
+        let dir = tempdir().unwrap();
+        let ir = dir.path().join("delay_one.wav");
+        write_mono_float_wav(&ir, &[0.0, 1.0, 0.0, 0.0]);
+        let chain = test_channel_chain(
+            vec![PluginConfigWrapper {
+                plugin_type: "convolution".to_string(),
+                parameters: serde_json::json!({
+                    "ir_file": ir,
+                    "mix": 1.0,
+                    "gain_db": 0.0
+                }),
+            }],
+            None,
+        );
+        let mut cache = DspResponseCache::new(48_000);
+        let response = channel_chain_response(&chain, 12_000.0, 48_000.0, &mut cache).unwrap();
+        assert!(response.re.abs() < 1e-9);
+        assert!((response.im + 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn joint_room_eq_path_models_mixed_fir_iir_band_split() {
+        let chain = test_channel_chain(
+            vec![
+                PluginConfigWrapper {
+                    plugin_type: "band_split".to_string(),
+                    parameters: serde_json::json!({
+                        "frequency": 1_000.0,
+                        "type": "LR24"
+                    }),
+                },
+                PluginConfigWrapper {
+                    plugin_type: "gain".to_string(),
+                    parameters: serde_json::json!({
+                        "gain_db": -12.0,
+                        "channels": [0, 1]
+                    }),
+                },
+                PluginConfigWrapper {
+                    plugin_type: "band_merge".to_string(),
+                    parameters: serde_json::json!({
+                        "bands": 2
+                    }),
+                },
+            ],
+            None,
+        );
+        let mut cache = DspResponseCache::new(48_000);
+        let low = channel_chain_response(&chain, 100.0, 48_000.0, &mut cache)
+            .unwrap()
+            .norm();
+        let high = channel_chain_response(&chain, 10_000.0, 48_000.0, &mut cache)
+            .unwrap()
+            .norm();
+        assert!(low < 0.35, "low-band gain should attenuate LF, got {low}");
+        assert!(high > 0.8, "high band should pass through, got {high}");
+    }
+
+    #[test]
+    fn joint_room_eq_path_models_driver_crossover_branches() {
+        let low_driver = crate::roomeq::types::DriverDspChain {
+            name: "woofer".to_string(),
+            index: 0,
+            plugins: vec![PluginConfigWrapper {
+                plugin_type: "crossover".to_string(),
+                parameters: serde_json::json!({
+                    "type": "LR24",
+                    "frequency": 1_000.0,
+                    "output": "low"
+                }),
+            }],
+            initial_curve: None,
+        };
+        let chain = test_channel_chain(Vec::new(), Some(vec![low_driver]));
+        let mut cache = DspResponseCache::new(48_000);
+        let low = channel_chain_response(&chain, 100.0, 48_000.0, &mut cache)
+            .unwrap()
+            .norm();
+        let high = channel_chain_response(&chain, 10_000.0, 48_000.0, &mut cache)
+            .unwrap()
+            .norm();
+        assert!(low > 0.9, "lowpass driver should pass LF, got {low}");
+        assert!(high < 0.05, "lowpass driver should reject HF, got {high}");
     }
 
     #[test]
@@ -961,6 +1602,7 @@ mod tests {
                 max_gain_db: 12.0,
             },
             robustness: "average".to_string(),
+            include_room_eq_dsp: true,
             fir_taps: 64,
             reference_sweep: None,
             sweep_duration_s: None,
@@ -980,10 +1622,11 @@ mod tests {
             bass_management: None,
         };
 
-        let report = maybe_generate_recommended_xtc(&cfg, &sys, 48_000.0, dir.path())
+        let report = maybe_generate_recommended_xtc(&cfg, &sys, 48_000.0, dir.path(), None)
             .unwrap()
             .expect("ctc report");
         assert_eq!(report.speakers, vec!["L", "R"]);
+        assert!(report.max_electrical_sum_gain_db <= cfg.regularization.max_gain_db + 1e-9);
         assert!(Path::new(&report.artifact).exists());
 
         let artifact: serde_json::Value =
@@ -991,6 +1634,108 @@ mod tests {
         assert_eq!(artifact["version"], CTC_ARTIFACT_VERSION);
         assert_eq!(artifact["filters"].as_array().unwrap().len(), 4);
         assert!(artifact["mean_crosstalk_residual_db"].is_number());
+        assert!(artifact["delivered_response"]["mean_target_error"].is_number());
+        assert!(report.delivered_response.is_some());
+    }
+
+    #[test]
+    fn joint_room_eq_path_folds_channel_gain_into_ctc_solve() {
+        let dir = tempdir().unwrap();
+        let left_wav = dir.path().join("left.wav");
+        let right_wav = dir.path().join("right.wav");
+        write_stereo_impulse(&left_wav, 30_000, 6_000);
+        write_stereo_impulse(&right_wav, 6_000, 30_000);
+
+        let cfg = CtcConfig {
+            enabled: true,
+            matrix_source: "measured".to_string(),
+            measurements: Some(CtcMeasurementConfig {
+                speakers: vec!["L".to_string(), "R".to_string()],
+                mics: vec!["left_ear".to_string(), "right_ear".to_string()],
+                head_positions: vec![],
+                files: vec![
+                    CtcMeasurementFileConfig {
+                        head_position: "primary".to_string(),
+                        speaker: "L".to_string(),
+                        ir: Some(left_wav),
+                        raw_sweep: None,
+                        loopback: None,
+                    },
+                    CtcMeasurementFileConfig {
+                        head_position: "primary".to_string(),
+                        speaker: "R".to_string(),
+                        ir: Some(right_wav),
+                        raw_sweep: None,
+                        loopback: None,
+                    },
+                ],
+            }),
+            hrtf: None,
+            window: CtcWindowConfig::default(),
+            regularization: CtcRegularizationConfig {
+                beta_db: -60.0,
+                beta_lf_db: -60.0,
+                beta_hf_db: -60.0,
+                max_gain_db: 12.0,
+            },
+            robustness: "average".to_string(),
+            include_room_eq_dsp: true,
+            fir_taps: 64,
+            reference_sweep: None,
+            sweep_duration_s: None,
+            sweep_start_hz: None,
+            sweep_end_hz: None,
+            harmonic_suppression_harmonics: 5,
+            harmonic_suppression_window_ms: 2.0,
+            minimax_iterations: 8,
+        };
+        let sys = SystemConfig {
+            model: SystemModel::Stereo,
+            speakers: HashMap::from([
+                ("L".to_string(), "left".to_string()),
+                ("R".to_string(), "right".to_string()),
+            ]),
+            subwoofers: None,
+            bass_management: None,
+        };
+        let channels = HashMap::from([
+            (
+                "left".to_string(),
+                crate::roomeq::output::build_channel_dsp_chain("left", Some(6.0), Vec::new(), &[]),
+            ),
+            (
+                "right".to_string(),
+                crate::roomeq::output::build_channel_dsp_chain("right", Some(6.0), Vec::new(), &[]),
+            ),
+        ]);
+
+        let plain =
+            maybe_generate_recommended_xtc(&cfg, &sys, 48_000.0, &dir.path().join("plain"), None)
+                .unwrap()
+                .expect("plain ctc report");
+        let joint = maybe_generate_recommended_xtc(
+            &cfg,
+            &sys,
+            48_000.0,
+            &dir.path().join("joint"),
+            Some(&channels),
+        )
+        .unwrap()
+        .expect("joint ctc report");
+
+        assert!(joint.room_eq_correction_applied);
+        assert_eq!(joint.room_eq_correction_channels, vec!["left", "right"]);
+        assert!(
+            joint.max_filter_gain_db < plain.max_filter_gain_db - 4.0,
+            "joint max gain {} should reflect downstream +6 dB channel gain, plain {}",
+            joint.max_filter_gain_db,
+            plain.max_filter_gain_db
+        );
+
+        let artifact: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&joint.artifact).unwrap()).unwrap();
+        assert_eq!(artifact["room_eq_correction_applied"], true);
+        assert_eq!(artifact["room_eq_correction_channels"][0], "left");
     }
 
     #[test]
@@ -1038,6 +1783,7 @@ mod tests {
                 max_gain_db: 12.0,
             },
             robustness: "minimax".to_string(),
+            include_room_eq_dsp: true,
             fir_taps: 64,
             reference_sweep: Some(reference),
             sweep_duration_s: Some(1.0),
@@ -1057,7 +1803,7 @@ mod tests {
             bass_management: None,
         };
 
-        let report = maybe_generate_recommended_xtc(&cfg, &sys, 48_000.0, dir.path())
+        let report = maybe_generate_recommended_xtc(&cfg, &sys, 48_000.0, dir.path(), None)
             .unwrap()
             .expect("ctc report");
         assert_eq!(report.source, "raw_sweep");
@@ -1118,6 +1864,7 @@ mod tests {
                 max_gain_db: 12.0,
             },
             robustness: "average".to_string(),
+            include_room_eq_dsp: true,
             fir_taps: 128,
             reference_sweep: Some(reference),
             sweep_duration_s: None,
@@ -1137,7 +1884,7 @@ mod tests {
             bass_management: None,
         };
 
-        let report = maybe_generate_recommended_xtc(&cfg, &sys, 48_000.0, dir.path())
+        let report = maybe_generate_recommended_xtc(&cfg, &sys, 48_000.0, dir.path(), None)
             .unwrap()
             .expect("ctc report");
         let artifact: serde_json::Value =
@@ -1155,6 +1902,122 @@ mod tests {
         );
     }
 
+    #[test]
+    fn synthetic_measured_ctc_reconstructs_binaural_identity() {
+        let dir = tempdir().unwrap();
+        let left_wav = dir.path().join("left_matrix.wav");
+        let right_wav = dir.path().join("right_matrix.wav");
+        write_stereo_split_impulse(&left_wav, 8, 30_000, 13, 7_000);
+        write_stereo_split_impulse(&right_wav, 12, 6_500, 9, 30_000);
+
+        let mut window = CtcWindowConfig::default();
+        window.length_ms = 1.0;
+        window.fade_ms = 0.0;
+        let cfg = CtcConfig {
+            enabled: true,
+            matrix_source: "measured".to_string(),
+            measurements: Some(CtcMeasurementConfig {
+                speakers: vec!["L".to_string(), "R".to_string()],
+                mics: vec!["left_ear".to_string(), "right_ear".to_string()],
+                head_positions: vec![],
+                files: vec![
+                    CtcMeasurementFileConfig {
+                        head_position: "primary".to_string(),
+                        speaker: "L".to_string(),
+                        ir: Some(left_wav),
+                        raw_sweep: None,
+                        loopback: None,
+                    },
+                    CtcMeasurementFileConfig {
+                        head_position: "primary".to_string(),
+                        speaker: "R".to_string(),
+                        ir: Some(right_wav),
+                        raw_sweep: None,
+                        loopback: None,
+                    },
+                ],
+            }),
+            hrtf: None,
+            window,
+            regularization: CtcRegularizationConfig {
+                beta_db: -80.0,
+                beta_lf_db: -80.0,
+                beta_hf_db: -80.0,
+                max_gain_db: 24.0,
+            },
+            robustness: "average".to_string(),
+            include_room_eq_dsp: true,
+            fir_taps: 256,
+            reference_sweep: None,
+            sweep_duration_s: None,
+            sweep_start_hz: None,
+            sweep_end_hz: None,
+            harmonic_suppression_harmonics: 5,
+            harmonic_suppression_window_ms: 2.0,
+            minimax_iterations: 8,
+        };
+        let sys = SystemConfig {
+            model: SystemModel::Stereo,
+            speakers: HashMap::from([
+                ("L".to_string(), "left".to_string()),
+                ("R".to_string(), "right".to_string()),
+            ]),
+            subwoofers: None,
+            bass_management: None,
+        };
+
+        let report = maybe_generate_recommended_xtc(&cfg, &sys, 48_000.0, dir.path(), None)
+            .unwrap()
+            .expect("ctc report");
+        assert!(report.mean_reconstruction_error < 0.02);
+        assert!(report.worst_position_error < 0.02);
+        assert!(report.mean_crosstalk_residual_db < -15.0);
+        let delivered = report.delivered_response.as_ref().unwrap();
+        assert!(delivered.mean_target_error < 0.05);
+        assert!(delivered.worst_target_error < 0.1);
+        assert!(delivered.mean_crosstalk_db < -20.0);
+        assert!(delivered.worst_crosstalk_db < -15.0);
+        assert!(delivered.mean_channel_balance_db < 1.0);
+
+        let artifact: CtcArtifact =
+            serde_json::from_slice(&std::fs::read(&report.artifact).unwrap()).unwrap();
+        assert!(artifact.delivered_response.is_some());
+        let spectrum = load_measured_spectrum(
+            cfg.measurements.as_ref().unwrap(),
+            &cfg.window,
+            48_000,
+            cfg.fir_taps,
+        )
+        .unwrap();
+        let f_ll = artifact_filter_spectrum(&artifact, "L", "left_ear");
+        let f_lr = artifact_filter_spectrum(&artifact, "L", "right_ear");
+        let f_rl = artifact_filter_spectrum(&artifact, "R", "left_ear");
+        let f_rr = artifact_filter_spectrum(&artifact, "R", "right_ear");
+        let latency = cfg.fir_taps / 2;
+        let mut max_cross = 0.0_f64;
+        let mut diag_error_sum = 0.0_f64;
+        let mut checked = 0usize;
+
+        for bin in 1..(cfg.fir_taps / 2) {
+            let h = &spectrum.bins[bin][0].values;
+            let y_ll = h[0] * f_ll[bin] + h[1] * f_rl[bin];
+            let y_lr = h[0] * f_lr[bin] + h[1] * f_rr[bin];
+            let y_rl = h[2] * f_ll[bin] + h[3] * f_rl[bin];
+            let y_rr = h[2] * f_lr[bin] + h[3] * f_rr[bin];
+            let phase = 2.0 * PI * bin as f64 * latency as f64 / cfg.fir_taps as f64;
+            let undo_latency = Complex64::from_polar(1.0, phase);
+            diag_error_sum += (y_ll * undo_latency - Complex64::new(1.0, 0.0)).norm();
+            diag_error_sum += (y_rr * undo_latency - Complex64::new(1.0, 0.0)).norm();
+            max_cross = max_cross.max((y_lr * undo_latency).norm());
+            max_cross = max_cross.max((y_rl * undo_latency).norm());
+            checked += 2;
+        }
+
+        let mean_diag_error = diag_error_sum / checked as f64;
+        assert!(mean_diag_error < 0.05, "mean_diag_error={mean_diag_error}");
+        assert!(max_cross < 0.08, "max_cross={max_cross}");
+    }
+
     fn write_mono_impulse(path: &Path, value: i16) {
         let spec = hound::WavSpec {
             channels: 1,
@@ -1166,6 +2029,77 @@ mod tests {
         writer.write_sample::<i16>(value).unwrap();
         for _ in 1..64 {
             writer.write_sample::<i16>(0).unwrap();
+        }
+        writer.finalize().unwrap();
+    }
+
+    fn write_mono_float_wav(path: &Path, samples: &[f32]) {
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 48_000,
+            bits_per_sample: 32,
+            sample_format: hound::SampleFormat::Float,
+        };
+        let mut writer = hound::WavWriter::create(path, spec).unwrap();
+        for sample in samples {
+            writer.write_sample::<f32>(*sample).unwrap();
+        }
+        writer.finalize().unwrap();
+    }
+
+    fn test_channel_chain(
+        plugins: Vec<PluginConfigWrapper>,
+        drivers: Option<Vec<crate::roomeq::types::DriverDspChain>>,
+    ) -> ChannelDspChain {
+        ChannelDspChain {
+            channel: "left".to_string(),
+            plugins,
+            drivers,
+            initial_curve: None,
+            final_curve: None,
+            eq_response: None,
+            pre_ir: None,
+            post_ir: None,
+            target_curve: None,
+        }
+    }
+
+    fn artifact_filter_spectrum(
+        artifact: &CtcArtifact,
+        speaker: &str,
+        target_ear: &str,
+    ) -> Vec<Complex64> {
+        let filter = artifact
+            .filters
+            .iter()
+            .find(|filter| filter.speaker == speaker && filter.target_ear == target_ear)
+            .unwrap_or_else(|| {
+                panic!("missing filter speaker='{speaker}', target_ear='{target_ear}'")
+            });
+        fft_real_to_half_spectrum_f64(&filter.taps, artifact.fir_taps)
+    }
+
+    fn write_stereo_split_impulse(
+        path: &Path,
+        left_delay: usize,
+        left: i16,
+        right_delay: usize,
+        right: i16,
+    ) {
+        let spec = hound::WavSpec {
+            channels: 2,
+            sample_rate: 48_000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut writer = hound::WavWriter::create(path, spec).unwrap();
+        for idx in 0..256 {
+            writer
+                .write_sample::<i16>(if idx == left_delay { left } else { 0 })
+                .unwrap();
+            writer
+                .write_sample::<i16>(if idx == right_delay { right } else { 0 })
+                .unwrap();
         }
         writer.finalize().unwrap();
     }

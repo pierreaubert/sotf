@@ -540,8 +540,13 @@ fn apply_ctc_if_enabled(
                 .to_string(),
         })?;
     let output_dir = output_dir.unwrap_or(Path::new("."));
-    result.metadata.ctc =
-        super::ctc::maybe_generate_recommended_xtc(ctc_config, sys, sample_rate, output_dir)?;
+    result.metadata.ctc = super::ctc::maybe_generate_recommended_xtc(
+        ctc_config,
+        sys,
+        sample_rate,
+        output_dir,
+        Some(&result.channels),
+    )?;
     Ok(())
 }
 

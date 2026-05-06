@@ -71,6 +71,7 @@ The optional `ctc` block exports a `recommended_xtc_matrix.json` artifact that c
     },
     "regularization": { "beta_db": -30.0, "beta_lf_db": -20.0, "beta_hf_db": -40.0, "max_gain_db": 12.0 },
     "robustness": "average",
+    "include_room_eq_dsp": true,
     "fir_taps": 4096
   }
 }
@@ -115,13 +116,16 @@ Raw sweep CTC input can deconvolve and align takes inside roomEQ. Use `matrix_so
     },
     "regularization": { "beta_db": -30.0, "beta_lf_db": -20.0, "beta_hf_db": -40.0, "max_gain_db": 12.0 },
     "robustness": "minimax",
+    "include_room_eq_dsp": true,
     "minimax_iterations": 8,
     "fir_taps": 4096
   }
 }
 ```
 
-`matrix_source: "hrtf_database"` uses `ctc.hrtf.hrtf_file` plus per-speaker azimuth/elevation/distance entries instead. The generated artifact includes FIR taps, latency, condition number, mean/worst reconstruction error, crosstalk residual, and electrical sum-gain/headroom metrics.
+`include_room_eq_dsp` defaults to `true`. When CTC runs from the full RoomEQ pipeline, it folds each exported per-channel gain/EQ/delay response into the acoustic matrix before solving so the recommended XTC matrix matches runtime order: global XTC first, then channel correction. Set it to `false` only when the artifact will be used without the exported RoomEQ channel chains.
+
+`matrix_source: "hrtf_database"` uses `ctc.hrtf.hrtf_file` plus per-speaker azimuth/elevation/distance entries instead. The generated artifact includes FIR taps, latency, condition number, mean/worst reconstruction error, delivered-response metrics, crosstalk residual, and electrical sum-gain/headroom metrics.
 
 ---
 

@@ -2307,6 +2307,10 @@ fn default_ctc_robustness() -> String {
     "average".to_string()
 }
 
+fn default_ctc_include_room_eq_dsp() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CtcHeadPositionConfig {
     pub id: String,
@@ -2476,6 +2480,12 @@ pub struct CtcConfig {
     pub regularization: CtcRegularizationConfig,
     #[serde(default = "default_ctc_robustness")]
     pub robustness: String,
+    /// Include the exported per-channel RoomEQ gain/EQ/delay response in the
+    /// acoustic plant before solving the CTC matrix. This matches the runtime
+    /// order where the global XTC matrix feeds the per-channel correction
+    /// chains.
+    #[serde(default = "default_ctc_include_room_eq_dsp")]
+    pub include_room_eq_dsp: bool,
     #[serde(default = "default_ctc_fir_taps")]
     pub fir_taps: usize,
     /// Optional emitted sweep WAV used for raw sweep deconvolution.
@@ -2504,6 +2514,29 @@ fn default_ctc_harmonic_window_ms() -> f64 {
 }
 fn default_ctc_minimax_iterations() -> usize {
     8
+}
+
+impl Default for CtcConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            matrix_source: default_ctc_matrix_source(),
+            measurements: None,
+            hrtf: None,
+            window: CtcWindowConfig::default(),
+            regularization: CtcRegularizationConfig::default(),
+            robustness: default_ctc_robustness(),
+            include_room_eq_dsp: default_ctc_include_room_eq_dsp(),
+            fir_taps: default_ctc_fir_taps(),
+            reference_sweep: None,
+            sweep_duration_s: None,
+            sweep_start_hz: None,
+            sweep_end_hz: None,
+            harmonic_suppression_harmonics: default_ctc_max_harmonic(),
+            harmonic_suppression_window_ms: default_ctc_harmonic_window_ms(),
+            minimax_iterations: default_ctc_minimax_iterations(),
+        }
+    }
 }
 
 impl CtcConfig {

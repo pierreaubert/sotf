@@ -2,6 +2,44 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Which recording artifact should be exported as the CTC transfer matrix.
+/// The default keeps the existing measured-IR path; raw sweeps are opt-in
+/// because roomeq also needs a reference sweep and loopback capture.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum CtcMatrixExportStrategy {
+    /// Export analyzed/deconvolved two-ear impulse responses.
+    #[default]
+    ImpulseResponse,
+    /// Export raw two-ear sweep recordings plus a per-take loopback WAV.
+    RawSweep,
+}
+
+impl CtcMatrixExportStrategy {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CtcMatrixExportStrategy::ImpulseResponse => "Impulse Response",
+            CtcMatrixExportStrategy::RawSweep => "Raw Sweep + Loopback",
+        }
+    }
+
+    pub fn all() -> &'static [CtcMatrixExportStrategy] {
+        &[
+            CtcMatrixExportStrategy::ImpulseResponse,
+            CtcMatrixExportStrategy::RawSweep,
+        ]
+    }
+}
+
+/// Raw loopback WAV captured for a speaker/position take. This is separate
+/// from visible mic recordings so the UI can keep ear mic rows clean while
+/// still giving roomeq the loopback path required for raw-sweep CTC solving.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransferMatrixLoopbackRecording {
+    pub speaker_index: usize,
+    pub mic_position_index: usize,
+    pub wav_path: String,
+}
+
 /// Recording screen workflow step
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RecordingStep {
@@ -625,6 +663,15 @@ pub struct RecordingDeviceConfig {
     /// the microphones. Defaults to 1 to keep older sessions byte-compatible.
     #[serde(default = "default_num_positions")]
     pub num_positions: usize,
+    /// Export strategy for CTC/N-by-M transfer-matrix measurements. Defaults
+    /// to the current measured impulse-response path.
+    #[serde(default)]
+    pub ctc_matrix_strategy: CtcMatrixExportStrategy,
+    /// Physical input channel used as loopback/reference when
+    /// `ctc_matrix_strategy == RawSweep`. Zero-based, same convention as
+    /// `channel_mappings`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ctc_loopback_input_channel: Option<usize>,
 }
 
 fn default_num_positions() -> usize {
@@ -642,6 +689,8 @@ impl Default for RecordingDeviceConfig {
             channel_mappings: vec![0],
             mic_calibration_paths: vec![None],
             num_positions: 1,
+            ctc_matrix_strategy: CtcMatrixExportStrategy::default(),
+            ctc_loopback_input_channel: None,
         }
     }
 }

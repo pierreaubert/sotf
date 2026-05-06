@@ -793,7 +793,7 @@ pub fn create_dsp_chain_output(
     channels: HashMap<String, ChannelDspChain>,
     metadata: Option<OptimizationMetadata>,
 ) -> DspChainOutput {
-    let global_plugins = metadata
+    let mut global_plugins: Vec<PluginConfigWrapper> = metadata
         .as_ref()
         .and_then(|metadata| metadata.bass_management.as_ref())
         .and_then(|report| report.routing_graph.as_ref())
@@ -810,6 +810,34 @@ pub fn create_dsp_chain_output(
         })
         .into_iter()
         .collect();
+    if let Some(ctc) = metadata.as_ref().and_then(|metadata| metadata.ctc.as_ref()) {
+        global_plugins.push(PluginConfigWrapper {
+            plugin_type: "xtc".to_string(),
+            parameters: json!({
+                "source_mode": "roomeq_recommended",
+                "recommended_matrix_file": ctc.artifact,
+                "auto_gain_enabled": false,
+                "metadata": {
+                    "source": ctc.source,
+                    "speakers": ctc.speakers,
+                    "ears": ctc.ears,
+                    "head_positions": ctc.head_positions,
+                    "latency_samples": ctc.latency_samples,
+                    "latency_ms": ctc.latency_ms,
+                    "max_filter_gain_db": ctc.max_filter_gain_db,
+                    "max_condition_number": ctc.max_condition_number,
+                    "mean_reconstruction_error": ctc.mean_reconstruction_error,
+                    "worst_position_error": ctc.worst_position_error,
+                    "mean_crosstalk_residual_db": ctc.mean_crosstalk_residual_db,
+                    "max_electrical_sum_gain_db": ctc.max_electrical_sum_gain_db,
+                    "driver_headroom_limited": ctc.driver_headroom_limited,
+                    "room_eq_correction_applied": ctc.room_eq_correction_applied,
+                    "room_eq_correction_channels": ctc.room_eq_correction_channels,
+                    "delivered_response": ctc.delivered_response,
+                }
+            }),
+        });
+    }
 
     DspChainOutput {
         version: super::types::default_config_version(),
@@ -1303,6 +1331,85 @@ mod tests {
         let meta = output.metadata.unwrap();
         assert_eq!(meta.pre_score, 5.0);
         assert_eq!(meta.post_score, 2.0);
+    }
+
+    #[test]
+    fn test_create_dsp_chain_output_adds_ctc_global_xtc_plugin() {
+        let mut channels = HashMap::new();
+        channels.insert(
+            "left".to_string(),
+            build_channel_dsp_chain("left", Some(-2.0), Vec::new(), &[]),
+        );
+
+        let metadata = OptimizationMetadata {
+            pre_score: 5.0,
+            post_score: 2.0,
+            algorithm: "cobyla".to_string(),
+            loss_type: Some("flat".to_string()),
+            iterations: 1000,
+            timestamp: "2025-01-01T00:00:00Z".to_string(),
+            inter_channel_deviation: None,
+            epa_per_channel: None,
+            group_delay: None,
+            perceptual_metrics: None,
+            home_cinema_layout: None,
+            multi_seat_coverage: None,
+            multi_seat_correction: None,
+            bass_management: None,
+            timing_diagnostics: None,
+            ctc: Some(crate::roomeq::ctc::CtcReport {
+                enabled: true,
+                source: "measured".to_string(),
+                artifact: "/tmp/recommended_xtc_matrix.json".to_string(),
+                speakers: vec!["L".to_string(), "R".to_string(), "C".to_string()],
+                ears: vec!["left_ear".to_string(), "right_ear".to_string()],
+                head_positions: 2,
+                fir_taps: 64,
+                latency_samples: 32,
+                latency_ms: 0.667,
+                max_filter_gain_db: 12.0,
+                max_condition_number: 25.0,
+                mean_reconstruction_error: 0.12,
+                worst_position_error: 0.2,
+                mean_crosstalk_residual_db: -18.0,
+                max_electrical_sum_gain_db: 9.0,
+                driver_headroom_limited: true,
+                room_eq_correction_applied: true,
+                room_eq_correction_channels: vec!["left".to_string(), "right".to_string()],
+                delivered_response: Some(crate::roomeq::ctc::CtcDeliveredResponseMetrics {
+                    mean_target_error: 0.05,
+                    worst_target_error: 0.08,
+                    mean_crosstalk_db: -24.0,
+                    worst_crosstalk_db: -18.0,
+                    mean_channel_balance_db: 0.5,
+                }),
+            }),
+        };
+
+        let output = create_dsp_chain_output(channels, Some(metadata));
+        let xtc = output
+            .global_plugins
+            .iter()
+            .find(|plugin| plugin.plugin_type == "xtc")
+            .expect("ctc metadata should export an xtc global plugin");
+
+        assert_eq!(xtc.parameters["source_mode"], "roomeq_recommended");
+        assert_eq!(
+            xtc.parameters["recommended_matrix_file"],
+            "/tmp/recommended_xtc_matrix.json"
+        );
+        assert_eq!(xtc.parameters["auto_gain_enabled"], false);
+        assert_eq!(xtc.parameters["metadata"]["speakers"][2], "C");
+        assert_eq!(xtc.parameters["metadata"]["head_positions"], 2);
+        assert_eq!(xtc.parameters["metadata"]["driver_headroom_limited"], true);
+        assert_eq!(
+            xtc.parameters["metadata"]["room_eq_correction_channels"][0],
+            "left"
+        );
+        assert_eq!(
+            xtc.parameters["metadata"]["delivered_response"]["mean_crosstalk_db"],
+            -24.0
+        );
     }
 
     #[test]

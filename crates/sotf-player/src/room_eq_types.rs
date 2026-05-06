@@ -1,10 +1,16 @@
 //! Shared room EQ domain types used by both GPUI and TUI apps.
 
+use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::path::{Path, PathBuf};
+
 use serde::{Deserialize, Serialize};
 
 use crate::EQFilter;
 use crate::ReleaseChannel;
-use crate::recording_types::{DelayProbeResults, RecordingResult};
+use crate::recording_types::{
+    ChannelRecording, ChannelRecordingState, CtcMatrixExportStrategy, DelayProbeResults,
+    RecordingResult, TransferMatrixLoopbackRecording,
+};
 use math_audio_iir_fir::BiquadFilterType;
 
 /// (frequencies, magnitude_db, phase_deg, wav_path, csv_path)
@@ -248,10 +254,313 @@ pub struct RecordingConfiguration {
     /// per-(position, mic) sweeps in `(position, mic)` order.
     #[serde(default = "default_num_positions_one")]
     pub num_positions: usize,
+    /// CTC/N-by-M transfer-matrix measurements exported from the
+    /// multi-speaker × multi-mic recording session. Paths are relative
+    /// to `recording_directory` when possible.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ctc_measurements: Option<autoeq::roomeq::CtcMeasurementConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ctc_config: Option<autoeq::roomeq::CtcConfig>,
 }
 
 fn default_num_positions_one() -> usize {
     1
+}
+
+fn sanitize_ctc_filename(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    for ch in name.chars() {
+        if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_') {
+            out.push(ch);
+        } else if ch.is_whitespace() || matches!(ch, '/' | '\\' | ':' | '(' | ')') {
+            out.push('_');
+        }
+    }
+    let trimmed = out.trim_matches('_').to_string();
+    if trimmed.is_empty() {
+        "measurement".to_string()
+    } else {
+        trimmed
+    }
+}
+
+fn write_stereo_ir_wav(
+    path: &Path,
+    left: &[f32],
+    right: &[f32],
+    sample_rate: u32,
+) -> Result<(), String> {
+    let len = left.len().max(right.len());
+    let mut interleaved = Vec::with_capacity(len * 2);
+    for idx in 0..len {
+        interleaved.push(left.get(idx).copied().unwrap_or(0.0));
+        interleaved.push(right.get(idx).copied().unwrap_or(0.0));
+    }
+    sotf_audio::signal_recorder::write_wav_file(path, &interleaved, sample_rate, 2)
+        .map_err(|e| format!("failed to write CTC IR WAV '{}': {}", path.display(), e))
+}
+
+fn write_stereo_wav_from_mono_wavs(
+    path: &Path,
+    left_path: &Path,
+    right_path: &Path,
+    expected_sample_rate: u32,
+) -> Result<(), String> {
+    let (left, left_sample_rate) = read_first_wav_channel_f32(left_path)?;
+    let (right, right_sample_rate) = read_first_wav_channel_f32(right_path)?;
+    if left_sample_rate != expected_sample_rate || right_sample_rate != expected_sample_rate {
+        return Err(format!(
+            "CTC raw sweep sample-rate mismatch: left={}Hz, right={}Hz, expected={}Hz",
+            left_sample_rate, right_sample_rate, expected_sample_rate
+        ));
+    }
+    write_stereo_ir_wav(path, &left, &right, expected_sample_rate)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WavSubFormat {
+    Pcm,
+    IeeeFloat,
+}
+
+fn read_first_wav_channel_f32(path: &Path) -> Result<(Vec<f32>, u32), String> {
+    let bytes = std::fs::read(path)
+        .map_err(|e| format!("failed to read WAV '{}': {}", path.display(), e))?;
+    if bytes.len() < 12 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
+        return Err(format!("'{}' is not a RIFF/WAVE file", path.display()));
+    }
+
+    let mut audio_format = None;
+    let mut channels = None;
+    let mut sample_rate = None;
+    let mut bits_per_sample = None;
+    let mut extensible_subformat = None;
+    let mut data_range = None;
+    let mut offset = 12usize;
+    while offset + 8 <= bytes.len() {
+        let chunk_id = &bytes[offset..offset + 4];
+        let chunk_size = u32::from_le_bytes([
+            bytes[offset + 4],
+            bytes[offset + 5],
+            bytes[offset + 6],
+            bytes[offset + 7],
+        ]) as usize;
+        let chunk_start = offset + 8;
+        let chunk_end = chunk_start.saturating_add(chunk_size);
+        if chunk_end > bytes.len() {
+            return Err(format!("WAV '{}' has a truncated chunk", path.display()));
+        }
+
+        match chunk_id {
+            b"fmt " => {
+                if chunk_size < 16 {
+                    return Err(format!("WAV '{}' has an invalid fmt chunk", path.display()));
+                }
+                audio_format = Some(u16::from_le_bytes([
+                    bytes[chunk_start],
+                    bytes[chunk_start + 1],
+                ]));
+                channels = Some(u16::from_le_bytes([
+                    bytes[chunk_start + 2],
+                    bytes[chunk_start + 3],
+                ]));
+                sample_rate = Some(u32::from_le_bytes([
+                    bytes[chunk_start + 4],
+                    bytes[chunk_start + 5],
+                    bytes[chunk_start + 6],
+                    bytes[chunk_start + 7],
+                ]));
+                bits_per_sample = Some(u16::from_le_bytes([
+                    bytes[chunk_start + 14],
+                    bytes[chunk_start + 15],
+                ]));
+                if audio_format == Some(65534) && chunk_size >= 40 {
+                    let guid = &bytes[chunk_start + 24..chunk_start + 40];
+                    extensible_subformat = match guid {
+                        [
+                            0x01,
+                            0x00,
+                            0x00,
+                            0x00,
+                            0x00,
+                            0x00,
+                            0x10,
+                            0x00,
+                            0x80,
+                            0x00,
+                            0x00,
+                            0xaa,
+                            0x00,
+                            0x38,
+                            0x9b,
+                            0x71,
+                        ] => Some(WavSubFormat::Pcm),
+                        [
+                            0x03,
+                            0x00,
+                            0x00,
+                            0x00,
+                            0x00,
+                            0x00,
+                            0x10,
+                            0x00,
+                            0x80,
+                            0x00,
+                            0x00,
+                            0xaa,
+                            0x00,
+                            0x38,
+                            0x9b,
+                            0x71,
+                        ] => Some(WavSubFormat::IeeeFloat),
+                        _ => None,
+                    };
+                }
+            }
+            b"data" => data_range = Some(chunk_start..chunk_end),
+            _ => {}
+        }
+        offset = chunk_end + (chunk_size & 1);
+    }
+
+    let audio_format =
+        audio_format.ok_or_else(|| format!("WAV '{}' is missing a fmt chunk", path.display()))?;
+    let channels = channels
+        .ok_or_else(|| format!("WAV '{}' is missing a channel count", path.display()))?
+        as usize;
+    let sample_rate =
+        sample_rate.ok_or_else(|| format!("WAV '{}' is missing a sample rate", path.display()))?;
+    let bits_per_sample = bits_per_sample
+        .ok_or_else(|| format!("WAV '{}' is missing a bit depth", path.display()))?;
+    let data_range =
+        data_range.ok_or_else(|| format!("WAV '{}' is missing a data chunk", path.display()))?;
+    if channels == 0 {
+        return Err(format!("WAV '{}' has zero channels", path.display()));
+    }
+
+    let bytes_per_sample = (bits_per_sample / 8) as usize;
+    if bytes_per_sample == 0 {
+        return Err(format!("WAV '{}' has invalid bit depth", path.display()));
+    }
+    let frame_size = bytes_per_sample * channels;
+    let data = &bytes[data_range];
+    if data.len() < frame_size {
+        return Ok((Vec::new(), sample_rate));
+    }
+
+    let mut samples = Vec::with_capacity(data.len() / frame_size);
+    for frame in data.chunks_exact(frame_size) {
+        let sample = match (audio_format, bits_per_sample) {
+            (3, 32) => f32::from_le_bytes([frame[0], frame[1], frame[2], frame[3]]),
+            (65534, 32) => match extensible_subformat {
+                Some(WavSubFormat::IeeeFloat) => {
+                    f32::from_le_bytes([frame[0], frame[1], frame[2], frame[3]])
+                }
+                Some(WavSubFormat::Pcm) => {
+                    i32::from_le_bytes([frame[0], frame[1], frame[2], frame[3]]) as f32
+                        / i32::MAX as f32
+                }
+                None => {
+                    return Err(format!(
+                        "WAV '{}' uses unsupported extensible subformat",
+                        path.display()
+                    ));
+                }
+            },
+            (1, 16) => i16::from_le_bytes([frame[0], frame[1]]) as f32 / i16::MAX as f32,
+            (1, 24) => {
+                let value = i32::from_le_bytes([
+                    frame[0],
+                    frame[1],
+                    frame[2],
+                    if frame[2] & 0x80 == 0 { 0 } else { 0xff },
+                ]);
+                value as f32 / 8_388_607.0
+            }
+            (1, 32) => {
+                i32::from_le_bytes([frame[0], frame[1], frame[2], frame[3]]) as f32
+                    / i32::MAX as f32
+            }
+            _ => {
+                return Err(format!(
+                    "WAV '{}' uses unsupported format={}, bits={}",
+                    path.display(),
+                    audio_format,
+                    bits_per_sample
+                ));
+            }
+        };
+        samples.push(sample);
+    }
+
+    Ok((samples, sample_rate))
+}
+
+fn resolve_recording_wav_path(path: &str, output_dir: &Path) -> PathBuf {
+    let path = PathBuf::from(path);
+    if path.is_relative() {
+        output_dir.join(path)
+    } else {
+        path
+    }
+}
+
+fn ctc_config_path_for(abs_path: &Path, output_dir: &Path) -> PathBuf {
+    abs_path
+        .strip_prefix(output_dir)
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| abs_path.to_path_buf())
+}
+
+fn ctc_position_index(id: &str) -> Option<usize> {
+    id.strip_prefix("pos_")
+        .and_then(|value| value.parse::<usize>().ok())
+        .and_then(|one_based| one_based.checked_sub(1))
+}
+
+/// Returns the common sweep range for a CTC raw-sweep measurement manifest.
+///
+/// Raw-sweep CTC currently carries one reference sweep for the whole matrix, so
+/// every exported speaker/position take must have been captured with the same
+/// sweep bounds. `None` means the manifest is empty, references recordings that
+/// cannot be found, or mixes different sweep ranges.
+pub fn ctc_uniform_sweep_range_for_measurements(
+    recordings: &[ChannelRecording],
+    speaker_names: &[String],
+    measurements: &autoeq::roomeq::CtcMeasurementConfig,
+) -> Option<(f32, f32)> {
+    let mut range: Option<(f32, f32)> = None;
+    for file in &measurements.files {
+        let speaker_idx = speaker_names
+            .iter()
+            .position(|name| name == &file.speaker)
+            .or_else(|| {
+                file.speaker
+                    .strip_prefix("ch_")
+                    .and_then(|value| value.parse::<usize>().ok())
+                    .and_then(|one_based| one_based.checked_sub(1))
+            })?;
+        let position_idx = ctc_position_index(&file.head_position)?;
+        for mic_idx in 0..2 {
+            let rec = recordings.iter().find(|rec| {
+                rec.state == ChannelRecordingState::Done
+                    && rec.channel_index == speaker_idx
+                    && rec.mic_position_index == position_idx
+                    && rec.mic_index == mic_idx
+            })?;
+            let current = (rec.sweep_start_freq, rec.sweep_end_freq);
+            match range {
+                Some((start, end))
+                    if (start - current.0).abs() > 1e-3 || (end - current.1).abs() > 1e-3 =>
+                {
+                    return None;
+                }
+                None => range = Some(current),
+                _ => {}
+            }
+        }
+    }
+    range
 }
 
 /// Simple W/D/H triple in meters for the legacy
@@ -294,6 +603,292 @@ impl RoomEqMeasurementsFile {
             channels,
             configuration: Some(configuration),
         }
+    }
+
+    /// Build a CTC/N-by-M acoustic transfer-matrix manifest from completed
+    /// multi-mic recordings. The current roomeq CTC solver consumes two-ear
+    /// IR WAVs, so this exports mic 0 and mic 1 as a stereo impulse-response
+    /// file for every completed `(head_position, speaker)` take.
+    pub fn build_ctc_measurements_from_recordings(
+        recordings: &[ChannelRecording],
+        speaker_names: &[String],
+        mic_names: &[String],
+        sample_rate: u32,
+        output_dir: &Path,
+    ) -> Result<Option<autoeq::roomeq::CtcMeasurementConfig>, String> {
+        Self::build_ctc_measurements_from_recordings_with_strategy(
+            recordings,
+            speaker_names,
+            mic_names,
+            sample_rate,
+            output_dir,
+            CtcMatrixExportStrategy::default(),
+            None,
+            &[],
+        )
+    }
+
+    /// Same as [`Self::build_ctc_measurements_from_recordings`], but lets
+    /// callers opt into exporting raw two-ear sweeps with a loopback channel.
+    ///
+    /// `loopback_mic_index` is only used by
+    /// [`CtcMatrixExportStrategy::RawSweep`]. The raw-sweep strategy returns
+    /// `Ok(None)` when the loopback channel or raw WAV paths are incomplete,
+    /// preserving the default measured-IR behaviour for normal app saves.
+    pub fn build_ctc_measurements_from_recordings_with_strategy(
+        recordings: &[ChannelRecording],
+        speaker_names: &[String],
+        mic_names: &[String],
+        sample_rate: u32,
+        output_dir: &Path,
+        strategy: CtcMatrixExportStrategy,
+        loopback_mic_index: Option<usize>,
+        loopback_recordings: &[TransferMatrixLoopbackRecording],
+    ) -> Result<Option<autoeq::roomeq::CtcMeasurementConfig>, String> {
+        if mic_names.len() < 2 {
+            return Ok(None);
+        }
+
+        let matrix_dir = output_dir.join("ctc_matrix");
+        let mut by_take: BTreeMap<(usize, usize, usize), &RecordingResult> = BTreeMap::new();
+        let max_mic_index = loopback_mic_index.unwrap_or(1).max(1);
+
+        for rec in recordings {
+            if rec.state != ChannelRecordingState::Done {
+                continue;
+            }
+            let Some(result) = rec.result.as_ref() else {
+                continue;
+            };
+            if rec.mic_index > max_mic_index {
+                continue;
+            }
+            let usable = match strategy {
+                CtcMatrixExportStrategy::ImpulseResponse => {
+                    rec.mic_index <= 1
+                        && result
+                            .impulse_response
+                            .as_ref()
+                            .is_some_and(|ir| !ir.is_empty())
+                }
+                CtcMatrixExportStrategy::RawSweep => {
+                    result.wav_path.as_ref().is_some_and(|p| !p.is_empty())
+                        && (rec.mic_index <= 1 || Some(rec.mic_index) == loopback_mic_index)
+                }
+            };
+            if !usable {
+                continue;
+            }
+            by_take.insert(
+                (rec.mic_position_index, rec.channel_index, rec.mic_index),
+                result,
+            );
+        }
+
+        if by_take.is_empty() {
+            return Ok(None);
+        }
+
+        let mut candidate_speakers = BTreeSet::new();
+        let mut candidate_positions = BTreeSet::new();
+        for (position_idx, speaker_idx, mic_idx) in by_take.keys().copied() {
+            if mic_idx <= 1 {
+                candidate_speakers.insert(speaker_idx);
+                candidate_positions.insert(position_idx);
+            }
+        }
+
+        let has_complete_take = |position_idx: usize, speaker_idx: usize| -> bool {
+            if !by_take.contains_key(&(position_idx, speaker_idx, 0))
+                || !by_take.contains_key(&(position_idx, speaker_idx, 1))
+            {
+                return false;
+            }
+            match strategy {
+                CtcMatrixExportStrategy::ImpulseResponse => true,
+                CtcMatrixExportStrategy::RawSweep => {
+                    loopback_recordings.iter().any(|r| {
+                        r.speaker_index == speaker_idx
+                            && r.mic_position_index == position_idx
+                            && !r.wav_path.is_empty()
+                    }) || loopback_mic_index.is_some_and(|loopback_idx| {
+                        by_take
+                            .get(&(position_idx, speaker_idx, loopback_idx))
+                            .and_then(|r| r.wav_path.as_ref())
+                            .is_some_and(|p| !p.is_empty())
+                    })
+                }
+            }
+        };
+
+        let mut complete_pairs: HashSet<(usize, usize)> = HashSet::new();
+        for position_idx in &candidate_positions {
+            for speaker_idx in &candidate_speakers {
+                if has_complete_take(*position_idx, *speaker_idx) {
+                    complete_pairs.insert((*position_idx, *speaker_idx));
+                }
+            }
+        }
+
+        let mut speaker_indices: BTreeSet<usize> =
+            complete_pairs.iter().map(|(_, speaker)| *speaker).collect();
+        let mut position_indices: BTreeSet<usize> = complete_pairs
+            .iter()
+            .map(|(position, _)| *position)
+            .collect();
+        loop {
+            let before = (speaker_indices.len(), position_indices.len());
+            position_indices.retain(|position_idx| {
+                speaker_indices
+                    .iter()
+                    .all(|speaker_idx| complete_pairs.contains(&(*position_idx, *speaker_idx)))
+            });
+            speaker_indices.retain(|speaker_idx| {
+                position_indices
+                    .iter()
+                    .all(|position_idx| complete_pairs.contains(&(*position_idx, *speaker_idx)))
+            });
+            if before == (speaker_indices.len(), position_indices.len()) {
+                break;
+            }
+        }
+
+        let speakers: Vec<String> = speaker_indices
+            .iter()
+            .map(|idx| {
+                speaker_names
+                    .get(*idx)
+                    .cloned()
+                    .unwrap_or_else(|| format!("ch_{}", idx + 1))
+            })
+            .collect();
+        if speakers.len() < 2 {
+            return Ok(None);
+        }
+        if position_indices.is_empty() {
+            return Ok(None);
+        }
+
+        std::fs::create_dir_all(&matrix_dir)
+            .map_err(|e| format!("failed to create CTC matrix directory: {}", e))?;
+
+        let mut used_positions = BTreeSet::new();
+        let mut files = Vec::new();
+
+        for position_idx in &position_indices {
+            for speaker_idx in &speaker_indices {
+                let left = by_take.get(&(*position_idx, *speaker_idx, 0));
+                let right = by_take.get(&(*position_idx, *speaker_idx, 1));
+                let (Some(left), Some(right)) = (left, right) else {
+                    continue;
+                };
+
+                let speaker = speaker_names
+                    .get(*speaker_idx)
+                    .cloned()
+                    .unwrap_or_else(|| format!("ch_{}", speaker_idx + 1));
+                let head_position = format!("pos_{}", position_idx + 1);
+                let safe_head = sanitize_ctc_filename(&head_position);
+                let safe_speaker = sanitize_ctc_filename(&speaker);
+
+                match strategy {
+                    CtcMatrixExportStrategy::ImpulseResponse => {
+                        let left_ir = left
+                            .impulse_response
+                            .as_ref()
+                            .filter(|ir| !ir.is_empty())
+                            .ok_or_else(|| {
+                                "left-ear recording has no impulse response".to_string()
+                            })?;
+                        let right_ir = right
+                            .impulse_response
+                            .as_ref()
+                            .filter(|ir| !ir.is_empty())
+                            .ok_or_else(|| {
+                                "right-ear recording has no impulse response".to_string()
+                            })?;
+                        let file_name = format!("{}_{}_ears_ir.wav", safe_head, safe_speaker);
+                        let abs_path = matrix_dir.join(&file_name);
+                        write_stereo_ir_wav(&abs_path, left_ir, right_ir, sample_rate)?;
+
+                        used_positions.insert(*position_idx);
+                        files.push(autoeq::roomeq::CtcMeasurementFileConfig {
+                            head_position,
+                            speaker,
+                            ir: Some(PathBuf::from("ctc_matrix").join(file_name)),
+                            raw_sweep: None,
+                            loopback: None,
+                        });
+                    }
+                    CtcMatrixExportStrategy::RawSweep => {
+                        let left_wav = left.wav_path.as_ref().filter(|p| !p.is_empty());
+                        let right_wav = right.wav_path.as_ref().filter(|p| !p.is_empty());
+                        let loopback_wav = loopback_recordings
+                            .iter()
+                            .find(|r| {
+                                r.speaker_index == *speaker_idx
+                                    && r.mic_position_index == *position_idx
+                            })
+                            .map(|r| &r.wav_path)
+                            .or_else(|| {
+                                let loopback_idx = loopback_mic_index?;
+                                by_take
+                                    .get(&(*position_idx, *speaker_idx, loopback_idx))
+                                    .and_then(|r| r.wav_path.as_ref())
+                            })
+                            .filter(|p| !p.is_empty());
+                        let (Some(left_wav), Some(right_wav), Some(loopback_wav)) =
+                            (left_wav, right_wav, loopback_wav)
+                        else {
+                            continue;
+                        };
+                        let left_wav = resolve_recording_wav_path(left_wav, output_dir);
+                        let right_wav = resolve_recording_wav_path(right_wav, output_dir);
+                        let loopback_wav = resolve_recording_wav_path(loopback_wav, output_dir);
+                        let file_name =
+                            format!("{}_{}_ears_raw_sweep.wav", safe_head, safe_speaker);
+                        let abs_path = matrix_dir.join(&file_name);
+                        write_stereo_wav_from_mono_wavs(
+                            &abs_path,
+                            &left_wav,
+                            &right_wav,
+                            sample_rate,
+                        )?;
+
+                        used_positions.insert(*position_idx);
+                        files.push(autoeq::roomeq::CtcMeasurementFileConfig {
+                            head_position,
+                            speaker,
+                            ir: None,
+                            raw_sweep: Some(PathBuf::from("ctc_matrix").join(file_name)),
+                            loopback: Some(ctc_config_path_for(&loopback_wav, output_dir)),
+                        });
+                    }
+                }
+            }
+        }
+
+        if files.len() < 2 {
+            return Ok(None);
+        }
+
+        let head_positions = used_positions
+            .into_iter()
+            .map(|idx| autoeq::roomeq::CtcHeadPositionConfig {
+                id: format!("pos_{}", idx + 1),
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                yaw_deg: 0.0,
+            })
+            .collect();
+
+        Ok(Some(autoeq::roomeq::CtcMeasurementConfig {
+            speakers,
+            mics: mic_names.iter().take(2).cloned().collect(),
+            head_positions,
+            files,
+        }))
     }
 
     /// Deserialize from JSON string with automatic version migration
@@ -2378,18 +2973,22 @@ fn build_routed_room_eq_graph(
         let matrix_gain = route_matrix_gain(route);
         let mut prev = add_node(
             "matrix".to_string(),
-            serde_json::json!({
-                "label": format!("room_eq_route_{}_{}_to_{}", route.route_kind, route.source_channel, route.destination),
-                "input_channel_map": [route.source_index],
-                "output_channel_map": [route.destination_index],
-                "matrix": [matrix_gain as f32],
-                "metadata": {
+            single_channel_matrix_parameters(
+                channel_count,
+                route.source_index,
+                route.destination_index,
+                matrix_gain,
+                format!(
+                    "room_eq_route_{}_{}_to_{}",
+                    route.route_kind, route.source_channel, route.destination
+                ),
+                Some(serde_json::json!({
                     "route_kind": route.route_kind,
                     "group_id": route.group_id,
                     "source": route.source_channel,
                     "destination": route.destination,
-                },
-            }),
+                })),
+            ),
         );
         if let Some(global_tail) = global_tail {
             edges.push(PluginGraphEdgeConfig {
@@ -2495,26 +3094,34 @@ fn build_routed_room_eq_graph(
     for (channel_index, channel_name) in output_order.iter().enumerate() {
         let isolate = add_node(
             "matrix".to_string(),
-            serde_json::json!({
-                "label": format!("room_eq_output_isolate_{channel_name}"),
-                "input_channel_map": [channel_index],
-                "output_channel_map": [channel_index],
-                "matrix": [1.0],
-            }),
+            single_channel_matrix_parameters(
+                channel_count,
+                channel_index,
+                channel_index,
+                1.0,
+                format!("room_eq_output_isolate_{channel_name}"),
+                None,
+            ),
         );
         edges.push(PluginGraphEdgeConfig {
             from_node: sum_anchor,
             to_node: isolate,
         });
-        let mut prev = isolate;
-        for plugin in post_route_plugins_for_channel(output, channel_name, graph) {
-            let node = add_node(plugin.plugin_type.clone(), plugin.parameters.clone());
-            edges.push(PluginGraphEdgeConfig {
-                from_node: prev,
-                to_node: node,
-            });
-            prev = node;
-        }
+        let post_chain = post_route_chain_for_channel(output, channel_name, graph);
+        let post_plugins = post_route_plugins_for_channel(output, channel_name, graph);
+        let mut append_node =
+            |plugin_type: String, parameters: serde_json::Value, _input_channels: usize| {
+                add_node(plugin_type, parameters)
+            };
+        let prev = append_channel_dsp_graph_branch(
+            &mut append_node,
+            &mut edges,
+            isolate,
+            post_chain,
+            post_plugins,
+            channel_count,
+            channel_name,
+        );
         correction_tails.push(prev);
     }
 
@@ -2530,37 +3137,72 @@ fn build_linear_room_eq_graph(
 ) -> anyhow::Result<sotf_audio::engine::PluginGraphConfig> {
     use sotf_audio::engine::{PluginGraphConfig, PluginGraphEdgeConfig, PluginGraphNodeConfig};
 
-    let channel_count = output.channels.len().max(2);
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
-    let mut prev = None;
+    let mut next_id = 0usize;
+    let output_order = linear_room_eq_output_order(output);
+    let mut current_channels = linear_room_eq_initial_channels(output, output_order.len());
 
-    for (id, plugin) in output
-        .global_plugins
-        .iter()
-        .chain(
-            output
-                .channels
-                .values()
-                .next()
-                .into_iter()
-                .flat_map(|ch| ch.plugins.iter()),
-        )
-        .enumerate()
-    {
-        nodes.push(PluginGraphNodeConfig {
-            id,
-            plugin_type: plugin.plugin_type.clone(),
-            parameters: plugin.parameters.clone(),
-            input_channels: channel_count,
-        });
-        if let Some(from_node) = prev {
+    let mut add_node =
+        |plugin_type: String, parameters: serde_json::Value, input_channels: usize| -> usize {
+            let id = next_id;
+            next_id += 1;
+            nodes.push(PluginGraphNodeConfig {
+                id,
+                plugin_type,
+                parameters,
+                input_channels,
+            });
+            id
+        };
+
+    let mut global_tail = None;
+    for plugin in &output.global_plugins {
+        let node = add_node(
+            plugin.plugin_type.clone(),
+            plugin.parameters.clone(),
+            current_channels,
+        );
+        if let Some(prev) = global_tail {
             edges.push(PluginGraphEdgeConfig {
-                from_node,
-                to_node: id,
+                from_node: prev,
+                to_node: node,
             });
         }
-        prev = Some(id);
+        global_tail = Some(node);
+        current_channels = infer_plugin_output_channels(plugin, current_channels);
+    }
+
+    for (channel_index, channel_name) in output_order.iter().enumerate() {
+        let isolate = add_node(
+            "matrix".to_string(),
+            single_channel_matrix_parameters(
+                current_channels,
+                channel_index,
+                channel_index,
+                1.0,
+                format!("room_eq_output_isolate_{channel_name}"),
+                None,
+            ),
+            current_channels,
+        );
+        if let Some(global_tail) = global_tail {
+            edges.push(PluginGraphEdgeConfig {
+                from_node: global_tail,
+                to_node: isolate,
+            });
+        }
+        if let Some(chain) = output.channels.get(channel_name) {
+            append_channel_dsp_graph_branch(
+                &mut add_node,
+                &mut edges,
+                isolate,
+                Some(chain),
+                chain.plugins.iter(),
+                current_channels,
+                channel_name,
+            );
+        }
     }
 
     if nodes.is_empty() {
@@ -2568,6 +3210,180 @@ fn build_linear_room_eq_graph(
     }
 
     Ok(PluginGraphConfig { nodes, edges })
+}
+
+fn append_channel_dsp_graph_branch<'a, F, I>(
+    add_node: &mut F,
+    edges: &mut Vec<sotf_audio::engine::PluginGraphEdgeConfig>,
+    start: usize,
+    chain: Option<&ChannelDspChain>,
+    plugins: I,
+    channel_count: usize,
+    channel_name: &str,
+) -> usize
+where
+    F: FnMut(String, serde_json::Value, usize) -> usize,
+    I: IntoIterator<Item = &'a DspPluginConfig>,
+{
+    let mut prev = start;
+    if let Some(drivers) = chain.and_then(|chain| chain.drivers.as_ref())
+        && !drivers.is_empty()
+    {
+        let label = format!("room_eq_driver_sum_{channel_name}");
+        let driver_sum = add_node(
+            "matrix".to_string(),
+            identity_matrix_parameters(channel_count, &label),
+            channel_count,
+        );
+        for driver in drivers {
+            let mut driver_prev = start;
+            for plugin in &driver.plugins {
+                let node = add_node(
+                    plugin.plugin_type.clone(),
+                    plugin.parameters.clone(),
+                    channel_count,
+                );
+                edges.push(sotf_audio::engine::PluginGraphEdgeConfig {
+                    from_node: driver_prev,
+                    to_node: node,
+                });
+                driver_prev = node;
+            }
+            edges.push(sotf_audio::engine::PluginGraphEdgeConfig {
+                from_node: driver_prev,
+                to_node: driver_sum,
+            });
+        }
+        prev = driver_sum;
+    }
+
+    for plugin in plugins {
+        let node = add_node(
+            plugin.plugin_type.clone(),
+            plugin.parameters.clone(),
+            channel_count,
+        );
+        edges.push(sotf_audio::engine::PluginGraphEdgeConfig {
+            from_node: prev,
+            to_node: node,
+        });
+        prev = node;
+    }
+    prev
+}
+
+fn linear_room_eq_initial_channels(output: &DspChainOutput, output_channels: usize) -> usize {
+    let Some(plugin) = output.global_plugins.first() else {
+        return output_channels.max(2);
+    };
+    if let Some(input_channels) = plugin
+        .parameters
+        .get("input_channels")
+        .and_then(|value| value.as_u64())
+        .map(|value| value as usize)
+    {
+        return input_channels.max(1);
+    }
+    match plugin.plugin_type.as_str() {
+        "xtc" | "crosstalk_cancellation" => 2,
+        "mono_to_stereo" => 1,
+        _ => output_channels.max(2),
+    }
+}
+
+fn linear_room_eq_output_order(output: &DspChainOutput) -> Vec<String> {
+    if let Some(ctc) = output
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.ctc.as_ref())
+    {
+        if ctc.room_eq_correction_channels.len() == ctc.speakers.len()
+            && ctc
+                .room_eq_correction_channels
+                .iter()
+                .all(|channel| output.channels.contains_key(channel))
+        {
+            return ctc.room_eq_correction_channels.clone();
+        }
+        if ctc
+            .speakers
+            .iter()
+            .all(|speaker| output.channels.contains_key(speaker))
+        {
+            return ctc.speakers.clone();
+        }
+    }
+    sorted_channel_names(output)
+}
+
+fn infer_plugin_output_channels(
+    plugin: &autoeq::roomeq::PluginConfigWrapper,
+    input_channels: usize,
+) -> usize {
+    match plugin.plugin_type.as_str() {
+        "xtc" | "crosstalk_cancellation" => plugin
+            .parameters
+            .get("metadata")
+            .and_then(|metadata| metadata.get("speakers"))
+            .and_then(|speakers| speakers.as_array())
+            .map(|speakers| speakers.len())
+            .filter(|len| *len >= 2)
+            .unwrap_or(2),
+        "matrix" => infer_matrix_output_channels(&plugin.parameters).unwrap_or(input_channels),
+        "upmixer" => infer_upmixer_output_channels(&plugin.parameters).unwrap_or(input_channels),
+        "downmix" => plugin
+            .parameters
+            .get("output_channels")
+            .and_then(|value| value.as_u64())
+            .map(|value| value as usize)
+            .unwrap_or(2),
+        "mono_to_stereo" => {
+            if input_channels == 1 {
+                2
+            } else {
+                input_channels
+            }
+        }
+        _ => input_channels,
+    }
+}
+
+fn infer_matrix_output_channels(parameters: &serde_json::Value) -> Option<usize> {
+    if let Some(map) = parameters
+        .get("output_channel_map")
+        .and_then(|value| value.as_array())
+    {
+        return map
+            .iter()
+            .filter_map(|value| value.as_u64())
+            .map(|value| value as usize + 1)
+            .max();
+    }
+    parameters
+        .get("output_channels")
+        .and_then(|value| value.as_u64())
+        .map(|value| value as usize)
+}
+
+fn infer_upmixer_output_channels(parameters: &serde_json::Value) -> Option<usize> {
+    let speaker_config = parameters
+        .get("speaker_config")
+        .or_else(|| parameters.get("layout"))
+        .and_then(|value| value.as_str())?;
+    match speaker_config {
+        "stereo" | "2.0" => Some(2),
+        "quad" | "4.0" => Some(4),
+        "5.0" => Some(5),
+        "5.1" => Some(6),
+        "5.1.2" => Some(8),
+        "7.1" => Some(8),
+        "7.1.2" => Some(10),
+        "5.1.4" => Some(10),
+        "7.1.4" => Some(12),
+        "9.1.4" => Some(14),
+        "9.1.6" => Some(16),
+        _ => None,
+    }
 }
 
 fn routed_graph_channel_count(
@@ -2609,6 +3425,30 @@ fn identity_matrix_parameters(channel_count: usize, label: &str) -> serde_json::
         "output_channels": channel_count,
         "matrix": identity_matrix(channel_count),
     })
+}
+
+fn single_channel_matrix_parameters(
+    channel_count: usize,
+    source_index: usize,
+    destination_index: usize,
+    gain: f64,
+    label: String,
+    metadata: Option<serde_json::Value>,
+) -> serde_json::Value {
+    let mut matrix = vec![0.0_f32; channel_count * channel_count];
+    if source_index < channel_count && destination_index < channel_count {
+        matrix[destination_index * channel_count + source_index] = gain as f32;
+    }
+    let mut parameters = serde_json::json!({
+        "label": label,
+        "input_channels": channel_count,
+        "output_channels": channel_count,
+        "matrix": matrix,
+    });
+    if let Some(metadata) = metadata {
+        parameters["metadata"] = metadata;
+    }
+    parameters
 }
 
 fn identity_matrix(channel_count: usize) -> Vec<f32> {
@@ -2727,6 +3567,24 @@ fn post_route_plugins_for_channel<'a>(
     }
 
     chain.plugins[start..].iter().collect()
+}
+
+fn post_route_chain_for_channel<'a>(
+    output: &'a DspChainOutput,
+    channel_name: &str,
+    graph: &autoeq::roomeq::BassManagementRoutingGraph,
+) -> Option<&'a ChannelDspChain> {
+    let post_chain_name = graph
+        .routes
+        .iter()
+        .find(|route| route.destination == channel_name)
+        .and_then(|route| route.post_chain_channel.as_deref())
+        .unwrap_or(channel_name);
+    output.channels.get(post_chain_name).or_else(|| {
+        is_bass_output_channel(channel_name, graph)
+            .then(|| output.channels.get(&graph.physical_sub_output))
+            .flatten()
+    })
 }
 
 fn is_route_owned_plugin(plugin: &DspPluginConfig) -> bool {
@@ -3046,7 +3904,249 @@ pub fn parse_eq_filters_from_json(filters_json: &[serde_json::Value]) -> Vec<EQF
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::recording_types::DelayProbeChannelResult;
+    use crate::recording_types::{
+        ChannelRecording, ChannelRecordingState, DelayProbeChannelResult, RecordingResult,
+    };
+
+    fn matrix_recording(
+        speaker_idx: usize,
+        speaker: &str,
+        mic_idx: usize,
+        impulse: Vec<f32>,
+    ) -> ChannelRecording {
+        let mut rec = ChannelRecording::with_mic_position(
+            speaker_idx,
+            format!("{} (Mic {})", speaker, mic_idx + 1),
+            mic_idx,
+            0,
+        );
+        rec.state = ChannelRecordingState::Done;
+        rec.result = Some(RecordingResult {
+            channel: speaker_idx,
+            wav_path: None,
+            csv_path: None,
+            frequencies: vec![100.0],
+            magnitude_db: vec![0.0],
+            phase_deg: vec![0.0],
+            impulse_response: Some(impulse),
+            impulse_time_ms: None,
+            thd_percent: None,
+            harmonic_distortion_db: None,
+            excess_group_delay_ms: None,
+            rt60_ms: None,
+            clarity_c50_db: None,
+            clarity_c80_db: None,
+            spectrogram_db: None,
+        });
+        rec
+    }
+
+    fn raw_matrix_recording(
+        dir: &Path,
+        speaker_idx: usize,
+        speaker: &str,
+        mic_idx: usize,
+        samples: &[f32],
+    ) -> ChannelRecording {
+        let wav_path = dir.join(format!("{}_mic_{}.wav", speaker, mic_idx));
+        sotf_audio::signal_recorder::write_wav_file(&wav_path, samples, 48_000, 1).unwrap();
+
+        let mut rec = ChannelRecording::with_mic_position(
+            speaker_idx,
+            format!("{} (Mic {})", speaker, mic_idx + 1),
+            mic_idx,
+            0,
+        );
+        rec.state = ChannelRecordingState::Done;
+        rec.result = Some(RecordingResult {
+            channel: speaker_idx,
+            wav_path: Some(wav_path.to_string_lossy().to_string()),
+            csv_path: None,
+            frequencies: vec![100.0],
+            magnitude_db: vec![0.0],
+            phase_deg: vec![0.0],
+            impulse_response: None,
+            impulse_time_ms: None,
+            thd_percent: None,
+            harmonic_distortion_db: None,
+            excess_group_delay_ms: None,
+            rt60_ms: None,
+            clarity_c50_db: None,
+            clarity_c80_db: None,
+            spectrogram_db: None,
+        });
+        rec
+    }
+
+    #[test]
+    fn builds_ctc_measurements_from_two_speakers_two_ear_recordings() {
+        let dir = tempfile::tempdir().unwrap();
+        let recordings = vec![
+            matrix_recording(0, "L", 0, vec![1.0, 0.25]),
+            matrix_recording(0, "L", 1, vec![0.5, 0.125, 0.0625]),
+            matrix_recording(1, "R", 0, vec![0.75]),
+            matrix_recording(1, "R", 1, vec![0.25, 0.125]),
+        ];
+        let speakers = vec!["L".to_string(), "R".to_string()];
+        let mics = vec!["left_ear".to_string(), "right_ear".to_string()];
+
+        let config = RoomEqMeasurementsFile::build_ctc_measurements_from_recordings(
+            &recordings,
+            &speakers,
+            &mics,
+            48_000,
+            dir.path(),
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(config.speakers, speakers);
+        assert_eq!(config.mics, mics);
+        assert_eq!(config.head_positions.len(), 1);
+        assert_eq!(config.files.len(), 2);
+
+        let ir_path = dir.path().join(config.files[0].ir.as_ref().unwrap());
+        let wav = std::fs::read(ir_path).unwrap();
+        assert_eq!(&wav[0..4], b"RIFF");
+        assert_eq!(&wav[8..12], b"WAVE");
+        assert_eq!(u16::from_le_bytes([wav[22], wav[23]]), 2);
+        assert_eq!(
+            u32::from_le_bytes([wav[24], wav[25], wav[26], wav[27]]),
+            48_000
+        );
+    }
+
+    #[test]
+    fn skips_ctc_measurements_when_second_ear_is_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let recordings = vec![
+            matrix_recording(0, "L", 0, vec![1.0]),
+            matrix_recording(1, "R", 0, vec![0.5]),
+        ];
+        let speakers = vec!["L".to_string(), "R".to_string()];
+        let mics = vec!["left_ear".to_string(), "right_ear".to_string()];
+
+        let config = RoomEqMeasurementsFile::build_ctc_measurements_from_recordings(
+            &recordings,
+            &speakers,
+            &mics,
+            48_000,
+            dir.path(),
+        )
+        .unwrap();
+
+        assert!(config.is_none());
+    }
+
+    #[test]
+    fn builds_raw_sweep_ctc_measurements_when_loopback_is_recorded() {
+        let dir = tempfile::tempdir().unwrap();
+        let recordings = vec![
+            raw_matrix_recording(dir.path(), 0, "L", 0, &[1.0, 0.5]),
+            raw_matrix_recording(dir.path(), 0, "L", 1, &[0.25, 0.125, 0.0625]),
+            raw_matrix_recording(dir.path(), 0, "L", 2, &[0.8, 0.2]),
+            raw_matrix_recording(dir.path(), 1, "R", 0, &[0.75, 0.5]),
+            raw_matrix_recording(dir.path(), 1, "R", 1, &[0.5, 0.25]),
+            raw_matrix_recording(dir.path(), 1, "R", 2, &[0.8, 0.2]),
+        ];
+        let speakers = vec!["L".to_string(), "R".to_string()];
+        let mics = vec!["left_ear".to_string(), "right_ear".to_string()];
+
+        let config = RoomEqMeasurementsFile::build_ctc_measurements_from_recordings_with_strategy(
+            &recordings,
+            &speakers,
+            &mics,
+            48_000,
+            dir.path(),
+            CtcMatrixExportStrategy::RawSweep,
+            Some(2),
+            &[],
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(config.files.len(), 2);
+        assert!(config.files.iter().all(|file| file.ir.is_none()));
+        assert!(config.files.iter().all(|file| file.raw_sweep.is_some()));
+        assert!(config.files.iter().all(|file| file.loopback.is_some()));
+
+        let raw_path = dir.path().join(config.files[0].raw_sweep.as_ref().unwrap());
+        let wav = std::fs::read(raw_path).unwrap();
+        assert_eq!(&wav[0..4], b"RIFF");
+        assert_eq!(&wav[8..12], b"WAVE");
+        assert_eq!(u16::from_le_bytes([wav[22], wav[23]]), 2);
+    }
+
+    #[test]
+    fn ctc_measurements_drop_incomplete_positions() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut l_pos2_left = matrix_recording(0, "L", 0, vec![0.25]);
+        l_pos2_left.mic_position_index = 1;
+        let mut l_pos2_right = matrix_recording(0, "L", 1, vec![0.125]);
+        l_pos2_right.mic_position_index = 1;
+        let recordings = vec![
+            matrix_recording(0, "L", 0, vec![1.0]),
+            matrix_recording(0, "L", 1, vec![0.5]),
+            matrix_recording(1, "R", 0, vec![0.75]),
+            matrix_recording(1, "R", 1, vec![0.25]),
+            l_pos2_left,
+            l_pos2_right,
+        ];
+        let speakers = vec!["L".to_string(), "R".to_string()];
+        let mics = vec!["left_ear".to_string(), "right_ear".to_string()];
+
+        let config = RoomEqMeasurementsFile::build_ctc_measurements_from_recordings(
+            &recordings,
+            &speakers,
+            &mics,
+            48_000,
+            dir.path(),
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(config.speakers, speakers);
+        assert_eq!(config.head_positions.len(), 1);
+        assert_eq!(config.head_positions[0].id, "pos_1");
+        assert_eq!(config.files.len(), 2);
+        assert!(config.files.iter().all(|f| f.head_position == "pos_1"));
+    }
+
+    #[test]
+    fn read_first_wav_channel_handles_extensible_pcm32() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pcm32_extensible.wav");
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(b"WAVE");
+        bytes.extend_from_slice(b"fmt ");
+        bytes.extend_from_slice(&40u32.to_le_bytes());
+        bytes.extend_from_slice(&65534u16.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&48_000u32.to_le_bytes());
+        bytes.extend_from_slice(&(48_000u32 * 4).to_le_bytes());
+        bytes.extend_from_slice(&4u16.to_le_bytes());
+        bytes.extend_from_slice(&32u16.to_le_bytes());
+        bytes.extend_from_slice(&22u16.to_le_bytes());
+        bytes.extend_from_slice(&32u16.to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&[
+            0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38,
+            0x9b, 0x71,
+        ]);
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&4u32.to_le_bytes());
+        bytes.extend_from_slice(&i32::MAX.to_le_bytes());
+        let riff_size = (bytes.len() - 8) as u32;
+        bytes[4..8].copy_from_slice(&riff_size.to_le_bytes());
+        std::fs::write(&path, bytes).unwrap();
+
+        let (samples, sample_rate) = read_first_wav_channel_f32(&path).unwrap();
+        assert_eq!(sample_rate, 48_000);
+        assert_eq!(samples.len(), 1);
+        assert!((samples[0] - 1.0).abs() < 1e-6);
+    }
 
     #[test]
     fn load_from_json_legacy_format() {
@@ -3746,6 +4846,7 @@ mod tests {
                 advisory: "ok".to_string(),
             }),
             timing_diagnostics: None,
+            ctc: None,
         });
         output
     }
@@ -3891,6 +4992,7 @@ mod tests {
             sub_post_trim_id > sum_anchor_id,
             "bass-output post trims must not be mistaken for route-owned gain"
         );
+        assert_room_eq_matrix_nodes_have_width(&graph, 2);
     }
 
     #[test]
@@ -3932,6 +5034,7 @@ mod tests {
 
         assert!(sub_pre_eq_id < lowpass_id);
         assert!(sub_post_eq_id > sum_anchor_id);
+        assert_room_eq_matrix_nodes_have_width(&graph, 3);
     }
 
     #[test]
@@ -3992,5 +5095,362 @@ mod tests {
                 .iter()
                 .any(|edge| edge.from_node == global_id && edge.to_node == *route_id)
         }));
+    }
+
+    #[test]
+    fn test_build_room_eq_graph_emits_driver_branches_before_channel_plugins() {
+        let mut woofer = bare_driver("woofer", 0);
+        woofer.plugins.push(PluginConfigWrapper {
+            plugin_type: "gain".to_string(),
+            parameters: serde_json::json!({
+                "label": "woofer_gain",
+                "gain_db": -1.0
+            }),
+        });
+        let mut tweeter = bare_driver("tweeter", 1);
+        tweeter.plugins.push(PluginConfigWrapper {
+            plugin_type: "crossover".to_string(),
+            parameters: serde_json::json!({
+                "label": "tweeter_highpass",
+                "type": "LR24",
+                "frequency": 1_500.0,
+                "output": "high"
+            }),
+        });
+        let mut chain = bare_chain("left", Some(vec![woofer, tweeter]));
+        chain.plugins.push(PluginConfigWrapper {
+            plugin_type: "eq".to_string(),
+            parameters: serde_json::json!({
+                "label": "after_driver_eq",
+                "filters": []
+            }),
+        });
+
+        let output = bare_output(vec![("left".to_string(), chain)]);
+        let graph = build_room_eq_plugin_graph_config(&output, 48_000.0).unwrap();
+        let labeled_nodes: Vec<_> = graph
+            .nodes
+            .iter()
+            .filter_map(|node| {
+                node.parameters
+                    .get("label")
+                    .and_then(|label| label.as_str())
+                    .map(|label| (node.id, label))
+            })
+            .collect();
+        let driver_sum_id = labeled_nodes
+            .iter()
+            .find(|(_, label)| *label == "room_eq_driver_sum_left")
+            .map(|(id, _)| *id)
+            .expect("driver sum node");
+        let woofer_gain_id = labeled_nodes
+            .iter()
+            .find(|(_, label)| *label == "woofer_gain")
+            .map(|(id, _)| *id)
+            .expect("woofer gain node");
+        let tweeter_highpass_id = labeled_nodes
+            .iter()
+            .find(|(_, label)| *label == "tweeter_highpass")
+            .map(|(id, _)| *id)
+            .expect("tweeter highpass node");
+        let channel_eq_id = labeled_nodes
+            .iter()
+            .find(|(_, label)| *label == "after_driver_eq")
+            .map(|(id, _)| *id)
+            .expect("channel EQ node");
+
+        assert!(
+            graph
+                .edges
+                .iter()
+                .any(|edge| { edge.from_node == woofer_gain_id && edge.to_node == driver_sum_id })
+        );
+        assert!(graph.edges.iter().any(|edge| {
+            edge.from_node == tweeter_highpass_id && edge.to_node == driver_sum_id
+        }));
+        assert!(
+            graph
+                .edges
+                .iter()
+                .any(|edge| { edge.from_node == driver_sum_id && edge.to_node == channel_eq_id })
+        );
+    }
+
+    #[test]
+    fn test_build_room_eq_graph_ctc_uses_stereo_input_and_speaker_branches() {
+        let mut output = bare_output(vec![
+            (
+                "left".to_string(),
+                ChannelDspChain {
+                    plugins: vec![PluginConfigWrapper {
+                        plugin_type: "gain".to_string(),
+                        parameters: serde_json::json!({
+                            "label": "left_trim",
+                            "gain_db": -1.0
+                        }),
+                    }],
+                    ..bare_chain("left", None)
+                },
+            ),
+            (
+                "right".to_string(),
+                ChannelDspChain {
+                    plugins: vec![PluginConfigWrapper {
+                        plugin_type: "gain".to_string(),
+                        parameters: serde_json::json!({
+                            "label": "right_trim",
+                            "gain_db": -2.0
+                        }),
+                    }],
+                    ..bare_chain("right", None)
+                },
+            ),
+            (
+                "center".to_string(),
+                ChannelDspChain {
+                    plugins: vec![PluginConfigWrapper {
+                        plugin_type: "eq".to_string(),
+                        parameters: serde_json::json!({
+                            "label": "center_eq",
+                            "filters": []
+                        }),
+                    }],
+                    ..bare_chain("center", None)
+                },
+            ),
+        ]);
+        output.global_plugins.push(PluginConfigWrapper {
+            plugin_type: "xtc".to_string(),
+            parameters: serde_json::json!({
+                "source_mode": "roomeq_recommended",
+                "recommended_matrix_file": "/tmp/recommended_xtc_matrix.json",
+                "metadata": {
+                    "speakers": ["L", "R", "C"]
+                }
+            }),
+        });
+        output.metadata = Some(OptimizationMetadata {
+            pre_score: 1.0,
+            post_score: 0.5,
+            algorithm: "test".to_string(),
+            loss_type: None,
+            iterations: 1,
+            timestamp: "test".to_string(),
+            inter_channel_deviation: None,
+            epa_per_channel: None,
+            group_delay: None,
+            perceptual_metrics: None,
+            home_cinema_layout: None,
+            multi_seat_coverage: None,
+            multi_seat_correction: None,
+            bass_management: None,
+            timing_diagnostics: None,
+            ctc: Some(autoeq::roomeq::ctc::CtcReport {
+                enabled: true,
+                source: "measured".to_string(),
+                artifact: "/tmp/recommended_xtc_matrix.json".to_string(),
+                speakers: vec!["L".to_string(), "R".to_string(), "C".to_string()],
+                ears: vec!["left_ear".to_string(), "right_ear".to_string()],
+                head_positions: 1,
+                fir_taps: 64,
+                latency_samples: 32,
+                latency_ms: 0.67,
+                max_filter_gain_db: 6.0,
+                max_condition_number: 10.0,
+                mean_reconstruction_error: 0.1,
+                worst_position_error: 0.2,
+                mean_crosstalk_residual_db: -20.0,
+                max_electrical_sum_gain_db: 3.0,
+                driver_headroom_limited: false,
+                room_eq_correction_applied: true,
+                room_eq_correction_channels: vec![
+                    "left".to_string(),
+                    "right".to_string(),
+                    "center".to_string(),
+                ],
+                delivered_response: None,
+            }),
+        });
+
+        let graph = build_room_eq_plugin_graph_config(&output, 48_000.0).unwrap();
+        let xtc = graph
+            .nodes
+            .iter()
+            .find(|node| node.plugin_type == "xtc")
+            .expect("ctc global xtc node");
+        assert_eq!(xtc.input_channels, 2);
+
+        let labeled_nodes: Vec<_> = graph
+            .nodes
+            .iter()
+            .filter_map(|node| {
+                node.parameters
+                    .get("label")
+                    .and_then(|label| label.as_str())
+                    .map(|label| (node.id, node.input_channels, label))
+            })
+            .collect();
+        for expected in ["left_trim", "right_trim", "center_eq"] {
+            let (_, input_channels, _) = labeled_nodes
+                .iter()
+                .find(|(_, _, label)| *label == expected)
+                .unwrap_or_else(|| panic!("missing {expected}"));
+            assert_eq!(*input_channels, 3);
+        }
+        for expected in [
+            "room_eq_output_isolate_left",
+            "room_eq_output_isolate_right",
+            "room_eq_output_isolate_center",
+        ] {
+            let (isolate_id, input_channels, _) = labeled_nodes
+                .iter()
+                .find(|(_, _, label)| *label == expected)
+                .unwrap_or_else(|| panic!("missing {expected}"));
+            assert_eq!(*input_channels, 3);
+            let isolate = graph
+                .nodes
+                .iter()
+                .find(|node| node.id == *isolate_id)
+                .expect("isolate node");
+            assert_eq!(isolate.parameters["input_channels"], 3);
+            assert_eq!(isolate.parameters["output_channels"], 3);
+            assert!(
+                graph
+                    .edges
+                    .iter()
+                    .any(|edge| edge.from_node == xtc.id && edge.to_node == *isolate_id),
+                "xtc should feed {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_build_room_eq_graph_tracks_global_variable_channel_widths() {
+        let mut output = bare_output(vec![
+            ("left".to_string(), bare_chain("left", None)),
+            ("right".to_string(), bare_chain("right", None)),
+            ("center".to_string(), bare_chain("center", None)),
+        ]);
+        output.global_plugins.push(PluginConfigWrapper {
+            plugin_type: "downmix".to_string(),
+            parameters: serde_json::json!({
+                "input_channels": 6
+            }),
+        });
+        output.global_plugins.push(PluginConfigWrapper {
+            plugin_type: "xtc".to_string(),
+            parameters: serde_json::json!({
+                "source_mode": "roomeq_recommended",
+                "recommended_matrix_file": "/tmp/recommended_xtc_matrix.json",
+                "metadata": {
+                    "speakers": ["L", "R", "C"]
+                }
+            }),
+        });
+        output.metadata = Some(OptimizationMetadata {
+            pre_score: 1.0,
+            post_score: 0.5,
+            algorithm: "test".to_string(),
+            loss_type: None,
+            iterations: 1,
+            timestamp: "test".to_string(),
+            inter_channel_deviation: None,
+            epa_per_channel: None,
+            group_delay: None,
+            perceptual_metrics: None,
+            home_cinema_layout: None,
+            multi_seat_coverage: None,
+            multi_seat_correction: None,
+            bass_management: None,
+            timing_diagnostics: None,
+            ctc: Some(autoeq::roomeq::ctc::CtcReport {
+                enabled: true,
+                source: "measured".to_string(),
+                artifact: "/tmp/recommended_xtc_matrix.json".to_string(),
+                speakers: vec!["L".to_string(), "R".to_string(), "C".to_string()],
+                ears: vec!["left_ear".to_string(), "right_ear".to_string()],
+                head_positions: 1,
+                fir_taps: 64,
+                latency_samples: 32,
+                latency_ms: 0.67,
+                max_filter_gain_db: 6.0,
+                max_condition_number: 10.0,
+                mean_reconstruction_error: 0.1,
+                worst_position_error: 0.2,
+                mean_crosstalk_residual_db: -20.0,
+                max_electrical_sum_gain_db: 3.0,
+                driver_headroom_limited: false,
+                room_eq_correction_applied: true,
+                room_eq_correction_channels: vec![
+                    "left".to_string(),
+                    "right".to_string(),
+                    "center".to_string(),
+                ],
+                delivered_response: None,
+            }),
+        });
+
+        let graph = build_room_eq_plugin_graph_config(&output, 48_000.0).unwrap();
+        let downmix = graph
+            .nodes
+            .iter()
+            .find(|node| node.plugin_type == "downmix")
+            .expect("downmix global node");
+        let xtc = graph
+            .nodes
+            .iter()
+            .find(|node| node.plugin_type == "xtc")
+            .expect("xtc global node");
+        assert_eq!(downmix.input_channels, 6);
+        assert_eq!(xtc.input_channels, 2);
+
+        for node in graph.nodes.iter().filter(|node| {
+            node.parameters
+                .get("label")
+                .and_then(|label| label.as_str())
+                .is_some_and(|label| label.starts_with("room_eq_output_isolate_"))
+        }) {
+            assert_eq!(node.input_channels, 3);
+            assert_eq!(node.parameters["input_channels"], 3);
+            assert_eq!(node.parameters["output_channels"], 3);
+        }
+    }
+
+    fn assert_room_eq_matrix_nodes_have_width(
+        graph: &sotf_audio::engine::PluginGraphConfig,
+        channel_count: usize,
+    ) {
+        for node in graph.nodes.iter().filter(|node| {
+            node.plugin_type == "matrix"
+                && node
+                    .parameters
+                    .get("label")
+                    .and_then(|label| label.as_str())
+                    .is_some_and(|label| label.starts_with("room_eq_"))
+        }) {
+            assert_eq!(
+                node.parameters["input_channels"], channel_count,
+                "matrix '{}' must declare the full bus input width",
+                node.parameters["label"]
+            );
+            assert_eq!(
+                node.parameters["output_channels"], channel_count,
+                "matrix '{}' must preserve the full bus output width",
+                node.parameters["label"]
+            );
+            let plugin = sotf_plugins::create_plugin(
+                "matrix",
+                &node.parameters,
+                node.input_channels,
+                48_000,
+            )
+            .unwrap_or_else(|err| panic!("matrix node should instantiate: {err}"));
+            assert_eq!(
+                plugin.output_channels(),
+                channel_count,
+                "runtime matrix '{}' must preserve graph bus width",
+                node.parameters["label"]
+            );
+        }
     }
 }

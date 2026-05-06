@@ -519,12 +519,25 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                 "Num Channels".to_string(),
                 s.recording_config.num_channels.to_string(),
             ));
+            rows.push((
+                Some(10),
+                "CTC Matrix".to_string(),
+                s.recording_config.ctc_matrix_strategy.as_str().to_string(),
+            ));
+            rows.push((
+                Some(11),
+                "Loopback Input".to_string(),
+                s.recording_config
+                    .ctc_loopback_input_channel
+                    .map(|ch| (ch + 1).to_string())
+                    .unwrap_or_else(|| "<none>".to_string()),
+            ));
             for ch in 0..n_channels {
-                rows.push((Some(10 + ch), mic_cal_label(ch), mic_cal_value(ch)));
+                rows.push((Some(12 + ch), mic_cal_label(ch), mic_cal_value(ch)));
             }
             for ch in 0..n_channels {
                 rows.push((
-                    Some(10 + n_channels + ch),
+                    Some(12 + n_channels + ch),
                     channel_input_label(ch),
                     channel_input_value(ch),
                 ));
