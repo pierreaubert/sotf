@@ -607,6 +607,7 @@ pub fn optimize_stereo_2_0(
             multi_seat_correction: None,
             bass_management: None,
             timing_diagnostics: None,
+            ctc: None,
         },
     })
 }
@@ -1409,6 +1410,7 @@ pub fn optimize_stereo_2_1(
                     sample_rate,
                 ),
             timing_diagnostics: None,
+            ctc: None,
         },
     })
 }
@@ -1610,6 +1612,7 @@ fn optimize_home_cinema_no_sub(
             multi_seat_correction,
             bass_management: None,
             timing_diagnostics: None,
+            ctc: None,
         },
     })
 }
@@ -2597,6 +2600,7 @@ fn optimize_home_cinema_with_sub(
                     sample_rate,
                 ),
             timing_diagnostics: None,
+            ctc: None,
         },
     })
 }

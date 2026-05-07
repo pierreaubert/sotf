@@ -11,9 +11,10 @@ use std::sync::atomic::AtomicBool;
 // Re-export shared domain types from player crate
 pub use sotf_audio_player::recording_types::{
     BassAnchorCaptureState, BassAnchorCaptureStatus, ChannelMapping, ChannelRecording,
-    ChannelRecordingState, PlaybackDeviceConfig, PlotSmoothing, ProbeCaptureState,
-    ProbeCaptureStatus, RecordingDeviceConfig, RecordingResult, RecordingSignalType, RecordingStep,
-    SpeakerConfiguration, SplCalibrationCaptureState, SplCalibrationCaptureStatus,
+    ChannelRecordingState, CtcMatrixExportStrategy, PlaybackDeviceConfig, PlotSmoothing,
+    ProbeCaptureState, ProbeCaptureStatus, RecordingDeviceConfig, RecordingResult,
+    RecordingSignalType, RecordingStep, SpeakerConfiguration, SplCalibrationCaptureState,
+    SplCalibrationCaptureStatus, TransferMatrixLoopbackRecording,
 };
 
 /// Measurement-unit preference for the room-dimensions inputs on the
@@ -79,6 +80,8 @@ pub struct RecordingState {
     /// Sweep end frequency in Hz
     pub sweep_end_freq: f32,
     pub channel_recordings: Vec<ChannelRecording>,
+    pub transfer_matrix_loopbacks: Vec<TransferMatrixLoopbackRecording>,
+    pub ctc_reference_sweep_path: Option<String>,
     pub current_recording_channel: Option<usize>,
     pub recording_progress: f32,
     pub status_message: String,
@@ -224,6 +227,8 @@ impl Default for RecordingState {
             sweep_start_freq: 20.0,
             sweep_end_freq: 20000.0,
             channel_recordings: Vec::new(),
+            transfer_matrix_loopbacks: Vec::new(),
+            ctc_reference_sweep_path: None,
             current_recording_channel: None,
             recording_progress: 0.0,
             status_message: String::new(),
@@ -324,6 +329,8 @@ impl RecordingState {
         }
 
         self.channel_recordings = out;
+        self.transfer_matrix_loopbacks.clear();
+        self.ctc_reference_sweep_path = None;
     }
 
     /// Position index (0-based) of the next pending recording. Returns

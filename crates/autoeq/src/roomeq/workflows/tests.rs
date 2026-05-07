@@ -123,6 +123,7 @@ fn bass_management_workflow_config(with_phase: bool, max_sub_boost_db: f64) -> R
             ..OptimizerConfig::default()
         },
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     }
 }
@@ -186,6 +187,7 @@ fn home_cinema_multiseat_guardrail_config() -> RoomConfig {
             ..OptimizerConfig::default()
         },
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     }
 }

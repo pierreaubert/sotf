@@ -1,5 +1,31 @@
 # 0.5.122
 
+## Room EQ: export measured CTC transfer matrices from recordings
+
+- Added a shared recording export helper that groups completed
+  speaker × mic × head-position captures into measured CTC transfer
+  matrices. It writes two-channel ear impulse-response WAVs under
+  `ctc_matrix/` and returns `CtcMeasurementConfig` entries that roomeq
+  can use as measured acoustic plants.
+- Added an opt-in raw-sweep export strategy for the same matrix helper.
+  It combines mic 0/1 raw recording WAVs into two-ear raw sweeps and
+  attaches a per-take loopback WAV from a caller-selected input channel;
+  the default remains the current impulse-response strategy.
+- Recording device configuration now carries the selected CTC matrix export
+  strategy and optional loopback input, while saved measurement metadata can
+  preserve the full `CtcConfig` needed for raw-sweep processing.
+- Legacy `RoomEqMeasurementsFile` metadata can now carry the measured
+  CTC matrix alongside the normal channel measurements.
+
+## Room EQ: graph playback for CTC and driver branches
+
+- RoomEQ graph export now supports variable channel counts through global
+  plugins such as downmix/upmix/XTC and keeps per-output correction branches
+  at the full bus width.
+- Multi-driver RoomEQ chains now expand into parallel graph branches, sum at
+  a driver anchor, and then continue through the channel-level correction
+  plugins. This keeps graph playback aligned with AutoEQ's joint CTC model.
+
 ## Room EQ: expose Bayesian optimizer settings upstream
 
 - Added BO optimizer fields to the player-facing Room EQ config:
@@ -146,6 +172,3 @@ Bug fixed:
 - replaced unwrap() on map lookups with expect() containing a clear diagnostic message
 - improved migration error message from "Unknown" to "Unsupported ... (minimum: N)".
 - fixed apply to rack and apply to graph hosts (lots of changes there)
-
-
-

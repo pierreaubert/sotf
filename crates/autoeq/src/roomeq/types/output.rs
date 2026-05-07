@@ -256,4 +256,7 @@ pub struct OptimizationMetadata {
     /// final exported delay plugins.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timing_diagnostics: Option<crate::roomeq::home_cinema::TimingDiagnosticsReport>,
+    /// Cross-talk cancellation / binaural-aware correction artifact summary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ctc: Option<crate::roomeq::ctc::CtcReport>,
 }

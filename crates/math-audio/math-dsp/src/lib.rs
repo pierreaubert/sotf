@@ -20,6 +20,7 @@
 
 pub mod analysis;
 pub mod audio_features;
+pub mod binaural_matrix;
 pub mod ebur128;
 pub mod esprit;
 pub mod fast_math;
@@ -28,6 +29,7 @@ pub mod fdw;
 pub mod instantaneous_frequency;
 pub mod psychoacoustics;
 pub mod replaygain;
+pub mod response;
 pub mod rtpghi;
 pub mod signals;
 pub mod simd;
@@ -62,6 +64,14 @@ pub use analysis::{
 
 pub use fdw::{FdwAnalysis, FdwConfig, analyze_impulse_response_fdw};
 
+pub use binaural_matrix::{
+    MatrixInverseBin, TransferMatrixBin, align_ir_to_reference_peak, condition_number,
+    deconvolve_sweep_to_ir, direct_peak_sample, direct_peak_windowed_half_spectrum,
+    direct_windowed_half_spectrum, fdw_complex_half_spectrum, half_spectrum_to_fir,
+    position_errors, solve_minimax_regularized_inverse_bin, solve_regularized_inverse_bin,
+    solve_weighted_regularized_inverse_bin, suppress_log_sweep_harmonic_residues,
+};
+
 pub use signals::{
     add_silence_padding, apply_fade_in, apply_fade_out, clip, frames_for, gen_allpass_probe,
     gen_dirac, gen_log_sweep, gen_m_noise, gen_mls, gen_narrowband_probe, gen_pink_noise, gen_tone,
@@ -70,4 +80,5 @@ pub use signals::{
 };
 
 pub use replaygain::{ReplayGainAnalyzer, ReplayGainInfo, ReplayGainTrackData, compute_album_gain};
+pub use response::{biquad_complex_response, fir_complex_response, lr4_crossover_response};
 pub use waveform::{WAVEFORM_SAMPLES, compute_waveform};

@@ -640,6 +640,34 @@ pub(crate) fn load_room_eq_measurements(app: &mut App) {
     match std::fs::read_to_string(path) {
         Ok(contents) => match RoomEqMeasurementsFile::load_from_json(&contents, base_dir) {
             Ok(channels) => {
+                app.room_eq.ctc_config = if let Ok(room_config) =
+                    serde_json::from_str::<autoeq::RoomConfig>(&contents)
+                {
+                    room_config.ctc
+                } else {
+                    RoomEqMeasurementsFile::from_json_str(&contents)
+                        .ok()
+                        .and_then(|file| file.configuration)
+                        .and_then(|cfg| {
+                            cfg.ctc_config.or_else(|| {
+                                cfg.ctc_measurements
+                                    .map(|measurements| autoeq::roomeq::CtcConfig {
+                                        enabled: true,
+                                        matrix_source: "measured".to_string(),
+                                        measurements: Some(measurements),
+                                        ..Default::default()
+                                    })
+                            })
+                        })
+                };
+                if let (Some(ctc), Some(dir)) = (app.room_eq.ctc_config.as_mut(), base_dir) {
+                    ctc.resolve_paths(dir);
+                }
+                app.room_eq.ctc_measurements = app
+                    .room_eq
+                    .ctc_config
+                    .as_ref()
+                    .and_then(|ctc| ctc.measurements.clone());
                 app.room_eq.channel_measurements = channels;
                 app.room_eq.load_error = None;
                 // Pre-seed Delay Detection form from the recording
@@ -664,11 +692,15 @@ pub(crate) fn load_room_eq_measurements(app: &mut App) {
             Err(e) => {
                 app.room_eq.load_error = Some(e);
                 app.room_eq.channel_measurements.clear();
+                app.room_eq.ctc_measurements = None;
+                app.room_eq.ctc_config = None;
             }
         },
         Err(e) => {
             app.room_eq.load_error = Some(format!("Read error: {}", e));
             app.room_eq.channel_measurements.clear();
+            app.room_eq.ctc_measurements = None;
+            app.room_eq.ctc_config = None;
         }
     }
 }
@@ -831,6 +863,8 @@ fn spawn_room_eq_optimization(app: &mut App) {
     // user skipped that step; in that case the optimizer falls back to
     // WAV-onset detection for each channel).
     let probe_arrivals = app.room_eq.delay_detection.probe_arrival_map();
+    let ctc_config = app.room_eq.ctc_config.clone();
+    let ctc_measurements = app.room_eq.ctc_measurements.clone();
 
     let result_slot = ROOM_OPT_RESULT
         .get_or_init(|| Arc::new(Mutex::new(None)))
@@ -891,6 +925,14 @@ fn spawn_room_eq_optimization(app: &mut App) {
             target_curve: None,
             optimizer,
             recording_config: None,
+            ctc: ctc_config.or_else(|| {
+                ctc_measurements.map(|measurements| autoeq::roomeq::CtcConfig {
+                    enabled: true,
+                    matrix_source: "measured".to_string(),
+                    measurements: Some(measurements),
+                    ..Default::default()
+                })
+            }),
             cea2034_cache: None,
         };
 

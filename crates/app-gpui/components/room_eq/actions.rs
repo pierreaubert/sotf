@@ -195,6 +195,19 @@ impl PlayerView {
 
                             // Capture optimizer config before speakers are consumed
                             let backend_optimizer = room_config.optimizer.clone();
+                            let mut ctc_config = room_config.ctc.clone();
+                            let mut ctc_measurements =
+                                ctc_config.as_ref().and_then(|ctc| ctc.measurements.clone());
+                            if let (Some(measurements), Some(dir)) =
+                                (ctc_measurements.as_mut(), file_dir.as_deref())
+                            {
+                                measurements.resolve_paths(dir);
+                            }
+                            if let Some(ctc) = ctc_config.as_mut()
+                                && let Some(dir) = file_dir.as_deref()
+                            {
+                                ctc.resolve_paths(dir);
+                            }
 
                             // Detect multi-position data before consuming speakers
                             let mut multi_position_counts: Vec<(String, usize)> = Vec::new();
@@ -295,6 +308,9 @@ impl PlayerView {
                                 }
                                 state.app.measurement_state.room_eq_state.channel_measurements =
                                     channel_measurements;
+                                state.app.measurement_state.room_eq_state.ctc_measurements =
+                                    ctc_measurements;
+                                state.app.measurement_state.room_eq_state.ctc_config = ctc_config;
                                 state.app.measurement_state.room_eq_state.speaker_configs =
                                     speaker_configs;
                                 state.app.measurement_state.room_eq_state.data_source =
@@ -450,6 +466,39 @@ impl PlayerView {
                                 }
 
                                 // Create speaker configs from loaded measurements
+                                let mut ctc_config = measurements_file
+                                    .configuration
+                                    .as_ref()
+                                    .and_then(|cfg| cfg.ctc_config.clone());
+                                let mut ctc_measurements = ctc_config
+                                    .as_ref()
+                                    .and_then(|cfg| cfg.measurements.clone())
+                                    .or_else(|| {
+                                        measurements_file
+                                            .configuration
+                                            .as_ref()
+                                            .and_then(|cfg| cfg.ctc_measurements.clone())
+                                    });
+                                if let (Some(measurements), Some(dir)) =
+                                    (ctc_measurements.as_mut(), file_dir.as_deref())
+                                {
+                                    measurements.resolve_paths(dir);
+                                }
+                                if let Some(ctc) = ctc_config.as_mut()
+                                    && let Some(dir) = file_dir.as_deref()
+                                {
+                                    ctc.resolve_paths(dir);
+                                }
+                                if ctc_config.is_none() {
+                                    ctc_config = ctc_measurements.clone().map(|measurements| {
+                                        autoeq::roomeq::CtcConfig {
+                                            enabled: true,
+                                            matrix_source: "measured".to_string(),
+                                            measurements: Some(measurements),
+                                            ..Default::default()
+                                        }
+                                    });
+                                }
                                 let mut speaker_configs: Vec<RoomEqSpeakerConfig> = measurements_file
                                     .channels
                                     .iter()
@@ -484,6 +533,10 @@ impl PlayerView {
                                     }
                                     state.app.measurement_state.room_eq_state.channel_measurements =
                                         channels;
+                                    state.app.measurement_state.room_eq_state.ctc_measurements =
+                                        ctc_measurements;
+                                    state.app.measurement_state.room_eq_state.ctc_config =
+                                        ctc_config;
                                     state.app.measurement_state.room_eq_state.speaker_configs =
                                         speaker_configs;
                                     state.app.measurement_state.room_eq_state.data_source =

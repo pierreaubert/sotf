@@ -79,6 +79,7 @@ fn make_stereo_config(optimizer: OptimizerConfig) -> RoomConfig {
         target_curve: None,
         optimizer,
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     }
 }
@@ -283,6 +284,7 @@ fn make_stereo_2_1_config(optimizer: OptimizerConfig) -> RoomConfig {
         target_curve: None,
         optimizer,
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     }
 }

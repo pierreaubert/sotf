@@ -58,6 +58,7 @@ mod tests {
                 ..OptimizerConfig::default()
             },
             recording_config: None,
+            ctc: None,
             cea2034_cache: None,
         };
 
@@ -154,6 +155,7 @@ mod tests {
                 ..OptimizerConfig::default()
             },
             recording_config: None,
+            ctc: None,
             cea2034_cache: None,
         };
 
@@ -212,6 +214,7 @@ mod tests {
                 ..OptimizerConfig::default()
             },
             recording_config: None,
+            ctc: None,
             cea2034_cache: None,
         };
 
@@ -326,6 +329,7 @@ mod tests {
             target_curve: None,
             optimizer,
             recording_config: None,
+            ctc: None,
             cea2034_cache: None,
         };
 
@@ -382,6 +386,7 @@ mod tests {
                 ..OptimizerConfig::default()
             },
             recording_config: None,
+            ctc: None,
             cea2034_cache: None,
         };
 

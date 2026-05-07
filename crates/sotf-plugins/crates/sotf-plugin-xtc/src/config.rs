@@ -148,6 +148,16 @@ pub struct XtcPluginParams {
     #[serde(default)]
     pub hrtf_file: Option<String>,
 
+    /// Filter source mode: "synthetic", "hrtf_file", or "roomeq_recommended".
+    /// The default preserves legacy behavior: synthetic geometry unless
+    /// `hrtf_file` is set.
+    #[serde(default = "default_source_mode")]
+    pub source_mode: String,
+
+    /// Path to a roomEQ `recommended_xtc_matrix.json` artifact.
+    #[serde(default)]
+    pub recommended_matrix_file: Option<String>,
+
     /// Smoothing time for auto-gain transitions in ms (default: 100.0)
     #[serde(default = "default_auto_gain_smoothing_ms")]
     pub auto_gain_smoothing_ms: f32,
@@ -231,6 +241,9 @@ fn default_spectral_normalization() -> bool {
 fn default_auto_gain_smoothing_ms() -> f32 {
     100.0
 }
+fn default_source_mode() -> String {
+    "synthetic".to_string()
+}
 fn default_itd_modeling() -> String {
     "phase_only".to_string()
 }
@@ -270,6 +283,8 @@ impl Default for XtcPluginParams {
             auto_gain_smoothing_ms: default_auto_gain_smoothing_ms(),
             pinna_model_enabled: false,
             hrtf_file: None,
+            source_mode: default_source_mode(),
+            recommended_matrix_file: None,
             itd_modeling: default_itd_modeling(),
         }
     }

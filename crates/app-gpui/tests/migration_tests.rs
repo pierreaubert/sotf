@@ -151,6 +151,7 @@ fn test_room_config_roundtrip() {
             signal_type: Some("Sweep".to_string()),
             ..Default::default()
         }),
+        ctc: None,
         cea2034_cache: None,
     };
 

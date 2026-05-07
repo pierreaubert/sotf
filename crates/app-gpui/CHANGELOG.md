@@ -1,5 +1,17 @@
 # 0.5.19
 
+## Room EQ recording: measured CTC matrix handoff
+
+- Recording saves now export completed two-ear captures as measured
+  CTC transfer-matrix IRs and include them in the saved RoomConfig.
+- The Recording configuration screen now exposes CTC matrix strategy
+  selection and loopback input. Raw-sweep mode persists the reference
+  sweep, records a hidden loopback channel with each speaker/position
+  take, and writes a `raw_sweep` CTC config for processing.
+- Loading recordings into Room EQ preserves measured CTC data so the
+  optimizer can solve against the in-room matrix instead of dropping it
+  at the app boundary, including raw-sweep CTC configs.
+
 ## AutoEQ forms: wire Bayesian optimizer controls
 
 - Added `autoeq:bo` to the shared AutoEQ optimizer selector and render

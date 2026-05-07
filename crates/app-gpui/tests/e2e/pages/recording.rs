@@ -1,6 +1,6 @@
 use crate::driver::AppDriver;
 use sotf_audio_player_gpui::app::types::{
-    ChannelRecordingState, RecordingSignalType, SpeakerConfiguration,
+    ChannelRecordingState, CtcMatrixExportStrategy, RecordingSignalType, SpeakerConfiguration,
 };
 
 pub struct RecordingPage<'a, 'b> {
@@ -428,6 +428,42 @@ impl<'a, 'b> RecordingPage<'a, 'b> {
                 .recording_state
                 .recording_base_directory
                 .clone()
+        })
+    }
+
+    pub fn set_ctc_matrix_strategy(&mut self, strategy: CtcMatrixExportStrategy) {
+        self.driver.update_app(move |app, _| {
+            app.measurement_state
+                .recording_state
+                .recording_config
+                .ctc_matrix_strategy = strategy;
+        });
+    }
+
+    pub fn get_ctc_matrix_strategy(&mut self) -> CtcMatrixExportStrategy {
+        self.driver.read_app(|app| {
+            app.measurement_state
+                .recording_state
+                .recording_config
+                .ctc_matrix_strategy
+        })
+    }
+
+    pub fn set_ctc_loopback_input(&mut self, input_channel: usize) {
+        self.driver.update_app(move |app, _| {
+            app.measurement_state
+                .recording_state
+                .recording_config
+                .ctc_loopback_input_channel = Some(input_channel);
+        });
+    }
+
+    pub fn get_ctc_loopback_input(&mut self) -> Option<usize> {
+        self.driver.read_app(|app| {
+            app.measurement_state
+                .recording_state
+                .recording_config
+                .ctc_loopback_input_channel
         })
     }
 }

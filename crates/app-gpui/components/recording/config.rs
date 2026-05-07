@@ -2,7 +2,9 @@
 //!
 //! Device selection, channel routing, and microphone calibration.
 
-use crate::app::types::{CalibrationData, ChannelMapping, RecordingState, SpeakerConfiguration};
+use crate::app::types::{
+    CalibrationData, ChannelMapping, CtcMatrixExportStrategy, RecordingState, SpeakerConfiguration,
+};
 use crate::components::design::Ds;
 use crate::components::graphs::common::theme_to_chart_theme;
 use crate::ui::PlayerView;
@@ -149,7 +151,15 @@ impl PlayerView {
     fn render_recording_device_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let translations = state.app.ui_state.translations.clone();
-        let (theme, num_channels, sample_rate, max_input_channels, num_positions) = {
+        let (
+            theme,
+            num_channels,
+            sample_rate,
+            max_input_channels,
+            num_positions,
+            ctc_strategy,
+            ctc_loopback,
+        ) = {
             let rec_config = &state.app.measurement_state.recording_state.recording_config;
             let input_devices = &state.app.audio_device_state.input_devices;
             // Find selected device, or fall back to first available device
@@ -167,6 +177,8 @@ impl PlayerView {
                 rec_config.sample_rate,
                 max_ch,
                 rec_config.num_positions.max(1),
+                rec_config.ctc_matrix_strategy,
+                rec_config.ctc_loopback_input_channel,
             )
         };
         let view = cx.weak_entity();
@@ -223,6 +235,73 @@ impl PlayerView {
                     })
             });
 
+        let ctc_strategy_row = HStack::new()
+            .spacing(StackSpacing::Sm)
+            .align(StackAlign::Center)
+            .child(
+                Text::new("CTC Matrix")
+                    .size(TextSize::Xs)
+                    .color(theme.text_secondary),
+            )
+            .child({
+                let view = view.clone();
+                Button::new("ctc_matrix_strategy", ctc_strategy.as_str())
+                    .size(ButtonSize::Xs)
+                    .variant(ButtonVariant::Secondary)
+                    .on_click(move |_, cx| {
+                        let _ = view.update(cx, |this, cx| {
+                            this.state.update(cx, |state, _| {
+                                let cfg = &mut state
+                                    .app
+                                    .measurement_state
+                                    .recording_state
+                                    .recording_config;
+                                cfg.ctc_matrix_strategy = match cfg.ctc_matrix_strategy {
+                                    CtcMatrixExportStrategy::ImpulseResponse => {
+                                        CtcMatrixExportStrategy::RawSweep
+                                    }
+                                    CtcMatrixExportStrategy::RawSweep => {
+                                        CtcMatrixExportStrategy::ImpulseResponse
+                                    }
+                                };
+                            });
+                            cx.notify();
+                        });
+                    })
+            });
+
+        let ctc_loopback_row = HStack::new()
+            .spacing(StackSpacing::Sm)
+            .align(StackAlign::Center)
+            .child(
+                Text::new("Loopback Input")
+                    .size(TextSize::Xs)
+                    .color(theme.text_secondary),
+            )
+            .child({
+                let view = view.clone();
+                NumberInput::new("ctc_loopback_input")
+                    .value(ctc_loopback.map(|ch| ch + 1).unwrap_or(1) as f64)
+                    .min(1.0)
+                    .max(max_input_channels as f64)
+                    .step(1.0)
+                    .size(NumberInputSize::Xs)
+                    .on_change(move |value, _window, cx| {
+                        let _ = view.update(cx, |this, cx| {
+                            this.state.update(cx, |state, _| {
+                                state
+                                    .app
+                                    .measurement_state
+                                    .recording_state
+                                    .recording_config
+                                    .ctc_loopback_input_channel =
+                                    Some((value as usize).saturating_sub(1));
+                            });
+                            cx.notify();
+                        });
+                    })
+            });
+
         // Number of measurement positions. Each position runs a full
         // speaker × mic sweep; between positions a modal asks the user
         // to move the microphones to the next seat.
@@ -271,6 +350,10 @@ impl PlayerView {
             .child(badges)
             .child(channel_count_row)
             .child(positions_row)
+            .child(ctc_strategy_row)
+            .when(ctc_strategy == CtcMatrixExportStrategy::RawSweep, |this| {
+                this.child(ctc_loopback_row)
+            })
             .child(channel_mapping)
     }
 

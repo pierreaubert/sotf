@@ -1,5 +1,18 @@
 # 0.5.205
 
+## Room EQ recording: N-by-M capture matrix
+
+- The recording channel list now expands across speakers, selected
+  input mics, and measurement positions, so TUI captures can represent
+  the full acoustic transfer matrix instead of one mono take per
+  speaker.
+- The configuration step now exposes CTC matrix strategy and loopback
+  input fields. Raw-sweep mode writes the reference sweep, records a
+  loopback WAV alongside captures, and preserves the full CTC config for
+  Room EQ processing.
+- Recording saves now group those captures back into per-speaker
+  measurements and persist measured CTC matrix metadata for Room EQ.
+
 ## Room EQ: expose Bayesian optimizer controls
 
 - Added `autoeq:bo` to the Room EQ configure step and exposed BO

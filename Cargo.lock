@@ -828,6 +828,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serial_test",
+ "sotf-host",
  "strsim",
  "tempfile",
  "thiserror 2.0.18",

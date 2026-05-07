@@ -275,6 +275,7 @@ fn perceptual_metrics_report_epa_and_timing_confidence() {
         multi_seat_correction: None,
         bass_management: None,
         timing_diagnostics: None,
+        ctc: None,
     };
 
     update_perceptual_metrics(&mut metadata, None, None);
@@ -361,6 +362,7 @@ fn perceptual_metrics_report_role_bass_dialog_and_headroom_guards() {
         multi_seat_correction: None,
         bass_management: None,
         timing_diagnostics: None,
+        ctc: None,
     };
 
     update_perceptual_metrics(&mut metadata, Some(&channels), None);
@@ -442,6 +444,7 @@ fn timing_diagnostics_reflect_measured_arrivals_and_exported_delays() {
         target_curve: None,
         optimizer: OptimizerConfig::default(),
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     };
 
@@ -1217,6 +1220,7 @@ fn test_room_config_with_gd(
             ..Default::default()
         },
         recording_config: None,
+        ctc: None,
         cea2034_cache: None,
     }
 }

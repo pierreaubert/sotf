@@ -1,11 +1,14 @@
 //! Room EQ configuration and serialization tests.
 
 use sotf_audio_player::{
-    EQFilter, PluginGraph, PluginSettings, PluginType, room_eq_types::parse_eq_filters_from_json,
+    EQFilter, PluginGraph, PluginSettings, PluginType, recording_types::CtcMatrixExportStrategy,
+    room_eq_types::parse_eq_filters_from_json,
 };
 use sotf_audio_player_gpui::{
-    ChannelMeasurement, RecordingResult, RoomEqOptimizerConfig, RoomEqState, RoomEqStep,
+    ChannelMeasurement, ChannelRecording, ChannelRecordingState, RecordingResult, RecordingState,
+    RoomEqOptimizerConfig, RoomEqState, RoomEqStep,
 };
+use std::path::PathBuf;
 
 #[test]
 fn test_room_eq_state_defaults() {
@@ -56,6 +59,99 @@ fn test_room_eq_to_room_config_simple() {
     assert_eq!(
         config.optimizer.processing_mode,
         autoeq::roomeq::ProcessingMode::LowLatency
+    );
+}
+
+#[test]
+fn test_room_eq_to_room_config_preserves_raw_sweep_ctc_config() {
+    let mut state = RoomEqState::default();
+    state.ctc_config = Some(autoeq::roomeq::CtcConfig {
+        enabled: true,
+        matrix_source: "raw_sweep".to_string(),
+        reference_sweep: Some(PathBuf::from("ctc_reference_sweep.wav")),
+        measurements: Some(autoeq::roomeq::CtcMeasurementConfig {
+            speakers: vec!["L".to_string(), "R".to_string()],
+            mics: vec!["left_ear".to_string(), "right_ear".to_string()],
+            head_positions: Vec::new(),
+            files: Vec::new(),
+        }),
+        ..Default::default()
+    });
+
+    let config = state.to_room_config();
+    let ctc = config.ctc.expect("ctc config");
+    assert_eq!(ctc.matrix_source, "raw_sweep");
+    assert_eq!(
+        ctc.reference_sweep,
+        Some(PathBuf::from("ctc_reference_sweep.wav"))
+    );
+}
+
+#[test]
+fn test_load_from_recording_marks_ctc_fallback_as_measured() {
+    fn ctc_ir_recording(speaker_idx: usize, mic_idx: usize) -> ChannelRecording {
+        let mut rec = ChannelRecording::with_mic_position(
+            speaker_idx,
+            format!(
+                "{} (Mic {})",
+                if speaker_idx == 0 { "L" } else { "R" },
+                mic_idx + 1
+            ),
+            mic_idx,
+            0,
+        );
+        rec.state = ChannelRecordingState::Done;
+        rec.result = Some(RecordingResult {
+            channel: speaker_idx,
+            frequencies: vec![100.0],
+            magnitude_db: vec![0.0],
+            phase_deg: vec![0.0],
+            wav_path: None,
+            csv_path: None,
+            impulse_response: Some(vec![1.0, 0.5]),
+            impulse_time_ms: None,
+            thd_percent: None,
+            harmonic_distortion_db: None,
+            excess_group_delay_ms: None,
+            rt60_ms: None,
+            clarity_c50_db: None,
+            clarity_c80_db: None,
+            spectrogram_db: None,
+        });
+        rec
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut recording = RecordingState::default();
+    recording.recording_directory = Some(dir.path().to_string_lossy().to_string());
+    recording.ctc_reference_sweep_path = Some(
+        dir.path()
+            .join("ctc_reference_sweep.wav")
+            .to_string_lossy()
+            .to_string(),
+    );
+    recording.recording_config.channel_mappings = vec![0, 1];
+    recording.recording_config.ctc_matrix_strategy = CtcMatrixExportStrategy::RawSweep;
+    recording.channel_recordings = vec![
+        ctc_ir_recording(0, 0),
+        ctc_ir_recording(0, 1),
+        ctc_ir_recording(1, 0),
+        ctc_ir_recording(1, 1),
+    ];
+
+    let mut room_eq = RoomEqState::default();
+    room_eq.load_from_recording(&recording);
+
+    let ctc = room_eq.ctc_config.expect("ctc config");
+    assert_eq!(ctc.matrix_source, "measured");
+    assert!(ctc.reference_sweep.is_none());
+    assert!(
+        ctc.measurements
+            .as_ref()
+            .unwrap()
+            .files
+            .iter()
+            .all(|file| file.ir.is_some() && file.raw_sweep.is_none())
     );
 }
 

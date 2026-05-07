@@ -974,9 +974,12 @@ impl PlayerView {
         // --- Gather parameters from state ---
         #[derive(Clone)]
         struct MicInfo {
-            vec_idx: usize,
+            vec_idx: Option<usize>,
             #[allow(dead_code)]
             mic_index: usize,
+            is_loopback: bool,
+            speaker_index: usize,
+            mic_position_index: usize,
             input_channel: u16,
             calibration: Option<String>,
             safe_name: String,
@@ -995,6 +998,7 @@ impl PlayerView {
             speaker_name: String,
             recording_directory: Option<String>,
             mics: Vec<MicInfo>,
+            ctc_strategy: crate::app::types::CtcMatrixExportStrategy,
         }
 
         let params = {
@@ -1010,15 +1014,19 @@ impl PlayerView {
             };
 
             let speaker_idx = channel.channel_index;
+            let position_idx = channel.mic_position_index;
             let sweep_start = channel.sweep_start_freq;
             let sweep_end = channel.sweep_end_freq;
 
-            // Collect all mic entries for this speaker
-            let mics: Vec<MicInfo> = rec_state
+            // Collect all ear-mic entries for this speaker at the current
+            // position. Other positions are separate physical mic placements.
+            let mut mics: Vec<MicInfo> = rec_state
                 .channel_recordings
                 .iter()
                 .enumerate()
-                .filter(|(_, r)| r.channel_index == speaker_idx)
+                .filter(|(_, r)| {
+                    r.channel_index == speaker_idx && r.mic_position_index == position_idx
+                })
                 .map(|(vi, r)| {
                     let input_ch = rec_state
                         .recording_config
@@ -1044,14 +1052,46 @@ impl PlayerView {
                         })
                         .collect();
                     MicInfo {
-                        vec_idx: vi,
+                        vec_idx: Some(vi),
                         mic_index: r.mic_index,
+                        is_loopback: false,
+                        speaker_index: speaker_idx,
+                        mic_position_index: position_idx,
                         input_channel: input_ch,
                         calibration,
                         safe_name,
                     }
                 })
                 .collect();
+
+            if rec_state.recording_config.ctc_matrix_strategy
+                == crate::app::types::CtcMatrixExportStrategy::RawSweep
+            {
+                if let Some(loopback_input) = rec_state.recording_config.ctc_loopback_input_channel
+                {
+                    let safe_speaker: String = channel
+                        .channel_name
+                        .chars()
+                        .map(|c| {
+                            if c.is_alphanumeric() || c == '_' || c == '-' {
+                                c
+                            } else {
+                                '_'
+                            }
+                        })
+                        .collect();
+                    mics.push(MicInfo {
+                        vec_idx: None,
+                        mic_index: usize::MAX,
+                        is_loopback: true,
+                        speaker_index: speaker_idx,
+                        mic_position_index: position_idx,
+                        input_channel: loopback_input as u16,
+                        calibration: None,
+                        safe_name: format!("{}_Pos_{}_Loopback", safe_speaker, position_idx + 1),
+                    });
+                }
+            }
 
             let signal_type = match rec_state.signal_type {
                 RecordingSignalType::Sweep => SignalType::Sweep,
@@ -1093,6 +1133,7 @@ impl PlayerView {
                 speaker_name,
                 recording_directory: rec_state.recording_directory.clone(),
                 mics,
+                ctc_strategy: rec_state.recording_config.ctc_matrix_strategy,
             }
         };
 
@@ -1126,7 +1167,7 @@ impl PlayerView {
 
         // Mark all mic entries for this speaker as Recording and clear old results
         // so the evaluating graphs reset immediately (not showing stale data).
-        let mic_vec_indices: Vec<usize> = params.mics.iter().map(|m| m.vec_idx).collect();
+        let mic_vec_indices: Vec<usize> = params.mics.iter().filter_map(|m| m.vec_idx).collect();
         self.state.update(cx, |state, _| {
             for &vi in &mic_vec_indices {
                 if let Some(recording) = state
@@ -1163,17 +1204,7 @@ impl PlayerView {
             params
                 .mics
                 .first()
-                .map(|m| {
-                    self.state
-                        .read(cx)
-                        .app
-                        .measurement_state
-                        .recording_state
-                        .channel_recordings
-                        .get(m.vec_idx)
-                        .map(|r| r.channel_index)
-                        .unwrap_or(999)
-                })
+                .map(|m| { m.speaker_index })
                 .unwrap_or(999),
             params.output_channel,
             params.sweep_start_freq,
@@ -1269,6 +1300,27 @@ impl PlayerView {
                 return;
             }
         };
+
+        if params.ctc_strategy == crate::app::types::CtcMatrixExportStrategy::RawSweep {
+            let reference_path = recording_dir.join("ctc_reference_sweep.wav");
+            if let Err(e) = sotf_audio_player::signal_recorder::write_wav_file(
+                &reference_path,
+                &signal,
+                params.sample_rate,
+                1,
+            ) {
+                log::warn!("Failed to persist CTC reference sweep: {}", e);
+            } else {
+                self.state.update(cx, |state, _| {
+                    state
+                        .app
+                        .measurement_state
+                        .recording_state
+                        .ctc_reference_sweep_path =
+                        Some(reference_path.to_string_lossy().to_string());
+                });
+            }
+        }
 
         // Build per-mic paths
         let wav_paths: Vec<std::path::PathBuf> = params
@@ -1379,7 +1431,7 @@ impl PlayerView {
                             for (mic_i, analysis_result) in
                                 analysis_results.into_iter().enumerate()
                             {
-                                let vi = mics[mic_i].vec_idx;
+                                let mic = &mics[mic_i];
                                 let mic_name = &mics[mic_i].safe_name;
 
                                 // Compute avg SPL within the actual sweep range
@@ -1415,6 +1467,56 @@ impl PlayerView {
                                     );
                                 }
 
+                                let rec_result = RecordingResult {
+                                    channel: mic.vec_idx.unwrap_or(usize::MAX),
+                                    wav_path: Some(wav_paths[mic_i].to_string_lossy().to_string()),
+                                    csv_path: Some(csv_paths[mic_i].to_string_lossy().to_string()),
+                                    frequencies: analysis_result.frequencies,
+                                    magnitude_db: analysis_result.spl_db,
+                                    phase_deg: analysis_result.phase_deg,
+                                    impulse_response: Some(analysis_result.impulse_response),
+                                    impulse_time_ms: Some(analysis_result.impulse_time_ms),
+                                    excess_group_delay_ms: Some(
+                                        analysis_result.excess_group_delay_ms,
+                                    ),
+                                    thd_percent: Some(analysis_result.thd_percent),
+                                    harmonic_distortion_db: Some(
+                                        analysis_result.harmonic_distortion_db,
+                                    ),
+                                    rt60_ms: Some(analysis_result.rt60_ms),
+                                    clarity_c50_db: Some(analysis_result.clarity_c50_db),
+                                    clarity_c80_db: Some(analysis_result.clarity_c80_db),
+                                    spectrogram_db: Some(analysis_result.spectrogram_db),
+                                };
+
+                                if mic.is_loopback {
+                                    state
+                                        .app
+                                        .measurement_state
+                                        .recording_state
+                                        .transfer_matrix_loopbacks
+                                        .retain(|r| {
+                                            r.speaker_index != mic.speaker_index
+                                                || r.mic_position_index != mic.mic_position_index
+                                        });
+                                    state
+                                        .app
+                                        .measurement_state
+                                        .recording_state
+                                        .transfer_matrix_loopbacks
+                                        .push(crate::app::types::TransferMatrixLoopbackRecording {
+                                            speaker_index: mic.speaker_index,
+                                            mic_position_index: mic.mic_position_index,
+                                            wav_path: wav_paths[mic_i]
+                                                .to_string_lossy()
+                                                .to_string(),
+                                        });
+                                    continue;
+                                }
+
+                                let Some(vi) = mic.vec_idx else {
+                                    continue;
+                                };
                                 if let Some(recording) = state
                                     .app
                                     .measurement_state
@@ -1423,37 +1525,7 @@ impl PlayerView {
                                     .get_mut(vi)
                                 {
                                     recording.state = ChannelRecordingState::Done;
-                                    recording.result = Some(RecordingResult {
-                                        channel: vi,
-                                        wav_path: Some(
-                                            wav_paths[mic_i].to_string_lossy().to_string(),
-                                        ),
-                                        csv_path: Some(
-                                            csv_paths[mic_i].to_string_lossy().to_string(),
-                                        ),
-                                        frequencies: analysis_result.frequencies,
-                                        magnitude_db: analysis_result.spl_db,
-                                        phase_deg: analysis_result.phase_deg,
-                                        impulse_response: Some(
-                                            analysis_result.impulse_response,
-                                        ),
-                                        impulse_time_ms: Some(
-                                            analysis_result.impulse_time_ms,
-                                        ),
-                                        excess_group_delay_ms: Some(
-                                            analysis_result.excess_group_delay_ms,
-                                        ),
-                                        thd_percent: Some(analysis_result.thd_percent),
-                                        harmonic_distortion_db: Some(
-                                            analysis_result.harmonic_distortion_db,
-                                        ),
-                                        rt60_ms: Some(analysis_result.rt60_ms),
-                                        clarity_c50_db: Some(analysis_result.clarity_c50_db),
-                                        clarity_c80_db: Some(analysis_result.clarity_c80_db),
-                                        spectrogram_db: Some(
-                                            analysis_result.spectrogram_db,
-                                        ),
-                                    });
+                                    recording.result = Some(rec_result);
                                 }
                             }
 
@@ -1486,12 +1558,15 @@ impl PlayerView {
                         Err(e) => {
                             log::error!("Recording failed: {}", e);
                             for mic in &mics {
+                                let Some(vec_idx) = mic.vec_idx else {
+                                    continue;
+                                };
                                 if let Some(recording) = state
                                     .app
                                     .measurement_state
                                     .recording_state
                                     .channel_recordings
-                                    .get_mut(mic.vec_idx)
+                                    .get_mut(vec_idx)
                                 {
                                     recording.state = ChannelRecordingState::Error;
                                 }
@@ -1673,6 +1748,7 @@ impl PlayerView {
     /// Save recordings to a JSON file in the recording directory
     /// Outputs autoeq::RoomConfig format compatible with roomeq CLI
     pub(crate) fn save_recordings(&mut self, cx: &mut Context<Self>) {
+        use crate::app::types::RoomEqMeasurementsFile;
         use autoeq::{
             InlineMeasurement, MeasurementRef, MeasurementSource, OptimizerConfig,
             RecordingConfiguration, RoomConfig, SpeakerConfig,
@@ -1680,7 +1756,7 @@ impl PlayerView {
         use std::collections::HashMap;
 
         // Get recordings, recording directory, configuration, and convert to RoomConfig format
-        let (room_config, recording_dir) = {
+        let (room_config, recording_dir, ctc_raw_fallback) = {
             let state = self.state.read(cx);
             let rec_state = &state.app.measurement_state.recording_state;
             let recordings = &rec_state.channel_recordings;
@@ -1695,6 +1771,87 @@ impl PlayerView {
                 }
             };
 
+            let channel_names: Vec<String> = rec_state
+                .playback_config
+                .channel_mappings
+                .iter()
+                .map(|m| m.group_name.clone())
+                .collect();
+            let mic_names = vec!["left_ear".to_string(), "right_ear".to_string()];
+            let ctc_strategy = rec_state.recording_config.ctc_matrix_strategy;
+            let mut ctc_reference_sweep = None;
+            let mut ctc_raw_sweep_range = None;
+            let mut ctc_raw_fallback = false;
+            let mut ctc_measurements = if ctc_strategy
+                == crate::app::types::CtcMatrixExportStrategy::RawSweep
+            {
+                ctc_reference_sweep = rec_state.ctc_reference_sweep_path.as_ref().map(|path| {
+                    std::path::Path::new(path)
+                        .strip_prefix(&recording_dir)
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or_else(|_| std::path::PathBuf::from(path))
+                });
+                match RoomEqMeasurementsFile::build_ctc_measurements_from_recordings_with_strategy(
+                    recordings,
+                    &channel_names,
+                    &mic_names,
+                    rec_state.recording_config.sample_rate,
+                    std::path::Path::new(&recording_dir),
+                    ctc_strategy,
+                    rec_state.recording_config.ctc_loopback_input_channel,
+                    &rec_state.transfer_matrix_loopbacks,
+                ) {
+                    Ok(Some(measurements)) => match sotf_audio_player::room_eq_types::ctc_uniform_sweep_range_for_measurements(
+                        recordings,
+                        &channel_names,
+                        &measurements,
+                    ) {
+                        Some(range) => {
+                            ctc_raw_sweep_range = Some(range);
+                            Some(measurements)
+                        }
+                        None => {
+                            ctc_raw_fallback = true;
+                            log::warn!(
+                                "Raw-sweep CTC matrix mixes sweep ranges or references missing recordings; falling back to measured impulse-response export"
+                            );
+                            None
+                        }
+                    },
+                    Ok(None) => {
+                        ctc_raw_fallback = true;
+                        log::warn!(
+                            "Raw-sweep CTC matrix is incomplete; falling back to measured impulse-response export"
+                        );
+                        None
+                    }
+                    Err(e) => {
+                        ctc_raw_fallback = true;
+                        log::warn!("Could not export CTC transfer matrix: {}", e);
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+            if ctc_measurements.is_none() {
+                ctc_measurements =
+                    match RoomEqMeasurementsFile::build_ctc_measurements_from_recordings(
+                        recordings,
+                        &channel_names,
+                        &mic_names,
+                        rec_state.recording_config.sample_rate,
+                        std::path::Path::new(&recording_dir),
+                    ) {
+                        Ok(measurements) => measurements,
+                        Err(e) => {
+                            log::warn!("Could not export CTC transfer matrix: {}", e);
+                            None
+                        }
+                    };
+                ctc_reference_sweep = None;
+            }
+
             // Build recording configuration from current state
             let recording_config = RecordingConfiguration {
                 playback_device_name: Some(rec_state.playback_config.device_name.clone()),
@@ -1708,14 +1865,7 @@ impl PlayerView {
                         .as_str()
                         .to_string(),
                 ),
-                channel_names: Some(
-                    rec_state
-                        .playback_config
-                        .channel_mappings
-                        .iter()
-                        .map(|m| m.group_name.clone())
-                        .collect(),
-                ),
+                channel_names: Some(channel_names.clone()),
                 recording_device_name: Some(rec_state.recording_config.device_name.clone()),
                 recording_device_id: Some(rec_state.recording_config.device_id.clone()),
                 recording_sample_rate: Some(rec_state.recording_config.sample_rate),
@@ -1881,10 +2031,35 @@ impl PlayerView {
                 target_curve: None,
                 optimizer: OptimizerConfig::default(),
                 recording_config: Some(recording_config),
+                ctc: ctc_measurements.map(|measurements| {
+                    let raw = ctc_reference_sweep.is_some();
+                    autoeq::roomeq::CtcConfig {
+                        enabled: true,
+                        matrix_source: if raw { "raw_sweep" } else { "measured" }.to_string(),
+                        measurements: Some(measurements),
+                        reference_sweep: ctc_reference_sweep,
+                        sweep_duration_s: if raw {
+                            Some(rec_state.signal_duration_secs as f64)
+                        } else {
+                            None
+                        },
+                        sweep_start_hz: if raw {
+                            ctc_raw_sweep_range.map(|(start, _)| start as f64)
+                        } else {
+                            None
+                        },
+                        sweep_end_hz: if raw {
+                            ctc_raw_sweep_range.map(|(_, end)| end as f64)
+                        } else {
+                            None
+                        },
+                        ..Default::default()
+                    }
+                }),
                 cea2034_cache: None,
             };
 
-            (room_config, recording_dir)
+            (room_config, recording_dir, ctc_raw_fallback)
         };
 
         // Save to recording directory (no dialog needed)
@@ -1901,8 +2076,13 @@ impl PlayerView {
                 } else {
                     log::info!("Recordings saved to {:?}", json_path);
                     self.state.update(cx, |state, _| {
+                        let suffix = if ctc_raw_fallback {
+                            " (raw-sweep CTC incomplete; saved measured CTC)"
+                        } else {
+                            ""
+                        };
                         state.app.measurement_state.recording_state.status_message =
-                            format!("Saved to {}", json_path.display());
+                            format!("Saved to {}{}", json_path.display(), suffix);
                     });
                 }
             }

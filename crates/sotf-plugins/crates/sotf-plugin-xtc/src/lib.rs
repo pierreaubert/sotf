@@ -46,7 +46,7 @@ use crate::params::PARAMS as XT;
 use arc_swap::ArcSwap;
 use math_audio_dsp::stft::generate_hann_window;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
-use rustfft::num_complex::Complex;
+use rustfft::{FftPlanner, num_complex::Complex};
 use serde::{Deserialize, Serialize};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_gain::{AutoGain, AutoGainData, AutoGainParams};
@@ -178,6 +178,114 @@ fn load_hrtf_for_xtc(
     }))
 }
 
+#[derive(Debug, Deserialize)]
+struct RoomeqRecommendedMatrix {
+    sample_rate: u32,
+    speakers: Vec<String>,
+    ears: Vec<String>,
+    filters: Vec<RoomeqRecommendedFilter>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RoomeqRecommendedFilter {
+    speaker: String,
+    target_ear: String,
+    taps: Vec<f64>,
+}
+
+fn load_roomeq_recommended_filters(
+    artifact_path: &str,
+    sample_rate: u32,
+    num_bins: usize,
+) -> Result<XtcFilters, String> {
+    let bytes = std::fs::read(artifact_path)
+        .map_err(|e| format!("Failed to read roomEQ recommended matrix: {}", e))?;
+    let artifact: RoomeqRecommendedMatrix = serde_json::from_slice(&bytes)
+        .map_err(|e| format!("Invalid roomEQ recommended matrix JSON: {}", e))?;
+    if artifact.sample_rate != sample_rate {
+        return Err(format!(
+            "roomEQ recommended matrix sample rate {} Hz differs from plugin sample rate {} Hz",
+            artifact.sample_rate, sample_rate
+        ));
+    }
+    if artifact.speakers.len() < 2 {
+        return Err(format!(
+            "roomEQ recommended matrix must contain at least two speakers, got {}",
+            artifact.speakers.len()
+        ));
+    }
+    if artifact.ears.len() != 2 {
+        return Err("roomEQ recommended matrix must contain exactly two ears".to_string());
+    }
+
+    let left_speaker = artifact.speakers[0].as_str();
+    let right_speaker = artifact.speakers[1].as_str();
+    let left_ear = artifact.ears[0].as_str();
+    let right_ear = artifact.ears[1].as_str();
+
+    let get_filter = |speaker: &str, target_ear: &str| -> Result<Vec<Complex<f32>>, String> {
+        let filter = artifact
+            .filters
+            .iter()
+            .find(|filter| filter.speaker == speaker && filter.target_ear == target_ear)
+            .ok_or_else(|| {
+                format!(
+                    "roomEQ recommended matrix missing filter speaker='{}', target_ear='{}'",
+                    speaker, target_ear
+                )
+            })?;
+        fir_taps_to_half_spectrum(&filter.taps, num_bins)
+    };
+
+    let mut speaker_filters = Vec::with_capacity(artifact.speakers.len());
+    for speaker in &artifact.speakers {
+        speaker_filters.push([
+            get_filter(speaker, left_ear)?,
+            get_filter(speaker, right_ear)?,
+        ]);
+    }
+
+    Ok(XtcFilters {
+        filter_ll: get_filter(left_speaker, left_ear)?,
+        filter_lr: get_filter(left_speaker, right_ear)?,
+        filter_rl: Some(get_filter(right_speaker, left_ear)?),
+        filter_rr: Some(get_filter(right_speaker, right_ear)?),
+        is_symmetric: false,
+        speaker_filters: Some(speaker_filters),
+    })
+}
+
+fn fir_taps_to_half_spectrum(taps: &[f64], num_bins: usize) -> Result<Vec<Complex<f32>>, String> {
+    if num_bins < 2 {
+        return Err("num_bins must contain at least DC and Nyquist".to_string());
+    }
+    let fft_size = (num_bins - 1) * 2;
+    let mut buffer = vec![Complex::new(0.0_f32, 0.0_f32); fft_size];
+    let copy_len = taps.len().min(fft_size);
+    for idx in 0..copy_len {
+        buffer[idx] = Complex::new(taps[idx] as f32, 0.0);
+    }
+    let mut planner = FftPlanner::<f32>::new();
+    let fft = planner.plan_fft_forward(fft_size);
+    fft.process(&mut buffer);
+    buffer.truncate(num_bins);
+    Ok(buffer)
+}
+
+fn validate_roomeq_recommended_source(
+    params: &XtcPluginParams,
+    sample_rate: u32,
+    num_bins: usize,
+) -> Result<(), String> {
+    if params.source_mode != "roomeq_recommended" {
+        return Ok(());
+    }
+    let matrix_path = params.recommended_matrix_file.as_deref().ok_or_else(|| {
+        "source_mode='roomeq_recommended' requires recommended_matrix_file".to_string()
+    })?;
+    load_roomeq_recommended_filters(matrix_path, sample_rate, num_bins).map(|_| ())
+}
+
 // ============================================================================
 // Helper functions for Optimization 4: Room reflection caching
 // ============================================================================
@@ -204,6 +312,10 @@ fn compute_room_params_hash(params: &XtcPluginParams) -> u64 {
     }
     if let Some(ref hrtf_path) = params.hrtf_file {
         hrtf_path.hash(&mut hasher);
+    }
+    params.source_mode.hash(&mut hasher);
+    if let Some(ref matrix_path) = params.recommended_matrix_file {
+        matrix_path.hash(&mut hasher);
     }
     params.kappa_target.to_bits().hash(&mut hasher);
     hasher.finish()
@@ -404,6 +516,21 @@ fn apply_filter_right(
     ifft_input[n - 1].im = 0.0;
 }
 
+#[inline(always)]
+fn apply_filter_pair(
+    ifft_input: &mut [Complex<f32>],
+    fft_l: &[Complex<f32>],
+    fft_r: &[Complex<f32>],
+    filter_l: &[Complex<f32>],
+    filter_r: &[Complex<f32>],
+) {
+    complex_mul_simd(ifft_input, fft_l, filter_l);
+    complex_mul_add_simd(ifft_input, fft_r, filter_r);
+    let n = ifft_input.len();
+    ifft_input[0].im = 0.0;
+    ifft_input[n - 1].im = 0.0;
+}
+
 impl XtcPlugin {
     /// Create a new XTC plugin
     pub fn new(params: XtcPluginParams, sample_rate: u32) -> Result<Self, String> {
@@ -459,28 +586,40 @@ impl XtcPlugin {
             None
         };
 
-        // Load HRTF file if specified
-        let hrtf_transfer_functions = if let Some(ref hrtf_path) = params.hrtf_file {
-            load_hrtf_for_xtc(hrtf_path, &params, sample_rate, num_bins)?
+        // Load HRTF file if specified. The roomEQ recommended source bypasses
+        // geometry/HRTF solving and loads its co-designed filters directly.
+        let hrtf_transfer_functions = if params.source_mode != "roomeq_recommended" {
+            if let Some(ref hrtf_path) = params.hrtf_file {
+                load_hrtf_for_xtc(hrtf_path, &params, sample_rate, num_bins)?
+            } else {
+                None
+            }
         } else {
             None
         };
 
-        // Compute geometry cache (Optimization 3)
-        let cache = compute_geometry_cache(&params, sample_rate, num_bins);
-
-        let filters = compute_xtc_filters_full_with_cache_and_hrtf(
-            &params,
-            sample_rate,
-            num_bins,
-            &cache,
-            room_reflection_cache.clone(),
-            hrtf_transfer_functions.as_ref(),
-        );
+        let filters = if params.source_mode == "roomeq_recommended" {
+            let matrix_path = params.recommended_matrix_file.as_deref().ok_or_else(|| {
+                "source_mode='roomeq_recommended' requires recommended_matrix_file".to_string()
+            })?;
+            load_roomeq_recommended_filters(matrix_path, sample_rate, num_bins)?
+        } else {
+            // Compute geometry cache (Optimization 3)
+            let cache = compute_geometry_cache(&params, sample_rate, num_bins);
+            compute_xtc_filters_full_with_cache_and_hrtf(
+                &params,
+                sample_rate,
+                num_bins,
+                &cache,
+                room_reflection_cache.clone(),
+                hrtf_transfer_functions.as_ref(),
+            )
+        };
+        let output_channels = filters.output_channels();
         let cached_current_filters = Arc::new(filters);
         let filters = Arc::new(ArcSwap::from(Arc::clone(&cached_current_filters)));
 
-        let auto_gain = if params.auto_gain_enabled {
+        let auto_gain = if params.auto_gain_enabled && output_channels == 2 {
             Some(
                 AutoGain::new(
                     2, // stereo
@@ -510,7 +649,7 @@ impl XtcPlugin {
             input_buffer_l: vec![0.0; fft_size],
             input_buffer_r: vec![0.0; fft_size],
             input_fill: 0,
-            output_accumulator: vec![0.0; fft_size * 4 * 2], // 4*N frames, stereo
+            output_accumulator: vec![0.0; fft_size * 4 * output_channels],
             output_accumulator_mask: (fft_size * 4) - 1,
             output_accumulator_fill: 0,
             next_add_position: 0,
@@ -669,6 +808,19 @@ impl XtcPlugin {
             self.params.hrtf_file.clone().unwrap_or_default(),
         ));
         self.cached_parameters.push(Parameter::new_string(
+            "source_mode",
+            "Source Mode",
+            self.params.source_mode.clone(),
+        ));
+        self.cached_parameters.push(Parameter::new_string(
+            "recommended_matrix_file",
+            "roomEQ Matrix",
+            self.params
+                .recommended_matrix_file
+                .clone()
+                .unwrap_or_default(),
+        ));
+        self.cached_parameters.push(Parameter::new_string(
             "itd_modeling",
             "ITD Mode",
             self.params.itd_modeling.clone(),
@@ -713,27 +865,49 @@ impl XtcPlugin {
             self.room_reflection_cache = room_data.clone();
             self.room_params_hash = new_hash;
 
-            let hrtf_data = if let Some(ref hrtf_path) = self.params.hrtf_file {
-                load_hrtf_for_xtc(hrtf_path, &self.params, sample_rate, num_bins)
-                    .ok()
-                    .flatten()
+            let hrtf_data = if self.params.source_mode != "roomeq_recommended" {
+                if let Some(ref hrtf_path) = self.params.hrtf_file {
+                    load_hrtf_for_xtc(hrtf_path, &self.params, sample_rate, num_bins)
+                        .ok()
+                        .flatten()
+                } else {
+                    None
+                }
             } else {
                 None
             };
             self.hrtf_transfer_functions = hrtf_data.clone();
 
-            let cache = compute_geometry_cache(&self.params, sample_rate, num_bins);
-            let new_filters = compute_xtc_filters_full_with_cache_and_hrtf(
-                &self.params,
-                sample_rate,
-                num_bins,
-                &cache,
-                room_data.clone(),
-                hrtf_data.as_ref(),
-            );
+            let new_filters = if self.params.source_mode == "roomeq_recommended" {
+                let Some(matrix_path) = self.params.recommended_matrix_file.as_deref() else {
+                    return;
+                };
+                let Ok(filters) =
+                    load_roomeq_recommended_filters(matrix_path, sample_rate, num_bins)
+                else {
+                    return;
+                };
+                filters
+            } else {
+                let cache = compute_geometry_cache(&self.params, sample_rate, num_bins);
+                compute_xtc_filters_full_with_cache_and_hrtf(
+                    &self.params,
+                    sample_rate,
+                    num_bins,
+                    &cache,
+                    room_data.clone(),
+                    hrtf_data.as_ref(),
+                )
+            };
             let new_filters = Arc::new(new_filters);
+            let previous_output_channels = self.cached_current_filters.output_channels();
+            let next_output_channels = new_filters.output_channels();
             self.filters.store(Arc::clone(&new_filters));
             self.cached_current_filters = new_filters;
+            if previous_output_channels != next_output_channels {
+                self.resize_output_accumulator(next_output_channels);
+                self.auto_gain = None;
+            }
             self.pending_filter_update.store(Arc::new(None));
         } else {
             // Asynchronous update using rayon. The audio thread starts the
@@ -750,22 +924,38 @@ impl XtcPlugin {
                 let room_params_hash = compute_room_params_hash(&params);
                 let room_data =
                     compute_room_reflection_data(&params, sample_rate, num_bins, Some(fft_forward));
-                let hrtf_data = if let Some(ref hrtf_path) = params.hrtf_file {
-                    load_hrtf_for_xtc(hrtf_path, &params, sample_rate, num_bins)
-                        .ok()
-                        .flatten()
+                let hrtf_data = if params.source_mode != "roomeq_recommended" {
+                    if let Some(ref hrtf_path) = params.hrtf_file {
+                        load_hrtf_for_xtc(hrtf_path, &params, sample_rate, num_bins)
+                            .ok()
+                            .flatten()
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 };
-                let cache = compute_geometry_cache(&params, sample_rate, num_bins);
-                let new_filters = compute_xtc_filters_full_with_cache_and_hrtf(
-                    &params,
-                    sample_rate,
-                    num_bins,
-                    &cache,
-                    room_data.clone(),
-                    hrtf_data.as_ref(),
-                );
+                let new_filters = if params.source_mode == "roomeq_recommended" {
+                    let Some(matrix_path) = params.recommended_matrix_file.as_deref() else {
+                        return;
+                    };
+                    let Ok(filters) =
+                        load_roomeq_recommended_filters(matrix_path, sample_rate, num_bins)
+                    else {
+                        return;
+                    };
+                    filters
+                } else {
+                    let cache = compute_geometry_cache(&params, sample_rate, num_bins);
+                    compute_xtc_filters_full_with_cache_and_hrtf(
+                        &params,
+                        sample_rate,
+                        num_bins,
+                        &cache,
+                        room_data.clone(),
+                        hrtf_data.as_ref(),
+                    )
+                };
                 if requested_generation.load(Ordering::Acquire) == generation {
                     pending_filter_update.store(Arc::new(Some(PendingFilterUpdate {
                         generation,
@@ -791,14 +981,35 @@ impl XtcPlugin {
         }
 
         let previous = self.filters.load_full();
+        let previous_output_channels = previous.output_channels();
         self.filters.store(Arc::clone(&update.filters));
         self.cached_current_filters = Arc::clone(&update.filters);
         self.hrtf_transfer_functions = update.hrtf_transfer_functions.clone();
         self.room_reflection_cache = update.room_reflection_cache.clone();
         self.room_params_hash = update.room_params_hash;
-        self.prev_filters = Some(previous);
-        self.crossfade_progress = 0.0;
+        let next_output_channels = update.filters.output_channels();
+        if previous_output_channels == next_output_channels {
+            self.prev_filters = Some(previous);
+            self.crossfade_progress = 0.0;
+        } else {
+            self.prev_filters = None;
+            self.crossfade_progress = 1.0;
+            self.resize_output_accumulator(next_output_channels);
+            self.auto_gain = None;
+        }
         self.pending_filter_update.store(Arc::new(None));
+    }
+
+    fn resize_output_accumulator(&mut self, output_channels: usize) {
+        let required_len = self.fft_size * 4 * output_channels;
+        if self.output_accumulator.len() != required_len {
+            self.output_accumulator.resize(required_len, 0.0);
+        }
+        self.output_accumulator.fill(0.0);
+        self.output_accumulator_fill = 0;
+        self.next_add_position = 0;
+        self.output_read_position = 0;
+        self.latency_filled = 0;
     }
 
     /// Process one STFT frame using SIMD-optimized operations.
@@ -835,6 +1046,8 @@ impl XtcPlugin {
         // Diagnostic bypass: skip all XTC filter math, just IFFT the windowed input.
         // This tests whether the STFT framework (windowing + OLA) itself is clean.
         if self.params.bypass_xtc_filters {
+            let output_channels = self.cached_current_filters.output_channels();
+
             // Left channel: IFFT the FFT output directly (identity in freq domain)
             self.ifft_input.copy_from_slice(&self.fft_output_l);
             let n = self.ifft_input.len();
@@ -848,7 +1061,7 @@ impl XtcPlugin {
             for i in 0..fft_size {
                 let idx = (self.next_add_position + i) & mask;
                 let s = self.ifft_output[i] * self.analysis_window[i] * scale;
-                self.output_accumulator[idx * 2] += s;
+                self.output_accumulator[idx * output_channels] += s;
             }
 
             // Right channel
@@ -863,7 +1076,72 @@ impl XtcPlugin {
             for i in 0..fft_size {
                 let idx = (self.next_add_position + i) & mask;
                 let s = self.ifft_output[i] * self.analysis_window[i] * scale;
-                self.output_accumulator[idx * 2 + 1] += s;
+                if output_channels > 1 {
+                    self.output_accumulator[idx * output_channels + 1] += s;
+                }
+            }
+        } else if let Some(speaker_filters) = self.cached_current_filters.speaker_filters.as_ref() {
+            let current_filters = &self.cached_current_filters;
+            let output_channels = current_filters.output_channels();
+            let can_crossfade = self.crossfade_progress < 1.0
+                && self
+                    .prev_filters
+                    .as_ref()
+                    .and_then(|prev| prev.speaker_filters.as_ref())
+                    .is_some_and(|prev| prev.len() == output_channels);
+            let alpha = self.crossfade_progress;
+
+            for (speaker_idx, filters_for_speaker) in speaker_filters.iter().enumerate() {
+                if can_crossfade {
+                    let prev_filters = self.prev_filters.as_ref().unwrap();
+                    let prev_speaker_filters = prev_filters.speaker_filters.as_ref().unwrap();
+                    apply_filter_pair(
+                        &mut self.ifft_input,
+                        &self.fft_output_l,
+                        &self.fft_output_r,
+                        &prev_speaker_filters[speaker_idx][0],
+                        &prev_speaker_filters[speaker_idx][1],
+                    );
+                    self.fft_inverse
+                        .process(&mut self.ifft_input, &mut self.prev_ifft_output)
+                        .expect("IFFT processing failed");
+
+                    apply_filter_pair(
+                        &mut self.ifft_input,
+                        &self.fft_output_l,
+                        &self.fft_output_r,
+                        &filters_for_speaker[0],
+                        &filters_for_speaker[1],
+                    );
+                    self.fft_inverse
+                        .process(&mut self.ifft_input, &mut self.ifft_output)
+                        .expect("IFFT processing failed");
+
+                    for i in 0..fft_size {
+                        let val =
+                            (1.0 - alpha) * self.prev_ifft_output[i] + alpha * self.ifft_output[i];
+                        let idx = (self.next_add_position + i) & mask;
+                        let s = val * self.analysis_window[i] * scale;
+                        self.output_accumulator[idx * output_channels + speaker_idx] += s;
+                    }
+                } else {
+                    apply_filter_pair(
+                        &mut self.ifft_input,
+                        &self.fft_output_l,
+                        &self.fft_output_r,
+                        &filters_for_speaker[0],
+                        &filters_for_speaker[1],
+                    );
+                    self.fft_inverse
+                        .process(&mut self.ifft_input, &mut self.ifft_output)
+                        .expect("IFFT processing failed");
+
+                    for i in 0..fft_size {
+                        let idx = (self.next_add_position + i) & mask;
+                        let s = self.ifft_output[i] * self.analysis_window[i] * scale;
+                        self.output_accumulator[idx * output_channels + speaker_idx] += s;
+                    }
+                }
             }
         } else if self.crossfade_progress < 1.0 && self.prev_filters.is_some() {
             let alpha = self.crossfade_progress;
@@ -1017,7 +1295,7 @@ impl Plugin for XtcPlugin {
     }
 
     fn output_channels(&self) -> usize {
-        2 // Stereo output
+        self.cached_current_filters.output_channels()
     }
 
     fn parameters(&self) -> Vec<Parameter> {
@@ -1060,6 +1338,59 @@ impl Plugin for XtcPlugin {
             self.rebuild_cached_parameters();
             return Ok(());
         }
+        if id.0 == "source_mode" {
+            let v = value
+                .as_string()
+                .ok_or_else(|| "source_mode must be a string".to_string())?;
+            match v {
+                "synthetic" | "hrtf_file" | "roomeq_recommended" => {
+                    if v == "roomeq_recommended" {
+                        let mut candidate = self.params.clone();
+                        candidate.source_mode = v.to_string();
+                        validate_roomeq_recommended_source(
+                            &candidate,
+                            self.sample_rate,
+                            self.fft_size / 2 + 1,
+                        )?;
+                    }
+                    self.params.source_mode = v.to_string();
+                }
+                _ => {
+                    return Err(format!(
+                        "source_mode must be 'synthetic', 'hrtf_file', or 'roomeq_recommended', got '{}'",
+                        v
+                    ));
+                }
+            }
+            self.update_filters(false);
+            self.rebuild_cached_parameters();
+            return Ok(());
+        }
+        if id.0 == "recommended_matrix_file" {
+            let v = value
+                .as_string()
+                .ok_or_else(|| "recommended_matrix_file must be a string".to_string())?;
+            if v.is_empty() {
+                self.params.recommended_matrix_file = None;
+            } else {
+                if !std::path::Path::new(v).exists() {
+                    return Err(format!("roomEQ recommended matrix not found: {}", v));
+                }
+                if self.params.source_mode == "roomeq_recommended" {
+                    let mut candidate = self.params.clone();
+                    candidate.recommended_matrix_file = Some(v.to_string());
+                    validate_roomeq_recommended_source(
+                        &candidate,
+                        self.sample_rate,
+                        self.fft_size / 2 + 1,
+                    )?;
+                }
+                self.params.recommended_matrix_file = Some(v.to_string());
+            }
+            self.update_filters(false);
+            self.rebuild_cached_parameters();
+            return Ok(());
+        }
         if id.0 == "itd_modeling" {
             let v = value
                 .as_string()
@@ -1094,7 +1425,9 @@ impl Plugin for XtcPlugin {
             21 | 22 => true, // bypass_spectral_normalization, bypass_neumann_refinement
             23 => {
                 // auto_gain_enabled
-                if self.params.auto_gain_enabled && self.auto_gain.is_none() {
+                if self.output_channels() != 2 {
+                    self.auto_gain = None;
+                } else if self.params.auto_gain_enabled && self.auto_gain.is_none() {
                     self.auto_gain = Some(AutoGain::new(
                         2,
                         self.sample_rate,
@@ -1147,6 +1480,17 @@ impl Plugin for XtcPlugin {
         if id.0 == "hrtf_file" {
             return Some(ParameterValue::String(
                 self.params.hrtf_file.clone().unwrap_or_default(),
+            ));
+        }
+        if id.0 == "source_mode" {
+            return Some(ParameterValue::String(self.params.source_mode.clone()));
+        }
+        if id.0 == "recommended_matrix_file" {
+            return Some(ParameterValue::String(
+                self.params
+                    .recommended_matrix_file
+                    .clone()
+                    .unwrap_or_default(),
             ));
         }
         if id.0 == "itd_modeling" {
@@ -1208,8 +1552,10 @@ impl Plugin for XtcPlugin {
         context: &ProcessContext,
     ) -> Result<usize, String> {
         let num_frames = context.num_frames;
+        self.adopt_pending_filters();
+        let output_channels = self.output_channels();
 
-        // Verify buffer sizes (stereo: 2 channels)
+        // Verify buffer sizes (stereo input, dynamic speaker output for roomEQ matrices)
         if input.len() != num_frames * 2 {
             return Err(format!(
                 "Input size mismatch: expected {}, got {}",
@@ -1217,10 +1563,10 @@ impl Plugin for XtcPlugin {
                 input.len()
             ));
         }
-        if output.len() != num_frames * 2 {
+        if output.len() != num_frames * output_channels {
             return Err(format!(
                 "Output size mismatch: expected {}, got {}",
-                num_frames * 2,
+                num_frames * output_channels,
                 output.len()
             ));
         }
@@ -1240,7 +1586,17 @@ impl Plugin for XtcPlugin {
 
         // Bypass if disabled
         if !self.params.enabled {
-            output.copy_from_slice(input);
+            for frame in 0..num_frames {
+                let input_base = frame * 2;
+                let output_base = frame * output_channels;
+                output[output_base] = input[input_base];
+                if output_channels > 1 {
+                    output[output_base + 1] = input[input_base + 1];
+                }
+                for ch in 2..output_channels {
+                    output[output_base + ch] = 0.0;
+                }
+            }
 
             // Still update diagnostic cache when bypassed
             if do_measure {
@@ -1256,8 +1612,6 @@ impl Plugin for XtcPlugin {
             }
             return Ok(context.num_frames);
         }
-
-        self.adopt_pending_filters();
 
         // Snapshot current filters once per process() call (avoids per-frame ArcSwap::load atomic ops)
         self.cached_current_filters = arc_swap::Guard::into_inner(self.filters.load());
@@ -1307,13 +1661,13 @@ impl Plugin for XtcPlugin {
                 if frames_to_drain > 0 {
                     for i in 0..frames_to_drain {
                         let read_idx = (self.output_read_position + i) & mask;
-                        let acc_base = read_idx * 2;
-                        let out_base = (output_pos + i) * 2;
-                        output[out_base] = self.output_accumulator[acc_base];
-                        output[out_base + 1] = self.output_accumulator[acc_base + 1];
+                        let acc_base = read_idx * output_channels;
+                        let out_base = (output_pos + i) * output_channels;
+                        output[out_base..out_base + output_channels].copy_from_slice(
+                            &self.output_accumulator[acc_base..acc_base + output_channels],
+                        );
                         // Clear after reading for next overlap-add cycle
-                        self.output_accumulator[acc_base] = 0.0;
-                        self.output_accumulator[acc_base + 1] = 0.0;
+                        self.output_accumulator[acc_base..acc_base + output_channels].fill(0.0);
                     }
                     self.output_read_position =
                         (self.output_read_position + frames_to_drain) & mask;
@@ -1331,7 +1685,7 @@ impl Plugin for XtcPlugin {
         // This ensures the gain calculation is stable and doesn't oscillate.
         if let Some(ag) = &mut self.auto_gain {
             if do_measure {
-                let _ = ag.measure_output(&output[..output_pos * 2]);
+                let _ = ag.measure_output(&output[..output_pos * output_channels]);
 
                 // Update diagnostic cache (Real-time safe, throttled)
                 let ag_data = ag.get_data();
@@ -1341,7 +1695,7 @@ impl Plugin for XtcPlugin {
                     d.limiter_envelope = limiter_env;
                 });
             }
-            ag.apply_compensation(&mut output[..output_pos * 2], output_pos);
+            ag.apply_compensation(&mut output[..output_pos * output_channels], output_pos);
         }
 
         // Per-sample peak limiter: prevent clipping after XTC filter summation + AutoGain.
@@ -1350,9 +1704,12 @@ impl Plugin for XtcPlugin {
         if !self.params.bypass_xtc_filters && output_pos > 0 {
             let threshold = 0.95_f32;
             for frame in 0..output_pos {
-                let idx_l = frame * 2;
-                let idx_r = frame * 2 + 1;
-                let peak = output[idx_l].abs().max(output[idx_r].abs());
+                let base = frame * output_channels;
+                let frame_slice = &output[base..base + output_channels];
+                let peak = frame_slice
+                    .iter()
+                    .map(|sample| sample.abs())
+                    .fold(0.0, f32::max);
                 let target_gr = if peak > threshold {
                     threshold / peak
                 } else {
@@ -1366,17 +1723,18 @@ impl Plugin for XtcPlugin {
                     self.limiter_envelope = target_gr
                         + self.limiter_release_coeff * (self.limiter_envelope - target_gr);
                 }
-                output[idx_l] *= self.limiter_envelope;
-                output[idx_r] *= self.limiter_envelope;
-                // Hard clamp: the one-pole envelope has finite attack time, so a
-                // few samples can overshoot during transient onset. Clamp to ±1.0
-                // as a safety ceiling — matches standard digital limiter practice.
-                output[idx_l] = output[idx_l].clamp(-1.0, 1.0);
-                output[idx_r] = output[idx_r].clamp(-1.0, 1.0);
+                for ch in 0..output_channels {
+                    let idx = base + ch;
+                    output[idx] *= self.limiter_envelope;
+                    // Hard clamp: the one-pole envelope has finite attack time, so a
+                    // few samples can overshoot during transient onset. Clamp to ±1.0
+                    // as a safety ceiling — matches standard digital limiter practice.
+                    output[idx] = output[idx].clamp(-1.0, 1.0);
+                }
             }
         }
 
-        output[output_pos * 2..].fill(0.0);
+        output[output_pos * output_channels..].fill(0.0);
 
         // Return actual number of frames produced. DawHost handles silence padding.
         flush_denormals_inplace(output);

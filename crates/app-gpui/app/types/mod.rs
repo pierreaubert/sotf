@@ -242,9 +242,10 @@ pub use calibration::CalibrationData;
 pub use headphone_eq::{HeadphoneEqBiquad, HeadphoneEqResult, HeadphoneEqState, HeadphoneEqStep};
 pub use queue::QueueItem;
 pub use recording::{
-    ChannelMapping, ChannelRecording, ChannelRecordingState, PlaybackDeviceConfig, PlotSmoothing,
-    RecordingDeviceConfig, RecordingResult, RecordingSignalType, RecordingState, RecordingStep,
-    SpeakerConfiguration,
+    ChannelMapping, ChannelRecording, ChannelRecordingState, CtcMatrixExportStrategy,
+    PlaybackDeviceConfig, PlotSmoothing, RecordingDeviceConfig, RecordingResult,
+    RecordingSignalType, RecordingState, RecordingStep, SpeakerConfiguration,
+    TransferMatrixLoopbackRecording,
 };
 pub use room_eq::{
     ChannelDspChain, ChannelMeasurement, ChannelOptResult, CrossoverType, CustomTargetCurve,

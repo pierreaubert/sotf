@@ -268,7 +268,8 @@ function New-Distribution {
         }
     }
 
-    # No runtime DLLs to ship -- pure-Rust binaries.
+    # No runtime DLLs to ship -- pure-Rust binary, MSVC CRT comes from VCRedist
+    # (dynamic build) or is statically linked (-Static build).
 
     # Copy assets excluding demo-audio (distributed separately as sotf-demo.zip)
     $assetsDir = "$ProjectRoot\crates\app-gpui\assets"

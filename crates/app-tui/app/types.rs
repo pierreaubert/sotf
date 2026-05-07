@@ -6,7 +6,7 @@ use sotf_audio_player::headphone_eq_types::{
 use sotf_audio_player::recording_types::{
     BassAnchorCaptureState, ChannelRecording, PlaybackDeviceConfig, ProbeCaptureState,
     RecordingDeviceConfig, RecordingSignalType, RecordingStep, RoomDimensionUnit,
-    SplCalibrationCaptureState,
+    SplCalibrationCaptureState, TransferMatrixLoopbackRecording,
 };
 use sotf_audio_player::room_eq_types::{
     ChannelMeasurement, ChannelOptResult, DelayDetectionState, OptimizationStatus,
@@ -380,6 +380,8 @@ pub struct RoomEqTuiState {
     pub file_path: String,
     pub editing_file_path: bool,
     pub channel_measurements: Vec<ChannelMeasurement>,
+    pub ctc_measurements: Option<autoeq::roomeq::CtcMeasurementConfig>,
+    pub ctc_config: Option<autoeq::roomeq::CtcConfig>,
     pub load_error: Option<String>,
     // Step 2: delay detection (tone-burst probe). Business state lives in
     // the shared `DelayDetectionState`; the `dd_*` fields below are
@@ -454,6 +456,8 @@ impl Default for RoomEqTuiState {
             file_path: String::new(),
             editing_file_path: false,
             channel_measurements: Vec::new(),
+            ctc_measurements: None,
+            ctc_config: None,
             load_error: None,
             delay_detection: DelayDetectionState::default(),
             dd_field: 0,
@@ -529,6 +533,8 @@ pub struct RecordingTuiState {
     pub edit_buffer: String,
     // Step 2: capture
     pub channel_recordings: Vec<ChannelRecording>,
+    pub transfer_matrix_loopbacks: Vec<TransferMatrixLoopbackRecording>,
+    pub ctc_reference_sweep_path: Option<String>,
     pub current_channel: Option<usize>,
     pub recording_progress: f32,
     pub auto_record: bool,
@@ -607,6 +613,8 @@ impl Default for RecordingTuiState {
             editing_value: false,
             edit_buffer: String::new(),
             channel_recordings: Vec::new(),
+            transfer_matrix_loopbacks: Vec::new(),
+            ctc_reference_sweep_path: None,
             current_channel: None,
             recording_progress: 0.0,
             auto_record: false,
@@ -653,6 +661,8 @@ pub enum RecordingField {
     SweepEnd,
     OutputDir,
     NumRecordingChannels,
+    CtcStrategy,
+    CtcLoopbackInput,
     /// Per-channel mic-calibration path (`recording_config.mic_calibration_paths[i]`).
     MicCal(usize),
     /// Per-channel input mapping (`recording_config.channel_mappings[i]`).
@@ -675,15 +685,17 @@ pub fn recording_field_at(s: &RecordingTuiState, idx: usize) -> Option<Recording
         7 => Some(SweepEnd),
         8 => Some(OutputDir),
         9 => Some(NumRecordingChannels),
-        i if i < 10 + n => Some(MicCal(i - 10)),
-        i if i < 10 + 2 * n => Some(ChannelInput(i - 10 - n)),
+        10 => Some(CtcStrategy),
+        11 => Some(CtcLoopbackInput),
+        i if i < 12 + n => Some(MicCal(i - 12)),
+        i if i < 12 + 2 * n => Some(ChannelInput(i - 12 - n)),
         _ => None,
     }
 }
 
 /// Total number of selectable rows for the current state.
 pub fn recording_field_count(s: &RecordingTuiState) -> usize {
-    10 + 2 * s.recording_config.num_channels.max(1)
+    12 + 2 * s.recording_config.num_channels.max(1)
 }
 
 impl RecordingTuiState {

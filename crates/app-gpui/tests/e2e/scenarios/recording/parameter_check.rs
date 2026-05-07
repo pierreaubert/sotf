@@ -3,7 +3,9 @@ use crate::pages::recording::RecordingPage;
 use crate::runner::E2ERunner;
 use crate::runner::TestScenario;
 use gpui::{VisualTestContext, WindowHandle};
-use sotf_audio_player_gpui::app::types::{RecordingSignalType, SpeakerConfiguration};
+use sotf_audio_player_gpui::app::types::{
+    CtcMatrixExportStrategy, RecordingSignalType, SpeakerConfiguration,
+};
 use sotf_audio_player_gpui::ui::PlayerView;
 use std::error::Error;
 
@@ -81,6 +83,19 @@ impl TestScenario for RecordingParameterCheckScenario {
         let rec_dir = "/tmp/recordings";
         page.set_recording_directory(rec_dir);
         assert_eq!(page.get_recording_directory(), Some(rec_dir.to_string()));
+
+        // 12. Configure transfer-matrix capture
+        assert_eq!(
+            page.get_ctc_matrix_strategy(),
+            CtcMatrixExportStrategy::ImpulseResponse
+        );
+        page.set_ctc_matrix_strategy(CtcMatrixExportStrategy::RawSweep);
+        page.set_ctc_loopback_input(2);
+        assert_eq!(
+            page.get_ctc_matrix_strategy(),
+            CtcMatrixExportStrategy::RawSweep
+        );
+        assert_eq!(page.get_ctc_loopback_input(), Some(2));
 
         Ok(())
     }
