@@ -865,10 +865,13 @@ build_windows() {
         log_success "Source synced"
     fi
 
-    # Build Windows x86_64
+    # Build Windows x86_64 (host arch)
+    # build-msix.ps1 needs both sotf-desktop.exe AND sotf-tui.exe present in
+    # the corresponding target dir before it runs.
     log_step "Building Windows x86_64 (native MSVC on remote)..."
     local win_build_cmd="cd ${remote_dir} && mkdir -p dist"
     win_build_cmd+=" && cargo build --release -p sotf-tui --bin sotf-tui"
+    win_build_cmd+=" && cargo build --release -p sotf-gpui --bin sotf-desktop"
     # Canonical artifact naming: <product>-<version>-<os>-<arch>.<ext>
     win_build_cmd+=" && cp target/release/sotf-tui.exe dist/sotf-tui-${VERSION}-windows-x86_64.exe"
 
@@ -876,11 +879,38 @@ build_windows() {
         log_dry "win_ssh_cmd ${host} '${win_build_cmd}'"
     else
         if ! win_ssh_cmd "$host" "$port" "$key" "$win_build_cmd"; then
-            log_error "Windows build failed"
+            log_error "Windows x86_64 build failed"
             record_result "Windows x86_64: FAILED"
             return
         fi
         record_result "Windows x86_64: OK"
+    fi
+
+    # Build Windows arm64 (cross-compiled on the x86_64 build host).
+    # Required for Microsoft Store ARM64 listing and for native execution on
+    # Windows-on-ARM (Surface Pro X, Copilot+ PCs). Failure here doesn't kill
+    # the x86_64 result; we just skip the arm64 MSIX.
+    log_step "Building Windows arm64 (cross-compiled on remote)..."
+    local win_arm_build_cmd="cd ${remote_dir}"
+    win_arm_build_cmd+=" && rustup target add aarch64-pc-windows-msvc"
+    win_arm_build_cmd+=" && cargo build --release --target aarch64-pc-windows-msvc -p sotf-tui --bin sotf-tui"
+    win_arm_build_cmd+=" && cargo build --release --target aarch64-pc-windows-msvc -p sotf-gpui --bin sotf-desktop"
+    win_arm_build_cmd+=" && cp target/aarch64-pc-windows-msvc/release/sotf-tui.exe dist/sotf-tui-${VERSION}-windows-arm64.exe"
+
+    local windows_arm64_ok=false
+    if $DRY_RUN; then
+        log_dry "win_ssh_cmd ${host} '${win_arm_build_cmd}'"
+        windows_arm64_ok=true
+    else
+        if win_ssh_cmd "$host" "$port" "$key" "$win_arm_build_cmd"; then
+            record_result "Windows arm64: OK"
+            windows_arm64_ok=true
+        else
+            log_warning "Windows arm64 build failed (continuing with x86_64 only)"
+            log_info "On the remote: rustup target add aarch64-pc-windows-msvc"
+            log_info "and ensure VS 2022 has the ARM64 build tools component installed."
+            record_result "Windows arm64: FAILED"
+        fi
     fi
 
     # Sign on Windows if cert thumbprint available
@@ -935,17 +965,37 @@ build_windows() {
         fi
     fi
     local msix_cleanup="cd ${remote_dir} && rm -f dist/sotf-desktop-${VERSION}-windows-*.msix"
-    local msix_powershell="powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-msix.ps1 -Arch x86_64${ps_sign}"
-    local msix_cmd="${msix_cleanup} && ${msix_powershell}"
+    local msix_x86="powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-msix.ps1 -Arch x86_64${ps_sign}"
+    local msix_arm="powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-msix.ps1 -Arch arm64${ps_sign}"
+
     if $DRY_RUN; then
         log_dry "win_ssh_cmd ${host} '${msix_cleanup}'"
-        log_dry "win_ssh_cmd ${host} '${msix_powershell}'"
+        log_dry "win_ssh_cmd ${host} '${msix_x86}'"
+        $windows_arm64_ok && log_dry "win_ssh_cmd ${host} '${msix_arm}'"
     else
-        if win_ssh_cmd "$host" "$port" "$key" "$msix_cmd"; then
-            record_result "Windows MSIX: OK"
+        # Cleanup runs once before either MSIX so we don't wipe the first one.
+        win_ssh_cmd "$host" "$port" "$key" "$msix_cleanup" 2>/dev/null || true
+
+        if win_ssh_cmd "$host" "$port" "$key" "cd ${remote_dir} && ${msix_x86}"; then
+            record_result "Windows MSIX x86_64: OK"
         else
-            log_warning "MSIX build failed (continuing)"
-            record_result "Windows MSIX: FAILED"
+            log_warning "MSIX x86_64 build failed (continuing)"
+            record_result "Windows MSIX x86_64: FAILED"
+        fi
+
+        # Only try the arm64 MSIX if the arm64 binaries actually built.
+        # Skipping silently when the cargo build above failed avoids a second
+        # confusing red error message for the same root cause.
+        if $windows_arm64_ok; then
+            if win_ssh_cmd "$host" "$port" "$key" "cd ${remote_dir} && ${msix_arm}"; then
+                record_result "Windows MSIX arm64: OK"
+            else
+                log_warning "MSIX arm64 build failed (continuing)"
+                record_result "Windows MSIX arm64: FAILED"
+            fi
+        else
+            log_info "Skipping arm64 MSIX (arm64 binaries didn't build)"
+            record_result "Windows MSIX arm64: SKIPPED"
         fi
     fi
 
