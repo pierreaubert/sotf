@@ -182,9 +182,15 @@ is_current_linux_artifact() {
         *.bundle|*.sig|*.cert) return 1 ;;
     esac
 
-    # Must contain the current version AND be a Linux artifact
+    # Cosign whitelist: only .AppImage and Linux .tar.gz for the current
+    # version. Bare binaries, .deb, and other extensions are skipped — they
+    # ship verifiable via SHA256SUMS instead. Apple-signed macOS artifacts
+    # and Microsoft-Store-signed .msix are never reached by this script.
     case "$name" in
-        *"$VERSION"*linux*|*"$VERSION"*.AppImage|*"$VERSION"*.deb)
+        *"$VERSION"*.AppImage|*"$VERSION"*.appimage)
+            return 0
+            ;;
+        *"$VERSION"*linux*.tar.gz)
             return 0
             ;;
     esac

@@ -1,7 +1,7 @@
 {
   "name": "sotf-website",
   "type": "module",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "scripts": {
     "gen-data": "node scripts/gen-export-formats.mjs",
     "predev": "npm run gen-data",
@@ -12,10 +12,10 @@
     "upgrade": "npx npm-check-updates -u"
   },
   "dependencies": {
-    "@astrojs/starlight": "^0.38.4",
+    "@astrojs/starlight": "^0.38.5",
     "@tailwindcss/postcss": "4.2.4",
-    "astro": "6.2.1",
-    "npm-check-updates": "22.0.1",
+    "astro": "6.2.2",
+    "npm-check-updates": "22.1.1",
     "tailwindcss": "4.2.4"
   }
 }

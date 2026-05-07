@@ -1,22 +1,32 @@
 ---
+import pkg from '../../package.json';
+
+// Screenshot assets live under /images/<major>.<minor>/ and are named with a
+// matching v<major>.<minor> infix (e.g. /images/0.6/sotf-tui-v0.6-player.png).
+// Patch bumps within the same minor reuse the same screenshots; a minor bump
+// (0.6 → 0.7) picks up whichever directory has been added under public/images.
+const majorMinor = pkg.version.split('.').slice(0, 2).join('.');
+const imgBase = `/images/${majorMinor}`;
+const v = `v${majorMinor}`;
+
 const tuiScreenshots = [
   {
-    src: '/images/0.5.12/sotf-tui-v0.5.12-player.png',
+    src: `${imgBase}/sotf-tui-${v}-player.png`,
     alt: 'SotF Terminal — music player view',
     caption: 'Music player with library and queue',
   },
   {
-    src: '/images/0.5.12/sotf-tui-v0.5.12-plugins.png',
+    src: `${imgBase}/sotf-tui-${v}-plugins.png`,
     alt: 'SotF Terminal — plugin chain',
     caption: 'Plugin chain manager',
   },
   {
-    src: '/images/0.5.12/sotf-tui-v0.5.12-upmixer.png',
+    src: `${imgBase}/sotf-tui-${v}-upmixer.png`,
     alt: 'SotF Terminal — upmixer plugin',
     caption: 'Stereo-to-surround upmixer',
   },
   {
-    src: '/images/0.5.12/sotf-tui-v0.5.12-headphone.png',
+    src: `${imgBase}/sotf-tui-${v}-headphone.png`,
     alt: 'SotF Terminal — headphone EQ',
     caption: 'Headphone EQ optimization',
   },
@@ -24,27 +34,27 @@ const tuiScreenshots = [
 
 const gpuiScreenshots = [
   {
-    src: '/images/0.5.12/sotf-gpui-v0.5.12-player.png',
+    src: `${imgBase}/sotf-gpui-${v}-player.png`,
     alt: 'SotF Desktop — player view',
     caption: 'Desktop player with library',
   },
   {
-    src: '/images/0.5.12/sotf-gpui-v0.5.12-eq.png',
+    src: `${imgBase}/sotf-gpui-${v}-eq.png`,
     alt: 'SotF Desktop — parametric EQ',
     caption: 'Visual parametric EQ editor',
   },
   {
-    src: '/images/0.5.12/sotf-gpui-v0.5.12-upmixer.png',
+    src: `${imgBase}/sotf-gpui-${v}-upmixer.png`,
     alt: 'SotF Desktop — upmixer',
     caption: 'Upmixer plugin in desktop app',
   },
   {
-    src: '/images/0.5.12/sotf-v0.5.12-headphoneeq.png',
+    src: `${imgBase}/sotf-${v}-headphoneeq.png`,
     alt: 'SotF — headphone EQ wizard',
     caption: 'Headphone EQ wizard',
   },
   {
-    src: '/images/0.5.12/sotf-v0.5.12-roomeq-mixedmode.png',
+    src: `${imgBase}/sotf-${v}-roomeq-mixedmode.png`,
     alt: 'SotF — room EQ wizard',
     caption: 'Room correction wizard',
   },

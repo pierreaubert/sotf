@@ -9,7 +9,7 @@
   <Identity
     Name="SotF.SotF"
     Publisher="CN=817DD0F7-95A7-40FF-AD7A-90E15D2F89AD"
-    Version="0.6.3"
+    Version="0.6.4"
     ProcessorArchitecture="x64" />
 
   <Properties>
@@ -24,8 +24,8 @@
     <!-- Microsoft Visual C++ 2015-2022 Runtime, framework-package form. The
          desktop binary is built with -msvc (no +crt-static), so it imports
          VCRUNTIME140.dll / MSVCP140.dll / UCRT at load time. Declaring this
-         dependency makes deployment refuse to install when VCLibs is missing
-         -- better than a silent "exe won't start" on a fresh Windows box.
+         dependency makes deployment refuse to install when VCLibs is missing,
+         which is better than a silent "exe won't start" on a fresh Windows box.
          For sideloaded MSIX, the user installs the VCLibs framework package
          once (see RELEASE-HOWTO.md). The Store pulls it in automatically. -->
     <PackageDependency Name="Microsoft.VCLibs.140.00.UWPDesktop"

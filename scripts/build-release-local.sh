@@ -468,9 +468,11 @@ rsync_from() {
     local key="$3"
     local remote_path="$4"
     local local_path="$5"
+    shift 5
     build_ssh_transport "$port" "$key"
     rsync -avz \
         -e "${SSH_TRANSPORT_CMD[*]}" \
+        "$@" \
         "${host}:${remote_path}" "$local_path"
     handle_rsync_status "$?" "rsync from ${host}:${remote_path}"
 }
@@ -482,10 +484,12 @@ rsync_from_win() {
     local key="$3"
     local remote_path="$4"
     local local_path="$5"
+    shift 5
     build_ssh_transport "$port" "$key"
     rsync -avz \
         -e "${SSH_TRANSPORT_CMD[*]}" \
         --rsync-path="$WIN_RSYNC_PATH" \
+        "$@" \
         "${host}:${remote_path}" "$local_path"
     handle_rsync_status "$?" "rsync from ${host}:${remote_path}"
 }
@@ -515,6 +519,19 @@ preflight() {
 
     log_step "Version: v${VERSION}"
     log_step "Dist dir: ${DIST_DIR}"
+
+    # Sync auxiliary version-pinned files (AppxManifest.xml, site/package.json)
+    # to the workspace Cargo.toml version BEFORE any remote rsync, so the
+    # Windows builder picks up the correct manifest.
+    log_step "Syncing version-pinned files to v${VERSION}..."
+    if $DRY_RUN; then
+        log_dry "./scripts/sync-version.sh"
+    else
+        if ! "$SCRIPT_DIR/sync-version.sh"; then
+            log_error "Version sync failed"
+            exit 1
+        fi
+    fi
 
     # Check local tools
     local missing=()
@@ -756,13 +773,14 @@ build_linux() {
         fi
     fi
 
-    # Copy artifacts back
-    log_step "Fetching Linux artifacts..."
+    # Copy artifacts back (current version only)
+    log_step "Fetching Linux artifacts (v${VERSION})..."
     if $DRY_RUN; then
-        log_dry "rsync ${host}:${remote_dir}/dist/ -> ${DIST_DIR}/"
+        log_dry "rsync ${host}:${remote_dir}/dist/*${VERSION}* -> ${DIST_DIR}/"
     else
         if ! rsync_from "$host" "$port" "$key" \
-            "${remote_dir}/dist/" "$DIST_DIR/"; then
+            "${remote_dir}/dist/" "$DIST_DIR/" \
+            --include='*/' --include="*${VERSION}*" --exclude='*'; then
             log_error "rsync from Linux failed"
             record_result "Linux fetch: FAILED"
             return
@@ -931,13 +949,14 @@ build_windows() {
         fi
     fi
 
-    # Copy artifacts back
-    log_step "Fetching Windows artifacts..."
+    # Copy artifacts back (current version only)
+    log_step "Fetching Windows artifacts (v${VERSION})..."
     if $DRY_RUN; then
-        log_dry "rsync ${host}:${remote_dir}/dist/ -> ${DIST_DIR}/"
+        log_dry "rsync ${host}:${remote_dir}/dist/*${VERSION}* -> ${DIST_DIR}/"
     else
         if ! rsync_from_win "$host" "$port" "$key" \
-            "${remote_dir}/dist/" "$DIST_DIR/"; then
+            "${remote_dir}/dist/" "$DIST_DIR/" \
+            --include='*/' --include="*${VERSION}*" --exclude='*'; then
             log_error "rsync from Windows failed"
             record_result "Windows fetch: FAILED"
             return
@@ -1049,29 +1068,26 @@ sign_with_cosign() {
         local name
         name=$(basename "$artifact")
 
-        # Skip existing signatures, checksums, markdown
+        # Cosign whitelist: only sign Windows .exe and Linux .AppImage / .tar.gz.
+        # macOS .dmg / .pkg / bare binaries are already signed by Apple Developer ID.
+        # .msix is signed by the Microsoft Store at submission time, not by us.
+        # Logs, checksums, release notes, and existing cosign bundles are not signed.
         case "$name" in
-            *.bundle|*.sig|*.cert|*.md|SHA256SUMS*) continue ;;
+            *.exe|*.AppImage|*.appimage|*.tar.gz) ;;
+            *) continue ;;
         esac
 
-        # Skip macOS artifacts (they have Apple signatures)
-        case "$name" in
-            *macos*|*.dmg|*.pkg) continue ;;
-        esac
-
-        # Only sign artifacts for the current version
+        # Only sign artifacts for the current version.
         case "$name" in
             *"$VERSION"*) ;;
             *) continue ;;
         esac
 
-        # Respect --skip-* flags: only sign artifacts for platforms we built.
-        # Canonical naming carries the OS segment, so a single substring match suffices.
+        # Respect --skip-* flags so we don't sign artifacts for platforms we
+        # didn't build this run. Canonical naming carries the OS segment.
         case "$name" in
-            *linux*)
-                if $SKIP_LINUX; then continue; fi ;;
-            *windows*|*.exe|*.msix)
-                if $SKIP_WINDOWS; then continue; fi ;;
+            *linux*)   if $SKIP_LINUX;   then continue; fi ;;
+            *windows*) if $SKIP_WINDOWS; then continue; fi ;;
         esac
 
         if $DRY_RUN; then

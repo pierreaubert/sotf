@@ -552,6 +552,12 @@ main() {
     log_info "SotF Release Build v${VERSION}"
     log_info "=========================================="
 
+    # Sync auxiliary version-pinned files (AppxManifest.xml, site/package.json)
+    # to the workspace Cargo.toml version before building so artifacts and the
+    # Windows manifest agree on the version string.
+    log_info "Syncing version-pinned files to v${VERSION}..."
+    "$SCRIPT_DIR/sync-version.sh"
+
     if ! $SKIP_BUILD; then
         build_all
     fi

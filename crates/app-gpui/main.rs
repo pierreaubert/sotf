@@ -35,6 +35,29 @@ struct Args {
     /// Run in headless server mode (MPD/DLNA) without UI
     #[arg(long)]
     server: bool,
+
+    /// Override the initial window size as WIDTHxHEIGHT (e.g. 1440x900).
+    /// Takes precedence over the size stored in the preferences file.
+    #[arg(long, value_name = "WIDTHxHEIGHT", value_parser = parse_size)]
+    size: Option<(f32, f32)>,
+}
+
+fn parse_size(s: &str) -> Result<(f32, f32), String> {
+    let (w_str, h_str) = s
+        .split_once(['x', 'X'])
+        .ok_or_else(|| format!("expected WIDTHxHEIGHT (e.g. 1440x900), got '{s}'"))?;
+    let w: f32 = w_str
+        .trim()
+        .parse()
+        .map_err(|e| format!("invalid width '{w_str}': {e}"))?;
+    let h: f32 = h_str
+        .trim()
+        .parse()
+        .map_err(|e| format!("invalid height '{h_str}': {e}"))?;
+    if !w.is_finite() || !h.is_finite() || w <= 0.0 || h <= 0.0 {
+        return Err(format!("size must be positive, got {w}x{h}"));
+    }
+    Ok((w, h))
 }
 
 actions!(sotf_player, [Quit, NextScreen, PrevScreen]);
@@ -80,6 +103,10 @@ fn main() {
 
     // Parse command line arguments (handles --version and --help)
     let args = Args::parse();
+
+    // Capture the optional --size override so the GPUI `move` closure can use
+    // it after `args` is partially consumed below. Option<(f32, f32)> is Copy.
+    let cli_size_override: Option<(f32, f32)> = args.size;
 
     // Apply QA directory override before any config dir access
     if let Some(qa_dir) = args.qa {
@@ -347,11 +374,20 @@ fn main() {
                 },
             ]);
 
-            // Use window geometry from already loaded config
-            let window_geometry = config
+            // Use window geometry from already loaded config, then apply
+            // the --size CLI override (width/height only; origin still comes
+            // from the saved preferences so the window appears where the
+            // user last placed it).
+            let mut window_geometry = config
                 .as_ref()
                 .map(|c| c.window_geometry.clone())
                 .unwrap_or_default();
+            if let Some((w, h)) = cli_size_override {
+                log::info!("--size override: {w}x{h} (was {}x{})",
+                    window_geometry.width, window_geometry.height);
+                window_geometry.width = w;
+                window_geometry.height = h;
+            }
 
             // Create window with app state
             let window = cx.open_window(

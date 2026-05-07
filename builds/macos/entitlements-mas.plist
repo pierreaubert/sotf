@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Mac App Store distribution entitlements.
+         Used by scripts/build-pkg-mas.sh together with
+         "Apple Distribution" + "3rd Party Mac Developer Installer" certs.
+         For Developer ID direct distribution see entitlements.plist. -->
+
+    <!-- App Sandbox is required for App Store apps. -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+
+    <!-- Allow JIT-style executable pages. RustFFT 6.x is statically
+         compiled, but the objc2 selector machinery on first message-send
+         can allocate executable pages; allow-jit is MAS-permitted while
+         allow-unsigned-executable-memory and disable-library-validation
+         are NOT — keep this one, drop the others. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+
+    <!-- Hardware capabilities the app actually uses. Each must also have a
+         user-facing usage-description string in Info.plist:
+           NSMicrophoneUsageDescription
+           NSCameraUsageDescription                                       -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+    <key>com.apple.security.device.camera</key>
+    <true/>
+
+    <!-- Outbound HTTPS only (api.spinorama.org metadata, headphone-EQ
+         database). No incoming connections; no UDP server. -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+
+    <!-- File access via NSOpenPanel / NSSavePanel. The user explicitly
+         picks each file or directory; the system grants the sandboxed
+         app a one-shot, per-URL access right. -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+
+    <!-- Persist user-selected URLs across launches via security-scoped
+         bookmarks. Required so the chosen music library stays accessible
+         after relaunch without re-prompting. The Rust code MUST create
+         bookmarks via NSURL bookmarkDataWithOptions:NSURLBookmarkCreationWithSecurityScope
+         and resolve + startAccessingSecurityScopedResource on next launch.
+         Adding the entitlement alone is not enough — see docs/MAS-SUBMISSION.md. -->
+    <key>com.apple.security.files.bookmarks.app-scope</key>
+    <true/>
+
+    <!-- Read-only access to ~/Music so the default-library scan can find
+         the user's iTunes/Music library without an extra picker step.
+         Use read-only (not read-write) — the app should never mutate
+         the user's library; metadata edits go in the sandbox container. -->
+    <key>com.apple.security.assets.music.read-only</key>
+    <true/>
+</dict>
+</plist>
