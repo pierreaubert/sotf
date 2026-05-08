@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use sotf_audio_player::{DirectoryInfo, ReleaseChannel};
 
 use crate::app::types::{PlaybackDeviceConfig, RecordingDeviceConfig, RecordingSignalType};
+use crate::components::plugins::theme::RackThemeState;
 use crate::i18n::Language;
 use crate::keybindings::KeymapPreset;
 use crate::theme::ThemeId;
@@ -243,6 +244,10 @@ pub struct Config {
     /// Selected design system language ("neutral", "apple_hig", "material3", "fluent")
     #[serde(default)]
     pub design_language: Option<String>,
+    /// Plugin chassis theme: rack default + per-plugin overrides. Independent
+    /// from `theme` (which controls the global app palette).
+    #[serde(default)]
+    pub rack_theme_state: RackThemeState,
 }
 
 fn default_font_scale() -> f32 {
@@ -279,6 +284,7 @@ impl Config {
                 tutorial_completed: false,
                 seen_hints: Vec::new(),
                 design_language: None,
+                rack_theme_state: RackThemeState::default(),
             });
         }
 

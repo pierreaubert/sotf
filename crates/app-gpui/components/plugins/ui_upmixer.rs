@@ -9,6 +9,7 @@ use super::common::{render_knob, render_vertical_slider_with_ticks};
 use crate::app::AppState;
 use crate::components::design::Ds;
 use crate::components::plugins::editing::PluginEditingManager;
+use crate::components::plugins::theme::PluginTheme;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
@@ -146,8 +147,15 @@ pub fn render_upmixer_plugin(
     plugin_idx: usize,
     state: UpmixerRenderState,
     theme: &Theme,
+    plugin_theme: &PluginTheme,
 ) -> impl IntoElement {
     let selected_config = state.upmixer_tab;
+
+    // Overlay the chassis theme onto the global theme so every helper
+    // taking `&Theme` (knobs, sliders, toggles, panels) repaints with the
+    // chassis palette. Same trick as ui_layout_renderer.
+    let chassis_theme = plugin_theme.apply_to(theme);
+    let theme = &chassis_theme;
 
     // Main area: Channel Gains + Spatial Controls side by side (centered)
     let main_area = render_main_area(d, entity.clone(), plugin_idx, &state, theme);

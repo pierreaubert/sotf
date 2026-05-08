@@ -3796,7 +3796,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-builder"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "gpui",
  "gpui-design",

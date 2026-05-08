@@ -103,6 +103,16 @@ pub fn render_plugin_content(
         .copied()
         .unwrap_or(0);
 
+    // Resolve the active plugin chassis theme — cascade of rack default
+    // and per-plugin override. Bound here so `&plugin_theme` references in
+    // both render paths remain valid for the rest of the function.
+    let plugin_theme = state
+        .app
+        .plugin_state
+        .rack_theme_state
+        .resolved_id(plugin_idx)
+        .theme();
+
     // Compute available width for the plugin content area.
     let available_width = {
         let window_width = state.app.ui_state.window_width;
@@ -139,6 +149,7 @@ pub fn render_plugin_content(
             selected_param,
             selected_band_idx,
             theme,
+            plugin_theme: &plugin_theme,
             loudness,
             plugin_data,
             spectrum_tilt_select_open,
@@ -163,6 +174,7 @@ pub fn render_plugin_content(
             plugin_data.as_ref(),
             available_width,
             theme,
+            &plugin_theme,
         );
     }
 

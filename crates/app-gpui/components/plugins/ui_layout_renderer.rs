@@ -23,6 +23,7 @@ use crate::app::AppState;
 use crate::app::constants::spacing;
 use crate::components::design::Ds;
 use crate::components::plugins::editing::PluginEditingManager;
+use crate::components::plugins::theme::PluginTheme;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
@@ -52,6 +53,7 @@ pub fn render_from_layout(
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     available_width: f32,
     theme: &Theme,
+    plugin_theme: &PluginTheme,
 ) -> AnyElement {
     let layout = settings
         .layout()
@@ -67,6 +69,12 @@ pub fn render_from_layout(
     // Run the constraint solver
     let solved = solve_layout(layout.column_constraints, available_width);
 
+    // Overlay the chassis theme onto the global app theme so every helper
+    // that takes `&Theme` (section title, knob, toggle, panel, ...) picks up
+    // the chassis colors with no signature changes downstream. Semantic
+    // colors (error / warning / meter palette) keep their global values.
+    let chassis_theme = plugin_theme.apply_to(theme);
+
     render_solved_layout(
         d,
         entity,
@@ -80,7 +88,7 @@ pub fn render_from_layout(
         selected_param,
         active_tab,
         plugin_data,
-        theme,
+        &chassis_theme,
     )
 }
 

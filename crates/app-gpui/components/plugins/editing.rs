@@ -107,12 +107,22 @@ impl PluginEditingManager for App {
     fn move_plugin_up(&mut self, index: usize) {
         self.plugin_state.clear_confirmations();
         let effect = self.plugin_state.move_plugin_up(index);
+        if matches!(effect, sotf_audio_player::PluginUpdateEffect::Structural) && index > 0 {
+            self.plugin_state
+                .rack_theme_state
+                .swap_overrides(index, index - 1);
+        }
         self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
     }
 
     fn move_plugin_down(&mut self, index: usize) {
         self.plugin_state.clear_confirmations();
         let effect = self.plugin_state.move_plugin_down(index);
+        if matches!(effect, sotf_audio_player::PluginUpdateEffect::Structural) {
+            self.plugin_state
+                .rack_theme_state
+                .swap_overrides(index, index + 1);
+        }
         self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
     }
 
@@ -126,6 +136,12 @@ impl PluginEditingManager for App {
 
     fn remove_plugin(&mut self, index: usize) {
         let effect = self.plugin_state.remove_plugin(index);
+        // Only compact overrides when the removal actually happened — the
+        // controller returns `None` for invalid / permanent / out-of-range
+        // indices, in which case shifting would misalign the override map.
+        if matches!(effect, sotf_audio_player::PluginUpdateEffect::Structural) {
+            self.plugin_state.rack_theme_state.on_plugin_removed(index);
+        }
         self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
         self.sync_spectrum_visible();
     }

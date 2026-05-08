@@ -1126,6 +1126,9 @@ impl App {
         // Restore design language
         self.ui_state.design_language = config.design_language;
 
+        // Restore plugin chassis theme state (rack default + overrides)
+        self.plugin_state.rack_theme_state = config.rack_theme_state;
+
         // Build LayoutState from config
         let layout_state = LayoutState {
             queue_panel_ratio: config.panel_layout.queue_ratio,
@@ -1340,6 +1343,7 @@ impl App {
             tutorial_completed: self.tutorial_completed,
             seen_hints: self.seen_hints.clone(),
             design_language: self.ui_state.design_language.clone(),
+            rack_theme_state: self.plugin_state.rack_theme_state.clone(),
         };
         config.save()?;
         Ok(())

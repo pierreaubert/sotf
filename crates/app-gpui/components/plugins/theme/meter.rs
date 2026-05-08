@@ -1,4 +1,4 @@
-//! Plugin UI theming parameters for consistent meter and slider styling
+//! Meter / LUFS / TruePeak styling — derives from the global app `Theme`.
 
 use gpui::*;
 

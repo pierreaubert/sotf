@@ -6,6 +6,7 @@
 use std::ops::{Deref, DerefMut};
 
 use crate::app::types::PluginUpdateType;
+use crate::components::plugins::theme::RackThemeState;
 use gpui::Entity;
 use gpui_ui_kit::workflow::{NodeId, WorkflowCanvas};
 use sotf_audio_player::{ConnectionDrag, GraphSelection, NodeDrag, PluginController};
@@ -70,6 +71,9 @@ pub struct PluginState {
     pub soloed_plugin_index: Option<usize>,
     /// Saved enabled states before solo was activated (to restore on un-solo)
     pub pre_solo_enabled_states: Vec<bool>,
+    /// Rack-level plugin theme + per-plugin overrides (UI-only, persisted to
+    /// gpui state file separately from engine config).
+    pub rack_theme_state: RackThemeState,
 }
 
 impl Deref for PluginState {
@@ -189,6 +193,7 @@ impl Default for PluginState {
             chain_autogain: false,
             soloed_plugin_index: None,
             pre_solo_enabled_states: Vec::new(),
+            rack_theme_state: RackThemeState::default(),
         }
     }
 }

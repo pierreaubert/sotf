@@ -49,6 +49,7 @@
 //! ```
 
 pub mod compat;
+pub mod plugin_chassis;
 pub mod solved;
 pub mod solver;
 pub mod types;
@@ -69,4 +70,10 @@ pub use gpui_pretext::{
 pub use compat::{
     ColumnRole, GroupDirection, KnobSize, Orientation, PluginAdaptations, PluginColumnConstraint,
     PluginLayoutThresholds, PluginLayoutTree, plugin_adaptations,
+};
+
+// Plugin chassis re-exports
+pub use plugin_chassis::{
+    ChassisLayout, FooterSpec, HeaderSpec, KnobSlot, RowSpec, SectionSpec, SolvedChassis,
+    SolvedSection,
 };

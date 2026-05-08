@@ -1,5 +1,77 @@
 # 0.6.5
 
+## Plugin chassis themes — Graphite / Studio Cream / Brutalist
+
+- New `components/plugins/theme/` module hierarchy — split from the
+  former single `theme.rs` (renamed to `theme/meter.rs`, content
+  unchanged).
+- `PluginTheme` struct (in `theme/plugin_theme.rs`) defines a complete
+  chassis-level visual language: chassis surfaces, panel backgrounds,
+  ink scale, accent + arc + glow, LED indicators, font families
+  (display / mono / UI), and dimensions (knob size, arc stroke,
+  corner radii, section spacing). Independent from the global app
+  `Theme` — chassis themes are a *replacement* layer, not a derivation.
+- Three presets shipped:
+  - **Graphite** (`theme/graphite.rs`) — default. Vintage psychoacoustic
+    instrument: deep graphite chassis, warm amber calibration accents,
+    Instrument Serif italic + Geist Mono. Inspired by Bruel & Kjaer field
+    measurement gear.
+  - **Studio Cream** (`theme/studio_cream.rs`) — light editorial: warm
+    cream paper surfaces, terracotta tomato accent, Fraunces serif.
+  - **Brutalist** (`theme/brutalist.rs`) — pure black / pure white,
+    zero-radius corners, Archivo Black + IBM Plex Mono. Maximal
+    contrast for projector use and accessibility.
+- `PluginThemeId` enum with `all()` / `name()` / `next()` cycle helpers,
+  plus serde `Serialize`/`Deserialize` for persistence.
+- `RackThemeState { rack_theme, overrides: HashMap<usize, PluginThemeId> }`
+  on `PluginState` — rack-level default cascades to every plugin without
+  an override; per-plugin overrides take precedence. `set_override` /
+  `clear_override` / `swap_overrides` / `on_plugin_removed` keep the
+  override map aligned with the rack as plugins are added / reordered /
+  removed.
+- `PluginTheme::apply_to(&Theme) -> Theme` overlays the chassis palette
+  onto a clone of the global theme — replaces surfaces, ink scale, accent,
+  border, font_family; preserves semantic colors (error / warning /
+  success / info / meter palette / plugin-type colors). This single
+  adapter saves ~3000 lines of mechanical signature edits across the
+  layout renderer and upmixer renderer; every existing helper that takes
+  `&Theme` automatically picks up the chassis palette.
+- `render_plugin_content` (in `components/plugins/mod.rs`) resolves the
+  active `PluginTheme` once per render via the cascade, binds it locally,
+  and passes `&PluginTheme` to both `ui_layout_renderer::render_from_layout`
+  and `CustomViewRenderContext`. Loudness compensation and Upmixer
+  (both routed through `render_from_layout`) repaint with the chassis
+  palette; plugins with bespoke custom views (EQ, Spectrum, Matrix,
+  Mute/Solo, MultibandComp/Exp, ABCompare, LoudnessMonitor) keep using
+  the global theme — they receive `&PluginTheme` in the context but
+  ignore it.
+- `Config.rack_theme_state` (in `app/config.rs`) persists the rack default
+  + overrides to user prefs (`#[serde(default)]` so old configs migrate
+  cleanly to `PluginThemeId::Graphite`). Save/load wiring lives in
+  `App::load_config_from` / `App::save_config_with_geometry`.
+- Skin cycler button next to Load / Save in the rack header
+  (`render_skin_cycler_button` in `components/plugins/ui_rack.rs`):
+  click cycles the rack-level theme; **Shift + click while a plugin is
+  being edited** cycles only that plugin's override. Label flips to
+  `Skin: <name> ▸ #<idx>` to signal override mode. Cycling back to match
+  the rack default automatically clears the override (so the map stays
+  clean). Every click triggers `save_config` so the selection survives
+  restart, mirroring the `cycle_theme` pattern.
+- Cleanup hooks: `editing.rs::remove_plugin` calls `on_plugin_removed`
+  *only* when the controller returns `PluginUpdateEffect::Structural`
+  (so trying to remove a permanent plugin doesn't shift the override
+  map); `move_plugin_up` / `move_plugin_down` call `swap_overrides`
+  under the same guard.
+- Defensive: skin cycler validates `editing_plugin_index` against the
+  current plugin count before honoring it — `PluginController::remove_plugin`
+  doesn't clear the field, so it can lag past a removal. A stale
+  index falls through to the rack-default cycle path rather than writing
+  a phantom override.
+- 24 new unit tests across `theme/plugin_theme.rs`, `theme/graphite.rs`,
+  `theme/studio_cream.rs`, `theme/brutalist.rs` — cover override cascade,
+  swap / shift on remove, distinctness of preset accents, `apply_to`
+  preserving semantic colors, and palette properties of each preset.
+
 ## Panel-divider drag: delta-based, no deadzone, no spurious clicks
 
 - Replaced the absolute-position drag math in `ui/three_panel_layout.rs`

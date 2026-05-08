@@ -6,6 +6,7 @@
 
 use crate::app::AppState;
 use crate::components::design::Ds;
+use crate::components::plugins::theme::PluginTheme;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::*;
@@ -23,6 +24,10 @@ pub struct CustomViewRenderContext<'a> {
     pub selected_param: usize,
     pub selected_band_idx: usize,
     pub theme: &'a Theme,
+    /// Resolved plugin chassis theme — cascade of rack default + per-plugin
+    /// override. Renderers that have adopted the chassis theme system read
+    /// from this; renderers still on the global app theme can ignore it.
+    pub plugin_theme: &'a PluginTheme,
     pub loudness: Option<sotf_audio_player::LoudnessData>,
     pub plugin_data: Option<Arc<dyn std::any::Any + Send + Sync>>,
     pub spectrum_tilt_select_open: bool,

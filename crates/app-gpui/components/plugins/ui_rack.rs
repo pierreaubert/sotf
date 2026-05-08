@@ -606,6 +606,15 @@ impl PlayerView {
                                         },
                                     ),
                             )
+                            // Skin cycler — click cycles the rack-level
+                            // chassis theme; Shift+click cycles only the
+                            // currently-edited plugin's override.
+                            .child(self.render_skin_cycler_button(
+                                &d,
+                                btn_text_muted,
+                                btn_surface_hover,
+                                cx,
+                            ))
                     })
             })
             // Plugin modules strip — Ozone-style rack
@@ -2380,6 +2389,114 @@ impl PlayerView {
                         )
                         .into_any_element()
                     })),
+            )
+    }
+
+    /// Plugin chassis skin cycler — sits next to Load / Save in the rack
+    /// preset row.
+    ///
+    /// - **Click**: cycles the rack-level theme (Graphite → Studio Cream →
+    ///   Brutalist → Graphite) for all plugins without a per-instance
+    ///   override.
+    /// - **Shift + click while a plugin is being edited**: cycles the
+    ///   override for that one plugin only. The label shows
+    ///   `Skin: <name> ▸ #<idx>` to signal override mode. Cycling back to
+    ///   the rack default automatically clears the override.
+    fn render_skin_cycler_button(
+        &self,
+        d: &Ds,
+        text_muted: Rgba,
+        surface_hover: Rgba,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let (label, _editing_idx) = {
+            let state = self.state.read(cx);
+            let rack_skin = state.app.plugin_state.rack_theme_state.rack_theme;
+            // Only honor editing_plugin_index when it points at a real
+            // plugin — PluginController::remove_plugin doesn't clear it, so
+            // it can dangle past a removal.
+            let plugin_count = state.app.plugin_state.graph.plugins().len();
+            let editing_idx = state
+                .app
+                .plugin_state
+                .editing_plugin_index
+                .filter(|idx| *idx < plugin_count);
+            let label = match editing_idx {
+                Some(idx) => {
+                    let resolved =
+                        state.app.plugin_state.rack_theme_state.resolved_id(idx);
+                    let has_override = state
+                        .app
+                        .plugin_state
+                        .rack_theme_state
+                        .overrides
+                        .contains_key(&idx);
+                    if has_override {
+                        format!("Skin: {} ▸ #{}", resolved.name(), idx + 1)
+                    } else {
+                        format!("Skin: {}", rack_skin.name())
+                    }
+                }
+                None => format!("Skin: {}", rack_skin.name()),
+            };
+            (label, editing_idx)
+        };
+
+        div()
+            .id("rack-skin-cycler")
+            .flex()
+            .items_center()
+            .justify_center()
+            .px(d.pad_y)
+            .h(rems(1.75))
+            .cursor_pointer()
+            .rounded(d.r_md)
+            .text_size(d.text_xs)
+            .font_weight(FontWeight::SEMIBOLD)
+            .text_color(text_muted)
+            .hover(move |s| s.bg(surface_hover))
+            .child(label)
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(move |view, ev: &MouseUpEvent, _, cx| {
+                    let shift = ev.modifiers.shift;
+                    view.state.update(cx, |state, cx| {
+                        // Re-read at click time — index could have changed since render.
+                        let plugin_count = state.app.plugin_state.graph.plugins().len();
+                        let valid_editing = state
+                            .app
+                            .plugin_state
+                            .editing_plugin_index
+                            .filter(|idx| *idx < plugin_count);
+                        match (shift, valid_editing) {
+                            (true, Some(idx)) => {
+                                let current =
+                                    state.app.plugin_state.rack_theme_state.resolved_id(idx);
+                                let next = current.next();
+                                let rack = state.app.plugin_state.rack_theme_state.rack_theme;
+                                if next == rack {
+                                    state.app.plugin_state.rack_theme_state.clear_override(idx);
+                                } else {
+                                    state
+                                        .app
+                                        .plugin_state
+                                        .rack_theme_state
+                                        .set_override(idx, next);
+                                }
+                            }
+                            _ => {
+                                let next =
+                                    state.app.plugin_state.rack_theme_state.rack_theme.next();
+                                state.app.plugin_state.rack_theme_state.rack_theme = next;
+                            }
+                        }
+                        let layout = state.layout.read(cx);
+                        if let Err(e) = state.app.save_config(layout) {
+                            log::error!("Failed to save rack theme: {}", e);
+                        }
+                    });
+                    cx.notify();
+                }),
             )
     }
 
