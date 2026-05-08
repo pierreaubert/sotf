@@ -1,3 +1,64 @@
+# 0.6.5
+
+## Panel-divider drag: delta-based, no deadzone, no spurious clicks
+
+- Replaced the absolute-position drag math in `ui/three_panel_layout.rs`
+  (horizontal + vertical 3-panel modes) with delta-based dragging. Each
+  divider's `on_drag_start` now records the mouse pixel position and the
+  current ratio; `on_mouse_move` applies `(mouse - anchor) / denominator`
+  to that recorded ratio. The ~100px deadzone before the divider would
+  start tracking the cursor — caused by the prior code re-deriving the
+  "current ratio" from the mouse alone, which disagreed with the
+  solved-layout-clamped ratio — is gone.
+- Added the corresponding `drag_anchor_pos` / `drag_anchor_*_ratio` fields
+  to `LayoutState` (`app/state/ui.rs`). One pixel anchor is shared across
+  dividers since only one can drag at a time; the per-divider ratio
+  anchors keep the math correct under any starting state.
+- `components/home/queue.rs` queue row `on_mouse_up` (left + right) now
+  drops the click if any divider drag flag is set. GPUI bubbles mouse-up
+  inner→outer, so the row handler runs *before* the layout-level handler
+  resets the flags — the right place to catch and discard the trailing
+  click that previously made finishing a divider drag over a queue row
+  jump playback to a random track / pop a context menu.
+
+## Meters panel: bars stretch with the panel
+
+- `components/plugins/level_meters.rs::render_lufs_with_true_peak` now
+  sets `.w_full()` on its outer `flex_col`. The bars (each `flex_1` inside
+  `render_meter_bar`) had no width to share with the parent before, so
+  they collapsed to intrinsic content size and left a wide empty band on
+  the right when the meters panel was dragged wider. The same fix
+  propagates automatically to the studio rack's Loudness Monitor plugin
+  (`components/plugins/ui_loudness.rs:22`).
+- `components/plugins/level_meters.rs::render_lufs_panel` drops the fixed
+  `w(rems(25.0))` content cap; the LUFS / True Peak / Stereo Width
+  section now fills the panel width.
+
+## CLI: `--size WIDTHxHEIGHT` overrides saved window geometry
+
+- `main.rs` adds a `--size` flag (e.g. `--size 1440x900`). The parser
+  splits on `x`/`X`, validates positive finite floats, and rejects
+  malformed values with a clear error before the GUI initializes. The
+  override is applied to width/height after the saved preferences.json
+  geometry is loaded; origin still comes from preferences so the window
+  appears in the user's last-known position at the requested size.
+
+## Queue: stale-index crash fixed + regression scenario
+
+- `components/home/queue.rs:170` — queue row left-click and right-click
+  handlers now bounds-check `queue_state.get(idx)` before indexing.
+  Previously a captured `idx` from a render-time `enumerate()` could
+  outlive a queue mutation (Clear Queue, magic-radio refill) and the
+  next click would panic with `the len is 0 but the index is 0`,
+  escalating to an FFI-frame abort because the panic crossed
+  `gpui_macos::window::handle_view_event`.
+- Added `dev_track("queue.row.{idx}")` on each queue row under
+  `cfg(feature = "dev-api")` so `crates/sotf-dev-driver/scenarios/
+  queue_stale_index.scn` can fire synthetic clicks against a known
+  selector. Per the new project convention, every UI bug fix gets a
+  `.scn` regression scenario alongside it; pure-logic bugs continue to
+  go to unit tests.
+
 # 0.5.19
 
 ## Room EQ recording: measured CTC matrix handoff

@@ -34,6 +34,20 @@ pub struct LayoutState {
     pub is_dragging_lufs_divider: bool,
     pub is_dragging_library_queue_divider: bool,
     pub is_dragging_queue_rack_divider: bool,
+    /// Drag-start anchors. Recorded in `on_drag_start` for each divider so
+    /// `on_mouse_move` can compute deltas from a stable reference instead of
+    /// re-deriving the divider's "current" position from raw ratios — that
+    /// derivation disagreed with the solved layout (which clamps + adjusts
+    /// ratios) and produced a ~100px deadzone before the drag took effect.
+    /// One pair per divider. Only meaningful while the matching
+    /// `is_dragging_*` flag is set.
+    pub drag_anchor_pos: f32,
+    pub drag_anchor_meters_ratio: f32,
+    pub drag_anchor_queue_list_ratio: f32,
+    pub drag_anchor_library_h_ratio: f32,
+    pub drag_anchor_rack_h_ratio: f32,
+    pub drag_anchor_library_v_ratio: f32,
+    pub drag_anchor_rack_v_ratio: f32,
 }
 
 impl EventEmitter<()> for LayoutState {}
@@ -61,6 +75,13 @@ impl Default for LayoutState {
             is_dragging_lufs_divider: false,
             is_dragging_library_queue_divider: false,
             is_dragging_queue_rack_divider: false,
+            drag_anchor_pos: 0.0,
+            drag_anchor_meters_ratio: 0.0,
+            drag_anchor_queue_list_ratio: 0.0,
+            drag_anchor_library_h_ratio: 0.0,
+            drag_anchor_rack_h_ratio: 0.0,
+            drag_anchor_library_v_ratio: 0.0,
+            drag_anchor_rack_v_ratio: 0.0,
         }
     }
 }

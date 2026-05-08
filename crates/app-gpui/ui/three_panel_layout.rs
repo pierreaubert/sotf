@@ -37,13 +37,27 @@ impl PlayerView {
             .flex_row()
             .size_full()
             .bg(theme.background)
-            // Global mouse move handler for all divider dragging
+            // Global mouse move handler for all divider dragging.
+            //
+            // Delta-based: each divider's `on_drag_start` records the mouse
+            // position and the *current* ratio. Here we compute (mouse_x -
+            // anchor_pos) as a pixel delta and convert to a ratio delta using
+            // the appropriate denominator. This eliminates the dead-zone bug
+            // where deriving the ratio from the raw mouse position
+            // disagreed with the solved layout (which clamps + adjusts the
+            // configured ratios) and snapped the divider on the first
+            // movement.
             .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, window, cx| {
                 let (
                     is_dragging_lib_queue,
                     is_dragging_queue_rack,
                     is_dragging_queue_list,
                     is_dragging_meters,
+                    anchor_pos,
+                    anchor_lib,
+                    anchor_rack,
+                    anchor_queue_list,
+                    anchor_meters,
                     library_h_ratio,
                     rack_h_ratio,
                     rack_collapsed,
@@ -55,6 +69,11 @@ impl PlayerView {
                         layout.is_dragging_queue_rack_divider,
                         layout.is_dragging_queue_list_divider,
                         layout.is_dragging_meters_divider,
+                        layout.drag_anchor_pos,
+                        layout.drag_anchor_library_h_ratio,
+                        layout.drag_anchor_rack_h_ratio,
+                        layout.drag_anchor_queue_list_ratio,
+                        layout.drag_anchor_meters_ratio,
                         layout.library_h_ratio,
                         layout.rack_h_ratio,
                         layout.rack_panel_collapsed,
@@ -65,9 +84,10 @@ impl PlayerView {
                 let mouse_pos = event.position;
                 let window_width: f32 = window_size.width.into();
                 let mouse_x: f32 = mouse_pos.x.into();
+                let dx = mouse_x - anchor_pos;
 
-                if is_dragging_lib_queue {
-                    let new_ratio = (mouse_x / window_width).clamp(0.15, 0.50);
+                if is_dragging_lib_queue && window_width > 0.0 {
+                    let new_ratio = (anchor_lib + dx / window_width).clamp(0.15, 0.50);
                     view.state.update(cx, |state, cx| {
                         state.layout.update(cx, |layout, _| {
                             layout.library_h_ratio = new_ratio;
@@ -75,8 +95,9 @@ impl PlayerView {
                     });
                 }
 
-                if is_dragging_queue_rack {
-                    let new_ratio = (1.0 - (mouse_x / window_width)).clamp(0.15, 0.50);
+                if is_dragging_queue_rack && window_width > 0.0 {
+                    // Rack grows leftward, so positive dx shrinks the ratio.
+                    let new_ratio = (anchor_rack - dx / window_width).clamp(0.15, 0.50);
                     view.state.update(cx, |state, cx| {
                         state.layout.update(cx, |layout, _| {
                             layout.rack_h_ratio = new_ratio;
@@ -84,18 +105,18 @@ impl PlayerView {
                     });
                 }
 
-                // Inner queue dividers: compute position relative to queue panel
+                // Inner queue dividers: deltas converted using queue width
+                // (not window width). Queue width derives from current
+                // library/rack ratios, which is fine because the user
+                // shouldn't be dragging two dividers simultaneously.
                 if is_dragging_queue_list || is_dragging_meters {
-                    // Queue panel spans from library_h_ratio to (1.0 - rack_h_ratio) in window coords
                     let queue_start = library_h_ratio * window_width;
                     let rack_width = if rack_collapsed { 0.0 } else { rack_h_ratio * window_width };
                     let queue_width = window_width - queue_start - rack_width;
 
                     if queue_width > 0.0 {
-                        let local_x = mouse_x - queue_start;
-
                         if is_dragging_queue_list {
-                            let new_ratio = (local_x / queue_width).clamp(0.1, 0.5);
+                            let new_ratio = (anchor_queue_list + dx / queue_width).clamp(0.1, 0.5);
                             view.state.update(cx, |state, cx| {
                                 state.layout.update(cx, |layout, _| {
                                     layout.queue_list_ratio = new_ratio;
@@ -104,7 +125,8 @@ impl PlayerView {
                         }
 
                         if is_dragging_meters {
-                            let new_ratio = (1.0 - (local_x / queue_width)).clamp(0.1, 0.5);
+                            // Meters panel grows leftward — positive dx shrinks it.
+                            let new_ratio = (anchor_meters - dx / queue_width).clamp(0.1, 0.5);
                             view.state.update(cx, |state, cx| {
                                 state.layout.update(cx, |layout, _| {
                                     layout.meters_panel_ratio = new_ratio;
@@ -180,10 +202,12 @@ impl PlayerView {
                     })
                     .on_drag_start({
                         let state_handle = self.state.clone();
-                        move |_pos, _window, cx| {
+                        move |pos, _window, cx| {
                             state_handle.update(cx, |state, cx| {
                                 state.layout.update(cx, |layout, _| {
                                     layout.is_dragging_library_queue_divider = true;
+                                    layout.drag_anchor_pos = pos;
+                                    layout.drag_anchor_library_h_ratio = layout.library_h_ratio;
                                 });
                             });
                         }
@@ -219,10 +243,12 @@ impl PlayerView {
                         })
                         .on_drag_start({
                             let state_handle = self.state.clone();
-                            move |_pos, _window, cx| {
+                            move |pos, _window, cx| {
                                 state_handle.update(cx, |state, cx| {
                                     state.layout.update(cx, |layout, _| {
                                         layout.is_dragging_queue_rack_divider = true;
+                                        layout.drag_anchor_pos = pos;
+                                        layout.drag_anchor_rack_h_ratio = layout.rack_h_ratio;
                                     });
                                 });
                             }
@@ -272,13 +298,19 @@ impl PlayerView {
             .flex_col()
             .size_full()
             .bg(theme.background)
-            // Global mouse move handler for all divider dragging (vertical layout)
+            // Global mouse move handler for all divider dragging (vertical layout).
+            // Delta-based — see horizontal-layout handler comment.
             .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, window, cx| {
                 let (
                     is_dragging_lib_queue,
                     is_dragging_queue_rack,
                     is_dragging_queue_list,
                     is_dragging_meters,
+                    anchor_pos,
+                    anchor_lib_v,
+                    anchor_rack_v,
+                    anchor_queue_list,
+                    anchor_meters,
                 ) = {
                     let layout = view.state.read(cx).layout.read(cx);
                     (
@@ -286,6 +318,11 @@ impl PlayerView {
                         layout.is_dragging_queue_rack_divider,
                         layout.is_dragging_queue_list_divider,
                         layout.is_dragging_meters_divider,
+                        layout.drag_anchor_pos,
+                        layout.drag_anchor_library_v_ratio,
+                        layout.drag_anchor_rack_v_ratio,
+                        layout.drag_anchor_queue_list_ratio,
+                        layout.drag_anchor_meters_ratio,
                     )
                 };
 
@@ -294,47 +331,57 @@ impl PlayerView {
 
                 if is_dragging_lib_queue {
                     let window_height: f32 = window_size.height.into();
-                    let mouse_y: f32 = mouse_pos.y.into();
-                    let new_ratio = (mouse_y / window_height).clamp(0.15, 0.50);
-                    view.state.update(cx, |state, cx| {
-                        state.layout.update(cx, |layout, _| {
-                            layout.library_v_ratio = new_ratio;
+                    if window_height > 0.0 {
+                        let mouse_y: f32 = mouse_pos.y.into();
+                        let dy = mouse_y - anchor_pos;
+                        let new_ratio = (anchor_lib_v + dy / window_height).clamp(0.15, 0.50);
+                        view.state.update(cx, |state, cx| {
+                            state.layout.update(cx, |layout, _| {
+                                layout.library_v_ratio = new_ratio;
+                            });
                         });
-                    });
+                    }
                 }
 
                 if is_dragging_queue_rack {
                     let window_height: f32 = window_size.height.into();
-                    let mouse_y: f32 = mouse_pos.y.into();
-                    let new_ratio = (1.0 - (mouse_y / window_height)).clamp(0.15, 0.50);
-                    view.state.update(cx, |state, cx| {
-                        state.layout.update(cx, |layout, _| {
-                            layout.rack_v_ratio = new_ratio;
-                        });
-                    });
-                }
-
-                // Inner queue dividers: queue panel spans full width in vertical mode
-                if is_dragging_queue_list || is_dragging_meters {
-                    let window_width: f32 = window_size.width.into();
-                    let mouse_x: f32 = mouse_pos.x.into();
-
-                    if is_dragging_queue_list {
-                        let new_ratio = (mouse_x / window_width).clamp(0.1, 0.5);
+                    if window_height > 0.0 {
+                        let mouse_y: f32 = mouse_pos.y.into();
+                        let dy = mouse_y - anchor_pos;
+                        // Rack grows upward — positive dy shrinks it.
+                        let new_ratio = (anchor_rack_v - dy / window_height).clamp(0.15, 0.50);
                         view.state.update(cx, |state, cx| {
                             state.layout.update(cx, |layout, _| {
-                                layout.queue_list_ratio = new_ratio;
+                                layout.rack_v_ratio = new_ratio;
                             });
                         });
                     }
+                }
 
-                    if is_dragging_meters {
-                        let new_ratio = (1.0 - (mouse_x / window_width)).clamp(0.1, 0.5);
-                        view.state.update(cx, |state, cx| {
-                            state.layout.update(cx, |layout, _| {
-                                layout.meters_panel_ratio = new_ratio;
+                // Inner queue dividers: vertical layout, queue panel spans full window width.
+                if is_dragging_queue_list || is_dragging_meters {
+                    let window_width: f32 = window_size.width.into();
+                    if window_width > 0.0 {
+                        let mouse_x: f32 = mouse_pos.x.into();
+                        let dx = mouse_x - anchor_pos;
+
+                        if is_dragging_queue_list {
+                            let new_ratio = (anchor_queue_list + dx / window_width).clamp(0.1, 0.5);
+                            view.state.update(cx, |state, cx| {
+                                state.layout.update(cx, |layout, _| {
+                                    layout.queue_list_ratio = new_ratio;
+                                });
                             });
-                        });
+                        }
+
+                        if is_dragging_meters {
+                            let new_ratio = (anchor_meters - dx / window_width).clamp(0.1, 0.5);
+                            view.state.update(cx, |state, cx| {
+                                state.layout.update(cx, |layout, _| {
+                                    layout.meters_panel_ratio = new_ratio;
+                                });
+                            });
+                        }
                     }
                 }
             }))
@@ -393,10 +440,12 @@ impl PlayerView {
                     })
                     .on_drag_start({
                         let state_handle = self.state.clone();
-                        move |_pos, _window, cx| {
+                        move |pos, _window, cx| {
                             state_handle.update(cx, |state, cx| {
                                 state.layout.update(cx, |layout, _| {
                                     layout.is_dragging_library_queue_divider = true;
+                                    layout.drag_anchor_pos = pos;
+                                    layout.drag_anchor_library_v_ratio = layout.library_v_ratio;
                                 });
                             });
                         }
@@ -432,10 +481,12 @@ impl PlayerView {
                         })
                         .on_drag_start({
                             let state_handle = self.state.clone();
-                            move |_pos, _window, cx| {
+                            move |pos, _window, cx| {
                                 state_handle.update(cx, |state, cx| {
                                     state.layout.update(cx, |layout, _| {
                                         layout.is_dragging_queue_rack_divider = true;
+                                        layout.drag_anchor_pos = pos;
+                                        layout.drag_anchor_rack_v_ratio = layout.rack_v_ratio;
                                     });
                                 });
                             }

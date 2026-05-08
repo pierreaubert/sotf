@@ -666,6 +666,12 @@ pub fn render_lufs_with_true_peak(
     div()
         .flex()
         .flex_col()
+        // Fill the available width so the bars (each `flex_1` inside
+        // render_meter_bar) actually grow when the meters panel is wide.
+        // Without this, the outer flex_col sizes to content and the bars
+        // collapse to whatever flex_1 of the intrinsic-width parent works
+        // out to — leaving a wide empty band on the right of the panel.
+        .w_full()
         .gap(d.section)
         .p(d.pad_x)
         // True Peak section (on top)
@@ -892,13 +898,21 @@ impl PlayerView {
                     .flex_col()
                     .flex_1()
                     .min_h(rems(12.5))
-                    // Ticks area (matches meter_bar flex_1)
+                    // Ticks area (matches meter_bar flex_1).
+                    // Width is wide enough to fit a 3-char dB label
+                    // ("-60") + tick + a small gap; both legends use the
+                    // same width so the meter group between them sits at
+                    // the panel's true horizontal centre. Narrower
+                    // widths cause labels to overflow on the left
+                    // legend (clipped or pushed out of the panel) while
+                    // the right legend's labels overflow into adjacent
+                    // empty space — visible asymmetry.
                     .child(
                         div()
                             .relative()
                             .flex_1()
                             .min_h(rems(11.25))
-                            .w(rems(1.5))
+                            .w(rems(2.25))
                             .overflow_hidden()
                             .children(ticks.into_iter().map(move |db| {
                                 let pos = db_to_position(db as f64);
@@ -1362,18 +1376,23 @@ impl PlayerView {
                 state.app.playback.loudness_info.clone(),
             )
         };
+        // No `.items_center()` here: cross-axis alignment defaults to
+        // stretch so the inner content fills the panel width. With
+        // items_center, gpui's flex implementation would size children
+        // to their intrinsic content width and `w_full()` on the inner
+        // wrapper would not propagate — bars would collapse to ~150px
+        // even on a 700px panel.
         div()
             .flex()
             .flex_col()
-            .items_center()
             .w_full()
             .p(d.card)
             .bg(theme.background)
-            .child(div().w(rems(25.0)).child(self.render_lufs_with_true_peak(
+            .child(self.render_lufs_with_true_peak(
                 &d,
                 loudness.as_ref(),
                 &theme,
-            )))
+            ))
     }
 }
 

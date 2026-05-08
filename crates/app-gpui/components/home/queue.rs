@@ -145,6 +145,10 @@ impl PlayerView {
                                     let theme = theme.clone();
                                     let theme_hover = theme.clone();
                                     let row = div()
+                                        // `on_click` requires a stateful element, hence the id.
+                                        // ElementId::Integer is enough — idx is unique across the
+                                        // visible queue rows.
+                                        .id(("queue-row", idx))
                                         .p(d.pad_y)
                                         .rounded(d.r_md)
                                         .when(is_current, |el| {
@@ -159,37 +163,51 @@ impl PlayerView {
                                              .hover(|style| style.bg(theme_hover.surface_hover))
                                         })
                                         .cursor_pointer()
-                                        .on_mouse_up(
-                                            MouseButton::Left,
-                                            cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                                view.state.update(cx, |state, _cx| {
-                                                    // The queue can be mutated (cleared, items
-                                                    // removed) between the render that captured `idx`
-                                                    // and the click landing here. `.get(idx)` instead
-                                                    // of `[idx]` avoids panicking on a stale index.
-                                                    let source = state
-                                                        .app
-                                                        .queue_state
-                                                        .get(idx)
-                                                        .and_then(|item| {
-                                                            item.current_track().map(|t| t.audio_source())
-                                                        });
-                                                    if let Some(source) = source {
-                                                        state.app.playback.current_queue_index = Some(idx);
-                                                        Self::play_track(state, source);
-                                                    }
-                                                });
-                                                cx.notify();
-                                            }),
-                                        )
+                                        // Use `on_click` rather than `on_mouse_up` so that the
+                                        // handler only fires when mouse-down AND mouse-up both
+                                        // landed on this row. `on_mouse_up` was firing on
+                                        // unrelated events whose mouse-up screen-position happened
+                                        // to overlap the row:
+                                        //   1. Releasing a divider drag whose path crossed a row.
+                                        //   2. Selecting an item in the footer's Studio menu
+                                        //      overlay — the dropdown sits on top of queue rows
+                                        //      and mouse-up was double-firing onto both the
+                                        //      menu item AND the row beneath, calling
+                                        //      `play_track` for whichever row happened to be
+                                        //      under the click point and pausing audio while
+                                        //      the new track loaded.
+                                        // `on_click` natively handles both: it requires the
+                                        // mouse-down to have started inside this element and
+                                        // the cursor not to have moved significantly. Replaces
+                                        // both the prior dragging-flag and the staleness
+                                        // guards.
+                                        .on_click(cx.listener(move |view, _: &ClickEvent, _window, cx| {
+                                            view.state.update(cx, |state, _cx| {
+                                                // Bounds-check: queue can mutate between paint and
+                                                // click (clear, magic-radio refill, etc.).
+                                                let source = state
+                                                    .app
+                                                    .queue_state
+                                                    .get(idx)
+                                                    .and_then(|item| {
+                                                        item.current_track().map(|t| t.audio_source())
+                                                    });
+                                                if let Some(source) = source {
+                                                    state.app.playback.current_queue_index = Some(idx);
+                                                    Self::play_track(state, source);
+                                                }
+                                            });
+                                            cx.notify();
+                                        }))
+                                        // Right-click stays on `on_mouse_up` — gpui's `on_click`
+                                        // is left-button only. Spurious right-click-on-overlay
+                                        // is not currently a known issue (no overlay opens via
+                                        // right-click), but the staleness guard still applies.
                                         .on_mouse_up(
                                             MouseButton::Right,
                                             cx.listener(
                                                 move |view, event: &MouseUpEvent, _window, cx| {
                                                     view.state.update(cx, |state, _cx| {
-                                                        // Same staleness guard as the left-click
-                                                        // handler: ignore the click if the queue
-                                                        // has shrunk past the captured index.
                                                         if state.app.queue_state.get(idx).is_none() {
                                                             return;
                                                         }
@@ -317,10 +335,12 @@ impl PlayerView {
                     })
                     .on_drag_start({
                         let state_handle = self.state.clone();
-                        move |_pos, _window, cx| {
+                        move |pos, _window, cx| {
                             state_handle.update(cx, |state, cx| {
                                 state.layout.update(cx, |layout, _| {
                                     layout.is_dragging_queue_list_divider = true;
+                                    layout.drag_anchor_pos = pos;
+                                    layout.drag_anchor_queue_list_ratio = layout.queue_list_ratio;
                                 });
                             });
                         }
@@ -361,10 +381,12 @@ impl PlayerView {
                     })
                     .on_drag_start({
                         let state_handle = self.state.clone();
-                        move |_pos, _window, cx| {
+                        move |pos, _window, cx| {
                             state_handle.update(cx, |state, cx| {
                                 state.layout.update(cx, |layout, _| {
                                     layout.is_dragging_meters_divider = true;
+                                    layout.drag_anchor_pos = pos;
+                                    layout.drag_anchor_meters_ratio = layout.meters_panel_ratio;
                                 });
                             });
                         }
