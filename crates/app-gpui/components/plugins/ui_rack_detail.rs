@@ -22,7 +22,7 @@ use sotf_audio_player::PluginType;
 use sotf_plugins::param_specs::{find_by_key as pk, upmixer::PARAMS as UP, aae::PARAMS as AAE_P};
 
 use crate::components::themed_tooltip as make_tooltip;
-use super::ui_rack::{build_controller_overlay, plugin_description, short_name, speaker_config_to_channels};
+use super::ui_rack::{plugin_description, short_name, speaker_config_to_channels};
 
 impl PlayerView {
     /// Render a side level meter group for the detail panel
@@ -758,27 +758,13 @@ impl PlayerView {
                                             .into_any_element()
                                         }
                                         PluginUiView::Controller(controller_id) => {
-                                            // Build overlay from selected controller layout
-                                            let controller_overlay = build_controller_overlay(
+                                            super::render_controller_view(
+                                                &d,
                                                 controller_id,
-                                                &app_st.app.plugin_state.midi_mapping,
-                                            );
-                                            render_plugin_content(
-                                                self.state.clone(),
-                                                selected_idx,
                                                 &plugin.settings,
-                                                is_editing,
-                                                param_selection,
+                                                selected_idx,
+                                                &app_st.app.plugin_state.midi_mapping,
                                                 &theme,
-                                                upmixer_config_open,
-                                                selected_eq_band,
-                                                loudness_for_plugin,
-                                                plugin_data,
-                                                spectrum_tilt_open,
-                                                spectrum_ref_open,
-                                                &plugin_graph,
-                                                Some(&controller_overlay),
-                                                cx,
                                             )
                                         }
                                         PluginUiView::UI => {

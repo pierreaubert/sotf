@@ -21,8 +21,6 @@ use gpui::*;
 use gpui::{MouseMoveEvent, MouseUpEvent};
 use gpui_ui_kit::{CollapseDirection, PaneDivider, PaneDividerTheme};
 use sotf_audio_player::PluginType;
-use sotf_audio_player_midi::MidiMappingEngine;
-use sotf_audio_player_midi::mapping::MidiOverlay;
 use sotf_plugins::param_specs::{find_by_key as pk, upmixer::PARAMS as UP};
 
 use crate::components::themed_tooltip as make_tooltip;
@@ -2204,27 +2202,13 @@ impl PlayerView {
                                             .into_any_element()
                                         }
                                         PluginUiView::Controller(controller_id) => {
-                                            // Build overlay from selected controller layout
-                                            let controller_overlay = build_controller_overlay(
+                                            super::render_controller_view(
+                                                &d,
                                                 controller_id,
-                                                &app_st.app.plugin_state.midi_mapping,
-                                            );
-                                            render_plugin_content(
-                                                self.state.clone(),
-                                                selected_idx,
                                                 &plugin.settings,
-                                                is_editing,
-                                                param_selection,
+                                                selected_idx,
+                                                &app_st.app.plugin_state.midi_mapping,
                                                 &theme,
-                                                upmixer_config_open,
-                                                selected_eq_band,
-                                                loudness_for_plugin,
-                                                plugin_data,
-                                                spectrum_tilt_open,
-                                                spectrum_ref_open,
-                                                &plugin_graph,
-                                                Some(&controller_overlay),
-                                                cx,
                                             )
                                         }
                                         PluginUiView::UI => {
@@ -2692,38 +2676,3 @@ impl PlayerView {
     }
 }
 
-/// Build a MidiOverlay for a specific controller layout.
-///
-/// If the mapping engine already has a real mapping, use it. Otherwise, create
-/// a synthetic overlay showing the controller's layout name so the UI renders
-/// the controller header even without live MIDI input.
-pub(crate) fn build_controller_overlay(
-    controller_id: &str,
-    engine: &MidiMappingEngine,
-) -> MidiOverlay {
-    // If the engine already has a mapping for this controller, use it
-    let engine_overlay = engine.build_overlay(&[]);
-    if engine_overlay.has_controller()
-        && engine_overlay.controller_name.as_ref().is_some_and(|name| {
-            available_controllers()
-                .iter()
-                .any(|(id, _)| name.contains(id) || id == &controller_id)
-        })
-    {
-        return engine_overlay;
-    }
-
-    // Build a minimal overlay showing the controller name
-    let display_name = available_controllers()
-        .iter()
-        .find(|(id, _)| *id == controller_id)
-        .map(|(_, label)| label.to_string())
-        .unwrap_or_else(|| controller_id.to_string());
-
-    MidiOverlay {
-        controller_name: Some(display_name),
-        current_page: 0,
-        total_pages: 1,
-        ..MidiOverlay::empty()
-    }
-}

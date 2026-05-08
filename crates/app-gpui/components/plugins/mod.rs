@@ -17,6 +17,7 @@ pub mod ticks;
 
 mod ui_ab_compare;
 mod ui_compressor;
+mod ui_controller_view;
 mod ui_downmix;
 pub mod ui_eq;
 mod ui_gain;
@@ -47,6 +48,7 @@ pub use theme::*;
 pub use ticks::{ScaleType, TickConfig, render_tick_row};
 
 pub use ui_compressor::render_compressor_plugin;
+pub use ui_controller_view::render_controller_view;
 pub use ui_downmix::render_downmix_plugin;
 pub use ui_eq::render_eq_plugin;
 pub use ui_gain::render_gain_plugin;
