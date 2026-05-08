@@ -144,7 +144,7 @@ impl PlayerView {
                                     let is_current = state.app.playback.current_queue_index == Some(idx);
                                     let theme = theme.clone();
                                     let theme_hover = theme.clone();
-                                    div()
+                                    let row = div()
                                         .p(d.pad_y)
                                         .rounded(d.r_md)
                                         .when(is_current, |el| {
@@ -252,7 +252,17 @@ impl PlayerView {
                                                             item.album.tracks.len()
                                                         )),
                                                 )
-                                        })
+                                        });
+                                    // Publish each row's painted bounds under a stable selector
+                                    // so scenarios/queue_stale_index.scn can fire a synthetic
+                                    // click against `queue.row.<idx>`. Compiled out in release
+                                    // builds where `dev-api` is off — zero runtime cost.
+                                    #[cfg(feature = "dev-api")]
+                                    let row = {
+                                        use crate::app::dev_api::DevTrackExt;
+                                        row.dev_track(format!("queue.row.{idx}"))
+                                    };
+                                    row
                                 })),
                         )
                         .child(

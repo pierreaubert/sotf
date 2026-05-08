@@ -45,6 +45,12 @@ fi
 # GitHub release base URL
 GITHUB_RELEASE_URL="https://github.com/pierreaubert/sotf/releases/download/v${VERSION}"
 
+# Microsoft Store product URL. The Windows MSIX is now distributed via
+# the Store (it auto-routes x64 vs arm64 to the user's CPU); the .msix
+# files we still upload to GitHub Releases are unsigned-by-us fallbacks
+# for sideload users and aren't the primary download surface.
+MS_STORE_URL="https://apps.microsoft.com/detail/9NXCMV37NXJ7"
+
 # Options
 SKIP_BUILD=false
 SKIP_SITE=false
@@ -122,7 +128,10 @@ get_signature() {
     case "$1" in
         macos-*)    echo "Apple Developer ID" ;;
         linux-*)    echo "cosign (Sigstore)" ;;
-        windows-*)  echo "self-signed" ;;
+        # Windows MSIX is re-signed by the Microsoft Store on ingestion;
+        # the .exe TUI fallback we host on GitHub Releases is still
+        # self-signed but the primary install path goes through the Store.
+        windows-*)  echo "Microsoft Store" ;;
     esac
 }
 
@@ -358,13 +367,27 @@ append_release_row() {
         local filename="${entry%%:*}"
         local label="${entry##*:}"
         label=$(echo "$label" | sed 's/%20/ /g')
-        if [ -f "$DIST_DIR/$filename" ]; then
-            local link="[${label}](${GITHUB_RELEASE_URL}/${filename})"
-            if [ -n "$downloads" ]; then
-                downloads="${downloads}, ${link}"
-            else
-                downloads="$link"
-            fi
+
+        # MSIX files are served by the Microsoft Store (single product
+        # page auto-routes by CPU), not from GitHub Releases. Link there
+        # without a presence check — Microsoft is the host of record.
+        local link
+        case "$filename" in
+            *.msix)
+                link="[Microsoft Store](${MS_STORE_URL})"
+                ;;
+            *)
+                if [ ! -f "$DIST_DIR/$filename" ]; then
+                    continue
+                fi
+                link="[${label}](${GITHUB_RELEASE_URL}/${filename})"
+                ;;
+        esac
+
+        if [ -n "$downloads" ]; then
+            downloads="${downloads}, ${link}"
+        else
+            downloads="$link"
         fi
     done
 
@@ -403,6 +426,9 @@ const releaseUrl = 'https://github.com/pierreaubert/sotf/releases';
 // reachable from their network.
 const githubBase = \`https://github.com/pierreaubert/sotf/releases/download/v\${version}\`;
 const mirrorBase = 'https://sotf.spinorama.org/downloads';
+// Microsoft Store product URL. Windows MSIX is distributed exclusively
+// via the Store (single page auto-routes x64 / arm64 to the user's CPU).
+const msStoreUrl = '${MS_STORE_URL}';
 EOF
 
     cat >> "$download_file" << 'ASTRO_BODY'
@@ -442,12 +468,12 @@ const builds = [
     os: 'Windows',
     icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M3 12V6.5l8-1.1V12H3zm0 .5h8v6.6l-8-1.1V12.5zm9 0h9V3l-9 1.2V12.5zm0 .5v6.3L21 21v-8H12z"/></svg>`,
     variants: [
-      { arch: 'ARM64', quality: 'alpha', signature: 'self-signed', files: [
-        { label: 'MSIX',    file: `sotf-desktop-${version}-windows-arm64.msix` },
+      { arch: 'ARM64', quality: 'alpha', signature: 'Microsoft Store', files: [
+        { label: 'MSIX',    url: msStoreUrl },
         { label: 'TUI exe', file: `sotf-tui-${version}-windows-arm64.exe` },
       ]},
-      { arch: 'x86_64', quality: 'alpha', signature: 'self-signed', files: [
-        { label: 'MSIX',    file: `sotf-desktop-${version}-windows-x86_64.msix` },
+      { arch: 'x86_64', quality: 'alpha', signature: 'Microsoft Store', files: [
+        { label: 'MSIX',    url: msStoreUrl },
         { label: 'TUI exe', file: `sotf-tui-${version}-windows-x86_64.exe` },
       ]},
     ],
@@ -497,20 +523,36 @@ const qualityColors: Record<string, string> = {
                     {variant.files.map((dl) => (
                       <div class="flex items-center gap-2 flex-wrap">
                         <span class="text-xs font-medium text-gray-300 min-w-20">{dl.label}</span>
-                        <a
-                          href={`${githubBase}/${dl.file}`}
-                          class="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-accent/10 text-accent border border-accent/20 rounded hover:bg-accent/20 transition-colors"
-                          title={`Download ${dl.file} from GitHub Releases`}
-                        >
-                          GitHub
-                        </a>
-                        <a
-                          href={`${mirrorBase}/${dl.file}`}
-                          class="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-accent/10 text-accent border border-accent/20 rounded hover:bg-accent/20 transition-colors"
-                          title={`Download ${dl.file} from sotf.spinorama.org mirror`}
-                        >
-                          Mirror
-                        </a>
+                        {dl.url ? (
+                          /* MSIX-style entry: hosted by a third party
+                             (Microsoft Store), no GitHub/mirror copy. */
+                          <a
+                            href={dl.url}
+                            class="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-accent/10 text-accent border border-accent/20 rounded hover:bg-accent/20 transition-colors"
+                            title={`Open ${dl.label} on its host`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            Microsoft Store
+                          </a>
+                        ) : (
+                          <Fragment>
+                            <a
+                              href={`${githubBase}/${dl.file}`}
+                              class="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-accent/10 text-accent border border-accent/20 rounded hover:bg-accent/20 transition-colors"
+                              title={`Download ${dl.file} from GitHub Releases`}
+                            >
+                              GitHub
+                            </a>
+                            <a
+                              href={`${mirrorBase}/${dl.file}`}
+                              class="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-accent/10 text-accent border border-accent/20 rounded hover:bg-accent/20 transition-colors"
+                              title={`Download ${dl.file} from sotf.spinorama.org mirror`}
+                            >
+                              Mirror
+                            </a>
+                          </Fragment>
+                        )}
                       </div>
                     ))}
                   </div>

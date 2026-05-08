@@ -34,3 +34,26 @@ cargo test -p sotf-dev-driver
 - Scenarios live under `scenarios/`, one per main user-facing screen.
 - See `crates/app-gpui/app/dev_api/queries.rs` for the available query path allow-list.
 - Click selectors must be wrapped with `dev_track(...)` in the GPUI builder chain to be addressable.
+
+## Regression-scenario convention
+
+Whenever a UI bug is fixed in `app-gpui`, add a `.scn` scenario under
+`scenarios/` named after the bug (e.g. `queue_stale_index.scn`,
+`library_focus_loop.scn`). The header comment must include:
+
+1. Date and a one-paragraph bug description (file:line, what panicked /
+   misbehaved, the trigger conditions).
+2. Where the fix landed (file:line) so a future reader can audit it.
+3. A reproducible run command (`mktemp -d` for QA dir, the `cargo run`
+   invocations).
+
+The scenario doesn't have to deterministically reproduce the original
+race — many UI bugs depend on paint/event timing that an HTTP driver
+can't reliably hit. What it must do is exercise the same code path
+(register `dev_track` selectors on the implicated elements if needed,
+then `click` / `key` / `action` against them) so that a future
+refactor that re-introduces the bug fails the scenario at least
+sometimes. Document any non-determinism in the scenario header.
+
+When the bug is in pure logic (no GPUI involvement), prefer a Rust
+unit test in the corresponding crate over a `.scn` scenario.

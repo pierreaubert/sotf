@@ -1,0 +1,67 @@
+# Regression: queue row click panics on stale captured index.
+#
+# Bug history (2026-05-08):
+#   crates/app-gpui/components/home/queue.rs used `state.app.queue_state[idx]`
+#   inside an `on_mouse_up` listener whose `idx` was captured at render time.
+#   When the queue mutated (cleared, items removed) between paint and click,
+#   the listener fired with a stale idx and panicked with
+#   "the len is 0 but the index is 0", then escalated to abort because the
+#   panic crossed an FFI boundary in gpui_macos::window::handle_view_event.
+#
+# Fix (queue.rs:170): bounds-check via `.get(idx)` in both left- and
+# right-click handlers. The defensive code path is also covered by the
+# direct unit tests in crates/app-gpui/tests; this scenario provides the
+# end-to-end smoke check that the click handler is wired correctly and
+# survives a click-then-clear round trip.
+#
+# Reproducible run (assumes the QA dir is pre-seeded with at least one
+# track — bare `mktemp -d` is empty and the click verbs below will bail
+# with "selector not registered"; that's expected and is itself a useful
+# guard against the row painter regressing):
+#
+#   QA_DIR=$(mktemp -d)
+#   cp some-tracks/*.flac "$QA_DIR/library/"   # if you have a fixture
+#   cargo run -p sotf-gpui --features dev-api --bin sotf-desktop -- --qa "$QA_DIR" &
+#   cargo run -p sotf-dev-driver -- crates/sotf-dev-driver/scenarios/queue_stale_index.scn -v
+
+focus       library
+assert      screen.focused == "Library"
+assert      queue.length == 0
+
+# Populate the queue. With an empty QA library FillQueueMagic adds zero
+# tracks and the rest of the scenario short-circuits at the first click.
+action      FillQueueMagic
+sleep       1s
+
+# Tracked-selector listing — useful when the queue stayed empty so it's
+# obvious from the log that `queue.row.0` simply isn't registered.
+elements
+
+# Phase 1: click on a live row. Hits the on_mouse_up closure with a
+# valid idx; succeeds whether or not the .get(idx) guard exists.
+click       queue.row.0
+sleep       100ms
+assert      queue.current_index == 0
+
+# Phase 2: clear the queue. The row's painted bounds and listener will
+# disappear on the next repaint. The deterministic part of the
+# regression check is below: query state after a click+clear round
+# trip to prove the dev-API server (and the GPUI main thread it
+# depends on) didn't go down.
+action      ClearQueue
+sleep       200ms
+assert      queue.length == 0
+assert      screen.focused == "Library"
+
+# Phase 3: re-fill and re-click to confirm the click path stays
+# healthy after a clear cycle. The pre-fix code would happily survive
+# this too — the bug only manifested when the click fired against a
+# stale captured idx, which requires racing the paint cycle. The
+# narrow race isn't reliably reproducible from a remote HTTP driver
+# (paint usually wins by the time the click POST lands), so we test
+# what we can: the click path on a populated queue.
+action      FillQueueMagic
+sleep       500ms
+click       queue.row.0
+sleep       100ms
+assert      queue.current_index == 0

@@ -8,6 +8,9 @@ const releaseUrl = 'https://github.com/pierreaubert/sotf/releases';
 // reachable from their network.
 const githubBase = `https://github.com/pierreaubert/sotf/releases/download/v${version}`;
 const mirrorBase = 'https://sotf.spinorama.org/downloads';
+// Microsoft Store product URL. Windows MSIX is distributed exclusively
+// via the Store (single page auto-routes x64 / arm64 to the user's CPU).
+const msStoreUrl = 'https://apps.microsoft.com/detail/9NXCMV37NXJ7';
 
 const builds = [
   {
@@ -44,12 +47,12 @@ const builds = [
     os: 'Windows',
     icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M3 12V6.5l8-1.1V12H3zm0 .5h8v6.6l-8-1.1V12.5zm9 0h9V3l-9 1.2V12.5zm0 .5v6.3L21 21v-8H12z"/></svg>`,
     variants: [
-      { arch: 'ARM64', quality: 'alpha', signature: 'self-signed', files: [
-        { label: 'MSIX',    file: `sotf-desktop-${version}-windows-arm64.msix` },
+      { arch: 'ARM64', quality: 'alpha', signature: 'Microsoft Store', files: [
+        { label: 'MSIX',    url: msStoreUrl },
         { label: 'TUI exe', file: `sotf-tui-${version}-windows-arm64.exe` },
       ]},
-      { arch: 'x86_64', quality: 'alpha', signature: 'self-signed', files: [
-        { label: 'MSIX',    file: `sotf-desktop-${version}-windows-x86_64.msix` },
+      { arch: 'x86_64', quality: 'alpha', signature: 'Microsoft Store', files: [
+        { label: 'MSIX',    url: msStoreUrl },
         { label: 'TUI exe', file: `sotf-tui-${version}-windows-x86_64.exe` },
       ]},
     ],
@@ -99,20 +102,36 @@ const qualityColors: Record<string, string> = {
                     {variant.files.map((dl) => (
                       <div class="flex items-center gap-2 flex-wrap">
                         <span class="text-xs font-medium text-gray-300 min-w-20">{dl.label}</span>
-                        <a
-                          href={`${githubBase}/${dl.file}`}
-                          class="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-accent/10 text-accent border border-accent/20 rounded hover:bg-accent/20 transition-colors"
-                          title={`Download ${dl.file} from GitHub Releases`}
-                        >
-                          GitHub
-                        </a>
-                        <a
-                          href={`${mirrorBase}/${dl.file}`}
-                          class="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-accent/10 text-accent border border-accent/20 rounded hover:bg-accent/20 transition-colors"
-                          title={`Download ${dl.file} from sotf.spinorama.org mirror`}
-                        >
-                          Mirror
-                        </a>
+                        {dl.url ? (
+                          /* MSIX-style entry: hosted by a third party
+                             (Microsoft Store), no GitHub/mirror copy. */
+                          <a
+                            href={dl.url}
+                            class="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-accent/10 text-accent border border-accent/20 rounded hover:bg-accent/20 transition-colors"
+                            title={`Open ${dl.label} on its host`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            Microsoft Store
+                          </a>
+                        ) : (
+                          <Fragment>
+                            <a
+                              href={`${githubBase}/${dl.file}`}
+                              class="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-accent/10 text-accent border border-accent/20 rounded hover:bg-accent/20 transition-colors"
+                              title={`Download ${dl.file} from GitHub Releases`}
+                            >
+                              GitHub
+                            </a>
+                            <a
+                              href={`${mirrorBase}/${dl.file}`}
+                              class="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-accent/10 text-accent border border-accent/20 rounded hover:bg-accent/20 transition-colors"
+                              title={`Download ${dl.file} from sotf.spinorama.org mirror`}
+                            >
+                              Mirror
+                            </a>
+                          </Fragment>
+                        )}
                       </div>
                     ))}
                   </div>

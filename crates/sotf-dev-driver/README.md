@@ -40,6 +40,15 @@ One scenario per main user-facing screen lives in `scenarios/`:
 Each focuses the screen, asserts `screen.focused`, and returns to Library.
 These are seeds — extend them with screen-specific actions and queries.
 
+## Regression scenarios
+
+Bug fixes in `app-gpui` get a companion `.scn` named after the bug
+(e.g. `queue_stale_index.scn`). The header comment carries the date,
+the file:line of the bug, the file:line of the fix, and a reproducible
+run command. See [`AGENTS.md`](./AGENTS.md#regression-scenario-convention)
+for the full convention. When the bug is pure logic with no GPUI
+involvement, prefer a unit test in the implicated crate over a `.scn`.
+
 ## DSL
 
 | Verb         | Effect                                                       |
