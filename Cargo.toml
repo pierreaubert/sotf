@@ -95,6 +95,7 @@ exclude = [
     "crates/3rdparties/zed-font-kit",
     "crates/3rdparties/coreaudio-rs",
     "crates/3rdparties/mach2",
+    "crates/3rdparties/gpui_macos",
 ]
 resolver = "3"
 
@@ -444,6 +445,16 @@ codegen-units = 256
 # that also adds tvOS/watchOS/visionOS to Apple platform cfg gates.
 [patch."https://github.com/zed-industries/font-kit"]
 zed-font-kit = { path = "crates/3rdparties/zed-font-kit" }
+
+# Mac App Store gate: the upstream gpui_macos references the private CGS
+# symbols `CGSMainConnectionID` / `CGSSetWindowBackgroundBlurRadius` for a
+# pre-Monterey window-blur fallback. Apple's static analyzer rejects the
+# binary outright (validation 409) when those names appear in the import
+# table, even from a branch that's unreachable on macOS 13+ (our minimum).
+# The vendored copy under crates/3rdparties/gpui_macos strips the FFI
+# decl + the call site; only the modern NSVisualEffectView path remains.
+[patch."https://github.com/zed-industries/zed.git"]
+gpui_macos = { path = "crates/3rdparties/gpui_macos" }
 
 # Patches for tvOS/watchOS/visionOS support (Tier 3 Apple platforms):
 # - psm: assembly files use ELF directives instead of Mach-O on unrecognized Apple OSes

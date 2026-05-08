@@ -32,8 +32,9 @@
     <key>com.apple.security.network.client</key>
     <true/>
 
-    <!-- Camera access (QR code scanning workflow) -->
-    <key>com.apple.security.device.camera</key>
-    <true/>
+    <!-- Camera entitlement removed 2026-05-08: SotF doesn't yet exercise
+         the camera path. Re-enable (with NSCameraUsageDescription in
+         org.spinorama.sotf.plist) when head-tracking lands. App Review
+         on the MAS path rejects entitlements without matching code. -->
 </dict>
 </plist>

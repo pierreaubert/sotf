@@ -100,6 +100,17 @@ log_step "Preflight checks"
 [ -f "$SOURCE_BINARY" ]    || { log_error "Binary not found: $SOURCE_BINARY"; exit 1; }
 [ -f "$ENTITLEMENTS" ]     || { log_error "Entitlements not found: $ENTITLEMENTS"; exit 1; }
 [ -f "$INFO_PLIST_TEMPLATE" ] || { log_error "Info.plist template not found: $INFO_PLIST_TEMPLATE"; exit 1; }
+
+# Private-API scan: aborts the build if the binary references SPI symbols
+# (e.g. CGSSetWindowBackgroundBlurRadius) or links non-public frameworks.
+# Catches MAS-rejection-class issues before we sign + upload.
+log_step "Scanning binary for private Apple APIs..."
+if ! "$SCRIPT_DIR/check-mas-private-api.sh" "$SOURCE_BINARY"; then
+    log_error "Refusing to build a .pkg that would be rejected by App Review."
+    log_error "Address the findings above (vendor-and-patch the offending"
+    log_error "dependency, or extend the ALLOWLIST if the symbol is in fact public)."
+    exit 1
+fi
 if [ ! -f "$MAS_PROVISIONING_PROFILE" ]; then
     log_error "MAS provisioning profile not found: $MAS_PROVISIONING_PROFILE"
     log_error "Download a 'Mac App Store Distribution' profile for $BUNDLE_ID from"
@@ -198,11 +209,9 @@ plutil -replace CFBundleShortVersionString -string "$VERSION" \
     "$APP_BUNDLE/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$BUILD_NUMBER" \
     "$APP_BUNDLE/Contents/Info.plist"
-# Camera entitlement is set; macOS will SIGKILL on first camera access without
-# a privacy string. Add it for both MAS and direct-distribution builds.
-plutil -replace NSCameraUsageDescription -string \
-    "SotF Player uses the camera to scan QR codes for headphone EQ presets." \
-    "$APP_BUNDLE/Contents/Info.plist"
+# Camera entitlement removed 2026-05-08; no NSCameraUsageDescription
+# injected here. Re-add (along with the entitlement in entitlements-mas.plist)
+# when head-tracking ships.
 # App Store requires an export-compliance answer. SotF only uses Apple-provided
 # HTTPS via system networking, which is exempt under standard rules.
 plutil -replace ITSAppUsesNonExemptEncryption -bool NO \
