@@ -163,11 +163,19 @@ impl PlayerView {
                                             MouseButton::Left,
                                             cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                                                 view.state.update(cx, |state, _cx| {
-                                                    state.app.playback.current_queue_index = Some(idx);
-                                                    if let Some(source) = state.app.queue_state[idx]
-                                                        .current_track()
-                                                        .map(|t| t.audio_source())
-                                                    {
+                                                    // The queue can be mutated (cleared, items
+                                                    // removed) between the render that captured `idx`
+                                                    // and the click landing here. `.get(idx)` instead
+                                                    // of `[idx]` avoids panicking on a stale index.
+                                                    let source = state
+                                                        .app
+                                                        .queue_state
+                                                        .get(idx)
+                                                        .and_then(|item| {
+                                                            item.current_track().map(|t| t.audio_source())
+                                                        });
+                                                    if let Some(source) = source {
+                                                        state.app.playback.current_queue_index = Some(idx);
                                                         Self::play_track(state, source);
                                                     }
                                                 });
@@ -179,6 +187,12 @@ impl PlayerView {
                                             cx.listener(
                                                 move |view, event: &MouseUpEvent, _window, cx| {
                                                     view.state.update(cx, |state, _cx| {
+                                                        // Same staleness guard as the left-click
+                                                        // handler: ignore the click if the queue
+                                                        // has shrunk past the captured index.
+                                                        if state.app.queue_state.get(idx).is_none() {
+                                                            return;
+                                                        }
                                                         state.app.playback.current_queue_index = Some(idx);
                                                         state.app.ui_state.context_menu =
                                                         Some(crate::app::ContextMenuState {
