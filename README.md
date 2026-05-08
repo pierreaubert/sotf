@@ -17,27 +17,34 @@ What can you do with it?
 
 ### Native Player
 
-![sotf](./site/public/images/0.5.11/sotf-gpui-v0.5.11-player.png)
+![sotf](./site/public/images/0.5/sotf-gpui-v0.5-player.png)
 
 ### Terminal Player
 
-![sotf](./site/public/images/0.5.11/sotf-tui-v0.5.11-player.png)
+![sotf](./site/public/images/0.5/sotf-tui-v0.5-player.png)
 
 ## How to use?
 
-Download a release from our [repo](https://github.com/pierreaubert/sotf) on Github. If you like it, star the directory please. If you dont, please let us know why? All feedback is welcome: you can leave a comment on [github](https://github.com/pierreaubert/sotf/discussions/116) or on [AudioScienceReview](https://www.audiosciencereview.com/forum/index.php?threads/autoeq-for-speaker-and-headphone.66460/).
+- Windows: [download from Microsoft Store](https://apps.microsoft.com/detail/9NXCMV37NXJ7).
+- Apple: [download from the Apple Store (soon: certification ungoing)]()
+
+Latest versions are on our [repo](https://github.com/pierreaubert/sotf) on Github and there is another copy on our [website](https://sotf.spinorama.org).
+
+If you like it, star the directory please. If you dont, please let us know why? All feedback is welcome: you can leave a comment on [github](https://github.com/pierreaubert/sotf/discussions/116) or on [AudioScienceReview](https://www.audiosciencereview.com/forum/index.php?threads/autoeq-for-speaker-and-headphone.66460/).
 
 ### Main functions
 
-- An audio player (nothing special but useful to have with the other applications
-- A audio recorder to measure your speakers
-- A system to optimise the sound based on your measurements for speakers and from internet measurements for headset
+- An **audio player** (nothing special but useful to have bundle with the other applications)
+- A **audio recorder** to measure your speakers
+- A system to **optimise** the sound based on your measurements for speakers and from internet measurements for headset. We claim to have a SOTA optimiser (a bit early for it but improving month after month if you want to a engineer view of it).
+- A large set of audio plugins that do spatial audio, binaural, denoiser, limiter, compressor, upmixer, equalizer, room optimiser, etc.
+- A systemwide DSP that allow you to run the roomEQ system continously for all applications on your computer. Currently working well on MacOS and needs to be ported/tested on Linux and Windows.
 
 The main UI application shows you the audio player. You can access the other functions via the menu bars.
 
 ## For developpers
 
-This is mainly a Rust application with some python and shell scripts.
+This is mainly a Rust application with some python and shell scripts. We want to keep it portable so we minimise C/C++ dependencies.
 
 ### Cargo
 
@@ -269,14 +276,14 @@ Status: almost working.
 
 ### Plugins list
 
-![Upmixer 2.0->5.1.4](./site/public/images/0.5.11/sotf-tui-v0.5.11-plugins.png)
+![Upmixer 2.0->5.1.4](./site/public/images/0.5/sotf-tui-v0.5-plugins.png)
 
 ### EQ
 
-![Parametric EQ](./site/public/images/0.5.11/sotf-gpui-v0.5.11-eq.png)
+![Parametric EQ](./site/public/images/0.5/sotf-gpui-v0.5-eq.png)
 
 ### Upmixer
 
-![Upmixer 2.0->5.1.4](./site/public/images/0.5.11/sotf-gpui-v0.5.11-upmixer.png)
-![Upmixer 2.0->5.1.4](./site/public/images/0.5.11/sotf-tui-v0.5.11-upmixer.png)
+![Upmixer 2.0->5.1.4](./site/public/images/0.5/sotf-gpui-v0.5-upmixer.png)
+![Upmixer 2.0->5.1.4](./site/public/images/0.5/sotf-tui-v0.5-upmixer.png)
 

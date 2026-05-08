@@ -1,7 +1,7 @@
 {
   "name": "sotf-website",
   "type": "module",
-  "version": "0.6.4",
+  "version": "0.6.5",
   "scripts": {
     "gen-data": "node scripts/gen-export-formats.mjs",
     "predev": "npm run gen-data",
