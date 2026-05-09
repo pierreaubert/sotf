@@ -66,10 +66,7 @@ pub struct SectionSpec {
 #[derive(Debug, Clone)]
 pub enum RowSpec {
     /// A horizontal row of knobs.
-    KnobRow {
-        id: String,
-        knobs: Vec<KnobSlot>,
-    },
+    KnobRow { id: String, knobs: Vec<KnobSlot> },
     /// A horizontal "label + toggle pip" row used as a band-enable header
     /// (e.g. "Mid Enabled  [Off | On]").
     BandToggle {
@@ -81,15 +78,9 @@ pub enum RowSpec {
     },
     /// A read-only value tile (e.g. "Playback Volume   0.0 dB"). Used for
     /// signal-tracking values that the user cannot set directly.
-    ReadoutTile {
-        id: String,
-        label: String,
-    },
+    ReadoutTile { id: String, label: String },
     /// A standalone toggle group with its own label above ("Auto Gain").
-    ToggleGroup {
-        id: String,
-        label: String,
-    },
+    ToggleGroup { id: String, label: String },
 }
 
 impl RowSpec {
@@ -196,15 +187,13 @@ impl ChassisLayout {
             // Find the visible section with the lowest priority. If multiple
             // tie, drop the rightmost (later in input order) — this keeps
             // earlier "primary" sections visible longer.
-            let drop_idx = (0..n)
-                .filter(|i| visible[*i])
-                .min_by(|a, b| {
-                    self.sections[*a]
-                        .priority
-                        .partial_cmp(&self.sections[*b].priority)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                        .then(b.cmp(a)) // tie-break: later index drops first
-                });
+            let drop_idx = (0..n).filter(|i| visible[*i]).min_by(|a, b| {
+                self.sections[*a]
+                    .priority
+                    .partial_cmp(&self.sections[*b].priority)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then(b.cmp(a)) // tie-break: later index drops first
+            });
 
             match drop_idx {
                 Some(i) => visible[i] = false,

@@ -1,4 +1,4 @@
-# 0.6.8
+# 0.6.6
 
 ## New features
 
@@ -15,7 +15,7 @@
 
 ### Recording
 
-- fix: recording spl calibration fails with "failed to to load wav, unsupported format"
+- fix: recording spl calibration or delays fails with "failed to to load wav, unsupported format" on some interface (too many channels)
 
 ### UI Library
 
@@ -26,7 +26,7 @@
 
 - Hw interface UI was not activated properly
 
-# 0.6.3 -> 0.6.7
+# 0.6.1 -> 0.6.5
 
 ## tweaks to be in accepted in the Apple Store (pending)
 
@@ -39,7 +39,9 @@
 - Microsoft wants all runtime libraries to be declared: remove them one by one and rewrote code in Rust to make it easier.
 - Microsoft wants a video of the running app.
 
-# 0.6.2
+# 0.6.0
+
+Features freeze
 
 
 

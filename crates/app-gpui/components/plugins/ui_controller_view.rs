@@ -145,15 +145,12 @@ fn render_page_indicator(
     total_pages: usize,
     theme: &Theme,
 ) -> impl IntoElement {
-    div()
-        .flex()
-        .justify_end()
-        .child(
-            div()
-                .text_size(d.text_xs)
-                .text_color(theme.text_muted)
-                .child(format!("Page {} / {}", current_page + 1, total_pages)),
-        )
+    div().flex().justify_end().child(
+        div()
+            .text_size(d.text_xs)
+            .text_color(theme.text_muted)
+            .child(format!("Page {} / {}", current_page + 1, total_pages)),
+    )
 }
 
 fn render_legend(d: &Ds, theme: &Theme) -> impl IntoElement {
@@ -213,7 +210,11 @@ fn render_grid(
             .controls
             .iter()
             .any(|c| c.row == row && c.kind == PhysicalControlKind::Fader);
-        let row_height = if has_fader_in_row { FADER_CELL_H } else { CELL_H };
+        let row_height = if has_fader_in_row {
+            FADER_CELL_H
+        } else {
+            CELL_H
+        };
 
         let mut cells: Vec<AnyElement> = Vec::with_capacity(cols as usize);
         for col in 0..cols {
@@ -574,11 +575,7 @@ fn render_button_widget(
             let count = labels.len().max(1);
             let cur = (value as usize).min(count - 1);
             let next = (cur + 1) % count;
-            let label_for_cell = labels
-                .get(cur)
-                .copied()
-                .unwrap_or_default()
-                .to_string();
+            let label_for_cell = labels.get(cur).copied().unwrap_or_default().to_string();
             let display = label_for_cell.clone();
             let element = div()
                 .id(("hw-choice-btn", plugin_index * 1000 + binding.param_index))
@@ -599,7 +596,9 @@ fn render_button_widget(
                     let param_idx = binding.param_index;
                     move |_, _, cx| {
                         entity.update(cx, |state, _| {
-                            state.app.set_plugin_param(plugin_index, param_idx, next as f64);
+                            state
+                                .app
+                                .set_plugin_param(plugin_index, param_idx, next as f64);
                         });
                     }
                 });
@@ -632,7 +631,9 @@ fn render_button_widget(
                     let param_idx = binding.param_index;
                     move |_, _, cx| {
                         entity.update(cx, |state, _| {
-                            state.app.set_plugin_param(plugin_index, param_idx, next as f64);
+                            state
+                                .app
+                                .set_plugin_param(plugin_index, param_idx, next as f64);
                         });
                     }
                 });
@@ -677,13 +678,7 @@ fn static_knob(theme: &Theme, accent: Rgba) -> impl IntoElement {
         .flex()
         .items_center()
         .justify_center()
-        .child(
-            div()
-                .w(px(18.0))
-                .h(px(18.0))
-                .rounded_full()
-                .bg(accent),
-        )
+        .child(div().w(px(18.0)).h(px(18.0)).rounded_full().bg(accent))
 }
 
 fn static_fader(theme: &Theme) -> impl IntoElement {

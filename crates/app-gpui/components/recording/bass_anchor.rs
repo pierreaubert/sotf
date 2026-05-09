@@ -1,22 +1,23 @@
 //! Recording wizard — Step 4: Bass Anchor (GD-Opt v2 Phase GD-1e).
 //!
-//! Plays a 20 Hz × 5-cycle Hann-windowed tone burst sequentially on
+//! Plays a low-frequency Hann-windowed tone burst sequentially on
 //! each output channel, records the mic, and extracts the per-channel
 //! phase + stability of the burst's fundamental via a single-bin DFT.
 //! The result anchors the sweep-derived phase at the first bin,
 //! eliminating the 2π wraparound ambiguity that plagues log-sweep
 //! bass measurements (§2.6 of `docs/gd_opt_v2_plan.md`).
 //!
-//! This renderer mirrors the Probe step (`probe.rs`) — display current
-//! status, expose a Start/Cancel control, render a per-channel result
-//! table when Complete. Live capture wiring (engine spawn +
-//! apply_results) lands alongside this step; for review purposes the
-//! step is optional and can be skipped via the wizard's Next button.
+//! Mirrors the Probe step (`probe.rs`): status line, Run/Cancel
+//! control, per-channel results table once Complete.
 
-use crate::app::types::recording::BassAnchorCaptureStatus;
+use crate::app::theme::Theme;
+use crate::app::types::recording::{BassAnchorCaptureStatus, RecordingState};
 use crate::ui::PlayerView;
 use gpui::{Context, IntoElement};
-use gpui_ui_kit::{Card, StackSpacing, Text, TextSize, TextWeight, VStack};
+use gpui_ui_kit::{
+    Button, ButtonSize, ButtonVariant, Card, HStack, StackSpacing, Text, TextSize, TextWeight,
+    VStack,
+};
 
 impl PlayerView {
     /// Render the BassAnchor step UI.
@@ -29,6 +30,8 @@ impl PlayerView {
         let translations = state.app.ui_state.translations.clone();
         let rec = &state.app.measurement_state.recording_state;
         let bac = rec.bass_anchor_capture.clone();
+        let has_speakers = !rec.playback_config.channel_mappings.is_empty();
+        let running = matches!(bac.status, BassAnchorCaptureStatus::Running { .. });
 
         let status_line = match &bac.status {
             BassAnchorCaptureStatus::Idle => {
@@ -44,6 +47,27 @@ impl PlayerView {
             BassAnchorCaptureStatus::Failed(e) => format!("Failed: {e}"),
         };
 
+        let run_button = if running {
+            Button::new("bass_anchor_cancel", translations.general_cancel)
+                .variant(ButtonVariant::Secondary)
+                .size(ButtonSize::Sm)
+                .theme(theme.to_button_theme())
+                .on_click_event(cx.listener(|view, _, _, cx| {
+                    view.cancel_bass_anchor_capture(cx);
+                }))
+        } else {
+            Button::new("bass_anchor_run", "Run Bass Anchor")
+                .variant(ButtonVariant::Primary)
+                .size(ButtonSize::Sm)
+                .theme(theme.to_button_theme())
+                .on_click_event(cx.listener(move |view, _, _, cx| {
+                    if !has_speakers {
+                        return;
+                    }
+                    view.start_bass_anchor_capture(cx);
+                }))
+        };
+
         let mut column = VStack::new()
             .spacing(StackSpacing::Sm)
             .child(
@@ -55,11 +79,34 @@ impl PlayerView {
                 Text::new(
                     "Plays a low-frequency tone burst per channel so GD-Opt v2 can anchor the \
                      first bass bin of the sweep-derived phase. Optional — skip with Next if \
-                     your system doesn't support sub-bass playback.",
+                     your system doesn't support playback at the selected bass frequency.",
                 )
                 .size(TextSize::Sm),
             )
-            .child(Text::new(status_line).size(TextSize::Sm));
+            .child(bass_anchor_number_row(
+                cx,
+                &theme,
+                "Frequency (Hz)",
+                bac.bass_freq_hz as f64,
+                5.0,
+                |rec, delta| {
+                    rec.bass_anchor_capture.bass_freq_hz =
+                        (rec.bass_anchor_capture.bass_freq_hz + delta).clamp(20.0, 120.0);
+                },
+            ))
+            .child(bass_anchor_number_row(
+                cx,
+                &theme,
+                "Cycles",
+                bac.bass_cycles as f64,
+                1.0,
+                |rec, delta| {
+                    let next = rec.bass_anchor_capture.bass_cycles as i32 + delta as i32;
+                    rec.bass_anchor_capture.bass_cycles = next.clamp(3, 12) as u16;
+                },
+            ))
+            .child(Text::new(status_line).size(TextSize::Sm))
+            .child(HStack::new().spacing(StackSpacing::Sm).child(run_button));
 
         if let Some(results) = bac.results.as_ref() {
             column = column.child(
@@ -93,4 +140,200 @@ impl PlayerView {
             .border(theme.border)
             .content(column)
     }
+
+    /// Spawn the bass-anchor tone-burst capture on a `smol::unblock`
+    /// worker. Mirrors `start_probe_capture` (probe.rs) — derives the
+    /// channel list from `playback_config.channel_mappings`, sets the
+    /// status to Running, and on completion calls `apply_results`.
+    pub(crate) fn start_bass_anchor_capture(&mut self, cx: &mut Context<Self>) {
+        let (
+            bass_freq_hz,
+            bass_cycles,
+            silence_ms,
+            sample_rate,
+            input_channel,
+            channel_indices,
+            channel_names,
+            out_dev,
+            in_dev,
+            wav_path,
+        ) = {
+            let state = self.state.read(cx);
+            let rec = &state.app.measurement_state.recording_state;
+            let mappings = &rec.playback_config.channel_mappings;
+            if mappings.is_empty() {
+                log::warn!("Bass anchor capture: no speaker channels configured");
+                return;
+            }
+            let names: Vec<String> = mappings.iter().map(|m| m.group_name.clone()).collect();
+            let indices: Vec<u16> = mappings
+                .iter()
+                .map(|m| m.interface_channel() as u16)
+                .collect();
+            let dir = rec
+                .recording_directory
+                .clone()
+                .unwrap_or_else(|| ".".to_string());
+            let wav = std::path::PathBuf::from(&dir).join("bass_anchor_all_channels.wav");
+            (
+                rec.bass_anchor_capture.bass_freq_hz,
+                rec.bass_anchor_capture.bass_cycles,
+                rec.bass_anchor_capture.silence_duration_ms,
+                rec.bass_anchor_capture.sample_rate,
+                rec.bass_anchor_capture.input_channel,
+                indices,
+                names,
+                Some(rec.playback_config.device_name.clone()),
+                Some(rec.recording_config.device_name.clone()),
+                wav,
+            )
+        };
+
+        let started_at_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+
+        let cancel_flag = self.state.update(cx, |state, cx| {
+            let rec = &mut state.app.measurement_state.recording_state;
+            rec.bass_anchor_cancel_requested
+                .store(false, std::sync::atomic::Ordering::Relaxed);
+            rec.bass_anchor_capture.status = BassAnchorCaptureStatus::Running { started_at_ms };
+            rec.bass_anchor_capture.results = None;
+            cx.notify();
+            rec.bass_anchor_cancel_requested.clone()
+        });
+
+        let state_clone = self.state.clone();
+        let wav_path_for_state = wav_path.clone();
+        let cancel_for_task = cancel_flag.clone();
+        cx.spawn(async move |_, cx| {
+            let result = smol::unblock(move || {
+                #[cfg(not(target_os = "ios"))]
+                {
+                    sotf_audio::signal_recorder::run_bass_anchor_with_recording(
+                        &channel_indices,
+                        &channel_names,
+                        sample_rate,
+                        bass_freq_hz,
+                        bass_cycles,
+                        silence_ms,
+                        out_dev.as_deref(),
+                        in_dev.as_deref(),
+                        input_channel,
+                        &wav_path,
+                        Some(cancel_for_task),
+                    )
+                }
+                #[cfg(target_os = "ios")]
+                {
+                    let _ = (
+                        &channel_indices,
+                        &channel_names,
+                        sample_rate,
+                        bass_freq_hz,
+                        bass_cycles,
+                        silence_ms,
+                        out_dev.as_deref(),
+                        in_dev.as_deref(),
+                        input_channel,
+                        &wav_path,
+                        cancel_for_task,
+                    );
+                    Err::<sotf_audio::signal_recorder::BassAnchorResults, String>(
+                        "Bass anchor capture is not available on iOS".to_string(),
+                    )
+                }
+            })
+            .await;
+
+            state_clone.update(&mut cx.clone(), |state, cx| {
+                let bac = &mut state
+                    .app
+                    .measurement_state
+                    .recording_state
+                    .bass_anchor_capture;
+                match result {
+                    Ok(results) => {
+                        bac.apply_results(
+                            results,
+                            Some(wav_path_for_state.to_string_lossy().to_string()),
+                        );
+                    }
+                    Err(e) if e == sotf_audio::signal_recorder::CANCELLED_ERR => {
+                        log::info!("Bass anchor capture cancelled by user");
+                        bac.status = BassAnchorCaptureStatus::Idle;
+                    }
+                    Err(e) => {
+                        log::warn!("Bass anchor capture failed: {}", e);
+                        bac.status = BassAnchorCaptureStatus::Failed(e);
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Request cancellation of an in-progress bass anchor capture. The
+    /// engine honors the flag at its next stability poll (~50 ms
+    /// latency) and returns `Err(CANCELLED_ERR)`.
+    pub(crate) fn cancel_bass_anchor_capture(&mut self, cx: &mut Context<Self>) {
+        log::info!("Cancel requested for bass anchor capture");
+        self.state.update(cx, |state, cx| {
+            state
+                .app
+                .measurement_state
+                .recording_state
+                .bass_anchor_cancel_requested
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            cx.notify();
+        });
+    }
+}
+
+fn bass_anchor_number_row(
+    cx: &mut Context<PlayerView>,
+    theme: &Theme,
+    label: &'static str,
+    current: f64,
+    step: f32,
+    apply: impl Fn(&mut RecordingState, f32) + Send + 'static + Clone,
+) -> impl IntoElement {
+    let apply_plus = apply.clone();
+    let apply_minus = apply;
+    HStack::new()
+        .spacing(StackSpacing::Sm)
+        .child(Text::new(label).size(TextSize::Xs))
+        .child(
+            Text::new(format!("{:.0}", current))
+                .size(TextSize::Xs)
+                .weight(TextWeight::Bold),
+        )
+        .child(
+            Button::new(format!("{label}_minus"), "-")
+                .aria_label(format!("Decrease {label}"))
+                .variant(ButtonVariant::Secondary)
+                .size(ButtonSize::Xs)
+                .theme(theme.to_button_theme())
+                .on_click_event(cx.listener(move |view, _, _, cx| {
+                    view.state.update(cx, |state, _| {
+                        apply_minus(&mut state.app.measurement_state.recording_state, -step);
+                    });
+                    cx.notify();
+                })),
+        )
+        .child(
+            Button::new(format!("{label}_plus"), "+")
+                .aria_label(format!("Increase {label}"))
+                .variant(ButtonVariant::Secondary)
+                .size(ButtonSize::Xs)
+                .theme(theme.to_button_theme())
+                .on_click_event(cx.listener(move |view, _, _, cx| {
+                    view.state.update(cx, |state, _| {
+                        apply_plus(&mut state.app.measurement_state.recording_state, step);
+                    });
+                    cx.notify();
+                })),
+        )
 }

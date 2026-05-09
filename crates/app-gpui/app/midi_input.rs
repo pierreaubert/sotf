@@ -139,9 +139,7 @@ pub fn try_start() -> Option<MidiInputService> {
 /// Match a device list against the controllers we know how to drive. Names
 /// are matched case-insensitively against the device's `name` field as
 /// reported by the OS. Returns the first match with its stable id.
-fn pick_supported_device(
-    devices: &[MidiDeviceInfo],
-) -> Option<(&MidiDeviceInfo, &'static str)> {
+fn pick_supported_device(devices: &[MidiDeviceInfo]) -> Option<(&MidiDeviceInfo, &'static str)> {
     for d in devices {
         let lower = d.name.to_lowercase();
         if lower.contains("xone") {

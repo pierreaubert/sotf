@@ -110,13 +110,13 @@ pub mod bayesian;
 /// Continuous-prior loss integration for spatial / area-based optimization
 /// (expected value, worst-case, CVaR over a [`continuous_area::Prior`]).
 pub mod continuous_area;
-pub use continuous_area::{
-    AreaError, AreaScalarisation, Prior, Quadrature, build_quadrature_points,
-    evaluate_area_loss, try_evaluate_area_loss,
-};
 pub use bayesian::{
     BayesAcquisition, BayesOptCallback, BayesOptConfig, BayesOptIntermediate, BayesOptParetoReport,
     BayesOptReport, BayesParetoSolution, bayesian_multi_objective, bayesian_optimization,
+};
+pub use continuous_area::{
+    AreaError, AreaScalarisation, Prior, Quadrature, build_quadrature_points, evaluate_area_loss,
+    try_evaluate_area_loss,
 };
 
 use std::fmt;

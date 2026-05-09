@@ -1637,13 +1637,15 @@ pub fn optimize_multiseat_continuous_area(
     freq_range: (f64, f64),
     sample_rate: f64,
 ) -> Result<MultiSeatOptimizationResult> {
-    let area_cfg = config.continuous_area.as_ref().ok_or_else(|| {
-        AutoeqError::InvalidConfiguration {
-            message: "optimize_multiseat_continuous_area requires \
+    let area_cfg =
+        config
+            .continuous_area
+            .as_ref()
+            .ok_or_else(|| AutoeqError::InvalidConfiguration {
+                message: "optimize_multiseat_continuous_area requires \
                       MultiSeatConfig::continuous_area to be set"
-                .to_string(),
-        }
-    })?;
+                    .to_string(),
+            })?;
 
     if area_cfg.bounds.len() != area_cfg.dimensions {
         return Err(AutoeqError::InvalidConfiguration {
@@ -1848,47 +1850,17 @@ fn optimize_continuous_area_dispatch<const D: usize>(
     let initial_gains = vec![0.0; measurements.num_subs];
     let initial_delays = vec![0.0; measurements.num_subs];
     let initial_polarities = vec![false; measurements.num_subs];
-    let initial_allpass: Vec<Vec<(f64, f64)>> =
-        vec![Vec::new(); measurements.num_subs];
+    let initial_allpass: Vec<Vec<(f64, f64)>> = vec![Vec::new(); measurements.num_subs];
 
     // Loss closure: returns scalarised flatness loss across the area.
-    let evaluate_area = |gains: &[f64],
-                         delays: &[f64],
-                         polarities: &[bool],
-                         allpass: &[Vec<(f64, f64)>]|
-     -> f64 {
-        match (&scalarisation, &static_complex, &static_points) {
-            (AreaScalarisation::ExpectedValue, Some(complex), Some((_, weights))) => {
-                let mut acc = 0.0;
-                for (per_sub, w) in complex.iter().zip(weights.iter()) {
-                    // Wrap as a single-seat dataset: per_sub[sub] is `Vec<Complex64>`
-                    // already on `freqs`. We need shape `[sub][seat=1][freq]`.
-                    let mut seat_form: Vec<Vec<Vec<Complex64>>> =
-                        Vec::with_capacity(per_sub.len());
-                    for sub_data in per_sub {
-                        seat_form.push(vec![sub_data.clone()]);
-                    }
-                    let combined = compute_combined_responses(
-                        &seat_form,
-                        &freqs,
-                        gains,
-                        delays,
-                        polarities,
-                        allpass,
-                        sample_rate,
-                        eval_min,
-                        eval_max,
-                    );
-                    acc += w * single_seat_flatness(&combined);
-                }
-                acc
-            }
-            (AreaScalarisation::Cvar { alpha }, Some(complex), Some((_, weights))) => {
-                let alpha = alpha.clamp(f64::MIN_POSITIVE, 1.0);
-                let mut wl: Vec<(f64, f64)> = complex
-                    .iter()
-                    .zip(weights.iter())
-                    .map(|(per_sub, &w)| {
+    let evaluate_area =
+        |gains: &[f64], delays: &[f64], polarities: &[bool], allpass: &[Vec<(f64, f64)>]| -> f64 {
+            match (&scalarisation, &static_complex, &static_points) {
+                (AreaScalarisation::ExpectedValue, Some(complex), Some((_, weights))) => {
+                    let mut acc = 0.0;
+                    for (per_sub, w) in complex.iter().zip(weights.iter()) {
+                        // Wrap as a single-seat dataset: per_sub[sub] is `Vec<Complex64>`
+                        // already on `freqs`. We need shape `[sub][seat=1][freq]`.
                         let mut seat_form: Vec<Vec<Vec<Complex64>>> =
                             Vec::with_capacity(per_sub.len());
                         for sub_data in per_sub {
@@ -1905,72 +1877,96 @@ fn optimize_continuous_area_dispatch<const D: usize>(
                             eval_min,
                             eval_max,
                         );
-                        (single_seat_flatness(&combined), w)
-                    })
-                    .collect();
-                wl.sort_by(|a, b| {
-                    b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal)
-                });
-                let mut acc_loss = 0.0;
-                let mut acc_mass = 0.0;
-                for (l, w) in &wl {
-                    let take = (alpha - acc_mass).min(*w);
-                    if take <= 0.0 {
-                        break;
+                        acc += w * single_seat_flatness(&combined);
                     }
-                    acc_loss += take * l;
-                    acc_mass += take;
-                    if acc_mass >= alpha {
-                        break;
+                    acc
+                }
+                (AreaScalarisation::Cvar { alpha }, Some(complex), Some((_, weights))) => {
+                    let alpha = alpha.clamp(f64::MIN_POSITIVE, 1.0);
+                    let mut wl: Vec<(f64, f64)> = complex
+                        .iter()
+                        .zip(weights.iter())
+                        .map(|(per_sub, &w)| {
+                            let mut seat_form: Vec<Vec<Vec<Complex64>>> =
+                                Vec::with_capacity(per_sub.len());
+                            for sub_data in per_sub {
+                                seat_form.push(vec![sub_data.clone()]);
+                            }
+                            let combined = compute_combined_responses(
+                                &seat_form,
+                                &freqs,
+                                gains,
+                                delays,
+                                polarities,
+                                allpass,
+                                sample_rate,
+                                eval_min,
+                                eval_max,
+                            );
+                            (single_seat_flatness(&combined), w)
+                        })
+                        .collect();
+                    wl.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+                    let mut acc_loss = 0.0;
+                    let mut acc_mass = 0.0;
+                    for (l, w) in &wl {
+                        let take = (alpha - acc_mass).min(*w);
+                        if take <= 0.0 {
+                            break;
+                        }
+                        acc_loss += take * l;
+                        acc_mass += take;
+                        if acc_mass >= alpha {
+                            break;
+                        }
+                    }
+                    if acc_mass > 0.0 {
+                        acc_loss / acc_mass
+                    } else {
+                        f64::INFINITY
                     }
                 }
-                if acc_mass > 0.0 {
-                    acc_loss / acc_mass
-                } else {
-                    f64::INFINITY
+                (AreaScalarisation::WorstCase { .. }, _, _) => {
+                    // For WorstCase we'd ideally do an inner search over p; for the
+                    // first iteration we evaluate over a small Sobol scan on the
+                    // bounding box and return the max. This avoids spawning a
+                    // nested DE per outer fitness call (which would be a huge cost
+                    // hit) and is good enough for typical D ≤ 3.
+                    let probe_pts = sobol_probe::<D>(64, &bounds_arr);
+                    let mut worst = f64::NEG_INFINITY;
+                    for p in &probe_pts {
+                        let per_sub = match interpolate_at_p(*p) {
+                            Ok(v) => v,
+                            Err(_) => return f64::INFINITY,
+                        };
+                        let mut seat_form: Vec<Vec<Vec<Complex64>>> =
+                            Vec::with_capacity(per_sub.len());
+                        for sub_data in &per_sub {
+                            seat_form.push(vec![sub_data.clone()]);
+                        }
+                        let combined = compute_combined_responses(
+                            &seat_form,
+                            &freqs,
+                            gains,
+                            delays,
+                            polarities,
+                            allpass,
+                            sample_rate,
+                            eval_min,
+                            eval_max,
+                        );
+                        let l = single_seat_flatness(&combined);
+                        if l > worst {
+                            worst = l;
+                        }
+                    }
+                    worst
                 }
+                // Static points missing means we hit a WorstCase / unreachable branch
+                // outside the WorstCase arm above — defensive.
+                _ => f64::INFINITY,
             }
-            (AreaScalarisation::WorstCase { .. }, _, _) => {
-                // For WorstCase we'd ideally do an inner search over p; for the
-                // first iteration we evaluate over a small Sobol scan on the
-                // bounding box and return the max. This avoids spawning a
-                // nested DE per outer fitness call (which would be a huge cost
-                // hit) and is good enough for typical D ≤ 3.
-                let probe_pts = sobol_probe::<D>(64, &bounds_arr);
-                let mut worst = f64::NEG_INFINITY;
-                for p in &probe_pts {
-                    let per_sub = match interpolate_at_p(*p) {
-                        Ok(v) => v,
-                        Err(_) => return f64::INFINITY,
-                    };
-                    let mut seat_form: Vec<Vec<Vec<Complex64>>> =
-                        Vec::with_capacity(per_sub.len());
-                    for sub_data in &per_sub {
-                        seat_form.push(vec![sub_data.clone()]);
-                    }
-                    let combined = compute_combined_responses(
-                        &seat_form,
-                        &freqs,
-                        gains,
-                        delays,
-                        polarities,
-                        allpass,
-                        sample_rate,
-                        eval_min,
-                        eval_max,
-                    );
-                    let l = single_seat_flatness(&combined);
-                    if l > worst {
-                        worst = l;
-                    }
-                }
-                worst
-            }
-            // Static points missing means we hit a WorstCase / unreachable branch
-            // outside the WorstCase arm above — defensive.
-            _ => f64::INFINITY,
-        }
-    };
+        };
 
     let initial_objective = evaluate_area(
         &initial_gains,
@@ -1999,13 +1995,7 @@ fn optimize_continuous_area_dispatch<const D: usize>(
                 initial_objective,
             )
         } else {
-            (
-                gains,
-                delays,
-                polarities,
-                allpass_filters,
-                final_objective,
-            )
+            (gains, delays, polarities, allpass_filters, final_objective)
         };
 
     let improvement = initial_objective - accepted_obj;

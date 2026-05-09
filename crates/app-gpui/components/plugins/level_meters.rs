@@ -304,8 +304,7 @@ impl Element for LevelMeterElement {
                     let mid = (strip_top + strip_bot) * 0.5;
                     // Normalize within the visible bar: 0 at bottom, 1 at top.
                     let local_pos = if meter_height_f > 0.0 {
-                        ((meter_origin_y_f + meter_height_f - mid) / meter_height_f)
-                            .clamp(0.0, 1.0)
+                        ((meter_origin_y_f + meter_height_f - mid) / meter_height_f).clamp(0.0, 1.0)
                     } else {
                         0.0
                     };
@@ -1478,11 +1477,7 @@ impl PlayerView {
             .w_full()
             .p(d.card)
             .bg(theme.background)
-            .child(self.render_lufs_with_true_peak(
-                &d,
-                loudness.as_ref(),
-                &theme,
-            ))
+            .child(self.render_lufs_with_true_peak(&d, loudness.as_ref(), &theme))
     }
 }
 

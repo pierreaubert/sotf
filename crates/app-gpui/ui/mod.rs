@@ -206,9 +206,7 @@ impl PlayerView {
                             let layout = svc.layout();
                             let last_focus = view.midi_focused_plugin;
                             let new_focus = view.state.update(cx, |state, _cx| {
-                                Self::dispatch_midi_messages(
-                                    state, layout, last_focus, messages,
-                                )
+                                Self::dispatch_midi_messages(state, layout, last_focus, messages)
                             });
                             view.midi_focused_plugin = new_focus;
                         }
@@ -392,9 +390,7 @@ impl PlayerView {
                     param_index,
                     value,
                 } => {
-                    state
-                        .app
-                        .set_plugin_param(plugin_index, param_index, value);
+                    state.app.set_plugin_param(plugin_index, param_index, value);
                 }
                 MappingAction::AdjustParam { .. } => {
                     // Relative encoders aren't auto-mapped on the supported

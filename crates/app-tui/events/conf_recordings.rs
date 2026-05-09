@@ -394,10 +394,7 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
         }
 
         RecordingStep::BassAnchor => {
-            // GD-Opt v2 Phase GD-1e — display-only in the TUI to
-            // mirror the GPUI wizard, which renders state but doesn't
-            // expose a Run button. Step-tab navigation comes from the
-            // outer wizard handler.
+            handle_bass_anchor_step_keys(app, key);
             None
         }
 
@@ -566,15 +563,18 @@ fn spawn_probe_capture(app: &mut App) {
         return;
     }
 
-    // Build the channel list from the already-captured sweeps so we
-    // probe the same speakers the user recorded.
-    let channel_names: Vec<String> = app
-        .recording
-        .channel_recordings
+    // Probe one signal per *speaker output channel*, not per
+    // (speaker × position × mic) entry in `channel_recordings`.
+    // The latter multiplies the channel count well beyond the physical
+    // layout (e.g. 9.1.6 × 2 mic positions × 1 mic = 32 entries for a
+    // 16-speaker setup) and tries to address hardware outputs that
+    // don't exist.
+    let mappings = &app.recording.playback_config.channel_mappings;
+    let channel_names: Vec<String> = mappings.iter().map(|m| m.group_name.clone()).collect();
+    let channel_indices: Vec<u16> = mappings
         .iter()
-        .map(|r| r.channel_name.clone())
+        .map(|m| m.interface_channel() as u16)
         .collect();
-    let channel_indices: Vec<u16> = (0..channel_names.len() as u16).collect();
 
     // Build the output WAV path under the same directory the sweeps
     // landed in so everything travels together at save time.
@@ -949,6 +949,148 @@ pub fn poll_spl_calibration_capture(app: &mut App) -> bool {
         Err(e) => {
             log::warn!("SPL calibration capture failed: {e}");
             cal.status = SplCalibrationCaptureStatus::Failed(e);
+        }
+    }
+    true
+}
+
+// ---------------------------------------------------------------------------
+// Bass Anchor step (GD-Opt v2 Phase GD-1e)
+// ---------------------------------------------------------------------------
+
+#[allow(clippy::type_complexity)]
+static BASS_ANCHOR_CAPTURE_RESULT: std::sync::OnceLock<
+    Arc<
+        Mutex<
+            Option<
+                Result<
+                    (
+                        sotf_audio_player::recording_types::BassAnchorResults,
+                        String,
+                    ),
+                    String,
+                >,
+            >,
+        >,
+    >,
+> = std::sync::OnceLock::new();
+
+fn handle_bass_anchor_step_keys(app: &mut App, key: KeyEvent) {
+    use sotf_audio_player::recording_types::BassAnchorCaptureStatus;
+
+    let running = matches!(
+        app.recording.bass_anchor_capture.status,
+        BassAnchorCaptureStatus::Running { .. }
+    );
+
+    match key.code {
+        KeyCode::Enter | KeyCode::Char('r') => {
+            if running {
+                // No cancel flag wired in the TUI yet — just leave it
+                // running; the engine call will return when it finishes.
+            } else {
+                spawn_bass_anchor_capture(app);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn spawn_bass_anchor_capture(app: &mut App) {
+    use sotf_audio_player::recording_types::BassAnchorCaptureStatus;
+
+    let mappings = &app.recording.playback_config.channel_mappings;
+    if mappings.is_empty() {
+        app.recording.bass_anchor_capture.status =
+            BassAnchorCaptureStatus::Failed("Configure speakers first (Config step)".to_string());
+        return;
+    }
+    let channel_names: Vec<String> = mappings.iter().map(|m| m.group_name.clone()).collect();
+    let channel_indices: Vec<u16> = mappings
+        .iter()
+        .map(|m| m.interface_channel() as u16)
+        .collect();
+
+    let wav_path_str = {
+        let base_dir = if app.recording.output_directory.is_empty() {
+            ".".to_string()
+        } else {
+            app.recording.output_directory.clone()
+        };
+        format!("{}/bass_anchor_all_channels.wav", base_dir)
+    };
+
+    let bass_freq_hz = app.recording.bass_anchor_capture.bass_freq_hz;
+    let bass_cycles = app.recording.bass_anchor_capture.bass_cycles;
+    let silence_ms = app.recording.bass_anchor_capture.silence_duration_ms;
+    let sample_rate = app.recording.bass_anchor_capture.sample_rate;
+    let input_channel = app.recording.bass_anchor_capture.input_channel;
+    let output_device = Some(app.recording.playback_config.device_name.clone());
+    let input_device = Some(app.recording.recording_config.device_name.clone());
+
+    app.recording.bass_anchor_capture.status = BassAnchorCaptureStatus::Running {
+        started_at_ms: now_ms(),
+    };
+    app.recording.bass_anchor_capture.results = None;
+
+    let slot = BASS_ANCHOR_CAPTURE_RESULT
+        .get_or_init(|| Arc::new(Mutex::new(None)))
+        .clone();
+    if let Ok(mut g) = slot.lock() {
+        *g = None;
+    }
+
+    std::thread::spawn(move || {
+        let wav_path = std::path::PathBuf::from(&wav_path_str);
+        let result = sotf_audio::signal_recorder::run_bass_anchor_with_recording(
+            &channel_indices,
+            &channel_names,
+            sample_rate,
+            bass_freq_hz,
+            bass_cycles,
+            silence_ms,
+            output_device.as_deref(),
+            input_device.as_deref(),
+            input_channel,
+            &wav_path,
+            None,
+        )
+        .map(|r| (r, wav_path_str));
+        if let Ok(mut g) = slot.lock() {
+            *g = Some(result);
+        }
+    });
+}
+
+/// Drain the bass-anchor capture slot. Returns `true` if state changed
+/// and the UI should redraw.
+pub fn poll_bass_anchor_capture(app: &mut App) -> bool {
+    use sotf_audio_player::recording_types::BassAnchorCaptureStatus;
+
+    if !matches!(
+        app.recording.bass_anchor_capture.status,
+        BassAnchorCaptureStatus::Running { .. }
+    ) {
+        return false;
+    }
+    let slot = BASS_ANCHOR_CAPTURE_RESULT
+        .get_or_init(|| Arc::new(Mutex::new(None)))
+        .clone();
+    let Ok(mut guard) = slot.lock() else {
+        return false;
+    };
+    let Some(outcome) = guard.take() else {
+        return false;
+    };
+    drop(guard);
+    match outcome {
+        Ok((results, wav_path)) => {
+            app.recording
+                .bass_anchor_capture
+                .apply_results(results, Some(wav_path));
+        }
+        Err(e) => {
+            app.recording.bass_anchor_capture.status = BassAnchorCaptureStatus::Failed(e);
         }
     }
     true

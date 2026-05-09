@@ -311,10 +311,7 @@ pub fn bootstrap_band(
     }
     if !(0.0..1.0).contains(&config.alpha) || config.alpha <= 0.0 {
         return Err(AutoeqError::InvalidConfiguration {
-            message: format!(
-                "bootstrap alpha must be in (0, 1), got {}",
-                config.alpha
-            ),
+            message: format!("bootstrap alpha must be in (0, 1), got {}", config.alpha),
         });
     }
 
@@ -346,10 +343,7 @@ pub fn bootstrap_band(
             }
         }
 
-        let mean_curve = rms_average_weighted(
-            &resampled,
-            resampled_weights.as_deref(),
-        );
+        let mean_curve = rms_average_weighted(&resampled, resampled_weights.as_deref());
         for (bin, samples) in resampled_means.iter_mut().enumerate() {
             samples.push(mean_curve.spl[bin]);
         }
@@ -374,11 +368,7 @@ pub fn bootstrap_band(
         // Sample std (unbiased, /(B-1)) across resamples.
         let mean: f64 = samples.iter().copied().sum::<f64>() / samples.len() as f64;
         let var = if samples.len() > 1 {
-            samples
-                .iter()
-                .map(|&v| (v - mean).powi(2))
-                .sum::<f64>()
-                / (samples.len() - 1) as f64
+            samples.iter().map(|&v| (v - mean).powi(2)).sum::<f64>() / (samples.len() - 1) as f64
         } else {
             0.0
         };
@@ -1060,8 +1050,8 @@ mod tests {
             alpha: 0.10,
             seed: 11,
         };
-        let res = analyze_spatial_robustness_with_bootstrap(&[c1, c2], &cfg, &bcfg, None)
-            .expect("ok");
+        let res =
+            analyze_spatial_robustness_with_bootstrap(&[c1, c2], &cfg, &bcfg, None).expect("ok");
         assert!(res.bootstrap.is_some());
         let band = res.bootstrap.unwrap();
         assert_eq!(band.lower.spl.len(), 2);

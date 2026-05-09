@@ -1931,31 +1931,27 @@ fn continuous_area_from_backend(
         ),
     };
 
-    let (
-        quadrature_kind,
-        quadrature_num_points,
-        quadrature_seed,
-        gauss_legendre_points_per_axis,
-    ) = match &a.quadrature {
-        autoeq::roomeq::AreaQuadratureKind::Sobol { num_points, seed } => (
-            "sobol".to_string(),
-            *num_points,
-            *seed,
-            default_area_gauss_legendre_points_per_axis(),
-        ),
-        autoeq::roomeq::AreaQuadratureKind::LatinHypercube { num_points, seed } => (
-            "latin_hypercube".to_string(),
-            *num_points,
-            *seed,
-            default_area_gauss_legendre_points_per_axis(),
-        ),
-        autoeq::roomeq::AreaQuadratureKind::GaussLegendre { points_per_axis } => (
-            "gauss_legendre".to_string(),
-            default_area_quadrature_num_points(),
-            default_area_quadrature_seed(),
-            *points_per_axis,
-        ),
-    };
+    let (quadrature_kind, quadrature_num_points, quadrature_seed, gauss_legendre_points_per_axis) =
+        match &a.quadrature {
+            autoeq::roomeq::AreaQuadratureKind::Sobol { num_points, seed } => (
+                "sobol".to_string(),
+                *num_points,
+                *seed,
+                default_area_gauss_legendre_points_per_axis(),
+            ),
+            autoeq::roomeq::AreaQuadratureKind::LatinHypercube { num_points, seed } => (
+                "latin_hypercube".to_string(),
+                *num_points,
+                *seed,
+                default_area_gauss_legendre_points_per_axis(),
+            ),
+            autoeq::roomeq::AreaQuadratureKind::GaussLegendre { points_per_axis } => (
+                "gauss_legendre".to_string(),
+                default_area_quadrature_num_points(),
+                default_area_quadrature_seed(),
+                *points_per_axis,
+            ),
+        };
 
     let (scalarisation_kind, worst_case_inner_maxiter, worst_case_inner_seed, cvar_alpha) =
         match &a.scalarisation {
@@ -1974,12 +1970,9 @@ fn continuous_area_from_backend(
                 *inner_seed,
                 default_area_cvar_alpha(),
             ),
-            autoeq::roomeq::AreaScalarisationKind::Cvar { alpha } => (
-                "cvar".to_string(),
-                default_area_inner_maxiter(),
-                0,
-                *alpha,
-            ),
+            autoeq::roomeq::AreaScalarisationKind::Cvar { alpha } => {
+                ("cvar".to_string(), default_area_inner_maxiter(), 0, *alpha)
+            }
         };
 
     ContinuousListeningAreaUiConfig {
@@ -2464,8 +2457,10 @@ impl RoomEqOptimizerConfig {
             };
             self.multi_seat.primary_seat = ms.primary_seat;
             self.multi_seat.max_deviation_db = ms.max_deviation_db;
-            self.multi_seat.continuous_area =
-                ms.continuous_area.as_ref().map(continuous_area_from_backend);
+            self.multi_seat.continuous_area = ms
+                .continuous_area
+                .as_ref()
+                .map(continuous_area_from_backend);
         }
 
         if let Some(ref mm) = backend.multi_measurement {

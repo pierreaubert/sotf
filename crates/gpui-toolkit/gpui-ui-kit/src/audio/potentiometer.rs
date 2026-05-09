@@ -872,11 +872,7 @@ impl RenderOnce for Potentiometer {
                 .child(formatted_label);
 
             if underlined {
-                let rule_color = if selected {
-                    theme.accent
-                } else {
-                    theme.border
-                };
+                let rule_color = if selected { theme.accent } else { theme.border };
                 container = container.child(
                     div()
                         .flex()

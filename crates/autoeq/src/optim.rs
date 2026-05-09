@@ -366,9 +366,7 @@ fn compute_multi_objective_fitness(x: &[f64], mo: &MultiObjectiveData) -> f64 {
                     let alpha = alpha.clamp(f64::MIN_POSITIVE, 1.0);
                     let mut sorted = losses.clone();
                     // Worst losses first.
-                    sorted.sort_by(|a, b| {
-                        b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal)
-                    });
+                    sorted.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
                     let n = (alpha * sorted.len() as f64).ceil() as usize;
                     let n = n.clamp(1, sorted.len());
                     sorted.iter().take(n).sum::<f64>() / n as f64

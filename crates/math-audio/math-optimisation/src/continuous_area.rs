@@ -311,7 +311,8 @@ pub fn build_quadrature_points<const D: usize>(
                 }
                 Prior::Gaussian { .. } => Err(AreaError::IncompatiblePriorQuadrature(
                     "GaussLegendre on a Gaussian prior would require Gauss–Hermite; \
-                     use Sobol or LatinHypercube for unbounded priors".into(),
+                     use Sobol or LatinHypercube for unbounded priors"
+                        .into(),
                 )),
             }
         }
@@ -376,9 +377,7 @@ where
                 .map(|(p, &w)| (loss(params, *p), w))
                 .collect();
             // Worst losses first.
-            wl.sort_by(|a, b| {
-                b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal)
-            });
+            wl.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
             // Walk down the sorted list, accumulating mass until α is reached.
             let mut acc_loss = 0.0;
             let mut acc_mass = 0.0;
@@ -589,8 +588,8 @@ fn gauss_legendre_1d(n: usize) -> (Vec<f64>, Vec<f64>) {
             let mut p_prev2 = 1.0_f64;
             let mut p_prev1 = x;
             for k in 1..n {
-                let p_next = ((2.0 * k as f64 + 1.0) * x * p_prev1 - k as f64 * p_prev2)
-                    / (k as f64 + 1.0);
+                let p_next =
+                    ((2.0 * k as f64 + 1.0) * x * p_prev1 - k as f64 * p_prev2) / (k as f64 + 1.0);
                 p_prev2 = p_prev1;
                 p_prev1 = p_next;
             }
@@ -607,8 +606,8 @@ fn gauss_legendre_1d(n: usize) -> (Vec<f64>, Vec<f64>) {
         let mut p_prev2 = 1.0_f64;
         let mut p_prev1 = x;
         for k in 1..n {
-            let p_next = ((2.0 * k as f64 + 1.0) * x * p_prev1 - k as f64 * p_prev2)
-                / (k as f64 + 1.0);
+            let p_next =
+                ((2.0 * k as f64 + 1.0) * x * p_prev1 - k as f64 * p_prev2) / (k as f64 + 1.0);
             p_prev2 = p_prev1;
             p_prev1 = p_next;
         }
@@ -620,7 +619,11 @@ fn gauss_legendre_1d(n: usize) -> (Vec<f64>, Vec<f64>) {
 
     // Sort nodes ascending so output is canonical.
     let mut idx: Vec<usize> = (0..n).collect();
-    idx.sort_by(|&a, &b| nodes[a].partial_cmp(&nodes[b]).unwrap_or(std::cmp::Ordering::Equal));
+    idx.sort_by(|&a, &b| {
+        nodes[a]
+            .partial_cmp(&nodes[b])
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     let nodes_sorted: Vec<f64> = idx.iter().map(|&i| nodes[i]).collect();
     let weights_sorted: Vec<f64> = idx.iter().map(|&i| weights[i]).collect();
     (nodes_sorted, weights_sorted)
@@ -747,8 +750,13 @@ mod tests {
     #[test]
     fn sobol_uniform_integrates_p_squared() {
         // ∫_0^1 p^2 dp = 1/3
-        let prior: Prior<1> = Prior::Uniform { bounds: [(0.0, 1.0)] };
-        let q: Quadrature<1> = Quadrature::Sobol { num_points: 1024, seed: 0 };
+        let prior: Prior<1> = Prior::Uniform {
+            bounds: [(0.0, 1.0)],
+        };
+        let q: Quadrature<1> = Quadrature::Sobol {
+            num_points: 1024,
+            seed: 0,
+        };
         let loss = |_p: &[f64], pt: [f64; 1]| pt[0] * pt[0];
         let v = evaluate_area_loss(&loss, &[0.0], &prior, &q, AreaScalarisation::ExpectedValue);
         assert!((v - 1.0 / 3.0).abs() < 1e-2, "got {}", v);
@@ -756,8 +764,13 @@ mod tests {
 
     #[test]
     fn lhs_uniform_2d_integrates_constant_to_constant() {
-        let prior: Prior<2> = Prior::Uniform { bounds: [(0.0, 2.0), (-1.0, 3.0)] };
-        let q: Quadrature<2> = Quadrature::LatinHypercube { num_points: 256, seed: 7 };
+        let prior: Prior<2> = Prior::Uniform {
+            bounds: [(0.0, 2.0), (-1.0, 3.0)],
+        };
+        let q: Quadrature<2> = Quadrature::LatinHypercube {
+            num_points: 256,
+            seed: 7,
+        };
         let loss = |_p: &[f64], _pt: [f64; 2]| 5.5;
         let v = evaluate_area_loss(&loss, &[0.0], &prior, &q, AreaScalarisation::ExpectedValue);
         assert!((v - 5.5).abs() < 1e-9, "got {}", v);
@@ -767,7 +780,9 @@ mod tests {
     fn gauss_legendre_exactness_polynomial_degree_three() {
         // ∫_{-1}^{1} (3p^3 - 2p^2 + p) dp = -4/3 (only the p^2 term survives)
         // GL-2 is exact on degree 3.
-        let prior: Prior<1> = Prior::Uniform { bounds: [(-1.0, 1.0)] };
+        let prior: Prior<1> = Prior::Uniform {
+            bounds: [(-1.0, 1.0)],
+        };
         let q: Quadrature<1> = Quadrature::GaussLegendre { points_per_axis: 2 };
         let loss = |_p: &[f64], pt: [f64; 1]| 3.0 * pt[0].powi(3) - 2.0 * pt[0].powi(2) + pt[0];
         let v = evaluate_area_loss(&loss, &[0.0], &prior, &q, AreaScalarisation::ExpectedValue);
@@ -778,8 +793,13 @@ mod tests {
     #[test]
     fn worst_case_finds_known_max() {
         // L(x, p) = -(p - 0.4)^2  on p ∈ [0, 1]: max at p=0.4 → loss=0.
-        let prior: Prior<1> = Prior::Uniform { bounds: [(0.0, 1.0)] };
-        let q: Quadrature<1> = Quadrature::Sobol { num_points: 16, seed: 0 };
+        let prior: Prior<1> = Prior::Uniform {
+            bounds: [(0.0, 1.0)],
+        };
+        let q: Quadrature<1> = Quadrature::Sobol {
+            num_points: 16,
+            seed: 0,
+        };
         let loss = |_p: &[f64], pt: [f64; 1]| -(pt[0] - 0.4).powi(2);
         let v = evaluate_area_loss(
             &loss,
@@ -802,7 +822,10 @@ mod tests {
             cov_diag: [0.25],
             truncation_sigmas: 5.0,
         };
-        let q: Quadrature<1> = Quadrature::Sobol { num_points: 4096, seed: 0 };
+        let q: Quadrature<1> = Quadrature::Sobol {
+            num_points: 4096,
+            seed: 0,
+        };
         let loss = |_p: &[f64], pt: [f64; 1]| pt[0] * pt[0];
         let v = evaluate_area_loss(&loss, &[0.0], &prior, &q, AreaScalarisation::ExpectedValue);
         assert!((v - 1.25).abs() < 5e-2, "got {}", v);
@@ -812,8 +835,13 @@ mod tests {
     fn cvar_concentrates_on_tail() {
         // ExpectedValue of a flat-bottom-with-corner-spike loss should be modest;
         // CVaR(α=0.1) should be much higher because it averages the worst 10 %.
-        let prior: Prior<1> = Prior::Uniform { bounds: [(0.0, 1.0)] };
-        let q: Quadrature<1> = Quadrature::Sobol { num_points: 1024, seed: 0 };
+        let prior: Prior<1> = Prior::Uniform {
+            bounds: [(0.0, 1.0)],
+        };
+        let q: Quadrature<1> = Quadrature::Sobol {
+            num_points: 1024,
+            seed: 0,
+        };
         let loss = |_p: &[f64], pt: [f64; 1]| if pt[0] > 0.9 { 100.0 } else { 1.0 };
         let mean = evaluate_area_loss(&loss, &[0.0], &prior, &q, AreaScalarisation::ExpectedValue);
         let cvar = evaluate_area_loss(
@@ -823,27 +851,35 @@ mod tests {
             &q,
             AreaScalarisation::Cvar { alpha: 0.1 },
         );
-        assert!(cvar > mean * 5.0, "cvar {} should be >> mean {}", cvar, mean);
+        assert!(
+            cvar > mean * 5.0,
+            "cvar {} should be >> mean {}",
+            cvar,
+            mean
+        );
     }
 
     #[test]
     fn rejects_zero_quadrature_points() {
-        let prior: Prior<1> = Prior::Uniform { bounds: [(0.0, 1.0)] };
-        let q: Quadrature<1> = Quadrature::Sobol { num_points: 0, seed: 0 };
+        let prior: Prior<1> = Prior::Uniform {
+            bounds: [(0.0, 1.0)],
+        };
+        let q: Quadrature<1> = Quadrature::Sobol {
+            num_points: 0,
+            seed: 0,
+        };
         let loss = |_p: &[f64], _pt: [f64; 1]| 1.0;
-        assert!(try_evaluate_area_loss(
-            &loss,
-            &[0.0],
-            &prior,
-            &q,
-            AreaScalarisation::ExpectedValue
-        )
-        .is_err());
+        assert!(
+            try_evaluate_area_loss(&loss, &[0.0], &prior, &q, AreaScalarisation::ExpectedValue)
+                .is_err()
+        );
     }
 
     #[test]
     fn rejects_degenerate_uniform_bounds() {
-        let prior: Prior<1> = Prior::Uniform { bounds: [(1.0, 1.0)] };
+        let prior: Prior<1> = Prior::Uniform {
+            bounds: [(1.0, 1.0)],
+        };
         assert!(prior.validate().is_err());
     }
 
@@ -854,7 +890,12 @@ mod tests {
             assert_eq!(nodes.len(), n);
             assert_eq!(weights.len(), n);
             let total_w: f64 = weights.iter().sum();
-            assert!((total_w - 2.0).abs() < 1e-10, "n={}: total_w={}", n, total_w);
+            assert!(
+                (total_w - 2.0).abs() < 1e-10,
+                "n={}: total_w={}",
+                n,
+                total_w
+            );
             // Symmetry around 0:
             for i in 0..n / 2 {
                 assert!(

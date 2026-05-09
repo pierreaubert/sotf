@@ -484,17 +484,18 @@ fn render_group(
         .iter()
         .any(|c| matches!(c.control_type, ControlType::VerticalSlider));
 
-    let mut col = div()
-        .flex()
-        .flex_col()
-        .gap(d.gap)
-        .when(!group.title.is_empty() && !has_sliders, |el| {
-            el.rounded(d.r_xl)
-                .bg(theme.background_secondary)
-                .border_1()
-                .border_color(theme.border)
-                .p(d.pad_x)
-        });
+    let mut col =
+        div()
+            .flex()
+            .flex_col()
+            .gap(d.gap)
+            .when(!group.title.is_empty() && !has_sliders, |el| {
+                el.rounded(d.r_xl)
+                    .bg(theme.background_secondary)
+                    .border_1()
+                    .border_color(theme.border)
+                    .p(d.pad_x)
+            });
     if !group.title.is_empty() {
         col = col.child(render_section_title(d, group.title, theme));
     }

@@ -432,15 +432,16 @@ impl PlayerView {
                 }
                 match p.plugin_type() {
                     PluginType::Upmixer => {
-                        chain_output_channels = if let sotf_audio_player::PluginSettings::Upmixer {
-                            speaker_config,
-                            ..
-                        } = &p.settings
-                        {
-                            speaker_config_to_channels(speaker_config)
-                        } else {
-                            6
-                        };
+                        chain_output_channels =
+                            if let sotf_audio_player::PluginSettings::Upmixer {
+                                speaker_config,
+                                ..
+                            } = &p.settings
+                            {
+                                speaker_config_to_channels(speaker_config)
+                            } else {
+                                6
+                            };
                     }
                     PluginType::BinauralDecoder => chain_output_channels = 2,
                     _ => {}
@@ -2475,8 +2476,7 @@ impl PlayerView {
                 .filter(|idx| *idx < plugin_count);
             let label = match editing_idx {
                 Some(idx) => {
-                    let resolved =
-                        state.app.plugin_state.rack_theme_state.resolved_id(idx);
+                    let resolved = state.app.plugin_state.rack_theme_state.resolved_id(idx);
                     let has_override = state
                         .app
                         .plugin_state
@@ -2743,4 +2743,3 @@ impl PlayerView {
         cx.notify();
     }
 }
-

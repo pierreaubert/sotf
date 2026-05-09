@@ -52,8 +52,7 @@ fn continuous_area_rejects_when_strategy_set_but_config_missing() {
         continuous_area: None,
         ..Default::default()
     };
-    let err =
-        optimize_multiseat_continuous_area(&ms, &cfg, (20.0, 200.0), 48000.0).unwrap_err();
+    let err = optimize_multiseat_continuous_area(&ms, &cfg, (20.0, 200.0), 48000.0).unwrap_err();
     assert!(
         err.to_string().contains("continuous_area"),
         "unexpected error: {err}"
@@ -86,8 +85,7 @@ fn continuous_area_rejects_unsupported_dimension() {
         continuous_area: Some(area),
         ..Default::default()
     };
-    let err =
-        optimize_multiseat_continuous_area(&ms, &cfg, (20.0, 200.0), 48000.0).unwrap_err();
+    let err = optimize_multiseat_continuous_area(&ms, &cfg, (20.0, 200.0), 48000.0).unwrap_err();
     assert!(
         err.to_string().contains("dimensions"),
         "unexpected error: {err}"
@@ -120,8 +118,7 @@ fn continuous_area_2d_uniform_sobol_runs_end_to_end() {
         continuous_area: Some(area),
         ..Default::default()
     };
-    let result =
-        optimize_multiseat_continuous_area(&ms, &cfg, (20.0, 200.0), 48000.0).expect("ok");
+    let result = optimize_multiseat_continuous_area(&ms, &cfg, (20.0, 200.0), 48000.0).expect("ok");
     assert_eq!(result.gains.len(), 2);
     assert_eq!(result.delays.len(), 2);
     assert_eq!(result.strategy, MultiSeatStrategy::ContinuousArea);
@@ -173,8 +170,7 @@ fn continuous_area_1d_line_runs_end_to_end() {
         continuous_area: Some(area),
         ..Default::default()
     };
-    let result =
-        optimize_multiseat_continuous_area(&ms, &cfg, (20.0, 200.0), 48000.0).expect("ok");
+    let result = optimize_multiseat_continuous_area(&ms, &cfg, (20.0, 200.0), 48000.0).expect("ok");
     assert_eq!(result.gains.len(), 2);
     assert_eq!(result.objective_name, "continuous_area");
 }

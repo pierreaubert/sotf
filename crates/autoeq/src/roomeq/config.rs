@@ -773,8 +773,7 @@ fn validate_continuous_listening_area(config: &RoomConfig, result: &mut Validati
         AreaQuadratureKind::GaussLegendre { points_per_axis } => {
             if *points_per_axis == 0 {
                 result.add_error(
-                    "multi_seat.continuous_area.quadrature.points_per_axis must be > 0"
-                        .to_string(),
+                    "multi_seat.continuous_area.quadrature.points_per_axis must be > 0".to_string(),
                 );
             }
         }

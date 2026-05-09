@@ -266,7 +266,7 @@ impl BassAnchorCaptureStatus {
 /// `RecordingConfiguration.bass_anchor_results`.
 #[derive(Debug, Clone)]
 pub struct BassAnchorCaptureState {
-    /// Tone-burst centre frequency in Hz. Default 20.0.
+    /// Tone-burst centre frequency in Hz. Default 30.0.
     pub bass_freq_hz: f32,
     /// Number of cycles in the burst. Default 5.
     pub bass_cycles: u16,
@@ -287,7 +287,7 @@ pub struct BassAnchorCaptureState {
 impl Default for BassAnchorCaptureState {
     fn default() -> Self {
         Self {
-            bass_freq_hz: 20.0,
+            bass_freq_hz: 30.0,
             bass_cycles: 5,
             silence_duration_ms: 500.0,
             sample_rate: 48_000,

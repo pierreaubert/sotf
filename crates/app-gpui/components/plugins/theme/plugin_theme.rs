@@ -505,7 +505,10 @@ mod tests {
         overrides.insert(1, PluginThemeId::Brutalist);
         let theme = resolve_plugin_theme(1, PluginThemeId::Graphite, &overrides);
         // Brutalist's accent should match the brutalist preset.
-        assert_eq!(theme.accent_arc, PluginThemeId::Brutalist.theme().accent_arc);
+        assert_eq!(
+            theme.accent_arc,
+            PluginThemeId::Brutalist.theme().accent_arc
+        );
     }
 
     #[test]

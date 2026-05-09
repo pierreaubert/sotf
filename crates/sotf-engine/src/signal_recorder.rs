@@ -1212,16 +1212,180 @@ struct PlayPerChannelOutput {
     analysis_silence_samples: usize,
 }
 
+#[cfg(not(target_os = "ios"))]
+#[derive(Debug, Clone, Copy)]
+struct MeasurementOutputConfig {
+    channels: u16,
+    sample_rate: u32,
+    sample_format: cpal::SampleFormat,
+}
+
+#[cfg(not(target_os = "ios"))]
+fn choose_measurement_output_config(
+    supported: &[cpal::SupportedStreamConfigRange],
+    min_channels: u16,
+    sample_rate: u32,
+) -> Result<MeasurementOutputConfig, String> {
+    let requested_rate = sample_rate;
+    let mut candidates: Vec<MeasurementOutputConfig> = supported
+        .iter()
+        .filter(|config| {
+            config.channels() >= min_channels
+                && config.min_sample_rate() <= requested_rate
+                && config.max_sample_rate() >= requested_rate
+        })
+        .map(|config| MeasurementOutputConfig {
+            channels: config.channels(),
+            sample_rate: requested_rate,
+            sample_format: config.sample_format(),
+        })
+        .collect();
+
+    candidates.sort_by_key(|config| {
+        let format_rank = match config.sample_format {
+            cpal::SampleFormat::F32 => 0,
+            cpal::SampleFormat::I32 => 1,
+            cpal::SampleFormat::I16 => 2,
+            cpal::SampleFormat::U32 => 3,
+            cpal::SampleFormat::U16 => 4,
+            _ => 5,
+        };
+        (config.channels, format_rank)
+    });
+
+    candidates.into_iter().next().ok_or_else(|| {
+        let available = supported
+            .iter()
+            .map(|config| {
+                format!(
+                    "{:?}/{}ch/{}-{}Hz",
+                    config.sample_format(),
+                    config.channels(),
+                    config.min_sample_rate(),
+                    config.max_sample_rate()
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(
+            "No output stream config supports {} channels at {}Hz. Available configs: {}",
+            min_channels, sample_rate, available
+        )
+    })
+}
+
+#[cfg(not(target_os = "ios"))]
+fn build_measurement_output_stream(
+    device: &cpal::Device,
+    output_config: &MeasurementOutputConfig,
+    playback: Arc<Vec<f32>>,
+    cursor: Arc<std::sync::atomic::AtomicUsize>,
+    log_tag: &str,
+) -> Result<cpal::Stream, String> {
+    use cpal::traits::DeviceTrait;
+
+    let config = cpal::StreamConfig {
+        channels: output_config.channels,
+        sample_rate: output_config.sample_rate,
+        buffer_size: cpal::BufferSize::Default,
+    };
+    let log_tag_owned = log_tag.to_string();
+    match output_config.sample_format {
+        cpal::SampleFormat::F32 => device
+            .build_output_stream(
+                &config,
+                move |data: &mut [f32], _| fill_measurement_output_f32(data, &playback, &cursor),
+                move |err| log::debug!("[{log_tag_owned}] Output stream error: {}", err),
+                None,
+            )
+            .map_err(|e| format!("[{log_tag}] Failed to build f32 output stream: {}", e)),
+        cpal::SampleFormat::I16 => device
+            .build_output_stream(
+                &config,
+                move |data: &mut [i16], _| fill_measurement_output_i16(data, &playback, &cursor),
+                move |err| log::debug!("[{log_tag_owned}] Output stream error: {}", err),
+                None,
+            )
+            .map_err(|e| format!("[{log_tag}] Failed to build i16 output stream: {}", e)),
+        cpal::SampleFormat::U16 => device
+            .build_output_stream(
+                &config,
+                move |data: &mut [u16], _| fill_measurement_output_u16(data, &playback, &cursor),
+                move |err| log::debug!("[{log_tag_owned}] Output stream error: {}", err),
+                None,
+            )
+            .map_err(|e| format!("[{log_tag}] Failed to build u16 output stream: {}", e)),
+        other => Err(format!(
+            "[{log_tag}] Unsupported measurement output sample format: {other:?}"
+        )),
+    }
+}
+
+#[cfg(not(target_os = "ios"))]
+fn fill_measurement_output_f32(
+    data: &mut [f32],
+    playback: &[f32],
+    cursor: &std::sync::atomic::AtomicUsize,
+) {
+    use std::sync::atomic::Ordering as AtomicOrdering;
+
+    let start = cursor.fetch_add(data.len(), AtomicOrdering::Relaxed);
+    let available = playback.len().saturating_sub(start).min(data.len());
+    if available > 0 {
+        data[..available].copy_from_slice(&playback[start..start + available]);
+    }
+    if available < data.len() {
+        data[available..].fill(0.0);
+    }
+}
+
+#[cfg(not(target_os = "ios"))]
+fn fill_measurement_output_i16(
+    data: &mut [i16],
+    playback: &[f32],
+    cursor: &std::sync::atomic::AtomicUsize,
+) {
+    use std::sync::atomic::Ordering as AtomicOrdering;
+
+    let start = cursor.fetch_add(data.len(), AtomicOrdering::Relaxed);
+    let available = playback.len().saturating_sub(start).min(data.len());
+    for i in 0..available {
+        data[i] = (playback[start + i].clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
+    }
+    if available < data.len() {
+        data[available..].fill(0);
+    }
+}
+
+#[cfg(not(target_os = "ios"))]
+fn fill_measurement_output_u16(
+    data: &mut [u16],
+    playback: &[f32],
+    cursor: &std::sync::atomic::AtomicUsize,
+) {
+    use std::sync::atomic::Ordering as AtomicOrdering;
+
+    let start = cursor.fetch_add(data.len(), AtomicOrdering::Relaxed);
+    let available = playback.len().saturating_sub(start).min(data.len());
+    for i in 0..available {
+        let normalized = playback[start + i].clamp(-1.0, 1.0) * 0.5 + 0.5;
+        data[i] = (normalized * u16::MAX as f32) as u16;
+    }
+    if available < data.len() {
+        data[available..].fill(u16::MAX / 2);
+    }
+}
+
 /// Shared playback + capture scaffolding for both
 /// [`probe_channel_delays_core`] (wideband delay probe) and
 /// [`run_bass_anchor_core`] (bass anchor tone burst).
 ///
 /// Builds a playback buffer of the form
 ///   `[silence][ch0_signal][silence][ch1_signal]...[silence]`,
-/// writes it to a temp WAV, loads it via `AudioEngineManager`,
-/// records from the mic while it plays, waits for the recording to
-/// settle, and returns the raw mono recording together with per-
-/// channel analysis offsets scaled to the mic's actual sample rate.
+/// writes it directly to a CPAL output stream, records from the mic
+/// while it plays, waits for the recording to settle, and returns the
+/// raw mono recording together with per-channel analysis offsets scaled
+/// to the mic's actual sample rate.
 ///
 /// Analysis is the caller's responsibility — this helper intentionally
 /// knows nothing about cross-correlation, DFTs, or any stimulus-
@@ -1242,9 +1406,9 @@ fn play_per_channel_and_record_mono(
     log_tag: &str,
     cancel: Option<&CancelFlag>,
 ) -> Result<PlayPerChannelOutput, String> {
-    use crate::AudioEngineManager;
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
     use std::thread::sleep;
     use std::time::Duration;
 
@@ -1272,18 +1436,16 @@ fn play_per_channel_and_record_mono(
             .ok_or_else(|| format!("[{log_tag}] No default output device available"))?
     };
 
-    // Use exactly enough channels to address the highest target output. Pro
-    // audio interfaces (e.g. RME UFX+) can report 64+ supported channels;
-    // writing a temp WAV that wide breaks symphonia-format-riff, which can't
-    // decode WAVs whose channel count exceeds the WAVE_FORMAT_EXTENSIBLE
-    // channel-mask range (returns Unsupported around 32 ch, panics on
-    // left-shift overflow above ~64). The playback layer
-    // (`choose_output_format`) already handles "open with fewer channels
-    // than device max" via cpal, so a smaller stream count is safe and
-    // channel K of the WAV still lands 1:1 on physical output K.
-    let device_max_channels = output_device
+    // Use a direct CPAL stream with at least enough channels to address
+    // the highest target output. This keeps measurement routing as raw
+    // physical-channel writes and avoids file-decoder channel-layout
+    // interpretation or normal playback downmix/upmix paths.
+    let supported_output_configs: Vec<_> = output_device
         .supported_output_configs()
         .map_err(|e| format!("[{log_tag}] Failed to get supported output configs: {}", e))?
+        .collect();
+    let device_max_channels = supported_output_configs
+        .iter()
         .map(|config| config.channels() as usize)
         .max()
         .unwrap_or(2);
@@ -1297,12 +1459,18 @@ fn play_per_channel_and_record_mono(
         ));
     }
     let hardware_channels = max_target_channel + 1;
+    let output_config = choose_measurement_output_config(
+        &supported_output_configs,
+        hardware_channels as u16,
+        sample_rate,
+    )?;
+    let playback_channels = output_config.channels as usize;
 
     // --- Build the playback buffer ---
     let segment_len = silence_samples + signal_samples;
     let total_frames = silence_samples + num_channels * segment_len;
 
-    let mut per_channel: Vec<Vec<f32>> = (0..hardware_channels)
+    let mut per_channel: Vec<Vec<f32>> = (0..playback_channels)
         .map(|_| vec![0.0_f32; total_frames])
         .collect();
 
@@ -1319,35 +1487,11 @@ fn play_per_channel_and_record_mono(
         );
     }
 
-    let interleaved = interleave_per_channel(&per_channel);
-
-    // --- Write to temp WAV so AudioEngineManager::load_file can
-    //     dispatch it through the full playback path (volume,
-    //     virtual-output overrides, etc.). The `.wav` suffix is
-    //     required for Symphonia's format detection.
-    let temp_file = NamedTempFile::with_suffix(".wav")
-        .map_err(|e| format!("[{log_tag}] Failed to create temp file: {}", e))?;
-    let temp_path = temp_file.path().to_path_buf();
-
-    let spec = WavSpec {
-        channels: hardware_channels as u16,
-        sample_rate,
-        bits_per_sample: 32,
-        sample_format: SampleFormat::Float,
-    };
-    let mut writer = WavWriter::create(&temp_path, spec)
-        .map_err(|e| format!("[{log_tag}] Failed to create WAV writer: {}", e))?;
-    for &s in &interleaved {
-        writer
-            .write_sample(s)
-            .map_err(|e| format!("[{log_tag}] Failed to write sample: {}", e))?;
-    }
-    writer
-        .finalize()
-        .map_err(|e| format!("[{log_tag}] Failed to finalize WAV: {}", e))?;
-
+    let playback = Arc::new(interleave_per_channel(&per_channel));
+    let playback_cursor = Arc::new(AtomicUsize::new(0));
     log::info!(
-        "[{log_tag}] Written {}-channel WAV: {} frames ({:.2}s)",
+        "[{log_tag}] Prepared direct {}ch playback stream ({} target ch): {} frames ({:.2}s)",
+        playback_channels,
         hardware_channels,
         total_frames,
         total_frames as f64 / sample_rate as f64
@@ -1431,24 +1575,21 @@ fn play_per_channel_and_record_mono(
         .map_err(|e| format!("[{log_tag}] Failed to start input stream: {}", e))?;
     sleep(Duration::from_millis(100));
 
-    // --- Start playback ---
+    // --- Start direct playback ---
     if cancel_requested(cancel) {
         std::mem::drop(input_stream);
         return Err(CANCELLED_ERR.to_string());
     }
-    let mut manager = AudioEngineManager::new();
-    manager.set_allow_virtual_output(true);
-    manager
-        .load_file(&temp_path)
-        .map_err(|e| format!("[{log_tag}] Failed to load WAV: {}", e))?;
-    let plugins = vec![];
-    manager
-        .start_playback(
-            output_device_name.map(|s| s.to_string()),
-            plugins,
-            hardware_channels,
-        )
-        .map_err(|e| format!("[{log_tag}] Failed to start playback: {}", e))?;
+    let output_stream = build_measurement_output_stream(
+        &output_device,
+        &output_config,
+        playback.clone(),
+        playback_cursor.clone(),
+        log_tag,
+    )?;
+    output_stream
+        .play()
+        .map_err(|e| format!("[{log_tag}] Failed to start output stream: {}", e))?;
 
     // Wait for playback to finish — same stability-loop pattern both
     // original functions used. Honors `cancel` between polls so a UI
@@ -1468,17 +1609,18 @@ fn play_per_channel_and_record_mono(
             log::info!("[{log_tag}] Cancellation requested — aborting capture");
             break;
         }
+        let played = playback_cursor.load(AtomicOrdering::Relaxed);
         let count = recorded_samples.lock().unwrap().len();
         if count == last_count && count > 0 {
             stable += 1;
-            if stable >= 3 {
+            if stable >= 3 && played >= playback.len() {
                 break;
             }
         } else {
             stable = 0;
         }
         last_count = count;
-        if manager.get_state() == crate::StreamingState::Idle {
+        if played >= playback.len() && elapsed >= Duration::from_secs_f64(expected_duration + 0.2) {
             break;
         }
     }
@@ -1490,8 +1632,7 @@ fn play_per_channel_and_record_mono(
     if !cancelled {
         sleep(Duration::from_millis(500));
     }
-    manager.stop().ok();
-    std::mem::drop(manager);
+    std::mem::drop(output_stream);
     std::mem::drop(input_stream);
     sleep(Duration::from_millis(500));
 
@@ -1726,11 +1867,11 @@ fn probe_channel_delays_core(
 
     // --- Per-channel analysis via cross-correlation ---
     //
-    // Peak position within the segment represents the absolute arrival
-    // relative to the segment start (= expected_offset). That includes
-    // both system latency and acoustic propagation. System latency is
-    // constant across all channels, so it cancels out when computing
-    // alignment delays (max - each).
+    // Peak position within the segment includes unknown hardware and
+    // host latency. That common offset is not an acoustic distance, so
+    // normalize the completed result set to the earliest detected
+    // arrival before exposing it to the UI / optimizer. Alignment
+    // delays are unchanged by this subtraction.
 
     let auto_result = math_audio_dsp::analysis::cross_correlate_envelope(
         &analysis_probe,
@@ -1763,10 +1904,21 @@ fn probe_channel_delays_core(
             capture.input_sr,
         )?;
 
-        let arrival_ms = xcorr.peak_sample_refined / capture.input_sr as f64 * 1000.0;
+        let direct = pick_direct_arrival_from_envelope(
+            &xcorr.envelope,
+            capture.input_sr,
+            segment
+                .len()
+                .min(capture.analysis_signal_samples + capture.analysis_silence_samples),
+        );
+        let peak_sample_refined = direct
+            .map(|p| p.peak_sample_refined)
+            .unwrap_or(xcorr.peak_sample_refined);
+        let peak_value = direct.map(|p| p.peak_value).unwrap_or(xcorr.peak_value);
+        let arrival_ms = peak_sample_refined / capture.input_sr as f64 * 1000.0;
 
         let gain_linear = if auto_peak > 1e-10 {
-            xcorr.peak_value as f64 / auto_peak
+            peak_value as f64 / auto_peak
         } else {
             0.0
         };
@@ -1780,15 +1932,20 @@ fn probe_channel_delays_core(
         let mut sorted_env = xcorr.envelope.to_vec();
         sorted_env.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let median = sorted_env[sorted_env.len() / 2].max(1e-10) as f64;
-        let snr_db = 20.0 * (xcorr.peak_value as f64 / median).log10();
+        let snr_db = 20.0 * (peak_value as f64 / median).log10();
 
         log::info!(
-            "[probe] Ch {} '{}': arrival={:.3}ms, gain={:.1}dB, SNR={:.1}dB",
+            "[probe] Ch {} '{}': arrival={:.3}ms, gain={:.1}dB, SNR={:.1}dB{}",
             i,
             channel_names[i],
             arrival_ms,
             gain_db,
             snr_db,
+            if direct.is_some() {
+                " (direct)"
+            } else {
+                " (strongest)"
+            },
         );
 
         arrivals_ms.push(arrival_ms);
@@ -1801,7 +1958,21 @@ fn probe_channel_delays_core(
         });
     }
 
-    // Compute alignment delays (align to the slowest channel)
+    let latency_floor_ms = arrivals_ms.iter().copied().fold(f64::INFINITY, f64::min);
+    if latency_floor_ms.is_finite() {
+        for arrival in &mut arrivals_ms {
+            *arrival -= latency_floor_ms;
+        }
+        for result in &mut channel_results {
+            result.arrival_ms -= latency_floor_ms;
+        }
+        log::info!(
+            "[probe_channel_delays] Normalized arrivals by subtracting common latency floor {:.3}ms",
+            latency_floor_ms
+        );
+    }
+
+    // Compute alignment delays (align to the slowest relative arrival).
     let max_arrival = arrivals_ms
         .iter()
         .copied()
@@ -1833,10 +2004,86 @@ fn probe_channel_delays_core(
     ))
 }
 
+#[derive(Debug, Clone, Copy)]
+struct DirectArrivalPeak {
+    peak_sample_refined: f64,
+    peak_value: f32,
+}
+
+fn pick_direct_arrival_from_envelope(
+    envelope: &[f32],
+    sample_rate: u32,
+    max_search_samples: usize,
+) -> Option<DirectArrivalPeak> {
+    if envelope.len() < 3 || sample_rate == 0 || max_search_samples < 3 {
+        return None;
+    }
+
+    let causal_len = (envelope.len() / 2).min(max_search_samples).max(3);
+    let search = &envelope[..causal_len];
+    let strongest = search.iter().copied().fold(0.0_f32, f32::max);
+    if strongest <= 1e-10 {
+        return None;
+    }
+
+    let mut sorted = search.to_vec();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let median = sorted[sorted.len() / 2].max(1e-10);
+    let p90 = sorted[((sorted.len() as f32 * 0.90) as usize).min(sorted.len() - 1)];
+
+    // Prefer the first direct-arrival peak over later room/modal energy.
+    // The absolute threshold rejects the correlation noise floor; the
+    // relative threshold still allows a direct sound that is noticeably
+    // weaker than a later reflection.
+    let threshold = (median * 12.0).max(p90 * 2.0).max(strongest * 0.08);
+    let lookahead = ((sample_rate as f32 * 0.003).round() as usize).clamp(8, 256);
+
+    let mut i = 1_usize;
+    while i + 1 < causal_len {
+        if search[i] < threshold {
+            i += 1;
+            continue;
+        }
+
+        let end = (i + lookahead).min(causal_len - 1);
+        let mut peak = i;
+        let mut peak_value = search[i];
+        for (j, &value) in search.iter().enumerate().take(end + 1).skip(i) {
+            if value > peak_value {
+                peak = j;
+                peak_value = value;
+            }
+        }
+
+        if peak > 0 && peak + 1 < causal_len {
+            let y_prev = search[peak - 1] as f64;
+            let y_peak = search[peak] as f64;
+            let y_next = search[peak + 1] as f64;
+            let denom = 2.0 * (2.0 * y_peak - y_prev - y_next);
+            let peak_sample_refined = if denom.abs() > 1e-12 {
+                peak as f64 + (y_prev - y_next) / denom
+            } else {
+                peak as f64
+            };
+            return Some(DirectArrivalPeak {
+                peak_sample_refined,
+                peak_value,
+            });
+        }
+
+        return Some(DirectArrivalPeak {
+            peak_sample_refined: peak as f64,
+            peak_value,
+        });
+    }
+
+    None
+}
+
 // ---------------------------------------------------------------------------
 // GD-Opt v2 Phase GD-1e — bass anchor capture
 //
-// Plays a low-frequency tone burst (default 20 Hz × 5 cycles) on one
+// Plays a low-frequency tone burst (typically 30 Hz × 5 cycles) on one
 // channel at a time, records from the mic, and extracts the per-channel
 // phase + stability of the burst's fundamental. The result anchors the
 // sweep-derived phase at the lowest bin — see `docs/gd_opt_v2_plan.md`
@@ -1882,7 +2129,7 @@ pub struct BassAnchorChannelResult {
 /// * `channel_indices` - Output channel indices to probe (0-based)
 /// * `channel_names` - Human-readable name for each channel
 /// * `sample_rate` - Desired playback / capture sample rate in Hz
-/// * `bass_freq_hz` - Tone-burst centre frequency (default 20 Hz)
+/// * `bass_freq_hz` - Tone-burst centre frequency
 /// * `bass_cycles` - Number of cycles per burst (default 5)
 /// * `silence_duration_ms` - Silence gap between channels in ms
 /// * `output_device_name` - Playback device (None = default)
@@ -1900,6 +2147,7 @@ pub fn run_bass_anchor(
     output_device_name: Option<&str>,
     input_device_name: Option<&str>,
     input_channel: u16,
+    cancel: Option<CancelFlag>,
 ) -> Result<BassAnchorResults, String> {
     let (results, _recorded, _input_sr) = run_bass_anchor_core(
         channel_indices,
@@ -1911,6 +2159,7 @@ pub fn run_bass_anchor(
         output_device_name,
         input_device_name,
         input_channel,
+        cancel.as_ref(),
     )?;
     Ok(results)
 }
@@ -1935,6 +2184,7 @@ pub fn run_bass_anchor_with_recording(
     input_device_name: Option<&str>,
     input_channel: u16,
     recording_wav_path: &std::path::Path,
+    cancel: Option<CancelFlag>,
 ) -> Result<BassAnchorResults, String> {
     let (results, recorded, input_sr) = run_bass_anchor_core(
         channel_indices,
@@ -1946,6 +2196,7 @@ pub fn run_bass_anchor_with_recording(
         output_device_name,
         input_device_name,
         input_channel,
+        cancel.as_ref(),
     )?;
 
     let spec = WavSpec {
@@ -2037,6 +2288,7 @@ fn run_bass_anchor_core(
     output_device_name: Option<&str>,
     input_device_name: Option<&str>,
     input_channel: u16,
+    cancel: Option<&CancelFlag>,
 ) -> Result<(BassAnchorResults, Vec<f32>, u32), String> {
     let num_channels = channel_indices.len();
     if num_channels == 0 {
@@ -2078,7 +2330,7 @@ fn run_bass_anchor_core(
         input_device_name,
         input_channel,
         "run_bass_anchor",
-        None,
+        cancel,
     )?;
 
     // Per-channel analysis via the pure helper. `extract_tone_phase`
@@ -3349,6 +3601,14 @@ mod tests {
         }
 
         if !arrivals.is_empty() {
+            let min = arrivals.iter().copied().fold(f64::INFINITY, f64::min);
+            if min.is_finite() {
+                for arrival in &mut arrivals {
+                    *arrival -= min;
+                }
+                eprintln!("\nNormalized arrivals by subtracting common latency floor: {min:.3} ms");
+            }
+
             let max = arrivals.iter().copied().fold(f64::NEG_INFINITY, f64::max);
             eprintln!("\n=== Alignment Delays ===");
             for (i, name) in channel_names.iter().enumerate() {
@@ -3356,14 +3616,12 @@ mod tests {
             }
         }
 
-        // Arrivals must include system latency (~475ms for this recording)
-        // so they should be well above 0.
-        for (i, &a) in arrivals.iter().enumerate() {
+        // Stored arrivals are relative acoustic offsets, not absolute
+        // host/device latency.
+        if let Some(min) = arrivals.iter().copied().reduce(f64::min) {
             assert!(
-                a > 100.0,
-                "Channel {} arrival should include system latency (>100ms), got {:.3}ms",
-                i,
-                a
+                min.abs() < 0.001,
+                "normalized arrival floor should be 0ms, got {min:.3}ms"
             );
         }
     }
@@ -3475,6 +3733,32 @@ mod tests {
             out_clamped.len(),
             out_min.len(),
             "Clamped and min-1.0 lengths differ"
+        );
+    }
+
+    #[test]
+    fn probe_direct_arrival_picker_prefers_weak_direct_over_late_reflection() {
+        let sample_rate = 48_000_u32;
+        let mut envelope = vec![1.0e-5_f32; sample_rate as usize / 2];
+        let direct = (0.004 * sample_rate as f64).round() as usize;
+        let reflection = (0.111 * sample_rate as f64).round() as usize;
+
+        for offset in -4_i32..=4 {
+            let idx = (direct as i32 + offset) as usize;
+            envelope[idx] = 0.08 * (1.0 - offset.unsigned_abs() as f32 / 6.0);
+        }
+        for offset in -8_i32..=8 {
+            let idx = (reflection as i32 + offset) as usize;
+            envelope[idx] = 0.8 * (1.0 - offset.unsigned_abs() as f32 / 10.0);
+        }
+
+        let peak = pick_direct_arrival_from_envelope(&envelope, sample_rate, envelope.len())
+            .expect("direct peak should be detected");
+        let arrival_ms = peak.peak_sample_refined / sample_rate as f64 * 1000.0;
+
+        assert!(
+            (arrival_ms - 4.0).abs() < 0.2,
+            "expected weak direct arrival near 4ms, got {arrival_ms:.3}ms"
         );
     }
 

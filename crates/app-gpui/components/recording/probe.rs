@@ -342,12 +342,18 @@ impl PlayerView {
                 log::warn!("Probe capture: no channel recordings — run Capture step first");
                 return;
             }
-            let names: Vec<String> = rec
-                .channel_recordings
+            // Probe one signal per *speaker output channel*, not per
+            // (speaker × position × mic) entry in `channel_recordings`.
+            // The latter multiplies the channel count well beyond the
+            // physical layout (e.g. 9.1.6 × 2 mic positions × 1 mic =
+            // 32 entries for a 16-speaker setup) and tries to address
+            // hardware outputs that don't exist.
+            let mappings = &rec.playback_config.channel_mappings;
+            let names: Vec<String> = mappings.iter().map(|m| m.group_name.clone()).collect();
+            let indices: Vec<u16> = mappings
                 .iter()
-                .map(|c| c.channel_name.clone())
+                .map(|m| m.interface_channel() as u16)
                 .collect();
-            let indices: Vec<u16> = (0..names.len() as u16).collect();
             let dir = rec
                 .recording_directory
                 .clone()

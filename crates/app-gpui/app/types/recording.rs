@@ -109,6 +109,9 @@ pub struct RecordingState {
     /// the BassAnchor wizard step on success; consumed by
     /// `save_recordings` to embed results in the session JSON.
     pub bass_anchor_capture: BassAnchorCaptureState,
+    /// Cancel-request flag for the bass anchor capture. Same shape and
+    /// lifetime as `probe_cancel_requested`.
+    pub bass_anchor_cancel_requested: Arc<AtomicBool>,
 
     // === SPL Calibration Step State (GD-Opt v2 Phase GD-1e.5) ===
     /// Shared business state for the SPL calibration step.
@@ -238,6 +241,7 @@ impl Default for RecordingState {
             probe_capture: ProbeCaptureState::default(),
             probe_cancel_requested: Arc::new(AtomicBool::new(false)),
             bass_anchor_capture: BassAnchorCaptureState::default(),
+            bass_anchor_cancel_requested: Arc::new(AtomicBool::new(false)),
             spl_calibration_capture: SplCalibrationCaptureState::default(),
             spl_cancel_requested: Arc::new(AtomicBool::new(false)),
             playback_device_dropdown_open: false,

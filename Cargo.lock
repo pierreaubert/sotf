@@ -3924,7 +3924,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-ui-kit"
-version = "0.6.18"
+version = "0.6.19"
 dependencies = [
  "block2",
  "gpui",

@@ -1,8 +1,8 @@
 //! Integration tests for measurement-uncertainty-aware robust optimization
 //! (`MultiMeasurementStrategy::MinimaxUncertainty`).
 
-use autoeq::roomeq::spatial_robustness::{BootstrapBand, BootstrapConfig, bootstrap_band};
 use autoeq::Curve;
+use autoeq::roomeq::spatial_robustness::{BootstrapBand, BootstrapConfig, bootstrap_band};
 use ndarray::Array1;
 
 fn make_curve(freq: Vec<f64>, spl: Vec<f64>) -> Curve {

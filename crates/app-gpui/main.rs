@@ -383,8 +383,11 @@ fn main() {
                 .map(|c| c.window_geometry.clone())
                 .unwrap_or_default();
             if let Some((w, h)) = cli_size_override {
-                log::info!("--size override: {w}x{h} (was {}x{})",
-                    window_geometry.width, window_geometry.height);
+                log::info!(
+                    "--size override: {w}x{h} (was {}x{})",
+                    window_geometry.width,
+                    window_geometry.height
+                );
                 window_geometry.width = w;
                 window_geometry.height = h;
             }
