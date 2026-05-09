@@ -20,6 +20,7 @@ pub mod i18n;
 pub mod keybindings;
 pub mod library;
 pub mod manager;
+pub mod midi_input;
 pub mod navigation;
 pub mod queue;
 pub mod state;

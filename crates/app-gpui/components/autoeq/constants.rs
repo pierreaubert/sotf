@@ -104,6 +104,7 @@ pub const MULTI_SEAT_STRATEGY_OPTIONS: &[(&str, &str)] = &[
     ("primary", "Primary + Constraints"),
     ("average", "Average Response"),
     ("modal_basis", "Modal Basis / SFM"),
+    ("continuous_area", "Continuous Listening Area"),
 ];
 
 /// Algorithm options for optimization
@@ -201,6 +202,8 @@ pub const MULTI_MEASUREMENT_STRATEGY_OPTIONS: &[(&str, &str)] = &[
     ("weighted_sum", "Weighted Sum"),
     ("minimax", "Minimax (Worst Case)"),
     ("variance_penalized", "Variance Penalized"),
+    ("spatial_robustness", "Spatial Robustness"),
+    ("minimax_uncertainty", "Minimax (Bootstrap Uncertainty)"),
 ];
 
 /// Local algorithm options for refinement

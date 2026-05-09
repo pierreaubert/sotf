@@ -551,8 +551,10 @@ pub const PARAMS: &[ParamSpec] = &[
 /// 41-42=source_extraction, 43=binaural_preview
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[
-        ControlSpec::selector(0), // speaker_config
-        ControlSpec::toggle(43),  // binaural_preview
+        // speaker_config is exposed at the chrome level by the rack's
+        // dedicated Output dropdown; hide it here to avoid duplication.
+        ControlSpec::selector(0).hide(),
+        ControlSpec::toggle(43), // binaural_preview
     ],
     main: &[
         ControlGroup {

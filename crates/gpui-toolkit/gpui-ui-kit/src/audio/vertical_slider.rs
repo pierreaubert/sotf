@@ -758,18 +758,28 @@ impl RenderOnce for VerticalSlider {
         let scale = self.scale;
         let element_id = self.id.clone(); // Clone for use in track ID
 
+        // Layout style: boxed (chassis around the whole slider) vs underlined
+        // (title with thin rule, no surrounding chassis). Mirrors the
+        // Potentiometer convention so the two controls stay visually paired.
+        let underlined = self.design_tokens.meter_label_style
+            == crate::audio_design_tokens::AudioDesignTokens::LABEL_UNDERLINED;
+
         let mut container = div()
             .id(self.id)
             .flex()
             .flex_col()
             .items_center()
             .gap_2()
-            .p_2()
-            .rounded_lg()
-            .bg(bg_color)
-            .border_2()
-            .border_color(border_color)
             .min_w(px(min_width));
+
+        if !underlined {
+            container = container
+                .p_2()
+                .rounded_lg()
+                .bg(bg_color)
+                .border_2()
+                .border_color(border_color);
+        }
 
         // Get or create a stable FocusHandle for this slider.
         // Prefer an externally-provided handle; fall back to the thread-local registry.
@@ -790,15 +800,17 @@ impl RenderOnce for VerticalSlider {
             container = container.track_focus(fh).focusable();
         }
 
-        // Add shadow when selected
-        if selected {
+        // Add shadow when selected (chassis-only).
+        if selected && !underlined {
             container = container.shadow_md();
         }
 
-        // Hover effect
-        let hover_border = theme.accent;
-        let hover_bg = theme.surface_hover;
-        container = container.hover(|s| s.border_color(hover_border).bg(hover_bg));
+        // Hover effect — chassis-only.
+        if !underlined {
+            let hover_border = theme.accent;
+            let hover_bg = theme.surface_hover;
+            container = container.hover(|s| s.border_color(hover_border).bg(hover_bg));
+        }
 
         // Cursor
         if disabled {
@@ -927,9 +939,12 @@ impl RenderOnce for VerticalSlider {
             }
         }
 
-        // Label with keyboard shortcut
-        container = container.child(
-            div()
+        // Label with keyboard shortcut. Empty labels collapse the entire
+        // title+rule block (the Xone hardware view passes "" so the cell can
+        // own the title row without leaving an empty band of vertical space).
+        let has_label = !formatted_label.is_empty();
+        if has_label {
+            let label_text = div()
                 .text_xs()
                 .font_weight(if selected {
                     FontWeight::BOLD
@@ -938,8 +953,28 @@ impl RenderOnce for VerticalSlider {
                 })
                 .text_color(label_color)
                 .text_center()
-                .child(formatted_label),
-        );
+                .child(formatted_label);
+
+            if underlined {
+                let rule_color = if selected {
+                    theme.accent
+                } else {
+                    theme.border
+                };
+                container = container.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .gap_1()
+                        .min_w(px(min_width))
+                        .child(label_text)
+                        .child(div().h(px(1.0)).w(px(min_width * 0.85)).bg(rule_color)),
+                );
+            } else {
+                container = container.child(label_text);
+            }
+        }
 
         // Value badge
         container = container.child(
@@ -958,13 +993,19 @@ impl RenderOnce for VerticalSlider {
         let track_id: ElementId =
             ElementId::Name(SharedString::from(format!("{}-track", element_id)));
 
-        // Track with fill and thumb
+        // Track with fill and thumb. Track corners are driven by the meter
+        // corner-radius design token so a brutalist preset can render a
+        // square-cornered fader and a softer preset can keep the rounded look.
+        let track_corner_px = self
+            .design_tokens
+            .meter_corner_radius
+            .clamp(0.0, (track_width / 2.0).min(8.0));
         let mut track = div()
             .id(track_id)
             .w(px(track_width))
             .h(px(track_height))
             .bg(track_bg)
-            .rounded_lg()
+            .rounded(px(track_corner_px))
             .border_2()
             .border_color(track_border)
             .relative()
@@ -975,41 +1016,81 @@ impl RenderOnce for VerticalSlider {
             track = track.shadow_sm();
         }
 
-        // Filled portion (from bottom)
-        track = track.child(
-            div()
-                .absolute()
-                .bottom_0()
-                .left_0()
-                .right_0()
-                .h(relative(normalized))
-                .bg(theme.accent)
-                .rounded_b_md(),
-        );
+        // Filled portion (from bottom).
+        //
+        // The bar's *visible top edge* sits exactly at the value position —
+        // that's the line the user reads against the tick marks. The thumb is
+        // then placed so its top edge coincides with the bar top (i.e. the
+        // thumb is the top `thumb_height` px of the visible bar) instead of
+        // sitting half above it.
+        let bar_top_px = (normalized * track_height).max(0.0);
+        let bar_radius = self
+            .design_tokens
+            .meter_corner_radius
+            .clamp(0.0, (track_width / 2.0).min(8.0));
 
-        // Thumb indicator — extends beyond track edges for a visible grab handle
+        // Build the fill div. When `meter_glow` is enabled, attach a colored,
+        // zero-offset box-shadow to fake an outer halo around the bar.
+        let glow_intensity = self.design_tokens.meter_glow.clamp(0.0, 1.0);
+        let fill_color = theme.accent;
+        let mut fill = div()
+            .absolute()
+            .bottom_0()
+            .left_0()
+            .right_0()
+            .h(px(bar_top_px))
+            .bg(fill_color)
+            // Top corners stay square (the bar's top edge is the value reading);
+            // bottom corners follow the meter corner-radius token.
+            .rounded(px(0.0))
+            .rounded_b(px(bar_radius));
+        if glow_intensity > 0.0 {
+            // Outer halo: same color as the fill, blurred, zero offset.
+            let glow_color = Hsla::from(Rgba {
+                r: fill_color.r,
+                g: fill_color.g,
+                b: fill_color.b,
+                a: (fill_color.a * 0.55 * glow_intensity).clamp(0.0, 1.0),
+            });
+            fill = fill.shadow(vec![BoxShadow {
+                color: glow_color,
+                offset: point(px(0.0), px(0.0)),
+                blur_radius: px(8.0 * glow_intensity),
+                spread_radius: px(2.0 * glow_intensity),
+            }]);
+        }
+        track = track.child(fill);
+
+        // Thumb indicator — top edge at the value position so the bar's
+        // visible end coincides with the tick. The thumb still extends past
+        // the track sides via `thumb_overhang` so it remains a clear grab
+        // affordance.
+        let thumb_top_px = bar_top_px;
+        let thumb_bottom_px = (thumb_top_px - thumb_height).max(-thumb_height);
         track = track.child(
             div()
                 .absolute()
                 .left(px(-thumb_overhang))
                 .w(px(track_width + thumb_overhang * 2.0))
-                .bottom(relative(normalized))
+                .bottom(px(thumb_bottom_px))
                 .h(px(thumb_height))
                 .bg(thumb_color)
-                .rounded_md()
+                .rounded(px(bar_radius))
                 .shadow_sm(),
         );
 
-        // Peak marker (optional) - thick horizontal line at peak position
+        // Peak marker (optional) - thick horizontal line centered at peak position.
         if let Some(peak_pos) = peak_normalized {
             let peak_color = theme.peak_marker;
+            let peak_thickness = 3.0_f32;
+            let peak_bottom_px = (peak_pos * track_height) - (peak_thickness / 2.0);
             track = track.child(
                 div()
                     .absolute()
                     .left_0()
                     .right_0()
-                    .bottom(relative(peak_pos))
-                    .h(px(3.0)) // Thick line for visibility
+                    .bottom(px(peak_bottom_px))
+                    .h(px(peak_thickness))
                     .bg(peak_color),
             );
         }

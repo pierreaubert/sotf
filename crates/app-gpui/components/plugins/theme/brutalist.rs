@@ -5,6 +5,7 @@
 
 use super::plugin_theme::PluginTheme;
 use gpui::{Rgba, SharedString};
+use gpui_ui_kit::audio_design_tokens::AudioDesignTokens;
 
 const fn rgba(hex: u32, alpha: f32) -> Rgba {
     Rgba {
@@ -57,6 +58,16 @@ pub fn theme() -> PluginTheme {
         radius_panel: 0.0,
         spacing_section: 32.0,
         spacing_knob_row: 24.0,
+
+        // Brutalist look tokens — strip the chassis from both knobs and
+        // sliders, light up the value arc and the meter fill with a glow,
+        // and let meter fills be square-cornered with a luminance gradient.
+        knob_label_style: AudioDesignTokens::LABEL_UNDERLINED,
+        knob_arc_glow: 1.0,
+        meter_label_style: AudioDesignTokens::LABEL_UNDERLINED,
+        meter_use_gradient: true,
+        meter_corner_radius: 0.0,
+        meter_glow: 1.0,
     }
 }
 
@@ -85,5 +96,16 @@ mod tests {
         assert_eq!(t.accent_arc.r, 1.0);
         assert_eq!(t.accent_arc.g, 1.0);
         assert_eq!(t.accent_arc.b, 1.0);
+    }
+
+    #[test]
+    fn brutalist_audio_tokens() {
+        let t = theme();
+        assert_eq!(t.knob_label_style, AudioDesignTokens::LABEL_UNDERLINED);
+        assert_eq!(t.knob_arc_glow, 1.0);
+        assert_eq!(t.meter_label_style, AudioDesignTokens::LABEL_UNDERLINED);
+        assert!(t.meter_use_gradient);
+        assert_eq!(t.meter_corner_radius, 0.0);
+        assert_eq!(t.meter_glow, 1.0);
     }
 }

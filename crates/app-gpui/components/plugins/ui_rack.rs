@@ -251,13 +251,16 @@ impl PlayerView {
                     });
                 }),
             )
-            // Contextual hint banner (dismissible, only show Studio-relevant hints)
+            // Contextual hint banner (dismissible). The first-visit hint
+            // for the rack itself was removed by request — it lived above
+            // the signal chain and got in the way of every session, not
+            // just the first. Per-action hints (e.g. FirstPluginAdded)
+            // still fire here.
             .when_some(
                 current_hint.filter(|h| {
                     matches!(
                         h.hint_id,
-                        crate::components::dialogs::tutorial::HintId::StudioFirstVisit
-                            | crate::components::dialogs::tutorial::HintId::FirstPluginAdded
+                        crate::components::dialogs::tutorial::HintId::FirstPluginAdded
                     )
                 }),
                 |el, hint| {
@@ -388,6 +391,10 @@ impl PlayerView {
             preset_list,
             last_loaded_preset,
             has_pending_update,
+            chain_input_channels,
+            chain_output_channels,
+            chain_sample_rate,
+            chain_buffer_frames,
         ) = {
             let state = self.state.read(cx);
             let graph = &state.app.plugin_state.graph;
@@ -413,6 +420,36 @@ impl PlayerView {
             let preset_list = state.app.plugin_state.plugin_preset_list.clone();
             let last_loaded_preset = state.app.plugin_state.last_loaded_preset.clone();
             let has_pending_update = state.app.plugin_state.pending_plugin_update.is_some();
+
+            // Chain I/O summary: input is stereo at the rack head; output
+            // depends on whether an Upmixer / BinauralDecoder is active and
+            // enabled. Mirrors the calculation at the meter divider site.
+            let chain_input_channels: usize = 2;
+            let mut chain_output_channels: usize = 2;
+            for p in graph.plugins() {
+                if !p.enabled {
+                    continue;
+                }
+                match p.plugin_type() {
+                    PluginType::Upmixer => {
+                        chain_output_channels = if let sotf_audio_player::PluginSettings::Upmixer {
+                            speaker_config,
+                            ..
+                        } = &p.settings
+                        {
+                            speaker_config_to_channels(speaker_config)
+                        } else {
+                            6
+                        };
+                    }
+                    PluginType::BinauralDecoder => chain_output_channels = 2,
+                    _ => {}
+                }
+            }
+
+            let chain_sample_rate = state.app.audio_device_state.hal_config.sample_rate;
+            let chain_buffer_frames = state.app.audio_device_state.hal_config.buffer_frames;
+
             (
                 plugins,
                 state.app.plugin_state.selected_plugin_index,
@@ -421,8 +458,26 @@ impl PlayerView {
                 preset_list,
                 last_loaded_preset,
                 has_pending_update,
+                chain_input_channels,
+                chain_output_channels,
+                chain_sample_rate,
+                chain_buffer_frames,
             )
         };
+
+        // Build the chain summary string: "5 plugins · 2ch → 6ch · 48 kHz · ~21 ms".
+        // Latency is the buffer-frame round-trip estimate (one full buffer at
+        // the configured sample rate).
+        let chain_latency_ms =
+            (chain_buffer_frames as f64 / chain_sample_rate.max(1) as f64) * 1000.0;
+        let chain_summary = format!(
+            "{} plugins · {}ch → {}ch · {} · ~{:.1} ms",
+            plugins_data.len(),
+            chain_input_channels,
+            chain_output_channels,
+            crate::app::state::audio_device::format_sample_rate(chain_sample_rate),
+            chain_latency_ms,
+        );
 
         // Pre-compute static data for plugin modules
         let modules_info: Vec<_> = plugins_data
@@ -447,7 +502,6 @@ impl PlayerView {
             .collect();
 
         let is_empty = plugins_data.is_empty();
-        let plugin_count = plugins_data.len();
         let d = Ds::from_cx(cx);
 
         // Split: main plugins, then "+", then Matrix + output monitor
@@ -499,7 +553,7 @@ impl PlayerView {
                                 });
                             }),
                     )
-                    // Title and plugin count
+                    // Title + chain summary (count, I/O channels, SR, latency)
                     .child(
                         div()
                             .flex()
@@ -516,7 +570,7 @@ impl PlayerView {
                                 div()
                                     .text_size(d.text_xs)
                                     .text_color(theme.text_muted)
-                                    .child(format!("{} plugins", plugin_count)),
+                                    .child(chain_summary.clone()),
                             )
                             .when(has_pending_update, |el| {
                                 el.child(
@@ -2187,6 +2241,17 @@ impl PlayerView {
 
                                     let d = Ds::from_cx(cx);
 
+                                    // Resolve the chassis theme once for the
+                                    // Simple/Controller branches so all four
+                                    // views share the same theming.
+                                    let chassis = app_st
+                                        .app
+                                        .plugin_state
+                                        .rack_theme_state
+                                        .resolved_id(selected_idx)
+                                        .theme()
+                                        .apply_to(&theme);
+
                                     match &plugin_ui_view {
                                         PluginUiView::Simple => {
                                             super::ui_simple::render_simple_plugin_view(
@@ -2196,7 +2261,7 @@ impl PlayerView {
                                                 &plugin.settings,
                                                 is_editing,
                                                 param_selection,
-                                                &theme,
+                                                &chassis,
                                                 midi_ref.as_ref(),
                                             )
                                             .into_any_element()
@@ -2208,7 +2273,10 @@ impl PlayerView {
                                                 &plugin.settings,
                                                 selected_idx,
                                                 &app_st.app.plugin_state.midi_mapping,
-                                                &theme,
+                                                self.state.clone(),
+                                                is_editing,
+                                                param_selection,
+                                                &chassis,
                                             )
                                         }
                                         PluginUiView::UI => {

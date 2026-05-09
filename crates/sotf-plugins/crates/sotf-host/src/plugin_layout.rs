@@ -124,6 +124,12 @@ pub struct ControlSpec {
     pub control_type: ControlType,
     /// If true, the control is display-only (no user interaction).
     pub read_only: bool,
+    /// If true, the renderer skips this control entirely. Used when the
+    /// param is already exposed elsewhere in the chrome (e.g. upmixer's
+    /// `speaker_config` is shown by the rack-level Output dropdown).
+    /// `validate_coverage` still counts it as referenced, so PARAMS-vs-LAYOUT
+    /// audits keep passing.
+    pub hidden: bool,
 }
 
 impl ControlSpec {
@@ -132,6 +138,7 @@ impl ControlSpec {
             param_index,
             control_type: ControlType::Knob,
             read_only: false,
+            hidden: false,
         }
     }
 
@@ -140,6 +147,7 @@ impl ControlSpec {
             param_index,
             control_type: ControlType::KnobLarge,
             read_only: false,
+            hidden: false,
         }
     }
 
@@ -148,6 +156,7 @@ impl ControlSpec {
             param_index,
             control_type: ControlType::VerticalSlider,
             read_only: false,
+            hidden: false,
         }
     }
 
@@ -156,6 +165,7 @@ impl ControlSpec {
             param_index,
             control_type: ControlType::Toggle,
             read_only: false,
+            hidden: false,
         }
     }
 
@@ -164,6 +174,7 @@ impl ControlSpec {
             param_index,
             control_type: ControlType::Selector,
             read_only: false,
+            hidden: false,
         }
     }
 
@@ -172,6 +183,7 @@ impl ControlSpec {
             param_index,
             control_type: ControlType::Selector,
             read_only: false,
+            hidden: false,
         }
     }
 
@@ -181,6 +193,7 @@ impl ControlSpec {
             param_index: usize::MAX,
             control_type: ControlType::BarMeter { min_db, max_db },
             read_only: true,
+            hidden: false,
         }
     }
 
@@ -189,6 +202,7 @@ impl ControlSpec {
             param_index,
             control_type: ControlType::Label,
             read_only: true,
+            hidden: false,
         }
     }
 
@@ -197,6 +211,7 @@ impl ControlSpec {
             param_index,
             control_type: ControlType::FilePicker,
             read_only: false,
+            hidden: false,
         }
     }
 
@@ -205,7 +220,17 @@ impl ControlSpec {
             param_index,
             control_type: ControlType::ButtonSet { labels },
             read_only: false,
+            hidden: false,
         }
+    }
+
+    /// Mark a control as hidden — the validator still sees the param as
+    /// referenced, but the renderer skips it. Use when the parameter is
+    /// surfaced by a chrome-level control (e.g. the rack-level Output
+    /// dropdown for the upmixer's `speaker_config`).
+    pub const fn hide(mut self) -> Self {
+        self.hidden = true;
+        self
     }
 }
 

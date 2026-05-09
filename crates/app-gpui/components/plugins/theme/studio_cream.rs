@@ -5,6 +5,7 @@
 
 use super::plugin_theme::PluginTheme;
 use gpui::{Rgba, SharedString};
+use gpui_ui_kit::audio_design_tokens::AudioDesignTokens;
 
 const fn rgba(hex: u32, alpha: f32) -> Rgba {
     Rgba {
@@ -56,6 +57,14 @@ pub fn theme() -> PluginTheme {
         radius_panel: 4.0,
         spacing_section: 44.0,
         spacing_knob_row: 26.0,
+
+        // Audio look tokens — keep the prior boxed look on knobs and meters.
+        knob_label_style: AudioDesignTokens::LABEL_BOXED,
+        knob_arc_glow: 0.0,
+        meter_label_style: AudioDesignTokens::LABEL_BOXED,
+        meter_use_gradient: false,
+        meter_corner_radius: 2.0,
+        meter_glow: 0.0,
     }
 }
 

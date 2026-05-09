@@ -67,6 +67,11 @@ pub struct MeterColors {
     pub peak: Rgba,
     /// Text color for channel name
     pub text: Rgba,
+    /// Corner radius (px) applied to the meter bar/track. 0.0 = square.
+    pub corner_radius: f32,
+    /// When true, paint the fill as a vertical luminance gradient (low values
+    /// faded, high values luminous) instead of flat-colored segments.
+    pub use_gradient: bool,
 }
 
 impl MeterColors {
@@ -78,6 +83,8 @@ impl MeterColors {
             red: theme.meter_colors.clip,
             peak: theme.meter_colors.peak,
             text: theme.meter_colors.text,
+            corner_radius: theme.design_tokens.meter_corner_radius,
+            use_gradient: theme.design_tokens.meter_use_gradient,
         }
     }
 }
@@ -229,10 +236,18 @@ impl Element for LevelMeterElement {
             size: size(bounds.size.width, bounds.size.height - text_height),
         };
 
+        // Cap corner radius so it never exceeds half the bar's smaller axis.
+        let meter_w_f: f32 = meter_bounds.size.width.into();
+        let bar_radius = self
+            .colors
+            .corner_radius
+            .clamp(0.0, (meter_w_f / 2.0).min(8.0));
+        let corner_radii = Corners::all(px(bar_radius));
+
         // Paint background
         window.paint_quad(PaintQuad {
             bounds: meter_bounds,
-            corner_radii: Corners::all(px(2.0)),
+            corner_radii,
             background: self.colors.background.into(),
             border_widths: Edges::default(),
             border_color: Hsla::transparent_black(),
@@ -252,71 +267,122 @@ impl Element for LevelMeterElement {
             0.0
         };
 
-        let meter_height = meter_bounds.size.height;
+        let meter_height_f: f32 = meter_bounds.size.height.into();
+        let meter_origin_y_f: f32 = meter_bounds.origin.y.into();
+        let use_gradient = self.colors.use_gradient;
+
+        // Paint a colored stripe from y_top..y_bottom of the meter (raw f32
+        // pixel coordinates).
+        //
+        // When `use_gradient` is enabled, the stripe is split into N thin
+        // sub-quads with alpha increasing from bottom (faded) to top
+        // (luminous). Otherwise we paint a single flat-colored quad. The
+        // bottom-most quad in the visible bar carries the rounded corners.
+        let mut paint_segment = |y_top: f32, y_bottom: f32, color: Rgba, is_bottom: bool| {
+            if y_bottom - y_top < 0.5 {
+                return;
+            }
+            let seg_corner = if is_bottom {
+                Corners {
+                    top_left: px(0.0),
+                    top_right: px(0.0),
+                    bottom_left: px(bar_radius),
+                    bottom_right: px(bar_radius),
+                }
+            } else {
+                Corners::default()
+            };
+
+            if use_gradient {
+                let strips = 12usize;
+                let total_h = (y_bottom - y_top).max(0.0);
+                for i in 0..strips {
+                    let t0 = i as f32 / strips as f32;
+                    let t1 = (i + 1) as f32 / strips as f32;
+                    let strip_top = y_top + total_h * t0;
+                    let strip_bot = y_top + total_h * t1;
+                    let mid = (strip_top + strip_bot) * 0.5;
+                    // Normalize within the visible bar: 0 at bottom, 1 at top.
+                    let local_pos = if meter_height_f > 0.0 {
+                        ((meter_origin_y_f + meter_height_f - mid) / meter_height_f)
+                            .clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    let alpha = 0.4 + 0.6 * local_pos;
+                    let stripe_color = Rgba {
+                        r: color.r,
+                        g: color.g,
+                        b: color.b,
+                        a: color.a * alpha,
+                    };
+                    window.paint_quad(PaintQuad {
+                        bounds: Bounds {
+                            origin: point(meter_bounds.origin.x, px(strip_top)),
+                            size: size(meter_bounds.size.width, px(strip_bot - strip_top)),
+                        },
+                        // Only the bottom-most strip of the bottom-most
+                        // segment carries the rounded corners.
+                        corner_radii: if is_bottom && i == strips - 1 {
+                            seg_corner
+                        } else {
+                            Corners::default()
+                        },
+                        background: stripe_color.into(),
+                        border_widths: Edges::default(),
+                        border_color: Hsla::transparent_black(),
+                        border_style: Default::default(),
+                    });
+                }
+            } else {
+                window.paint_quad(PaintQuad {
+                    bounds: Bounds {
+                        origin: point(meter_bounds.origin.x, px(y_top)),
+                        size: size(meter_bounds.size.width, px(y_bottom - y_top)),
+                    },
+                    corner_radii: seg_corner,
+                    background: color.into(),
+                    border_widths: Edges::default(),
+                    border_color: Hsla::transparent_black(),
+                    border_style: Default::default(),
+                });
+            }
+        };
+
+        let bar_bottom_y = meter_origin_y_f + meter_height_f;
 
         // Paint green segment (from bottom)
         if green_height > 0.001 {
-            let segment_height = meter_height * green_height;
-            window.paint_quad(PaintQuad {
-                bounds: Bounds {
-                    origin: point(
-                        meter_bounds.origin.x,
-                        meter_bounds.origin.y + meter_height - segment_height,
-                    ),
-                    size: size(meter_bounds.size.width, segment_height),
-                },
-                corner_radii: Corners::default(),
-                background: self.colors.green.into(),
-                border_widths: Edges::default(),
-                border_color: Hsla::transparent_black(),
-                border_style: Default::default(),
-            });
+            let segment_height = meter_height_f * green_height;
+            paint_segment(
+                bar_bottom_y - segment_height,
+                bar_bottom_y,
+                self.colors.green,
+                true,
+            );
         }
 
         // Paint yellow segment (above green)
         if yellow_height > 0.001 {
-            let segment_height = meter_height * yellow_height;
-            let segment_bottom = meter_height * yellow_threshold;
-            window.paint_quad(PaintQuad {
-                bounds: Bounds {
-                    origin: point(
-                        meter_bounds.origin.x,
-                        meter_bounds.origin.y + meter_height - segment_bottom - segment_height,
-                    ),
-                    size: size(meter_bounds.size.width, segment_height),
-                },
-                corner_radii: Corners::default(),
-                background: self.colors.yellow.into(),
-                border_widths: Edges::default(),
-                border_color: Hsla::transparent_black(),
-                border_style: Default::default(),
-            });
+            let segment_height = meter_height_f * yellow_height;
+            let segment_bottom = meter_height_f * yellow_threshold;
+            let y_top = bar_bottom_y - segment_bottom - segment_height;
+            paint_segment(y_top, y_top + segment_height, self.colors.yellow, false);
         }
 
         // Paint red segment (above yellow)
         if red_height > 0.001 {
-            let segment_height = meter_height * red_height;
-            let segment_bottom = meter_height * red_threshold;
-            window.paint_quad(PaintQuad {
-                bounds: Bounds {
-                    origin: point(
-                        meter_bounds.origin.x,
-                        meter_bounds.origin.y + meter_height - segment_bottom - segment_height,
-                    ),
-                    size: size(meter_bounds.size.width, segment_height),
-                },
-                corner_radii: Corners::default(),
-                background: self.colors.red.into(),
-                border_widths: Edges::default(),
-                border_color: Hsla::transparent_black(),
-                border_style: Default::default(),
-            });
+            let segment_height = meter_height_f * red_height;
+            let segment_bottom = meter_height_f * red_threshold;
+            let y_top = bar_bottom_y - segment_bottom - segment_height;
+            paint_segment(y_top, y_top + segment_height, self.colors.red, false);
         }
 
-        // Paint peak indicator if present
+        // Paint peak indicator if present (centered on the peak position).
         if let Some(peak_db) = self.peak_db {
             let peak_pos = db_to_position(peak_db);
-            let peak_y = meter_bounds.origin.y + meter_height * (1.0 - peak_pos);
+            let peak_thickness = 2.0_f32;
+            let peak_center_y = meter_origin_y_f + meter_height_f * (1.0 - peak_pos);
             let peak_color = if self.is_clipping {
                 self.colors.red
             } else {
@@ -325,8 +391,11 @@ impl Element for LevelMeterElement {
 
             window.paint_quad(PaintQuad {
                 bounds: Bounds {
-                    origin: point(meter_bounds.origin.x, peak_y - px(1.0)),
-                    size: size(meter_bounds.size.width, px(2.0)),
+                    origin: point(
+                        meter_bounds.origin.x,
+                        px(peak_center_y - peak_thickness / 2.0),
+                    ),
+                    size: size(meter_bounds.size.width, px(peak_thickness)),
                 },
                 corner_radii: Corners::default(),
                 background: peak_color.into(),
@@ -1270,6 +1339,27 @@ impl PlayerView {
         let ratio = tick_config.value_to_position(value);
         let bar_color = meter_theme.color_for_ratio(ratio);
 
+        // Fill: when gradient is enabled, paint several stacked horizontal
+        // strips with rising alpha to fake a low→high luminance ramp.
+        let fill = if meter_theme.use_gradient {
+            let strips = 10usize;
+            let mut row = div().h_full().w(gpui::relative(ratio)).flex();
+            for i in 0..strips {
+                let t = (i as f32 + 0.5) / strips as f32;
+                let alpha = 0.35 + 0.65 * t;
+                let strip_color = Rgba {
+                    r: bar_color.r,
+                    g: bar_color.g,
+                    b: bar_color.b,
+                    a: bar_color.a * alpha,
+                };
+                row = row.child(div().h_full().flex_1().bg(strip_color));
+            }
+            row
+        } else {
+            div().h_full().w(gpui::relative(ratio)).bg(bar_color)
+        };
+
         div()
             .flex()
             .items_center()
@@ -1292,7 +1382,7 @@ impl PlayerView {
                     .border_color(meter_theme.color_border)
                     .bg(meter_theme.color_background)
                     .overflow_hidden()
-                    .child(div().h_full().w(gpui::relative(ratio)).bg(bar_color)),
+                    .child(fill),
             )
             // Value display
             .child(

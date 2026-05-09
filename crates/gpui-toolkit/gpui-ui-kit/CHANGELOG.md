@@ -1,3 +1,7 @@
+# 0.6.19
+
+- Added more options to configure audio components
+
 # 0.6.18
 
 ## Fixes

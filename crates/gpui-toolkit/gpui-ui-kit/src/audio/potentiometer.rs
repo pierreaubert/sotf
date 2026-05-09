@@ -44,8 +44,12 @@ struct KnobArcElement {
     normalized: f32,
     /// Arc color (typically the plugin accent color)
     arc_color: Rgba,
-    /// Arc thickness in pixels
+    /// Arc thickness in pixels (filled / value portion)
     arc_width: f32,
+    /// Track (unfilled) arc thickness in pixels. `0.0` hides the track.
+    track_arc_width: f32,
+    /// Glow intensity [0.0, 1.0]. 0.0 disables the outer halo.
+    arc_glow: f32,
     /// Arc start angle in radians (from design tokens)
     arc_start_rad: f32,
     /// Arc end angle in radians (from design tokens)
@@ -115,102 +119,96 @@ impl Element for KnobArcElement {
         window: &mut Window,
         _cx: &mut App,
     ) {
-        if self.normalized < 0.005 {
-            return; // Nothing to draw at zero
-        }
-
         let origin_x = bounds.origin.x;
         let origin_y = bounds.origin.y;
 
         let center_x = self.knob_offset + self.knob_size / 2.0;
         let center_y = self.knob_offset + self.knob_size / 2.0;
 
-        // Arc sits just outside the knob border
-        let outer_radius = self.knob_size / 2.0 + 1.0;
-        let inner_radius = outer_radius - self.arc_width;
-
         let start_rad = self.arc_start_rad;
         let end_rad = self.arc_end_rad;
         let value_rad = start_rad + (end_rad - start_rad) * self.normalized;
-
-        // Build the annular sector as a filled path:
-        // outer arc from start_rad to value_rad, then inner arc back
         let segments = self.arc_segments;
-        let angle_span = value_rad - start_rad;
-        let actual_segments = ((segments as f32 * (angle_span / (end_rad - start_rad)))
-            .ceil()
-            .max(4.0)) as usize;
+        let total_span = end_rad - start_rad;
 
-        let mut builder = PathBuilder::fill();
+        // Helper that builds a filled annular sector path between two angles.
+        let build_sector = |from_rad: f32,
+                            to_rad: f32,
+                            outer_r: f32,
+                            inner_r: f32|
+         -> Option<gpui::Path<Pixels>> {
+            let span = to_rad - from_rad;
+            if span <= 0.01 || outer_r <= inner_r {
+                return None;
+            }
+            let actual_segments = ((segments as f32 * (span / total_span.max(0.0001)))
+                .ceil()
+                .max(4.0)) as usize;
 
-        // Outer arc: start → value (clockwise)
-        let outer_start_x = center_x + outer_radius * start_rad.cos();
-        let outer_start_y = center_y + outer_radius * start_rad.sin();
-        builder.move_to(point(
-            origin_x + px(outer_start_x),
-            origin_y + px(outer_start_y),
-        ));
+            let mut builder = PathBuilder::fill();
+            let start_x = center_x + outer_r * from_rad.cos();
+            let start_y = center_y + outer_r * from_rad.sin();
+            builder.move_to(point(origin_x + px(start_x), origin_y + px(start_y)));
 
-        for i in 1..=actual_segments {
-            let t = i as f32 / actual_segments as f32;
-            let angle = start_rad + angle_span * t;
-            let x = center_x + outer_radius * angle.cos();
-            let y = center_y + outer_radius * angle.sin();
-            builder.line_to(point(origin_x + px(x), origin_y + px(y)));
+            for i in 1..=actual_segments {
+                let t = i as f32 / actual_segments as f32;
+                let angle = from_rad + span * t;
+                let x = center_x + outer_r * angle.cos();
+                let y = center_y + outer_r * angle.sin();
+                builder.line_to(point(origin_x + px(x), origin_y + px(y)));
+            }
+            for i in 0..=actual_segments {
+                let t = 1.0 - (i as f32 / actual_segments as f32);
+                let angle = from_rad + span * t;
+                let x = center_x + inner_r * angle.cos();
+                let y = center_y + inner_r * angle.sin();
+                builder.line_to(point(origin_x + px(x), origin_y + px(y)));
+            }
+
+            builder.build().ok()
+        };
+
+        // Geometry: arc sits just outside the knob border.
+        let outer_radius = self.knob_size / 2.0 + 1.0;
+        let value_inner_radius = outer_radius - self.arc_width;
+
+        // Glow halo behind the value arc — three concentric copies with falling
+        // alpha to fake a soft outer bloom. Skipped at zero glow or zero value.
+        if self.arc_glow > 0.0 && self.normalized > 0.005 {
+            let glow_alpha_base = (self.arc_glow.clamp(0.0, 1.0) * 0.45) * self.arc_color.a;
+            for (i, mult) in [(1.0_f32, 0.55_f32), (2.5, 0.30), (4.5, 0.15)] {
+                let halo_color = Rgba {
+                    r: self.arc_color.r,
+                    g: self.arc_color.g,
+                    b: self.arc_color.b,
+                    a: (glow_alpha_base * mult).clamp(0.0, 1.0),
+                };
+                let halo_outer = outer_radius + i;
+                let halo_inner = (value_inner_radius - i).max(self.knob_size / 2.0);
+                if let Some(path) = build_sector(start_rad, value_rad, halo_outer, halo_inner) {
+                    window.paint_path(path, halo_color);
+                }
+            }
         }
 
-        // Inner arc: value → start (counter-clockwise, closing the shape)
-        for i in 0..=actual_segments {
-            let t = 1.0 - (i as f32 / actual_segments as f32);
-            let angle = start_rad + angle_span * t;
-            let x = center_x + inner_radius * angle.cos();
-            let y = center_y + inner_radius * angle.sin();
-            builder.line_to(point(origin_x + px(x), origin_y + px(y)));
-        }
-
-        if let Ok(path) = builder.build() {
+        // Value arc (filled portion).
+        if self.normalized > 0.005
+            && let Some(path) = build_sector(start_rad, value_rad, outer_radius, value_inner_radius)
+        {
             window.paint_path(path, self.arc_color);
         }
 
-        // Also paint the unfilled (track) portion as a dimmed arc
-        let remaining_span = end_rad - value_rad;
-        if remaining_span > 0.01 {
+        // Track (unfilled portion). Hidden when the configured track width is 0.
+        if self.track_arc_width > 0.0 {
+            let track_outer = outer_radius;
+            let track_inner = outer_radius - self.track_arc_width;
             let track_color = Rgba {
                 r: self.arc_color.r,
                 g: self.arc_color.g,
                 b: self.arc_color.b,
                 a: 0.12,
             };
-            let remain_segments = ((segments as f32 * (remaining_span / (end_rad - start_rad)))
-                .ceil()
-                .max(4.0)) as usize;
-
-            let mut track_builder = PathBuilder::fill();
-
-            let track_start_x = center_x + outer_radius * value_rad.cos();
-            let track_start_y = center_y + outer_radius * value_rad.sin();
-            track_builder.move_to(point(
-                origin_x + px(track_start_x),
-                origin_y + px(track_start_y),
-            ));
-
-            for i in 1..=remain_segments {
-                let t = i as f32 / remain_segments as f32;
-                let angle = value_rad + remaining_span * t;
-                let x = center_x + outer_radius * angle.cos();
-                let y = center_y + outer_radius * angle.sin();
-                track_builder.line_to(point(origin_x + px(x), origin_y + px(y)));
-            }
-
-            for i in 0..=remain_segments {
-                let t = 1.0 - (i as f32 / remain_segments as f32);
-                let angle = value_rad + remaining_span * t;
-                let x = center_x + inner_radius * angle.cos();
-                let y = center_y + inner_radius * angle.sin();
-                track_builder.line_to(point(origin_x + px(x), origin_y + px(y)));
-            }
-
-            if let Ok(path) = track_builder.build() {
+            if let Some(path) = build_sector(value_rad, end_rad, track_outer, track_inner) {
                 window.paint_path(path, track_color);
             }
         }
@@ -700,18 +698,31 @@ impl RenderOnce for Potentiometer {
         // Potentiometer uses rotational config (drag distance = knob_size for full range)
         let interaction_config = InteractionConfig::rotational(min, max, scale, knob_size);
 
+        // Layout style: boxed (chassis around the whole knob) vs underlined
+        // (title above with a thin rule, no surrounding chassis).
+        let underlined = self.design_tokens.knob_label_style
+            == crate::audio_design_tokens::AudioDesignTokens::LABEL_UNDERLINED;
+
         let mut container = div()
             .id(self.id)
             .flex()
             .flex_col()
             .items_center()
             .gap_2()
-            .p_2()
-            .rounded_lg()
-            .bg(bg_color)
-            .border_2()
-            .border_color(border_color)
             .min_w(px(min_width));
+
+        if underlined {
+            // No chassis fill or border — just the title rule + knob below.
+            // Selection is communicated via the title color and weight (set
+            // further down) rather than a surrounding box.
+        } else {
+            container = container
+                .p_2()
+                .rounded_lg()
+                .bg(bg_color)
+                .border_2()
+                .border_color(border_color);
+        }
 
         // Track focus if handle provided
         // Both track_focus (for focus observation) and focusable (for key events) are needed
@@ -719,15 +730,18 @@ impl RenderOnce for Potentiometer {
             container = container.track_focus(focus_handle).focusable();
         }
 
-        // Add shadow when selected
-        if selected {
+        // Add shadow when selected (chassis only — underlined style stays flat).
+        if selected && !underlined {
             container = container.shadow_md();
         }
 
-        // Hover effect
-        let hover_border = theme.accent;
-        let hover_bg = theme.surface_hover;
-        container = container.hover(|s| s.border_color(hover_border).bg(hover_bg));
+        // Hover effect — only apply chassis-style hover when boxed; the
+        // underlined variant relies on indicator/title color changes instead.
+        if !underlined {
+            let hover_border = theme.accent;
+            let hover_bg = theme.surface_hover;
+            container = container.hover(|s| s.border_color(hover_border).bg(hover_bg));
+        }
 
         // Cursor
         if disabled {
@@ -836,9 +850,17 @@ impl RenderOnce for Potentiometer {
             });
         }
 
-        // Label with keyboard shortcut
-        container = container.child(
-            div()
+        // Label with keyboard shortcut.
+        //
+        // Underlined variant adds a thin rule beneath the title and a small
+        // gap, mimicking the "title above + horizontal bar" mockup. When the
+        // caller passes an empty label (e.g. the Xone view, where the cell
+        // around the knob already supplies the parameter name as a header),
+        // we skip the *entire* title+rule block so no vertical space is
+        // reserved for an empty row of text.
+        let has_label = !formatted_label.is_empty();
+        if has_label {
+            let label_text = div()
                 .text_xs()
                 .font_weight(if selected {
                     FontWeight::BOLD
@@ -847,8 +869,31 @@ impl RenderOnce for Potentiometer {
                 })
                 .text_color(label_color)
                 .text_center()
-                .child(formatted_label),
-        );
+                .child(formatted_label);
+
+            if underlined {
+                let rule_color = if selected {
+                    theme.accent
+                } else {
+                    theme.border
+                };
+                container = container.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .gap_1()
+                        .min_w(px(min_width))
+                        .child(label_text)
+                        // Thin underline rule — width keyed off the knob
+                        // container so the rule lines up with the knob's
+                        // bounding box.
+                        .child(div().h(px(1.0)).w(px(min_width * 0.85)).bg(rule_color)),
+                );
+            } else {
+                container = container.child(label_text);
+            }
+        }
 
         // Determine number of major ticks based on range and size
         // Algorithm:
@@ -1000,11 +1045,57 @@ impl RenderOnce for Potentiometer {
                     format!("{:.1}", tick_value)
                 };
 
+                // Quadrant-aware label anchoring.
+                //
+                // Position the label so the corner closest to the knob center
+                // sits a small gap away from the tick — that means the digit
+                // facing the tick is what aligns with it, regardless of the
+                // label's length. Examples (default sweep, range 0..1000):
+                //   • upper-right tick "600.4" → label sits to the upper-right
+                //     of the tick, left edge anchored → "6" near the tick
+                //   • upper-left tick "400.6"  → label sits to the upper-left,
+                //     right edge anchored → "6" near the tick (was "0")
+                //   • 9 o'clock tick "200.0"   → label sits to the left, right
+                //     edge anchored, vertically centered → "0" near the tick
+                //   • 3 o'clock tick "800.0"   → label sits to the right, left
+                //     edge anchored, vertically centered
+                //
+                // We approximate the rendered text width from char count at
+                // 9px font (~5.4px/char). We can't measure exact glyph metrics
+                // here without entering paint, so the multiplier is tuned for
+                // the ~9px font used below.
+                let char_w = 5.4_f32;
+                let line_h = 10.0_f32;
+                let text_w = (label_text.len() as f32) * char_w;
+
+                // Anchor offsets: how far the label's top-left corner is
+                // shifted from `(label_x, label_y)` so that its facing edge
+                // lands on the tick's outer label position.
+                let cos_a = tick_angle.cos();
+                let sin_a = tick_angle.sin();
+                let dead_zone = 0.30_f32; // |cos|/|sin| below this counts as "centered"
+                let pad = 1.5_f32; // gap between tick and label edge
+
+                let dx = if cos_a > dead_zone {
+                    pad // left edge of label hugs the tick
+                } else if cos_a < -dead_zone {
+                    -text_w - pad // right edge of label hugs the tick
+                } else {
+                    -text_w / 2.0 // center horizontally
+                };
+                let dy = if sin_a > dead_zone {
+                    pad // top of label below the tick
+                } else if sin_a < -dead_zone {
+                    -line_h - pad // bottom of label above the tick
+                } else {
+                    -line_h / 2.0 // vertically center
+                };
+
                 knob_container = knob_container.child(
                     div()
                         .absolute()
-                        .left(px(label_x - 6.0)) // Center the text
-                        .top(px(label_y - 5.0))
+                        .left(px(label_x + dx))
+                        .top(px(label_y + dy))
                         .text_size(px(9.0)) // Smaller than text_xs (12px)
                         .text_color(major_tick_color)
                         .child(label_text),
@@ -1014,12 +1105,14 @@ impl RenderOnce for Potentiometer {
 
         // Value arc — painted behind tick marks, around the knob
         let arc_color = self.accent_color.unwrap_or(theme.accent);
-        let arc_width = match self.size {
-            PotentiometerSize::Xs => self.design_tokens.knob_arc_widths[0],
-            PotentiometerSize::Sm => self.design_tokens.knob_arc_widths[1],
-            PotentiometerSize::Md => self.design_tokens.knob_arc_widths[2],
-            PotentiometerSize::Lg => self.design_tokens.knob_arc_widths[3],
+        let size_idx = match self.size {
+            PotentiometerSize::Xs => 0,
+            PotentiometerSize::Sm => 1,
+            PotentiometerSize::Md => 2,
+            PotentiometerSize::Lg => 3,
         };
+        let arc_width = self.design_tokens.knob_arc_widths[size_idx];
+        let track_arc_width = self.design_tokens.knob_arc_track_widths[size_idx].max(0.0);
         knob_container = knob_container.child(
             div().absolute().inset_0().child(KnobArcElement {
                 container_size,
@@ -1028,6 +1121,8 @@ impl RenderOnce for Potentiometer {
                 normalized,
                 arc_color,
                 arc_width,
+                track_arc_width,
+                arc_glow: self.design_tokens.knob_arc_glow,
                 arc_start_rad: self.design_tokens.knob_arc_start_deg.to_radians(),
                 arc_end_rad: (self.design_tokens.knob_arc_start_deg
                     + self.design_tokens.knob_arc_sweep_deg)
@@ -1063,15 +1158,60 @@ impl RenderOnce for Potentiometer {
             );
         }
 
-        // Indicator dot
+        // Indicator marker — shape configured by `knob_indicator_style`. The
+        // dot rect is positioned at (x, y); for non-dot shapes we keep the
+        // same anchor and width so existing geometry math stays meaningful.
         let mut indicator = div()
             .absolute()
             .left(px(x))
             .top(px(y))
             .w(px(indicator_size))
             .h(px(indicator_size))
-            .bg(indicator_color)
-            .rounded_full();
+            .bg(indicator_color);
+
+        match self.design_tokens.knob_indicator_style {
+            crate::audio_design_tokens::AudioDesignTokens::INDICATOR_TICK => {
+                // Radial tick: stretch toward the rim, narrow tangentially.
+                // We approximate the radial direction by always extending the
+                // marker outward from center; for the dead-zone-bottom layout
+                // a simple square stretched 1.5x reads correctly at the
+                // common quadrants and stays inside the bounding box.
+                let tick_len = indicator_size * 1.6;
+                let tick_thick = (indicator_size * 0.55).max(2.0);
+                let tick_x = center + radius * angle_rad.cos() - (tick_thick / 2.0);
+                let tick_y = center + radius * angle_rad.sin() - (tick_len / 2.0);
+                indicator = div()
+                    .absolute()
+                    .left(px(tick_x))
+                    .top(px(tick_y))
+                    .w(px(tick_thick))
+                    .h(px(tick_len))
+                    .bg(indicator_color)
+                    .rounded_sm();
+            }
+            crate::audio_design_tokens::AudioDesignTokens::INDICATOR_ARROW => {
+                // Arrow approximation: small triangular cap rendered as a
+                // tilted square (rotated 45° via overflow trick is not
+                // available without transforms in GPUI's stable surface, so
+                // approximate with a smaller, brighter rounded square at the
+                // arc tip).
+                let arrow_size = indicator_size * 0.85;
+                let arrow_x = center + radius * angle_rad.cos() - (arrow_size / 2.0);
+                let arrow_y = center + radius * angle_rad.sin() - (arrow_size / 2.0);
+                indicator = div()
+                    .absolute()
+                    .left(px(arrow_x))
+                    .top(px(arrow_y))
+                    .w(px(arrow_size))
+                    .h(px(arrow_size))
+                    .bg(indicator_color)
+                    .rounded_sm();
+            }
+            // INDICATOR_DOT (or any unknown — fall through to dot).
+            _ => {
+                indicator = indicator.rounded_full();
+            }
+        }
 
         // Add shiny shadow for Lg size and selected state
         indicator = match self.size {

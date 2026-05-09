@@ -1,3 +1,23 @@
+# 0.6.6 (unreleased)
+
+## Room EQ: new strategy options in dropdowns
+
+- `MULTI_MEASUREMENT_STRATEGY_OPTIONS` now exposes `"spatial_robustness"`
+  ("Spatial Robustness") and `"minimax_uncertainty"`
+  ("Minimax (Bootstrap Uncertainty)"), in addition to the existing average
+  / weighted-sum / minimax / variance-penalized choices.
+- `MULTI_SEAT_STRATEGY_OPTIONS` now exposes `"continuous_area"`
+  ("Continuous Listening Area"), alongside the existing variance / primary /
+  average / modal-basis choices.
+- All four strategy dropdowns (Multi-Measurement and Multi-Seat, in both
+  the autoeq form and the room-eq configure step) automatically pick up the
+  new entries through the existing form bindings; the UI carries the
+  selection through to `sotf-player`'s `RoomEqOptimizerConfig`, which
+  forwards it to `autoeq::roomeq`. Detailed sub-config editors (bootstrap
+  num_resamples / α, area dimensions / bounds / seat positions, etc.) are
+  not yet built — selecting these strategies currently uses library-side
+  defaults until per-strategy panels are added.
+
 # 0.6.5
 
 ## Plugin chassis themes — Graphite / Studio Cream / Brutalist

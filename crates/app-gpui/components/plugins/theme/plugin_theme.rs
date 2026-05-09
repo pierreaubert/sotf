@@ -80,6 +80,25 @@ pub struct PluginTheme {
     pub radius_panel: f32,
     pub spacing_section: f32,
     pub spacing_knob_row: f32,
+
+    // ── Audio component design tokens overridden by this chassis ─────
+    // These mirror the matching fields on `AudioDesignTokens`. `apply_to`
+    // writes them into the resolved `Theme.design_tokens` so the knob and
+    // meter renderers pick them up automatically.
+    /// `AudioDesignTokens::LABEL_BOXED` (default) or `LABEL_UNDERLINED`.
+    pub knob_label_style: u8,
+    /// Glow halo intensity on the value arc, [0.0, 1.0].
+    pub knob_arc_glow: f32,
+    /// `AudioDesignTokens::LABEL_BOXED` (default) or `LABEL_UNDERLINED` —
+    /// also drives the VerticalSlider chassis.
+    pub meter_label_style: u8,
+    /// True to render meter fills as a luminance gradient.
+    pub meter_use_gradient: bool,
+    /// Corner radius (px) for the meter bar/track.
+    pub meter_corner_radius: f32,
+    /// Glow intensity (0.0–1.0) painted as a colored halo around the meter /
+    /// vertical-slider fill. 0.0 = no glow.
+    pub meter_glow: f32,
 }
 
 impl PluginTheme {
@@ -106,9 +125,20 @@ impl PluginTheme {
     /// - Meter colors (normal / warning / clip / peak)
     /// - Plugin-type colors, EQ curve / spectrum / band / channel palettes
     /// - Toast / progress / button colors
-    /// - Layout sizes and design tokens (sizing stays consistent)
+    /// - Sizing-related design tokens — only the four "look" tokens
+    ///   (`knob_label_style`, `knob_arc_glow`, `meter_*`) are overridden.
     pub fn apply_to(&self, base: &Theme) -> Theme {
         let mut out = base.clone();
+
+        // Audio-component look tokens — patched into the resolved theme so
+        // the knob and meter renderers downstream pick them up without
+        // signature changes.
+        out.design_tokens.knob_label_style = self.knob_label_style;
+        out.design_tokens.knob_arc_glow = self.knob_arc_glow;
+        out.design_tokens.meter_label_style = self.meter_label_style;
+        out.design_tokens.meter_use_gradient = self.meter_use_gradient;
+        out.design_tokens.meter_corner_radius = self.meter_corner_radius;
+        out.design_tokens.meter_glow = self.meter_glow;
 
         // Surfaces — the chassis gradient maps to background; panels to
         // background_secondary; recessed tiles to background_tertiary; the

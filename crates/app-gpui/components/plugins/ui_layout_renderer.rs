@@ -198,6 +198,9 @@ fn render_config_column(
     let mut col = div().flex().flex_col().gap(d.gap).w(px(width));
     col = col.child(render_section_title(d, "CONFIG", theme));
     for spec in controls {
+        if spec.hidden {
+            continue;
+        }
         col = col.child(render_control(
             d,
             entity.clone(),
@@ -340,7 +343,10 @@ fn render_main_column(
             let tab_idx = i;
             tab_bar = tab_bar.child(
                 div()
-                    .text_size(d.text_xs)
+                    // Match the size used by Potentiometer titles (e.g.
+                    // "LFE Gain") so the tab labels read as peer headings,
+                    // not chart labels.
+                    .text_size(d.text_sm)
                     .px(d.card)
                     // intentional: asymmetric 6px bottom / 4px top for tab underline spacing
                     .pb(px(6.0))
@@ -389,6 +395,9 @@ fn render_main_column(
         if let Some((_, tab_content)) = all_tabs.get(clamped_tab) {
             let mut tab_div = div().flex().flex_wrap().gap(d.section);
             for spec in *tab_content {
+                if spec.hidden {
+                    continue;
+                }
                 tab_div = tab_div.child(render_control(
                     d,
                     entity.clone(),
@@ -430,6 +439,9 @@ fn render_output_column(
     let mut col = div().flex().flex_col().gap(d.gap).w(px(width));
     col = col.child(render_section_title(d, "OUTPUT", theme));
     for spec in controls {
+        if spec.hidden {
+            continue;
+        }
         col = col.child(render_control(
             d,
             entity.clone(),
@@ -464,12 +476,19 @@ fn render_group(
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     theme: &Theme,
 ) -> impl IntoElement {
-    // Wrap group in a subtle bordered container for visual separation
+    // Slider groups (vertical meters) carry their own visual frame via
+    // tick marks and labels, so the chassis-box wrapper is redundant.
+    // Knob groups still get the bordered container for visual separation.
+    let has_sliders = group
+        .controls
+        .iter()
+        .any(|c| matches!(c.control_type, ControlType::VerticalSlider));
+
     let mut col = div()
         .flex()
         .flex_col()
         .gap(d.gap)
-        .when(!group.title.is_empty(), |el| {
+        .when(!group.title.is_empty() && !has_sliders, |el| {
             el.rounded(d.r_xl)
                 .bg(theme.background_secondary)
                 .border_1()
@@ -480,15 +499,12 @@ fn render_group(
         col = col.child(render_section_title(d, group.title, theme));
     }
 
-    // Check if this group has sliders — if so, arrange horizontally
-    let has_sliders = group
-        .controls
-        .iter()
-        .any(|c| matches!(c.control_type, ControlType::VerticalSlider));
-
     if has_sliders {
         let mut slider_row = div().flex().gap(d.gap).items_end();
         for spec in group.controls {
+            if spec.hidden {
+                continue;
+            }
             slider_row = slider_row.child(render_control(
                 d,
                 entity.clone(),
@@ -509,6 +525,9 @@ fn render_group(
         // Knobs/toggles: wrap in a flex-wrap container
         let mut knob_row = div().flex().flex_wrap().gap(d.gap);
         for spec in group.controls {
+            if spec.hidden {
+                continue;
+            }
             knob_row = knob_row.child(render_control(
                 d,
                 entity.clone(),

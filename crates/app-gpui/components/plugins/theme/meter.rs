@@ -36,6 +36,10 @@ pub struct MeterTheme {
     pub warning_threshold: f32,
     /// Critical threshold position (0.0 to 1.0)
     pub critical_threshold: f32,
+
+    /// When true, render the bar fill with a horizontal luminance gradient
+    /// (low value faded, high value luminous) instead of a flat color.
+    pub use_gradient: bool,
 }
 
 impl MeterTheme {
@@ -52,12 +56,13 @@ impl MeterTheme {
             color_text: theme.text_secondary,
             color_text_muted: theme.text_muted,
             bar_height: 20.0,
-            border_radius: 4.0,
+            border_radius: theme.design_tokens.meter_corner_radius.max(0.0),
             border_width: 1.0,
             label_width: 32.0,        // Reduced from 80px to make bars 60% longer
             value_width: 50.0,        // Value display width
             warning_threshold: 0.75,  // 75% of range
             critical_threshold: 0.90, // 90% of range
+            use_gradient: theme.design_tokens.meter_use_gradient,
         }
     }
 

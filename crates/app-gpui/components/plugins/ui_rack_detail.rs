@@ -743,6 +743,14 @@ impl PlayerView {
 
                                     let d = Ds::from_cx(cx);
 
+                                    let chassis = app_st
+                                        .app
+                                        .plugin_state
+                                        .rack_theme_state
+                                        .resolved_id(selected_idx)
+                                        .theme()
+                                        .apply_to(&theme);
+
                                     match &plugin_ui_view {
                                         PluginUiView::Simple => {
                                             super::ui_simple::render_simple_plugin_view(
@@ -752,7 +760,7 @@ impl PlayerView {
                                                 &plugin.settings,
                                                 is_editing,
                                                 param_selection,
-                                                &theme,
+                                                &chassis,
                                                 midi_ref.as_ref(),
                                             )
                                             .into_any_element()
@@ -764,7 +772,10 @@ impl PlayerView {
                                                 &plugin.settings,
                                                 selected_idx,
                                                 &app_st.app.plugin_state.midi_mapping,
-                                                &theme,
+                                                self.state.clone(),
+                                                is_editing,
+                                                param_selection,
+                                                &chassis,
                                             )
                                         }
                                         PluginUiView::UI => {

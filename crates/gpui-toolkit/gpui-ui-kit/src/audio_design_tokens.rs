@@ -24,17 +24,57 @@ pub struct AudioDesignTokens {
     /// Arc thickness in px (per size variant: [Xs, Sm, Md, Lg]).
     /// Default: [2.5, 3.0, 3.5, 4.0].
     pub knob_arc_widths: [f32; 4],
+    /// Track (unfilled) arc thickness in px (per size variant).
+    /// When `0.0`, the track arc is hidden entirely; when negative, falls back to
+    /// `knob_arc_widths`. Allows the dimmed track to be thinner or thicker than
+    /// the value arc.
+    /// Default: matches `knob_arc_widths`.
+    pub knob_arc_track_widths: [f32; 4],
+    /// Glow intensity for the value arc, [0.0, 1.0]. 0.0 disables the glow.
+    /// At 1.0, paints an outer halo at full configured opacity.
+    /// Default: 0.0.
+    pub knob_arc_glow: f32,
     /// Number of segments for arc rendering (smoothness).
     /// Default: 48.
     pub knob_arc_segments: u32,
     /// Knob border width in px.
     /// Default: 2.0.
     pub knob_border_width: f32,
+    /// Layout style for the knob's title.
+    /// 0=Boxed (chassis surrounds the knob), 1=Underlined (title above, thin
+    /// underline rule, no surrounding chassis).
+    /// Default: 0 (Boxed).
+    pub knob_label_style: u8,
+    /// Marker shape pointing at the current value.
+    /// 0=Dot (filled circle), 1=Arrow (triangle pointing outward), 2=Tick
+    /// (radial bar from indicator radius outward).
+    /// Default: 0 (Dot).
+    pub knob_indicator_style: u8,
 
     // -- VerticalSlider geometry --
     /// Slider track widths [Sm, Md, Lg] in px.
     /// Default: [14.0, 18.0, 24.0].
     pub slider_track_widths: [f32; 3],
+
+    // -- Level meter geometry --
+    /// Layout style for the level meter title.
+    /// 0=Boxed (label sits inside a chassis box), 1=Underlined (label above,
+    /// thin underline rule, bar below with no surrounding chassis).
+    /// Default: 0 (Boxed).
+    pub meter_label_style: u8,
+    /// When true, the level meter fill is rendered with a luminance gradient
+    /// (low values faded, high values luminous) instead of a flat color.
+    /// Default: false.
+    pub meter_use_gradient: bool,
+    /// Corner radius (px) applied to the meter bar fill and track.
+    /// 0.0 = square corners. The renderer clamps to half the bar's smaller axis.
+    /// Default: 2.0 (matches the prior hardcoded value).
+    pub meter_corner_radius: f32,
+    /// Glow intensity for the meter / vertical-slider fill, [0.0, 1.0]. 0.0
+    /// disables the halo. Higher values widen and brighten the colored
+    /// box-shadow painted around the bar fill.
+    /// Default: 0.0.
+    pub meter_glow: f32,
 
     // -- Toggle variant --
     /// Toggle visual style.
@@ -78,9 +118,17 @@ impl Default for AudioDesignTokens {
             knob_arc_start_deg: 135.0,
             knob_arc_sweep_deg: 270.0,
             knob_arc_widths: [2.5, 3.0, 3.5, 4.0],
+            knob_arc_track_widths: [2.5, 3.0, 3.5, 4.0],
+            knob_arc_glow: 0.0,
             knob_arc_segments: 48,
             knob_border_width: 2.0,
+            knob_label_style: AudioDesignTokens::LABEL_BOXED,
+            knob_indicator_style: AudioDesignTokens::INDICATOR_DOT,
             slider_track_widths: [14.0, 18.0, 24.0],
+            meter_label_style: AudioDesignTokens::LABEL_BOXED,
+            meter_use_gradient: false,
+            meter_corner_radius: 2.0,
+            meter_glow: 0.0,
             toggle_variant: 0,
             corner_radius: 8.0,
             min_touch_target: 32.0,
@@ -100,4 +148,16 @@ impl AudioDesignTokens {
     pub const TOGGLE_SEGMENTED: u8 = 1;
     pub const TOGGLE_THUMB_ON_TRACK: u8 = 2;
     pub const TOGGLE_PILL: u8 = 3;
+
+    /// Label layout: enclose in a chassis box (current default).
+    pub const LABEL_BOXED: u8 = 0;
+    /// Label layout: title above with a thin underline rule, no chassis.
+    pub const LABEL_UNDERLINED: u8 = 1;
+
+    /// Indicator marker: filled dot.
+    pub const INDICATOR_DOT: u8 = 0;
+    /// Indicator marker: triangular arrow pointing outward.
+    pub const INDICATOR_ARROW: u8 = 1;
+    /// Indicator marker: radial tick line.
+    pub const INDICATOR_TICK: u8 = 2;
 }

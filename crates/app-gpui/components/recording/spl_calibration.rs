@@ -17,7 +17,8 @@ use crate::app::types::recording::SplCalibrationCaptureStatus;
 use crate::ui::PlayerView;
 use gpui::{AnyElement, Context, IntoElement};
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, Card, StackSpacing, Text, TextSize, TextWeight, VStack,
+    Button, ButtonSize, ButtonVariant, Card, HStack, NumberInput, NumberInputSize, StackAlign,
+    StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 
 impl PlayerView {
@@ -106,13 +107,8 @@ impl PlayerView {
             .child(start_button);
 
         if let Some(r) = cal.engine_result.as_ref() {
-            let reported = cal.reported_db_spl;
-            let reported_line = match reported {
-                Some(v) => format!("Reported dBSPL: {v:.1}"),
-                None => {
-                    "Reported dBSPL: (not entered yet — type it in the UI entry below)".to_string()
-                }
-            };
+            let view = cx.entity().clone();
+            let initial_db_spl = cal.reported_db_spl.unwrap_or(75.0) as f64;
             column = column
                 .child(
                     Text::new(format!(
@@ -121,7 +117,36 @@ impl PlayerView {
                     ))
                     .size(TextSize::Sm),
                 )
-                .child(Text::new(reported_line).size(TextSize::Sm));
+                .child(
+                    HStack::new()
+                        .spacing(StackSpacing::Sm)
+                        .align(StackAlign::Center)
+                        .child(Text::new("Reported dBSPL").size(TextSize::Sm))
+                        .child(
+                            NumberInput::new("spl_calibration_reported_db_spl")
+                                .value(initial_db_spl)
+                                .min(30.0)
+                                .max(130.0)
+                                .step(0.5)
+                                .decimals(1)
+                                .unit("dB SPL")
+                                .size(NumberInputSize::Sm)
+                                .width(140.0)
+                                .on_change(move |val, _window, cx| {
+                                    view.update(cx, |this, cx| {
+                                        this.state.update(cx, |state, _| {
+                                            state
+                                                .app
+                                                .measurement_state
+                                                .recording_state
+                                                .spl_calibration_capture
+                                                .reported_db_spl = Some(val as f32);
+                                        });
+                                        cx.notify();
+                                    });
+                                }),
+                        ),
+                );
             if let Some(cal_out) = cal.to_spl_calibration() {
                 column = column.child(
                     Text::new(format!(

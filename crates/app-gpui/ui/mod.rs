@@ -111,6 +111,12 @@ pub struct PlayerView {
     /// OS media controls (MPRIS / MediaPlayer) — not available on iOS/tvOS
     #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
     media_controls: Option<crate::media_controls::GpuiMediaControls>,
+    /// Optional MIDI hardware bridge. Set when a supported controller was
+    /// detected at startup; `None` when no device matched.
+    midi_input: Option<crate::app::midi_input::MidiInputService>,
+    /// Plugin index the engine was last focused on, so we know when to
+    /// rebuild the auto-map for a different plugin.
+    midi_focused_plugin: Option<usize>,
 }
 
 impl PlayerView {
@@ -190,6 +196,24 @@ impl PlayerView {
                     #[cfg(any(target_os = "ios", target_os = "tvos"))]
                     let media_events: Vec<()> = vec![];
 
+                    // Drain any pending hardware MIDI messages before the
+                    // main state update so resulting param changes ride
+                    // through the same `pending_plugin_update` path as
+                    // user-initiated edits.
+                    if let Some(svc) = view.midi_input.as_ref() {
+                        let messages = svc.drain();
+                        if !messages.is_empty() {
+                            let layout = svc.layout();
+                            let last_focus = view.midi_focused_plugin;
+                            let new_focus = view.state.update(cx, |state, _cx| {
+                                Self::dispatch_midi_messages(
+                                    state, layout, last_focus, messages,
+                                )
+                            });
+                            view.midi_focused_plugin = new_focus;
+                        }
+                    }
+
                     // Consolidate all state updates into a single update call
                     // to avoid multiple observer triggers
                     view.state.update(cx, |state, _cx| {
@@ -255,6 +279,11 @@ impl PlayerView {
         })
         .detach();
 
+        // Best-effort hardware MIDI bridge. iOS/tvOS use the manager_stub
+        // which always returns no devices, so this is harmless on those
+        // targets.
+        let midi_input = crate::app::midi_input::try_start();
+
         Self {
             state,
             focus_handle,
@@ -267,6 +296,8 @@ impl PlayerView {
             geometry_save_task: None,
             #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
             media_controls,
+            midi_input,
+            midi_focused_plugin: None,
         }
     }
 
@@ -304,6 +335,83 @@ impl PlayerView {
                 *pending_stats.lock() = Some(stats);
             })
             .detach();
+    }
+
+    /// Drain MIDI messages from the hardware bridge into plugin parameter
+    /// updates via `MidiMappingEngine`. Returns the plugin index the engine
+    /// is now focused on (for cache-invalidation in the caller).
+    ///
+    /// Skips when no plugin is focused (engine has nothing to map onto)
+    /// and silently drops messages when the focused plugin has no params.
+    fn dispatch_midi_messages(
+        state: &mut AppState,
+        layout: sotf_audio_player_midi::ControllerLayout,
+        last_focus: Option<usize>,
+        messages: Vec<sotf_audio_player_midi::MidiMessage>,
+    ) -> Option<usize> {
+        use sotf_audio_player_midi::MappingAction;
+
+        // Install the layout exactly once. set_layout() is idempotent on
+        // the inner Option but we avoid the clone on every tick.
+        if state.app.plugin_state.midi_mapping.layout().is_none() {
+            state.app.plugin_state.midi_mapping.set_layout(layout);
+        }
+
+        let focused = state.app.plugin_state.editing_plugin_index?;
+
+        // Snapshot the focused plugin's params so we can release the borrow
+        // on `plugin_state.graph` before mutably borrowing `midi_mapping`.
+        let (plugin_type_name, params) = {
+            let plugins = state.app.plugin_state.graph.plugins();
+            let plugin = plugins.get(focused)?;
+            (
+                plugin.settings.plugin_type().name().to_string(),
+                plugin.settings.param_specs().to_vec(),
+            )
+        };
+
+        // Re-focus the engine when the plugin selection changed so the
+        // auto-mapped bindings target the new param set.
+        if last_focus != Some(focused) {
+            state.app.plugin_state.midi_mapping.on_plugin_focus(
+                &plugin_type_name,
+                &params,
+                focused,
+            );
+        }
+
+        for msg in messages {
+            let action = state
+                .app
+                .plugin_state
+                .midi_mapping
+                .handle_midi(&msg, &params);
+            match action {
+                MappingAction::SetParam {
+                    plugin_index,
+                    param_index,
+                    value,
+                } => {
+                    state
+                        .app
+                        .set_plugin_param(plugin_index, param_index, value);
+                }
+                MappingAction::AdjustParam { .. } => {
+                    // Relative encoders aren't auto-mapped on the supported
+                    // controllers (Xone:K2 / LCXL pots and faders are
+                    // absolute). Drop relative deltas with a debug log so
+                    // we notice if a future controller surfaces them.
+                    log::debug!("MIDI: AdjustParam dropped (relative encoders unsupported)");
+                }
+                MappingAction::PagePrev | MappingAction::PageNext => {
+                    // Engine has already mutated `mapping.current_page`.
+                    // Re-render is implicit via cx.notify() in the tick.
+                }
+                MappingAction::LearnComplete { .. } | MappingAction::Unmapped => {}
+            }
+        }
+
+        Some(focused)
     }
 
     /// Sync playback position, duration, and analyzer data from the audio engine.

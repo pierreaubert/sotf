@@ -138,6 +138,12 @@ pub fn render_plugin_content(
         (content_width - output_meter_width - 44.0).max(300.0)
     };
 
+    // Overlay the chassis theme onto the global app theme so custom views
+    // and the layout renderer share the same chassis-aware colors. The owned
+    // `chassis_theme` lives for the rest of the function so `ctx.theme` can
+    // borrow it.
+    let chassis_theme = plugin_theme.apply_to(theme);
+
     // Check if this plugin has a registered custom view
     let registry = GpuiViewRegistry::new();
     let type_key = custom_view_registry::plugin_type_key(settings);
@@ -150,7 +156,7 @@ pub fn render_plugin_content(
             is_editing,
             selected_param,
             selected_band_idx,
-            theme,
+            theme: &chassis_theme,
             plugin_theme: &plugin_theme,
             loudness,
             plugin_data,

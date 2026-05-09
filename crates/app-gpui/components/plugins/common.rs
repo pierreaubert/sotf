@@ -459,7 +459,7 @@ pub fn format_shortcut_label(label: &str, shortcut_key: Option<char>) -> String 
 }
 
 /// Convert Theme to VerticalSliderTheme for gpui-ui-kit VerticalSlider
-fn theme_to_vertical_slider_theme(theme: &Theme) -> VerticalSliderTheme {
+pub(super) fn theme_to_vertical_slider_theme(theme: &Theme) -> VerticalSliderTheme {
     VerticalSliderTheme {
         surface: theme.surface,
         surface_hover: theme.surface_hover,
