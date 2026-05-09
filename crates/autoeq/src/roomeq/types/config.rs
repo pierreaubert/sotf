@@ -380,6 +380,10 @@ pub enum MultiSeatStrategy {
     Average,
     /// Complex modal-basis sound-field management across seats
     ModalBasis,
+    /// Continuous listening-area prior: integrate the variance / mean / worst-case
+    /// objective over a probability density over positions, instead of the
+    /// discrete seat slots. Requires `MultiSeatConfig::continuous_area` to be set.
+    ContinuousArea,
 }
 
 /// Strategy for handling multiple measurements per speaker
@@ -398,6 +402,13 @@ pub enum MultiMeasurementStrategy {
     /// Spatial robustness: RMS-average + correction depth mask based on spatial variance.
     /// Only corrects features consistent across positions.
     SpatialRobustness,
+    /// Measurement-uncertainty-aware robust optimization. Generates B
+    /// case-bootstrap resamples of the input curves at setup time, then
+    /// scalarises losses across the resampled targets per the configured
+    /// `BootstrapUncertaintyConfig::scalarisation` (worst-case or CVaR).
+    /// Drives the optimizer toward a solution that is robust to which
+    /// resample of the measurement set is "true".
+    MinimaxUncertainty,
 }
 
 /// Correction mode for CEA2034 speaker pre-correction
@@ -1351,6 +1362,10 @@ pub struct MultiSeatConfig {
     /// Relative primary-seat weight used with PrimaryWithConstraints.
     #[serde(default = "default_primary_seat_weight")]
     pub primary_seat_weight: f64,
+    /// Continuous listening-area prior. Required (and only consulted) when
+    /// `strategy = ContinuousArea`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub continuous_area: Option<ContinuousListeningAreaConfig>,
 }
 
 fn default_max_deviation_db() -> f64 {
@@ -1387,6 +1402,7 @@ impl Default for MultiSeatConfig {
             all_channel_strategy: default_all_channel_multiseat_strategy(),
             seat_weights: None,
             primary_seat_weight: default_primary_seat_weight(),
+            continuous_area: None,
         }
     }
 }
@@ -1644,6 +1660,203 @@ fn default_mask_smoothing_octaves() -> f64 {
     1.0 / 6.0
 }
 
+/// How to scalarise the per-bootstrap-resample losses into one outer-loop loss.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum BootstrapScalarisation {
+    /// Pure worst-case: max loss across the B resamples. Most conservative; can be
+    /// driven by a single outlier resample.
+    #[default]
+    WorstCase,
+    /// Mean of the worst α-fraction of resamples (CVaR). Smoother, less sensitive
+    /// to a single freak resample than `WorstCase`.
+    Cvar,
+}
+
+/// Serializable bootstrap uncertainty configuration for JSON config files.
+///
+/// Drives `MultiMeasurementStrategy::MinimaxUncertainty`. At optimizer-setup
+/// time, the input N measurement curves are case-bootstrap resampled B times;
+/// each resampled mean becomes its own per-measurement objective. The outer
+/// optimizer then scalarises the B objectives per `scalarisation`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
+pub struct BootstrapUncertaintyConfig {
+    /// Number of bootstrap resamples B. Typical: 200..1000. Default: 400.
+    #[serde(default = "default_bootstrap_num_resamples")]
+    pub num_resamples: usize,
+    /// Two-sided confidence level α; band covers `[α/2, 1-α/2]`. Default: 0.10.
+    #[serde(default = "default_bootstrap_alpha")]
+    pub alpha: f64,
+    /// PRNG seed for determinism.
+    #[serde(default = "default_bootstrap_seed")]
+    pub seed: u64,
+    /// Scalarisation across the B resamples.
+    #[serde(default)]
+    pub scalarisation: BootstrapScalarisation,
+    /// Tail fraction for CVaR (only used when `scalarisation = Cvar`). Default 0.20.
+    #[serde(default = "default_bootstrap_cvar_alpha")]
+    pub cvar_alpha: f64,
+}
+
+fn default_bootstrap_num_resamples() -> usize {
+    400
+}
+fn default_bootstrap_alpha() -> f64 {
+    0.10
+}
+fn default_bootstrap_seed() -> u64 {
+    0xC0FFEE
+}
+fn default_bootstrap_cvar_alpha() -> f64 {
+    0.20
+}
+
+impl Default for BootstrapUncertaintyConfig {
+    fn default() -> Self {
+        Self {
+            num_resamples: default_bootstrap_num_resamples(),
+            alpha: default_bootstrap_alpha(),
+            seed: default_bootstrap_seed(),
+            scalarisation: BootstrapScalarisation::default(),
+            cvar_alpha: default_bootstrap_cvar_alpha(),
+        }
+    }
+}
+
+/// Probability density shape over positions, JSON-serialisable.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Default)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum AreaPriorKind {
+    /// Uniform density over the configured `bounds`.
+    #[default]
+    Uniform,
+    /// Axis-aligned Gaussian density. `mean` and `cov_diag` must each have
+    /// length equal to the number of dimensions; truncated at ±k·σ.
+    Gaussian {
+        /// Per-axis means.
+        mean: Vec<f64>,
+        /// Per-axis variances (must be > 0).
+        cov_diag: Vec<f64>,
+        /// Truncation in standard deviations. Default 4.0.
+        #[serde(default = "default_gaussian_truncation_sigmas")]
+        truncation_sigmas: f64,
+    },
+}
+
+fn default_gaussian_truncation_sigmas() -> f64 {
+    4.0
+}
+
+/// Quadrature scheme for discretising the prior integral, JSON-serialisable.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum AreaQuadratureKind {
+    /// Sobol low-discrepancy QMC with `num_points` samples.
+    Sobol {
+        /// Number of quadrature points (powers of two are most efficient).
+        num_points: usize,
+        /// PRNG seed.
+        #[serde(default)]
+        seed: u64,
+    },
+    /// Latin-Hypercube sampling.
+    LatinHypercube {
+        /// Number of quadrature points.
+        num_points: usize,
+        /// PRNG seed.
+        #[serde(default)]
+        seed: u64,
+    },
+    /// Gauss–Legendre tensor product. Total points = `points_per_axis^D`.
+    GaussLegendre {
+        /// Nodes per axis.
+        points_per_axis: usize,
+    },
+}
+
+impl Default for AreaQuadratureKind {
+    fn default() -> Self {
+        AreaQuadratureKind::Sobol {
+            num_points: 64,
+            seed: 0xC0FFEE,
+        }
+    }
+}
+
+/// How to scalarise per-quadrature-point losses, JSON-serialisable.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Default)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum AreaScalarisationKind {
+    /// Probability-weighted mean (expected loss over the listening area).
+    #[default]
+    ExpectedValue,
+    /// Worst-case (max) over the area's bounding box. Inner DE search.
+    WorstCase {
+        /// Inner-search budget. Default 50.
+        #[serde(default = "default_area_inner_maxiter")]
+        inner_maxiter: usize,
+        /// Inner-search seed.
+        #[serde(default)]
+        inner_seed: u64,
+    },
+    /// CVaR at level α — mean of the worst α-fraction of points.
+    Cvar {
+        /// Tail fraction in (0, 1].
+        #[serde(default = "default_area_cvar_alpha")]
+        alpha: f64,
+    },
+}
+
+fn default_area_inner_maxiter() -> usize {
+    50
+}
+fn default_area_cvar_alpha() -> f64 {
+    0.20
+}
+
+/// Serializable continuous listening-area configuration for JSON config files.
+///
+/// Drives `MultiSeatStrategy::ContinuousArea`. The optimizer integrates the
+/// per-position objective over a continuous prior π(p) defined over a
+/// `dimensions`-dimensional axis-aligned box, replacing the discrete seats
+/// array with a continuous probability density.
+///
+/// `bounds.len()` must equal `dimensions`. For Gaussian priors,
+/// `mean.len()` and `cov_diag.len()` must also equal `dimensions`.
+/// `seat_positions.len()` must equal the number of discrete seats in the
+/// calibration `MultiSeatMeasurements` and each row's length must equal
+/// `dimensions`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
+pub struct ContinuousListeningAreaConfig {
+    /// Number of spatial dimensions (typical: 1 for a couch line, 2 for an
+    /// MLP rectangle, 3 for a head-volume sweep). Currently 1, 2, and 3 are
+    /// supported by the runtime dispatcher.
+    pub dimensions: usize,
+    /// Per-axis bounding-box bounds `(lo, hi)`. Always required; even for
+    /// Gaussian priors the bounds determine the truncation rectangle.
+    pub bounds: Vec<(f64, f64)>,
+    /// Spatial coordinates of each calibration seat in
+    /// `MultiSeatMeasurements`. Outer length = number of seats, inner length =
+    /// `dimensions`. Order must match the seat index in the measurements.
+    pub seat_positions: Vec<Vec<f64>>,
+    /// Probability density shape.
+    #[serde(default)]
+    pub prior: AreaPriorKind,
+    /// Quadrature scheme.
+    #[serde(default)]
+    pub quadrature: AreaQuadratureKind,
+    /// How to scalarise the Q per-point losses.
+    #[serde(default)]
+    pub scalarisation: AreaScalarisationKind,
+    /// IDW power exponent for spatial interpolation (default 2.0).
+    #[serde(default = "default_idw_power")]
+    pub idw_power: f64,
+}
+
+fn default_idw_power() -> f64 {
+    2.0
+}
+
 /// Configuration for multi-measurement optimization
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MultiMeasurementConfig {
@@ -1659,6 +1872,9 @@ pub struct MultiMeasurementConfig {
     /// Spatial robustness configuration (used when strategy = SpatialRobustness)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spatial_robustness: Option<SpatialRobustnessSerdeConfig>,
+    /// Bootstrap uncertainty configuration (used when strategy = MinimaxUncertainty).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bootstrap_uncertainty: Option<BootstrapUncertaintyConfig>,
 }
 
 fn default_variance_lambda() -> f64 {
@@ -1672,6 +1888,7 @@ impl Default for MultiMeasurementConfig {
             weights: None,
             variance_lambda: default_variance_lambda(),
             spatial_robustness: None,
+            bootstrap_uncertainty: None,
         }
     }
 }

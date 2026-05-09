@@ -2,7 +2,11 @@
 //!
 //! Performs comprehensive validation of RoomConfig before optimization.
 
-use super::types::{OptimizerConfig, ProcessingMode, RoomConfig, SpeakerConfig, TargetShape};
+use super::types::{
+    AreaPriorKind, AreaQuadratureKind, AreaScalarisationKind, BootstrapScalarisation,
+    MultiMeasurementStrategy, MultiSeatStrategy, OptimizerConfig, ProcessingMode, RoomConfig,
+    SpeakerConfig, TargetShape,
+};
 use crate::{MeasurementRef, MeasurementSource};
 use std::collections::HashMap;
 
@@ -615,9 +619,186 @@ fn validate_crossovers(
 ///   plain in-room responses silently produces garbage.
 fn validate_cross_option_interactions(config: &RoomConfig, result: &mut ValidationResult) {
     validate_multi_measurement_weights(config, result);
+    validate_bootstrap_uncertainty(config, result);
+    validate_continuous_listening_area(config, result);
     validate_cea2034_source_plausibility(config, result);
     validate_bass_management(config, result);
     validate_role_targets(config, result);
+}
+
+/// Validate the bootstrap uncertainty block when
+/// `multi_measurement.strategy == MinimaxUncertainty`.
+fn validate_bootstrap_uncertainty(config: &RoomConfig, result: &mut ValidationResult) {
+    let Some(mm) = config.optimizer.multi_measurement.as_ref() else {
+        return;
+    };
+    if mm.strategy != MultiMeasurementStrategy::MinimaxUncertainty {
+        // The block may still be set; we don't reject that — it just won't be
+        // consulted unless the strategy switches. Keep validation focused on
+        // the active path.
+        return;
+    }
+    // The block is optional (it has a Default); when absent, we use defaults.
+    if let Some(b) = mm.bootstrap_uncertainty.as_ref() {
+        if b.num_resamples == 0 {
+            result.add_error(
+                "multi_measurement.bootstrap_uncertainty.num_resamples must be > 0".to_string(),
+            );
+        }
+        if !(0.0..1.0).contains(&b.alpha) || b.alpha <= 0.0 {
+            result.add_error(format!(
+                "multi_measurement.bootstrap_uncertainty.alpha must be in (0, 1), got {}",
+                b.alpha
+            ));
+        }
+        if matches!(b.scalarisation, BootstrapScalarisation::Cvar)
+            && (!(0.0..=1.0).contains(&b.cvar_alpha) || b.cvar_alpha <= 0.0)
+        {
+            result.add_error(format!(
+                "multi_measurement.bootstrap_uncertainty.cvar_alpha must be in (0, 1] when \
+                 scalarisation = cvar, got {}",
+                b.cvar_alpha
+            ));
+        }
+    }
+}
+
+/// Validate `multiseat.continuous_area` when the strategy is `ContinuousArea`.
+fn validate_continuous_listening_area(config: &RoomConfig, result: &mut ValidationResult) {
+    let Some(ms) = config.optimizer.multi_seat.as_ref() else {
+        return;
+    };
+    if ms.strategy != MultiSeatStrategy::ContinuousArea {
+        return;
+    }
+    let Some(area) = ms.continuous_area.as_ref() else {
+        result.add_error(
+            "multi_seat.strategy = continuous_area requires multi_seat.continuous_area to be set"
+                .to_string(),
+        );
+        return;
+    };
+    if !(1..=3).contains(&area.dimensions) {
+        result.add_error(format!(
+            "multi_seat.continuous_area.dimensions must be 1, 2, or 3 (got {})",
+            area.dimensions
+        ));
+    }
+    if area.bounds.len() != area.dimensions {
+        result.add_error(format!(
+            "multi_seat.continuous_area.bounds length {} must equal dimensions {}",
+            area.bounds.len(),
+            area.dimensions
+        ));
+    }
+    for (i, (lo, hi)) in area.bounds.iter().enumerate() {
+        if !(lo.is_finite() && hi.is_finite()) || hi <= lo {
+            result.add_error(format!(
+                "multi_seat.continuous_area.bounds[{}] = ({}, {}) is degenerate",
+                i, lo, hi
+            ));
+        }
+    }
+    if area.seat_positions.is_empty() {
+        result.add_error(
+            "multi_seat.continuous_area.seat_positions must contain at least one position"
+                .to_string(),
+        );
+    } else {
+        for (i, row) in area.seat_positions.iter().enumerate() {
+            if row.len() != area.dimensions {
+                result.add_error(format!(
+                    "multi_seat.continuous_area.seat_positions[{}] has length {} (expected {})",
+                    i,
+                    row.len(),
+                    area.dimensions
+                ));
+            }
+        }
+    }
+    if !area.idw_power.is_finite() || area.idw_power <= 0.0 {
+        result.add_error(format!(
+            "multi_seat.continuous_area.idw_power must be > 0, got {}",
+            area.idw_power
+        ));
+    }
+
+    match &area.prior {
+        AreaPriorKind::Uniform => {}
+        AreaPriorKind::Gaussian {
+            mean,
+            cov_diag,
+            truncation_sigmas,
+        } => {
+            if mean.len() != area.dimensions {
+                result.add_error(format!(
+                    "multi_seat.continuous_area.prior.gaussian.mean length {} must equal dimensions {}",
+                    mean.len(),
+                    area.dimensions
+                ));
+            }
+            if cov_diag.len() != area.dimensions {
+                result.add_error(format!(
+                    "multi_seat.continuous_area.prior.gaussian.cov_diag length {} must equal dimensions {}",
+                    cov_diag.len(),
+                    area.dimensions
+                ));
+            }
+            for (i, &v) in cov_diag.iter().enumerate() {
+                if !v.is_finite() || v <= 0.0 {
+                    result.add_error(format!(
+                        "multi_seat.continuous_area.prior.gaussian.cov_diag[{}] must be > 0, got {}",
+                        i, v
+                    ));
+                }
+            }
+            if !truncation_sigmas.is_finite() || *truncation_sigmas <= 0.0 {
+                result.add_error(format!(
+                    "multi_seat.continuous_area.prior.gaussian.truncation_sigmas must be > 0, got {}",
+                    truncation_sigmas
+                ));
+            }
+        }
+    }
+
+    match &area.quadrature {
+        AreaQuadratureKind::Sobol { num_points, .. }
+        | AreaQuadratureKind::LatinHypercube { num_points, .. } => {
+            if *num_points == 0 {
+                result.add_error(
+                    "multi_seat.continuous_area.quadrature.num_points must be > 0".to_string(),
+                );
+            }
+        }
+        AreaQuadratureKind::GaussLegendre { points_per_axis } => {
+            if *points_per_axis == 0 {
+                result.add_error(
+                    "multi_seat.continuous_area.quadrature.points_per_axis must be > 0"
+                        .to_string(),
+                );
+            }
+        }
+    }
+
+    match &area.scalarisation {
+        AreaScalarisationKind::ExpectedValue => {}
+        AreaScalarisationKind::WorstCase { inner_maxiter, .. } => {
+            if *inner_maxiter == 0 {
+                result.add_error(
+                    "multi_seat.continuous_area.scalarisation.worst_case.inner_maxiter must be > 0"
+                        .to_string(),
+                );
+            }
+        }
+        AreaScalarisationKind::Cvar { alpha } => {
+            if !(0.0..=1.0).contains(alpha) || *alpha <= 0.0 {
+                result.add_error(format!(
+                    "multi_seat.continuous_area.scalarisation.cvar.alpha must be in (0, 1], got {}",
+                    alpha
+                ));
+            }
+        }
+    }
 }
 
 /// Collect all `MeasurementSource`s referenced by a speaker, so the validator

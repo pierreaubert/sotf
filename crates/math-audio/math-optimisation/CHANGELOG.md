@@ -1,3 +1,19 @@
+# 0.5.8
+
+## New features
+
+- Added `continuous_area` module for continuous-prior loss integration. It is
+  generic over dimension via const generics (`Prior<const D: usize>` /
+  `Quadrature<const D: usize>`), with `Uniform` / axis-aligned `Gaussian` /
+  `Custom` priors, Sobol / Latin-Hypercube / Gauss–Legendre tensor-product
+  quadrature, and `ExpectedValue` / `WorstCase` / `CVaR` scalarisations.
+  `evaluate_area_loss` collapses a per-position loss `L(params, p)` into one
+  outer-loop scalar suitable for any optimiser. Reuses the existing
+  `init_sobol`, `init_latin_hypercube`, and `differential_evolution` (for the
+  `WorstCase` inner search). Includes hand-derived Beasley-Springer-Moro
+  inverse-normal CDF and Abramowitz-Stegun erf for the Gaussian inverse-CDF
+  transform.
+
 # 0.5.7
 
 ## New features

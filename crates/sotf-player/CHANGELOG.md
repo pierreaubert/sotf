@@ -1,3 +1,25 @@
+# 0.5.123 (unreleased)
+
+## Room EQ: surface uncertainty-aware and continuous-listening-area strategies
+
+- `MultiMeasurementUiConfig` now carries an optional
+  `bootstrap_uncertainty: BootstrapUncertaintyUiConfig` for the new
+  `MultiMeasurementStrategy::MinimaxUncertainty` backend strategy. Fields:
+  `num_resamples`, `alpha`, `seed`, `scalarisation` ("worst_case" | "cvar"),
+  and `cvar_alpha` for the CVaR tail fraction.
+- `MultiSeatConfig` (UI) now carries an optional
+  `continuous_area: ContinuousListeningAreaUiConfig` for the new
+  `MultiSeatStrategy::ContinuousArea` backend strategy. Flat string-based
+  fields hold dimensions, axis-aligned bounds, calibration `seat_positions`,
+  prior kind ("uniform" | "gaussian") with Gaussian mean/cov_diag/truncation,
+  quadrature kind ("sobol" | "latin_hypercube" | "gauss_legendre") with the
+  associated point counts and seed, scalarisation kind ("expected_value" |
+  "worst_case" | "cvar") with worst-case inner-search budget and CVaR alpha,
+  plus `idw_power` for the spatial measurement interpolator.
+- `to_optimizer_config()` and `import_from_backend()` round-trip the new
+  variants and sub-configs through `autoeq::roomeq`. Unknown strategy strings
+  fall back to safe defaults at conversion time rather than panicking.
+
 # 0.5.122
 
 ## Room EQ: export measured CTC transfer matrices from recordings

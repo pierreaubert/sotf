@@ -1628,6 +1628,119 @@ pub struct MultiSeatConfig {
     pub seat_weights: Option<Vec<f64>>,
     #[serde(default = "default_primary_seat_weight")]
     pub primary_seat_weight: f64,
+    /// Continuous listening-area configuration (used when strategy = "continuous_area")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub continuous_area: Option<ContinuousListeningAreaUiConfig>,
+}
+
+/// Flat UI configuration mirror of `autoeq::roomeq::ContinuousListeningAreaConfig`.
+///
+/// Strings are used in place of tagged enums for ergonomic UI binding; conversion
+/// happens at `to_optimizer_config()` time and is permissive on unknown values
+/// (falls back to defaults rather than panicking on a stale UI string).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ContinuousListeningAreaUiConfig {
+    /// Spatial dimensions (1, 2, or 3).
+    pub dimensions: usize,
+    /// Per-axis bounding-box bounds `[lo, hi]`. Length must equal `dimensions`.
+    pub bounds: Vec<[f64; 2]>,
+    /// Spatial coordinates of each calibration seat. Outer length = number of
+    /// seats, inner length = `dimensions`. Order must match seat index in the
+    /// measurements array.
+    pub seat_positions: Vec<Vec<f64>>,
+    /// Prior kind: "uniform" or "gaussian".
+    #[serde(default = "default_area_prior_kind")]
+    pub prior_kind: String,
+    /// Per-axis means for Gaussian prior (length must equal `dimensions`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub gaussian_mean: Vec<f64>,
+    /// Per-axis variances for Gaussian prior (length must equal `dimensions`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub gaussian_cov_diag: Vec<f64>,
+    /// Truncation in standard deviations for Gaussian prior.
+    #[serde(default = "default_gaussian_truncation_sigmas")]
+    pub gaussian_truncation_sigmas: f64,
+    /// Quadrature kind: "sobol", "latin_hypercube", or "gauss_legendre".
+    #[serde(default = "default_area_quadrature_kind")]
+    pub quadrature_kind: String,
+    /// Number of quadrature points (Sobol / Latin-Hypercube).
+    #[serde(default = "default_area_quadrature_num_points")]
+    pub quadrature_num_points: usize,
+    /// PRNG seed for sampling-based quadratures.
+    #[serde(default = "default_area_quadrature_seed")]
+    pub quadrature_seed: u64,
+    /// Nodes per axis for Gauss-Legendre.
+    #[serde(default = "default_area_gauss_legendre_points_per_axis")]
+    pub gauss_legendre_points_per_axis: usize,
+    /// Scalarisation kind: "expected_value", "worst_case", or "cvar".
+    #[serde(default = "default_area_scalarisation_kind")]
+    pub scalarisation_kind: String,
+    /// Inner-search budget for the worst-case scalarisation.
+    #[serde(default = "default_area_inner_maxiter")]
+    pub worst_case_inner_maxiter: usize,
+    /// Inner-search seed for the worst-case scalarisation.
+    #[serde(default)]
+    pub worst_case_inner_seed: u64,
+    /// Tail fraction for CVaR scalarisation.
+    #[serde(default = "default_area_cvar_alpha")]
+    pub cvar_alpha: f64,
+    /// IDW power exponent for the spatial measurement interpolator.
+    #[serde(default = "default_idw_power")]
+    pub idw_power: f64,
+}
+
+fn default_area_prior_kind() -> String {
+    "uniform".to_string()
+}
+fn default_gaussian_truncation_sigmas() -> f64 {
+    4.0
+}
+fn default_area_quadrature_kind() -> String {
+    "sobol".to_string()
+}
+fn default_area_quadrature_num_points() -> usize {
+    64
+}
+fn default_area_quadrature_seed() -> u64 {
+    0xC0FFEE
+}
+fn default_area_gauss_legendre_points_per_axis() -> usize {
+    4
+}
+fn default_area_scalarisation_kind() -> String {
+    "expected_value".to_string()
+}
+fn default_area_inner_maxiter() -> usize {
+    50
+}
+fn default_area_cvar_alpha() -> f64 {
+    0.20
+}
+fn default_idw_power() -> f64 {
+    2.0
+}
+
+impl Default for ContinuousListeningAreaUiConfig {
+    fn default() -> Self {
+        Self {
+            dimensions: 2,
+            bounds: vec![[0.0, 1.0], [0.0, 1.0]],
+            seat_positions: Vec::new(),
+            prior_kind: default_area_prior_kind(),
+            gaussian_mean: Vec::new(),
+            gaussian_cov_diag: Vec::new(),
+            gaussian_truncation_sigmas: default_gaussian_truncation_sigmas(),
+            quadrature_kind: default_area_quadrature_kind(),
+            quadrature_num_points: default_area_quadrature_num_points(),
+            quadrature_seed: default_area_quadrature_seed(),
+            gauss_legendre_points_per_axis: default_area_gauss_legendre_points_per_axis(),
+            scalarisation_kind: default_area_scalarisation_kind(),
+            worst_case_inner_maxiter: default_area_inner_maxiter(),
+            worst_case_inner_seed: 0,
+            cvar_alpha: default_area_cvar_alpha(),
+            idw_power: default_idw_power(),
+        }
+    }
 }
 
 fn default_all_channel_multiseat_enabled() -> bool {
@@ -1653,6 +1766,7 @@ impl Default for MultiSeatConfig {
             all_channel_strategy: default_all_channel_multiseat_strategy(),
             seat_weights: None,
             primary_seat_weight: default_primary_seat_weight(),
+            continuous_area: None,
         }
     }
 }
@@ -1698,6 +1812,9 @@ pub struct MultiMeasurementUiConfig {
     pub strategy: String,
     pub variance_lambda: f64,
     pub weights: Vec<f64>,
+    /// Bootstrap-uncertainty configuration (used when strategy = "minimax_uncertainty").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bootstrap_uncertainty: Option<BootstrapUncertaintyUiConfig>,
 }
 
 impl Default for MultiMeasurementUiConfig {
@@ -1707,7 +1824,229 @@ impl Default for MultiMeasurementUiConfig {
             strategy: "average".to_string(),
             variance_lambda: 1.0,
             weights: Vec::new(),
+            bootstrap_uncertainty: None,
         }
+    }
+}
+
+/// Flat UI mirror of `autoeq::roomeq::BootstrapUncertaintyConfig`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BootstrapUncertaintyUiConfig {
+    /// Number of case-bootstrap resamples B.
+    #[serde(default = "default_bootstrap_num_resamples")]
+    pub num_resamples: usize,
+    /// Two-sided confidence level α (used for diagnostic plots; the optimizer
+    /// uses all B resamples).
+    #[serde(default = "default_bootstrap_alpha")]
+    pub alpha: f64,
+    /// PRNG seed.
+    #[serde(default = "default_bootstrap_seed")]
+    pub seed: u64,
+    /// Scalarisation kind: "worst_case" or "cvar".
+    #[serde(default = "default_bootstrap_scalarisation")]
+    pub scalarisation: String,
+    /// Tail fraction for CVaR scalarisation.
+    #[serde(default = "default_bootstrap_cvar_alpha")]
+    pub cvar_alpha: f64,
+}
+
+fn default_bootstrap_num_resamples() -> usize {
+    400
+}
+fn default_bootstrap_alpha() -> f64 {
+    0.10
+}
+fn default_bootstrap_seed() -> u64 {
+    0xC0FFEE
+}
+fn default_bootstrap_scalarisation() -> String {
+    "worst_case".to_string()
+}
+fn default_bootstrap_cvar_alpha() -> f64 {
+    0.20
+}
+
+impl Default for BootstrapUncertaintyUiConfig {
+    fn default() -> Self {
+        Self {
+            num_resamples: default_bootstrap_num_resamples(),
+            alpha: default_bootstrap_alpha(),
+            seed: default_bootstrap_seed(),
+            scalarisation: default_bootstrap_scalarisation(),
+            cvar_alpha: default_bootstrap_cvar_alpha(),
+        }
+    }
+}
+
+fn bootstrap_uncertainty_from_backend(
+    b: &autoeq::roomeq::BootstrapUncertaintyConfig,
+) -> BootstrapUncertaintyUiConfig {
+    BootstrapUncertaintyUiConfig {
+        num_resamples: b.num_resamples,
+        alpha: b.alpha,
+        seed: b.seed,
+        scalarisation: match b.scalarisation {
+            autoeq::roomeq::BootstrapScalarisation::WorstCase => "worst_case".to_string(),
+            autoeq::roomeq::BootstrapScalarisation::Cvar => "cvar".to_string(),
+        },
+        cvar_alpha: b.cvar_alpha,
+    }
+}
+
+fn bootstrap_uncertainty_to_backend(
+    ui: &BootstrapUncertaintyUiConfig,
+) -> autoeq::roomeq::BootstrapUncertaintyConfig {
+    autoeq::roomeq::BootstrapUncertaintyConfig {
+        num_resamples: ui.num_resamples,
+        alpha: ui.alpha,
+        seed: ui.seed,
+        scalarisation: match ui.scalarisation.as_str() {
+            "cvar" => autoeq::roomeq::BootstrapScalarisation::Cvar,
+            _ => autoeq::roomeq::BootstrapScalarisation::WorstCase,
+        },
+        cvar_alpha: ui.cvar_alpha,
+    }
+}
+
+fn continuous_area_from_backend(
+    a: &autoeq::roomeq::ContinuousListeningAreaConfig,
+) -> ContinuousListeningAreaUiConfig {
+    let (prior_kind, gaussian_mean, gaussian_cov_diag, gaussian_truncation_sigmas) = match &a.prior
+    {
+        autoeq::roomeq::AreaPriorKind::Uniform => (
+            "uniform".to_string(),
+            Vec::new(),
+            Vec::new(),
+            default_gaussian_truncation_sigmas(),
+        ),
+        autoeq::roomeq::AreaPriorKind::Gaussian {
+            mean,
+            cov_diag,
+            truncation_sigmas,
+        } => (
+            "gaussian".to_string(),
+            mean.clone(),
+            cov_diag.clone(),
+            *truncation_sigmas,
+        ),
+    };
+
+    let (
+        quadrature_kind,
+        quadrature_num_points,
+        quadrature_seed,
+        gauss_legendre_points_per_axis,
+    ) = match &a.quadrature {
+        autoeq::roomeq::AreaQuadratureKind::Sobol { num_points, seed } => (
+            "sobol".to_string(),
+            *num_points,
+            *seed,
+            default_area_gauss_legendre_points_per_axis(),
+        ),
+        autoeq::roomeq::AreaQuadratureKind::LatinHypercube { num_points, seed } => (
+            "latin_hypercube".to_string(),
+            *num_points,
+            *seed,
+            default_area_gauss_legendre_points_per_axis(),
+        ),
+        autoeq::roomeq::AreaQuadratureKind::GaussLegendre { points_per_axis } => (
+            "gauss_legendre".to_string(),
+            default_area_quadrature_num_points(),
+            default_area_quadrature_seed(),
+            *points_per_axis,
+        ),
+    };
+
+    let (scalarisation_kind, worst_case_inner_maxiter, worst_case_inner_seed, cvar_alpha) =
+        match &a.scalarisation {
+            autoeq::roomeq::AreaScalarisationKind::ExpectedValue => (
+                "expected_value".to_string(),
+                default_area_inner_maxiter(),
+                0,
+                default_area_cvar_alpha(),
+            ),
+            autoeq::roomeq::AreaScalarisationKind::WorstCase {
+                inner_maxiter,
+                inner_seed,
+            } => (
+                "worst_case".to_string(),
+                *inner_maxiter,
+                *inner_seed,
+                default_area_cvar_alpha(),
+            ),
+            autoeq::roomeq::AreaScalarisationKind::Cvar { alpha } => (
+                "cvar".to_string(),
+                default_area_inner_maxiter(),
+                0,
+                *alpha,
+            ),
+        };
+
+    ContinuousListeningAreaUiConfig {
+        dimensions: a.dimensions,
+        bounds: a.bounds.iter().map(|(lo, hi)| [*lo, *hi]).collect(),
+        seat_positions: a.seat_positions.clone(),
+        prior_kind,
+        gaussian_mean,
+        gaussian_cov_diag,
+        gaussian_truncation_sigmas,
+        quadrature_kind,
+        quadrature_num_points,
+        quadrature_seed,
+        gauss_legendre_points_per_axis,
+        scalarisation_kind,
+        worst_case_inner_maxiter,
+        worst_case_inner_seed,
+        cvar_alpha,
+        idw_power: a.idw_power,
+    }
+}
+
+fn continuous_area_to_backend(
+    ui: &ContinuousListeningAreaUiConfig,
+) -> autoeq::roomeq::ContinuousListeningAreaConfig {
+    let prior = match ui.prior_kind.as_str() {
+        "gaussian" => autoeq::roomeq::AreaPriorKind::Gaussian {
+            mean: ui.gaussian_mean.clone(),
+            cov_diag: ui.gaussian_cov_diag.clone(),
+            truncation_sigmas: ui.gaussian_truncation_sigmas,
+        },
+        _ => autoeq::roomeq::AreaPriorKind::Uniform,
+    };
+
+    let quadrature = match ui.quadrature_kind.as_str() {
+        "latin_hypercube" => autoeq::roomeq::AreaQuadratureKind::LatinHypercube {
+            num_points: ui.quadrature_num_points,
+            seed: ui.quadrature_seed,
+        },
+        "gauss_legendre" => autoeq::roomeq::AreaQuadratureKind::GaussLegendre {
+            points_per_axis: ui.gauss_legendre_points_per_axis,
+        },
+        _ => autoeq::roomeq::AreaQuadratureKind::Sobol {
+            num_points: ui.quadrature_num_points,
+            seed: ui.quadrature_seed,
+        },
+    };
+
+    let scalarisation = match ui.scalarisation_kind.as_str() {
+        "worst_case" => autoeq::roomeq::AreaScalarisationKind::WorstCase {
+            inner_maxiter: ui.worst_case_inner_maxiter,
+            inner_seed: ui.worst_case_inner_seed,
+        },
+        "cvar" => autoeq::roomeq::AreaScalarisationKind::Cvar {
+            alpha: ui.cvar_alpha,
+        },
+        _ => autoeq::roomeq::AreaScalarisationKind::ExpectedValue,
+    };
+
+    autoeq::roomeq::ContinuousListeningAreaConfig {
+        dimensions: ui.dimensions,
+        bounds: ui.bounds.iter().map(|b| (b[0], b[1])).collect(),
+        seat_positions: ui.seat_positions.clone(),
+        prior,
+        quadrature,
+        scalarisation,
+        idw_power: ui.idw_power,
     }
 }
 
@@ -2121,9 +2460,12 @@ impl RoomEqOptimizerConfig {
                 autoeq::roomeq::MultiSeatStrategy::PrimaryWithConstraints => "primary".to_string(),
                 autoeq::roomeq::MultiSeatStrategy::Average => "average".to_string(),
                 autoeq::roomeq::MultiSeatStrategy::ModalBasis => "modal_basis".to_string(),
+                autoeq::roomeq::MultiSeatStrategy::ContinuousArea => "continuous_area".to_string(),
             };
             self.multi_seat.primary_seat = ms.primary_seat;
             self.multi_seat.max_deviation_db = ms.max_deviation_db;
+            self.multi_seat.continuous_area =
+                ms.continuous_area.as_ref().map(continuous_area_from_backend);
         }
 
         if let Some(ref mm) = backend.multi_measurement {
@@ -2138,9 +2480,16 @@ impl RoomEqOptimizerConfig {
                 autoeq::roomeq::MultiMeasurementStrategy::SpatialRobustness => {
                     "spatial_robustness".to_string()
                 }
+                autoeq::roomeq::MultiMeasurementStrategy::MinimaxUncertainty => {
+                    "minimax_uncertainty".to_string()
+                }
             };
             self.multi_measurement.variance_lambda = mm.variance_lambda;
             self.multi_measurement.weights = mm.weights.clone().unwrap_or_default();
+            self.multi_measurement.bootstrap_uncertainty = mm
+                .bootstrap_uncertainty
+                .as_ref()
+                .map(bootstrap_uncertainty_from_backend);
         } else {
             self.multi_measurement.enabled = false;
         }
@@ -2319,6 +2668,7 @@ impl RoomEqOptimizerConfig {
                 "primary" => MultiSeatStrategy::PrimaryWithConstraints,
                 "average" => MultiSeatStrategy::Average,
                 "modal_basis" => MultiSeatStrategy::ModalBasis,
+                "continuous_area" => MultiSeatStrategy::ContinuousArea,
                 _ => MultiSeatStrategy::MinimizeVariance,
             };
             Some(BackendMultiSeatConfig {
@@ -2338,10 +2688,18 @@ impl RoomEqOptimizerConfig {
                         autoeq::roomeq::MultiMeasurementStrategy::VariancePenalized
                     }
                     "average" => autoeq::roomeq::MultiMeasurementStrategy::Average,
+                    "minimax_uncertainty" => {
+                        autoeq::roomeq::MultiMeasurementStrategy::MinimaxUncertainty
+                    }
                     _ => autoeq::roomeq::MultiMeasurementStrategy::SpatialRobustness,
                 },
                 seat_weights: self.multi_seat.seat_weights.clone(),
                 primary_seat_weight: self.multi_seat.primary_seat_weight,
+                continuous_area: self
+                    .multi_seat
+                    .continuous_area
+                    .as_ref()
+                    .map(continuous_area_to_backend),
             })
         } else {
             None
@@ -2363,6 +2721,7 @@ impl RoomEqOptimizerConfig {
                 "minimax" => MultiMeasurementStrategy::Minimax,
                 "variance_penalized" => MultiMeasurementStrategy::VariancePenalized,
                 "spatial_robustness" => MultiMeasurementStrategy::SpatialRobustness,
+                "minimax_uncertainty" => MultiMeasurementStrategy::MinimaxUncertainty,
                 s => panic!("Unknown multi_measurement strategy: {s}"),
             };
             let weights = if self.multi_measurement.weights.is_empty() {
@@ -2375,6 +2734,11 @@ impl RoomEqOptimizerConfig {
                 weights,
                 variance_lambda: self.multi_measurement.variance_lambda,
                 spatial_robustness: None,
+                bootstrap_uncertainty: self
+                    .multi_measurement
+                    .bootstrap_uncertainty
+                    .as_ref()
+                    .map(bootstrap_uncertainty_to_backend),
             })
         } else {
             None
@@ -4232,6 +4596,7 @@ mod tests {
             strategy: "weighted_sum".to_string(),
             variance_lambda: 2.5,
             weights: vec![0.3, 0.7],
+            bootstrap_uncertainty: None,
         };
         let json = serde_json::to_string(&config).unwrap();
         let roundtrip: MultiMeasurementUiConfig = serde_json::from_str(&json).unwrap();

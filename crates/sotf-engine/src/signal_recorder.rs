@@ -1272,21 +1272,31 @@ fn play_per_channel_and_record_mono(
             .ok_or_else(|| format!("[{log_tag}] No default output device available"))?
     };
 
-    let hardware_channels = output_device
+    // Use exactly enough channels to address the highest target output. Pro
+    // audio interfaces (e.g. RME UFX+) can report 64+ supported channels;
+    // writing a temp WAV that wide breaks symphonia-format-riff, which can't
+    // decode WAVs whose channel count exceeds the WAVE_FORMAT_EXTENSIBLE
+    // channel-mask range (returns Unsupported around 32 ch, panics on
+    // left-shift overflow above ~64). The playback layer
+    // (`choose_output_format`) already handles "open with fewer channels
+    // than device max" via cpal, so a smaller stream count is safe and
+    // channel K of the WAV still lands 1:1 on physical output K.
+    let device_max_channels = output_device
         .supported_output_configs()
         .map_err(|e| format!("[{log_tag}] Failed to get supported output configs: {}", e))?
         .map(|config| config.channels() as usize)
         .max()
         .unwrap_or(2);
 
-    for &ch in channel_indices {
-        if ch as usize >= hardware_channels {
-            return Err(format!(
-                "[{log_tag}] Channel {} exceeds hardware output count {}",
-                ch, hardware_channels
-            ));
-        }
+    // channel_indices is non-empty (checked above).
+    let max_target_channel = channel_indices.iter().map(|&c| c as usize).max().unwrap();
+    if max_target_channel >= device_max_channels {
+        return Err(format!(
+            "[{log_tag}] Channel {} exceeds hardware output count {}",
+            max_target_channel, device_max_channels
+        ));
     }
+    let hardware_channels = max_target_channel + 1;
 
     // --- Build the playback buffer ---
     let segment_len = silence_samples + signal_samples;

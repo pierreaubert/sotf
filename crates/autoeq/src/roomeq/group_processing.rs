@@ -751,6 +751,7 @@ fn multiseat_peq_config(policy: &MultiSeatConfig, seat_count: usize) -> MultiMea
             min_correction_depth: 0.1,
             mask_smoothing_octaves: 1.0 / 6.0,
         }),
+        bootstrap_uncertainty: None,
     }
 }
 

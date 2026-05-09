@@ -163,9 +163,12 @@ pub mod slope;
 
 // Advanced room correction features (Scenario A & B)
 pub mod excursion;
+pub mod listening_area;
 pub mod multiseat;
 pub mod phase_alignment;
 pub mod target_tilt;
+
+pub use listening_area::{ListeningArea, ListeningAreaInterpolatorConfig};
 
 pub use excursion::{
     ExcursionProtectionResult, F3DetectionResult, detect_f3, generate_excursion_protection,
@@ -178,7 +181,10 @@ pub use home_cinema::{
     HomeCinemaLayoutReport, HomeCinemaRole, HomeCinemaRoleGroup, MultiSeatCoverageReport,
     TimingDiagnosticsReport, analyze_layout as analyze_home_cinema_layout,
 };
-pub use multiseat::{MultiSeatMeasurements, MultiSeatOptimizationResult, optimize_multiseat};
+pub use multiseat::{
+    MultiSeatMeasurements, MultiSeatOptimizationResult, optimize_multiseat,
+    optimize_multiseat_continuous_area,
+};
 pub use phase_alignment::{
     PhaseAlignmentResult, optimize_phase_alignment, optimize_phase_alignment_batch,
 };

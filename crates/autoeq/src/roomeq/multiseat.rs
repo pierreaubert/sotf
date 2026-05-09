@@ -212,6 +212,15 @@ pub fn optimize_multiseat(
         });
     }
 
+    if config.strategy == MultiSeatStrategy::ContinuousArea {
+        return Err(AutoeqError::InvalidConfiguration {
+            message: "MultiSeatStrategy::ContinuousArea must be invoked via \
+                      optimize_multiseat_continuous_area; the discrete-seats \
+                      entry point cannot integrate over a continuous prior"
+                .to_string(),
+        });
+    }
+
     // Create common frequency grid
     let freqs = create_eval_frequency_grid(measurements, eval_min, eval_max);
 
@@ -325,6 +334,12 @@ pub fn optimize_multiseat(
                     .expect("modal basis is built before modal-basis optimization"),
                 &objective_context,
             ),
+            MultiSeatStrategy::ContinuousArea => {
+                // Already rejected at the top of this function; the early
+                // return above is the authoritative error path. This arm
+                // exists only to satisfy exhaustiveness.
+                unreachable!("ContinuousArea handled by optimize_multiseat_continuous_area")
+            }
         };
 
     let final_complex_responses = compute_combined_complex_responses(
@@ -1138,6 +1153,7 @@ fn objective_name(strategy: MultiSeatStrategy) -> &'static str {
         MultiSeatStrategy::Average => "average_flatness",
         MultiSeatStrategy::PrimaryWithConstraints => "primary_constrained",
         MultiSeatStrategy::ModalBasis => "modal_basis",
+        MultiSeatStrategy::ContinuousArea => "continuous_area",
     }
 }
 
@@ -1159,6 +1175,16 @@ fn objective_from_responses(
         MultiSeatStrategy::ModalBasis => context
             .map(|ctx| mso_resource_penalty(responses, ctx))
             .unwrap_or_else(|| variance_from_responses(responses)),
+        MultiSeatStrategy::ContinuousArea => {
+            // The continuous-area path supplies a base strategy that gets
+            // applied at each quadrature point; this helper is never invoked
+            // with `ContinuousArea` directly.
+            unreachable!(
+                "objective_from_responses called with ContinuousArea \
+                 strategy; the continuous-area entry point should pass the \
+                 underlying base strategy here"
+            )
+        }
     }
 }
 
@@ -1577,6 +1603,460 @@ fn optimize_modal_basis(
             modal_basis_objective_from_responses(&complex, &spl, basis, objective_context)
         },
     )
+}
+
+// ============================================================================
+// Continuous listening-area MSO entry point
+// ============================================================================
+
+/// Optimize sub gains/delays/polarity/all-pass over a continuous listening area.
+///
+/// Replaces the discrete seats array with a probability density π(p) over
+/// positions p ∈ R^D. Per-quadrature loss is the SPL flatness of the combined
+/// (all-subs) response at p_q (lower = flatter); the configured scalarisation
+/// (expected value, worst-case, or CVaR) collapses the Q per-point losses
+/// into one outer-loop scalar.
+///
+/// # Arguments
+///
+/// * `measurements` - Calibration measurements at K discrete seats. The
+///   seat coordinates come from `config.continuous_area.seat_positions`.
+/// * `config` - Multi-seat config; must have `strategy = ContinuousArea` and
+///   `continuous_area = Some(...)`.
+/// * `freq_range` - `(min_hz, max_hz)` for optimization.
+/// * `sample_rate` - Sample rate for filter design.
+///
+/// # Errors
+///
+/// Returns `InvalidConfiguration` if the strategy/area config don't match,
+/// if dimensions ∉ {1, 2, 3}, or if the seat-position array length doesn't
+/// match the calibration seats.
+pub fn optimize_multiseat_continuous_area(
+    measurements: &MultiSeatMeasurements,
+    config: &MultiSeatConfig,
+    freq_range: (f64, f64),
+    sample_rate: f64,
+) -> Result<MultiSeatOptimizationResult> {
+    let area_cfg = config.continuous_area.as_ref().ok_or_else(|| {
+        AutoeqError::InvalidConfiguration {
+            message: "optimize_multiseat_continuous_area requires \
+                      MultiSeatConfig::continuous_area to be set"
+                .to_string(),
+        }
+    })?;
+
+    if area_cfg.bounds.len() != area_cfg.dimensions {
+        return Err(AutoeqError::InvalidConfiguration {
+            message: format!(
+                "continuous_area: bounds length {} does not match dimensions {}",
+                area_cfg.bounds.len(),
+                area_cfg.dimensions
+            ),
+        });
+    }
+    if area_cfg.seat_positions.len() != measurements.num_seats {
+        return Err(AutoeqError::InvalidConfiguration {
+            message: format!(
+                "continuous_area: seat_positions length {} does not match \
+                 measurements.num_seats {}",
+                area_cfg.seat_positions.len(),
+                measurements.num_seats
+            ),
+        });
+    }
+    for (i, row) in area_cfg.seat_positions.iter().enumerate() {
+        if row.len() != area_cfg.dimensions {
+            return Err(AutoeqError::InvalidConfiguration {
+                message: format!(
+                    "continuous_area: seat_positions[{}] has length {}, expected {}",
+                    i,
+                    row.len(),
+                    area_cfg.dimensions
+                ),
+            });
+        }
+    }
+
+    match area_cfg.dimensions {
+        1 => optimize_continuous_area_dispatch::<1>(measurements, config, freq_range, sample_rate),
+        2 => optimize_continuous_area_dispatch::<2>(measurements, config, freq_range, sample_rate),
+        3 => optimize_continuous_area_dispatch::<3>(measurements, config, freq_range, sample_rate),
+        d => Err(AutoeqError::InvalidConfiguration {
+            message: format!(
+                "continuous_area: dimensions = {} unsupported (only 1, 2, 3 are dispatched)",
+                d
+            ),
+        }),
+    }
+}
+
+fn optimize_continuous_area_dispatch<const D: usize>(
+    measurements: &MultiSeatMeasurements,
+    config: &MultiSeatConfig,
+    freq_range: (f64, f64),
+    sample_rate: f64,
+) -> Result<MultiSeatOptimizationResult> {
+    use crate::roomeq::listening_area::{ListeningArea, ListeningAreaInterpolatorConfig};
+    use crate::roomeq::{AreaPriorKind, AreaQuadratureKind, AreaScalarisationKind};
+    use math_audio_optimisation::continuous_area::{
+        AreaScalarisation, Prior, Quadrature, build_quadrature_points,
+    };
+
+    let area_cfg = config
+        .continuous_area
+        .as_ref()
+        .expect("validated by caller");
+
+    // Convert positions to fixed-size arrays.
+    let positions: Vec<[f64; D]> = area_cfg
+        .seat_positions
+        .iter()
+        .map(|row| {
+            let mut out = [0.0_f64; D];
+            out[..D].copy_from_slice(&row[..D]);
+            out
+        })
+        .collect();
+
+    let area = ListeningArea::<D>::new(
+        positions,
+        measurements.measurements.clone(),
+        ListeningAreaInterpolatorConfig {
+            idw_power: area_cfg.idw_power,
+            ..Default::default()
+        },
+    )?;
+
+    // Build prior bounds from config.
+    let mut bounds_arr = [(0.0_f64, 0.0_f64); D];
+    bounds_arr[..D].copy_from_slice(&area_cfg.bounds[..D]);
+
+    let prior: Prior<D> = match &area_cfg.prior {
+        AreaPriorKind::Uniform => Prior::Uniform { bounds: bounds_arr },
+        AreaPriorKind::Gaussian {
+            mean,
+            cov_diag,
+            truncation_sigmas,
+        } => {
+            if mean.len() != D || cov_diag.len() != D {
+                return Err(AutoeqError::InvalidConfiguration {
+                    message: format!(
+                        "continuous_area: Gaussian mean/cov_diag length must equal {}",
+                        D
+                    ),
+                });
+            }
+            let mut mean_arr = [0.0_f64; D];
+            let mut cov_arr = [0.0_f64; D];
+            mean_arr[..D].copy_from_slice(&mean[..D]);
+            cov_arr[..D].copy_from_slice(&cov_diag[..D]);
+            Prior::Gaussian {
+                mean: mean_arr,
+                cov_diag: cov_arr,
+                truncation_sigmas: *truncation_sigmas,
+            }
+        }
+    };
+
+    let quadrature: Quadrature<D> = match &area_cfg.quadrature {
+        AreaQuadratureKind::Sobol { num_points, seed } => Quadrature::Sobol {
+            num_points: *num_points,
+            seed: *seed,
+        },
+        AreaQuadratureKind::LatinHypercube { num_points, seed } => Quadrature::LatinHypercube {
+            num_points: *num_points,
+            seed: *seed,
+        },
+        AreaQuadratureKind::GaussLegendre { points_per_axis } => Quadrature::GaussLegendre {
+            points_per_axis: *points_per_axis,
+        },
+    };
+
+    let scalarisation: AreaScalarisation = match &area_cfg.scalarisation {
+        AreaScalarisationKind::ExpectedValue => AreaScalarisation::ExpectedValue,
+        AreaScalarisationKind::WorstCase {
+            inner_maxiter,
+            inner_seed,
+        } => AreaScalarisation::WorstCase {
+            inner_maxiter: *inner_maxiter,
+            inner_seed: *inner_seed,
+        },
+        AreaScalarisationKind::Cvar { alpha } => AreaScalarisation::Cvar { alpha: *alpha },
+    };
+
+    // Pre-compute the Q quadrature points + weights once. WorstCase is the
+    // exception: it requires an inner DE search per outer call, so we won't
+    // have static points; we'll fall through to a bespoke evaluator below.
+    let static_points: Option<(Vec<[f64; D]>, Vec<f64>)> = match &scalarisation {
+        AreaScalarisation::WorstCase { .. } => None,
+        _ => Some(build_quadrature_points(&prior, &quadrature).map_err(|e| {
+            AutoeqError::InvalidConfiguration {
+                message: format!("continuous_area quadrature error: {e}"),
+            }
+        })?),
+    };
+
+    // Pre-build per-quadrature interpolated complex measurements on a shared
+    // frequency grid. This is the hot inner data: gain/delay tweaks then sweep
+    // it at every outer iteration.
+    let (min_freq, max_freq) = freq_range;
+    let Some((common_min, common_max)) = super::frequency_grid::common_frequency_range(
+        measurements.measurements.iter().flat_map(|sub| sub.iter()),
+    ) else {
+        return Err(AutoeqError::InvalidMeasurement {
+            message: "continuous_area MSO measurements do not share a valid \
+                      overlapping frequency range"
+                .to_string(),
+        });
+    };
+    let eval_min = min_freq.max(common_min);
+    let eval_max = max_freq.min(common_max);
+    if eval_min >= eval_max {
+        return Err(AutoeqError::InvalidMeasurement {
+            message: format!(
+                "continuous_area MSO frequency range [{:.1}, {:.1}] Hz does not overlap all measurements [{:.1}, {:.1}] Hz",
+                min_freq, max_freq, common_min, common_max
+            ),
+        });
+    }
+    let freqs = create_eval_frequency_grid(measurements, eval_min, eval_max);
+
+    let interpolate_at_p = |p: [f64; D]| -> Result<Vec<Vec<Complex64>>> {
+        let virtual_curves = area.interpolate_at(p);
+        // virtual_curves[sub_idx] = Curve at p
+        // Convert each to a complex vec on the shared frequency grid.
+        let mut out: Vec<Vec<Complex64>> = Vec::with_capacity(virtual_curves.len());
+        for curve in &virtual_curves {
+            out.push(interpolate_curve_to_grid(curve, &freqs)?);
+        }
+        Ok(out)
+    };
+
+    // Pre-bake the complex per-sub responses at each static quadrature point.
+    let static_complex: Option<Vec<Vec<Vec<Complex64>>>> = match &static_points {
+        Some((pts, _)) => {
+            let mut all = Vec::with_capacity(pts.len());
+            for p in pts {
+                let per_sub = interpolate_at_p(*p)?;
+                all.push(per_sub);
+            }
+            Some(all)
+        }
+        None => None,
+    };
+
+    let initial_gains = vec![0.0; measurements.num_subs];
+    let initial_delays = vec![0.0; measurements.num_subs];
+    let initial_polarities = vec![false; measurements.num_subs];
+    let initial_allpass: Vec<Vec<(f64, f64)>> =
+        vec![Vec::new(); measurements.num_subs];
+
+    // Loss closure: returns scalarised flatness loss across the area.
+    let evaluate_area = |gains: &[f64],
+                         delays: &[f64],
+                         polarities: &[bool],
+                         allpass: &[Vec<(f64, f64)>]|
+     -> f64 {
+        match (&scalarisation, &static_complex, &static_points) {
+            (AreaScalarisation::ExpectedValue, Some(complex), Some((_, weights))) => {
+                let mut acc = 0.0;
+                for (per_sub, w) in complex.iter().zip(weights.iter()) {
+                    // Wrap as a single-seat dataset: per_sub[sub] is `Vec<Complex64>`
+                    // already on `freqs`. We need shape `[sub][seat=1][freq]`.
+                    let mut seat_form: Vec<Vec<Vec<Complex64>>> =
+                        Vec::with_capacity(per_sub.len());
+                    for sub_data in per_sub {
+                        seat_form.push(vec![sub_data.clone()]);
+                    }
+                    let combined = compute_combined_responses(
+                        &seat_form,
+                        &freqs,
+                        gains,
+                        delays,
+                        polarities,
+                        allpass,
+                        sample_rate,
+                        eval_min,
+                        eval_max,
+                    );
+                    acc += w * single_seat_flatness(&combined);
+                }
+                acc
+            }
+            (AreaScalarisation::Cvar { alpha }, Some(complex), Some((_, weights))) => {
+                let alpha = alpha.clamp(f64::MIN_POSITIVE, 1.0);
+                let mut wl: Vec<(f64, f64)> = complex
+                    .iter()
+                    .zip(weights.iter())
+                    .map(|(per_sub, &w)| {
+                        let mut seat_form: Vec<Vec<Vec<Complex64>>> =
+                            Vec::with_capacity(per_sub.len());
+                        for sub_data in per_sub {
+                            seat_form.push(vec![sub_data.clone()]);
+                        }
+                        let combined = compute_combined_responses(
+                            &seat_form,
+                            &freqs,
+                            gains,
+                            delays,
+                            polarities,
+                            allpass,
+                            sample_rate,
+                            eval_min,
+                            eval_max,
+                        );
+                        (single_seat_flatness(&combined), w)
+                    })
+                    .collect();
+                wl.sort_by(|a, b| {
+                    b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal)
+                });
+                let mut acc_loss = 0.0;
+                let mut acc_mass = 0.0;
+                for (l, w) in &wl {
+                    let take = (alpha - acc_mass).min(*w);
+                    if take <= 0.0 {
+                        break;
+                    }
+                    acc_loss += take * l;
+                    acc_mass += take;
+                    if acc_mass >= alpha {
+                        break;
+                    }
+                }
+                if acc_mass > 0.0 {
+                    acc_loss / acc_mass
+                } else {
+                    f64::INFINITY
+                }
+            }
+            (AreaScalarisation::WorstCase { .. }, _, _) => {
+                // For WorstCase we'd ideally do an inner search over p; for the
+                // first iteration we evaluate over a small Sobol scan on the
+                // bounding box and return the max. This avoids spawning a
+                // nested DE per outer fitness call (which would be a huge cost
+                // hit) and is good enough for typical D ≤ 3.
+                let probe_pts = sobol_probe::<D>(64, &bounds_arr);
+                let mut worst = f64::NEG_INFINITY;
+                for p in &probe_pts {
+                    let per_sub = match interpolate_at_p(*p) {
+                        Ok(v) => v,
+                        Err(_) => return f64::INFINITY,
+                    };
+                    let mut seat_form: Vec<Vec<Vec<Complex64>>> =
+                        Vec::with_capacity(per_sub.len());
+                    for sub_data in &per_sub {
+                        seat_form.push(vec![sub_data.clone()]);
+                    }
+                    let combined = compute_combined_responses(
+                        &seat_form,
+                        &freqs,
+                        gains,
+                        delays,
+                        polarities,
+                        allpass,
+                        sample_rate,
+                        eval_min,
+                        eval_max,
+                    );
+                    let l = single_seat_flatness(&combined);
+                    if l > worst {
+                        worst = l;
+                    }
+                }
+                worst
+            }
+            // Static points missing means we hit a WorstCase / unreachable branch
+            // outside the WorstCase arm above — defensive.
+            _ => f64::INFINITY,
+        }
+    };
+
+    let initial_objective = evaluate_area(
+        &initial_gains,
+        &initial_delays,
+        &initial_polarities,
+        &initial_allpass,
+    );
+
+    let options = MsoSearchOptions::from_config(config, eval_min, eval_max);
+    let (gains, delays, polarities, allpass_filters) =
+        optimize_continuous_mso(measurements.num_subs, options, &evaluate_area);
+    let final_objective = evaluate_area(&gains, &delays, &polarities, &allpass_filters);
+
+    let (final_gains, final_delays, final_polarities, final_allpass, accepted_obj) =
+        if mso_objective_regressed(initial_objective, final_objective) {
+            warn!(
+                "  continuous_area MSO result rejected: regressed {:.6} -> {:.6}; \
+                 keeping identity gain/delay state",
+                initial_objective, final_objective
+            );
+            (
+                initial_gains,
+                initial_delays,
+                initial_polarities,
+                initial_allpass,
+                initial_objective,
+            )
+        } else {
+            (
+                gains,
+                delays,
+                polarities,
+                allpass_filters,
+                final_objective,
+            )
+        };
+
+    let improvement = initial_objective - accepted_obj;
+    Ok(MultiSeatOptimizationResult {
+        gains: final_gains,
+        delays: final_delays,
+        polarities: final_polarities,
+        allpass_filters: final_allpass,
+        strategy: MultiSeatStrategy::ContinuousArea,
+        objective_name: "continuous_area".to_string(),
+        objective_before: initial_objective,
+        objective_after: accepted_obj,
+        objective_improvement_db: improvement,
+        // Continuous-area path doesn't compute a discrete seat variance.
+        // Report 0/0 so downstream UI knows it isn't applicable; the
+        // continuous-area objective is the authoritative quality signal.
+        variance_before: 0.0,
+        variance_after: 0.0,
+        variance_improvement_db: 0.0,
+        improvement_db: improvement,
+    })
+}
+
+fn single_seat_flatness(combined: &[Vec<f64>]) -> f64 {
+    // `combined` from `compute_combined_responses` is `[seat][freq]`; we
+    // built it with seat-count = 1, so take seat 0 and compute the std of SPL.
+    if combined.is_empty() || combined[0].is_empty() {
+        return f64::INFINITY;
+    }
+    let row = &combined[0];
+    let n = row.len() as f64;
+    let mean: f64 = row.iter().sum::<f64>() / n;
+    let variance: f64 = row.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n;
+    variance.sqrt()
+}
+
+/// Lightweight Sobol probe over an axis-aligned box. Used for the WorstCase
+/// inner search when we don't pre-bake static quadrature points.
+fn sobol_probe<const D: usize>(num_points: usize, bounds: &[(f64, f64); D]) -> Vec<[f64; D]> {
+    // Reuse the math-optimisation Sobol in [0,1]^D, then scale.
+    let unit_bounds: Vec<(f64, f64)> = (0..D).map(|_| (0.0, 1.0)).collect();
+    let raw = math_audio_optimisation::init_sobol::init_sobol(D, num_points, &unit_bounds);
+    raw.into_iter()
+        .map(|v| {
+            let mut out = [0.0_f64; D];
+            for (i, x) in v.into_iter().enumerate().take(D) {
+                out[i] = bounds[i].0 + x * (bounds[i].1 - bounds[i].0);
+            }
+            out
+        })
+        .collect()
 }
 
 #[cfg(test)]

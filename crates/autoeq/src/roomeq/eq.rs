@@ -1226,6 +1226,49 @@ fn optimize_channel_eq_multi_inner(
         );
     }
 
+    // =========================================================================
+    // MinimaxUncertainty strategy: materialise B bootstrap-resampled curves at
+    // setup time, then run the standard multi-objective machinery over the
+    // resampled bank. The MinimaxUncertainty arm in `compute_multi_objective_fitness`
+    // takes max (or CVaR mean of the worst α-tail) across the B resampled losses.
+    // =========================================================================
+    let bootstrap_storage: Option<Vec<Curve>>;
+    let uncertainty_cvar_alpha: Option<f64>;
+    if multi_config.strategy == MultiMeasurementStrategy::MinimaxUncertainty {
+        let boot_cfg = multi_config
+            .bootstrap_uncertainty
+            .clone()
+            .unwrap_or_default();
+        log::info!(
+            "  MinimaxUncertainty: generating {} bootstrap resamples (seed {}, scalarisation {:?})",
+            boot_cfg.num_resamples,
+            boot_cfg.seed,
+            boot_cfg.scalarisation
+        );
+        let resampled = crate::roomeq::spatial_robustness::bootstrap_resampled_curves(
+            curves,
+            &crate::roomeq::spatial_robustness::BootstrapConfig {
+                num_resamples: boot_cfg.num_resamples,
+                alpha: boot_cfg.alpha,
+                seed: boot_cfg.seed,
+            },
+            multi_config.weights.as_deref(),
+        )
+        .map_err(|e| -> Box<dyn Error> { Box::new(e) })?;
+        uncertainty_cvar_alpha = match boot_cfg.scalarisation {
+            crate::roomeq::BootstrapScalarisation::WorstCase => None,
+            crate::roomeq::BootstrapScalarisation::Cvar => Some(boot_cfg.cvar_alpha),
+        };
+        bootstrap_storage = Some(resampled);
+    } else {
+        bootstrap_storage = None;
+        uncertainty_cvar_alpha = None;
+    }
+    let curves: &[Curve] = match &bootstrap_storage {
+        Some(v) => v.as_slice(),
+        None => curves,
+    };
+
     // Clamp optimizer frequency range to the measurement data range of the first curve
     let data_min_freq = curves[0].freq[0];
     let data_max_freq = curves[0].freq[curves[0].freq.len() - 1];
@@ -1383,6 +1426,7 @@ fn optimize_channel_eq_multi_inner(
         strategy: multi_config.strategy.clone(),
         weights,
         variance_lambda: multi_config.variance_lambda,
+        uncertainty_cvar_alpha,
     };
 
     // Wrap multi-objective data into the primary ObjectiveData

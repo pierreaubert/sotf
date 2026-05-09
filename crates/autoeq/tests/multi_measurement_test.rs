@@ -76,6 +76,7 @@ fn weighted_sum_equal_weights_equals_mean() {
         strategy: MultiMeasurementStrategy::WeightedSum,
         weights: vec![0.5, 0.5],
         variance_lambda: 1.0,
+        uncertainty_cvar_alpha: None,
     });
 
     let multi_loss = compute_base_fitness(&x, &primary);
@@ -105,6 +106,7 @@ fn weighted_sum_respects_weights() {
         strategy: MultiMeasurementStrategy::WeightedSum,
         weights: vec![0.9, 0.1],
         variance_lambda: 1.0,
+        uncertainty_cvar_alpha: None,
     });
 
     let multi_loss = compute_base_fitness(&x, &primary);
@@ -133,6 +135,7 @@ fn minimax_returns_worst_case() {
         strategy: MultiMeasurementStrategy::Minimax,
         weights: vec![1.0 / 3.0; 3],
         variance_lambda: 1.0,
+        uncertainty_cvar_alpha: None,
     });
 
     let multi_loss = compute_base_fitness(&x, &primary);
@@ -158,6 +161,7 @@ fn pareto_objectives_return_per_measurement_losses() {
         strategy: MultiMeasurementStrategy::WeightedSum,
         weights: vec![0.5, 0.5],
         variance_lambda: 1.0,
+        uncertainty_cvar_alpha: None,
     });
 
     let objectives = compute_pareto_objectives(&x, &primary);
@@ -189,6 +193,7 @@ fn variance_penalized_penalizes_inconsistency() {
         strategy: MultiMeasurementStrategy::VariancePenalized,
         weights: vec![0.5, 0.5],
         variance_lambda: 1.0,
+        uncertainty_cvar_alpha: None,
     });
     let consistent_loss = compute_base_fitness(&x, &primary_same);
 
@@ -199,6 +204,7 @@ fn variance_penalized_penalizes_inconsistency() {
         strategy: MultiMeasurementStrategy::VariancePenalized,
         weights: vec![0.5, 0.5],
         variance_lambda: 1.0,
+        uncertainty_cvar_alpha: None,
     });
     let inconsistent_loss = compute_base_fitness(&x, &primary_diff);
 
@@ -231,6 +237,7 @@ fn variance_lambda_scales_penalty() {
             strategy: MultiMeasurementStrategy::VariancePenalized,
             weights: vec![0.5, 0.5],
             variance_lambda: lambda,
+            uncertainty_cvar_alpha: None,
         });
         primary
     };
@@ -255,6 +262,7 @@ fn config_serialization_roundtrip() {
         weights: None,
         variance_lambda: 2.5,
         spatial_robustness: None,
+        bootstrap_uncertainty: None,
     };
 
     let json = serde_json::to_string(&config).unwrap();

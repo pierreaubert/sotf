@@ -1046,6 +1046,7 @@ pub fn derive_all_channel_multiseat_config(
         weights: Some(weights),
         variance_lambda: 1.0,
         spatial_robustness: Some(default_all_channel_spatial_robustness()),
+        bootstrap_uncertainty: None,
     })
 }
 
@@ -1710,6 +1711,7 @@ fn multi_measurement_strategy_name(strategy: &MultiMeasurementStrategy) -> &'sta
         MultiMeasurementStrategy::Minimax => "minimax",
         MultiMeasurementStrategy::VariancePenalized => "variance_penalized",
         MultiMeasurementStrategy::SpatialRobustness => "spatial_robustness",
+        MultiMeasurementStrategy::MinimaxUncertainty => "minimax_uncertainty",
     }
 }
 

@@ -158,6 +158,7 @@ impl SimplePresetConfig {
                 "minimax" => super::config::MultiMeasurementStrategy::Minimax,
                 "variance_penalized" => super::config::MultiMeasurementStrategy::VariancePenalized,
                 "spatial_robustness" => super::config::MultiMeasurementStrategy::SpatialRobustness,
+                "minimax_uncertainty" => super::config::MultiMeasurementStrategy::MinimaxUncertainty,
                 s => panic!("Unknown multi_measurement strategy: {s}"),
             };
             Some(super::config::MultiMeasurementConfig {
@@ -165,6 +166,7 @@ impl SimplePresetConfig {
                 weights: None,
                 variance_lambda: 0.5,
                 spatial_robustness: None,
+                bootstrap_uncertainty: None,
             })
         } else {
             None

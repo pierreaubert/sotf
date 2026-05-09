@@ -1,3 +1,16 @@
+# 0.5.206 (unreleased)
+
+## Room EQ: pass-through support for new strategies
+
+- The TUI's room-eq configuration screen now accepts the two new
+  `RoomEqOptimizerConfig` strategy strings introduced in `sotf-player`
+  0.5.123 — `"minimax_uncertainty"` for the bootstrap uncertainty path and
+  `"continuous_area"` for the continuous listening-area prior. The TUI
+  binding is string-based and goes through `to_optimizer_config()`, so the
+  new strategies travel through unchanged. Sub-config payloads currently
+  default to the library-side defaults; explicit TUI editors for them are
+  not yet built.
+
 # 0.5.205
 
 ## Room EQ recording: N-by-M capture matrix

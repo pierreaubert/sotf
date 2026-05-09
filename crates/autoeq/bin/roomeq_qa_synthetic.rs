@@ -870,6 +870,7 @@ fn run_multiseat_strategy_metric_guard(strategy: MultiSeatStrategy) -> TestResul
         MultiSeatStrategy::Average => "average_flatness",
         MultiSeatStrategy::PrimaryWithConstraints => "primary_constrained",
         MultiSeatStrategy::ModalBasis => "modal_basis",
+        MultiSeatStrategy::ContinuousArea => "continuous_area",
     };
     let test_name = format!("multiseat/api/{}_metrics", expected_name);
 

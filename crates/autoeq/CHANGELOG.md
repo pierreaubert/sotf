@@ -1,3 +1,28 @@
+# 0.4.44 (unreleased)
+
+## New features
+
+- Added measurement-uncertainty-aware robust optimization
+  (`MultiMeasurementStrategy::MinimaxUncertainty`). At setup time the optimizer
+  generates B case-bootstrap resamples of the input measurement curves and then
+  scalarises losses across the resampled targets via either pure worst-case
+  (max) or CVaR (mean of the worst α-tail). Driven by
+  `optimizer.multi_measurement.bootstrap_uncertainty` in JSON config. New
+  helpers `bootstrap_band` and `bootstrap_resampled_curves` are also exposed
+  from `autoeq::roomeq::spatial_robustness` for direct use.
+- Added a continuous listening-area optimization prior
+  (`MultiSeatStrategy::ContinuousArea`) as an alternative to the discrete seats
+  array. The new `optimize_multiseat_continuous_area` entry point integrates
+  the per-position objective over a `Prior<const D: usize>` (uniform or
+  axis-aligned Gaussian, in 1D, 2D, or 3D) using Sobol, Latin-Hypercube, or
+  Gauss–Legendre quadrature, scalarised as expected value, worst-case, or
+  CVaR. Spatial interpolation between calibration seats uses inverse-distance
+  weighting on log-magnitude with shortest-arc phase. Configured via
+  `multi_seat.continuous_area` in JSON.
+- The generic continuous-prior wrapper lives in
+  `math-optimisation::continuous_area` (`Prior`, `Quadrature`,
+  `AreaScalarisation`, `evaluate_area_loss`) and is reusable beyond audio.
+
 # 0.4.43
 
 ## New features

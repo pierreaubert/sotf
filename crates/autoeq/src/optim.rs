@@ -205,7 +205,9 @@ pub struct ObjectiveData {
 /// Data for multi-objective optimization across multiple measurements
 #[derive(Debug, Clone)]
 pub struct MultiObjectiveData {
-    /// One ObjectiveData per measurement curve
+    /// One ObjectiveData per measurement curve. For
+    /// `MultiMeasurementStrategy::MinimaxUncertainty`, this holds B
+    /// bootstrap-resampled objectives generated once at setup time.
     pub objectives: Vec<ObjectiveData>,
     /// Strategy for combining per-measurement losses
     pub strategy: crate::roomeq::MultiMeasurementStrategy,
@@ -213,6 +215,9 @@ pub struct MultiObjectiveData {
     pub weights: Vec<f64>,
     /// Lambda for VariancePenalized strategy
     pub variance_lambda: f64,
+    /// CVaR tail fraction in (0, 1], used by `MinimaxUncertainty` when its
+    /// scalarisation is `Cvar`. `None` means pure worst-case (max).
+    pub uncertainty_cvar_alpha: Option<f64>,
 }
 
 /// Smoothness regularizer on the cascaded biquad magnitude response.
@@ -350,6 +355,25 @@ fn compute_multi_objective_fitness(x: &[f64], mo: &MultiObjectiveData) -> f64 {
             // SpatialRobustness uses single-curve optimization on the RMS-averaged curve
             // and should never reach the multi-objective loss computation.
             unreachable!("SpatialRobustness strategy should not use multi-objective loss path")
+        }
+        MultiMeasurementStrategy::MinimaxUncertainty => {
+            // The bootstrap-resampled objectives have already been materialised
+            // into `mo.objectives` at setup time. Either take the max (pure
+            // worst-case) or the mean of the worst α-tail (CVaR).
+            match mo.uncertainty_cvar_alpha {
+                None => losses.iter().cloned().fold(f64::NEG_INFINITY, f64::max),
+                Some(alpha) => {
+                    let alpha = alpha.clamp(f64::MIN_POSITIVE, 1.0);
+                    let mut sorted = losses.clone();
+                    // Worst losses first.
+                    sorted.sort_by(|a, b| {
+                        b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal)
+                    });
+                    let n = (alpha * sorted.len() as f64).ceil() as usize;
+                    let n = n.clamp(1, sorted.len());
+                    sorted.iter().take(n).sum::<f64>() / n as f64
+                }
+            }
         }
     }
 }

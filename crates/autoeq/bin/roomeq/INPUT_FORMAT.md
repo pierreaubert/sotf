@@ -1136,6 +1136,45 @@ seat-to-seat modal patterns, then optimizes sub gain, delay, polarity, and
 configured all-pass filters against that modal basis. It requires phase data
 for every sub/seat measurement.
 
+### Continuous Listening-Area Strategy
+
+Setting `multi_seat.strategy = "continuous_area"` switches MSO from a discrete
+seats array to a continuous probability density π(p) over positions. Calibration
+measurements at K seats are spatially interpolated (IDW on log-magnitude with
+shortest-arc phase) at each of Q quadrature points, and the per-quadrature
+flatness loss is scalarised via expected value, worst-case, or CVaR.
+
+```json
+"multi_seat": {
+  "enabled": true,
+  "strategy": "continuous_area",
+  "continuous_area": {
+    "dimensions": 2,
+    "bounds": [[0.0, 1.5], [0.0, 0.6]],
+    "seat_positions": [
+      [0.25, 0.30],
+      [0.75, 0.30],
+      [0.25, 0.50],
+      [0.75, 0.50]
+    ],
+    "prior":        { "kind": "uniform" },
+    "quadrature":   { "kind": "sobol", "num_points": 64, "seed": 42 },
+    "scalarisation":{ "kind": "expected_value" },
+    "idw_power": 2.0
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `dimensions` | integer | - | 1, 2, or 3 |
+| `bounds` | array of `[lo, hi]` pairs | - | Axis-aligned bounding box; length must equal `dimensions` |
+| `seat_positions` | array of arrays | - | Spatial coordinates of each calibration seat; outer length = #seats, inner length = `dimensions` |
+| `prior.kind` | string | `"uniform"` | `"uniform"` or `"gaussian"` (Gaussian also takes `mean`, `cov_diag`, `truncation_sigmas`) |
+| `quadrature.kind` | string | `"sobol"` | `"sobol"`, `"latin_hypercube"`, or `"gauss_legendre"` |
+| `scalarisation.kind` | string | `"expected_value"` | `"expected_value"`, `"worst_case"`, or `"cvar"` |
+| `idw_power` | number | `2.0` | IDW power exponent for the spatial interpolator |
+
 ---
 
 ## Broadband Pre-correction
@@ -1211,10 +1250,11 @@ When a speaker has multiple measurements (different listening positions), contro
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `strategy` | string | `"average"` | Strategy: `"average"`, `"weighted_sum"`, `"minimax"`, `"variance_penalized"`, `"spatial_robustness"` |
+| `strategy` | string | `"average"` | Strategy: `"average"`, `"weighted_sum"`, `"minimax"`, `"variance_penalized"`, `"spatial_robustness"`, `"minimax_uncertainty"` |
 | `weights` | array | - | Weights for `weighted_sum` (normalized internally). Equal if omitted. |
 | `variance_lambda` | number | `1.0` | Lambda for `variance_penalized`. Higher = more consistent. |
 | `spatial_robustness` | object | - | Configuration for `spatial_robustness` strategy |
+| `bootstrap_uncertainty` | object | - | Configuration for `minimax_uncertainty` strategy |
 
 **Multi-Measurement Strategies:**
 
@@ -1225,6 +1265,7 @@ When a speaker has multiple measurements (different listening positions), contro
 | `minimax` | loss = max(loss_i) - optimize worst case across all measurements |
 | `variance_penalized` | loss = mean(loss_i) + lambda * var(loss_i) - balance quality + consistency |
 | `spatial_robustness` | RMS-average + correction depth mask based on spatial variance |
+| `minimax_uncertainty` | Case-bootstrap the input curves, then optimise worst-case (or CVaR) loss across the resampled bank — robust to measurement noise / mic jitter |
 
 **SpatialRobustness Fields:**
 
@@ -1234,6 +1275,16 @@ When a speaker has multiple measurements (different listening positions), contro
 | `transition_width_db` | number | `2.0` | Transition width (dB) for sigmoid blending |
 | `min_correction_depth` | number | `0.1` | Minimum correction depth (0.0-1.0) |
 | `mask_smoothing_octaves` | number | `0.167` | Smoothing width in octaves for the correction depth mask |
+
+**BootstrapUncertainty Fields** (used when `strategy == "minimax_uncertainty"`):
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `num_resamples` | integer | `400` | Number of case-bootstrap resamples B over the input curves |
+| `alpha` | number | `0.10` | Two-sided confidence level (only affects diagnostic plots; the optimizer uses all B resamples) |
+| `seed` | integer | `0xC0FFEE` | PRNG seed for reproducibility |
+| `scalarisation` | string | `"worst_case"` | How to combine the B losses: `"worst_case"` (max) or `"cvar"` (mean of worst α-tail) |
+| `cvar_alpha` | number | `0.20` | Tail fraction for CVaR (only when `scalarisation == "cvar"`) |
 
 ---
 
