@@ -94,6 +94,20 @@ pub fn optimize_crossover(
     let (xover_min_freq, xover_max_freq) =
         crossover_freq_range.unwrap_or((config.min_freq, config.max_freq));
 
+    // Validate fixed frequencies size match once; it does not depend on polarity.
+    if let Some(ref freqs) = fixed_freqs {
+        let expected = n_drivers - 1;
+        if freqs.len() != expected {
+            return Err(format!(
+                "Expected {} crossover frequencies for {} drivers, got {}",
+                expected,
+                n_drivers,
+                freqs.len()
+            )
+            .into());
+        }
+    }
+
     for i in 0..num_combinations {
         // Driver 0 is always normal (false)
         // Driver k (k>0) is inverted if bit (k-1) is set
@@ -133,20 +147,6 @@ pub fn optimize_crossover(
 
         // Note: DriversLossData::new sorts internally, but we already sorted, so order is preserved.
         let drivers_data = DriversLossData::new(modified_drivers, crossover_type);
-
-        // Validate fixed frequencies size match
-        if let Some(ref freqs) = fixed_freqs {
-            let expected = n_drivers - 1;
-            if freqs.len() != expected {
-                return Err(format!(
-                    "Expected {} crossover frequencies for {} drivers, got {}",
-                    expected,
-                    n_drivers,
-                    freqs.len()
-                )
-                .into());
-            }
-        }
 
         // Run optimization
         let result = crate::workflow::optimize_drivers_crossover(

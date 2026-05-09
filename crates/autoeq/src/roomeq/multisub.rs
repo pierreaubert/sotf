@@ -157,6 +157,8 @@ pub fn optimize_multisub_with_allpass(
     // Parameter vector: [gains(N), delays(N), ap_freq(N), ap_q(N)]
     let n_params = n_drivers * 4;
 
+    let (allpass_min_freq, allpass_max_freq) = allpass_frequency_bounds(config)?;
+
     // Bounds
     let mut lower_bounds = Vec::with_capacity(n_params);
     let mut upper_bounds = Vec::with_capacity(n_params);
@@ -173,8 +175,8 @@ pub fn optimize_multisub_with_allpass(
     }
     // All-pass frequencies: [min_freq, max_freq]
     for _ in 0..n_drivers {
-        lower_bounds.push(config.min_freq.max(20.0));
-        upper_bounds.push(config.max_freq.min(200.0)); // sub range
+        lower_bounds.push(allpass_min_freq);
+        upper_bounds.push(allpass_max_freq); // sub range
     }
     // All-pass Q: [0.3, 5.0]
     for _ in 0..n_drivers {
@@ -185,7 +187,7 @@ pub fn optimize_multisub_with_allpass(
     // Initial guess: zeros for gains, zeros for delays, 60 Hz + Q=1 for allpass
     let mut x = vec![0.0; n_params];
     for i in 0..n_drivers {
-        x[2 * n_drivers + i] = 60.0; // initial AP frequency
+        x[2 * n_drivers + i] = 60.0_f64.clamp(allpass_min_freq, allpass_max_freq); // initial AP frequency
         x[3 * n_drivers + i] = 1.0; // initial AP Q
     }
 
@@ -281,6 +283,18 @@ pub fn optimize_multisub_with_allpass(
         allpass_filters,
         combined_curve,
     })
+}
+
+fn allpass_frequency_bounds(config: &OptimizerConfig) -> Result<(f64, f64), Box<dyn Error>> {
+    let min_freq = config.min_freq.max(20.0);
+    let max_freq = config.max_freq.min(200.0);
+    if max_freq <= min_freq {
+        return Err(format!(
+            "Multi-sub all-pass optimization requires a non-zero frequency range after clamping to 20-200 Hz, got [{min_freq:.1}, {max_freq:.1}] Hz"
+        )
+        .into());
+    }
+    Ok((min_freq, max_freq))
 }
 
 /// Loss function for multi-sub optimization with all-pass filters.
@@ -453,6 +467,22 @@ mod tests {
         assert!(
             phase_80 != phase_20 || phase_80 != phase_200,
             "Phase at center frequency should differ from at least one extreme"
+        );
+    }
+
+    #[test]
+    fn test_allpass_frequency_bounds_reject_zero_width_range() {
+        let config = OptimizerConfig {
+            min_freq: 10.0,
+            max_freq: 20.0,
+            ..Default::default()
+        };
+
+        let err = allpass_frequency_bounds(&config).expect_err("zero-width range must be invalid");
+
+        assert!(
+            err.to_string().contains("non-zero"),
+            "unexpected error: {err}"
         );
     }
 

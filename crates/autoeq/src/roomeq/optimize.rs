@@ -1222,9 +1222,9 @@ fn optimize_room_impl(
         }
 
         if channel_means.len() > 1 {
-            let avg = channel_means.iter().sum::<f64>() / channel_means.len() as f64;
+            let avg = shared_target_level(&channel_means);
             info!(
-                "Shared target level: {:.1} dB (average of {} channels)",
+                "Shared target level: {:.1} dB (robust center of {} channels)",
                 avg,
                 channel_means.len()
             );
@@ -2490,6 +2490,25 @@ fn process_speaker_internal(
         SpeakerConfig::Cardioid(config) => {
             process_cardioid(channel_name, config, room_config, sample_rate, output_dir)
         }
+    }
+}
+
+fn shared_target_level(channel_means: &[f64]) -> f64 {
+    let mut finite_means: Vec<f64> = channel_means
+        .iter()
+        .copied()
+        .filter(|mean| mean.is_finite())
+        .collect();
+    if finite_means.is_empty() {
+        return 0.0;
+    }
+
+    finite_means.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let mid = finite_means.len() / 2;
+    if finite_means.len() % 2 == 0 {
+        (finite_means[mid - 1] + finite_means[mid]) / 2.0
+    } else {
+        finite_means[mid]
     }
 }
 

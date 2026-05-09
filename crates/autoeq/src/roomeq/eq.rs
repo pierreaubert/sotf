@@ -889,19 +889,20 @@ fn optimize_channel_eq_adaptive(
 ) -> Result<(Vec<Biquad>, f64), Box<dyn Error>> {
     let prep = prepare_single_channel_eq(curve, config, target_config, sample_rate)?;
     let max_filters = config.num_filters;
-    let budget_per_step = (config.max_iter / max_filters).max(5000);
+    let base_budget_per_step = adaptive_budget_for_step(config.max_iter, max_filters, 1);
 
     let mut best_filters: Vec<Biquad> = vec![];
     let mut best_loss = f64::INFINITY;
 
     log::info!(
-        "  Adaptive filter selection: up to {} filters, threshold={:.6}, budget/step={}",
+        "  Adaptive filter selection: up to {} filters, threshold={:.6}, base budget/step={}",
         max_filters,
         config.min_filter_improvement,
-        budget_per_step
+        base_budget_per_step
     );
 
     for k in 1..=max_filters {
+        let budget_per_step = adaptive_budget_for_step(config.max_iter, max_filters, k);
         let (filters, loss, _x) = run_optimization_pass(&prep, k, budget_per_step, config, None)?;
 
         let improvement = best_loss - loss;
@@ -1099,6 +1100,11 @@ pub(super) fn resolve_multi_measurement_auto_optimizer_config(
     auto_tune::resolve_auto_optimizer_config(&representative_curve, config, &auto_context)
 }
 
+fn adaptive_budget_for_step(max_iter: usize, max_filters: usize, filter_count: usize) -> usize {
+    let base_budget = (max_iter / max_filters.max(1)).max(5000);
+    base_budget * filter_count.max(1)
+}
+
 fn representative_multi_measurement_curve(curves: &[Curve]) -> Curve {
     let first = curves
         .first()
@@ -1113,13 +1119,18 @@ fn representative_multi_measurement_curve(curves: &[Curve]) -> Curve {
                 .all(|(a, b)| (a - b).abs() <= 1e-6 * b.abs().max(1.0))
     });
 
-    if !same_grid {
-        return first.clone();
-    }
-
     let mut power_sum = Array1::<f64>::zeros(first.freq.len());
     for curve in curves {
-        power_sum = power_sum + curve.spl.mapv(|spl| 10.0_f64.powf(spl / 10.0));
+        if same_grid {
+            power_sum = power_sum + curve.spl.mapv(|spl| 10.0_f64.powf(spl / 10.0));
+        } else {
+            let spl_on_first_grid: Array1<f64> = first
+                .freq
+                .iter()
+                .map(|&freq| interpolate_spl_at_frequency(curve, freq))
+                .collect();
+            power_sum = power_sum + spl_on_first_grid.mapv(|spl| 10.0_f64.powf(spl / 10.0));
+        }
     }
     let avg_power = power_sum / curves.len() as f64;
     Curve {
@@ -1128,6 +1139,36 @@ fn representative_multi_measurement_curve(curves: &[Curve]) -> Curve {
         phase: None,
         ..Default::default()
     }
+}
+
+fn interpolate_spl_at_frequency(curve: &Curve, freq: f64) -> f64 {
+    if curve.freq.is_empty() || curve.spl.is_empty() {
+        return 0.0;
+    }
+
+    if freq <= curve.freq[0] {
+        return curve.spl[0];
+    }
+
+    let last = curve.freq.len().min(curve.spl.len()) - 1;
+    if freq >= curve.freq[last] {
+        return curve.spl[last];
+    }
+
+    for i in 0..last {
+        let f0 = curve.freq[i];
+        let f1 = curve.freq[i + 1];
+        if freq >= f0 && freq <= f1 {
+            let denom = f1.ln() - f0.ln();
+            if denom.abs() <= f64::EPSILON {
+                return curve.spl[i];
+            }
+            let t = (freq.ln() - f0.ln()) / denom;
+            return curve.spl[i] + t * (curve.spl[i + 1] - curve.spl[i]);
+        }
+    }
+
+    curve.spl[last]
 }
 
 /// Optimize EQ filters across multiple measurement curves simultaneously.
@@ -1871,6 +1912,43 @@ mod tests {
             "sub context should cap boost at the sub auto limit, got {:.2}",
             resolved.max_db
         );
+    }
+
+    #[test]
+    fn adaptive_budget_scales_with_filter_count() {
+        let one_filter = adaptive_budget_for_step(60_000, 6, 1);
+        let six_filters = adaptive_budget_for_step(60_000, 6, 6);
+
+        assert!(
+            six_filters > one_filter,
+            "higher-dimensional adaptive steps need a larger optimization budget"
+        );
+    }
+
+    #[test]
+    fn representative_multi_measurement_curve_interpolates_mismatched_grids() {
+        let first = Curve {
+            freq: Array1::from_vec(vec![100.0, 200.0, 400.0]),
+            spl: Array1::from_vec(vec![80.0, 80.0, 80.0]),
+            phase: None,
+            ..Default::default()
+        };
+        let second = Curve {
+            freq: Array1::from_vec(vec![100.0, 400.0]),
+            spl: Array1::from_vec(vec![90.0, 90.0]),
+            phase: None,
+            ..Default::default()
+        };
+
+        let representative = representative_multi_measurement_curve(&[first, second]);
+
+        assert_eq!(representative.freq.to_vec(), vec![100.0, 200.0, 400.0]);
+        for spl in representative.spl.iter() {
+            assert!(
+                (*spl - 87.4036269).abs() < 1e-5,
+                "expected power average of both measurements, got {spl}"
+            );
+        }
     }
 
     fn make_fdw_e2e_curve() -> Curve {

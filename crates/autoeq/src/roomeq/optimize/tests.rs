@@ -1224,3 +1224,12 @@ fn test_room_config_with_gd(
         cea2034_cache: None,
     }
 }
+#[test]
+fn shared_target_level_uses_robust_center() {
+    let shared = super::shared_target_level(&[75.0, 76.0, 77.0, 120.0]);
+
+    assert!(
+        (shared - 76.5).abs() < 1e-9,
+        "outlier channel should not pull shared target level to {shared}"
+    );
+}
