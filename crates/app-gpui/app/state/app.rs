@@ -22,6 +22,7 @@ use crate::app::types::{
 
 use super::ui::LayoutState;
 use super::{InputState, LibraryState, PlaybackState, PluginState, UIState};
+use crate::app::constants::recording::DEFAULT_SIGNAL_LEVEL_DB;
 use crate::app::manager::{Manager, ManagerError};
 use crate::app::state::library::LibraryEvent;
 use crate::components::plugins::editing::PluginEditingManager;
@@ -1162,7 +1163,11 @@ impl App {
         self.measurement_state.recording_state.signal_duration_secs =
             config.recording_config.signal_duration_secs;
         self.measurement_state.recording_state.signal_level_db =
-            config.recording_config.signal_level_db;
+            if (config.recording_config.signal_level_db - -20.0).abs() < f32::EPSILON {
+                DEFAULT_SIGNAL_LEVEL_DB
+            } else {
+                config.recording_config.signal_level_db
+            };
         self.measurement_state.recording_state.mic_calibration_path =
             config.recording_config.mic_calibration_path.clone();
         // Migrate per-channel calibration paths

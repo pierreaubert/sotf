@@ -20,7 +20,7 @@ use std::path::PathBuf;
 fn test_recording_config_state_default() {
     let config = RecordingConfigState::default();
     assert_eq!(config.signal_duration_secs, 5.0);
-    assert_eq!(config.signal_level_db, -20.0);
+    assert!((config.signal_level_db - -6.0206).abs() < 0.0001);
     assert!(config.mic_calibration_path.is_none());
     assert!(config.recording_directory.is_none());
 }

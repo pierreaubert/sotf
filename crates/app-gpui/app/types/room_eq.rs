@@ -47,6 +47,7 @@ impl InteractiveChartStateWrapper {
 
 // Domain types shared via sotf-player crate — single source of truth for all apps.
 pub use sotf_audio_player::room_eq_types::RoomEqWizardMode;
+pub use sotf_audio_player::room_eq_types::SimpleCrossoverChoice;
 pub use sotf_audio_player::room_eq_types::{
     ChannelDspChain, ChannelMatchingUiConfig, ChannelMeasurement, ChannelOptResult,
     CustomTargetCurve, DelayDetectionState, DelayDetectionStatus, DriverDspChain, DspChainMetadata,
@@ -814,6 +815,23 @@ impl RoomEqState {
             let has_bass_output = speakers
                 .keys()
                 .any(|name| room_eq_channel_is_bass_output(name));
+            let bass_management_crossover = has_bass_output.then(|| {
+                let xover_id = "bass_management".to_string();
+                let crossover_type = match self.simple_preset.crossover {
+                    SimpleCrossoverChoice::Lr24 => "LR24",
+                    SimpleCrossoverChoice::Lr48 => "LR48",
+                };
+                crossovers.insert(
+                    xover_id.clone(),
+                    BackendCrossoverConfig {
+                        crossover_type: crossover_type.to_string(),
+                        frequency: Some(80.0),
+                        frequencies: None,
+                        frequency_range: None,
+                    },
+                );
+                xover_id
+            });
             SystemConfig {
                 model: SystemModel::HomeCinema,
                 speakers: speakers
@@ -822,7 +840,7 @@ impl RoomEqState {
                     .collect(),
                 subwoofers: has_bass_output.then(|| SubwooferSystemConfig {
                     config: SubwooferStrategy::Single,
-                    crossover: None,
+                    crossover: bass_management_crossover,
                     mapping: HashMap::new(),
                 }),
                 bass_management: None,

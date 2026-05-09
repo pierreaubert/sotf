@@ -5,6 +5,7 @@
 // Domain types are shared via the player crate. UI-specific state stays here.
 
 use super::calibration::CalibrationData;
+use crate::app::constants::recording::DEFAULT_SIGNAL_LEVEL_DB;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
@@ -226,7 +227,7 @@ impl Default for RecordingState {
             mic_calibration_data_per_channel: Vec::new(),
             signal_type: RecordingSignalType::Sweep,
             signal_duration_secs: 5.0,
-            signal_level_db: -20.0,
+            signal_level_db: DEFAULT_SIGNAL_LEVEL_DB,
             sweep_start_freq: 20.0,
             sweep_end_freq: 20000.0,
             channel_recordings: Vec::new(),

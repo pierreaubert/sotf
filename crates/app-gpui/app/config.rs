@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sotf_audio_player::{DirectoryInfo, ReleaseChannel};
 
+use crate::app::constants::recording::DEFAULT_SIGNAL_LEVEL_DB;
 use crate::app::types::{PlaybackDeviceConfig, RecordingDeviceConfig, RecordingSignalType};
 use crate::components::plugins::theme::RackThemeState;
 use crate::i18n::Language;
@@ -53,7 +54,7 @@ impl Default for RecordingConfigState {
             recording: RecordingDeviceConfig::default(),
             signal_type: RecordingSignalType::Sweep,
             signal_duration_secs: 5.0,
-            signal_level_db: -20.0,
+            signal_level_db: DEFAULT_SIGNAL_LEVEL_DB,
             mic_calibration_path: None,
             mic_calibration_paths: Vec::new(),
             recording_directory: None,

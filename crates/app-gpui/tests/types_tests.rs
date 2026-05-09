@@ -799,7 +799,7 @@ fn test_recording_state_default() {
     assert_eq!(state.step, RecordingStep::Config);
     assert_eq!(state.signal_type, RecordingSignalType::Sweep);
     assert_eq!(state.signal_duration_secs, 5.0);
-    assert_eq!(state.signal_level_db, -20.0);
+    assert!((state.signal_level_db - -6.0206).abs() < 0.0001);
 }
 
 #[test]

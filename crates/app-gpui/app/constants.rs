@@ -166,8 +166,9 @@ pub mod recording {
     /// Default signal duration (seconds)
     pub const DEFAULT_SIGNAL_DURATION_SECS: f32 = 5.0;
 
-    /// Default signal level (dB)
-    pub const DEFAULT_SIGNAL_LEVEL_DB: f32 = -20.0;
+    /// Default signal level (dBFS) used as the SPL-calibrated reference
+    /// for capture, delay probe, and bass anchor.
+    pub const DEFAULT_SIGNAL_LEVEL_DB: f32 = -6.0206;
 }
 
 /// Design-system spacing scale (matches design-tokens/tokens.json `global.spacing`).

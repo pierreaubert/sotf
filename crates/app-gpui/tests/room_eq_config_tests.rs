@@ -99,10 +99,17 @@ fn test_room_eq_to_room_config_preserves_raw_sweep_ctc_config() {
         system.speakers.get("LFE [mic 1]").map(String::as_str),
         Some("LFE [mic 1]")
     );
-    assert!(
-        system.subwoofers.is_some(),
-        "CTC home-cinema config with LFE must include subwoofer config"
-    );
+    let subwoofers = system
+        .subwoofers
+        .expect("CTC home-cinema config with LFE must include subwoofer config");
+    assert_eq!(subwoofers.crossover.as_deref(), Some("bass_management"));
+    let crossover = config
+        .crossovers
+        .as_ref()
+        .and_then(|crossovers| crossovers.get("bass_management"))
+        .expect("bass-management crossover config");
+    assert_eq!(crossover.crossover_type, "LR24");
+    assert_eq!(crossover.frequency, Some(80.0));
 }
 
 #[test]
