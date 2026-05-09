@@ -132,14 +132,14 @@ fn resolve_correction_mode(
                         "  Auto mode: distance={:.2}m < threshold={:.1}m -> Flat LW correction",
                         dist, config.nearfield_threshold_m
                     );
-                    Cea2034CorrectionMode::Flat
                 } else {
                     info!(
-                        "  Auto mode: distance={:.2}m >= threshold={:.1}m -> Speaker score correction",
+                        "  Auto mode: distance={:.2}m >= threshold={:.1}m -> Flat LW correction \
+                         (CEA2034 score optimization is not supported in roomeq)",
                         dist, config.nearfield_threshold_m
                     );
-                    Cea2034CorrectionMode::Score
                 }
+                Cea2034CorrectionMode::Flat
             } else {
                 // No distance info available, default to Flat (safer)
                 info!("  Auto mode: no distance info available, defaulting to Flat LW correction");
@@ -262,77 +262,25 @@ fn compute_flat_lw_correction(
     Ok((filters, corrected_room))
 }
 
-/// Speaker-score correction: optimize full Harman preference score above Schroeder.
+/// Speaker-score correction is intentionally unsupported in roomeq.
+///
+/// The CEA2034 score is defined for anechoic spinorama data. Roomeq uses
+/// spinorama curves only to build an anechoic speaker pre-correction before
+/// room optimization, so silently approximating score mode as flat LW
+/// correction would misrepresent the requested objective.
 fn compute_score_correction(
-    cea2034_data: &Cea2034Data,
-    config: &Cea2034CorrectionConfig,
-    room_curve: &Curve,
-    schroeder_freq: f64,
-    sample_rate: f64,
+    _cea2034_data: &Cea2034Data,
+    _config: &Cea2034CorrectionConfig,
+    _room_curve: &Curve,
+    _schroeder_freq: f64,
+    _sample_rate: f64,
 ) -> Result<(Vec<Biquad>, Curve)> {
-    if room_curve.freq.is_empty() {
-        return Err(AutoeqError::InvalidMeasurement {
-            message: "Room curve has no frequency data for CEA2034 correction".to_string(),
-        });
-    }
-
-    // For score mode, we need the Listening Window as the primary curve
-    // but the optimizer also needs access to On Axis, Sound Power, and PIR
-    // via the score loss function.
-    //
-    // We use optimize_channel_eq with loss_type="score", but that requires
-    // spin data to be passed through the objective data setup.
-    // For now, fall back to flat LW correction with score-like constraints
-    // (broader Q, allowing more filters) since the full score pipeline
-    // requires the Args struct with spin_data.
-
-    // Interpolate Listening Window to room measurement's frequency grid
-    let lw_interpolated =
-        read::normalize_and_interpolate_response(&room_curve.freq, &cea2034_data.listening_window);
-
-    info!(
-        "  Speaker-score correction: {} filters, {:.0}-{:.0} Hz",
-        config.num_filters,
-        schroeder_freq,
-        room_curve.freq[room_curve.freq.len() - 1]
-    );
-
-    // For score mode, we use more filters and broader Q range
-    let optimizer_config = OptimizerConfig {
-        num_filters: config.num_filters,
-        min_freq: schroeder_freq,
-        max_freq: 20000.0,
-        min_q: 0.5,
-        max_q: config.max_q,
-        min_db: config.min_db,
-        max_db: config.max_db,
-        loss_type: "flat".to_string(), // Use flat loss on LW as approximation
-        asymmetric_loss: true,         // Penalize peaks more (closer to score behavior)
-        psychoacoustic: false,
-        refine: true,
-        ..OptimizerConfig::default()
-    };
-
-    let (filters, loss) =
-        eq::optimize_channel_eq(&lw_interpolated, &optimizer_config, None, sample_rate).map_err(
-            |e| AutoeqError::OptimizationFailed {
-                message: format!("CEA2034 score correction failed: {}", e),
-            },
-        )?;
-
-    info!(
-        "  CEA2034 score correction: {} filters, final loss={:.4}",
-        filters.len(),
-        loss
-    );
-    for f in &filters {
-        debug!("    {:.0} Hz, Q={:.2}, {:.1} dB", f.freq, f.q, f.db_gain);
-    }
-
-    // Apply correction to the room measurement curve
-    let corrected_room = simulate_correction(&filters, room_curve, sample_rate);
-
-    Ok((filters, corrected_room))
+    Err(AutoeqError::InvalidConfiguration {
+        message: "CEA2034 score correction is not supported in roomeq; the Harman/Olive \
+                  preference score is defined for anechoic spinorama data, while roomeq \
+                  uses CEA2034 only for flat Listening Window speaker pre-correction"
+            .to_string(),
+    })
 }
 
 /// Apply filter correction to a curve, returning the corrected curve.
@@ -401,6 +349,19 @@ mod tests {
             spl: Array1::from_elem(num_points, 85.0),
             phase: None,
             ..Default::default()
+        }
+    }
+
+    fn make_cea2034_data(num_points: usize) -> Cea2034Data {
+        Cea2034Data {
+            on_axis: make_flat_curve(num_points),
+            listening_window: make_flat_curve(num_points),
+            early_reflections: make_flat_curve(num_points),
+            sound_power: make_flat_curve(num_points),
+            estimated_in_room: make_flat_curve(num_points),
+            er_di: make_flat_curve(num_points),
+            sp_di: make_flat_curve(num_points),
+            curves: HashMap::new(),
         }
     }
 
@@ -486,7 +447,7 @@ mod tests {
             ..Default::default()
         };
         let mode = resolve_correction_mode(&config, None);
-        assert_eq!(mode, Cea2034CorrectionMode::Score);
+        assert_eq!(mode, Cea2034CorrectionMode::Flat);
     }
 
     #[test]
@@ -499,9 +460,11 @@ mod tests {
             system_latency_ms: Some(2.0),
             ..Default::default()
         };
-        // 8.83ms arrival -> (8.83 - 2.0) * 0.001 * 343 = 2.34m -> Score (>= threshold)
+        // 8.83ms arrival -> (8.83 - 2.0) * 0.001 * 343 = 2.34m.
+        // Roomeq still uses flat anechoic pre-correction because Harman score
+        // optimization is not meaningful for in-room measurements.
         let mode = resolve_correction_mode(&config, Some(8.83));
-        assert_eq!(mode, Cea2034CorrectionMode::Score);
+        assert_eq!(mode, Cea2034CorrectionMode::Flat);
 
         // 5.0ms arrival -> (5.0 - 2.0) * 0.001 * 343 = 1.029m -> Flat (< threshold)
         let mode = resolve_correction_mode(&config, Some(5.0));
@@ -520,6 +483,26 @@ mod tests {
     }
 
     #[test]
+    fn test_score_correction_mode_returns_error() {
+        let room_curve = make_flat_curve(32);
+        let cea_data = make_cea2034_data(32);
+        let config = Cea2034CorrectionConfig {
+            enabled: true,
+            correction_mode: Cea2034CorrectionMode::Score,
+            ..Default::default()
+        };
+
+        let result =
+            compute_speaker_correction(&cea_data, &config, &room_curve, 300.0, None, 48000.0);
+
+        assert!(matches!(
+            result,
+            Err(AutoeqError::InvalidConfiguration { ref message })
+                if message.contains("CEA2034 score correction is not supported in roomeq")
+        ));
+    }
+
+    #[test]
     fn test_empty_room_curve_returns_error() {
         let empty_curve = Curve {
             freq: Array1::zeros(0),
@@ -527,16 +510,7 @@ mod tests {
             phase: None,
             ..Default::default()
         };
-        let cea_data = Cea2034Data {
-            on_axis: make_flat_curve(100),
-            listening_window: make_flat_curve(100),
-            early_reflections: make_flat_curve(100),
-            sound_power: make_flat_curve(100),
-            estimated_in_room: make_flat_curve(100),
-            er_di: make_flat_curve(100),
-            sp_di: make_flat_curve(100),
-            curves: HashMap::new(),
-        };
+        let cea_data = make_cea2034_data(100);
         let config = Cea2034CorrectionConfig {
             enabled: true,
             correction_mode: Cea2034CorrectionMode::Flat,

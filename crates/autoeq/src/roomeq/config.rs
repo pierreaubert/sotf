@@ -4,8 +4,8 @@
 
 use super::types::{
     AreaPriorKind, AreaQuadratureKind, AreaScalarisationKind, BootstrapScalarisation,
-    MultiMeasurementStrategy, MultiSeatStrategy, OptimizerConfig, ProcessingMode, RoomConfig,
-    SpeakerConfig, TargetShape,
+    Cea2034CorrectionMode, MultiMeasurementStrategy, MultiSeatStrategy, OptimizerConfig,
+    ProcessingMode, RoomConfig, SpeakerConfig, TargetShape,
 };
 use crate::{MeasurementRef, MeasurementSource};
 use std::collections::HashMap;
@@ -165,6 +165,15 @@ fn validate_optimizer_config(opt: &OptimizerConfig, result: &mut ValidationResul
         ));
     }
 
+    if opt.processing_mode == ProcessingMode::WarpedIir {
+        result.add_error(
+            "processing_mode=warped_iir is not supported; the roomeq output pipeline \
+             currently exports standard biquads, so warped IIR would silently behave \
+             like low_latency"
+                .to_string(),
+        );
+    }
+
     if let Some(auto) = &opt.auto_optimizer
         && auto.enabled
     {
@@ -292,6 +301,14 @@ fn validate_optimizer_config(opt: &OptimizerConfig, result: &mut ValidationResul
                 "cea2034_correction.max_db ({}) must be >= min_db ({})",
                 cea.max_db, cea.min_db
             ));
+        }
+        if cea.correction_mode == Cea2034CorrectionMode::Score {
+            result.add_error(
+                "cea2034_correction.correction_mode=score is not supported in roomeq; \
+                 Harman/Olive speaker score is defined for anechoic spinorama data, while \
+                 roomeq CEA2034 correction only supports flat Listening Window pre-correction"
+                    .to_string(),
+            );
         }
         if cea.nearfield_threshold_m <= 0.0 {
             result.add_error(format!(
@@ -1083,6 +1100,87 @@ mod tests {
         let result = validate_room_config(&config);
         assert!(!result.is_valid);
         assert!(result.errors.iter().any(|e| e.contains("min_freq")));
+    }
+
+    #[test]
+    fn test_validate_cea2034_score_mode_is_invalid_for_roomeq() {
+        let mut speakers = HashMap::new();
+        speakers.insert(
+            "left".to_string(),
+            SpeakerConfig::Single(MeasurementSource::Single(MeasurementSingle {
+                measurement: MeasurementRef::Path(PathBuf::from("spinorama_left.csv")),
+                speaker_name: Some("Example Speaker".to_string()),
+            })),
+        );
+
+        let optimizer = OptimizerConfig {
+            cea2034_correction: Some(Cea2034CorrectionConfig {
+                enabled: true,
+                correction_mode: Cea2034CorrectionMode::Score,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let config = RoomConfig {
+            version: default_config_version(),
+            system: None,
+            speakers,
+            crossovers: None,
+            target_curve: None,
+            optimizer,
+            recording_config: None,
+            ctc: None,
+            cea2034_cache: None,
+        };
+
+        let result = validate_room_config(&config);
+
+        assert!(!result.is_valid);
+        assert!(result.errors.iter().any(|e| {
+            e.contains("cea2034_correction.correction_mode=score is not supported in roomeq")
+        }));
+    }
+
+    #[test]
+    fn test_validate_warped_iir_mode_is_invalid_until_implemented() {
+        let mut speakers = HashMap::new();
+        speakers.insert(
+            "left".to_string(),
+            SpeakerConfig::Single(MeasurementSource::InMemory(Curve {
+                freq: ndarray::Array1::from_vec(vec![20.0, 100.0, 1000.0]),
+                spl: ndarray::Array1::from_vec(vec![80.0, 80.0, 80.0]),
+                phase: None,
+                ..Default::default()
+            })),
+        );
+
+        let optimizer = OptimizerConfig {
+            processing_mode: ProcessingMode::WarpedIir,
+            ..Default::default()
+        };
+
+        let config = RoomConfig {
+            version: default_config_version(),
+            system: None,
+            speakers,
+            crossovers: None,
+            target_curve: None,
+            optimizer,
+            recording_config: None,
+            ctc: None,
+            cea2034_cache: None,
+        };
+
+        let result = validate_room_config(&config);
+
+        assert!(!result.is_valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| { e.contains("processing_mode=warped_iir is not supported") })
+        );
     }
 
     #[test]

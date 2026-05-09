@@ -20,6 +20,21 @@ pub struct ArrivalTimeResult {
     pub peak_amplitude: f32,
 }
 
+/// Why a phase-derived arrival estimate could not be used.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PhaseArrivalError {
+    MissingPhase,
+    InsufficientBandPoints {
+        min_freq: f64,
+        max_freq: f64,
+        points: usize,
+    },
+    DegenerateRegression,
+    ImplausibleDelay {
+        delay_ms: f64,
+    },
+}
+
 fn load_wav_first_channel(wav_path: &Path) -> Result<(Vec<f32>, u32), String> {
     let mut reader = WavReader::open(wav_path)
         .map_err(|e| format!("Failed to open WAV file {:?}: {}", wav_path, e))?;
@@ -82,14 +97,16 @@ pub fn find_arrival_time(
         return Err("Signal appears to be silent (peak amplitude < -120 dB)".to_string());
     }
 
-    // Estimate noise floor from the first 10ms of silence (or first 1% of signal, whichever is smaller)
+    // Estimate RMS noise floor from the first 10ms of silence (or first 1%
+    // of signal, whichever is smaller). RMS avoids letting one early click
+    // raise the threshold enough to hide the real arrival.
     let noise_samples = (sample_rate as usize / 100)
         .min(samples.len() / 100)
-        .max(10);
-    let noise_floor: f32 = samples[..noise_samples]
-        .iter()
-        .map(|&s| s.abs())
-        .fold(0.0_f32, f32::max);
+        .max(10)
+        .min(samples.len());
+    let noise_floor: f32 = (samples[..noise_samples].iter().map(|&s| s * s).sum::<f32>()
+        / noise_samples as f32)
+        .sqrt();
 
     // Use the larger of: noise_floor * 10 (20dB above noise) or peak * threshold_db
     let threshold_from_peak = peak_amplitude * 10.0_f32.powf(threshold_db as f32 / 20.0);
@@ -98,13 +115,14 @@ pub fn find_arrival_time(
 
     // Find the first sample that exceeds the threshold (signal onset)
     // This works for both impulse responses and sweep recordings
-    let mut arrival_idx = 0;
-    for (i, &sample) in samples.iter().enumerate() {
-        if sample.abs() >= threshold_linear {
-            arrival_idx = i;
-            break;
-        }
-    }
+    let arrival_idx = samples
+        .iter()
+        .position(|&sample| sample.abs() >= threshold_linear)
+        .ok_or_else(|| {
+            format!(
+                "No sample exceeded arrival threshold ({threshold_linear:.6}); peak amplitude was {peak_amplitude:.6}"
+            )
+        })?;
 
     let arrival_ms = arrival_idx as f64 * 1000.0 / sample_rate as f64;
 
@@ -123,14 +141,27 @@ pub fn find_arrival_time(
 ///
 /// Returns the estimated arrival time in milliseconds, or None if phase data
 /// is absent, no points fall in the band, or the estimate is implausible.
+#[allow(dead_code)]
 pub fn estimate_arrival_from_phase(
     curve: &crate::Curve,
     min_freq: f64,
     max_freq: f64,
 ) -> Option<f64> {
+    estimate_arrival_from_phase_detailed(curve, min_freq, max_freq).ok()
+}
+
+/// Estimate speaker propagation delay from phase data and report why rejected.
+pub fn estimate_arrival_from_phase_detailed(
+    curve: &crate::Curve,
+    min_freq: f64,
+    max_freq: f64,
+) -> Result<f64, PhaseArrivalError> {
     use std::f64::consts::PI;
 
-    let phase = curve.phase.as_ref()?;
+    let phase = curve
+        .phase
+        .as_ref()
+        .ok_or(PhaseArrivalError::MissingPhase)?;
 
     // Unwrap phase to remove discontinuities
     let unwrapped = super::phase_utils::unwrap_phase_degrees(phase);
@@ -145,7 +176,11 @@ pub fn estimate_arrival_from_phase(
         .collect();
 
     if points.len() < 5 {
-        return None;
+        return Err(PhaseArrivalError::InsufficientBandPoints {
+            min_freq,
+            max_freq,
+            points: points.len(),
+        });
     }
 
     // Linear regression in radians: φ_rad = φ₀ - 2π·τ·f  →  slope = dφ/df
@@ -157,7 +192,7 @@ pub fn estimate_arrival_from_phase(
 
     let denom = n * sum_f2 - sum_f * sum_f;
     if denom.abs() < 1e-12 {
-        return None;
+        return Err(PhaseArrivalError::DegenerateRegression);
     }
 
     let slope = (n * sum_f_phi - sum_f * sum_phi) / denom;
@@ -167,7 +202,68 @@ pub fn estimate_arrival_from_phase(
 
     // Sanity check: plausible acoustic propagation time (0–500 ms)
     if delay_ms > 0.0 && delay_ms < 500.0 {
-        Some(delay_ms)
+        Ok(delay_ms)
+    } else {
+        Err(PhaseArrivalError::ImplausibleDelay { delay_ms })
+    }
+}
+
+/// Choose a regression band for phase-derived arrival estimates.
+///
+/// Prefer the normal full-range band when it contains enough phase points.
+/// Otherwise fall back to the measured signal band (within 40 dB of peak SPL),
+/// which avoids running subwoofer-only channels through an empty 200-2000 Hz
+/// phase regression.
+pub fn phase_arrival_regression_band(
+    curve: &crate::Curve,
+    preferred_min: f64,
+    preferred_max: f64,
+) -> Option<(f64, f64)> {
+    curve.phase.as_ref()?;
+
+    if curve.freq.is_empty() || curve.spl.is_empty() {
+        return None;
+    }
+
+    let peak_spl = curve
+        .spl
+        .iter()
+        .copied()
+        .filter(|v| v.is_finite())
+        .fold(f64::NEG_INFINITY, f64::max);
+    if !peak_spl.is_finite() {
+        return None;
+    }
+
+    let preferred_active_points = curve
+        .freq
+        .iter()
+        .zip(curve.spl.iter())
+        .filter(|&(&f, &spl)| {
+            f >= preferred_min
+                && f <= preferred_max
+                && f.is_finite()
+                && spl.is_finite()
+                && spl >= peak_spl - 40.0
+        })
+        .count();
+    if preferred_active_points >= 5 {
+        return Some((preferred_min, preferred_max));
+    }
+
+    let active: Vec<f64> = curve
+        .freq
+        .iter()
+        .zip(curve.spl.iter())
+        .filter_map(|(&f, &spl)| {
+            (f.is_finite() && spl.is_finite() && spl >= peak_spl - 40.0).then_some(f)
+        })
+        .collect();
+
+    if active.len() >= 5 {
+        Some((*active.first().unwrap(), *active.last().unwrap()))
+    } else if curve.freq.len() >= 5 {
+        Some((curve.freq[0], *curve.freq.last().unwrap()))
     } else {
         None
     }
@@ -443,6 +539,79 @@ mod tests {
             ..Default::default()
         };
         assert!(estimate_arrival_from_phase(&curve, 200.0, 2000.0).is_none());
+    }
+
+    #[test]
+    fn test_find_arrival_time_errors_when_no_sample_crosses_threshold() {
+        let sr = 48_000_u32;
+        let samples = vec![0.001_f32; 2048];
+        let wav = write_mono_wav(&samples, sr);
+
+        let err = find_arrival_time(wav.path(), None).unwrap_err();
+
+        assert!(
+            err.contains("No sample exceeded arrival threshold"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_find_arrival_time_uses_rms_noise_floor_not_peak() {
+        let sr = 48_000_u32;
+        let mut samples = vec![0.0_f32; 4096];
+        samples[12] = 0.02; // isolated early noise click
+        let arrival = 1200_usize;
+        samples[arrival] = 0.1;
+        let wav = write_mono_wav(&samples, sr);
+
+        let result = find_arrival_time(wav.path(), None).unwrap();
+
+        assert_eq!(result.arrival_samples, arrival);
+    }
+
+    #[test]
+    fn test_estimate_arrival_from_phase_detailed_reports_implausible_delay() {
+        use ndarray::Array1;
+
+        let tau_ms = -2.0_f64;
+        let tau_s = tau_ms / 1000.0;
+        let freqs: Vec<f64> = (100..=3000).step_by(20).map(|f| f as f64).collect();
+        let phase_deg: Vec<f64> = freqs.iter().map(|&f| -360.0 * f * tau_s).collect();
+
+        let curve = crate::Curve {
+            freq: Array1::from_vec(freqs),
+            spl: Array1::zeros(phase_deg.len()),
+            phase: Some(Array1::from_vec(phase_deg)),
+            ..Default::default()
+        };
+
+        let err = estimate_arrival_from_phase_detailed(&curve, 200.0, 2000.0).unwrap_err();
+
+        assert!(matches!(
+            err,
+            PhaseArrivalError::ImplausibleDelay { delay_ms } if delay_ms < 0.0
+        ));
+    }
+
+    #[test]
+    fn test_phase_arrival_regression_band_falls_back_to_active_sub_band() {
+        use ndarray::Array1;
+
+        let freqs: Vec<f64> = (20..=2000).step_by(10).map(|f| f as f64).collect();
+        let spl: Vec<f64> = freqs
+            .iter()
+            .map(|&f| if f <= 120.0 { 0.0 } else { -80.0 })
+            .collect();
+        let curve = crate::Curve {
+            freq: Array1::from_vec(freqs),
+            spl: Array1::from_vec(spl),
+            phase: Some(Array1::zeros(199)),
+            ..Default::default()
+        };
+
+        let band = phase_arrival_regression_band(&curve, 200.0, 2000.0).unwrap();
+
+        assert_eq!(band, (20.0, 120.0));
     }
 
     #[test]

@@ -10,6 +10,23 @@ use super::config::{
     TargetShape,
 };
 
+fn canonical_multi_measurement_strategy(strategy: &str) -> Option<&'static str> {
+    let normalized = strategy
+        .trim()
+        .to_ascii_lowercase()
+        .replace([' ', '-'], "_")
+        .replace(['(', ')'], "");
+    match normalized.as_str() {
+        "average" | "average_rms" => Some("average"),
+        "weighted_sum" => Some("weighted_sum"),
+        "minimax" | "minmax" | "minimax_worst_case" => Some("minimax"),
+        "variance_penalized" | "minimize_variance" | "variance" => Some("variance_penalized"),
+        "spatial_robustness" => Some("spatial_robustness"),
+        "minimax_uncertainty" | "minimax_bootstrap_uncertainty" => Some("minimax_uncertainty"),
+        _ => None,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Enums
 // ---------------------------------------------------------------------------
@@ -152,7 +169,15 @@ impl SimplePresetConfig {
 
         // Multi-position measurement strategy
         let multi_measurement = if !self.multi_position_strategy.is_empty() {
-            let strategy = match self.multi_position_strategy.as_str() {
+            let strategy_key = canonical_multi_measurement_strategy(&self.multi_position_strategy)
+                .unwrap_or_else(|| {
+                    log::warn!(
+                        "Unknown multi_position_strategy '{}'; falling back to average",
+                        self.multi_position_strategy
+                    );
+                    "average"
+                });
+            let strategy = match strategy_key {
                 "average" => super::config::MultiMeasurementStrategy::Average,
                 "weighted_sum" => super::config::MultiMeasurementStrategy::WeightedSum,
                 "minimax" => super::config::MultiMeasurementStrategy::Minimax,
@@ -161,7 +186,7 @@ impl SimplePresetConfig {
                 "minimax_uncertainty" => {
                     super::config::MultiMeasurementStrategy::MinimaxUncertainty
                 }
-                s => panic!("Unknown multi_measurement strategy: {s}"),
+                _ => super::config::MultiMeasurementStrategy::Average,
             };
             Some(super::config::MultiMeasurementConfig {
                 strategy,
@@ -260,5 +285,18 @@ mod tests {
         };
         let config = preset.to_optimizer_config();
         assert!(config.multi_measurement.is_some());
+    }
+
+    #[test]
+    fn test_simple_preset_accepts_multi_position_display_label() {
+        let preset = SimplePresetConfig {
+            multi_position_strategy: "Minimize Variance".to_string(),
+            ..Default::default()
+        };
+        let config = preset.to_optimizer_config();
+        assert_eq!(
+            config.multi_measurement.unwrap().strategy,
+            super::super::config::MultiMeasurementStrategy::VariancePenalized
+        );
     }
 }

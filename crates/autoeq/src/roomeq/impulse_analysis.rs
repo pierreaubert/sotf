@@ -168,16 +168,15 @@ pub fn detect_room_modes(
     }
 
     // Find local maxima below Schroeder frequency
-    for i in 2..n - 2 {
+    for i in 1..n - 1 {
         if freq[i] > config.schroeder_freq {
             break;
         }
 
-        // Local maximum: higher than both neighbors (using 2-sample window for robustness)
-        let is_peak = spl[i] > spl[i - 1]
-            && spl[i] > spl[i + 1]
-            && spl[i] > spl[i - 2]
-            && spl[i] > spl[i + 2];
+        // Local maximum: higher than available neighbors within a 2-sample
+        // window. Near band edges this degrades gracefully to the available
+        // one-sided context instead of skipping the lowest two bins.
+        let is_peak = is_local_extremum(spl, i, 2, true);
 
         if !is_peak {
             continue;
@@ -210,7 +209,7 @@ pub fn detect_room_modes(
     modes
 }
 
-/// Compute local baseline SPL around a peak (average of surrounding values).
+/// Compute local baseline SPL around a peak (median of surrounding values).
 fn compute_local_baseline(
     freq: &Array1<f64>,
     spl: &Array1<f64>,
@@ -218,31 +217,35 @@ fn compute_local_baseline(
     f_low: f64,
     f_high: f64,
 ) -> f64 {
-    let mut sum = 0.0;
-    let mut count = 0;
+    let mut values = Vec::new();
 
     for j in 0..freq.len() {
         if j == center_idx {
             continue;
         }
         if freq[j] >= f_low && freq[j] <= f_high {
-            sum += spl[j];
-            count += 1;
+            values.push(spl[j]);
         }
     }
 
-    if count > 0 {
-        sum / count as f64
-    } else {
+    if values.is_empty() {
         spl[center_idx]
+    } else {
+        values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let mid = values.len() / 2;
+        if values.len() % 2 == 0 {
+            (values[mid - 1] + values[mid]) * 0.5
+        } else {
+            values[mid]
+        }
     }
 }
 
 /// Estimate Q factor of a peak from its -3 dB bandwidth.
 ///
 /// Q = f_center / bandwidth, where bandwidth = f_high - f_low at -3 dB.
-/// When only one side crossing is found, the bandwidth is estimated as
-/// 2x the one-sided distance to avoid reporting double the true Q.
+/// When one or both crossings are missing, the bandwidth is bounded by the
+/// measured span rather than reflecting the available side symmetrically.
 fn estimate_peak_q(freq: &Array1<f64>, spl: &Array1<f64>, peak_idx: usize) -> f64 {
     let peak_spl = spl[peak_idx];
     let threshold = peak_spl - 3.0; // -3 dB point
@@ -278,20 +281,34 @@ fn estimate_peak_q(freq: &Array1<f64>, spl: &Array1<f64>, peak_idx: usize) -> f6
         }
     }
 
-    // Compute bandwidth: if only one side found, double the one-sided distance
+    // Compute bandwidth. Missing crossings use the measured band edge so wide
+    // unresolved bumps do not inherit the same Q as a truly narrow peak.
     let bandwidth = match (f_low, f_high) {
         (Some(lo), Some(hi)) => hi - lo,
-        (Some(lo), None) => 2.0 * (f_center - lo),
-        (None, Some(hi)) => 2.0 * (hi - f_center),
-        (None, None) => 0.0, // no crossing found at all
+        (Some(lo), None) => freq[freq.len() - 1] - lo,
+        (None, Some(hi)) => hi - freq[0],
+        (None, None) => freq[freq.len() - 1] - freq[0],
     };
 
     if bandwidth > 0.0 {
         f_center / bandwidth
     } else {
-        // Very narrow peak — assign high Q
-        20.0
+        0.0
     }
+}
+
+fn is_local_extremum(spl: &Array1<f64>, idx: usize, radius: usize, maximum: bool) -> bool {
+    let lo = idx.saturating_sub(radius);
+    let hi = (idx + radius).min(spl.len().saturating_sub(1));
+    let center = spl[idx];
+
+    (lo..=hi).filter(|&j| j != idx).all(|j| {
+        if maximum {
+            center > spl[j]
+        } else {
+            center < spl[j]
+        }
+    })
 }
 
 /// Build per-frequency correction weights combining mode detection and Schroeder split.
@@ -420,13 +437,10 @@ pub fn detect_narrow_nulls(
         return nulls;
     }
 
-    for i in 2..n - 2 {
+    for i in 1..n - 1 {
         // Local minimum: lower than both neighbours at distance 1 and 2
-        // (same 2-sample window as detect_room_modes for robustness).
-        let is_min = spl[i] < spl[i - 1]
-            && spl[i] < spl[i + 1]
-            && spl[i] < spl[i - 2]
-            && spl[i] < spl[i + 2];
+        // (same available 2-sample window as detect_room_modes).
+        let is_min = is_local_extremum(spl, i, 2, false);
 
         if !is_min {
             continue;
@@ -459,9 +473,7 @@ pub fn detect_narrow_nulls(
 /// Estimate Q factor of a dip from its +3 dB bandwidth.
 ///
 /// Symmetric counterpart of `estimate_peak_q`: searches left and right
-/// from the nadir for the first crossing of `spl[peak_idx] + 3 dB`. When
-/// only one side is found the bandwidth is estimated as 2× the one-sided
-/// distance, same convention as the peak helper.
+/// from the nadir for the first crossing of `spl[peak_idx] + 3 dB`.
 fn estimate_dip_q(freq: &Array1<f64>, spl: &Array1<f64>, dip_idx: usize) -> f64 {
     let dip_spl = spl[dip_idx];
     let threshold = dip_spl + 3.0; // +3 dB from the nadir
@@ -499,16 +511,15 @@ fn estimate_dip_q(freq: &Array1<f64>, spl: &Array1<f64>, dip_idx: usize) -> f64 
 
     let bandwidth = match (f_low, f_high) {
         (Some(lo), Some(hi)) => hi - lo,
-        (Some(lo), None) => 2.0 * (f_center - lo),
-        (None, Some(hi)) => 2.0 * (hi - f_center),
-        (None, None) => 0.0,
+        (Some(lo), None) => freq[freq.len() - 1] - lo,
+        (None, Some(hi)) => hi - freq[0],
+        (None, None) => freq[freq.len() - 1] - freq[0],
     };
 
     if bandwidth > 0.0 {
         f_center / bandwidth
     } else {
-        // No +3 dB crossing found: extremely narrow dip, treat as very high Q
-        20.0
+        0.0
     }
 }
 
@@ -916,6 +927,27 @@ mod tests {
     }
 
     #[test]
+    fn test_detect_room_modes_can_detect_low_edge_peak() {
+        let freq = Array1::from_vec(vec![20.0, 25.0, 31.5, 40.0, 50.0, 63.0]);
+        let spl = Array1::from_vec(vec![80.0, 94.0, 84.0, 80.0, 80.0, 80.0]);
+        let config = DecomposedCorrectionConfig {
+            schroeder_freq: 100.0,
+            min_mode_prominence_db: 6.0,
+            min_mode_q: 1.0,
+            ..Default::default()
+        };
+
+        let modes = detect_room_modes(&freq, &spl, &config);
+
+        assert!(
+            modes
+                .iter()
+                .any(|mode| (mode.frequency - 25.0).abs() < 1e-9),
+            "lowest in-band local peak should be detectable, got {modes:?}"
+        );
+    }
+
+    #[test]
     fn test_correction_weights_below_schroeder() {
         let freq = Array1::from_vec(vec![50.0]);
         let modes = vec![];
@@ -1065,6 +1097,19 @@ mod tests {
     }
 
     #[test]
+    fn test_compute_local_baseline_uses_median_to_ignore_neighboring_modes() {
+        let freq = Array1::from_vec(vec![40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0]);
+        let spl = Array1::from_vec(vec![80.0, 80.0, 108.0, 96.0, 80.0, 80.0, 80.0]);
+
+        let baseline = compute_local_baseline(&freq, &spl, 3, 35.0, 110.0);
+
+        assert!(
+            (baseline - 80.0).abs() < 1e-9,
+            "median baseline should ignore neighboring modal outlier, got {baseline:.1}"
+        );
+    }
+
+    #[test]
     fn test_correction_weights_smooth_transition() {
         // With smooth transition, weight near Schroeder should be between extremes
         let freq = Array1::from_vec(vec![50.0, 200.0, 800.0]);
@@ -1180,6 +1225,19 @@ mod tests {
             q.is_finite() && q > 0.0,
             "Q should be finite positive, got {:.1}",
             q
+        );
+    }
+
+    #[test]
+    fn test_estimate_peak_q_without_crossings_uses_measured_span() {
+        let freq = Array1::from_vec(vec![20.0, 30.0, 40.0, 50.0, 60.0]);
+        let spl = Array1::from_vec(vec![87.5, 88.5, 90.0, 88.5, 87.5]);
+
+        let q = estimate_peak_q(&freq, &spl, 2);
+
+        assert!(
+            q < 2.0,
+            "wide bump with no -3 dB crossings should not be classified as Q=20, got {q:.1}"
         );
     }
 
@@ -1303,6 +1361,21 @@ mod tests {
             nearest.depth_db >= 4.0,
             "detected depth={:.1} should exceed min_null_depth_db=4",
             nearest.depth_db
+        );
+    }
+
+    #[test]
+    fn test_detect_narrow_nulls_can_detect_low_edge_null() {
+        let freq = Array1::from_vec(vec![20.0, 25.0, 31.5, 40.0, 50.0, 63.0]);
+        let spl = Array1::from_vec(vec![80.0, 66.0, 76.0, 80.0, 80.0, 80.0]);
+
+        let nulls = detect_narrow_nulls(&freq, &spl, &NullDetectionConfig::default());
+
+        assert!(
+            nulls
+                .iter()
+                .any(|null| (null.frequency - 25.0).abs() < 1e-9),
+            "lowest in-band local null should be detectable, got {nulls:?}"
         );
     }
 

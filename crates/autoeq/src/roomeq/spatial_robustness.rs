@@ -234,17 +234,16 @@ pub fn correction_depth_mask(
 pub fn analyze_spatial_robustness(
     curves: &[Curve],
     config: &SpatialRobustnessConfig,
-) -> SpatialRobustnessResult {
-    try_analyze_spatial_robustness_weighted(curves, config, None).unwrap_or_else(|e| panic!("{e}"))
+) -> Result<SpatialRobustnessResult> {
+    try_analyze_spatial_robustness_weighted(curves, config, None)
 }
 
 pub fn analyze_spatial_robustness_weighted(
     curves: &[Curve],
     config: &SpatialRobustnessConfig,
     weights: Option<&[f64]>,
-) -> SpatialRobustnessResult {
+) -> Result<SpatialRobustnessResult> {
     try_analyze_spatial_robustness_weighted(curves, config, weights)
-        .unwrap_or_else(|e| panic!("{e}"))
 }
 
 pub fn try_analyze_spatial_robustness_weighted(
@@ -788,7 +787,7 @@ mod tests {
             mask_smoothing_octaves: 0.0,
             ..Default::default()
         };
-        let result = analyze_spatial_robustness(&[curve], &config);
+        let result = analyze_spatial_robustness(&[curve], &config).expect("analysis");
 
         // Zero variance → high correction everywhere
         // sigmoid((3.0 - 0.0) / 2.0) ≈ 0.818, depth = 0.1 + 0.9 * 0.818 ≈ 0.836
@@ -805,7 +804,6 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "same frequency grid")]
     fn test_analyze_spatial_robustness_rejects_mismatched_frequency_grids() {
         let c1 = make_curve(vec![100.0, 1000.0], vec![80.0, 85.0]);
         let c2 = make_curve(vec![110.0, 1100.0], vec![80.0, 85.0]);
@@ -814,7 +812,11 @@ mod tests {
             ..Default::default()
         };
 
-        let _ = analyze_spatial_robustness(&[c1, c2], &config);
+        let err = analyze_spatial_robustness(&[c1, c2], &config).unwrap_err();
+        assert!(
+            err.to_string().contains("same frequency grid"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
@@ -828,7 +830,7 @@ mod tests {
             mask_smoothing_octaves: 0.0,
             ..Default::default()
         };
-        let result = analyze_spatial_robustness(&[c1, c2, c3], &config);
+        let result = analyze_spatial_robustness(&[c1, c2, c3], &config).expect("analysis");
 
         // 100 Hz should have low variance → high correction depth
         assert!(result.spatial_variance[0] < 2.0);

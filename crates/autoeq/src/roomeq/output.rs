@@ -43,8 +43,9 @@ const DISPLAY_MAX_FREQ: f64 = math_audio_iir_fir::AUDIBLE_MAX_FREQ;
 
 /// Extend a curve's frequency range to cover 20 Hz – 20 kHz for display.
 ///
-/// Points outside the measurement range are extrapolated with the nearest
-/// boundary SPL value. The original measurement data points are preserved.
+/// Points outside the measurement range are extrapolated using the local
+/// log-frequency SPL slope at each boundary. The original measurement data
+/// points are preserved.
 pub fn extend_curve_to_full_range(curve: &crate::Curve) -> crate::Curve {
     if curve.freq.is_empty() {
         return curve.clone();
@@ -60,6 +61,22 @@ pub fn extend_curve_to_full_range(curve: &crate::Curve) -> crate::Curve {
 
     let first_spl = curve.spl[0];
     let last_spl = *curve.spl.last().unwrap();
+    let low_slope_ref = if curve.freq.len() >= 2 && curve.spl.len() >= 2 {
+        Some((curve.freq[0], curve.spl[0], curve.freq[1], curve.spl[1]))
+    } else {
+        None
+    };
+    let high_slope_ref = if curve.freq.len() >= 2 && curve.spl.len() >= 2 {
+        let last = curve.freq.len() - 1;
+        Some((
+            curve.freq[last - 1],
+            curve.spl[last - 1],
+            curve.freq[last],
+            curve.spl[last],
+        ))
+    } else {
+        None
+    };
     let points_per_decade = 50;
 
     let mut freq_vec = Vec::new();
@@ -75,7 +92,11 @@ pub fn extend_curve_to_full_range(curve: &crate::Curve) -> crate::Curve {
             let t = i as f64 / n_points as f64;
             let f = 10f64.powf(log_start + t * (log_end - log_start));
             freq_vec.push(f);
-            spl_vec.push(first_spl);
+            spl_vec.push(
+                low_slope_ref
+                    .map(|(f0, spl0, f1, spl1)| extrapolate_spl_log_slope(f, f0, spl0, f1, spl1))
+                    .unwrap_or(first_spl),
+            );
         }
     }
 
@@ -95,7 +116,11 @@ pub fn extend_curve_to_full_range(curve: &crate::Curve) -> crate::Curve {
                 .powf(log_start + t * (log_end - log_start))
                 .min(DISPLAY_MAX_FREQ);
             freq_vec.push(f);
-            spl_vec.push(last_spl);
+            spl_vec.push(
+                high_slope_ref
+                    .map(|(f0, spl0, f1, spl1)| extrapolate_spl_log_slope(f, f1, spl1, f0, spl0))
+                    .unwrap_or(last_spl),
+            );
         }
     }
 
@@ -105,6 +130,27 @@ pub fn extend_curve_to_full_range(curve: &crate::Curve) -> crate::Curve {
         phase: None,
         ..Default::default()
     }
+}
+
+fn extrapolate_spl_log_slope(
+    freq: f64,
+    boundary_freq: f64,
+    boundary_spl: f64,
+    neighbor_freq: f64,
+    neighbor_spl: f64,
+) -> f64 {
+    if freq <= 0.0 || boundary_freq <= 0.0 || neighbor_freq <= 0.0 || boundary_freq == neighbor_freq
+    {
+        return boundary_spl;
+    }
+
+    let denom = neighbor_freq.log10() - boundary_freq.log10();
+    if denom.abs() < 1e-12 {
+        return boundary_spl;
+    }
+
+    let slope = (neighbor_spl - boundary_spl) / denom;
+    boundary_spl + slope * (freq.log10() - boundary_freq.log10())
 }
 
 /// Convert Biquad filter to JSON configuration
@@ -1469,11 +1515,11 @@ mod tests {
         assert!(last > 19000.0);
         assert!(last <= 20000.0);
 
-        // SPL at extended low end should equal first measurement value
-        assert_eq!(extended.spl[0], -5.0);
+        // SPL at extended low end should follow the local low-frequency slope.
+        assert!(extended.spl[0] < -5.0);
 
-        // SPL at extended high end should equal last measurement value
-        assert_eq!(*extended.spl.last().unwrap(), -4.0);
+        // SPL at extended high end should follow the local high-frequency slope.
+        assert!(*extended.spl.last().unwrap() < -4.0);
 
         // Original data points should be preserved in the middle
         let orig_start = extended.freq.iter().position(|&f| f == 100.0).unwrap();

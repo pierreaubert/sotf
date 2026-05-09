@@ -305,14 +305,15 @@ pub enum ProcessingMode {
     /// Mixed-phase mode (IIR for minimum-phase + excess phase FIR)
     /// Requires phase data in measurements. Low latency (~10ms).
     MixedPhase,
-    /// Warped IIR mode — biquads designed on a Bark-scale warped frequency axis.
-    /// Concentrates filter resolution in bass/low-mid where room modes live.
-    /// Same latency as LowLatency but perceptually-weighted correction.
+    /// Warped IIR mode — not currently supported by roomeq output/export.
+    /// Validation rejects this mode until warped filter design and serialization
+    /// are integrated end-to-end.
     WarpedIir,
     /// Kautz modal mode — pole-tuned filter targeting detected room modes.
     /// Uses room mode analysis to place filter poles at resonance frequencies.
     /// Gain optimization via linear least-squares (very fast, no DE needed).
     /// Best for small, highly resonant rooms with clear modal problems.
+    /// Returns an error if no room modes are detected.
     KautzModal,
 }
 
@@ -417,9 +418,9 @@ pub enum MultiMeasurementStrategy {
 pub enum Cea2034CorrectionMode {
     /// Correct Listening Window toward flat (best for nearfield <2m)
     Flat,
-    /// Optimize full Harman speaker preference score using all CEA2034 curves
+    /// Unsupported in roomeq; Harman speaker score is anechoic-only
     Score,
-    /// Auto-select based on estimated listening distance from impulse response
+    /// Auto-select the supported roomeq pre-correction from listening distance
     #[default]
     Auto,
 }
@@ -2012,7 +2013,7 @@ pub struct Cea2034CorrectionConfig {
     /// Measurement version on spinorama.org (default: "asr")
     #[serde(default = "default_cea2034_version")]
     pub version: String,
-    /// Correction mode: flat (nearfield), score (farfield), auto (distance-based)
+    /// Correction mode: flat, score (unsupported in roomeq), auto (distance-aware flat)
     #[serde(default)]
     pub correction_mode: Cea2034CorrectionMode,
     /// Manual listening distance override in meters
@@ -2021,7 +2022,7 @@ pub struct Cea2034CorrectionConfig {
     /// System round-trip latency in ms (for distance computation from impulse response)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub system_latency_ms: Option<f64>,
-    /// Distance threshold in meters for auto mode switch (default: 2.0m)
+    /// Distance threshold in meters for auto-mode diagnostics (default: 2.0m)
     #[serde(default = "default_nearfield_threshold")]
     pub nearfield_threshold_m: f64,
     /// Override minimum correction frequency in Hz (Schroeder frequency)

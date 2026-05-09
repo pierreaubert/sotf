@@ -6,6 +6,7 @@ use crate::roomeq::types::{
     LowFreqFilterConfig, OptimizerConfig, SchroederSplitConfig, TargetCurveConfig, TargetShape,
 };
 use log::{debug, info};
+use math_audio_dsp::analysis::compute_average_response;
 use math_audio_iir_fir::Biquad;
 
 /// Optimize EQ with optional Schroeder frequency split.
@@ -46,12 +47,41 @@ pub(in crate::roomeq) fn optimize_eq_with_optional_schroeder(
 
         let mut combined = low_filters;
         combined.extend(high_filters);
-        // Loss is approximate (sum of both passes) — not used for scoring
-        let loss = 0.0;
+        let loss = compute_combined_filter_loss(curve, &combined, optimizer, sample_rate);
         Ok((combined, loss))
     } else {
         eq::optimize_channel_eq(curve, optimizer, target_config, sample_rate)
     }
+}
+
+fn compute_combined_filter_loss(
+    curve: &Curve,
+    filters: &[Biquad],
+    optimizer: &OptimizerConfig,
+    sample_rate: f64,
+) -> f64 {
+    let corrected = if filters.is_empty() {
+        curve.clone()
+    } else {
+        let response = response::compute_peq_complex_response(filters, &curve.freq, sample_rate);
+        response::apply_complex_response(curve, &response)
+    };
+
+    let freqs_f32: Vec<f32> = corrected.freq.iter().map(|&f| f as f32).collect();
+    let spl_f32: Vec<f32> = corrected.spl.iter().map(|&s| s as f32).collect();
+    let mean = compute_average_response(
+        &freqs_f32,
+        &spl_f32,
+        Some((optimizer.min_freq as f32, optimizer.max_freq as f32)),
+    ) as f64;
+    let normalized = &corrected.spl - mean;
+
+    crate::loss::flat_loss(
+        &corrected.freq,
+        &normalized,
+        optimizer.min_freq,
+        optimizer.max_freq,
+    )
 }
 
 /// Optimize EQ with Schroeder frequency split
@@ -208,6 +238,28 @@ pub(in crate::roomeq) fn clamp_filter_q(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::roomeq::types::HighFreqFilterConfig;
+    use ndarray::Array1;
+
+    fn curve_with_bass_peak_and_treble_tilt() -> Curve {
+        let freq = Array1::logspace(10.0, f64::log10(20.0), f64::log10(20000.0), 128);
+        let spl = freq.mapv(|f| {
+            let bass_peak = 8.0 * (-(f / 80.0).log2().powi(2) / (2.0 * 0.20_f64.powi(2))).exp();
+            let treble_tilt = if f > 300.0 {
+                2.0 * (f / 300.0).log2()
+            } else {
+                0.0
+            };
+            80.0 + bass_peak + treble_tilt
+        });
+
+        Curve {
+            freq,
+            spl,
+            phase: None,
+            ..Default::default()
+        }
+    }
 
     #[test]
     fn explicit_low_freq_max_db_respects_cuts_only_setting() {
@@ -240,6 +292,53 @@ mod tests {
         assert_eq!(
             low_freq_gain_bounds(&optimizer, &low_config, false),
             (-14.0, 14.0)
+        );
+    }
+
+    #[test]
+    fn optional_schroeder_split_returns_actual_combined_loss() {
+        let curve = curve_with_bass_peak_and_treble_tilt();
+        let optimizer = OptimizerConfig {
+            num_filters: 2,
+            min_filter_improvement: 0.0,
+            max_iter: 20,
+            population: 6,
+            refine: false,
+            min_freq: 20.0,
+            max_freq: 2000.0,
+            min_q: 0.5,
+            max_q: 4.0,
+            min_db: -6.0,
+            max_db: 3.0,
+            psychoacoustic: false,
+            schroeder_split: Some(SchroederSplitConfig {
+                enabled: true,
+                schroeder_freq: 200.0,
+                low_freq_config: LowFreqFilterConfig {
+                    min_q: 1.0,
+                    max_q: 6.0,
+                    allow_boost: false,
+                    max_db: Some(6.0),
+                },
+                high_freq_config: HighFreqFilterConfig {
+                    max_q: 2.0,
+                    shelving_only: false,
+                },
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let (filters, loss) =
+            optimize_eq_with_optional_schroeder(&curve, &optimizer, None, 48000.0).unwrap();
+        let expected = compute_combined_filter_loss(&curve, &filters, &optimizer, 48000.0);
+
+        assert!(expected > 1e-6, "test curve should not produce zero loss");
+        assert!(
+            (loss - expected).abs() < 1e-9,
+            "reported loss {} did not match combined response loss {}",
+            loss,
+            expected
         );
     }
 }

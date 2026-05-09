@@ -1246,56 +1246,64 @@ pub fn multi_seat_correction_report(
                         let sr_config = spatial_robustness_config_from(
                             &default_all_channel_spatial_robustness(),
                         );
-                        let analysis =
-                            super::spatial_robustness::analyze_spatial_robustness_weighted(
-                                &curves,
-                                &sr_config,
-                                Some(&weights),
-                            );
-                        spatial_variance_peak_db =
-                            analysis.spatial_variance.iter().cloned().reduce(f64::max);
-                        min_correction_depth =
-                            analysis.correction_depth.iter().cloned().reduce(f64::min);
+                        match super::spatial_robustness::analyze_spatial_robustness_weighted(
+                            &curves,
+                            &sr_config,
+                            Some(&weights),
+                        ) {
+                            Ok(analysis) => {
+                                spatial_variance_peak_db =
+                                    analysis.spatial_variance.iter().cloned().reduce(f64::max);
+                                min_correction_depth =
+                                    analysis.correction_depth.iter().cloned().reduce(f64::min);
 
-                        seats = curves
-                            .iter()
-                            .enumerate()
-                            .filter_map(|(idx, seat_curve)| {
-                                predicted_seat_report(
-                                    idx,
-                                    seat_curve,
-                                    result,
-                                    target_band_hz,
-                                    policy.primary_seat,
-                                    *weights.get(idx).unwrap_or(&0.0),
-                                    policy.max_deviation_db,
-                                )
-                            })
-                            .collect();
-                        if seats.len() == seat_count {
-                            let primary_pass = seats
-                                .iter()
-                                .find(|seat| seat.is_primary)
-                                .is_some_and(|seat| seat.pass);
-                            let non_primary_pass = seats
-                                .iter()
-                                .filter(|seat| !seat.is_primary)
-                                .all(|seat| seat.pass);
-                            if primary_pass && non_primary_pass {
-                                status = "applied".to_string();
-                            } else {
-                                status = "failed_constraints".to_string();
-                                if !primary_pass {
-                                    channel_advisories
-                                        .push("primary_seat_constraint_failed".to_string());
-                                }
-                                if !non_primary_pass {
-                                    channel_advisories
-                                        .push("non_primary_seat_constraint_failed".to_string());
+                                seats = curves
+                                    .iter()
+                                    .enumerate()
+                                    .filter_map(|(idx, seat_curve)| {
+                                        predicted_seat_report(
+                                            idx,
+                                            seat_curve,
+                                            result,
+                                            target_band_hz,
+                                            policy.primary_seat,
+                                            *weights.get(idx).unwrap_or(&0.0),
+                                            policy.max_deviation_db,
+                                        )
+                                    })
+                                    .collect();
+                                if seats.len() == seat_count {
+                                    let primary_pass = seats
+                                        .iter()
+                                        .find(|seat| seat.is_primary)
+                                        .is_some_and(|seat| seat.pass);
+                                    let non_primary_pass = seats
+                                        .iter()
+                                        .filter(|seat| !seat.is_primary)
+                                        .all(|seat| seat.pass);
+                                    if primary_pass && non_primary_pass {
+                                        status = "applied".to_string();
+                                    } else {
+                                        status = "failed_constraints".to_string();
+                                        if !primary_pass {
+                                            channel_advisories
+                                                .push("primary_seat_constraint_failed".to_string());
+                                        }
+                                        if !non_primary_pass {
+                                            channel_advisories.push(
+                                                "non_primary_seat_constraint_failed".to_string(),
+                                            );
+                                        }
+                                    }
+                                } else {
+                                    status = "prediction_failed".to_string();
                                 }
                             }
-                        } else {
-                            status = "prediction_failed".to_string();
+                            Err(e) => {
+                                status = "spatial_robustness_invalid_skipped".to_string();
+                                channel_advisories
+                                    .push(format!("spatial_robustness_invalid_skipped: {e}"));
+                            }
                         }
                     }
                     if seats.iter().any(|seat| seat.null_risk) {

@@ -1552,10 +1552,39 @@ fn optimize_room_impl(
     let phase_ir_sync = channel_arrivals.is_empty() && channel_results.len() > 1;
     if phase_ir_sync {
         for (channel_name, result) in &channel_results {
-            if let Some(arrival_ms) =
-                super::time_align::estimate_arrival_from_phase(&result.initial_curve, 200.0, 2000.0)
-            {
-                channel_arrivals.insert(channel_name.clone(), arrival_ms);
+            let Some((phase_min, phase_max)) = super::time_align::phase_arrival_regression_band(
+                &result.initial_curve,
+                200.0,
+                2000.0,
+            ) else {
+                debug!(
+                    "Auto IR sync: channel '{}' has no usable phase-arrival regression band",
+                    channel_name
+                );
+                continue;
+            };
+
+            match super::time_align::estimate_arrival_from_phase_detailed(
+                &result.initial_curve,
+                phase_min,
+                phase_max,
+            ) {
+                Ok(arrival_ms) => {
+                    channel_arrivals.insert(channel_name.clone(), arrival_ms);
+                }
+                Err(super::time_align::PhaseArrivalError::MissingPhase)
+                | Err(super::time_align::PhaseArrivalError::InsufficientBandPoints { .. }) => {
+                    debug!(
+                        "Auto IR sync: channel '{}' lacks usable phase data in {:.1}-{:.1} Hz",
+                        channel_name, phase_min, phase_max
+                    );
+                }
+                Err(err) => {
+                    warn!(
+                        "Auto IR sync: rejected phase-derived arrival for channel '{}' in {:.1}-{:.1} Hz: {:?}",
+                        channel_name, phase_min, phase_max, err
+                    );
+                }
             }
         }
         if channel_arrivals.len() > 1 {
@@ -2046,9 +2075,9 @@ fn optimize_room_impl(
         )?;
     }
 
-    // Group Delay Optimization (GD-Opt v1) was removed in the 2.0 simplification
-    // pass. A redesigned v2 lives in docs/gd_opt_v2_plan.md and is scheduled for a
-    // future release; it will plug in here.
+    // Group Delay Optimization v1 was removed in the 2.0 simplification pass.
+    // The redesigned v2 integration runs below, after phase correction and
+    // before IR/EPA/metadata generation.
 
     // Standalone phase correction (rePhase-style)
     if config.optimizer.phase_correction.is_some() {

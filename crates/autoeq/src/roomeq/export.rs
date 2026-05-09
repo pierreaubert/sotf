@@ -267,7 +267,7 @@ fn easyeffects_filter_type(ft: &str) -> &str {
         "lowshelf" => "Lo Shelf",
         "highshelf" => "Hi Shelf",
         "lowpass" => "Lo-pass",
-        "highpass" => "Hi-pass",
+        "highpass" | "highpassvariableq" => "Hi-pass",
         "notch" => "Notch",
         "bandpass" => "Bandpass",
         "allpass" => "Allpass",
@@ -276,8 +276,8 @@ fn easyeffects_filter_type(ft: &str) -> &str {
 }
 
 /// Map filter type string to PipeWire builtin label
-fn pipewire_filter_label(ft: &str) -> &str {
-    match ft {
+fn pipewire_filter_label(ft: &str) -> anyhow::Result<&'static str> {
+    let label = match ft {
         "peak" => "bq_peaking",
         "lowshelf" => "bq_lowshelf",
         "highshelf" => "bq_highshelf",
@@ -286,8 +286,10 @@ fn pipewire_filter_label(ft: &str) -> &str {
         "notch" => "bq_notch",
         "bandpass" => "bq_bandpass",
         "allpass" => "bq_allpass",
-        other => other,
-    }
+        other => anyhow::bail!("Unsupported PipeWire biquad filter type '{other}'"),
+    };
+
+    Ok(label)
 }
 
 // ============================================================================
@@ -709,10 +711,10 @@ fn export_wavelet(output: &DspChainOutput, sample_rate: f64) -> anyhow::Result<S
         let biquads: Vec<Biquad> = filters
             .iter()
             .map(|f| {
-                let ft = parse_biquad_filter_type(&f.filter_type);
-                Biquad::new(ft, f.freq, sample_rate, f.q, f.gain_db)
+                let ft = parse_biquad_filter_type(&f.filter_type)?;
+                Ok(Biquad::new(ft, f.freq, sample_rate, f.q, f.gain_db))
             })
-            .collect();
+            .collect::<anyhow::Result<_>>()?;
 
         for (i, &freq) in WAVELET_BANDS.iter().enumerate() {
             let mut db = gain;
@@ -752,8 +754,8 @@ fn export_wavelet(output: &DspChainOutput, sample_rate: f64) -> anyhow::Result<S
 }
 
 /// Parse filter type string to BiquadFilterType enum
-fn parse_biquad_filter_type(ft: &str) -> BiquadFilterType {
-    match ft {
+fn parse_biquad_filter_type(ft: &str) -> anyhow::Result<BiquadFilterType> {
+    let filter_type = match ft {
         "peak" => BiquadFilterType::Peak,
         "lowshelf" => BiquadFilterType::Lowshelf,
         "highshelf" => BiquadFilterType::Highshelf,
@@ -763,8 +765,10 @@ fn parse_biquad_filter_type(ft: &str) -> BiquadFilterType {
         "notch" => BiquadFilterType::Notch,
         "bandpass" => BiquadFilterType::Bandpass,
         "allpass" => BiquadFilterType::AllPass,
-        _ => BiquadFilterType::Peak,
-    }
+        other => anyhow::bail!("Unsupported biquad filter type '{other}'"),
+    };
+
+    Ok(filter_type)
 }
 
 // ============================================================================
@@ -833,10 +837,10 @@ fn export_pipewire(output: &DspChainOutput, sample_rate: f64) -> anyhow::Result<
         // EQ filter nodes
         let filters = extract_eq_filters(&all_plugins);
         for (i, f) in filters.iter().enumerate() {
-            let label = pipewire_filter_label(&f.filter_type);
+            let label = pipewire_filter_label(&f.filter_type)?;
             let node_name = format!("{ch_prefix}_eq_{i}");
             match f.filter_type.as_str() {
-                "lowpass" | "highpass" => {
+                "lowpass" | "highpass" | "highpassvariableq" => {
                     writeln!(
                         out,
                         "          {{ type = builtin  name = \"{node_name}\"  label = {label}  control = {{ \"Freq\" = {:.1}  \"Q\" = {:.4} }} }}",
@@ -1135,6 +1139,43 @@ mod tests {
                 timing_diagnostics: None,
                 ctc: None,
             }),
+        }
+    }
+
+    fn make_single_filter_output(filter_type: &str, gain_db: f64) -> DspChainOutput {
+        let mut channels = HashMap::new();
+        channels.insert(
+            "left".to_string(),
+            ChannelDspChain {
+                channel: "left".to_string(),
+                plugins: vec![PluginConfigWrapper {
+                    plugin_type: "eq".to_string(),
+                    parameters: json!({
+                        "filters": [
+                            {
+                                "filter_type": filter_type,
+                                "freq": 80.0,
+                                "q": 0.707,
+                                "db_gain": gain_db,
+                            }
+                        ]
+                    }),
+                }],
+                drivers: None,
+                initial_curve: None,
+                final_curve: None,
+                eq_response: None,
+                target_curve: None,
+                pre_ir: None,
+                post_ir: None,
+            },
+        );
+
+        DspChainOutput {
+            version: "1.3.0".to_string(),
+            global_plugins: Vec::new(),
+            channels,
+            metadata: None,
         }
     }
 
@@ -1516,12 +1557,69 @@ mod tests {
     fn test_highpassvariableq_mapped_correctly() {
         // Bug: highpassvariableq fell through to Peak
         assert_eq!(
-            parse_biquad_filter_type("highpassvariableq"),
+            parse_biquad_filter_type("highpassvariableq").unwrap(),
             BiquadFilterType::HighpassVariableQ
         );
         assert_eq!(camilladsp_filter_type("highpassvariableq"), "Highpass");
         assert_eq!(apo_filter_type("highpassvariableq"), "HP");
-        assert_eq!(pipewire_filter_label("highpassvariableq"), "bq_highpass");
+        assert_eq!(easyeffects_filter_type("highpassvariableq"), "Hi-pass");
+        assert_eq!(
+            pipewire_filter_label("highpassvariableq").unwrap(),
+            "bq_highpass"
+        );
+        assert_eq!(roon_filter_type("highpassvariableq"), "High Pass");
+    }
+
+    #[test]
+    fn test_unknown_biquad_filter_type_is_rejected() {
+        let err = parse_biquad_filter_type("lowsehlf").unwrap_err();
+
+        assert!(
+            err.to_string().contains("Unsupported biquad filter type"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_wavelet_rejects_unknown_filter_type() {
+        let output = make_single_filter_output("lowsehlf", 3.0);
+
+        let err = export_wavelet(&output, 48_000.0).unwrap_err();
+
+        assert!(
+            err.to_string().contains("Unsupported biquad filter type"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_pipewire_rejects_unknown_filter_type() {
+        let output = make_single_filter_output("lowsehlf", 3.0);
+
+        let err = export_pipewire(&output, 48_000.0).unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("Unsupported PipeWire biquad filter type"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_pipewire_highpassvariableq_omits_gain_control() {
+        let output = make_single_filter_output("highpassvariableq", -6.0);
+
+        let conf = export_pipewire(&output, 48_000.0).unwrap();
+
+        assert!(conf.contains("label = bq_highpass"));
+        assert!(
+            conf.contains("control = { \"Freq\" = 80.0  \"Q\" = 0.7070 }"),
+            "highpassvariableq should emit only Freq/Q controls:\n{conf}"
+        );
+        assert!(
+            !conf.contains("\"Gain\" = -6.00"),
+            "PipeWire highpassvariableq must not emit unsupported Gain control:\n{conf}"
+        );
     }
 
     #[test]

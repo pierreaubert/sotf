@@ -1206,16 +1206,22 @@ pub(super) fn process_single_speaker(
                             .multi_measurement
                             .as_ref()
                             .and_then(|mc| mc.weights.as_deref());
-                        let analysis =
-                            super::spatial_robustness::analyze_spatial_robustness_weighted(
-                                &curves, &sr_config, weights,
-                            );
-                        info!(
-                            "  Spatial depth for mixed-phase: mean={:.2}",
-                            analysis.correction_depth.iter().sum::<f64>()
-                                / analysis.correction_depth.len() as f64,
-                        );
-                        Some(analysis.correction_depth)
+                        match super::spatial_robustness::analyze_spatial_robustness_weighted(
+                            &curves, &sr_config, weights,
+                        ) {
+                            Ok(analysis) => {
+                                info!(
+                                    "  Spatial depth for mixed-phase: mean={:.2}",
+                                    analysis.correction_depth.iter().sum::<f64>()
+                                        / analysis.correction_depth.len() as f64,
+                                );
+                                Some(analysis.correction_depth)
+                            }
+                            Err(e) => {
+                                warn!("  Spatial robustness analysis skipped: {e}");
+                                None
+                            }
+                        }
                     }
                     _ => None,
                 }
@@ -1615,21 +1621,17 @@ pub(super) fn process_single_speaker(
             ))
         }
 
-        ProcessingMode::WarpedIir | ProcessingMode::KautzModal => {
-            // Both modes reuse the LowLatency IIR pipeline for now.
-            //
-            // WarpedIir: The warped biquad's benefits come from perceptually-weighted
-            // frequency resolution. Full integration (x2warped_peq) is a future step.
-            // Currently routes through the same optimizer as LowLatency.
-            //
-            // KautzModal: Detects room modes and converts Kautz gains to equivalent
-            // biquad Peak filters. Falls back to standard optimizer if no modes found.
-            let mode_name = match room_config.optimizer.processing_mode {
-                ProcessingMode::WarpedIir => "WarpedIir",
-                ProcessingMode::KautzModal => "KautzModal",
-                _ => unreachable!(),
-            };
-            info!("  {} mode: starting optimization...", mode_name);
+        ProcessingMode::WarpedIir => Err(AutoeqError::InvalidConfiguration {
+            message: "processing_mode=warped_iir is not supported; roomeq currently exports \
+                      standard biquads, so using this mode would silently behave like low_latency"
+                .to_string(),
+        }),
+
+        ProcessingMode::KautzModal => {
+            // KautzModal detects room modes and converts optimized Kautz gains
+            // to equivalent Peak biquads. If no modes are detected, returning
+            // an error is more truthful than silently using the LowLatency path.
+            info!("  KautzModal mode: starting optimization...");
 
             let optimization_curve = if let Some(ref tilt_curve) = target_tilt_curve {
                 Curve {
@@ -1642,96 +1644,72 @@ pub(super) fn process_single_speaker(
                 curve_for_optim.clone()
             };
 
-            let effective_target = if target_tilt_curve.is_some() {
-                None
-            } else {
-                room_config.target_curve.as_ref()
-            };
+            let decomposed_config = super::impulse_analysis::DecomposedCorrectionConfig::default();
+            let room_modes = super::impulse_analysis::detect_room_modes(
+                &optimization_curve.freq,
+                &optimization_curve.spl,
+                &decomposed_config,
+            );
 
-            // KautzModal: try mode detection + Kautz gain optimization first
-            let eq_filters = if matches!(
-                room_config.optimizer.processing_mode,
-                ProcessingMode::KautzModal
-            ) {
-                let decomposed_config =
-                    super::impulse_analysis::DecomposedCorrectionConfig::default();
-                let room_modes = super::impulse_analysis::detect_room_modes(
-                    &optimization_curve.freq,
-                    &optimization_curve.spl,
-                    &decomposed_config,
-                );
+            if room_modes.is_empty() {
+                return Err(AutoeqError::OptimizationFailed {
+                    message: format!(
+                        "KautzModal found no room modes for channel '{}'; use low_latency or \
+                         provide a measurement with clear modal peaks",
+                        channel_name
+                    ),
+                });
+            }
 
-                if !room_modes.is_empty() {
-                    info!(
-                        "  Detected {} room modes, building Kautz filter",
-                        room_modes.len()
-                    );
+            info!(
+                "  Detected {} room modes, building Kautz filter",
+                room_modes.len()
+            );
 
-                    let mode_tuples: Vec<(f64, f64)> =
-                        room_modes.iter().map(|m| (m.frequency, m.q)).collect();
+            let mode_tuples: Vec<(f64, f64)> =
+                room_modes.iter().map(|m| (m.frequency, m.q)).collect();
 
-                    let mut kautz =
-                        math_audio_iir_fir::KautzFilter::from_room_modes(&mode_tuples, sample_rate);
+            let mut kautz =
+                math_audio_iir_fir::KautzFilter::from_room_modes(&mode_tuples, sample_rate);
 
-                    let freqs_f64: Vec<f64> = optimization_curve.freq.iter().copied().collect();
-                    let measured_f64: Vec<f64> = optimization_curve.spl.iter().copied().collect();
-                    let target_f64: Vec<f64> = vec![0.0; freqs_f64.len()];
+            let freqs_f64: Vec<f64> = optimization_curve.freq.iter().copied().collect();
+            let measured_f64: Vec<f64> = optimization_curve.spl.iter().copied().collect();
+            let target_f64: Vec<f64> = vec![0.0; freqs_f64.len()];
 
-                    kautz.optimize_gains(&freqs_f64, &measured_f64, &target_f64);
+            kautz.optimize_gains(&freqs_f64, &measured_f64, &target_f64);
 
-                    // Convert Kautz sections to equivalent Peak biquads
-                    let kautz_filters: Vec<Biquad> = room_modes
-                        .iter()
-                        .zip(kautz.sections.iter())
-                        .filter(|(_, s)| s.gain.abs() > 0.1)
-                        .map(|(mode, section)| {
-                            use math_audio_iir_fir::BiquadFilterType;
-                            Biquad::new(
-                                BiquadFilterType::Peak,
-                                mode.frequency,
-                                sample_rate,
-                                mode.q.max(0.5),
-                                section.gain,
-                            )
-                        })
-                        .collect();
-
-                    info!(
-                        "  KautzModal: {} biquad filters from {} modes",
-                        kautz_filters.len(),
-                        room_modes.len()
-                    );
-                    kautz_filters
-                } else {
-                    info!("  No room modes detected, falling back to standard optimizer");
-                    let (filters, _) = optimize_eq_maybe_multi(
-                        source,
-                        &optimization_curve,
-                        &clamped_optimizer,
-                        effective_target,
+            // Convert Kautz sections to equivalent Peak biquads.
+            let eq_filters: Vec<Biquad> = room_modes
+                .iter()
+                .zip(kautz.sections.iter())
+                .filter(|(_, s)| s.gain.abs() > 0.1)
+                .map(|(mode, section)| {
+                    use math_audio_iir_fir::BiquadFilterType;
+                    Biquad::new(
+                        BiquadFilterType::Peak,
+                        mode.frequency,
                         sample_rate,
-                        channel_name,
-                        callback,
-                        target_tilt_curve.as_ref(),
-                    )?;
-                    filters
-                }
-            } else {
-                // WarpedIir: use standard optimizer (warped evaluation is future work)
-                let (filters, _) = optimize_eq_maybe_multi(
-                    source,
-                    &optimization_curve,
-                    &clamped_optimizer,
-                    effective_target,
-                    sample_rate,
-                    channel_name,
-                    callback,
-                    target_tilt_curve.as_ref(),
-                )?;
-                filters
+                        mode.q.max(0.5),
+                        section.gain,
+                    )
+                })
+                .collect();
+
+            if eq_filters.is_empty() {
+                return Err(AutoeqError::OptimizationFailed {
+                    message: format!(
+                        "KautzModal optimized zero usable filters for channel '{}'; use low_latency \
+                         or adjust the measurement/optimizer range",
+                        channel_name
+                    ),
+                });
             };
 
-            info!("  {} mode: {} EQ filters", mode_name, eq_filters.len());
+            info!(
+                "  KautzModal: {} biquad filters from {} modes",
+                eq_filters.len(),
+                room_modes.len()
+            );
 
             // Combine all filters and build chain (same pattern as LowLatency)
             let preference_filters = if cea2034_active {
@@ -1879,20 +1857,12 @@ pub(super) fn determine_optimization_bands(
 
     let mut bands = Vec::with_capacity(n_drivers);
 
-    // Determine crossover points estimates
-    // If fixed frequencies or range provided, use those.
-    // Otherwise, assume log-spaced distribution.
+    // Determine fixed crossover point estimates. A `frequency_range` is not a
+    // fixed point; it is the search range for each crossover.
     let xover_points = if let Some(ref freqs) = crossover_config.frequencies {
         freqs.clone()
     } else if let Some(freq) = crossover_config.frequency {
         vec![freq]
-    } else if let Some((min, max)) = crossover_config.frequency_range {
-        // If range provided for 2-way, use geometric mean as center estimate
-        // but for bounds calculation, we use the range limits.
-        // Actually, for optimization limits:
-        // Low driver max = max_range * 2
-        // High driver min = min_range / 2
-        vec![min, max] // Placeholder, logic below handles range
     } else {
         Vec::new() // No info
     };
@@ -1900,10 +1870,7 @@ pub(super) fn determine_optimization_bands(
     // Helper to get safe crossover bounds
     let get_xover_bounds = |idx: usize| -> (f64, f64) {
         if let Some((min, max)) = crossover_config.frequency_range {
-            // If explicit range is given, use it for the single crossover (2-way)
-            if n_drivers == 2 && idx == 0 {
-                return (min, max);
-            }
+            return (min, max);
         }
 
         if !xover_points.is_empty() && idx < xover_points.len() {
@@ -1937,4 +1904,94 @@ pub(super) fn determine_optimization_bands(
     }
 
     bands
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ndarray::Array1;
+    use std::collections::HashMap;
+
+    fn flat_curve() -> Curve {
+        Curve {
+            freq: Array1::logspace(10.0, f64::log10(20.0), f64::log10(20000.0), 96),
+            spl: Array1::from_elem(96, 80.0),
+            phase: None,
+            ..Default::default()
+        }
+    }
+
+    fn single_speaker_config(processing_mode: ProcessingMode) -> RoomConfig {
+        let mut speakers = HashMap::new();
+        speakers.insert(
+            "left".to_string(),
+            super::super::types::SpeakerConfig::Single(MeasurementSource::InMemory(flat_curve())),
+        );
+
+        RoomConfig {
+            version: super::super::types::default_config_version(),
+            system: None,
+            speakers,
+            crossovers: None,
+            target_curve: None,
+            optimizer: OptimizerConfig {
+                processing_mode,
+                num_filters: 1,
+                max_iter: 20,
+                population: 6,
+                min_freq: 20.0,
+                max_freq: 500.0,
+                psychoacoustic: false,
+                refine: false,
+                ..Default::default()
+            },
+            recording_config: None,
+            ctc: None,
+            cea2034_cache: None,
+        }
+    }
+
+    #[test]
+    fn kautz_modal_without_detected_modes_returns_error() {
+        let source = MeasurementSource::InMemory(flat_curve());
+        let config = single_speaker_config(ProcessingMode::KautzModal);
+        let output_dir = std::env::temp_dir();
+
+        let result = process_single_speaker(
+            "left",
+            &source,
+            &config,
+            48000.0,
+            &output_dir,
+            None,
+            None,
+            None,
+        );
+
+        assert!(matches!(
+            result,
+            Err(AutoeqError::OptimizationFailed { ref message })
+                if message.contains("KautzModal found no room modes")
+        ));
+    }
+
+    #[test]
+    fn three_way_frequency_range_is_not_treated_as_fixed_crossovers() {
+        let mut config = single_speaker_config(ProcessingMode::LowLatency);
+        config.optimizer.min_freq = 20.0;
+        config.optimizer.max_freq = 20000.0;
+        let crossover = super::super::types::CrossoverConfig {
+            crossover_type: "LR24".to_string(),
+            frequency: None,
+            frequencies: None,
+            frequency_range: Some((200.0, 3000.0)),
+        };
+
+        let bands = determine_optimization_bands(3, &config, &crossover);
+
+        assert_eq!(bands.len(), 3);
+        assert_eq!(bands[0], (20.0, 6000.0));
+        assert_eq!(bands[1], (100.0, 6000.0));
+        assert_eq!(bands[2], (100.0, 20000.0));
+    }
 }

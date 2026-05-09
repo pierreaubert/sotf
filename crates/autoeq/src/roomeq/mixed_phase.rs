@@ -217,32 +217,21 @@ pub fn generate_excess_phase_fir_with_depth(
     };
 
     // Generate FIR from unity magnitude with the correction phase
-    // magnitude = 0 dB everywhere (phase-only correction)
-    let magnitude_db: Vec<f64> = vec![0.0; freq.len()];
-
-    // Use the standard FIR generation with phase override
-    // Since FirPhase::Minimum uses magnitude-derived phase, we need a custom path
-    generate_phase_only_fir(
-        freq.as_slice().unwrap(),
-        &magnitude_db,
-        &correction_phase_deg,
-        &fir_config,
-    )
+    // Use the standard FIR generation shape with phase override. Since
+    // FirPhase::Minimum uses magnitude-derived phase, this needs a custom path.
+    generate_phase_only_fir(freq.as_slice().unwrap(), &correction_phase_deg, &fir_config)
 }
 
 /// Generate a phase-only FIR filter (unity magnitude, specified phase).
 ///
 /// Constructs a complex spectrum with |H(f)| = 1 and φ(f) = correction_phase,
 /// then performs IFFT, windowing, and pre-ringing suppression. After these
-/// time-domain modifications, the magnitude is re-normalized to unity via a
-/// second FFT/IFFT round-trip so the FIR corrects phase without coloring
-/// the magnitude response.
-fn generate_phase_only_fir(
-    freqs: &[f64],
-    _magnitude_db: &[f64],
-    phase_deg: &[f64],
-    config: &FirDesignConfig,
-) -> Vec<f64> {
+/// time-domain modifications, the magnitude is re-normalized to unity from
+/// the modified IR's phase via a second FFT/IFFT round-trip so the FIR
+/// corrects phase without coloring the magnitude response. If pre-ringing
+/// suppression is asymmetric, the renormalized phase follows the suppressed
+/// IR rather than the original requested phase exactly.
+fn generate_phase_only_fir(freqs: &[f64], phase_deg: &[f64], config: &FirDesignConfig) -> Vec<f64> {
     use num_complex::Complex64;
     use rustfft::FftPlanner;
 
@@ -517,7 +506,6 @@ mod tests {
 
         // A phase-only FIR should have approximately unity magnitude response
         let freqs = vec![20.0, 100.0, 1000.0, 10000.0, 20000.0];
-        let magnitude_db = vec![0.0; 5];
         let phase_deg = vec![0.0, -10.0, -30.0, -20.0, -5.0];
 
         let config = FirDesignConfig {
@@ -527,7 +515,7 @@ mod tests {
             ..Default::default()
         };
 
-        let fir = generate_phase_only_fir(&freqs, &magnitude_db, &phase_deg, &config);
+        let fir = generate_phase_only_fir(&freqs, &phase_deg, &config);
         assert_eq!(fir.len(), 511);
 
         // Verify magnitude response is near-unity across audio band
@@ -558,7 +546,6 @@ mod tests {
     fn test_phase_only_fir_zero_phase_is_near_impulse() {
         // Zero correction phase → FIR should be near-identity (impulse at center)
         let freqs = vec![20.0, 100.0, 1000.0, 10000.0, 20000.0];
-        let magnitude_db = vec![0.0; 5];
         let phase_deg = vec![0.0; 5]; // zero correction = identity
 
         let config = FirDesignConfig {
@@ -568,7 +555,7 @@ mod tests {
             ..Default::default()
         };
 
-        let fir = generate_phase_only_fir(&freqs, &magnitude_db, &phase_deg, &config);
+        let fir = generate_phase_only_fir(&freqs, &phase_deg, &config);
         assert_eq!(fir.len(), 255);
 
         // Center tap should dominate (due to windowing it won't be exactly 1.0)
@@ -604,7 +591,7 @@ mod tests {
             ..Default::default()
         };
 
-        let fir = generate_phase_only_fir(&freqs, &[0.0; 5], &phase_deg, &config);
+        let fir = generate_phase_only_fir(&freqs, &phase_deg, &config);
 
         // All taps should be real-valued (finite, no NaN)
         for (i, &v) in fir.iter().enumerate() {

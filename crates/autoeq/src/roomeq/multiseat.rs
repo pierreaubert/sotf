@@ -514,8 +514,15 @@ fn create_eval_frequency_grid(
         }
     }
 
-    // Create log-spaced grid
-    let num_points = 50; // Sufficient for sub-bass optimization
+    if f_max <= f_min {
+        return Array1::from(vec![f_min]);
+    }
+
+    // Create a log-spaced grid at roughly constant points/octave. Keep the
+    // historical 50-point minimum for sub-bass, but increase density when the
+    // requested range widens into bass-management crossover studies.
+    let octaves = (f_max / f_min).log2();
+    let num_points = ((octaves * 24.0).ceil() as usize).max(50);
     let log_min = f_min.log10();
     let log_max = f_max.log10();
 
@@ -559,10 +566,14 @@ fn interpolate_curve_to_grid(curve: &Curve, freqs: &Array1<f64>) -> Result<Vec<C
         // Find bracketing indices
         let (lower_idx, upper_idx) = find_bracket_indices(&curve.freq, f);
 
-        // Linear interpolation for SPL
+        // Log-frequency interpolation for SPL and phase. Measurement grids are
+        // commonly log-spaced, and this keeps low-frequency midpoints centered
+        // perceptually and numerically.
         let f_low = curve.freq[lower_idx];
         let f_high = curve.freq[upper_idx];
-        let t = if f_high > f_low {
+        let t = if f_high > f_low && f_low > 0.0 && f > 0.0 {
+            (f.ln() - f_low.ln()) / (f_high.ln() - f_low.ln())
+        } else if f_high > f_low {
             (f - f_low) / (f_high - f_low)
         } else {
             0.0
@@ -2603,6 +2614,50 @@ mod tests {
             phase_deg.abs() > 170.0,
             "Phase should be near ±180°, got {:.1}°",
             phase_deg
+        );
+    }
+
+    #[test]
+    fn test_interpolation_uses_log_frequency_fraction() {
+        let curve = Curve {
+            freq: Array1::from(vec![20.0, 80.0]),
+            spl: Array1::from(vec![0.0, 12.0]),
+            phase: Some(Array1::from(vec![0.0, 120.0])),
+            ..Default::default()
+        };
+        let grid = Array1::from(vec![40.0]);
+
+        let result = interpolate_curve_to_grid(&curve, &grid).expect("Should interpolate");
+        let spl_db = 20.0 * result[0].norm().log10();
+        let phase_deg = result[0].arg().to_degrees();
+
+        assert!(
+            (spl_db - 6.0).abs() < 1e-9,
+            "expected log-frequency midpoint SPL of 6 dB, got {spl_db}"
+        );
+        assert!(
+            (phase_deg - 60.0).abs() < 1e-9,
+            "expected log-frequency midpoint phase of 60 degrees, got {phase_deg}"
+        );
+    }
+
+    #[test]
+    fn test_eval_grid_adapts_to_wide_frequency_range() {
+        let curve = Curve {
+            freq: Array1::from(vec![20.0, 500.0]),
+            spl: Array1::from(vec![0.0, 0.0]),
+            phase: Some(Array1::from(vec![0.0, 0.0])),
+            ..Default::default()
+        };
+        let ms =
+            MultiSeatMeasurements::new(vec![vec![curve.clone(), curve]]).expect("Should create");
+
+        let freqs = create_eval_frequency_grid(&ms, 20.0, 500.0);
+
+        assert!(
+            freqs.len() > 50,
+            "wide bass-management ranges need denser sampling, got {} points",
+            freqs.len()
         );
     }
 

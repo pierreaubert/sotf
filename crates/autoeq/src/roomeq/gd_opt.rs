@@ -755,28 +755,23 @@ fn compute_sum_gd(
         .map(|ch_idx| decode_channel_params(params, ch_idx, config))
         .collect();
 
-    // We need adjacent bins for finite-difference GD computation.
-    // For each band index, compute sum phase at that bin and the next.
+    // We need adjacent in-band bins for finite-difference GD computation.
+    // Interior bins use forward differences; the final bin uses a backward
+    // difference so it is not pulled toward an out-of-band raw-grid neighbor.
     let mut gd_ms = Vec::with_capacity(band_indices.len());
 
     for (bi, &idx) in band_indices.iter().enumerate() {
-        // Need idx+1 for forward difference
-        let idx_next = if bi + 1 < band_indices.len() {
-            band_indices[bi + 1]
-        } else if idx + 1 < channels[0].freq.len() {
-            idx + 1
+        let (idx0, idx1) = if bi + 1 < band_indices.len() {
+            (idx, band_indices[bi + 1])
+        } else if bi > 0 {
+            (band_indices[bi - 1], idx)
         } else {
-            // Can't compute GD at last bin
-            if !gd_ms.is_empty() {
-                gd_ms.push(*gd_ms.last().unwrap());
-            } else {
-                gd_ms.push(0.0);
-            }
+            gd_ms.push(0.0);
             continue;
         };
 
-        let f0 = channels[0].freq[idx];
-        let f1 = channels[0].freq[idx_next];
+        let f0 = channels[0].freq[idx0];
+        let f1 = channels[0].freq[idx1];
         let omega0 = 2.0 * PI * f0;
         let omega1 = 2.0 * PI * f1;
 
@@ -785,8 +780,8 @@ fn compute_sum_gd(
         let mut sum1 = Complex64::new(0.0, 0.0);
 
         for (ch, cp) in channels.iter().zip(ch_params.iter()) {
-            sum0 += channel_complex_at(ch, idx, cp, config);
-            sum1 += channel_complex_at(ch, idx_next, cp, config);
+            sum0 += channel_complex_at(ch, idx0, cp, config);
+            sum1 += channel_complex_at(ch, idx1, cp, config);
         }
 
         // GD = -dφ/dω
@@ -829,10 +824,8 @@ fn compute_sum_gd_rms(
         })
         .collect();
 
-    // Target: median GD (flattest achievable reference per §3.1)
-    let mut gd_sorted = gd.clone();
-    gd_sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let target = gd_sorted[gd_sorted.len() / 2];
+    // Target: coherence-weighted median GD (flattest achievable reference per §3.1)
+    let target = weighted_median(&gd, &weights);
 
     // Weighted RMS deviation from target
     let mut weighted_sum = 0.0;
@@ -849,6 +842,39 @@ fn compute_sum_gd_rms(
     } else {
         0.0
     }
+}
+
+fn weighted_median(values: &[f64], weights: &[f64]) -> f64 {
+    if values.is_empty() {
+        return 0.0;
+    }
+
+    let mut pairs: Vec<(f64, f64)> = values
+        .iter()
+        .copied()
+        .zip(weights.iter().copied())
+        .filter(|(value, weight)| value.is_finite() && weight.is_finite() && *weight > 0.0)
+        .collect();
+
+    if pairs.is_empty() {
+        let mut sorted = values.to_vec();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        return sorted[sorted.len() / 2];
+    }
+
+    pairs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    let total_weight: f64 = pairs.iter().map(|(_, weight)| *weight).sum();
+    let midpoint = total_weight * 0.5;
+    let mut cumulative = 0.0;
+
+    for (value, weight) in pairs.iter().copied() {
+        cumulative += weight;
+        if cumulative >= midpoint {
+            return value;
+        }
+    }
+
+    pairs.last().map(|(value, _)| *value).unwrap_or(0.0)
 }
 
 /// The objective function for DE: coherence-weighted RMS GD of the sum.
@@ -1116,6 +1142,36 @@ mod tests {
             rms_high,
             rms,
         );
+    }
+
+    #[test]
+    fn test_sum_gd_last_band_bin_uses_in_band_backward_difference() {
+        let freq = Array1::from_vec(vec![20.0, 30.0, 40.0, 1000.0]);
+        let channel = ChannelMeasurementInput {
+            freq,
+            spl: Array1::zeros(4),
+            phase: Array1::from_vec(vec![0.0, -0.1, -0.2, -10.0]),
+            coherence: Array1::from_elem(4, 0.95),
+        };
+        let channels = vec![channel];
+        let band_indices = vec![0, 1, 2];
+        let identity = vec![0.0; param_count(1, &GdOptConfig::default())];
+
+        let gd = compute_sum_gd(&channels, &identity, &band_indices, &GdOptConfig::default());
+
+        assert_eq!(gd.len(), band_indices.len());
+        assert!(
+            (gd[2] - gd[1]).abs() < 1e-9,
+            "last in-band GD should use backward difference; got {:?}",
+            gd
+        );
+    }
+
+    #[test]
+    fn test_gd_target_uses_coherence_weighted_median() {
+        let target = weighted_median(&[0.0, 100.0, 101.0], &[10.0, 0.1, 0.1]);
+
+        assert_eq!(target, 0.0);
     }
 
     #[test]

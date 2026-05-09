@@ -466,7 +466,9 @@ fn interpolate_curve_complex(curve: &Curve, new_freqs: &Array1<f64>) -> Result<V
 
         let f_low = curve.freq[lower_idx];
         let f_high = curve.freq[upper_idx];
-        let t = if f_high > f_low {
+        let t = if f >= f_low && f <= f_high && f_high > f_low && f_low > 0.0 && f > 0.0 {
+            (f.ln() - f_low.ln()) / (f_high.ln() - f_low.ln())
+        } else if f_high > f_low {
             (f - f_low) / (f_high - f_low)
         } else {
             0.0
@@ -683,6 +685,29 @@ mod tests {
         assert!(
             (high_phase - 40.0).abs() < 1e-9,
             "expected high-edge extrapolated phase near 40 degrees, got {high_phase}"
+        );
+    }
+
+    #[test]
+    fn test_complex_interpolation_uses_log_frequency_fraction() {
+        let curve = Curve {
+            freq: Array1::from_vec(vec![20.0, 80.0]),
+            spl: Array1::from_vec(vec![0.0, 12.0]),
+            phase: Some(Array1::from_vec(vec![0.0, 120.0])),
+            ..Default::default()
+        };
+
+        let values = interpolate_curve_complex(&curve, &Array1::from_vec(vec![40.0])).unwrap();
+        let spl_db = 20.0 * values[0].norm().log10();
+        let phase_deg = values[0].arg().to_degrees();
+
+        assert!(
+            (spl_db - 6.0).abs() < 1e-9,
+            "expected log-frequency midpoint SPL of 6 dB, got {spl_db}"
+        );
+        assert!(
+            (phase_deg - 60.0).abs() < 1e-9,
+            "expected log-frequency midpoint phase of 60 degrees, got {phase_deg}"
         );
     }
 
