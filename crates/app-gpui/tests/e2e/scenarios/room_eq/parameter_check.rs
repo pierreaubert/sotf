@@ -49,7 +49,7 @@ impl TestScenario for RoomEqParameterCheckScenario {
             app.measurement_state
                 .room_eq_state
                 .optimizer_config
-                .algorithm = "nlopt:neldermead".to_string();
+                .algorithm = "autoeq:cmaes".to_string();
             app.measurement_state
                 .room_eq_state
                 .optimizer_config
@@ -74,7 +74,7 @@ impl TestScenario for RoomEqParameterCheckScenario {
 
         driver.read_app(|app| {
             let config = &app.measurement_state.room_eq_state.optimizer_config;
-            assert_eq!(config.algorithm, "nlopt:neldermead");
+            assert_eq!(config.algorithm, "autoeq:cmaes");
             assert_eq!(config.num_filters, 8);
             assert!((config.min_q - 0.8).abs() < 0.001);
             assert!((config.max_q - 4.0).abs() < 0.001);

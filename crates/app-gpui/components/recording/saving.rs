@@ -49,7 +49,8 @@ impl PlayerView {
             let sp = &snap.app.measurement_state.spinorama_eq_state;
             let rec = &snap.app.measurement_state.recording_state;
             let catalog_missing = sp.available_speakers.is_empty() && !sp.loading_speakers;
-            let speakers_unsynced = rec.channel_speakers.len() != rec.channel_recordings.len();
+            let speakers_unsynced =
+                rec.channel_speakers.len() != rec.playback_config.channel_mappings.len();
             catalog_missing || speakers_unsynced
         };
         if needs_fetch {
@@ -622,16 +623,16 @@ impl PlayerView {
 
         // Snapshot the per-row (channel_name, current_value) pairs so we
         // can build the dropdown without borrowing `state` into the
-        // listeners. The `channel_speakers` vec is kept in sync with
-        // `channel_recordings` by `sync_channel_speakers_length` at
-        // render entry.
+        // listeners. Speaker identity is per physical playback channel,
+        // not per captured mic/position row.
         let rows: Vec<(usize, String, String)> = rec
-            .channel_recordings
+            .playback_config
+            .channel_mappings
             .iter()
             .enumerate()
-            .map(|(i, r)| {
+            .map(|(i, mapping)| {
                 let current = rec.channel_speakers.get(i).cloned().unwrap_or_default();
-                (i, r.channel_name.clone(), current)
+                (i, mapping.group_name.clone(), current)
             })
             .collect();
         let view = cx.entity().clone();

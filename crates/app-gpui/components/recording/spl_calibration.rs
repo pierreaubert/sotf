@@ -32,12 +32,13 @@ impl PlayerView {
         let translations = state.app.ui_state.translations.clone();
         let rec = &state.app.measurement_state.recording_state;
         let cal = rec.spl_calibration_capture.clone();
+        let signal_level_db = rec.signal_level_db;
         let running = matches!(cal.status, SplCalibrationCaptureStatus::Running { .. });
 
         let status_line = match &cal.status {
             SplCalibrationCaptureStatus::Idle => format!(
-                "Ready — {:.0} Hz @ amp {:.3} for {:.1}s on ch {}",
-                cal.reference_freq_hz, cal.tone_amp, cal.duration_s, cal.output_channel
+                "Ready — {:.0} Hz @ {:.1} dBFS for {:.1}s on ch {}",
+                cal.reference_freq_hz, signal_level_db, cal.duration_s, cal.output_channel
             ),
             SplCalibrationCaptureStatus::Running { .. } => {
                 "Tone playing — read your SPL meter now…".to_string()
@@ -104,6 +105,35 @@ impl PlayerView {
                 .size(TextSize::Sm),
             )
             .child(Text::new(status_line).size(TextSize::Sm))
+            .child({
+                let view = cx.entity().clone();
+                HStack::new()
+                    .spacing(StackSpacing::Sm)
+                    .align(StackAlign::Center)
+                    .child(Text::new(translations.recording_level_label).size(TextSize::Sm))
+                    .child(
+                        NumberInput::new("spl_calibration_signal_level")
+                            .value(signal_level_db as f64)
+                            .min(-60.0)
+                            .max(6.0)
+                            .step(1.0)
+                            .decimals(0)
+                            .unit("dBFS")
+                            .size(NumberInputSize::Sm)
+                            .width(120.0)
+                            .on_change(move |val, _window, cx| {
+                                view.update(cx, |this, cx| {
+                                    this.state.update(cx, |state, _| {
+                                        let rec = &mut state.app.measurement_state.recording_state;
+                                        rec.signal_level_db = val as f32;
+                                        rec.spl_calibration_capture.tone_amp =
+                                            10.0_f32.powf(val as f32 / 20.0).clamp(0.0, 1.0);
+                                    });
+                                    cx.notify();
+                                });
+                            }),
+                    )
+            })
             .child(start_button);
 
         if let Some(r) = cal.engine_result.as_ref() {
@@ -182,9 +212,10 @@ impl PlayerView {
             let state = self.state.read(cx);
             let rec = &state.app.measurement_state.recording_state;
             let cal = &rec.spl_calibration_capture;
+            let tone_amp = 10.0_f32.powf(rec.signal_level_db / 20.0).clamp(0.0, 1.0);
             (
                 cal.reference_freq_hz,
-                cal.tone_amp,
+                tone_amp,
                 cal.duration_s,
                 cal.sample_rate,
                 cal.output_channel,
@@ -206,6 +237,8 @@ impl PlayerView {
             rec.spl_calibration_capture.status =
                 SplCalibrationCaptureStatus::Running { started_at_ms };
             rec.spl_calibration_capture.engine_result = None;
+            rec.spl_calibration_capture.tone_amp =
+                10.0_f32.powf(rec.signal_level_db / 20.0).clamp(0.0, 1.0);
             cx.notify();
             rec.spl_cancel_requested.clone()
         });

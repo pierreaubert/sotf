@@ -591,6 +591,7 @@ fn spawn_probe_capture(app: &mut App) {
     let silence_ms = app.recording.probe_capture.silence_duration_ms;
     let sample_rate = app.recording.probe_capture.sample_rate;
     let input_channel = app.recording.probe_capture.input_channel;
+    let signal_level_db = app.recording.signal_level_db;
     let output_device = Some(app.recording.playback_config.device_name.clone());
     let input_device = Some(app.recording.recording_config.device_name.clone());
 
@@ -618,6 +619,7 @@ fn spawn_probe_capture(app: &mut App) {
             input_device.as_deref(),
             input_channel,
             &wav_path,
+            signal_level_db,
             None,
         )
         .map(|r| (r, wav_path_str));
@@ -1025,6 +1027,7 @@ fn spawn_bass_anchor_capture(app: &mut App) {
     let silence_ms = app.recording.bass_anchor_capture.silence_duration_ms;
     let sample_rate = app.recording.bass_anchor_capture.sample_rate;
     let input_channel = app.recording.bass_anchor_capture.input_channel;
+    let signal_level_db = app.recording.signal_level_db;
     let output_device = Some(app.recording.playback_config.device_name.clone());
     let input_device = Some(app.recording.recording_config.device_name.clone());
 
@@ -1053,6 +1056,7 @@ fn spawn_bass_anchor_capture(app: &mut App) {
             input_device.as_deref(),
             input_channel,
             &wav_path,
+            signal_level_db,
             None,
         )
         .map(|r| (r, wav_path_str));

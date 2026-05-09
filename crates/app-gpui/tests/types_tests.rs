@@ -726,6 +726,7 @@ fn test_crossover_type_default() {
 fn test_room_eq_algorithm_all() {
     let all = RoomEqAlgorithm::all();
     assert_eq!(all.len(), 4);
+    assert!(!all.contains(&RoomEqAlgorithm::NelderMead));
 }
 
 #[test]
@@ -739,12 +740,12 @@ fn test_room_eq_algorithm_as_str() {
         RoomEqAlgorithm::BayesianOptimization.as_str(),
         "Bayesian Optimization"
     );
-    assert_eq!(RoomEqAlgorithm::NelderMead.as_str(), "Nelder-Mead");
+    assert_eq!(RoomEqAlgorithm::CmaEs.as_str(), "CMA-ES");
 }
 
 #[test]
 fn test_room_eq_algorithm_to_autoeq_string() {
-    assert_eq!(RoomEqAlgorithm::Cobyla.to_autoeq_string(), "cobyla");
+    assert_eq!(RoomEqAlgorithm::Cobyla.to_autoeq_string(), "autoeq:cobyla");
     assert_eq!(
         RoomEqAlgorithm::DifferentialEvolution.to_autoeq_string(),
         "autoeq:de"
@@ -753,10 +754,7 @@ fn test_room_eq_algorithm_to_autoeq_string() {
         RoomEqAlgorithm::BayesianOptimization.to_autoeq_string(),
         "autoeq:bo"
     );
-    assert_eq!(
-        RoomEqAlgorithm::NelderMead.to_autoeq_string(),
-        "nelder-mead"
-    );
+    assert_eq!(RoomEqAlgorithm::CmaEs.to_autoeq_string(), "autoeq:cmaes");
 }
 
 // ============================================================================
@@ -902,6 +900,32 @@ fn test_recording_state_init_multi_position_multi_mic() {
     );
     assert_eq!(state.channel_recordings[7].mic_index, 1);
     assert_eq!(state.channel_recordings[7].mic_position_index, 1);
+}
+
+#[test]
+fn test_channel_speakers_are_per_playback_channel_for_save() {
+    let mut state = RecordingState::default();
+    state.playback_config.channel_mappings = vec![
+        ChannelMapping::single(1, "L"),
+        ChannelMapping::single(2, "R"),
+    ];
+    state.recording_config.num_positions = 2;
+    state.recording_config.channel_mappings = vec![0, 1];
+
+    state.init_channel_recordings();
+    state.sync_channel_speakers_length();
+
+    assert_eq!(state.channel_recordings.len(), 8);
+    assert_eq!(state.channel_speakers.len(), 2);
+
+    state.channel_speakers[0] = "Acme Left".to_string();
+    state.channel_speakers[1] = "Acme Right".to_string();
+
+    let saved = state.channel_speakers_map_for_save().unwrap();
+    assert_eq!(saved.len(), 2);
+    assert_eq!(saved.get("L").map(String::as_str), Some("Acme Left"));
+    assert_eq!(saved.get("R").map(String::as_str), Some("Acme Right"));
+    assert!(!saved.contains_key("L (Pos 1 / Mic 1)"));
 }
 
 #[test]

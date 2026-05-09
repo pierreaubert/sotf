@@ -1,8 +1,9 @@
 //! Room EQ configuration and serialization tests.
 
 use sotf_audio_player::{
-    EQFilter, PluginGraph, PluginSettings, PluginType, recording_types::CtcMatrixExportStrategy,
-    room_eq_types::parse_eq_filters_from_json,
+    EQFilter, PluginGraph, PluginSettings, PluginType,
+    recording_types::{CtcMatrixExportStrategy, DelayProbeChannelResult, DelayProbeResults},
+    room_eq_types::{DelayDetectionStatus, parse_eq_filters_from_json},
 };
 use sotf_audio_player_gpui::{
     ChannelMeasurement, ChannelRecording, ChannelRecordingState, RecordingResult, RecordingState,
@@ -65,12 +66,18 @@ fn test_room_eq_to_room_config_simple() {
 #[test]
 fn test_room_eq_to_room_config_preserves_raw_sweep_ctc_config() {
     let mut state = RoomEqState::default();
+    state.channel_measurements = vec![
+        make_dummy_measurement("L"),
+        make_dummy_measurement("R"),
+        make_dummy_measurement("LFE [mic 1]"),
+    ];
+    state.init_speaker_configs();
     state.ctc_config = Some(autoeq::roomeq::CtcConfig {
         enabled: true,
         matrix_source: "raw_sweep".to_string(),
         reference_sweep: Some(PathBuf::from("ctc_reference_sweep.wav")),
         measurements: Some(autoeq::roomeq::CtcMeasurementConfig {
-            speakers: vec!["L".to_string(), "R".to_string()],
+            speakers: vec!["L".to_string(), "R".to_string(), "LFE [mic 1]".to_string()],
             mics: vec!["left_ear".to_string(), "right_ear".to_string()],
             head_positions: Vec::new(),
             files: Vec::new(),
@@ -84,6 +91,17 @@ fn test_room_eq_to_room_config_preserves_raw_sweep_ctc_config() {
     assert_eq!(
         ctc.reference_sweep,
         Some(PathBuf::from("ctc_reference_sweep.wav"))
+    );
+    let system = config.system.expect("ctc requires system config");
+    assert_eq!(system.speakers.get("L").map(String::as_str), Some("L"));
+    assert_eq!(system.speakers.get("R").map(String::as_str), Some("R"));
+    assert_eq!(
+        system.speakers.get("LFE [mic 1]").map(String::as_str),
+        Some("LFE [mic 1]")
+    );
+    assert!(
+        system.subwoofers.is_some(),
+        "CTC home-cinema config with LFE must include subwoofer config"
     );
 }
 
@@ -153,6 +171,59 @@ fn test_load_from_recording_marks_ctc_fallback_as_measured() {
             .iter()
             .all(|file| file.ir.is_some() && file.raw_sweep.is_none())
     );
+}
+
+#[test]
+fn test_load_from_recording_applies_probe_delay_results() {
+    let mut recording = RecordingState::default();
+    recording.playback_config.device_name = "Output Device".to_string();
+    recording.recording_config.device_name = "Input Device".to_string();
+    recording.probe_capture.sample_rate = 96_000;
+    recording.probe_capture.input_channel = 1;
+    recording.probe_capture.results = Some(DelayProbeResults {
+        sample_rate: 96_000,
+        channels: vec![
+            DelayProbeChannelResult {
+                channel_name: "L".to_string(),
+                channel_index: 0,
+                arrival_ms: 2.5,
+                gain_db: -12.0,
+                snr_db: 42.0,
+            },
+            DelayProbeChannelResult {
+                channel_name: "R".to_string(),
+                channel_index: 1,
+                arrival_ms: 4.0,
+                gain_db: -13.0,
+                snr_db: 41.0,
+            },
+        ],
+        alignment_delays_ms: vec![1.5, 0.0],
+    });
+
+    let mut room_eq = RoomEqState::default();
+    room_eq.load_from_recording(&recording);
+
+    assert_eq!(
+        room_eq.delay_detection.status,
+        DelayDetectionStatus::Complete
+    );
+    assert_eq!(room_eq.delay_detection.sample_rate, 96_000);
+    assert_eq!(room_eq.delay_detection.input_channel, 1);
+    assert_eq!(
+        room_eq.delay_detection.output_device_name.as_deref(),
+        Some("Output Device")
+    );
+    assert_eq!(
+        room_eq.delay_detection.input_device_name.as_deref(),
+        Some("Input Device")
+    );
+    let arrivals = room_eq
+        .delay_detection
+        .probe_arrival_map()
+        .expect("probe arrivals");
+    assert_eq!(arrivals.get("L").copied(), Some(2.5));
+    assert_eq!(arrivals.get("R").copied(), Some(4.0));
 }
 
 #[test]
@@ -973,7 +1044,7 @@ fn test_import_preserves_seed_and_refine() {
     let mut backend = make_bare_backend_config();
     backend.seed = Some(42);
     backend.refine = false;
-    backend.local_algo = "neldermead".to_string();
+    backend.local_algo = "cobyla".to_string();
 
     let mut state = RoomEqState::default();
     state.channel_measurements.push(make_dummy_measurement("L"));
@@ -992,7 +1063,7 @@ fn test_import_preserves_seed_and_refine() {
         "refine=false must survive smart defaults"
     );
     assert_eq!(
-        state.optimizer_config.local_algo, "neldermead",
+        state.optimizer_config.local_algo, "cobyla",
         "local_algo must survive smart defaults"
     );
 }

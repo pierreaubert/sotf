@@ -43,13 +43,7 @@ impl PlayerView {
             min_freq: config.min_freq,
             max_freq: config.max_freq,
             peq_model: config.peq_model.clone(),
-            algo: match config.algorithm {
-                crate::app::types::RoomEqAlgorithm::Cobyla => "nlopt:cobyla",
-                crate::app::types::RoomEqAlgorithm::DifferentialEvolution => "autoeq:de",
-                crate::app::types::RoomEqAlgorithm::BayesianOptimization => "autoeq:bo",
-                crate::app::types::RoomEqAlgorithm::NelderMead => "nlopt:neldermead",
-            }
-            .to_string(),
+            algo: config.algorithm.to_autoeq_string().to_string(),
             population: config.population,
             maxeval: config.max_iter,
             tolerance: config.tolerance,
@@ -263,10 +257,10 @@ impl PlayerView {
                             .spinorama_eq_state
                             .optimizer_config
                             .algorithm = match algo {
-                            "nlopt:cobyla" => RoomEqAlgorithm::Cobyla,
+                            "autoeq:cobyla" | "cobyla" => RoomEqAlgorithm::Cobyla,
                             "autoeq:de" => RoomEqAlgorithm::DifferentialEvolution,
                             "autoeq:bo" => RoomEqAlgorithm::BayesianOptimization,
-                            "nlopt:neldermead" => RoomEqAlgorithm::NelderMead,
+                            "autoeq:cmaes" | "cma-es" => RoomEqAlgorithm::CmaEs,
                             _ => RoomEqAlgorithm::Cobyla,
                         };
                         state

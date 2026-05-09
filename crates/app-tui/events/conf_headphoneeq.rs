@@ -781,7 +781,7 @@ fn adjust_headphone_eq_field(app: &mut App, delta: i32) {
         13 => c.de_cr = (c.de_cr + delta as f64 * 0.1).clamp(0.1, 1.0),
         14 => c.refine = !c.refine,
         15 => {
-            c.local_algo = super::cycle_string(&c.local_algo, &["cobyla", "nelder-mead"], delta);
+            c.local_algo = super::cycle_string(&c.local_algo, &["cobyla"], delta);
         }
         16 => c.smooth = !c.smooth,
         17 => {

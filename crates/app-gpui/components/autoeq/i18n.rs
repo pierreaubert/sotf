@@ -318,7 +318,7 @@ impl AutoEqTranslations {
         );
         t.insert((Language::English, DescFrequencyRange), "The frequency bounds for filter placement. Filters will only be placed within this range.");
         t.insert((Language::English, DescPeqModel), "'pk' = peak filters only. 'hp-pk' adds a highpass. 'hp-pk-lp' adds both highpass and lowpass. 'ls-pk-hs' adds shelf filters. 'free' allows any combination.");
-        t.insert((Language::English, DescAlgorithm), "The optimization method. DE (Differential Evolution) is a robust global search. COBYLA/BOBYQA are fast local methods. PSO/RGA/TLBO are alternative metaheuristics.");
+        t.insert((Language::English, DescAlgorithm), "The optimization method. DE (Differential Evolution) is a robust global search. COBYLA is a fast local method. CMA-ES and PSO/RGA/TLBO are alternative metaheuristics.");
         t.insert((Language::English, DescPopulation), "Number of candidate solutions in the population-based search. Larger populations explore more but take longer.");
         t.insert((Language::English, DescMaxEvaluations), "Maximum number of objective function evaluations. The optimizer stops after this many, even if not converged.");
         t.insert((Language::English, DescTolerance), "Convergence threshold. The optimizer stops early when improvement drops below this value.");
@@ -330,7 +330,7 @@ impl AutoEqTranslations {
             (Language::English, DescEnableRefine),
             "Run a local optimizer after the global search finishes.",
         );
-        t.insert((Language::English, DescLocalAlgorithm), "The local optimizer used for refinement. COBYLA is derivative-free and robust. BOBYQA is faster but less stable near constraints.");
+        t.insert((Language::English, DescLocalAlgorithm), "The local optimizer used for refinement. COBYLA is derivative-free and robust near constraints.");
         t.insert((Language::English, DescTiltType), "'Harman' applies the Harman research-based slope. 'Custom' lets you set the slope manually. 'Flat' disables tilt.");
         t.insert(
             (Language::English, DescSlopeDbOct),
@@ -417,7 +417,7 @@ impl AutoEqTranslations {
         t.insert((Language::English, TipQRange), "Keep max Q below 10 to avoid ringing. Q around 1-2 gives natural-sounding corrections.");
         t.insert((Language::English, TipFrequencyRange), "For room EQ, restrict to the region where you have reliable measurements (e.g., 20-500 Hz for subwoofers).");
         t.insert((Language::English, TipPeqModel), "For headphone EQ, 'pk' is usually sufficient. For speakers, 'hp-pk-lp' or 'ls-pk-hs' gives better low/high frequency control.");
-        t.insert((Language::English, TipAlgorithm), "'autoeq:de' is the best default — it's a tuned DE variant. Use 'nlopt:cobyla' for fast local refinement only.");
+        t.insert((Language::English, TipAlgorithm), "'autoeq:de' is the best default — it's a tuned DE variant. Use 'autoeq:cobyla' for fast local refinement only.");
         t.insert(
             (Language::English, TipPopulation),
             "50-200 for quick results, 500+ for thorough searches on difficult targets.",
@@ -443,7 +443,7 @@ impl AutoEqTranslations {
         );
         t.insert(
             (Language::English, TipLocalAlgorithm),
-            "COBYLA is the safest choice. Try BOBYQA if COBYLA is slow.",
+            "COBYLA is the local refinement optimizer.",
         );
         t.insert(
             (Language::English, TipTiltType),
@@ -608,7 +608,7 @@ impl AutoEqTranslations {
         t.insert((Language::French, DescQRange), "Bande passante de chaque filtre. Q faible = large et doux, Q élevé = étroit et chirurgical.");
         t.insert((Language::French, DescFrequencyRange), "Les limites de fréquence pour le placement des filtres. Les filtres ne seront placés que dans cette plage.");
         t.insert((Language::French, DescPeqModel), "'pk' = filtres peak uniquement. 'hp-pk' ajoute un passe-haut. 'hp-pk-lp' ajoute un passe-haut et un passe-bas. 'ls-pk-hs' ajoute des filtres shelf. 'free' permet toute combinaison.");
-        t.insert((Language::French, DescAlgorithm), "La méthode d'optimisation. DE (Differential Evolution) est une recherche globale robuste. COBYLA/BOBYQA sont des méthodes locales rapides. PSO/RGA/TLBO sont des métaheuristiques alternatives.");
+        t.insert((Language::French, DescAlgorithm), "La méthode d'optimisation. DE (Differential Evolution) est une recherche globale robuste. COBYLA est une méthode locale rapide. CMA-ES et PSO/RGA/TLBO sont des métaheuristiques alternatives.");
         t.insert((Language::French, DescPopulation), "Nombre de solutions candidates dans la recherche basée sur la population. Des populations plus grandes explorent plus mais prennent plus de temps.");
         t.insert((Language::French, DescMaxEvaluations), "Nombre maximum d'évaluations de la fonction objectif. L'optimiseur s'arrête après ce nombre, même s'il n'a pas convergé.");
         t.insert((Language::French, DescTolerance), "Seuil de convergence. L'optimiseur s'arrête tôt lorsque l'amélioration descend en dessous de cette valeur.");
@@ -620,7 +620,7 @@ impl AutoEqTranslations {
             (Language::French, DescEnableRefine),
             "Exécuter un optimiseur local après la fin de la recherche globale.",
         );
-        t.insert((Language::French, DescLocalAlgorithm), "L'optimiseur local utilisé pour le raffinement. COBYLA est sans dérivé et robuste. BOBYQA est plus rapide mais moins stable près des contraintes.");
+        t.insert((Language::French, DescLocalAlgorithm), "L'optimiseur local utilisé pour le raffinement. COBYLA est sans dérivé et robuste près des contraintes.");
         t.insert((Language::French, DescTiltType), "'Harman' applique la pente recommandée par Harman. 'Custom' vous permet de régler la pente manuellement. 'Flat' désactive l'inclinaison.");
         t.insert((Language::French, DescSlopeDbOct), "Le taux d'inclinaison. Négatif = plus chaleureux (plus de grave), positif = plus brillant (plus d'aigu).");
         t.insert((Language::French, DescAutoDetectF3), "Détecte automatiquement le point -3 dB du haut-parleur à partir de la mesure et place le filtre de protection à cet endroit.");
@@ -701,7 +701,7 @@ impl AutoEqTranslations {
         t.insert((Language::French, TipQRange), "Gardez le Q max en dessous de 10 pour éviter le ronronnement. Un Q autour de 1-2 donne des corrections naturelles.");
         t.insert((Language::French, TipFrequencyRange), "Pour l'EQ de pièce, restreignez à la région où vous avez des mesures fiables (ex: 20-500 Hz pour les subwoofers).");
         t.insert((Language::French, TipPeqModel), "Pour l'EQ de casque, 'pk' est usually suffisant. Pour lesenceintes, 'hp-pk-lp' ou 'ls-pk-hs' donne un meilleur contrôle des basses/hautes fréquences.");
-        t.insert((Language::French, TipAlgorithm), "'autoeq:de' est le meilleur choix — c'est une variante DE affinée. Utilisez 'nlopt:cobyla' pour un raffinement local rapide uniquement.");
+        t.insert((Language::French, TipAlgorithm), "'autoeq:de' est le meilleur choix — c'est une variante DE affinée. Utilisez 'autoeq:cobyla' pour un raffinement local rapide uniquement.");
         t.insert((Language::French, TipPopulation), "50-200 pour des résultats rapides, 500+ pour des recherches approfondies sur des cibles difficiles.");
         t.insert((Language::French, TipMaxEvaluations), "5000 est un bon équilibre. Augmentez à 20000+ pour une optimisation multi-sub complexe.");
         t.insert((Language::French, TipTolerance), "Tolérance plus basse = recherche plus longue mais résultat potentiellement meilleur. 1e-4 est suffisant pour des aperçus rapides.");
@@ -715,7 +715,7 @@ impl AutoEqTranslations {
         t.insert((Language::French, TipEnableRefine), "Gardez presque toujours activé. Désactivez uniquement pour la vitesse lors des aperçus rapides.");
         t.insert(
             (Language::French, TipLocalAlgorithm),
-            "COBYLA est le choix le plus sûr. Essayez BOBYQA si COBYLA est lent.",
+            "COBYLA est l'optimiseur local de raffinement.",
         );
         t.insert((Language::French, TipTiltType), "Commencez par 'flat'. Ajoutez une inclinaison seulement si le résultat plat semble trop brillant ou trop chaud.");
         t.insert(
@@ -862,7 +862,7 @@ impl AutoEqTranslations {
         t.insert((Language::German, DescQRange), "Bandbreite jedes Filters. Niedriges Q = breit und sanft, hohes Q = eng und chirurgisch.");
         t.insert((Language::German, DescFrequencyRange), "Die Frequenzgrenzen für die Filterplatzierung. Filter werden nur innerhalb dieses Bereichs platziert.");
         t.insert((Language::German, DescPeqModel), "'pk' = nur Peak-Filter. 'hp-pk' fügt einen Hochpass hinzu. 'hp-pk-lp' fügt Hoch- und Tiefpass hinzu. 'ls-pk-hs' fügt Shelf-Filter hinzu. 'free' erlaubt jede Kombination.");
-        t.insert((Language::German, DescAlgorithm), "Die Optimierungsmethode. DE (Differential Evolution) ist eine robuste globale Suche. COBYLA/BOBYQA sind schnelle lokale Methoden. PSO/RGA/TLBO sind alternative Metaheuristiken.");
+        t.insert((Language::German, DescAlgorithm), "Die Optimierungsmethode. DE (Differential Evolution) ist eine robuste globale Suche. COBYLA ist eine schnelle lokale Methode. CMA-ES und PSO/RGA/TLBO sind alternative Metaheuristiken.");
         t.insert((Language::German, DescPopulation), "Anzahl der Kandidatenlösungen in der populationsbasierten Suche. Größere Populationen erkunden mehr, dauern aber länger.");
         t.insert((Language::German, DescMaxEvaluations), "Maximale Anzahl an Zielfunktionsauswertungen. Der Optimierer stoppt nach dieser Anzahl, auch wenn er nicht konvergiert ist.");
         t.insert((Language::German, DescTolerance), "Konvergenzschwelle. Der Optimierer stoppt früh, wenn die Verbesserung unter diesem Wert liegt.");
@@ -874,7 +874,7 @@ impl AutoEqTranslations {
             (Language::German, DescEnableRefine),
             "Führen Sie einen lokalen Optimierer aus, nachdem die globale Suche beendet ist.",
         );
-        t.insert((Language::German, DescLocalAlgorithm), "Der lokale Optimierer für die Verfeinerung. COBYLA ist robust und derivatfrei. BOBYQA ist schneller, aber weniger stabil nahe Einschränkungen.");
+        t.insert((Language::German, DescLocalAlgorithm), "Der lokale Optimierer für die Verfeinerung. COBYLA ist robust und derivatfrei nahe Einschränkungen.");
         t.insert((Language::German, DescTiltType), "'Harman' wendet die Harman-forschungsbasierte Steigung an. 'Custom' ermöglicht manuelle Einstellung. 'Flat' deaktiviert die Neigung.");
         t.insert(
             (Language::German, DescSlopeDbOct),
@@ -961,7 +961,7 @@ impl AutoEqTranslations {
         t.insert((Language::German, TipQRange), "Halten Sie max Q unter 10, um Klingeln zu vermeiden. Q um 1-2 gibt natürlich klingende Korrekturen.");
         t.insert((Language::German, TipFrequencyRange), "Für Raum-EQ einschränken auf den Bereich, wo Sie zuverlässige Messungen haben (z.B. 20-500 Hz für Subwoofer).");
         t.insert((Language::German, TipPeqModel), "Für Kopfhörer-EQ ist 'pk' normalerweise ausreichend. Für Lautsprecher geben 'hp-pk-lp' oder 'ls-pk-hs' bessere Kontrolle über Bass/Hochton.");
-        t.insert((Language::German, TipAlgorithm), "'autoeq:de' ist die beste Standardwahl — es ist eine abgestimmte DE-Variante. Verwenden Sie 'nlopt:cobyla' nur für schnelle lokale Verfeinerung.");
+        t.insert((Language::German, TipAlgorithm), "'autoeq:de' ist die beste Standardwahl — es ist eine abgestimmte DE-Variante. Verwenden Sie 'autoeq:cobyla' nur für schnelle lokale Verfeinerung.");
         t.insert(
             (Language::German, TipPopulation),
             "50-200 für schnelle Ergebnisse, 500+ für gründliche Suchen bei schwierigen Zielen.",
@@ -978,7 +978,7 @@ impl AutoEqTranslations {
         t.insert((Language::German, TipEnableRefine), "Fast immer aktiviert lassen. Nur für Geschwindigkeit bei schnellen Vorschauen deaktivieren.");
         t.insert(
             (Language::German, TipLocalAlgorithm),
-            "COBYLA ist die sicherste Wahl. Versuchen Sie BOBYQA, wenn COBYLA langsam ist.",
+            "COBYLA ist der lokale Optimierer für die Verfeinerung.",
         );
         t.insert((Language::German, TipTiltType), "Beginnen Sie mit 'flat'. Fügen Sie nur Neigung hinzu, wenn das flache Ergebnis zu hell oder zu warm klingt.");
         t.insert(
@@ -1143,7 +1143,7 @@ impl AutoEqTranslations {
         t.insert((Language::Spanish, DescQRange), "Ancho de banda de cada filtro. Q bajo = amplio y suave, Q alto = estrecho y quirúrgico.");
         t.insert((Language::Spanish, DescFrequencyRange), "Los límites de frecuencia para la colocación de filtros. Los filtros solo se colocarán dentro de este rango.");
         t.insert((Language::Spanish, DescPeqModel), "'pk' = solo filtros peak. 'hp-pk' añade un paso alto. 'hp-pk-lp' añade paso alto y paso bajo. 'ls-pk-hs' añade filtros estante. 'free' permite cualquier combinación.");
-        t.insert((Language::Spanish, DescAlgorithm), "El método de optimización. DE (Evolución Diferencial) es una búsqueda global robusta. COBYLA/BOBYQA son métodos locales rápidos. PSO/RGA/TLBO son metaheurísticas alternativas.");
+        t.insert((Language::Spanish, DescAlgorithm), "El método de optimización. DE (Evolución Diferencial) es una búsqueda global robusta. COBYLA es un método local rápido. CMA-ES y PSO/RGA/TLBO son metaheurísticas alternativas.");
         t.insert((Language::Spanish, DescPopulation), "Número de soluciones candidatas en la búsqueda basada en población. Poblaciones más grandes exploran más pero toman más tiempo.");
         t.insert((Language::Spanish, DescMaxEvaluations), "Número máximo de evaluaciones de la función objetivo. El optimizador se detiene después de este número, incluso si no ha convergido.");
         t.insert((Language::Spanish, DescTolerance), "Umbral de convergencia. El optimizador se detiene temprano cuando la mejora cae por debajo de este valor.");
@@ -1158,7 +1158,7 @@ impl AutoEqTranslations {
             (Language::Spanish, DescEnableRefine),
             "Ejecutar un optimizador local después de que termina la búsqueda global.",
         );
-        t.insert((Language::Spanish, DescLocalAlgorithm), "El optimizador local usado para refinamiento. COBYLA es robusto y sin derivadas. BOBYQA es más rápido pero menos estable cerca de restricciones.");
+        t.insert((Language::Spanish, DescLocalAlgorithm), "El optimizador local usado para refinamiento. COBYLA es robusto y sin derivadas cerca de restricciones.");
         t.insert((Language::Spanish, DescTiltType), "'Harman' aplica la pendiente de investigación Harman. 'Custom' le permite establecer la pendiente manualmente. 'Flat' desactiva la inclinación.");
         t.insert((Language::Spanish, DescSlopeDbOct), "La tasa de inclinación. Negativo = más cálido (más graves), positivo = más brillante (más agudos).");
         t.insert((Language::Spanish, DescAutoDetectF3), "Detecta automáticamente el punto de -3 dB del altavoz a partir de la medición y coloca el filtro de protección allí.");
@@ -1242,7 +1242,7 @@ impl AutoEqTranslations {
         t.insert((Language::Spanish, TipQRange), "Mantenga Q máximo por debajo de 10 para evitar zumbido. Q alrededor de 1-2 da correcciones de sonido natural.");
         t.insert((Language::Spanish, TipFrequencyRange), "Para EQ de sala, restrinja a la región donde tiene mediciones confiables (ej. 20-500 Hz para subwoofers).");
         t.insert((Language::Spanish, TipPeqModel), "Para EQ de auriculares, 'pk' usually es suficiente. Para altavoces, 'hp-pk-lp' o 'ls-pk-hs' da mejor control de graves/agudos.");
-        t.insert((Language::Spanish, TipAlgorithm), "'autoeq:de' es la mejor opción por defecto — es una variante DE ajustada. Use 'nlopt:cobyla' solo para refinamiento local rápido.");
+        t.insert((Language::Spanish, TipAlgorithm), "'autoeq:de' es la mejor opción por defecto — es una variante DE ajustada. Use 'autoeq:cobyla' solo para refinamiento local rápido.");
         t.insert((Language::Spanish, TipPopulation), "50-200 para resultados rápidos, 500+ para búsquedas exhaustivas en objetivos difíciles.");
         t.insert(
             (Language::Spanish, TipMaxEvaluations),
@@ -1259,7 +1259,7 @@ impl AutoEqTranslations {
         t.insert((Language::Spanish, TipEnableRefine), "Casi siempre mantenga esto activado. Solo desactive para velocidad durante vistas previas rápidas.");
         t.insert(
             (Language::Spanish, TipLocalAlgorithm),
-            "COBYLA es la elección más segura. Pruebe BOBYQA si COBYLA es lento.",
+            "COBYLA es el optimizador local de refinamiento.",
         );
         t.insert((Language::Spanish, TipTiltType), "Comience con 'flat'. Añada inclinación solo si el resultado plano suena demasiado brillante o demasiado cálido.");
         t.insert(

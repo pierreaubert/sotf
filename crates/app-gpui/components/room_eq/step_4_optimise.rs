@@ -549,7 +549,8 @@ impl PlayerView {
                 // Build chart: first channel is the primary series, rest are added
                 let chart = if let Some(first_ch) = channel_order.first() {
                     let (iters, losses) = &channel_data[first_ch];
-                    let mut builder = line(iters, losses)
+                    let (iters, losses) = downsample_xy(iters, losses, 80);
+                    let mut builder = line(&iters, &losses)
                         .title("Optimization Process")
                         .x_label("Iterations")
                         .y_label("Loss")
@@ -563,10 +564,11 @@ impl PlayerView {
 
                     for (idx, ch_name) in channel_order.iter().enumerate().skip(1) {
                         let (ch_iters, ch_losses) = &channel_data[ch_name];
+                        let (ch_iters, ch_losses) = downsample_xy(ch_iters, ch_losses, 80);
                         let color = channel_colors[idx % channel_colors.len()];
                         builder = builder.add_series_with_x(
-                            ch_iters,
-                            ch_losses,
+                            &ch_iters,
+                            &ch_losses,
                             Some(&format!("Loss {}", ch_name)),
                             color,
                             2.0,
@@ -608,11 +610,12 @@ impl PlayerView {
                             if let Some((ep_iters, ep_vals)) = epa_data.get(ch_name)
                                 && !ep_iters.is_empty()
                             {
+                                let (ep_iters, ep_vals) = downsample_xy(ep_iters, ep_vals, 80);
                                 let color = channel_colors[idx % channel_colors.len()];
                                 builder = builder
                                     .add_series_y2_with_x(
-                                        ep_iters,
-                                        ep_vals,
+                                        &ep_iters,
+                                        &ep_vals,
                                         Some(&format!("EPA {}", ch_name)),
                                         color,
                                         1.0,
@@ -705,6 +708,17 @@ impl PlayerView {
                         match serde_json::from_str::<serde_json::Value>(&room_config_json) {
                             Ok(json_val) => flatten_json(&json_val, String::new(), &mut pairs),
                             Err(e) => log::error!("Failed to parse optimizer config JSON: {}", e),
+                        }
+                        let total_pairs = pairs.len();
+                        pairs.truncate(64);
+                        if total_pairs > pairs.len() {
+                            pairs.push((
+                                "...".to_string(),
+                                format!(
+                                    "{} additional parameters hidden",
+                                    total_pairs - pairs.len()
+                                ),
+                            ));
                         }
 
                         let label_color = theme.text_secondary;
@@ -1373,6 +1387,32 @@ fn flatten_json(value: &serde_json::Value, prefix: String, pairs: &mut Vec<(Stri
             pairs.push((prefix, "null".to_string()));
         }
     }
+}
+
+fn downsample_xy(x: &[f64], y: &[f64], max_points: usize) -> (Vec<f64>, Vec<f64>) {
+    if max_points == 0 || x.len() <= max_points || y.len() <= max_points {
+        return (x.to_vec(), y.to_vec());
+    }
+
+    let len = x.len().min(y.len());
+    if len <= max_points {
+        return (x[..len].to_vec(), y[..len].to_vec());
+    }
+
+    let last = len - 1;
+    let denom = max_points - 1;
+    let mut xs = Vec::with_capacity(max_points);
+    let mut ys = Vec::with_capacity(max_points);
+    let mut previous = usize::MAX;
+    for i in 0..max_points {
+        let idx = (i * last + denom / 2) / denom;
+        if idx != previous {
+            xs.push(x[idx]);
+            ys.push(y[idx]);
+            previous = idx;
+        }
+    }
+    (xs, ys)
 }
 
 /// Compute group delay from a Curve's phase data.

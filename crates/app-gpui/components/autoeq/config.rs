@@ -175,7 +175,7 @@ pub struct AutoEqConfig {
     pub min_spacing_oct: f64,
 
     // Algorithm Parameters
-    /// Optimization algorithm (e.g., "autoeq:de", "nlopt:cobyla")
+    /// Optimization algorithm (e.g., "autoeq:de", "autoeq:cobyla")
     pub algo: String,
     /// Population size for evolutionary algorithms
     pub population: usize,

@@ -875,16 +875,16 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
 ///   1..=3  Room width / depth / height
 ///   4      Unit toggle (Metric / Imperial)
 ///   5      Setup description
-///   6..    Per-channel speaker entries (one index per `channel_recordings`)
+///   6..    Per-channel speaker entries (one index per playback mapping)
 fn draw_recording_saving_step(f: &mut Frame, content: Rect, app: &App) {
     use sotf_audio_player::recording_types::{ChannelRecordingState, RoomDimensionUnit};
 
     let s = &app.recording;
-    let channel_count = s.channel_recordings.len();
+    let speaker_channel_count = s.playback_config.channel_mappings.len();
     // Results table (speakers per channel) grows with the channel
     // count; 1 row per channel + 2 lines borders + 1 line dropdown
     // overlay when editing.
-    let speakers_rows = channel_count.max(1) as u16 + 2;
+    let speakers_rows = speaker_channel_count.max(1) as u16 + 2;
     let inner = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -1004,7 +1004,7 @@ fn draw_recording_saving_step(f: &mut Frame, content: Rect, app: &App) {
     let spk_block = Block::default().borders(Borders::ALL).title(spk_title);
     let spk_inner = spk_block.inner(inner[3]);
     f.render_widget(spk_block, inner[3]);
-    if channel_count == 0 {
+    if speaker_channel_count == 0 {
         f.render_widget(
             Paragraph::new(" No channels yet — record some first.")
                 .style(Style::default().fg(app.theme.fg_secondary)),
@@ -1012,10 +1012,11 @@ fn draw_recording_saving_step(f: &mut Frame, content: Rect, app: &App) {
         );
     } else {
         let rows: Vec<Row> = s
-            .channel_recordings
+            .playback_config
+            .channel_mappings
             .iter()
             .enumerate()
-            .map(|(i, rec)| {
+            .map(|(i, mapping)| {
                 let field_idx = 6 + i;
                 let current = s.channel_speakers.get(i).cloned().unwrap_or_default();
                 let cell_value = if is_editing_field(field_idx) {
@@ -1033,7 +1034,7 @@ fn draw_recording_saving_step(f: &mut Frame, content: Rect, app: &App) {
                     Style::default()
                 };
                 Row::new(vec![
-                    Cell::from(format!(" {}", rec.channel_name.clone())),
+                    Cell::from(format!(" {}", mapping.group_name.clone())),
                     Cell::from(cell_value),
                 ])
                 .style(row_style)
@@ -1050,7 +1051,7 @@ fn draw_recording_saving_step(f: &mut Frame, content: Rect, app: &App) {
     // visual hint — they still commit with Enter.
     let editing_speaker = s.editing_save_value
         && s.selected_save_field >= 6
-        && s.selected_save_field < 6 + channel_count;
+        && s.selected_save_field < 6 + speaker_channel_count;
     if editing_speaker {
         let q = s.edit_buffer.to_lowercase();
         let matches: Vec<String> = catalog

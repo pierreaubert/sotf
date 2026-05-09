@@ -758,12 +758,12 @@ impl RecordingTuiState {
         cal.truncate(target);
     }
 
-    /// Ensure `channel_speakers` has one slot per current channel row.
-    /// Call this whenever the channel list changes so the UI never
-    /// indexes a short vec. Preserves any pre-existing values.
+    /// Ensure `channel_speakers` has one slot per physical playback
+    /// channel. Capture rows can be multiplied by mic/position, but
+    /// speaker identity is attached to the speaker channel itself.
     pub fn sync_channel_speakers_length(&mut self) {
         self.channel_speakers
-            .resize(self.channel_recordings.len(), String::new());
+            .resize(self.playback_config.channel_mappings.len(), String::new());
     }
 
     /// Build the canonical-metric `RoomDimensionsLegacy` to persist in
@@ -794,11 +794,11 @@ impl RecordingTuiState {
         &self,
     ) -> Option<std::collections::HashMap<String, String>> {
         let mut map = std::collections::HashMap::new();
-        for (i, rec) in self.channel_recordings.iter().enumerate() {
+        for (i, mapping) in self.playback_config.channel_mappings.iter().enumerate() {
             if let Some(entry) = self.channel_speakers.get(i) {
                 let trimmed = entry.trim();
                 if !trimmed.is_empty() {
-                    map.insert(rec.channel_name.clone(), trimmed.to_string());
+                    map.insert(mapping.group_name.clone(), trimmed.to_string());
                 }
             }
         }
@@ -811,9 +811,9 @@ impl RecordingTuiState {
     ///   1..=3    room width / depth / height
     ///   4        unit toggle
     ///   5        setup description
-    ///   6..6+N-1 per-channel speaker entries
+    ///   6..6+N-1 per-playback-channel speaker entries
     pub fn save_field_count(&self) -> usize {
-        6 + self.channel_recordings.len()
+        6 + self.playback_config.channel_mappings.len()
     }
 }
 

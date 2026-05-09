@@ -128,6 +128,23 @@ pub use autoeq::roomeq::{
     SpeakerTier,
 };
 
+fn canonical_multi_measurement_strategy(strategy: &str) -> Option<&'static str> {
+    let normalized = strategy
+        .trim()
+        .to_ascii_lowercase()
+        .replace([' ', '-'], "_")
+        .replace(['(', ')'], "");
+    match normalized.as_str() {
+        "average" | "average_rms" => Some("average"),
+        "weighted_sum" => Some("weighted_sum"),
+        "minimax" | "minmax" | "minimax_worst_case" => Some("minimax"),
+        "variance_penalized" | "minimize_variance" | "variance" => Some("variance_penalized"),
+        "spatial_robustness" => Some("spatial_robustness"),
+        "minimax_uncertainty" | "minimax_bootstrap_uncertainty" => Some("minimax_uncertainty"),
+        _ => None,
+    }
+}
+
 /// Apply the user's Simple Wizard choices to a flat UI optimizer config.
 ///
 /// Fields not controlled by the preset keep their current values so the
@@ -185,7 +202,10 @@ pub fn apply_simple_preset(preset: &SimplePresetConfig, config: &mut RoomEqOptim
     // Multi-position strategy
     if !preset.multi_position_strategy.is_empty() {
         config.multi_measurement.enabled = true;
-        config.multi_measurement.strategy = preset.multi_position_strategy.clone();
+        config.multi_measurement.strategy =
+            canonical_multi_measurement_strategy(&preset.multi_position_strategy)
+                .unwrap_or("average")
+                .to_string();
     }
 }
 
@@ -1261,6 +1281,9 @@ pub enum RoomEqAlgorithm {
     Cobyla,
     DifferentialEvolution,
     BayesianOptimization,
+    CmaEs,
+    /// Legacy value kept so older saved configs deserialize. It is not exposed
+    /// in algorithm selectors now that NLopt backends are gone.
     NelderMead,
 }
 
@@ -1270,7 +1293,7 @@ impl RoomEqAlgorithm {
             RoomEqAlgorithm::Cobyla,
             RoomEqAlgorithm::DifferentialEvolution,
             RoomEqAlgorithm::BayesianOptimization,
-            RoomEqAlgorithm::NelderMead,
+            RoomEqAlgorithm::CmaEs,
         ]
     }
 
@@ -1279,16 +1302,18 @@ impl RoomEqAlgorithm {
             RoomEqAlgorithm::Cobyla => "COBYLA",
             RoomEqAlgorithm::DifferentialEvolution => "Differential Evolution",
             RoomEqAlgorithm::BayesianOptimization => "Bayesian Optimization",
-            RoomEqAlgorithm::NelderMead => "Nelder-Mead",
+            RoomEqAlgorithm::CmaEs => "CMA-ES",
+            RoomEqAlgorithm::NelderMead => "Nelder-Mead (Legacy)",
         }
     }
 
     pub fn to_autoeq_string(&self) -> &'static str {
         match self {
-            RoomEqAlgorithm::Cobyla => "cobyla",
+            RoomEqAlgorithm::Cobyla => "autoeq:cobyla",
             RoomEqAlgorithm::DifferentialEvolution => "autoeq:de",
             RoomEqAlgorithm::BayesianOptimization => "autoeq:bo",
-            RoomEqAlgorithm::NelderMead => "nelder-mead",
+            RoomEqAlgorithm::CmaEs => "autoeq:cmaes",
+            RoomEqAlgorithm::NelderMead => "autoeq:cobyla",
         }
     }
 }
@@ -2710,14 +2735,23 @@ impl RoomEqOptimizerConfig {
         };
 
         let multi_measurement = if self.multi_measurement.enabled {
-            let strategy = match self.multi_measurement.strategy.as_str() {
+            let strategy_key =
+                canonical_multi_measurement_strategy(&self.multi_measurement.strategy)
+                    .unwrap_or_else(|| {
+                        log::warn!(
+                            "Unknown multi_measurement strategy '{}'; falling back to average",
+                            self.multi_measurement.strategy
+                        );
+                        "average"
+                    });
+            let strategy = match strategy_key {
                 "average" => MultiMeasurementStrategy::Average,
                 "weighted_sum" => MultiMeasurementStrategy::WeightedSum,
                 "minimax" => MultiMeasurementStrategy::Minimax,
                 "variance_penalized" => MultiMeasurementStrategy::VariancePenalized,
                 "spatial_robustness" => MultiMeasurementStrategy::SpatialRobustness,
                 "minimax_uncertainty" => MultiMeasurementStrategy::MinimaxUncertainty,
-                s => panic!("Unknown multi_measurement strategy: {s}"),
+                _ => MultiMeasurementStrategy::Average,
             };
             let weights = if self.multi_measurement.weights.is_empty() {
                 None
@@ -4632,13 +4666,57 @@ mod tests {
 
     #[test]
     fn multi_measurement_strategy_strings_match_constants() {
-        let valid_strategies = ["average", "weighted_sum", "minimax", "variance_penalized"];
+        let valid_strategies = [
+            "average",
+            "weighted_sum",
+            "minimax",
+            "variance_penalized",
+            "spatial_robustness",
+            "minimax_uncertainty",
+        ];
         let default = MultiMeasurementUiConfig::default();
         assert!(
             valid_strategies.contains(&default.strategy.as_str()),
             "Default strategy '{}' not in valid set",
             default.strategy
         );
+    }
+
+    #[test]
+    fn multi_measurement_strategy_accepts_display_labels() {
+        let cases = [
+            ("Average", autoeq::roomeq::MultiMeasurementStrategy::Average),
+            (
+                "Minimize Variance",
+                autoeq::roomeq::MultiMeasurementStrategy::VariancePenalized,
+            ),
+            ("MinMax", autoeq::roomeq::MultiMeasurementStrategy::Minimax),
+            (
+                "Weighted Sum",
+                autoeq::roomeq::MultiMeasurementStrategy::WeightedSum,
+            ),
+        ];
+
+        for (label, expected) in cases {
+            let mut config = RoomEqOptimizerConfig::default();
+            config.multi_measurement.enabled = true;
+            config.multi_measurement.strategy = label.to_string();
+
+            let backend = config.to_optimizer_config();
+            assert_eq!(backend.multi_measurement.unwrap().strategy, expected);
+        }
+    }
+
+    #[test]
+    fn simple_preset_canonicalizes_multi_position_strategy_label() {
+        let mut preset = SimplePresetConfig::default();
+        preset.multi_position_strategy = "Minimize Variance".to_string();
+        let mut config = RoomEqOptimizerConfig::default();
+
+        apply_simple_preset(&preset, &mut config);
+
+        assert!(config.multi_measurement.enabled);
+        assert_eq!(config.multi_measurement.strategy, "variance_penalized");
     }
 
     // ── DelayDetectionState tests ────────────────────────────────────────

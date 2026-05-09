@@ -1106,13 +1106,7 @@ impl PlayerView {
 
         // Build optimization params
         let loss = mode.to_loss_string().to_string();
-        let algo = match optimizer_config.algorithm {
-            crate::app::types::RoomEqAlgorithm::Cobyla => "nlopt:cobyla",
-            crate::app::types::RoomEqAlgorithm::DifferentialEvolution => "autoeq:de",
-            crate::app::types::RoomEqAlgorithm::BayesianOptimization => "autoeq:bo",
-            crate::app::types::RoomEqAlgorithm::NelderMead => "nlopt:neldermead",
-        }
-        .to_string();
+        let algo = optimizer_config.algorithm.to_autoeq_string().to_string();
 
         // Use the user-selected curve, or override based on mode
         let effective_curve_name = if curve_name.is_empty() {

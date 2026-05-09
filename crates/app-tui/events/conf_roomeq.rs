@@ -544,7 +544,7 @@ fn adjust_room_eq_field(app: &mut App, delta: i32) {
         }
         // Optimization
         8 => {
-            let algos = ["cobyla", "autoeq:de", "autoeq:bo", "nelder-mead"];
+            let algos = ["autoeq:cobyla", "autoeq:de", "autoeq:bo", "autoeq:cmaes"];
             c.algorithm = super::cycle_string(&c.algorithm, &algos, delta);
         }
         9 => {
@@ -574,7 +574,7 @@ fn adjust_room_eq_field(app: &mut App, delta: i32) {
         15 => c.bo_ehvi = !c.bo_ehvi,
         16 => c.refine = !c.refine,
         17 => {
-            c.local_algo = super::cycle_string(&c.local_algo, &["cobyla", "nelder-mead"], delta);
+            c.local_algo = super::cycle_string(&c.local_algo, &["cobyla"], delta);
         }
         18 => c.psychoacoustic = !c.psychoacoustic,
         19 => c.asymmetric_loss = !c.asymmetric_loss,
@@ -686,6 +686,9 @@ pub(crate) fn load_room_eq_measurements(app: &mut App) {
                     }
                     if dd.input_device_name.is_none() {
                         dd.input_device_name = hints.recording_device_name;
+                    }
+                    if let Some(probe_results) = hints.probe_results {
+                        dd.apply_results(probe_results);
                     }
                 }
             }
@@ -883,7 +886,10 @@ fn spawn_room_eq_optimization(app: &mut App) {
 
     std::thread::spawn(move || {
         use autoeq::MeasurementSource;
-        use autoeq::roomeq::{CallbackAction, RoomConfig, SpeakerConfig};
+        use autoeq::roomeq::{
+            CallbackAction, RoomConfig, SpeakerConfig, SubwooferStrategy, SubwooferSystemConfig,
+            SystemConfig, SystemModel,
+        };
         use sotf_audio_player::autoeq::{
             run_room_optimization, run_room_optimization_with_probe_arrivals,
         };
@@ -917,22 +923,51 @@ fn spawn_room_eq_optimization(app: &mut App) {
 
         let optimizer = config.to_optimizer_config();
 
+        let ctc = ctc_config.or_else(|| {
+            ctc_measurements.map(|measurements| autoeq::roomeq::CtcConfig {
+                enabled: true,
+                matrix_source: "measured".to_string(),
+                measurements: Some(measurements),
+                ..Default::default()
+            })
+        });
+        let system = ctc.as_ref().filter(|ctc| ctc.enabled).map(|_| {
+            let has_bass_output = speakers.keys().any(|name| {
+                let normalized: String = name
+                    .chars()
+                    .filter(|ch| ch.is_ascii_alphanumeric())
+                    .flat_map(|ch| ch.to_lowercase())
+                    .collect();
+                normalized.contains("lfe")
+                    || normalized == "sub"
+                    || normalized == "subwoofer"
+                    || normalized == "sw"
+                    || normalized.starts_with("sub")
+            });
+            SystemConfig {
+                model: SystemModel::HomeCinema,
+                speakers: speakers
+                    .keys()
+                    .map(|name| (name.clone(), name.clone()))
+                    .collect(),
+                subwoofers: has_bass_output.then(|| SubwooferSystemConfig {
+                    config: SubwooferStrategy::Single,
+                    crossover: None,
+                    mapping: Default::default(),
+                }),
+                bass_management: None,
+            }
+        });
+
         let room_config = RoomConfig {
             version: autoeq::roomeq::default_config_version(),
-            system: None,
+            system,
             speakers,
             crossovers: None,
             target_curve: None,
             optimizer,
             recording_config: None,
-            ctc: ctc_config.or_else(|| {
-                ctc_measurements.map(|measurements| autoeq::roomeq::CtcConfig {
-                    enabled: true,
-                    matrix_source: "measured".to_string(),
-                    measurements: Some(measurements),
-                    ..Default::default()
-                })
-            }),
+            ctc,
             cea2034_cache: None,
         };
 

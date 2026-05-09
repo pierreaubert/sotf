@@ -223,11 +223,9 @@ impl ParamLimits {
 /// Algorithm options for dropdown
 pub const ALGORITHM_OPTIONS: &[(&str, &str)] = &[
     ("autoeq:de", "Auto DE (Recommended)"),
-    ("nlopt:isres", "NLOPT ISRES"),
-    ("nlopt:ags", "NLOPT AGS"),
-    ("nlopt:cobyla", "NLOPT COBYLA"),
-    ("nlopt:bobyqa", "NLOPT BOBYQA"),
-    ("nlopt:neldermead", "NLOPT Nelder-Mead"),
+    ("autoeq:bo", "Bayesian Optimization"),
+    ("autoeq:cobyla", "COBYLA"),
+    ("autoeq:cmaes", "CMA-ES"),
 ];
 
 /// DE strategy options
@@ -276,11 +274,7 @@ pub const CURVE_NAME_OPTIONS: &[(&str, &str)] = &[
 ];
 
 /// Local refinement algorithm options
-pub const LOCAL_ALGO_OPTIONS: &[(&str, &str)] = &[
-    ("cobyla", "COBYLA"),
-    ("bobyqa", "BOBYQA"),
-    ("newuoa", "NEWUOA"),
-];
+pub const LOCAL_ALGO_OPTIONS: &[(&str, &str)] = &[("cobyla", "COBYLA")];
 
 /// All EQ export format options (id, label, extension).
 /// Use `eq_export_format_options()` to get the platform-filtered list.

@@ -228,11 +228,11 @@ pub static BLOCK_DOCS: &[BlockDoc] = &[
             FieldDoc {
                 name: "Algorithm",
                 description: "The optimization method. DE (Differential Evolution) is \
-                              a robust global search. COBYLA/BOBYQA are fast local \
-                              methods. PSO/RGA/TLBO are alternative metaheuristics.",
+                              a robust global search. COBYLA is a fast local method. \
+                              CMA-ES and PSO/RGA/TLBO are alternative metaheuristics.",
                 default: "autoeq:de",
                 tip: "'autoeq:de' is the best default — it's a tuned DE variant. \
-                      Use 'nlopt:cobyla' for fast local refinement only.",
+                      Use 'autoeq:cobyla' for fast local refinement only.",
             },
             FieldDoc {
                 name: "Population",
@@ -317,10 +317,9 @@ pub static BLOCK_DOCS: &[BlockDoc] = &[
             FieldDoc {
                 name: "Local Algorithm",
                 description: "The local optimizer used for refinement. COBYLA is \
-                              derivative-free and robust. BOBYQA is faster but less \
-                              stable near constraints.",
+                              derivative-free and robust near constraints.",
                 default: "cobyla",
-                tip: "COBYLA is the safest choice. Try BOBYQA if COBYLA is slow.",
+                tip: "COBYLA is the local refinement optimizer.",
             },
         ],
     },

@@ -5,7 +5,7 @@
 use super::recording::{RecordingResult, RecordingState};
 use autoeq::roomeq::{
     CrossoverConfig as BackendCrossoverConfig, MeasurementSource, RoomConfig, SpeakerConfig,
-    SpeakerGroup,
+    SpeakerGroup, SubwooferStrategy, SubwooferSystemConfig, SystemConfig, SystemModel,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -62,6 +62,19 @@ pub use sotf_audio_player::room_eq_types::AutoEqField;
 pub use sotf_audio_player::room_eq_types::OptimizationStatus;
 pub use sotf_audio_player::room_eq_types::RoomEqAlgorithm;
 pub use sotf_audio_player::room_eq_types::RoomEqOptimizerConfig;
+
+fn room_eq_channel_is_bass_output(name: &str) -> bool {
+    let normalized: String = name
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .flat_map(|ch| ch.to_lowercase())
+        .collect();
+    normalized.contains("lfe")
+        || normalized == "sub"
+        || normalized == "subwoofer"
+        || normalized == "sw"
+        || normalized.starts_with("sub")
+}
 
 /// UI state for Room EQ dropdowns
 #[derive(Debug, Clone)]
@@ -575,6 +588,22 @@ impl RoomEqState {
             }
         });
 
+        self.delay_detection.sample_rate = recording_state.probe_capture.sample_rate;
+        self.delay_detection.input_channel = recording_state.probe_capture.input_channel;
+        self.delay_detection.output_device_name =
+            (!recording_state.playback_config.device_name.is_empty())
+                .then(|| recording_state.playback_config.device_name.clone());
+        self.delay_detection.input_device_name =
+            (!recording_state.recording_config.device_name.is_empty())
+                .then(|| recording_state.recording_config.device_name.clone());
+        if let Some(results) = recording_state.probe_capture.results.clone() {
+            self.delay_detection.apply_results(results);
+        } else {
+            self.delay_detection.results = None;
+            self.delay_detection.edited_arrival_ms.clear();
+            self.delay_detection.status = DelayDetectionStatus::Idle;
+        }
+
         self.data_source = RoomEqDataSource::FromRecording;
         self.init_speaker_configs();
     }
@@ -771,24 +800,44 @@ impl RoomEqState {
             self.optimizer_config.imported_from_file,
         );
 
+        let ctc = self.ctc_config.clone().or_else(|| {
+            self.ctc_measurements
+                .clone()
+                .map(|measurements| autoeq::roomeq::CtcConfig {
+                    enabled: true,
+                    matrix_source: "measured".to_string(),
+                    measurements: Some(measurements),
+                    ..Default::default()
+                })
+        });
+        let system = ctc.as_ref().filter(|ctc| ctc.enabled).map(|_| {
+            let has_bass_output = speakers
+                .keys()
+                .any(|name| room_eq_channel_is_bass_output(name));
+            SystemConfig {
+                model: SystemModel::HomeCinema,
+                speakers: speakers
+                    .keys()
+                    .map(|name| (name.clone(), name.clone()))
+                    .collect(),
+                subwoofers: has_bass_output.then(|| SubwooferSystemConfig {
+                    config: SubwooferStrategy::Single,
+                    crossover: None,
+                    mapping: HashMap::new(),
+                }),
+                bass_management: None,
+            }
+        });
+
         RoomConfig {
             version: autoeq::roomeq::default_config_version(),
-            system: None,
+            system,
             speakers,
             crossovers: Some(crossovers),
             target_curve: None,
             optimizer,
             recording_config: None,
-            ctc: self.ctc_config.clone().or_else(|| {
-                self.ctc_measurements
-                    .clone()
-                    .map(|measurements| autoeq::roomeq::CtcConfig {
-                        enabled: true,
-                        matrix_source: "measured".to_string(),
-                        measurements: Some(measurements),
-                        ..Default::default()
-                    })
-            }),
+            ctc,
             cea2034_cache: None,
         }
     }

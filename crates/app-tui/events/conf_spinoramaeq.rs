@@ -516,7 +516,7 @@ fn adjust_spinorama_field(app: &mut App, delta: i32) {
         // ── Refinement ──
         15 => c.refine = !c.refine,
         16 => {
-            c.local_algo = super::cycle_string(&c.local_algo, &["cobyla", "nelder-mead"], delta);
+            c.local_algo = super::cycle_string(&c.local_algo, &["cobyla"], delta);
         }
         // ── Smoothing ──
         17 => c.smooth = !c.smooth,

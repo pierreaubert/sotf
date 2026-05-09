@@ -111,16 +111,13 @@ pub const MULTI_SEAT_STRATEGY_OPTIONS: &[(&str, &str)] = &[
 pub const ALGORITHM_OPTIONS: &[(&str, &str)] = &[
     ("autoeq:de", "Auto DE (Recommended)"),
     ("autoeq:bo", "Bayesian Optimization"),
+    ("autoeq:cobyla", "COBYLA"),
+    ("autoeq:cmaes", "CMA-ES"),
     ("mh:de", "MH Differential Evolution"),
     ("mh:pso", "MH Particle Swarm"),
     ("mh:rga", "MH Genetic Algorithm"),
     ("mh:tlbo", "MH TLBO"),
     ("mh:firefly", "MH Firefly"),
-    ("nlopt:isres", "NLOPT ISRES"),
-    ("nlopt:ags", "NLOPT AGS"),
-    ("nlopt:cobyla", "NLOPT COBYLA"),
-    ("nlopt:bobyqa", "NLOPT BOBYQA"),
-    ("nlopt:neldermead", "NLOPT Nelder-Mead"),
 ];
 
 /// Bayesian optimization acquisition options
@@ -207,11 +204,7 @@ pub const MULTI_MEASUREMENT_STRATEGY_OPTIONS: &[(&str, &str)] = &[
 ];
 
 /// Local algorithm options for refinement
-pub const LOCAL_ALGO_OPTIONS: &[(&str, &str)] = &[
-    ("cobyla", "COBYLA"),
-    ("bobyqa", "BOBYQA"),
-    ("newuoa", "NEWUOA"),
-];
+pub const LOCAL_ALGO_OPTIONS: &[(&str, &str)] = &[("cobyla", "COBYLA")];
 
 /// Target distance presets: (id, label, description, recommended_slope_db_per_oct)
 pub const TARGET_DISTANCE_OPTIONS: &[(&str, &str, &str, f64)] = &[

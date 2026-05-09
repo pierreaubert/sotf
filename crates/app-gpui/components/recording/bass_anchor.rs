@@ -152,6 +152,7 @@ impl PlayerView {
             silence_ms,
             sample_rate,
             input_channel,
+            signal_level_db,
             channel_indices,
             channel_names,
             out_dev,
@@ -181,6 +182,7 @@ impl PlayerView {
                 rec.bass_anchor_capture.silence_duration_ms,
                 rec.bass_anchor_capture.sample_rate,
                 rec.bass_anchor_capture.input_channel,
+                rec.signal_level_db,
                 indices,
                 names,
                 Some(rec.playback_config.device_name.clone()),
@@ -222,6 +224,7 @@ impl PlayerView {
                         in_dev.as_deref(),
                         input_channel,
                         &wav_path,
+                        signal_level_db,
                         Some(cancel_for_task),
                     )
                 }
@@ -237,6 +240,7 @@ impl PlayerView {
                         out_dev.as_deref(),
                         in_dev.as_deref(),
                         input_channel,
+                        signal_level_db,
                         &wav_path,
                         cancel_for_task,
                     );

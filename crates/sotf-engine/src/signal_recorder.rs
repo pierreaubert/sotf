@@ -28,9 +28,20 @@ pub type CancelFlag = Arc<AtomicBool>;
 /// is observed during a capture. Stable so UI code can match on it.
 pub const CANCELLED_ERR: &str = "cancelled";
 
+/// Default level for auxiliary recording stimuli (delay probe and bass anchor).
+///
+/// These are short/narrowband signals and are noticeably quieter than sweeps
+/// when played at the same peak level, so keep the historical 0.5 linear
+/// amplitude default unless a caller explicitly chooses otherwise.
+pub const DEFAULT_AUXILIARY_SIGNAL_LEVEL_DB: f32 = -6.0206;
+
 #[inline]
 fn cancel_requested(cancel: Option<&CancelFlag>) -> bool {
     cancel.is_some_and(|c| c.load(Ordering::Relaxed))
+}
+
+fn measurement_amplitude_from_level_db(level_db: f32) -> f32 {
+    10.0_f32.powf(level_db.clamp(-40.0, 0.0) / 20.0)
 }
 
 /// Signal type for recording
@@ -1707,6 +1718,7 @@ pub fn probe_channel_delays(
         output_device_name,
         input_device_name,
         input_channel,
+        DEFAULT_AUXILIARY_SIGNAL_LEVEL_DB,
         None,
     )?;
     Ok(results)
@@ -1745,6 +1757,7 @@ pub fn probe_channel_delays_with_recording(
     input_device_name: Option<&str>,
     input_channel: u16,
     recording_wav_path: &std::path::Path,
+    signal_level_db: f32,
     cancel: Option<CancelFlag>,
 ) -> Result<ProbeDelayResults, String> {
     let (results, recorded, input_sr) = probe_channel_delays_core(
@@ -1756,6 +1769,7 @@ pub fn probe_channel_delays_with_recording(
         output_device_name,
         input_device_name,
         input_channel,
+        signal_level_db,
         cancel.as_ref(),
     )?;
 
@@ -1806,6 +1820,7 @@ fn probe_channel_delays_core(
     output_device_name: Option<&str>,
     input_device_name: Option<&str>,
     input_channel: u16,
+    signal_level_db: f32,
     cancel: Option<&CancelFlag>,
 ) -> Result<(ProbeDelayResults, Vec<f32>, u32), String> {
     let num_channels = channel_indices.len();
@@ -1820,12 +1835,21 @@ fn probe_channel_delays_core(
     // at the requested playback sample rate. If cpal negotiates a different
     // input rate the probe is regenerated for analysis below.
     let probe_samples = (probe_duration_ms / 1000.0 * sample_rate as f32) as usize;
-    let probe = gen_narrowband_probe(probe_samples, sample_rate, 0.5, PROBE_SEED, 800.0, 2000.0);
+    let amplitude = measurement_amplitude_from_level_db(signal_level_db);
+    let probe = gen_narrowband_probe(
+        probe_samples,
+        sample_rate,
+        amplitude,
+        PROBE_SEED,
+        800.0,
+        2000.0,
+    );
 
     log::info!(
-        "[probe_channel_delays] Generated narrowband probe: {} samples ({:.1}ms), 800-2000Hz",
+        "[probe_channel_delays] Generated narrowband probe: {} samples ({:.1}ms), 800-2000Hz, level={:.1}dBFS",
         probe_samples,
-        probe_duration_ms
+        probe_duration_ms,
+        signal_level_db.clamp(-40.0, 0.0)
     );
 
     // Play on each output channel in turn and capture the mic — shared
@@ -1858,7 +1882,7 @@ fn probe_channel_delays_core(
         gen_narrowband_probe(
             capture.analysis_signal_samples,
             capture.input_sr,
-            0.5,
+            amplitude,
             PROBE_SEED,
             800.0,
             2000.0,
@@ -2159,6 +2183,7 @@ pub fn run_bass_anchor(
         output_device_name,
         input_device_name,
         input_channel,
+        DEFAULT_AUXILIARY_SIGNAL_LEVEL_DB,
         cancel.as_ref(),
     )?;
     Ok(results)
@@ -2184,6 +2209,7 @@ pub fn run_bass_anchor_with_recording(
     input_device_name: Option<&str>,
     input_channel: u16,
     recording_wav_path: &std::path::Path,
+    signal_level_db: f32,
     cancel: Option<CancelFlag>,
 ) -> Result<BassAnchorResults, String> {
     let (results, recorded, input_sr) = run_bass_anchor_core(
@@ -2196,6 +2222,7 @@ pub fn run_bass_anchor_with_recording(
         output_device_name,
         input_device_name,
         input_channel,
+        signal_level_db,
         cancel.as_ref(),
     )?;
 
@@ -2288,6 +2315,7 @@ fn run_bass_anchor_core(
     output_device_name: Option<&str>,
     input_device_name: Option<&str>,
     input_channel: u16,
+    signal_level_db: f32,
     cancel: Option<&CancelFlag>,
 ) -> Result<(BassAnchorResults, Vec<f32>, u32), String> {
     let num_channels = channel_indices.len();
@@ -2304,20 +2332,26 @@ fn run_bass_anchor_core(
     }
 
     // Generate the tone burst at the playback sample rate.
-    let burst =
-        math_audio_dsp::signals::gen_bass_tone_burst(bass_freq_hz, bass_cycles, sample_rate, 0.5);
+    let amplitude = measurement_amplitude_from_level_db(signal_level_db);
+    let burst = math_audio_dsp::signals::gen_bass_tone_burst(
+        bass_freq_hz,
+        bass_cycles,
+        sample_rate,
+        amplitude,
+    );
     if burst.is_empty() {
         return Err("gen_bass_tone_burst returned empty".to_string());
     }
     let burst_samples = burst.len();
 
     log::info!(
-        "[run_bass_anchor] Generated {:.0} Hz × {} cycles ({:.0} ms / {} samples) at {} Hz",
+        "[run_bass_anchor] Generated {:.0} Hz × {} cycles ({:.0} ms / {} samples) at {} Hz, level={:.1}dBFS",
         bass_freq_hz,
         bass_cycles,
         1000.0 * burst_samples as f64 / sample_rate as f64,
         burst_samples,
-        sample_rate
+        sample_rate,
+        signal_level_db.clamp(-40.0, 0.0)
     );
 
     // Play + record via the shared scaffolding.

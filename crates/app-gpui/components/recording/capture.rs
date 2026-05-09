@@ -38,7 +38,6 @@ impl PlayerView {
     fn render_signal_config_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let translations = state.app.ui_state.translations.clone();
-        let signal_level_db = state.app.measurement_state.recording_state.signal_level_db;
         let _ = state;
 
         Card::new().content(
@@ -58,36 +57,6 @@ impl PlayerView {
                         .align(StackAlign::Center)
                         .child(Text::label(translations.recording_duration_label))
                         .child(self.render_duration_dropdown(cx)),
-                )
-                .child(
-                    HStack::new()
-                        .spacing(StackSpacing::Sm)
-                        .align(StackAlign::Center)
-                        .child(Text::new(translations.recording_level_label).size(TextSize::Xs))
-                        .child({
-                            let view = cx.entity().clone();
-                            NumberInput::new("signal_level")
-                                .value(signal_level_db as f64)
-                                .min(-60.0)
-                                .max(6.0)
-                                .step(1.0)
-                                .decimals(0)
-                                .unit("dB")
-                                .size(NumberInputSize::Xs)
-                                .width(100.0)
-                                .on_change(move |val, _window, cx| {
-                                    view.update(cx, |this, cx| {
-                                        this.state.update(cx, |state, _| {
-                                            state
-                                                .app
-                                                .measurement_state
-                                                .recording_state
-                                                .signal_level_db = val as f32;
-                                        });
-                                        cx.notify();
-                                    });
-                                })
-                        }),
                 ),
         )
     }

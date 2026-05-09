@@ -40,13 +40,7 @@ impl PlayerView {
             min_freq: config.min_freq,
             max_freq: config.max_freq,
             peq_model: config.peq_model.clone(),
-            algo: match config.algorithm {
-                crate::app::types::RoomEqAlgorithm::DifferentialEvolution => "autoeq:de",
-                crate::app::types::RoomEqAlgorithm::BayesianOptimization => "autoeq:bo",
-                crate::app::types::RoomEqAlgorithm::Cobyla => "nlopt:cobyla",
-                crate::app::types::RoomEqAlgorithm::NelderMead => "nlopt:neldermead",
-            }
-            .to_string(),
+            algo: config.algorithm.to_autoeq_string().to_string(),
             population: config.population,
             maxeval: config.max_iter,
             de_f: config.de_f,
@@ -180,10 +174,10 @@ impl PlayerView {
                             .headphone_eq_state
                             .optimizer_config
                             .algorithm = match algo {
+                            "autoeq:cobyla" | "cobyla" => RoomEqAlgorithm::Cobyla,
                             "autoeq:de" => RoomEqAlgorithm::DifferentialEvolution,
                             "autoeq:bo" => RoomEqAlgorithm::BayesianOptimization,
-                            "nlopt:cobyla" => RoomEqAlgorithm::Cobyla,
-                            "nlopt:neldermead" => RoomEqAlgorithm::NelderMead,
+                            "autoeq:cmaes" | "cma-es" => RoomEqAlgorithm::CmaEs,
                             _ => RoomEqAlgorithm::Cobyla,
                         };
                         state

@@ -399,12 +399,12 @@ impl RecordingState {
         self.current_recording_channel.is_some()
     }
 
-    /// Ensure `channel_speakers` has one slot per current channel row.
-    /// Call this whenever the channel list changes so the UI never
-    /// indexes a short vec. Preserves any pre-existing values.
+    /// Ensure `channel_speakers` has one slot per physical playback
+    /// channel. Capture rows can be multiplied by mic/position, but
+    /// speaker identity is attached to the speaker channel itself.
     pub fn sync_channel_speakers_length(&mut self) {
         self.channel_speakers
-            .resize(self.channel_recordings.len(), String::new());
+            .resize(self.playback_config.channel_mappings.len(), String::new());
     }
 
     /// Build the canonical-metric [`RoomDimensions`] to persist in
@@ -436,11 +436,11 @@ impl RecordingState {
         &self,
     ) -> Option<std::collections::HashMap<String, String>> {
         let mut map = std::collections::HashMap::new();
-        for (i, rec) in self.channel_recordings.iter().enumerate() {
+        for (i, mapping) in self.playback_config.channel_mappings.iter().enumerate() {
             if let Some(name) = self.channel_speakers.get(i) {
                 let trimmed = name.trim();
                 if !trimmed.is_empty() {
-                    map.insert(rec.channel_name.clone(), trimmed.to_string());
+                    map.insert(mapping.group_name.clone(), trimmed.to_string());
                 }
             }
         }
