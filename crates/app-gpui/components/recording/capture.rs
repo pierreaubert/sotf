@@ -1820,12 +1820,10 @@ impl PlayerView {
     /// Outputs autoeq::RoomConfig format compatible with roomeq CLI
     pub(crate) fn save_recordings(&mut self, cx: &mut Context<Self>) {
         use crate::app::types::RoomEqMeasurementsFile;
-        use autoeq::{
-            InlineMeasurement, MeasurementRef, MeasurementSource, OptimizerConfig,
-            RecordingConfiguration, RoomConfig, SpeakerConfig,
+        use autoeq::{OptimizerConfig, RecordingConfiguration, RoomConfig};
+        use sotf_audio_player::room_eq_types::{
+            build_speakers_from_recordings, ctc_system_config_for_speaker_names,
         };
-        use sotf_audio_player::room_eq_types::ctc_system_config_for_speaker_names;
-        use std::collections::HashMap;
 
         let recording_dir = match self.ensure_named_recording_directory(cx) {
             Ok(dir) => dir,
@@ -2052,91 +2050,16 @@ impl PlayerView {
                 },
             };
 
-            // Group recordings by channel_index so each logical speaker
-            // produces one SpeakerConfig entry. Multi-position takes
-            // (mic_position_index > 0) become MeasurementSource::Multiple.
-            // The second mic of binaural CTC captures (mic_index >= 1) is
-            // excluded — that data lives in ctc_measurements and using it
-            // here would create extra "phantom" speakers whose names don't
-            // match the CTC measurement roles, breaking system.speakers
-            // validation downstream.
-            let mut grouped_recordings: std::collections::BTreeMap<
-                usize,
-                Vec<&crate::app::types::ChannelRecording>,
-            > = std::collections::BTreeMap::new();
-            for rec in recordings.iter() {
-                if rec.result.is_some() && rec.mic_index == 0 {
-                    grouped_recordings
-                        .entry(rec.channel_index)
-                        .or_default()
-                        .push(rec);
-                }
-            }
-
-            let mut speakers: HashMap<String, SpeakerConfig> = HashMap::new();
-
-            for (channel_index, mut group) in grouped_recordings {
-                group.sort_by_key(|r| r.mic_position_index);
-
-                let primary = group[0];
-                let base_name = rec_state
-                    .playback_config
-                    .channel_mappings
-                    .get(channel_index)
-                    .map(|m| m.group_name.clone())
-                    .unwrap_or_else(|| {
-                        primary
-                            .channel_name
-                            .find(" (")
-                            .map_or(primary.channel_name.as_str(), |pos| {
-                                &primary.channel_name[..pos]
-                            })
-                            .to_string()
-                    });
-
-                let measurement_refs: Vec<MeasurementRef> = group
-                    .iter()
-                    .filter_map(|rec| {
-                        let result = rec.result.as_ref()?;
-                        let relative_wav = result
-                            .wav_path
-                            .as_ref()
-                            .and_then(|p| std::path::Path::new(p).file_name())
-                            .map(|f| f.to_string_lossy().to_string());
-                        let relative_csv = result
-                            .csv_path
-                            .as_ref()
-                            .and_then(|p| std::path::Path::new(p).file_name())
-                            .map(|f| f.to_string_lossy().to_string());
-                        Some(MeasurementRef::Inline(InlineMeasurement {
-                            frequencies: Vec::new(),
-                            magnitude_db: Vec::new(),
-                            phase_deg: None,
-                            name: Some(rec.channel_name.clone()),
-                            wav_path: relative_wav,
-                            csv_path: relative_csv,
-                        }))
-                    })
-                    .collect();
-
-                if measurement_refs.is_empty() {
-                    continue;
-                }
-
-                let speaker_source = if measurement_refs.len() == 1 {
-                    MeasurementSource::Single(autoeq::read::MeasurementSingle {
-                        measurement: measurement_refs.into_iter().next().unwrap(),
-                        speaker_name: None,
-                    })
-                } else {
-                    MeasurementSource::Multiple(autoeq::read::MeasurementMultiple {
-                        measurements: measurement_refs,
-                        speaker_name: None,
-                    })
-                };
-
-                speakers.insert(base_name, SpeakerConfig::Single(speaker_source));
-            }
+            // Group every completed (channel × mic × position) take by
+            // channel_index so each output channel produces exactly one
+            // SpeakerConfig — multi-mic / multi-position takes become a
+            // MeasurementSource::Multiple that roomeq averages into one
+            // EQ chain per real channel.
+            let speakers = build_speakers_from_recordings(
+                recordings,
+                &channel_names,
+                rec_state.channel_speakers_map_for_save().as_ref(),
+            );
 
             if speakers.is_empty() {
                 log::warn!("No completed recordings to save");
@@ -2225,14 +2148,10 @@ impl PlayerView {
         log::info!("Save recordings completed");
     }
 
-    /// Load recordings from a JSON file (RoomEqMeasurementsFile format)
-    ///
-    /// Detects legacy format (large inline data) and prompts for migration.
+    /// Load recordings from a JSON file (autoeq RoomConfig format)
     pub(crate) fn load_recordings_from_file(&mut self, cx: &mut Context<Self>) {
         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
-            use crate::app::types::RoomEqMeasurementsFile;
-
             let weak_state = self.state.downgrade();
 
             cx.spawn(async move |_, cx| {
@@ -2253,46 +2172,19 @@ impl PlayerView {
                         return;
                     };
 
-                    // Read file content
+                    let _ = file_size;
+                    // Read file content — only the autoeq RoomConfig
+                    // format is supported; older RoomEqMeasurementsFile
+                    // files surface as a load error.
                     match std::fs::read_to_string(&file_path) {
                         Ok(json) => {
-                            // Check if this is a legacy format (large file with inline data)
-                            let needs_migration = Self::check_needs_migration(&json, file_size);
-
-                            if needs_migration {
-                                // Show migration modal instead of loading directly
-                                log::info!(
-                                    "Detected legacy format ({:.2} MB), showing migration modal",
-                                    file_size as f64 / 1_000_000.0
-                                );
-
-                                // Count channels for display
-                                let channel_count = RoomEqMeasurementsFile::from_json_str(&json)
-                                    .map(|m| m.channels.len())
-                                    .unwrap_or(0);
-
-                                state_entity.update(&mut cx.clone(), |state, _| {
-                                    let rec_state =
-                                        &mut state.app.measurement_state.recording_state;
-                                    rec_state.migration_modal_open = true;
-                                    rec_state.migration_file_path =
-                                        Some(file_path.to_string_lossy().to_string());
-                                    rec_state.migration_file_dir =
-                                        file_dir.map(|d| d.to_string_lossy().to_string());
-                                    rec_state.migration_file_size = Some(file_size);
-                                    rec_state.migration_channel_count = channel_count;
-                                    rec_state.migration_pending_json = Some(json);
-                                });
-                            } else {
-                                // Load normally for new format or small files
-                                Self::load_recordings_internal(
-                                    state_entity,
-                                    &mut cx.clone(),
-                                    &json,
-                                    &file_path,
-                                    file_dir,
-                                );
-                            }
+                            Self::load_recordings_internal(
+                                state_entity,
+                                &mut cx.clone(),
+                                &json,
+                                &file_path,
+                                file_dir,
+                            );
                         }
                         Err(e) => {
                             log::error!("Failed to read recordings file: {}", e);
@@ -2308,11 +2200,6 @@ impl PlayerView {
 
             log::info!("Load recordings from file initiated");
         }
-    }
-
-    /// Check if a JSON file needs migration (legacy format with large inline data)
-    fn check_needs_migration(json: &str, file_size: u64) -> bool {
-        crate::components::migration::check_needs_migration(json, file_size)
     }
 
     /// Internal function to load recordings from parsed JSON
@@ -2519,69 +2406,17 @@ impl PlayerView {
             return;
         }
 
-        // Fall back to legacy RoomEqMeasurementsFile format
-        use crate::app::types::RoomEqMeasurementsFile;
-        match RoomEqMeasurementsFile::from_json_str(json) {
-            Ok(measurements_file) => {
-                log::info!(
-                    "Loaded {} channel measurements from {:?} (legacy format)",
-                    measurements_file.channels.len(),
-                    file_path
-                );
-
-                let file_path_display = file_path.display().to_string();
-                state_entity.update(cx, |state, _| {
-                    // Convert ChannelMeasurement to ChannelRecording
-                    let recordings: Vec<ChannelRecording> = measurements_file
-                        .channels
-                        .into_iter()
-                        .enumerate()
-                        .map(|(idx, cm)| {
-                            // Convert relative paths in result to absolute paths
-                            let mut result = cm.measurement;
-                            if let (Some(dir), Some(wav)) = (&file_dir, &result.wav_path) {
-                                let abs_path = dir.join(wav);
-                                if abs_path.exists() {
-                                    result.wav_path = Some(abs_path.to_string_lossy().to_string());
-                                }
-                            }
-                            if let (Some(dir), Some(csv)) = (&file_dir, &result.csv_path) {
-                                let abs_path = dir.join(csv);
-                                if abs_path.exists() {
-                                    result.csv_path = Some(abs_path.to_string_lossy().to_string());
-                                }
-                            }
-
-                            let mut rec = ChannelRecording::new(idx, cm.channel_name);
-                            rec.state = ChannelRecordingState::Done;
-                            rec.result = Some(result);
-                            rec
-                        })
-                        .collect();
-
-                    let rec_state = &mut state.app.measurement_state.recording_state;
-                    rec_state.channel_recordings = recordings.clone();
-
-                    // Also set the recording directory to the file's directory
-                    if let Some(dir) = file_dir {
-                        rec_state.recording_directory = Some(dir.to_string_lossy().to_string());
-                    }
-
-                    rec_state.status_message = format!(
-                        "Loaded {} channels from {}",
-                        recordings.len(),
-                        file_path_display
-                    );
-                });
-            }
-            Err(e) => {
-                log::error!("Failed to parse recordings JSON: {}", e);
-                state_entity.update(cx, |state, _| {
-                    state.app.measurement_state.recording_state.status_message =
-                        format!("Failed to parse: {}", e);
-                });
-            }
-        }
+        // Not a RoomConfig — there is no legacy fallback any more.
+        log::error!(
+            "{} is not in the autoeq RoomConfig format (no \"speakers\" map)",
+            file_path.display()
+        );
+        state_entity.update(cx, |state, _| {
+            state.app.measurement_state.recording_state.status_message = format!(
+                "{} is not in the current RoomConfig format — re-run the Recording wizard to regenerate it.",
+                file_path.display()
+            );
+        });
     }
 
     /// Render the migration confirmation modal
@@ -2799,128 +2634,19 @@ impl PlayerView {
     /// 2. Write updated CSV files with full data from the inline JSON
     /// 3. Write a new lightweight JSON file to the original location
     fn perform_migration(&mut self, cx: &mut Context<Self>) {
-        use crate::app::types::{ChannelRecording, ChannelRecordingState};
-        use crate::components::migration;
-
-        log::info!("perform_migration: STARTED");
-
-        let state = self.state.read(cx);
-        let rec_state = &state.app.measurement_state.recording_state;
-
-        log::info!(
-            "perform_migration: modal_open={}, has_pending_json={}, file_path={:?}",
-            rec_state.migration_modal_open,
-            rec_state.migration_pending_json.is_some(),
-            rec_state.migration_file_path
-        );
-
-        let json = match &rec_state.migration_pending_json {
-            Some(j) => j.clone(),
-            None => {
-                log::error!("No pending JSON for migration");
-                return;
-            }
-        };
-
-        let file_path = rec_state.migration_file_path.clone().unwrap_or_default();
-        let file_dir = rec_state
-            .migration_file_dir
-            .clone()
-            .map(std::path::PathBuf::from);
-
-        // Release the borrow on state before proceeding with migration
-        let _ = state;
-
-        let original_path = std::path::PathBuf::from(&file_path);
-        let session_dir = file_dir.clone().unwrap_or_else(|| {
-            original_path
-                .parent()
-                .unwrap_or(std::path::Path::new("."))
-                .to_path_buf()
+        // Legacy `RoomEqMeasurementsFile` migration is no longer
+        // supported — the only on-disk format is `autoeq::RoomConfig`.
+        // The modal trigger has been disabled, but in case the modal
+        // surfaces from stale state, dismiss it cleanly with a message
+        // instead of touching the legacy parser.
+        self.state.update(cx, |state, _| {
+            let rec_state = &mut state.app.measurement_state.recording_state;
+            rec_state.migration_modal_open = false;
+            rec_state.migration_pending_json = None;
+            rec_state.status_message =
+                "Legacy file migration is no longer supported. Re-record to regenerate the file."
+                    .to_string();
         });
-
-        // Use shared migration module for file operations
-        match migration::perform_migration(&json, &original_path, &session_dir) {
-            Ok(result) => {
-                log::info!(
-                    "Migration complete: {} channels, backup at {:?}",
-                    result.channel_count,
-                    result.backup_path
-                );
-
-                // Re-parse the measurements to build ChannelRecording objects
-                use crate::app::types::RoomEqMeasurementsFile;
-                match RoomEqMeasurementsFile::from_json_str(&json) {
-                    Ok(measurements_file) => {
-                        // Create recordings directly from the already-parsed measurements_file
-                        let recordings: Vec<ChannelRecording> = measurements_file
-                            .channels
-                            .iter()
-                            .enumerate()
-                            .map(|(idx, ch)| {
-                                let safe_channel_name =
-                                    migration::sanitize_filename(&ch.channel_name);
-
-                                // Convert relative paths to absolute paths
-                                let mut result = ch.measurement.clone();
-                                result.csv_path = Some(
-                                    session_dir
-                                        .join(format!("{}.csv", safe_channel_name))
-                                        .to_string_lossy()
-                                        .to_string(),
-                                );
-                                if let Some(wav) = &result.wav_path {
-                                    let abs_path = session_dir.join(wav);
-                                    if abs_path.exists() {
-                                        result.wav_path =
-                                            Some(abs_path.to_string_lossy().to_string());
-                                    }
-                                }
-
-                                let mut rec = ChannelRecording::new(idx, ch.channel_name.clone());
-                                rec.state = ChannelRecordingState::Done;
-                                rec.result = Some(result);
-                                rec
-                            })
-                            .collect();
-
-                        let num_channels = recordings.len();
-
-                        // Update state with the recordings and close modal
-                        self.state.update(cx, |state, _| {
-                            let rec_state = &mut state.app.measurement_state.recording_state;
-                            rec_state.channel_recordings = recordings;
-                            rec_state.migration_modal_open = false;
-                            rec_state.migration_pending_json = None;
-                            rec_state.status_message = format!(
-                                "Converted {} channels. Original backed up to .bak",
-                                num_channels
-                            );
-                        });
-                    }
-                    Err(e) => {
-                        log::error!("Failed to re-parse JSON after migration: {}", e);
-                        self.state.update(cx, |state, _| {
-                            let rec_state = &mut state.app.measurement_state.recording_state;
-                            rec_state.migration_modal_open = false;
-                            rec_state.migration_pending_json = None;
-                            rec_state.status_message =
-                                format!("Migration files written but failed to load: {}", e);
-                        });
-                    }
-                }
-            }
-            Err(e) => {
-                log::error!("Migration failed: {}", e);
-                self.state.update(cx, |state, _| {
-                    let rec_state = &mut state.app.measurement_state.recording_state;
-                    rec_state.migration_modal_open = false;
-                    rec_state.migration_pending_json = None;
-                    rec_state.status_message = format!("Migration failed: {}", e);
-                });
-            }
-        }
-
         cx.notify();
     }
 

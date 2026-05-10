@@ -2064,9 +2064,10 @@ pub fn poll_recording(app: &mut App) -> bool {
 }
 
 pub(crate) fn save_recordings(app: &mut App) {
+    use autoeq::{OptimizerConfig, RecordingConfiguration, RoomConfig};
     use sotf_audio_player::recording_types::ChannelRecordingState;
     use sotf_audio_player::room_eq_types::{
-        ChannelMeasurement, RecordingConfiguration, RoomEqMeasurementsFile,
+        RoomEqMeasurementsFile, build_speakers_from_recordings, ctc_system_config_for_speaker_names,
     };
 
     // Validate save name early (before any I/O)
@@ -2103,60 +2104,6 @@ pub(crate) fn save_recordings(app: &mut App) {
         app.recording.save_error = Some(format!("Cannot create directory: {}", e));
         return;
     }
-
-    // Build measurements file
-    let mut grouped: std::collections::BTreeMap<
-        usize,
-        Vec<&sotf_audio_player::recording_types::ChannelRecording>,
-    > = std::collections::BTreeMap::new();
-    for &ch in &completed {
-        grouped.entry(ch.channel_index).or_default().push(ch);
-    }
-    let channels: Vec<ChannelMeasurement> = grouped
-        .into_values()
-        .filter_map(|mut recordings| {
-            recordings.sort_by_key(|r| (r.mic_position_index, r.mic_index));
-            let primary_idx = recordings
-                .iter()
-                .position(|r| r.mic_position_index == 0 && r.mic_index == 0)
-                .unwrap_or(0);
-            let primary = recordings[primary_idx];
-            let base_name = app
-                .recording
-                .playback_config
-                .channel_mappings
-                .get(primary.channel_index)
-                .map(|m| m.group_name.clone())
-                .unwrap_or_else(|| {
-                    primary
-                        .channel_name
-                        .find(" (")
-                        .map_or(primary.channel_name.as_str(), |pos| {
-                            &primary.channel_name[..pos]
-                        })
-                        .to_string()
-                });
-            let measurement = primary.result.clone()?;
-            let multi_mic_measurements = recordings
-                .into_iter()
-                .enumerate()
-                .filter_map(|(idx, r)| {
-                    if idx == primary_idx {
-                        None
-                    } else {
-                        r.result.clone()
-                    }
-                })
-                .collect();
-            Some(ChannelMeasurement {
-                channel_name: base_name,
-                measurement,
-                is_group: false,
-                group_drivers: Vec::new(),
-                multi_mic_measurements,
-            })
-        })
-        .collect();
 
     let channel_names: Vec<String> = app
         .recording
@@ -2240,46 +2187,59 @@ pub(crate) fn save_recordings(app: &mut App) {
         ctc_reference_sweep = None;
     }
 
-    // B6: Build RecordingConfiguration from current state
+    // Build per-channel speaker entries — every (channel × mic ×
+    // position) recording for the same output channel folds into one
+    // SpeakerConfig so roomeq emits one EQ chain per channel.
+    let speakers = build_speakers_from_recordings(
+        &app.recording.channel_recordings,
+        &channel_names,
+        app.recording.channel_speakers_map_for_save().as_ref(),
+    );
+
+    if speakers.is_empty() {
+        app.recording.save_error = Some("No completed recordings to save".to_string());
+        return;
+    }
+
+    let mic_calibration_paths_value =
+        app.recording.recording_config.mic_calibration_paths.clone();
+
     let configuration = RecordingConfiguration {
-        playback_device_name: app.recording.playback_config.device_name.clone(),
-        playback_device_id: app.recording.playback_config.device_id.clone(),
-        playback_sample_rate: app.recording.playback_config.sample_rate,
-        playback_channels: app.recording.playback_config.num_channels,
-        speaker_configuration: app
-            .recording
-            .playback_config
-            .speaker_configuration
-            .as_str()
-            .to_string(),
-        channel_names,
-        recording_device_name: app.recording.recording_config.device_name.clone(),
-        recording_device_id: app.recording.recording_config.device_id.clone(),
-        recording_sample_rate: app.recording.recording_config.sample_rate,
-        recording_channels: app.recording.recording_config.num_channels,
-        // Legacy single-mic field: derive from channel 0 for backwards
-        // compatibility with consumers that haven't migrated to the per-
-        // channel vec.
-        mic_calibration_path: app
-            .recording
-            .recording_config
-            .mic_calibration_paths
+        playback_device_name: Some(app.recording.playback_config.device_name.clone()),
+        playback_device_id: Some(app.recording.playback_config.device_id.clone()),
+        playback_sample_rate: Some(app.recording.playback_config.sample_rate),
+        playback_channels: Some(app.recording.playback_config.num_channels),
+        speaker_configuration: Some(
+            app.recording
+                .playback_config
+                .speaker_configuration
+                .as_str()
+                .to_string(),
+        ),
+        channel_names: Some(channel_names.clone()),
+        recording_device_name: Some(app.recording.recording_config.device_name.clone()),
+        recording_device_id: Some(app.recording.recording_config.device_id.clone()),
+        recording_sample_rate: Some(app.recording.recording_config.sample_rate),
+        recording_channels: Some(app.recording.recording_config.num_channels),
+        mic_calibration_path: mic_calibration_paths_value
             .first()
             .and_then(|o| o.clone())
             .filter(|s| !s.is_empty()),
-        mic_calibration_paths: app.recording.recording_config.mic_calibration_paths.clone(),
+        mic_calibration_paths: if mic_calibration_paths_value.is_empty() {
+            None
+        } else {
+            Some(mic_calibration_paths_value)
+        },
         recording_directory: if app.recording.output_directory.is_empty() {
             None
         } else {
             Some(app.recording.output_directory.clone())
         },
-        signal_type: app.recording.signal_type.as_str().to_string(),
-        signal_duration_secs: app.recording.signal_duration_secs,
-        signal_level_db: app.recording.signal_level_db,
+        signal_type: Some(app.recording.signal_type.as_str().to_string()),
+        signal_duration_secs: Some(app.recording.signal_duration_secs),
+        signal_level_db: Some(app.recording.signal_level_db),
         sweep_start_freq: Some(app.recording.sweep_start_freq),
         sweep_end_freq: Some(app.recording.sweep_end_freq),
-        // Room info collected on the Save step. Converted to metric,
-        // trimmed, or dropped when the user left the fields blank.
         room_dimensions: app.recording.room_dimensions_for_save(),
         setup_description: {
             let s = app.recording.setup_description.trim();
@@ -2290,9 +2250,23 @@ pub(crate) fn save_recordings(app: &mut App) {
             }
         },
         channel_speakers: app.recording.channel_speakers_map_for_save(),
-        // Tone-burst delay-probe results (Recording wizard Probe
-        // step). `None` when the user skipped the step.
-        probe_results: app.recording.probe_capture.results.clone(),
+        probe_results: app.recording.probe_capture.results.as_ref().map(|r| {
+            autoeq::roomeq::ProbeResultsLegacy {
+                channels: r
+                    .channels
+                    .iter()
+                    .map(|c| autoeq::roomeq::ProbeChannelResultLegacy {
+                        channel_name: c.channel_name.clone(),
+                        channel_index: c.channel_index,
+                        arrival_ms: c.arrival_ms,
+                        gain_db: c.gain_db,
+                        snr_db: c.snr_db,
+                    })
+                    .collect(),
+                sample_rate: r.sample_rate,
+                alignment_delays_ms: r.alignment_delays_ms.clone(),
+            }
+        }),
         probe_wav_relative: app
             .recording
             .probe_capture
@@ -2300,40 +2274,57 @@ pub(crate) fn save_recordings(app: &mut App) {
             .as_ref()
             .and_then(|p| std::path::Path::new(p).file_name())
             .map(|f| f.to_string_lossy().to_string()),
-        num_positions: app.recording.recording_config.num_positions.max(1),
-        ctc_config: ctc_measurements.clone().map(|measurements| {
-            let raw = ctc_reference_sweep.is_some();
-            autoeq::roomeq::CtcConfig {
-                enabled: true,
-                matrix_source: if raw { "raw_sweep" } else { "measured" }.to_string(),
-                measurements: Some(measurements),
-                reference_sweep: ctc_reference_sweep,
-                sweep_duration_s: if raw {
-                    Some(app.recording.signal_duration_secs as f64)
-                } else {
-                    None
-                },
-                sweep_start_hz: if raw {
-                    ctc_raw_sweep_range.map(|(start, _)| start as f64)
-                } else {
-                    None
-                },
-                sweep_end_hz: if raw {
-                    ctc_raw_sweep_range.map(|(_, end)| end as f64)
-                } else {
-                    None
-                },
-                ..Default::default()
-            }
-        }),
-        ctc_measurements,
+        num_positions: {
+            let n = app.recording.recording_config.num_positions.max(1);
+            if n > 1 { Some(n) } else { None }
+        },
+        ..Default::default()
     };
 
-    let measurements_file = RoomEqMeasurementsFile::with_configuration(channels, configuration);
+    let ctc = ctc_measurements.map(|measurements| {
+        let raw = ctc_reference_sweep.is_some();
+        autoeq::roomeq::CtcConfig {
+            enabled: true,
+            matrix_source: if raw { "raw_sweep" } else { "measured" }.to_string(),
+            measurements: Some(measurements),
+            reference_sweep: ctc_reference_sweep,
+            sweep_duration_s: if raw {
+                Some(app.recording.signal_duration_secs as f64)
+            } else {
+                None
+            },
+            sweep_start_hz: if raw {
+                ctc_raw_sweep_range.map(|(start, _)| start as f64)
+            } else {
+                None
+            },
+            sweep_end_hz: if raw {
+                ctc_raw_sweep_range.map(|(_, end)| end as f64)
+            } else {
+                None
+            },
+            ..Default::default()
+        }
+    });
+    let system = ctc.as_ref().filter(|ctc| ctc.enabled).and_then(|_| {
+        ctc_system_config_for_speaker_names(speakers.keys().map(String::as_str), None)
+    });
+
+    let room_config = RoomConfig {
+        version: "1.1.0".to_string(),
+        system,
+        speakers,
+        crossovers: None,
+        target_curve: None,
+        optimizer: OptimizerConfig::default(),
+        recording_config: Some(configuration),
+        ctc,
+        cea2034_cache: None,
+    };
 
     let path = std::path::PathBuf::from(&dir).join(format!("{}.json", name));
 
-    match serde_json::to_string_pretty(&measurements_file) {
+    match serde_json::to_string_pretty(&room_config) {
         Ok(json) => match std::fs::write(&path, json) {
             Ok(()) => {
                 app.recording.save_success = true;

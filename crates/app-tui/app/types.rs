@@ -766,13 +766,11 @@ impl RecordingTuiState {
             .resize(self.playback_config.channel_mappings.len(), String::new());
     }
 
-    /// Build the canonical-metric `RoomDimensionsLegacy` to persist in
-    /// `RecordingConfiguration`. Returns `None` when any dimension is
-    /// blank (zero) — a partial triple would mislead downstream
-    /// consumers (e.g. the optimizer's Schroeder auto-detect).
-    pub fn room_dimensions_for_save(
-        &self,
-    ) -> Option<sotf_audio_player::room_eq_types::RoomDimensionsLegacy> {
+    /// Build the canonical-metric `RoomDimensions` to persist in the
+    /// autoeq `RecordingConfiguration`. Returns `None` when any
+    /// dimension is blank (zero) — a partial triple would mislead
+    /// downstream consumers (e.g. the optimizer's Schroeder auto-detect).
+    pub fn room_dimensions_for_save(&self) -> Option<autoeq::roomeq::RoomDimensions> {
         if self.save_room_width <= 0.0
             || self.save_room_depth <= 0.0
             || self.save_room_height <= 0.0
@@ -780,7 +778,7 @@ impl RecordingTuiState {
             return None;
         }
         let u = self.save_room_unit;
-        Some(sotf_audio_player::room_eq_types::RoomDimensionsLegacy {
+        Some(autoeq::roomeq::RoomDimensions {
             length: u.to_meters(self.save_room_depth),
             width: u.to_meters(self.save_room_width),
             height: u.to_meters(self.save_room_height),

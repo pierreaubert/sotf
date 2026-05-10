@@ -1,55 +1,4 @@
-use sotf_audio_player_gpui::{RoomEqMeasurementsFile, check_needs_migration, sanitize_filename};
-
-#[test]
-fn test_migration_v1_to_v2() {
-    // V1 JSON (missing version)
-    let v1_json = r#"{
-        "channels": [
-            {
-                "channel_name": "L",
-                "measurement": {
-                    "channel": 0,
-                    "wav_path": "test.wav",
-                    "csv_path": null,
-                    "frequencies": [],
-                    "magnitude_db": [],
-                    "phase_deg": [],
-                    "impulse_response": null,
-                    "impulse_time_ms": null,
-                    "thd_percent": null,
-                    "harmonic_distortion_db": null,
-                    "excess_group_delay_ms": null,
-                    "rt60_ms": null,
-                    "clarity_c50_db": null,
-                    "clarity_c80_db": null,
-                    "spectrogram_db": null
-                },
-                "is_group": false,
-                "group_drivers": []
-            }
-        ],
-        "configuration": null
-    }"#;
-
-    let result = RoomEqMeasurementsFile::from_json_str(v1_json).expect("Migration failed");
-
-    assert_eq!(result.version, 2);
-    assert_eq!(result.channels.len(), 1);
-    assert_eq!(result.channels[0].channel_name, "L");
-}
-
-#[test]
-fn test_load_v2() {
-    // V2 JSON (with version)
-    let v2_json = r#"{
-        "version": 2,
-        "channels": [],
-        "configuration": null
-    }"#;
-
-    let result = RoomEqMeasurementsFile::from_json_str(v2_json).expect("Loading V2 failed");
-    assert_eq!(result.version, 2);
-}
+use sotf_audio_player_gpui::{check_needs_migration, sanitize_filename};
 
 #[test]
 fn test_load_new_room_config_format() {
@@ -171,25 +120,17 @@ fn test_room_config_roundtrip() {
 // ============================================================================
 
 #[test]
-fn test_check_needs_migration_small_file() {
-    let json = r#"{"channels": []}"#;
-    assert!(!check_needs_migration(json, 100));
-}
-
-#[test]
-fn test_check_needs_migration_large_file_no_data() {
-    let json = r#"{"channels": []}"#;
-    assert!(!check_needs_migration(json, 2_000_000));
-}
-
-#[test]
-fn test_check_needs_migration_large_file_with_data() {
+fn check_needs_migration_is_a_no_op_after_legacy_removal() {
+    // The legacy `RoomEqMeasurementsFile` schema has been removed; the
+    // helper exists as a stub that always reports "no migration needed"
+    // so callers route straight to the autoeq RoomConfig parser.
     let frequencies: Vec<f32> = (0..200).map(|i| i as f32 * 100.0).collect();
-    let json = format!(
+    let big_legacy_blob = format!(
         r#"{{"channels": [{{"measurement": {{"frequencies": {:?}}}}}]}}"#,
         frequencies
     );
-    assert!(check_needs_migration(&json, 2_000_000));
+    assert!(!check_needs_migration(&big_legacy_blob, 2_000_000));
+    assert!(!check_needs_migration(r#"{"channels": []}"#, 100));
 }
 
 #[test]

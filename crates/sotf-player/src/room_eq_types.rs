@@ -274,74 +274,6 @@ pub enum RoomEqDataSource {
     FromFile(std::path::PathBuf),
 }
 
-/// Recording configuration stored with measurements
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RecordingConfiguration {
-    pub playback_device_name: String,
-    pub playback_device_id: String,
-    pub playback_sample_rate: u32,
-    pub playback_channels: usize,
-    pub speaker_configuration: String,
-    pub channel_names: Vec<String>,
-    pub recording_device_name: String,
-    pub recording_device_id: String,
-    pub recording_sample_rate: u32,
-    pub recording_channels: usize,
-    pub mic_calibration_path: Option<String>,
-    #[serde(default)]
-    pub mic_calibration_paths: Vec<Option<String>>,
-    pub recording_directory: Option<String>,
-    pub signal_type: String,
-    pub signal_duration_secs: f32,
-    pub signal_level_db: f32,
-    #[serde(default)]
-    pub sweep_start_freq: Option<f32>,
-    #[serde(default)]
-    pub sweep_end_freq: Option<f32>,
-    /// Physical room dimensions collected at save time (W × D × H, in
-    /// meters). Optional — older files and hastily-saved sessions will
-    /// not have this populated. When present the field round-trips
-    /// through load/save unchanged.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub room_dimensions: Option<RoomDimensionsLegacy>,
-    /// Free-form description of the listening setup (treatment,
-    /// seating, notes). Empty strings are stored as `None` on save.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub setup_description: Option<String>,
-    /// Per-channel speaker identity (brand + model) keyed by channel
-    /// name so rename/reorder survives.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub channel_speakers: Option<std::collections::HashMap<String, String>>,
-    /// Tone-burst delay probe results captured during the Recording
-    /// wizard's Probe step. When present the Room EQ "Delay Detection"
-    /// step can auto-populate from these instead of running a live
-    /// measurement.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub probe_results: Option<DelayProbeResults>,
-    /// Relative path (within the recording directory) of the raw
-    /// probe WAV persisted by `probe_channel_delays_with_recording`.
-    /// `None` for sessions that skipped the Probe step.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub probe_wav_relative: Option<String>,
-    /// Number of measurement positions (seats) the user captured.
-    /// 1 for legacy single-position sessions; ≥ 2 means the
-    /// `multi_mic_measurements` arrays on each channel hold the
-    /// per-(position, mic) sweeps in `(position, mic)` order.
-    #[serde(default = "default_num_positions_one")]
-    pub num_positions: usize,
-    /// CTC/N-by-M transfer-matrix measurements exported from the
-    /// multi-speaker × multi-mic recording session. Paths are relative
-    /// to `recording_directory` when possible.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ctc_measurements: Option<autoeq::roomeq::CtcMeasurementConfig>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ctc_config: Option<autoeq::roomeq::CtcConfig>,
-}
-
-fn default_num_positions_one() -> usize {
-    1
-}
-
 fn sanitize_ctc_filename(name: &str) -> String {
     let mut out = String::with_capacity(name.len());
     for ch in name.chars() {
@@ -638,48 +570,127 @@ pub fn ctc_uniform_sweep_range_for_measurements(
     range
 }
 
-/// Simple W/D/H triple in meters for the legacy
-/// `RoomEqMeasurementsFile` format. Mirrors `autoeq::RoomDimensions`
-/// but lives in the player crate so nothing here has to depend on
-/// autoeq's roomeq types.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct RoomDimensionsLegacy {
-    pub length: f64,
-    pub width: f64,
-    pub height: f64,
+/// Build the per-channel speaker map for an `autoeq::RoomConfig` from a
+/// finished recording session. All completed takes for the same
+/// `channel_index` (every microphone, every measurement position) are
+/// folded into a single `SpeakerConfig`, so roomeq emits one EQ chain per
+/// real output channel instead of one per (channel × mic × position) take.
+///
+/// * `channel_names` is indexed by `channel_index` and supplies the bare
+///   output name (e.g. `"L"`, `"R"`, `"LFE"`) used as the map key.
+/// * `channel_speakers` (optional) maps a channel name to the speaker
+///   model string (e.g. `"Genelec 8361A"`); when present it is recorded
+///   as `speaker_name` in the resulting source so the optimizer / UI can
+///   reference the catalog entry.
+///
+/// Each take is exported as `MeasurementRef::Inline` carrying the
+/// session-relative `wav_path` / `csv_path` so the autoeq optimizer can
+/// pick up the WAV for FDW analysis even though the SPL data lives in
+/// the CSV file.
+pub fn build_speakers_from_recordings(
+    recordings: &[ChannelRecording],
+    channel_names: &[String],
+    channel_speakers: Option<&std::collections::HashMap<String, String>>,
+) -> HashMap<String, autoeq::SpeakerConfig> {
+    use autoeq::read::{
+        InlineMeasurement, MeasurementMultiple, MeasurementRef, MeasurementSingle,
+    };
+    use autoeq::{MeasurementSource, SpeakerConfig};
+
+    let mut grouped: BTreeMap<usize, Vec<&ChannelRecording>> = BTreeMap::new();
+    for rec in recordings {
+        if rec.state != ChannelRecordingState::Done {
+            continue;
+        }
+        if rec.result.is_none() {
+            continue;
+        }
+        grouped.entry(rec.channel_index).or_default().push(rec);
+    }
+
+    let mut speakers: HashMap<String, SpeakerConfig> = HashMap::new();
+    for (channel_index, mut group) in grouped {
+        group.sort_by_key(|r| (r.mic_position_index, r.mic_index));
+
+        let primary = group[0];
+        let base_name = channel_names
+            .get(channel_index)
+            .cloned()
+            .unwrap_or_else(|| {
+                primary
+                    .channel_name
+                    .find(" (")
+                    .map_or(primary.channel_name.as_str(), |pos| {
+                        &primary.channel_name[..pos]
+                    })
+                    .to_string()
+            });
+
+        let measurement_refs: Vec<MeasurementRef> = group
+            .iter()
+            .filter_map(|rec| {
+                let result = rec.result.as_ref()?;
+                let relative_wav = result
+                    .wav_path
+                    .as_ref()
+                    .and_then(|p| std::path::Path::new(p).file_name())
+                    .map(|f| f.to_string_lossy().to_string());
+                let relative_csv = result
+                    .csv_path
+                    .as_ref()
+                    .and_then(|p| std::path::Path::new(p).file_name())
+                    .map(|f| f.to_string_lossy().to_string());
+                if relative_wav.is_none() && relative_csv.is_none() {
+                    return None;
+                }
+                Some(MeasurementRef::Inline(InlineMeasurement {
+                    frequencies: Vec::new(),
+                    magnitude_db: Vec::new(),
+                    phase_deg: None,
+                    name: Some(rec.channel_name.clone()),
+                    wav_path: relative_wav,
+                    csv_path: relative_csv,
+                }))
+            })
+            .collect();
+
+        if measurement_refs.is_empty() {
+            continue;
+        }
+
+        let speaker_name = channel_speakers
+            .and_then(|m| m.get(&base_name))
+            .map(|s| s.to_string());
+
+        let source = if measurement_refs.len() == 1 {
+            MeasurementSource::Single(MeasurementSingle {
+                measurement: measurement_refs.into_iter().next().unwrap(),
+                speaker_name,
+            })
+        } else {
+            MeasurementSource::Multiple(MeasurementMultiple {
+                measurements: measurement_refs,
+                speaker_name,
+            })
+        };
+
+        speakers.insert(base_name, SpeakerConfig::Single(source));
+    }
+    speakers
 }
 
-/// File format for saving/loading room EQ measurements
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RoomEqMeasurementsFile {
-    pub version: u32,
-    pub channels: Vec<ChannelMeasurement>,
-    #[serde(default)]
-    pub configuration: Option<RecordingConfiguration>,
-}
+/// Namespace for the room-EQ measurement helpers (CTC matrix export,
+/// recordings.json loading, delay-detection hint extraction).
+///
+/// The historical struct used to also be the on-disk shape for the
+/// `recordings.json` file, but every saver now writes
+/// [`autoeq::RoomConfig`] directly via [`build_speakers_from_recordings`].
+/// This type is kept as a unit struct so the long list of static helpers
+/// retains a single namespace; nothing here is serialized.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RoomEqMeasurementsFile;
 
 impl RoomEqMeasurementsFile {
-    pub const CURRENT_VERSION: u32 = 2;
-
-    pub fn new(channels: Vec<ChannelMeasurement>) -> Self {
-        Self {
-            version: Self::CURRENT_VERSION,
-            channels,
-            configuration: None,
-        }
-    }
-
-    pub fn with_configuration(
-        channels: Vec<ChannelMeasurement>,
-        configuration: RecordingConfiguration,
-    ) -> Self {
-        Self {
-            version: Self::CURRENT_VERSION,
-            channels,
-            configuration: Some(configuration),
-        }
-    }
-
     /// Build a CTC/N-by-M acoustic transfer-matrix manifest from completed
     /// multi-mic recordings. The current roomeq CTC solver consumes two-ear
     /// IR WAVs, so this exports mic 0 and mic 1 as a stereo impulse-response
@@ -966,108 +977,49 @@ impl RoomEqMeasurementsFile {
         }))
     }
 
-    /// Deserialize from JSON string with automatic version migration
-    pub fn from_json_str(json: &str) -> Result<Self, serde_json::Error> {
-        let mut value: serde_json::Value = serde_json::from_str(json)?;
-
-        let version = value.get("version").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
-
-        if version < Self::CURRENT_VERSION {
-            log::info!(
-                "Migrating recordings.json from version {} to {}",
-                version,
-                Self::CURRENT_VERSION
-            );
-            value = Self::convert_v1_to_v2(value);
-        }
-
-        serde_json::from_value(value)
-    }
-
-    /// Try to extract the delay-detection hints from a measurements JSON
-    /// blob in either the legacy `RoomEqMeasurementsFile` format or the
-    /// newer `autoeq::RoomConfig` format. Returns the canonical channel
+    /// Try to extract the delay-detection hints from an
+    /// `autoeq::RoomConfig` JSON blob. Returns the canonical channel
     /// name order and sample rate the recording session was captured
     /// at, so the Delay Detection step can align its probe with the
     /// same device settings the user measured with.
     ///
-    /// Returns `None` when neither format carries the config — that
+    /// Returns `None` when the file does not carry the config — that
     /// means the file was recorded without session metadata and the
     /// caller should fall back to defaults (0..N indices, 48 000 Hz).
     pub fn extract_delay_detection_hints(json: &str) -> Option<DelayDetectionHints> {
-        // Newer RoomConfig format
-        if let Ok(room_config) = serde_json::from_str::<autoeq::RoomConfig>(json)
-            && let Some(rc) = room_config.recording_config
-        {
-            // The autoeq crate stores probe results as `ProbeResultsLegacy`
-            // which is shape-compatible with the engine's `ProbeDelayResults`
-            // (re-exported as `DelayProbeResults`). Translate via serde
-            // round-trip so the player-layer type is what DelayDetectionState
-            // expects.
-            let probe_results = rc.probe_results.as_ref().and_then(|pr| {
-                serde_json::to_string(pr)
-                    .ok()
-                    .and_then(|j| serde_json::from_str::<DelayProbeResults>(&j).ok())
-            });
-            return Some(DelayDetectionHints {
-                channel_names: rc.channel_names.clone(),
-                sample_rate: rc.recording_sample_rate,
-                playback_device_name: rc.playback_device_name.clone(),
-                recording_device_name: rc.recording_device_name.clone(),
-                probe_results,
-            });
-        }
-        // Legacy format — the player-layer `RecordingConfiguration`
-        // stores the same fields but with stricter types.
-        if let Ok(file) = Self::from_json_str(json)
-            && let Some(cfg) = file.configuration
-        {
-            return Some(DelayDetectionHints {
-                channel_names: Some(cfg.channel_names),
-                sample_rate: Some(cfg.recording_sample_rate),
-                playback_device_name: Some(cfg.playback_device_name),
-                recording_device_name: Some(cfg.recording_device_name),
-                probe_results: cfg.probe_results,
-            });
-        }
-        None
+        let room_config = serde_json::from_str::<autoeq::RoomConfig>(json).ok()?;
+        let rc = room_config.recording_config?;
+        // The autoeq crate stores probe results as `ProbeResultsLegacy`
+        // which is shape-compatible with the engine's `ProbeDelayResults`
+        // (re-exported as `DelayProbeResults`). Translate via serde
+        // round-trip so the player-layer type is what DelayDetectionState
+        // expects.
+        let probe_results = rc.probe_results.as_ref().and_then(|pr| {
+            serde_json::to_string(pr)
+                .ok()
+                .and_then(|j| serde_json::from_str::<DelayProbeResults>(&j).ok())
+        });
+        Some(DelayDetectionHints {
+            channel_names: rc.channel_names,
+            sample_rate: rc.recording_sample_rate,
+            playback_device_name: rc.playback_device_name,
+            recording_device_name: rc.recording_device_name,
+            probe_results,
+        })
     }
 
-    fn convert_v1_to_v2(mut value: serde_json::Value) -> serde_json::Value {
-        if let Some(obj) = value.as_object_mut() {
-            obj.insert("version".to_string(), serde_json::json!(2));
-        }
-        value
-    }
-
-    /// Load measurements from a JSON file, supporting both the legacy
-    /// `RoomEqMeasurementsFile` format and the newer `autoeq::RoomConfig`
-    /// format (with `speakers` map and string version).
+    /// Load measurements from an `autoeq::RoomConfig` JSON file.
     ///
-    /// `base_dir` is used to resolve relative wav/csv paths in the RoomConfig
-    /// format.  Pass the parent directory of the JSON file.
+    /// `base_dir` is used to resolve relative wav/csv paths.  Pass the
+    /// parent directory of the JSON file.
     pub fn load_from_json(
         json: &str,
         base_dir: Option<&std::path::Path>,
     ) -> Result<Vec<ChannelMeasurement>, String> {
-        // Try the new RoomConfig format first (has string version like "1.1.0")
-        if let Ok(room_config) = serde_json::from_str::<autoeq::RoomConfig>(json) {
-            log::info!(
-                "Loaded {} speakers (RoomConfig format)",
-                room_config.speakers.len(),
-            );
-            let channels = Self::channels_from_room_config(room_config, base_dir);
-            if !channels.is_empty() {
-                return Ok(channels);
-            }
-            // Empty result from RoomConfig → fall through to legacy format
-        }
-
-        // Fall back to legacy RoomEqMeasurementsFile format
-        match Self::from_json_str(json) {
-            Ok(file) => Ok(file.channels),
-            Err(e) => Err(format!("Parse error: {}", e)),
-        }
+        let room_config: autoeq::RoomConfig = serde_json::from_str(json)
+            .map_err(|e| format!("Parse error: {}", e))?;
+        log::info!("Loaded {} speakers (RoomConfig format)", room_config.speakers.len());
+        Ok(Self::channels_from_room_config(room_config, base_dir))
     }
 
     /// Convert an `autoeq::RoomConfig` into `Vec<ChannelMeasurement>`.
@@ -4647,28 +4599,6 @@ mod tests {
     }
 
     #[test]
-    fn load_from_json_legacy_format() {
-        let json = r#"{
-            "version": 2,
-            "channels": [{
-                "channel_name": "L",
-                "measurement": {
-                    "channel": 0,
-                    "frequencies": [100.0, 1000.0],
-                    "magnitude_db": [-3.0, 0.0],
-                    "phase_deg": [10.0, 20.0]
-                },
-                "is_group": false,
-                "group_drivers": []
-            }]
-        }"#;
-        let channels = RoomEqMeasurementsFile::load_from_json(json, None).unwrap();
-        assert_eq!(channels.len(), 1);
-        assert_eq!(channels[0].channel_name, "L");
-        assert_eq!(channels[0].measurement.frequencies.len(), 2);
-    }
-
-    #[test]
     fn load_from_json_room_config_format() {
         let json = r#"{
             "version": "1.1.0",
@@ -4765,6 +4695,84 @@ mod tests {
         );
         assert_eq!(l.multi_mic_measurements[0].frequencies.len(), 3);
         assert_eq!(l.multi_mic_measurements[1].frequencies.len(), 3);
+    }
+
+    #[test]
+    fn build_speakers_from_recordings_groups_per_channel() {
+        // Three output channels (L, R, LFE) × four mics × one position
+        // is the genelec-2_1 shape that originally produced 12 EQ chains
+        // when each (channel, mic) pair was emitted as its own
+        // SpeakerConfig. The helper must collapse this to 3 entries with
+        // four MeasurementRefs each.
+        let mut recordings = Vec::new();
+        for (channel_index, channel_label) in [(0, "L"), (1, "R"), (2, "LFE")] {
+            for mic_idx in 0..4 {
+                let display = format!("{} (Mic {})", channel_label, mic_idx + 1);
+                let mut rec = ChannelRecording::with_mic_position(
+                    channel_index,
+                    display.clone(),
+                    mic_idx,
+                    0,
+                );
+                rec.state = ChannelRecordingState::Done;
+                let safe = display.replace([' ', '(', ')'], "_");
+                rec.result = Some(RecordingResult {
+                    channel: channel_index,
+                    wav_path: Some(format!("/tmp/recording/{}.wav", safe)),
+                    csv_path: Some(format!("/tmp/recording/{}.csv", safe)),
+                    frequencies: vec![100.0],
+                    magnitude_db: vec![0.0],
+                    phase_deg: vec![0.0],
+                    impulse_response: None,
+                    impulse_time_ms: None,
+                    excess_group_delay_ms: None,
+                    thd_percent: None,
+                    harmonic_distortion_db: None,
+                    rt60_ms: None,
+                    clarity_c50_db: None,
+                    clarity_c80_db: None,
+                    spectrogram_db: None,
+                });
+                recordings.push(rec);
+            }
+        }
+
+        let channel_names = vec!["L".to_string(), "R".to_string(), "LFE".to_string()];
+        let speakers = build_speakers_from_recordings(&recordings, &channel_names, None);
+
+        assert_eq!(
+            speakers.len(),
+            3,
+            "expected one SpeakerConfig per channel, got {}",
+            speakers.len()
+        );
+        for channel in ["L", "R", "LFE"] {
+            let entry = speakers
+                .get(channel)
+                .unwrap_or_else(|| panic!("missing speaker entry for {}", channel));
+            match entry {
+                autoeq::SpeakerConfig::Single(autoeq::MeasurementSource::Multiple(m)) => {
+                    assert_eq!(
+                        m.measurements.len(),
+                        4,
+                        "expected 4 mic measurements for channel {}",
+                        channel
+                    );
+                    for r in &m.measurements {
+                        let inline = r.inline_data().expect("ref must be inline");
+                        assert!(
+                            inline.csv_path.as_deref().is_some_and(|p| !p.contains('/')),
+                            "csv_path must be a session-relative filename"
+                        );
+                        assert!(
+                            inline.wav_path.as_deref().is_some_and(|p| !p.contains('/')),
+                            "wav_path must be a session-relative filename"
+                        );
+                    }
+                }
+                other => panic!("expected MeasurementSource::Multiple for {channel}, got {other:?}"),
+            }
+        }
     }
 
     #[test]

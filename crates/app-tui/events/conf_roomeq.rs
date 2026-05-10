@@ -642,26 +642,9 @@ pub(crate) fn load_room_eq_measurements(app: &mut App) {
     match std::fs::read_to_string(path) {
         Ok(contents) => match RoomEqMeasurementsFile::load_from_json(&contents, base_dir) {
             Ok(channels) => {
-                app.room_eq.ctc_config = if let Ok(room_config) =
-                    serde_json::from_str::<autoeq::RoomConfig>(&contents)
-                {
-                    room_config.ctc
-                } else {
-                    RoomEqMeasurementsFile::from_json_str(&contents)
-                        .ok()
-                        .and_then(|file| file.configuration)
-                        .and_then(|cfg| {
-                            cfg.ctc_config.or_else(|| {
-                                cfg.ctc_measurements
-                                    .map(|measurements| autoeq::roomeq::CtcConfig {
-                                        enabled: true,
-                                        matrix_source: "measured".to_string(),
-                                        measurements: Some(measurements),
-                                        ..Default::default()
-                                    })
-                            })
-                        })
-                };
+                app.room_eq.ctc_config = serde_json::from_str::<autoeq::RoomConfig>(&contents)
+                    .ok()
+                    .and_then(|room_config| room_config.ctc);
                 if let (Some(ctc), Some(dir)) = (app.room_eq.ctc_config.as_mut(), base_dir) {
                     ctc.resolve_paths(dir);
                 }
@@ -893,31 +876,34 @@ fn spawn_room_eq_optimization(app: &mut App) {
             run_room_optimization, run_room_optimization_with_probe_arrivals,
         };
 
-        // Convert measurements to speaker configs
+        // Convert measurements to speaker configs. Multi-mic / multi-
+        // position takes ride along as `InMemoryMultiple` so the
+        // optimizer averages every position into one EQ chain per
+        // channel; single-take channels stay on `InMemory`.
+        let curve_from_result =
+            |result: &sotf_audio_player::recording_types::RecordingResult| -> autoeq::Curve {
+                let freq: Vec<f64> = result.frequencies.iter().map(|&f| f as f64).collect();
+                let spl: Vec<f64> = result.magnitude_db.iter().map(|&db| db as f64).collect();
+                autoeq::Curve {
+                    freq: ndarray::Array1::from(freq),
+                    spl: ndarray::Array1::from(spl),
+                    phase: None,
+                    ..Default::default()
+                }
+            };
+
         let mut speakers = std::collections::HashMap::new();
         for m in &measurements {
-            let freq: Vec<f64> = m
-                .measurement
-                .frequencies
-                .iter()
-                .map(|&f| f as f64)
-                .collect();
-            let spl: Vec<f64> = m
-                .measurement
-                .magnitude_db
-                .iter()
-                .map(|&db| db as f64)
-                .collect();
-            let curve = autoeq::Curve {
-                freq: ndarray::Array1::from(freq),
-                spl: ndarray::Array1::from(spl),
-                phase: None,
-                ..Default::default()
+            let primary_curve = curve_from_result(&m.measurement);
+            let source = if m.multi_mic_measurements.is_empty() {
+                MeasurementSource::InMemory(primary_curve)
+            } else {
+                let mut curves = Vec::with_capacity(m.multi_mic_measurements.len() + 1);
+                curves.push(primary_curve);
+                curves.extend(m.multi_mic_measurements.iter().map(curve_from_result));
+                MeasurementSource::InMemoryMultiple(curves)
             };
-            speakers.insert(
-                m.channel_name.clone(),
-                SpeakerConfig::Single(MeasurementSource::InMemory(curve)),
-            );
+            speakers.insert(m.channel_name.clone(), SpeakerConfig::Single(source));
         }
 
         let optimizer = config.to_optimizer_config();

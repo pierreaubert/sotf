@@ -53,7 +53,7 @@ pub use sotf_audio_player::room_eq_types::{
     CustomTargetCurve, DelayDetectionState, DelayDetectionStatus, DriverDspChain, DspChainMetadata,
     DspChainOutput, DspPluginConfig, EqFilterConfig, ExcursionProtectionConfig, MixedModeUiConfig,
     MixedPhaseUiConfig, MultiMeasurementUiConfig, MultiSeatConfig, MultiSpeakerMode,
-    PhaseAlignmentConfig, PreRingingConfig, RecordingConfiguration, RoomEqDataSource,
+    PhaseAlignmentConfig, PreRingingConfig, RoomEqDataSource,
     RoomEqFirConfig, RoomEqMeasurementsFile, RoomEqOptimizationMode, RoomEqSpeakerConfig,
     RoomEqStep, SchroederSplitConfig, SimplePresetConfig, SpeakerConfigType, SubOptimizerUiConfig,
     TargetCurveControlPoint, TargetResponseUiConfig, VoGConfig,

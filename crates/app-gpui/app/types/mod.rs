@@ -250,7 +250,7 @@ pub use recording::{
 pub use room_eq::{
     ChannelDspChain, ChannelMeasurement, ChannelOptResult, CrossoverType, CustomTargetCurve,
     DriverDspChain, DspChainMetadata, DspChainOutput, DspPluginConfig, EqFilterConfig,
-    MultiSpeakerMode, OptimizationStatus, RecordingConfiguration, RoomEqAlgorithm,
+    MultiSpeakerMode, OptimizationStatus, RoomEqAlgorithm,
     RoomEqDataSource, RoomEqMeasurementsFile, RoomEqOptimizationMode, RoomEqOptimizerConfig,
     RoomEqSpeakerConfig, RoomEqState, RoomEqStep, SpeakerConfigType, TargetCurveControlPoint,
 };

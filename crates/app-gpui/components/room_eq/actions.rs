@@ -175,11 +175,6 @@ impl PlayerView {
                 let file_dir = file_path.parent().map(|p| p.to_path_buf());
                 log::info!("Loading measurements from {:?}", file_path);
 
-                // Get file size for migration detection
-                let file_size = std::fs::metadata(&file_path)
-                    .map(|m| m.len())
-                    .unwrap_or(0);
-
                 // Read file content
                 match std::fs::read_to_string(&file_path) {
                     Ok(json) => {
@@ -394,207 +389,22 @@ impl PlayerView {
                             return;
                         }
 
-                        // Fall back to legacy RoomEqMeasurementsFile format
-                        match serde_json::from_str::<RoomEqMeasurementsFile>(&json) {
-                            Ok(measurements_file) => {
-                                log::info!(
-                                    "Successfully parsed {} channel measurements from {:?} (legacy format)",
-                                    measurements_file.channels.len(),
-                                    file_path
-                                );
-
-                                // Check if this legacy file needs migration (large file with inline data)
-                                let needs_migration = Self::check_legacy_needs_migration(&json, file_size);
-
-                                if needs_migration {
-                                    // Show migration modal instead of loading directly
-                                    log::info!(
-                                        "Detected legacy format ({:.2} MB), showing migration modal",
-                                        file_size as f64 / 1_000_000.0
-                                    );
-
-                                    let channel_count = measurements_file.channels.len();
-
-                                    state_entity.update(cx, |state, _| {
-                                        // Use the recording state's migration modal
-                                        let rec_state = &mut state.app.measurement_state.recording_state;
-                                        rec_state.migration_modal_open = true;
-                                        rec_state.migration_file_path =
-                                            Some(file_path.to_string_lossy().to_string());
-                                        rec_state.migration_file_dir =
-                                            file_dir.map(|d| d.to_string_lossy().to_string());
-                                        rec_state.migration_file_size = Some(file_size);
-                                        rec_state.migration_channel_count = channel_count;
-                                        rec_state.migration_pending_json = Some(json);
-                                    });
-                                    return;
-                                }
-
-                                // Validate that we have at least one channel
-                                if measurements_file.channels.is_empty() {
-                                    log::error!("No channels found in measurements file");
-                                    state_entity.update(cx, |state, _| {
-                                        state.app.measurement_state.room_eq_state.error_message =
-                                            Some("No channels found in the measurement file".to_string());
-                                    });
-                                    return;
-                                }
-
-                                // Validate each channel has data
-                                for (idx, channel) in measurements_file.channels.iter().enumerate() {
-                                    if channel.measurement.frequencies.is_empty() {
-                                        log::error!(
-                                            "Channel {} '{}' has no frequency data",
-                                            idx,
-                                            channel.channel_name
-                                        );
-                                        state_entity.update(cx, |state, _| {
-                                            state.app.measurement_state.room_eq_state.error_message =
-                                                Some(format!(
-                                                    "Channel '{}' has no frequency data",
-                                                    channel.channel_name
-                                                ));
-                                        });
-                                        return;
-                                    }
-                                    log::debug!(
-                                        "Channel {}: {} freq points, is_group: {}",
-                                        channel.channel_name,
-                                        channel.measurement.frequencies.len(),
-                                        channel.is_group
-                                    );
-                                }
-
-                                // Create speaker configs from loaded measurements
-                                let mut ctc_config = measurements_file
-                                    .configuration
-                                    .as_ref()
-                                    .and_then(|cfg| cfg.ctc_config.clone());
-                                let mut ctc_measurements = ctc_config
-                                    .as_ref()
-                                    .and_then(|cfg| cfg.measurements.clone())
-                                    .or_else(|| {
-                                        measurements_file
-                                            .configuration
-                                            .as_ref()
-                                            .and_then(|cfg| cfg.ctc_measurements.clone())
-                                    });
-                                if let (Some(measurements), Some(dir)) =
-                                    (ctc_measurements.as_mut(), file_dir.as_deref())
-                                {
-                                    measurements.resolve_paths(dir);
-                                }
-                                if let Some(ctc) = ctc_config.as_mut()
-                                    && let Some(dir) = file_dir.as_deref()
-                                {
-                                    ctc.resolve_paths(dir);
-                                }
-                                if ctc_config.is_none() {
-                                    ctc_config = ctc_measurements.clone().map(|measurements| {
-                                        autoeq::roomeq::CtcConfig {
-                                            enabled: true,
-                                            matrix_source: "measured".to_string(),
-                                            measurements: Some(measurements),
-                                            ..Default::default()
-                                        }
-                                    });
-                                }
-                                let mut speaker_configs: Vec<RoomEqSpeakerConfig> = measurements_file
-                                    .channels
-                                    .iter()
-                                    .map(|m| {
-                                        let config_type = if m.is_group {
-                                            SpeakerConfigType::MultiDriver
-                                        } else {
-                                            SpeakerConfigType::Single
-                                        };
-                                        RoomEqSpeakerConfig {
-                                            channel_name: m.channel_name.clone(),
-                                            config_type,
-                                            driver_names: m
-                                                .group_drivers
-                                                .iter()
-                                                .enumerate()
-                                                .map(|(i, _)| format!("Driver {}", i + 1))
-                                                .collect(),
-                                            ..Default::default()
-                                        }
-                                    })
-                                    .collect();
-
-                                let channel_count = measurements_file.channels.len();
-                                let mut channels = measurements_file.channels;
-                                state_entity.update(cx, |state, _| {
-                                    let max_ch = state.app.max_room_eq_channels();
-                                    let truncated = max_ch > 0 && channel_count > max_ch;
-                                    if truncated {
-                                        channels.truncate(max_ch);
-                                        speaker_configs.truncate(max_ch);
-                                    }
-                                    state.app.measurement_state.room_eq_state.channel_measurements =
-                                        channels;
-                                    state.app.measurement_state.room_eq_state.ctc_measurements =
-                                        ctc_measurements;
-                                    state.app.measurement_state.room_eq_state.ctc_config =
-                                        ctc_config;
-                                    state.app.measurement_state.room_eq_state.speaker_configs =
-                                        speaker_configs;
-                                    state.app.measurement_state.room_eq_state.data_source =
-                                        RoomEqDataSource::FromFile(file_path.clone());
-                                    if truncated {
-                                        state.app.measurement_state.room_eq_state.status_message = format!(
-                                            "Loaded {} channel(s) from {} (truncated from {} — upgrade release channel for more)",
-                                            max_ch, file_path.display(), channel_count
-                                        );
-                                    } else {
-                                        state.app.measurement_state.room_eq_state.status_message = format!(
-                                            "Successfully loaded {} channel(s) from {}",
-                                            channel_count,
-                                            file_path.display()
-                                        );
-                                    }
-                                    state.app.measurement_state.room_eq_state.error_message = None;
-                                    // Legacy format: no multi-position data
-                                    state.app.measurement_state.room_eq_state.has_multi_position_data = false;
-                                    state.app.measurement_state.room_eq_state.multi_position_counts = Vec::new();
-                                    let playback_sr = state.app.playback.sample_rate;
-                                    state.app.measurement_state.room_eq_state.apply_smart_defaults(playback_sr);
-                                });
-                            }
-                            Err(e) => {
-                                log::error!("JSON parse error: {}", e);
-                                // Try to provide more helpful error messages
-                                let error_msg = if json.contains("\"speakers\"") {
-                                    format!(
-                                        "File appears to be in RoomConfig format but failed to parse: {}. \
-                                        Make sure all speakers have inline measurement data.",
-                                        e
-                                    )
-                                } else if json.contains("\"channel\"")
-                                    && !json.contains("\"version\"")
-                                {
-                                    format!(
-                                        "File format error: Missing 'version' field. This may be an old format file. Error: {}",
-                                        e
-                                    )
-                                } else if !json.contains("\"channels\"")
-                                    && !json.contains("\"speakers\"")
-                                {
-                                    format!(
-                                        "File format error: Missing 'channels' or 'speakers' field. \
-                                        This doesn't appear to be a valid measurement file. Error: {}",
-                                        e
-                                    )
-                                } else {
-                                    format!("Failed to parse JSON: {}", e)
-                                };
-
-                                state_entity.update(cx, |state, _| {
-                                    state.app.measurement_state.room_eq_state.error_message =
-                                        Some(error_msg);
-                                });
-                            }
-                        }
+                        // Not a RoomConfig — there is no legacy fallback any
+                        // more. Surface a clear error so the user can re-run the
+                        // recording wizard to regenerate the file in the
+                        // current format.
+                        log::error!(
+                            "{} is not an autoeq RoomConfig (no \"speakers\" map). Re-run the Recording wizard to regenerate it.",
+                            file_path.display()
+                        );
+                        state_entity.update(cx, |state, _| {
+                            state.app.measurement_state.room_eq_state.error_message = Some(
+                                format!(
+                                    "{} is not in the current RoomConfig format — re-run the Recording wizard to regenerate it.",
+                                    file_path.display()
+                                ),
+                            );
+                        });
                     }
                     Err(e) => {
                         log::error!("File read error: {}", e);
@@ -610,9 +420,4 @@ impl PlayerView {
         }
     }
 
-    /// Check if a legacy JSON file needs migration (large file with inline data)
-    /// Uses the shared migration module
-    fn check_legacy_needs_migration(json: &str, file_size: u64) -> bool {
-        crate::components::migration::check_needs_migration(json, file_size)
-    }
 }
