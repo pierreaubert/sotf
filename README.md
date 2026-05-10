@@ -26,9 +26,9 @@ What can you do with it?
 ## How to use?
 
 - Windows: [download from Microsoft Store](https://apps.microsoft.com/detail/9NXCMV37NXJ7).
-- Apple: [download from the Apple Store (soon: certification ungoing)]()
+- Apple: [download from the App Store](https://apps.apple.com/ch/app/sound-of-the-future/id6754237332).
 
-Latest versions are on our [repo](https://github.com/pierreaubert/sotf) on Github and there is another copy on our [website](https://sotf.spinorama.org).
+Stable desktop releases are on the platform stores. Beta releases and command-line artifacts are on [GitHub Releases](https://github.com/pierreaubert/sotf/releases), with another copy on our [website](https://sotf.spinorama.org).
 
 If you like it, star the directory please. If you dont, please let us know why? All feedback is welcome: you can leave a comment on [github](https://github.com/pierreaubert/sotf/discussions/116) or on [AudioScienceReview](https://www.audiosciencereview.com/forum/index.php?threads/autoeq-for-speaker-and-headphone.66460/).
 
@@ -286,4 +286,3 @@ Status: almost working.
 
 ![Upmixer 2.0->5.1.4](./site/public/images/0.5/sotf-gpui-v0.5-upmixer.png)
 ![Upmixer 2.0->5.1.4](./site/public/images/0.5/sotf-tui-v0.5-upmixer.png)
-

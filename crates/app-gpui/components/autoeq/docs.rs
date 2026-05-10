@@ -227,12 +227,13 @@ pub static BLOCK_DOCS: &[BlockDoc] = &[
         fields: &[
             FieldDoc {
                 name: "Algorithm",
-                description: "The optimization method. DE (Differential Evolution) is \
-                              a robust global search. COBYLA is a fast local method. \
-                              CMA-ES and PSO/RGA/TLBO are alternative metaheuristics.",
-                default: "autoeq:de",
-                tip: "'autoeq:de' is the best default — it's a tuned DE variant. \
-                      Use 'autoeq:cobyla' for fast local refinement only.",
+                description: "The optimization method. CMA-ES and DE are robust global \
+                              searches. COBYLA is a fast local method. PSO/RGA/TLBO \
+                              are alternative metaheuristics.",
+                default: "autoeq:cmaes",
+                tip: "'autoeq:cmaes' is the default global optimizer. Use \
+                      'autoeq:de' for the tuned DE path or 'autoeq:cobyla' for \
+                      fast local refinement only.",
             },
             FieldDoc {
                 name: "Population",

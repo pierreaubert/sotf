@@ -375,7 +375,7 @@ impl AutoEqTranslations {
             "20 Hz to 20,000 Hz",
         );
         t.insert((Language::English, DefaultPeqModel), "pk");
-        t.insert((Language::English, DefaultAlgorithm), "autoeq:de");
+        t.insert((Language::English, DefaultAlgorithm), "autoeq:cmaes");
         t.insert((Language::English, DefaultPopulation), "100");
         t.insert((Language::English, DefaultMaxEvaluations), "5000");
         t.insert((Language::English, DefaultTolerance), "1e-6");
@@ -417,7 +417,7 @@ impl AutoEqTranslations {
         t.insert((Language::English, TipQRange), "Keep max Q below 10 to avoid ringing. Q around 1-2 gives natural-sounding corrections.");
         t.insert((Language::English, TipFrequencyRange), "For room EQ, restrict to the region where you have reliable measurements (e.g., 20-500 Hz for subwoofers).");
         t.insert((Language::English, TipPeqModel), "For headphone EQ, 'pk' is usually sufficient. For speakers, 'hp-pk-lp' or 'ls-pk-hs' gives better low/high frequency control.");
-        t.insert((Language::English, TipAlgorithm), "'autoeq:de' is the best default — it's a tuned DE variant. Use 'autoeq:cobyla' for fast local refinement only.");
+        t.insert((Language::English, TipAlgorithm), "'autoeq:cmaes' is the default global optimizer. Use 'autoeq:de' for the tuned DE path or 'autoeq:cobyla' for fast local refinement only.");
         t.insert(
             (Language::English, TipPopulation),
             "50-200 for quick results, 500+ for thorough searches on difficult targets.",
@@ -659,7 +659,7 @@ impl AutoEqTranslations {
             "20 Hz à 20 000 Hz",
         );
         t.insert((Language::French, DefaultPeqModel), "pk");
-        t.insert((Language::French, DefaultAlgorithm), "autoeq:de");
+        t.insert((Language::French, DefaultAlgorithm), "autoeq:cmaes");
         t.insert((Language::French, DefaultPopulation), "100");
         t.insert((Language::French, DefaultMaxEvaluations), "5000");
         t.insert((Language::French, DefaultTolerance), "1e-6");
@@ -701,7 +701,7 @@ impl AutoEqTranslations {
         t.insert((Language::French, TipQRange), "Gardez le Q max en dessous de 10 pour éviter le ronronnement. Un Q autour de 1-2 donne des corrections naturelles.");
         t.insert((Language::French, TipFrequencyRange), "Pour l'EQ de pièce, restreignez à la région où vous avez des mesures fiables (ex: 20-500 Hz pour les subwoofers).");
         t.insert((Language::French, TipPeqModel), "Pour l'EQ de casque, 'pk' est usually suffisant. Pour lesenceintes, 'hp-pk-lp' ou 'ls-pk-hs' donne un meilleur contrôle des basses/hautes fréquences.");
-        t.insert((Language::French, TipAlgorithm), "'autoeq:de' est le meilleur choix — c'est une variante DE affinée. Utilisez 'autoeq:cobyla' pour un raffinement local rapide uniquement.");
+        t.insert((Language::French, TipAlgorithm), "'autoeq:cmaes' est l'optimiseur global par défaut. Utilisez 'autoeq:de' pour le chemin DE affiné ou 'autoeq:cobyla' pour un raffinement local rapide uniquement.");
         t.insert((Language::French, TipPopulation), "50-200 pour des résultats rapides, 500+ pour des recherches approfondies sur des cibles difficiles.");
         t.insert((Language::French, TipMaxEvaluations), "5000 est un bon équilibre. Augmentez à 20000+ pour une optimisation multi-sub complexe.");
         t.insert((Language::French, TipTolerance), "Tolérance plus basse = recherche plus longue mais résultat potentiellement meilleur. 1e-4 est suffisant pour des aperçus rapides.");
@@ -919,7 +919,7 @@ impl AutoEqTranslations {
             "20 Hz bis 20.000 Hz",
         );
         t.insert((Language::German, DefaultPeqModel), "pk");
-        t.insert((Language::German, DefaultAlgorithm), "autoeq:de");
+        t.insert((Language::German, DefaultAlgorithm), "autoeq:cmaes");
         t.insert((Language::German, DefaultPopulation), "100");
         t.insert((Language::German, DefaultMaxEvaluations), "5000");
         t.insert((Language::German, DefaultTolerance), "1e-6");
@@ -961,7 +961,7 @@ impl AutoEqTranslations {
         t.insert((Language::German, TipQRange), "Halten Sie max Q unter 10, um Klingeln zu vermeiden. Q um 1-2 gibt natürlich klingende Korrekturen.");
         t.insert((Language::German, TipFrequencyRange), "Für Raum-EQ einschränken auf den Bereich, wo Sie zuverlässige Messungen haben (z.B. 20-500 Hz für Subwoofer).");
         t.insert((Language::German, TipPeqModel), "Für Kopfhörer-EQ ist 'pk' normalerweise ausreichend. Für Lautsprecher geben 'hp-pk-lp' oder 'ls-pk-hs' bessere Kontrolle über Bass/Hochton.");
-        t.insert((Language::German, TipAlgorithm), "'autoeq:de' ist die beste Standardwahl — es ist eine abgestimmte DE-Variante. Verwenden Sie 'autoeq:cobyla' nur für schnelle lokale Verfeinerung.");
+        t.insert((Language::German, TipAlgorithm), "'autoeq:cmaes' ist der globale Standardoptimierer. Verwenden Sie 'autoeq:de' für den abgestimmten DE-Pfad oder 'autoeq:cobyla' nur für schnelle lokale Verfeinerung.");
         t.insert(
             (Language::German, TipPopulation),
             "50-200 für schnelle Ergebnisse, 500+ für gründliche Suchen bei schwierigen Zielen.",
@@ -1200,7 +1200,7 @@ impl AutoEqTranslations {
             "20 Hz a 20.000 Hz",
         );
         t.insert((Language::Spanish, DefaultPeqModel), "pk");
-        t.insert((Language::Spanish, DefaultAlgorithm), "autoeq:de");
+        t.insert((Language::Spanish, DefaultAlgorithm), "autoeq:cmaes");
         t.insert((Language::Spanish, DefaultPopulation), "100");
         t.insert((Language::Spanish, DefaultMaxEvaluations), "5000");
         t.insert((Language::Spanish, DefaultTolerance), "1e-6");
@@ -1242,7 +1242,7 @@ impl AutoEqTranslations {
         t.insert((Language::Spanish, TipQRange), "Mantenga Q máximo por debajo de 10 para evitar zumbido. Q alrededor de 1-2 da correcciones de sonido natural.");
         t.insert((Language::Spanish, TipFrequencyRange), "Para EQ de sala, restrinja a la región donde tiene mediciones confiables (ej. 20-500 Hz para subwoofers).");
         t.insert((Language::Spanish, TipPeqModel), "Para EQ de auriculares, 'pk' usually es suficiente. Para altavoces, 'hp-pk-lp' o 'ls-pk-hs' da mejor control de graves/agudos.");
-        t.insert((Language::Spanish, TipAlgorithm), "'autoeq:de' es la mejor opción por defecto — es una variante DE ajustada. Use 'autoeq:cobyla' solo para refinamiento local rápido.");
+        t.insert((Language::Spanish, TipAlgorithm), "'autoeq:cmaes' es el optimizador global por defecto. Use 'autoeq:de' para la ruta DE ajustada o 'autoeq:cobyla' solo para refinamiento local rápido.");
         t.insert((Language::Spanish, TipPopulation), "50-200 para resultados rápidos, 500+ para búsquedas exhaustivas en objetivos difíciles.");
         t.insert(
             (Language::Spanish, TipMaxEvaluations),

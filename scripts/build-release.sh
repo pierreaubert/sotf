@@ -45,6 +45,10 @@ fi
 # GitHub release base URL
 GITHUB_RELEASE_URL="https://github.com/pierreaubert/sotf/releases/download/v${VERSION}"
 
+# Apple App Store product URL. The Mac desktop app's stable release is
+# distributed via the Store; GitHub/macOS artifacts are beta builds.
+APPLE_STORE_URL="https://apps.apple.com/ch/app/sound-of-the-future/id6754237332"
+
 # Microsoft Store product URL. The Windows MSIX is now distributed via
 # the Store (it auto-routes x64 vs arm64 to the user's CPU); the .msix
 # files we still upload to GitHub Releases are unsigned-by-us fallbacks
@@ -242,10 +246,15 @@ generate_release_md() {
 
 ## Downloads
 
+Stable desktop releases are distributed through the Apple App Store and
+Microsoft Store when available. Beta releases and command-line artifacts are
+published on GitHub Releases.
+
 | OS | Architecture | Download | Quality | Signature |
 |----|-------------|----------|---------|-----------|
 EOF
 
+    echo "| macOS | Universal | [App Store](${APPLE_STORE_URL}) | stable | App Store |" >> "$release_file"
     # macOS ARM64
     append_release_row "$release_file" "macOS" "ARM64 (Apple Silicon)" "macos-arm64"
     # macOS x86_64
@@ -268,9 +277,10 @@ EOF
 ## Installation
 
 ### macOS
-Download the `sotf-desktop-*.dmg` for your CPU for the desktop app and the
-`sotf-tui-*` binary for the terminal UI. For bare binaries, make them executable
-(`chmod +x sotf-*`) and run from Terminal. The first run may require
+Use the App Store link for the stable desktop app. GitHub macOS artifacts are
+beta builds: download the `sotf-desktop-*.dmg` for your CPU for the desktop app
+or the `sotf-tui-*` binary for the terminal UI. For bare binaries, make them
+executable (`chmod +x sotf-*`) and run from Terminal. The first run may require
 right-click → Open to bypass Gatekeeper if Apple notarization is unavailable.
 
 ### Linux
@@ -426,6 +436,9 @@ const releaseUrl = 'https://github.com/pierreaubert/sotf/releases';
 // reachable from their network.
 const githubBase = \`https://github.com/pierreaubert/sotf/releases/download/v\${version}\`;
 const mirrorBase = 'https://sotf.spinorama.org/downloads';
+// Apple App Store product URL. Stable macOS desktop releases are distributed
+// via the Store; GitHub/macOS artifacts remain available as beta builds.
+const appleStoreUrl = '${APPLE_STORE_URL}';
 // Microsoft Store product URL. Windows MSIX is distributed exclusively
 // via the Store (single page auto-routes x64 / arm64 to the user's CPU).
 const msStoreUrl = '${MS_STORE_URL}';
@@ -438,6 +451,9 @@ const builds = [
     os: 'macOS',
     icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>`,
     variants: [
+      { arch: 'Universal', quality: 'stable', signature: 'App Store', files: [
+        { label: 'Desktop app', url: appleStoreUrl, host: 'App Store' },
+      ]},
       { arch: 'ARM64 (Apple Silicon)', quality: 'beta', signature: 'Apple Developer ID', files: [
         { label: 'DMG',         file: `sotf-desktop-${version}-macos-arm64.dmg` },
         { label: 'GPUI binary', file: `sotf-desktop-${version}-macos-arm64` },
@@ -469,11 +485,11 @@ const builds = [
     icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M3 12V6.5l8-1.1V12H3zm0 .5h8v6.6l-8-1.1V12.5zm9 0h9V3l-9 1.2V12.5zm0 .5v6.3L21 21v-8H12z"/></svg>`,
     variants: [
       { arch: 'ARM64', quality: 'alpha', signature: 'Microsoft Store', files: [
-        { label: 'MSIX',    url: msStoreUrl },
+        { label: 'MSIX',    url: msStoreUrl, host: 'Microsoft Store' },
         { label: 'TUI exe', file: `sotf-tui-${version}-windows-arm64.exe` },
       ]},
       { arch: 'x86_64', quality: 'alpha', signature: 'Microsoft Store', files: [
-        { label: 'MSIX',    url: msStoreUrl },
+        { label: 'MSIX',    url: msStoreUrl, host: 'Microsoft Store' },
         { label: 'TUI exe', file: `sotf-tui-${version}-windows-x86_64.exe` },
       ]},
     ],
@@ -481,6 +497,7 @@ const builds = [
 ];
 
 const qualityColors: Record<string, string> = {
+  'stable': 'text-green-400 bg-green-400/10 border-green-400/20',
   'good': 'text-green-400 bg-green-400/10 border-green-400/20',
   'beta': 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20',
   'alpha': 'text-orange-400 bg-orange-400/10 border-orange-400/20',
@@ -493,6 +510,10 @@ const qualityColors: Record<string, string> = {
     <span class="inline-block px-3 py-1 rounded-full text-sm font-mono bg-accent/10 text-accent border border-accent/20 mb-8">
       v{version}
     </span>
+    <p class="max-w-2xl mx-auto text-sm text-gray-400 mb-8">
+      Stable desktop releases are available on the platform stores. Beta releases
+      and command-line artifacts are available on GitHub Releases.
+    </p>
 
     <div class="overflow-x-auto mb-8">
       <table class="w-full text-left text-sm">
@@ -524,16 +545,16 @@ const qualityColors: Record<string, string> = {
                       <div class="flex items-center gap-2 flex-wrap">
                         <span class="text-xs font-medium text-gray-300 min-w-20">{dl.label}</span>
                         {dl.url ? (
-                          /* MSIX-style entry: hosted by a third party
-                             (Microsoft Store), no GitHub/mirror copy. */
+                          /* Store entry: hosted by the platform store, no
+                             GitHub/mirror copy for the stable desktop build. */
                           <a
                             href={dl.url}
                             class="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-accent/10 text-accent border border-accent/20 rounded hover:bg-accent/20 transition-colors"
-                            title={`Open ${dl.label} on its host`}
+                            title={`Open ${dl.label} on ${'host' in dl ? dl.host : 'its host'}`}
                             target="_blank"
                             rel="noopener noreferrer"
                           >
-                            Microsoft Store
+                            {'host' in dl ? dl.host : dl.label}
                           </a>
                         ) : (
                           <Fragment>

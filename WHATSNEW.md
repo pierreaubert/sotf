@@ -1,5 +1,10 @@
 # 0.6.6
 
+## Apple Store and Microsoft Stor availability
+
+- Stable Apple releases are now available on the App Store: <https://apps.apple.com/ch/app/sound-of-the-future/id6754237332>
+- Beta macOS releases and command-line artifacts remain available on GitHub Releases.
+
 ## New features
 
 ### UI
@@ -28,7 +33,7 @@
 
 # 0.6.1 -> 0.6.5
 
-## tweaks to be in accepted in the Apple Store (pending)
+## tweaks to be accepted in the Apple Store
 
 - Apple does not want private symbols to be used (vendored some crates)
 - Apple wants only the correct set of permissions (removed camera which is not yet used)
@@ -42,6 +47,5 @@
 # 0.6.0
 
 Features freeze
-
 
 

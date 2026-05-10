@@ -109,10 +109,10 @@ pub const MULTI_SEAT_STRATEGY_OPTIONS: &[(&str, &str)] = &[
 
 /// Algorithm options for optimization
 pub const ALGORITHM_OPTIONS: &[(&str, &str)] = &[
-    ("autoeq:de", "Auto DE (Recommended)"),
+    ("autoeq:cmaes", "CMA-ES (Recommended)"),
+    ("autoeq:de", "Auto DE"),
     ("autoeq:bo", "Bayesian Optimization"),
     ("autoeq:cobyla", "COBYLA"),
-    ("autoeq:cmaes", "CMA-ES"),
     ("mh:de", "MH Differential Evolution"),
     ("mh:pso", "MH Particle Swarm"),
     ("mh:rga", "MH Genetic Algorithm"),
