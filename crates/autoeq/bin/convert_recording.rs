@@ -6,8 +6,8 @@
 //! If output is not specified, the input file is overwritten and a .bak backup is created.
 
 use autoeq::{
-    InlineMeasurement, MeasurementRef, MeasurementSource, OptimizerConfig, RecordingConfiguration,
-    RoomConfig, SpeakerConfig,
+    DspChainOutput, InlineMeasurement, MeasurementRef, MeasurementSource, OptimizerConfig,
+    RecordingConfiguration, RoomConfig, SpeakerConfig,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -154,7 +154,7 @@ fn convert_legacy_to_room_config(legacy: &LegacyMeasurementsFile) -> RoomConfig 
         });
 
     RoomConfig {
-        version: "1.3.0".to_string(),
+        version: autoeq::roomeq::default_config_version(),
         system: None,
         speakers,
         crossovers: None,
@@ -166,7 +166,7 @@ fn convert_legacy_to_room_config(legacy: &LegacyMeasurementsFile) -> RoomConfig 
     }
 }
 
-fn is_legacy_format(json: &str) -> bool {
+fn is_legacy_recording_format(json: &str) -> bool {
     // Check if JSON has "channels" array (legacy) vs "speakers" object (new)
     if let Ok(value) = serde_json::from_str::<serde_json::Value>(json) {
         // New format has "speakers" as object, legacy has "channels" as array
@@ -178,6 +178,68 @@ fn is_legacy_format(json: &str) -> bool {
         }
     }
     false
+}
+
+fn backup_path_for(input_path: &std::path::Path) -> PathBuf {
+    let mut backup = input_path.to_path_buf();
+    let extension = backup
+        .extension()
+        .map(|e| format!("{}.bak", e.to_string_lossy()))
+        .unwrap_or_else(|| "bak".to_string());
+    backup.set_extension(extension);
+    backup
+}
+
+fn write_output(
+    input_path: &std::path::Path,
+    output_path: &std::path::Path,
+    output_json: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if output_path == input_path {
+        let backup_path = backup_path_for(input_path);
+        std::fs::copy(input_path, &backup_path)?;
+        println!("Backup: {}", backup_path.display());
+    }
+
+    std::fs::write(output_path, output_json)?;
+    println!(
+        "Output: {} ({:.2} KB)",
+        output_path.display(),
+        output_json.len() as f64 / 1024.0
+    );
+    Ok(())
+}
+
+fn strip_deprecated_top_level_keys(value: &mut serde_json::Value) -> Vec<&'static str> {
+    let deprecated_keys = ["group_delay"];
+    let mut stripped = Vec::new();
+
+    if let Some(obj) = value.as_object_mut() {
+        for key in deprecated_keys {
+            if obj.remove(key).is_some() {
+                stripped.push(key);
+            }
+        }
+    }
+
+    stripped
+}
+
+fn parse_room_config_with_cleanup(json: &str) -> Result<(RoomConfig, Vec<&'static str>), String> {
+    let mut value: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| format!("invalid JSON: {e}"))?;
+    let stripped = strip_deprecated_top_level_keys(&mut value);
+    let cleaned_json =
+        serde_json::to_string(&value).map_err(|e| format!("failed to encode cleaned JSON: {e}"))?;
+    let mut config: RoomConfig = serde_json::from_str(&cleaned_json).map_err(|e| format!("{e}"))?;
+    config.version = autoeq::roomeq::default_config_version();
+    Ok((config, stripped))
+}
+
+fn parse_dsp_chain_output_with_latest_version(json: &str) -> Result<DspChainOutput, String> {
+    let mut output: DspChainOutput = serde_json::from_str(json).map_err(|e| format!("{e}"))?;
+    output.version = autoeq::roomeq::default_config_version();
+    Ok(output)
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -210,79 +272,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         file_size as f64 / 1024.0
     );
 
-    // Check if already new format
-    if !is_legacy_format(&json) {
-        // Check for deprecated keys that need stripping
-        let deprecated_keys = ["group_delay"];
-        let mut value: serde_json::Value = serde_json::from_str(&json)?;
-        let mut stripped = false;
-
-        if let Some(obj) = value.as_object_mut() {
-            for key in &deprecated_keys {
-                if obj.remove(*key).is_some() {
+    // Check if already new input or output format. These are still rewritten so
+    // their schema version is upgraded to the latest canonical version.
+    if !is_legacy_recording_format(&json) {
+        match parse_room_config_with_cleanup(&json) {
+            Ok((config, stripped_keys)) => {
+                for key in stripped_keys {
                     println!("Stripped deprecated key: {}", key);
-                    stripped = true;
                 }
-            }
-        }
-
-        if stripped {
-            // Re-parse to verify it's valid after stripping
-            let cleaned_json = serde_json::to_string_pretty(&value)?;
-            match serde_json::from_str::<RoomConfig>(&cleaned_json) {
-                Ok(config) => {
-                    println!(
-                        "File is already in RoomConfig format (version {}), stripped deprecated keys",
-                        config.version
-                    );
-                    println!("  {} speaker(s)", config.speakers.len());
-
-                    // Create backup if overwriting
-                    if output_path == input_path {
-                        let backup_path = {
-                            let mut backup = input_path.clone();
-                            let extension = backup
-                                .extension()
-                                .map(|e| format!("{}.bak", e.to_string_lossy()))
-                                .unwrap_or_else(|| "bak".to_string());
-                            backup.set_extension(extension);
-                            backup
-                        };
-                        std::fs::copy(&input_path, &backup_path)?;
-                        println!("Backup: {}", backup_path.display());
-                    }
-
-                    std::fs::write(&output_path, &cleaned_json)?;
-                    println!("Output: {}", output_path.display());
-                    return Ok(());
-                }
-                Err(e) => {
-                    eprintln!(
-                        "Error: File is not valid after stripping deprecated keys: {}",
-                        e
-                    );
-                    std::process::exit(1);
-                }
-            }
-        }
-
-        // No deprecated keys found, try to parse as-is
-        match serde_json::from_str::<RoomConfig>(&json) {
-            Ok(config) => {
                 println!(
-                    "File is already in RoomConfig format (version {})",
+                    "File is in RoomConfig format; rewriting as version {}",
                     config.version
                 );
                 println!("  {} speaker(s)", config.speakers.len());
+                let output_json = serde_json::to_string_pretty(&config)?;
+                write_output(&input_path, &output_path, &output_json)?;
                 return Ok(());
             }
-            Err(e) => {
-                eprintln!(
-                    "Error: File doesn't appear to be a valid recording format: {}",
-                    e
-                );
-                std::process::exit(1);
-            }
+            Err(room_err) => match parse_dsp_chain_output_with_latest_version(&json) {
+                Ok(output) => {
+                    println!(
+                        "File is in DspChainOutput format; rewriting as version {}",
+                        output.version
+                    );
+                    println!("  {} channel(s)", output.channels.len());
+                    let output_json = serde_json::to_string_pretty(&output)?;
+                    write_output(&input_path, &output_path, &output_json)?;
+                    return Ok(());
+                }
+                Err(output_err) => {
+                    eprintln!("Error: File doesn't appear to be a valid recording format");
+                    eprintln!("  RoomConfig parse error: {room_err}");
+                    eprintln!("  DspChainOutput parse error: {output_err}");
+                    std::process::exit(1);
+                }
+            },
         }
     }
 
@@ -294,31 +318,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Convert to new format
     let room_config = convert_legacy_to_room_config(&legacy);
 
-    // Create backup if overwriting
-    if output_path == input_path {
-        let backup_path = {
-            let mut backup = input_path.clone();
-            let extension = backup
-                .extension()
-                .map(|e| format!("{}.bak", e.to_string_lossy()))
-                .unwrap_or_else(|| "bak".to_string());
-            backup.set_extension(extension);
-            backup
-        };
-        std::fs::copy(&input_path, &backup_path)?;
-        println!("Backup: {}", backup_path.display());
-    }
-
     // Write output
     let output_json = serde_json::to_string_pretty(&room_config)?;
-    std::fs::write(&output_path, &output_json)?;
-
-    let output_size = output_json.len();
-    println!(
-        "Output: {} ({:.2} KB)",
-        output_path.display(),
-        output_size as f64 / 1024.0
-    );
+    write_output(&input_path, &output_path, &output_json)?;
     println!("  {} speaker(s)", room_config.speakers.len());
     println!("Conversion complete!");
 

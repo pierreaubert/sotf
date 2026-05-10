@@ -111,7 +111,7 @@
     "version": {
       "description": "Configuration version (semantic versioning, e.g. \"1.0.0\")",
       "type": "string",
-      "default": "2.0.0"
+      "default": "3.0.0"
     }
   },
   "required": [

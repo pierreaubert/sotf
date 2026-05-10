@@ -17,7 +17,7 @@ check-jsonschema --schemafile input_schema.json your_config.json
 
 ```json
 {
-  "version": "1.3.0",
+  "version": "3.0.0",
   "system": { ... },
   "speakers": { ... },
   "crossovers": { ... },
@@ -32,7 +32,7 @@ check-jsonschema --schemafile input_schema.json your_config.json
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `version` | string | No | `"1.3.0"` | Configuration version (semantic versioning) |
+| `version` | string | No | `"3.0.0"` | Configuration version (semantic versioning) |
 | `system` | object | No | - | System topology and logical channel mapping |
 | `speakers` | object | **Yes** | - | Map of channel names to speaker configurations |
 | `crossovers` | object | No | - | Crossover configurations referenced by multi-driver speakers |

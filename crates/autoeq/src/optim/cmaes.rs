@@ -9,7 +9,7 @@ use super::backend::{AlgorithmType, ConstraintCapabilities, FilterOptimizer};
 use super::constraints_install::install_constraints;
 use super::params::OptimParams;
 use super::{ObjectiveData, OptimProgressCallback, PenaltyMode, compute_fitness_penalties_ref};
-use math_audio_optimisation::{CmaEsConfig, CmaEsIntermediate, cma_es};
+use math_audio_optimisation::{CmaEsConfig, CmaEsIntermediate, ParallelConfig, cma_es};
 use ndarray::Array1;
 use std::sync::Arc;
 
@@ -99,6 +99,14 @@ impl FilterOptimizer for AutoeqCmaEsBackend {
             seed: params.seed,
             f_tol: params.atolerance.max(1e-12),
             stagnation_window: 80,
+            parallel: ParallelConfig {
+                enabled: !params.no_parallel,
+                num_threads: if params.parallel_threads == 0 {
+                    None
+                } else {
+                    Some(params.parallel_threads)
+                },
+            },
             ..Default::default()
         };
 

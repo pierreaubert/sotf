@@ -17,7 +17,7 @@ check-jsonschema --schemafile output_schema.json dsp_chain.json
 
 ```json
 {
-  "version": "1.3.0",
+  "version": "1.4.0",
   "channels": { ... },
   "metadata": { ... }
 }
@@ -446,7 +446,7 @@ Output for a basic stereo system with EQ filters only.
 
 ```json
 {
-  "version": "1.3.0",
+  "version": "1.4.0",
   "channels": {
     "left": {
       "channel": "left",
@@ -511,7 +511,7 @@ Output for a 2-way speaker with crossover and per-driver processing.
 
 ```json
 {
-  "version": "1.3.0",
+  "version": "1.4.0",
   "channels": {
     "left": {
       "channel": "left",
@@ -598,7 +598,7 @@ Output for FIR mode, where each channel gets a WAV impulse response file.
 
 ```json
 {
-  "version": "1.3.0",
+  "version": "1.4.0",
   "channels": {
     "left": {
       "channel": "left",
@@ -639,7 +639,7 @@ Output for mixed mode where FIR handles low frequencies and IIR handles high fre
 
 ```json
 {
-  "version": "1.3.0",
+  "version": "1.4.0",
   "channels": {
     "left": {
       "channel": "left",
