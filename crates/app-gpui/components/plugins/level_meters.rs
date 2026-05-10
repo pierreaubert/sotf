@@ -48,6 +48,32 @@ pub fn db_to_position(db: f64) -> f32 {
     normalized.clamp(0.0, 1.0) as f32
 }
 
+pub(crate) fn should_use_peak_spread(channel_count: usize) -> bool {
+    channel_count > 2
+}
+
+pub(crate) fn peak_spread_db(true_peaks_dbtp: &[f64]) -> f64 {
+    if true_peaks_dbtp.is_empty() {
+        return 0.0;
+    }
+
+    let mut min_peak = f64::INFINITY;
+    let mut max_peak = f64::NEG_INFINITY;
+
+    for &peak in true_peaks_dbtp {
+        let peak = if peak.is_finite() { peak } else { -60.0 };
+        let peak = peak.clamp(-60.0, 6.0);
+        min_peak = min_peak.min(peak);
+        max_peak = max_peak.max(peak);
+    }
+
+    if min_peak.is_finite() && max_peak.is_finite() {
+        max_peak - min_peak
+    } else {
+        0.0
+    }
+}
+
 // ============================================================================
 // GPU-Accelerated Level Meter Element
 // ============================================================================
@@ -709,6 +735,8 @@ pub fn render_lufs_with_true_peak(
         true_peak_left,
         true_peak_right,
         stereo_width,
+        peak_spread,
+        channel_count,
     ) = if let Some(l) = loudness {
         let tp_left = l.true_peaks_dbtp.first().copied().unwrap_or(-60.0);
         let tp_right = l.true_peaks_dbtp.get(1).copied().unwrap_or(tp_left);
@@ -717,6 +745,8 @@ pub fn render_lufs_with_true_peak(
             .correlation_lr
             .map(|c| ((1.0 - c) / 2.0).clamp(0.0, 1.0))
             .unwrap_or(0.5);
+        let peak_spread = peak_spread_db(&l.true_peaks_dbtp);
+        let channel_count = l.true_peaks_dbtp.len();
         (
             l.integrated_lufs,
             l.shortterm_lufs,
@@ -724,9 +754,11 @@ pub fn render_lufs_with_true_peak(
             tp_left,
             tp_right,
             width,
+            peak_spread,
+            channel_count,
         )
     } else {
-        (-60.0, -60.0, -60.0, -60.0, -60.0, 0.5)
+        (-60.0, -60.0, -60.0, -60.0, -60.0, 0.5, 0.0, 0)
     };
 
     let meter_theme = MeterTheme::from_theme(theme);
@@ -881,58 +913,100 @@ pub fn render_lufs_with_true_peak(
                         .child(div().w(px(meter_theme.value_width))),
                 )
         })
-        // Stereo Width section
+        // Stereo Width / Peak Spread section
         .child({
-            // Use TickConfig preset for stereo width (linear scale 0 to 1)
-            let tick_config = TickConfig::stereo_width();
+            if should_use_peak_spread(channel_count) {
+                let tick_config = TickConfig::peak_spread();
 
-            div()
-                .flex()
-                .flex_col()
-                .gap(d.gap)
-                .child(
-                    div()
-                        .text_size(d.text_sm)
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(theme.text_primary)
-                        .mb(d.grid)
-                        .child("Stereo Width"),
-                )
-                // Width bar (uses same scale as ticks)
-                .child(PlayerView::render_width_bar(
-                    d,
-                    stereo_width,
-                    &tick_config,
-                    &meter_theme,
-                ))
-                // Tick marks (aligned with bar using same flex layout)
-                .child(render_tick_row(
-                    &tick_config,
-                    meter_theme.label_width,
-                    meter_theme.value_width,
-                ))
-                // Width legend (same flex layout as bar and ticks)
-                .child(
-                    div()
-                        .flex()
-                        .gap(spacing::SM)
-                        // Label spacer
-                        .child(div().w(px(meter_theme.label_width)))
-                        // Legend area (flex-1, justify_between for labels)
-                        .child(
-                            div()
-                                .flex_1()
-                                .flex()
-                                .justify_between()
-                                .text_size(d.text_xs)
-                                .text_color(meter_theme.color_text_muted)
-                                .child(div().child("Mono"))
-                                .child(div().child("50%"))
-                                .child(div().child("Wide")),
-                        )
-                        // Value spacer
-                        .child(div().w(px(meter_theme.value_width))),
-                )
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(d.gap)
+                    .child(
+                        div()
+                            .text_size(d.text_sm)
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(theme.text_primary)
+                            .mb(d.grid)
+                            .child("Peak Spread"),
+                    )
+                    .child(PlayerView::render_peak_spread_bar(
+                        d,
+                        peak_spread,
+                        &tick_config,
+                        &meter_theme,
+                    ))
+                    .child(render_tick_row(
+                        &tick_config,
+                        meter_theme.label_width,
+                        meter_theme.value_width,
+                    ))
+                    .child(
+                        div()
+                            .flex()
+                            .gap(spacing::SM)
+                            .child(div().w(px(meter_theme.label_width)))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .flex()
+                                    .justify_between()
+                                    .text_size(d.text_xs)
+                                    .text_color(meter_theme.color_text_muted)
+                                    .child(div().child("Even"))
+                                    .child(div().child("6 dB"))
+                                    .child(div().child("12 dB"))
+                                    .child(div().child("24+")),
+                            )
+                            .child(div().w(px(meter_theme.value_width))),
+                    )
+                    .into_any_element()
+            } else {
+                let tick_config = TickConfig::stereo_width();
+
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(d.gap)
+                    .child(
+                        div()
+                            .text_size(d.text_sm)
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(theme.text_primary)
+                            .mb(d.grid)
+                            .child("Stereo Width"),
+                    )
+                    .child(PlayerView::render_width_bar(
+                        d,
+                        stereo_width,
+                        &tick_config,
+                        &meter_theme,
+                    ))
+                    .child(render_tick_row(
+                        &tick_config,
+                        meter_theme.label_width,
+                        meter_theme.value_width,
+                    ))
+                    .child(
+                        div()
+                            .flex()
+                            .gap(spacing::SM)
+                            .child(div().w(px(meter_theme.label_width)))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .flex()
+                                    .justify_between()
+                                    .text_size(d.text_xs)
+                                    .text_color(meter_theme.color_text_muted)
+                                    .child(div().child("Mono"))
+                                    .child(div().child("50%"))
+                                    .child(div().child("Wide")),
+                            )
+                            .child(div().w(px(meter_theme.value_width))),
+                    )
+                    .into_any_element()
+            }
         })
 }
 
@@ -1444,6 +1518,49 @@ impl PlayerView {
             )
     }
 
+    /// Render multichannel peak spread bar (0 = even, higher = wider channel imbalance)
+    pub fn render_peak_spread_bar(
+        d: &Ds,
+        spread_db: f64,
+        tick_config: &TickConfig,
+        meter_theme: &MeterTheme,
+    ) -> impl IntoElement {
+        let ratio = tick_config.value_to_position(spread_db);
+        let bar_color = meter_theme.color_info;
+
+        div()
+            .flex()
+            .items_center()
+            .gap(spacing::SM)
+            .child(
+                div()
+                    .w(px(meter_theme.label_width))
+                    .text_size(d.text_xs)
+                    .text_color(meter_theme.color_text)
+                    .child("D"),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .h(px(meter_theme.bar_height))
+                    .rounded(px(meter_theme.border_radius))
+                    .border(px(meter_theme.border_width))
+                    .border_color(meter_theme.color_border)
+                    .bg(meter_theme.color_background)
+                    .overflow_hidden()
+                    .child(div().h_full().w(gpui::relative(ratio)).bg(bar_color)),
+            )
+            .child(
+                div()
+                    .w(px(meter_theme.value_width))
+                    .text_size(d.text_xs)
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(meter_theme.color_text)
+                    .text_align(TextAlign::Right)
+                    .child(format!("{:.1} dB", spread_db)),
+            )
+    }
+
     /// Render LUFS display with True Peak bars at top (wrapper method)
     pub fn render_lufs_with_true_peak(
         &self,
@@ -1912,5 +2029,40 @@ impl LevelMeterManager for AppState {
             2 => self.toggle_level_meter_dim(),
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{peak_spread_db, should_use_peak_spread};
+
+    #[test]
+    fn peak_spread_is_multichannel_only() {
+        assert!(!should_use_peak_spread(0));
+        assert!(!should_use_peak_spread(1));
+        assert!(!should_use_peak_spread(2));
+        assert!(should_use_peak_spread(3));
+    }
+
+    #[test]
+    fn peak_spread_equal_peaks_is_zero() {
+        assert_eq!(peak_spread_db(&[-3.0, -3.0, -3.0, -3.0]), 0.0);
+    }
+
+    #[test]
+    fn peak_spread_uses_max_minus_min() {
+        assert_eq!(peak_spread_db(&[-12.0, -9.5, -3.0, -6.0]), 9.0);
+    }
+
+    #[test]
+    fn peak_spread_handles_silent_or_unavailable_values() {
+        assert_eq!(peak_spread_db(&[]), 0.0);
+        assert_eq!(peak_spread_db(&[f64::NEG_INFINITY, f64::NAN]), 0.0);
+        assert_eq!(peak_spread_db(&[-12.0, f64::NEG_INFINITY]), 48.0);
+    }
+
+    #[test]
+    fn peak_spread_clamps_values_before_spread() {
+        assert_eq!(peak_spread_db(&[-120.0, 20.0]), 66.0);
     }
 }

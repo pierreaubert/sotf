@@ -459,6 +459,82 @@ impl AudioEngineManager {
         Ok(())
     }
 
+    /// Switch the running engine to a new source without recreating the output stream.
+    ///
+    /// This is intended for manual same-format track changes where tearing down
+    /// the device stream can produce audible artifacts. Callers must ensure the
+    /// new source is compatible with the current engine input channel count.
+    pub fn switch_source_at(
+        &mut self,
+        source: AudioSource,
+        position: Option<f64>,
+    ) -> AudioDecoderResult<()> {
+        let _guard = self.cmd_mutex.lock().unwrap();
+
+        let Some(engine) = &*self.engine.load() else {
+            return Err(AudioDecoderError::ConfigError(
+                "No engine running".to_string(),
+            ));
+        };
+
+        match position {
+            Some(pos) => engine
+                .play_at(source.clone(), pos)
+                .map_err(AudioDecoderError::IoError)?,
+            None => engine
+                .play(source.clone())
+                .map_err(AudioDecoderError::IoError)?,
+        }
+
+        // Keep gapless-transition polling from treating this explicit manual
+        // source change as an automatic queue advance.
+        *self.last_seen_source.lock().unwrap() = Some(source.clone());
+        *self.current_audio_info.lock().unwrap() = Some(match &source {
+            AudioSource::File(path) => {
+                let (format, spec) = probe_file(path)?;
+                AudioFileInfo {
+                    source: source.clone(),
+                    path: path.clone(),
+                    format,
+                    duration_seconds: spec.duration().map(|d| d.as_secs_f64()),
+                    spec,
+                }
+            }
+            AudioSource::Url { url, .. } => AudioFileInfo {
+                source: source.clone(),
+                path: PathBuf::from(url),
+                format: AudioFormat::Mp3,
+                spec: AudioSpec {
+                    sample_rate: 44100,
+                    channels: 2,
+                    bits_per_sample: 16,
+                    total_frames: None,
+                },
+                duration_seconds: None,
+            },
+            AudioSource::ServiceStream { service, track_id } => AudioFileInfo {
+                source: source.clone(),
+                path: PathBuf::from(format!("{}:{}", service, track_id)),
+                format: AudioFormat::Mp3,
+                spec: AudioSpec {
+                    sample_rate: 44100,
+                    channels: 2,
+                    bits_per_sample: 16,
+                    total_frames: None,
+                },
+                duration_seconds: None,
+            },
+            AudioSource::Driver => {
+                return Err(AudioDecoderError::ConfigError(
+                    "Driver source should use start_driver_playback()".to_string(),
+                ));
+            }
+        });
+        self.set_state(StreamingState::Playing);
+
+        Ok(())
+    }
+
     /// Start driver playback without a file source
     ///
     /// In driver mode, audio comes from a platform driver (macOS HAL, PipeWire, APO)

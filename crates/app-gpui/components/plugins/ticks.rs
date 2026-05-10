@@ -295,6 +295,18 @@ impl TickConfig {
         }
     }
 
+    /// Peak spread scale (0 to 24 dB, linear)
+    pub fn peak_spread() -> Self {
+        Self {
+            scale: ScaleType::Linear,
+            min: 0.0,
+            max: 24.0,
+            major_values: vec![0.0, 6.0, 12.0, 24.0],
+            minor_count: 4,
+            ..Default::default()
+        }
+    }
+
     /// Percentage scale (0 to 100, linear)
     pub fn percentage() -> Self {
         Self {
