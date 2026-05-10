@@ -1714,6 +1714,110 @@ impl PlayerView {
         log::info!("All recordings reset");
     }
 
+    fn rewrite_optional_path_to_dir(path: &mut Option<String>, dir: &std::path::Path) {
+        let Some(existing) = path else {
+            return;
+        };
+        let Some(file_name) = std::path::Path::new(existing).file_name() else {
+            return;
+        };
+        *existing = dir.join(file_name).to_string_lossy().to_string();
+    }
+
+    fn rewrite_path_to_dir(path: &mut String, dir: &std::path::Path) {
+        let Some(file_name) = std::path::Path::new(path).file_name() else {
+            return;
+        };
+        *path = dir.join(file_name).to_string_lossy().to_string();
+    }
+
+    /// Make the on-disk recording directory match the Save-step name.
+    ///
+    /// Capture starts in a timestamped folder so intermediate WAV/CSV files
+    /// have somewhere stable to land. At save time the user-facing name wins:
+    /// we rename that folder to `<base>/<safe_save_name>` and rewrite cached
+    /// absolute paths so CTC/raw-sweep export reads from the moved files.
+    fn ensure_named_recording_directory(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> Result<String, String> {
+        let (current_dir, target_dir) = {
+            let state = self.state.read(cx);
+            let rec = &state.app.measurement_state.recording_state;
+            (
+                rec.recording_directory.clone(),
+                rec.named_recording_directory(),
+            )
+        };
+
+        let Some(target_dir) = target_dir else {
+            return current_dir.ok_or_else(|| "No recording directory set".to_string());
+        };
+
+        let target_dir_string = target_dir.to_string_lossy().to_string();
+        let Some(current_dir) = current_dir else {
+            std::fs::create_dir_all(&target_dir)
+                .map_err(|e| format!("failed to create '{}': {}", target_dir.display(), e))?;
+            self.state.update(cx, |state, _| {
+                state
+                    .app
+                    .measurement_state
+                    .recording_state
+                    .recording_directory = Some(target_dir_string.clone());
+            });
+            return Ok(target_dir_string);
+        };
+
+        let current_path = std::path::PathBuf::from(&current_dir);
+        if current_path == target_dir {
+            return Ok(target_dir_string);
+        }
+
+        if let Some(parent) = target_dir.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("failed to create '{}': {}", parent.display(), e))?;
+        }
+
+        if current_path.exists() {
+            if target_dir.exists() {
+                return Err(format!(
+                    "target directory already exists: {}",
+                    target_dir.display()
+                ));
+            }
+            std::fs::rename(&current_path, &target_dir).map_err(|e| {
+                format!(
+                    "failed to rename '{}' to '{}': {}",
+                    current_path.display(),
+                    target_dir.display(),
+                    e
+                )
+            })?;
+        } else {
+            std::fs::create_dir_all(&target_dir)
+                .map_err(|e| format!("failed to create '{}': {}", target_dir.display(), e))?;
+        }
+
+        self.state.update(cx, |state, _| {
+            let rec = &mut state.app.measurement_state.recording_state;
+            rec.recording_directory = Some(target_dir_string.clone());
+            for channel in &mut rec.channel_recordings {
+                if let Some(result) = &mut channel.result {
+                    Self::rewrite_optional_path_to_dir(&mut result.wav_path, &target_dir);
+                    Self::rewrite_optional_path_to_dir(&mut result.csv_path, &target_dir);
+                }
+            }
+            Self::rewrite_optional_path_to_dir(&mut rec.probe_capture.wav_path, &target_dir);
+            Self::rewrite_optional_path_to_dir(&mut rec.bass_anchor_capture.wav_path, &target_dir);
+            Self::rewrite_optional_path_to_dir(&mut rec.ctc_reference_sweep_path, &target_dir);
+            for loopback in &mut rec.transfer_matrix_loopbacks {
+                Self::rewrite_path_to_dir(&mut loopback.wav_path, &target_dir);
+            }
+        });
+
+        Ok(target_dir_string)
+    }
+
     /// Save recordings to a JSON file in the recording directory
     /// Outputs autoeq::RoomConfig format compatible with roomeq CLI
     pub(crate) fn save_recordings(&mut self, cx: &mut Context<Self>) {
@@ -1724,21 +1828,24 @@ impl PlayerView {
         };
         use std::collections::HashMap;
 
+        let recording_dir = match self.ensure_named_recording_directory(cx) {
+            Ok(dir) => dir,
+            Err(e) => {
+                log::error!("Failed to prepare recording directory: {}", e);
+                self.state.update(cx, |state, _| {
+                    state.app.measurement_state.recording_state.status_message =
+                        format!("Failed to prepare output directory: {}", e);
+                });
+                cx.notify();
+                return;
+            }
+        };
+
         // Get recordings, recording directory, configuration, and convert to RoomConfig format
         let (room_config, recording_dir, ctc_raw_fallback) = {
             let state = self.state.read(cx);
             let rec_state = &state.app.measurement_state.recording_state;
             let recordings = &rec_state.channel_recordings;
-            let recording_dir = rec_state.recording_directory.clone();
-
-            // Check if recording directory is set
-            let recording_dir = match recording_dir {
-                Some(dir) => dir,
-                None => {
-                    log::error!("No recording directory set");
-                    return;
-                }
-            };
 
             let channel_names: Vec<String> = rec_state
                 .playback_config

@@ -186,7 +186,7 @@ impl PlayerView {
             .clone()
             .unwrap_or_else(|| translations.recording_not_set.to_string());
 
-        let save_name = &recording_state.save_name;
+        let save_name = recording_state.safe_save_name();
         let full_path = if base_dir.is_some() {
             format!("{}/{}/", base_dir_display, save_name)
         } else {
@@ -277,24 +277,12 @@ impl PlayerView {
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
-        let save_name = &recording_state.save_name;
+        let safe_save_name = recording_state.safe_save_name();
 
         let recorded_channels: Vec<_> = recording_state
             .channel_recordings
             .iter()
             .filter(|r| r.state == ChannelRecordingState::Done)
-            .collect();
-
-        // Create safe version of save_name for filenames
-        let safe_save_name: String = save_name
-            .chars()
-            .map(|c| {
-                if c.is_alphanumeric() || c == '_' || c == '-' {
-                    c
-                } else {
-                    '_'
-                }
-            })
             .collect();
 
         Card::new().content(

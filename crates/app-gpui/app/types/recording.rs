@@ -284,6 +284,37 @@ impl Default for RecordingState {
 }
 
 impl RecordingState {
+    /// Filesystem-safe name used for the saved recording directory and
+    /// session-level file names.
+    pub fn safe_save_name(&self) -> String {
+        let safe: String = self
+            .save_name
+            .trim()
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || c == '_' || c == '-' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+
+        if safe.is_empty() {
+            "recording".to_string()
+        } else {
+            safe
+        }
+    }
+
+    /// Directory implied by the user-selected base directory and current
+    /// save name.
+    pub fn named_recording_directory(&self) -> Option<std::path::PathBuf> {
+        self.recording_base_directory
+            .as_ref()
+            .map(|base| std::path::Path::new(base).join(self.safe_save_name()))
+    }
+
     /// Initialize channel recordings from playback × recording × position
     /// configuration. Order is `position-major, speaker-mid, mic-minor` so
     /// every (speaker, mic) pair at position 0 comes before any entry at

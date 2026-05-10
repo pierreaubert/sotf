@@ -41,7 +41,7 @@ fn cancel_requested(cancel: Option<&CancelFlag>) -> bool {
 }
 
 fn measurement_amplitude_from_level_db(level_db: f32) -> f32 {
-    10.0_f32.powf(level_db.clamp(-40.0, 0.0) / 20.0)
+    10.0_f32.powf(level_db.clamp(-40.0, 20.0) / 20.0)
 }
 
 /// Signal type for recording
@@ -1849,7 +1849,7 @@ fn probe_channel_delays_core(
         "[probe_channel_delays] Generated narrowband probe: {} samples ({:.1}ms), 800-2000Hz, level={:.1}dBFS",
         probe_samples,
         probe_duration_ms,
-        signal_level_db.clamp(-40.0, 0.0)
+        signal_level_db.clamp(-40.0, 20.0)
     );
 
     // Play on each output channel in turn and capture the mic — shared
@@ -2351,7 +2351,7 @@ fn run_bass_anchor_core(
         1000.0 * burst_samples as f64 / sample_rate as f64,
         burst_samples,
         sample_rate,
-        signal_level_db.clamp(-40.0, 0.0)
+        signal_level_db.clamp(-40.0, 20.0)
     );
 
     // Play + record via the shared scaffolding.

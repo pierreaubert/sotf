@@ -19,6 +19,8 @@ use gpui_ui_kit::{
     VStack,
 };
 
+const BASS_ANCHOR_SIGNAL_BOOST_DB: f32 = 10.0;
+
 impl PlayerView {
     /// Render the BassAnchor step UI.
     pub(crate) fn render_recording_bass_anchor_step(
@@ -182,7 +184,7 @@ impl PlayerView {
                 rec.bass_anchor_capture.silence_duration_ms,
                 rec.bass_anchor_capture.sample_rate,
                 rec.bass_anchor_capture.input_channel,
-                rec.signal_level_db,
+                rec.signal_level_db + BASS_ANCHOR_SIGNAL_BOOST_DB,
                 indices,
                 names,
                 Some(rec.playback_config.device_name.clone()),

@@ -26,6 +26,8 @@ use gpui_ui_kit::{
 };
 use sotf_audio_player::room_eq_types::estimate_probe_sequence_ms;
 
+const PROBE_SIGNAL_BOOST_DB: f32 = 20.0;
+
 impl PlayerView {
     /// Render the Probe step UI.
     pub(crate) fn render_recording_probe_step(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -365,7 +367,7 @@ impl PlayerView {
                 rec.probe_capture.silence_duration_ms,
                 rec.probe_capture.sample_rate,
                 rec.probe_capture.input_channel,
-                rec.signal_level_db,
+                rec.signal_level_db + PROBE_SIGNAL_BOOST_DB,
                 indices,
                 names,
                 Some(rec.playback_config.device_name.clone()),

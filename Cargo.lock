@@ -5829,6 +5829,7 @@ dependencies = [
  "num-complex 0.4.6",
  "oxiblas-ndarray",
  "rand 0.9.4",
+ "rayon",
  "realfft",
  "rustfft 6.4.1",
  "serde",
@@ -5870,9 +5871,10 @@ dependencies = [
 
 [[package]]
 name = "math-rir"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "math-iir-fir",
+ "rayon",
 ]
 
 [[package]]
