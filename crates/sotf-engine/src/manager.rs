@@ -477,19 +477,7 @@ impl AudioEngineManager {
             ));
         };
 
-        match position {
-            Some(pos) => engine
-                .play_at(source.clone(), pos)
-                .map_err(AudioDecoderError::IoError)?,
-            None => engine
-                .play(source.clone())
-                .map_err(AudioDecoderError::IoError)?,
-        }
-
-        // Keep gapless-transition polling from treating this explicit manual
-        // source change as an automatic queue advance.
-        *self.last_seen_source.lock().unwrap() = Some(source.clone());
-        *self.current_audio_info.lock().unwrap() = Some(match &source {
+        let audio_info = match &source {
             AudioSource::File(path) => {
                 let (format, spec) = probe_file(path)?;
                 AudioFileInfo {
@@ -529,7 +517,21 @@ impl AudioEngineManager {
                     "Driver source should use start_driver_playback()".to_string(),
                 ));
             }
-        });
+        };
+
+        match position {
+            Some(pos) => engine
+                .play_at(source.clone(), pos)
+                .map_err(AudioDecoderError::IoError)?,
+            None => engine
+                .play(source.clone())
+                .map_err(AudioDecoderError::IoError)?,
+        }
+
+        // Keep gapless-transition polling from treating this explicit manual
+        // source change as an automatic queue advance.
+        *self.last_seen_source.lock().unwrap() = Some(source.clone());
+        *self.current_audio_info.lock().unwrap() = Some(audio_info);
         self.set_state(StreamingState::Playing);
 
         Ok(())

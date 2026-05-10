@@ -456,6 +456,7 @@ impl Render for PlayerView {
                                             path,
                                             None,
                                             track_channels,
+                                            false,
                                         );
                                     });
                                 }

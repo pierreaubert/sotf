@@ -17,6 +17,11 @@ use std::rc::Rc;
 
 use crate::components::themed_tooltip as footer_tooltip;
 
+const WAVEFORM_NUM_BARS: usize = 128;
+const WAVEFORM_MAX_HEIGHT_PX: f32 = 12.0;
+const WAVEFORM_MIN_HEIGHT_PX: f32 = 0.0;
+const WAVEFORM_BAR_GAP_PX: f32 = 1.0;
+
 /// Custom element to capture waveform bounds and render bars
 struct WaveformElement {
     waveform: Option<Vec<u8>>,
@@ -71,7 +76,17 @@ impl Element for WaveformElement {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
-        let layout_id = window.request_layout(Style::default(), [], cx);
+        let layout_id = window.request_layout(
+            Style {
+                size: Size {
+                    width: relative(1.0).into(),
+                    height: relative(1.0).into(),
+                },
+                ..Default::default()
+            },
+            [],
+            cx,
+        );
         (layout_id, ())
     }
 
@@ -100,53 +115,46 @@ impl Element for WaveformElement {
         *self.bounds_ref.borrow_mut() = Some(bounds);
 
         // Render logic from render_waveform_bars
-        const NUM_BARS: usize = 128;
-        const MAX_HEIGHT: f32 = 12.0;
-        const MIN_HEIGHT: f32 = 0.0;
-        const BAR_WIDTH: f32 = 4.0;
-
-        let default_waveform: Vec<u8> = vec![64; NUM_BARS];
+        let default_waveform: Vec<u8> = vec![64; WAVEFORM_NUM_BARS];
         let samples = self.waveform.as_ref().unwrap_or(&default_waveform);
 
-        let bar_samples: Vec<u8> = if samples.len() == NUM_BARS {
+        let bar_samples: Vec<u8> = if samples.len() == WAVEFORM_NUM_BARS {
             samples.clone()
         } else if samples.is_empty() {
-            vec![64; NUM_BARS]
+            vec![64; WAVEFORM_NUM_BARS]
         } else {
-            (0..NUM_BARS)
+            (0..WAVEFORM_NUM_BARS)
                 .map(|i| {
-                    let src_idx = (i * samples.len()) / NUM_BARS;
+                    let src_idx = (i * samples.len()) / WAVEFORM_NUM_BARS;
                     samples.get(src_idx).copied().unwrap_or(64)
                 })
                 .collect()
         };
 
-        let progress_bar_idx = (self.progress * NUM_BARS as f32) as usize;
+        let progress_bar_idx = (self.progress * WAVEFORM_NUM_BARS as f32) as usize;
 
-        // Calculate total width to center the bars
-        let total_width = NUM_BARS as f32 * BAR_WIDTH;
-        let start_x = bounds.origin.x + (bounds.size.width - px(total_width)) / 2.0;
         // intentional: paint-space baseline nudge aligning bar midpoint with
         // label baseline in the waveform row (matches the integer pixel grid
-        // used by BAR_WIDTH / MAX_HEIGHT above).
+        // used by WAVEFORM_MAX_HEIGHT_PX above).
         let center_y = bounds.origin.y + bounds.size.height / 2.0 + px(6.0);
 
         for (idx, amplitude) in bar_samples.iter().enumerate() {
             let height_ratio = *amplitude as f32 / 255.0;
-            let bar_height = MIN_HEIGHT + (MAX_HEIGHT - MIN_HEIGHT) * height_ratio;
+            let bar_height = WAVEFORM_MIN_HEIGHT_PX
+                + (WAVEFORM_MAX_HEIGHT_PX - WAVEFORM_MIN_HEIGHT_PX) * height_ratio;
             let bar_color = if idx < progress_bar_idx {
                 self.played_color
             } else {
                 self.unplayed_color
             };
 
-            let x = start_x + px(idx as f32 * BAR_WIDTH);
+            let (x, width) = waveform_bar_x_and_width(bounds.size.width, idx, WAVEFORM_NUM_BARS);
 
             // Draw top half
             window.paint_quad(PaintQuad {
                 bounds: Bounds {
-                    origin: point(x, center_y - px(bar_height)),
-                    size: size(px(BAR_WIDTH - 1.0), px(bar_height * 2.0)),
+                    origin: point(bounds.origin.x + x, center_y - px(bar_height)),
+                    size: size(width, px(bar_height * 2.0)),
                 },
                 corner_radii: Corners::all(px(1.0)), // intentional: 1px paint-math rounding inside Element::paint
                 background: bar_color.into(),
@@ -154,6 +162,65 @@ impl Element for WaveformElement {
                 border_color: Hsla::transparent_black(),
                 border_style: Default::default(),
             });
+        }
+    }
+}
+
+fn waveform_bar_x_and_width(
+    bounds_width: Pixels,
+    idx: usize,
+    bar_count: usize,
+) -> (Pixels, Pixels) {
+    if bar_count == 0 {
+        return (px(0.0), px(0.0));
+    }
+
+    let slot_width = bounds_width / bar_count as f32;
+    let x = slot_width * idx as f32;
+    let right = if idx + 1 == bar_count {
+        bounds_width
+    } else {
+        slot_width * (idx + 1) as f32
+    };
+    let available_width = (right - x).max(px(0.0));
+    let gap = px(WAVEFORM_BAR_GAP_PX).min(available_width * 0.25);
+    let width = if idx + 1 == bar_count {
+        available_width
+    } else {
+        (available_width - gap).max(px(1.0).min(available_width))
+    };
+
+    (x, width)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn px_f32(value: Pixels) -> f32 {
+        value.to_f64() as f32
+    }
+
+    #[test]
+    fn waveform_bars_span_measured_bounds() {
+        let bounds_width = px(600.0);
+        let (first_x, _) = waveform_bar_x_and_width(bounds_width, 0, WAVEFORM_NUM_BARS);
+        let (last_x, last_width) =
+            waveform_bar_x_and_width(bounds_width, WAVEFORM_NUM_BARS - 1, WAVEFORM_NUM_BARS);
+
+        assert_eq!(px_f32(first_x), 0.0);
+        assert!((px_f32(last_x + last_width) - 600.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn waveform_bars_do_not_overflow_when_narrow() {
+        let bounds_width = px(64.0);
+
+        for idx in 0..WAVEFORM_NUM_BARS {
+            let (x, width) = waveform_bar_x_and_width(bounds_width, idx, WAVEFORM_NUM_BARS);
+            assert!(x >= px(0.0));
+            assert!(width >= px(0.0));
+            assert!(x + width <= bounds_width);
         }
     }
 }

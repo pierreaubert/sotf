@@ -185,16 +185,39 @@ impl PlayerView {
                                             view.state.update(cx, |state, _cx| {
                                                 // Bounds-check: queue can mutate between paint and
                                                 // click (clear, magic-radio refill, etc.).
-                                                let source = state
+                                                let current_channels = state
+                                                    .app
+                                                    .playback
+                                                    .current_queue_index
+                                                    .and_then(|queue_idx| state.app.queue_state.get(queue_idx))
+                                                    .and_then(|item| item.current_track())
+                                                    .and_then(|track| track.channels)
+                                                    .unwrap_or(2) as usize;
+                                                let target = state
                                                     .app
                                                     .queue_state
                                                     .get(idx)
                                                     .and_then(|item| {
-                                                        item.current_track().map(|t| t.audio_source())
+                                                        item.current_track().map(|track| {
+                                                            (
+                                                                track.audio_source(),
+                                                                track.channels.unwrap_or(2) as usize,
+                                                            )
+                                                        })
                                                     });
-                                                if let Some(source) = source {
+                                                if let Some((source, target_channels)) = target {
+                                                    let prefer_smooth_switch =
+                                                        state.app.playback.is_playing
+                                                            && state.app.playback.current_queue_index
+                                                                != Some(idx)
+                                                            && current_channels == target_channels;
+                                                    state.app.queue_state.current_index = Some(idx);
                                                     state.app.playback.current_queue_index = Some(idx);
-                                                    Self::play_track(state, source);
+                                                    if prefer_smooth_switch {
+                                                        Self::play_track_smooth(state, source);
+                                                    } else {
+                                                        Self::play_track(state, source);
+                                                    }
                                                 }
                                             });
                                             cx.notify();
@@ -915,6 +938,7 @@ impl PlayerView {
                 let duration_str = format!("{}:{:02}", duration / 60, duration % 60);
                 let theme_c = theme.clone();
                 let track_path = track.audio_source();
+                let target_track_channels = track.channels.unwrap_or(2) as usize;
                 let track_play_count = track.play_count;
                 let track_is_favorite = track.is_favorite;
                 let heart_track_path = track.path.clone();
@@ -938,13 +962,30 @@ impl PlayerView {
                             cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                                 let path = track_path.clone();
                                 view.state.update(cx, |state, _cx| {
+                                    let current_channels = state
+                                        .app
+                                        .playback
+                                        .current_queue_index
+                                        .and_then(|queue_idx| state.app.queue_state.get(queue_idx))
+                                        .and_then(|item| item.current_track())
+                                        .and_then(|track| track.channels)
+                                        .unwrap_or(2)
+                                        as usize;
+                                    let prefer_smooth_switch = state.app.playback.is_playing
+                                        && current_track_idx != idx
+                                        && current_channels == target_track_channels;
+
                                     // Update the track index in the current queue item
                                     if let Some(queue_idx) = state.app.playback.current_queue_index
                                         && let Some(item) = state.app.queue_state.get_mut(queue_idx)
                                     {
                                         item.current_track_index = idx;
                                     }
-                                    Self::play_track(state, path);
+                                    if prefer_smooth_switch {
+                                        Self::play_track_smooth(state, path);
+                                    } else {
+                                        Self::play_track(state, path);
+                                    }
                                 });
                                 cx.notify();
                             }),

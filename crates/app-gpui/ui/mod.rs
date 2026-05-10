@@ -999,7 +999,14 @@ impl PlayerView {
     }
 
     pub(crate) fn play_track(state: &mut AppState, source: sotf_audio::decoder::AudioSource) {
-        Self::play_track_at(state, source, None);
+        Self::play_track_at_with_mode(state, source, None, false);
+    }
+
+    pub(crate) fn play_track_smooth(
+        state: &mut AppState,
+        source: sotf_audio::decoder::AudioSource,
+    ) {
+        Self::play_track_at_with_mode(state, source, None, true);
     }
 
     /// Auto-advance variant: auto-suspends incompatible plugins without showing a dialog.
@@ -1044,13 +1051,22 @@ impl PlayerView {
                 .update_channel_dependent_plugins();
         }
 
-        Self::play_track_at_inner(state, source, None, track_channels);
+        Self::play_track_at_inner(state, source, None, track_channels, false);
     }
 
     pub(crate) fn play_track_at(
         state: &mut AppState,
         source: sotf_audio::decoder::AudioSource,
         position: Option<f64>,
+    ) {
+        Self::play_track_at_with_mode(state, source, position, false);
+    }
+
+    fn play_track_at_with_mode(
+        state: &mut AppState,
+        source: sotf_audio::decoder::AudioSource,
+        position: Option<f64>,
+        prefer_smooth_switch: bool,
     ) {
         let track_channels = state
             .app
@@ -1088,7 +1104,13 @@ impl PlayerView {
             return;
         }
 
-        Self::play_track_at_inner(state, source, position, track_channels);
+        Self::play_track_at_inner(
+            state,
+            source,
+            position,
+            track_channels,
+            prefer_smooth_switch,
+        );
     }
 
     /// Inner play logic after conflict resolution. Called by both play_track_at and
@@ -1098,6 +1120,7 @@ impl PlayerView {
         source: sotf_audio::decoder::AudioSource,
         position: Option<f64>,
         track_channels: usize,
+        prefer_smooth_switch: bool,
     ) {
         let track_sample_rate = state
             .app
@@ -1162,13 +1185,43 @@ impl PlayerView {
 
         let plugins = state.app.plugin_state.graph.to_plugin_configs(sample_rate);
 
-        if let Err(e) = state.player.lock().load_and_play_source_at(
-            source,
-            plugins,
-            output_channels,
-            device_name,
-            position,
-        ) {
+        let play_result = {
+            let mut player = state.player.lock();
+            if prefer_smooth_switch && position.is_none() {
+                match player.switch_to_source_at(
+                    source.clone(),
+                    plugins.clone(),
+                    output_channels,
+                    device_name.clone(),
+                    position,
+                ) {
+                    Ok(()) => Ok(()),
+                    Err(e) => {
+                        log::warn!(
+                            "[GPUI] Smooth track switch unavailable, falling back to restart: {}",
+                            e
+                        );
+                        player.load_and_play_source_at(
+                            source,
+                            plugins,
+                            output_channels,
+                            device_name,
+                            position,
+                        )
+                    }
+                }
+            } else {
+                player.load_and_play_source_at(
+                    source,
+                    plugins,
+                    output_channels,
+                    device_name,
+                    position,
+                )
+            }
+        };
+
+        if let Err(e) = play_result {
             log::error!("Failed to play track: {}", e);
             state.app.playback.is_playing = false;
             state
