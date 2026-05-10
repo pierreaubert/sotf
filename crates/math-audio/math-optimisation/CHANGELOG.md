@@ -14,6 +14,10 @@
   inverse-normal CDF and Abramowitz-Stegun erf for the Gaussian inverse-CDF
   transform.
 
+## Performance
+
+- Added parallelisation where it can help: CMA-ES
+
 # 0.5.7
 
 ## New features

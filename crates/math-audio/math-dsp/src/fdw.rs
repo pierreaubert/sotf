@@ -6,6 +6,7 @@
 //! per-frequency correction-depth curve.
 
 use crate::analysis::smooth_response_f32;
+use rayon::prelude::*;
 
 const MIN_POWER: f32 = 1.0e-30;
 
@@ -67,6 +68,13 @@ pub struct FdwAnalysis {
     pub direct_sound_sample: usize,
 }
 
+struct FdwFrequencyPoint {
+    magnitude_db: f32,
+    full_energy_db: f32,
+    direct_energy_ratio: f32,
+    window_ms: f32,
+}
+
 /// Analyze an impulse response with frequency-dependent windowing.
 ///
 /// `direct_sound_sample` should be the detected direct-sound TOA when available.
@@ -116,43 +124,55 @@ pub fn analyze_impulse_response_fdw(
         .min(impulse_response.len() - 1);
     let frequencies = log_spaced_frequencies(config.num_points, min_freq, max_freq);
 
-    let mut magnitude_db = Vec::with_capacity(frequencies.len());
-    let mut full_energy_db = Vec::with_capacity(frequencies.len());
-    let mut direct_energy_ratio = Vec::with_capacity(frequencies.len());
-    let mut window_ms = Vec::with_capacity(frequencies.len());
+    let points: Vec<FdwFrequencyPoint> = frequencies
+        .par_iter()
+        .map(|&freq| {
+            let window_samples = fdw_window_samples(freq, sample_rate, config);
+            let sigma_samples = (window_samples as f32 / 6.0).max(1.0);
+            let half_support = (sigma_samples * 3.0).ceil() as usize;
 
-    for &freq in &frequencies {
-        let window_samples = fdw_window_samples(freq, sample_rate, config);
-        let sigma_samples = (window_samples as f32 / 6.0).max(1.0);
-        let half_support = (sigma_samples * 3.0).ceil() as usize;
+            let direct_power = morlet_power_at(
+                impulse_response,
+                direct_sample,
+                freq,
+                sample_rate,
+                sigma_samples,
+                half_support,
+            );
+            let (direct_tf_energy, total_tf_energy) = time_frequency_energy(
+                impulse_response,
+                direct_sample,
+                freq,
+                sample_rate,
+                window_samples,
+                sigma_samples,
+                half_support,
+                config,
+            );
 
-        let direct_power = morlet_power_at(
-            impulse_response,
-            direct_sample,
-            freq,
-            sample_rate,
-            sigma_samples,
-            half_support,
-        );
-        let (direct_tf_energy, total_tf_energy) = time_frequency_energy(
-            impulse_response,
-            direct_sample,
-            freq,
-            sample_rate,
-            window_samples,
-            sigma_samples,
-            half_support,
-            config,
-        );
+            FdwFrequencyPoint {
+                magnitude_db: power_to_db(direct_power),
+                full_energy_db: power_to_db(total_tf_energy),
+                direct_energy_ratio: if total_tf_energy > MIN_POWER {
+                    (direct_tf_energy / total_tf_energy).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                },
+                window_ms: window_samples as f32 / sample_rate * 1000.0,
+            }
+        })
+        .collect();
 
-        magnitude_db.push(power_to_db(direct_power));
-        full_energy_db.push(power_to_db(total_tf_energy));
-        direct_energy_ratio.push(if total_tf_energy > MIN_POWER {
-            (direct_tf_energy / total_tf_energy).clamp(0.0, 1.0)
-        } else {
-            0.0
-        });
-        window_ms.push(window_samples as f32 / sample_rate * 1000.0);
+    let mut magnitude_db = Vec::with_capacity(points.len());
+    let mut full_energy_db = Vec::with_capacity(points.len());
+    let mut direct_energy_ratio = Vec::with_capacity(points.len());
+    let mut window_ms = Vec::with_capacity(points.len());
+
+    for point in points {
+        magnitude_db.push(point.magnitude_db);
+        full_energy_db.push(point.full_energy_db);
+        direct_energy_ratio.push(point.direct_energy_ratio);
+        window_ms.push(point.window_ms);
     }
 
     if config.smoothing_octaves > 0.0 {

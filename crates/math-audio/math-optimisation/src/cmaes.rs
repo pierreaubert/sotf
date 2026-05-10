@@ -9,9 +9,11 @@ use nalgebra::{DMatrix, DVector, SymmetricEigen};
 use ndarray::Array1;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use rayon::prelude::*;
 
 use crate::CallbackAction;
 use crate::error::{DEError, Result};
+use crate::parallel_eval::ParallelConfig;
 
 /// Per-generation callback payload for [`cma_es`].
 pub struct CmaEsIntermediate {
@@ -58,6 +60,8 @@ pub struct CmaEsConfig {
     /// Optional per-generation callback. Returning [`CallbackAction::Stop`]
     /// terminates the run early and returns the best point seen so far.
     pub callback: Option<CmaEsCallback>,
+    /// Parallel evaluation configuration for offspring fitness calls.
+    pub parallel: ParallelConfig,
 }
 
 impl Default for CmaEsConfig {
@@ -74,6 +78,7 @@ impl Default for CmaEsConfig {
             f_tol: 1e-10,
             target_f: f64::NEG_INFINITY,
             callback: None,
+            parallel: ParallelConfig::default(),
         }
     }
 }
@@ -116,6 +121,11 @@ impl std::fmt::Debug for CmaEsReport {
 struct Candidate {
     y: DVector<f64>,
     fun: f64,
+}
+
+struct Sample {
+    y: DVector<f64>,
+    x: Array1<f64>,
 }
 
 /// Minimise `f` with bounded full-covariance CMA-ES.
@@ -205,26 +215,50 @@ where
     let mut message = String::from("maximum evaluations reached");
     let mut success = false;
 
+    if let Some(n) = config.parallel.num_threads {
+        let _ = rayon::ThreadPoolBuilder::new()
+            .num_threads(n)
+            .build_global();
+    }
+
     while nfev < config.maxeval {
         let old_mean = mean.clone();
         let transform = &b * DMatrix::<f64>::from_diagonal(&d);
-        let mut candidates: Vec<Candidate> = Vec::with_capacity(lambda);
+        let eval_budget = (config.maxeval - nfev).min(lambda);
+        let mut samples: Vec<Sample> = Vec::with_capacity(eval_budget);
 
-        for _ in 0..lambda {
-            if nfev >= config.maxeval {
-                break;
-            }
+        for _ in 0..eval_budget {
             let z = standard_normal_vector(n, &mut rng);
             let step = &transform * z;
             let y = clamp_unit_vector(&(old_mean.clone() + step * sigma));
             let x = denormalise(&y, &config.bounds);
-            let fun = finite_or_infinity(f(&x));
-            nfev += 1;
-            if fun < best_fun {
-                best_fun = fun;
-                best_x = x;
+            samples.push(Sample { y, x });
+        }
+
+        let mut candidates: Vec<Candidate> = if config.parallel.enabled && samples.len() >= 4 {
+            samples
+                .par_iter()
+                .map(|sample| Candidate {
+                    y: sample.y.clone(),
+                    fun: finite_or_infinity(f(&sample.x)),
+                })
+                .collect()
+        } else {
+            samples
+                .iter()
+                .map(|sample| Candidate {
+                    y: sample.y.clone(),
+                    fun: finite_or_infinity(f(&sample.x)),
+                })
+                .collect()
+        };
+        nfev += candidates.len();
+
+        for (sample, candidate) in samples.iter().zip(candidates.iter()) {
+            if candidate.fun < best_fun {
+                best_fun = candidate.fun;
+                best_x = sample.x.clone();
             }
-            candidates.push(Candidate { y, fun });
         }
 
         if candidates.is_empty() {

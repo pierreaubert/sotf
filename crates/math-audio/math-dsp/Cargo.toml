@@ -43,6 +43,7 @@ serde = { workspace = true }
 log = { workspace = true }
 clap = { workspace = true }
 rand = { workspace = true }
+rayon = { workspace = true }
 
 [dev-dependencies]
 approx = "0.5"

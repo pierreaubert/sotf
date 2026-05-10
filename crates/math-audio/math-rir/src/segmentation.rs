@@ -1,6 +1,7 @@
 use crate::config::SsirConfig;
 use crate::detection::DetectedReflection;
 use crate::types::RirSegment;
+use rayon::prelude::*;
 
 /// Build segments from detected reflections with onset refinement.
 ///
@@ -45,10 +46,12 @@ pub(crate) fn build_segments(
     onsets.push(0);
 
     // For each reflection (skip direct sound — its onset is 0), find the onset
-    for event in &events[1..] {
-        let onset = find_onset(rir, event.0, onset_window);
-        onsets.push(onset);
-    }
+    onsets.extend(
+        events[1..]
+            .par_iter()
+            .map(|event| find_onset(rir, event.0, onset_window))
+            .collect::<Vec<_>>(),
+    );
 
     // Enforce minimum segment duration by merging short segments with predecessors
     let mut refined_onsets: Vec<usize> = vec![onsets[0]];

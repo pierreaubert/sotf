@@ -1,4 +1,5 @@
 use crate::config::SsirConfig;
+use rayon::prelude::*;
 
 /// A detected reflection candidate before segmentation.
 #[derive(Debug, Clone)]
@@ -80,53 +81,55 @@ pub(crate) fn detect_reflections(
         return Vec::new();
     };
 
-    let mut raw_detections: Vec<(usize, f64)> = Vec::new();
+    let mut raw_detections: Vec<(usize, f64)> = (0..num_windows)
+        .into_par_iter()
+        .filter_map(|i| {
+            let win_start = i * window_len;
+            let win_end = ((i + 1) * window_len).min(rir.len());
+            if win_start >= rir.len() {
+                return None;
+            }
 
-    for i in 0..num_windows {
-        let win_start = i * window_len;
-        let win_end = ((i + 1) * window_len).min(rir.len());
-        if win_start >= rir.len() {
-            break;
-        }
+            // Compute energies in this window
+            let mut energies: Vec<f64> = (win_start..win_end)
+                .map(|j| {
+                    let s = rir[j] as f64;
+                    s * s
+                })
+                .collect();
 
-        // Compute energies in this window
-        let mut energies: Vec<f64> = (win_start..win_end)
-            .map(|j| {
-                let s = rir[j] as f64;
-                s * s
+            if energies.is_empty() {
+                return None;
+            }
+
+            // Compute median energy
+            let median = median_of(&mut energies);
+
+            // Threshold: energy must exceed `energy_threshold` times the median
+            let threshold = config.energy_threshold * median;
+
+            // Find the sample with maximum energy above threshold
+            let mut best_idx = None;
+            let mut best_energy = 0.0;
+
+            for (j, &sample) in rir.iter().enumerate().take(win_end).skip(win_start) {
+                let e = (sample as f64) * (sample as f64);
+                if e > threshold && e > best_energy {
+                    best_energy = e;
+                    best_idx = Some(j);
+                }
+            }
+
+            best_idx.and_then(|idx| {
+                // Skip if within direct sound window
+                if idx >= ds_start && idx < ds_end {
+                    None
+                } else {
+                    Some((idx, best_energy))
+                }
             })
-            .collect();
-
-        if energies.is_empty() {
-            continue;
-        }
-
-        // Compute median energy
-        let median = median_of(&mut energies);
-
-        // Threshold: energy must exceed `energy_threshold` times the median
-        let threshold = config.energy_threshold * median;
-
-        // Find the sample with maximum energy above threshold
-        let mut best_idx = None;
-        let mut best_energy = 0.0;
-
-        for (j, &sample) in rir.iter().enumerate().take(win_end).skip(win_start) {
-            let e = (sample as f64) * (sample as f64);
-            if e > threshold && e > best_energy {
-                best_energy = e;
-                best_idx = Some(j);
-            }
-        }
-
-        if let Some(idx) = best_idx {
-            // Skip if within direct sound window
-            if idx >= ds_start && idx < ds_end {
-                continue;
-            }
-            raw_detections.push((idx, best_energy));
-        }
-    }
+        })
+        .collect();
 
     // Sort by sample index
     raw_detections.sort_by_key(|&(idx, _)| idx);

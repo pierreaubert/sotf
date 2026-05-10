@@ -19,6 +19,14 @@
   biquad response, FIR response, and LR4 low/high crossover response. RoomEQ
   uses these to align CTC transfer-matrix solving with exported runtime DSP.
 
+## Performance
+
+- Added parallelisation in FDW computation
+
+## AI model
+
+- Note: not synced here. Need to copy the python code or port it to rust
+
 # 0.5.15
 
 ## New features

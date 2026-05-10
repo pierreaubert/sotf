@@ -45,6 +45,7 @@ pub use types::{RirSegment, SsirResult};
 
 use detection::{detect_reflections, find_direct_sound_toa};
 use mixing_time::estimate_mixing_time;
+use rayon::prelude::*;
 use segmentation::build_segments;
 
 /// Analyze a mono room impulse response using the SSIR method.
@@ -222,12 +223,21 @@ fn compute_bformat_doa(channels: &[&[f32]], len: usize, config: &SsirConfig) -> 
                 .map(|s| s as f32)
                 .collect()
         };
-        (
-            filter_channel(channels[0]),
-            filter_channel(channels[1]),
-            filter_channel(channels[2]),
-            filter_channel(channels[3]),
-        )
+        let ((w, x), (y, z)) = rayon::join(
+            || {
+                rayon::join(
+                    || filter_channel(channels[0]),
+                    || filter_channel(channels[1]),
+                )
+            },
+            || {
+                rayon::join(
+                    || filter_channel(channels[2]),
+                    || filter_channel(channels[3]),
+                )
+            },
+        );
+        (w, x, y, z)
     } else {
         (
             channels[0].to_vec(),
@@ -238,6 +248,7 @@ fn compute_bformat_doa(channels: &[&[f32]], len: usize, config: &SsirConfig) -> 
     };
 
     (0..len)
+        .into_par_iter()
         .map(|i| {
             let p = w[i] as f64;
             // Intensity vector components

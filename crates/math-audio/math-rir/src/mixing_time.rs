@@ -1,3 +1,5 @@
+use rayon::prelude::*;
+
 /// Estimate the mixing time of a room impulse response.
 ///
 /// Uses the Abel & Huang (2006) echo density method: the mixing time is
@@ -50,31 +52,41 @@ pub(crate) fn estimate_mixing_time(rir: &[f32], sample_rate: f64) -> usize {
     let hop = window_samples / 2;
     let density_threshold = 0.55; // Transition threshold
 
+    let positions: Vec<usize> = std::iter::successors(Some(analysis_start), |pos| {
+        let next = pos.saturating_add(hop);
+        (next + window_samples <= search_end).then_some(next)
+    })
+    .collect();
+
+    let densities_above: Vec<bool> = positions
+        .par_iter()
+        .map(|&pos| {
+            let window = &rir[pos..pos + window_samples];
+
+            // Compute RMS of window
+            let rms = {
+                let sum_sq: f64 = window.iter().map(|&x| (x as f64).powi(2)).sum();
+                (sum_sq / window_samples as f64).sqrt()
+            };
+
+            if rms < 1e-12 {
+                return false;
+            }
+
+            // Count samples above RMS (echo density)
+            let above_count = window.iter().filter(|&&x| (x as f64).abs() > rms).count();
+            let density = above_count as f64 / window_samples as f64;
+
+            density >= density_threshold
+        })
+        .collect();
+
     // Running count of windows above threshold
     let mut consecutive_above = 0;
     let required_consecutive = 3;
 
-    let mut pos = analysis_start;
-    while pos + window_samples <= search_end {
-        let window = &rir[pos..pos + window_samples];
-
-        // Compute RMS of window
-        let rms = {
-            let sum_sq: f64 = window.iter().map(|&x| (x as f64).powi(2)).sum();
-            (sum_sq / window_samples as f64).sqrt()
-        };
-
-        if rms < 1e-12 {
-            consecutive_above = 0;
-            pos += hop;
-            continue;
-        }
-
-        // Count samples above RMS (echo density)
-        let above_count = window.iter().filter(|&&x| (x as f64).abs() > rms).count();
-        let density = above_count as f64 / window_samples as f64;
-
-        if density >= density_threshold {
+    for (&pos, &above) in positions.iter().zip(densities_above.iter()) {
+        if above {
             consecutive_above += 1;
             if consecutive_above >= required_consecutive {
                 // Mixing time = start of the first window in the streak
@@ -83,8 +95,6 @@ pub(crate) fn estimate_mixing_time(rir: &[f32], sample_rate: f64) -> usize {
         } else {
             consecutive_above = 0;
         }
-
-        pos += hop;
     }
 
     // If estimation failed (e.g., very dry room), use default
