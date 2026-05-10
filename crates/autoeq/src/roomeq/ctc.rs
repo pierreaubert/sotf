@@ -393,6 +393,7 @@ fn compute_delivered_response_metrics(
     let mut balance_sum_db = 0.0_f64;
     let mut balance_count = 0usize;
 
+    #[allow(clippy::needless_range_loop)]
     for bin in 0..num_bins {
         let latency_phase = 2.0 * PI * bin as f64 * latency_samples as f64 / fft_size as f64;
         let undo_latency = Complex64::from_polar(1.0, latency_phase);
@@ -490,6 +491,7 @@ fn apply_room_eq_dsp_to_spectrum(
         responses_by_speaker.push(responses);
     }
 
+    #[allow(clippy::needless_range_loop)]
     for bin in 0..spectrum.bins.len() {
         for position in &mut spectrum.bins[bin] {
             for speaker_idx in 0..speakers {
@@ -569,22 +571,21 @@ fn plugin_chain_response(
     let mut idx = 0usize;
     while idx < plugins.len() {
         let plugin = &plugins[idx];
-        if plugin.plugin_type == "band_split" {
-            if let Some(merge_offset) = plugins[idx + 1..]
+        if plugin.plugin_type == "band_split"
+            && let Some(merge_offset) = plugins[idx + 1..]
                 .iter()
                 .position(|candidate| candidate.plugin_type == "band_merge")
-            {
-                let merge_idx = idx + 1 + merge_offset;
-                response *= mixed_band_response(
-                    plugin,
-                    &plugins[idx + 1..merge_idx],
-                    freq,
-                    sample_rate,
-                    cache,
-                )?;
-                idx = merge_idx + 1;
-                continue;
-            }
+        {
+            let merge_idx = idx + 1 + merge_offset;
+            response *= mixed_band_response(
+                plugin,
+                &plugins[idx + 1..merge_idx],
+                freq,
+                sample_rate,
+                cache,
+            )?;
+            idx = merge_idx + 1;
+            continue;
         }
         response *= plugin_response(plugin, freq, sample_rate, cache)?;
         idx += 1;

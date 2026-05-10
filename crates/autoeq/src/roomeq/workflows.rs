@@ -11,6 +11,10 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 use super::crossover;
 use super::dba;
@@ -26,6 +30,38 @@ use super::types::{
 mod bass_management;
 
 use bass_management::*;
+
+pub(super) struct WorkflowProgressCallback {
+    pub callback: crate::optim::OptimProgressCallback,
+    pub stopped: Arc<AtomicBool>,
+}
+
+pub(super) type WorkflowProgressCallbackFactory<'a> =
+    dyn FnMut(&str, usize, usize, usize) -> Option<WorkflowProgressCallback> + 'a;
+
+fn workflow_progress_callback(
+    progress_factory: &mut Option<&mut WorkflowProgressCallbackFactory<'_>>,
+    role: &str,
+    channel_index: usize,
+    total_channels: usize,
+    max_iterations: usize,
+) -> Option<WorkflowProgressCallback> {
+    progress_factory
+        .as_deref_mut()
+        .and_then(|factory| factory(role, channel_index, total_channels, max_iterations))
+}
+
+fn workflow_progress_stopped(stopped: &Option<Arc<AtomicBool>>, step: &'static str) -> Result<()> {
+    if stopped
+        .as_ref()
+        .is_some_and(|flag| flag.load(Ordering::Relaxed))
+    {
+        return Err(AutoeqError::OptimizationFailed {
+            message: format!("Room optimization stopped by observer during {step}"),
+        });
+    }
+    Ok(())
+}
 
 /// Align channel levels by normalizing down to the lowest level.
 pub fn align_channels_to_lowest(
@@ -144,6 +180,10 @@ fn run_channel_via_generic_path(
     alignment_gain_db: f64,
     sample_rate: f64,
     output_dir: &Path,
+    progress_factory: &mut Option<&mut WorkflowProgressCallbackFactory<'_>>,
+    channel_index: usize,
+    total_channels: usize,
+    max_iterations: usize,
 ) -> Result<(
     ChannelDspChain,
     ChannelOptimizationResult,
@@ -166,16 +206,27 @@ fn run_channel_via_generic_path(
         config
     };
 
+    let progress = workflow_progress_callback(
+        progress_factory,
+        role,
+        channel_index,
+        total_channels,
+        max_iterations,
+    );
+    let stopped = progress
+        .as_ref()
+        .map(|progress| Arc::clone(&progress.stopped));
     let mut processed = super::speaker_eq::process_single_speaker(
         role,
         source,
         effective_config,
         sample_rate,
         output_dir,
-        None,
+        progress.map(|progress| progress.callback),
         None,
         None,
     )?;
+    workflow_progress_stopped(&stopped, "TopologyWorkflowExecution")?;
 
     let mut multiseat_rejection = None;
     if derived_multiseat_config.is_some() {
@@ -193,16 +244,27 @@ fn run_channel_via_generic_path(
                 acceptance.advisories.join(", ")
             );
             multiseat_rejection = Some(acceptance.advisories);
+            let progress = workflow_progress_callback(
+                progress_factory,
+                role,
+                channel_index,
+                total_channels,
+                max_iterations,
+            );
+            let stopped = progress
+                .as_ref()
+                .map(|progress| Arc::clone(&progress.stopped));
             processed = super::speaker_eq::process_single_speaker(
                 role,
                 source,
                 config,
                 sample_rate,
                 output_dir,
-                None,
+                progress.map(|progress| progress.callback),
                 None,
                 None,
             )?;
+            workflow_progress_stopped(&stopped, "TopologyWorkflowExecution")?;
         }
     }
 
@@ -537,6 +599,16 @@ pub fn optimize_stereo_2_0(
     sample_rate: f64,
     output_dir: &Path,
 ) -> Result<RoomOptimizationResult> {
+    optimize_stereo_2_0_with_progress(config, sys, sample_rate, output_dir, None)
+}
+
+pub(super) fn optimize_stereo_2_0_with_progress(
+    config: &RoomConfig,
+    sys: &SystemConfig,
+    sample_rate: f64,
+    output_dir: &Path,
+    mut progress_factory: Option<&mut WorkflowProgressCallbackFactory<'_>>,
+) -> Result<RoomOptimizationResult> {
     info!("Running Stereo 2.0 Optimization Workflow");
 
     // 1. Load measurements
@@ -555,14 +627,27 @@ pub fn optimize_stereo_2_0(
     let mut pre_scores = Vec::new();
     let mut post_scores = Vec::new();
 
-    for role in curves.keys() {
+    let total_channels = curves.len();
+    let max_iterations = config.optimizer.max_iter;
+    for (channel_index, role) in curves.keys().enumerate() {
         let gain = *gains.get(role).unwrap_or(&0.0);
         let source = resolve_single_source(role, config, sys)?;
 
         info!("  Optimizing '{}' with alignment gain {:.2} dB", role, gain);
 
         let (chain, ch_result, pre_score, post_score, _fir, _multiseat_rejection) =
-            run_channel_via_generic_path(role, source, config, gain, sample_rate, output_dir)?;
+            run_channel_via_generic_path(
+                role,
+                source,
+                config,
+                gain,
+                sample_rate,
+                output_dir,
+                &mut progress_factory,
+                channel_index,
+                total_channels,
+                max_iterations,
+            )?;
 
         info!(
             "  '{}' pre_score={:.4} post_score={:.4}",
@@ -625,6 +710,16 @@ pub fn optimize_stereo_2_1(
     sys: &SystemConfig,
     sample_rate: f64,
     output_dir: &Path,
+) -> Result<RoomOptimizationResult> {
+    optimize_stereo_2_1_with_progress(config, sys, sample_rate, output_dir, None)
+}
+
+pub(super) fn optimize_stereo_2_1_with_progress(
+    config: &RoomConfig,
+    sys: &SystemConfig,
+    sample_rate: f64,
+    output_dir: &Path,
+    mut progress_factory: Option<&mut WorkflowProgressCallbackFactory<'_>>,
 ) -> Result<RoomOptimizationResult> {
     info!("Running Stereo 2.1 Optimization Workflow");
 
@@ -760,7 +855,9 @@ pub fn optimize_stereo_2_1(
         HashMap::new();
     let mut linearized_curves: HashMap<String, Curve> = HashMap::new();
 
-    for role in ["L", "R"] {
+    let total_channels = 3;
+    let max_iterations = config.optimizer.max_iter;
+    for (channel_index, role) in ["L", "R"].into_iter().enumerate() {
         let source = resolve_single_source(role, config, sys)?;
         let mut per_config = config.clone();
         per_config.optimizer.min_freq = min_xo;
@@ -770,7 +867,18 @@ pub fn optimize_stereo_2_1(
             role, min_xo
         );
         let (chain, ch_result, _pre_score, _post_score, _fir, _multiseat_rejection) =
-            run_channel_via_generic_path(role, source, &per_config, 0.0, sample_rate, output_dir)?;
+            run_channel_via_generic_path(
+                role,
+                source,
+                &per_config,
+                0.0,
+                sample_rate,
+                output_dir,
+                &mut progress_factory,
+                channel_index,
+                total_channels,
+                max_iterations,
+            )?;
         pre_eq_plugins.insert(role.to_string(), chain.plugins);
         linearized_curves.insert(role.to_string(), ch_result.final_curve);
     }
@@ -792,6 +900,10 @@ pub fn optimize_stereo_2_1(
                 0.0,
                 sample_rate,
                 output_dir,
+                &mut progress_factory,
+                2,
+                total_channels,
+                max_iterations,
             )?;
         pre_eq_plugins.insert(sub_role.clone(), chain.plugins);
         linearized_curves.insert(sub_role.clone(), ch_result.final_curve);
@@ -1426,6 +1538,16 @@ pub fn optimize_home_cinema(
     sample_rate: f64,
     _output_dir: &Path,
 ) -> Result<RoomOptimizationResult> {
+    optimize_home_cinema_with_progress(config, sys, sample_rate, _output_dir, None)
+}
+
+pub(super) fn optimize_home_cinema_with_progress(
+    config: &RoomConfig,
+    sys: &SystemConfig,
+    sample_rate: f64,
+    _output_dir: &Path,
+    mut progress_factory: Option<&mut WorkflowProgressCallbackFactory<'_>>,
+) -> Result<RoomOptimizationResult> {
     let sub_role = super::home_cinema::bass_output_role(config, sys);
     let has_sub = sys.speakers.contains_key(&sub_role);
 
@@ -1512,6 +1634,7 @@ pub fn optimize_home_cinema(
     };
 
     if has_sub {
+        let total_channels = main_roles.len() + 1;
         optimize_home_cinema_with_sub(
             config,
             sys,
@@ -1520,9 +1643,21 @@ pub fn optimize_home_cinema(
             sub_preprocess.unwrap(),
             sample_rate,
             _output_dir,
+            &mut progress_factory,
+            total_channels,
         )
     } else {
-        optimize_home_cinema_no_sub(config, sys, &main_roles, &curves, sample_rate, _output_dir)
+        let total_channels = main_roles.len();
+        optimize_home_cinema_no_sub(
+            config,
+            sys,
+            &main_roles,
+            &curves,
+            sample_rate,
+            _output_dir,
+            &mut progress_factory,
+            total_channels,
+        )
     }
 }
 
@@ -1538,6 +1673,8 @@ fn optimize_home_cinema_no_sub(
     curves: &HashMap<String, Curve>,
     sample_rate: f64,
     output_dir: &Path,
+    progress_factory: &mut Option<&mut WorkflowProgressCallbackFactory<'_>>,
+    total_channels: usize,
 ) -> Result<RoomOptimizationResult> {
     // Level alignment: mains measured from 100 Hz to 2000 Hz
     let mut ranges = HashMap::new();
@@ -1552,14 +1689,26 @@ fn optimize_home_cinema_no_sub(
     let mut post_scores = Vec::new();
     let mut multi_seat_rejections: HashMap<String, Vec<String>> = HashMap::new();
 
-    for role in main_roles {
+    let max_iterations = config.optimizer.max_iter;
+    for (channel_index, role) in main_roles.iter().enumerate() {
         let gain = *gains.get(role).unwrap_or(&0.0);
         let source = resolve_single_source(role, config, sys)?;
 
         info!("  Optimizing '{}' with alignment gain {:.2} dB", role, gain);
 
         let (chain, ch_result, pre_score, post_score, _fir, multiseat_rejection) =
-            run_channel_via_generic_path(role, source, config, gain, sample_rate, output_dir)?;
+            run_channel_via_generic_path(
+                role,
+                source,
+                config,
+                gain,
+                sample_rate,
+                output_dir,
+                progress_factory,
+                channel_index,
+                total_channels,
+                max_iterations,
+            )?;
         if let Some(advisories) = multiseat_rejection {
             multi_seat_rejections.insert(role.clone(), advisories);
         }
@@ -1631,6 +1780,8 @@ fn optimize_home_cinema_with_sub(
     sub_preprocess: SubPreprocessResult,
     sample_rate: f64,
     output_dir: &Path,
+    progress_factory: &mut Option<&mut WorkflowProgressCallbackFactory<'_>>,
+    total_channels: usize,
 ) -> Result<RoomOptimizationResult> {
     let sub_role = super::home_cinema::bass_output_role(config, sys);
 
@@ -1693,7 +1844,8 @@ fn optimize_home_cinema_with_sub(
     let mut linearized_curves: HashMap<String, Curve> = HashMap::new();
     let mut multi_seat_rejections: HashMap<String, Vec<String>> = HashMap::new();
 
-    for role in main_roles {
+    let max_iterations = config.optimizer.max_iter;
+    for (channel_index, role) in main_roles.iter().enumerate() {
         let source = resolve_single_source(role, config, sys)?;
         let mut per_config = config.clone();
         per_config.optimizer.min_freq = min_xo;
@@ -1702,7 +1854,18 @@ fn optimize_home_cinema_with_sub(
             role, min_xo
         );
         let (chain, ch_result, _pre, _post, _fir, multiseat_rejection) =
-            run_channel_via_generic_path(role, source, &per_config, 0.0, sample_rate, output_dir)?;
+            run_channel_via_generic_path(
+                role,
+                source,
+                &per_config,
+                0.0,
+                sample_rate,
+                output_dir,
+                progress_factory,
+                channel_index,
+                total_channels,
+                max_iterations,
+            )?;
         if let Some(advisories) = multiseat_rejection {
             multi_seat_rejections.insert(role.clone(), advisories);
         }
@@ -1727,6 +1890,10 @@ fn optimize_home_cinema_with_sub(
                 0.0,
                 sample_rate,
                 output_dir,
+                progress_factory,
+                main_roles.len(),
+                total_channels,
+                max_iterations,
             )?;
         pre_eq_plugins.insert(
             sub_role.clone(),

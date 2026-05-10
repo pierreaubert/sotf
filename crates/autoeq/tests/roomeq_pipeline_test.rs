@@ -59,6 +59,20 @@ fn stereo_config() -> RoomConfig {
     }
 }
 
+fn workflow_stereo_config() -> RoomConfig {
+    let mut config = stereo_config();
+    config.system = Some(SystemConfig {
+        model: SystemModel::Stereo,
+        speakers: HashMap::from([
+            ("L".to_string(), "left".to_string()),
+            ("R".to_string(), "right".to_string()),
+        ]),
+        subwoofers: None,
+        bass_management: None,
+    });
+    config
+}
+
 fn collect_events(
     config: &RoomConfig,
 ) -> (
@@ -93,6 +107,73 @@ fn event_index(
         .iter()
         .position(|event| event.step_id == step_id && event.status == status)
         .unwrap_or_else(|| panic!("missing event {step_id:?}/{status:?}"))
+}
+
+#[test]
+fn topology_workflow_emits_live_iteration_progress() {
+    let config = workflow_stereo_config();
+    let (events, result) = collect_events(&config);
+    result.expect("workflow pipeline optimization");
+
+    let progress_events: Vec<&PipelineEvent> = events
+        .iter()
+        .filter(|event| {
+            event.step_id == PipelineStepId::TopologyWorkflowExecution
+                && event.status == PipelineStepStatus::InProgress
+                && event.iteration.unwrap_or(0) > 0
+        })
+        .collect();
+
+    assert!(
+        !progress_events.is_empty(),
+        "workflow optimization should emit per-iteration progress events"
+    );
+    assert!(
+        progress_events
+            .iter()
+            .all(|event| event.channel.as_ref().is_some_and(|name| !name.is_empty()))
+    );
+    assert!(progress_events.iter().any(|event| {
+        event
+            .loss
+            .is_some_and(|loss| loss.is_finite() && loss > 0.0)
+    }));
+    assert!(
+        progress_events
+            .iter()
+            .any(|event| event.overall_progress > 0.0)
+    );
+}
+
+#[test]
+fn topology_workflow_iteration_progress_can_cancel_run() {
+    let config = workflow_stereo_config();
+    let observer: Box<dyn PipelineObserver> = Box::new(|event: &PipelineEvent| {
+        if event.step_id == PipelineStepId::TopologyWorkflowExecution
+            && event.status == PipelineStepStatus::InProgress
+            && event.iteration.unwrap_or(0) > 0
+        {
+            PipelineControl::Stop
+        } else {
+            PipelineControl::Continue
+        }
+    });
+
+    let result = RoomPipeline::new(RoomPipelineRequest {
+        config: &config,
+        sample_rate: 48_000.0,
+        output_dir: None,
+        probe_arrival_overrides: None,
+    })
+    .run(Some(observer));
+
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("stopped by observer")
+    );
 }
 
 #[test]

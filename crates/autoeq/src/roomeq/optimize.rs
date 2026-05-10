@@ -11,7 +11,10 @@ use num_complex::Complex64;
 use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
 
 use super::config::validate_room_config;
 use super::fir;
@@ -576,6 +579,30 @@ fn progress_event(
     event
 }
 
+fn optimizer_progress_iterations(config: &RoomConfig) -> usize {
+    let params_per_filter = match config.optimizer.peq_model.as_str() {
+        "free" | "ls-pk-hs" => 4,
+        _ => 3,
+    };
+    let n_params = config.optimizer.num_filters * params_per_filter;
+    let n_free = n_params.max(1);
+    let desired_pop = config
+        .optimizer
+        .population
+        .max(1)
+        .min(config.optimizer.max_iter.max(1));
+    let pop_multiplier = desired_pop.div_ceil(n_free).max(4);
+    let population_size = pop_multiplier * n_free;
+    const DE_GENERATIONS_FLOOR: usize = 5000;
+    let computed_generations =
+        config.optimizer.max_iter.saturating_sub(population_size) / population_size;
+    if config.optimizer.max_iter >= DE_GENERATIONS_FLOOR.saturating_mul(population_size) {
+        computed_generations.max(DE_GENERATIONS_FLOOR)
+    } else {
+        computed_generations.max(1)
+    }
+}
+
 /// I6 — debug-only sanity invariants on the final `RoomOptimizationResult`.
 ///
 /// Catches silent corruption bugs that would otherwise produce garbage DSP
@@ -783,30 +810,91 @@ fn optimize_room_impl(
                 )?;
             }
 
+            let workflow_max_iterations = optimizer_progress_iterations(config);
+            let mut workflow_progress_factory = {
+                let observer = Arc::clone(&observer_shared);
+                move |channel_name: &str,
+                      speaker_idx: usize,
+                      total_speakers: usize,
+                      _max_iterations: usize|
+                      -> Option<super::workflows::WorkflowProgressCallback> {
+                    let observer = Arc::clone(&observer);
+                    let name = channel_name.to_string();
+                    let total = total_speakers.max(1);
+                    let max_iterations = workflow_max_iterations;
+                    let stopped = Arc::new(AtomicBool::new(false));
+                    let stopped_for_callback = Arc::clone(&stopped);
+                    let callback: crate::optim::OptimProgressCallback =
+                        Box::new(move |iter: usize, loss: f64, epa: Option<f64>| {
+                            let base_progress = speaker_idx as f64 / total as f64;
+                            let speaker_progress = if max_iterations > 0 {
+                                iter as f64 / max_iterations as f64
+                            } else {
+                                0.0
+                            };
+                            // Workflow-local channel optimization occupies the first
+                            // 90% of the pipeline; final report/FIR/IR stages fill the
+                            // remaining coarse progress events.
+                            let overall = ((base_progress + speaker_progress / total as f64)
+                                * 0.90)
+                                .min(0.90);
+
+                            match send_progress(
+                                &observer,
+                                PipelineStepId::TopologyWorkflowExecution,
+                                PipelineStepStatus::InProgress,
+                                &RoomOptimizationProgress {
+                                    current_speaker: name.clone(),
+                                    speaker_index: speaker_idx,
+                                    total_speakers,
+                                    iteration: iter,
+                                    max_iterations,
+                                    loss,
+                                    overall_progress: overall,
+                                    message: None,
+                                    epa_preference: epa,
+                                },
+                            ) {
+                                Ok(()) => crate::de::CallbackAction::Continue,
+                                Err(_) => {
+                                    stopped_for_callback.store(true, Ordering::Relaxed);
+                                    crate::de::CallbackAction::Stop
+                                }
+                            }
+                        });
+                    Some(super::workflows::WorkflowProgressCallback { callback, stopped })
+                }
+            };
+
             let workflow_result = match sys.model {
                 SystemModel::Stereo => {
                     if sys.subwoofers.is_some() {
-                        Some(super::workflows::optimize_stereo_2_1(
+                        Some(super::workflows::optimize_stereo_2_1_with_progress(
                             config,
                             sys,
                             sample_rate,
                             output_dir.unwrap_or(Path::new(".")),
+                            Some(&mut workflow_progress_factory),
                         ))
                     } else {
-                        Some(super::workflows::optimize_stereo_2_0(
+                        Some(super::workflows::optimize_stereo_2_0_with_progress(
                             config,
                             sys,
                             sample_rate,
                             output_dir.unwrap_or(Path::new(".")),
+                            Some(&mut workflow_progress_factory),
                         ))
                     }
                 }
-                SystemModel::HomeCinema => Some(super::workflows::optimize_home_cinema(
-                    config,
-                    sys,
-                    sample_rate,
-                    output_dir.unwrap_or(Path::new(".")),
-                )),
+                SystemModel::HomeCinema => {
+                    Some(super::workflows::optimize_home_cinema_with_progress(
+                        config,
+                        sys,
+                        sample_rate,
+                        output_dir.unwrap_or(Path::new(".")),
+                        Some(&mut workflow_progress_factory),
+                    ))
+                }
                 SystemModel::Custom => None, // Fall through to generic path
             };
 
@@ -833,7 +921,7 @@ fn optimize_room_impl(
                         iteration: 0,
                         max_iterations: 0,
                         loss: result.combined_post_score,
-                        overall_progress: 1.0,
+                        overall_progress: 0.90,
                         message: Some(format!(
                             "{} workflow complete:\n{}",
                             workflow_name,
@@ -2505,7 +2593,7 @@ fn shared_target_level(channel_means: &[f64]) -> f64 {
 
     finite_means.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let mid = finite_means.len() / 2;
-    if finite_means.len() % 2 == 0 {
+    if finite_means.len().is_multiple_of(2) {
         (finite_means[mid - 1] + finite_means[mid]) / 2.0
     } else {
         finite_means[mid]

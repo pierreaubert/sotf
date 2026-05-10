@@ -212,7 +212,7 @@ fn bo_config(
         if params.no_parallel {
             1
         } else {
-            params.parallel_threads.max(1).min(16)
+            params.parallel_threads.clamp(1, 16)
         }
     } else {
         params.bo_batch_size
