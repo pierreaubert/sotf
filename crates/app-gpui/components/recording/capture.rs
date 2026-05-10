@@ -2052,44 +2052,90 @@ impl PlayerView {
                 },
             };
 
-            // Convert ChannelRecording to speakers HashMap with inline measurements
+            // Group recordings by channel_index so each logical speaker
+            // produces one SpeakerConfig entry. Multi-position takes
+            // (mic_position_index > 0) become MeasurementSource::Multiple.
+            // The second mic of binaural CTC captures (mic_index >= 1) is
+            // excluded — that data lives in ctc_measurements and using it
+            // here would create extra "phantom" speakers whose names don't
+            // match the CTC measurement roles, breaking system.speakers
+            // validation downstream.
+            let mut grouped_recordings: std::collections::BTreeMap<
+                usize,
+                Vec<&crate::app::types::ChannelRecording>,
+            > = std::collections::BTreeMap::new();
+            for rec in recordings.iter() {
+                if rec.result.is_some() && rec.mic_index == 0 {
+                    grouped_recordings
+                        .entry(rec.channel_index)
+                        .or_default()
+                        .push(rec);
+                }
+            }
+
             let mut speakers: HashMap<String, SpeakerConfig> = HashMap::new();
 
-            for rec in recordings.iter() {
-                if let Some(result) = &rec.result {
-                    // Convert absolute paths to relative (just filename)
-                    let relative_wav = result
-                        .wav_path
-                        .as_ref()
-                        .and_then(|p| std::path::Path::new(p).file_name())
-                        .map(|f| f.to_string_lossy().to_string());
-                    let relative_csv = result
-                        .csv_path
-                        .as_ref()
-                        .and_then(|p| std::path::Path::new(p).file_name())
-                        .map(|f| f.to_string_lossy().to_string());
+            for (channel_index, mut group) in grouped_recordings {
+                group.sort_by_key(|r| r.mic_position_index);
 
-                    // Store only file references, not inline data
-                    // Data will be loaded from CSV on demand
-                    let inline_measurement = InlineMeasurement {
-                        frequencies: Vec::new(),
-                        magnitude_db: Vec::new(),
-                        phase_deg: None,
-                        name: Some(rec.channel_name.clone()),
-                        wav_path: relative_wav,
-                        csv_path: relative_csv,
-                    };
+                let primary = group[0];
+                let base_name = rec_state
+                    .playback_config
+                    .channel_mappings
+                    .get(channel_index)
+                    .map(|m| m.group_name.clone())
+                    .unwrap_or_else(|| {
+                        primary
+                            .channel_name
+                            .find(" (")
+                            .map_or(primary.channel_name.as_str(), |pos| {
+                                &primary.channel_name[..pos]
+                            })
+                            .to_string()
+                    });
 
-                    let measurement_ref = MeasurementRef::Inline(inline_measurement);
-                    let measurement_source =
-                        MeasurementSource::Single(autoeq::read::MeasurementSingle {
-                            measurement: measurement_ref,
-                            speaker_name: None,
-                        });
-                    let speaker_config = SpeakerConfig::Single(measurement_source);
+                let measurement_refs: Vec<MeasurementRef> = group
+                    .iter()
+                    .filter_map(|rec| {
+                        let result = rec.result.as_ref()?;
+                        let relative_wav = result
+                            .wav_path
+                            .as_ref()
+                            .and_then(|p| std::path::Path::new(p).file_name())
+                            .map(|f| f.to_string_lossy().to_string());
+                        let relative_csv = result
+                            .csv_path
+                            .as_ref()
+                            .and_then(|p| std::path::Path::new(p).file_name())
+                            .map(|f| f.to_string_lossy().to_string());
+                        Some(MeasurementRef::Inline(InlineMeasurement {
+                            frequencies: Vec::new(),
+                            magnitude_db: Vec::new(),
+                            phase_deg: None,
+                            name: Some(rec.channel_name.clone()),
+                            wav_path: relative_wav,
+                            csv_path: relative_csv,
+                        }))
+                    })
+                    .collect();
 
-                    speakers.insert(rec.channel_name.clone(), speaker_config);
+                if measurement_refs.is_empty() {
+                    continue;
                 }
+
+                let speaker_source = if measurement_refs.len() == 1 {
+                    MeasurementSource::Single(autoeq::read::MeasurementSingle {
+                        measurement: measurement_refs.into_iter().next().unwrap(),
+                        speaker_name: None,
+                    })
+                } else {
+                    MeasurementSource::Multiple(autoeq::read::MeasurementMultiple {
+                        measurements: measurement_refs,
+                        speaker_name: None,
+                    })
+                };
+
+                speakers.insert(base_name, SpeakerConfig::Single(speaker_source));
             }
 
             if speakers.is_empty() {

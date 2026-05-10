@@ -61,7 +61,7 @@ pub(crate) struct InstanceBufferPool {
 impl Default for InstanceBufferPool {
     fn default() -> Self {
         Self {
-            buffer_size: 2 * 1024 * 1024,
+            buffer_size: 8 * 1024 * 1024,
             buffers: Vec::new(),
         }
     }

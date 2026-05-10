@@ -1094,22 +1094,52 @@ impl RoomEqMeasurementsFile {
             .into_iter()
             .enumerate()
             .filter_map(|(idx, (channel_name, speaker_config))| {
-                // Extract the primary MeasurementRef from the speaker config
-                let measurement_ref = match speaker_config {
+                // Collect every MeasurementRef from the speaker config so
+                // multi-position recordings (saved as
+                // MeasurementSource::Multiple) round-trip with all takes
+                // preserved. The first ref becomes the primary measurement;
+                // any extras are stored as multi_mic_measurements.
+                let measurement_refs: Vec<autoeq::read::MeasurementRef> = match speaker_config {
                     autoeq::SpeakerConfig::Single(source) => match source {
-                        autoeq::MeasurementSource::Single(s) => Some(s.measurement),
-                        autoeq::MeasurementSource::Multiple(m) => m.measurements.into_iter().next(),
+                        autoeq::MeasurementSource::Single(s) => vec![s.measurement],
+                        autoeq::MeasurementSource::Multiple(m) => m.measurements,
                         autoeq::MeasurementSource::InMemory(_)
-                        | autoeq::MeasurementSource::InMemoryMultiple(_) => None,
+                        | autoeq::MeasurementSource::InMemoryMultiple(_) => Vec::new(),
                     },
-                    _ => None, // Groups not yet supported
+                    _ => Vec::new(), // Groups not yet supported
                 };
 
-                let measurement_ref = measurement_ref?;
+                let mut iter = measurement_refs.into_iter();
+                let primary_ref = iter.next()?;
 
-                // Build ChannelMeasurement from any MeasurementRef variant
+                // Build ChannelMeasurement from the primary MeasurementRef
                 let (frequencies, magnitude_db, phase_deg, wav_path, csv_path) =
-                    Self::load_measurement_ref(&measurement_ref, &resolve_path);
+                    Self::load_measurement_ref(&primary_ref, &resolve_path);
+
+                let multi_mic_measurements = iter
+                    .map(|extra_ref| {
+                        let (frequencies, magnitude_db, phase_deg, wav_path, csv_path) =
+                            Self::load_measurement_ref(&extra_ref, &resolve_path);
+                        RecordingResult {
+                            channel: idx,
+                            wav_path,
+                            csv_path,
+                            frequencies,
+                            magnitude_db,
+                            phase_deg,
+                            impulse_response: None,
+                            impulse_time_ms: None,
+                            excess_group_delay_ms: None,
+                            thd_percent: None,
+                            harmonic_distortion_db: None,
+                            rt60_ms: None,
+                            clarity_c50_db: None,
+                            clarity_c80_db: None,
+                            spectrogram_db: None,
+                        }
+                    })
+                    .filter(|res| !res.frequencies.is_empty())
+                    .collect();
 
                 Some(ChannelMeasurement {
                     channel_name,
@@ -1132,7 +1162,7 @@ impl RoomEqMeasurementsFile {
                     },
                     is_group: false,
                     group_drivers: Vec::new(),
-                    multi_mic_measurements: Vec::new(),
+                    multi_mic_measurements,
                 })
             })
             .filter(|ch| !ch.measurement.frequencies.is_empty())
@@ -4691,6 +4721,50 @@ mod tests {
                 ch.channel_name
             );
         }
+    }
+
+    #[test]
+    fn load_from_json_preserves_multi_position_measurements() {
+        // RoomConfig saved by app-gpui groups multi-position recordings into
+        // MeasurementSource::Multiple. Loading must keep every measurement so
+        // multi_mic_measurements stays populated for downstream optimization.
+        let json = r#"{
+            "version": "1.1.0",
+            "speakers": {
+                "L": {
+                    "measurements": [
+                        {
+                            "frequencies": [20.0, 100.0, 1000.0],
+                            "magnitude_db": [-10.0, -3.0, 0.0],
+                            "name": "L (Pos 1)"
+                        },
+                        {
+                            "frequencies": [20.0, 100.0, 1000.0],
+                            "magnitude_db": [-9.0, -2.5, 0.5],
+                            "name": "L (Pos 2)"
+                        },
+                        {
+                            "frequencies": [20.0, 100.0, 1000.0],
+                            "magnitude_db": [-8.5, -2.0, 1.0],
+                            "name": "L (Pos 3)"
+                        }
+                    ]
+                }
+            },
+            "optimizer": {}
+        }"#;
+        let channels = RoomEqMeasurementsFile::load_from_json(json, None).unwrap();
+        assert_eq!(channels.len(), 1);
+        let l = &channels[0];
+        assert_eq!(l.channel_name, "L");
+        assert_eq!(l.measurement.frequencies.len(), 3);
+        assert_eq!(
+            l.multi_mic_measurements.len(),
+            2,
+            "two extra positions should populate multi_mic_measurements"
+        );
+        assert_eq!(l.multi_mic_measurements[0].frequencies.len(), 3);
+        assert_eq!(l.multi_mic_measurements[1].frequencies.len(), 3);
     }
 
     #[test]
