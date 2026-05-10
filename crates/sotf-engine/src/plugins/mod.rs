@@ -473,6 +473,9 @@ sotf_plugins::serde_param_default! {
     fn default_aae_content_aware() -> bool = "content_aware";
     fn default_aae_dialogue_attenuation_db() -> f64 = "dialogue_attenuation_db";
     fn default_aae_safety_limit_db() -> f64 = "safety_limit_db";
+    fn default_aae_auto_gain_enabled() -> bool = "auto_gain_enabled";
+    fn default_aae_auto_gain_max_db() -> f64 = "auto_gain_max_db";
+    fn default_aae_auto_gain_smoothing_ms() -> f64 = "auto_gain_smoothing_ms";
 }
 
 sotf_plugins::serde_param_default! {
@@ -1060,6 +1063,12 @@ pub enum PluginSettings {
         dialogue_attenuation_db: f64,
         #[serde(default = "default_aae_safety_limit_db")]
         safety_limit_db: f64,
+        #[serde(default = "default_aae_auto_gain_enabled")]
+        auto_gain_enabled: bool,
+        #[serde(default = "default_aae_auto_gain_max_db")]
+        auto_gain_max_db: f64,
+        #[serde(default = "default_aae_auto_gain_smoothing_ms")]
+        auto_gain_smoothing_ms: f64,
         #[serde(default)]
         bypass: bool,
         #[serde(default)]
@@ -3170,6 +3179,9 @@ impl PluginSettings {
                 content_aware,
                 dialogue_attenuation_db,
                 safety_limit_db,
+                auto_gain_enabled,
+                auto_gain_max_db,
+                auto_gain_smoothing_ms,
                 bypass,
                 solo_early,
                 solo_late,
@@ -3195,6 +3207,9 @@ impl PluginSettings {
                     "content_aware": content_aware,
                     "dialogue_attenuation_db": dialogue_attenuation_db,
                     "safety_limit_db": safety_limit_db,
+                    "auto_gain_enabled": auto_gain_enabled,
+                    "auto_gain_max_db": auto_gain_max_db,
+                    "auto_gain_smoothing_ms": auto_gain_smoothing_ms,
                     "bypass": bypass,
                     "solo_early": solo_early,
                     "solo_late": solo_late,
@@ -3833,6 +3848,9 @@ impl PluginSettings {
                     content_aware: p(a, "content_aware").default_bool(),
                     dialogue_attenuation_db: p(a, "dialogue_attenuation_db").default_f64(),
                     safety_limit_db: p(a, "safety_limit_db").default_f64(),
+                    auto_gain_enabled: p(a, "auto_gain_enabled").default_bool(),
+                    auto_gain_max_db: p(a, "auto_gain_max_db").default_f64(),
+                    auto_gain_smoothing_ms: p(a, "auto_gain_smoothing_ms").default_f64(),
                     bypass: false,
                     solo_early: false,
                     solo_late: false,

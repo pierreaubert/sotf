@@ -225,6 +225,8 @@ impl PlayerView {
                             Self::apply_plugin_update(state, update_type);
                         }
 
+                        Self::sync_chain_autogain(state, view.update_frame_count);
+
                         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
                         for event in &media_events {
                             Self::handle_media_control_event(state, event);
@@ -469,6 +471,70 @@ impl PlayerView {
         state.app.update_level_meter_peak_hold();
 
         (playback_state, was_playing)
+    }
+
+    /// Keep the rack AutoGain trim aligned with the current IN/OUT loudness.
+    fn sync_chain_autogain(state: &mut AppState, frame_count: u64) {
+        const UPDATE_INTERVAL_FRAMES: u64 = 5;
+        const DEAD_BAND_DB: f64 = 0.25;
+        const MAX_GAIN_DB: f64 = 24.0;
+
+        if !state.app.plugin_state.chain_autogain {
+            return;
+        }
+
+        let last_frame = state.app.plugin_state.chain_autogain_last_frame;
+        if last_frame != 0 && frame_count.wrapping_sub(last_frame) < UPDATE_INTERVAL_FRAMES {
+            return;
+        }
+
+        let Some(input) = state.app.playback.input_loudness_info.as_ref() else {
+            return;
+        };
+        let Some(output) = state.app.playback.loudness_info.as_ref() else {
+            return;
+        };
+
+        let input_lufs = input.momentary_lufs;
+        let output_lufs = output.momentary_lufs;
+        if !input_lufs.is_finite() || !output_lufs.is_finite() {
+            return;
+        }
+
+        let residual_db = input_lufs - output_lufs;
+        if residual_db.abs() < DEAD_BAND_DB {
+            return;
+        }
+
+        let current_gain_db = state
+            .app
+            .plugin_state
+            .graph
+            .chain_auto_gain_db()
+            .unwrap_or(0.0);
+        let next_gain_db = (current_gain_db + residual_db).clamp(-MAX_GAIN_DB, MAX_GAIN_DB);
+        if (next_gain_db - current_gain_db).abs() < 0.1 {
+            return;
+        }
+
+        state
+            .app
+            .plugin_state
+            .graph
+            .set_chain_auto_gain(Some(next_gain_db));
+        state.app.plugin_state.chain_autogain_last_frame = frame_count;
+
+        let Some(engine_index) = state.app.plugin_state.graph.chain_auto_gain_engine_index() else {
+            return;
+        };
+
+        if let Err(e) = state.player.lock().set_plugin_parameter(
+            engine_index,
+            "gain_db".to_string(),
+            format!("{next_gain_db:.3}"),
+        ) {
+            log::warn!("Failed to update chain AutoGain: {}", e);
+        }
     }
 
     /// Handle engine crash, errors, gapless transitions, and track auto-advance.

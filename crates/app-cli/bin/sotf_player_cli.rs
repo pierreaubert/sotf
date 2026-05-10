@@ -264,6 +264,18 @@ struct AaeArgs {
     /// AAE modulation depth for time-variant processing (0.0-1.0)
     #[arg(long = "aae-mod-depth", default_value = "0.5")]
     mod_depth: f32,
+
+    /// Enable AAE automatic output loudness matching
+    #[arg(long = "aae-auto-gain", default_value_t = false)]
+    auto_gain_enabled: bool,
+
+    /// AAE maximum auto-gain correction in dB
+    #[arg(long = "aae-auto-gain-max-db", default_value = "12.0")]
+    auto_gain_max_db: f32,
+
+    /// AAE auto-gain transition time in milliseconds
+    #[arg(long = "aae-auto-gain-smoothing-ms", default_value = "100.0")]
+    auto_gain_smoothing_ms: f32,
 }
 
 #[derive(Debug, Clone, clap::Args)]
@@ -1649,6 +1661,9 @@ fn create_aae_plugin_config(args: &AaeArgs) -> Result<PluginConfig, String> {
         "late_level": args.late_level,
         "pre_delay_ms": args.pre_delay_ms,
         "mod_depth": args.mod_depth,
+        "auto_gain_enabled": args.auto_gain_enabled,
+        "auto_gain_max_db": args.auto_gain_max_db,
+        "auto_gain_smoothing_ms": args.auto_gain_smoothing_ms,
     });
 
     Ok(PluginConfig {
@@ -3014,6 +3029,9 @@ fn build_rack_mode_plugins(
                         content_aware: true,
                         dialogue_attenuation_db: 6.0,
                         safety_limit_db: 6.0,
+                        auto_gain_enabled: plugins.aae.auto_gain_enabled,
+                        auto_gain_max_db: plugins.aae.auto_gain_max_db as f64,
+                        auto_gain_smoothing_ms: plugins.aae.auto_gain_smoothing_ms as f64,
                         bypass: false,
                         solo_early: false,
                         solo_late: false,

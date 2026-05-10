@@ -748,6 +748,7 @@ impl_param_accessors! {
             mod_depth: f64, er_mod_depth: f64, input_diffusion: f64,
             envelopment: f64, height_amount: f64,
             content_aware: bool, dialogue_attenuation_db: f64, safety_limit_db: f64,
+            auto_gain_enabled: bool, auto_gain_max_db: f64, auto_gain_smoothing_ms: f64,
             bypass: bool, solo_early: bool, solo_late: bool,
         ]
     }

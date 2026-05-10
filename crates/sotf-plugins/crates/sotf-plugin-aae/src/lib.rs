@@ -23,6 +23,7 @@ use crate::early_reflections::EarlyReflections;
 use crate::fdn::{FDN_SIZE, Fdn};
 use crate::params::{AaePluginParams, build_parameters};
 
+use sotf_host::auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, AutoGainParams};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
@@ -31,6 +32,8 @@ use sotf_host::speaker_config::{
     SpeakerConfig, calculate_panning_gain, calculate_panning_gain_with_wraparound,
     get_speaker_config,
 };
+use std::any::Any;
+use std::sync::Arc;
 
 /// LFE crossover frequency in Hz.
 const LFE_CROSSOVER_HZ: f32 = 120.0;
@@ -83,8 +86,18 @@ pub struct AaePlugin {
     late_smoother: Smoother,
     lfe_smoother: Smoother,
 
+    // Auto-gain compensation. The meter is stereo: input L/R vs a stereo fold-down
+    // of the multichannel render, then the resulting gain is applied to all outputs.
+    auto_gain: Option<AutoGain>,
+    auto_gain_meter_buffer: Vec<f32>,
+
     // Cached parameter list
     cached_parameters: Vec<Parameter>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AaeData {
+    pub auto_gain: AutoGainData,
 }
 
 /// Two-stage allpass diffuser for smearing transients before the FDN.
@@ -175,6 +188,8 @@ impl AaePlugin {
             er_smoother: Smoother::new(params.er_level, 5.0, sr),
             late_smoother: Smoother::new(params.late_level, 5.0, sr),
             lfe_smoother: Smoother::new(params.lfe_level, 5.0, sr),
+            auto_gain: create_auto_gain(&params, sr),
+            auto_gain_meter_buffer: Vec::new(),
             cached_parameters: Vec::new(),
             params,
         };
@@ -308,6 +323,91 @@ impl AaePlugin {
         self.dialogue_duck_gain = target + coeff * (self.dialogue_duck_gain - target);
         self.dialogue_duck_gain
     }
+
+    fn ensure_auto_gain(&mut self) -> PluginResult<()> {
+        if self.auto_gain.is_none() {
+            self.auto_gain = Some(AutoGain::new(
+                2,
+                self.sample_rate,
+                AutoGainParams {
+                    enabled: self.params.auto_gain_enabled,
+                    loudness_type: AutoGainLoudnessType::Momentary,
+                    max_gain_db: self.params.auto_gain_max_db,
+                    smoothing_ms: self.params.auto_gain_smoothing_ms,
+                },
+            )?);
+        }
+        Ok(())
+    }
+
+    fn fill_auto_gain_meter_buffer(&mut self, output: &[f32], num_frames: usize) {
+        self.auto_gain_meter_buffer.resize(num_frames * 2, 0.0);
+        self.auto_gain_meter_buffer.fill(0.0);
+
+        let out_ch = self.num_output_channels;
+        for frame in 0..num_frames {
+            let out_base = frame * out_ch;
+            let meter_base = frame * 2;
+            for sp in self.speaker_config.speakers {
+                if sp.is_lfe || sp.channel >= out_ch {
+                    continue;
+                }
+
+                let sample = output[out_base + sp.channel];
+                if sp.azimuth > 10.0 {
+                    self.auto_gain_meter_buffer[meter_base] += sample;
+                } else if sp.azimuth < -10.0 {
+                    self.auto_gain_meter_buffer[meter_base + 1] += sample;
+                } else {
+                    let split = sample * std::f32::consts::FRAC_1_SQRT_2;
+                    self.auto_gain_meter_buffer[meter_base] += split;
+                    self.auto_gain_meter_buffer[meter_base + 1] += split;
+                }
+            }
+        }
+    }
+
+    fn apply_auto_gain(&mut self, output: &mut [f32], num_frames: usize) -> PluginResult<()> {
+        if !self.params.auto_gain_enabled {
+            return Ok(());
+        }
+
+        self.ensure_auto_gain()?;
+        self.fill_auto_gain_meter_buffer(output, num_frames);
+
+        let auto_gain = self.auto_gain.as_mut().unwrap();
+        auto_gain.measure_output(&self.auto_gain_meter_buffer)?;
+
+        let out_ch = self.num_output_channels;
+        for frame in 0..num_frames {
+            let gain = auto_gain.next_gain_linear();
+            let base = frame * out_ch;
+            for sample in &mut output[base..base + out_ch] {
+                *sample *= gain;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+fn create_auto_gain(params: &AaePluginParams, sample_rate: u32) -> Option<AutoGain> {
+    if !params.auto_gain_enabled {
+        return None;
+    }
+
+    AutoGain::new(
+        2,
+        sample_rate,
+        AutoGainParams {
+            enabled: true,
+            loudness_type: AutoGainLoudnessType::Momentary,
+            max_gain_db: params.auto_gain_max_db,
+            smoothing_ms: params.auto_gain_smoothing_ms,
+        },
+    )
+    .map_err(|err| log::warn!("AAE auto-gain initialization failed: {err}"))
+    .ok()
 }
 
 impl Plugin for AaePlugin {
@@ -459,6 +559,35 @@ impl Plugin for AaePlugin {
                     self.fdn.set_safety_limit_db(v);
                 }
             }
+            "auto_gain_enabled" => {
+                if let Some(v) = value.as_bool() {
+                    self.params.auto_gain_enabled = v;
+                    if v {
+                        self.ensure_auto_gain()?;
+                        if let Some(auto_gain) = &mut self.auto_gain {
+                            auto_gain.set_enabled(true);
+                        }
+                    } else if let Some(auto_gain) = &mut self.auto_gain {
+                        auto_gain.set_enabled(false);
+                    }
+                }
+            }
+            "auto_gain_max_db" => {
+                if let Some(v) = value.as_float() {
+                    self.params.auto_gain_max_db = v;
+                    if let Some(auto_gain) = &mut self.auto_gain {
+                        auto_gain.set_max_gain_db(v);
+                    }
+                }
+            }
+            "auto_gain_smoothing_ms" => {
+                if let Some(v) = value.as_float() {
+                    self.params.auto_gain_smoothing_ms = v;
+                    if let Some(auto_gain) = &mut self.auto_gain {
+                        auto_gain.set_smoothing_ms(v);
+                    }
+                }
+            }
             "bypass" => {
                 if let Some(v) = value.as_bool() {
                     self.params.bypass = v;
@@ -504,6 +633,11 @@ impl Plugin for AaePlugin {
                 Some(ParameterValue::Float(self.params.dialogue_attenuation_db))
             }
             "safety_limit_db" => Some(ParameterValue::Float(self.params.safety_limit_db)),
+            "auto_gain_enabled" => Some(ParameterValue::Bool(self.params.auto_gain_enabled)),
+            "auto_gain_max_db" => Some(ParameterValue::Float(self.params.auto_gain_max_db)),
+            "auto_gain_smoothing_ms" => {
+                Some(ParameterValue::Float(self.params.auto_gain_smoothing_ms))
+            }
             "bypass" => Some(ParameterValue::Bool(self.params.bypass)),
             "solo_early" => Some(ParameterValue::Bool(self.params.solo_early)),
             "solo_late" => Some(ParameterValue::Bool(self.params.solo_late)),
@@ -557,6 +691,11 @@ impl Plugin for AaePlugin {
         self.er_smoother = Smoother::new(self.params.er_level, 5.0, sample_rate);
         self.late_smoother = Smoother::new(self.params.late_level, 5.0, sample_rate);
         self.lfe_smoother = Smoother::new(self.params.lfe_level, 5.0, sample_rate);
+        if let Some(auto_gain) = &mut self.auto_gain {
+            auto_gain.set_sample_rate(sample_rate)?;
+        } else if self.params.auto_gain_enabled {
+            self.ensure_auto_gain()?;
+        }
 
         // Recompute VBAP gains (ER taps may have changed)
         self.precompute_gains();
@@ -573,6 +712,9 @@ impl Plugin for AaePlugin {
         self.fdn.reset();
         self.lfe_filter_state = 0.0;
         self.dialogue_duck_gain = 1.0;
+        if let Some(auto_gain) = &mut self.auto_gain {
+            auto_gain.reset();
+        }
     }
 
     fn process(
@@ -619,6 +761,13 @@ impl Plugin for AaePlugin {
                 }
             }
             return Ok(num_frames);
+        }
+
+        if self.params.auto_gain_enabled {
+            self.ensure_auto_gain()?;
+            if let Some(auto_gain) = &mut self.auto_gain {
+                auto_gain.measure_input(input)?;
+            }
         }
 
         // Smooth parameters
@@ -722,11 +871,23 @@ impl Plugin for AaePlugin {
         }
 
         flush_denormals_inplace(output);
+        self.apply_auto_gain(output, num_frames)?;
+        flush_denormals_inplace(output);
         Ok(num_frames)
     }
 
     fn latency_samples(&self) -> usize {
         0
+    }
+
+    fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
+        Some(Arc::new(AaeData {
+            auto_gain: self
+                .auto_gain
+                .as_ref()
+                .map(AutoGain::get_data)
+                .unwrap_or_default(),
+        }))
     }
 }
 
@@ -920,6 +1081,48 @@ mod tests {
             p.get_parameter(&ParameterId::from("rt60")),
             Some(ParameterValue::Float(3.5))
         );
+    }
+
+    #[test]
+    fn test_auto_gain_parameters_roundtrip_and_data() {
+        let mut p = make_plugin();
+        assert_eq!(
+            p.get_parameter(&ParameterId::from("auto_gain_enabled")),
+            Some(ParameterValue::Bool(false))
+        );
+
+        p.set_parameter(
+            ParameterId::from("auto_gain_enabled"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
+        p.set_parameter(
+            ParameterId::from("auto_gain_max_db"),
+            ParameterValue::Float(9.0),
+        )
+        .unwrap();
+        p.set_parameter(
+            ParameterId::from("auto_gain_smoothing_ms"),
+            ParameterValue::Float(80.0),
+        )
+        .unwrap();
+
+        assert_eq!(
+            p.get_parameter(&ParameterId::from("auto_gain_enabled")),
+            Some(ParameterValue::Bool(true))
+        );
+        assert_eq!(
+            p.get_parameter(&ParameterId::from("auto_gain_max_db")),
+            Some(ParameterValue::Float(9.0))
+        );
+        assert_eq!(
+            p.get_parameter(&ParameterId::from("auto_gain_smoothing_ms")),
+            Some(ParameterValue::Float(80.0))
+        );
+
+        let data = p.get_data().unwrap();
+        let data = data.downcast_ref::<AaeData>().unwrap();
+        assert!(data.auto_gain.enabled);
     }
 
     #[test]

@@ -461,6 +461,13 @@ impl PluginEditingManager for App {
 
     fn toggle_chain_autogain(&mut self) {
         self.plugin_state.chain_autogain = !self.plugin_state.chain_autogain;
+        self.plugin_state.chain_autogain_last_frame = 0;
+        if self.plugin_state.chain_autogain {
+            self.plugin_state.graph.set_chain_auto_gain(Some(0.0));
+        } else {
+            self.plugin_state.graph.set_chain_auto_gain(None);
+        }
+        self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
     }
 
     fn toggle_plugin_solo(&mut self, index: usize) {

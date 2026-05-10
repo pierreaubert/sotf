@@ -57,6 +57,14 @@ Active acoustic enhancement using psychoacoustic processing to improve perceived
 | Dialogue Atten. | Float | 0 .. 12 | 6 | dB | Reverb reduction during detected speech |
 | Safety Limit | Float | 0 .. 12 | 6 | dB | FDN feedback limiter threshold |
 
+### Auto Gain
+
+| Parameter | Type | Range | Default | Unit | Description |
+|-----------|------|-------|---------|------|-------------|
+| Auto Gain | Bool | On / Off | Off | - | Match rendered output loudness to the stereo input |
+| AG Max | Float | 0 .. 24 | 12 | dB | Maximum auto gain correction |
+| AG Smoothing | Float | 10 .. 500 | 100 | ms | Auto gain transition time |
+
 ### Diagnostic
 
 | Parameter | Type | Range | Default | Unit | Description |

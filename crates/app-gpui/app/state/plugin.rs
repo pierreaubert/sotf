@@ -67,6 +67,8 @@ pub struct PluginState {
     pub chain_bypass: bool,
     /// Chain-level auto-gain toggle
     pub chain_autogain: bool,
+    /// Last UI timer frame that pushed a chain auto-gain correction.
+    pub chain_autogain_last_frame: u64,
     /// Index of the currently soloed plugin (None = no solo active)
     pub soloed_plugin_index: Option<usize>,
     /// Saved enabled states before solo was activated (to restore on un-solo)
@@ -191,6 +193,7 @@ impl Default for PluginState {
             confirm_delete_preset: None,
             chain_bypass: false,
             chain_autogain: false,
+            chain_autogain_last_frame: 0,
             soloed_plugin_index: None,
             pre_solo_enabled_states: Vec::new(),
             rack_theme_state: RackThemeState::default(),

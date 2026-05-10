@@ -247,6 +247,9 @@ pub struct PluginGraph {
     pub canvas_offset: (f32, f32),
     /// Canvas zoom level (0.5 to 2.0)
     pub canvas_zoom: f32,
+    /// Hidden rack auto-gain stage, injected just before output analyzers.
+    #[serde(skip)]
+    chain_auto_gain_db: Option<f64>,
     /// Next plugin ID for creating new plugins
     next_plugin_id: usize,
 }
@@ -259,6 +262,7 @@ impl Default for PluginGraph {
             connections: Vec::new(),
             canvas_offset: (0.0, 0.0),
             canvas_zoom: 1.0,
+            chain_auto_gain_db: None,
             next_plugin_id: 1,
         }
     }
@@ -1532,6 +1536,29 @@ impl PluginGraph {
         }
     }
 
+    /// Set the hidden rack auto-gain trim. When enabled, this gain stage is
+    /// inserted after processing plugins and before output analyzers so the OUT
+    /// meter reflects the correction without affecting user plugin drive.
+    pub fn set_chain_auto_gain(&mut self, gain_db: Option<f64>) {
+        self.chain_auto_gain_db = gain_db;
+    }
+
+    /// Read the current hidden rack auto-gain trim.
+    pub fn chain_auto_gain_db(&self) -> Option<f64> {
+        self.chain_auto_gain_db
+    }
+
+    fn chain_auto_gain_config(&self, gain_db: f64) -> PluginConfig {
+        PluginConfig::new(
+            "gain",
+            serde_json::json!({
+                "channels": self.output_channels(),
+                "gain_db": gain_db,
+                "smoothing_ms": 80.0,
+            }),
+        )
+    }
+
     // =========================================================================
     // Channel-Dependent Plugin Updates
     // =========================================================================
@@ -2212,6 +2239,9 @@ impl PluginGraph {
         let mut result = Vec::with_capacity(1 + processing.len() + analyzers.len());
         result.extend(input_monitor);
         result.extend(processing);
+        if let Some(gain_db) = self.chain_auto_gain_db {
+            result.push(self.chain_auto_gain_config(gain_db));
+        }
         result.extend(analyzers);
         result
     }
@@ -2331,10 +2361,39 @@ impl PluginGraph {
             return Some(offset + pos);
         }
         if let Some(pos) = analyzer_ids.iter().position(|&id| id == node_id) {
-            return Some(offset + processing_ids.len() + pos);
+            let chain_gain_slots = usize::from(self.chain_auto_gain_db.is_some());
+            return Some(offset + processing_ids.len() + chain_gain_slots + pos);
         }
 
         None
+    }
+
+    /// Get the engine index of the hidden rack auto-gain stage.
+    pub fn chain_auto_gain_engine_index(&self) -> Option<usize> {
+        self.chain_auto_gain_db?;
+
+        let ordered_ids = self
+            .linear_order()
+            .or_else(|| self.topological_sort().ok())
+            .unwrap_or_default();
+
+        let has_input_monitor = ordered_ids.iter().any(|id| {
+            self.nodes.get(id).is_some_and(|n| {
+                n.plugin.enabled && !n.plugin.suspended && n.role == NodeRole::InputMonitor
+            })
+        });
+        let processing_count = ordered_ids
+            .iter()
+            .filter(|id| {
+                self.nodes.get(id).is_some_and(|n| {
+                    n.plugin.enabled
+                        && !n.plugin.suspended
+                        && !matches!(n.role, NodeRole::InputMonitor | NodeRole::OutputMonitor)
+                })
+            })
+            .count();
+
+        Some(usize::from(has_input_monitor) + processing_count)
     }
 
     /// Map a linear position index (as shown in the rack) to an engine index.
@@ -2824,6 +2883,28 @@ mod tests {
         let eq_pos = types.iter().position(|&t| t == "eq").unwrap();
         let comp_pos = types.iter().position(|&t| t == "compressor").unwrap();
         assert!(eq_pos < comp_pos);
+    }
+
+    #[test]
+    fn test_chain_auto_gain_injected_before_output_monitor() {
+        let mut g = PluginGraph::with_default_rack();
+        let _eq_id = g.add_user_plugin(&PluginType::EQ).unwrap();
+        g.set_chain_auto_gain(Some(-6.0));
+
+        let configs = g.to_plugin_configs(48000.0);
+        let types: Vec<&str> = configs.iter().map(|c| c.plugin_type.as_str()).collect();
+
+        assert_eq!(types.last(), Some(&"loudness_monitor"));
+        assert_eq!(types[types.len() - 2], "gain");
+        assert_eq!(
+            configs[types.len() - 2]
+                .parameters
+                .get("gain_db")
+                .and_then(|v| v.as_f64()),
+            Some(-6.0)
+        );
+        assert_eq!(g.chain_auto_gain_engine_index(), Some(types.len() - 2));
+        assert_eq!(g.output_monitor_engine_index(), Some(types.len() - 1));
     }
 
     #[test]

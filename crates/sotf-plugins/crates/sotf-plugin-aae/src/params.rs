@@ -185,12 +185,42 @@ pub const PARAMS: &[ParamSpec] = &[
         "Intelligence",
     )
     .doc("FDN feedback limiter threshold"),
-    // 19: bypass
+    // 19: auto_gain_enabled
+    ParamSpec::bool_param("Auto Gain", "auto_gain_enabled", false, "Auto Gain")
+        .output()
+        .doc("Match rendered output loudness to the stereo input"),
+    // 20: auto_gain_max_db
+    ParamSpec::float(
+        "AG Max",
+        "auto_gain_max_db",
+        12.0,
+        0.0,
+        24.0,
+        1.0,
+        "dB",
+        "Auto Gain",
+    )
+    .output()
+    .doc("Maximum auto gain correction"),
+    // 21: auto_gain_smoothing_ms
+    ParamSpec::float(
+        "AG Smoothing",
+        "auto_gain_smoothing_ms",
+        100.0,
+        10.0,
+        500.0,
+        5.0,
+        "ms",
+        "Auto Gain",
+    )
+    .output()
+    .doc("Auto gain transition time"),
+    // 22: bypass
     ParamSpec::bool_param("Bypass", "bypass", false, "Diagnostic").doc("Pass-through mode"),
-    // 20: solo_early
+    // 23: solo_early
     ParamSpec::bool_param("Solo Early", "solo_early", false, "Diagnostic")
         .doc("Hear only early reflections"),
-    // 21: solo_late
+    // 24: solo_late
     ParamSpec::bool_param("Solo Late", "solo_late", false, "Diagnostic")
         .doc("Hear only late reverb"),
 ];
@@ -226,7 +256,10 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         },
     ],
     output: &[
-        ControlSpec::knob(18), // safety_limit_db
+        ControlSpec::knob(18),   // safety_limit_db
+        ControlSpec::toggle(19), // auto_gain_enabled
+        ControlSpec::knob(20),   // auto_gain_max_db
+        ControlSpec::knob(21),   // auto_gain_smoothing_ms
     ],
     tabs: &[
         TabSpec {
@@ -254,9 +287,9 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         TabSpec {
             name: "Diagnostics",
             controls: &[
-                ControlSpec::toggle(19), // bypass
-                ControlSpec::toggle(20), // solo_early
-                ControlSpec::toggle(21), // solo_late
+                ControlSpec::toggle(22), // bypass
+                ControlSpec::toggle(23), // solo_early
+                ControlSpec::toggle(24), // solo_late
             ],
         },
     ],
@@ -288,6 +321,9 @@ sotf_host::serde_param_default! {
     fn default_content_aware() -> bool = "content_aware";
     fn default_dialogue_attenuation_db() -> f32 = "dialogue_attenuation_db";
     fn default_safety_limit_db() -> f32 = "safety_limit_db";
+    fn default_auto_gain_enabled() -> bool = "auto_gain_enabled";
+    fn default_auto_gain_max_db() -> f32 = "auto_gain_max_db";
+    fn default_auto_gain_smoothing_ms() -> f32 = "auto_gain_smoothing_ms";
 }
 
 fn default_speaker_config() -> String {
@@ -337,6 +373,12 @@ pub struct AaePluginParams {
     pub dialogue_attenuation_db: f32,
     #[serde(default = "default_safety_limit_db")]
     pub safety_limit_db: f32,
+    #[serde(default = "default_auto_gain_enabled")]
+    pub auto_gain_enabled: bool,
+    #[serde(default = "default_auto_gain_max_db")]
+    pub auto_gain_max_db: f32,
+    #[serde(default = "default_auto_gain_smoothing_ms")]
+    pub auto_gain_smoothing_ms: f32,
     #[serde(default)]
     pub bypass: bool,
     #[serde(default)]
@@ -439,6 +481,23 @@ pub fn build_parameters(params: &AaePluginParams) -> Vec<Parameter> {
             12.0,
         )
         .with_unit("dB"),
+        Parameter::new_bool("auto_gain_enabled", "Auto Gain", params.auto_gain_enabled),
+        Parameter::new_float(
+            "auto_gain_max_db",
+            "Auto Gain Max",
+            params.auto_gain_max_db,
+            0.0,
+            24.0,
+        )
+        .with_unit("dB"),
+        Parameter::new_float(
+            "auto_gain_smoothing_ms",
+            "Auto Gain Smoothing",
+            params.auto_gain_smoothing_ms,
+            10.0,
+            500.0,
+        )
+        .with_unit("ms"),
         Parameter::new_bool("bypass", "Bypass", params.bypass),
         Parameter::new_bool("solo_early", "Solo Early", params.solo_early),
         Parameter::new_bool("solo_late", "Solo Late", params.solo_late),
