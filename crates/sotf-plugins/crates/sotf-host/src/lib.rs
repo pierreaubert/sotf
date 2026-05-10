@@ -12,6 +12,7 @@ pub mod error;
 pub mod host;
 pub mod layout_solver;
 pub mod lufs_target;
+pub mod multichannel_auto_gain;
 pub mod oversampling;
 pub mod param_bridge;
 pub mod param_registry;
@@ -65,6 +66,7 @@ pub use analyzer_spectrum::{
 pub use auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, AutoGainParams};
 pub use host::{DawHost, GraphEdge, Host};
 pub use lufs_target::LufsTarget;
+pub use multichannel_auto_gain::MultichannelAutoGain;
 pub use math_audio_dsp::auto_makeup::MeasuredMakeup;
 pub use math_audio_dsp::channel_linking::{compute_linked_levels, link_stereo};
 pub use math_audio_dsp::dc_blocker::DcBlocker;

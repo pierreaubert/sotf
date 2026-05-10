@@ -1035,31 +1035,29 @@ impl PlayerView {
 
             if rec_state.recording_config.ctc_matrix_strategy
                 == crate::app::types::CtcMatrixExportStrategy::RawSweep
+                && let Some(loopback_input) = rec_state.recording_config.ctc_loopback_input_channel
             {
-                if let Some(loopback_input) = rec_state.recording_config.ctc_loopback_input_channel
-                {
-                    let safe_speaker: String = channel
-                        .channel_name
-                        .chars()
-                        .map(|c| {
-                            if c.is_alphanumeric() || c == '_' || c == '-' {
-                                c
-                            } else {
-                                '_'
-                            }
-                        })
-                        .collect();
-                    mics.push(MicInfo {
-                        vec_idx: None,
-                        mic_index: usize::MAX,
-                        is_loopback: true,
-                        speaker_index: speaker_idx,
-                        mic_position_index: position_idx,
-                        input_channel: loopback_input as u16,
-                        calibration: None,
-                        safe_name: format!("{}_Pos_{}_Loopback", safe_speaker, position_idx + 1),
-                    });
-                }
+                let safe_speaker: String = channel
+                    .channel_name
+                    .chars()
+                    .map(|c| {
+                        if c.is_alphanumeric() || c == '_' || c == '-' {
+                            c
+                        } else {
+                            '_'
+                        }
+                    })
+                    .collect();
+                mics.push(MicInfo {
+                    vec_idx: None,
+                    mic_index: usize::MAX,
+                    is_loopback: true,
+                    speaker_index: speaker_idx,
+                    mic_position_index: position_idx,
+                    input_channel: loopback_input as u16,
+                    calibration: None,
+                    safe_name: format!("{}_Pos_{}_Loopback", safe_speaker, position_idx + 1),
+                });
             }
 
             let signal_type = match rec_state.signal_type {
@@ -1826,6 +1824,7 @@ impl PlayerView {
             InlineMeasurement, MeasurementRef, MeasurementSource, OptimizerConfig,
             RecordingConfiguration, RoomConfig, SpeakerConfig,
         };
+        use sotf_audio_player::room_eq_types::ctc_system_config_for_speaker_names;
         use std::collections::HashMap;
 
         let recording_dir = match self.ensure_named_recording_directory(cx) {
@@ -2098,40 +2097,45 @@ impl PlayerView {
                 return;
             }
 
+            let ctc = ctc_measurements.map(|measurements| {
+                let raw = ctc_reference_sweep.is_some();
+                autoeq::roomeq::CtcConfig {
+                    enabled: true,
+                    matrix_source: if raw { "raw_sweep" } else { "measured" }.to_string(),
+                    measurements: Some(measurements),
+                    reference_sweep: ctc_reference_sweep,
+                    sweep_duration_s: if raw {
+                        Some(rec_state.signal_duration_secs as f64)
+                    } else {
+                        None
+                    },
+                    sweep_start_hz: if raw {
+                        ctc_raw_sweep_range.map(|(start, _)| start as f64)
+                    } else {
+                        None
+                    },
+                    sweep_end_hz: if raw {
+                        ctc_raw_sweep_range.map(|(_, end)| end as f64)
+                    } else {
+                        None
+                    },
+                    ..Default::default()
+                }
+            });
+            let system = ctc.as_ref().filter(|ctc| ctc.enabled).and_then(|_| {
+                ctc_system_config_for_speaker_names(speakers.keys().map(String::as_str), None)
+            });
+
             // Build RoomConfig
             let room_config = RoomConfig {
                 version: "1.1.0".to_string(),
-                system: None,
+                system,
                 speakers,
                 crossovers: None,
                 target_curve: None,
                 optimizer: OptimizerConfig::default(),
                 recording_config: Some(recording_config),
-                ctc: ctc_measurements.map(|measurements| {
-                    let raw = ctc_reference_sweep.is_some();
-                    autoeq::roomeq::CtcConfig {
-                        enabled: true,
-                        matrix_source: if raw { "raw_sweep" } else { "measured" }.to_string(),
-                        measurements: Some(measurements),
-                        reference_sweep: ctc_reference_sweep,
-                        sweep_duration_s: if raw {
-                            Some(rec_state.signal_duration_secs as f64)
-                        } else {
-                            None
-                        },
-                        sweep_start_hz: if raw {
-                            ctc_raw_sweep_range.map(|(start, _)| start as f64)
-                        } else {
-                            None
-                        },
-                        sweep_end_hz: if raw {
-                            ctc_raw_sweep_range.map(|(_, end)| end as f64)
-                        } else {
-                            None
-                        },
-                        ..Default::default()
-                    }
-                }),
+                ctc,
                 cea2034_cache: None,
             };
 

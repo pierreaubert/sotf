@@ -129,6 +129,7 @@ pub fn write_room_config(measurements: &RoomEqMeasurementsFile, path: &Path) -> 
         InlineMeasurement, MeasurementRef, MeasurementSource, OptimizerConfig,
         RecordingConfiguration, RoomConfig, SpeakerConfig,
     };
+    use sotf_audio_player::room_eq_types::ctc_system_config_for_speaker_names;
     use std::collections::HashMap;
 
     // Convert channels to speakers HashMap with inline measurements
@@ -191,27 +192,32 @@ pub fn write_room_config(measurements: &RoomEqMeasurementsFile, path: &Path) -> 
         }
     });
 
+    let ctc = measurements.configuration.as_ref().and_then(|cfg| {
+        cfg.ctc_config.clone().or_else(|| {
+            cfg.ctc_measurements
+                .clone()
+                .map(|measurements| autoeq::roomeq::CtcConfig {
+                    enabled: true,
+                    matrix_source: "measured".to_string(),
+                    measurements: Some(measurements),
+                    ..Default::default()
+                })
+        })
+    });
+    let system = ctc.as_ref().filter(|ctc| ctc.enabled).and_then(|_| {
+        ctc_system_config_for_speaker_names(speakers.keys().map(String::as_str), None)
+    });
+
     // Build RoomConfig
     let room_config = RoomConfig {
         version: "1.1.0".to_string(),
-        system: None,
+        system,
         speakers,
         crossovers: None,
         target_curve: None,
         optimizer: OptimizerConfig::default(),
         recording_config,
-        ctc: measurements.configuration.as_ref().and_then(|cfg| {
-            cfg.ctc_config.clone().or_else(|| {
-                cfg.ctc_measurements
-                    .clone()
-                    .map(|measurements| autoeq::roomeq::CtcConfig {
-                        enabled: true,
-                        matrix_source: "measured".to_string(),
-                        measurements: Some(measurements),
-                        ..Default::default()
-                    })
-            })
-        }),
+        ctc,
         cea2034_cache: None,
     };
 

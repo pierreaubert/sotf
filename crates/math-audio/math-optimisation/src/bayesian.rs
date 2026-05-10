@@ -377,7 +377,7 @@ where
     let n = config.bounds.len();
     let batch_size = config.batch_size.max(1);
     let initial_samples = derive_initial_samples(n, &config).min(config.maxeval);
-    let candidate_pool_size = derive_candidate_pool_size(n, &config).min(256).max(32);
+    let candidate_pool_size = derive_candidate_pool_size(n, &config).clamp(32, 256);
     let lengthscales = derive_lengthscales(n, &config)?;
     let fixed_lengthscales = config.lengthscales.is_some();
     let mut rng = make_rng(config.seed);

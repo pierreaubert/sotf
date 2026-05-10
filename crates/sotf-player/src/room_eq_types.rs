@@ -1,6 +1,6 @@
 //! Shared room EQ domain types used by both GPUI and TUI apps.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -15,6 +15,61 @@ use math_audio_iir_fir::BiquadFilterType;
 
 /// (frequencies, magnitude_db, phase_deg, wav_path, csv_path)
 type MeasurementData = (Vec<f32>, Vec<f32>, Vec<f32>, Option<String>, Option<String>);
+
+/// Return true when a channel name conventionally represents an LFE/sub output.
+pub fn room_eq_channel_is_bass_output(name: &str) -> bool {
+    let normalized: String = name
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .flat_map(|ch| ch.to_lowercase())
+        .collect();
+    normalized.contains("lfe")
+        || normalized == "sub"
+        || normalized == "subwoofer"
+        || normalized == "sw"
+        || normalized.starts_with("sub")
+}
+
+/// Build the logical-role system map required by enabled CTC configs.
+///
+/// The apps use channel names as both logical roles and measurement keys, so
+/// this returns an identity map (`"L" -> "L"`, `"R" -> "R"`, ...). It also
+/// annotates subwoofer outputs when channel names indicate LFE/sub channels.
+pub fn ctc_system_config_for_speaker_names<I, S>(
+    speaker_names: I,
+    bass_management_crossover: Option<String>,
+) -> Option<autoeq::roomeq::SystemConfig>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let speakers: BTreeSet<String> = speaker_names
+        .into_iter()
+        .map(|name| name.as_ref().to_string())
+        .filter(|name| !name.is_empty())
+        .collect();
+    if speakers.is_empty() {
+        return None;
+    }
+
+    let has_bass_output = speakers
+        .iter()
+        .any(|name| room_eq_channel_is_bass_output(name));
+
+    Some(autoeq::roomeq::SystemConfig {
+        model: autoeq::roomeq::SystemModel::HomeCinema,
+        speakers: speakers
+            .into_iter()
+            .map(|name| (name.clone(), name))
+            .collect::<HashMap<_, _>>(),
+        subwoofers: has_bass_output.then(|| autoeq::roomeq::SubwooferSystemConfig {
+            config: autoeq::roomeq::SubwooferStrategy::Single,
+            crossover: bass_management_crossover,
+            mapping: HashMap::new(),
+        }),
+        bass_management: None,
+    })
+}
 
 /// Room EQ workflow step
 ///
@@ -4300,6 +4355,26 @@ mod tests {
     use crate::recording_types::{
         ChannelRecording, ChannelRecordingState, DelayProbeChannelResult, RecordingResult,
     };
+
+    #[test]
+    fn ctc_system_config_maps_speaker_names_to_logical_roles() {
+        let system = ctc_system_config_for_speaker_names(["L", "R", "LFE [mic 1]"], None)
+            .expect("speaker names produce a system config");
+
+        assert_eq!(system.model, autoeq::roomeq::SystemModel::HomeCinema);
+        assert_eq!(system.speakers.get("L").map(String::as_str), Some("L"));
+        assert_eq!(system.speakers.get("R").map(String::as_str), Some("R"));
+        assert_eq!(
+            system.speakers.get("LFE [mic 1]").map(String::as_str),
+            Some("LFE [mic 1]")
+        );
+        assert!(system.subwoofers.is_some());
+    }
+
+    #[test]
+    fn ctc_system_config_skips_empty_speaker_sets() {
+        assert!(ctc_system_config_for_speaker_names([""], None).is_none());
+    }
 
     fn matrix_recording(
         speaker_idx: usize,

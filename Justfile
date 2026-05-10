@@ -266,6 +266,7 @@ install-rustup:
 	~/.cargo/bin/cargo install cargo-binstall
 	~/.cargo/bin/cargo binstall cargo-nextest --secure
 	~/.cargo/bin/cargo install samply
+	~/.cargo/bin/cargo install cargo-insta
 
 # ----------------------------------------------------------------------
 # POST

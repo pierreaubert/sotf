@@ -181,7 +181,7 @@ pub fn bark_spectrum(freqs: &[f64], spl_db: &[f64]) -> [f64; 24] {
 /// Apply a Bark-band spreading function and return excitation levels.
 pub fn excitation_pattern(bark_levels: &[f64; 24]) -> [f64; 24] {
     let mut excitation = [0.0_f64; 24];
-    for target in 0..24 {
+    for (target, slot) in excitation.iter_mut().enumerate() {
         let mut total_power = 0.0_f64;
         for source in 0..24 {
             let level = bark_levels[source];
@@ -199,7 +199,7 @@ pub fn excitation_pattern(bark_levels: &[f64; 24]) -> [f64; 24] {
             };
             total_power += db_to_power(level - attenuation);
         }
-        excitation[target] = if total_power > 0.0 {
+        *slot = if total_power > 0.0 {
             10.0 * total_power.log10()
         } else {
             -100.0
@@ -412,8 +412,8 @@ fn db_to_power(db: f64) -> f64 {
 fn sum_aligned(a: &[f64], b: &[f64]) -> Vec<f64> {
     let n = a.len().max(b.len());
     let mut out = vec![0.0; n];
-    for i in 0..n {
-        out[i] = a.get(i).copied().unwrap_or(0.0) + b.get(i).copied().unwrap_or(0.0);
+    for (i, slot) in out.iter_mut().enumerate() {
+        *slot = a.get(i).copied().unwrap_or(0.0) + b.get(i).copied().unwrap_or(0.0);
     }
     out
 }

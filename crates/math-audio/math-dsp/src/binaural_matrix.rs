@@ -538,15 +538,15 @@ fn apply_direct_window(
     let length = ((length_ms / 1000.0) * sample_rate).round().max(1.0) as usize;
     let fade = ((fade_ms / 1000.0) * sample_rate).round().max(0.0) as usize;
     let end = (start + length).min(samples.len());
-    for idx in 0..samples.len() {
+    for (idx, sample) in samples.iter_mut().enumerate() {
         if idx < start || idx >= end {
-            samples[idx] = 0.0;
+            *sample = 0.0;
             continue;
         }
         if fade > 0 && idx >= end.saturating_sub(fade) {
             let n = end - idx;
             let phase = PI * n as f64 / fade as f64;
-            samples[idx] *= 0.5 - 0.5 * phase.cos();
+            *sample *= 0.5 - 0.5 * phase.cos();
         }
     }
 }

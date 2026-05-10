@@ -23,14 +23,14 @@ use crate::early_reflections::EarlyReflections;
 use crate::fdn::{FDN_SIZE, Fdn};
 use crate::params::{AaePluginParams, build_parameters};
 
-use sotf_host::auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, AutoGainParams};
+use sotf_host::auto_gain::{AutoGainData, AutoGainLoudnessType, AutoGainParams};
+use sotf_host::multichannel_auto_gain::MultichannelAutoGain;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
 use sotf_host::speaker_config::{
-    SpeakerConfig, calculate_panning_gain, calculate_panning_gain_with_wraparound,
-    get_speaker_config,
+    SourcePosition, SpeakerConfig, compute_vbap_matrix, get_speaker_config, normalize_gains_l2,
 };
 use std::any::Any;
 use std::sync::Arc;
@@ -88,8 +88,7 @@ pub struct AaePlugin {
 
     // Auto-gain compensation. The meter is stereo: input L/R vs a stereo fold-down
     // of the multichannel render, then the resulting gain is applied to all outputs.
-    auto_gain: Option<AutoGain>,
-    auto_gain_meter_buffer: Vec<f32>,
+    auto_gain: Option<MultichannelAutoGain>,
 
     // Cached parameter list
     cached_parameters: Vec<Parameter>,
@@ -189,7 +188,6 @@ impl AaePlugin {
             late_smoother: Smoother::new(params.late_level, 5.0, sr),
             lfe_smoother: Smoother::new(params.lfe_level, 5.0, sr),
             auto_gain: create_auto_gain(&params, sr),
-            auto_gain_meter_buffer: Vec::new(),
             cached_parameters: Vec::new(),
             params,
         };
@@ -201,96 +199,71 @@ impl AaePlugin {
 
     /// Pre-compute VBAP panning gains for all routing paths.
     fn precompute_gains(&mut self) {
-        let speakers = self.speaker_config.speakers;
+        let cfg = self.speaker_config;
         let n_ch = self.num_output_channels;
 
-        // Direct signal: stereo L at +30° az, R at -30° az
-        resize_vec(&mut self.direct_gains_l, n_ch);
-        resize_vec(&mut self.direct_gains_r, n_ch);
-        self.direct_gains_l.fill(0.0);
-        self.direct_gains_r.fill(0.0);
-        for sp in speakers {
-            if sp.is_lfe {
-                continue;
-            }
-            self.direct_gains_l[sp.channel] =
-                calculate_panning_gain(30.0, 0.0, sp.azimuth, sp.elevation);
-            self.direct_gains_r[sp.channel] =
-                calculate_panning_gain(-30.0, 0.0, sp.azimuth, sp.elevation);
-        }
-        normalize_gains(&mut self.direct_gains_l);
-        normalize_gains(&mut self.direct_gains_r);
+        // Direct signal: stereo L at +30° az, R at -30° az.
+        let direct_sources = [SourcePosition::new(30.0, 0.0), SourcePosition::new(-30.0, 0.0)];
+        let mut direct = compute_vbap_matrix(cfg, &direct_sources, None).into_iter();
+        let mut left = direct.next().expect("compute_vbap_matrix returns one row per source");
+        let mut right = direct.next().expect("compute_vbap_matrix returns one row per source");
+        normalize_gains_l2(&mut left);
+        normalize_gains_l2(&mut right);
+        self.direct_gains_l = left;
+        self.direct_gains_r = right;
 
-        // Early reflections: per-tap VBAP gains
+        // Early reflections: per-tap VBAP gains, padded to MAX_TAPS rows.
         let num_taps = self.early_reflections.num_taps();
-        resize_gain_matrix(&mut self.er_gains, early_reflections::MAX_TAPS, n_ch);
-        for gains in &mut self.er_gains {
-            gains.fill(0.0);
+        let er_sources: Vec<SourcePosition> = (0..num_taps)
+            .map(|idx| {
+                let tap = self.early_reflections.tap_info(idx).unwrap();
+                SourcePosition::new(tap.azimuth, tap.elevation)
+            })
+            .collect();
+        let mut er = compute_vbap_matrix(cfg, &er_sources, Some(0.5));
+        for row in &mut er {
+            normalize_gains_l2(row);
         }
-        for tap_idx in 0..num_taps {
-            let tap = self.early_reflections.tap_info(tap_idx).unwrap();
-            let gains = &mut self.er_gains[tap_idx];
-            for sp in speakers {
-                if sp.is_lfe {
-                    continue;
-                }
-                gains[sp.channel] = calculate_panning_gain_with_wraparound(
-                    tap.azimuth,
-                    tap.elevation,
-                    sp.azimuth,
-                    sp.elevation,
-                    0.5,
-                );
-            }
-            normalize_gains(gains);
-        }
+        er.resize(early_reflections::MAX_TAPS, vec![0.0; n_ch]);
+        self.er_gains = er;
 
-        // FDN outputs: distributed across speakers with envelopment bias
-        // Lines 0-2: more front, lines 3-7: more surround/rear
+        // FDN outputs: distributed across speakers with envelopment bias.
+        // Lines 0-2: more front, lines 3-7: more surround/rear. Line 7 is overhead.
         let envelopment = self.params.envelopment;
         let height_amount = self.params.height_amount;
-
-        // Assign each FDN line a virtual source direction
-        let fdn_azimuths = [30.0, -30.0, 0.0, 110.0, -110.0, 150.0, -150.0, 0.0];
-        let fdn_elevations = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 45.0];
-
-        resize_gain_matrix(&mut self.fdn_gains, FDN_SIZE, n_ch);
-        for gains in &mut self.fdn_gains {
-            gains.fill(0.0);
-        }
-        for i in 0..FDN_SIZE {
-            let gains = &mut self.fdn_gains[i];
-            for sp in speakers {
-                if sp.is_lfe {
+        let fdn_sources = [
+            SourcePosition::new(30.0, 0.0),
+            SourcePosition::new(-30.0, 0.0),
+            SourcePosition::new(0.0, 0.0),
+            SourcePosition::new(110.0, 0.0),
+            SourcePosition::new(-110.0, 0.0),
+            SourcePosition::new(150.0, 0.0),
+            SourcePosition::new(-150.0, 0.0),
+            SourcePosition::new(0.0, 45.0),
+        ];
+        debug_assert_eq!(fdn_sources.len(), FDN_SIZE);
+        let mut fdn = compute_vbap_matrix(cfg, &fdn_sources, Some(0.7));
+        for (line_idx, row) in fdn.iter_mut().enumerate() {
+            for sp in cfg.speakers {
+                if sp.is_lfe || sp.channel >= n_ch {
                     continue;
                 }
-                let mut g = calculate_panning_gain_with_wraparound(
-                    fdn_azimuths[i],
-                    fdn_elevations[i],
-                    sp.azimuth,
-                    sp.elevation,
-                    0.7,
-                );
-
-                // Apply envelopment: boost surround/rear, attenuate front for lines 3+
-                if i >= 3 {
+                let g = &mut row[sp.channel];
+                if line_idx >= 3 {
                     let is_rear = sp.azimuth.abs() > 90.0;
-                    if is_rear {
-                        g *= 0.5 + 0.5 * envelopment;
+                    *g *= if is_rear {
+                        0.5 + 0.5 * envelopment
                     } else {
-                        g *= 1.0 - 0.5 * envelopment;
-                    }
+                        1.0 - 0.5 * envelopment
+                    };
                 }
-
-                // Scale height channels
                 if sp.elevation > 10.0 {
-                    g *= height_amount;
+                    *g *= height_amount;
                 }
-
-                gains[sp.channel] = g;
             }
-            normalize_gains(gains);
+            normalize_gains_l2(row);
         }
+        self.fdn_gains = fdn;
     }
 
     fn update_cached_parameter(&mut self, id: &ParameterId, value: &ParameterValue) {
@@ -326,8 +299,7 @@ impl AaePlugin {
 
     fn ensure_auto_gain(&mut self) -> PluginResult<()> {
         if self.auto_gain.is_none() {
-            self.auto_gain = Some(AutoGain::new(
-                2,
+            self.auto_gain = Some(MultichannelAutoGain::new(
                 self.sample_rate,
                 AutoGainParams {
                     enabled: self.params.auto_gain_enabled,
@@ -340,64 +312,24 @@ impl AaePlugin {
         Ok(())
     }
 
-    fn fill_auto_gain_meter_buffer(&mut self, output: &[f32], num_frames: usize) {
-        self.auto_gain_meter_buffer.resize(num_frames * 2, 0.0);
-        self.auto_gain_meter_buffer.fill(0.0);
-
-        let out_ch = self.num_output_channels;
-        for frame in 0..num_frames {
-            let out_base = frame * out_ch;
-            let meter_base = frame * 2;
-            for sp in self.speaker_config.speakers {
-                if sp.is_lfe || sp.channel >= out_ch {
-                    continue;
-                }
-
-                let sample = output[out_base + sp.channel];
-                if sp.azimuth > 10.0 {
-                    self.auto_gain_meter_buffer[meter_base] += sample;
-                } else if sp.azimuth < -10.0 {
-                    self.auto_gain_meter_buffer[meter_base + 1] += sample;
-                } else {
-                    let split = sample * std::f32::consts::FRAC_1_SQRT_2;
-                    self.auto_gain_meter_buffer[meter_base] += split;
-                    self.auto_gain_meter_buffer[meter_base + 1] += split;
-                }
-            }
-        }
-    }
-
     fn apply_auto_gain(&mut self, output: &mut [f32], num_frames: usize) -> PluginResult<()> {
         if !self.params.auto_gain_enabled {
             return Ok(());
         }
-
         self.ensure_auto_gain()?;
-        self.fill_auto_gain_meter_buffer(output, num_frames);
-
-        let auto_gain = self.auto_gain.as_mut().unwrap();
-        auto_gain.measure_output(&self.auto_gain_meter_buffer)?;
-
+        let speaker_config = self.speaker_config;
         let out_ch = self.num_output_channels;
-        for frame in 0..num_frames {
-            let gain = auto_gain.next_gain_linear();
-            let base = frame * out_ch;
-            for sample in &mut output[base..base + out_ch] {
-                *sample *= gain;
-            }
-        }
-
-        Ok(())
+        let auto_gain = self.auto_gain.as_mut().unwrap();
+        auto_gain.measure_and_apply(output, num_frames, out_ch, speaker_config)
     }
 }
 
-fn create_auto_gain(params: &AaePluginParams, sample_rate: u32) -> Option<AutoGain> {
+fn create_auto_gain(params: &AaePluginParams, sample_rate: u32) -> Option<MultichannelAutoGain> {
     if !params.auto_gain_enabled {
         return None;
     }
 
-    AutoGain::new(
-        2,
+    MultichannelAutoGain::new(
         sample_rate,
         AutoGainParams {
             enabled: true,
@@ -885,24 +817,9 @@ impl Plugin for AaePlugin {
             auto_gain: self
                 .auto_gain
                 .as_ref()
-                .map(AutoGain::get_data)
+                .map(MultichannelAutoGain::data)
                 .unwrap_or_default(),
         }))
-    }
-}
-
-fn resize_vec(values: &mut Vec<f32>, len: usize) {
-    if values.len() != len {
-        values.resize(len, 0.0);
-    }
-}
-
-fn resize_gain_matrix(values: &mut Vec<Vec<f32>>, rows: usize, cols: usize) {
-    if values.len() != rows {
-        values.resize_with(rows, Vec::new);
-    }
-    for row in values {
-        resize_vec(row, cols);
     }
 }
 
@@ -914,17 +831,6 @@ fn smoothing_coeff(time_ms: f32, sample_rate: f32) -> f32 {
 fn compute_lp_coeff(cutoff_hz: f32, sample_rate: f32) -> f32 {
     let w = (2.0 * std::f32::consts::PI * cutoff_hz / sample_rate).min(0.99);
     (-w).exp()
-}
-
-/// Normalize a gains vector so the sum of squares equals 1.0 (energy-preserving).
-fn normalize_gains(gains: &mut [f32]) {
-    let energy: f32 = gains.iter().map(|g| g * g).sum();
-    if energy > 1e-10 {
-        let scale = 1.0 / energy.sqrt();
-        for g in gains.iter_mut() {
-            *g *= scale;
-        }
-    }
 }
 
 #[cfg(test)]

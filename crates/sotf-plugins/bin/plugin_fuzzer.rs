@@ -1128,6 +1128,12 @@ impl PluginFuzzer for UpmixerFuzzer {
             bypass_all_processing: false,
             low_latency: false,
             frequency_resolution: "erb".to_string(),
+            multi_source_extraction: false,
+            multi_source_threshold: 0.8,
+            binaural_preview: false,
+            auto_gain_enabled: false,
+            auto_gain_max_db: 12.0,
+            auto_gain_smoothing_ms: 100.0,
         };
 
         let desc = format!(

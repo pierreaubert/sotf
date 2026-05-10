@@ -1143,9 +1143,10 @@ impl XtcPlugin {
                     }
                 }
             }
-        } else if self.crossfade_progress < 1.0 && self.prev_filters.is_some() {
+        } else if let Some(prev_filters) =
+            self.prev_filters.as_ref().filter(|_| self.crossfade_progress < 1.0)
+        {
             let alpha = self.crossfade_progress;
-            let prev_filters = self.prev_filters.as_ref().unwrap();
             // Use cached filter snapshot (loaded once per process() call)
             let current_filters = &self.cached_current_filters;
 

@@ -5,7 +5,7 @@
 use super::recording::{RecordingResult, RecordingState};
 use autoeq::roomeq::{
     CrossoverConfig as BackendCrossoverConfig, MeasurementSource, RoomConfig, SpeakerConfig,
-    SpeakerGroup, SubwooferStrategy, SubwooferSystemConfig, SystemConfig, SystemModel,
+    SpeakerGroup,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -63,19 +63,9 @@ pub use sotf_audio_player::room_eq_types::AutoEqField;
 pub use sotf_audio_player::room_eq_types::OptimizationStatus;
 pub use sotf_audio_player::room_eq_types::RoomEqAlgorithm;
 pub use sotf_audio_player::room_eq_types::RoomEqOptimizerConfig;
-
-fn room_eq_channel_is_bass_output(name: &str) -> bool {
-    let normalized: String = name
-        .chars()
-        .filter(|ch| ch.is_ascii_alphanumeric())
-        .flat_map(|ch| ch.to_lowercase())
-        .collect();
-    normalized.contains("lfe")
-        || normalized == "sub"
-        || normalized == "subwoofer"
-        || normalized == "sw"
-        || normalized.starts_with("sub")
-}
+pub use sotf_audio_player::room_eq_types::{
+    ctc_system_config_for_speaker_names, room_eq_channel_is_bass_output,
+};
 
 /// UI state for Room EQ dropdowns
 #[derive(Debug, Clone)]
@@ -811,7 +801,7 @@ impl RoomEqState {
                     ..Default::default()
                 })
         });
-        let system = ctc.as_ref().filter(|ctc| ctc.enabled).map(|_| {
+        let system = ctc.as_ref().filter(|ctc| ctc.enabled).and_then(|_| {
             let has_bass_output = speakers
                 .keys()
                 .any(|name| room_eq_channel_is_bass_output(name));
@@ -832,19 +822,10 @@ impl RoomEqState {
                 );
                 xover_id
             });
-            SystemConfig {
-                model: SystemModel::HomeCinema,
-                speakers: speakers
-                    .keys()
-                    .map(|name| (name.clone(), name.clone()))
-                    .collect(),
-                subwoofers: has_bass_output.then(|| SubwooferSystemConfig {
-                    config: SubwooferStrategy::Single,
-                    crossover: bass_management_crossover,
-                    mapping: HashMap::new(),
-                }),
-                bass_management: None,
-            }
+            ctc_system_config_for_speaker_names(
+                speakers.keys().map(String::as_str),
+                bass_management_crossover,
+            )
         });
 
         RoomConfig {

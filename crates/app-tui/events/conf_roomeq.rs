@@ -3,7 +3,9 @@
 use super::PlayerCommand;
 use crate::app::{App, FilePickerMode, FilePickerOrigin, InputMode};
 use crossterm::event::{KeyCode, KeyEvent};
-use sotf_audio_player::room_eq_types::{OptimizationStatus, RoomEqStep};
+use sotf_audio_player::room_eq_types::{
+    OptimizationStatus, RoomEqStep, ctc_system_config_for_speaker_names,
+};
 use std::sync::{Arc, Mutex};
 
 fn room_eq_step_prev_wrap(s: RoomEqStep) -> RoomEqStep {
@@ -886,10 +888,7 @@ fn spawn_room_eq_optimization(app: &mut App) {
 
     std::thread::spawn(move || {
         use autoeq::MeasurementSource;
-        use autoeq::roomeq::{
-            CallbackAction, RoomConfig, SpeakerConfig, SubwooferStrategy, SubwooferSystemConfig,
-            SystemConfig, SystemModel,
-        };
+        use autoeq::roomeq::{CallbackAction, RoomConfig, SpeakerConfig};
         use sotf_audio_player::autoeq::{
             run_room_optimization, run_room_optimization_with_probe_arrivals,
         };
@@ -931,32 +930,8 @@ fn spawn_room_eq_optimization(app: &mut App) {
                 ..Default::default()
             })
         });
-        let system = ctc.as_ref().filter(|ctc| ctc.enabled).map(|_| {
-            let has_bass_output = speakers.keys().any(|name| {
-                let normalized: String = name
-                    .chars()
-                    .filter(|ch| ch.is_ascii_alphanumeric())
-                    .flat_map(|ch| ch.to_lowercase())
-                    .collect();
-                normalized.contains("lfe")
-                    || normalized == "sub"
-                    || normalized == "subwoofer"
-                    || normalized == "sw"
-                    || normalized.starts_with("sub")
-            });
-            SystemConfig {
-                model: SystemModel::HomeCinema,
-                speakers: speakers
-                    .keys()
-                    .map(|name| (name.clone(), name.clone()))
-                    .collect(),
-                subwoofers: has_bass_output.then(|| SubwooferSystemConfig {
-                    config: SubwooferStrategy::Single,
-                    crossover: None,
-                    mapping: Default::default(),
-                }),
-                bass_management: None,
-            }
+        let system = ctc.as_ref().filter(|ctc| ctc.enabled).and_then(|_| {
+            ctc_system_config_for_speaker_names(speakers.keys().map(String::as_str), None)
         });
 
         let room_config = RoomConfig {

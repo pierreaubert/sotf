@@ -14,12 +14,12 @@ expression: plan
   "knob_size": "sm",
   "group_direction": "row",
   "slider_height": 120.0,
-  "show_visualizations": false,
+  "show_visualizations": true,
   "columns_visible": [
-    "main",
-    "output"
+    "main"
   ],
   "columns_collapsed": [
+    "output",
     "config"
   ],
   "config_controls": [
@@ -144,6 +144,39 @@ expression: plan
       "range": [
         0.0,
         3.0
+      ],
+      "read_only": false
+    },
+    {
+      "param_index": 44,
+      "param_name": "Auto Gain",
+      "control_type": "toggle",
+      "unit": "",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "read_only": false
+    },
+    {
+      "param_index": 45,
+      "param_name": "AG Max",
+      "control_type": "knob",
+      "unit": "dB",
+      "range": [
+        0.0,
+        24.0
+      ],
+      "read_only": false
+    },
+    {
+      "param_index": 46,
+      "param_name": "AG Smoothing",
+      "control_type": "knob",
+      "unit": "ms",
+      "range": [
+        10.0,
+        500.0
       ],
       "read_only": false
     }
@@ -484,12 +517,7 @@ expression: plan
             2.0
           ],
           "read_only": false
-        }
-      ]
-    },
-    {
-      "name": "Source",
-      "controls": [
+        },
         {
           "param_index": 41,
           "param_name": "Multi-Source Extraction",

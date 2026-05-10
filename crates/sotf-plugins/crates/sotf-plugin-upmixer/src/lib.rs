@@ -21,7 +21,8 @@ use rustfft::num_complex::Complex;
 pub mod params;
 
 use crate::params::{PARAMS as UP, SPEAKER_CONFIGS};
-use sotf_host::auto_gain::{AutoGain, AutoGainLoudnessType, AutoGainParams};
+use sotf_host::auto_gain::{AutoGainLoudnessType, AutoGainParams};
+use sotf_host::multichannel_auto_gain::MultichannelAutoGain;
 use sotf_host::param_bridge;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
@@ -180,8 +181,7 @@ pub struct UpmixerPlugin {
     auto_gain_enabled: bool,
     auto_gain_max_db: f32,
     auto_gain_smoothing_ms: f32,
-    auto_gain: Option<AutoGain>,
-    auto_gain_meter_buffer: Vec<f32>,
+    auto_gain: Option<MultichannelAutoGain>,
 
     // Sub-harmonic synth state
     subharmonic_phase: f32,
@@ -683,7 +683,6 @@ impl UpmixerPlugin {
             auto_gain_max_db: 12.0,
             auto_gain_smoothing_ms: 100.0,
             auto_gain: None,
-            auto_gain_meter_buffer: Vec::new(),
             decorrelation_mode: 0, // Default to Velvet Noise
 
             // Sub-harmonic synthesis parameters
@@ -942,8 +941,7 @@ impl UpmixerPlugin {
 
     fn ensure_auto_gain(&mut self) -> PluginResult<()> {
         if self.auto_gain.is_none() {
-            self.auto_gain = Some(AutoGain::new(
-                2,
+            self.auto_gain = Some(MultichannelAutoGain::new(
                 self.sample_rate,
                 AutoGainParams {
                     enabled: self.auto_gain_enabled,
@@ -956,42 +954,6 @@ impl UpmixerPlugin {
         Ok(())
     }
 
-    fn fill_auto_gain_meter_buffer(&mut self, output: &[f32], num_frames: usize, out_ch: usize) {
-        self.auto_gain_meter_buffer.resize(num_frames * 2, 0.0);
-        self.auto_gain_meter_buffer.fill(0.0);
-
-        if self.binaural_preview || out_ch == 2 {
-            for frame in 0..num_frames {
-                let out_base = frame * out_ch;
-                let meter_base = frame * 2;
-                self.auto_gain_meter_buffer[meter_base] = output[out_base];
-                self.auto_gain_meter_buffer[meter_base + 1] = output[out_base + 1];
-            }
-            return;
-        }
-
-        for frame in 0..num_frames {
-            let out_base = frame * out_ch;
-            let meter_base = frame * 2;
-            for sp in self.speaker_config.speakers {
-                if sp.is_lfe || sp.channel >= out_ch {
-                    continue;
-                }
-
-                let sample = output[out_base + sp.channel];
-                if sp.azimuth > 10.0 {
-                    self.auto_gain_meter_buffer[meter_base] += sample;
-                } else if sp.azimuth < -10.0 {
-                    self.auto_gain_meter_buffer[meter_base + 1] += sample;
-                } else {
-                    let split = sample * std::f32::consts::FRAC_1_SQRT_2;
-                    self.auto_gain_meter_buffer[meter_base] += split;
-                    self.auto_gain_meter_buffer[meter_base + 1] += split;
-                }
-            }
-        }
-    }
-
     fn apply_auto_gain(
         &mut self,
         output: &mut [f32],
@@ -1001,22 +963,10 @@ impl UpmixerPlugin {
         if !self.auto_gain_enabled || num_frames == 0 {
             return Ok(());
         }
-
         self.ensure_auto_gain()?;
-        self.fill_auto_gain_meter_buffer(output, num_frames, out_ch);
-
+        let speaker_config = self.speaker_config;
         let auto_gain = self.auto_gain.as_mut().unwrap();
-        auto_gain.measure_output(&self.auto_gain_meter_buffer)?;
-
-        for frame in 0..num_frames {
-            let gain = auto_gain.next_gain_linear();
-            let base = frame * out_ch;
-            for sample in &mut output[base..base + out_ch] {
-                *sample *= gain;
-            }
-        }
-
-        Ok(())
+        auto_gain.measure_and_apply(output, num_frames, out_ch, speaker_config)
     }
 
     fn canonical_frequency_resolution(value: &str) -> &'static str {
@@ -1357,11 +1307,11 @@ impl UpmixerPlugin {
         plugin.frequency_resolution =
             Self::canonical_frequency_resolution(&params.frequency_resolution).to_string();
         plugin.multi_source_extraction = params.multi_source_extraction;
-        plugin.multi_source_threshold = params.multi_source_threshold as f32;
+        plugin.multi_source_threshold = params.multi_source_threshold;
         plugin.binaural_preview = params.binaural_preview;
         plugin.auto_gain_enabled = params.auto_gain_enabled;
-        plugin.auto_gain_max_db = params.auto_gain_max_db as f32;
-        plugin.auto_gain_smoothing_ms = params.auto_gain_smoothing_ms as f32;
+        plugin.auto_gain_max_db = params.auto_gain_max_db;
+        plugin.auto_gain_smoothing_ms = params.auto_gain_smoothing_ms;
 
         plugin.rebuild_cached_parameters();
         plugin

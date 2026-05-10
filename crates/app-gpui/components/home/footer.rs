@@ -195,7 +195,8 @@ fn waveform_bar_x_and_width(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{WAVEFORM_NUM_BARS, waveform_bar_x_and_width};
+    use gpui::{Pixels, px};
 
     fn px_f32(value: Pixels) -> f32 {
         value.to_f64() as f32
