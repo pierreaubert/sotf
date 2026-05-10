@@ -2995,6 +2995,9 @@ fn build_rack_mode_plugins(
                         multi_source_extraction: false,
                         multi_source_threshold: 0.3,
                         binaural_preview: false,
+                        auto_gain_enabled: false,
+                        auto_gain_max_db: 12.0,
+                        auto_gain_smoothing_ms: 100.0,
                     };
                 }
                 log::info!("Rack: Added Upmixer plugin ({})", plugins.upmixer.config);

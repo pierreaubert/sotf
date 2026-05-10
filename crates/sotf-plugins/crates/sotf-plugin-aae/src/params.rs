@@ -76,10 +76,12 @@ pub const PARAMS: &[ParamSpec] = &[
     .doc("Gap before first reflection"),
     // 6: room_preset
     ParamSpec::choice("Room Preset", "room_preset", 1, ROOM_PRESETS, "Room")
+        .setup()
         .doc("Early reflection tap configuration"),
     // 7: dry_level
     ParamSpec::float("Dry Level", "dry_level", 0.5, 0.0, 1.0, 0.01, "x", "Levels")
-        .doc("Direct signal level"),
+        .output()
+        .doc("Direct dry output level"),
     // 8: er_level
     ParamSpec::float("ER Level", "er_level", 0.3, 0.0, 1.0, 0.01, "x", "Levels")
         .doc("Early reflection level"),
@@ -184,6 +186,7 @@ pub const PARAMS: &[ParamSpec] = &[
         "dB",
         "Intelligence",
     )
+    .output()
     .doc("FDN feedback limiter threshold"),
     // 19: auto_gain_enabled
     ParamSpec::bool_param("Auto Gain", "auto_gain_enabled", false, "Auto Gain")
@@ -248,7 +251,6 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ControlGroup {
             title: "LEVELS",
             controls: &[
-                ControlSpec::slider(7),  // dry_level
                 ControlSpec::slider(8),  // er_level
                 ControlSpec::slider(9),  // late_level
                 ControlSpec::slider(10), // lfe_level
@@ -256,6 +258,7 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         },
     ],
     output: &[
+        ControlSpec::slider(7),  // dry_level
         ControlSpec::knob(18),   // safety_limit_db
         ControlSpec::toggle(19), // auto_gain_enabled
         ControlSpec::knob(20),   // auto_gain_max_db
@@ -294,7 +297,11 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         },
     ],
     visualizations: &[],
-    column_constraints: &[],
+    column_constraints: &[
+        ColumnConstraint::config(180.0, 0.55),
+        ColumnConstraint::main(500.0),
+        ColumnConstraint::output(220.0, 0.65),
+    ],
     dynamic_sections: &[],
 };
 

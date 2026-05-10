@@ -306,12 +306,12 @@ fn render_upmixer(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerView>) -
         multi_source_extraction,
         multi_source_threshold,
         binaural_preview,
+        auto_gain_enabled,
+        auto_gain_max_db,
+        auto_gain_smoothing_ms,
     } = ctx.settings
     {
-        let (chain_autogain, upmixer_tab) = {
-            let app = ctx.entity.read(cx);
-            (app.app.plugin_state.chain_autogain, app.app.upmixer_tab)
-        };
+        let upmixer_tab = ctx.entity.read(cx).app.upmixer_tab;
         let d = Ds::from_cx(cx);
         super::render_upmixer_plugin(
             &d,
@@ -362,7 +362,9 @@ fn render_upmixer(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerView>) -
                 multi_source_extraction: *multi_source_extraction,
                 multi_source_threshold: *multi_source_threshold,
                 binaural_preview: *binaural_preview,
-                chain_autogain,
+                auto_gain_enabled: *auto_gain_enabled,
+                auto_gain_max_db: *auto_gain_max_db,
+                auto_gain_smoothing_ms: *auto_gain_smoothing_ms,
                 is_editing: ctx.is_editing,
                 selected_param: ctx.selected_param,
                 config_open: false,

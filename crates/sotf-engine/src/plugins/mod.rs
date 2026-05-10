@@ -448,6 +448,9 @@ sotf_plugins::serde_param_default! {
     fn default_upmixer_enable_hr_direct() -> bool = "enable_hr_direct";
     fn default_upmixer_multi_source_threshold() -> f64 = "multi_source_threshold";
     fn default_upmixer_frequency_resolution() -> usize = "frequency_resolution";
+    fn default_upmixer_auto_gain_enabled() -> bool = "auto_gain_enabled";
+    fn default_upmixer_auto_gain_max_db() -> f64 = "auto_gain_max_db";
+    fn default_upmixer_auto_gain_smoothing_ms() -> f64 = "auto_gain_smoothing_ms";
 }
 
 use sotf_plugins::param_specs::aae as aae_specs;
@@ -1023,6 +1026,13 @@ pub enum PluginSettings {
         // Binaural preview (Phase 4G)
         #[serde(default)]
         binaural_preview: bool,
+        // Upmixer output auto gain
+        #[serde(default = "default_upmixer_auto_gain_enabled")]
+        auto_gain_enabled: bool,
+        #[serde(default = "default_upmixer_auto_gain_max_db")]
+        auto_gain_max_db: f64,
+        #[serde(default = "default_upmixer_auto_gain_smoothing_ms")]
+        auto_gain_smoothing_ms: f64,
     },
     AAE {
         #[serde(default = "default_aae_speaker_config")]
@@ -2416,6 +2426,9 @@ impl PluginSettings {
                 multi_source_extraction,
                 multi_source_threshold,
                 binaural_preview,
+                auto_gain_enabled,
+                auto_gain_max_db,
+                auto_gain_smoothing_ms,
             } => PluginConfig::new(
                 "upmixer",
                 json!({
@@ -2468,6 +2481,9 @@ impl PluginSettings {
                     "multi_source_extraction": multi_source_extraction,
                     "multi_source_threshold": multi_source_threshold,
                     "binaural_preview": binaural_preview,
+                    "auto_gain_enabled": auto_gain_enabled,
+                    "auto_gain_max_db": auto_gain_max_db,
+                    "auto_gain_smoothing_ms": auto_gain_smoothing_ms,
                 }),
             ),
             Self::Compressor {
@@ -3291,6 +3307,9 @@ impl PluginSettings {
                     multi_source_extraction: p(u, "multi_source_extraction").default_bool(),
                     multi_source_threshold: p(u, "multi_source_threshold").default_f64(),
                     binaural_preview: p(u, "binaural_preview").default_bool(),
+                    auto_gain_enabled: p(u, "auto_gain_enabled").default_bool(),
+                    auto_gain_max_db: p(u, "auto_gain_max_db").default_f64(),
+                    auto_gain_smoothing_ms: p(u, "auto_gain_smoothing_ms").default_f64(),
                 }
             }
             PluginType::Compressor => {

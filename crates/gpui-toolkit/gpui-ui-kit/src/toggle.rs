@@ -377,8 +377,14 @@ impl Toggle {
     fn build_segmented(self, theme: &ToggleTheme) -> Stateful<Div> {
         let checked = self.checked;
         let selected = self.selected;
+        let transparent = Rgba {
+            r: 0.0,
+            g: 0.0,
+            b: 0.0,
+            a: 0.0,
+        };
 
-        let mut container = div().id(self.id).flex().flex_col().gap_1().cursor_pointer();
+        let mut container = div().id(self.id).flex().items_center().cursor_pointer();
 
         // Apply selection styling
         if selected {
@@ -397,28 +403,7 @@ impl Toggle {
             container = container.opacity(0.5).cursor_not_allowed();
         }
 
-        // Label (top row, left-aligned)
-        if let Some(label) = &self.label {
-            let label_color = if selected {
-                theme.text_primary
-            } else {
-                theme.label
-            };
-            let label_weight = if selected {
-                FontWeight::MEDIUM
-            } else {
-                FontWeight::NORMAL
-            };
-            container = container.child(
-                div()
-                    .text_sm()
-                    .text_color(label_color)
-                    .font_weight(label_weight)
-                    .child(label.clone()),
-            );
-        }
-
-        // Segmented switch: [OFF | ON] (bottom row, right-aligned)
+        // Segmented switch: [OFF | ON]
         let switch = div()
             .flex()
             .rounded_md()
@@ -432,13 +417,21 @@ impl Toggle {
                     .py_1()
                     .text_xs()
                     .font_weight(FontWeight::BOLD)
+                    .text_center()
+                    .min_w(px(36.0))
+                    .border_2()
+                    .border_color(if !checked {
+                        theme.text_on_accent
+                    } else {
+                        transparent
+                    })
                     .bg(if !checked {
-                        theme.surface_hover
+                        theme.accent
                     } else {
                         theme.background
                     })
                     .text_color(if !checked {
-                        theme.text_primary
+                        theme.text_on_accent
                     } else {
                         theme.text_muted
                     })
@@ -453,8 +446,16 @@ impl Toggle {
                     .py_1()
                     .text_xs()
                     .font_weight(FontWeight::BOLD)
+                    .text_center()
+                    .min_w(px(36.0))
+                    .border_2()
+                    .border_color(if checked {
+                        theme.text_on_accent
+                    } else {
+                        transparent
+                    })
                     .bg(if checked {
-                        theme.success
+                        theme.accent
                     } else {
                         theme.background
                     })
@@ -466,7 +467,30 @@ impl Toggle {
                     .child("ON"),
             );
 
-        container = container.child(div().flex().justify_end().child(switch));
+        if let Some(label) = self.label.filter(|label| !label.is_empty()) {
+            let label_color = if selected {
+                theme.text_primary
+            } else {
+                theme.label
+            };
+            let label_weight = if selected {
+                FontWeight::MEDIUM
+            } else {
+                FontWeight::NORMAL
+            };
+            container = container
+                .gap_2()
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(label_color)
+                        .font_weight(label_weight)
+                        .child(label),
+                )
+                .child(switch);
+        } else {
+            container = container.child(switch);
+        }
 
         // Click and keyboard handlers
         if !self.disabled

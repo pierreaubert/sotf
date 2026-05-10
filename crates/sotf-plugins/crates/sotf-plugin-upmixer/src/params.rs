@@ -473,7 +473,6 @@ pub const PARAMS: &[ParamSpec] = &[
     ParamSpec::bool_param("Low Latency", "low_latency", false, "Analysis")
         .secondary("Analysis")
         .structural()
-        .setup()
         .doc("Smaller FFT for lower latency"),
     // 36: frequency_resolution
     ParamSpec::choice(
@@ -485,14 +484,12 @@ pub const PARAMS: &[ParamSpec] = &[
     )
     .secondary("Analysis")
     .structural()
-    .setup()
     .doc("Frequency band grouping method"),
     // Diagnostics
     // 37: bypass_decorrelation
     ParamSpec::bool_param("Bypass Decor", "bypass_decorrelation", false, "Diagnostics")
         .diagnostic()
         .structural()
-        .setup()
         .doc("Skip channel decorrelation"),
     // 38: bypass_transient_detection
     ParamSpec::bool_param(
@@ -535,10 +532,37 @@ pub const PARAMS: &[ParamSpec] = &[
     .secondary("Analysis")
     .doc("Source separation sensitivity"),
     // Phase 4G: SOTA addition
-    ParamSpec::bool_param("Binaural Preview", "binaural_preview", false, "Output")
+    ParamSpec::bool_param("Binaural Preview", "binaural_preview", false, "Config")
         .structural()
-        .output()
+        .setup()
         .doc("Preview surround output binaurally (headphone monitoring, changes output to 2ch)"),
+    ParamSpec::bool_param("Auto Gain", "auto_gain_enabled", false, "Auto Gain")
+        .output()
+        .doc("Match rendered output loudness to the stereo input"),
+    ParamSpec::float(
+        "AG Max",
+        "auto_gain_max_db",
+        12.0,
+        0.0,
+        24.0,
+        1.0,
+        "dB",
+        "Auto Gain",
+    )
+    .output()
+    .doc("Maximum auto gain correction"),
+    ParamSpec::float(
+        "AG Smoothing",
+        "auto_gain_smoothing_ms",
+        100.0,
+        10.0,
+        500.0,
+        5.0,
+        "ms",
+        "Auto Gain",
+    )
+    .output()
+    .doc("Auto gain transition time"),
 ];
 
 // ============================================================================
@@ -548,13 +572,11 @@ pub const PARAMS: &[ParamSpec] = &[
 /// Upmixer: 0=speaker_config, 1-4=gains, 5-11=LFE, 12-14=spatial,
 /// 15-17=hr_direct, 18-21=decorrelation, 22-24=height, 25-27=surround,
 /// 28-33=dialogue, 34=safety_cap, 35-36=analysis, 37-40=diagnostics,
-/// 41-42=source_extraction, 43=binaural_preview
+/// 41-42=source_extraction, 43=binaural_preview, 44-46=auto_gain
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[
-        // speaker_config is exposed at the chrome level by the rack's
-        // dedicated Output dropdown; hide it here to avoid duplication.
-        ControlSpec::selector(0).hide(),
-        ControlSpec::toggle(43), // binaural_preview
+        ControlSpec::selector(0), // output channels / speaker_config
+        ControlSpec::toggle(43),  // binaural_preview
     ],
     main: &[
         ControlGroup {
@@ -576,7 +598,10 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         },
     ],
     output: &[
-        ControlSpec::knob(34), // safety_cap_db
+        ControlSpec::knob(34),   // safety_cap_db
+        ControlSpec::toggle(44), // auto_gain_enabled
+        ControlSpec::knob(45),   // auto_gain_max_db
+        ControlSpec::knob(46),   // auto_gain_smoothing_ms
     ],
     tabs: &[
         TabSpec {
@@ -635,13 +660,8 @@ pub const LAYOUT: PluginLayout = PluginLayout {
             controls: &[
                 ControlSpec::toggle(35),   // low_latency
                 ControlSpec::selector(36), // frequency_resolution
-            ],
-        },
-        TabSpec {
-            name: "Source",
-            controls: &[
-                ControlSpec::toggle(41), // multi_source_extraction
-                ControlSpec::knob(42),   // multi_source_threshold
+                ControlSpec::toggle(41),   // multi_source_extraction
+                ControlSpec::knob(42),     // multi_source_threshold
             ],
         },
         TabSpec {
@@ -656,9 +676,9 @@ pub const LAYOUT: PluginLayout = PluginLayout {
     ],
     visualizations: &[],
     column_constraints: &[
-        ColumnConstraint::config(120.0, 0.5),
-        ColumnConstraint::main(400.0),
-        ColumnConstraint::output(100.0, 0.6),
+        ColumnConstraint::config(180.0, 0.55),
+        ColumnConstraint::main(500.0),
+        ColumnConstraint::output(220.0, 0.65),
     ],
     dynamic_sections: &[],
 };
@@ -762,6 +782,12 @@ pub struct Params {
     pub multi_source_threshold: f64,
     #[serde(default)]
     pub binaural_preview: bool,
+    #[serde(default = "d_auto_gain_enabled")]
+    pub auto_gain_enabled: bool,
+    #[serde(default = "d_auto_gain_max_db")]
+    pub auto_gain_max_db: f64,
+    #[serde(default = "d_auto_gain_smoothing_ms")]
+    pub auto_gain_smoothing_ms: f64,
 }
 
 fn d_speaker_config() -> usize {
@@ -893,6 +919,15 @@ fn d_multi_source_extraction() -> bool {
 fn d_multi_source_threshold() -> f64 {
     pk(PARAMS, "multi_source_threshold").default_f64()
 }
+fn d_auto_gain_enabled() -> bool {
+    pk(PARAMS, "auto_gain_enabled").default_bool()
+}
+fn d_auto_gain_max_db() -> f64 {
+    pk(PARAMS, "auto_gain_max_db").default_f64()
+}
+fn d_auto_gain_smoothing_ms() -> f64 {
+    pk(PARAMS, "auto_gain_smoothing_ms").default_f64()
+}
 
 impl Default for Params {
     fn default() -> Self {
@@ -941,6 +976,9 @@ impl Default for Params {
             multi_source_extraction: d_multi_source_extraction(),
             multi_source_threshold: d_multi_source_threshold(),
             binaural_preview: false,
+            auto_gain_enabled: d_auto_gain_enabled(),
+            auto_gain_max_db: d_auto_gain_max_db(),
+            auto_gain_smoothing_ms: d_auto_gain_smoothing_ms(),
         }
     }
 }
@@ -1013,6 +1051,9 @@ impl PluginParamDef for Params {
             }),
             42 => Some(self.multi_source_threshold),
             43 => Some(if self.binaural_preview { 1.0 } else { 0.0 }),
+            44 => Some(if self.auto_gain_enabled { 1.0 } else { 0.0 }),
+            45 => Some(self.auto_gain_max_db),
+            46 => Some(self.auto_gain_smoothing_ms),
             _ => None,
         }
     }
@@ -1063,6 +1104,9 @@ impl PluginParamDef for Params {
             41 => self.multi_source_extraction = value > 0.5,
             42 => self.multi_source_threshold = value,
             43 => self.binaural_preview = value > 0.5,
+            44 => self.auto_gain_enabled = value > 0.5,
+            45 => self.auto_gain_max_db = value,
+            46 => self.auto_gain_smoothing_ms = value,
             _ => {}
         }
     }
@@ -1094,7 +1138,7 @@ mod tests {
 
     #[test]
     fn param_count() {
-        assert_eq!(PARAMS.len(), 44, "Expected 44 params");
+        assert_eq!(PARAMS.len(), 47, "Expected 47 params");
     }
 
     #[test]

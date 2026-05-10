@@ -9,11 +9,14 @@ use super::common::{render_knob, render_vertical_slider_with_ticks};
 use crate::app::AppState;
 use crate::components::design::Ds;
 use crate::components::plugins::editing::PluginEditingManager;
+use crate::components::plugins::level_meters::LevelMeterManager;
 use crate::components::plugins::theme::PluginTheme;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{HStack, StackAlign, StackSpacing, Toggle, ToggleStyle, VStack};
+use gpui_ui_kit::{
+    HStack, Select, SelectOption, SelectSize, StackAlign, StackSpacing, Toggle, ToggleStyle, VStack,
+};
 use sotf_plugins::param_specs::{find_by_key as pk, upmixer::PARAMS as UP};
 
 /// State for rendering the Upmixer plugin
@@ -72,7 +75,9 @@ pub struct UpmixerRenderState<'a> {
     pub multi_source_extraction: bool,
     pub multi_source_threshold: f64,
     pub binaural_preview: bool,
-    pub chain_autogain: bool,
+    pub auto_gain_enabled: bool,
+    pub auto_gain_max_db: f64,
+    pub auto_gain_smoothing_ms: f64,
     // UI state
     pub is_editing: bool,
     pub selected_param: usize,
@@ -130,6 +135,9 @@ mod param_idx {
     pub const MULTI_SOURCE_EXTRACTION: usize = index_of(P, "multi_source_extraction");
     pub const MULTI_SOURCE_THRESHOLD: usize = index_of(P, "multi_source_threshold");
     pub const BINAURAL_PREVIEW: usize = index_of(P, "binaural_preview");
+    pub const AUTO_GAIN_ENABLED: usize = index_of(P, "auto_gain_enabled");
+    pub const AUTO_GAIN_MAX_DB: usize = index_of(P, "auto_gain_max_db");
+    pub const AUTO_GAIN_SMOOTHING_MS: usize = index_of(P, "auto_gain_smoothing_ms");
 }
 
 /// Configuration menu items
@@ -153,12 +161,17 @@ pub fn render_upmixer_plugin(
     plugin_theme: &PluginTheme,
 ) -> impl IntoElement {
     let selected_config = state.upmixer_tab;
+    let app_background = theme.background_secondary;
 
     // Overlay the chassis theme onto the global theme so every helper
     // taking `&Theme` (knobs, sliders, toggles, panels) repaints with the
     // chassis palette. Same trick as ui_layout_renderer.
     let chassis_theme = plugin_theme.apply_to(theme);
     let theme = &chassis_theme;
+
+    let config_column = render_config_column_controls(d, entity.clone(), plugin_idx, &state, theme);
+
+    let output_column = render_output_column(d, entity.clone(), plugin_idx, &state, theme);
 
     // Main area: Channel Gains + Spatial Controls side by side (centered)
     let main_area = render_main_area(d, entity.clone(), plugin_idx, &state, theme);
@@ -176,20 +189,191 @@ pub fn render_upmixer_plugin(
         theme,
     );
 
-    // Diagnostic toggles row
-    let diag_row = render_config_diagnostic(d, entity.clone(), plugin_idx, &state, theme);
+    div()
+        .w_full()
+        .bg(app_background)
+        .rounded(d.r_lg)
+        .flex()
+        .justify_center()
+        .p(d.pad_x)
+        .child(
+            HStack::new()
+                .spacing(StackSpacing::Md)
+                .align(StackAlign::Start)
+                .child(config_column)
+                .child(
+                    VStack::new()
+                        .spacing(StackSpacing::Xs)
+                        .child(main_area)
+                        .child(tab_bar)
+                        .when((1..=7).contains(&selected_config), |el| {
+                            el.child(config_row)
+                        })
+                        .build(),
+                )
+                .child(output_column)
+                .build(),
+        )
+}
 
-    div().w_full().flex().justify_center().p(d.pad_x).child(
-        VStack::new()
-            .spacing(StackSpacing::Xs)
-            .child(main_area)
-            .child(tab_bar)
-            .when((1..=7).contains(&selected_config), |el| {
-                el.child(config_row)
-            })
-            .child(diag_row)
-            .build(),
-    )
+fn render_config_column_controls(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    state: &UpmixerRenderState,
+    theme: &Theme,
+) -> impl IntoElement {
+    let labels = pk(UP, "speaker_config").choice_labels();
+    let output_options: Vec<SelectOption> = labels
+        .iter()
+        .map(|label| SelectOption::new(label.to_string(), label.to_string()))
+        .collect();
+
+    div()
+        .w(px(180.0))
+        .flex_none()
+        .flex()
+        .flex_col()
+        .gap(d.gap)
+        .p(d.pad_y)
+        .bg(theme.surface)
+        .rounded(d.r_lg)
+        .child(render_section_header(d, "Configuration", theme))
+        .child(
+            VStack::new()
+                .spacing(StackSpacing::Xs)
+                .child(
+                    div()
+                        .text_size(d.text_xs)
+                        .text_color(theme.text_secondary)
+                        .child("Output Channels".to_string()),
+                )
+                .child(
+                    div().w_full().child(
+                        Select::new(format!("upmixer-output-config-{plugin_idx}"))
+                            .options(output_options)
+                            .selected(state.speaker_config.to_string())
+                            .is_open(state.config_open)
+                            .size(SelectSize::Xs)
+                            .theme(theme.to_select_theme())
+                            .on_toggle({
+                                let entity = entity.clone();
+                                move |is_open, _window, cx| {
+                                    entity.update(cx, |state, cx| {
+                                        state.app.upmixer_config_open = is_open;
+                                        cx.notify();
+                                    });
+                                }
+                            })
+                            .on_change({
+                                let entity = entity.clone();
+                                move |value, _window, cx| {
+                                    let idx = labels
+                                        .iter()
+                                        .position(|label| *label == value.as_ref())
+                                        .unwrap_or(0);
+                                    entity.update(cx, |state, _| {
+                                        state.app.set_plugin_param(
+                                            plugin_idx,
+                                            param_idx::_SPEAKER_CONFIG,
+                                            idx as f64,
+                                        );
+                                        state.app.upmixer_config_open = false;
+                                        state.app.update_level_meter_groups();
+                                    });
+                                }
+                            }),
+                    ),
+                )
+                .build(),
+        )
+        .child(render_diag_toggle(
+            d,
+            entity,
+            plugin_idx,
+            "Binaural Preview",
+            state.binaural_preview,
+            param_idx::BINAURAL_PREVIEW,
+            theme,
+        ))
+}
+
+fn render_output_column(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    state: &UpmixerRenderState,
+    theme: &Theme,
+) -> impl IntoElement {
+    div()
+        .w(px(220.0))
+        .flex_none()
+        .flex()
+        .flex_col()
+        .gap(d.gap_md)
+        .p(d.pad_y)
+        .bg(theme.surface)
+        .rounded(d.r_lg)
+        .child(render_section_header(d, "Output", theme))
+        .child(render_knob(
+            entity.clone(),
+            plugin_idx,
+            "Safety Cap",
+            state.safety_cap_db,
+            pk(UP, "safety_cap_db").min_f64(),
+            pk(UP, "safety_cap_db").max_f64(),
+            "dB",
+            param_idx::SAFETY_CAP_DB,
+            state.selected_param,
+            state.is_editing,
+            None,
+            theme,
+        ))
+        .child(render_diag_toggle(
+            d,
+            entity.clone(),
+            plugin_idx,
+            "Auto Gain",
+            state.auto_gain_enabled,
+            param_idx::AUTO_GAIN_ENABLED,
+            theme,
+        ))
+        .child(
+            div()
+                .when(!state.auto_gain_enabled, |d| d.opacity(0.3))
+                .child(render_knob(
+                    entity.clone(),
+                    plugin_idx,
+                    "AG Max",
+                    state.auto_gain_max_db,
+                    pk(UP, "auto_gain_max_db").min_f64(),
+                    pk(UP, "auto_gain_max_db").max_f64(),
+                    "dB",
+                    param_idx::AUTO_GAIN_MAX_DB,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
+                )),
+        )
+        .child(
+            div()
+                .when(!state.auto_gain_enabled, |d| d.opacity(0.3))
+                .child(render_knob(
+                    entity,
+                    plugin_idx,
+                    "AG Smooth",
+                    state.auto_gain_smoothing_ms,
+                    pk(UP, "auto_gain_smoothing_ms").min_f64(),
+                    pk(UP, "auto_gain_smoothing_ms").max_f64(),
+                    "ms",
+                    param_idx::AUTO_GAIN_SMOOTHING_MS,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
+                )),
+        )
 }
 
 /// Render an underline tab button
@@ -523,7 +707,6 @@ fn render_config_lfe(
                 .child(
                     Toggle::new(("subharm-toggle", plugin_idx))
                         .checked(subharm_enabled)
-                        .label(if subharm_enabled { "On" } else { "Off" })
                         .style(ToggleStyle::Segmented)
                         .theme(theme.to_toggle_theme())
                         .on_change({
@@ -891,7 +1074,6 @@ fn render_config_hr_direct(
                 .child(
                     Toggle::new(("hr-direct-toggle", plugin_idx))
                         .checked(state.enable_hr_direct)
-                        .label(if state.enable_hr_direct { "On" } else { "Off" })
                         .style(ToggleStyle::Segmented)
                         .theme(theme.to_toggle_theme())
                         .on_change({
@@ -1070,11 +1252,6 @@ fn render_config_analysis(
                 .child(
                     Toggle::new(("multi-source-toggle", plugin_idx))
                         .checked(state.multi_source_extraction)
-                        .label(if state.multi_source_extraction {
-                            "On"
-                        } else {
-                            "Off"
-                        })
                         .style(ToggleStyle::Segmented)
                         .theme(theme.to_toggle_theme())
                         .on_change({
@@ -1151,7 +1328,7 @@ fn render_config_analysis(
                     div()
                         .when(!state.multi_source_extraction, |d| d.opacity(0.3))
                         .child(render_knob(
-                            entity,
+                            entity.clone(),
                             plugin_idx,
                             "Threshold",
                             state.multi_source_threshold,
@@ -1167,40 +1344,9 @@ fn render_config_analysis(
                 )
                 .build(),
         )
-        .build()
-}
-
-/// Config tab: diagnostic toggles in a row
-fn render_config_diagnostic(
-    d: &Ds,
-    entity: Entity<AppState>,
-    plugin_idx: usize,
-    state: &UpmixerRenderState,
-    theme: &Theme,
-) -> impl IntoElement {
-    VStack::new()
-        .spacing(StackSpacing::Xs)
-        .child(render_section_header(d, "Configuration", theme))
         .child(
             HStack::new()
-                .spacing(StackSpacing::Lg)
-                .child(render_autogain_toggle(
-                    d,
-                    entity.clone(),
-                    plugin_idx,
-                    "AutoGain",
-                    state.chain_autogain,
-                    theme,
-                ))
-                .child(render_diag_toggle(
-                    d,
-                    entity.clone(),
-                    plugin_idx,
-                    "Binaural Preview",
-                    state.binaural_preview,
-                    param_idx::BINAURAL_PREVIEW,
-                    theme,
-                ))
+                .spacing(StackSpacing::Md)
                 .child(render_diag_toggle(
                     d,
                     entity.clone(),
@@ -1242,41 +1388,6 @@ fn render_config_diagnostic(
         .build()
 }
 
-/// Render the rack-level AutoGain control in the Upmixer native view.
-fn render_autogain_toggle(
-    d: &Ds,
-    entity: Entity<AppState>,
-    plugin_idx: usize,
-    label: &str,
-    value: bool,
-    theme: &Theme,
-) -> impl IntoElement {
-    div()
-        .flex()
-        .items_center()
-        .gap(d.gap)
-        .child(
-            div()
-                .text_size(d.text_xs)
-                .text_color(theme.text_secondary)
-                .child(label.to_string()),
-        )
-        .child(
-            Toggle::new(("upmixer-chain-autogain", plugin_idx))
-                .checked(value)
-                .label(if value { "On" } else { "Off" })
-                .style(ToggleStyle::Segmented)
-                .theme(theme.to_toggle_theme())
-                .on_change({
-                    move |_new_value, _, cx| {
-                        entity.update(cx, |state, _| {
-                            state.app.toggle_chain_autogain();
-                        });
-                    }
-                }),
-        )
-}
-
 /// Render a single diagnostic toggle with label
 fn render_diag_toggle(
     d: &Ds,
@@ -1300,7 +1411,6 @@ fn render_diag_toggle(
         .child(
             Toggle::new((SharedString::from(format!("diag-{param_id}")), plugin_idx))
                 .checked(value)
-                .label(if value { "On" } else { "Off" })
                 .style(ToggleStyle::Segmented)
                 .theme(theme.to_toggle_theme())
                 .on_change({

@@ -474,6 +474,7 @@ impl_param_accessors! {
             bypass_all_processing: bool, enable_ml_detection: bool,
             multi_source_extraction: bool, multi_source_threshold: f64,
             binaural_preview: bool,
+            auto_gain_enabled: bool, auto_gain_max_db: f64, auto_gain_smoothing_ms: f64,
         ]
     },
     Convolution {

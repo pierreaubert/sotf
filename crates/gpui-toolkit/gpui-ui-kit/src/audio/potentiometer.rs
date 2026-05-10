@@ -306,10 +306,10 @@ impl PotentiometerSize {
 
     fn min_width(&self) -> f32 {
         match self {
-            Self::Xs => 65.0,
-            Self::Sm => 80.0,
-            Self::Md => 100.0,
-            Self::Lg => 120.0,
+            Self::Xs => 120.0,
+            Self::Sm => 130.0,
+            Self::Md => 150.0,
+            Self::Lg => 170.0,
         }
     }
 }
@@ -942,12 +942,14 @@ impl RenderOnce for Potentiometer {
         // Number of minor ticks between each major tick
         let minor_ticks_between = 4;
 
-        // Knob graphic with ticks - need larger container for labels
-        let container_size = knob_size + 30.0; // Extra space for tick labels
+        // Knob graphic with ticks. Keep a generous gutter so quadrant-anchored
+        // tick labels stay inside the surrounding potentiometer frame.
+        let label_gutter = 44.0;
+        let container_size = knob_size + (label_gutter * 2.0);
         let mut knob_container = div().w(px(container_size)).h(px(container_size)).relative();
 
         // Add tick marks and labels around the knob
-        let knob_offset = 15.0; // Offset to center the knob in the larger container
+        let knob_offset = label_gutter; // Offset to center the knob in the larger container
         let tick_inner_radius = knob_size / 2.0; // Start at knob edge
         let major_tick_outer_radius = tick_inner_radius + 8.0; // Major ticks
         let minor_tick_outer_radius = tick_inner_radius + 5.0; // Minor ticks (shorter)

@@ -1336,6 +1336,9 @@ mod tests {
                 low_latency: false,
                 frequency_resolution: 0,
                 binaural_preview: false,
+                auto_gain_enabled: false,
+                auto_gain_max_db: 12.0,
+                auto_gain_smoothing_ms: 100.0,
             };
         }
         assert_eq!(chain.output_channels(), 8);
@@ -1434,6 +1437,9 @@ mod tests {
                 low_latency: false,
                 frequency_resolution: 0,
                 binaural_preview: false,
+                auto_gain_enabled: false,
+                auto_gain_max_db: 12.0,
+                auto_gain_smoothing_ms: 100.0,
             };
         }
 

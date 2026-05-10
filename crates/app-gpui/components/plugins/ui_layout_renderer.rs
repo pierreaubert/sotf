@@ -335,7 +335,11 @@ fn render_main_column(
         let clamped_tab = active_tab.min(all_tabs.len().saturating_sub(1));
 
         // Tab bar (underline style)
-        let mut tab_bar = div().flex().border_b_1().border_color(theme.border);
+        let mut tab_bar = div()
+            .flex()
+            .justify_center()
+            .border_b_1()
+            .border_color(theme.border);
         for (i, (tab_name, _)) in all_tabs.iter().enumerate() {
             let is_active = i == clamped_tab;
             let tab_entity = entity.clone();
@@ -393,7 +397,7 @@ fn render_main_column(
 
         // Active tab content
         if let Some((_, tab_content)) = all_tabs.get(clamped_tab) {
-            let mut tab_div = div().flex().flex_wrap().gap(d.section);
+            let mut tab_div = div().flex().flex_wrap().justify_center().gap(d.section);
             for spec in *tab_content {
                 if spec.hidden {
                     continue;

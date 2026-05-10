@@ -17,11 +17,19 @@
 - Added support for continuous area for optimisation (wrt to per measurement point)
 - Added bayesian optimisation for expensive calls: faster optimisation
 
+### Audio Plugins
+
+- Added a auto gain mode to AAE
+
 ## bug fixes
 
 ### Recording
 
 - fix: recording spl calibration or delays fails with "failed to to load wav, unsupported format" on some interface (too many channels)
+
+### RoomEQ
+
+- fix: user selected optimisation algo is now used everywhere (excep 1d optimisation)
 
 ### UI Library
 
@@ -32,6 +40,7 @@
 ### UI Plugins
 
 - Hw interface UI was not activated properly
+- Fixed auto gain in Upmixer
 
 
 # 0.6.1 -> 0.6.5

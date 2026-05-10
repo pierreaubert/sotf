@@ -21,6 +21,7 @@ use rustfft::num_complex::Complex;
 pub mod params;
 
 use crate::params::{PARAMS as UP, SPEAKER_CONFIGS};
+use sotf_host::auto_gain::{AutoGain, AutoGainLoudnessType, AutoGainParams};
 use sotf_host::param_bridge;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
@@ -173,6 +174,14 @@ pub struct UpmixerPlugin {
     prev_safety_scale: f32,
     /// Final post-OLA safety scale for the actual emitted samples
     final_safety_scale: f32,
+
+    // Auto-gain compensation: stereo input monitor vs stereo fold-down of
+    // the rendered output, with gain applied to all output channels.
+    auto_gain_enabled: bool,
+    auto_gain_max_db: f32,
+    auto_gain_smoothing_ms: f32,
+    auto_gain: Option<AutoGain>,
+    auto_gain_meter_buffer: Vec<f32>,
 
     // Sub-harmonic synth state
     subharmonic_phase: f32,
@@ -670,6 +679,11 @@ impl UpmixerPlugin {
             safety_cap_db: default_safety_cap_db(),
             prev_safety_scale: 1.0, // Start with no gain reduction
             final_safety_scale: 1.0,
+            auto_gain_enabled: false,
+            auto_gain_max_db: 12.0,
+            auto_gain_smoothing_ms: 100.0,
+            auto_gain: None,
+            auto_gain_meter_buffer: Vec::new(),
             decorrelation_mode: 0, // Default to Velvet Noise
 
             // Sub-harmonic synthesis parameters
@@ -926,6 +940,85 @@ impl UpmixerPlugin {
         }
     }
 
+    fn ensure_auto_gain(&mut self) -> PluginResult<()> {
+        if self.auto_gain.is_none() {
+            self.auto_gain = Some(AutoGain::new(
+                2,
+                self.sample_rate,
+                AutoGainParams {
+                    enabled: self.auto_gain_enabled,
+                    loudness_type: AutoGainLoudnessType::Momentary,
+                    max_gain_db: self.auto_gain_max_db,
+                    smoothing_ms: self.auto_gain_smoothing_ms,
+                },
+            )?);
+        }
+        Ok(())
+    }
+
+    fn fill_auto_gain_meter_buffer(&mut self, output: &[f32], num_frames: usize, out_ch: usize) {
+        self.auto_gain_meter_buffer.resize(num_frames * 2, 0.0);
+        self.auto_gain_meter_buffer.fill(0.0);
+
+        if self.binaural_preview || out_ch == 2 {
+            for frame in 0..num_frames {
+                let out_base = frame * out_ch;
+                let meter_base = frame * 2;
+                self.auto_gain_meter_buffer[meter_base] = output[out_base];
+                self.auto_gain_meter_buffer[meter_base + 1] = output[out_base + 1];
+            }
+            return;
+        }
+
+        for frame in 0..num_frames {
+            let out_base = frame * out_ch;
+            let meter_base = frame * 2;
+            for sp in self.speaker_config.speakers {
+                if sp.is_lfe || sp.channel >= out_ch {
+                    continue;
+                }
+
+                let sample = output[out_base + sp.channel];
+                if sp.azimuth > 10.0 {
+                    self.auto_gain_meter_buffer[meter_base] += sample;
+                } else if sp.azimuth < -10.0 {
+                    self.auto_gain_meter_buffer[meter_base + 1] += sample;
+                } else {
+                    let split = sample * std::f32::consts::FRAC_1_SQRT_2;
+                    self.auto_gain_meter_buffer[meter_base] += split;
+                    self.auto_gain_meter_buffer[meter_base + 1] += split;
+                }
+            }
+        }
+    }
+
+    fn apply_auto_gain(
+        &mut self,
+        output: &mut [f32],
+        num_frames: usize,
+        out_ch: usize,
+    ) -> PluginResult<()> {
+        if !self.auto_gain_enabled || num_frames == 0 {
+            return Ok(());
+        }
+
+        self.ensure_auto_gain()?;
+        self.fill_auto_gain_meter_buffer(output, num_frames, out_ch);
+
+        let auto_gain = self.auto_gain.as_mut().unwrap();
+        auto_gain.measure_output(&self.auto_gain_meter_buffer)?;
+
+        for frame in 0..num_frames {
+            let gain = auto_gain.next_gain_linear();
+            let base = frame * out_ch;
+            for sample in &mut output[base..base + out_ch] {
+                *sample *= gain;
+            }
+        }
+
+        Ok(())
+    }
+
     fn canonical_frequency_resolution(value: &str) -> &'static str {
         let mut normalized = String::with_capacity(value.len());
         for ch in value.chars() {
@@ -1089,6 +1182,9 @@ impl UpmixerPlugin {
             }),
             42 => Some(self.multi_source_threshold as f64),
             43 => Some(if self.binaural_preview { 1.0 } else { 0.0 }),
+            44 => Some(if self.auto_gain_enabled { 1.0 } else { 0.0 }),
+            45 => Some(self.auto_gain_max_db as f64),
+            46 => Some(self.auto_gain_smoothing_ms as f64),
             _ => None,
         }
     }
@@ -1146,6 +1242,9 @@ impl UpmixerPlugin {
             41 => self.multi_source_extraction = value > 0.5,
             42 => self.multi_source_threshold = value as f32,
             43 => self.binaural_preview = value > 0.5,
+            44 => self.auto_gain_enabled = value > 0.5,
+            45 => self.auto_gain_max_db = value as f32,
+            46 => self.auto_gain_smoothing_ms = value as f32,
             _ => {}
         }
     }
@@ -1257,6 +1356,12 @@ impl UpmixerPlugin {
         // Frequency resolution (canonicalized for analyzer band selection)
         plugin.frequency_resolution =
             Self::canonical_frequency_resolution(&params.frequency_resolution).to_string();
+        plugin.multi_source_extraction = params.multi_source_extraction;
+        plugin.multi_source_threshold = params.multi_source_threshold as f32;
+        plugin.binaural_preview = params.binaural_preview;
+        plugin.auto_gain_enabled = params.auto_gain_enabled;
+        plugin.auto_gain_max_db = params.auto_gain_max_db as f32;
+        plugin.auto_gain_smoothing_ms = params.auto_gain_smoothing_ms as f32;
 
         plugin.rebuild_cached_parameters();
         plugin
@@ -1559,6 +1664,24 @@ impl Plugin for UpmixerPlugin {
                 self.prev_decorrelation_strength = -1.0;
             }
             40 => self.try_start_ml_inference(), // enable_ml_detection
+            44 => {
+                if self.auto_gain_enabled {
+                    self.ensure_auto_gain()?;
+                }
+                if let Some(auto_gain) = &mut self.auto_gain {
+                    auto_gain.set_enabled(self.auto_gain_enabled);
+                }
+            }
+            45 => {
+                if let Some(auto_gain) = &mut self.auto_gain {
+                    auto_gain.set_max_gain_db(self.auto_gain_max_db);
+                }
+            }
+            46 => {
+                if let Some(auto_gain) = &mut self.auto_gain {
+                    auto_gain.set_smoothing_ms(self.auto_gain_smoothing_ms);
+                }
+            }
             _ => {}
         }
         self.rebuild_cached_parameters();
@@ -1663,6 +1786,12 @@ impl Plugin for UpmixerPlugin {
         self.height_hf_cap_hz_smoother
             .set_time(time_ms, sample_rate);
         self.safety_cap_db_smoother.set_time(time_ms, sample_rate);
+
+        if let Some(auto_gain) = &mut self.auto_gain {
+            auto_gain.set_sample_rate(sample_rate)?;
+        } else if self.auto_gain_enabled {
+            self.ensure_auto_gain()?;
+        }
 
         // Set FTZ/DAZ CPU flags once at initialization so the processing thread inherits
         // them for all subsequent process() calls. This avoids calling enable_ftz_daz()
@@ -1787,6 +1916,9 @@ impl Plugin for UpmixerPlugin {
 
         self.prev_safety_scale = 1.0;
         self.final_safety_scale = 1.0;
+        if let Some(auto_gain) = &mut self.auto_gain {
+            auto_gain.reset();
+        }
 
         // Reset MFCC extractor state
         #[cfg(feature = "onnx")]
@@ -1820,6 +1952,13 @@ impl Plugin for UpmixerPlugin {
                 output_samples,
                 output.len()
             ));
+        }
+
+        if self.auto_gain_enabled {
+            self.ensure_auto_gain()?;
+            if let Some(auto_gain) = &mut self.auto_gain {
+                auto_gain.measure_input(input)?;
+            }
         }
 
         // Update smoothers by the number of frames in this block
@@ -1901,6 +2040,8 @@ impl Plugin for UpmixerPlugin {
                     output[i * out_nch + ch] = 0.0;
                 }
             }
+            self.apply_auto_gain(output, num_frames, out_nch)?;
+            flush_denormals_inplace(output);
             return Ok(context.num_frames);
         }
 
@@ -2110,6 +2251,7 @@ impl Plugin for UpmixerPlugin {
 
         // Return actual number of frames written; startup latency is emitted as leading silence.
         if output_pos > 0 {
+            self.apply_auto_gain(&mut output[..output_pos * out_nch], output_pos, out_nch)?;
             self.apply_final_safety_cap(&mut output[..output_pos * out_nch], output_pos);
         }
         flush_denormals_inplace(output);

@@ -211,6 +211,30 @@ pub fn default_dialogue_coherence_weight() -> f32 {
     0.5
 }
 
+pub fn default_multi_source_extraction() -> bool {
+    false
+}
+
+pub fn default_multi_source_threshold() -> f32 {
+    0.1
+}
+
+pub fn default_binaural_preview() -> bool {
+    false
+}
+
+pub fn default_auto_gain_enabled() -> bool {
+    false
+}
+
+pub fn default_auto_gain_max_db() -> f32 {
+    12.0
+}
+
+pub fn default_auto_gain_smoothing_ms() -> f32 {
+    100.0
+}
+
 /// Configuration parameters for UpmixerPlugin
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpmixerPluginParams {
@@ -390,6 +414,30 @@ pub struct UpmixerPluginParams {
     /// "per_bin" = one band per FFT bin (~1025 bands at 2048-point FFT, maximum resolution)
     #[serde(default = "default_frequency_resolution")]
     pub frequency_resolution: String,
+
+    /// Enable extraction of a second source during spatial analysis.
+    #[serde(default = "default_multi_source_extraction")]
+    pub multi_source_extraction: bool,
+
+    /// Source separation sensitivity.
+    #[serde(default = "default_multi_source_threshold")]
+    pub multi_source_threshold: f32,
+
+    /// Preview surround output as binaural stereo.
+    #[serde(default = "default_binaural_preview")]
+    pub binaural_preview: bool,
+
+    /// Match rendered output loudness to stereo input.
+    #[serde(default = "default_auto_gain_enabled")]
+    pub auto_gain_enabled: bool,
+
+    /// Maximum auto gain correction.
+    #[serde(default = "default_auto_gain_max_db")]
+    pub auto_gain_max_db: f32,
+
+    /// Auto gain transition time.
+    #[serde(default = "default_auto_gain_smoothing_ms")]
+    pub auto_gain_smoothing_ms: f32,
 }
 
 impl Default for UpmixerPluginParams {
@@ -438,6 +486,12 @@ impl Default for UpmixerPluginParams {
             bypass_transient_detection: default_bypass_transient_detection(),
             bypass_all_processing: default_bypass_all_processing(),
             frequency_resolution: default_frequency_resolution(),
+            multi_source_extraction: default_multi_source_extraction(),
+            multi_source_threshold: default_multi_source_threshold(),
+            binaural_preview: default_binaural_preview(),
+            auto_gain_enabled: default_auto_gain_enabled(),
+            auto_gain_max_db: default_auto_gain_max_db(),
+            auto_gain_smoothing_ms: default_auto_gain_smoothing_ms(),
         }
     }
 }
