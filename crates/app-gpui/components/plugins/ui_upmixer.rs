@@ -71,6 +71,8 @@ pub struct UpmixerRenderState<'a> {
     pub frequency_resolution: usize,
     pub multi_source_extraction: bool,
     pub multi_source_threshold: f64,
+    pub binaural_preview: bool,
+    pub chain_autogain: bool,
     // UI state
     pub is_editing: bool,
     pub selected_param: usize,
@@ -127,6 +129,7 @@ mod param_idx {
     pub const FREQUENCY_RESOLUTION: usize = index_of(P, "frequency_resolution");
     pub const MULTI_SOURCE_EXTRACTION: usize = index_of(P, "multi_source_extraction");
     pub const MULTI_SOURCE_THRESHOLD: usize = index_of(P, "multi_source_threshold");
+    pub const BINAURAL_PREVIEW: usize = index_of(P, "binaural_preview");
 }
 
 /// Configuration menu items
@@ -1181,6 +1184,23 @@ fn render_config_diagnostic(
         .child(
             HStack::new()
                 .spacing(StackSpacing::Lg)
+                .child(render_autogain_toggle(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    "AutoGain",
+                    state.chain_autogain,
+                    theme,
+                ))
+                .child(render_diag_toggle(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    "Binaural Preview",
+                    state.binaural_preview,
+                    param_idx::BINAURAL_PREVIEW,
+                    theme,
+                ))
                 .child(render_diag_toggle(
                     d,
                     entity.clone(),
@@ -1220,6 +1240,41 @@ fn render_config_diagnostic(
                 .build(),
         )
         .build()
+}
+
+/// Render the rack-level AutoGain control in the Upmixer native view.
+fn render_autogain_toggle(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    label: &str,
+    value: bool,
+    theme: &Theme,
+) -> impl IntoElement {
+    div()
+        .flex()
+        .items_center()
+        .gap(d.gap)
+        .child(
+            div()
+                .text_size(d.text_xs)
+                .text_color(theme.text_secondary)
+                .child(label.to_string()),
+        )
+        .child(
+            Toggle::new(("upmixer-chain-autogain", plugin_idx))
+                .checked(value)
+                .label(if value { "On" } else { "Off" })
+                .style(ToggleStyle::Segmented)
+                .theme(theme.to_toggle_theme())
+                .on_change({
+                    move |_new_value, _, cx| {
+                        entity.update(cx, |state, _| {
+                            state.app.toggle_chain_autogain();
+                        });
+                    }
+                }),
+        )
 }
 
 /// Render a single diagnostic toggle with label
