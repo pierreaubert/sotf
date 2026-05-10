@@ -52,6 +52,8 @@ pub mod params;
 pub mod pareto;
 /// Algorithm registry — string name → backend.
 pub mod registry;
+/// Shared bounded scalar-objective optimizer dispatch.
+pub mod scalar;
 /// Shared optimization setup (bounds, initial guess, objective data)
 pub mod setup;
 

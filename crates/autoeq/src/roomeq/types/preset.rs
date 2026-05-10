@@ -207,7 +207,7 @@ impl SimplePresetConfig {
             multi_measurement,
             // Sane defaults for fields not exposed in Simple mode
             num_filters: 7,
-            algorithm: "autoeq:de".to_string(),
+            algorithm: "autoeq:cmaes".to_string(),
             population: 300,
             max_iter: 50_000,
             min_freq: 20.0,
@@ -239,6 +239,7 @@ mod tests {
         let config = preset.to_optimizer_config();
         assert_eq!(config.processing_mode, ProcessingMode::LowLatency);
         assert_eq!(config.loss_type, "flat");
+        assert_eq!(config.algorithm, "autoeq:cmaes");
         assert_eq!(config.num_filters, 7);
         assert!(config.target_response.is_some());
         assert!(config.schroeder_split.is_none());

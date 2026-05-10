@@ -29,7 +29,7 @@
       "description": "Optimizer configuration",
       "$ref": "#/$defs/OptimizerConfig",
       "default": {
-        "algorithm": "autoeq:de",
+        "algorithm": "autoeq:cmaes",
         "asymmetric_loss": true,
         "atolerance": 0.00001,
         "decomposed_correction": {
@@ -1756,7 +1756,7 @@
         "algorithm": {
           "description": "Optimization algorithm",
           "type": "string",
-          "default": "autoeq:de"
+          "default": "autoeq:cmaes"
         },
         "allow_delay": {
           "description": "Allow inter-speaker delay optimization",
@@ -2092,7 +2092,7 @@
           ]
         },
         "population": {
-          "description": "Population size for DE optimizer",
+          "description": "Population size for population-based optimizers",
           "type": "integer",
           "format": "uint",
           "default": 300,

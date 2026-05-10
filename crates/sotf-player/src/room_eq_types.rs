@@ -177,7 +177,7 @@ pub fn apply_simple_preset(preset: &SimplePresetConfig, config: &mut RoomEqOptim
 
     // Sane defaults for params not exposed in Simple mode
     config.num_filters = 7;
-    config.algorithm = "autoeq:de".to_string();
+    config.algorithm = "autoeq:cmaes".to_string();
     config.population = 300;
     config.max_iter = 50_000;
     config.bo_initial_samples = 0;
@@ -2285,7 +2285,7 @@ impl Default for RoomEqOptimizerConfig {
             mode: RoomEqOptimizationMode::default(),
             fir: RoomEqFirConfig::default(),
             multi_speaker_mode: MultiSpeakerMode::Combined,
-            algorithm: "autoeq:de".to_string(),
+            algorithm: "autoeq:cmaes".to_string(),
             strategy: "lshade".to_string(),
             de_f: default_de_f(),
             de_cr: default_de_cr(),

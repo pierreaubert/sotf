@@ -240,7 +240,7 @@ mod tests {
     }
 
     /// Realistic GPUI-style 2-speaker reproduction: mimics the Simple
-    /// Wizard defaults (DE optimizer, psychoacoustic + asymmetric + refine,
+    /// Wizard defaults (global optimizer, psychoacoustic + asymmetric + refine,
     /// target_response from_measurement, num_filters=7, peq_model=pk) against
     /// two non-flat curves with bass bumps. If the second speaker's
     /// optimization silently fails or hangs, both assertions below fail.

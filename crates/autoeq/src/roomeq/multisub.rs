@@ -8,6 +8,7 @@
 
 use crate::Curve;
 use crate::loss::{CrossoverType, DriverMeasurement, DriversLossData};
+use crate::optim::scalar::{ScalarOptimConfig, optimize_bounded_scalar};
 use crate::workflow::DriverOptimizationResult;
 use log::{info, warn};
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
@@ -205,14 +206,8 @@ pub fn optimize_multisub_with_allpass(
     let min_freq = config.min_freq;
     let max_freq = config.max_freq;
 
-    let objective_fn = move |params: &Array1<f64>| -> f64 {
-        multisub_allpass_loss(
-            &drivers_data_clone,
-            params.as_slice().unwrap(),
-            sample_rate,
-            min_freq,
-            max_freq,
-        )
+    let objective_fn = move |params: &[f64]| -> f64 {
+        multisub_allpass_loss(&drivers_data_clone, params, sample_rate, min_freq, max_freq)
     };
 
     // Build bounds as (lower, upper) pairs
@@ -222,17 +217,24 @@ pub fn optimize_multisub_with_allpass(
         .map(|(&l, &u)| (l, u))
         .collect();
 
-    let de_config = crate::de::DEConfigBuilder::default()
-        .maxiter(config.max_iter)
-        .seed(config.seed.unwrap_or(42))
-        .build()
-        .expect("DEConfig build should not fail");
+    let opt_result = optimize_bounded_scalar(
+        &bounds,
+        &x,
+        &ScalarOptimConfig {
+            algorithm: config.algorithm.clone(),
+            max_iter: config.max_iter,
+            population: config.population,
+            tolerance: config.tolerance,
+            atolerance: config.atolerance,
+            strategy: config.strategy.clone(),
+            seed: config.seed,
+        },
+        objective_fn,
+    )
+    .map_err(|e| format!("all-pass optimization failed: {e}"))?;
 
-    let de_result = crate::de::differential_evolution(&objective_fn, &bounds, de_config)
-        .map_err(|e| format!("DE optimization failed: {:?}", e))?;
-
-    x = de_result.x.to_vec();
-    let post_obj = de_result.fun;
+    x = opt_result.x;
+    let post_obj = opt_result.fun;
 
     info!(
         "Multi-sub all-pass optimization: pre={:.4}, post={:.4}, improvement={:.2} dB",

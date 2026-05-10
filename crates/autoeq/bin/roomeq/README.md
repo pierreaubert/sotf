@@ -143,10 +143,11 @@ freq,spl
 
 ### Algorithms
 
-- `nlopt:cobyla`: COBYLA (Constrained Optimization BY Linear Approximations)
-- `autoeq:de`: Differential Evolution (global optimizer)
-- `nlopt:isres`: Improved Stochastic Ranking Evolution Strategy
-- Other NLopt and metaheuristics algorithms supported by autoeq
+- `autoeq:cmaes`: CMA-ES (default global optimizer)
+- `autoeq:de`: Differential Evolution
+- `autoeq:cobyla`: COBYLA (Constrained Optimization BY Linear Approximations)
+- `autoeq:isres`: Improved Stochastic Ranking Evolution Strategy
+- Other AutoEQ and metaheuristics algorithms supported by autoeq
 
 ### Loss Types
 
@@ -421,7 +422,7 @@ For multi-seat optimization, you need measurements of each subwoofer at each sea
     "sub": "measurements/subwoofer.csv"
   },
   "optimizer": {
-    "algorithm": "autoeq:de",
+    "algorithm": "autoeq:cmaes",
     "num_filters": 10,
     "refine": true,
 
@@ -452,7 +453,7 @@ For multi-seat optimization, you need measurements of each subwoofer at each sea
     "right": "measurements/right_bookshelf.csv"
   },
   "optimizer": {
-    "algorithm": "autoeq:de",
+    "algorithm": "autoeq:cmaes",
     "num_filters": 12,
     "refine": true,
 

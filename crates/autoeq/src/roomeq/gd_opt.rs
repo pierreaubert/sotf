@@ -11,9 +11,9 @@
 //!
 //! References: `crates/autoeq/docs/gd_opt_v2_plan.md` §3.
 
+use crate::optim::scalar::{ScalarOptimConfig, optimize_bounded_scalar};
 use crate::roomeq::types::{MixedModeConfig, ProcessingMode};
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
-use math_audio_optimisation::{DEConfigBuilder, differential_evolution};
 use ndarray::Array1;
 use num_complex::Complex64;
 use std::f64::consts::PI;
@@ -39,11 +39,15 @@ pub struct GdOptConfig {
     pub ap_max_q: f64,
     /// Whether to optimise polarity per channel.
     pub optimize_polarity: bool,
-    /// DE maximum iterations.
+    /// Optimizer algorithm.
+    pub algorithm: String,
+    /// DE mutation strategy when `algorithm` resolves to `autoeq:de`.
+    pub strategy: String,
+    /// Optimizer maximum iteration/evaluation budget.
     pub max_iter: usize,
-    /// DE population size multiplier.
+    /// Optimizer population size.
     pub popsize: usize,
-    /// DE convergence tolerance.
+    /// Optimizer convergence tolerance.
     pub tol: f64,
     /// Optional seed for reproducibility.
     pub seed: Option<u64>,
@@ -60,6 +64,8 @@ impl Default for GdOptConfig {
             ap_min_q: 0.3,
             ap_max_q: 10.0,
             optimize_polarity: true,
+            algorithm: "autoeq:cmaes".to_string(),
+            strategy: "lshade".to_string(),
             max_iter: 2000,
             popsize: 20,
             tol: 1e-8,
@@ -339,37 +345,29 @@ pub fn optimize_group_delay(
     // Build bounds for DE
     let bounds = build_bounds(n_ch, config);
 
-    // Run DE
-    let de_config = {
-        let mut builder = DEConfigBuilder::new()
-            .maxiter(config.max_iter)
-            .popsize(config.popsize)
-            .tol(config.tol);
-        if let Some(seed) = config.seed {
-            builder = builder.seed(seed);
-        }
-        builder
-            .build()
-            .map_err(|e| format!("DE config error: {e}"))?
-    };
-
     let channels_ref = channels;
     let band_indices_ref = &band_indices;
     let config_ref = config;
 
-    let loss_fn = |x: &Array1<f64>| -> f64 {
-        gd_loss(
-            channels_ref,
-            x.as_slice().unwrap(),
-            band_indices_ref,
-            config_ref,
-        )
-    };
+    let loss_fn = |x: &[f64]| -> f64 { gd_loss(channels_ref, x, band_indices_ref, config_ref) };
 
-    let report = differential_evolution(&loss_fn, &bounds, de_config)
-        .map_err(|e| format!("DE failed: {e}"))?;
+    let initial = identity_params.clone();
+    let report = optimize_bounded_scalar(
+        &bounds,
+        &initial,
+        &ScalarOptimConfig {
+            algorithm: config.algorithm.clone(),
+            max_iter: config.max_iter,
+            population: config.popsize,
+            tolerance: config.tol,
+            atolerance: config.tol,
+            strategy: config.strategy.clone(),
+            seed: config.seed,
+        },
+        loss_fn,
+    )?;
 
-    let best_params = report.x.as_slice().unwrap();
+    let best_params = report.x.as_slice();
 
     // Compute post-optimisation sum GD RMS
     let sum_gd_post_rms_ms = compute_sum_gd_rms(channels, best_params, &band_indices, config);
@@ -1641,6 +1639,8 @@ mod tests {
             ap_min_q: 0.3,
             ap_max_q: 10.0,
             optimize_polarity: false,
+            algorithm: "autoeq:de".to_string(),
+            strategy: "lshade".to_string(),
             max_iter: 5000,
             popsize: 30,
             tol: 1e-12,
@@ -1719,6 +1719,8 @@ mod tests {
             ap_min_q: 0.3,
             ap_max_q: 10.0,
             optimize_polarity: false,
+            algorithm: "autoeq:de".to_string(),
+            strategy: "lshade".to_string(),
             max_iter: 4000,
             popsize: 25,
             tol: 1e-10,

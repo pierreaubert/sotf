@@ -520,7 +520,7 @@ Controls the optimization algorithm, constraints, and advanced features.
   "optimizer": {
     "mode": "iir",
     "loss_type": "flat",
-    "algorithm": "autoeq:de",
+    "algorithm": "autoeq:cmaes",
     "num_filters": 7,
     "min_q": 0.5,
     "max_q": 6.0,
@@ -549,7 +549,7 @@ Controls the optimization algorithm, constraints, and advanced features.
 | `mixed_phase` | object | - | Mixed-phase correction config (when processing_mode is `"mixed_phase"`) |
 | `loss_type` | string | `"flat"` | Loss function: `"flat"`, `"score"`, or `"epa"` (see [Loss Types](#loss-types) and [EPA Configuration](#epa-configuration)) |
 | `epa_config` | object | - | Tuning knobs for the EPA psychoacoustic loss (consulted for any `loss_type`; required only when you want to override defaults). See [EPA Configuration](#epa-configuration) |
-| `algorithm` | string | `"autoeq:de"` | Optimization algorithm |
+| `algorithm` | string | `"autoeq:cmaes"` | Optimization algorithm |
 | `num_filters` | integer | `7` | Number of PEQ filters per channel |
 | `min_q` | number | `0.5` | Minimum Q factor |
 | `max_q` | number | `6.0` | Maximum Q factor |
@@ -558,7 +558,7 @@ Controls the optimization algorithm, constraints, and advanced features.
 | `min_freq` | number (Hz) | `20.0` | Minimum frequency |
 | `max_freq` | number (Hz) | `1600.0` | Maximum frequency |
 | `max_iter` | integer | `50000` | Maximum optimization iterations |
-| `population` | integer | `50` | Population size for DE optimizer |
+| `population` | integer | `50` | Population size for population-based optimizers |
 | `peq_model` | string | `"pk"` | PEQ model type |
 | `seed` | integer | - | Random seed for reproducible results |
 | `refine` | boolean | `true` | Enable hybrid two-stage optimization (DE global + COBYLA local) |
@@ -585,7 +585,8 @@ Controls the optimization algorithm, constraints, and advanced features.
 
 | Algorithm | Description |
 |-----------|-------------|
-| `autoeq:de` | Differential Evolution (default global optimizer) |
+| `autoeq:cmaes` | CMA-ES (default global optimizer) |
+| `autoeq:de` | Differential Evolution |
 | `cobyla` | COBYLA (Constrained Optimization BY Linear Approximations) |
 | `de` | Bare DE alias |
 | `nlopt:cobyla` | NLopt COBYLA variant |
@@ -1421,7 +1422,7 @@ freq,spl,phase
   },
   "optimizer": {
     "num_filters": 7,
-    "algorithm": "autoeq:de",
+    "algorithm": "autoeq:cmaes",
     "max_iter": 50000,
     "min_freq": 20.0,
     "max_freq": 1600.0
@@ -1460,7 +1461,7 @@ freq,spl,phase
   },
   "optimizer": {
     "num_filters": 7,
-    "algorithm": "autoeq:de",
+    "algorithm": "autoeq:cmaes",
     "max_iter": 50000,
     "min_freq": 20.0,
     "max_freq": 1600.0

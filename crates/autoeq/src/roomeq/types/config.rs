@@ -2213,7 +2213,7 @@ pub struct OptimizerConfig {
     /// Maximum number of iterations
     #[serde(default = "default_max_iter")]
     pub max_iter: usize,
-    /// Population size for DE optimizer
+    /// Population size for population-based optimizers
     #[serde(default = "default_population")]
     pub population: usize,
     /// PEQ model (e.g. "pk", "ls-pk-hs", "free")
@@ -2327,7 +2327,7 @@ fn default_loss_type() -> String {
     "flat".to_string()
 }
 fn default_algorithm() -> String {
-    "autoeq:de".to_string()
+    "autoeq:cmaes".to_string()
 }
 fn default_strategy() -> String {
     "lshade".to_string()
@@ -2951,6 +2951,12 @@ mod tests {
         );
         assert_eq!(dc.schroeder_freq, 250.0);
         assert_eq!(dc.steady_state_weight, 0.4);
+    }
+
+    #[test]
+    fn test_optimizer_config_default_algorithm_is_cmaes() {
+        let config = OptimizerConfig::default();
+        assert_eq!(config.algorithm, "autoeq:cmaes");
     }
 
     #[test]
