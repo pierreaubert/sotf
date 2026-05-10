@@ -299,6 +299,59 @@ fn test_search_library_integration() {
 }
 
 #[test]
+fn test_search_library_supplements_non_empty_fts_results() {
+    let (_temp_dir, db_path) = fixtures::temp_database();
+    let mut db = MusicDatabase::open_for_testing(&db_path).unwrap();
+
+    let db_album = sotf_audio_player::Album {
+        title: "Game Theory".to_string(),
+        tracks: vec![sotf_audio_player::Track {
+            path: fixtures::get_demo_file("rock.wav"),
+            title: Some("Opening Move".to_string()),
+            artist: Some("Indexed Artist".to_string()),
+            album_artist: Some("Indexed Artist".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    db.save_albums(&[db_album]).expect("Failed to save album");
+
+    let mut library = MusicLibrary::with_custom_database_for_testing(&db_path).unwrap();
+    library
+        .load_from_database()
+        .expect("Failed to load from database");
+    library.albums.push(sotf_audio_player::Album {
+        title: "Game of Thrones".to_string(),
+        tracks: vec![sotf_audio_player::Track {
+            path: fixtures::get_demo_file("classical.wav"),
+            title: Some("Main Title".to_string()),
+            artist: Some("Ramin Djawadi".to_string()),
+            album_artist: Some("Ramin Djawadi".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+
+    let thrones_results = library.search_albums("thrones");
+    assert_eq!(thrones_results.len(), 1);
+    assert_eq!(thrones_results[0].title, "Game of Thrones");
+
+    let game_results = library.search_albums("game");
+    let game_titles: Vec<_> = game_results
+        .iter()
+        .map(|album| album.title.as_str())
+        .collect();
+    assert!(
+        game_titles.contains(&"Game of Thrones"),
+        "expected in-memory fallback match in {game_titles:?}"
+    );
+    assert!(
+        game_titles.contains(&"Game Theory"),
+        "expected FTS match in {game_titles:?}"
+    );
+}
+
+#[test]
 fn test_scan_specific_file_formats() {
     fixtures::ensure_demo_files_exist();
 

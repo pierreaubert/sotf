@@ -129,6 +129,40 @@ impl Player {
         Ok(())
     }
 
+    /// Switch the current engine to another compatible source without tearing
+    /// down the output stream. This keeps manual queue jumps from taking the
+    /// harsher stop/load/start path used when the engine format must change.
+    pub fn switch_to_source_at(
+        &mut self,
+        source: AudioSource,
+        plugins: Vec<PluginConfig>,
+        output_channels: usize,
+        output_device: Option<String>,
+        position: Option<f64>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(config) = &self.saved_config
+            && (config.output_channels != output_channels || config.output_device != output_device)
+        {
+            return Err("Smooth source switch requires the same output configuration".into());
+        }
+
+        self.saved_config = Some(SavedPlaybackConfig {
+            source: source.clone(),
+            plugins: plugins.clone(),
+            output_channels,
+            output_device,
+            last_position_secs: position.unwrap_or(0.0),
+        });
+        self.restart_count = 0;
+        self.engine_restarted_flag = false;
+        self.engine_fatal_flag = false;
+
+        self.manager.update_plugin_chain(plugins)?;
+        self.manager.switch_source_at(source, position)?;
+
+        Ok(())
+    }
+
     pub fn update_plugins(
         &mut self,
         plugins: Vec<PluginConfig>,

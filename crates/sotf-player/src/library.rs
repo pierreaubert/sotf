@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{
     Arc,
@@ -1388,84 +1388,96 @@ impl MusicLibrary {
         Ok((total_tracks, scanned_tracks))
     }
 
-    /// Search albums with fuzzy matching across artist, album title, and track titles
-    /// Uses FTS5 full-text search for fast prefix matching
-    /// FTS index is synced after each library scan
+    /// Search albums with fuzzy matching across artist, album title, and track titles.
+    /// Uses FTS5 for fast prefix matching, then supplements it with in-memory
+    /// substring matching so stale or narrower FTS results don't hide obvious matches.
     pub fn search_albums(&self, query: &str) -> Vec<&Album> {
         if query.is_empty() {
             return self.albums.iter().collect();
         }
 
         let mut results = Vec::new();
+        let mut result_ids = HashSet::new();
 
         // Use FTS5 search if database is available
         if let Some(db) = &self.db {
             if let Ok(album_ids) = db.search_library(query) {
-                if !album_ids.is_empty() {
-                    results = self
-                        .albums
-                        .iter()
-                        .filter(|album| {
-                            if let Some(id) = album.id {
-                                album_ids.contains(&id)
-                            } else {
-                                false
-                            }
-                        })
-                        .collect();
+                for album_id in album_ids {
+                    if !result_ids.insert(album_id) {
+                        continue;
+                    }
+
+                    if let Some(album) = self.albums.iter().find(|album| album.id == Some(album_id))
+                    {
+                        results.push(album);
+                    }
                 }
             }
         }
 
-        // Fallback to in-memory search if no results found via DB
+        // Supplement with in-memory search.
         // This handles cases where:
         // 1. Database is not available (e.g. tests, or initialization failed)
         // 2. FTS index is out of sync or empty
         // 3. Search query matches something not indexed or FTS is too strict (e.g. substring)
-        if results.is_empty() && !query.is_empty() {
-            let query_lower = query.to_lowercase();
-            results = self
-                .albums
+        let query_lower = query.to_lowercase();
+        for album in &self.albums {
+            if !Self::album_matches_search_query(album, &query_lower) {
+                continue;
+            }
+
+            if let Some(id) = album.id {
+                if result_ids.contains(&id) {
+                    continue;
+                }
+                result_ids.insert(id);
+            } else if results
                 .iter()
-                .filter(|album| {
-                    // Match album title
-                    if album.title.to_lowercase().contains(&query_lower) {
-                        return true;
-                    }
-                    // Match album artist
-                    if album.artist().to_lowercase().contains(&query_lower) {
-                        return true;
-                    }
-                    // Match track titles, artists, and filenames
-                    for track in &album.tracks {
-                        if let Some(title) = &track.title {
-                            if title.to_lowercase().contains(&query_lower) {
-                                return true;
-                            }
-                        }
-                        // Match track artist
-                        if let Some(artist) = &track.artist {
-                            if artist.to_lowercase().contains(&query_lower) {
-                                return true;
-                            }
-                        }
-                        // Match track filename (for files with no metadata tags)
-                        if let Some(filename) = track.path.file_stem() {
-                            if filename
-                                .to_string_lossy()
-                                .to_lowercase()
-                                .contains(&query_lower)
-                            {
-                                return true;
-                            }
-                        }
-                    }
-                    false
-                })
-                .collect();
+                .any(|existing| std::ptr::eq::<Album>(*existing, album))
+            {
+                continue;
+            }
+
+            results.push(album);
         }
 
         results
+    }
+
+    fn album_matches_search_query(album: &Album, query_lower: &str) -> bool {
+        // Match album title
+        if album.title.to_lowercase().contains(query_lower) {
+            return true;
+        }
+        // Match album artist
+        if album.artist().to_lowercase().contains(query_lower) {
+            return true;
+        }
+        // Match track titles, artists, and filenames
+        for track in &album.tracks {
+            if let Some(title) = &track.title {
+                if title.to_lowercase().contains(query_lower) {
+                    return true;
+                }
+            }
+            // Match track artist
+            if let Some(artist) = &track.artist {
+                if artist.to_lowercase().contains(query_lower) {
+                    return true;
+                }
+            }
+            // Match track filename (for files with no metadata tags)
+            if let Some(filename) = track.path.file_stem() {
+                if filename
+                    .to_string_lossy()
+                    .to_lowercase()
+                    .contains(query_lower)
+                {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     /// Update directory scan times from database

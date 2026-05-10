@@ -10,6 +10,7 @@
 ### UI
 
 - Added skins for plugins that can have distinct looks: Graphite / Studio Cream / Brutalist
+- In stereo mode we plot the width dynamically. Replaced it by peaks for 5.0 and larger.
 
 ### RoomEQ
 
@@ -26,10 +27,12 @@
 
 - fix: sliders behaviour
 - fix: spacing between sliders that prevented to level meters to be fully visible
+- fix; now search both tags and in-memory information, deduplication is done.
 
 ### UI Plugins
 
 - Hw interface UI was not activated properly
+
 
 # 0.6.1 -> 0.6.5
 
