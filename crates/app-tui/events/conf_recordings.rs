@@ -1023,10 +1023,25 @@ fn spawn_bass_anchor_capture(app: &mut App) {
     };
 
     let bass_freq_hz = app.recording.bass_anchor_capture.bass_freq_hz;
-    let bass_cycles = app.recording.bass_anchor_capture.bass_cycles;
+    let bass_duration_s = app.recording.bass_anchor_capture.bass_duration_s;
+    let fade_ms = app.recording.bass_anchor_capture.fade_ms;
+    let num_windows = app.recording.bass_anchor_capture.num_windows;
     let silence_ms = app.recording.bass_anchor_capture.silence_duration_ms;
     let sample_rate = app.recording.bass_anchor_capture.sample_rate;
     let input_channel = app.recording.bass_anchor_capture.input_channel;
+    let loopback_input_channel =
+        app.recording
+            .recording_config
+            .ctc_loopback_input_channel
+            .and_then(|c| match u16::try_from(c) {
+                Ok(v) => Some(v),
+                Err(_) => {
+                    log::warn!(
+                        "Loopback input channel {c} exceeds u16::MAX — bass anchor will run without loopback reference",
+                    );
+                    None
+                }
+            });
     let signal_level_db = app.recording.signal_level_db;
     let output_device = Some(app.recording.playback_config.device_name.clone());
     let input_device = Some(app.recording.recording_config.device_name.clone());
@@ -1050,11 +1065,14 @@ fn spawn_bass_anchor_capture(app: &mut App) {
             &channel_names,
             sample_rate,
             bass_freq_hz,
-            bass_cycles,
+            bass_duration_s,
+            fade_ms,
+            num_windows,
             silence_ms,
             output_device.as_deref(),
             input_device.as_deref(),
             input_channel,
+            loopback_input_channel,
             &wav_path,
             signal_level_db,
             None,
@@ -2278,13 +2296,19 @@ pub(crate) fn save_recordings(app: &mut App) {
             let n = app.recording.recording_config.num_positions.max(1);
             if n > 1 { Some(n) } else { None }
         },
+        bass_probe_freq_hz: Some(app.recording.bass_anchor_capture.bass_freq_hz),
+        bass_probe_duration_s: Some(app.recording.bass_anchor_capture.bass_duration_s),
         ..Default::default()
     };
 
     let ctc = ctc_measurements.map(|measurements| {
         let raw = ctc_reference_sweep.is_some();
         autoeq::roomeq::CtcConfig {
-            enabled: true,
+            // Off by default — binaural CTC is opt-in. The stanza is
+            // written so the user can flip it on later without
+            // re-recording, but roomeq must not run the CTC solver
+            // until they do.
+            enabled: false,
             matrix_source: if raw { "raw_sweep" } else { "measured" }.to_string(),
             measurements: Some(measurements),
             reference_sweep: ctc_reference_sweep,
@@ -2306,9 +2330,11 @@ pub(crate) fn save_recordings(app: &mut App) {
             ..Default::default()
         }
     });
-    let system = ctc.as_ref().filter(|ctc| ctc.enabled).and_then(|_| {
-        ctc_system_config_for_speaker_names(speakers.keys().map(String::as_str), None)
-    });
+    // Always emit the system (logical role) map from the recorded
+    // speakers, independent of CTC enable state. roomeq uses it to
+    // interpret the layout (LFE/sub detection, bass-management
+    // routing). Flipping CTC on later does not require re-recording.
+    let system = ctc_system_config_for_speaker_names(speakers.keys().map(String::as_str), None);
 
     let room_config = RoomConfig {
         version: "1.1.0".to_string(),

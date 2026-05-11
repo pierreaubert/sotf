@@ -406,6 +406,7 @@ pub fn run_multi_speaker_optimization(
             group_delay: None,
             auto_optimizer: None,
             smoothness_penalty: None,
+            from_measurement_slope_override: None,
         },
         recording_config: None,
         ctc: None,
@@ -587,6 +588,7 @@ pub fn optimizer_config_from_args(args: &autoeq::Args) -> OptimizerConfig {
         group_delay: None,
         auto_optimizer: None,
         smoothness_penalty: None,
+        from_measurement_slope_override: None,
     }
 }
 

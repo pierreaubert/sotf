@@ -963,6 +963,253 @@ pub fn extract_tone_phase(signal: &[f32], freq_hz: f32, sample_rate: u32) -> Ton
     }
 }
 
+/// Generate a steady-state sinusoidal tone with linear-Hann fade in/out.
+///
+/// Used by the recording wizard's BassAnchor step (GD-Opt v2 Phase
+/// GD-1e) for steady-state lock-in phase extraction. Plays a continuous
+/// sine for `duration_s` seconds with `fade_ms` half-Hann fades at the
+/// start and end so the speaker doesn't see a transient. The total
+/// length is exactly `round(duration_s · sample_rate)` samples.
+///
+/// # Arguments
+/// * `freq_hz`     - Tone frequency in Hz.
+/// * `duration_s`  - Total tone length in seconds (≥ `2 · fade_ms`).
+/// * `fade_ms`     - Fade-in / fade-out length in milliseconds.
+/// * `sample_rate` - Sample rate in Hz.
+/// * `amp`         - Peak amplitude in the steady portion (≤ 1.0).
+///
+/// # Returns
+/// A vector of `f32` samples; empty when any input is zero or the
+/// duration is shorter than two fades.
+pub fn gen_steady_tone(
+    freq_hz: f32,
+    duration_s: f32,
+    fade_ms: f32,
+    sample_rate: u32,
+    amp: f32,
+) -> Vec<f32> {
+    if freq_hz <= 0.0 || duration_s <= 0.0 || sample_rate == 0 || amp <= 0.0 {
+        return Vec::new();
+    }
+    let n = (duration_s * sample_rate as f32).round() as usize;
+    let fade_n = ((fade_ms.max(0.0) / 1000.0) * sample_rate as f32).round() as usize;
+    if n < 2 * fade_n.max(1) {
+        return Vec::new();
+    }
+    let omega = 2.0 * PI * freq_hz / sample_rate as f32;
+    (0..n)
+        .map(|k| {
+            let env = if fade_n == 0 {
+                1.0
+            } else if k < fade_n {
+                // Half-Hann fade-in: 0 → 1 across `fade_n` samples.
+                0.5 * (1.0 - (PI * k as f32 / fade_n as f32).cos())
+            } else if k >= n - fade_n {
+                // Half-Hann fade-out: 1 → 0 across the last `fade_n`.
+                let kk = (n - 1 - k) as f32;
+                0.5 * (1.0 - (PI * kk / fade_n as f32).cos())
+            } else {
+                1.0
+            };
+            clip(amp * env * (omega * k as f32).sin())
+        })
+        .collect()
+}
+
+/// Per-window lock-in phasor at `freq_hz` produced by
+/// [`tone_phase_phasors`]. Carries the raw `(re, im)` from
+/// `single_bin_dft` plus the `start` index in the parent signal so a
+/// caller can correlate two streams sub-window for sub-window.
+#[derive(Debug, Clone, Copy)]
+pub struct TonePhasorWindow {
+    pub re: f64,
+    pub im: f64,
+    pub start: usize,
+    pub len: usize,
+}
+
+/// Collect per-window single-bin lock-in phasors at `freq_hz`. Drops
+/// the first and last `len/8` samples (settling around the fades),
+/// splits the remaining steady portion into ≥ 1 sub-windows snapped to
+/// integer cycles, and runs `single_bin_dft` on each.
+///
+/// Minimum-resolvable frequency on a buffer of length `n` is
+/// `8 · num_windows · freq_hz ≤ sample_rate`; below that, the helper
+/// merges sub-windows so each still spans ≥ 1 full cycle (down to a
+/// single sub-window) — this keeps the per-bin DFT leakage-free
+/// instead of returning falsely-confident sub-cycle estimates.
+///
+/// Returns an empty vector for degenerate inputs (signal too short,
+/// `num_windows == 0`, `freq_hz <= 0`, fewer than one cycle even after
+/// merging).
+pub fn tone_phase_phasors(
+    signal: &[f32],
+    freq_hz: f32,
+    sample_rate: u32,
+    num_windows: usize,
+) -> Vec<TonePhasorWindow> {
+    if signal.len() < 8 || freq_hz <= 0.0 || sample_rate == 0 || num_windows == 0 {
+        return Vec::new();
+    }
+    let settle = signal.len() / 8;
+    let steady_start = settle;
+    let steady_end = signal.len() - settle;
+    if steady_end <= steady_start + 1 {
+        return Vec::new();
+    }
+    let steady_len = steady_end - steady_start;
+    let samples_per_cycle = (sample_rate as f64 / freq_hz as f64).round() as usize;
+    if samples_per_cycle < 2 || steady_len < samples_per_cycle {
+        // Less than one full cycle of the target frequency fits in the
+        // analysis region — single-bin DFT below one cycle has severe
+        // spectral leakage with falsely-low circular-std (correlated
+        // bias across sub-windows). Refuse to produce results rather
+        // than mislead the caller.
+        return Vec::new();
+    }
+    // Aim for `num_windows` sub-windows but never split below one
+    // full cycle. Effective count is the largest k in [1, num_windows]
+    // such that floor(steady_len / k) >= samples_per_cycle.
+    let mut effective_windows = num_windows;
+    while effective_windows > 1 && steady_len / effective_windows < samples_per_cycle {
+        effective_windows -= 1;
+    }
+    let raw_win_len = steady_len / effective_windows;
+    let win_len = (raw_win_len / samples_per_cycle) * samples_per_cycle;
+    if win_len < samples_per_cycle {
+        return Vec::new();
+    }
+
+    let mut out = Vec::with_capacity(effective_windows);
+    for w in 0..effective_windows {
+        let start = steady_start + w * win_len;
+        let end = start + win_len;
+        if end > signal.len() {
+            break;
+        }
+        let (re, im) = single_bin_dft(&signal[start..end], freq_hz, sample_rate, start);
+        out.push(TonePhasorWindow {
+            re,
+            im,
+            start,
+            len: win_len,
+        });
+    }
+    out
+}
+
+/// Sub-window lock-in phase extraction.
+///
+/// Wraps [`tone_phase_phasors`] and aggregates the per-window
+/// phasors into:
+/// - `phase_deg`     — circular mean of per-window phase, in degrees,
+///   wrapped to (−180°, 180°]. Computed from `atan2(ΣQᵢ, ΣIᵢ)` where the
+///   I/Q come from each window with a shared `k_offset` so the phases
+///   share a common time reference.
+/// - `magnitude`     — mean of `√(I² + Q²) / window_len` across windows.
+/// - `stability_deg` — circular standard deviation of per-window phase
+///   (degrees). Equivalent to `√(−2·ln(R̄))` in radians, converted to
+///   degrees, where `R̄` is the mean resultant length over all windows.
+///   A stable lock returns ≈ 0; modal contamination or low SNR pushes
+///   this above the 20° advisory threshold.
+///
+/// Returns `phase_deg = 0`, `magnitude = 0`, `stability_deg = 0` when
+/// inputs are degenerate (see [`tone_phase_phasors`] for the rules).
+pub fn extract_tone_phase_windowed(
+    signal: &[f32],
+    freq_hz: f32,
+    sample_rate: u32,
+    num_windows: usize,
+) -> TonePhaseResult {
+    let phasors = tone_phase_phasors(signal, freq_hz, sample_rate, num_windows);
+    aggregate_tone_phase(&phasors)
+}
+
+/// Aggregate a slice of per-window phasors into a `TonePhaseResult`.
+/// See [`extract_tone_phase_windowed`] for the semantics.
+pub fn aggregate_tone_phase(phasors: &[TonePhasorWindow]) -> TonePhaseResult {
+    let zero = TonePhaseResult {
+        phase_deg: 0.0,
+        magnitude: 0.0,
+        stability_deg: 0.0,
+    };
+    if phasors.is_empty() {
+        return zero;
+    }
+    let mut sum_re = 0.0_f64;
+    let mut sum_im = 0.0_f64;
+    let mut sum_mag = 0.0_f64;
+    let mut sum_cos = 0.0_f64;
+    let mut sum_sin = 0.0_f64;
+    for p in phasors {
+        sum_re += p.re;
+        sum_im += p.im;
+        let mag = (p.re * p.re + p.im * p.im).sqrt();
+        sum_mag += mag / p.len as f64;
+        let phase = p.im.atan2(p.re);
+        sum_cos += phase.cos();
+        sum_sin += phase.sin();
+    }
+    let n = phasors.len() as f64;
+    let phase_rad = sum_im.atan2(sum_re);
+    let mean_mag = sum_mag / n;
+    let mean_cos = sum_cos / n;
+    let mean_sin = sum_sin / n;
+    let r_bar = (mean_cos * mean_cos + mean_sin * mean_sin).sqrt().min(1.0);
+    let circ_std_rad = if r_bar > 1e-9 {
+        (-2.0 * r_bar.ln()).sqrt()
+    } else {
+        std::f64::consts::PI
+    };
+    TonePhaseResult {
+        phase_deg: phase_rad.to_degrees(),
+        magnitude: mean_mag,
+        stability_deg: circ_std_rad.to_degrees(),
+    }
+}
+
+/// Magnitude-squared coherence between two per-window phasor streams
+/// at the same frequency, in `[0, 1]`. Both streams must have the same
+/// length and matching `start` indices (use [`tone_phase_phasors`] on
+/// the same signal layout).
+///
+/// Returns:
+///   `γ² = |⟨X · conj(Y)⟩|² / (⟨|X|²⟩ · ⟨|Y|²⟩)`
+///
+/// `1.0` means the two streams' per-window phasors are perfectly
+/// linearly related (clean linkage between mic and loopback);
+/// values toward `0.0` indicate uncorrelated noise on either side.
+/// Returns `None` when the inputs disagree on length / start indices
+/// or when either stream has zero energy.
+pub fn phasor_coherence(
+    a: &[TonePhasorWindow],
+    b: &[TonePhasorWindow],
+) -> Option<f64> {
+    if a.is_empty() || a.len() != b.len() {
+        return None;
+    }
+    if !a.iter().zip(b).all(|(p, q)| p.start == q.start && p.len == q.len) {
+        return None;
+    }
+    let mut cross_re = 0.0_f64;
+    let mut cross_im = 0.0_f64;
+    let mut auto_a = 0.0_f64;
+    let mut auto_b = 0.0_f64;
+    for (p, q) in a.iter().zip(b) {
+        // X · conj(Y) = (X.re + iX.im)(Y.re - iY.im)
+        cross_re += p.re * q.re + p.im * q.im;
+        cross_im += p.im * q.re - p.re * q.im;
+        auto_a += p.re * p.re + p.im * p.im;
+        auto_b += q.re * q.re + q.im * q.im;
+    }
+    let denom = auto_a * auto_b;
+    if denom <= 0.0 {
+        return None;
+    }
+    let num = cross_re * cross_re + cross_im * cross_im;
+    Some((num / denom).clamp(0.0, 1.0))
+}
+
 /// Direct single-bin DFT evaluated with the `sin` convention:
 ///   `s[k] ≈ A · sin(ωk + φ)` → `phase = atan2(imag, real)`.
 ///
@@ -1666,5 +1913,202 @@ mod tests {
         assert_eq!(r.magnitude, 0.0);
         assert_eq!(r.phase_deg, 0.0);
         assert_eq!(r.stability_deg, 0.0);
+    }
+
+    // ----- Steady-state lock-in helpers (bass-anchor v2) -----------------
+
+    #[test]
+    fn steady_tone_length_and_fade_envelope() {
+        let sr = 48_000_u32;
+        let s = gen_steady_tone(30.0, 1.0, 50.0, sr, 0.5);
+        assert_eq!(s.len(), 48_000, "1 s @ 48 kHz must be exactly 48 000 samples");
+        // Endpoints sit on the half-Hann fade — should be zero.
+        assert!(s[0].abs() < 1e-6, "fade-in must start at zero, got {}", s[0]);
+        assert!(s[s.len() - 1].abs() < 1e-6, "fade-out must end at zero");
+        // Steady region should hit the requested amplitude (at amp=0.5).
+        let steady_start = (0.06 * sr as f32) as usize; // 60 ms in
+        let steady_end = s.len() - steady_start;
+        let peak: f32 = s[steady_start..steady_end]
+            .iter()
+            .map(|s| s.abs())
+            .fold(0.0, f32::max);
+        assert!(
+            (peak - 0.5).abs() < 0.02,
+            "steady region peak should be ≈ amp (0.5), got {peak}"
+        );
+    }
+
+    #[test]
+    fn steady_tone_rejects_invalid() {
+        assert!(gen_steady_tone(0.0, 1.0, 50.0, 48_000, 0.5).is_empty());
+        assert!(gen_steady_tone(30.0, 0.0, 50.0, 48_000, 0.5).is_empty());
+        assert!(gen_steady_tone(30.0, 1.0, 50.0, 0, 0.5).is_empty());
+        assert!(gen_steady_tone(30.0, 1.0, 50.0, 48_000, 0.0).is_empty());
+        // Duration shorter than two fades.
+        assert!(gen_steady_tone(30.0, 0.05, 50.0, 48_000, 0.5).is_empty());
+    }
+
+    #[test]
+    fn windowed_phase_recovers_pure_sin() {
+        let sr = 48_000_u32;
+        let s = gen_steady_tone(30.0, 2.0, 50.0, sr, 0.5);
+        let r = extract_tone_phase_windowed(&s, 30.0, sr, 8);
+        assert!(
+            r.phase_deg.abs() < 0.5,
+            "pure sin should give phase ≈ 0°, got {:.4}°",
+            r.phase_deg
+        );
+        assert!(r.magnitude > 0.0);
+        assert!(
+            r.stability_deg < 1.0,
+            "pure sin steady tone should give near-zero circular-std, got {:.3}°",
+            r.stability_deg
+        );
+    }
+
+    #[test]
+    fn windowed_phase_recovers_synthetic_45_degree_shift() {
+        let sr = 48_000_u32;
+        let freq = 30.0_f32;
+        let n = (sr as f32 * 2.0) as usize;
+        let omega = 2.0 * PI * freq / sr as f32;
+        let phase_shift = (45.0_f32).to_radians();
+        let fade_n = (0.05 * sr as f32) as usize;
+        let s: Vec<f32> = (0..n)
+            .map(|k| {
+                let env = if k < fade_n {
+                    0.5 * (1.0 - (PI * k as f32 / fade_n as f32).cos())
+                } else if k >= n - fade_n {
+                    let kk = (n - 1 - k) as f32;
+                    0.5 * (1.0 - (PI * kk / fade_n as f32).cos())
+                } else {
+                    1.0
+                };
+                0.5 * env * (omega * k as f32 + phase_shift).sin()
+            })
+            .collect();
+        let r = extract_tone_phase_windowed(&s, freq, sr, 8);
+        let err = (r.phase_deg - 45.0).abs();
+        assert!(
+            err < 0.5,
+            "45° shifted sin should give phase ≈ 45°, got {:.3}° (err {:.3}°)",
+            r.phase_deg,
+            err
+        );
+        assert!(r.stability_deg < 1.0);
+    }
+
+    #[test]
+    fn windowed_phase_flags_drifting_phase_as_unstable() {
+        let sr = 48_000_u32;
+        let freq = 30.0_f32;
+        let n = (sr as f32 * 2.0) as usize;
+        let omega = 2.0 * PI * freq / sr as f32;
+        // Inject a slow phase drift (linear ramp from 0 to ±90°). The
+        // circular std should rise well above the ~1° pure-tone floor.
+        let s: Vec<f32> = (0..n)
+            .map(|k| {
+                let frac = k as f32 / n as f32;
+                let drift = (PI / 2.0) * frac;
+                0.5 * (omega * k as f32 + drift).sin()
+            })
+            .collect();
+        let r = extract_tone_phase_windowed(&s, freq, sr, 8);
+        assert!(
+            r.stability_deg > 5.0,
+            "drifting-phase tone should read unstable, got circular-std {:.3}°",
+            r.stability_deg
+        );
+    }
+
+    #[test]
+    fn windowed_phase_rejects_sub_cycle_buffers() {
+        // 30 Hz @ 48 kHz → 1600 samples/cycle. A signal of 800 samples
+        // contains less than one cycle even before the /8 settle drop.
+        // The helper must refuse rather than return falsely-confident
+        // numbers.
+        let sr = 48_000_u32;
+        let n = 800; // < one cycle
+        let omega = 2.0 * PI * 30.0 / sr as f32;
+        let s: Vec<f32> = (0..n).map(|k| 0.5 * (omega * k as f32).sin()).collect();
+        let phasors = tone_phase_phasors(&s, 30.0, sr, 8);
+        assert!(
+            phasors.is_empty(),
+            "sub-cycle buffers must yield empty phasor list, got {} entries",
+            phasors.len()
+        );
+        let r = extract_tone_phase_windowed(&s, 30.0, sr, 8);
+        assert_eq!(r.magnitude, 0.0);
+        assert_eq!(r.phase_deg, 0.0);
+    }
+
+    #[test]
+    fn windowed_phase_merges_when_per_window_below_one_cycle() {
+        // 30 Hz @ 48 kHz, 2 s tone, asking for 64 windows: each raw
+        // window would be 2 s/64 = 31 ms < one cycle (33 ms). The
+        // helper must merge windows down so each spans ≥ 1 cycle and
+        // still recover phase to within ~1°.
+        let sr = 48_000_u32;
+        let s = gen_steady_tone(30.0, 2.0, 50.0, sr, 0.5);
+        let r = extract_tone_phase_windowed(&s, 30.0, sr, 64);
+        assert!(
+            r.phase_deg.abs() < 1.0,
+            "merged-window analysis should still recover ~0° phase, got {:.3}°",
+            r.phase_deg
+        );
+        assert!(r.magnitude > 0.0);
+    }
+
+    #[test]
+    fn phasor_coherence_is_one_for_identical_phasors() {
+        let sr = 48_000_u32;
+        let s = gen_steady_tone(30.0, 2.0, 50.0, sr, 0.5);
+        let p = tone_phase_phasors(&s, 30.0, sr, 8);
+        let coh = phasor_coherence(&p, &p).expect("coherent");
+        assert!(
+            (coh - 1.0).abs() < 1e-9,
+            "γ²(x, x) should be exactly 1, got {coh}"
+        );
+    }
+
+    #[test]
+    fn phasor_coherence_drops_when_one_stream_is_noise() {
+        // Mic = clean tone, loopback = uncorrelated white noise →
+        // γ² should approach 0. The previous proxy returned 1.0 in
+        // this case; the true MSC must be < 0.5.
+        use rand::{Rng, SeedableRng};
+        let sr = 48_000_u32;
+        let clean = gen_steady_tone(30.0, 2.0, 50.0, sr, 0.5);
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0xC0FFEE);
+        let noise: Vec<f32> = (0..clean.len())
+            .map(|_| rng.random_range(-0.3..0.3))
+            .collect();
+        let p_clean = tone_phase_phasors(&clean, 30.0, sr, 8);
+        let p_noise = tone_phase_phasors(&noise, 30.0, sr, 8);
+        let coh = phasor_coherence(&p_clean, &p_noise).expect("coherent");
+        assert!(
+            coh < 0.3,
+            "γ²(clean, noise) must drop well below 0.5, got {coh}"
+        );
+    }
+
+    #[test]
+    fn phasor_coherence_rejects_mismatched_lengths() {
+        let sr = 48_000_u32;
+        let s = gen_steady_tone(30.0, 2.0, 50.0, sr, 0.5);
+        let a = tone_phase_phasors(&s, 30.0, sr, 8);
+        let b = tone_phase_phasors(&s, 30.0, sr, 4);
+        assert!(phasor_coherence(&a, &b).is_none());
+    }
+
+    #[test]
+    fn windowed_phase_rejects_degenerate_inputs() {
+        let r = extract_tone_phase_windowed(&[0.1, 0.2, 0.3], 30.0, 48_000, 8);
+        assert_eq!(r.phase_deg, 0.0);
+        assert_eq!(r.magnitude, 0.0);
+        assert_eq!(r.stability_deg, 0.0);
+
+        let r = extract_tone_phase_windowed(&vec![0.1_f32; 1000], 30.0, 48_000, 0);
+        assert_eq!(r.magnitude, 0.0);
     }
 }

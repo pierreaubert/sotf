@@ -169,6 +169,14 @@ impl AutoGain {
         self.smoothing_ms
     }
 
+    #[inline]
+    pub fn is_unity_gain_stable(&self) -> bool {
+        !self.enabled
+            || ((self.current_gain_linear - 1.0).abs() < 1e-5
+                && self.gain_smoother.current().abs() < 1e-5
+                && self.gain_smoother.target().abs() < 1e-5)
+    }
+
     pub fn measure_input(&mut self, input: &[f32]) -> Result<(), String> {
         self.input_monitor.add_frames(input)?;
         self.input_monitor

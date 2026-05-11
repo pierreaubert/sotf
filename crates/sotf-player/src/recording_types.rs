@@ -266,10 +266,16 @@ impl BassAnchorCaptureStatus {
 /// `RecordingConfiguration.bass_anchor_results`.
 #[derive(Debug, Clone)]
 pub struct BassAnchorCaptureState {
-    /// Tone-burst centre frequency in Hz. Default 30.0.
+    /// Steady-state tone centre frequency in Hz. Default 30.0.
     pub bass_freq_hz: f32,
-    /// Number of cycles in the burst. Default 5.
-    pub bass_cycles: u16,
+    /// Total tone length in seconds (steady portion + fades). Default 2.0.
+    pub bass_duration_s: f32,
+    /// Half-Hann fade-in / fade-out length in milliseconds. Default 50.
+    pub fade_ms: f32,
+    /// Sub-window count for circular-mean / circular-std lock-in
+    /// analysis. More windows give a tighter variance estimate; fewer
+    /// windows tolerate shorter tones. Default 8.
+    pub num_windows: u16,
     /// Silence gap between channels in ms. Default 500.
     pub silence_duration_ms: f32,
     /// Sample rate used for the capture (Hz).
@@ -281,6 +287,8 @@ pub struct BassAnchorCaptureState {
     /// Raw analysis results. Cleared on Reset / new run.
     pub results: Option<BassAnchorResults>,
     /// Absolute path to the persisted bass-anchor WAV once captured.
+    /// Stereo (mic + loopback) when a loopback channel is configured;
+    /// mono otherwise.
     pub wav_path: Option<String>,
 }
 
@@ -288,7 +296,9 @@ impl Default for BassAnchorCaptureState {
     fn default() -> Self {
         Self {
             bass_freq_hz: 30.0,
-            bass_cycles: 5,
+            bass_duration_s: 2.0,
+            fade_ms: 50.0,
+            num_windows: 8,
             silence_duration_ms: 500.0,
             sample_rate: 48_000,
             input_channel: 0,

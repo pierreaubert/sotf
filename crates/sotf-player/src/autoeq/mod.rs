@@ -105,6 +105,8 @@ pub use multi_speaker::{
     MultiSubGroup,
     OptimizationMetadata,
     OptimizerConfig,
+    PipelineStepId,
+    PipelineStepStatus,
     PluginConfigWrapper,
     // Core types
     RoomConfig,

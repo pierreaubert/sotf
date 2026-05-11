@@ -34,14 +34,17 @@ impl PlayerView {
         let bac = rec.bass_anchor_capture.clone();
         let has_speakers = !rec.playback_config.channel_mappings.is_empty();
         let running = matches!(bac.status, BassAnchorCaptureStatus::Running { .. });
+        let loopback_channel = rec.recording_config.ctc_loopback_input_channel;
+        let loopback_hint = match loopback_channel {
+            Some(ch) => format!(" + loopback ref ch {}", ch),
+            None => String::new(),
+        };
 
         let status_line = match &bac.status {
             BassAnchorCaptureStatus::Idle => {
                 format!(
-                    "Not started — {:.0} Hz × {} cycles ({:.0} ms / channel)",
-                    bac.bass_freq_hz,
-                    bac.bass_cycles,
-                    1000.0 * bac.bass_cycles as f32 / bac.bass_freq_hz
+                    "Not started — {:.1} Hz × {:.1} s ({} sub-windows{})",
+                    bac.bass_freq_hz, bac.bass_duration_s, bac.num_windows, loopback_hint
                 )
             }
             BassAnchorCaptureStatus::Running { .. } => "Capturing bass anchor…".to_string(),
@@ -99,12 +102,23 @@ impl PlayerView {
             .child(bass_anchor_number_row(
                 cx,
                 &theme,
-                "Cycles",
-                bac.bass_cycles as f64,
+                "Duration (s)",
+                bac.bass_duration_s as f64,
+                0.5,
+                |rec, delta| {
+                    rec.bass_anchor_capture.bass_duration_s =
+                        (rec.bass_anchor_capture.bass_duration_s + delta).clamp(0.5, 10.0);
+                },
+            ))
+            .child(bass_anchor_number_row(
+                cx,
+                &theme,
+                "Sub-windows",
+                bac.num_windows as f64,
                 1.0,
                 |rec, delta| {
-                    let next = rec.bass_anchor_capture.bass_cycles as i32 + delta as i32;
-                    rec.bass_anchor_capture.bass_cycles = next.clamp(3, 12) as u16;
+                    let next = rec.bass_anchor_capture.num_windows as i32 + delta as i32;
+                    rec.bass_anchor_capture.num_windows = next.clamp(4, 16) as u16;
                 },
             ))
             .child(Text::new(status_line).size(TextSize::Sm))
@@ -121,12 +135,20 @@ impl PlayerView {
             );
             for ch in &results.channels {
                 let reliable = ch.bass_anchor_stability_deg < 20.0;
+                let lb_part = match (
+                    ch.bass_anchor_loopback_phase_deg,
+                    ch.bass_anchor_coherence,
+                ) {
+                    (Some(lb), Some(coh)) => format!(", lb {:+.1}°, γ² {:.3}", lb, coh),
+                    _ => String::new(),
+                };
                 let line = format!(
-                    "  {} — phase {:+.1}°, |mag| {:.3}, stability {:.1}°{}",
+                    "  {} — phase {:+.1}°, |mag| {:.3}, stability {:.1}°{}{}",
                     ch.channel_name,
                     ch.bass_anchor_phase_deg,
                     ch.bass_anchor_magnitude,
                     ch.bass_anchor_stability_deg,
+                    lb_part,
                     if reliable {
                         ""
                     } else {
@@ -150,10 +172,13 @@ impl PlayerView {
     pub(crate) fn start_bass_anchor_capture(&mut self, cx: &mut Context<Self>) {
         let (
             bass_freq_hz,
-            bass_cycles,
+            bass_duration_s,
+            fade_ms,
+            num_windows,
             silence_ms,
             sample_rate,
             input_channel,
+            loopback_input_channel,
             signal_level_db,
             channel_indices,
             channel_names,
@@ -180,10 +205,23 @@ impl PlayerView {
             let wav = std::path::PathBuf::from(&dir).join("bass_anchor_all_channels.wav");
             (
                 rec.bass_anchor_capture.bass_freq_hz,
-                rec.bass_anchor_capture.bass_cycles,
+                rec.bass_anchor_capture.bass_duration_s,
+                rec.bass_anchor_capture.fade_ms,
+                rec.bass_anchor_capture.num_windows,
                 rec.bass_anchor_capture.silence_duration_ms,
                 rec.bass_anchor_capture.sample_rate,
                 rec.bass_anchor_capture.input_channel,
+                rec.recording_config
+                    .ctc_loopback_input_channel
+                    .and_then(|c| match u16::try_from(c) {
+                        Ok(v) => Some(v),
+                        Err(_) => {
+                            log::warn!(
+                                "Loopback input channel {c} exceeds u16::MAX — bass anchor will run without loopback reference",
+                            );
+                            None
+                        }
+                    }),
                 rec.signal_level_db + BASS_ANCHOR_SIGNAL_BOOST_DB,
                 indices,
                 names,
@@ -220,11 +258,14 @@ impl PlayerView {
                         &channel_names,
                         sample_rate,
                         bass_freq_hz,
-                        bass_cycles,
+                        bass_duration_s,
+                        fade_ms,
+                        num_windows,
                         silence_ms,
                         out_dev.as_deref(),
                         in_dev.as_deref(),
                         input_channel,
+                        loopback_input_channel,
                         &wav_path,
                         signal_level_db,
                         Some(cancel_for_task),
@@ -237,11 +278,14 @@ impl PlayerView {
                         &channel_names,
                         sample_rate,
                         bass_freq_hz,
-                        bass_cycles,
+                        bass_duration_s,
+                        fade_ms,
+                        num_windows,
                         silence_ms,
                         out_dev.as_deref(),
                         in_dev.as_deref(),
                         input_channel,
+                        loopback_input_channel,
                         signal_level_db,
                         &wav_path,
                         cancel_for_task,

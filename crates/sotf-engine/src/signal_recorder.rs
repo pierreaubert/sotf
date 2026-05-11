@@ -1206,6 +1206,12 @@ struct PlayPerChannelOutput {
     /// Mono mic samples at `input_sr`. Length is determined by how
     /// long the playback + tail ran on the host audio system.
     recorded: Vec<f32>,
+    /// Optional parallel loopback capture (same length / sample rate
+    /// as `recorded`). Populated when the caller passed a
+    /// `loopback_input_channel`. Used by the bass-anchor lock-in path
+    /// to subtract source-side delay / clock skew from the per-channel
+    /// phase reading.
+    loopback_recorded: Option<Vec<f32>>,
     /// Sample rate the mic actually captured at (may differ from the
     /// requested playback `sample_rate` when cpal had to negotiate).
     input_sr: u32,
@@ -1414,6 +1420,7 @@ fn play_per_channel_and_record_mono(
     output_device_name: Option<&str>,
     input_device_name: Option<&str>,
     input_channel: u16,
+    loopback_input_channel: Option<u16>,
     log_tag: &str,
     cancel: Option<&CancelFlag>,
 ) -> Result<PlayPerChannelOutput, String> {
@@ -1516,7 +1523,17 @@ fn play_per_channel_and_record_mono(
             .ok_or_else(|| format!("[{log_tag}] No default input device available"))?
     };
 
-    let min_input_ch = (input_channel as usize) + 1;
+    if let Some(lb) = loopback_input_channel
+        && lb == input_channel
+    {
+        return Err(format!(
+            "[{log_tag}] Loopback input channel {lb} must differ from mic input channel {input_channel}"
+        ));
+    }
+
+    let min_input_ch = (input_channel as usize)
+        .max(loopback_input_channel.map(|c| c as usize).unwrap_or(0))
+        + 1;
     let default_input_config = input_device
         .default_input_config()
         .map_err(|e| format!("[{log_tag}] Failed to get default input config: {}", e))?;
@@ -1559,8 +1576,24 @@ fn play_per_channel_and_record_mono(
         sample_rate: input_sr,
         buffer_size: cpal::BufferSize::Default,
     };
-    let recorded_samples: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
-    let recorded_clone = Arc::clone(&recorded_samples);
+    // Mic + loopback are pushed under the SAME Mutex so a callback can
+    // never advance one stream while the other waits — downstream code
+    // (especially `analyze_bass_anchor_recording`) relies on
+    // `mic.len() == loopback.len()` to slice per-channel offsets in
+    // both with the same indices.
+    //
+    // Pre-allocate enough capacity to cover the playback duration plus
+    // the 0.5 s settle tail at the host's input rate; that keeps every
+    // realloc out of the cpal callback.
+    let expected_input_samples =
+        ((total_frames as f64 * input_sr as f64 / sample_rate as f64) as usize)
+            + (input_sr as usize / 2);
+    let capture_buffers: Arc<Mutex<(Vec<f32>, Option<Vec<f32>>)>> = Arc::new(Mutex::new((
+        Vec::with_capacity(expected_input_samples),
+        loopback_input_channel.map(|_| Vec::with_capacity(expected_input_samples)),
+    )));
+    let capture_clone = Arc::clone(&capture_buffers);
+    let loopback_ch_idx = loopback_input_channel.map(|c| c as usize);
     let input_ch_idx = input_channel as usize;
     let hw_ch = hw_input_ch;
 
@@ -1569,10 +1602,27 @@ fn play_per_channel_and_record_mono(
         .build_input_stream(
             &input_config,
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                let mut recorded = recorded_clone.lock().unwrap();
+                let mut guard = capture_clone.lock().unwrap();
+                let (recorded, loopback_opt) = &mut *guard;
                 for frame in data.chunks(hw_ch) {
-                    if input_ch_idx < frame.len() {
-                        recorded.push(frame[input_ch_idx]);
+                    if input_ch_idx >= frame.len() {
+                        continue;
+                    }
+                    let mic_sample = frame[input_ch_idx];
+                    let lb_sample = match loopback_ch_idx {
+                        Some(idx) if idx < frame.len() => Some(frame[idx]),
+                        Some(_) => None,
+                        None => None,
+                    };
+                    // Only push when we have BOTH samples (or no
+                    // loopback configured) so the two vectors stay
+                    // exactly in lock-step.
+                    if loopback_opt.is_some() && lb_sample.is_none() {
+                        continue;
+                    }
+                    recorded.push(mic_sample);
+                    if let (Some(loopback), Some(s)) = (loopback_opt.as_mut(), lb_sample) {
+                        loopback.push(s);
                     }
                 }
             },
@@ -1621,7 +1671,7 @@ fn play_per_channel_and_record_mono(
             break;
         }
         let played = playback_cursor.load(AtomicOrdering::Relaxed);
-        let count = recorded_samples.lock().unwrap().len();
+        let count = capture_buffers.lock().unwrap().0.len();
         if count == last_count && count > 0 {
             stable += 1;
             if stable >= 3 && played >= playback.len() {
@@ -1651,7 +1701,10 @@ fn play_per_channel_and_record_mono(
         return Err(CANCELLED_ERR.to_string());
     }
 
-    let recorded = recorded_samples.lock().unwrap().clone();
+    let (recorded, loopback_recorded) = {
+        let guard = capture_buffers.lock().unwrap();
+        (guard.0.clone(), guard.1.clone())
+    };
     log::info!(
         "[{log_tag}] Recorded {} samples ({:.2}s) at {} Hz",
         recorded.len(),
@@ -1667,8 +1720,29 @@ fn play_per_channel_and_record_mono(
         ));
     }
 
+    if let Some(ref lb) = loopback_recorded {
+        // Mic and loopback are pushed in lock-step under the same
+        // Mutex; if they diverge here something deeper went wrong
+        // (callback panic, cpal frame anomaly) and we must refuse
+        // rather than silently truncate downstream.
+        if lb.len() != recorded.len() {
+            return Err(format!(
+                "[{log_tag}] Mic/loopback length mismatch: mic={}, loopback={} — capture corrupted",
+                recorded.len(),
+                lb.len()
+            ));
+        }
+        let lb_peak = lb.iter().map(|s| s.abs()).fold(0.0_f32, f32::max);
+        log::info!(
+            "[{log_tag}] Loopback captured {} samples, peak {:.4}",
+            lb.len(),
+            lb_peak
+        );
+    }
+
     Ok(PlayPerChannelOutput {
         recorded,
+        loopback_recorded,
         input_sr,
         analysis_offsets,
         analysis_signal_samples,
@@ -1863,6 +1937,7 @@ fn probe_channel_delays_core(
         output_device_name,
         input_device_name,
         input_channel,
+        None,
         "probe_channel_delays",
         cancel,
     )?;
@@ -2127,10 +2202,10 @@ pub struct BassAnchorResults {
     /// Input sample rate used for the analysis (may differ from
     /// `requested_sample_rate` if cpal negotiated a different rate).
     pub sample_rate: u32,
-    /// Centre frequency of the tone burst in Hz.
+    /// Centre frequency of the steady-state tone in Hz.
     pub bass_freq_hz: f32,
-    /// Number of cycles in the burst.
-    pub bass_cycles: u16,
+    /// Total tone length in seconds (steady portion + fades).
+    pub bass_duration_s: f32,
 }
 
 /// Per-channel bass-anchor result.
@@ -2138,27 +2213,58 @@ pub struct BassAnchorResults {
 pub struct BassAnchorChannelResult {
     pub channel_name: String,
     pub channel_index: usize,
-    /// Phase of the bass tone at the mic, sin-referenced, in degrees.
+    /// Reported phase of the bass tone, degrees in (−180°, 180°],
+    /// sin-referenced. When a loopback channel is recorded this is the
+    /// loopback-corrected acoustic phase
+    /// (`phase_mic − phase_loopback`); otherwise it is the raw mic
+    /// phase. See `bass_anchor_loopback_phase_deg` for the raw
+    /// loopback reference value.
     pub bass_anchor_phase_deg: f64,
-    /// Linear magnitude of the DFT bin at `bass_freq_hz` — SNR proxy.
+    /// Linear magnitude of the lock-in I/Q estimator at `bass_freq_hz`
+    /// on the mic — SNR proxy.
     pub bass_anchor_magnitude: f64,
-    /// Half-split phase difference in degrees — advisory threshold is
-    /// 20° (§2.8 of `docs/gd_opt_v2_plan.md`).
+    /// Circular standard deviation of phase across the sub-window
+    /// lock-in estimates, in degrees. Combines the mic-side spread
+    /// with the loopback-side spread in quadrature when a loopback
+    /// channel is present. Advisory threshold is 20° (§2.8 of
+    /// `docs/gd_opt_v2_plan.md`).
     pub bass_anchor_stability_deg: f64,
+    /// Raw loopback reference phase in degrees (sin-referenced). `None`
+    /// when no loopback channel was recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bass_anchor_loopback_phase_deg: Option<f64>,
+    /// Magnitude-squared coherence γ² ∈ [0, 1] between the mic and
+    /// loopback per-window phasors at `bass_freq_hz`:
+    ///   γ² = |⟨X · conj(Y)⟩|² / (⟨|X|²⟩ · ⟨|Y|²⟩)
+    /// γ²=1 → mic and loopback are linearly related (clean acoustic +
+    /// electronic chain); γ²→0 → mic is dominated by uncorrelated
+    /// noise. The conventional QA threshold is γ² > 0.9. `None` when
+    /// no loopback channel was recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bass_anchor_coherence: Option<f64>,
 }
 
-/// Run the bass-anchor capture across all output channels.
+/// Run the bass-anchor capture across all output channels with
+/// steady-state lock-in detection. See `run_bass_anchor_with_recording`
+/// for the persisting variant.
 ///
 /// # Arguments
 /// * `channel_indices` - Output channel indices to probe (0-based)
-/// * `channel_names` - Human-readable name for each channel
-/// * `sample_rate` - Desired playback / capture sample rate in Hz
-/// * `bass_freq_hz` - Tone-burst centre frequency
-/// * `bass_cycles` - Number of cycles per burst (default 5)
+/// * `channel_names`   - Human-readable name for each channel
+/// * `sample_rate`     - Desired playback / capture sample rate in Hz
+/// * `bass_freq_hz`    - Steady-state tone frequency in Hz
+/// * `bass_duration_s` - Tone duration in seconds (≥ 2 · `fade_ms`)
+/// * `fade_ms`         - Half-Hann fade-in / fade-out length in ms
+/// * `num_windows`     - Sub-window count for circular-mean / std analysis
 /// * `silence_duration_ms` - Silence gap between channels in ms
-/// * `output_device_name` - Playback device (None = default)
-/// * `input_device_name` - Recording device (None = default)
-/// * `input_channel` - Mic input channel index
+/// * `output_device_name`  - Playback device (None = default)
+/// * `input_device_name`   - Recording device (None = default)
+/// * `input_channel`       - Mic input channel index
+/// * `loopback_input_channel` - Optional second input that captures the
+///   raw playback signal. When `Some`, the per-channel reported phase
+///   is `phase_mic − phase_loopback`, which cancels DAC delay / cpal
+///   pre-roll / clock skew. Reusing `RecordingDeviceConfig.ctc_loopback_input_channel`
+///   keeps the wiring identical to the CTC raw-sweep path.
 #[cfg(not(target_os = "ios"))]
 #[allow(clippy::too_many_arguments)]
 pub fn run_bass_anchor(
@@ -2166,36 +2272,42 @@ pub fn run_bass_anchor(
     channel_names: &[String],
     sample_rate: u32,
     bass_freq_hz: f32,
-    bass_cycles: u16,
+    bass_duration_s: f32,
+    fade_ms: f32,
+    num_windows: u16,
     silence_duration_ms: f32,
     output_device_name: Option<&str>,
     input_device_name: Option<&str>,
     input_channel: u16,
+    loopback_input_channel: Option<u16>,
     cancel: Option<CancelFlag>,
 ) -> Result<BassAnchorResults, String> {
-    let (results, _recorded, _input_sr) = run_bass_anchor_core(
+    let (results, _recorded, _loopback, _input_sr) = run_bass_anchor_core(
         channel_indices,
         channel_names,
         sample_rate,
         bass_freq_hz,
-        bass_cycles,
+        bass_duration_s,
+        fade_ms,
+        num_windows,
         silence_duration_ms,
         output_device_name,
         input_device_name,
         input_channel,
+        loopback_input_channel,
         DEFAULT_AUXILIARY_SIGNAL_LEVEL_DB,
         cancel.as_ref(),
     )?;
     Ok(results)
 }
 
-/// Run the bass-anchor capture and persist the raw mono mic recording.
+/// Run the bass-anchor capture and persist the raw mic recording.
 ///
-/// Behaves like [`run_bass_anchor`] otherwise. The recording is a
-/// single-channel `f32` WAV at the negotiated input sample rate; the
-/// same `channel_offsets` layout as `probe_channel_delays_with_recording`
-/// applies so callers can re-analyse offline with
-/// [`analyze_bass_anchor_recording`].
+/// Behaves like [`run_bass_anchor`] otherwise. When
+/// `loopback_input_channel` is `Some`, the recording WAV is written as
+/// a 2-channel f32 file (channel 0 = mic, channel 1 = loopback) so the
+/// session can be re-analysed offline with
+/// [`analyze_bass_anchor_recording`]; otherwise it is single-channel.
 #[cfg(not(target_os = "ios"))]
 #[allow(clippy::too_many_arguments)]
 pub fn run_bass_anchor_with_recording(
@@ -2203,49 +2315,81 @@ pub fn run_bass_anchor_with_recording(
     channel_names: &[String],
     sample_rate: u32,
     bass_freq_hz: f32,
-    bass_cycles: u16,
+    bass_duration_s: f32,
+    fade_ms: f32,
+    num_windows: u16,
     silence_duration_ms: f32,
     output_device_name: Option<&str>,
     input_device_name: Option<&str>,
     input_channel: u16,
+    loopback_input_channel: Option<u16>,
     recording_wav_path: &std::path::Path,
     signal_level_db: f32,
     cancel: Option<CancelFlag>,
 ) -> Result<BassAnchorResults, String> {
-    let (results, recorded, input_sr) = run_bass_anchor_core(
+    let (results, recorded, loopback_recorded, input_sr) = run_bass_anchor_core(
         channel_indices,
         channel_names,
         sample_rate,
         bass_freq_hz,
-        bass_cycles,
+        bass_duration_s,
+        fade_ms,
+        num_windows,
         silence_duration_ms,
         output_device_name,
         input_device_name,
         input_channel,
+        loopback_input_channel,
         signal_level_db,
         cancel.as_ref(),
     )?;
 
+    let channels_out: u16 = if loopback_recorded.is_some() { 2 } else { 1 };
     let spec = WavSpec {
-        channels: 1,
+        channels: channels_out,
         sample_rate: input_sr,
         bits_per_sample: 32,
         sample_format: SampleFormat::Float,
     };
     let mut writer = WavWriter::create(recording_wav_path, spec)
         .map_err(|e| format!("Failed to create bass-anchor recording WAV: {}", e))?;
-    for &s in &recorded {
-        writer
-            .write_sample(s)
-            .map_err(|e| format!("Failed to write bass-anchor sample: {}", e))?;
+    if let Some(ref lb) = loopback_recorded {
+        if lb.len() != recorded.len() {
+            log::warn!(
+                "[run_bass_anchor_with_recording] Mic/loopback length mismatch (mic={}, lb={}) — \
+                 padding shorter side with zeros so the WAV stays interleaved. \
+                 Live result is consistent; offline re-analysis of the WAV may report \
+                 phase shifts in the padded region.",
+                recorded.len(),
+                lb.len()
+            );
+        }
+        let n = recorded.len().max(lb.len());
+        for i in 0..n {
+            let mic_sample = recorded.get(i).copied().unwrap_or(0.0);
+            let lb_sample = lb.get(i).copied().unwrap_or(0.0);
+            writer
+                .write_sample(mic_sample)
+                .map_err(|e| format!("Failed to write bass-anchor mic sample: {}", e))?;
+            writer
+                .write_sample(lb_sample)
+                .map_err(|e| format!("Failed to write bass-anchor loopback sample: {}", e))?;
+        }
+    } else {
+        for &s in &recorded {
+            writer
+                .write_sample(s)
+                .map_err(|e| format!("Failed to write bass-anchor sample: {}", e))?;
+        }
     }
     writer
         .finalize()
         .map_err(|e| format!("Failed to finalize bass-anchor WAV: {}", e))?;
     log::info!(
-        "[run_bass_anchor_with_recording] Saved {} samples ({:.2}s) to {}",
+        "[run_bass_anchor_with_recording] Saved {} samples ({:.2}s, {}ch) to {}",
         recorded.len(),
         recorded.len() as f64 / input_sr as f64,
+        channels_out,
         recording_wav_path.display()
     );
     Ok(results)
@@ -2257,25 +2401,47 @@ pub fn run_bass_anchor_with_recording(
 /// re-analysis tool.
 ///
 /// `channel_starts` lists the sample index in `recorded` where each
-/// channel's burst begins (mic-side). `burst_samples` is the burst
-/// length at the mic's sample rate.
+/// channel's tone segment begins (mic-side). `tone_samples` is the
+/// length of the steady-state tone at the mic's sample rate. When
+/// `loopback_recorded` is `Some`, the same `channel_starts` /
+/// `tone_samples` slice the loopback for per-channel reference phase
+/// extraction; the reported `bass_anchor_phase_deg` becomes
+/// `phase_mic − phase_loopback`, wrapped to (−180°, 180°].
+#[allow(clippy::too_many_arguments)]
 pub fn analyze_bass_anchor_recording(
     recorded: &[f32],
+    loopback_recorded: Option<&[f32]>,
     channel_names: &[String],
     channel_indices: &[u16],
     sample_rate: u32,
     bass_freq_hz: f32,
-    bass_cycles: u16,
+    bass_duration_s: f32,
+    num_windows: u16,
     channel_starts: &[usize],
-    burst_samples: usize,
+    tone_samples: usize,
 ) -> Result<BassAnchorResults, String> {
     if channel_names.len() != channel_starts.len() || channel_names.len() != channel_indices.len() {
         return Err("channel_names / channel_indices / channel_starts length mismatch".to_string());
     }
+    if let Some(lb) = loopback_recorded
+        && lb.len() != recorded.len()
+    {
+        // Mic and loopback are pushed under one Mutex per cpal callback,
+        // so they should always have identical lengths. A divergence
+        // here means either the cpal callback dropped frames on one
+        // channel only, or a caller fed us a mis-sized loopback slice
+        // — both invalidate the per-channel offset slicing below.
+        return Err(format!(
+            "Loopback length {} does not match mic length {} — refusing to analyse with desynced inputs",
+            lb.len(),
+            recorded.len()
+        ));
+    }
+    let nw = num_windows.max(1) as usize;
 
     let mut channels = Vec::with_capacity(channel_names.len());
     for (i, (&start, name)) in channel_starts.iter().zip(channel_names.iter()).enumerate() {
-        let end = (start + burst_samples).min(recorded.len());
+        let end = (start + tone_samples).min(recorded.len());
         if start >= recorded.len() {
             return Err(format!(
                 "Channel {} start {} exceeds recording length {}",
@@ -2285,13 +2451,79 @@ pub fn analyze_bass_anchor_recording(
             ));
         }
         let segment = &recorded[start..end];
-        let r = math_audio_dsp::signals::extract_tone_phase(segment, bass_freq_hz, sample_rate);
+        let mic_phasors = math_audio_dsp::signals::tone_phase_phasors(
+            segment,
+            bass_freq_hz,
+            sample_rate,
+            nw,
+        );
+        let mic = math_audio_dsp::signals::aggregate_tone_phase(&mic_phasors);
+
+        let (phase_deg, stability_deg, loopback_phase_deg, coherence) = match loopback_recorded {
+            Some(lb) => {
+                if start >= lb.len() {
+                    return Err(format!(
+                        "Channel {} start {} exceeds loopback length {}",
+                        name,
+                        start,
+                        lb.len()
+                    ));
+                }
+                let lb_end = (start + tone_samples).min(lb.len());
+                let lb_segment = &lb[start..lb_end];
+                if lb_end - start != end - start {
+                    return Err(format!(
+                        "Channel {} loopback slice length {} differs from mic slice length {}",
+                        name,
+                        lb_end - start,
+                        end - start
+                    ));
+                }
+                let lb_phasors = math_audio_dsp::signals::tone_phase_phasors(
+                    lb_segment,
+                    bass_freq_hz,
+                    sample_rate,
+                    nw,
+                );
+                let lb_res = math_audio_dsp::signals::aggregate_tone_phase(&lb_phasors);
+                let mut diff = mic.phase_deg - lb_res.phase_deg;
+                while diff > 180.0 {
+                    diff -= 360.0;
+                }
+                while diff <= -180.0 {
+                    diff += 360.0;
+                }
+                // Combined uncertainty: mic and loopback per-window
+                // phase variances add in quadrature (independent
+                // measurements).
+                let combined_std =
+                    (mic.stability_deg.powi(2) + lb_res.stability_deg.powi(2)).sqrt();
+                // True magnitude-squared coherence between mic and
+                // loopback I/Q per sub-window. γ²=1 → linearly related
+                // (clean acoustic + electronic chain); γ²→0 → mic is
+                // dominated by noise uncorrelated with the playback.
+                let coherence = math_audio_dsp::signals::phasor_coherence(
+                    &mic_phasors,
+                    &lb_phasors,
+                );
+                (
+                    diff,
+                    combined_std,
+                    Some(lb_res.phase_deg),
+                    coherence,
+                )
+            }
+            None => (mic.phase_deg, mic.stability_deg, None, None),
+        };
+
         channels.push(BassAnchorChannelResult {
             channel_name: name.clone(),
             channel_index: channel_indices[i] as usize,
-            bass_anchor_phase_deg: r.phase_deg,
-            bass_anchor_magnitude: r.magnitude,
-            bass_anchor_stability_deg: r.stability_deg,
+            bass_anchor_phase_deg: phase_deg,
+            bass_anchor_magnitude: mic.magnitude,
+            bass_anchor_stability_deg: stability_deg,
+            bass_anchor_loopback_phase_deg: loopback_phase_deg,
+            bass_anchor_coherence: coherence,
         });
     }
 
@@ -2299,25 +2531,28 @@ pub fn analyze_bass_anchor_recording(
         channels,
         sample_rate,
         bass_freq_hz,
-        bass_cycles,
+        bass_duration_s,
     })
 }
 
 #[cfg(not(target_os = "ios"))]
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn run_bass_anchor_core(
     channel_indices: &[u16],
     channel_names: &[String],
     sample_rate: u32,
     bass_freq_hz: f32,
-    bass_cycles: u16,
+    bass_duration_s: f32,
+    fade_ms: f32,
+    num_windows: u16,
     silence_duration_ms: f32,
     output_device_name: Option<&str>,
     input_device_name: Option<&str>,
     input_channel: u16,
+    loopback_input_channel: Option<u16>,
     signal_level_db: f32,
     cancel: Option<&CancelFlag>,
-) -> Result<(BassAnchorResults, Vec<f32>, u32), String> {
+) -> Result<(BassAnchorResults, Vec<f32>, Option<Vec<f32>>, u32), String> {
     let num_channels = channel_indices.len();
     if num_channels == 0 {
         return Err("No channels for bass anchor".to_string());
@@ -2325,74 +2560,92 @@ fn run_bass_anchor_core(
     if channel_names.len() != num_channels {
         return Err("channel_indices and channel_names must have the same length".to_string());
     }
-    if bass_freq_hz <= 0.0 || bass_cycles == 0 {
+    if bass_freq_hz <= 0.0 || bass_duration_s <= 0.0 || num_windows == 0 {
         return Err(format!(
-            "Invalid bass-anchor params: freq={bass_freq_hz}, cycles={bass_cycles}"
+            "Invalid bass-anchor params: freq={bass_freq_hz}, duration_s={bass_duration_s}, num_windows={num_windows}"
         ));
     }
 
-    // Generate the tone burst at the playback sample rate.
+    // Generate the steady-state tone at the playback sample rate.
     let amplitude = measurement_amplitude_from_level_db(signal_level_db);
-    let burst = math_audio_dsp::signals::gen_bass_tone_burst(
+    let tone = math_audio_dsp::signals::gen_steady_tone(
         bass_freq_hz,
-        bass_cycles,
+        bass_duration_s,
+        fade_ms,
         sample_rate,
         amplitude,
     );
-    if burst.is_empty() {
-        return Err("gen_bass_tone_burst returned empty".to_string());
+    if tone.is_empty() {
+        return Err(format!(
+            "gen_steady_tone returned empty (freq={bass_freq_hz}, duration_s={bass_duration_s}, fade_ms={fade_ms})"
+        ));
     }
-    let burst_samples = burst.len();
+    let tone_samples = tone.len();
 
     log::info!(
-        "[run_bass_anchor] Generated {:.0} Hz × {} cycles ({:.0} ms / {} samples) at {} Hz, level={:.1}dBFS",
+        "[run_bass_anchor] Generated {:.1} Hz × {:.2} s ({} samples, fade {:.0} ms, {} sub-windows) at {} Hz, level={:.1}dBFS{}",
         bass_freq_hz,
-        bass_cycles,
-        1000.0 * burst_samples as f64 / sample_rate as f64,
-        burst_samples,
+        bass_duration_s,
+        tone_samples,
+        fade_ms,
+        num_windows,
         sample_rate,
-        signal_level_db.clamp(-40.0, 20.0)
+        signal_level_db.clamp(-40.0, 20.0),
+        if loopback_input_channel.is_some() {
+            " + loopback ref"
+        } else {
+            ""
+        }
     );
 
     // Play + record via the shared scaffolding.
     let capture = play_per_channel_and_record_mono(
         channel_indices,
         sample_rate,
-        &burst,
+        &tone,
         silence_duration_ms,
         output_device_name,
         input_device_name,
         input_channel,
+        loopback_input_channel,
         "run_bass_anchor",
         cancel,
     )?;
 
-    // Per-channel analysis via the pure helper. `extract_tone_phase`
-    // operates at the recording's sample rate directly, so no
-    // regeneration step is needed even when cpal negotiates a
-    // different input rate.
+    // Per-channel analysis via the pure helper.
+    // `extract_tone_phase_windowed` operates at the recording's sample
+    // rate directly, so no regeneration step is needed even when cpal
+    // negotiates a different input rate.
     let results = analyze_bass_anchor_recording(
         &capture.recorded,
+        capture.loopback_recorded.as_deref(),
         channel_names,
         channel_indices,
         capture.input_sr,
         bass_freq_hz,
-        bass_cycles,
+        bass_duration_s,
+        num_windows,
         &capture.analysis_offsets,
         capture.analysis_signal_samples,
     )?;
 
     for cr in &results.channels {
         log::info!(
-            "[run_bass_anchor] {}: phase={:.2}°  mag={:.4}  stability={:.2}°",
+            "[run_bass_anchor] {}: phase={:.2}°  mag={:.4}  stability={:.2}°{}{}",
             cr.channel_name,
             cr.bass_anchor_phase_deg,
             cr.bass_anchor_magnitude,
-            cr.bass_anchor_stability_deg
+            cr.bass_anchor_stability_deg,
+            cr.bass_anchor_loopback_phase_deg
+                .map(|p| format!("  lb_phase={p:.2}°"))
+                .unwrap_or_default(),
+            cr.bass_anchor_coherence
+                .map(|c| format!("  γ²={c:.3}"))
+                .unwrap_or_default()
         );
     }
 
-    Ok((results, capture.recorded, capture.input_sr))
+    Ok((results, capture.recorded, capture.loopback_recorded, capture.input_sr))
 }
 
 // ---------------------------------------------------------------------------
@@ -2481,6 +2734,7 @@ pub fn run_spl_calibration(
         output_device_name,
         input_device_name,
         input_channel,
+        None,
         "run_spl_calibration",
         cancel.as_ref(),
     )?;
@@ -3800,28 +4054,28 @@ mod tests {
     // GD-Opt v2 Phase GD-1e: bass-anchor replay tests
     // ------------------------------------------------------------------
 
-    /// Synthesise a multi-channel bass-anchor recording with KNOWN
-    /// per-channel phase shifts, then run the same analysis path that
-    /// `run_bass_anchor_core` uses and assert the phases are recovered.
+    /// Build a synthetic multi-channel steady-state mic recording with
+    /// known per-channel phase shifts (sin-referenced) and run the
+    /// analysis path. Asserts circular-mean phase recovery to < 0.5°.
     #[test]
     fn bass_anchor_replay_recovers_known_phase_shifts() {
-        use math_audio_dsp::signals::gen_bass_tone_burst;
         use std::f32::consts::PI;
 
         let sample_rate = 48_000_u32;
-        let bass_freq = 20.0_f32;
-        let bass_cycles = 5_u16;
+        let bass_freq = 30.0_f32;
+        let bass_duration_s = 1.0_f32;
+        let fade_ms = 50.0_f32;
+        let num_windows = 8_u16;
         let silence_ms = 500.0_f32;
 
         let channel_indices = vec![0_u16, 1, 2];
         let channel_names = vec!["L".to_string(), "R".to_string(), "Sub".to_string()];
-        // Inject a known phase shift per channel (degrees).
         let injected_phases_deg = [0.0_f32, 30.0, -45.0];
 
-        let burst_samples =
-            ((bass_cycles as f32 / bass_freq) * sample_rate as f32).round() as usize;
+        let tone_samples = (bass_duration_s * sample_rate as f32).round() as usize;
+        let fade_n = ((fade_ms / 1000.0) * sample_rate as f32).round() as usize;
         let silence_samples = (silence_ms / 1000.0 * sample_rate as f32) as usize;
-        let segment_len = silence_samples + burst_samples;
+        let segment_len = silence_samples + tone_samples;
         let total_frames = silence_samples + channel_indices.len() * segment_len;
 
         let mut recorded = vec![0.0_f32; total_frames];
@@ -3829,43 +4083,49 @@ mod tests {
             .map(|i| silence_samples + i * segment_len)
             .collect();
 
-        // Build each channel's phase-shifted burst by directly
-        // synthesising the windowed sinusoid at `bass_freq + phase_shift`
-        // instead of time-shifting the burst from `gen_bass_tone_burst`.
-        let n_f = burst_samples as f32;
         let omega = 2.0 * PI * bass_freq / sample_rate as f32;
-        let _unused = gen_bass_tone_burst(bass_freq, bass_cycles, sample_rate, 0.5); // sanity
         for (ch_i, &start) in offsets.iter().enumerate() {
             let phase_shift = injected_phases_deg[ch_i].to_radians();
-            for k in 0..burst_samples {
-                let t = k as f32;
-                let w = 0.5 * (1.0 - (2.0 * PI * t / (n_f - 1.0)).cos());
-                recorded[start + k] = 0.5 * w * (omega * t + phase_shift).sin();
+            for k in 0..tone_samples {
+                let env = if k < fade_n {
+                    0.5 * (1.0 - (PI * k as f32 / fade_n as f32).cos())
+                } else if k >= tone_samples - fade_n {
+                    let kk = (tone_samples - 1 - k) as f32;
+                    0.5 * (1.0 - (PI * kk / fade_n as f32).cos())
+                } else {
+                    1.0
+                };
+                // Use the GLOBAL sample index (start + k) so the
+                // injected phase matches what `extract_tone_phase_windowed`
+                // recovers — the helper anchors its sin/cos basis at
+                // the recording's t = 0, not the start of the segment.
+                let t = (start + k) as f32;
+                recorded[start + k] = 0.5 * env * (omega * t + phase_shift).sin();
             }
         }
 
-        // Run the same analysis path the live capture uses.
         let results = analyze_bass_anchor_recording(
             &recorded,
+            None,
             &channel_names,
             &channel_indices,
             sample_rate,
             bass_freq,
-            bass_cycles,
+            bass_duration_s,
+            num_windows,
             &offsets,
-            burst_samples,
+            tone_samples,
         )
         .expect("analysis should succeed");
 
         assert_eq!(results.channels.len(), 3);
         assert_eq!(results.sample_rate, sample_rate);
         assert_eq!(results.bass_freq_hz, bass_freq);
-        assert_eq!(results.bass_cycles, bass_cycles);
+        assert_eq!(results.bass_duration_s, bass_duration_s);
 
         for (i, cr) in results.channels.iter().enumerate() {
             let expected = injected_phases_deg[i] as f64;
             let got = cr.bass_anchor_phase_deg;
-            // Wrap difference to (−180°, 180°] for robust comparison.
             let mut diff = got - expected;
             while diff > 180.0 {
                 diff -= 360.0;
@@ -3874,8 +4134,8 @@ mod tests {
                 diff += 360.0;
             }
             assert!(
-                diff.abs() < 2.0,
-                "Channel {} ({}): expected {:+.1}°, got {:+.2}° (error {:+.2}°)",
+                diff.abs() < 0.5,
+                "Channel {} ({}): expected {:+.1}°, got {:+.2}° (err {:+.3}°)",
                 i,
                 cr.channel_name,
                 expected,
@@ -3883,15 +4143,139 @@ mod tests {
                 diff
             );
             assert!(cr.bass_anchor_magnitude > 0.0);
-            // Stable synthetic burst — stability should fall under the
-            // 20° advisory threshold (clear margin).
             assert!(
-                cr.bass_anchor_stability_deg < 15.0,
-                "Channel {} stability {:.2}° should be well under 20°",
+                cr.bass_anchor_stability_deg < 1.0,
+                "Pure-sin steady tone should give near-zero circular-std, got {:.3}°",
+                cr.bass_anchor_stability_deg
+            );
+            // No loopback recorded.
+            assert!(cr.bass_anchor_loopback_phase_deg.is_none());
+            assert!(cr.bass_anchor_coherence.is_none());
+        }
+    }
+
+    /// Loopback subtraction: the mic phase carries a per-channel
+    /// acoustic shift PLUS a common source-side delay. The reported
+    /// phase must equal the per-channel shift alone (the loopback
+    /// cancels the common term).
+    #[test]
+    fn bass_anchor_replay_loopback_cancels_source_side_delay() {
+        use std::f32::consts::PI;
+
+        let sample_rate = 48_000_u32;
+        let bass_freq = 30.0_f32;
+        let bass_duration_s = 1.0_f32;
+        let fade_ms = 50.0_f32;
+        let num_windows = 8_u16;
+        let silence_ms = 500.0_f32;
+
+        let channel_indices = vec![0_u16, 1];
+        let channel_names = vec!["L".to_string(), "R".to_string()];
+        let acoustic_phase_deg = [10.0_f32, -20.0]; // what we want to recover
+        let source_phase_deg = 70.0_f32;            // common source-side shift
+
+        let tone_samples = (bass_duration_s * sample_rate as f32).round() as usize;
+        let fade_n = ((fade_ms / 1000.0) * sample_rate as f32).round() as usize;
+        let silence_samples = (silence_ms / 1000.0 * sample_rate as f32) as usize;
+        let segment_len = silence_samples + tone_samples;
+        let total_frames = silence_samples + channel_indices.len() * segment_len;
+
+        let omega = 2.0 * PI * bass_freq / sample_rate as f32;
+        let envelope = |k: usize| -> f32 {
+            if k < fade_n {
+                0.5 * (1.0 - (PI * k as f32 / fade_n as f32).cos())
+            } else if k >= tone_samples - fade_n {
+                let kk = (tone_samples - 1 - k) as f32;
+                0.5 * (1.0 - (PI * kk / fade_n as f32).cos())
+            } else {
+                1.0
+            }
+        };
+
+        let offsets: Vec<usize> = (0..channel_indices.len())
+            .map(|i| silence_samples + i * segment_len)
+            .collect();
+
+        let mut mic = vec![0.0_f32; total_frames];
+        let mut loopback = vec![0.0_f32; total_frames];
+        for (ch_i, &start) in offsets.iter().enumerate() {
+            let mic_phase = (acoustic_phase_deg[ch_i] + source_phase_deg).to_radians();
+            let lb_phase = source_phase_deg.to_radians();
+            for k in 0..tone_samples {
+                let env = envelope(k);
+                let t = (start + k) as f32;
+                mic[start + k] = 0.5 * env * (omega * t + mic_phase).sin();
+                loopback[start + k] = 0.5 * env * (omega * t + lb_phase).sin();
+            }
+        }
+
+        let results = analyze_bass_anchor_recording(
+            &mic,
+            Some(&loopback),
+            &channel_names,
+            &channel_indices,
+            sample_rate,
+            bass_freq,
+            bass_duration_s,
+            num_windows,
+            &offsets,
+            tone_samples,
+        )
+        .expect("analysis should succeed");
+
+        for (i, cr) in results.channels.iter().enumerate() {
+            let expected = acoustic_phase_deg[i] as f64;
+            let mut diff = cr.bass_anchor_phase_deg - expected;
+            while diff > 180.0 {
+                diff -= 360.0;
+            }
+            while diff <= -180.0 {
+                diff += 360.0;
+            }
+            assert!(
+                diff.abs() < 0.5,
+                "Loopback-corrected phase for {} should be {:+.1}°, got {:+.2}° (err {:+.3}°)",
                 cr.channel_name,
+                expected,
+                cr.bass_anchor_phase_deg,
+                diff
+            );
+            assert!(cr.bass_anchor_loopback_phase_deg.is_some());
+            assert!(cr.bass_anchor_coherence.is_some());
+            // With identical envelopes both per-window stds are ~0,
+            // so combined stability also stays near zero.
+            assert!(
+                cr.bass_anchor_stability_deg < 1.0,
+                "Combined std should stay near zero, got {:.3}°",
                 cr.bass_anchor_stability_deg
             );
         }
+    }
+
+    #[test]
+    fn bass_anchor_replay_rejects_loopback_length_mismatch() {
+        // Mic and loopback must have identical lengths — anything else
+        // means the cpal callback dropped frames asymmetrically and we
+        // refuse to analyse rather than emit per-channel garbage.
+        let mic = vec![0.0_f32; 100_000];
+        let loopback = vec![0.0_f32; 90_000]; // 10 % short
+        let err = analyze_bass_anchor_recording(
+            &mic,
+            Some(&loopback),
+            &["L".to_string()],
+            &[0_u16],
+            48_000,
+            30.0,
+            1.0,
+            8,
+            &[0_usize],
+            48_000,
+        )
+        .expect_err("loopback length mismatch must fail");
+        assert!(
+            err.contains("Loopback length"),
+            "error should mention loopback length mismatch, got: {err}"
+        );
     }
 
     #[test]
@@ -3899,11 +4283,13 @@ mod tests {
         let recorded = vec![0.0_f32; 100];
         let err = analyze_bass_anchor_recording(
             &recorded,
+            None,
             &["L".to_string()],
             &[0_u16],
             48_000,
-            20.0,
-            5,
+            30.0,
+            1.0,
+            8,
             &[0_usize, 50],
             48,
         )
@@ -3919,11 +4305,13 @@ mod tests {
         let recorded = vec![0.0_f32; 10];
         let err = analyze_bass_anchor_recording(
             &recorded,
+            None,
             &["L".to_string()],
             &[0_u16],
             48_000,
-            20.0,
-            5,
+            30.0,
+            1.0,
+            8,
             &[100_usize],
             48,
         )

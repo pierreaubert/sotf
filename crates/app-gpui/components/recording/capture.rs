@@ -2012,11 +2012,13 @@ impl PlayerView {
                                 bass_anchor_phase_deg: c.bass_anchor_phase_deg,
                                 bass_anchor_magnitude: c.bass_anchor_magnitude,
                                 bass_anchor_stability_deg: c.bass_anchor_stability_deg,
+                                bass_anchor_loopback_phase_deg: c.bass_anchor_loopback_phase_deg,
+                                bass_anchor_coherence: c.bass_anchor_coherence,
                             })
                             .collect(),
                         sample_rate: r.sample_rate,
                         bass_freq_hz: r.bass_freq_hz,
-                        bass_cycles: r.bass_cycles,
+                        bass_duration_s: r.bass_duration_s,
                     }
                 }),
                 bass_anchor_wav_relative: rec_state
@@ -2036,8 +2038,8 @@ impl PlayerView {
                 sweep_level_db_spl: None,
                 num_sweeps: None,
                 coherence_threshold: None,
-                bass_probe_freq_hz: None,
-                bass_probe_cycles: None,
+                bass_probe_freq_hz: Some(rec_state.bass_anchor_capture.bass_freq_hz),
+                bass_probe_duration_s: Some(rec_state.bass_anchor_capture.bass_duration_s),
                 mic_phase_calibration_path: None,
                 mic_phase_calibration_paths: None,
                 // GD-Opt v2 Phase GD-1e.5 — SPL calibration, when captured
@@ -2069,7 +2071,11 @@ impl PlayerView {
             let ctc = ctc_measurements.map(|measurements| {
                 let raw = ctc_reference_sweep.is_some();
                 autoeq::roomeq::CtcConfig {
-                    enabled: true,
+                    // Off by default — binaural CTC is opt-in, the
+                    // CTC stanza is written so the user can flip it
+                    // on later without re-recording, but roomeq must
+                    // not run the CTC solver until they do.
+                    enabled: false,
                     matrix_source: if raw { "raw_sweep" } else { "measured" }.to_string(),
                     measurements: Some(measurements),
                     reference_sweep: ctc_reference_sweep,
@@ -2091,9 +2097,13 @@ impl PlayerView {
                     ..Default::default()
                 }
             });
-            let system = ctc.as_ref().filter(|ctc| ctc.enabled).and_then(|_| {
-                ctc_system_config_for_speaker_names(speakers.keys().map(String::as_str), None)
-            });
+            // Always emit the system (logical role) map from the
+            // recorded speakers, independent of CTC enable state.
+            // roomeq uses it to interpret the layout (LFE/sub
+            // detection, bass-management routing). Flipping CTC on
+            // later does not require re-recording.
+            let system =
+                ctc_system_config_for_speaker_names(speakers.keys().map(String::as_str), None);
 
             // Build RoomConfig
             let room_config = RoomConfig {

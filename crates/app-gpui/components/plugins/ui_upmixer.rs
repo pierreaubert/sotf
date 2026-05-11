@@ -2,7 +2,7 @@
 //!
 //! Layout:
 //! - Main area: Channel Gains (4 faders) + Spatial Controls (4 faders) side by side
-//! - Tab bar: LFE & Bass | Dialogue | Ambient | Height | HR Direct | Decorrelation | Analysis
+//! - Tab bar: LFE & Bass | Dialogue | Ambient | Height | HR Direct | Decorrelation | Analysis | Diagnostic
 //! - Tab content: Expandable panel for the selected tab
 
 use super::common::{render_knob, render_vertical_slider_with_ticks};
@@ -17,7 +17,7 @@ use gpui::*;
 use gpui_ui_kit::{
     HStack, Select, SelectOption, SelectSize, StackAlign, StackSpacing, Toggle, ToggleStyle, VStack,
 };
-use sotf_plugins::param_specs::{find_by_key as pk, upmixer::PARAMS as UP};
+use sotf_plugins::param_specs::{ParamCategory, find_by_key as pk, upmixer::PARAMS as UP};
 
 /// State for rendering the Upmixer plugin
 pub struct UpmixerRenderState<'a> {
@@ -82,7 +82,7 @@ pub struct UpmixerRenderState<'a> {
     pub is_editing: bool,
     pub selected_param: usize,
     pub config_open: bool,
-    /// 0=none, 1=LFE, 2=Dialogue, 3=Ambient, 4=Height, 5=HR Direct, 6=Decorrelation, 7=Analysis
+    /// 0=none, 1=LFE, 2=Dialogue, 3=Ambient, 4=Height, 5=HR Direct, 6=Decorrelation, 7=Analysis, 8=Diagnostic
     pub upmixer_tab: usize,
 }
 
@@ -141,7 +141,7 @@ mod param_idx {
 }
 
 /// Configuration menu items
-const CONFIG_ITEMS: [&str; 7] = [
+const CONFIG_ITEMS: [&str; 8] = [
     "LFE & Bass",
     "Dialogue",
     "Ambient",
@@ -149,6 +149,7 @@ const CONFIG_ITEMS: [&str; 7] = [
     "HR Direct",
     "Decorrelation",
     "Analysis",
+    "Diagnostic",
 ];
 
 /// Render the upmixer plugin controls
@@ -206,7 +207,7 @@ pub fn render_upmixer_plugin(
                         .spacing(StackSpacing::Xs)
                         .child(main_area)
                         .child(tab_bar)
-                        .when((1..=7).contains(&selected_config), |el| {
+                        .when((1..=8).contains(&selected_config), |el| {
                             el.child(config_row)
                         })
                         .build(),
@@ -453,6 +454,7 @@ fn render_tab_bar(
                     4 => "cfg-hr-direct",
                     5 => "cfg-decorr",
                     6 => "cfg-analysis",
+                    7 => "cfg-diagnostic",
                     _ => "cfg-unknown",
                 },
                 label,
@@ -655,6 +657,7 @@ fn render_config_row(
         5 => render_config_hr_direct(d, entity, plugin_idx, state, theme).into_any_element(),
         6 => render_config_decorrelation(d, entity, plugin_idx, state, theme).into_any_element(),
         7 => render_config_analysis(d, entity, plugin_idx, state, theme).into_any_element(),
+        8 => render_config_diagnostic(d, entity, plugin_idx, state, theme).into_any_element(),
         _ => div().into_any_element(),
     };
 
@@ -1344,48 +1347,62 @@ fn render_config_analysis(
                 )
                 .build(),
         )
-        .child(
-            HStack::new()
-                .spacing(StackSpacing::Md)
-                .child(render_diag_toggle(
-                    d,
-                    entity.clone(),
-                    plugin_idx,
-                    "Bypass Decorrelation",
-                    state.bypass_decorrelation,
-                    param_idx::BYPASS_DECORRELATION,
-                    theme,
-                ))
-                .child(render_diag_toggle(
-                    d,
-                    entity.clone(),
-                    plugin_idx,
-                    "Bypass Transients",
-                    state.bypass_transient_detection,
-                    param_idx::BYPASS_TRANSIENT_DETECTION,
-                    theme,
-                ))
-                .child(render_diag_toggle(
-                    d,
-                    entity.clone(),
-                    plugin_idx,
-                    "Bypass All Processing",
-                    state.bypass_all_processing,
-                    param_idx::BYPASS_ALL_PROCESSING,
-                    theme,
-                ))
-                .child(render_diag_toggle(
-                    d,
-                    entity,
-                    plugin_idx,
-                    "ML Detection",
-                    state.enable_ml_detection,
-                    param_idx::ENABLE_ML_DETECTION,
-                    theme,
-                ))
-                .build(),
-        )
         .build()
+}
+
+/// Diagnostic configuration row — auto-discovered from PARAMS.
+///
+/// Iterates the upmixer's `PARAMS` and renders a toggle for every spec tagged
+/// `ParamCategory::Diagnostic`. Adding a `.diagnostic()` param in `params.rs`
+/// auto-populates this tab — no edits here required (only a new field/match
+/// arm in `UpmixerRenderState` + `diagnostic_param_value`).
+fn render_config_diagnostic(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    state: &UpmixerRenderState,
+    theme: &Theme,
+) -> impl IntoElement {
+    let mut row = HStack::new().spacing(StackSpacing::Md);
+    for (idx, spec) in UP.iter().enumerate() {
+        if !matches!(spec.category, ParamCategory::Diagnostic) {
+            continue;
+        }
+        let value = diagnostic_param_value(state, idx);
+        row = row.child(render_diag_toggle(
+            d,
+            entity.clone(),
+            plugin_idx,
+            spec.name,
+            value,
+            idx,
+            theme,
+        ));
+    }
+
+    VStack::new()
+        .spacing(StackSpacing::Xs)
+        .child(render_section_header(d, "Diagnostic", theme))
+        .child(row.build())
+        .build()
+}
+
+/// Read the bool value for a diagnostic-category param out of the render state.
+///
+/// Crashes on an unknown index — if a new `.diagnostic()` param is added in
+/// `params.rs`, the surface that needs updating is `UpmixerRenderState` and
+/// this match arm. The crash makes that dependency visible at runtime.
+fn diagnostic_param_value(state: &UpmixerRenderState, idx: usize) -> bool {
+    match idx {
+        i if i == param_idx::BYPASS_DECORRELATION => state.bypass_decorrelation,
+        i if i == param_idx::BYPASS_TRANSIENT_DETECTION => state.bypass_transient_detection,
+        i if i == param_idx::BYPASS_ALL_PROCESSING => state.bypass_all_processing,
+        i if i == param_idx::ENABLE_ML_DETECTION => state.enable_ml_detection,
+        _ => unreachable!(
+            "diagnostic_param_value: unmapped param index {} ({}); add a match arm",
+            idx, UP[idx].name
+        ),
+    }
 }
 
 /// Render a single diagnostic toggle with label

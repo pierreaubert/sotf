@@ -1336,10 +1336,14 @@ fn draw_recording_bass_anchor_step(f: &mut Frame, content: Rect, app: &App) {
         .split(content);
 
     // --- Explainer + config summary ------------------------------------
-    let burst_ms = 1000.0 * bac.bass_cycles as f32 / bac.bass_freq_hz;
+    let tone_ms = 1000.0 * bac.bass_duration_s;
+    let loopback_hint = match app.recording.recording_config.ctc_loopback_input_channel {
+        Some(ch) => format!(" • loopback ref ch {}", ch),
+        None => String::new(),
+    };
     let explainer = vec![
         Line::from(Span::styled(
-            "Plays a low-frequency tone burst per channel so GD-Opt v2 can anchor the",
+            "Plays a steady-state bass tone per channel so GD-Opt v2 can lock-in the",
             Style::default().fg(app.theme.fg_secondary),
         )),
         Line::from(Span::styled(
@@ -1348,12 +1352,13 @@ fn draw_recording_bass_anchor_step(f: &mut Frame, content: Rect, app: &App) {
         )),
         Line::from(Span::styled(
             format!(
-                " Burst: {:.0} Hz × {} cycles ({:.0} ms / channel) • silence {:.0} ms • mic ch {}",
+                " Tone: {:.1} Hz × {:.1} s ({} sub-windows) • silence {:.0} ms • mic ch {}{}",
                 bac.bass_freq_hz,
-                bac.bass_cycles,
-                burst_ms,
+                bac.bass_duration_s,
+                bac.num_windows,
                 bac.silence_duration_ms,
-                bac.input_channel
+                bac.input_channel,
+                loopback_hint,
             ),
             Style::default().fg(app.theme.fg_primary),
         )),
@@ -1366,7 +1371,7 @@ fn draw_recording_bass_anchor_step(f: &mut Frame, content: Rect, app: &App) {
     // --- Status banner -------------------------------------------------
     let (status_text, status_color) = match &bac.status {
         BassAnchorCaptureStatus::Idle => (
-            format!("Idle — optional step ({:.0} ms / channel).", burst_ms),
+            format!("Idle — optional step ({:.0} ms / channel).", tone_ms),
             app.theme.fg_secondary,
         ),
         BassAnchorCaptureStatus::Running { .. } => (

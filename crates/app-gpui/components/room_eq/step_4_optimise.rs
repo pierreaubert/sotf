@@ -41,6 +41,11 @@ impl PlayerView {
         let current_channel = room_eq.current_channel.clone();
         let current_iteration = room_eq.current_iteration;
         let current_loss = room_eq.current_loss;
+        // Pipeline step strip — stable left-to-right render order,
+        // colored by the latest status the optimizer has reported for
+        // each step.
+        let current_step = room_eq.current_step;
+        let step_history = room_eq.step_history.clone();
 
         // Build the actual RoomConfig that will be sent to the optimizer
         let room_config = room_eq.to_room_config();
@@ -268,6 +273,14 @@ impl PlayerView {
                                                 ProgressVariant::Default
                                             }),
                                     )
+                                    .child(render_pipeline_step_strip(
+                                        &theme,
+                                        &d,
+                                        current_step,
+                                        &step_history,
+                                        is_completed,
+                                        is_failed,
+                                    ))
                                     .child(Text::new(status_msg.clone()).size(TextSize::Xs).color(
                                         if is_completed {
                                             theme.success
@@ -778,7 +791,8 @@ impl PlayerView {
         use crate::app::types::{ChannelOptResult, EqFilterConfig, OptimizationStatus};
         use autoeq::roomeq::CallbackAction;
         use sotf_audio_player::autoeq::{
-            RoomOptimizationCallback, RoomOptimizationProgress, run_room_optimization,
+            PipelineStepId, PipelineStepStatus, RoomOptimizationCallback,
+            RoomOptimizationProgress, run_room_optimization,
             run_room_optimization_with_probe_arrivals,
         };
         use sotf_audio_player::room_eq_types::RoomEqWizardMode;
@@ -932,6 +946,13 @@ impl PlayerView {
             state.app.measurement_state.room_eq_state.current_loss = 0.0;
             state.app.measurement_state.room_eq_state.current_channel = None;
             state.app.measurement_state.room_eq_state.error_message = None;
+            state.app.measurement_state.room_eq_state.current_step = None;
+            state
+                .app
+                .measurement_state
+                .room_eq_state
+                .step_history
+                .clear();
 
             // Initialize progress chart state immediately
             state
@@ -954,9 +975,20 @@ impl PlayerView {
 
         let state_clone = self.state.clone();
 
-        // Create async channel for progress updates from blocking thread
-        let (progress_tx, progress_rx) =
-            smol::channel::bounded::<(usize, f64, f32, String, Option<String>, Option<f64>)>(100);
+        // Create async channel for progress updates from blocking thread.
+        // Tuple: (iteration, loss, overall, speaker, message, epa,
+        //         step_id, step_status).
+        type ProgressMsg = (
+            usize,
+            f64,
+            f32,
+            String,
+            Option<String>,
+            Option<f64>,
+            Option<PipelineStepId>,
+            Option<PipelineStepStatus>,
+        );
+        let (progress_tx, progress_rx) = smol::channel::bounded::<ProgressMsg>(100);
 
         // Clone state for progress receiver task
         let state_for_progress = self.state.clone();
@@ -979,39 +1011,107 @@ impl PlayerView {
                     // Block until at least one message arrives (or channel closes).
                     let first = progress_rx.recv().await;
                     let Ok((
-                        mut iteration,
-                        mut loss,
-                        mut overall_progress,
-                        mut speaker,
-                        mut message,
+                        first_iteration,
+                        first_loss,
+                        first_overall,
+                        first_speaker,
+                        first_message,
                         first_epa,
+                        first_step_id,
+                        first_step_status,
                     )) = first
                     else {
                         break;
                     };
 
-                    // Drain all additional pending messages without blocking.
-                    let mut batch: Vec<(usize, f64, String, Option<f64>)> =
-                        vec![(iteration, loss, speaker.clone(), first_epa)];
-                    while let Ok((it, l, op, sp, msg, ep)) = progress_rx.try_recv() {
-                        batch.push((it, l, sp.clone(), ep));
-                        iteration = it;
-                        loss = l;
-                        overall_progress = op;
-                        speaker = sp;
+                    // Aggregate state from the batch. Two message
+                    // shapes flow through this channel:
+                    //
+                    //   (A) Per-iteration data — emitted from the
+                    //       inner optimizer loop. Always carries
+                    //       `current_speaker`, `iteration`, `loss`,
+                    //       `epa`. Step ids may also be set
+                    //       (`InProgress`) but conceptually this is
+                    //       iteration data.
+                    //
+                    //   (B) Step transition — emitted at the
+                    //       boundaries of pipeline steps with
+                    //       `iteration = 0`, `loss = 0.0`, often
+                    //       `current_speaker == ""`. Always carries
+                    //       a `step_id` + `step_status`.
+                    //
+                    // We classify a message as a transition-only
+                    // event when it has step info AND no usable
+                    // per-channel iteration payload (empty speaker).
+                    // This lets a real iter-0 message with `loss = 0`
+                    // (e.g. DE optimum hit immediately, or a flat
+                    // target test harness) still update the readout —
+                    // the previous filter "iter is zero" silently
+                    // dropped those.
+                    fn is_transition_only(speaker: &str, sid: Option<PipelineStepId>) -> bool {
+                        sid.is_some() && speaker.is_empty()
+                    }
+
+                    let mut latest_iteration = first_iteration;
+                    let mut latest_loss = first_loss;
+                    let mut latest_speaker = first_speaker.clone();
+                    let mut latest_overall_progress = first_overall;
+                    let mut latest_message = first_message;
+                    let mut latest_step_id = first_step_id;
+                    let mut latest_step_status = first_step_status;
+                    let mut batch: Vec<(usize, f64, String, Option<f64>)> = Vec::new();
+                    let mut step_transitions: Vec<(PipelineStepId, PipelineStepStatus)> =
+                        Vec::new();
+                    if !is_transition_only(&first_speaker, first_step_id) {
+                        batch.push((first_iteration, first_loss, first_speaker, first_epa));
+                    }
+                    if let (Some(sid), Some(sst)) = (first_step_id, first_step_status) {
+                        step_transitions.push((sid, sst));
+                    }
+                    while let Ok((it, l, op, sp, msg, ep, sid, sst)) = progress_rx.try_recv() {
+                        latest_overall_progress = op;
+                        if !is_transition_only(&sp, sid) {
+                            batch.push((it, l, sp.clone(), ep));
+                            latest_iteration = it;
+                            latest_loss = l;
+                            latest_speaker = sp;
+                        }
                         if msg.is_some() {
-                            message = msg;
+                            latest_message = msg;
+                        }
+                        if let (Some(s), Some(st)) = (sid, sst) {
+                            step_transitions.push((s, st));
+                            latest_step_id = Some(s);
+                            latest_step_status = Some(st);
                         }
                     }
 
                     state_for_progress.update(&mut cx.clone(), |state, cx| {
                         let room_eq = &mut state.app.measurement_state.room_eq_state;
-                        room_eq.current_iteration = iteration;
-                        room_eq.current_loss = loss;
-                        room_eq.overall_progress = overall_progress;
-                        room_eq.current_channel = Some(speaker);
-                        if let Some(msg) = message {
+                        // Iteration / loss only advance when a real
+                        // per-iteration message arrived in this batch;
+                        // otherwise we keep the previous values so the
+                        // readout doesn't flicker on step boundaries.
+                        if !batch.is_empty() {
+                            room_eq.current_iteration = latest_iteration;
+                            room_eq.current_loss = latest_loss;
+                            room_eq.current_channel = Some(latest_speaker);
+                        }
+                        room_eq.overall_progress = latest_overall_progress;
+                        if let Some(msg) = latest_message {
                             room_eq.status_message = msg;
+                        }
+
+                        // Apply step transitions in order so the
+                        // history reflects what actually happened
+                        // (e.g. Started → Completed → next Started).
+                        for (sid, sst) in &step_transitions {
+                            room_eq.step_history.insert(*sid, *sst);
+                        }
+                        if let Some(sid) = latest_step_id
+                            && latest_step_status.map(is_active_step).unwrap_or(false)
+                        {
+                            room_eq.current_step = Some(sid);
                         }
 
                         let history = &mut room_eq.progress_history;
@@ -1062,8 +1162,18 @@ impl PlayerView {
 
                     // Send progress update (non-blocking)
                     let epa = progress.epa_preference;
-                    let _ = progress_tx_clone
-                        .try_send((iteration, loss, overall, speaker, message, epa));
+                    let step_id = progress.step_id;
+                    let step_status = progress.step_status;
+                    let _ = progress_tx_clone.try_send((
+                        iteration,
+                        loss,
+                        overall,
+                        speaker,
+                        message,
+                        epa,
+                        step_id,
+                        step_status,
+                    ));
                     CallbackAction::Continue
                 });
 
@@ -1095,14 +1205,11 @@ impl PlayerView {
             let was_cancelled = cancel_flag.load(std::sync::atomic::Ordering::Relaxed);
             if was_cancelled {
                 state_clone.update(&mut cx.clone(), |state, cx| {
-                    state
-                        .app
-                        .measurement_state
-                        .room_eq_state
-                        .optimization_status = OptimizationStatus::Cancelled;
-                    state.app.measurement_state.room_eq_state.status_message =
-                        "Optimization cancelled".to_string();
-                    state.app.measurement_state.room_eq_state.current_channel = None;
+                    let room_eq = &mut state.app.measurement_state.room_eq_state;
+                    room_eq.optimization_status = OptimizationStatus::Cancelled;
+                    room_eq.status_message = "Optimization cancelled".to_string();
+                    room_eq.current_channel = None;
+                    finalize_pipeline_step_state(room_eq, false);
                     cx.notify();
                 });
                 return;
@@ -1297,36 +1404,29 @@ impl PlayerView {
 
                     // Update final state
                     state_clone.update(&mut cx.clone(), |state, cx| {
-                        state
-                            .app
-                            .measurement_state
-                            .room_eq_state
-                            .optimization_status = OptimizationStatus::Completed;
-                        state.app.measurement_state.room_eq_state.status_message = format!(
+                        let room_eq = &mut state.app.measurement_state.room_eq_state;
+                        room_eq.optimization_status = OptimizationStatus::Completed;
+                        room_eq.status_message = format!(
                             "Optimization complete! Score: {:.2} -> {:.2}",
                             avg_pre, avg_post
                         );
-                        state.app.measurement_state.room_eq_state.channel_results = all_results;
-                        state.app.measurement_state.room_eq_state.overall_progress = 1.0;
-                        state.app.measurement_state.room_eq_state.current_channel = None;
-
-                        state.app.measurement_state.room_eq_state.dsp_output = Some(dsp_output);
-
-                        state.app.measurement_state.room_eq_state.step =
-                            crate::app::types::RoomEqStep::Review;
+                        room_eq.channel_results = all_results;
+                        room_eq.overall_progress = 1.0;
+                        room_eq.current_channel = None;
+                        room_eq.dsp_output = Some(dsp_output);
+                        room_eq.step = crate::app::types::RoomEqStep::Review;
+                        finalize_pipeline_step_state(room_eq, true);
                         cx.notify();
                     });
                 }
                 Err(e) => {
                     log::error!("Room optimization failed: {}", e);
                     state_clone.update(&mut cx.clone(), |state, cx| {
-                        state
-                            .app
-                            .measurement_state
-                            .room_eq_state
-                            .optimization_status = OptimizationStatus::Failed;
-                        state.app.measurement_state.room_eq_state.error_message =
+                        let room_eq = &mut state.app.measurement_state.room_eq_state;
+                        room_eq.optimization_status = OptimizationStatus::Failed;
+                        room_eq.error_message =
                             Some(format!("Room optimization error: {}", e));
+                        finalize_pipeline_step_state(room_eq, false);
                         cx.notify();
                     });
                 }
@@ -1353,6 +1453,109 @@ impl PlayerView {
 
 /// Recursively flatten a JSON value into dotted key-value pairs.
 /// Skips large arrays (e.g. measurement data) — only includes scalars and small objects.
+/// `true` when a pipeline step status implies the step is the
+/// optimizer's current focus. Started/InProgress events update
+/// `current_step`; Completed/Skipped events only land in
+/// `step_history` so the previous step doesn't keep claiming
+/// "current" once the next step has taken over.
+fn is_active_step(status: sotf_audio_player::autoeq::PipelineStepStatus) -> bool {
+    use sotf_audio_player::autoeq::PipelineStepStatus;
+    matches!(
+        status,
+        PipelineStepStatus::Started | PipelineStepStatus::InProgress
+    )
+}
+
+/// Finalize the pipeline-step indicators when an optimization run
+/// reaches a terminal state. Clears `current_step` (so no chip stays
+/// in "active" colour) and, on success, promotes any in-flight
+/// (`Started`/`InProgress`) entries in `step_history` to `Completed`
+/// so the strip reads as a fully-green summary instead of leaving
+/// "what was running when the run ended" half-coloured.
+fn finalize_pipeline_step_state(
+    room_eq: &mut crate::app::types::RoomEqState,
+    succeeded: bool,
+) {
+    use sotf_audio_player::autoeq::PipelineStepStatus;
+    room_eq.current_step = None;
+    if succeeded {
+        for status in room_eq.step_history.values_mut() {
+            if matches!(
+                status,
+                PipelineStepStatus::Started | PipelineStepStatus::InProgress
+            ) {
+                *status = PipelineStepStatus::Completed;
+            }
+        }
+    }
+}
+
+/// Render the pipeline-step strip: one chip per `PipelineStepId::ALL`
+/// in canonical execution order. Status colors:
+/// - Pending (unseen)         → muted background + muted text
+/// - Started/InProgress       → accent background, scale-up + ring
+/// - Completed                → success background
+/// - Skipped                  → muted background, dashed border feel
+///
+/// On global Completed / Failed we paint every reached step in the
+/// global outcome color so the strip reads as a final-state summary.
+fn render_pipeline_step_strip(
+    theme: &crate::app::theme::Theme,
+    d: &Ds,
+    current_step: Option<sotf_audio_player::autoeq::PipelineStepId>,
+    step_history: &std::collections::HashMap<
+        sotf_audio_player::autoeq::PipelineStepId,
+        sotf_audio_player::autoeq::PipelineStepStatus,
+    >,
+    is_completed: bool,
+    is_failed: bool,
+) -> impl IntoElement {
+    use sotf_audio_player::autoeq::{PipelineStepId, PipelineStepStatus};
+
+    let mut row = div().flex().flex_row().flex_wrap().gap(d.gap);
+
+    for &step in PipelineStepId::ALL {
+        let status = step_history.get(&step).copied();
+        let is_current = current_step == Some(step) && !is_completed && !is_failed;
+
+        let (bg, fg, border) = if is_current {
+            (theme.accent, theme.text_primary, theme.accent)
+        } else {
+            match status {
+                Some(PipelineStepStatus::Completed) => {
+                    (theme.success, theme.text_primary, theme.success)
+                }
+                Some(PipelineStepStatus::Skipped) => {
+                    (theme.surface_hover, theme.text_muted, theme.border)
+                }
+                Some(PipelineStepStatus::Started) | Some(PipelineStepStatus::InProgress) => {
+                    (theme.accent_muted, theme.text_primary, theme.accent)
+                }
+                None => (theme.surface_hover, theme.text_muted, theme.border),
+            }
+        };
+
+        row = row.child(
+            div()
+                .flex()
+                .items_center()
+                .px(d.pad_x)
+                .py(d.gap)
+                .rounded(d.r_sm)
+                .bg(bg)
+                .border_1()
+                .border_color(border)
+                .child(
+                    Text::new(step.label())
+                        .size(TextSize::Xs)
+                        .color(fg),
+                ),
+        );
+    }
+
+    row
+}
+
 fn flatten_json(value: &serde_json::Value, prefix: String, pairs: &mut Vec<(String, String)>) {
     match value {
         serde_json::Value::Object(map) => {

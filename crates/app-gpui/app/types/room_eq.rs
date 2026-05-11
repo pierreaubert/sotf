@@ -243,6 +243,21 @@ pub struct RoomEqState {
     pub has_multi_position_data: bool,
     /// Per-speaker measurement counts: (channel_name, count)
     pub multi_position_counts: Vec<(String, usize)>,
+
+    // === Pipeline step tracking (live optimization feedback) ===
+    /// Pipeline step the optimizer is currently working on, surfaced by
+    /// the `RoomOptimizationCallback`. The Optimize step renders this
+    /// alongside the loss chart so the user can see whether they're in
+    /// per-channel optimization, FIR generation, channel matching,
+    /// etc., not just an opaque "Optimizing…" spinner.
+    pub current_step: Option<sotf_audio_player::autoeq::PipelineStepId>,
+    /// Latest reported status for every step the pipeline has touched
+    /// in this run. Insertion-ordered by `PipelineStepId::ALL`. Reset
+    /// on every new optimization run.
+    pub step_history: std::collections::HashMap<
+        sotf_audio_player::autoeq::PipelineStepId,
+        sotf_audio_player::autoeq::PipelineStepStatus,
+    >,
 }
 
 impl Default for RoomEqState {
@@ -283,6 +298,8 @@ impl Default for RoomEqState {
             selected_preset: "full-range".to_string(),
             has_multi_position_data: false,
             multi_position_counts: Vec::new(),
+            current_step: None,
+            step_history: std::collections::HashMap::new(),
         }
     }
 }
