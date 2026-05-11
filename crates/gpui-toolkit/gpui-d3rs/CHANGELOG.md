@@ -1,3 +1,9 @@
+# 0.6.8
+
+## Features
+
+- Added 3d lines with wpgu support
+
 # 0.6.7
 
 ## Features
