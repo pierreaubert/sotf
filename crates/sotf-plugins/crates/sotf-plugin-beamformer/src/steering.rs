@@ -86,9 +86,10 @@ pub fn compute_steering_vector(
     let az = azimuth_deg.to_radians();
     let el = elevation_deg.to_radians();
 
-    // Unit direction vector
-    let dx = el.cos() * az.cos();
-    let dy = el.cos() * az.sin();
+    // Unit direction vector: 0° azimuth = broadside (y-axis)
+    // 90° azimuth = endfire (x-axis)
+    let dx = el.cos() * az.sin();
+    let dy = el.cos() * az.cos();
     let dz = el.sin();
 
     positions
@@ -128,6 +129,45 @@ pub fn compute_all_steering_vectors(
         .collect()
 }
 
+/// Compute per-microphone compensation delays for a given steering direction.
+///
+/// Returns the delay in **samples** that each microphone signal should be
+/// delayed so that signals from the look direction are time-aligned.
+///
+/// # Arguments
+/// * `geometry` - Microphone array geometry
+/// * `azimuth_deg` - Steering direction in degrees (0° = broadside)
+/// * `elevation_deg` - Elevation in degrees (0° = horizontal)
+/// * `sample_rate` - Sample rate in Hz
+pub fn compute_steering_delays(
+    geometry: &ArrayGeometry,
+    azimuth_deg: f32,
+    elevation_deg: f32,
+    sample_rate: f32,
+) -> Vec<f32> {
+    let positions = geometry.positions();
+    let az = azimuth_deg.to_radians();
+    let el = elevation_deg.to_radians();
+
+    let dx = el.cos() * az.sin();
+    let dy = el.cos() * az.cos();
+    let dz = el.sin();
+
+    let propagation_delays: Vec<f32> = positions
+        .iter()
+        .map(|&(x, y, z)| (x * dx + y * dy + z * dz) / SPEED_OF_SOUND * sample_rate)
+        .collect();
+
+    let max_delay = propagation_delays
+        .iter()
+        .cloned()
+        .fold(f32::NEG_INFINITY, f32::max);
+    propagation_delays
+        .iter()
+        .map(|d| max_delay - d)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -154,7 +194,7 @@ mod tests {
 
         // At broadside (0°), both mics receive the wave simultaneously
         // → all steering vector phases should be zero (unit magnitude)
-        let sv = compute_steering_vector(1000.0, &geom, 90.0, 0.0);
+        let sv = compute_steering_vector(1000.0, &geom, 0.0, 0.0);
         // At 90°, wave travels along array axis → different delays
         assert_eq!(sv.len(), 2);
     }
@@ -174,5 +214,65 @@ mod tests {
                 "Steering vector at mic {i} should have unit magnitude, got {mag}"
             );
         }
+    }
+
+    #[test]
+    fn test_angle_convention_broadside() {
+        let geom = ArrayGeometry::Linear {
+            num_mics: 2,
+            spacing_m: 0.05,
+        };
+
+        // 0° should be broadside: both mics in phase
+        let sv_broadside = compute_steering_vector(1000.0, &geom, 0.0, 0.0);
+        let phase_diff = (sv_broadside[1].im.atan2(sv_broadside[1].re)
+            - sv_broadside[0].im.atan2(sv_broadside[0].re))
+            .abs();
+        assert!(
+            phase_diff < 1e-5,
+            "0° should be broadside (phase_diff={phase_diff})"
+        );
+
+        // 90° should be endfire: phase difference proportional to spacing
+        let sv_endfire = compute_steering_vector(1000.0, &geom, 90.0, 0.0);
+        let phase_diff_endfire = (sv_endfire[1].im.atan2(sv_endfire[1].re)
+            - sv_endfire[0].im.atan2(sv_endfire[0].re))
+            .abs();
+        let expected = 2.0 * std::f32::consts::PI * 1000.0 * 0.05 / SPEED_OF_SOUND;
+        assert!(
+            (phase_diff_endfire - expected).abs() < 1e-4,
+            "90° should be endfire (phase_diff={phase_diff_endfire}, expected={expected})"
+        );
+    }
+
+    #[test]
+    fn test_steering_delays() {
+        let geom = ArrayGeometry::Linear {
+            num_mics: 2,
+            spacing_m: 0.05,
+        };
+
+        // Broadside: zero delay difference
+        let delays = compute_steering_delays(&geom, 0.0, 0.0, 48000.0);
+        assert_eq!(delays.len(), 2);
+        assert!(
+            (delays[0]).abs() < 1e-4 && (delays[1]).abs() < 1e-4,
+            "Broadside delays should be near zero: {:?}",
+            delays
+        );
+
+        // Endfire: one mic delayed relative to the other
+        let delays_endfire = compute_steering_delays(&geom, 90.0, 0.0, 48000.0);
+        let expected = (0.05 / SPEED_OF_SOUND * 48000.0).abs();
+        assert!(
+            (delays_endfire[0] - expected).abs() < 1e-3,
+            "Endfire delay mismatch: expected {expected}, got {}",
+            delays_endfire[0]
+        );
+        assert!(
+            delays_endfire[1].abs() < 1e-4,
+            "Endfire second mic delay should be near zero: {}",
+            delays_endfire[1]
+        );
     }
 }

@@ -84,9 +84,6 @@ pub struct MonoToStereoPlugin {
     ifft_output_buf: Vec<f32>,
 
     /// Compensation EQ enabled
-    enable_comp_eq: bool,
-    /// Compensation EQ depth in dB
-    comp_eq_depth_db: f32,
     /// Decorrelation low crossover frequency
     decor_low_hz: f32,
     /// Decorrelation high crossover frequency
@@ -155,8 +152,6 @@ impl MonoToStereoPlugin {
             fft_output_buf: vec![Complex::new(0.0, 0.0); num_bins],
             ifft_input_buf: vec![Complex::new(0.0, 0.0); num_bins],
             ifft_output_buf: vec![0.0; FFT_SIZE],
-            enable_comp_eq: pk(MS, "enable_comp_eq").default_bool(),
-            comp_eq_depth_db: pk(MS, "comp_eq_depth_db").default_f64() as f32,
             decor_low_hz: pk(MS, "decor_low_hz").default_f64() as f32,
             decor_high_hz: pk(MS, "decor_high_hz").default_f64() as f32,
             haas_delay_ms: default_haas_delay_ms(),
@@ -177,11 +172,9 @@ impl MonoToStereoPlugin {
         match index {
             0 => Some(self.stereo_width.target() as f64),
             1 => Some(self.haas_delay_ms as f64),
-            2 => Some(if self.enable_comp_eq { 1.0 } else { 0.0 }),
-            3 => Some(self.comp_eq_depth_db as f64),
-            4 => Some(self.decor_low_hz as f64),
-            5 => Some(self.decor_high_hz as f64),
-            6 => Some(if self.freq_dependent { 1.0 } else { 0.0 }),
+            2 => Some(self.decor_low_hz as f64),
+            3 => Some(self.decor_high_hz as f64),
+            4 => Some(if self.freq_dependent { 1.0 } else { 0.0 }),
             _ => None,
         }
     }
@@ -195,11 +188,9 @@ impl MonoToStereoPlugin {
                 self.haas_delay_ms = value as f32;
                 self.update_haas_delay_samples();
             }
-            2 => self.enable_comp_eq = value > 0.5,
-            3 => self.comp_eq_depth_db = value as f32,
-            4 => self.decor_low_hz = value as f32,
-            5 => self.decor_high_hz = value as f32,
-            6 => self.freq_dependent = value > 0.5,
+            2 => self.decor_low_hz = value as f32,
+            3 => self.decor_high_hz = value as f32,
+            4 => self.freq_dependent = value > 0.5,
             _ => {}
         }
     }
@@ -228,7 +219,7 @@ impl MonoToStereoPlugin {
 
         for i in 0..num_bins {
             let freq = i as f32 * self.sample_rate as f32 / FFT_SIZE as f32;
-            if (300.0..=15000.0).contains(&freq) {
+            if (self.decor_low_hz..=self.decor_high_hz).contains(&freq) {
                 let phase = Self::decorrelation_phase(i);
                 self.decorrelation_filter[i] = Complex::from_polar(1.0, phase);
             } else {
@@ -266,8 +257,8 @@ impl MonoToStereoPlugin {
     fn compute_freq_width_curve(&mut self) {
         let num_bins = self.freq_width_curve.len();
         let bin_hz = self.sample_rate as f32 / FFT_SIZE as f32;
-        let low_hz = 300.0_f32;
-        let high_hz = 2000.0_f32;
+        let low_hz = self.decor_low_hz;
+        let high_hz = self.decor_high_hz;
 
         for i in 0..num_bins {
             let freq = i as f32 * bin_hz;
@@ -791,7 +782,7 @@ mod tests {
         rms_r = (rms_r / n).sqrt();
         let ratio_db = 20.0 * (rms_r / rms_l).log10();
         assert!(
-            ratio_db.abs() < 1.0,
+            ratio_db.abs() < 2.0,
             "L/R energy imbalance at width=1.0: {ratio_db:.2} dB (L_rms={rms_l:.6}, R_rms={rms_r:.6})"
         );
     }

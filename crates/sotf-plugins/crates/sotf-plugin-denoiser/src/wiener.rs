@@ -125,8 +125,8 @@ impl DenoiserPlugin {
                     // Blend: tonal bins keep current gain, transient bins push gain toward 1.0
                     let transient_weight = self.tt_transient_mask[k];
                     self.gain[ch][k] =
-                        self.gain[ch][k] * (1.0 - 0.5 * transient_weight) + transient_weight * 0.5;
-                    // 50% less denoising on transients
+                        self.gain[ch][k] * (1.0 - transient_weight) + transient_weight;
+                    // preserve transients (blend toward 1.0)
                 }
             }
 

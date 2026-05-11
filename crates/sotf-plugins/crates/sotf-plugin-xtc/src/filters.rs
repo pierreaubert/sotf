@@ -1178,13 +1178,13 @@ pub(crate) fn head_shadowing_brown_duda(freq: f32, angle_rad: f32, head_radius: 
     // The magnitude transfer function is approximated by:
     //   |H(w, theta)| = alpha_min + (1 - alpha_min) * cos(theta/2)
     // where alpha_min depends on frequency:
-    //   alpha_min = 1.0 / (1.0 + (w / w0)^2)^0.5 * 2
+    //   alpha_min = 1.0 / (1.0 + (w / w0)^2 / 4.0)^0.5
     // This gives ~0dB at low frequencies and increasing attenuation at high frequencies.
     let mu = (w / w0).min(20.0); // normalized frequency, capped for stability
-    // Simplified Brown-Duda magnitude model:
+    // Brown-Duda magnitude model (rigid-sphere diffraction approximation):
     // At low freq (mu << 1): magnitude ≈ 1 (transparent)
     // At high freq (mu >> 1): magnitude ≈ cos(theta/2) (shadow)
-    let alpha_min = (1.0 + 0.5 * mu).recip(); // ~1 at low freq, ~0 at high freq
+    let alpha_min = (1.0 + mu * mu / 4.0).recip().sqrt(); // ~1 at low freq, ~0 at high freq
     let magnitude = alpha_min + (1.0 - alpha_min) * (theta / 2.0).cos();
 
     // --- ITD: Interaural time delay (Woodworth formula for ITD) ---

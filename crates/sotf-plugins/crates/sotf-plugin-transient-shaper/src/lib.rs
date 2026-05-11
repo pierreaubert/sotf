@@ -353,6 +353,9 @@ impl InPlacePlugin for TransientShaperPlugin {
     fn reset(&mut self) {
         self.fast_env.fill(0.0);
         self.slow_env.fill(0.0);
+        self.attack_smoother.reset(self.attack_amount);
+        self.sustain_smoother.reset(self.sustain_amount);
+        self.mix_smoother.reset(self.mix);
     }
 
     fn process_in_place(
@@ -364,8 +367,9 @@ impl InPlacePlugin for TransientShaperPlugin {
         let num_frames = context.num_frames;
         let ch = self.channels;
 
-        // Pre-compute sensitivity scaling (linear multiplier from dB)
-        let sensitivity_lin = 10.0f32.powf(self.sensitivity_db / 20.0);
+        // Pre-compute detection threshold from sensitivity (dB)
+        // +12 dB = lower threshold (more sensitive), -12 dB = higher threshold (less sensitive)
+        let threshold_lin = 1e-3f32 * 10.0f32.powf(-self.sensitivity_db / 20.0);
         // Pre-compute output gain (linear multiplier from dB)
         let output_gain_lin = 10.0f32.powf(self.output_gain_db / 20.0);
 
@@ -382,7 +386,7 @@ impl InPlacePlugin for TransientShaperPlugin {
             for c in 0..ch {
                 let idx = frame * ch + c;
                 let input = buffer[idx];
-                let abs_input = input.abs() * sensitivity_lin;
+                let abs_input = input.abs();
 
                 // Fast envelope (tracks transients)
                 self.fast_env[c] = one_pole(
@@ -412,13 +416,15 @@ impl InPlacePlugin for TransientShaperPlugin {
                 let transient_ratio = (transient / slow.max(EPSILON)).clamp(-1.0, 1.0);
                 let sustain_ratio = (sustain / fast.max(EPSILON)).clamp(-1.0, 1.0);
 
-                let gain: f32 =
-                    (1.0 + attack_amt * transient_ratio + sustain_amt * sustain_ratio).max(0.0);
+                let gain: f32 = if slow > threshold_lin {
+                    (1.0 + attack_amt * transient_ratio + sustain_amt * sustain_ratio).max(0.0)
+                } else {
+                    1.0
+                };
 
-                let shaped = input * gain * output_gain_lin;
-
-                // Apply dry/wet mix
-                buffer[idx] = input + current_mix * (shaped - input);
+                let wet = input * gain;
+                let mixed = input + current_mix * (wet - input);
+                buffer[idx] = mixed * output_gain_lin;
 
                 // Update monitoring
                 peak_transient = peak_transient.max(transient.abs());
@@ -595,6 +601,133 @@ mod tests {
             "Reduced sustain should be quieter: shaped_rms={}, original_rms={}",
             rms_shaped,
             rms_original
+        );
+    }
+
+    #[test]
+    fn test_sensitivity_affects_audio_output() {
+        let channels = 1;
+        let num_frames = 2400; // 50ms at 48kHz
+
+        // Create a step signal with sustained level 0.001
+        let mut signal = vec![0.0f32; num_frames * channels];
+        for frame in 480..num_frames {
+            // 10ms silence then step to 0.001
+            signal[frame] = 0.001;
+        }
+
+        // Low sensitivity (-12 dB) — high threshold, signal should be bypassed
+        let params_low = TransientShaperPluginParams {
+            attack: 100.0,
+            sustain: 0.0,
+            sensitivity_db: -12.0,
+            output_gain_db: 0.0,
+            mix: 1.0,
+        };
+        let mut plugin_low = TransientShaperPlugin::from_params(channels, params_low);
+        plugin_low.initialize(48000).unwrap();
+        let mut buffer_low = signal.clone();
+        let ctx = make_context(num_frames);
+        plugin_low.process_in_place(&mut buffer_low, &ctx).unwrap();
+
+        // High sensitivity (+12 dB) — low threshold, signal should be processed
+        let params_high = TransientShaperPluginParams {
+            attack: 100.0,
+            sustain: 0.0,
+            sensitivity_db: 12.0,
+            output_gain_db: 0.0,
+            mix: 1.0,
+        };
+        let mut plugin_high = TransientShaperPlugin::from_params(channels, params_high);
+        plugin_high.initialize(48000).unwrap();
+        let mut buffer_high = signal.clone();
+        plugin_high.process_in_place(&mut buffer_high, &ctx).unwrap();
+
+        // The outputs should differ
+        let mut total_diff = 0.0f32;
+        for i in 0..(num_frames * channels) {
+            total_diff += (buffer_low[i] - buffer_high[i]).abs();
+        }
+        assert!(
+            total_diff > 1e-6,
+            "Sensitivity should affect audio output, but outputs were identical (diff={})",
+            total_diff
+        );
+    }
+
+    #[test]
+    fn test_output_gain_applies_to_final_mix() {
+        let channels = 1;
+        let num_frames = 256;
+
+        // With mix=0.0, output_gain should still affect the output
+        let params = TransientShaperPluginParams {
+            attack: 0.0,
+            sustain: 0.0,
+            sensitivity_db: 0.0,
+            output_gain_db: 6.0, // +6 dB = ~2.0x linear
+            mix: 0.0,            // fully dry
+        };
+        let mut plugin = TransientShaperPlugin::from_params(channels, params);
+        plugin.initialize(48000).unwrap();
+
+        let mut buffer = vec![0.0f32; num_frames * channels];
+        for frame in 0..num_frames {
+            buffer[frame] = 0.5;
+        }
+
+        let ctx = make_context(num_frames);
+        plugin.process_in_place(&mut buffer, &ctx).unwrap();
+
+        // With mix=0.0 and output_gain=6dB, output should be input * 2.0
+        let expected = 0.5 * 10.0f32.powf(6.0 / 20.0);
+        for frame in 0..num_frames {
+            let diff = (buffer[frame] - expected).abs();
+            assert!(
+                diff < 1e-5,
+                "frame={}: expected={}, got={}, diff={}",
+                frame,
+                expected,
+                buffer[frame],
+                diff
+            );
+        }
+    }
+
+    #[test]
+    fn test_reset_resets_smoothers() {
+        let channels = 1;
+        let mut plugin = TransientShaperPlugin::new(channels);
+        plugin.initialize(48000).unwrap();
+
+        // Set attack to 50% and process a block to advance smoothers
+        plugin
+            .set_parameter(ParameterId::from("attack"), ParameterValue::Float(50.0))
+            .unwrap();
+        assert_eq!(plugin.attack_smoother.target(), 0.5);
+
+        let num_frames = 480;
+        let mut buffer = vec![0.0f32; num_frames * channels];
+        let ctx = make_context(num_frames);
+        plugin.process_in_place(&mut buffer, &ctx).unwrap();
+
+        // After processing, the smoother should have moved toward the target
+        let before_reset = plugin.attack_smoother.current();
+        assert!(
+            (before_reset - 0.5).abs() > 1e-6,
+            "Smoother should have moved from initial value, got={}",
+            before_reset
+        );
+
+        // Now reset
+        plugin.reset();
+
+        // After reset, smoother should be at target immediately
+        let after_reset = plugin.attack_smoother.current();
+        assert!(
+            (after_reset - 0.5).abs() < 1e-6,
+            "Smoother should be reset to target after reset(), got={}",
+            after_reset
         );
     }
 

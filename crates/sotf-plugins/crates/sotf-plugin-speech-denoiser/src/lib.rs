@@ -89,8 +89,9 @@ impl InPlacePlugin for SpeechDenoiserPlugin {
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
-        self.inner.initialize(sample_rate, self.channels);
-        Ok(())
+        self.inner
+            .initialize(sample_rate, self.channels)
+            .map_err(|e| e.to_string())
     }
 
     fn reset(&mut self) {
@@ -102,27 +103,120 @@ impl InPlacePlugin for SpeechDenoiserPlugin {
         buffer: &mut [f32],
         context: &ProcessContext,
     ) -> PluginResult<usize> {
-        if self.enabled {
-            let max_in_place_frames = self.inner.max_in_place_frames();
-            if context.num_frames > max_in_place_frames {
-                return Err(format!(
-                    "Block too large for RNNoise speech denoiser: {} frames exceeds prepared safe maximum {}",
-                    context.num_frames, max_in_place_frames
-                ));
-            }
-            self.inner
-                .process(buffer, context.num_frames, self.channels);
-            Ok(context.num_frames)
-        } else {
-            Ok(context.num_frames)
+        let expected_len = context.num_frames * self.channels;
+        if buffer.len() < expected_len {
+            return Err(format!(
+                "Buffer too small: {} < {}",
+                buffer.len(), expected_len
+            ));
         }
+
+        if context.num_frames % 480 != 0 {
+            return Err(format!(
+                "RNNoise requires block sizes multiple of 480; got {}",
+                context.num_frames
+            ));
+        }
+
+        let bypass = !self.enabled;
+        let frames_written = self
+            .inner
+            .process(buffer, context.num_frames, self.channels, bypass);
+        Ok(frames_written)
     }
 
     fn latency_samples(&self) -> usize {
-        if self.enabled {
-            self.inner.latency_samples()
-        } else {
-            0
-        }
+        self.inner.latency_samples()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sotf_host::parameters::ParameterValue;
+    use sotf_host::plugin::{InPlacePlugin, ProcessContext};
+
+    #[test]
+    fn disabled_is_transparent() {
+        let mut plugin = SpeechDenoiserPlugin::new(2);
+        plugin
+            .set_parameter("enabled".into(), ParameterValue::Bool(false))
+            .expect("set enabled");
+        plugin.initialize(48000).expect("initialize");
+
+        // Process 960 frames: first 480 discarded (startup delay), second 480 pass through.
+        let mut buffer: Vec<f32> = (0..1920).map(|i| ((i % 100) as f32 - 50.0) / 100.0).collect();
+        let input = buffer.clone();
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames: 960,
+        };
+        let written = plugin.process_in_place(&mut buffer, &context).unwrap();
+        // First frame discarded, so only 480 frames written.
+        assert_eq!(written, 480);
+        // The second 480 frames of input should appear at the start of the output.
+        assert_eq!(&buffer[..960], &input[960..1920]);
+    }
+
+    #[test]
+    fn latency_is_constant_when_disabled() {
+        let mut plugin = SpeechDenoiserPlugin::new(1);
+        plugin.initialize(48000).expect("initialize");
+        assert_eq!(plugin.latency_samples(), 480);
+
+        plugin
+            .set_parameter("enabled".into(), ParameterValue::Bool(false))
+            .expect("set enabled");
+        assert_eq!(plugin.latency_samples(), 480);
+    }
+
+    #[test]
+    fn rejects_non_multiple_of_480() {
+        let mut plugin = SpeechDenoiserPlugin::new(1);
+        plugin.initialize(48000).expect("initialize");
+
+        let mut buffer = vec![0.0f32; 512];
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames: 512,
+        };
+        let result = plugin.process_in_place(&mut buffer, &context);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("480"));
+    }
+
+    #[test]
+    fn rejects_non_48khz() {
+        let mut plugin = SpeechDenoiserPlugin::new(1);
+        let result = plugin.initialize(44100);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("48 kHz"));
+    }
+
+    #[test]
+    fn disabled_preserves_latency() {
+        let mut plugin = SpeechDenoiserPlugin::new(1);
+        plugin
+            .set_parameter("enabled".into(), ParameterValue::Bool(false))
+            .expect("set enabled");
+        plugin.initialize(48000).expect("initialize");
+
+        // Inject an impulse at sample 0 of the second 480-frame block.
+        let mut buffer = vec![0.0f32; 960];
+        buffer[480] = 1.0;
+
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames: 960,
+        };
+        let written = plugin.process_in_place(&mut buffer, &context).unwrap();
+        // First frame is discarded (startup delay), so only 480 frames output.
+        assert_eq!(written, 480);
+        // The impulse should appear at the start of the output buffer because
+        // the first 480-sample frame was discarded and the second frame is output.
+        assert!(
+            buffer[0].abs() > 0.99,
+            "Bypass should preserve the same startup delay; impulse should appear at sample 0"
+        );
     }
 }

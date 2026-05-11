@@ -287,7 +287,7 @@ impl InPlacePlugin for DelayPlugin {
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
         // Extra headroom for LFO modulation and interpolation guard samples
-        self.max_samples = (MAX_DELAY_MS * 0.001 * sample_rate as f32) as usize + 4;
+        self.max_samples = ((MAX_DELAY_MS * 0.001 * sample_rate as f32) as usize + 4).next_power_of_two();
         self.buffer.resize(self.max_samples * self.channels, 0.0);
         self.delay_smoother = Smoother::new(
             self.delay_ms * sample_rate as f32 / 1000.0,
@@ -318,7 +318,6 @@ impl InPlacePlugin for DelayPlugin {
         enable_ftz_daz();
         let num_frames = context.num_frames;
 
-        let base_delay_samples = self.delay_smoother.next_n(num_frames);
         let fb = self.feedback_smoother.next_n(num_frames);
         let mix = self.mix_smoother.next_n(num_frames);
 
@@ -334,14 +333,13 @@ impl InPlacePlugin for DelayPlugin {
             let lfo_val = if lfo_active {
                 let val = (self.lfo_phase * std::f32::consts::TAU).sin();
                 self.lfo_phase += lfo_phase_inc;
-                if self.lfo_phase >= 1.0 {
-                    self.lfo_phase -= 1.0;
-                }
+                self.lfo_phase = self.lfo_phase.fract();
                 val
             } else {
                 0.0
             };
 
+            let base_delay_samples = self.delay_smoother.advance();
             let delay_samples = self.effective_delay_samples(base_delay_samples, lfo_val);
             let int_delay = delay_samples.floor() as usize;
             let frac = delay_samples - int_delay as f32;
@@ -353,10 +351,11 @@ impl InPlacePlugin for DelayPlugin {
                 // 4-point Lagrange interpolation read positions:
                 // We want samples at positions: int_delay-1, int_delay, int_delay+1, int_delay+2
                 // relative to write_pos (going backwards in time)
-                let r0 = (self.write_pos + self.max_samples - int_delay) % self.max_samples;
-                let r_m1 = (r0 + 1) % self.max_samples;
-                let r1 = (r0 + self.max_samples - 1) % self.max_samples;
-                let r2 = (r1 + self.max_samples - 1) % self.max_samples;
+                let mask = self.max_samples - 1;
+                let r0 = (self.write_pos + self.max_samples - int_delay) & mask;
+                let r_m1 = (r0 + 1) & mask;
+                let r1 = (r0 + self.max_samples - 1) & mask;
+                let r2 = (r1 + self.max_samples - 1) & mask;
 
                 let y_m1 = self.read_buffer(r_m1, ch);
                 let y_0 = self.read_buffer(r0, ch);
@@ -375,7 +374,7 @@ impl InPlacePlugin for DelayPlugin {
                 self.buffer[self.write_pos * self.channels + ch] = input + feedback_signal;
                 buffer[idx] = input * (1.0 - mix) + delayed * mix;
             }
-            self.write_pos = (self.write_pos + 1) % self.max_samples;
+            self.write_pos = (self.write_pos + 1) & (self.max_samples - 1);
         }
 
         flush_denormals_inplace(buffer);

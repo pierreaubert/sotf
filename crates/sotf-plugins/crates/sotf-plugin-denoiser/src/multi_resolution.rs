@@ -181,8 +181,6 @@ impl MultiResState {
         &mut self,
         samples: &[f32],
         num_channels: usize,
-        attack_coeff: f32,
-        release_coeff: f32,
         reduction_linear: f32,
         floor_linear: f32,
     ) {
@@ -201,8 +199,6 @@ impl MultiResState {
             while self.input_buffer_fill >= block_samples {
                 self.process_small_block(
                     num_channels,
-                    attack_coeff,
-                    release_coeff,
                     reduction_linear,
                     floor_linear,
                 );
@@ -213,8 +209,6 @@ impl MultiResState {
     fn process_small_block(
         &mut self,
         num_channels: usize,
-        attack_coeff: f32,
-        release_coeff: f32,
         reduction_linear: f32,
         floor_linear: f32,
     ) {
@@ -318,20 +312,15 @@ impl MultiResState {
             }
             state.frame_counter += 1;
 
-            // Wiener gain computation with temporal smoothing
+            // Wiener gain computation (raw gain — temporal smoothing is applied
+            // by the large-FFT path in calculate_wiener_gains, so we avoid
+            // double-smoothing by storing the unsmoothed gain here).
             for k in 0..spectrum_size {
                 let signal_power = state.freq_domain[k].norm_sqr();
                 let noise_power = state.noise_psd[k].max(EPSILON);
                 let snr = ((signal_power - noise_power).max(0.0)) / noise_power;
                 let g = (snr / (snr + reduction_linear)).max(floor_linear);
-
-                let prev = state.smoothed_gain[k];
-                let coeff = if g > prev {
-                    attack_coeff
-                } else {
-                    release_coeff
-                };
-                state.smoothed_gain[k] = g + coeff * (prev - g);
+                state.smoothed_gain[k] = g;
             }
 
             // Spectral flux: mean |magnitude_change| across bins

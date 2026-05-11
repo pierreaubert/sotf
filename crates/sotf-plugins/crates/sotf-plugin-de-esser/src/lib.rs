@@ -175,7 +175,7 @@ impl DeEsserPlugin {
             param_mode: ParameterId::from("mode"),
             mode_index: 1, // default: split-band
             crossovers: (0..channels)
-                .map(|_| Lr4Crossover::new(freq, sr as f32, 1))
+                .map(|_| Lr4Crossover::new(freq, sr as f32, 4))
                 .collect(),
 
             param_mix: ParameterId::from("mix"),

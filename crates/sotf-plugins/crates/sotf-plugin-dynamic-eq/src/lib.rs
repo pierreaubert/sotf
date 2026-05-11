@@ -636,12 +636,6 @@ impl DynamicEqPlugin {
         ];
     }
 
-    fn ensure_dry_buf(&mut self, required: usize) {
-        // Pre-allocated in initialize(); resize only if needed (rare edge case)
-        if self.dry_buf.len() < required {
-            self.dry_buf.resize(required, 0.0);
-        }
-    }
 }
 
 impl InPlacePlugin for DynamicEqPlugin {
@@ -872,8 +866,14 @@ impl InPlacePlugin for DynamicEqPlugin {
             ));
         }
 
-        // Ensure dry buffer is big enough
-        self.ensure_dry_buf(total);
+        // Reject blocks larger than pre-allocated dry buffer to maintain real-time safety.
+        if total > self.dry_buf.len() {
+            return Err(format!(
+                "dynamic-eq: block size {} samples exceeds max {} samples",
+                total,
+                self.dry_buf.len()
+            ));
+        }
 
         // Save dry signal
         self.dry_buf[..total].copy_from_slice(&buffer[..total]);
@@ -906,7 +906,7 @@ impl InPlacePlugin for DynamicEqPlugin {
                     let mut max_level = 0.0f32;
                     for ch in 0..nc {
                         let idx = frame * nc + ch;
-                        let filtered = band.apply_sidechain_bp(ch, buffer[idx]);
+                        let filtered = band.apply_sidechain_bp(ch, self.dry_buf[idx]);
                         let level = filtered.abs();
                         max_level = max_level.max(level);
                     }
@@ -928,7 +928,7 @@ impl InPlacePlugin for DynamicEqPlugin {
                     // Per-channel detection
                     for ch in 0..nc {
                         let idx = frame * nc + ch;
-                        let filtered = band.apply_sidechain_bp(ch, buffer[idx]);
+                        let filtered = band.apply_sidechain_bp(ch, self.dry_buf[idx]);
                         let level = filtered.abs();
                         let level_db = DB_CONVERSION_FACTOR * fast_log10(level.max(EPSILON));
                         let gr = band.cores[ch]

@@ -19,3 +19,10 @@
 - Massive update to plugins, see individual markdown plan for details (wave 3)
 - Massive update to plugins, see individual markdown plan for details (wave 2)
 - Massive update to plugins, see individual markdown plan for details
+# Unreleased
+
+## Fixes
+- Fixed hardcoded decorrelation frequency range: `generate_decorrelation_filter()` now uses `self.decor_low_hz` and `self.decor_high_hz` instead of hardcoded 300 Hz and 15000 Hz.
+- Fixed hardcoded width curve frequencies: `compute_freq_width_curve()` now uses `self.decor_low_hz` and `self.decor_high_hz` instead of hardcoded 300 Hz and 2000 Hz.
+- Removed dead `enable_comp_eq` and `comp_eq_depth_db` parameters from UI layout to avoid misleading users.
+

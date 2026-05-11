@@ -51,6 +51,9 @@ fn default_itu_mode() -> bool {
 fn default_matrix_ltrt() -> bool {
     false
 }
+fn default_phase_coherence_strength() -> f32 {
+    0.5
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DownmixPluginParams {
@@ -75,6 +78,9 @@ pub struct DownmixPluginParams {
     /// When true, use matrix Lt/Rt encoding for surround channels
     #[serde(default = "default_matrix_ltrt", alias = "dolby_ltrt")]
     pub matrix_ltrt: bool,
+    /// Strength of phase coherence blending (0.0 = off, 1.0 = full alignment).
+    #[serde(default = "default_phase_coherence_strength")]
+    pub phase_coherence_strength: f32,
 }
 
 #[derive(Clone, Copy)]
@@ -84,7 +90,7 @@ pub(crate) struct DownmixCoeffs {
 }
 
 const FFT_SIZE: usize = 2048;
-const HOP_SIZE: usize = FFT_SIZE / 4;
+const HOP_SIZE: usize = FFT_SIZE / 2;
 const PARAM_SMOOTH_MS: f32 = 20.0;
 
 pub struct DownmixPlugin {
@@ -133,31 +139,31 @@ pub struct DownmixPlugin {
     itu_mode: bool,
     matrix_ltrt: bool,
 
-    /// Per-surround-channel first-order allpass filters for ~90° phase shift.
-    /// Used only when matrix_ltrt is enabled.
-    /// Each surround channel gets one allpass filter.
-    ltrt_allpass: Vec<LtRtAllpass>,
+    /// Per-front-channel reference phase-splitter for Lt/Rt encoding.
+    ltrt_ref: Vec<LtRtPhaseSplitter>,
+    /// Per-surround-channel quadrature phase-splitter for Lt/Rt encoding.
+    ltrt_quad: Vec<LtRtPhaseSplitter>,
+    /// Maps input channel index to front filter index.
+    ltrt_front_idx: Vec<Option<usize>>,
+
+    phase_coherence_strength: f32,
 
     cached_parameters: Vec<sotf_host::parameters::Parameter>,
 }
 
-/// First-order allpass filter state for 90° phase shift approximation.
-///
-/// Uses a first-order allpass: y[n] = -a*x[n] + x[n-1] + a*y[n-1]
-/// where a = (tan(pi*fc/fs) - 1) / (tan(pi*fc/fs) + 1).
-/// At frequencies >> fc, the phase approaches -180°; at fc, it's -90°.
-/// For Lt/Rt encoding, fc is tuned to ~300 Hz so surround content (primarily
-/// 300 Hz+) gets approximately 90° shift relative to the direct path.
-struct LtRtAllpass {
+/// Correct first-order allpass filter implementing H(z) = (a - z^{-1})/(1 - a*z^{-1}).
+/// The coefficient a = (1 - tan(π*fc/fs)) / (1 + tan(π*fc/fs)) places the -90°
+/// phase point exactly at fc.
+struct FirstOrderAllpass {
     coeff_a: f32,
     x_prev: f32,
     y_prev: f32,
 }
 
-impl LtRtAllpass {
-    fn new(sample_rate: u32) -> Self {
-        let fc = 300.0_f32; // Crossover frequency for 90° at ~300 Hz
-        let coeff_a = Self::compute_coeff(fc, sample_rate);
+impl FirstOrderAllpass {
+    fn new(fc: f32, sample_rate: u32) -> Self {
+        let t = (std::f32::consts::PI * fc / sample_rate as f32).tan();
+        let coeff_a = (1.0 - t) / (1.0 + t);
         Self {
             coeff_a,
             x_prev: 0.0,
@@ -165,18 +171,10 @@ impl LtRtAllpass {
         }
     }
 
-    fn compute_coeff(fc: f32, sample_rate: u32) -> f32 {
-        let t = (std::f32::consts::PI * fc / sample_rate as f32).tan();
-        (t - 1.0) / (t + 1.0)
-    }
-
-    fn update_sample_rate(&mut self, sample_rate: u32) {
-        self.coeff_a = Self::compute_coeff(300.0, sample_rate);
-    }
-
     #[inline]
     fn process(&mut self, x: f32) -> f32 {
-        let y = -self.coeff_a * x + self.x_prev + self.coeff_a * self.y_prev;
+        // y[n] = a*x[n] - x[n-1] + a*y[n-1]
+        let y = self.coeff_a * x - self.x_prev + self.coeff_a * self.y_prev;
         self.x_prev = x;
         self.y_prev = y;
         y
@@ -186,6 +184,69 @@ impl LtRtAllpass {
         self.x_prev = 0.0;
         self.y_prev = 0.0;
     }
+}
+
+/// Lt/Rt 90° phase-splitter using two parallel chains of first-order allpass filters.
+/// Chain 1 (reference) and Chain 2 (quadrature) maintain an approximate 90°
+/// phase difference across the audio band.
+struct LtRtPhaseSplitter {
+    ref_stages: [FirstOrderAllpass; 2],
+    quad_stages: [FirstOrderAllpass; 2],
+}
+
+const REF_FREQS: [f32; 2] = [200.0, 3200.0];
+const QUAD_FREQS: [f32; 2] = [800.0, 12800.0];
+
+impl LtRtPhaseSplitter {
+    fn new(sample_rate: u32) -> Self {
+        Self {
+            ref_stages: [
+                FirstOrderAllpass::new(REF_FREQS[0], sample_rate),
+                FirstOrderAllpass::new(REF_FREQS[1], sample_rate),
+            ],
+            quad_stages: [
+                FirstOrderAllpass::new(QUAD_FREQS[0], sample_rate),
+                FirstOrderAllpass::new(QUAD_FREQS[1], sample_rate),
+            ],
+        }
+    }
+
+    fn update_sample_rate(&mut self, sample_rate: u32) {
+        for (i, &fc) in REF_FREQS.iter().enumerate() {
+            self.ref_stages[i] = FirstOrderAllpass::new(fc, sample_rate);
+        }
+        for (i, &fc) in QUAD_FREQS.iter().enumerate() {
+            self.quad_stages[i] = FirstOrderAllpass::new(fc, sample_rate);
+        }
+    }
+
+    #[inline]
+    fn process_ref(&mut self, x: f32) -> f32 {
+        let mut y = x;
+        for stage in &mut self.ref_stages {
+            y = stage.process(y);
+        }
+        y
+    }
+
+    #[inline]
+    fn process_quad(&mut self, x: f32) -> f32 {
+        let mut y = x;
+        for stage in &mut self.quad_stages {
+            y = stage.process(y);
+        }
+        y
+    }
+
+    fn reset(&mut self) {
+        for stage in &mut self.ref_stages {
+            stage.reset();
+        }
+        for stage in &mut self.quad_stages {
+            stage.reset();
+        }
+    }
+
 }
 
 impl DownmixPlugin {
@@ -198,12 +259,16 @@ impl DownmixPlugin {
         let analysis_window: Vec<f32> = (0..FFT_SIZE)
             .map(|i| {
                 let x = i as f32 / FFT_SIZE as f32;
-                0.5 * (1.0 - (2.0 * std::f32::consts::PI * x).cos())
+                let hann = 0.5 * (1.0 - (2.0 * std::f32::consts::PI * x).cos());
+                hann.sqrt()
             })
             .collect();
 
-        // 75% overlap dual-window scaling: Sum(w^2) = (N/H) * (3/8) * N = 1.5 * N
-        let output_scale = 1.0 / (FFT_SIZE as f32 * 1.5);
+        // 50% overlap with sqrt(Hann): OLA sum of w^2 = sum(Hann) = 1.0 (constant).
+        // realfft does not normalize, so IFFT(FFT(x*w)) = N*x*w.
+        // After synthesis window and OLA: N * x * 1.0.
+        // Scale by 1/N to recover the original amplitude.
+        let output_scale = 1.0 / FFT_SIZE as f32;
 
         let mut p = Self {
             input_ch: input_channels,
@@ -240,7 +305,10 @@ impl DownmixPlugin {
             phase_blend_high_hz: pk(DM, "phase_blend_high_hz").default_f64() as f32,
             itu_mode: pk(DM, "itu_mode").default_bool(),
             matrix_ltrt: false,
-            ltrt_allpass: Vec::new(),
+            ltrt_ref: Vec::new(),
+            ltrt_quad: Vec::new(),
+            ltrt_front_idx: Vec::new(),
+            phase_coherence_strength: 0.5,
             cached_parameters: Vec::new(),
         };
         p.compute_coefficients(true);
@@ -295,6 +363,7 @@ impl DownmixPlugin {
         plugin.phase_blend_high_hz = params.phase_blend_high_hz;
         plugin.itu_mode = params.itu_mode;
         plugin.matrix_ltrt = params.matrix_ltrt;
+        plugin.phase_coherence_strength = params.phase_coherence_strength;
         plugin.compute_coefficients(true);
         plugin.rebuild_cached_parameters();
         plugin
@@ -543,6 +612,49 @@ impl DownmixPlugin {
         new_coeffs
     }
 
+    /// Count front channels (|azimuth| < 45°, not LFE, not height).
+    fn count_front_channels(&self) -> usize {
+        if let Some(config) = self.speaker_config {
+            config
+                .speakers
+                .iter()
+                .filter(|s| !s.is_lfe && s.azimuth.abs() < 45.0 && s.elevation.abs() <= 10.0)
+                .count()
+        } else {
+            self.input_ch - self.lfe_channels.len()
+        }
+    }
+
+    /// Map channel index to front filter index.
+    fn front_channel_index(&self, ch: usize) -> Option<usize> {
+        if let Some(config) = self.speaker_config {
+            let mut front_idx = 0;
+            for s in config.speakers {
+                if !s.is_lfe && s.azimuth.abs() < 45.0 && s.elevation.abs() <= 10.0 {
+                    if s.channel == ch {
+                        return Some(front_idx);
+                    }
+                    front_idx += 1;
+                }
+            }
+        } else {
+            if self.lfe_channels.contains(&ch) {
+                return None;
+            }
+            let mut front_idx = 0;
+            for c in 0..self.input_ch {
+                if self.lfe_channels.contains(&c) {
+                    continue;
+                }
+                if c == ch {
+                    return Some(front_idx);
+                }
+                front_idx += 1;
+            }
+        }
+        None
+    }
+
     /// Count surround channels (|azimuth| >= 45°, not LFE, not height).
     fn count_surround_channels(&self) -> usize {
         if let Some(config) = self.speaker_config {
@@ -607,8 +719,8 @@ impl DownmixPlugin {
 
     /// Matrix Lt/Rt stereo encoding.
     ///
-    /// Lt = L + 0.707*C - 0.707*j*Ls - 0.707*j*Rs
-    /// Rt = R + 0.707*C + 0.707*j*Ls + 0.707*j*Rs
+    /// Lt = L + 0.707*C - 0.707*j*Ls + 0.707*j*Rs
+    /// Rt = R + 0.707*C + 0.707*j*Ls - 0.707*j*Rs
     ///
     /// where j = 90° phase shift, approximated by a first-order allpass filter.
     /// For speaker configurations without standard 5.1 layout, we identify
@@ -624,13 +736,21 @@ impl DownmixPlugin {
                 let s = input[frame * self.input_ch + ch];
 
                 if self.is_center_channel(ch) {
-                    // Center: 0.707 * C to both Lt and Rt
-                    lt += ATTEN * s;
-                    rt += ATTEN * s;
+                    // Center: apply reference chain, then 0.707 * C to both Lt and Rt
+                    if let Some(front_idx) = self.ltrt_front_idx[ch] {
+                        if front_idx < self.ltrt_ref.len() {
+                            let shifted = self.ltrt_ref[front_idx].process_ref(s);
+                            lt += ATTEN * shifted;
+                            rt += ATTEN * shifted;
+                        }
+                    } else {
+                        lt += ATTEN * s;
+                        rt += ATTEN * s;
+                    }
                 } else if let Some(surr_idx) = self.is_surround_channel(ch) {
-                    // Surround: apply 90° phase shift via allpass
-                    if surr_idx < self.ltrt_allpass.len() {
-                        let shifted = self.ltrt_allpass[surr_idx].process(s);
+                    // Surround: apply quadrature chain for 90° phase shift
+                    if surr_idx < self.ltrt_quad.len() {
+                        let shifted = self.ltrt_quad[surr_idx].process_quad(s);
                         // Determine if left-side or right-side surround from speaker config
                         let is_left = self
                             .speaker_config
@@ -650,7 +770,15 @@ impl DownmixPlugin {
                 } else if self.lfe_lpf_idx.get(ch).copied().flatten().is_some() {
                     // LFE: discard in standard Lt/Rt encoding
                 } else {
-                    // Front L/R: pass through directly using smoother gains
+                    // Front L/R: apply reference chain, then pass through with smoother gains
+                    if let Some(front_idx) = self.ltrt_front_idx[ch] {
+                        if front_idx < self.ltrt_ref.len() {
+                            let shifted = self.ltrt_ref[front_idx].process_ref(s);
+                            lt += shifted * self.coeff_smoothers[ch * 2].advance();
+                            rt += shifted * self.coeff_smoothers[ch * 2 + 1].advance();
+                            continue;
+                        }
+                    }
                     lt += s * self.coeff_smoothers[ch * 2].advance();
                     rt += s * self.coeff_smoothers[ch * 2 + 1].advance();
                     continue;
@@ -660,9 +788,6 @@ impl DownmixPlugin {
             output[frame * 2] = lt;
             output[frame * 2 + 1] = rt;
         }
-
-        // Advance smoothers for non-front channels that weren't advanced above
-        // (smoothers are used only for coefficient interpolation in non-ltrt mode)
     }
 
     fn process_fft_block(&mut self) {
@@ -783,8 +908,9 @@ impl DownmixPlugin {
                         mag_sum_r * fast_sin(avg_phase_r),
                     );
 
-                    self.out_freq_l[bin] = self.out_freq_l[bin] * (1.0 - blend) + aligned_l * blend;
-                    self.out_freq_r[bin] = self.out_freq_r[bin] * (1.0 - blend) + aligned_r * blend;
+                    let effective_blend = blend * self.phase_coherence_strength;
+                    self.out_freq_l[bin] = self.out_freq_l[bin] * (1.0 - effective_blend) + aligned_l * effective_blend;
+                    self.out_freq_r[bin] = self.out_freq_r[bin] * (1.0 - effective_blend) + aligned_r * effective_blend;
                 }
             }
         }
@@ -873,18 +999,28 @@ impl Plugin for DownmixPlugin {
                 ]
             })
             .collect();
-        // Initialize Lt/Rt allpass filters: one per surround channel.
-        // Surround channels are those with |azimuth| >= 45° and not LFE.
+        // Initialize Lt/Rt phase splitters: one per front channel and one per surround channel.
+        let front_count = self.count_front_channels();
         let surround_count = self.count_surround_channels();
-        if self.ltrt_allpass.len() == surround_count {
-            for ap in &mut self.ltrt_allpass {
-                ap.update_sample_rate(sample_rate);
+        if self.ltrt_ref.len() == front_count {
+            for ps in &mut self.ltrt_ref {
+                ps.update_sample_rate(sample_rate);
             }
         } else {
-            self.ltrt_allpass = (0..surround_count)
-                .map(|_| LtRtAllpass::new(sample_rate))
+            self.ltrt_ref = (0..front_count)
+                .map(|_| LtRtPhaseSplitter::new(sample_rate))
                 .collect();
         }
+        if self.ltrt_quad.len() == surround_count {
+            for ps in &mut self.ltrt_quad {
+                ps.update_sample_rate(sample_rate);
+            }
+        } else {
+            self.ltrt_quad = (0..surround_count)
+                .map(|_| LtRtPhaseSplitter::new(sample_rate))
+                .collect();
+        }
+        self.ltrt_front_idx = (0..self.input_ch).map(|ch| self.front_channel_index(ch)).collect();
         for s in &mut self.coeff_smoothers {
             s.set_time(PARAM_SMOOTH_MS, sample_rate);
         }
@@ -977,8 +1113,11 @@ impl Plugin for DownmixPlugin {
         self.output_accumulator_fill = 0;
         self.next_add_position = 0;
         self.output_read_position = 0;
-        for ap in &mut self.ltrt_allpass {
-            ap.reset();
+        for ps in &mut self.ltrt_ref {
+            ps.reset();
+        }
+        for ps in &mut self.ltrt_quad {
+            ps.reset();
         }
         self.lfe_lpf = self
             .lfe_channels
@@ -1074,6 +1213,7 @@ mod tests {
             phase_blend_high_hz: 5000.0,
             itu_mode: false,
             matrix_ltrt: false,
+            phase_coherence_strength: 0.5,
         });
         p.initialize(48000).unwrap();
 
@@ -1137,6 +1277,7 @@ mod tests {
             phase_blend_high_hz: 5000.0,
             itu_mode: false,
             matrix_ltrt: false,
+            phase_coherence_strength: 0.5,
         });
 
         // Sum the absolute values of all left gains — should be <= 2.0 after normalization
@@ -1168,6 +1309,7 @@ mod tests {
             phase_blend_high_hz: 5000.0,
             itu_mode: false,
             matrix_ltrt: false,
+            phase_coherence_strength: 0.5,
         });
 
         // In 7.1: ch4=SL(90°), ch5=SR(-90°), ch6=BL(150°), ch7=BR(-150°)
@@ -1268,6 +1410,7 @@ mod tests {
                 phase_blend_high_hz: 5000.0,
                 itu_mode: false,
                 matrix_ltrt: false,
+                phase_coherence_strength: 0.5,
             });
 
             assert_eq!(
@@ -1353,5 +1496,156 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Bug: Lt/Rt encoding phase splitter should maintain ~90° phase difference
+    /// between reference and quadrature chains across the audio band.
+    #[test]
+    fn test_ltrt_phase_splitter_90_degrees() {
+        use std::f32::consts::PI;
+        let sr = 48000.0;
+
+        // Helper: measure phase of output relative to input sine
+        let measure_phase = |freq: f32, process_fn: &mut dyn FnMut(f32) -> f32| -> f32 {
+            let num_cycles = 200;
+            let samples_per_cycle = (sr / freq).round() as usize;
+            let total = num_cycles * samples_per_cycle;
+
+            // Settle
+            for i in 0..samples_per_cycle * 50 {
+                let t = i as f32;
+                process_fn((2.0 * PI * freq * t / sr).sin());
+            }
+
+            let mut sum_sin = 0.0f32;
+            let mut sum_cos = 0.0f32;
+            for i in 0..total {
+                let t = (i + samples_per_cycle * 50) as f32;
+                let input = (2.0 * PI * freq * t / sr).sin();
+                let output = process_fn(input);
+                sum_sin += output * (2.0 * PI * freq * t / sr).sin();
+                sum_cos += output * (2.0 * PI * freq * t / sr).cos();
+            }
+            sum_cos.atan2(sum_sin)
+        };
+
+        let test_freqs = [200.0, 400.0, 800.0, 1600.0, 3200.0, 6400.0];
+        let mut max_err = 0.0f32;
+        for &freq in &test_freqs {
+            let mut splitter_ref = crate::LtRtPhaseSplitter::new(sr as u32);
+            let mut splitter_quad = crate::LtRtPhaseSplitter::new(sr as u32);
+            let p_ref = measure_phase(freq, &mut |x| splitter_ref.process_ref(x));
+            let p_quad = measure_phase(freq, &mut |x| splitter_quad.process_quad(x));
+            let mut diff = p_quad - p_ref;
+            while diff > PI { diff -= 2.0 * PI; }
+            while diff < -PI { diff += 2.0 * PI; }
+            let err = (diff.abs() - PI / 2.0).abs();
+            max_err = max_err.max(err);
+        }
+        // Tolerate up to 25° error for the 2+2 first-order design.
+        assert!(
+            max_err.to_degrees() < 25.0,
+            "Max phase error too large: {:.1}°",
+            max_err.to_degrees()
+        );
+    }
+
+    /// Bug: Phase coherence strength should control the amount of phase alignment.
+    /// With strength=1.0, out-of-phase content is fully aligned (no cancellation).
+    /// With strength=0.5, partial alignment leaves intermediate cancellation.
+    #[test]
+    fn test_phase_coherence_strength() {
+        let mut plugin = DownmixPlugin::new(2);
+        plugin.initialize(48000).unwrap();
+        plugin.phase_coherence = true;
+        plugin.phase_blend_low_hz = 100.0;
+        plugin.phase_blend_high_hz = 8000.0;
+
+        // Map both channels equally to the left output (right output gets nothing)
+        plugin.target_coeffs = vec![
+            DownmixCoeffs { left_gain: 0.5, right_gain: 0.0 },
+            DownmixCoeffs { left_gain: 0.5, right_gain: 0.0 },
+        ];
+        // Reset smoothers to new targets
+        plugin.coeff_smoothers.clear();
+        for c in &plugin.target_coeffs {
+            plugin.coeff_smoothers.push(Smoother::new(c.left_gain, PARAM_SMOOTH_MS, plugin.sample_rate));
+            plugin.coeff_smoothers.push(Smoother::new(c.right_gain, PARAM_SMOOTH_MS, plugin.sample_rate));
+        }
+
+        let freq = 1000.0;
+        let sr = 48000.0;
+        let block_size = 512;
+        let num_blocks = 40;
+
+        // First, measure without phase coherence to establish baseline
+        plugin.phase_coherence = false;
+        let amp_none = run_phase_coherence_test(&mut plugin, freq, sr, block_size, num_blocks);
+
+        plugin.phase_coherence = true;
+        // Run with strength = 1.0
+        plugin.phase_coherence_strength = 1.0;
+        let amp_full = run_phase_coherence_test(&mut plugin, freq, sr, block_size, num_blocks);
+
+        // Run with strength = 0.5
+        plugin.phase_coherence_strength = 0.5;
+        let amp_half = run_phase_coherence_test(&mut plugin, freq, sr, block_size, num_blocks);
+
+        // Without phase coherence, out-of-phase content cancels → near-zero amplitude.
+        // With strength=1.0, content is aligned → highest amplitude.
+        // With strength=0.5, partially aligned → intermediate amplitude.
+        assert!(
+            amp_full > amp_half,
+            "Full strength ({}) should produce higher amplitude than half strength ({})",
+            amp_full, amp_half
+        );
+        assert!(
+            amp_half > amp_none,
+            "Half strength ({}) should produce higher amplitude than no coherence ({})",
+            amp_half, amp_none
+        );
+        // Full alignment should recover significant amplitude (substantially more than none)
+        assert!(
+            amp_full > amp_none * 5.0,
+            "Full strength ({}) should be much higher than no coherence ({})",
+            amp_full, amp_none
+        );
+    }
+
+    fn run_phase_coherence_test(
+        plugin: &mut DownmixPlugin,
+        freq: f32,
+        sr: f32,
+        block_size: usize,
+        num_blocks: usize,
+    ) -> f32 {
+        // Warm-up
+        let mut input = vec![0.0f32; block_size * 2];
+        let mut output = vec![0.0f32; block_size * 2];
+        for block in 0..num_blocks {
+            for i in 0..block_size {
+                let t = (block * block_size + i) as f32 / sr;
+                input[i * 2] = (2.0 * std::f32::consts::PI * freq * t).sin();
+                // Channel 1 is 180° out of phase
+                input[i * 2 + 1] = -(2.0 * std::f32::consts::PI * freq * t).sin();
+            }
+            let ctx = ProcessContext { num_frames: block_size, sample_rate: sr as u32 };
+            plugin.process(&input, &mut output, &ctx).unwrap();
+        }
+        // Measure average amplitude of left channel over last few blocks
+        let mut total_amp = 0.0f32;
+        let measure_blocks = 10;
+        for block in 0..measure_blocks {
+            for i in 0..block_size {
+                let t = ((num_blocks + block) * block_size + i) as f32 / sr;
+                input[i * 2] = (2.0 * std::f32::consts::PI * freq * t).sin();
+                input[i * 2 + 1] = -(2.0 * std::f32::consts::PI * freq * t).sin();
+            }
+            let ctx = ProcessContext { num_frames: block_size, sample_rate: sr as u32 };
+            plugin.process(&input, &mut output, &ctx).unwrap();
+            let peak = output.iter().step_by(2).map(|&s| s.abs()).fold(0.0f32, f32::max);
+            total_amp += peak;
+        }
+        total_amp / measure_blocks as f32
     }
 }

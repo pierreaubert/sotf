@@ -3,6 +3,7 @@
 // ============================================================================
 
 use crate::analyzer::{LoudnessData, RealTimeCache};
+use crate::analyzer_channel_correlation::ChannelCorrelationMonitor;
 use crate::parameters::{Parameter, ParameterId, ParameterValue};
 use crate::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use math_audio_dsp::ebur128::{EbuR128, Mode};
@@ -26,6 +27,21 @@ pub struct LoudnessMonitor {
     /// Running L/R correlation (Pearson) for stereo width.
     /// Smoothed with EMA to avoid jitter.
     correlation_lr: Option<f64>,
+    /// When true, also maintain a full inter-channel Pearson r matrix and
+    /// write it into `LoudnessData.correlation_matrix` on each update.
+    /// Off by default — only the output-side LoudnessMonitor that feeds the
+    /// spatial-spider widget needs to opt in. CLI tools, JSON dumps, and
+    /// per-meter LoudnessMonitors keep the field empty for zero cost.
+    spatial_enabled: bool,
+    /// Full inter-channel correlation matrix accumulator. Lazily exercised:
+    /// when `spatial_enabled == false`, `add_frames` skips it entirely and
+    /// `update_loudness_data` leaves `LoudnessData.correlation_matrix` as the
+    /// empty `Arc<Vec<f32>>` the caller constructed.
+    correlation_matrix: ChannelCorrelationMonitor,
+    /// Scratch buffer used to read the matrix into a contiguous slice for
+    /// `LoudnessData::update_correlation_matrix`. Reused across calls to
+    /// keep the audio-thread allocation count at zero.
+    matrix_scratch: crate::analyzer::CorrelationData,
 }
 
 impl LoudnessMonitor {
@@ -40,7 +56,35 @@ impl LoudnessMonitor {
             ebur128: ebur,
             channels,
             correlation_lr: None,
+            spatial_enabled: false,
+            correlation_matrix: ChannelCorrelationMonitor::new(channels as usize, sr),
+            matrix_scratch: crate::analyzer::CorrelationData::new(channels as usize),
         })
+    }
+
+    /// Enable / disable the inter-channel Pearson r matrix.
+    ///
+    /// Default is `false`. When enabled, `add_frames` accumulates correlation
+    /// state and `update_loudness_data` writes the matrix into
+    /// `LoudnessData.correlation_matrix`. When disabled, both paths skip the
+    /// extra work and the matrix stays empty.
+    pub fn set_spatial_enabled(&mut self, enabled: bool) {
+        if !enabled && self.spatial_enabled {
+            // Leaving the on-state: clear so the next enable starts fresh.
+            self.correlation_matrix.reset();
+        }
+        self.spatial_enabled = enabled;
+    }
+
+    /// Builder-style helper for `set_spatial_enabled(true)`.
+    pub fn with_spatial(mut self) -> Self {
+        self.set_spatial_enabled(true);
+        self
+    }
+
+    /// True when the spatial correlation matrix is being maintained.
+    pub fn spatial_enabled(&self) -> bool {
+        self.spatial_enabled
     }
 
     pub fn add_frames(&mut self, samples: &[f32]) -> Result<(), String> {
@@ -55,6 +99,12 @@ impl LoudnessMonitor {
                     None => c,
                 });
             }
+        }
+
+        // Full inter-channel Pearson r matrix for the spatial-spider widget,
+        // gated by an explicit opt-in so default consumers don't pay the cost.
+        if self.spatial_enabled {
+            self.correlation_matrix.add_frames(samples);
         }
 
         self.ebur128
@@ -90,6 +140,22 @@ impl LoudnessMonitor {
 
         d.peak = d.channel_peaks.iter().copied().fold(0.0, f64::max);
         d.correlation_lr = self.correlation_lr;
+
+        if self.spatial_enabled {
+            // Refresh the inter-channel correlation matrix. We write into a
+            // re-used scratch CorrelationData so the matrix Vec is allocated
+            // exactly once per LoudnessMonitor instance, then copy the slice
+            // into LoudnessData.
+            self.correlation_matrix
+                .update_correlation_data(&mut self.matrix_scratch);
+            d.update_correlation_matrix(&self.matrix_scratch.matrix);
+            d.correlation_samples_seen = self.correlation_matrix.samples_seen();
+        } else {
+            // Spatial off → emit an empty matrix so downstream consumers can
+            // unambiguously detect "feature disabled" via `is_empty()`.
+            d.update_correlation_matrix(&[]);
+            d.correlation_samples_seen = 0;
+        }
     }
 
     pub fn get_loudness(&mut self) -> LoudnessData {
@@ -101,6 +167,7 @@ impl LoudnessMonitor {
     pub fn reset(&mut self) -> Result<(), String> {
         self.ebur128.reset();
         self.correlation_lr = None;
+        self.correlation_matrix.reset();
         Ok(())
     }
 }
@@ -180,6 +247,22 @@ impl LoudnessMonitorPlugin {
     fn rebuild_cached_parameters(&mut self) {
         self.cached_parameters = vec![Parameter::new_bool("enabled", "Enabled", self.enabled)];
     }
+
+    /// Toggle the inter-channel correlation matrix on the embedded monitor.
+    ///
+    /// Off by default. The audio engine flips this on for the output-side
+    /// LoudnessMonitor so the spatial-spider widget has data to display; all
+    /// other LoudnessMonitor instances (input-side, per-meter, CLI, ad-hoc)
+    /// stay off and pay zero overhead.
+    pub fn set_spatial_enabled(&mut self, enabled: bool) {
+        self.monitor.set_spatial_enabled(enabled);
+    }
+
+    /// Builder-style helper.
+    pub fn with_spatial(mut self) -> Self {
+        self.monitor.set_spatial_enabled(true);
+        self
+    }
 }
 
 impl Plugin for LoudnessMonitorPlugin {
@@ -212,7 +295,12 @@ impl Plugin for LoudnessMonitorPlugin {
     }
     fn initialize(&mut self, sr: u32) -> PluginResult<()> {
         self.sample_rate = sr;
+        // Preserve the spatial-enable bit across reinitialisation so callers
+        // that opted in once don't silently lose the matrix after a sample-
+        // rate or channel-count change.
+        let spatial = self.monitor.spatial_enabled();
         self.monitor = LoudnessMonitor::new(self.num_channels as u32, sr)?;
+        self.monitor.set_spatial_enabled(spatial);
         Ok(())
     }
     fn reset(&mut self) {

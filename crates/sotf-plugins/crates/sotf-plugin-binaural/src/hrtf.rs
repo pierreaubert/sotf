@@ -137,23 +137,22 @@ pub fn apply_near_field_shadowing(
 ) {
     let freq_size = fft_size / 2 + 1;
 
-    // Head model parameters
-    const HEAD_RADIUS: f32 = 0.0875; // 8.75 cm (typical adult head radius)
+    // Brown-Duda spherical-head shadowing model parameters
+    const HEAD_RADIUS: f32 = 0.0875; // 8.75 cm
     const SPEED_OF_SOUND: f32 = 343.0; // m/s at 20°C
+    const ALPHA_MIN: f32 = 0.1;
+    const TAU: f32 = 2.0 * HEAD_RADIUS / SPEED_OF_SOUND;
 
     let az_rad = azimuth.to_radians();
     let el_rad = elevation.to_radians();
 
-    // Use azimuth directly - elevation affects attenuation magnitude, not the angle
-    let horizontal_angle = az_rad;
-
-    // Determine which ear is shadowed
-    let (shadowed_ear, shadow_angle) = if horizontal_angle > 0.0 {
-        // Source on left, shadow right ear
-        (right_fft, horizontal_angle.abs())
+    // Determine shadowed ear (contralateral to source)
+    let (shadowed_ear, shadow_angle) = if az_rad > 0.0 {
+        // Source on right -> shadow left ear
+        (left_fft, az_rad.abs())
     } else {
-        // Source on right, shadow left ear
-        (left_fft, horizontal_angle.abs())
+        // Source on left -> shadow right ear
+        (right_fft, az_rad.abs())
     };
 
     // Only apply if angle is significant (> 15 degrees)
@@ -161,67 +160,41 @@ pub fn apply_near_field_shadowing(
         return;
     }
 
+    // Elevation reduces shadowing effect
+    let elevation_factor = el_rad.cos().abs();
+
+    // Incidence angle for the shadowed ear (0 = facing ear, π = opposite ear)
+    let theta_inc = if shadow_angle <= std::f32::consts::PI / 2.0 {
+        std::f32::consts::PI / 2.0 + shadow_angle
+    } else {
+        3.0 * std::f32::consts::PI / 2.0 - shadow_angle
+    };
+
+    // Brown-Duda asymptotic high-frequency gain parameter
+    let alpha = 1.0 + ALPHA_MIN / 2.0 + (1.0 - ALPHA_MIN / 2.0) * theta_inc.cos();
+
     // Process each frequency bin (half-spectrum only, no mirroring needed for real FFT)
     for (k, val) in shadowed_ear.iter_mut().enumerate().take(freq_size) {
-        // Frequency for bin k
         let freq = k as f32 * sample_rate as f32 / fft_size as f32;
-
         if freq < 50.0 {
-            // Very low frequencies: no shadowing
             continue;
         }
 
-        // Wavelength
-        let wavelength = SPEED_OF_SOUND / freq;
+        let omega = 2.0 * std::f32::consts::PI * freq;
+        let tau_w = TAU * omega;
+        let tau_w_sq = tau_w * tau_w;
+        let alpha_tau_w_sq = (alpha * tau_w) * (alpha * tau_w);
 
-        // Normalized frequency: ka = 2π * radius / wavelength
-        let ka = 2.0 * std::f32::consts::PI * HEAD_RADIUS / wavelength;
+        // Magnitude squared of Brown-Duda shadowing filter H(s)=(1+alpha*tau*s)/(1+tau*s)
+        let mag_sq = (1.0 + alpha_tau_w_sq) / (1.0 + tau_w_sq);
+        let gain = mag_sq.sqrt();
+        let atten_db = 20.0 * gain.log10();
 
-        // Shadowing attenuation model (combines multiple effects):
-        //
-        // 1. Geometric shadowing (high frequency): exponential with angle
-        // 2. Diffraction (low frequency): based on Rayleigh parameter ka
-        // 3. Transition region: smooth blend
+        // Scale by near-field strength and elevation
+        let scaled_db = atten_db * near_field_strength * elevation_factor;
+        let final_gain = 10.0_f32.powf(scaled_db / 20.0);
 
-        // Elevation reduces shadowing effect (source above/below head has less head shadowing)
-        let elevation_factor = el_rad.cos().abs(); // 1.0 at horizontal plane, 0.0 at zenith/nadir
-
-        // High-frequency geometric shadowing (ka >> 1)
-        // Attenuation increases with angle and frequency
-        let geometric_atten = if ka > 2.0 {
-            // Exponential shadowing model for high frequencies
-            let angle_factor = (shadow_angle / std::f32::consts::PI).powi(2);
-            let freq_factor = (ka / 10.0).min(1.0);
-            -6.0 * angle_factor * freq_factor * elevation_factor // Up to -6 dB, reduced at high elevations
-        } else {
-            0.0
-        };
-
-        // Low-frequency diffraction (ka << 1)
-        // Uses Rayleigh scattering approximation
-        let diffraction_atten = if ka < 2.0 {
-            // Minimal shadowing at low frequencies due to diffraction
-            let diffraction_factor = (ka / 2.0).powi(2);
-            -2.0 * diffraction_factor
-                * (shadow_angle / std::f32::consts::PI).powi(2)
-                * elevation_factor
-        } else {
-            0.0
-        };
-
-        // Combine effects (smooth transition)
-        let transition_weight = (ka / 2.0).min(1.0);
-        let total_atten_db =
-            geometric_atten * transition_weight + diffraction_atten * (1.0 - transition_weight);
-
-        // Scale by near-field strength parameter
-        let scaled_atten_db = total_atten_db * near_field_strength;
-
-        // Convert dB to linear gain
-        let gain = 10.0_f32.powf(scaled_atten_db / 20.0);
-
-        // Apply to shadowed ear (no mirroring needed with real FFT)
-        *val *= gain;
+        *val *= final_gain;
     }
 }
 
@@ -578,8 +551,8 @@ pub fn normalize_hrtf_gains(
         max_right_magnitude = max_right_magnitude.max(right_sum);
     }
 
-    // Include LFE contribution (mixed at -3dB = 0.707)
-    let lfe_contribution = lfe_channels.len() as f32 * std::f32::consts::FRAC_1_SQRT_2;
+    // Include LFE contribution (mixed full-scale to both ears)
+    let lfe_contribution = lfe_channels.len() as f32;
     max_left_magnitude += lfe_contribution;
     max_right_magnitude += lfe_contribution;
 

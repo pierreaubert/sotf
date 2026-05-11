@@ -898,19 +898,28 @@ impl BinauralDecoderPlugin {
         self.last_hrtf_pitch = pitch;
         self.last_hrtf_roll = roll;
 
-        // Without a SOFA file there are no measured HRTFs to re-query, so we leave
-        // the default (identity) filters in place.
-        let hrtf_path = match self.hrtf_path.clone() {
-            Some(p) => p,
-            None => return Ok(()),
-        };
-
         if self.sample_rate == 0 {
             return Ok(());
         }
 
-        let mut sofa = SofaFile::load(&hrtf_path)
-            .map_err(|e| format!("Failed to load HRTF file for head tracking: {}", e))?;
+        // Reuse cached SOFA from current state to avoid reloading from disk on every small head movement.
+        let mut sofa = match self.state.load()._hrtf_data.clone() {
+            Some(sofa) => sofa,
+            None => {
+                let hrtf_path = match self.hrtf_path.clone() {
+                    Some(p) => p,
+                    None => return Ok(()),
+                };
+                let mut s = SofaFile::load(&hrtf_path)
+                    .map_err(|e| format!("Failed to load HRTF file for head tracking: {}", e))?;
+                let sofa_rate = s.sample_rate.round() as u32;
+                if sofa_rate != self.sample_rate {
+                    hrtf::resample_sofa(&mut s, self.sample_rate)
+                        .map_err(|e| format!("HRTF resample failed during head tracking: {}", e))?;
+                }
+                s
+            }
+        };
 
         let sofa_rate = sofa.sample_rate.round() as u32;
         if sofa_rate != self.sample_rate {
@@ -2549,5 +2558,89 @@ mod tests {
             .set_parameter(ParameterId::from("crossfade_mode"), ParameterValue::Int(0))
             .unwrap();
         assert_eq!(plugin.crossfade_mode_index, 0);
+    }
+
+    /// Verify that near-field shadowing produces strong attenuation for a 90° source
+    /// using the Brown-Duda spherical-head model.
+    #[test]
+    fn test_near_field_shadowing_90deg_strong_attenuation() {
+        let fft_size = 512;
+        let freq_size = fft_size / 2 + 1;
+        let mut left = vec![Complex::new(1.0, 0.0); freq_size];
+        let mut right = vec![Complex::new(1.0, 0.0); freq_size];
+        // Source at 90° right -> should shadow left ear strongly
+        hrtf::apply_near_field_shadowing(
+            &mut left,
+            &mut right,
+            90.0,
+            0.0,
+            fft_size,
+            48000,
+            1.0,
+        );
+        let k_5k = (5000.0 * fft_size as f32 / 48000.0).round() as usize;
+        let k = k_5k.min(freq_size - 1);
+        let atten_db = 20.0 * left[k].norm().log10();
+        assert!(
+            atten_db < -10.0,
+            "Expected strong shadowing attenuation at 5 kHz for 90° source, got {:.1} dB",
+            atten_db
+        );
+        // Right ear should be untouched
+        assert!(
+            (right[k].norm() - 1.0).abs() < 1e-6,
+            "Right ear should not be shadowed for a right-side source"
+        );
+    }
+
+    /// Verify that LFE gain does not include the arbitrary -3 dB dual-mono attenuation.
+    #[test]
+    fn test_lfe_gain_no_arbitrary_attenuation() {
+        let (_, gain) = filter::compute_lfe_filter(512, 48000, 120.0, 2.0, 0.0);
+        // distance=2.0 -> 0.5, level=0.0 -> 1.0, so gain should be 0.5 (no 1/sqrt(2))
+        assert!(
+            (gain - 0.5).abs() < 1e-4,
+            "LFE gain should be 0.5, got {}",
+            gain
+        );
+    }
+
+    /// Verify that head tracking reuses the cached SofaFile instead of reloading from disk.
+    #[test]
+    fn test_head_tracking_uses_cached_sofa() {
+        let mut plugin = BinauralDecoderPlugin::new(
+            2,
+            512,
+            None,
+            true,
+            0.0,
+            0.0,
+            false,
+            120.0,
+            2.0,
+            0.0,
+            RoomModel::default(),
+        );
+        plugin.initialize(44100).unwrap();
+
+        let freq_size = plugin.freq_size;
+        let sofa = make_test_sofa(44100.0, 64, 36);
+        let state_with_sofa = Arc::new(BinauralState {
+            hrtf_filters_freq: vec![vec![Complex::new(0.0, 0.0); freq_size * 2]; 2],
+            diffuse_field_eq_filter: None,
+            _hrtf_data: Some(sofa),
+        });
+        plugin.state.store(state_with_sofa.clone());
+        plugin.current_state_snapshot = state_with_sofa;
+
+        // Point to a non-existent path so a disk reload would fail
+        plugin.hrtf_path = Some(std::path::PathBuf::from("/nonexistent/sofa/file.sofa"));
+
+        let result = plugin.recompute_hrtf_for_head_angles(1.0, 0.0, 0.0);
+        assert!(
+            result.is_ok(),
+            "Head tracking should reuse cached SOFA instead of reloading from disk: {:?}",
+            result
+        );
     }
 }

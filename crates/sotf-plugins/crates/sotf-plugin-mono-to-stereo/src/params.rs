@@ -32,20 +32,6 @@ pub const PARAMS: &[ParamSpec] = &[
         "General",
     )
     .doc("Inter-channel delay for Haas effect"),
-    ParamSpec::bool_param("Comp EQ", "enable_comp_eq", true, "EQ")
-        .setup()
-        .doc("Compensate comb filter coloration"),
-    ParamSpec::float(
-        "Comp EQ Depth",
-        "comp_eq_depth_db",
-        1.0,
-        0.0,
-        3.0,
-        0.1,
-        "dB",
-        "EQ",
-    )
-    .doc("Compensation EQ strength"),
     ParamSpec::float(
         "Decor Low",
         "decor_low_hz",
@@ -77,10 +63,7 @@ pub const PARAMS: &[ParamSpec] = &[
 // ============================================================================
 
 pub const LAYOUT: PluginLayout = PluginLayout {
-    config: &[
-        ControlSpec::toggle(2), // enable_comp_eq
-        ControlSpec::knob(3),   // comp_eq_depth_db
-    ],
+    config: &[],
     main: &[ControlGroup {
         title: "",
         controls: &[ControlSpec::slider(0)], // stereo_width
@@ -90,9 +73,9 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         name: "Advanced",
         controls: &[
             ControlSpec::knob(1),   // haas_delay_ms
-            ControlSpec::knob(4),   // decor_low_hz
-            ControlSpec::knob(5),   // decor_high_hz
-            ControlSpec::toggle(6), // freq_dependent
+            ControlSpec::knob(2),   // decor_low_hz
+            ControlSpec::knob(3),   // decor_high_hz
+            ControlSpec::toggle(4), // freq_dependent
         ],
     }],
     visualizations: &[],
@@ -118,10 +101,6 @@ pub struct Params {
     pub stereo_width: f64,
     #[serde(default = "d_haas_delay_ms")]
     pub haas_delay_ms: f64,
-    #[serde(default = "d_enable_comp_eq")]
-    pub enable_comp_eq: bool,
-    #[serde(default = "d_comp_eq_depth_db")]
-    pub comp_eq_depth_db: f64,
     #[serde(default = "d_decor_low_hz")]
     pub decor_low_hz: f64,
     #[serde(default = "d_decor_high_hz")]
@@ -135,12 +114,6 @@ fn d_stereo_width() -> f64 {
 }
 fn d_haas_delay_ms() -> f64 {
     pk(PARAMS, "haas_delay_ms").default_f64()
-}
-fn d_enable_comp_eq() -> bool {
-    pk(PARAMS, "enable_comp_eq").default_bool()
-}
-fn d_comp_eq_depth_db() -> f64 {
-    pk(PARAMS, "comp_eq_depth_db").default_f64()
 }
 fn d_decor_low_hz() -> f64 {
     pk(PARAMS, "decor_low_hz").default_f64()
@@ -157,8 +130,6 @@ impl Default for Params {
         Self {
             stereo_width: d_stereo_width(),
             haas_delay_ms: d_haas_delay_ms(),
-            enable_comp_eq: d_enable_comp_eq(),
-            comp_eq_depth_db: d_comp_eq_depth_db(),
             decor_low_hz: d_decor_low_hz(),
             decor_high_hz: d_decor_high_hz(),
             freq_dependent: d_freq_dependent(),
@@ -180,11 +151,9 @@ impl PluginParamDef for Params {
         match index {
             0 => Some(self.stereo_width),
             1 => Some(self.haas_delay_ms),
-            2 => Some(if self.enable_comp_eq { 1.0 } else { 0.0 }),
-            3 => Some(self.comp_eq_depth_db),
-            4 => Some(self.decor_low_hz),
-            5 => Some(self.decor_high_hz),
-            6 => Some(if self.freq_dependent { 1.0 } else { 0.0 }),
+            2 => Some(self.decor_low_hz),
+            3 => Some(self.decor_high_hz),
+            4 => Some(if self.freq_dependent { 1.0 } else { 0.0 }),
             _ => None,
         }
     }
@@ -193,11 +162,9 @@ impl PluginParamDef for Params {
         match index {
             0 => self.stereo_width = value,
             1 => self.haas_delay_ms = value,
-            2 => self.enable_comp_eq = value > 0.5,
-            3 => self.comp_eq_depth_db = value,
-            4 => self.decor_low_hz = value,
-            5 => self.decor_high_hz = value,
-            6 => self.freq_dependent = value > 0.5,
+            2 => self.decor_low_hz = value,
+            3 => self.decor_high_hz = value,
+            4 => self.freq_dependent = value > 0.5,
             _ => {}
         }
     }
@@ -234,8 +201,6 @@ mod tests {
         let restored: Params = serde_json::from_value(json).unwrap();
         assert_eq!(original.stereo_width, restored.stereo_width);
         assert_eq!(original.haas_delay_ms, restored.haas_delay_ms);
-        assert_eq!(original.enable_comp_eq, restored.enable_comp_eq);
-        assert_eq!(original.comp_eq_depth_db, restored.comp_eq_depth_db);
         assert_eq!(original.decor_low_hz, restored.decor_low_hz);
         assert_eq!(original.decor_high_hz, restored.decor_high_hz);
         assert_eq!(original.freq_dependent, restored.freq_dependent);
@@ -246,14 +211,6 @@ mod tests {
         let p: Params = serde_json::from_str("{}").unwrap();
         assert_eq!(p.stereo_width, pk(PARAMS, "stereo_width").default_f64());
         assert_eq!(p.haas_delay_ms, pk(PARAMS, "haas_delay_ms").default_f64());
-        assert_eq!(
-            p.enable_comp_eq,
-            pk(PARAMS, "enable_comp_eq").default_bool()
-        );
-        assert_eq!(
-            p.comp_eq_depth_db,
-            pk(PARAMS, "comp_eq_depth_db").default_f64()
-        );
         assert_eq!(p.decor_low_hz, pk(PARAMS, "decor_low_hz").default_f64());
         assert_eq!(p.decor_high_hz, pk(PARAMS, "decor_high_hz").default_f64());
         assert_eq!(

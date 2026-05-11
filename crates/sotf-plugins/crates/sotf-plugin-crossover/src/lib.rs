@@ -270,20 +270,20 @@ impl Plugin for CrossoverPlugin {
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
-        self.freq_smoother = LogSmoother::new(self.freq_smoother.target(), 20.0, sample_rate);
-        self.crossover_2way.reinit(
-            self.freq_smoother.target(),
-            sample_rate as f32,
-            self.num_channels,
-        );
+        let nyquist = sample_rate as f32 * 0.5 * 0.99;
+        let freq = self.freq_smoother.target().min(nyquist);
+        self.freq_smoother = LogSmoother::new(freq, 20.0, sample_rate);
+        self.crossover_2way.reinit(freq, sample_rate as f32, self.num_channels);
         self.low_buf.resize(self.num_channels, 0.0);
         self.high_buf.resize(self.num_channels, 0.0);
 
         if let Some(ref mut mb) = self.multiband {
             for smoother in &mut self.extra_freq_smoothers {
-                *smoother = LogSmoother::new(smoother.target(), 20.0, sample_rate);
+                let f = smoother.target().min(nyquist);
+                *smoother = LogSmoother::new(f, 20.0, sample_rate);
             }
-            mb.reinit(&self.all_frequencies, sample_rate as f32, self.num_channels);
+            let clamped_freqs: Vec<f32> = self.all_frequencies.iter().map(|&f| f.min(nyquist)).collect();
+            mb.reinit(&clamped_freqs, sample_rate as f32, self.num_channels);
         }
 
         // Resize band flat buffer
@@ -316,15 +316,19 @@ impl Plugin for CrossoverPlugin {
             let num_bands = self.num_bands();
             let mb = self.multiband.as_mut().unwrap();
 
-            // Update frequencies from smoothers
-            let new_freq0 = self.freq_smoother.next_n(num_frames);
-            mb.set_frequency(0, new_freq0);
-            for (i, smoother) in self.extra_freq_smoothers.iter_mut().enumerate() {
-                let f = smoother.next_n(num_frames);
-                mb.set_frequency(i + 1, f);
-            }
+            // Sub-block size for frequency updates: every 16 samples to avoid
+            // zipper noise while keeping CPU cost reasonable.
+            const SUBBLOCK: usize = 16;
 
             for frame in 0..num_frames {
+                if frame % SUBBLOCK == 0 {
+                    let new_freq0 = self.freq_smoother.next_n(SUBBLOCK.min(num_frames - frame));
+                    mb.set_frequency(0, new_freq0);
+                    for (i, smoother) in self.extra_freq_smoothers.iter_mut().enumerate() {
+                        let f = smoother.next_n(SUBBLOCK.min(num_frames - frame));
+                        mb.set_frequency(i + 1, f);
+                    }
+                }
                 let in_off = frame * in_ch;
                 let out_off = frame * out_ch;
                 let frame_slice = &input[in_off..in_off + in_ch];
@@ -362,10 +366,13 @@ impl Plugin for CrossoverPlugin {
             }
         } else {
             // 2-way processing
-            let new_freq = self.freq_smoother.next_n(num_frames);
-            self.crossover_2way.set_frequency(new_freq);
+            const SUBBLOCK: usize = 16;
 
             for frame in 0..num_frames {
+                if frame % SUBBLOCK == 0 {
+                    let new_freq = self.freq_smoother.next_n(SUBBLOCK.min(num_frames - frame));
+                    self.crossover_2way.set_frequency(new_freq);
+                }
                 let in_off = frame * in_ch;
                 let out_off = frame * out_ch;
                 let frame_slice = &input[in_off..in_off + in_ch];

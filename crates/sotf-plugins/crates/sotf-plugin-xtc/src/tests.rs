@@ -1,7 +1,7 @@
 use super::*;
 use filters::{
     compute_beta, compute_beta_smooth, compute_geometry_cache, compute_xtc_filters_full,
-    head_shadowing_complex, head_shadowing_filter, head_shadowing_woodworth, sanitize_filter,
+    head_shadowing_brown_duda, head_shadowing_complex, head_shadowing_filter, head_shadowing_woodworth, sanitize_filter,
     soft_limit_complex_magnitude, woodworth_diffraction_path,
 };
 use reflections::{air_absorption, compute_image_sources, compute_reflection_beta_boost};
@@ -628,6 +628,32 @@ fn test_brown_duda_shadowing_applies_phase() {
     );
 }
 
+/// Test that Brown-Duda alpha_min matches the published rigid-sphere approximation.
+/// At theta = PI the magnitude equals alpha_min, isolating the frequency-dependent term.
+#[test]
+fn test_brown_duda_alpha_min_matches_paper_formula() {
+    let head_radius = 0.0875;
+    let freq = 4000.0;
+
+    // At theta = PI, cos(theta/2) = 0, so magnitude == alpha_min
+    let (magnitude, _phase) = head_shadowing_brown_duda(freq, std::f32::consts::PI, head_radius);
+
+    let w = 2.0 * std::f32::consts::PI * freq;
+    let w0 = 343.0 / head_radius;
+    let mu = (w / w0).min(20.0);
+
+    // Brown & Duda (1998), Eq. (2) approximation:
+    // alpha_min = 1 / sqrt(1 + (mu/2)^2)
+    let expected_alpha_min = (1.0 + mu * mu / 4.0).sqrt().recip();
+
+    assert!(
+        (magnitude - expected_alpha_min).abs() < 0.01,
+        "Brown-Duda alpha_min should match paper formula 1/sqrt(1+(mu/2)^2). Expected {}, got {}",
+        expected_alpha_min,
+        magnitude
+    );
+}
+
 /// Test fixed Woodworth diffraction delay calculation.
 #[test]
 fn test_woodworth_itd() {
@@ -724,6 +750,45 @@ fn test_image_source_positions() {
             "Reflection {} amplitude should be in (0, 1), got {}",
             i,
             path.amplitude
+        );
+    }
+}
+
+/// Test that reflection amplitude uses the pressure reflection coefficient sqrt(1-alpha)
+/// rather than the energy absorption coefficient (1-alpha) directly.
+#[test]
+fn test_reflection_amplitude_uses_sqrt_of_energy_coefficient() {
+    let speaker_pos = [0.0_f32, 1.2, 2.0];
+    let ear_pos = [0.0875_f32, 1.2, 0.0];
+    let direct_dist = {
+        let dx = speaker_pos[0] - ear_pos[0];
+        let dy = speaker_pos[1] - ear_pos[1];
+        let dz = speaker_pos[2] - ear_pos[2];
+        (dx * dx + dy * dy + dz * dz).sqrt()
+    };
+
+    let room_reflective = reflections::tests_support::make_room(4.0, 5.0, 2.5, 0.0);
+    let paths_reflective = compute_image_sources(speaker_pos, ear_pos, direct_dist, &room_reflective);
+
+    let room_absorptive = reflections::tests_support::make_room(4.0, 5.0, 2.5, 0.5);
+    let paths_absorptive = compute_image_sources(speaker_pos, ear_pos, direct_dist, &room_absorptive);
+
+    assert_eq!(
+        paths_reflective.len(),
+        paths_absorptive.len(),
+        "Both rooms should produce the same number of reflection paths"
+    );
+
+    for (r, a) in paths_reflective.iter().zip(paths_absorptive.iter()) {
+        // With the fix: ratio = sqrt(1 - 0.5) / sqrt(1 - 0.0) = sqrt(0.5) ≈ 0.7071
+        // With the bug: ratio = (1 - 0.5) / (1 - 0.0) = 0.5
+        let ratio = a.amplitude / r.amplitude;
+        let expected_ratio = (1.0_f32 - 0.5).sqrt(); // sqrt(0.5)
+        assert!(
+            (ratio - expected_ratio).abs() < 1e-4,
+            "Reflection amplitude should use pressure coefficient sqrt(1-alpha). Expected ratio {} for alpha=0.5, got {}",
+            expected_ratio,
+            ratio
         );
     }
 }
@@ -1654,14 +1719,6 @@ fn test_itd_modeling_serde() {
     assert_eq!(ed.itd_modeling, "explicit_delay");
 }
 
-/// Bug 1: Asymmetric spectral normalization scales wrong columns (rows instead of columns).
-/// Left-ear normalization should scale column 0 (w_ll, w_rl) — the code scales row 0
-/// (w_ll, w_lr). This means w_ll and w_rl should receive the SAME scale factor.
-/// In the buggy code, w_ll and w_lr receive the same factor instead.
-///
-/// Test: verify that spectral normalization applies the same factor to both elements
-/// of each column (left column: w_ll, w_rl; right column: w_lr, w_rr).
-#[test]
 /// Bug 12: STFT plugins must return context.num_frames, not output_pos.
 /// During initial latency, output_pos may be 0 (buffer not yet full), but the
 /// host expects num_frames to maintain ring buffer alignment.
@@ -1836,7 +1893,14 @@ fn test_beta_freq_boosts_affect_filters() {
     );
 }
 
-
+/// Bug 1: Asymmetric spectral normalization scales wrong columns (rows instead of columns).
+/// Left-ear normalization should scale column 0 (w_ll, w_rl) — the code scales row 0
+/// (w_ll, w_lr). This means w_ll and w_rl should receive the SAME scale factor.
+/// In the buggy code, w_ll and w_lr receive the same factor instead.
+///
+/// Test: verify that spectral normalization applies the same factor to both elements
+/// of each column (left column: w_ll, w_rl; right column: w_lr, w_rr).
+#[test]
 fn test_asymmetric_spectral_norm_scales_columns_not_rows() {
     let num_bins = 513;
 

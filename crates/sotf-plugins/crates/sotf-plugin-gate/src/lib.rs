@@ -553,9 +553,9 @@ impl InPlacePlugin for GatePlugin {
                 };
 
                 let coeff = if target > self.envelope[0] {
-                    self.attack_coeff
+                    self.release_coeff // closing the gate = release
                 } else {
-                    self.release_coeff
+                    self.attack_coeff // opening the gate = attack
                 };
                 self.envelope[0] = target + coeff * (self.envelope[0] - target);
                 let gain = (1.0 - mix) + mix * fast_pow10(-self.envelope[0] / DB_CONVERSION_FACTOR);
@@ -598,9 +598,9 @@ impl InPlacePlugin for GatePlugin {
                     };
 
                     let coeff = if target > self.envelope[ch] {
-                        self.attack_coeff
+                        self.release_coeff // closing the gate = release
                     } else {
-                        self.release_coeff
+                        self.attack_coeff // opening the gate = attack
                     };
                     self.envelope[ch] = target + coeff * (self.envelope[ch] - target);
                     let gain =
@@ -619,7 +619,11 @@ impl InPlacePlugin for GatePlugin {
         self.cache_update_counter += 1;
         if self.cache_update_counter >= 10 {
             self.cache_update_counter = 0;
-            let is_open = self.envelope.iter().any(|&a| a < 0.1);
+            let is_open = if self.link_channels {
+                self.envelope[0] < 0.1
+            } else {
+                self.envelope.iter().any(|&a| a < 0.1)
+            };
             if self.link_channels {
                 self.monitoring_levels.fill(self.envelope[0]);
             } else {
@@ -662,6 +666,129 @@ mod tests {
         )
         .unwrap();
         assert!(b[999] < 0.05);
+    }
+
+    /// CRITICAL: Attack must control gate opening speed, Release must control closing speed.
+    /// With fast attack (1 ms) and slow release (500 ms), the gate should open quickly
+    /// when the signal rises above threshold.
+    #[test]
+    fn test_attack_controls_opening_speed() {
+        let sr = 48000u32;
+        let mut p = GatePlugin::new(1, -20.0, 100.0, 1.0, 0.0, 500.0);
+        p.initialize(sr).unwrap();
+
+        // Close the gate with very quiet signal (-100 dBFS)
+        let quiet_len = sr as usize;
+        let mut quiet = vec![0.00001f32; quiet_len];
+        let ctx = ProcessContext {
+            sample_rate: sr,
+            num_frames: quiet_len,
+        };
+        p.process_in_place(&mut quiet, &ctx).unwrap();
+
+        // Switch to loud signal (-6 dBFS, well above threshold)
+        let loud_len = sr as usize / 10; // 100 ms
+        let input_level = 0.5f32;
+        let mut loud = vec![input_level; loud_len];
+        let ctx2 = ProcessContext {
+            sample_rate: sr,
+            num_frames: loud_len,
+        };
+        p.process_in_place(&mut loud, &ctx2).unwrap();
+
+        // With fast attack (1 ms) the gate should be essentially fully open
+        // within the last 10 ms of the loud section.
+        let tail_start = loud_len - sr as usize / 100;
+        let avg_output: f32 = loud[tail_start..].iter().sum::<f32>() / (loud_len - tail_start) as f32;
+        assert!(
+            avg_output > input_level * 0.95,
+            "Gate should open quickly with fast attack (1 ms), but avg output was {avg_output}"
+        );
+    }
+
+    /// CRITICAL: Release must control gate closing speed.
+    /// With slow attack (500 ms) and fast release (1 ms), the gate should close quickly
+    /// when the signal drops below threshold.
+    #[test]
+    fn test_release_controls_closing_speed() {
+        let sr = 48000u32;
+        let mut p = GatePlugin::new(1, -20.0, 100.0, 500.0, 0.0, 1.0);
+        p.initialize(sr).unwrap();
+
+        // Open the gate with loud signal (-6 dBFS)
+        let loud_len = sr as usize;
+        let mut loud = vec![0.5f32; loud_len];
+        let ctx = ProcessContext {
+            sample_rate: sr,
+            num_frames: loud_len,
+        };
+        p.process_in_place(&mut loud, &ctx).unwrap();
+
+        // Switch to very quiet signal (-60 dBFS, well below threshold)
+        let quiet_len = sr as usize / 10; // 100 ms
+        let quiet_input = 0.001f32;
+        let mut quiet = vec![quiet_input; quiet_len];
+        let ctx2 = ProcessContext {
+            sample_rate: sr,
+            num_frames: quiet_len,
+        };
+        p.process_in_place(&mut quiet, &ctx2).unwrap();
+
+        // With fast release (1 ms) the gate should be essentially fully closed
+        // within the last 10 ms of the quiet section.
+        let tail_start = quiet_len - sr as usize / 100;
+        let avg_output: f32 = quiet[tail_start..].iter().sum::<f32>() / (quiet_len - tail_start) as f32;
+        assert!(
+            avg_output < quiet_input * 0.1,
+            "Gate should close quickly with fast release (1 ms), but avg output was {avg_output}"
+        );
+    }
+
+    /// CRITICAL: In linked stereo mode the monitoring cache `is_open` must reflect
+    /// the actual gate state. When the gate is fully closed it must report false.
+    #[test]
+    fn test_linked_stereo_monitoring_cache_reports_closed() {
+        let sr = 48000u32;
+        let mut p = GatePlugin::from_params(
+            2,
+            GatePluginParams {
+                threshold_db: -20.0,
+                ratio: 100.0,
+                attack_ms: 1.0,
+                hold_ms: 0.0,
+                release_ms: 10.0,
+                mix: 1.0,
+                link_channels: true,
+                sidechain_hpf_hz: 0.0,
+                sidechain_hpf_order: "2nd".to_string(),
+                detection_mode: "peak".to_string(),
+                sidechain_external: false,
+                range_db: 80.0,
+                hysteresis_db: 0.0,
+                knee_db: 0.0,
+                lookahead_ms: 0.0,
+            },
+        );
+        p.initialize(sr).unwrap();
+
+        let block_size = 1024;
+        let num_blocks = 20; // enough to trigger cache update (every 10 blocks)
+        let quiet = vec![0.0001f32; block_size * 2];
+        for _ in 0..num_blocks {
+            let mut buf = quiet.clone();
+            let ctx = ProcessContext {
+                sample_rate: sr,
+                num_frames: block_size,
+            };
+            p.process_in_place(&mut buf, &ctx).unwrap();
+        }
+
+        let data = p.get_data().unwrap();
+        let gate_data = data.downcast_ref::<GateData>().unwrap();
+        assert!(
+            !gate_data.is_open,
+            "Linked stereo gate should report is_open=false when fully closed"
+        );
     }
 
     /// Sidechain HPF at 200 Hz: a 50 Hz signal below threshold should NOT open

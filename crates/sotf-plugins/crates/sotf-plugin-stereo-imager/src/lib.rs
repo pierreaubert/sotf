@@ -6,11 +6,11 @@ pub mod params;
 
 use crate::params::PARAMS as SI;
 use sotf_host::lr4_crossover::Lr4Crossover;
-use sotf_host::param_specs::find_by_key as pk;
+use sotf_host::param_specs::{ParamType, find_by_key as pk};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
-use sotf_host::smoothing::Smoother;
+use sotf_host::smoothing::{LogSmoother, Smoother};
 
 use serde::{Deserialize, Serialize};
 
@@ -98,16 +98,17 @@ pub struct StereoImagerPlugin {
     mid_width_smoother: Smoother,
     high_width_smoother: Smoother,
     mix_smoother: Smoother,
-
-    cached_parameters: Vec<Parameter>,
+    low_mid_freq_smoother: LogSmoother,
+    mid_high_freq_smoother: LogSmoother,
 }
 
 const SMOOTHING_MS: f32 = 10.0;
+const FREQ_SMOOTHING_MS: f32 = 50.0;
 
 impl StereoImagerPlugin {
     pub fn new(channels: usize, params: StereoImagerPluginParams) -> Self {
         let sr = 48000;
-        let mut plugin = Self {
+        Self {
             channels,
             sample_rate: sr,
 
@@ -131,19 +132,28 @@ impl StereoImagerPlugin {
             mid_width_smoother: Smoother::new(params.mid_width, SMOOTHING_MS, sr),
             high_width_smoother: Smoother::new(params.high_width, SMOOTHING_MS, sr),
             mix_smoother: Smoother::new(params.mix, SMOOTHING_MS, sr),
-
-            cached_parameters: Vec::new(),
-        };
-        plugin.rebuild_cached_parameters();
-        plugin
+            low_mid_freq_smoother: LogSmoother::new(params.low_mid_freq, FREQ_SMOOTHING_MS, sr),
+            mid_high_freq_smoother: LogSmoother::new(params.mid_high_freq, FREQ_SMOOTHING_MS, sr),
+        }
     }
 
     pub fn from_params(channels: usize, params: StereoImagerPluginParams) -> Self {
         Self::new(channels, params)
     }
+}
 
-    fn rebuild_cached_parameters(&mut self) {
-        self.cached_parameters = vec![
+impl InPlacePlugin for StereoImagerPlugin {
+    fn info(&self) -> PluginInfo {
+        PluginInfo::new("StereoImager", "1.0.0", "SotF")
+            .with_description("Multi-band M/S stereo width control")
+    }
+
+    fn channels(&self) -> usize {
+        self.channels
+    }
+
+    fn parameters(&self) -> Vec<Parameter> {
+        vec![
             Parameter::new_float(
                 "width",
                 "Width",
@@ -194,22 +204,38 @@ impl StereoImagerPlugin {
                 pk(SI, "mix").min_f64() as f32,
                 pk(SI, "mix").max_f64() as f32,
             ),
-        ];
-    }
-}
-
-impl InPlacePlugin for StereoImagerPlugin {
-    fn info(&self) -> PluginInfo {
-        PluginInfo::new("StereoImager", "1.0.0", "SotF")
-            .with_description("Multi-band M/S stereo width control")
+        ]
     }
 
-    fn channels(&self) -> usize {
-        self.channels
-    }
-
-    fn parameters(&self) -> Vec<Parameter> {
-        self.cached_parameters.clone()
+    fn validate_parameter(&self, id: &ParameterId, value: &ParameterValue) -> PluginResult<()> {
+        let Some(spec) = SI.iter().find(|s| s.engine_key == id.as_str()) else {
+            return Err(format!("Unknown parameter: {}", id));
+        };
+        match (&spec.param_type, value) {
+            (ParamType::Float { min, max, .. }, ParameterValue::Float(v)) => {
+                if v.is_nan() {
+                    return Err(format!("{}: Value is NaN", id));
+                }
+                if v.is_infinite() {
+                    return Err(format!("{}: Value is infinite", id));
+                }
+                if *v < *min as f32 {
+                    return Err(format!(
+                        "{}: Value {} is below minimum {}",
+                        id, v, min
+                    ));
+                }
+                if *v > *max as f32 {
+                    return Err(format!(
+                        "{}: Value {} is above maximum {}",
+                        id, v, max
+                    ));
+                }
+                Ok(())
+            }
+            (ParamType::Bool { .. }, ParameterValue::Bool(_)) => Ok(()),
+            _ => Err(format!("{}: Parameter type mismatch", id)),
+        }
     }
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
@@ -220,55 +246,47 @@ impl InPlacePlugin for StereoImagerPlugin {
                 if let Some(v) = value.as_float() {
                     self.width = v;
                     self.width_smoother.set_target(v);
-                    self.rebuild_cached_parameters();
                 }
             }
             "low_mid_freq" => {
                 if let Some(v) = value.as_float() {
                     self.low_mid_freq = v;
-                    self.crossover_low.set_frequency(v);
-                    self.rebuild_cached_parameters();
+                    self.low_mid_freq_smoother.set_target(v);
                 }
             }
             "mid_high_freq" => {
                 if let Some(v) = value.as_float() {
                     self.mid_high_freq = v;
-                    self.crossover_high.set_frequency(v);
-                    self.rebuild_cached_parameters();
+                    self.mid_high_freq_smoother.set_target(v);
                 }
             }
             "low_width" => {
                 if let Some(v) = value.as_float() {
                     self.low_width = v;
                     self.low_width_smoother.set_target(v);
-                    self.rebuild_cached_parameters();
                 }
             }
             "mid_width" => {
                 if let Some(v) = value.as_float() {
                     self.mid_width = v;
                     self.mid_width_smoother.set_target(v);
-                    self.rebuild_cached_parameters();
                 }
             }
             "high_width" => {
                 if let Some(v) = value.as_float() {
                     self.high_width = v;
                     self.high_width_smoother.set_target(v);
-                    self.rebuild_cached_parameters();
                 }
             }
             "mono_bass" => {
                 if let Some(v) = value.as_bool() {
                     self.mono_bass = v;
-                    self.rebuild_cached_parameters();
                 }
             }
             "mix" => {
                 if let Some(v) = value.as_float() {
                     self.mix = v;
                     self.mix_smoother.set_target(v);
-                    self.rebuild_cached_parameters();
                 }
             }
             _ => return Err(format!("Unknown parameter: {}", id)),
@@ -305,9 +323,12 @@ impl InPlacePlugin for StereoImagerPlugin {
         self.mid_width_smoother = Smoother::new(self.mid_width, SMOOTHING_MS, sample_rate);
         self.high_width_smoother = Smoother::new(self.high_width, SMOOTHING_MS, sample_rate);
         self.mix_smoother = Smoother::new(self.mix, SMOOTHING_MS, sample_rate);
+        self.low_mid_freq_smoother =
+            LogSmoother::new(self.low_mid_freq, FREQ_SMOOTHING_MS, sample_rate);
+        self.mid_high_freq_smoother =
+            LogSmoother::new(self.mid_high_freq, FREQ_SMOOTHING_MS, sample_rate);
 
         // Pre-allocate dry buffer for maximum expected frame size
-        // Use a generous allocation that covers typical frame sizes
         self.dry_buf.resize(8192 * 2, 0.0);
 
         Ok(())
@@ -316,6 +337,13 @@ impl InPlacePlugin for StereoImagerPlugin {
     fn reset(&mut self) {
         self.crossover_low.reset();
         self.crossover_high.reset();
+        self.width_smoother.reset(self.width);
+        self.low_width_smoother.reset(self.low_width);
+        self.mid_width_smoother.reset(self.mid_width);
+        self.high_width_smoother.reset(self.high_width);
+        self.mix_smoother.reset(self.mix);
+        self.low_mid_freq_smoother.reset(self.low_mid_freq);
+        self.mid_high_freq_smoother.reset(self.mid_high_freq);
     }
 
     fn process_in_place(
@@ -337,6 +365,19 @@ impl InPlacePlugin for StereoImagerPlugin {
             self.dry_buf.resize(nf * 2, 0.0);
         }
 
+        // Apply smoothed crossover frequencies before processing this buffer
+        self.low_mid_freq_smoother.next_n(nf);
+        let low_freq = self.low_mid_freq_smoother.current();
+        if (low_freq - self.crossover_low.frequency()).abs() >= 0.1 {
+            self.crossover_low.set_frequency(low_freq);
+        }
+
+        self.mid_high_freq_smoother.next_n(nf);
+        let high_freq = self.mid_high_freq_smoother.current();
+        if (high_freq - self.crossover_high.frequency()).abs() >= 0.1 {
+            self.crossover_high.set_frequency(high_freq);
+        }
+
         // Save dry signal for mix blending
         self.dry_buf[..nf * 2].copy_from_slice(&buffer[..nf * 2]);
 
@@ -350,10 +391,8 @@ impl InPlacePlugin for StereoImagerPlugin {
             let side = (l - r) * 0.5;
 
             // Split mid and side into bands via cascaded crossovers.
-            // crossover_low: channel 0 = mid signal, channel 1 = side signal
             let (mid_low, mid_rest) = self.crossover_low.process(mid, 0);
             let (side_low, side_rest) = self.crossover_low.process(side, 1);
-            // crossover_high: channel 0 = mid rest, channel 1 = side rest
             let (mid_mid, mid_high) = self.crossover_high.process(mid_rest, 0);
             let (side_mid, side_high) = self.crossover_high.process(side_rest, 1);
 
@@ -511,10 +550,6 @@ mod tests {
         let mut plugin = StereoImagerPlugin::new(2, params);
         plugin.initialize(48000).unwrap();
 
-        // Feed a DC offset (which is all "low" band): L=0.8, R=0.2
-        // With mono_bass, the low band side is collapsed to zero.
-        // So the low band becomes mid only: (0.8+0.2)*0.5 = 0.5 for both L and R.
-        // But mid and high bands still carry the original stereo difference.
         let num_frames = 10000;
         let mut buffer = Vec::with_capacity(num_frames * 2);
         for _ in 0..num_frames {
@@ -526,8 +561,6 @@ mod tests {
             .process_in_place(&mut buffer, &make_context(num_frames))
             .unwrap();
 
-        // After settling, DC should be in low band only, and mono_bass collapses
-        // the side, so L and R converge for this DC signal.
         let settle = 2000;
         for frame in settle..num_frames {
             let idx = frame * 2;
@@ -557,12 +590,6 @@ mod tests {
         let mut plugin = StereoImagerPlugin::new(2, params);
         plugin.initialize(48000).unwrap();
 
-        // With width=2.0 and all band widths=1.0, the side is scaled by 2.0.
-        // For a constant signal: L=0.8, R=0.2:
-        //   mid = 0.5, side = 0.3
-        //   scaled_side = 0.3 * 2.0 = 0.6
-        //   wet_L = 0.5 + 0.6 = 1.1
-        //   wet_R = 0.5 - 0.6 = -0.1
         let num_frames = 10000;
         let mut buffer = Vec::with_capacity(num_frames * 2);
         for _ in 0..num_frames {
@@ -578,15 +605,11 @@ mod tests {
         let l = buffer[last];
         let r = buffer[last + 1];
 
-        // L should be wider than original 0.8, R should be narrower than 0.2
         assert!(l > 0.9, "Wide L should be > 0.9, got {l}");
         assert!(r < 0.1, "Wide R should be < 0.1, got {r}");
 
-        // The difference (L-R) should be roughly 4x the original side
-        // Original side content: (0.8-0.2)/2 = 0.3 * 2 (width) = 0.6 each way
-        // So L-R = 2*scaled_side = 1.2 vs original L-R = 0.6
         let diff = l - r;
-        let original_diff = 0.6; // 0.8 - 0.2
+        let original_diff = 0.6;
         assert!(
             diff > original_diff * 1.5,
             "L-R difference ({diff}) should be significantly larger than original ({original_diff})"
@@ -599,33 +622,28 @@ mod tests {
         let mut plugin = StereoImagerPlugin::new(2, StereoImagerPluginParams::default());
         plugin.initialize(48000).unwrap();
 
-        // Set width
         plugin
             .set_parameter(ParameterId::from("width"), ParameterValue::Float(1.5))
             .unwrap();
         let val = plugin.get_parameter(&ParameterId::from("width"));
         assert_eq!(val, Some(ParameterValue::Float(1.5)));
 
-        // Set mono_bass
         plugin
             .set_parameter(ParameterId::from("mono_bass"), ParameterValue::Bool(true))
             .unwrap();
         let val = plugin.get_parameter(&ParameterId::from("mono_bass"));
         assert_eq!(val, Some(ParameterValue::Bool(true)));
 
-        // Set mix
         plugin
             .set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.75))
             .unwrap();
         let val = plugin.get_parameter(&ParameterId::from("mix"));
         assert_eq!(val, Some(ParameterValue::Float(0.75)));
 
-        // Unknown parameter should fail
         let result =
             plugin.set_parameter(ParameterId::from("nonexistent"), ParameterValue::Float(1.0));
         assert!(result.is_err());
 
-        // Unknown get should return None
         assert_eq!(
             plugin.get_parameter(&ParameterId::from("nonexistent")),
             None
@@ -647,4 +665,98 @@ mod tests {
 
         assert_eq!(buffer, original);
     }
+
+    /// Changing crossover frequency should not update coefficients instantly.
+    /// The frequency should smooth over time via LogSmoother.
+    #[test]
+    fn test_crossover_frequency_smoothing() {
+        let mut plugin = StereoImagerPlugin::new(2, StereoImagerPluginParams::default());
+        plugin.initialize(48000).unwrap();
+
+        let initial_low_freq = plugin.crossover_low.frequency();
+        assert!((initial_low_freq - 250.0).abs() < 0.1);
+
+        // Change low-mid freq via set_parameter
+        plugin
+            .set_parameter(
+                ParameterId::from("low_mid_freq"),
+                ParameterValue::Float(1000.0),
+            )
+            .unwrap();
+
+        // Crossover frequency should NOT have updated instantly
+        assert!(
+            (plugin.crossover_low.frequency() - initial_low_freq).abs() < 0.1,
+            "crossover frequency updated instantly: got {}, expected ~{}",
+            plugin.crossover_low.frequency(),
+            initial_low_freq
+        );
+
+        // Process a buffer to let the smoother advance
+        let mut buffer = vec![0.5_f32; 512 * 2];
+        plugin.process_in_place(&mut buffer, &ProcessContext { num_frames: 512, sample_rate: 48000 }).unwrap();
+
+        // After processing, the frequency should have moved toward the target
+        let new_freq = plugin.crossover_low.frequency();
+        assert!(
+            new_freq > initial_low_freq,
+            "frequency should have increased after processing: got {}, was {}",
+            new_freq,
+            initial_low_freq
+        );
+        assert!(
+            new_freq < 1000.0,
+            "frequency should not have reached target yet: got {}, target 1000",
+            new_freq
+        );
+
+        // Process many more buffers until the frequency reaches the target
+        for _ in 0..200 {
+            plugin.process_in_place(&mut buffer, &ProcessContext { num_frames: 512, sample_rate: 48000 }).unwrap();
+        }
+
+        let final_freq = plugin.crossover_low.frequency();
+        assert!(
+            (final_freq - 1000.0).abs() < 1.0,
+            "frequency should have reached target after many buffers: got {}, target 1000",
+            final_freq
+        );
+    }
+
+    /// set_parameter should not allocate (regression test for real-time safety).
+    /// We verify functional correctness; the removal of cached_parameters/rebuild
+    /// eliminates the Vec allocation path.
+    #[test]
+    fn test_set_parameter_no_allocation() {
+        let mut plugin = StereoImagerPlugin::new(2, StereoImagerPluginParams::default());
+        plugin.initialize(48000).unwrap();
+
+        // Set every parameter repeatedly
+        for i in 0..100 {
+            let v = 0.5 + (i as f32 * 0.001);
+            plugin
+                .set_parameter(ParameterId::from("width"), ParameterValue::Float(v))
+                .unwrap();
+            plugin
+                .set_parameter(ParameterId::from("low_mid_freq"), ParameterValue::Float(200.0 + v * 10.0))
+                .unwrap();
+            plugin
+                .set_parameter(ParameterId::from("mid_high_freq"), ParameterValue::Float(3000.0 + v * 100.0))
+                .unwrap();
+            plugin
+                .set_parameter(ParameterId::from("mix"), ParameterValue::Float(v.min(1.0)))
+                .unwrap();
+        }
+
+        // parameters() should still return correct values
+        let params = plugin.parameters();
+        assert_eq!(params.len(), 8);
+
+        // Verify the last-set values are reflected
+        assert_eq!(
+            plugin.get_parameter(&ParameterId::from("width")),
+            Some(ParameterValue::Float(0.5 + 99.0 * 0.001))
+        );
+    }
 }
+

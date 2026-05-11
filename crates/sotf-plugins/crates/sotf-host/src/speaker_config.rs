@@ -25,6 +25,27 @@ pub struct SpeakerPosition {
     pub is_lfe: bool,
 }
 
+impl SpeakerPosition {
+    /// Convert this speaker's spherical position (azimuth, elevation) into a
+    /// unit-length Cartesian vector `[x, y, z]`.
+    ///
+    /// Convention matches the rest of this module:
+    /// - `azimuth` in degrees (`0° = front`, `+90° = left`)
+    /// - `elevation` in degrees (`0° = ear level`, `+90° = overhead`)
+    /// - Returned vector: `x = right-handed lateral` (sin(az) at elevation 0),
+    ///   `y = depth toward front`, `z = vertical (up)`.
+    ///
+    /// LFE speakers have no physical direction; this still returns the
+    /// vector implied by their azimuth/elevation fields (typically `[0, 1, 0]`).
+    /// Callers that care about LFE should filter on `is_lfe` first.
+    pub fn to_cartesian(&self) -> [f32; 3] {
+        let az = self.azimuth.to_radians();
+        let el = self.elevation.to_radians();
+        let cos_el = el.cos();
+        [cos_el * az.sin(), cos_el * az.cos(), el.sin()]
+    }
+}
+
 /// Speaker configuration preset
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpeakerConfig {
@@ -1797,6 +1818,16 @@ pub fn make_fallback_channel(index: usize) -> MeterChannelSpec {
 // VBAP (Vector Base Amplitude Panning)
 // ============================================================================
 
+/// Convert a spherical direction `(azimuth_deg, elevation_deg)` to a unit
+/// Cartesian vector using the conventions described on `SpeakerPosition`.
+#[inline]
+pub fn spherical_to_cartesian(azimuth_deg: f32, elevation_deg: f32) -> [f32; 3] {
+    let az = azimuth_deg.to_radians();
+    let el = elevation_deg.to_radians();
+    let cos_el = el.cos();
+    [cos_el * az.sin(), cos_el * az.cos(), el.sin()]
+}
+
 /// Calculate panning gain for a speaker based on source position
 /// Uses modified Vector Base Amplitude Panning (VBAP) with improved height handling
 ///
@@ -1814,23 +1845,11 @@ pub fn calculate_panning_gain(
     speaker_azimuth: f32,
     speaker_elevation: f32,
 ) -> f32 {
-    // Convert to radians
-    let src_az = source_azimuth.to_radians();
-    let src_el = source_elevation.to_radians();
-    let spk_az = speaker_azimuth.to_radians();
-    let spk_el = speaker_elevation.to_radians();
+    let src = spherical_to_cartesian(source_azimuth, source_elevation);
+    let spk = spherical_to_cartesian(speaker_azimuth, speaker_elevation);
 
-    // Convert spherical to Cartesian coordinates
-    let src_x = src_el.cos() * src_az.sin();
-    let src_y = src_el.cos() * src_az.cos();
-    let src_z = src_el.sin();
-
-    let spk_x = spk_el.cos() * spk_az.sin();
-    let spk_y = spk_el.cos() * spk_az.cos();
-    let spk_z = spk_el.sin();
-
-    // Calculate dot product (cosine of angle between vectors)
-    let dot_product = src_x * spk_x + src_y * spk_y + src_z * spk_z;
+    // Calculate dot product (cosine of angle between unit vectors)
+    let dot_product = src[0] * spk[0] + src[1] * spk[1] + src[2] * spk[2];
 
     // Clamp to [0, 1]
     let cosine_gain = dot_product.max(0.0);
@@ -1993,6 +2012,71 @@ pub fn normalize_gains_l2(gains: &mut [f32]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_speaker_position_to_cartesian_matches_inline_math() {
+        // Verify the extracted method agrees with the historical inline
+        // spherical→Cartesian conversion at every speaker in every preset.
+        for cfg_id in get_available_configs() {
+            let cfg = get_speaker_config(cfg_id).unwrap();
+            for sp in cfg.speakers {
+                let az = sp.azimuth.to_radians();
+                let el = sp.elevation.to_radians();
+                let expected = [el.cos() * az.sin(), el.cos() * az.cos(), el.sin()];
+                let actual = sp.to_cartesian();
+                for i in 0..3 {
+                    assert!(
+                        (actual[i] - expected[i]).abs() < 1e-6,
+                        "{}/{} component {}: got {} expected {}",
+                        cfg_id,
+                        sp.label,
+                        i,
+                        actual[i],
+                        expected[i]
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_to_cartesian_known_directions() {
+        // Front center (0°, 0°) → +Y
+        let c = SpeakerPosition {
+            label: "C",
+            name: "Center",
+            azimuth: 0.0,
+            elevation: 0.0,
+            channel: 0,
+            is_lfe: false,
+        }
+        .to_cartesian();
+        assert!(c[0].abs() < 1e-6 && (c[1] - 1.0).abs() < 1e-6 && c[2].abs() < 1e-6);
+
+        // Pure left (+90°, 0°) → +X
+        let l = SpeakerPosition {
+            label: "L",
+            name: "Left",
+            azimuth: 90.0,
+            elevation: 0.0,
+            channel: 0,
+            is_lfe: false,
+        }
+        .to_cartesian();
+        assert!((l[0] - 1.0).abs() < 1e-6 && l[1].abs() < 1e-6 && l[2].abs() < 1e-6);
+
+        // Overhead (any az, 90°) → +Z
+        let vog = SpeakerPosition {
+            label: "VoG",
+            name: "Voice of God",
+            azimuth: 0.0,
+            elevation: 90.0,
+            channel: 0,
+            is_lfe: false,
+        }
+        .to_cartesian();
+        assert!(vog[0].abs() < 1e-6 && vog[1].abs() < 1e-6 && (vog[2] - 1.0).abs() < 1e-6);
+    }
 
     #[test]
     fn test_get_speaker_config() {

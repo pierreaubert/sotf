@@ -308,8 +308,10 @@ impl SpectralCompressorPlugin {
         let hop_size = fft_size / 4;
         let hop_rate = sample_rate as f32 / hop_size as f32;
 
-        let attack_coeff = (-1.0 / (params.attack_ms * 0.001 * hop_rate)).exp();
-        let release_coeff = (-1.0 / (params.release_ms * 0.001 * hop_rate)).exp();
+        let attack_ms = params.attack_ms.max(0.01);
+        let release_ms = params.release_ms.max(0.01);
+        let attack_coeff = (-1.0 / (attack_ms * 0.001 * hop_rate)).exp();
+        let release_coeff = (-1.0 / (release_ms * 0.001 * hop_rate)).exp();
 
         let mut plugin = Self {
             channels,
@@ -407,7 +409,12 @@ impl SpectralCompressorPlugin {
 
             // --- Per-bin compression ---
             for k in 0..num_bins {
-                let mag = self.stft.freq_scratch[k].norm() * mag_norm;
+                let mut mag = self.stft.freq_scratch[k].norm() * mag_norm;
+                // Compensate for Hann window coherent gain (0.5) on non-DC/non-Nyquist bins.
+                // DC and Nyquist are real-only and scale as fft_size/2 regardless of window.
+                if k != 0 && k != num_bins - 1 {
+                    mag *= 2.0;
+                }
                 self.stft.magnitudes_scratch[k] = mag;
                 let mag_db = 20.0 * mag.max(1e-10).log10();
 

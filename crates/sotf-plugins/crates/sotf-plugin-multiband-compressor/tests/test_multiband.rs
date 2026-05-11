@@ -31,12 +31,18 @@ fn test_multiband_compressor_processing() {
         input[i * 2 + 1] = (low + high) * 0.5;
     }
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
-
-    plugin.process_in_place(&mut input, &context).unwrap();
+    // Process in 1024-frame chunks to stay within max block size
+    let chunk_size = 1024;
+    let mut offset = 0;
+    while offset < num_frames {
+        let end = (offset + chunk_size).min(num_frames);
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames: end - offset,
+        };
+        plugin.process_in_place(&mut input[offset * 2..end * 2], &context).unwrap();
+        offset = end;
+    }
 
     // Check that we don't have NaNs
     assert!(!input.iter().any(|x| x.is_nan()));
@@ -70,12 +76,18 @@ fn test_multiband_compressor_ms_mode_roundtrip() {
     }
     let original = input.clone();
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
-
-    plugin.process_in_place(&mut input, &context).unwrap();
+    // Process in 1024-frame chunks to stay within max block size
+    let chunk_size = 1024;
+    let mut offset = 0;
+    while offset < num_frames {
+        let end = (offset + chunk_size).min(num_frames);
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames: end - offset,
+        };
+        plugin.process_in_place(&mut input[offset * 2..end * 2], &context).unwrap();
+        offset = end;
+    }
 
     // With ratio=1 (no compression), output should preserve energy and stereo image.
     // The crossover filters shift phase, so sample-level identity is not expected.

@@ -8,6 +8,11 @@
 
 ## Fixes
 
+- **CRITICAL** Fixed STFT trigger bug: after first hop, `input_fill` reset caused ~257 FFT frames per 512-sample block instead of 2. Now correctly triggers every `hop` samples.
+- **CRITICAL** Fixed missing overlap-add (OLA) in STFT synthesis path. Added `ola_buffer` with COLA-compliant sqrt(Hann) analysis/synthesis windows.
+- **MAJOR** Fixed steering angle convention: docs said 0°=broadside but math implemented 0°=endfire. Rotated coordinate system so 0° is now actually broadside.
+- **MAJOR** Fixed GSC Fixed Beamformer to use fractional delay compensation via per-mic delay lines instead of ignoring `steering_delays`.
+- **MAJOR** Fixed GSC Blocking Matrix to match documentation (`B = I - d*d^H/(d^H*d)`) instead of adjacent-difference approximation.
 - Did a round of test fixing
 
 ## Changes

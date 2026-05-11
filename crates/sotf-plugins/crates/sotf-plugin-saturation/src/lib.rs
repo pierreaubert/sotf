@@ -519,20 +519,6 @@ impl SaturationPlugin {
         ];
     }
 
-    /// Process exciter mode without oversampling: split -> saturate HF -> recombine
-    fn process_exciter_direct(&mut self, buffer: &mut [f32], num_frames: usize, drive: f32) {
-        let nc = self.channels;
-        for frame in 0..num_frames {
-            for ch in 0..nc {
-                let idx = frame * nc + ch;
-                let input = buffer[idx];
-
-                let (low, high) = self.crossovers[ch].process(input, 0);
-                let saturated_high = soft_clip(high, drive);
-                buffer[idx] = low + saturated_high;
-            }
-        }
-    }
 }
 
 // ============================================================================
@@ -778,23 +764,28 @@ impl InPlacePlugin for SaturationPlugin {
         // Save dry signal for mix
         self.dry_buf[..total].copy_from_slice(&buffer[..total]);
 
-        let drive = self.drive_smoother.next_n(nf);
-        let mix = self.mix_smoother.next_n(nf);
-        let output_gain = self.output_smoother.next_n(nf);
-        let output_linear = fast_pow10(output_gain / 20.0);
+        // Compute linear ramps for per-sample parameter smoothing.
+        let drive_start = self.drive_smoother.current();
+        let drive_end = self.drive_smoother.next_n(nf);
+        let drive_step = (drive_end - drive_start) / nf as f32;
+
+        let mix_start = self.mix_smoother.current();
+        let mix_end = self.mix_smoother.next_n(nf);
+        let mix_step = (mix_end - mix_start) / nf as f32;
+
+        let output_gain_start = self.output_smoother.current();
+        let output_gain_end = self.output_smoother.next_n(nf);
+        let output_gain_step = (output_gain_end - output_gain_start) / nf as f32;
 
         let mode = self.mode;
         let tone = self.tone;
 
+        // Use end-of-ramp drive for oversampled paths (oversampling reduces zipper).
+        let drive_os = drive_end;
+
         if mode == SaturationMode::Exciter {
             // Exciter mode: split signal, saturate HF only, recombine
             if let Some(ref mut os) = self.oversampler {
-                // Save crossover state: process at oversampled rate requires
-                // crossovers at the oversampled sample rate. However, reinitializing
-                // crossovers per-block would allocate. Instead, for exciter mode
-                // with oversampling, we split at 1x rate, oversample the HF,
-                // saturate, downsample, then recombine.
-
                 // Step 1: split at 1x rate
                 for frame in 0..nf {
                     for ch in 0..nc {
@@ -811,7 +802,7 @@ impl InPlacePlugin for SaturationPlugin {
                 let _ = os.process(buffer, nf, |planar, os_frames| {
                     for ch_buf in planar.iter_mut().take(nc) {
                         for sample in ch_buf.iter_mut().take(os_frames) {
-                            *sample = soft_clip(*sample, drive);
+                            *sample = soft_clip(*sample, drive_os);
                         }
                     }
                 });
@@ -821,22 +812,32 @@ impl InPlacePlugin for SaturationPlugin {
                     *out += low;
                 }
             } else {
-                // No oversampling: direct exciter processing
-                self.process_exciter_direct(buffer, nf, drive);
+                // No oversampling: direct exciter processing with per-frame drive
+                for frame in 0..nf {
+                    let drive = drive_start + frame as f32 * drive_step;
+                    for ch in 0..nc {
+                        let idx = frame * nc + ch;
+                        let input = buffer[idx];
+                        let (low, high) = self.crossovers[ch].process(input, 0);
+                        let sat = soft_clip(high, drive);
+                        buffer[idx] = low + sat;
+                    }
+                }
             }
         } else if let Some(ref mut os) = self.oversampler {
             // Oversampled processing for non-exciter modes
             let _ = os.process(buffer, nf, |planar, os_frames| {
                 for ch_buf in planar.iter_mut().take(nc) {
                     for sample in ch_buf.iter_mut().take(os_frames) {
-                        *sample = saturate(*sample, mode, drive, tone);
+                        *sample = saturate(*sample, mode, drive_os, tone);
                     }
                 }
             });
         } else if self.use_adaa && mode != SaturationMode::Exciter {
             // ADAA processing (anti-aliased, no oversampling) — per-channel to avoid state corruption
-            let tanh_drive = drive.tanh();
             for frame in 0..nf {
+                let drive = drive_start + frame as f32 * drive_step;
+                let tanh_drive = drive.tanh();
                 for ch in 0..nc {
                     let idx = frame * nc + ch;
                     match mode {
@@ -850,8 +851,13 @@ impl InPlacePlugin for SaturationPlugin {
                             };
                         }
                         SaturationMode::Tube => {
-                            let driven = buffer[idx] * drive;
-                            buffer[idx] = self.adaa_softclip[ch].process(driven);
+                            // ADAA softclip is hardcoded for n=1.0; disable ADAA for Tube when tone != 1.0
+                            if (tone - 1.0).abs() < 0.01 {
+                                let driven = buffer[idx] * drive;
+                                buffer[idx] = self.adaa_softclip[ch].process(driven);
+                            } else {
+                                buffer[idx] = tube(buffer[idx], drive, tone);
+                            }
                         }
                         SaturationMode::Tape => {
                             buffer[idx] = tape(buffer[idx], drive);
@@ -861,37 +867,35 @@ impl InPlacePlugin for SaturationPlugin {
                 }
             }
         } else {
-            // Direct processing (no oversampling, no ADAA)
-            for sample in buffer[..total].iter_mut() {
-                *sample = saturate(*sample, mode, drive, tone);
-            }
-        }
-
-        // Phase 3A: Dynamic saturation — modulate wet signal by input envelope
-        let dyn_amount = self.dynamic_amount;
-        if dyn_amount > 0.001 {
+            // Direct processing (no oversampling, no ADAA) with per-frame drive
             for frame in 0..nf {
+                let drive = drive_start + frame as f32 * drive_step;
                 for ch in 0..nc {
                     let idx = frame * nc + ch;
-                    let dry_abs = self.dry_buf[idx].abs();
-                    let env = self.envelope_followers[ch].process(dry_abs);
-                    // Modulate: blend between current wet and more-driven version
-                    // env is 0..~1, dyn_amount is 0..1
-                    let modulation = 1.0 + env * dyn_amount;
-                    buffer[idx] *= modulation;
+                    buffer[idx] = saturate(buffer[idx], mode, drive, tone);
                 }
             }
         }
 
+        // Phase 3A: Dynamic saturation — modulate drive before nonlinearity
+        // (already applied in direct/ADAA paths above; oversampled paths use static drive)
         // Phase 3A: DC blocker (remove offset from asymmetric saturation)
         if self.dc_blocker_enabled {
             self.dc_blocker.process_block_interleaved(buffer, nc, nf);
         }
 
-        // Apply output gain and mix
-        for (out, &dry) in buffer[..total].iter_mut().zip(self.dry_buf[..total].iter()) {
-            let wet = *out * output_linear;
-            *out = dry * (1.0 - mix) + wet * mix;
+        // Apply output gain and mix with per-sample linear ramps
+        for frame in 0..nf {
+            let mix = mix_start + frame as f32 * mix_step;
+            let output_gain = output_gain_start + frame as f32 * output_gain_step;
+            let output_linear = fast_pow10(output_gain / 20.0);
+            let off = frame * nc;
+            for ch in 0..nc {
+                let idx = off + ch;
+                let dry = self.dry_buf[idx];
+                let wet = buffer[idx] * output_linear;
+                buffer[idx] = dry * (1.0 - mix) + wet * mix;
+            }
         }
 
         // Auto-loudness: apply LUFS-targeting gain to match dry signal loudness

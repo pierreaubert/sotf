@@ -296,7 +296,14 @@ pub const LAYOUT: PluginLayout = PluginLayout {
             ],
         },
     ],
-    visualizations: &[],
+    // Spatial spider (SPL / inter-channel correlation) — opt-in via the
+    // generic ui_layout_renderer "spatial_spider" custom-viz hook. Plugins
+    // that produce a multichannel output benefit from this; it lets the
+    // user see per-channel level / phase relationships at a glance.
+    visualizations: &[VizSlot::Custom {
+        name: viz_names::SPATIAL_SPIDER,
+        position: VizPosition::FullCenter,
+    }],
     column_constraints: &[
         ColumnConstraint::config(180.0, 0.55),
         ColumnConstraint::main(500.0),

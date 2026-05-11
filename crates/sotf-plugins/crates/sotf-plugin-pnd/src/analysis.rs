@@ -216,9 +216,20 @@ impl PndAnalyzer {
         }
         self.drift_dirty = false;
 
-        // Compute median of drift_history[..drift_count] using O(n) selection.
+        // Compute median of drift_history using O(n) selection.
+        // drift_history is a circular buffer — copy it in wrap order.
         let len = self.drift_count.min(self.drift_history_capacity);
-        self.median_scratch[..len].copy_from_slice(&self.drift_history[..len]);
+        if self.drift_count < self.drift_history_capacity {
+            self.median_scratch[..len].copy_from_slice(&self.drift_history[..len]);
+        } else {
+            let first = self.drift_history_capacity - self.drift_write_pos;
+            self.median_scratch[..first]
+                .copy_from_slice(&self.drift_history[self.drift_write_pos..self.drift_write_pos + first]);
+            if self.drift_write_pos > 0 {
+                self.median_scratch[first..len]
+                    .copy_from_slice(&self.drift_history[..self.drift_write_pos]);
+            }
+        }
 
         let mid = len / 2;
         self.median_scratch[..len].select_nth_unstable_by(mid, |a, b| {

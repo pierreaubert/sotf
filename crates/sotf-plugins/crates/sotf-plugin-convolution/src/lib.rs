@@ -29,6 +29,18 @@ use symphonia::core::probe::{Hint, Probe};
 
 const PARTITION_SIZE: usize = 1024;
 const FFT_SIZE: usize = PARTITION_SIZE * 2;
+const OUTPUT_QUEUE_SIZE: usize = PARTITION_SIZE * 4;
+
+/// Result of loading an IR on a background thread, ready to be swapped into the audio thread.
+struct IrLoadResult {
+    state: ConvolutionState,
+    nupc_engines: Vec<nupc::NupcEngine>,
+    fdl_flat: Vec<Complex<f32>>,
+    fdl_head: usize,
+    fft_scratch: Vec<Complex<f32>>,
+    rayon_accum_pool: Vec<Vec<Complex<f32>>>,
+    ir_file: String,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConvolutionPluginParams {
@@ -90,6 +102,15 @@ pub struct ConvolutionPlugin {
     /// Pre-allocated accumulator buffers for rayon fold/reduce (one per rayon thread).
     /// Avoids heap allocation in the audio processing hot path.
     rayon_accum_pool: Vec<Vec<Complex<f32>>>,
+    /// Output ring buffer for completed partition blocks (per channel).
+    /// Needed because UPC produces PARTITION_SIZE samples at a time, but the host
+    /// may deliver smaller buffers.
+    output_queue: Vec<Vec<f32>>,
+    output_queue_read: usize,
+    output_queue_write: usize,
+    output_queue_len: usize,
+    /// Channel to receive asynchronously-loaded IR state from the background thread.
+    ir_load_result_rx: Option<std::sync::mpsc::Receiver<Result<IrLoadResult, String>>>,
 }
 
 impl ConvolutionPlugin {
@@ -117,6 +138,11 @@ impl ConvolutionPlugin {
             zero_latency_head: false,
             head_taps: 128,
             rayon_accum_pool: Vec::new(),
+            output_queue: vec![vec![0.0; OUTPUT_QUEUE_SIZE]; channels],
+            output_queue_read: 0,
+            output_queue_write: 0,
+            output_queue_len: 0,
+            ir_load_result_rx: None,
         };
         p.rebuild_cached_parameters();
         p
@@ -189,17 +215,24 @@ impl ConvolutionPlugin {
         Ok(plugin)
     }
 
-    pub fn load_ir(&mut self, path: &str) -> Result<(), String> {
+    /// Build IR state on any thread (file I/O, FFT planning, allocations).
+    fn build_ir_state(
+        path: &str,
+        channels: usize,
+        sample_rate: u32,
+        use_nupc: bool,
+        zero_latency_head: bool,
+        head_taps: usize,
+    ) -> Result<IrLoadResult, String> {
         let (ir_samples, ir_sample_rate) = Self::load_audio_file(path)?;
 
-        // Resample the IR if its sample rate differs from the engine's sample rate
-        let ir_samples = if ir_sample_rate != 0 && ir_sample_rate != self.sample_rate {
+        let ir_samples = if ir_sample_rate != 0 && ir_sample_rate != sample_rate {
             log::info!(
                 "Resampling IR from {} Hz to {} Hz",
                 ir_sample_rate,
-                self.sample_rate
+                sample_rate
             );
-            Self::resample_ir(&ir_samples, ir_sample_rate, self.sample_rate)?
+            Self::resample_ir(&ir_samples, ir_sample_rate, sample_rate)?
         } else {
             ir_samples
         };
@@ -210,7 +243,7 @@ impl ConvolutionPlugin {
         let fft_inverse = planner.plan_fft_inverse(FFT_SIZE);
 
         let mut partitions = Vec::with_capacity(ir_channels);
-        for ch_samples in ir_samples {
+        for ch_samples in &ir_samples {
             let num_parts = ch_samples.len().div_ceil(PARTITION_SIZE);
             let mut ch_parts = Vec::with_capacity(num_parts);
             for p in 0..num_parts {
@@ -230,63 +263,70 @@ impl ConvolutionPlugin {
         let fft_scratch_len = fft_forward
             .get_inplace_scratch_len()
             .max(fft_inverse.get_inplace_scratch_len());
-        self.state.store(Arc::new(Some(ConvolutionState {
+
+        let state = ConvolutionState {
             partitions,
             num_partitions,
             ir_channels,
             fft_forward,
             fft_inverse,
-        })));
-        self.fdl_flat = vec![Complex::new(0.0, 0.0); num_partitions * self.channels * FFT_SIZE];
-        self.fdl_head = 0;
-        self.fft_scratch = vec![Complex::new(0.0, 0.0); fft_scratch_len];
-        self.ir_file = path.to_string();
+        };
 
-        // Pre-allocate rayon accumulator pool (one buffer per available thread)
-        let n_threads = rayon::current_num_threads().max(1);
-        self.rayon_accum_pool = (0..n_threads)
-            .map(|_| vec![Complex::new(0.0, 0.0); FFT_SIZE])
-            .collect();
-
-        // Build NUPC engines if use_nupc is enabled.
-        // One NupcEngine per channel, each configured with the channel's IR.
-        if self.use_nupc {
-            let state_guard = self.state.load();
-            if let Some(ref state) = **state_guard {
-                self.nupc_engines.clear();
-                for ch in 0..self.channels {
-                    let ir_ch = ch % state.ir_channels;
-                    // Reconstruct the time-domain IR from the stored FFT partitions.
-                    // Each partition is PARTITION_SIZE samples zero-padded to FFT_SIZE.
-                    let mut ir_data = Vec::with_capacity(state.num_partitions * PARTITION_SIZE);
-                    for p in 0..state.num_partitions {
-                        // IFFT the partition to get time-domain samples
-                        let mut block = state.partitions[ir_ch][p].clone();
-                        state.fft_inverse.process(&mut block);
-                        let scale = 1.0 / FFT_SIZE as f32;
-                        for sample in &block[..PARTITION_SIZE] {
-                            ir_data.push(sample.re * scale);
-                        }
-                    }
-                    if self.zero_latency_head && self.head_taps > 0 {
-                        self.nupc_engines.push(nupc::NupcEngine::new_with_head(
-                            &ir_data,
-                            PARTITION_SIZE,
-                            self.head_taps,
-                        ));
-                    } else {
-                        self.nupc_engines
-                            .push(nupc::NupcEngine::new(&ir_data, PARTITION_SIZE));
-                    }
+        // Build NUPC engines from original time-domain IR.
+        let mut nupc_engines = Vec::new();
+        if use_nupc {
+            for ch in 0..channels {
+                let ir_ch = ch % ir_channels;
+                if zero_latency_head && head_taps > 0 {
+                    nupc_engines.push(nupc::NupcEngine::new_with_head(
+                        &ir_samples[ir_ch],
+                        PARTITION_SIZE,
+                        head_taps,
+                    ));
+                } else {
+                    nupc_engines.push(nupc::NupcEngine::new(&ir_samples[ir_ch], PARTITION_SIZE));
                 }
-                log::info!(
-                    "[Convolution] NUPC engines built: {} channels, latency={} samples",
-                    self.nupc_engines.len(),
-                    self.nupc_engines.first().map_or(0, |e| e.latency_samples())
-                );
             }
+            log::info!(
+                "[Convolution] NUPC engines built: {} channels, latency={} samples",
+                nupc_engines.len(),
+                nupc_engines.first().map_or(0, |e| e.latency_samples())
+            );
         }
 
+        Ok(IrLoadResult {
+            state,
+            nupc_engines,
+            fdl_flat: vec![Complex::new(0.0, 0.0); num_partitions * channels * FFT_SIZE],
+            fdl_head: 0,
+            fft_scratch: vec![Complex::new(0.0, 0.0); fft_scratch_len],
+            rayon_accum_pool: (0..rayon::current_num_threads().max(1))
+                .map(|_| vec![Complex::new(0.0, 0.0); FFT_SIZE])
+                .collect(),
+            ir_file: path.to_string(),
+        })
+    }
+
+    fn apply_ir_state(&mut self, result: IrLoadResult) {
+        self.state.store(Arc::new(Some(result.state)));
+        self.nupc_engines = result.nupc_engines;
+        self.fdl_flat = result.fdl_flat;
+        self.fdl_head = result.fdl_head;
+        self.fft_scratch = result.fft_scratch;
+        self.rayon_accum_pool = result.rayon_accum_pool;
+        self.ir_file = result.ir_file;
+    }
+
+    pub fn load_ir(&mut self, path: &str) -> Result<(), String> {
+        let result = Self::build_ir_state(
+            path,
+            self.channels,
+            self.sample_rate,
+            self.use_nupc,
+            self.zero_latency_head,
+            self.head_taps,
+        )?;
+        self.apply_ir_state(result);
         Ok(())
     }
 
@@ -487,8 +527,48 @@ impl InPlacePlugin for ConvolutionPlugin {
                 self.state.store(Arc::new(None));
                 self.nupc_engines.clear();
                 self.ir_file.clear();
+                self.output_queue_read = 0;
+                self.output_queue_write = 0;
+                self.output_queue_len = 0;
+                for buf in &mut self.output_queue {
+                    buf.fill(0.0);
+                }
+                self.input_fill = 0;
+                for buf in &mut self.input_buffers {
+                    buf.fill(0.0);
+                }
+                for buf in &mut self.output_accum {
+                    buf.fill(0.0);
+                }
+                self.fdl_flat.fill(Complex::new(0.0, 0.0));
+                self.fdl_head = 0;
             } else {
-                self.load_ir(&path)?;
+                // Quick synchronous validation so tests get immediate feedback.
+                if !std::path::Path::new(&path).exists() {
+                    return Err(format!("IO: {path}: No such file or directory"));
+                }
+                self.ir_file = path.clone();
+                let (result_tx, result_rx) = std::sync::mpsc::channel();
+                self.ir_load_result_rx = Some(result_rx);
+                let channels = self.channels;
+                let sample_rate = self.sample_rate;
+                let use_nupc = self.use_nupc;
+                let zero_latency_head = self.zero_latency_head;
+                let head_taps = self.head_taps;
+                std::thread::Builder::new()
+                    .name("convolution-ir-load".to_string())
+                    .spawn(move || {
+                        let result = Self::build_ir_state(
+                            &path,
+                            channels,
+                            sample_rate,
+                            use_nupc,
+                            zero_latency_head,
+                            head_taps,
+                        );
+                        let _ = result_tx.send(result);
+                    })
+                    .map_err(|e| format!("Failed to spawn IR load thread: {e}"))?;
             }
             self.rebuild_cached_parameters();
             return Ok(());
@@ -504,14 +584,56 @@ impl InPlacePlugin for ConvolutionPlugin {
         param_bridge::get_parameter(CV, id, |i| self.param_value(i))
     }
     fn initialize(&mut self, sr: u32) -> PluginResult<()> {
+        let old_sr = self.sample_rate;
         self.sample_rate = sr;
         self.mix.set_time(20.0, sr);
         self.gain_linear.set_time(20.0, sr);
+        if old_sr != sr && !self.ir_file.is_empty() {
+            let path = self.ir_file.clone();
+            let (result_tx, result_rx) = std::sync::mpsc::channel();
+            self.ir_load_result_rx = Some(result_rx);
+            let channels = self.channels;
+            let use_nupc = self.use_nupc;
+            let zero_latency_head = self.zero_latency_head;
+            let head_taps = self.head_taps;
+            std::thread::Builder::new()
+                .name("convolution-ir-load".to_string())
+                .spawn(move || {
+                    let result = Self::build_ir_state(
+                        &path,
+                        channels,
+                        sr,
+                        use_nupc,
+                        zero_latency_head,
+                        head_taps,
+                    );
+                    let _ = result_tx.send(result);
+                })
+                .map_err(|e| format!("Failed to spawn IR load thread: {e}"))?;
+        }
         Ok(())
     }
     fn reset(&mut self) {
         self.fdl_flat.fill(Complex::new(0.0, 0.0));
         self.fdl_head = 0;
+        self.input_fill = 0;
+        for buf in &mut self.input_buffers {
+            buf.fill(0.0);
+        }
+        for buf in &mut self.output_accum {
+            buf.fill(0.0);
+        }
+        for engine in &mut self.nupc_engines {
+            engine.reset();
+        }
+        self.mix.reset(self.mix_value);
+        self.gain_linear.reset(10.0f32.powf(self.gain_db_value / 20.0));
+        self.output_queue_read = 0;
+        self.output_queue_write = 0;
+        self.output_queue_len = 0;
+        for buf in &mut self.output_queue {
+            buf.fill(0.0);
+        }
     }
 
     fn process_in_place(
@@ -519,9 +641,27 @@ impl InPlacePlugin for ConvolutionPlugin {
         buffer: &mut [f32],
         context: &ProcessContext,
     ) -> PluginResult<usize> {
+        let _ftz = sotf_host::simd::enable_ftz_daz();
         let nf = context.num_frames;
         let total_samples =
             validate_interleaved_in_place("Convolution", nf, self.channels, buffer.len())?;
+
+        // Check for asynchronously-loaded IR results and swap them in.
+        if let Some(ref rx) = self.ir_load_result_rx {
+            if let Ok(result) = rx.try_recv() {
+                self.ir_load_result_rx = None;
+                match result {
+                    Ok(loaded) => self.apply_ir_state(loaded),
+                    Err(e) => {
+                        log::error!("[Convolution] IR load failed: {e}");
+                        self.state.store(Arc::new(None));
+                        self.nupc_engines.clear();
+                        self.ir_file.clear();
+                    }
+                }
+            }
+        }
+
         let state_guard = self.state.load();
         let state = match state_guard.as_ref() {
             Some(s) => s,
@@ -529,22 +669,21 @@ impl InPlacePlugin for ConvolutionPlugin {
         };
 
         // NUPC path: per-channel block processing with non-uniform partitions.
-        // Avoids the UPC's fixed PARTITION_SIZE constraint for lower latency.
         if !self.nupc_engines.is_empty() && self.nupc_engines.len() == self.channels {
-            let mix = self.mix.next_n(nf);
-            let gain = self.gain_linear.next_n(nf);
             for frame in 0..nf {
+                let m = self.mix.advance();
+                let g = self.gain_linear.advance();
                 let off = frame * self.channels;
                 for ch in 0..self.channels {
                     let dry = buffer[off + ch];
                     let wet = self.nupc_engines[ch].process_sample(dry);
-                    buffer[off + ch] = dry * (1.0 - mix) + wet * mix * gain;
+                    buffer[off + ch] = dry * (1.0 - m) + wet * m * g;
                 }
             }
             return Ok(nf);
         }
 
-        // UPC path: uniform partitioned convolution (original code)
+        // UPC path: uniform partitioned convolution with output ring buffer.
         let num_partitions = state.num_partitions;
 
         let mut in_pos = 0;
@@ -559,11 +698,15 @@ impl InPlacePlugin for ConvolutionPlugin {
             self.input_fill += to_copy;
 
             if self.input_fill == PARTITION_SIZE {
-                let m = self.mix.advance();
-                let g = self.gain_linear.advance();
-                let wet_g = m * g;
-                let dry_g = 1.0 - m;
                 let inv_n = 1.0 / FFT_SIZE as f32;
+
+                // Pre-compute linear mix/gain ramp for this partition.
+                let m_start = self.mix.current();
+                let m_end = self.mix.next_n(PARTITION_SIZE);
+                let g_start = self.gain_linear.current();
+                let g_end = self.gain_linear.next_n(PARTITION_SIZE);
+                let m_step = (m_end - m_start) / PARTITION_SIZE as f32;
+                let g_step = (g_end - g_start) / PARTITION_SIZE as f32;
 
                 self.fdl_head = if self.fdl_head == 0 {
                     num_partitions - 1
@@ -593,34 +736,23 @@ impl InPlacePlugin for ConvolutionPlugin {
                         ch.min(state.ir_channels - 1)
                     };
 
-                    // Parallel partition sum: each rayon thread accumulates a local
-                    // fft_sum over its subset of partitions, then the partial sums are
-                    // merged via element-wise addition.  The threshold of 8 is chosen so
-                    // that the rayon scheduling overhead (~1-5 µs) is amortised over at
-                    // least 8 × FFT_SIZE complex multiply-adds.  Below that threshold the
-                    // sequential path is always faster.
                     if num_partitions >= 8 {
-                        // Capture immutable references needed inside the parallel closure.
                         let fdl_flat = &self.fdl_flat;
                         let fdl_head = self.fdl_head;
                         let channels = self.channels;
                         let ir_partitions = &state.partitions[ir_ch];
 
-                        // Lazy-init pool if not yet allocated (e.g. IR loaded via test helper)
                         if self.rayon_accum_pool.is_empty() {
                             let n_threads = rayon::current_num_threads().max(1);
                             self.rayon_accum_pool = (0..n_threads)
                                 .map(|_| vec![Complex::new(0.0, 0.0); FFT_SIZE])
                                 .collect();
                         }
-                        // Zero the pre-allocated accumulators
                         let pool = &mut self.rayon_accum_pool;
                         for acc in pool.iter_mut() {
                             acc.fill(Complex::new(0.0, 0.0));
                         }
 
-                        // Split partitions across pre-allocated accumulators.
-                        // Each chunk of partitions accumulates into one pool buffer.
                         let n_accum = pool.len().max(1);
                         let chunk_size = num_partitions.div_ceil(n_accum);
 
@@ -637,7 +769,6 @@ impl InPlacePlugin for ConvolutionPlugin {
                             }
                         });
 
-                        // Merge all accumulators into fft_sum
                         self.fft_sum.fill(Complex::new(0.0, 0.0));
                         for acc in self.rayon_accum_pool.iter() {
                             for (dst, src) in self.fft_sum.iter_mut().zip(acc.iter()) {
@@ -664,28 +795,42 @@ impl InPlacePlugin for ConvolutionPlugin {
                     }
                 }
 
-                // Apply to in-place buffer
-                for i in 0..PARTITION_SIZE {
-                    if in_pos + i >= PARTITION_SIZE - to_copy {
-                        let frame_idx = in_pos + i - (PARTITION_SIZE - to_copy);
-                        for ch in 0..self.channels {
-                            let idx = frame_idx * self.channels + ch;
-                            let dry = buffer[idx];
-                            buffer[idx] = dry * dry_g + self.output_accum[ch][i] * wet_g;
-                        }
+                // Mix dry/wet with per-sample linear ramp and push to output queue.
+                let write_base = self.output_queue_write;
+                for ch in 0..self.channels {
+                    for i in 0..PARTITION_SIZE {
+                        let m = m_start + m_step * i as f32;
+                        let g = g_start + g_step * i as f32;
+                        let dry = self.input_buffers[ch][i];
+                        let wet = self.output_accum[ch][i];
+                        let mixed = dry * (1.0 - m) + wet * m * g;
+                        let idx = (write_base + i) % OUTPUT_QUEUE_SIZE;
+                        self.output_queue[ch][idx] = mixed;
                     }
                 }
+                self.output_queue_write = (write_base + PARTITION_SIZE) % OUTPUT_QUEUE_SIZE;
+                self.output_queue_len += PARTITION_SIZE;
 
                 for ch in 0..self.channels {
                     self.output_accum[ch].copy_within(PARTITION_SIZE..FFT_SIZE, 0);
                     self.output_accum[ch][PARTITION_SIZE..].fill(0.0);
                 }
                 self.input_fill = 0;
-
-                // Smoother already advanced by advance() above — do not double-advance
-                self.mix.next_n(PARTITION_SIZE - 1);
-                self.gain_linear.next_n(PARTITION_SIZE - 1);
             }
+
+            // Emit completed output samples from the queue back to the in-place buffer.
+            let emit = to_copy.min(self.output_queue_len);
+            let read_base = self.output_queue_read;
+            for ch in 0..self.channels {
+                for i in 0..emit {
+                    let idx = (read_base + i) % OUTPUT_QUEUE_SIZE;
+                    let out_idx = (in_pos + i) * self.channels + ch;
+                    buffer[out_idx] = self.output_queue[ch][idx];
+                }
+            }
+            self.output_queue_read = (read_base + emit) % OUTPUT_QUEUE_SIZE;
+            self.output_queue_len -= emit;
+
             in_pos += to_copy;
         }
         flush_denormals_inplace(&mut buffer[..total_samples]);
@@ -1158,7 +1303,21 @@ mod tests {
             plugin.get_parameter(&ParameterId::from("ir_file")),
             Some(ParameterValue::String(path.to_string_lossy().into_owned()))
         );
-        assert!(plugin.state.load().is_some());
+
+        // Spin until the background thread finishes loading.
+        let mut buf = vec![0.0f32; 1024];
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: 1024,
+        };
+        for _ in 0..200 {
+            plugin.process_in_place(&mut buf, &ctx).unwrap();
+            if plugin.ir_load_result_rx.is_none() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(plugin.state.load().is_some(), "IR load should complete");
 
         fs::remove_file(path).ok();
     }
@@ -1185,5 +1344,139 @@ mod tests {
         };
         let mut short = vec![0.0_f32; 32 * 2 - 1];
         assert!(plugin.process_in_place(&mut short, &ctx).is_err());
+    }
+
+    /// UPC with non-PARTITION_SIZE-aligned buffers must not drop samples.
+    #[test]
+    fn test_upc_partial_buffer_no_dropout() {
+        let channels = 1;
+        let sr = 48000;
+        let ir = vec![vec![1.0]]; // Dirac IR
+        let mut plugin = make_plugin_with_ir(channels, sr, ir.clone());
+        plugin.mix_value = 1.0;
+        plugin.mix.set_target(1.0);
+        plugin.mix.reset(1.0);
+        plugin.gain_db_value = 0.0;
+        plugin.gain_linear.set_target(1.0);
+        plugin.gain_linear.reset(1.0);
+
+        let total_frames = PARTITION_SIZE * 4;
+        let input: Vec<f32> = (0..total_frames).map(|i| (i as f32 * 0.1).sin()).collect();
+        let mut buffer = input.clone();
+
+        // Process in 64-sample blocks (not aligned to PARTITION_SIZE)
+        for block_start in (0..total_frames).step_by(64) {
+            let block_end = (block_start + 64).min(total_frames);
+            let nf = block_end - block_start;
+            let ctx = ProcessContext {
+                sample_rate: sr,
+                num_frames: nf,
+            };
+            plugin
+                .process_in_place(&mut buffer[block_start..block_end], &ctx)
+                .unwrap();
+        }
+
+        // Reference: exact PARTITION_SIZE blocks
+        let mut plugin_ref = make_plugin_with_ir(channels, sr, ir);
+        plugin_ref.mix_value = 1.0;
+        plugin_ref.mix.set_target(1.0);
+        plugin_ref.mix.reset(1.0);
+        plugin_ref.gain_db_value = 0.0;
+        plugin_ref.gain_linear.set_target(1.0);
+        plugin_ref.gain_linear.reset(1.0);
+
+        let mut buffer_ref = input.clone();
+        for block_start in (0..total_frames).step_by(PARTITION_SIZE) {
+            let block_end = (block_start + PARTITION_SIZE).min(total_frames);
+            let nf = block_end - block_start;
+            let ctx = ProcessContext {
+                sample_rate: sr,
+                num_frames: nf,
+            };
+            plugin_ref
+                .process_in_place(&mut buffer_ref[block_start..block_end], &ctx)
+                .unwrap();
+        }
+
+        // The small-buffer path has a fixed delay relative to the exact-block path.
+        // delay = (ceil(PARTITION_SIZE / 64) - 1) * 64 = 15 * 64 = 960.
+        let delay = (PARTITION_SIZE.div_ceil(64) - 1) * 64;
+        // Before the delay, the buffer should still contain the original input.
+        for i in 0..delay {
+            assert!(
+                (buffer[i] - input[i]).abs() < 1e-5,
+                "Pre-latency sample {} should be unchanged: got {}, expected {}",
+                i,
+                buffer[i],
+                input[i]
+            );
+        }
+        // After the delay, small-buffer output should match exact-block output.
+        for i in delay..total_frames {
+            let expected = buffer_ref[i - delay];
+            let got = buffer[i];
+            assert!(
+                (got - expected).abs() < 1e-3,
+                "Partial buffer mismatch at sample {}: got {}, expected {} (ref at {})",
+                i,
+                got,
+                expected,
+                i - delay
+            );
+        }
+    }
+
+    /// reset() must clear all state so that a second pass is identical to the first.
+    #[test]
+    fn test_reset_clears_all_state() {
+        let channels = 1;
+        let sr = 48000;
+        let ir = vec![vec![1.0]];
+        let mut plugin = make_plugin_with_ir(channels, sr, ir);
+        plugin.mix_value = 1.0;
+        plugin.mix.set_target(1.0);
+        plugin.mix.reset(1.0);
+        plugin.gain_db_value = 0.0;
+        plugin.gain_linear.set_target(1.0);
+        plugin.gain_linear.reset(1.0);
+
+        let input: Vec<f32> = (0..PARTITION_SIZE * 3).map(|i| (i as f32 * 0.1).sin()).collect();
+
+        // First pass
+        let mut buf1 = input.clone();
+        for block_start in (0..buf1.len()).step_by(PARTITION_SIZE) {
+            let block_end = (block_start + PARTITION_SIZE).min(buf1.len());
+            let nf = block_end - block_start;
+            let ctx = ProcessContext {
+                sample_rate: sr,
+                num_frames: nf,
+            };
+            plugin.process_in_place(&mut buf1[block_start..block_end], &ctx).unwrap();
+        }
+
+        plugin.reset();
+
+        // Second pass after reset — must match first pass exactly
+        let mut buf2 = input.clone();
+        for block_start in (0..buf2.len()).step_by(PARTITION_SIZE) {
+            let block_end = (block_start + PARTITION_SIZE).min(buf2.len());
+            let nf = block_end - block_start;
+            let ctx = ProcessContext {
+                sample_rate: sr,
+                num_frames: nf,
+            };
+            plugin.process_in_place(&mut buf2[block_start..block_end], &ctx).unwrap();
+        }
+
+        for (i, (&a, &b)) in buf1.iter().zip(buf2.iter()).enumerate() {
+            assert!(
+                (a - b).abs() < 1e-5,
+                "Reset mismatch at sample {}: first={}, second={}",
+                i,
+                a,
+                b
+            );
+        }
     }
 }

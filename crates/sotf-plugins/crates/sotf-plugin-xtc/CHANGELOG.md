@@ -1,3 +1,11 @@
+# 0.5.38
+
+- **Critical bug fix**: Added missing `#[test]` attribute on `test_asymmetric_spectral_norm_scales_columns_not_rows`. The regression test for the asymmetric spectral normalization fix was dead code and never executed.
+- **Critical bug fix**: Room reflection amplitude now uses the pressure reflection coefficient `sqrt(1 - alpha)` instead of the energy absorption coefficient `(1 - alpha)` directly. This corrects reflected energy levels for typical wall absorptions (e.g. alpha=0.3 now yields 0.84 instead of 0.70).
+- **Major bug fix**: Brown-Duda head-shadowing `alpha_min` now implements the published rigid-sphere approximation `1 / sqrt(1 + (mu/2)^2)` instead of the previous ad-hoc linear fit `1 / (1 + 0.5*mu)`. The comment and implementation are now consistent.
+- Added regression tests for all three fixes.
+
+
 # 0.5.37
 
 - **Bug fix**: `process()` now returns `context.num_frames` instead of `output_pos`. STFT plugins must return the requested frame count to prevent ring-buffer underruns in the host. Unproduced frames are zeroed.

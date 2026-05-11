@@ -343,9 +343,28 @@ impl LinearPhaseEqPlugin {
         let mut freqs = Vec::with_capacity(num_points);
         let mut magnitudes_db = Vec::with_capacity(num_points);
 
-        // Include DC
-        freqs.push(1.0); // Use 1 Hz instead of 0 to avoid log issues
-        magnitudes_db.push(0.0);
+        let band_contribution = |freq: f64| -> f64 {
+            let mut combined_db = 0.0;
+            for band in &self.bands {
+                if !band.active {
+                    continue;
+                }
+                match band.filter_type {
+                    BiquadFilterType::Lowpass | BiquadFilterType::Highpass => {
+                        combined_db += band.biquad.log_result(freq);
+                    }
+                    _ if band.gain_db.abs() > 1e-6 => {
+                        combined_db += band.biquad.log_result(freq);
+                    }
+                    _ => {}
+                }
+            }
+            combined_db
+        };
+
+        // Include DC (1 Hz to avoid log-space interpolation issues with 0)
+        freqs.push(1.0);
+        magnitudes_db.push(band_contribution(1.0));
 
         let log_min = 1.0_f64.ln();
         let log_max = nyquist.ln();
@@ -355,14 +374,7 @@ impl LinearPhaseEqPlugin {
             let freq = (log_min + t * (log_max - log_min)).exp();
             freqs.push(freq);
 
-            // Sum the dB contribution from all active bands
-            let mut combined_db = 0.0;
-            for band in &self.bands {
-                if band.active && band.gain_db.abs() > 1e-6 {
-                    combined_db += band.biquad.log_result(freq);
-                }
-            }
-            magnitudes_db.push(combined_db);
+            magnitudes_db.push(band_contribution(freq));
         }
 
         // Generate the linear-phase FIR
@@ -1205,6 +1217,106 @@ mod tests {
         match val {
             Some(ParameterValue::Float(v)) => assert!((v - 2000.0).abs() < 1.0),
             other => panic!("Expected Float(2000.0), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_dc_gain_not_hardcoded() {
+        // CRITICAL: DC magnitude was hardcoded to 0 dB regardless of filter shape.
+        // A lowshelf cut should produce a FIR with attenuated DC gain.
+        let channels = 1;
+        let sr = 48000;
+        let params = LinearPhaseEqPluginParams {
+            num_filters: 1,
+            fir_length_index: 2, // 4096 taps
+            auto_gain: false,
+            mix: 1.0,
+            filters: vec![BandConfig {
+                filter_type: "Lowshelf".to_string(),
+                frequency: 200.0,
+                q: 0.7,
+                gain_db: -12.0,
+                active: true,
+            }],
+        };
+
+        let plugin = LinearPhaseEqPlugin::from_params(channels, sr, params).unwrap();
+        let dc_gain_linear: f32 = plugin.fir_coeffs.iter().sum();
+        let dc_gain_db = 20.0 * dc_gain_linear.abs().max(1e-12).log10();
+        // With the bug DC was forced to 0 dB, so sum ≈ 1.0 (0 dB).
+        // After the fix the FIR should reflect the shelf cut.
+        assert!(
+            dc_gain_db < -6.0,
+            "Expected DC gain significantly below 0 dB for a lowshelf cut, got {dc_gain_db:.2} dB"
+        );
+    }
+
+    #[test]
+    fn test_lowpass_zero_gain_not_skipped() {
+        // CRITICAL: lowpass/highpass bands with 0 dB gain were silently skipped.
+        let channels = 1;
+        let sr = 48000;
+        let params = LinearPhaseEqPluginParams {
+            num_filters: 1,
+            fir_length_index: 2, // 4096 taps
+            auto_gain: false,
+            mix: 1.0,
+            filters: vec![BandConfig {
+                filter_type: "Lowpass".to_string(),
+                frequency: 1000.0,
+                q: 0.7,
+                gain_db: 0.0,
+                active: true,
+            }],
+        };
+
+        let mut plugin = LinearPhaseEqPlugin::from_params(channels, sr, params).unwrap();
+        let num_frames = 512;
+        let latency = plugin.latency_samples();
+        let blocks_needed = (latency / num_frames) + 10;
+
+        let mut input_rms = 0.0f64;
+        let mut output_rms = 0.0f64;
+        let mut samples_counted = 0usize;
+
+        for block in 0..blocks_needed {
+            let mut buffer = vec![0.0f32; num_frames * channels];
+            let start_frame = block * num_frames;
+            for frame in 0..num_frames {
+                let t = (start_frame + frame) as f32 / sr as f32;
+                // 5 kHz sine, well above 1 kHz cutoff
+                let sample = (2.0 * std::f32::consts::PI * 5000.0 * t).sin() * 0.5;
+                buffer[frame] = sample;
+            }
+
+            if block * num_frames > latency + num_frames {
+                for &s in &buffer {
+                    input_rms += (s as f64) * (s as f64);
+                }
+                samples_counted += num_frames;
+            }
+
+            let ctx = make_context(num_frames);
+            plugin.process_in_place(&mut buffer, &ctx).unwrap();
+
+            if block * num_frames > latency + num_frames {
+                for &s in &buffer {
+                    output_rms += (s as f64) * (s as f64);
+                }
+            }
+        }
+
+        if samples_counted > 0 {
+            input_rms = (input_rms / samples_counted as f64).sqrt();
+            output_rms = (output_rms / samples_counted as f64).sqrt();
+
+            let attenuation_db = 20.0 * (output_rms / input_rms).log10();
+            // A 1 kHz lowpass should attenuate a 5 kHz sine significantly.
+            // With the bug the band was skipped, resulting in ~0 dB attenuation.
+            assert!(
+                attenuation_db < -6.0,
+                "Expected significant attenuation for lowpass at 5 kHz, got {attenuation_db:.1} dB"
+            );
         }
     }
 }

@@ -226,9 +226,12 @@ impl ResamplerPlugin {
             self.chunk_size,
             self.quality,
         )?;
-        let max_output_frames = resampler.output_frames_max();
-        self.output_buffer = vec![vec![0.0; max_output_frames]; self.num_channels];
-        self.residual_input = vec![vec![0.0; self.chunk_size]; self.num_channels];
+        // Re-use pre-allocated buffers instead of reallocating (real-time safety)
+        for ch in 0..self.num_channels {
+            self.input_buffer[ch].fill(0.0);
+            self.output_buffer[ch].fill(0.0);
+            self.residual_input[ch].fill(0.0);
+        }
         self.residual_frames = 0;
         self.resampler = Some(resampler);
         self.current_ratio = self.output_sample_rate as f64 / self.input_sample_rate as f64;
@@ -345,6 +348,67 @@ impl ResamplerPlugin {
         self.rebuild_cached_parameters();
         Ok(())
     }
+
+    /// Flush any remaining buffered input frames through the resampler.
+    ///
+    /// This zero-pads the residual buffer to a full chunk and processes it,
+    /// returning the final output frames. Call this when the input stream ends
+    /// to avoid losing trailing audio.
+    pub fn flush(&mut self, output: &mut [f32]) -> Result<usize, String> {
+        let resampler = self.resampler.as_mut().ok_or("Resampler not initialized")?;
+        let chunk_size = self.chunk_size;
+        let max_output_frames = resampler.output_frames_max();
+
+        if self.residual_frames == 0 {
+            return Ok(0);
+        }
+
+        // Zero-pad residual input to full chunk size
+        for ch in 0..self.num_channels {
+            self.input_buffer[ch].fill(0.0);
+            self.input_buffer[ch][..self.residual_frames]
+                .copy_from_slice(&self.residual_input[ch][..self.residual_frames]);
+        }
+
+        let input_adapter =
+            SequentialSliceOfVecs::new(&self.input_buffer, self.num_channels, chunk_size)
+                .map_err(|e| format!("Input adapter error: {:?}", e))?;
+        let mut output_adapter = SequentialSliceOfVecs::new_mut(
+            &mut self.output_buffer,
+            self.num_channels,
+            max_output_frames,
+        )
+        .map_err(|e| format!("Output adapter error: {:?}", e))?;
+
+        let (_, output_frames) = resampler
+            .process_into_buffer(&input_adapter, &mut output_adapter, None)
+            .map_err(|e| format!("Resampling failed: {:?}", e))?;
+
+        // Check output buffer capacity
+        let new_output_samples = output_frames * self.num_channels;
+        if new_output_samples > output.len() {
+            return Err(format!(
+                "Output buffer too small: need {} samples, got {}",
+                new_output_samples,
+                output.len()
+            ));
+        }
+
+        // Convert planar to interleaved
+        Self::planar_to_interleaved(
+            &self.output_buffer,
+            &mut output[..new_output_samples],
+            output_frames,
+            self.num_channels,
+        );
+
+        self.residual_frames = 0;
+        for ch in 0..self.num_channels {
+            self.residual_input[ch].fill(0.0);
+        }
+
+        Ok(output_frames)
+    }
 }
 
 impl Plugin for ResamplerPlugin {
@@ -449,6 +513,9 @@ impl Plugin for ResamplerPlugin {
         self.current_ratio = self.output_sample_rate as f64 / self.input_sample_rate as f64;
         // Clear residual buffer
         self.residual_frames = 0;
+        for ch in 0..self.num_channels {
+            self.residual_input[ch].fill(0.0);
+        }
     }
 
     fn process(
@@ -549,9 +616,10 @@ impl Plugin for ResamplerPlugin {
     }
 
     fn latency_samples(&self) -> usize {
-        // Rubato has some latency due to the sinc filter
-        // Approximately half the sinc filter length
-        self.quality.sinc_len() / 2
+        self.resampler
+            .as_ref()
+            .map(|r| r.output_delay())
+            .unwrap_or(self.quality.sinc_len() / 2)
     }
 
     fn output_frames_for_input(&self, input_frames: usize) -> usize {
@@ -819,19 +887,19 @@ mod tests {
         let r_fast =
             ResamplerPlugin::with_quality(2, 44100, 48000, 1024, ResamplerQuality::Fast).unwrap();
         assert_eq!(r_fast.quality(), ResamplerQuality::Fast);
-        assert_eq!(r_fast.latency_samples(), 32); // 64 / 2
+        assert_eq!(r_fast.latency_samples(), 34); // rubato output_delay, not 64/2=32
 
         // Medium
         let r_med =
             ResamplerPlugin::with_quality(2, 44100, 48000, 1024, ResamplerQuality::Medium).unwrap();
         assert_eq!(r_med.quality(), ResamplerQuality::Medium);
-        assert_eq!(r_med.latency_samples(), 64); // 128 / 2
+        assert_eq!(r_med.latency_samples(), 69); // rubato output_delay, not 128/2=64
 
         // High
         let r_high =
             ResamplerPlugin::with_quality(2, 44100, 48000, 1024, ResamplerQuality::High).unwrap();
         assert_eq!(r_high.quality(), ResamplerQuality::High);
-        assert_eq!(r_high.latency_samples(), 128); // 256 / 2
+        assert_eq!(r_high.latency_samples(), 139); // rubato output_delay, not 256/2=128
     }
 
     #[test]
@@ -1067,3 +1135,53 @@ mod tests {
         );
     }
 }
+
+    #[test]
+    fn test_latency_uses_rubato_output_delay() {
+        let resampler = ResamplerPlugin::with_quality(2, 44100, 48000, 1024, ResamplerQuality::Medium).unwrap();
+        let latency = resampler.latency_samples();
+        // Old heuristic was 64 (128/2); rubato reports 69 for this configuration.
+        assert_eq!(latency, 69, "latency_samples should use rubato output_delay, not sinc_len/2");
+    }
+
+    #[test]
+    fn test_flush_produces_trailing_output() {
+        let mut resampler = ResamplerPlugin::new(2, 44100, 48000, 1024).unwrap();
+        resampler.initialize(44100).unwrap();
+
+        // Process a partial chunk (512 frames)
+        let num_frames = 512;
+        let input = vec![0.5_f32; num_frames * 2];
+        let max_output = resampler.output_frames_for_input(num_frames);
+        let mut output = vec![0.0_f32; max_output * 2];
+        let ctx = ProcessContext {
+            sample_rate: 44100,
+            num_frames,
+        };
+        let produced = resampler.process(&input, &mut output, &ctx).unwrap();
+        assert_eq!(produced, 0, "Partial chunk should produce no output yet");
+
+        // Flush should produce output for the buffered partial chunk
+        let mut flush_buf = vec![0.0_f32; max_output * 2];
+        let flush_output = resampler.flush(&mut flush_buf).unwrap();
+        assert!(flush_output > 0, "Flush should produce trailing output");
+    }
+
+    #[test]
+    fn test_rebuild_resampler_reuses_buffers() {
+        let mut resampler = ResamplerPlugin::new(2, 44100, 48000, 1024).unwrap();
+        
+        let input_ptr = resampler.input_buffer[0].as_ptr();
+        let output_ptr = resampler.output_buffer[0].as_ptr();
+        let residual_ptr = resampler.residual_input[0].as_ptr();
+
+        // Switch quality via set_parameter (calls rebuild_resampler internally)
+        resampler.set_parameter(
+            ParameterId::from("quality"),
+            ParameterValue::String("high".to_string()),
+        ).unwrap();
+
+        assert_eq!(resampler.input_buffer[0].as_ptr(), input_ptr, "input_buffer was reallocated");
+        assert_eq!(resampler.output_buffer[0].as_ptr(), output_ptr, "output_buffer was reallocated");
+        assert_eq!(resampler.residual_input[0].as_ptr(), residual_ptr, "residual_input was reallocated");
+    }

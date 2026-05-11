@@ -527,6 +527,36 @@ impl CrossfeedPlugin {
             self.sample_rate as f32,
             1,
         );
+
+        // Meier filters
+        self.meier_lpf_l = Biquad::new(
+            math_audio_iir_fir::BiquadFilterType::Lowpass,
+            650.0,
+            sr,
+            0.707,
+            0.0,
+        );
+        self.meier_lpf_r = Biquad::new(
+            math_audio_iir_fir::BiquadFilterType::Lowpass,
+            650.0,
+            sr,
+            0.707,
+            0.0,
+        );
+        self.meier_allpass_l = Biquad::new(
+            math_audio_iir_fir::BiquadFilterType::AllPass,
+            1000.0,
+            sr,
+            0.5,
+            0.0,
+        );
+        self.meier_allpass_r = Biquad::new(
+            math_audio_iir_fir::BiquadFilterType::AllPass,
+            1000.0,
+            sr,
+            0.5,
+            0.0,
+        );
     }
 
     #[inline(always)]
@@ -653,10 +683,6 @@ impl InPlacePlugin for CrossfeedPlugin {
             if v.is_finite() {
                 self.params.head_yaw_deg = v.clamp(-90.0, 90.0);
                 self.yaw_smoother.set_target(self.params.head_yaw_deg);
-                let effective =
-                    compute_dynamic_itd_ms(self.params.head_yaw_deg, self.params.itd_delay_ms);
-                self.itd_delay_l.set_delay(effective, self.sample_rate);
-                self.itd_delay_r.set_delay(effective, self.sample_rate);
             }
             self.rebuild_cached_parameters();
             return Ok(());
@@ -670,11 +696,7 @@ impl InPlacePlugin for CrossfeedPlugin {
             4 | 5 => self.update_filters(),                     // bauer_fcut_hz, bauer_feed_db
             7 | 8 => self.update_filters(), // mb_low_freq_hz, mb_mid_high_freq_hz
             12 => {
-                // itd_delay_ms
-                let effective =
-                    compute_dynamic_itd_ms(self.params.head_yaw_deg, self.params.itd_delay_ms);
-                self.itd_delay_l.set_delay(effective, self.sample_rate);
-                self.itd_delay_r.set_delay(effective, self.sample_rate);
+                // itd_delay_ms — delay lines updated per-block from smoother
             }
             13 => {
                 // autogain_enabled
@@ -779,11 +801,15 @@ impl InPlacePlugin for CrossfeedPlugin {
         }
 
         // Advance yaw smoother and update ITD delay per block
-        let smoothed_yaw = self.yaw_smoother.advance();
+        let smoothed_yaw = self.yaw_smoother.next_n(nf);
         if smoothed_yaw.abs() > 0.01 || self.params.itd_delay_ms > 0.0 {
-            let effective = compute_dynamic_itd_ms(smoothed_yaw, self.params.itd_delay_ms);
-            self.itd_delay_l.set_delay(effective, self.sample_rate);
-            self.itd_delay_r.set_delay(effective, self.sample_rate);
+            let base = self.params.itd_delay_ms * 0.5;
+            let yaw_rad = smoothed_yaw * std::f32::consts::PI / 180.0;
+            let dynamic = HEAD_RADIUS_M * yaw_rad.sin() / SPEED_OF_SOUND * 1000.0;
+            self.itd_delay_l
+                .set_delay((base + dynamic).clamp(0.0, 1.0), self.sample_rate);
+            self.itd_delay_r
+                .set_delay((base - dynamic).clamp(0.0, 1.0), self.sample_rate);
         }
 
         deinterleave_stereo(buffer, &mut self.dry_l[..nf], &mut self.dry_r[..nf]);
@@ -1056,7 +1082,7 @@ mod tests {
         let onset_no_delay = find_r_onset(0.0);
         let onset_with_delay = find_r_onset(0.5);
 
-        // 0.5ms at 48kHz = 24 samples. The delayed version should arrive later.
+        // With symmetric split, 0.5ms total ITD → 0.25ms per crossfeed path = 12 samples@48kHz.
         assert!(
             onset_with_delay > onset_no_delay,
             "ITD 0.5ms should delay R onset: no_delay_onset={}, delayed_onset={}",
@@ -1064,11 +1090,10 @@ mod tests {
             onset_with_delay
         );
 
-        // The difference should be approximately 24 samples
         let diff = onset_with_delay - onset_no_delay;
         assert!(
-            (diff as i32 - 24).unsigned_abs() <= 3,
-            "ITD difference should be ~24 samples (0.5ms@48kHz), got {} (onset_no={}, onset_with={})",
+            (diff as i32 - 12).unsigned_abs() <= 3,
+            "ITD difference should be ~12 samples (0.25ms@48kHz), got {} (onset_no={}, onset_with={})",
             diff,
             onset_no_delay,
             onset_with_delay

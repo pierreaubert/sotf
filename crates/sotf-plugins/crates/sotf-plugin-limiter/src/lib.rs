@@ -112,6 +112,10 @@ pub struct LimiterPlugin {
     lookahead_buffer: Vec<f32>,
     lookahead_pos: usize,
     lookahead_len: usize,
+    /// Per-frame peak in the lookahead window (avoids O(lookahead_len) scan per sample)
+    lookahead_peaks: Vec<f32>,
+    /// Current maximum of lookahead_peaks
+    lookahead_peak_max: f32,
     true_peak_detectors: Vec<TruePeakDetector>,
     /// Output ISP detectors for verifying no inter-sample peaks exceed ceiling
     output_isp_detectors: Vec<TruePeakDetector>,
@@ -167,6 +171,8 @@ impl LimiterPlugin {
             lookahead_buffer: vec![0.0; lookahead_len * channels],
             lookahead_pos: 0,
             lookahead_len,
+            lookahead_peaks: vec![0.0; lookahead_len],
+            lookahead_peak_max: 0.0,
             true_peak_detectors: (0..channels).map(|_| TruePeakDetector::new()).collect(),
             output_isp_detectors: (0..channels).map(|_| TruePeakDetector::new()).collect(),
             isp_correction_db: 0.0,
@@ -285,6 +291,8 @@ impl LimiterPlugin {
         if new_len != self.lookahead_len {
             self.lookahead_len = new_len;
             self.lookahead_buffer.resize(new_len * self.channels, 0.0);
+            self.lookahead_peaks.resize(new_len, 0.0);
+            self.lookahead_peak_max = 0.0;
             self.lookahead_pos = 0;
         }
         self.dual_release_env
@@ -448,9 +456,9 @@ impl InPlacePlugin for LimiterPlugin {
 
         #[allow(clippy::needless_range_loop)]
         for frame in 0..num_frames {
-            // Detect per-channel peaks
-            let mut ch_peaks = [0.0f32; 32]; // stack-allocated, max 32 channels
-            let nc = self.channels.min(32);
+            // Detect per-channel peaks (no artificial 32-channel cap)
+            let mut ch_peaks = vec![0.0f32; self.channels];
+            let nc = self.channels;
             if use_true_peak {
                 for ch in 0..nc {
                     let idx = frame * self.channels + ch;
@@ -469,7 +477,7 @@ impl InPlacePlugin for LimiterPlugin {
             }
 
             // Apply channel linking: blend per-channel peaks toward max
-            let max_peak_ch = ch_peaks[..nc].iter().copied().fold(0.0f32, f32::max);
+            let max_peak_ch = ch_peaks.iter().copied().fold(0.0f32, f32::max);
             let frame_peak = if link >= 1.0 || nc <= 1 {
                 max_peak_ch
             } else {
@@ -485,18 +493,24 @@ impl InPlacePlugin for LimiterPlugin {
 
             max_peak = max_peak.max(frame_peak);
 
-            // Feed-forward: scan the entire lookahead buffer for the maximum
-            // upcoming peak, then use that to compute gain reduction.
-            // This anticipates loud transients before they arrive at the output.
+            // Feed-forward: maintain a running max of the lookahead window.
+            // Update the per-frame peak at the current write position, then
+            // recompute the window max only when necessary (amortized O(1)).
             let effective_peak = if use_feed_forward {
-                let mut la_peak = frame_peak;
-                for pos in 0..self.lookahead_len {
-                    let base = pos * self.channels;
-                    for ch in 0..self.channels {
-                        la_peak = la_peak.max(self.lookahead_buffer[base + ch].abs());
-                    }
+                let old_peak = self.lookahead_peaks[self.lookahead_pos];
+                self.lookahead_peaks[self.lookahead_pos] = frame_peak;
+                if frame_peak >= self.lookahead_peak_max {
+                    self.lookahead_peak_max = frame_peak;
+                } else if old_peak >= self.lookahead_peak_max && frame_peak < old_peak {
+                    // We displaced the previous max with a smaller value;
+                    // rescan to find the new max.
+                    self.lookahead_peak_max = self
+                        .lookahead_peaks
+                        .iter()
+                        .copied()
+                        .fold(0.0f32, f32::max);
                 }
-                la_peak
+                self.lookahead_peak_max
             } else {
                 frame_peak
             };
@@ -566,8 +580,14 @@ impl InPlacePlugin for LimiterPlugin {
                     // Accumulate — take max of current correction and new overshoot, capped at 12dB
                     self.isp_correction_db = self.isp_correction_db.max(overshoot).min(12.0);
                 } else {
-                    // Decay correction with release coefficient
-                    self.isp_correction_db *= self.release_coeff;
+                    // Decay correction in linear gain space (not dB) so the
+                    // time constant matches the release setting.
+                    let mut correction_lin = fast_pow10(self.isp_correction_db / 20.0);
+                    // correction_lin = 1.0 + (correction_lin - 1.0) * release_coeff
+                    // would be the proper linear decay toward unity.
+                    // For small corrections, multiplication by release_coeff is close enough.
+                    correction_lin = 1.0 + self.release_coeff * (correction_lin - 1.0);
+                    self.isp_correction_db = 20.0 * fast_log10(correction_lin.max(1.0));
                     if self.isp_correction_db < 0.01 {
                         self.isp_correction_db = 0.0;
                     }

@@ -140,6 +140,68 @@ pub enum AnalyzerData {
     Loudness(LoudnessData),
     /// Spectrum measurements (frequency bins)
     Spectrum(SpectrumData),
+    /// Inter-channel correlation matrix
+    Correlation(CorrelationData),
+}
+
+/// Inter-channel correlation matrix data
+///
+/// `matrix` is row-major of length `channels * channels`. Entry
+/// `matrix[i * channels + j]` is the Pearson r between channels `i` and `j`,
+/// clamped to `[-1.0, 1.0]`. Diagonal entries are always `1.0`. The matrix is
+/// symmetric.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CorrelationData {
+    /// Number of channels (matrix side length).
+    pub channels: usize,
+    /// Flattened `channels x channels` matrix (row-major).
+    pub matrix: Arc<Vec<f32>>,
+    /// Frame count since reset, useful for UI to suppress cold readings.
+    pub samples_seen: u64,
+}
+
+impl CorrelationData {
+    pub fn new(channels: usize) -> Self {
+        let mut matrix = vec![0.0_f32; channels * channels];
+        // Identity on construction so a freshly-instantiated cache reads
+        // sensibly when there is not yet any audio.
+        for i in 0..channels {
+            matrix[i * channels + i] = 1.0;
+        }
+        Self {
+            channels,
+            matrix: Arc::new(matrix),
+            samples_seen: 0,
+        }
+    }
+
+    /// Update the matrix in place using a writer closure. Reallocates only
+    /// when the matrix length or the Arc's strong count requires it.
+    pub fn update_matrix_with<F: FnOnce(&mut [f32])>(&mut self, channels: usize, writer: F) {
+        let expected_len = channels * channels;
+        self.channels = channels;
+        if let Some(buf) = Arc::get_mut(&mut self.matrix) {
+            if buf.len() != expected_len {
+                buf.resize(expected_len, 0.0);
+            }
+            writer(buf.as_mut_slice());
+            return;
+        }
+        // Lost the race with a UI reader — allocate a fresh buffer.
+        let mut buf = vec![0.0_f32; expected_len];
+        writer(buf.as_mut_slice());
+        self.matrix = Arc::new(buf);
+    }
+}
+
+impl Default for CorrelationData {
+    fn default() -> Self {
+        Self {
+            channels: 0,
+            matrix: Arc::new(Vec::new()),
+            samples_seen: 0,
+        }
+    }
 }
 
 /// Loudness analyzer data
@@ -163,6 +225,17 @@ pub struct LoudnessData {
     /// Range: -1.0 (anti-correlated) to +1.0 (fully correlated)
     /// None if not stereo or not enough data
     pub correlation_lr: Option<f64>,
+    /// Full inter-channel Pearson r matrix (row-major,
+    /// `channels * channels` entries). Diagonal is `1.0`, off-diagonals are
+    /// clamped to `[-1, 1]`. Empty (`len() == 0`) unless the owning
+    /// `LoudnessMonitor` was constructed with `spatial_enabled = true` —
+    /// non-spider consumers (CLI tools, JSON export, plain meters) don't pay
+    /// the O(N²) compute or carry the extra payload.
+    pub correlation_matrix: Arc<Vec<f32>>,
+    /// Number of aligned audio frames the correlation accumulator has seen
+    /// since last reset. Zero means "no data yet"; UI consumers use this to
+    /// distinguish a cold matrix (identity) from a settled one.
+    pub correlation_samples_seen: u64,
 }
 
 impl LoudnessData {
@@ -175,6 +248,12 @@ impl LoudnessData {
             channel_peaks: Arc::new(vec![0.0; channels]),
             true_peaks_dbtp: Arc::new(vec![f64::NEG_INFINITY; channels]),
             correlation_lr: None,
+            // Spatial correlation is opt-in — kept empty so consumers that
+            // never enable it (CLI tools, meters, JSON dumps) don't pay any
+            // memory/serialization cost. `LoudnessMonitor::with_spatial`
+            // populates it.
+            correlation_matrix: Arc::new(Vec::new()),
+            correlation_samples_seen: 0,
         }
     }
 
@@ -188,8 +267,22 @@ impl LoudnessData {
 
         self.update_peaks(&other.channel_peaks);
         self.update_true_peaks(&other.true_peaks_dbtp);
+        self.update_correlation_matrix(&other.correlation_matrix);
+        self.correlation_samples_seen = other.correlation_samples_seen;
 
         self.correlation_lr = other.correlation_lr;
+    }
+
+    /// Update the full correlation matrix in place, allocating only when the
+    /// length changes or another reader still holds the Arc.
+    pub fn update_correlation_matrix(&mut self, new_matrix: &[f32]) {
+        if let Some(buf) = Arc::get_mut(&mut self.correlation_matrix)
+            && buf.len() == new_matrix.len()
+        {
+            buf.copy_from_slice(new_matrix);
+            return;
+        }
+        self.correlation_matrix = Arc::new(new_matrix.to_vec());
     }
 
     /// Update channel peaks efficiently
@@ -225,6 +318,8 @@ impl Default for LoudnessData {
             channel_peaks: Arc::new(Vec::new()),
             true_peaks_dbtp: Arc::new(Vec::new()),
             correlation_lr: None,
+            correlation_matrix: Arc::new(Vec::new()),
+            correlation_samples_seen: 0,
         }
     }
 }

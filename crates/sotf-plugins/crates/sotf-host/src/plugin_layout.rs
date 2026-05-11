@@ -279,6 +279,16 @@ pub enum VizSlot {
     },
 }
 
+/// Stable names for `VizSlot::Custom` viz types. Plugins opt into a custom
+/// renderer by referencing one of these constants rather than typing the
+/// raw string — typos surface at compile time instead of silently rendering
+/// nothing.
+pub mod viz_names {
+    /// Spatial spider (per-channel SPL / inter-channel correlation).
+    /// Recognised by the `app-gpui` layout renderer.
+    pub const SPATIAL_SPIDER: &str = "spatial_spider";
+}
+
 /// Describes a repeated parameter section (one per band/filter).
 ///
 /// Used by plugins with a variable number of identical parameter groups,

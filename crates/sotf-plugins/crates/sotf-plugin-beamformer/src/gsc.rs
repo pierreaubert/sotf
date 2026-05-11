@@ -29,6 +29,11 @@ pub struct GscBeamformer {
     delta: f32,
     /// Pre-allocated scratch for reference signals (avoids per-sample allocation)
     reference_scratch: Vec<f32>,
+    /// Per-mic delay lines for fractional delay compensation
+    delay_lines: Vec<Vec<f32>>,
+    delay_write_pos: usize,
+    max_delay_samples: usize,
+    steering_delays: Vec<f32>,
 }
 
 impl GscBeamformer {
@@ -43,24 +48,40 @@ impl GscBeamformer {
         assert!(num_mics >= 2, "GSC requires at least 2 microphones");
 
         // Fixed beamformer: uniform real-valued weights for delay-and-sum.
-        // For time-domain GSC, fractional delays should be handled by
-        // actual delay lines, not complex exponentials applied sample-by-sample.
-        // Here we use unit weights (assuming delays are pre-compensated).
-        let _ = steering_delays; // Delays are for documentation; time-domain FBF uses uniform weights
-        let fbf_weights = vec![1.0f32; num_mics];
+        let fbf_weights = vec![1.0f32 / num_mics as f32; num_mics];
 
         // Blocking matrix: orthogonal complement of steering vector
-        // B = I - d*d^H / (d^H * d) applied to real part only
-        // For a simple linear array, use adjacent-microphone differences
+        // B = I - d*d^H / (d^H * d)
         let num_refs = num_mics - 1;
-        let blocking_matrix: Vec<Vec<f32>> = (0..num_refs)
-            .map(|i| {
-                let mut row = vec![0.0f32; num_mics];
-                row[i] = 1.0;
-                row[i + 1] = -1.0;
-                row
-            })
-            .collect();
+        let d_norm_sq = fbf_weights.iter().map(|w| w * w).sum::<f32>();
+        let mut blocking_matrix = Vec::with_capacity(num_refs);
+        for r in 0..num_mics {
+            let mut row = vec![0.0f32; num_mics];
+            for c in 0..num_mics {
+                row[c] = if r == c { 1.0 } else { 0.0 };
+                row[c] -= fbf_weights[r] * fbf_weights[c] / d_norm_sq;
+            }
+            let norm_sq = row.iter().map(|x| x * x).sum::<f32>();
+            if norm_sq > 1e-10 && blocking_matrix.len() < num_refs {
+                blocking_matrix.push(row);
+            }
+        }
+        // Fallback: should never happen for num_mics >= 2, but keep safe
+        while blocking_matrix.len() < num_refs {
+            let mut row = vec![0.0f32; num_mics];
+            row[blocking_matrix.len()] = 1.0;
+            row[blocking_matrix.len() + 1] = -1.0;
+            blocking_matrix.push(row);
+        }
+
+        // Delay lines
+        let max_delay = steering_delays
+            .iter()
+            .map(|d| d.ceil() as usize + 1)
+            .max()
+            .unwrap_or(1)
+            .max(1);
+        let delay_lines = vec![vec![0.0f32; max_delay]; num_mics];
 
         Self {
             num_mics,
@@ -73,6 +94,10 @@ impl GscBeamformer {
             mu,
             delta: 1e-6,
             reference_scratch: vec![0.0; num_refs],
+            delay_lines,
+            delay_write_pos: 0,
+            max_delay_samples: max_delay,
+            steering_delays: steering_delays.to_vec(),
         }
     }
 
@@ -87,12 +112,27 @@ impl GscBeamformer {
         let m = self.num_mics.min(mic_samples.len());
         let num_refs = self.blocking_matrix.len();
 
-        // 1. Fixed beamformer output: uniform delay-and-sum
-        let mut fbf_output = 0.0f32;
-        for (&sample, &weight) in mic_samples[..m].iter().zip(&self.fbf_weights[..m]) {
-            fbf_output += sample * weight;
+        // Write current samples to delay lines
+        for i in 0..m {
+            self.delay_lines[i][self.delay_write_pos] = mic_samples[i];
         }
-        fbf_output /= m as f32;
+
+        // 1. Fixed beamformer output: delay-compensated sum
+        let mut fbf_output = 0.0f32;
+        for i in 0..m {
+            let delay = self.steering_delays[i];
+            let int_delay = delay.floor() as usize;
+            let frac = delay - delay.floor();
+            let buf_len = self.delay_lines[i].len();
+            let idx0 = (self.delay_write_pos + buf_len - int_delay) % buf_len;
+            let idx1 = (idx0 + 1) % buf_len;
+            let delayed_sample =
+                self.delay_lines[i][idx0] * (1.0 - frac) + self.delay_lines[i][idx1] * frac;
+            fbf_output += delayed_sample * self.fbf_weights[i];
+        }
+
+        // Advance delay write position
+        self.delay_write_pos = (self.delay_write_pos + 1) % self.max_delay_samples;
 
         // 2. Blocking matrix: compute reference signals
         // u = B * x (num_refs reference signals)
@@ -118,10 +158,15 @@ impl GscBeamformer {
         let mut total_ref_power = self.delta;
 
         for r in 0..num_refs {
+            let mut buf_idx = self.ref_write_pos;
             for j in 0..self.filter_length {
-                let buf_idx = (self.ref_write_pos + self.filter_length - j) % self.filter_length;
                 noise_estimate += self.adaptive_weights[r][j] * self.reference_buffers[r][buf_idx];
                 total_ref_power += self.reference_buffers[r][buf_idx].powi(2);
+                buf_idx = if buf_idx == 0 {
+                    self.filter_length - 1
+                } else {
+                    buf_idx - 1
+                };
             }
         }
 
@@ -131,9 +176,14 @@ impl GscBeamformer {
         // NLMS weight update: w += μ * e * u / (||u||² + δ)
         let step = self.mu * error / total_ref_power;
         for r in 0..num_refs {
+            let mut buf_idx = self.ref_write_pos;
             for j in 0..self.filter_length {
-                let buf_idx = (self.ref_write_pos + self.filter_length - j) % self.filter_length;
                 self.adaptive_weights[r][j] += step * self.reference_buffers[r][buf_idx];
+                buf_idx = if buf_idx == 0 {
+                    self.filter_length - 1
+                } else {
+                    buf_idx - 1
+                };
             }
         }
 
@@ -151,7 +201,11 @@ impl GscBeamformer {
         for b in &mut self.reference_buffers {
             b.fill(0.0);
         }
+        for d in &mut self.delay_lines {
+            d.fill(0.0);
+        }
         self.ref_write_pos = 0;
+        self.delay_write_pos = 0;
     }
 }
 
@@ -229,6 +283,49 @@ mod tests {
         for w in &gsc.adaptive_weights {
             for &v in w {
                 assert_eq!(v, 0.0, "Weights should be zero after reset");
+            }
+        }
+    }
+
+    #[test]
+    fn test_gsc_blocking_matrix_orthogonal() {
+        let gsc = GscBeamformer::new(3, &[0.0, 0.001, 0.002], 16, 0.01);
+
+        // The FBF weights form the steering vector for aligned signals
+        let d = &gsc.fbf_weights;
+
+        for (r, row) in gsc.blocking_matrix.iter().enumerate() {
+            let dot: f32 = row.iter().zip(d).map(|(a, b)| a * b).sum();
+            assert!(
+                dot.abs() < 1e-5,
+                "Blocking matrix row {r} not orthogonal to steering vector: dot={dot}"
+            );
+        }
+
+        // Should have exactly num_mics - 1 rows
+        assert_eq!(gsc.blocking_matrix.len(), 2);
+    }
+
+    #[test]
+    fn test_gsc_delay_compensation() {
+        // 2 mics, mic0 receives 1 sample before mic1.
+        // Compensation delays [1.0, 0.0] delay mic0 by 1 to align with mic1.
+        // mu = 0.0 disables adaptation so output = fbf_output.
+        let mut gsc = GscBeamformer::new(2, &[1.0, 0.0], 16, 0.0);
+
+        // Feed a ramp where mic1 is already delayed by 1 sample relative to mic0.
+        for t in 10..100 {
+            let mic0 = t as f32;
+            let mic1 = (t - 1) as f32;
+            let output = gsc.process_sample(&[mic0, mic1]);
+
+            // After delay compensation, both mics see (t-1); fbf averages to (t-1).
+            if t >= 12 {
+                let expected = (t - 1) as f32;
+                assert!(
+                    (output - expected).abs() < 0.01,
+                    "GSC delay compensation failed at t={t}: expected {expected}, got {output}"
+                );
             }
         }
     }

@@ -1,14 +1,7 @@
-# 0.5.22
+# Unreleased
 
 ## Fixes
-
-- Fixed again parameters for plugins. TODO: think about doing it the hard way with a trait per plugin
-- Fixed a lot of tests and then the corresponing code
-
-## Changes
-
-- First step of automatic UI generation via a set of constraints; non-regression is built in with insta
-- Plugins implemented f2,3 7,8,9,10,11,12 and 13 see product features for details
-- Massive update to plugins, see individual markdown plan for details (wave 3)
-- Massive update to plugins, see individual markdown plan for details (wave 2)
-- Massive update to plugins, see individual markdown plan for details
+- Fixed WOLA window not satisfying COLA at 75% overlap: switched to sqrt(Hann) window with 50% overlap for perfect reconstruction, eliminating amplitude flutter on pure tones.
+- Fixed Lt/Rt doc comment sign error for Rs channel.
+- Replaced broken single first-order allpass (inaccurate beyond ~300 Hz) with a proper 2+2 stage parallel allpass phase-splitter for broadband 90° phase shift in Lt/Rt encoding.
+- Added `phase_coherence_strength` parameter (default 0.5) to prevent full phase collapse of stereo width for out-of-phase content in the STFT path.

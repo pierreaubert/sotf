@@ -980,8 +980,6 @@ impl InPlacePlugin for DenoiserPlugin {
             // Feed the whole input block into the small-FFT path before
             // the main loop starts.  `feed_and_process` is self-contained
             // and does not touch `buffer` after reading — safe to call here.
-            let attack = self.attack_coeff;
-            let release = self.release_coeff;
             let reduction = self.reduction_linear;
             let floor = self.floor_linear;
             let channels = self.channels;
@@ -989,8 +987,6 @@ impl InPlacePlugin for DenoiserPlugin {
                 mrs.feed_and_process(
                     &buffer[..total_samples],
                     channels,
-                    attack,
-                    release,
                     reduction,
                     floor,
                 );

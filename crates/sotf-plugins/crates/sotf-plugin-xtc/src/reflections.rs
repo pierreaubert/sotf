@@ -116,7 +116,7 @@ pub(crate) fn compute_image_sources(
             continue;
         }
 
-        let amplitude = (1.0 - room.wall_absorption) * (direct_dist / image_dist);
+        let amplitude = (1.0 - room.wall_absorption).sqrt() * (direct_dist / image_dist);
         let delay_s = image_dist / SPEED_OF_SOUND;
 
         // Shadow angle: azimuth from head center to image source (in horizontal plane)

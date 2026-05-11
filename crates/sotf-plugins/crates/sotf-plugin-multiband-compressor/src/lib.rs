@@ -312,7 +312,7 @@ impl MultibandCompressorPlugin {
             crossover_points: Vec::new(),
             band_compressors: bcomps,
             band_buffers: Vec::new(),
-            band_levels_db: vec![0.0; nb],
+            band_levels_db: vec![-120.0; nb],
             dry_buffer: Vec::new(),
             threshold_smoother: Smoother::new(params.threshold_db, 20.0, sr),
             mix_smoother: Smoother::new(params.mix, 20.0, sr),
@@ -360,7 +360,7 @@ impl MultibandCompressorPlugin {
     /// Order must match params::GLOBAL_PARAMS exactly.
     fn set_param_value(&mut self, index: usize, value: f64) {
         match index {
-            0 => self.num_bands = value as usize,              // num_bands
+            0 => self.num_bands = value.round() as usize,      // num_bands
             1 => self._crossover_preset = value as i32,        // crossover_preset
             2 => self.crossover_frequencies[0] = value as f32, // crossover_freq_1
             3 => self.crossover_frequencies[1] = value as f32, // crossover_freq_2
@@ -373,7 +373,7 @@ impl MultibandCompressorPlugin {
             10 => self.knee_db = value as f32,                 // knee
             11 => self.mix = value as f32,                     // mix
             12 => self.link_channels = value > 0.5,            // link_channels
-            13 => self.per_band_lookahead_ms = value as f32,   // per_band_lookahead_ms
+            13 => self.per_band_lookahead_ms = value.clamp(0.0, 10.0) as f32, // per_band_lookahead_ms
             14 => self.ms_mode = value > 0.5,                  // ms_mode
             15 => self.sidechain_tilt_db = value as f32,       // sidechain_tilt_db
             16 => self.link_amount = value as f32,             // link_amount
@@ -674,9 +674,10 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                         self.measured_makeups
                             .push(MeasuredMakeup::new(1000.0, self.sample_rate));
                     }
-                    self.band_levels_db.resize(nb, -100.0);
+                    self.band_levels_db.resize(nb, -120.0);
                     self.gain_reduction_flattened
                         .resize(nb * self.channels, 0.0);
+                    self.rebuild_sidechain_tilt();
                     self.update_coefficients();
                 }
                 2..=5 => {
@@ -778,7 +779,7 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                 let v = value
                     .as_float()
                     .ok_or_else(|| "lookahead_ms must be a float".to_string())?;
-                self.per_band_lookahead_ms = v;
+                self.per_band_lookahead_ms = v.clamp(0.0, 10.0);
                 for buf in &mut self.lookahead_buffers {
                     if self.per_band_lookahead_ms > 0.0 {
                         buf.set_delay_ms(self.per_band_lookahead_ms, self.sample_rate);
@@ -1031,6 +1032,7 @@ impl InPlacePlugin for MultibandCompressorPlugin {
         for mm in &mut self.measured_makeups {
             mm.reset();
         }
+        self.rebuild_sidechain_tilt();
         self.band_buffers.fill(0.0);
         self.dry_buffer.fill(0.0);
     }
@@ -1044,12 +1046,12 @@ impl InPlacePlugin for MultibandCompressorPlugin {
         let nf = context.num_frames;
         let stride = nf * self.channels;
 
-        // Safety guard: resize if host sends larger blocks than initialize() pre-allocated (4096 frames).
-        if self.dry_buffer.len() < buffer.len() {
-            self.dry_buffer.resize(buffer.len(), 0.0);
-        }
-        if self.band_buffers.len() < self.num_bands * stride {
-            self.band_buffers.resize(self.num_bands * stride, 0.0);
+        // Reject blocks larger than the pre-allocated 4096 frames to maintain real-time safety.
+        if nf > 4096 {
+            return Err(format!(
+                "multiband-compressor: block size {} exceeds max 4096 frames",
+                nf
+            ));
         }
 
         self.dry_buffer[..buffer.len()].copy_from_slice(buffer);
@@ -1312,21 +1314,27 @@ mod tests {
         let mut p = MultibandCompressorPlugin::with_params(1, params);
         p.initialize(48000).unwrap();
 
-        // Generate test signal (broadband)
+        // Generate test signal (broadband) — process in 1024-frame chunks
         let nf = 4800;
         let mut input = Vec::with_capacity(nf);
         for i in 0..nf {
             input.push(0.3 * (i as f32 * 0.1).sin() + 0.1 * (i as f32 * 0.5).sin());
         }
         let mut output = input.clone();
-        p.process_in_place(
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: nf,
-            },
-        )
-        .unwrap();
+        let chunk_size = 1024;
+        let mut offset = 0;
+        while offset < nf {
+            let end = (offset + chunk_size).min(nf);
+            p.process_in_place(
+                &mut output[offset..end],
+                &ProcessContext {
+                    sample_rate: 48000,
+                    num_frames: end - offset,
+                },
+            )
+            .unwrap();
+            offset = end;
+        }
 
         // After crossover filter settling, RMS should be close to input
         let half = nf / 2;
@@ -1405,18 +1413,24 @@ mod tests {
         p.set_parameter(ParameterId::from("mix"), ParameterValue::Float(1.0))
             .unwrap();
 
-        // Process enough to let smoothers settle (200ms)
+        // Process enough to let smoothers settle (200ms) — in 1024-frame chunks
         let nf = 9600;
         let input_val = 0.5f32; // -6 dBFS
         let mut b = vec![input_val; nf];
-        p.process_in_place(
-            &mut b,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: nf,
-            },
-        )
-        .unwrap();
+        let chunk_size = 1024;
+        let mut offset = 0;
+        while offset < nf {
+            let end = (offset + chunk_size).min(nf);
+            p.process_in_place(
+                &mut b[offset..end],
+                &ProcessContext {
+                    sample_rate: 48000,
+                    num_frames: end - offset,
+                },
+            )
+            .unwrap();
+            offset = end;
+        }
 
         // After settling, output should be quieter than input
         let rms_out: f32 =
@@ -1425,5 +1439,24 @@ mod tests {
             rms_out < input_val * 0.9,
             "Multiband compressor should reduce loud signal, but RMS {rms_out:.4} ≈ input {input_val}"
         );
+    }
+
+    #[test]
+    fn test_rejects_oversized_blocks() {
+        let mut p = MultibandCompressorPlugin::new(1);
+        p.initialize(48000).unwrap();
+        let mut b = vec![0.5; 5000];
+        let result = p.process_in_place(
+            &mut b,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 5000,
+            },
+        );
+        assert!(
+            result.is_err(),
+            "Should reject blocks larger than 4096 frames"
+        );
+        assert!(result.unwrap_err().contains("exceeds max 4096"));
     }
 }

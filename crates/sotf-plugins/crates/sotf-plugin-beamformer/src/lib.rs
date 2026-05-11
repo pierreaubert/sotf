@@ -26,7 +26,7 @@ use std::sync::Arc;
 
 use crate::gsc::GscBeamformer;
 use crate::mvdr::MvdrBeamformer;
-use crate::steering::{ArrayGeometry, compute_all_steering_vectors};
+use crate::steering::{ArrayGeometry, compute_all_steering_vectors, compute_steering_delays};
 use crate::superdirective::SuperdirectiveBeamformer;
 
 /// Beamformer algorithm selection.
@@ -108,8 +108,13 @@ pub struct BeamformerPlugin {
     stft_channels: Vec<Vec<Complex<f32>>>,
     /// Pre-allocated mic samples buffer for GSC path
     gsc_samples: Vec<f32>,
-    /// Hann window
+    /// sqrt(Hann) window for WOLA
     window: Vec<f32>,
+    /// STFT first-frame flag
+    stft_filled: bool,
+    /// Overlap-add accumulator
+    ola_buffer: Vec<f32>,
+    ola_write_pos: usize,
     /// Parameters
     param_steer_angle: ParameterId,
     param_type: ParameterId,
@@ -130,8 +135,8 @@ impl BeamformerPlugin {
         let superdirective =
             SuperdirectiveBeamformer::new(&geometry, 0.0, FFT_SIZE, sample_rate as f32, 0.01);
 
-        let delays = vec![0.0f32; num_mics];
-        let window = math_audio_dsp::stft::generate_hann_window(FFT_SIZE);
+        let delays = compute_steering_delays(&geometry, 0.0, 0.0, sample_rate as f32);
+        let window = math_audio_dsp::stft::generate_sqrt_hann_window(FFT_SIZE);
 
         let mut p = Self {
             num_mics,
@@ -145,13 +150,16 @@ impl BeamformerPlugin {
             steering_vectors,
             input_buffers: vec![vec![0.0; FFT_SIZE]; num_mics],
             input_fill: 0,
-            output_buffer: vec![0.0; FFT_SIZE * 4],
+            output_buffer: vec![0.0; FFT_SIZE * 16],
             output_read_pos: 0,
             output_write_pos: 0,
             fft: RealFftProcessor::new_bidirectional(FFT_SIZE),
             stft_channels: vec![vec![Complex::new(0.0, 0.0); spectrum_size]; num_mics],
             gsc_samples: vec![0.0; num_mics],
             window,
+            stft_filled: false,
+            ola_buffer: vec![0.0; FFT_SIZE * 2],
+            ola_write_pos: 0,
             param_steer_angle: ParameterId::from("steer_angle_deg"),
             param_type: ParameterId::from("beamformer_type"),
             cached_parameters: Vec::new(),
@@ -213,6 +221,9 @@ impl BeamformerPlugin {
             self.sample_rate as f32,
             0.01,
         ));
+        let delays =
+            compute_steering_delays(&geometry, self.steer_angle_deg, 0.0, self.sample_rate as f32);
+        self.gsc = GscBeamformer::new(self.num_mics, &delays, 32, 0.01);
     }
 
     fn available_output(&self) -> usize {
@@ -226,6 +237,10 @@ impl BeamformerPlugin {
     fn push_output(&mut self, sample: f32) {
         self.output_buffer[self.output_write_pos] = sample;
         self.output_write_pos = (self.output_write_pos + 1) % self.output_buffer.len();
+        debug_assert!(
+            self.available_output() < self.output_buffer.len() - 1,
+            "Output buffer overflow"
+        );
     }
 
     fn pop_output(&mut self) -> f32 {
@@ -293,9 +308,12 @@ impl Plugin for BeamformerPlugin {
         self.mvdr.reset();
         self.gsc.reset();
         self.input_fill = 0;
+        self.stft_filled = false;
         self.output_read_pos = 0;
         self.output_write_pos = 0;
         self.output_buffer.fill(0.0);
+        self.ola_buffer.fill(0.0);
+        self.ola_write_pos = 0;
     }
 
     fn process(
@@ -326,7 +344,13 @@ impl Plugin for BeamformerPlugin {
                     }
                     self.input_fill += 1;
 
-                    if self.input_fill >= hop {
+                    let trigger = if !self.stft_filled {
+                        self.input_fill >= hop
+                    } else {
+                        self.input_fill == FFT_SIZE
+                    };
+
+                    if trigger {
                         // STFT analysis for each channel
                         let spectrum_size = FFT_SIZE / 2 + 1;
                         for ch in 0..self.num_mics {
@@ -376,9 +400,18 @@ impl Plugin for BeamformerPlugin {
                         self.fft.freq_buffer[spectrum_size - 1].im = 0.0;
                         self.fft.inverse();
 
+                        // Overlap-add synthesis
                         let scale = 1.0 / FFT_SIZE as f32;
-                        for j in 0..hop {
-                            self.push_output(self.fft.time_buffer[j] * scale);
+                        for j in 0..FFT_SIZE {
+                            let pos = (self.ola_write_pos + j) % self.ola_buffer.len();
+                            self.ola_buffer[pos] +=
+                                self.fft.time_buffer[j] * scale * self.window[j];
+                        }
+                        for _j in 0..hop {
+                            self.push_output(self.ola_buffer[self.ola_write_pos]);
+                            self.ola_buffer[self.ola_write_pos] = 0.0;
+                            self.ola_write_pos =
+                                (self.ola_write_pos + 1) % self.ola_buffer.len();
                         }
 
                         // Shift input buffers: keep the last (FFT_SIZE - hop) samples
@@ -387,7 +420,7 @@ impl Plugin for BeamformerPlugin {
                             self.input_buffers[ch].copy_within(hop..FFT_SIZE, 0);
                             self.input_buffers[ch][FFT_SIZE - hop..].fill(0.0);
                         }
-                        // After shift, positions [0..FFT_SIZE-hop] contain carried-over data
+                        self.stft_filled = true;
                         self.input_fill = FFT_SIZE - hop;
                     }
                 }
@@ -496,5 +529,111 @@ mod tests {
 
         let result = plugin.process(&input, &mut output, &context);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_stft_trigger_and_ola() {
+        let mut plugin = BeamformerPlugin::new(2, 48000);
+        plugin.beamformer_type = BeamformerType::Superdirective;
+
+        // DC input on both mics (broadside)
+        let num_frames = 4096;
+        let input = vec![0.5f32; num_frames * 2];
+        let mut output = vec![0.0f32; num_frames];
+
+        // Process in 512-sample chunks to avoid output buffer overflow
+        let chunk_size = 512;
+        for chunk in 0..(num_frames / chunk_size) {
+            let start = chunk * chunk_size;
+            let context = ProcessContext {
+                sample_rate: 48000,
+                num_frames: chunk_size,
+            };
+            plugin.process(
+                &input[start * 2..(start + chunk_size) * 2],
+                &mut output[start..start + chunk_size],
+                &context,
+            )
+            .unwrap();
+        }
+
+        // Skip latency and transient
+        let latency = plugin.latency_samples();
+        let start = latency + 512;
+        let end = num_frames - 512;
+
+        // With correct OLA, DC input should produce near-constant DC output
+        let mean = output[start..end].iter().sum::<f32>() / (end - start) as f32;
+        let variance = output[start..end]
+            .iter()
+            .map(|&x| (x - mean).powi(2))
+            .sum::<f32>()
+            / (end - start) as f32;
+
+        assert!(
+            variance < 1e-3,
+            "OLA reconstruction failed: variance={variance}, mean={mean}"
+        );
+        assert!(
+            mean > 0.2,
+            "Output mean too low: {mean} (expected ~0.5 for DC passthrough)"
+        );
+    }
+
+    #[test]
+    fn test_stft_sine_passthrough() {
+        let mut plugin = BeamformerPlugin::new(2, 48000);
+        plugin.beamformer_type = BeamformerType::Superdirective;
+
+        let num_frames = 4096;
+        let freq = 440.0;
+        let input: Vec<f32> = (0..num_frames * 2)
+            .map(|i| {
+                let t = (i / 2) as f32 / 48000.0;
+                (2.0 * std::f32::consts::PI * freq * t).sin() * 0.5
+            })
+            .collect();
+        let mut output = vec![0.0f32; num_frames];
+
+        // Process in 512-sample chunks
+        let chunk_size = 512;
+        for chunk in 0..(num_frames / chunk_size) {
+            let start = chunk * chunk_size;
+            let context = ProcessContext {
+                sample_rate: 48000,
+                num_frames: chunk_size,
+            };
+            plugin.process(
+                &input[start * 2..(start + chunk_size) * 2],
+                &mut output[start..start + chunk_size],
+                &context,
+            )
+            .unwrap();
+        }
+
+        let latency = plugin.latency_samples();
+        let start = latency + 512;
+        let end = num_frames - 512;
+
+        let input_rms: f32 = input[start * 2..end * 2]
+            .iter()
+            .step_by(2)
+            .map(|&x| x * x)
+            .sum::<f32>()
+            / (end - start) as f32;
+        let output_rms: f32 = output[start..end]
+            .iter()
+            .map(|&x| x * x)
+            .sum::<f32>()
+            / (end - start) as f32;
+
+        let ratio = output_rms.sqrt() / input_rms.sqrt();
+        assert!(
+            ratio > 0.3 && ratio < 2.0,
+            "STFT sine passthrough failed: ratio={ratio}, input_rms={ir}, output_rms={or}",
+            ratio = ratio,
+            ir = input_rms.sqrt(),
+            or = output_rms.sqrt()
+        );
     }
 }

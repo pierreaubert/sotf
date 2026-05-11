@@ -22,7 +22,7 @@ impl TransientSuppressor {
 
     pub fn reset(&mut self) {
         self.last_samples.fill(0.0);
-        self.slope_envelope.fill(0.0);
+        self.slope_envelope.fill(1e-6);
     }
 
     pub fn set_sensitivity(&mut self, sensitivity: f32) {
@@ -40,7 +40,7 @@ impl TransientSuppressor {
                 let delta = *sample - last;
                 let abs_delta = delta.abs();
 
-                if self.slope_envelope[ch] == 0.0 {
+                if self.slope_envelope[ch] < 1e-12 {
                     self.slope_envelope[ch] = abs_delta + 1e-6;
                 }
 
@@ -51,6 +51,9 @@ impl TransientSuppressor {
                     let sign = if delta >= 0.0 { 1.0 } else { -1.0 };
                     processed_sample = last + sign * threshold;
                     *sample = processed_sample;
+                    // Update envelope with the allowed delta so it adapts during suppression
+                    self.slope_envelope[ch] =
+                        self.slope_envelope[ch] * self.decay + threshold * self.one_minus_decay;
                 } else {
                     processed_sample = *sample;
                     if abs_delta > self.slope_envelope[ch] {

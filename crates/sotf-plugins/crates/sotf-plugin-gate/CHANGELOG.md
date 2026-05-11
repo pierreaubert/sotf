@@ -1,3 +1,10 @@
+# 0.5.5
+
+## Fixes
+
+- **CRITICAL**: Fixed reversed attack/release semantics. Attack now correctly controls gate opening speed and Release controls closing speed.
+- **CRITICAL**: Fixed linked stereo monitoring cache `is_open` always reporting `true` because stale envelope values for channels 1+ were never updated.
+
 # 0.5.4
 
 ## New

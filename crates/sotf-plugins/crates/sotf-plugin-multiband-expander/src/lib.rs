@@ -289,7 +289,7 @@ impl SpectralState {
         crossover_frequencies: &[f32],
         num_bands: usize,
     ) -> Self {
-        let hop_size = fft_size / 4; // 75% overlap
+        let hop_size = fft_size / 2; // 50% overlap for COLA with Hann window
         let num_bins = fft_size / 2 + 1;
 
         // Build per-channel FFT processors
@@ -305,8 +305,8 @@ impl SpectralState {
 
         let analysis_window = generate_hann_window(fft_size);
 
-        // 75% overlap, dual Hann window: COLA sum = 1.5
-        let output_scale = 1.0 / (fft_size as f32 * 1.5);
+        // 50% overlap, dual Hann window: COLA sum = 1.0 (sum of w^2 = N/2, two frames overlap)
+        let output_scale = 2.0 / fft_size as f32;
 
         // Assign each bin to a band based on center frequency
         let bin_to_band = Self::compute_bin_to_band(
@@ -974,9 +974,8 @@ impl MultibandExpanderPlugin {
             active: bool,
             solo: bool,
         }
-        const MAX_MB_BANDS: usize = 5;
         let hop_rate = self.sample_rate as f32 / ss.hop_size as f32;
-        let mut band_info = [BandInfo {
+        let mut band_info = vec![BandInfo {
             th: 0.0,
             rat: 1.0,
             kn: 0.0,
@@ -986,8 +985,8 @@ impl MultibandExpanderPlugin {
             bypass: false,
             active: true,
             solo: false,
-        }; MAX_MB_BANDS];
-        for (b, info) in band_info.iter_mut().enumerate().take(self.num_bands) {
+        }; self.num_bands];
+        for (b, info) in band_info.iter_mut().enumerate() {
             let bp = self.band_params.get(b);
             let hold_ms = bp.and_then(|p| p.hold_ms).unwrap_or(self.hold_ms);
             *info = BandInfo {
@@ -1037,12 +1036,12 @@ impl MultibandExpanderPlugin {
 
                 // Bin magnitude normalized to equivalent time-domain amplitude.
                 //
-                // The realfft forward transform is unnormalized: a cosine with
-                // amplitude A at exactly a bin frequency gives |X[k]| = N*A/2.
-                // Multiplying by 2/N converts the raw FFT magnitude back to the
-                // equivalent amplitude so the threshold (in dBFS) has the same
-                // meaning as in the time-domain expander mode.
-                let mag = ss.freq_scratch[k].norm() * (2.0 / fft_size as f32);
+                // The realfft forward transform is unnormalized. With a Hann
+                // window, a cosine of amplitude A at a bin center produces
+                // |X[k]| = A * window_sum / 2. We divide by window_sum / 2 to
+                // recover A, giving the same dBFS reading as the time-domain path.
+                let window_sum: f32 = ss.analysis_window.iter().sum();
+                let mag = ss.freq_scratch[k].norm() * (2.0 / window_sum);
                 let mag_db = 20.0 * fast_log10(mag.max(1e-10));
 
                 // Update gate state and envelope (at hop rate)
@@ -1123,10 +1122,10 @@ impl MultibandExpanderPlugin {
 
         // Zero the "fresh" positions just past the write head (for clean OLA)
         // They will accumulate contributions from the next several hops.
-        // We zero hop_size frames at next_add_position + fft_size to clear stale data.
+        // We zero fft_size frames at next_add_position + fft_size to clear stale data.
         {
             let clear_start = (ss.next_add_position + fft_size) & mask;
-            for i in 0..ss.hop_size {
+            for i in 0..fft_size {
                 let frame_idx = (clear_start + i) & mask;
                 for ch in 0..channels {
                     ss.output_accumulator[frame_idx * channels + ch] = 0.0;
@@ -1696,6 +1695,7 @@ impl InPlacePlugin for MultibandExpanderPlugin {
             self.spectral = Some(ss);
         }
 
+        self.reset();
         Ok(())
     }
     fn reset(&mut self) {
@@ -1725,7 +1725,7 @@ impl InPlacePlugin for MultibandExpanderPlugin {
 
     fn latency_samples(&self) -> usize {
         if let Some(ss) = &self.spectral {
-            ss.fft_size
+            ss.fft_size - ss.hop_size
         } else if self.lookahead_ms > 0.0 {
             (self.lookahead_ms * 0.001 * self.sample_rate as f32).round() as usize
         } else {
@@ -2218,11 +2218,11 @@ mod tests {
         let mut p = MultibandExpanderPlugin::with_params(2, params);
         p.initialize(48000).unwrap();
 
-        // Check that latency is reported as fft_size
+        // Check that latency is reported as fft_size - hop_size
         assert_eq!(
             p.latency_samples(),
-            1024,
-            "Spectral mode latency should be fft_size=1024"
+            512,
+            "Spectral mode latency should be fft_size - hop_size = 512"
         );
 
         // Generate pink-noise-like signal using sum of sines
@@ -2252,9 +2252,9 @@ mod tests {
             assert!(s.is_finite(), "Sample {i} is not finite: {s}");
         }
 
-        // After the latency fill (~fft_size frames = 1024), output must not be all-zeros
+        // After the latency fill (~fft_size - hop_size frames = 512), output must not be all-zeros
         let rms_out: f32 =
-            (buf[1024 * 2..].iter().map(|s| s * s).sum::<f32>() / ((nf - 1024) * 2) as f32).sqrt();
+            (buf[512 * 2..].iter().map(|s| s * s).sum::<f32>() / ((nf - 512) * 2) as f32).sqrt();
         assert!(
             rms_out > 1e-5,
             "Spectral mode output should not be silent for loud input, RMS={rms_out:.8}"

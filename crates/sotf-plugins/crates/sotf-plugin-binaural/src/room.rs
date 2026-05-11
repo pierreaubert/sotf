@@ -3,6 +3,7 @@ use rustfft::num_complex::Complex;
 use serde::{Deserialize, Serialize};
 use sotf_host::sofa::SourcePosition;
 use sotf_host::speaker_config::{SpeakerConfig, SpeakerPosition};
+use std::collections::HashSet;
 use std::path::Path;
 
 // ============================================================================
@@ -231,6 +232,13 @@ pub fn calculate_reflections(
                 }
             }
 
+            // Deduplicate second-order images (orthogonal wall pairs produce identical positions)
+            let mut seen = HashSet::new();
+            second_order_images.retain(|(pos, _w1, _w2)| {
+                let key = (pos[0].to_bits(), pos[1].to_bits(), pos[2].to_bits());
+                seen.insert(key)
+            });
+
             for (img_pos, wall1_idx, wall2_idx) in &second_order_images {
                 let dx = img_pos[0] - listener[0];
                 let dy = img_pos[1] - listener[1];
@@ -249,9 +257,7 @@ pub fn calculate_reflections(
 
                     let az = dx.atan2(dy);
                     let el = dz.atan2((dx * dx + dy * dy).sqrt());
-                    let p = (az + std::f32::consts::PI / 4.0) * 0.5;
-                    let left = p.cos().abs();
-                    let right = p.sin().abs();
+                    let (left, right) = azimuth_to_pan_gains(az);
 
                     channel_reflections.push(Reflection {
                         delay_samples,
@@ -270,6 +276,15 @@ pub fn calculate_reflections(
     }
 
     reflections
+}
+
+/// Constant-power sine-law panning from azimuth (radians).
+/// az = 0 -> front (balanced), az = +π/2 -> right, az = -π/2 -> left.
+fn azimuth_to_pan_gains(az: f32) -> (f32, f32) {
+    let pan = az.sin(); // -1 = left, 0 = front/back, 1 = right
+    let left = ((1.0 - pan) * 0.5).sqrt();
+    let right = ((1.0 + pan) * 0.5).sqrt();
+    (left, right)
 }
 
 /// Add reflections from image sources to the channel reflection list
@@ -299,9 +314,7 @@ fn add_image_reflections(
 
             let az = dx.atan2(dy);
             let el = dz.atan2((dx * dx + dy * dy).sqrt());
-            let p = (az + std::f32::consts::PI / 4.0) * 0.5;
-            let left = p.cos().abs();
-            let right = p.sin().abs();
+            let (left, right) = azimuth_to_pan_gains(az);
 
             channel_reflections.push(Reflection {
                 delay_samples,
@@ -441,9 +454,7 @@ fn ssir_result_to_reflections(
 
         // Simple L/R panning from azimuth (same formula as ISM)
         let az_rad = azimuth_deg.to_radians();
-        let p = (az_rad + std::f32::consts::PI / 4.0) * 0.5;
-        let left_gain = p.cos().abs();
-        let right_gain = p.sin().abs();
+        let (left_gain, right_gain) = azimuth_to_pan_gains(az_rad);
 
         reflections.push(Reflection {
             delay_samples,
@@ -457,4 +468,69 @@ fn ssir_result_to_reflections(
     }
 
     reflections
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_front_reflection_balanced() {
+        let (l, r) = azimuth_to_pan_gains(0.0);
+        assert!((l - r).abs() < 1e-6, "Front source should be balanced");
+        assert!((l - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_left_reflection_louder_left() {
+        let (l, r) = azimuth_to_pan_gains(-std::f32::consts::PI / 2.0);
+        assert!(l > r, "Left source should be louder in left ear");
+        assert!((l - 1.0).abs() < 1e-6);
+        assert!(r.abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_right_reflection_louder_right() {
+        let (l, r) = azimuth_to_pan_gains(std::f32::consts::PI / 2.0);
+        assert!(r > l, "Right source should be louder in right ear");
+        assert!((r - 1.0).abs() < 1e-6);
+        assert!(l.abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_second_order_reflections_no_duplicates() {
+        let room = RoomModel {
+            dimensions: [4.0, 5.0, 2.5],
+            listener_position: [2.0, 2.0, 1.2],
+            absorption: [0.15, 0.15, 0.20, 0.20, 0.30, 0.25],
+            max_order: 2,
+            speed_of_sound: 343.0,
+        };
+        let speakers: &'static [SpeakerPosition] =
+            Box::leak(vec![SpeakerPosition {
+                label: "L",
+                name: "Left",
+                channel: 0,
+                azimuth: -30.0,
+                elevation: 0.0,
+                is_lfe: false,
+            }].into_boxed_slice());
+        let speaker_config = SpeakerConfig {
+            id: "test",
+            name: "test",
+            description: "test",
+            total_channels: 1,
+            speakers,
+            meter_groups: &[],
+        };
+        let reflections = calculate_reflections(&room, &speaker_config, 48000);
+        let channel_refs = &reflections[0];
+        // 6 first-order + 18 unique second-order = 24 total
+        assert_eq!(
+            channel_refs.len(),
+            24,
+            "Expected 24 unique reflections, got {}",
+            channel_refs.len()
+        );
+    }
 }
