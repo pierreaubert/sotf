@@ -1,7 +1,7 @@
 [package]
 name = "sotf-plugin-mono-to-stereo"
 description = "SOTF Mono to Stereo plugin - mono to stereo widening"
-version = "0.5.3"
+version = "0.5.4"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -26,4 +26,3 @@ realfft = { workspace = true }
 rustfft = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-rand = { workspace = true }

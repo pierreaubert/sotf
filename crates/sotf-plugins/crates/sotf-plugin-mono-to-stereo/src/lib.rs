@@ -210,9 +210,10 @@ impl MonoToStereoPlugin {
 
     pub fn from_params(_channels: usize, params: MonoToStereoPluginParams) -> Self {
         let mut p = Self::new();
-        p.stereo_width.set_target(params.stereo_width);
+        p.stereo_width.reset(params.stereo_width);
         p.freq_dependent = params.freq_dependent;
         p.haas_delay_ms = params.haas_delay_ms;
+        p.rebuild_cached_parameters();
         p
     }
 
@@ -223,14 +224,12 @@ impl MonoToStereoPlugin {
     }
 
     fn generate_decorrelation_filter(&mut self) {
-        let mut rng = rand::rng();
-        use rand::Rng;
         let num_bins = self.decorrelation_filter.len();
 
         for i in 0..num_bins {
             let freq = i as f32 * self.sample_rate as f32 / FFT_SIZE as f32;
             if (300.0..=15000.0).contains(&freq) {
-                let phase = rng.random_range(0.0..2.0 * std::f32::consts::PI);
+                let phase = Self::decorrelation_phase(i);
                 self.decorrelation_filter[i] = Complex::from_polar(1.0, phase);
             } else {
                 self.decorrelation_filter[i] = Complex::new(1.0, 0.0);
@@ -242,6 +241,19 @@ impl MonoToStereoPlugin {
 
         // Build the frequency-dependent width curve
         self.compute_freq_width_curve();
+    }
+
+    fn decorrelation_phase(bin: usize) -> f32 {
+        let mut x = (bin as u32)
+            .wrapping_mul(0x9e37_79b9)
+            .wrapping_add(0x85eb_ca6b);
+        x ^= x >> 16;
+        x = x.wrapping_mul(0x7feb_352d);
+        x ^= x >> 15;
+        x = x.wrapping_mul(0x846c_a68b);
+        x ^= x >> 16;
+
+        (x as f32 / u32::MAX as f32) * std::f32::consts::TAU
     }
 
     /// Compute the per-bin decorrelation strength curve.
@@ -501,6 +513,50 @@ mod tests {
         )
         .unwrap();
         assert!(o[2047].is_finite());
+    }
+
+    #[test]
+    fn test_from_params_sets_width_without_startup_smoothing() {
+        let p = MonoToStereoPlugin::from_params(
+            1,
+            MonoToStereoPluginParams {
+                stereo_width: 0.0,
+                freq_dependent: false,
+                haas_delay_ms: 0.0,
+            },
+        );
+
+        assert_eq!(p.stereo_width.current(), 0.0);
+        assert_eq!(p.stereo_width.target(), 0.0);
+        assert_eq!(
+            p.get_parameter(&ParameterId::from("stereo_width")),
+            Some(ParameterValue::Float(0.0))
+        );
+        assert_eq!(
+            p.get_parameter(&ParameterId::from("haas_delay_ms")),
+            Some(ParameterValue::Float(0.0))
+        );
+        assert_eq!(
+            p.get_parameter(&ParameterId::from("freq_dependent")),
+            Some(ParameterValue::Bool(false))
+        );
+        assert!(
+            p.parameters()
+                .iter()
+                .any(|param| param.id == ParameterId::from("stereo_width")
+                    && param.default_value == ParameterValue::Float(0.0)),
+            "cached parameters should reflect from_params stereo_width"
+        );
+    }
+
+    #[test]
+    fn test_decorrelation_filter_is_deterministic() {
+        let mut a = MonoToStereoPlugin::new();
+        let mut b = MonoToStereoPlugin::new();
+        a.initialize(48000).unwrap();
+        b.initialize(48000).unwrap();
+
+        assert_eq!(a.decorrelation_filter, b.decorrelation_filter);
     }
 
     #[test]

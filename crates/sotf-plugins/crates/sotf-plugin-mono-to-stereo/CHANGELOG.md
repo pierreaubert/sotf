@@ -1,3 +1,11 @@
+# 0.5.4
+
+## Fixes
+
+- Start `from_params` at the requested stereo width instead of smoothing from the default width.
+- Make decorrelation phase generation deterministic so QA is not dependent on random filter phases.
+- Update mono-to-stereo QA energy checks to measure settled, representative audio regions.
+
 # 0.5.3
 
 ## Fixes
