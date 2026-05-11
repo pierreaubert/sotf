@@ -356,12 +356,33 @@ pub(crate) fn build_reflection_data_ir(
 
     let h_ll_ipsi = process_channel(&channels[0]);
     let h_rr_ipsi = h_ll_ipsi.clone();
-    let h_lr_contra = if num_channels >= 2 {
-        process_channel(&channels[1])
+    let (h_lr_contra, h_rl_contra) = if num_channels >= 2 {
+        let h_lr = process_channel(&channels[1]);
+        (h_lr.clone(), h_lr)
     } else {
-        h_ll_ipsi.clone()
+        // Mono IR: derive contra from ipsi with a simple head-shadowing model.
+        // Reflected sound reaching the contralateral ear travels an extra path
+        // around the head, causing delay (ITD) and high-frequency attenuation.
+        let itd_s = 0.0003_f32; // ~0.3 ms typical ITD for 30° speakers
+        let shadow_cutoff_hz = 2000.0_f32;
+        let freq_per_bin = sample_rate as f32 / (2.0 * (num_bins - 1) as f32);
+
+        let mut h_lr = vec![Complex::new(0.0, 0.0); num_bins];
+        for bin in 0..num_bins {
+            let freq = bin as f32 * freq_per_bin;
+            // Simple 1st-order lowpass shadow model
+            let shadow = if freq <= 0.0 {
+                1.0
+            } else {
+                let ratio = freq / shadow_cutoff_hz;
+                1.0 / (1.0 + ratio)
+            };
+            let phase = -2.0 * PI * freq * itd_s;
+            let delay_phasor = Complex::new(phase.cos(), phase.sin());
+            h_lr[bin] = h_ll_ipsi[bin] * shadow * delay_phasor;
+        }
+        (h_lr.clone(), h_lr)
     };
-    let h_rl_contra = h_lr_contra.clone();
 
     // Compute beta boost from combined magnitude
     let mut h_total_magnitude = vec![0.0_f32; num_bins];

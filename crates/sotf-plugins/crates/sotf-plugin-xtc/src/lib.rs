@@ -1737,9 +1737,10 @@ impl Plugin for XtcPlugin {
 
         output[output_pos * output_channels..].fill(0.0);
 
-        // Return actual number of frames produced. DawHost handles silence padding.
+        // STFT plugins must return context.num_frames (not output_pos) to prevent
+        // ring buffer underrun in the host. Unproduced frames are already zeroed.
         flush_denormals_inplace(output);
-        Ok(output_pos)
+        Ok(context.num_frames)
     }
 
     fn latency_samples(&self) -> usize {

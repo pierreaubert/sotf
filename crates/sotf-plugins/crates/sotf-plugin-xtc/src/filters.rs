@@ -419,6 +419,7 @@ fn compute_xtc_filters_asymmetric_with_cache(
             h_ll_contra_final,
             h_rr_contra_final,
             h_rr_ipsi_final,
+            freq,
             params,
         );
         let beta = if let Some(room) = room_data {
@@ -544,7 +545,7 @@ fn compute_xtc_filters_hrtf(
     let max_gain_linear = 10.0_f32.powf(params.max_gain_db / 20.0);
 
     // Build condition-number based beta LUT
-    let beta_lut = build_beta_lut_condition_number(num_bins, params, Some(hrtf));
+    let beta_lut = build_beta_lut_condition_number(num_bins, cache.freq_per_bin, params, Some(hrtf));
 
     for bin in 0..num_bins {
         let freq = bin as f32 * cache.freq_per_bin;
@@ -752,7 +753,7 @@ fn compute_xtc_filters_symmetric_with_cache(
         };
 
         // Recompute condition-number beta with final (shaped+room) transfer functions
-        let beta = compute_beta_condition_number(h_ipsi_final, h_contra_final, params);
+        let beta = compute_beta_condition_number(h_ipsi_final, h_contra_final, freq, params);
         let beta = if let Some(room) = room_data {
             beta * room.beta_boost[bin]
         } else {
@@ -1410,11 +1411,13 @@ fn condition_number_2x2(
 pub(crate) fn compute_beta_condition_number(
     h_ipsi: Complex<f32>,
     h_contra: Complex<f32>,
+    freq: f32,
     params: &XtcPluginParams,
 ) -> f32 {
     // Symmetric plant matrix: C = [[h_ipsi, h_contra], [h_contra, h_ipsi]]
     let kappa = condition_number_2x2(h_ipsi, h_contra, h_contra, h_ipsi);
-    params.beta_base * (kappa / params.kappa_target).max(1.0)
+    let beta = params.beta_base * (kappa / params.kappa_target).max(1.0);
+    apply_beta_freq_boosts(beta, freq, params)
 }
 
 /// Compute condition-number based beta for a full (asymmetric) 2x2 plant matrix.
@@ -1423,10 +1426,24 @@ pub(crate) fn compute_beta_condition_number_full(
     h01: Complex<f32>,
     h10: Complex<f32>,
     h11: Complex<f32>,
+    freq: f32,
     params: &XtcPluginParams,
 ) -> f32 {
     let kappa = condition_number_2x2(h00, h01, h10, h11);
-    params.beta_base * (kappa / params.kappa_target).max(1.0)
+    let beta = params.beta_base * (kappa / params.kappa_target).max(1.0);
+    apply_beta_freq_boosts(beta, freq, params)
+}
+
+/// Apply frequency-dependent beta boosts (low/high) to the base beta value.
+#[inline]
+fn apply_beta_freq_boosts(beta: f32, freq: f32, params: &XtcPluginParams) -> f32 {
+    let low_factor = 1.0
+        + params.beta_low_freq_boost
+            * (1.0 / (1.0 + (-(100.0 - freq) / 30.0).exp()));
+    let high_factor = 1.0
+        + params.beta_high_freq_boost
+            * (1.0 / (1.0 + (-(freq - 12000.0) / 1500.0).exp()));
+    beta * low_factor * high_factor
 }
 
 /// Build condition-number based beta LUT using Woodworth model transfer functions.
@@ -1435,6 +1452,7 @@ pub(crate) fn compute_beta_condition_number_full(
 /// to set the regularization strength.
 pub(crate) fn build_beta_lut_condition_number(
     num_bins: usize,
+    freq_per_bin: f32,
     params: &XtcPluginParams,
     hrtf_data: Option<&HrtfTransferFunctions>,
 ) -> Vec<f32> {
@@ -1442,11 +1460,13 @@ pub(crate) fn build_beta_lut_condition_number(
         // HRTF mode: use actual HRTF transfer functions for condition number
         (0..num_bins)
             .map(|bin| {
+                let freq = bin as f32 * freq_per_bin;
                 compute_beta_condition_number_full(
                     hrtf.h_ll[bin],
                     hrtf.h_lr[bin],
                     hrtf.h_rl[bin],
                     hrtf.h_rr[bin],
+                    freq,
                     params,
                 )
             })
@@ -1456,10 +1476,10 @@ pub(crate) fn build_beta_lut_condition_number(
         // We need the geometry cache data, but this is called from contexts
         // that already have it. For a standalone LUT, use the params directly.
         (0..num_bins)
-            .map(|_bin| {
-                // Fallback: just use beta_base (the per-bin computation is done
-                // in the filter loop where we have access to h_ipsi/h_contra)
-                params.beta_base
+            .map(|bin| {
+                let freq = bin as f32 * freq_per_bin;
+                // Fallback: just use beta_base with frequency boosts
+                apply_beta_freq_boosts(params.beta_base, freq, params)
             })
             .collect()
     }

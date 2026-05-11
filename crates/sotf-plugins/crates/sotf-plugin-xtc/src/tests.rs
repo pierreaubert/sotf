@@ -1662,6 +1662,181 @@ fn test_itd_modeling_serde() {
 /// Test: verify that spectral normalization applies the same factor to both elements
 /// of each column (left column: w_ll, w_rl; right column: w_lr, w_rr).
 #[test]
+/// Bug 12: STFT plugins must return context.num_frames, not output_pos.
+/// During initial latency, output_pos may be 0 (buffer not yet full), but the
+/// host expects num_frames to maintain ring buffer alignment.
+#[test]
+fn test_process_returns_num_frames_not_output_pos() {
+    let params = XtcPluginParams::default();
+    let mut plugin = XtcPlugin::new(params, 48000).unwrap();
+    plugin.initialize(48000).unwrap();
+
+    // Small block that doesn't fill the FFT buffer — output_pos will be 0
+    let num_frames = 512; // Less than fft_size (2048)
+    let input = vec![0.0_f32; num_frames * 2];
+    let mut output = vec![0.0_f32; num_frames * 2];
+
+    let context = ProcessContext {
+        sample_rate: 48000,
+        num_frames,
+    };
+
+    let result = plugin.process(&input, &mut output, &context).unwrap();
+    assert_eq!(
+        result, num_frames,
+        "process() must return context.num_frames ({}), got {}",
+        num_frames, result
+    );
+}
+
+
+/// Bug 4: Mono room IR files incorrectly copy ipsi response to contra path.
+/// The contralateral ear should receive attenuated and delayed reflections
+/// compared to the ipsilateral ear. Loading a mono IR should apply a
+/// head-shadowing model to derive the contra path instead of cloning.
+#[test]
+fn test_mono_room_ir_derives_contra_with_head_shadowing() {
+    use rustfft::num_complex::Complex;
+
+    // Create a minimal mono WAV file (48000 Hz, f32, mono)
+    let path = std::env::temp_dir().join(format!("xtc-mono-ir-{}.wav", std::process::id()));
+    {
+        let ir_samples: Vec<f32> = (0..1024)
+            .map(|i| {
+                let t = i as f32 / 48000.0;
+                // Simple decaying exponential IR
+                (-t * 10.0).exp() * (2.0 * std::f32::consts::PI * 500.0 * t).sin()
+            })
+            .collect();
+
+        // Write minimal WAV: RIFF header + fmt chunk + data chunk
+        let mut wav = vec![];
+        // RIFF header
+        wav.extend_from_slice(b"RIFF");
+        let file_size = (36 + ir_samples.len() * 4) as u32;
+        wav.extend_from_slice(&file_size.to_le_bytes());
+        wav.extend_from_slice(b"WAVE");
+        // fmt chunk
+        wav.extend_from_slice(b"fmt ");
+        wav.extend_from_slice(&16_u32.to_le_bytes()); // chunk size
+        wav.extend_from_slice(&3_u16.to_le_bytes()); // format: IEEE float
+        wav.extend_from_slice(&1_u16.to_le_bytes()); // channels: mono
+        wav.extend_from_slice(&48000_u32.to_le_bytes()); // sample rate
+        wav.extend_from_slice(&(48000u32 * 4).to_le_bytes()); // byte rate
+        wav.extend_from_slice(&4_u16.to_le_bytes()); // block align
+        wav.extend_from_slice(&32_u16.to_le_bytes()); // bits per sample
+        // data chunk
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&((ir_samples.len() * 4) as u32).to_le_bytes());
+        for sample in &ir_samples {
+            wav.extend_from_slice(&sample.to_le_bytes());
+        }
+
+        std::fs::write(&path, wav).unwrap();
+    }
+
+    let num_bins = 513; // 1024-point FFT
+    let data = reflections::build_reflection_data_ir(
+        path.to_str().unwrap(),
+        48000,
+        num_bins,
+        None,
+    )
+    .unwrap();
+
+    let _ = std::fs::remove_file(path);
+
+    // At high frequencies, contra should be attenuated relative to ipsi
+    // due to head shadowing. Find a bin above 2kHz.
+    let bin_4khz = (4000.0 * 1024.0 / 48000.0) as usize;
+    let ipsi_mag = data.h_ll_ipsi[bin_4khz].norm();
+    let contra_mag = data.h_lr_contra[bin_4khz].norm();
+
+    assert!(
+        contra_mag < ipsi_mag,
+        "Mono IR contra path should be attenuated relative to ipsi at high freq. \
+         ipsi_mag={}, contra_mag={}",
+        ipsi_mag,
+        contra_mag
+    );
+
+    // Contra should have a phase shift (delay) relative to ipsi
+    let ipsi_phase = data.h_ll_ipsi[bin_4khz].arg();
+    let contra_phase = data.h_lr_contra[bin_4khz].arg();
+    let phase_diff = (contra_phase - ipsi_phase).abs();
+    assert!(
+        phase_diff > 0.01,
+        "Mono IR contra path should have phase delay relative to ipsi. \
+         ipsi_phase={}, contra_phase={}, diff={}",
+        ipsi_phase,
+        contra_phase,
+        phase_diff
+    );
+}
+
+
+/// Bug 2: beta_low_freq_boost and beta_high_freq_boost were dead parameters.
+/// They are exposed as UI knobs but had no effect on filter computation.
+/// This test verifies that changing these parameters now affects the computed beta.
+#[test]
+fn test_beta_freq_boosts_affect_filters() {
+    let fft_size = 2048;
+    let sample_rate = 48000_u32;
+    let num_bins = fft_size / 2 + 1;
+
+    // Default: both boosts = 10.0
+    let params_default = XtcPluginParams::default();
+    let filters_default = compute_xtc_filters_full(&params_default,
+        sample_rate,
+        num_bins,
+    );
+
+    // Low boost = 0 (no extra low-frequency regularization)
+    let mut params_low_off = XtcPluginParams::default();
+    params_low_off.beta_low_freq_boost = 0.0;
+    let filters_low_off = compute_xtc_filters_full(
+        &params_low_off,
+        sample_rate,
+        num_bins,
+    );
+
+    // High boost = 0 (no extra high-frequency regularization)
+    let mut params_high_off = XtcPluginParams::default();
+    params_high_off.beta_high_freq_boost = 0.0;
+    let filters_high_off = compute_xtc_filters_full(
+        &params_high_off,
+        sample_rate,
+        num_bins,
+    );
+
+    let freq_per_bin = sample_rate as f32 / (2.0 * (num_bins - 1) as f32);
+
+    // At low frequencies (< 100 Hz), default should have more regularization
+    // (higher beta) than low_boost=0, producing different filter magnitudes
+    let bin_50hz = (50.0 / freq_per_bin) as usize;
+    let mag_default_lf = filters_default.filter_ll[bin_50hz].norm();
+    let mag_low_off_lf = filters_low_off.filter_ll[bin_50hz].norm();
+    assert!(
+        (mag_default_lf - mag_low_off_lf).abs() > 1e-6,
+        "beta_low_freq_boost should affect LF filters. default={}, low_off={}",
+        mag_default_lf,
+        mag_low_off_lf
+    );
+
+    // At high frequencies (> 12 kHz), default should have more regularization
+    // than high_boost=0
+    let bin_15khz = (15000.0 / freq_per_bin) as usize;
+    let mag_default_hf = filters_default.filter_ll[bin_15khz].norm();
+    let mag_high_off_hf = filters_high_off.filter_ll[bin_15khz].norm();
+    assert!(
+        (mag_default_hf - mag_high_off_hf).abs() > 1e-6,
+        "beta_high_freq_boost should affect HF filters. default={}, high_off={}",
+        mag_default_hf,
+        mag_high_off_hf
+    );
+}
+
+
 fn test_asymmetric_spectral_norm_scales_columns_not_rows() {
     let num_bins = 513;
 
