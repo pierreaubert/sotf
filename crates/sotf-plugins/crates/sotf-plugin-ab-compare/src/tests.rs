@@ -239,6 +239,29 @@ fn test_multichannel_support() {
 }
 
 #[test]
+fn test_empty_path_fast_path_matches_equal_power_mix() {
+    let mut plugin = ABComparePlugin::new(2).unwrap();
+    plugin.initialize(48000).unwrap();
+
+    let input = vec![0.25; 512 * 2];
+    let mut output = vec![0.0; 512 * 2];
+    let context = ProcessContext {
+        sample_rate: 48000,
+        num_frames: 512,
+    };
+
+    plugin.process(&input, &mut output, &context).unwrap();
+
+    let expected = 0.25 * std::f32::consts::SQRT_2;
+    for &sample in &output {
+        assert!(
+            (sample - expected).abs() < 1e-6,
+            "default empty A/B path should use equal-power 50/50 mix"
+        );
+    }
+}
+
+#[test]
 fn test_reset() {
     let mut plugin = ABComparePlugin::new(2).unwrap();
     plugin.initialize(48000).unwrap();

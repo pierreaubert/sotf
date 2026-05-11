@@ -421,6 +421,77 @@ impl ABComparePlugin {
         self.band_mask_low_hz > 20.5 || self.band_mask_high_hz < 19999.5
     }
 
+    fn has_empty_paths(&self) -> bool {
+        matches!(self.path_a_config, PathConfig::None)
+            && matches!(self.path_b_config, PathConfig::None)
+    }
+
+    fn can_use_empty_path_fast_path(&self) -> bool {
+        self.has_empty_paths()
+            && self.mix_mode == MixMode::Potentiometer
+            && !self.phase_invert_a
+            && !self.phase_invert_b
+            && !self.difference_mode
+            && !self.band_mask_active()
+            && self.auto_gain.is_unity_gain_stable()
+            && (self.mix_smoother.current() - self.mix_smoother.target()).abs() < 1e-5
+    }
+
+    fn process_empty_path_fast(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        num_frames: usize,
+    ) -> Result<(), String> {
+        self.cache_update_counter += 1;
+        let mut do_measure = false;
+        if self.cache_update_counter >= 10 || self.cache_update_counter == 1 {
+            if self.cache_update_counter >= 10 {
+                self.cache_update_counter = 0;
+            }
+            do_measure = true;
+        }
+
+        if do_measure {
+            self.auto_gain.measure_input(input)?;
+            self.auto_gain.measure_output(input)?;
+            self.last_peak_a = self.auto_gain.last_input_peak();
+            self.last_peak_b = self.auto_gain.last_output_peak();
+        }
+
+        let current_mix = self.mix_smoother.current();
+        let mix_01 = (current_mix + 1.0) * 0.5;
+        let angle = mix_01 * std::f32::consts::FRAC_PI_2;
+        let gain = angle.cos() + angle.sin();
+
+        if (gain - 1.0).abs() < 1e-6 {
+            output.copy_from_slice(input);
+        } else {
+            for (out, &sample) in output.iter_mut().zip(input.iter()) {
+                *out = sample * gain;
+            }
+        }
+
+        self.auto_gain.next_n(num_frames);
+
+        if do_measure {
+            let data = ABCompareData {
+                loudness_a_lufs: self.auto_gain.last_input_lufs(),
+                loudness_b_lufs: self.auto_gain.last_output_lufs(),
+                auto_gain_db: self.auto_gain.current_gain_db(),
+                peak_a: self.last_peak_a,
+                peak_b: self.last_peak_b,
+                current_mix: self.mix_smoother.current(),
+                bypass_active: self.bypass,
+            };
+            self.cache.update(|d| {
+                *d = data;
+            });
+        }
+
+        Ok(())
+    }
+
     /// Rebuild the bandpass filter pair for the current band mask settings.
     fn rebuild_band_mask_filters(&mut self) {
         let q = 1.0 / std::f64::consts::SQRT_2;
@@ -778,6 +849,14 @@ impl Plugin for ABComparePlugin {
         // Handle bypass
         if self.bypass {
             output.copy_from_slice(input);
+            return Ok(context.num_frames);
+        }
+
+        // Default/QA case: both A and B are empty pass-through paths. Avoid two
+        // nested host passes and per-frame trigonometry while preserving the
+        // normal diagnostic measurement cadence.
+        if self.can_use_empty_path_fast_path() {
+            self.process_empty_path_fast(input, output, context.num_frames)?;
             return Ok(context.num_frames);
         }
 
