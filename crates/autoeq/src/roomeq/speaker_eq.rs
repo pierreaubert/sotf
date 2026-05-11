@@ -197,6 +197,19 @@ pub(super) fn optimize_eq_maybe_multi(
     }
 }
 
+/// Decide whether a broadband pre-correction result should be rejected.
+///
+/// The shelf fit can be confused by room modes or HPF rolloff, producing
+/// a result that is worse than the raw measurement. Rejecting it prevents
+/// the optimizer from compounding the error.
+fn broadband_correction_rejected(pre_bb_score: f64, post_bb_score: f64) -> bool {
+    // Tight threshold: anything more than 20 % worse is rejected.
+    // The old 1.5× threshold was too permissive — a 40 % worse result
+    // would still be accepted, causing audible degradation.
+    const MAX_WORSENING_RATIO: f64 = 1.2;
+    post_bb_score > pre_bb_score * MAX_WORSENING_RATIO
+}
+
 /// Process a simple speaker with a single measurement
 ///
 /// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms)
@@ -326,18 +339,44 @@ pub(super) fn process_single_speaker(
         effective_target =
             super::home_cinema::role_adjusted_target_response(channel_name, &effective_target);
 
-        // Resolve FromMeasurement: extract slope from input curve
+        // Resolve FromMeasurement: prefer a system-wide slope override
+        // (resolved once from a full-range reference channel by
+        // `optimize_room_impl`) over per-channel regression. Per-channel
+        // regression is junk for band-limited channels — an LFE/sub
+        // measurement has no real signal in the
+        // `[DEFAULT_SLOPE_MIN_FREQ, DEFAULT_SLOPE_MAX_FREQ]` window so
+        // the slope falls into the noise floor and the resulting target
+        // tilt is unphysically steep.
         if effective_target.shape == TargetShape::FromMeasurement {
-            let measured_slope = slope::estimate_slope_db_per_octave(
-                &curve,
-                slope::DEFAULT_SLOPE_MIN_FREQ,
-                slope::DEFAULT_SLOPE_MAX_FREQ,
-            )
-            .unwrap_or(0.0);
-            info!(
-                "  FromMeasurement: estimated slope = {:.2} dB/octave from '{}'",
-                measured_slope, channel_name
-            );
+            let is_sub_or_lfe =
+                super::home_cinema::role_for_channel(channel_name).is_sub_or_lfe();
+            let measured_slope = if let Some(override_slope) =
+                room_config.optimizer.from_measurement_slope_override
+            {
+                info!(
+                    "  FromMeasurement: using room-level slope = {:.2} dB/octave (resolved from reference channel) for '{}'",
+                    override_slope, channel_name
+                );
+                override_slope
+            } else if is_sub_or_lfe {
+                info!(
+                    "  FromMeasurement: '{}' is band-limited (sub/LFE) and no reference slope is available — defaulting to flat (0.0 dB/octave)",
+                    channel_name
+                );
+                0.0
+            } else {
+                let s = slope::estimate_slope_db_per_octave(
+                    &curve,
+                    slope::DEFAULT_SLOPE_MIN_FREQ,
+                    slope::DEFAULT_SLOPE_MAX_FREQ,
+                )
+                .unwrap_or(0.0);
+                info!(
+                    "  FromMeasurement: estimated slope = {:.2} dB/octave from '{}'",
+                    s, channel_name
+                );
+                s
+            };
             effective_target.shape = TargetShape::Custom;
             effective_target.slope_db_per_octave = measured_slope;
         }
@@ -763,7 +802,7 @@ pub(super) fn process_single_speaker(
                 let post_bb_score =
                     crate::loss::flat_loss(&corrected_curve.freq, &post_bb_dev, min_freq, max_freq);
 
-                if post_bb_score > pre_bb_score * 1.5 {
+                if broadband_correction_rejected(pre_bb_score, post_bb_score) {
                     warn!(
                         "  Broadband correction rejected: deviation from target {:.4} -> {:.4} \
                              (worse by {:.0}%). Shelf fit likely confused by room modes or HPF rolloff.",
@@ -792,20 +831,25 @@ pub(super) fn process_single_speaker(
         let p = std::path::PathBuf::from(&wp);
         if p.exists() { Some(p) } else { None }
     });
-    // Detect whether this is a subwoofer/LFE channel
-    let is_sub_channel = if let Some(sys) = &room_config.system {
-        if let Some(subs) = &sys.subwoofers {
-            // v2.1: check if this channel is in the subwoofer mapping
-            sys.speakers
-                .get(channel_name)
-                .is_some_and(|meas_key| subs.mapping.contains_key(meas_key))
-        } else {
-            false
-        }
-    } else {
-        // Legacy: name-based detection
-        channel_name.eq_ignore_ascii_case("lfe") || channel_name.to_lowercase().starts_with("sub")
-    };
+    // Detect whether this is a subwoofer/LFE channel.
+    //
+    // The role-based check (`role_for_channel(...).is_sub_or_lfe()`) is
+    // the source of truth — it correctly classifies channels named
+    // "LFE", "sub*", etc. regardless of whether the v2.1
+    // `system.subwoofers.mapping` is populated. The mapping check is
+    // kept as an additional positive signal (e.g. a channel named
+    // "extra-bass" mapped into the subwoofer group), never as a gate
+    // that would override the role.
+    let is_sub_channel = super::home_cinema::role_for_channel(channel_name).is_sub_or_lfe()
+        || room_config
+            .system
+            .as_ref()
+            .and_then(|sys| {
+                let subs = sys.subwoofers.as_ref()?;
+                let meas_key = sys.speakers.get(channel_name)?;
+                Some(subs.mapping.contains_key(meas_key))
+            })
+            .unwrap_or(false);
 
     let clamped_optimizer = {
         let mut opt = room_config.optimizer.clone();
@@ -813,6 +857,57 @@ pub(super) fn process_single_speaker(
             opt.min_freq = min_freq;
         }
         opt.ssir_wav_path = wav_path_for_ssir;
+
+        // For sub channels, clamp the optimizer's UPPER frequency
+        // bound to the actual usable bandwidth. Subwoofers vary
+        // hugely in passband — a sealed 8" sub may roll off at 80 Hz
+        // while a full-range "sub" used as broad-band bass extends
+        // past 300 Hz. A static 160 Hz cap was wrong in both
+        // directions, so we derive the upper bound from data:
+        //
+        // 1. The measured -3 dB high-side crossing on the smoothed
+        //    response (`detect_sub_passband_3db`).
+        // 2. Twice the bass-management crossover, when configured —
+        //    covers the LR2/LR4 skirt where main/sub correction
+        //    legitimately overlaps (Welti & Devantier 2007 on
+        //    multi-sub correction often reaches into the 120–200 Hz
+        //    region for bass-managed systems).
+        //
+        // Lower bound is intentionally left untouched — real axial
+        // modes can exist below 20 Hz in larger rooms (Toole, *Sound
+        // Reproduction* 3rd ed. ch. 8; Welti AES 2002), and modern
+        // subs reach 12–15 Hz in-room. The measurement's own SNR plus
+        // the existing data-range clamp in `prepare_single_channel_eq`
+        // already gate filter placement at the low end.
+        if is_sub_channel {
+            let measured_upper =
+                super::optimize::detect_sub_passband_3db(&curve).map(|(_lo, hi)| hi);
+            let crossover_upper = super::home_cinema::effective_bass_management(room_config)
+                .and_then(|bm| bm.crossover_frequency_hz)
+                .map(|xo| 2.0 * xo);
+            // Fallback when neither signal is available — the previous
+            // hard-coded LFE band default. Lets a sub-only run with no
+            // bass-management config still get *some* sane upper bound.
+            const SUB_UPPER_FALLBACK_HZ: f64 = 160.0;
+            let upper = match (measured_upper, crossover_upper) {
+                (Some(m), Some(xo)) => m.max(xo),
+                (Some(m), None) => m,
+                (None, Some(xo)) => xo,
+                (None, None) => SUB_UPPER_FALLBACK_HZ,
+            };
+            info!(
+                "  Sub channel '{}': clamping optimizer upper bound to {:.1} Hz (measured -3dB high={}, 2*crossover={})",
+                channel_name,
+                upper,
+                measured_upper
+                    .map(|h| format!("{:.1} Hz", h))
+                    .unwrap_or_else(|| "n/a".to_string()),
+                crossover_upper
+                    .map(|h| format!("{:.1} Hz", h))
+                    .unwrap_or_else(|| "n/a".to_string()),
+            );
+            opt.max_freq = opt.max_freq.min(upper);
+        }
 
         // Apply subwoofer-specific optimizer overrides
         if is_sub_channel && let Some(sub_cfg) = &room_config.optimizer.sub_config {
@@ -1949,6 +2044,20 @@ mod tests {
             ctc: None,
             cea2034_cache: None,
         }
+    }
+
+    #[test]
+    fn broadband_rejection_tight_threshold() {
+        // A 10 % worse result is accepted.
+        assert!(!super::broadband_correction_rejected(1.0, 1.10));
+        // A 25 % worse result is rejected.
+        assert!(super::broadband_correction_rejected(1.0, 1.25));
+        // Slightly past the 20 % boundary is rejected.
+        assert!(super::broadband_correction_rejected(1.0, 1.200_000_1));
+        // Improvement is always accepted.
+        assert!(!super::broadband_correction_rejected(1.0, 0.5));
+        // Zero pre-score with any positive post-score is rejected.
+        assert!(super::broadband_correction_rejected(0.0, 0.1));
     }
 
     #[test]

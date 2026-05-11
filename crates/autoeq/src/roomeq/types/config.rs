@@ -157,9 +157,17 @@ pub struct RecordingConfiguration {
     /// `1.25 * min_freq`, whichever is higher).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bass_probe_freq_hz: Option<f32>,
-    /// Number of cycles in the bass tone burst. Default 5.
+    /// Total length of the steady-state bass-anchor tone in seconds
+    /// (steady portion + fades). Default 2.0.
+    ///
+    /// The pre-v2 schema stored `bass_probe_cycles: u16` here — it's
+    /// dropped silently at load (the units differ and converting
+    /// requires `bass_probe_freq_hz` which serde sees per-field). The
+    /// per-result `BassAnchorResultsLegacy::bass_duration_s` migration
+    /// handles legacy run-output files (where the conversion is well
+    /// defined).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub bass_probe_cycles: Option<u16>,
+    pub bass_probe_duration_s: Option<f32>,
     /// Path to the microphone phase calibration CSV (4 columns:
     /// `freq, mag_db, phase_deg, coherence`). Magnitude calibration
     /// already lives under [`mic_calibration_path`](Self::mic_calibration_path).
@@ -255,16 +263,56 @@ pub struct ProbeChannelResultLegacy {
 /// v2's confidence gate (§3.5 of `docs/gd_opt_v2_plan.md`) and
 /// optimiser (§3.2) can ingest it at config-load time without
 /// depending on `sotf-engine`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+///
+/// Implements a custom `Deserialize` that also accepts the pre-v2
+/// schema field name `bass_cycles: u16`; when present (and
+/// `bass_duration_s` is absent) it is converted to seconds via
+/// `cycles / bass_freq_hz` so older recordings.json files load without
+/// re-recording.
+#[derive(Debug, Clone, Default, Serialize, JsonSchema)]
 pub struct BassAnchorResultsLegacy {
     /// Per-channel phase + quality metrics.
     pub channels: Vec<BassAnchorChannelResultLegacy>,
     /// Sample rate used for the capture (Hz).
     pub sample_rate: u32,
-    /// Tone-burst centre frequency in Hz (nominal 20 Hz).
+    /// Centre frequency of the steady-state tone in Hz (nominal 30 Hz).
     pub bass_freq_hz: f32,
-    /// Number of cycles in the burst (nominal 5).
-    pub bass_cycles: u16,
+    /// Total tone length in seconds (steady portion + fades). Nominal 2.0.
+    pub bass_duration_s: f32,
+}
+
+impl<'de> Deserialize<'de> for BassAnchorResultsLegacy {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Helper {
+            #[serde(default)]
+            channels: Vec<BassAnchorChannelResultLegacy>,
+            #[serde(default)]
+            sample_rate: u32,
+            #[serde(default)]
+            bass_freq_hz: f32,
+            #[serde(default)]
+            bass_duration_s: Option<f32>,
+            // Legacy v1 field — preserved here for migration only.
+            #[serde(default)]
+            bass_cycles: Option<u16>,
+        }
+        let h = Helper::deserialize(deserializer)?;
+        let bass_duration_s = match (h.bass_duration_s, h.bass_cycles, h.bass_freq_hz) {
+            (Some(d), _, _) => d,
+            (None, Some(cycles), freq) if freq > 0.0 => cycles as f32 / freq,
+            _ => 0.0,
+        };
+        Ok(BassAnchorResultsLegacy {
+            channels: h.channels,
+            sample_rate: h.sample_rate,
+            bass_freq_hz: h.bass_freq_hz,
+            bass_duration_s,
+        })
+    }
 }
 
 /// Per-channel bass-anchor result (mirror of `BassAnchorChannelResult`).
@@ -274,17 +322,30 @@ pub struct BassAnchorChannelResultLegacy {
     pub channel_name: String,
     /// Channel output index used during playback.
     pub channel_index: usize,
-    /// Measured phase of the bass tone at the listening position,
-    /// degrees in `(−180°, 180°]`, sin-referenced against the emitted
-    /// burst.
+    /// Reported phase of the bass tone at the listening position,
+    /// degrees in `(−180°, 180°]`, sin-referenced. When a loopback
+    /// reference channel was recorded this is the loopback-corrected
+    /// acoustic phase (`phase_mic − phase_loopback`); see
+    /// `bass_anchor_loopback_phase_deg` for the raw loopback value.
     pub bass_anchor_phase_deg: f64,
-    /// Linear magnitude of the DFT bin at the bass frequency.
-    /// Used as an SNR proxy.
+    /// Linear magnitude of the lock-in I/Q estimator at
+    /// `bass_freq_hz` on the mic. SNR proxy.
     pub bass_anchor_magnitude: f64,
-    /// |phase_half1 − phase_half2| in degrees. Values above the
+    /// Circular standard deviation of phase across the sub-window
+    /// lock-in estimates, in degrees. Values above the
     /// `"bass_anchor_unreliable"` advisory threshold (§2.8, 20°) mean
     /// the GD confidence gate should discard this channel's anchor.
     pub bass_anchor_stability_deg: f64,
+    /// Raw loopback reference phase in degrees (sin-referenced).
+    /// `None` when no loopback channel was recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bass_anchor_loopback_phase_deg: Option<f64>,
+    /// Magnitude-squared coherence γ² ∈ [0, 1] between the mic and the
+    /// loopback per-window phasors at `bass_freq_hz`. Conventional QA
+    /// threshold is γ² > 0.9. `None` when no loopback channel was
+    /// recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bass_anchor_coherence: Option<f64>,
 }
 
 // ============================================================================
@@ -2320,6 +2381,14 @@ pub struct OptimizerConfig {
     /// Default: None (no CDT protection).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_cut_envelope: Option<Vec<(f64, f64)>>,
+
+    /// Runtime-only: system-wide slope (dB/octave) resolved once for
+    /// `TargetShape::FromMeasurement`. When `Some`, every channel reuses
+    /// this slope instead of re-running the regression on its own curve.
+    /// Lifted to room level so that band-limited channels (LFE, sub) do
+    /// not derive a junk slope from their own rolled-off skirts.
+    #[serde(skip)]
+    pub from_measurement_slope_override: Option<f64>,
 }
 
 // Default values for OptimizerConfig
@@ -2448,6 +2517,7 @@ impl Default for OptimizerConfig {
             max_boost_envelope: None,
             min_cut_envelope: None,
             epa_config: None,
+            from_measurement_slope_override: None,
         }
     }
 }
@@ -2863,8 +2933,8 @@ mod tests {
             "sweep_level_db_spl": 85.0,
             "num_sweeps": 4,
             "coherence_threshold": 0.9,
-            "bass_probe_freq_hz": 20.0,
-            "bass_probe_cycles": 5,
+            "bass_probe_freq_hz": 30.0,
+            "bass_probe_duration_s": 2.0,
             "mic_phase_calibration_path": "/tmp/mic_phase.csv",
             "spl_calibration": {
                 "reported_db_spl": 85.0,
@@ -2878,8 +2948,8 @@ mod tests {
         assert_eq!(cfg.bass_octave_duration_s, Some(3.0));
         assert_eq!(cfg.num_sweeps, Some(4));
         assert_eq!(cfg.coherence_threshold, Some(0.9));
-        assert_eq!(cfg.bass_probe_freq_hz, Some(20.0));
-        assert_eq!(cfg.bass_probe_cycles, Some(5));
+        assert_eq!(cfg.bass_probe_freq_hz, Some(30.0));
+        assert_eq!(cfg.bass_probe_duration_s, Some(2.0));
         assert_eq!(
             cfg.mic_phase_calibration_path.as_deref(),
             Some("/tmp/mic_phase.csv")
@@ -2907,11 +2977,56 @@ mod tests {
         assert!(cfg.num_sweeps.is_none());
         assert!(cfg.coherence_threshold.is_none());
         assert!(cfg.bass_probe_freq_hz.is_none());
-        assert!(cfg.bass_probe_cycles.is_none());
+        assert!(cfg.bass_probe_duration_s.is_none());
         assert!(cfg.mic_phase_calibration_path.is_none());
         assert!(cfg.mic_phase_calibration_paths.is_none());
         assert!(cfg.spl_calibration.is_none());
         assert!(cfg.recording_seed.is_none());
+    }
+
+    #[test]
+    fn bass_anchor_results_legacy_migrates_v1_bass_cycles_to_duration() {
+        // Pre-v2 schema: bass_cycles + bass_freq_hz, no bass_duration_s.
+        let legacy = serde_json::json!({
+            "channels": [],
+            "sample_rate": 48_000_u32,
+            "bass_freq_hz": 30.0_f32,
+            "bass_cycles": 6_u16,
+        });
+        let r: BassAnchorResultsLegacy = serde_json::from_value(legacy).unwrap();
+        // 6 cycles at 30 Hz = 0.2 s.
+        assert!(
+            (r.bass_duration_s - 0.2).abs() < 1e-6,
+            "expected 0.2 s migrated from 6 cycles @ 30 Hz, got {}",
+            r.bass_duration_s
+        );
+        assert_eq!(r.sample_rate, 48_000);
+        assert_eq!(r.bass_freq_hz, 30.0);
+    }
+
+    #[test]
+    fn bass_anchor_results_prefers_explicit_duration_when_both_present() {
+        let mixed = serde_json::json!({
+            "channels": [],
+            "sample_rate": 48_000_u32,
+            "bass_freq_hz": 30.0_f32,
+            "bass_cycles": 6_u16,
+            "bass_duration_s": 2.5_f32,
+        });
+        let r: BassAnchorResultsLegacy = serde_json::from_value(mixed).unwrap();
+        assert!((r.bass_duration_s - 2.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn bass_anchor_results_v2_round_trips() {
+        let v2 = serde_json::json!({
+            "channels": [],
+            "sample_rate": 48_000_u32,
+            "bass_freq_hz": 30.0_f32,
+            "bass_duration_s": 2.0_f32,
+        });
+        let r: BassAnchorResultsLegacy = serde_json::from_value(v2).unwrap();
+        assert_eq!(r.bass_duration_s, 2.0);
     }
 
     #[test]

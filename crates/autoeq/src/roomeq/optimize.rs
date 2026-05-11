@@ -27,10 +27,12 @@ use super::pipeline::{
 use super::types::{
     ChannelDspChain, DspChainOutput, MeasurementSource, OptimizationMetadata, OptimizerConfig,
     PerceptualMetrics, ProcessingMode, RoomConfig, SpeakerConfig, SystemModel, TargetCurveConfig,
+    TargetShape,
 };
 
 // Private module imports for extracted functions
 use super::speaker_eq::process_single_speaker;
+use super::slope;
 
 use super::crossover_utils::check_group_consistency;
 use super::group_processing::{
@@ -143,6 +145,141 @@ pub(super) fn warn_if_optimizer_bounds_exceed_data(
              Filters in [{:.1} .. {:.1}] Hz will have no data to correct and will be ignored.",
             channel_name, opt.max_freq, data_max, data_max, opt.max_freq,
         );
+    }
+}
+
+/// Detect a sub channel's natural passband from its measurement curve.
+///
+/// Returns `(low_3db_hz, high_3db_hz)` — the frequencies at which the
+/// smoothed magnitude drops 3 dB below the in-band average. Returns
+/// `None` when the curve does not exhibit a clear passband (essentially
+/// flat noise floor, or insufficient samples).
+///
+/// Algorithm:
+/// 1. Smooth the curve at 1 octave to suppress room modes.
+/// 2. Find the peak SPL within [10, 500] Hz — restricting the peak
+///    search to the sub frequency range avoids picking up
+///    out-of-band noise floor as the "peak" when a sub measurement
+///    extends well above its passband.
+/// 3. Compute a log-frequency-weighted average across the band where
+///    smoothed SPL is within 2 dB of the peak — this is the
+///    "passband reference level".
+/// 4. Walk left and right from the peak until smoothed SPL drops 3 dB
+///    below the passband reference; linearly interpolate the crossing
+///    frequency in log-frequency / linear-dB space.
+///
+/// Used to clamp the optimizer's upper frequency bound for sub
+/// channels to the actual usable bandwidth — different subs roll off
+/// at very different frequencies (some 8" units at 80 Hz, full-range
+/// "subs" used as broad-band bass at 200–500 Hz). A static 160 Hz
+/// cap was either too low (full-range subs) or too high (sealed
+/// subs whose passband ends at 80 Hz).
+pub(super) fn detect_sub_passband_3db(curve: &Curve) -> Option<(f64, f64)> {
+    if curve.freq.len() < 4 || curve.spl.len() != curve.freq.len() {
+        return None;
+    }
+
+    let smoothed = crate::read::smooth_one_over_n_octave(curve, 1);
+    if smoothed.freq.len() < 4 {
+        return None;
+    }
+
+    // Restrict peak search to the sub frequency range. A sub measurement
+    // captured by a full-range mic can have legitimate energy above
+    // 1 kHz (handling noise, leakage); we don't want that to pull the
+    // peak detector out of the sub band.
+    const SUB_SEARCH_LO_HZ: f64 = 10.0;
+    const SUB_SEARCH_HI_HZ: f64 = 500.0;
+
+    let mut peak_idx: Option<usize> = None;
+    let mut peak_spl = f64::NEG_INFINITY;
+    for i in 0..smoothed.freq.len() {
+        let f = smoothed.freq[i];
+        if !(SUB_SEARCH_LO_HZ..=SUB_SEARCH_HI_HZ).contains(&f) {
+            continue;
+        }
+        let spl = smoothed.spl[i];
+        if spl.is_finite() && spl > peak_spl {
+            peak_spl = spl;
+            peak_idx = Some(i);
+        }
+    }
+    let peak_idx = peak_idx?;
+
+    // Define the in-band region as samples within 2 dB of the peak
+    // contiguous to peak_idx. This excludes any out-of-band leakage
+    // bumps that happen to be loud.
+    const IN_BAND_TOLERANCE_DB: f64 = 2.0;
+    let in_band_threshold = peak_spl - IN_BAND_TOLERANCE_DB;
+
+    let mut in_lo = peak_idx;
+    while in_lo > 0 && smoothed.spl[in_lo - 1] >= in_band_threshold {
+        in_lo -= 1;
+    }
+    let mut in_hi = peak_idx;
+    while in_hi + 1 < smoothed.spl.len() && smoothed.spl[in_hi + 1] >= in_band_threshold {
+        in_hi += 1;
+    }
+
+    let freqs_f32: Vec<f32> = smoothed.freq.iter().map(|&f| f as f32).collect();
+    let spl_f32: Vec<f32> = smoothed.spl.iter().map(|&s| s as f32).collect();
+    let band_avg = compute_average_response(
+        &freqs_f32,
+        &spl_f32,
+        Some((smoothed.freq[in_lo] as f32, smoothed.freq[in_hi] as f32)),
+    ) as f64;
+
+    if !band_avg.is_finite() {
+        return None;
+    }
+
+    let three_db = band_avg - 3.0;
+
+    // Walk left from the peak to find the low -3 dB crossing. If the
+    // measurement starts above the threshold (i.e. the sub already has
+    // bandwidth at the lowest measured frequency), return that lowest
+    // frequency.
+    let mut low_3db = smoothed.freq[0];
+    for i in (0..peak_idx).rev() {
+        let s_here = smoothed.spl[i];
+        if s_here <= three_db {
+            let f0 = smoothed.freq[i];
+            let f1 = smoothed.freq[i + 1];
+            let s1 = smoothed.spl[i + 1];
+            let denom = s1 - s_here;
+            low_3db = if denom.abs() > f64::EPSILON {
+                let t = ((three_db - s_here) / denom).clamp(0.0, 1.0);
+                (f0.ln() + t * (f1.ln() - f0.ln())).exp()
+            } else {
+                f0
+            };
+            break;
+        }
+    }
+
+    // Walk right from the peak to find the high -3 dB crossing.
+    let mut high_3db = smoothed.freq[smoothed.freq.len() - 1];
+    for i in (peak_idx + 1)..smoothed.spl.len() {
+        let s_here = smoothed.spl[i];
+        if s_here <= three_db {
+            let f0 = smoothed.freq[i - 1];
+            let f1 = smoothed.freq[i];
+            let s0 = smoothed.spl[i - 1];
+            let denom = s_here - s0;
+            high_3db = if denom.abs() > f64::EPSILON {
+                let t = ((three_db - s0) / denom).clamp(0.0, 1.0);
+                (f0.ln() + t * (f1.ln() - f0.ln())).exp()
+            } else {
+                f1
+            };
+            break;
+        }
+    }
+
+    if high_3db > low_3db {
+        Some((low_3db, high_3db))
+    } else {
+        None
     }
 }
 
@@ -311,7 +448,14 @@ pub enum CallbackAction {
     Stop,
 }
 
-/// Progress update for room optimization
+/// Progress update for room optimization.
+///
+/// Intentionally does **not** derive `Default` — an empty-speaker /
+/// zero-iteration record looks deceptively valid (it would be
+/// indistinguishable from a real iter-0 message) and would silently
+/// drive callers that gate on `current_speaker.is_empty()` or
+/// `iteration == 0`. Construct explicitly or via
+/// `From<&PipelineEvent>`.
 #[derive(Debug, Clone)]
 pub struct RoomOptimizationProgress {
     /// Current speaker being optimized
@@ -332,6 +476,14 @@ pub struct RoomOptimizationProgress {
     pub message: Option<String>,
     /// EPA preference score (higher = better), computed every N iterations
     pub epa_preference: Option<f64>,
+    /// Pipeline step the optimizer is currently working on. UIs use this
+    /// to render a step strip alongside the per-iteration loss chart so
+    /// the user can see which phase (validation, channel optimization,
+    /// FIR generation, channel matching, …) is active.
+    pub step_id: Option<PipelineStepId>,
+    /// Lifecycle status of `step_id`. Combined with `step_id` so the UI
+    /// can mark steps as Started → InProgress → Completed/Skipped.
+    pub step_status: Option<PipelineStepStatus>,
 }
 
 impl From<&PipelineEvent> for RoomOptimizationProgress {
@@ -346,6 +498,8 @@ impl From<&PipelineEvent> for RoomOptimizationProgress {
             overall_progress: event.overall_progress,
             message: event.message.clone(),
             epa_preference: event.epa_preference,
+            step_id: Some(event.step_id),
+            step_status: Some(event.status),
         }
     }
 }
@@ -665,6 +819,146 @@ fn sanity_check_result(result: &RoomOptimizationResult) -> Result<()> {
     Ok(())
 }
 
+/// Fixed iteration order for bed channels feeding the room-level
+/// `FromMeasurement` slope average. HashMap iteration is
+/// non-deterministic; sorting by this priority makes the resolved
+/// slope reproducible across runs of the same configuration. Front
+/// L/R lead because they are the most consistently positioned and
+/// most-measured pair in any layout.
+fn bed_channel_priority(role: super::home_cinema::HomeCinemaRole) -> Option<u8> {
+    use super::home_cinema::HomeCinemaRole as R;
+    match role {
+        R::FrontLeft => Some(0),
+        R::FrontRight => Some(1),
+        R::Center => Some(2),
+        R::SideSurroundLeft => Some(3),
+        R::SideSurroundRight => Some(4),
+        R::RearSurroundLeft => Some(5),
+        R::RearSurroundRight => Some(6),
+        R::WideLeft => Some(7),
+        R::WideRight => Some(8),
+        _ => None,
+    }
+}
+
+/// Resolve a single, system-wide `FromMeasurement` slope (dB/octave)
+/// by averaging the regression slope across every available bed
+/// channel.
+///
+/// Why averaging instead of "pick one":
+/// - Asymmetric L/R in-room slopes of 1–2 dB/oct are common in real
+///   rooms (one speaker near a corner, one in free space — Toole on
+///   SBIR). Picking the first channel via HashMap iteration order
+///   makes the resolved slope non-deterministic across runs of the
+///   same room.
+/// - Averaging across all bed channels reflects the room's
+///   collective tonal balance — what Dirac, Audyssey, and ARC do
+///   internally for their reference tilt estimation.
+///
+/// Channels backed by `Group`/`MultiSub`/`Dba`/`Cardioid` are skipped
+/// here because their per-driver curves are not the right input for
+/// a system-wide tilt regression. Sub/LFE channels are excluded — see
+/// `detect_sub_passband_3db` for why their bandwidth makes per-channel
+/// regression unreliable.
+///
+/// Picking rules:
+/// 1. Average slopes from every bed channel (front L/R, center,
+///    surrounds, wides) sorted by `bed_channel_priority`.
+/// 2. If no bed channels, fall back to the first non-sub channel
+///    (sorted alphabetically for determinism).
+/// 3. If no curve is loadable / regressable, return 0.0 (flat).
+fn resolve_from_measurement_slope(config: &RoomConfig) -> f64 {
+    let mut bed_channels: Vec<(u8, &str, &MeasurementSource)> = Vec::new();
+    let mut other_channels: Vec<(&str, &MeasurementSource)> = Vec::new();
+    for (channel_name, speaker_config) in &config.speakers {
+        let SpeakerConfig::Single(source) = speaker_config else {
+            continue;
+        };
+        let role = super::home_cinema::role_for_channel(channel_name);
+        if role.is_sub_or_lfe() {
+            continue;
+        }
+        if let Some(prio) = bed_channel_priority(role) {
+            bed_channels.push((prio, channel_name.as_str(), source));
+        } else {
+            other_channels.push((channel_name.as_str(), source));
+        }
+    }
+    bed_channels.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(b.1)));
+    other_channels.sort_by(|a, b| a.0.cmp(b.0));
+
+    let mut slopes: Vec<f64> = Vec::with_capacity(bed_channels.len());
+    for (_, name, source) in &bed_channels {
+        match crate::read::load_source(source) {
+            Ok(curve) => {
+                if let Some(s) = slope::estimate_slope_db_per_octave(
+                    &curve,
+                    slope::DEFAULT_SLOPE_MIN_FREQ,
+                    slope::DEFAULT_SLOPE_MAX_FREQ,
+                ) {
+                    info!(
+                        "  FromMeasurement: '{}' contributes slope = {:.2} dB/octave",
+                        name, s
+                    );
+                    slopes.push(s);
+                } else {
+                    debug!(
+                        "  FromMeasurement: '{}' produced no valid slope — skipped from average",
+                        name
+                    );
+                }
+            }
+            Err(e) => {
+                debug!(
+                    "  FromMeasurement: failed to load '{}' for slope averaging: {}",
+                    name, e
+                );
+            }
+        }
+    }
+
+    if !slopes.is_empty() {
+        let avg = slopes.iter().sum::<f64>() / slopes.len() as f64;
+        info!(
+            "  FromMeasurement: averaged room-level slope = {:.2} dB/octave from {} bed channel(s)",
+            avg,
+            slopes.len()
+        );
+        return avg;
+    }
+
+    // No bed channels usable — fall back to the first non-sub channel
+    // we can load (sorted for determinism).
+    for (name, source) in &other_channels {
+        match crate::read::load_source(source) {
+            Ok(curve) => {
+                let s = slope::estimate_slope_db_per_octave(
+                    &curve,
+                    slope::DEFAULT_SLOPE_MIN_FREQ,
+                    slope::DEFAULT_SLOPE_MAX_FREQ,
+                )
+                .unwrap_or(0.0);
+                info!(
+                    "  FromMeasurement: fallback slope = {:.2} dB/octave from non-bed channel '{}'",
+                    s, name
+                );
+                return s;
+            }
+            Err(e) => {
+                debug!(
+                    "  FromMeasurement: failed to load fallback '{}': {}",
+                    name, e
+                );
+            }
+        }
+    }
+
+    info!(
+        "  FromMeasurement: no usable reference channel — defaulting to 0.0 dB/octave"
+    );
+    0.0
+}
+
 fn optimize_room_impl(
     config: &RoomConfig,
     sample_rate: f64,
@@ -683,6 +977,23 @@ fn optimize_room_impl(
     )?;
 
     let mut config = config.clone();
+
+    // Resolve `TargetShape::FromMeasurement` slope once, system-wide,
+    // from a full-range reference channel — see
+    // `resolve_from_measurement_slope` for the picking rules. Lifting
+    // this out of the per-channel loop prevents band-limited channels
+    // (LFE, sub) from deriving a junk slope from their own rolled-off
+    // skirts.
+    if config
+        .optimizer
+        .target_response
+        .as_ref()
+        .is_some_and(|t| t.shape == TargetShape::FromMeasurement)
+        && config.optimizer.from_measurement_slope_override.is_none()
+    {
+        let resolved = resolve_from_measurement_slope(&config);
+        config.optimizer.from_measurement_slope_override = Some(resolved);
+    }
 
     // Pre-fetch CEA2034 data for all speakers when speaker pre-correction is enabled
     if config
@@ -806,6 +1117,8 @@ fn optimize_room_impl(
                             sys.speakers.len()
                         )),
                         epa_preference: None,
+                        step_id: None,
+                        step_status: None,
                     },
                 )?;
             }
@@ -853,6 +1166,8 @@ fn optimize_room_impl(
                                     overall_progress: overall,
                                     message: None,
                                     epa_preference: epa,
+                                    step_id: None,
+                                    step_status: None,
                                 },
                             ) {
                                 Ok(()) => crate::de::CallbackAction::Continue,
@@ -928,6 +1243,8 @@ fn optimize_room_impl(
                             summary.join("\n")
                         )),
                         epa_preference: None,
+                        step_id: None,
+                        step_status: None,
                     },
                 )?;
                 // Workflows only do IIR. If FIR/Hybrid mode is requested, post-generate
@@ -950,6 +1267,8 @@ fn optimize_room_impl(
                             overall_progress: 0.95,
                             message: Some("Generating FIR coefficients...".to_string()),
                             epa_preference: None,
+                            step_id: None,
+                            step_status: None,
                         },
                     )?;
                     let out_dir = output_dir.unwrap_or(Path::new("."));
@@ -1011,6 +1330,8 @@ fn optimize_room_impl(
                             overall_progress: 0.95,
                             message: Some("Generating mixed-phase FIR...".to_string()),
                             epa_preference: None,
+                            step_id: None,
+                            step_status: None,
                         },
                     )?;
                     let out_dir = output_dir.unwrap_or(Path::new("."));
@@ -1069,6 +1390,8 @@ fn optimize_room_impl(
                             overall_progress: 0.96,
                             message: Some("Phase correction...".to_string()),
                             epa_preference: None,
+                            step_id: None,
+                            step_status: None,
                         },
                     )?;
                 }
@@ -1144,6 +1467,8 @@ fn optimize_room_impl(
                         overall_progress: 0.97,
                         message: Some("Computing impulse responses...".to_string()),
                         epa_preference: None,
+                        step_id: None,
+                        step_status: None,
                     },
                 )?;
                 for (channel_name, ch_result) in &result.channel_results {
@@ -1183,6 +1508,8 @@ fn optimize_room_impl(
                             overall_progress: 0.98,
                             message: Some("Channel matching analysis...".to_string()),
                             epa_preference: None,
+                            step_id: None,
+                            step_status: None,
                         },
                     )?;
                     let plugin_count_before_icd: usize = result
@@ -1341,6 +1668,8 @@ fn optimize_room_impl(
                 total_speakers
             )),
             epa_preference: None,
+            step_id: None,
+            step_status: None,
         },
     )?;
 
@@ -1413,6 +1742,8 @@ fn optimize_room_impl(
                 overall_progress: speaker_idx as f64 / total_speakers as f64,
                 message: Some(format!("Processing channel: {}", channel_name)),
                 epa_preference: None,
+                step_id: None,
+                step_status: None,
             },
         )?;
 
@@ -1442,6 +1773,8 @@ fn optimize_room_impl(
                         overall_progress: overall,
                         message: None,
                         epa_preference: epa,
+                        step_id: None,
+                        step_status: None,
                     },
                 ) {
                     Ok(()) => crate::de::CallbackAction::Continue,
@@ -1490,6 +1823,8 @@ fn optimize_room_impl(
                             channel_name, pre_score, post_score
                         )),
                         epa_preference: None,
+                        step_id: None,
+                        step_status: None,
                     },
                 )?;
 
@@ -1526,6 +1861,8 @@ fn optimize_room_impl(
             overall_progress: 0.90,
             message: Some(format!("Optimized {} channels", total_speakers)),
             epa_preference: None,
+            step_id: None,
+            step_status: None,
         },
     )?;
 
@@ -1586,6 +1923,8 @@ fn optimize_room_impl(
                         channel_name
                     )),
                     epa_preference: None,
+                    step_id: None,
+                    step_status: None,
                 },
             )?;
             let generated = post_generate_fir(
@@ -1791,6 +2130,8 @@ fn optimize_room_impl(
                 overall_progress: 0.92,
                 message: Some("Spectral channel alignment...".to_string()),
                 epa_preference: None,
+                step_id: None,
+                step_status: None,
             },
         )?;
         let min_freq = config.optimizer.min_freq;
@@ -1948,6 +2289,8 @@ fn optimize_room_impl(
                     vog_config.reference_channel
                 )),
                 epa_preference: None,
+                step_id: None,
+                step_status: None,
             },
         )?;
         info!(
@@ -2058,6 +2401,8 @@ fn optimize_room_impl(
                     overall_progress: 0.0,
                     message: Some("Running phase alignment...".to_string()),
                     epa_preference: None,
+                    step_id: None,
+                    step_status: None,
                 },
             )?;
 
@@ -2183,6 +2528,8 @@ fn optimize_room_impl(
                 overall_progress: 0.96,
                 message: Some("Phase correction...".to_string()),
                 epa_preference: None,
+                step_id: None,
+                step_status: None,
             },
         )?;
     }
@@ -2264,6 +2611,8 @@ fn optimize_room_impl(
             overall_progress: 0.97,
             message: Some("Computing impulse responses...".to_string()),
             epa_preference: None,
+            step_id: None,
+            step_status: None,
         },
     )?;
     for (channel_name, result) in &channel_results {
@@ -2366,6 +2715,8 @@ fn optimize_room_impl(
                 overall_progress: 0.98,
                 message: Some("Channel matching analysis...".to_string()),
                 epa_preference: None,
+                step_id: None,
+                step_status: None,
             },
         )?;
         compute_and_correct_icd(&mut result, config, sample_rate);

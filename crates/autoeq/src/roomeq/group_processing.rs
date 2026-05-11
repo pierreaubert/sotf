@@ -204,6 +204,10 @@ pub(super) fn process_speaker_group(
     // 8. Global EQ (Optional Touch-up)
     // Run global EQ on the combined response to fix any remaining issues
     // but constrain it to be gentle if possible, or normal full optimization.
+    let min_freq = room_config.optimizer.min_freq;
+    let max_freq = room_config.optimizer.max_freq;
+    let pre_global_eq_score = flat_loss_score(&combined_curve, min_freq, max_freq);
+
     let (global_eq_filters, post_score) = eq::optimize_channel_eq(
         &combined_curve,
         &room_config.optimizer,
@@ -217,11 +221,29 @@ pub(super) fn process_speaker_group(
         ),
     })?;
 
-    info!("  Optimized {} Global EQ filters", global_eq_filters.len());
-    info!(
-        "  Pre-score: {:.6}, Post-score: {:.6}",
-        pre_score, post_score
-    );
+    let (global_eq_filters, post_score, final_curve) = if eq_score_regressed(
+        pre_global_eq_score,
+        post_score,
+    ) {
+        warn!(
+            "  Global EQ rejected for speaker group {}: flat loss {:.6} -> {:.6}",
+            channel_name, pre_global_eq_score, post_score
+        );
+        (Vec::new(), pre_global_eq_score, combined_curve.clone())
+    } else {
+        info!("  Optimized {} Global EQ filters", global_eq_filters.len());
+        info!(
+            "  Pre-score: {:.6}, Post-score: {:.6}",
+            pre_global_eq_score, post_score
+        );
+        let global_resp = response::compute_peq_complex_response(
+            &global_eq_filters,
+            &combined_curve.freq,
+            sample_rate,
+        );
+        let final_curve = response::apply_complex_response(&combined_curve, &global_resp);
+        (global_eq_filters, post_score, final_curve)
+    };
 
     // 9. Build Output DSP Chain
     // We now have per-driver filters AND global filters.
@@ -245,14 +267,6 @@ pub(super) fn process_speaker_group(
         None,
         Some(&driver_curves_for_display),
     );
-
-    // 10. Compute Final Response for validation
-    let global_resp = response::compute_peq_complex_response(
-        &global_eq_filters,
-        &combined_curve.freq,
-        sample_rate,
-    );
-    let final_curve = response::apply_complex_response(&combined_curve, &global_resp);
 
     // Detect passband
     let (norm_range, _passband_mean) = detect_passband_and_mean(&combined_curve);
@@ -342,6 +356,87 @@ mod tests {
             err.to_string().contains("requires measured phase"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    fn flat_loss_score_zero_for_flat_curve() {
+        let curve = Curve {
+            freq: array![100.0, 200.0, 400.0, 800.0, 1600.0],
+            spl: array![80.0, 80.0, 80.0, 80.0, 80.0],
+            phase: None,
+            ..Default::default()
+        };
+        let score = flat_loss_score(&curve, 100.0, 1600.0);
+        assert!(
+            score.abs() < 1e-6,
+            "perfectly flat curve should have zero loss, got {score}"
+        );
+    }
+
+    #[test]
+    fn flat_loss_score_positive_for_uneven_curve() {
+        let curve = Curve {
+            freq: array![100.0, 200.0, 400.0, 800.0, 1600.0],
+            spl: array![80.0, 85.0, 80.0, 75.0, 80.0],
+            phase: None,
+            ..Default::default()
+        };
+        let score = flat_loss_score(&curve, 100.0, 1600.0);
+        assert!(
+            score > 0.1,
+            "uneven curve should have positive loss, got {score}"
+        );
+    }
+
+    #[test]
+    fn cardioid_flat_response_does_not_regress() {
+        // Front and rear are identical flat curves with measured phase.
+        // The cardioid sum will be flat-ish; global EQ should not regress it.
+        let front = Curve {
+            freq: array![100.0, 200.0, 400.0, 800.0],
+            spl: array![80.0, 80.0, 80.0, 80.0],
+            phase: Some(array![0.0, 0.0, 0.0, 0.0]),
+            ..Default::default()
+        };
+        let rear = Curve {
+            freq: array![100.0, 200.0, 400.0, 800.0],
+            spl: array![80.0, 80.0, 80.0, 80.0],
+            phase: Some(array![0.0, 0.0, 0.0, 0.0]),
+            ..Default::default()
+        };
+        let cardioid = super::super::types::CardioidConfig {
+            name: "card".to_string(),
+            speaker_name: None,
+            front: MeasurementSource::InMemory(front),
+            rear: MeasurementSource::InMemory(rear),
+            separation_meters: 0.5,
+        };
+        let room_config = RoomConfig {
+            version: super::super::types::default_config_version(),
+            system: None,
+            speakers: HashMap::new(),
+            crossovers: None,
+            target_curve: None,
+            optimizer: OptimizerConfig {
+                min_freq: 100.0,
+                max_freq: 800.0,
+                num_filters: 1,
+                max_iter: 10,
+                population: 4,
+                seed: Some(42),
+                ..Default::default()
+            },
+            recording_config: None,
+            ctc: None,
+            cea2034_cache: None,
+        };
+
+        let result =
+            process_cardioid("LFE", &cardioid, &room_config, 48000.0, Path::new("."));
+        assert!(result.is_ok(), "Cardioid processing should succeed: {:?}", result);
+        let (_chain, _pre, post, _initial, _final, _filters, _mean, _arrival, _fir) =
+            result.unwrap();
+        assert!(post.is_finite(), "post_score must be finite after regression guard");
     }
 
     #[test]
@@ -1684,6 +1779,10 @@ pub(super) fn process_cardioid(
     };
 
     // 4. Optimize EQ
+    let min_freq = room_config.optimizer.min_freq;
+    let max_freq = room_config.optimizer.max_freq;
+    let pre_score = flat_loss_score(&combined_curve, min_freq, max_freq);
+
     let (eq_filters, post_score) = eq::optimize_channel_eq(
         &combined_curve,
         &room_config.optimizer,
@@ -1694,19 +1793,27 @@ pub(super) fn process_cardioid(
         message: format!("EQ optimization failed for Cardioid sum: {}", e),
     })?;
 
-    // Compute pre-score
-    let min_freq = room_config.optimizer.min_freq;
-    let max_freq = room_config.optimizer.max_freq;
-    let (norm_range, mean) = detect_passband_and_mean(&combined_curve);
-    let normalized_spl = &combined_curve.spl - mean;
-    let pre_score =
-        crate::loss::flat_loss(&combined_curve.freq, &normalized_spl, min_freq, max_freq);
-
-    info!(
-        "  Global EQ: {} filters, score={:.6}",
-        eq_filters.len(),
-        post_score
-    );
+    let (eq_filters, post_score, final_curve) = if eq_score_regressed(pre_score, post_score) {
+        warn!(
+            "  Global EQ rejected for Cardioid sum {}: flat loss {:.6} -> {:.6}",
+            channel_name, pre_score, post_score
+        );
+        (Vec::new(), pre_score, combined_curve.clone())
+    } else {
+        info!(
+            "  Global EQ: {} filters, pre={:.6}, post={:.6}",
+            eq_filters.len(),
+            pre_score,
+            post_score
+        );
+        let eq_resp = response::compute_peq_complex_response(
+            &eq_filters,
+            &combined_curve.freq,
+            sample_rate,
+        );
+        let final_curve = response::apply_complex_response(&combined_curve, &eq_resp);
+        (eq_filters, post_score, final_curve)
+    };
 
     // 5. Build Output Chain
     // Prepare display curves
@@ -1725,12 +1832,8 @@ pub(super) fn process_cardioid(
         Some(&driver_curves_for_display),
     );
 
-    // Final Curve calculation
-    let iir_resp =
-        response::compute_peq_complex_response(&eq_filters, &combined_curve.freq, sample_rate);
-    let final_curve = response::apply_complex_response(&combined_curve, &iir_resp);
-
     // Populate initial/final curves in chain
+    let (norm_range, _) = detect_passband_and_mean(&combined_curve);
     let display_initial = output::extend_curve_to_full_range(&combined_curve);
     let display_resp =
         response::compute_peq_complex_response(&eq_filters, &display_initial.freq, sample_rate);

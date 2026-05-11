@@ -201,7 +201,7 @@ pub fn estimate_arrival_from_phase_detailed(
     let delay_ms = -slope / (2.0 * PI) * 1000.0;
 
     // Sanity check: plausible acoustic propagation time (0–500 ms)
-    if delay_ms > 0.0 && delay_ms < 500.0 {
+    if delay_ms >= 0.0 && delay_ms < 500.0 {
         Ok(delay_ms)
     } else {
         Err(PhaseArrivalError::ImplausibleDelay { delay_ms })
@@ -677,6 +677,36 @@ mod tests {
             tau_ms,
             estimated,
             (estimated - tau_ms).abs()
+        );
+    }
+
+    #[test]
+    fn test_estimate_arrival_zero_delay_accepted() {
+        use ndarray::Array1;
+
+        // A speaker at the exact reference position has 0 ms propagation delay.
+        // Phase is flat (0° everywhere) → slope = 0 → delay = 0.
+        let freqs: Vec<f64> = (100..=5000).step_by(20).map(|f| f as f64).collect();
+        let phase_deg: Vec<f64> = freqs.iter().map(|_| 0.0).collect();
+
+        let curve = crate::Curve {
+            freq: Array1::from_vec(freqs),
+            spl: Array1::zeros(phase_deg.len()),
+            phase: Some(Array1::from_vec(phase_deg)),
+            ..Default::default()
+        };
+
+        let result = estimate_arrival_from_phase_detailed(&curve, 200.0, 4000.0);
+        assert!(
+            result.is_ok(),
+            "Exactly 0 ms delay should be accepted, not rejected as implausible: {:?}",
+            result
+        );
+        let delay = result.unwrap();
+        assert!(
+            delay.abs() < 0.01,
+            "Expected ~0 ms, got {} ms",
+            delay
         );
     }
 

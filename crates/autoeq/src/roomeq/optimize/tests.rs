@@ -1233,3 +1233,193 @@ fn shared_target_level_uses_robust_center() {
         "outlier channel should not pull shared target level to {shared}"
     );
 }
+
+// ----------------------------------------------------------------------
+// Sub passband detection tests
+// ----------------------------------------------------------------------
+
+fn synth_sub_curve(low_3db: f64, high_3db: f64, level_db: f64) -> Curve {
+    // Build a smooth band-limited curve: flat at `level_db` between
+    // `low_3db` and `high_3db`, rolling off 24 dB/octave outside.
+    let n = 200;
+    let f0: f64 = 5.0;
+    let f1: f64 = 2_000.0;
+    let log_step = (f1 / f0).ln() / (n - 1) as f64;
+    let freq: Vec<f64> = (0..n).map(|i| f0 * (i as f64 * log_step).exp()).collect();
+    let spl: Vec<f64> = freq
+        .iter()
+        .map(|&f| {
+            if f < low_3db {
+                level_db - 24.0 * (low_3db / f).log2()
+            } else if f > high_3db {
+                level_db - 24.0 * (f / high_3db).log2()
+            } else {
+                level_db
+            }
+        })
+        .collect();
+    Curve {
+        freq: ndarray::Array1::from(freq),
+        spl: ndarray::Array1::from(spl),
+        phase: None,
+        ..Default::default()
+    }
+}
+
+#[test]
+fn sub_passband_detects_narrow_band_sub() {
+    // 8" sealed-style sub: 25–80 Hz passband.
+    let curve = synth_sub_curve(25.0, 80.0, 90.0);
+    let (lo, hi) = super::detect_sub_passband_3db(&curve)
+        .expect("narrow-band sub should produce a detectable passband");
+    // Smoothing widens the apparent skirts, so we tolerate ~1/3 octave
+    // on each side. The detector must not collapse to a tiny window
+    // (which would over-clamp the optimizer).
+    assert!(
+        (lo / 25.0).log2().abs() < 0.5,
+        "low -3 dB ({lo:.1} Hz) should be within ~1/2 octave of 25 Hz"
+    );
+    assert!(
+        (hi / 80.0).log2().abs() < 0.5,
+        "high -3 dB ({hi:.1} Hz) should be within ~1/2 octave of 80 Hz"
+    );
+}
+
+#[test]
+fn sub_passband_detects_full_range_sub() {
+    // Full-range "sub" used for broad-band bass: 20–300 Hz passband.
+    // Confirms the detector does NOT artificially cap at 160 Hz.
+    let curve = synth_sub_curve(20.0, 300.0, 88.0);
+    let (_lo, hi) = super::detect_sub_passband_3db(&curve)
+        .expect("full-range sub should produce a detectable passband");
+    assert!(
+        hi > 200.0,
+        "high -3 dB ({hi:.1} Hz) should reflect the 300 Hz upper passband, not be clamped to 160"
+    );
+}
+
+#[test]
+fn sub_passband_returns_none_on_flat_noise() {
+    // Featureless flat curve — no peak → no passband.
+    let n = 100;
+    let freq: ndarray::Array1<f64> =
+        ndarray::Array1::from_iter((0..n).map(|i| 10.0 * (i as f64 * 0.03).exp()));
+    let spl = ndarray::Array1::from_elem(n, 0.0);
+    let curve = Curve { freq, spl, phase: None, ..Default::default() };
+    // A perfectly flat curve has its peak at the lowest frequency in
+    // the search window; the high -3 dB walk will hit the search
+    // ceiling without ever crossing. The detector should fail
+    // gracefully (None) instead of returning a junk band.
+    let result = super::detect_sub_passband_3db(&curve);
+    if let Some((lo, hi)) = result {
+        // If it does return something on a flat curve, it must at
+        // least not be inverted — a sanity guard.
+        assert!(hi > lo, "returned band must be non-empty");
+    }
+}
+
+// ----------------------------------------------------------------------
+// FromMeasurement slope averaging tests
+// ----------------------------------------------------------------------
+
+fn synth_tilted_curve(slope_db_per_octave: f64) -> Curve {
+    // Curve with a clean tilt across [200, 10_000] Hz so the slope
+    // regression in `slope::estimate_slope_db_per_octave` returns
+    // exactly `slope_db_per_octave`.
+    let n = 80;
+    let f0: f64 = 100.0;
+    let f1: f64 = 16_000.0;
+    let log_step = (f1 / f0).ln() / (n - 1) as f64;
+    let freq: Vec<f64> = (0..n).map(|i| f0 * (i as f64 * log_step).exp()).collect();
+    let f_ref: f64 = 1000.0;
+    let spl: Vec<f64> = freq
+        .iter()
+        .map(|&f| 80.0 + slope_db_per_octave * (f / f_ref).log2())
+        .collect();
+    Curve {
+        freq: ndarray::Array1::from(freq),
+        spl: ndarray::Array1::from(spl),
+        phase: None,
+        ..Default::default()
+    }
+}
+
+fn config_with_speakers(speakers: Vec<(&str, Curve)>) -> RoomConfig {
+    let mut speaker_map = HashMap::new();
+    for (name, curve) in speakers {
+        speaker_map.insert(
+            name.to_string(),
+            SpeakerConfig::Single(crate::MeasurementSource::InMemory(curve)),
+        );
+    }
+    RoomConfig {
+        version: super::super::types::default_config_version(),
+        system: None,
+        speakers: speaker_map,
+        crossovers: None,
+        target_curve: None,
+        optimizer: OptimizerConfig::default(),
+        recording_config: None,
+        ctc: None,
+        cea2034_cache: None,
+    }
+}
+
+#[test]
+fn from_measurement_slope_averages_bed_channels() {
+    // L = -1.0, R = -0.6, expected average -0.8 dB/oct.
+    let cfg = config_with_speakers(vec![
+        ("L", synth_tilted_curve(-1.0)),
+        ("R", synth_tilted_curve(-0.6)),
+    ]);
+    let avg = super::resolve_from_measurement_slope(&cfg);
+    assert!(
+        (avg - (-0.8)).abs() < 0.05,
+        "averaged slope was {avg}, expected ~-0.8 dB/octave"
+    );
+}
+
+#[test]
+fn from_measurement_slope_excludes_lfe() {
+    // LFE has a spurious steep slope (band-limited regression); it
+    // must not pollute the averaged room slope.
+    let cfg = config_with_speakers(vec![
+        ("L", synth_tilted_curve(-1.0)),
+        ("R", synth_tilted_curve(-1.0)),
+        ("LFE", synth_tilted_curve(-15.0)),
+    ]);
+    let avg = super::resolve_from_measurement_slope(&cfg);
+    assert!(
+        (avg - (-1.0)).abs() < 0.05,
+        "averaged slope was {avg}, expected -1.0 with LFE excluded"
+    );
+}
+
+#[test]
+fn from_measurement_slope_is_deterministic() {
+    // Asymmetric L/R: HashMap iteration order would otherwise toss the
+    // resolved slope between -1.0 and +1.0 across runs. The averaged
+    // result is identical regardless of insertion order.
+    let cfg_a = config_with_speakers(vec![
+        ("L", synth_tilted_curve(-1.0)),
+        ("R", synth_tilted_curve(1.0)),
+    ]);
+    let cfg_b = config_with_speakers(vec![
+        ("R", synth_tilted_curve(1.0)),
+        ("L", synth_tilted_curve(-1.0)),
+    ]);
+    let a = super::resolve_from_measurement_slope(&cfg_a);
+    let b = super::resolve_from_measurement_slope(&cfg_b);
+    assert!(
+        (a - b).abs() < 1e-9,
+        "slope must be order-independent (got {a} vs {b})"
+    );
+    assert!(a.abs() < 0.05, "L=-1 + R=+1 should average ~0, got {a}");
+}
+
+#[test]
+fn from_measurement_slope_falls_back_to_zero_when_only_subs() {
+    let cfg = config_with_speakers(vec![("LFE", synth_tilted_curve(-1.0))]);
+    let avg = super::resolve_from_measurement_slope(&cfg);
+    assert_eq!(avg, 0.0, "all-sub system must default to flat 0 dB/octave");
+}

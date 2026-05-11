@@ -83,6 +83,58 @@ pub enum PipelineStepId {
     SanityCheck,
 }
 
+impl PipelineStepId {
+    /// Canonical execution order of every pipeline step. Step indicators
+    /// in UIs render this list left-to-right; later steps are not all
+    /// always visited (TopologyWorkflowExecution vs
+    /// GenericChannelOptimization, MixedPhaseFirGeneration, etc.) and
+    /// will appear as `Skipped` in the live event stream.
+    pub const ALL: &'static [PipelineStepId] = &[
+        PipelineStepId::ConfigPreparation,
+        PipelineStepId::Validation,
+        PipelineStepId::TopologyRouteSelection,
+        PipelineStepId::TopologyWorkflowExecution,
+        PipelineStepId::GenericChannelOptimization,
+        PipelineStepId::FirGeneration,
+        PipelineStepId::MixedPhaseFirGeneration,
+        PipelineStepId::PhaseCorrection,
+        PipelineStepId::TimeAlignment,
+        PipelineStepId::SpectralAlignment,
+        PipelineStepId::VoiceOfGodAlignment,
+        PipelineStepId::PhaseAlignment,
+        PipelineStepId::GroupDelayOptimization,
+        PipelineStepId::ImpulseResponseComputation,
+        PipelineStepId::ChannelMatching,
+        PipelineStepId::MetadataRefresh,
+        PipelineStepId::SanityCheck,
+    ];
+
+    /// Short, human-readable label for status indicators. Matches the
+    /// log lines emitted by the pipeline so users can correlate the UI
+    /// step strip with the log scroll buffer.
+    pub fn label(&self) -> &'static str {
+        match self {
+            PipelineStepId::ConfigPreparation => "Config",
+            PipelineStepId::Validation => "Validate",
+            PipelineStepId::TopologyRouteSelection => "Route",
+            PipelineStepId::TopologyWorkflowExecution => "Topology",
+            PipelineStepId::GenericChannelOptimization => "Channels",
+            PipelineStepId::FirGeneration => "FIR",
+            PipelineStepId::MixedPhaseFirGeneration => "Mixed-Phase FIR",
+            PipelineStepId::PhaseCorrection => "Phase Corr.",
+            PipelineStepId::TimeAlignment => "Time Align",
+            PipelineStepId::SpectralAlignment => "Spectral Align",
+            PipelineStepId::VoiceOfGodAlignment => "VoG Align",
+            PipelineStepId::PhaseAlignment => "Phase Align",
+            PipelineStepId::GroupDelayOptimization => "GD-Opt",
+            PipelineStepId::ImpulseResponseComputation => "IR",
+            PipelineStepId::ChannelMatching => "Match",
+            PipelineStepId::MetadataRefresh => "Metadata",
+            PipelineStepId::SanityCheck => "Sanity",
+        }
+    }
+}
+
 /// Lifecycle status for a pipeline step event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PipelineStepStatus {

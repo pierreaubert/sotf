@@ -281,12 +281,15 @@ fn estimate_peak_q(freq: &Array1<f64>, spl: &Array1<f64>, peak_idx: usize) -> f6
         }
     }
 
-    // Compute bandwidth. Missing crossings use the measured band edge so wide
-    // unresolved bumps do not inherit the same Q as a truly narrow peak.
+    // Compute bandwidth. When both crossings are found, use them directly.
+    // When one side is missing, assume symmetry around the peak rather than
+    // snapping to the band edge — a broad bump near the edge would otherwise
+    // inherit an artificially narrow bandwidth and be misclassified as a high-Q
+    // room mode.
     let bandwidth = match (f_low, f_high) {
         (Some(lo), Some(hi)) => hi - lo,
-        (Some(lo), None) => freq[freq.len() - 1] - lo,
-        (None, Some(hi)) => hi - freq[0],
+        (Some(lo), None) => 2.0 * (f_center - lo),
+        (None, Some(hi)) => 2.0 * (hi - f_center),
         (None, None) => freq[freq.len() - 1] - freq[0],
     };
 
@@ -509,10 +512,11 @@ fn estimate_dip_q(freq: &Array1<f64>, spl: &Array1<f64>, dip_idx: usize) -> f64 
         }
     }
 
+    // Compute bandwidth using the same symmetric fallback as `estimate_peak_q`.
     let bandwidth = match (f_low, f_high) {
         (Some(lo), Some(hi)) => hi - lo,
-        (Some(lo), None) => freq[freq.len() - 1] - lo,
-        (None, Some(hi)) => hi - freq[0],
+        (Some(lo), None) => 2.0 * (f_center - lo),
+        (None, Some(hi)) => 2.0 * (hi - f_center),
         (None, None) => freq[freq.len() - 1] - freq[0],
     };
 
@@ -1238,6 +1242,52 @@ mod tests {
         assert!(
             q < 2.0,
             "wide bump with no -3 dB crossings should not be classified as Q=20, got {q:.1}"
+        );
+    }
+
+    #[test]
+    fn test_estimate_peak_q_one_sided_uses_symmetric_fallback() {
+        // Peak at 100 Hz with only the right -3 dB crossing visible.
+        // The left side starts above -3 dB (measurement begins at 50 Hz).
+        // Old behaviour: bandwidth = 150 - 50 = 100 Hz → Q = 1.0
+        // New behaviour: bandwidth = 2*(150-100) = 100 Hz → Q = 1.0
+        // Both agree here, but test a case where they differ:
+        //
+        // Peak at 100 Hz, right crossing at 110 Hz, measurement starts at 95 Hz.
+        // Old: bandwidth = 110 - 95 = 15 Hz → Q = 6.7 (false high-Q mode!)
+        // New: bandwidth = 2*(110-100) = 20 Hz → Q = 5.0 (still high but closer)
+        let freq = Array1::from_vec(vec![95.0, 97.0, 100.0, 105.0, 110.0, 200.0]);
+        let spl = Array1::from_vec(vec![88.0, 89.0, 90.0, 89.0, 87.0, 87.0]);
+
+        let q = estimate_peak_q(&freq, &spl, 2);
+        // With symmetric fallback, Q = 100 / (2 * 10) = 5.0
+        // With old band-edge fallback, Q = 100 / 15 = 6.7
+        assert!(
+            q < 6.0,
+            "one-sided crossing should use symmetric fallback, not band-edge; got Q={q:.2}"
+        );
+        assert!(
+            q > 3.0,
+            "Q should still reflect the visible right crossing; got Q={q:.2}"
+        );
+    }
+
+    #[test]
+    fn test_estimate_dip_q_one_sided_uses_symmetric_fallback() {
+        // Dip at 100 Hz with only the right +3 dB crossing visible.
+        let freq = Array1::from_vec(vec![95.0, 97.0, 100.0, 105.0, 110.0, 200.0]);
+        let spl = Array1::from_vec(vec![92.0, 91.0, 90.0, 91.0, 93.0, 93.0]);
+
+        let q = estimate_dip_q(&freq, &spl, 2);
+        // With symmetric fallback, Q = 100 / (2 * 10) = 5.0
+        // With old band-edge fallback, Q = 100 / 15 = 6.7
+        assert!(
+            q < 6.0,
+            "one-sided crossing should use symmetric fallback, not band-edge; got Q={q:.2}"
+        );
+        assert!(
+            q > 3.0,
+            "Q should still reflect the visible right crossing; got Q={q:.2}"
         );
     }
 
