@@ -1027,10 +1027,14 @@ fn phase_linear_gd_target_is_encoded_into_fir_not_delay_plugin() {
         "PhaseLinear GD must be encoded in FIR coefficients, not delay plugins"
     );
 
+
+    // With fractional-sample delay, the impulse energy is interpolated across
+    // adjacent taps. A threshold of 0.3 catches all non-trivial shifts while
+    // tolerating the linear-interpolation spreading of a fractional delay.
     let shifted = channel_results
         .values()
         .filter_map(|result| result.fir_coeffs.as_ref())
-        .any(|coeffs| coeffs.iter().position(|v| v.abs() > 0.5).unwrap_or(0) > 0);
+        .any(|coeffs| coeffs.iter().position(|v| v.abs() > 0.3).unwrap_or(0) > 0);
     assert!(shifted, "at least one FIR impulse should be sample-shifted");
 }
 
@@ -1305,17 +1309,21 @@ fn sub_passband_returns_none_on_flat_noise() {
     let freq: ndarray::Array1<f64> =
         ndarray::Array1::from_iter((0..n).map(|i| 10.0 * (i as f64 * 0.03).exp()));
     let spl = ndarray::Array1::from_elem(n, 0.0);
-    let curve = Curve { freq, spl, phase: None, ..Default::default() };
+    let curve = Curve {
+        freq,
+        spl,
+        phase: None,
+        ..Default::default()
+    };
     // A perfectly flat curve has its peak at the lowest frequency in
     // the search window; the high -3 dB walk will hit the search
     // ceiling without ever crossing. The detector should fail
     // gracefully (None) instead of returning a junk band.
     let result = super::detect_sub_passband_3db(&curve);
-    if let Some((lo, hi)) = result {
-        // If it does return something on a flat curve, it must at
-        // least not be inverted — a sanity guard.
-        assert!(hi > lo, "returned band must be non-empty");
-    }
+    assert!(
+        result.is_none(),
+        "flat/no-crossing curve returned {result:?}"
+    );
 }
 
 // ----------------------------------------------------------------------

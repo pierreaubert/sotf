@@ -813,10 +813,10 @@ fn compute_octave_weights(freq: &Array1<f64>) -> Array1<f64> {
     for i in 1..n - 1 {
         weights[i] = (log2_freq[i + 1] - log2_freq[i - 1]) / 2.0;
     }
-    // Boundary points
+    // Boundary points: half the single-sided span, matching the interior convention
     if n >= 2 {
-        weights[0] = log2_freq[1] - log2_freq[0];
-        weights[n - 1] = log2_freq[n - 1] - log2_freq[n - 2];
+        weights[0] = (log2_freq[1] - log2_freq[0]) / 2.0;
+        weights[n - 1] = (log2_freq[n - 1] - log2_freq[n - 2]) / 2.0;
     }
 
     // Normalize so sum = n (preserves scale of the residual)
@@ -1088,6 +1088,28 @@ mod tests {
             (actual - expected).abs() < 1e-9,
             "expected {expected}, got {actual}"
         );
+    }
+
+    #[test]
+    fn octave_weights_use_half_span_at_boundaries() {
+        // Non-uniform log spacing: 100→200 is 1 oct, 200→300 is 0.58 oct, 300→600 is 1 oct.
+        let freq = Array1::from_vec(vec![100.0, 200.0, 300.0, 600.0]);
+        let weights = compute_octave_weights(&freq);
+
+        // Reconstruct raw (pre-normalization) weights from normalized ones.
+        // Normalization: weights_norm[i] = weights_raw[i] * n / total_raw
+        // Therefore: total_raw = n / (sum(weights_norm) / total_raw) ... circular.
+        // Easier: since normalization preserves ratios, check ratios directly.
+        let n = freq.len() as f64;
+        // The normalized weights sum to n. So weights_raw = weights_norm * total_raw / n.
+        // We know total_raw = 0.5 + 0.792481 + 0.792481 + 0.5 = 2.5849625.
+        let expected_total_raw = 2.584962500721156;
+        let raw: Vec<f64> = weights.iter().map(|&w| w * expected_total_raw / n).collect();
+
+        assert_close(raw[0], 0.5);
+        assert_close(raw[1], 0.792481250360578);
+        assert_close(raw[2], 0.792481250360578);
+        assert_close(raw[3], 0.5);
     }
 
     /// Build a simple Curve at log-spaced frequencies from 20 Hz to 20 kHz

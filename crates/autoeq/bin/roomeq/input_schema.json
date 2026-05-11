@@ -111,13 +111,211 @@
     "version": {
       "description": "Configuration version (semantic versioning, e.g. \"1.0.0\")",
       "type": "string",
-      "default": "3.0.0"
+      "default": "2.0.0"
     }
   },
   "required": [
     "speakers"
   ],
   "$defs": {
+    "AreaPriorKind": {
+      "description": "Probability density shape over positions, JSON-serialisable.",
+      "oneOf": [
+        {
+          "description": "Uniform density over the configured `bounds`.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "uniform"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "Axis-aligned Gaussian density. `mean` and `cov_diag` must each have\nlength equal to the number of dimensions; truncated at ±k·σ.",
+          "type": "object",
+          "properties": {
+            "cov_diag": {
+              "description": "Per-axis variances (must be > 0).",
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "double"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "const": "gaussian"
+            },
+            "mean": {
+              "description": "Per-axis means.",
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "double"
+              }
+            },
+            "truncation_sigmas": {
+              "description": "Truncation in standard deviations. Default 4.0.",
+              "type": "number",
+              "format": "double",
+              "default": 4.0
+            }
+          },
+          "required": [
+            "kind",
+            "mean",
+            "cov_diag"
+          ]
+        }
+      ]
+    },
+    "AreaQuadratureKind": {
+      "description": "Quadrature scheme for discretising the prior integral, JSON-serialisable.",
+      "oneOf": [
+        {
+          "description": "Sobol low-discrepancy QMC with `num_points` samples.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "sobol"
+            },
+            "num_points": {
+              "description": "Number of quadrature points (powers of two are most efficient).",
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0
+            },
+            "seed": {
+              "description": "PRNG seed.",
+              "type": "integer",
+              "format": "uint64",
+              "default": 0,
+              "minimum": 0
+            }
+          },
+          "required": [
+            "kind",
+            "num_points"
+          ]
+        },
+        {
+          "description": "Latin-Hypercube sampling.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "latin_hypercube"
+            },
+            "num_points": {
+              "description": "Number of quadrature points.",
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0
+            },
+            "seed": {
+              "description": "PRNG seed.",
+              "type": "integer",
+              "format": "uint64",
+              "default": 0,
+              "minimum": 0
+            }
+          },
+          "required": [
+            "kind",
+            "num_points"
+          ]
+        },
+        {
+          "description": "Gauss–Legendre tensor product. Total points = `points_per_axis^D`.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "gauss_legendre"
+            },
+            "points_per_axis": {
+              "description": "Nodes per axis.",
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "kind",
+            "points_per_axis"
+          ]
+        }
+      ]
+    },
+    "AreaScalarisationKind": {
+      "description": "How to scalarise per-quadrature-point losses, JSON-serialisable.",
+      "oneOf": [
+        {
+          "description": "Probability-weighted mean (expected loss over the listening area).",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "expected_value"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "Worst-case (max) over the area's bounding box. Inner DE search.",
+          "type": "object",
+          "properties": {
+            "inner_maxiter": {
+              "description": "Inner-search budget. Default 50.",
+              "type": "integer",
+              "format": "uint",
+              "default": 50,
+              "minimum": 0
+            },
+            "inner_seed": {
+              "description": "Inner-search seed.",
+              "type": "integer",
+              "format": "uint64",
+              "default": 0,
+              "minimum": 0
+            },
+            "kind": {
+              "type": "string",
+              "const": "worst_case"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "CVaR at level α — mean of the worst α-fraction of points.",
+          "type": "object",
+          "properties": {
+            "alpha": {
+              "description": "Tail fraction in (0, 1].",
+              "type": "number",
+              "format": "double",
+              "default": 0.2
+            },
+            "kind": {
+              "type": "string",
+              "const": "cvar"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        }
+      ]
+    },
     "AutoOptimizerConfig": {
       "description": "Opt-in automatic room EQ optimizer bound selection.",
       "type": "object",
@@ -162,18 +360,34 @@
       "description": "Per-channel bass-anchor result (mirror of `BassAnchorChannelResult`).",
       "type": "object",
       "properties": {
+        "bass_anchor_coherence": {
+          "description": "Magnitude-squared coherence γ² ∈ [0, 1] between the mic and the\nloopback per-window phasors at `bass_freq_hz`. Conventional QA\nthreshold is γ² > 0.9. `None` when no loopback channel was\nrecorded.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "bass_anchor_loopback_phase_deg": {
+          "description": "Raw loopback reference phase in degrees (sin-referenced).\n`None` when no loopback channel was recorded.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
         "bass_anchor_magnitude": {
-          "description": "Linear magnitude of the DFT bin at the bass frequency.\nUsed as an SNR proxy.",
+          "description": "Linear magnitude of the lock-in I/Q estimator at\n`bass_freq_hz` on the mic. SNR proxy.",
           "type": "number",
           "format": "double"
         },
         "bass_anchor_phase_deg": {
-          "description": "Measured phase of the bass tone at the listening position,\ndegrees in `(−180°, 180°]`, sin-referenced against the emitted\nburst.",
+          "description": "Reported phase of the bass tone at the listening position,\ndegrees in `(−180°, 180°]`, sin-referenced. When a loopback\nreference channel was recorded this is the loopback-corrected\nacoustic phase (`phase_mic − phase_loopback`); see\n`bass_anchor_loopback_phase_deg` for the raw loopback value.",
           "type": "number",
           "format": "double"
         },
         "bass_anchor_stability_deg": {
-          "description": "|phase_half1 − phase_half2| in degrees. Values above the\n`\"bass_anchor_unreliable\"` advisory threshold (§2.8, 20°) mean\nthe GD confidence gate should discard this channel's anchor.",
+          "description": "Circular standard deviation of phase across the sub-window\nlock-in estimates, in degrees. Values above the\n`\"bass_anchor_unreliable\"` advisory threshold (§2.8, 20°) mean\nthe GD confidence gate should discard this channel's anchor.",
           "type": "number",
           "format": "double"
         },
@@ -197,18 +411,16 @@
       ]
     },
     "BassAnchorResultsLegacy": {
-      "description": "Serializable mirror of the engine's `BassAnchorResults`. Captures\nthe per-channel phase at the bass anchor frequency so that GD-Opt\nv2's confidence gate (§3.5 of `docs/gd_opt_v2_plan.md`) and\noptimiser (§3.2) can ingest it at config-load time without\ndepending on `sotf-engine`.",
+      "description": "Serializable mirror of the engine's `BassAnchorResults`. Captures\nthe per-channel phase at the bass anchor frequency so that GD-Opt\nv2's confidence gate (§3.5 of `docs/gd_opt_v2_plan.md`) and\noptimiser (§3.2) can ingest it at config-load time without\ndepending on `sotf-engine`.\n\nImplements a custom `Deserialize` that also accepts the pre-v2\nschema field name `bass_cycles: u16`; when present (and\n`bass_duration_s` is absent) it is converted to seconds via\n`cycles / bass_freq_hz` so older recordings.json files load without\nre-recording.",
       "type": "object",
       "properties": {
-        "bass_cycles": {
-          "description": "Number of cycles in the burst (nominal 5).",
-          "type": "integer",
-          "format": "uint16",
-          "maximum": 65535,
-          "minimum": 0
+        "bass_duration_s": {
+          "description": "Total tone length in seconds (steady portion + fades). Nominal 2.0.",
+          "type": "number",
+          "format": "float"
         },
         "bass_freq_hz": {
-          "description": "Tone-burst centre frequency in Hz (nominal 20 Hz).",
+          "description": "Centre frequency of the steady-state tone in Hz (nominal 30 Hz).",
           "type": "number",
           "format": "float"
         },
@@ -230,7 +442,7 @@
         "channels",
         "sample_rate",
         "bass_freq_hz",
-        "bass_cycles"
+        "bass_duration_s"
       ]
     },
     "BassHeadroomModelConfig": {
@@ -335,6 +547,58 @@
         }
       }
     },
+    "BootstrapScalarisation": {
+      "description": "How to scalarise the per-bootstrap-resample losses into one outer-loop loss.",
+      "oneOf": [
+        {
+          "description": "Pure worst-case: max loss across the B resamples. Most conservative; can be\ndriven by a single outlier resample.",
+          "type": "string",
+          "const": "worst_case"
+        },
+        {
+          "description": "Mean of the worst α-fraction of resamples (CVaR). Smoother, less sensitive\nto a single freak resample than `WorstCase`.",
+          "type": "string",
+          "const": "cvar"
+        }
+      ]
+    },
+    "BootstrapUncertaintyConfig": {
+      "description": "Serializable bootstrap uncertainty configuration for JSON config files.\n\nDrives `MultiMeasurementStrategy::MinimaxUncertainty`. At optimizer-setup\ntime, the input N measurement curves are case-bootstrap resampled B times;\neach resampled mean becomes its own per-measurement objective. The outer\noptimizer then scalarises the B objectives per `scalarisation`.",
+      "type": "object",
+      "properties": {
+        "alpha": {
+          "description": "Two-sided confidence level α; band covers `[α/2, 1-α/2]`. Default: 0.10.",
+          "type": "number",
+          "format": "double",
+          "default": 0.1
+        },
+        "cvar_alpha": {
+          "description": "Tail fraction for CVaR (only used when `scalarisation = Cvar`). Default 0.20.",
+          "type": "number",
+          "format": "double",
+          "default": 0.2
+        },
+        "num_resamples": {
+          "description": "Number of bootstrap resamples B. Typical: 200..1000. Default: 400.",
+          "type": "integer",
+          "format": "uint",
+          "default": 400,
+          "minimum": 0
+        },
+        "scalarisation": {
+          "description": "Scalarisation across the B resamples.",
+          "$ref": "#/$defs/BootstrapScalarisation",
+          "default": "worst_case"
+        },
+        "seed": {
+          "description": "PRNG seed for determinism.",
+          "type": "integer",
+          "format": "uint64",
+          "default": 12648430,
+          "minimum": 0
+        }
+      }
+    },
     "CardioidConfig": {
       "description": "Configuration for Gradient Cardioid Subwoofer (2 subwoofers)",
       "type": "object",
@@ -376,7 +640,7 @@
       "type": "object",
       "properties": {
         "correction_mode": {
-          "description": "Correction mode: flat (nearfield), score (farfield), auto (distance-based)",
+          "description": "Correction mode: flat, score (unsupported in roomeq), auto (distance-aware flat)",
           "$ref": "#/$defs/Cea2034CorrectionMode",
           "default": "auto"
         },
@@ -420,7 +684,7 @@
           "format": "double"
         },
         "nearfield_threshold_m": {
-          "description": "Distance threshold in meters for auto mode switch (default: 2.0m)",
+          "description": "Distance threshold in meters for auto-mode diagnostics (default: 2.0m)",
           "type": "number",
           "format": "double",
           "default": 2.0
@@ -463,12 +727,12 @@
           "const": "flat"
         },
         {
-          "description": "Optimize full Harman speaker preference score using all CEA2034 curves",
+          "description": "Unsupported in roomeq; Harman speaker score is anechoic-only",
           "type": "string",
           "const": "score"
         },
         {
-          "description": "Auto-select based on estimated listening distance from impulse response",
+          "description": "Auto-select the supported roomeq pre-correction from listening distance",
           "type": "string",
           "const": "auto"
         }
@@ -497,6 +761,82 @@
           "default": 0.75
         }
       }
+    },
+    "ContinuousListeningAreaConfig": {
+      "description": "Serializable continuous listening-area configuration for JSON config files.\n\nDrives `MultiSeatStrategy::ContinuousArea`. The optimizer integrates the\nper-position objective over a continuous prior π(p) defined over a\n`dimensions`-dimensional axis-aligned box, replacing the discrete seats\narray with a continuous probability density.\n\n`bounds.len()` must equal `dimensions`. For Gaussian priors,\n`mean.len()` and `cov_diag.len()` must also equal `dimensions`.\n`seat_positions.len()` must equal the number of discrete seats in the\ncalibration `MultiSeatMeasurements` and each row's length must equal\n`dimensions`.",
+      "type": "object",
+      "properties": {
+        "bounds": {
+          "description": "Per-axis bounding-box bounds `(lo, hi)`. Always required; even for\nGaussian priors the bounds determine the truncation rectangle.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number",
+                "format": "double"
+              },
+              {
+                "type": "number",
+                "format": "double"
+              }
+            ]
+          }
+        },
+        "dimensions": {
+          "description": "Number of spatial dimensions (typical: 1 for a couch line, 2 for an\nMLP rectangle, 3 for a head-volume sweep). Currently 1, 2, and 3 are\nsupported by the runtime dispatcher.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "idw_power": {
+          "description": "IDW power exponent for spatial interpolation (default 2.0).",
+          "type": "number",
+          "format": "double",
+          "default": 2.0
+        },
+        "prior": {
+          "description": "Probability density shape.",
+          "$ref": "#/$defs/AreaPriorKind",
+          "default": {
+            "kind": "uniform"
+          }
+        },
+        "quadrature": {
+          "description": "Quadrature scheme.",
+          "$ref": "#/$defs/AreaQuadratureKind",
+          "default": {
+            "kind": "sobol",
+            "num_points": 64,
+            "seed": 12648430
+          }
+        },
+        "scalarisation": {
+          "description": "How to scalarise the Q per-point losses.",
+          "$ref": "#/$defs/AreaScalarisationKind",
+          "default": {
+            "kind": "expected_value"
+          }
+        },
+        "seat_positions": {
+          "description": "Spatial coordinates of each calibration seat in\n`MultiSeatMeasurements`. Outer length = number of seats, inner length =\n`dimensions`. Order must match the seat index in the measurements.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            }
+          }
+        }
+      },
+      "required": [
+        "dimensions",
+        "bounds",
+        "seat_positions"
+      ]
     },
     "CrossoverConfig": {
       "description": "Crossover configuration",
@@ -1548,6 +1888,17 @@
       "description": "Configuration for multi-measurement optimization",
       "type": "object",
       "properties": {
+        "bootstrap_uncertainty": {
+          "description": "Bootstrap uncertainty configuration (used when strategy = MinimaxUncertainty).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BootstrapUncertaintyConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "spatial_robustness": {
           "description": "Spatial robustness configuration (used when strategy = SpatialRobustness)",
           "anyOf": [
@@ -1610,6 +1961,11 @@
           "description": "Spatial robustness: RMS-average + correction depth mask based on spatial variance.\nOnly corrects features consistent across positions.",
           "type": "string",
           "const": "spatial_robustness"
+        },
+        {
+          "description": "Measurement-uncertainty-aware robust optimization. Generates B\ncase-bootstrap resamples of the input curves at setup time, then\nscalarises losses across the resampled targets per the configured\n`BootstrapUncertaintyConfig::scalarisation` (worst-case or CVaR).\nDrives the optimizer toward a solution that is robust to which\nresample of the measurement set is \"true\".",
+          "type": "string",
+          "const": "minimax_uncertainty"
         }
       ]
     },
@@ -1633,6 +1989,17 @@
           "format": "uint",
           "default": 0,
           "minimum": 0
+        },
+        "continuous_area": {
+          "description": "Continuous listening-area prior. Required (and only consulted) when\n`strategy = ContinuousArea`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContinuousListeningAreaConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "enabled": {
           "description": "Enable multi-seat optimization",
@@ -1713,6 +2080,11 @@
           "description": "Complex modal-basis sound-field management across seats",
           "type": "string",
           "const": "modal_basis"
+        },
+        {
+          "description": "Continuous listening-area prior: integrate the variance / mean / worst-case\nobjective over a probability density over positions, instead of the\ndiscrete seat slots. Requires `MultiSeatConfig::continuous_area` to be set.",
+          "type": "string",
+          "const": "continuous_area"
         }
       ]
     },
@@ -2335,12 +2707,12 @@
           "const": "mixed_phase"
         },
         {
-          "description": "Warped IIR mode — biquads designed on a Bark-scale warped frequency axis.\nConcentrates filter resolution in bass/low-mid where room modes live.\nSame latency as LowLatency but perceptually-weighted correction.",
+          "description": "Warped IIR mode — not currently supported by roomeq output/export.\nValidation rejects this mode until warped filter design and serialization\nare integrated end-to-end.",
           "type": "string",
           "const": "warped_iir"
         },
         {
-          "description": "Kautz modal mode — pole-tuned filter targeting detected room modes.\nUses room mode analysis to place filter poles at resonance frequencies.\nGain optimization via linear least-squares (very fast, no DE needed).\nBest for small, highly resonant rooms with clear modal problems.",
+          "description": "Kautz modal mode — pole-tuned filter targeting detected room modes.\nUses room mode analysis to place filter poles at resonance frequencies.\nGain optimization via linear least-squares (very fast, no DE needed).\nBest for small, highly resonant rooms with clear modal problems.\nReturns an error if no room modes are detected.",
           "type": "string",
           "const": "kautz_modal"
         }
@@ -2376,15 +2748,13 @@
           ],
           "format": "float"
         },
-        "bass_probe_cycles": {
-          "description": "Number of cycles in the bass tone burst. Default 5.",
+        "bass_probe_duration_s": {
+          "description": "Total length of the steady-state bass-anchor tone in seconds\n(steady portion + fades). Default 2.0.\n\nThe pre-v2 schema stored `bass_probe_cycles: u16` here — it's\ndropped silently at load (the units differ and converting\nrequires `bass_probe_freq_hz` which serde sees per-field). The\nper-result `BassAnchorResultsLegacy::bass_duration_s` migration\nhandles legacy run-output files (where the conversion is well\ndefined).",
           "type": [
-            "integer",
+            "number",
             "null"
           ],
-          "format": "uint16",
-          "maximum": 65535,
-          "minimum": 0
+          "format": "float"
         },
         "bass_probe_freq_hz": {
           "description": "Centre frequency of the bass tone burst captured by the\nBassAnchor wizard step. Default 20.0 Hz (or\n`1.25 * min_freq`, whichever is higher).",

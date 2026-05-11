@@ -37,7 +37,7 @@ pub fn build_complete_target_curve(freqs: &Array1<f64>, config: &TargetResponseC
         }
     };
 
-    let ref_freq = config.reference_freq;
+    let ref_freq = config.reference_freq.max(1.0);
     let pref = &config.preference;
 
     let spl = Array1::from_shape_fn(freqs.len(), |i| {
@@ -47,7 +47,10 @@ pub fn build_complete_target_curve(freqs: &Array1<f64>, config: &TargetResponseC
         let tilt_db = slope * (f / ref_freq).log2();
 
         // Bass shelf preference (smooth 2nd-order transition)
-        let bass_adj = if pref.bass_shelf_db.abs() > 0.001 && f < pref.bass_shelf_freq * 2.0 {
+        let bass_adj = if pref.bass_shelf_db.abs() > 0.001
+            && pref.bass_shelf_freq > 0.0
+            && f < pref.bass_shelf_freq * 2.0
+        {
             let ratio = f / pref.bass_shelf_freq;
             let transition = 1.0 / (1.0 + ratio.powi(2));
             pref.bass_shelf_db * transition
@@ -57,7 +60,9 @@ pub fn build_complete_target_curve(freqs: &Array1<f64>, config: &TargetResponseC
 
         // Treble shelf preference (smooth 2nd-order transition)
         // Uses 4th-order for steeper onset: ~90% at 2x shelf_freq, ~50% at shelf_freq
-        let treble_adj = if pref.treble_shelf_db.abs() > 0.001 && f > pref.treble_shelf_freq * 0.25
+        let treble_adj = if pref.treble_shelf_db.abs() > 0.001
+            && pref.treble_shelf_freq > 0.0
+            && f > pref.treble_shelf_freq * 0.25
         {
             let ratio = f / pref.treble_shelf_freq;
             let transition = 1.0 / (1.0 + (1.0 / ratio).powi(4));

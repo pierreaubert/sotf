@@ -881,7 +881,7 @@ pub(super) fn process_single_speaker(
         // already gate filter placement at the low end.
         if is_sub_channel {
             let measured_upper =
-                super::optimize::detect_sub_passband_3db(&curve).map(|(_lo, hi)| hi);
+                super::optimize::detect_sub_passband_3db(&curve_raw).map(|(_lo, hi)| hi);
             let crossover_upper = super::home_cinema::effective_bass_management(room_config)
                 .and_then(|bm| bm.crossover_frequency_hz)
                 .map(|xo| 2.0 * xo);
@@ -2102,5 +2102,69 @@ mod tests {
         assert_eq!(bands[0], (20.0, 6000.0));
         assert_eq!(bands[1], (100.0, 6000.0));
         assert_eq!(bands[2], (100.0, 20000.0));
+    }
+
+    #[test]
+    fn sub_passband_detected_on_raw_curve_not_hpf_corrected() {
+        // A sub curve that extends flat from ~20 Hz to ~200 Hz then rolls off.
+        // Excursion protection adds an HPF at ~80 Hz.
+        // The sub passband detection must see the RAW curve (low bound ~20 Hz),
+        // not the HPF-corrected curve (which would incorrectly report a higher
+        // low bound because the HPF attenuates the low end).
+        let freq = Array1::logspace(10.0, f64::log10(20.0), f64::log10(500.0), 64);
+        let spl: Vec<f64> = freq
+            .iter()
+            .map(|&f| {
+                if f < 200.0 {
+                    80.0
+                } else {
+                    80.0 - 20.0 * ((f / 200.0).log2().max(0.0))
+                }
+            })
+            .collect();
+        let raw_curve = Curve {
+            freq: freq.clone(),
+            spl: Array1::from(spl),
+            phase: None,
+            ..Default::default()
+        };
+
+        // Simulate excursion HPF: a 24 dB/oct HPF at 80 Hz
+        let hpf = math_audio_iir_fir::Biquad::new(
+            math_audio_iir_fir::BiquadFilterType::Highpass,
+            80.0,
+            48000.0,
+            0.707,
+            0.0,
+        );
+        let hpf_resp =
+            crate::response::compute_peq_complex_response(&[hpf], &raw_curve.freq, 48000.0);
+        let hpf_curve = crate::response::apply_complex_response(&raw_curve, &hpf_resp);
+
+        let raw_band = super::super::optimize::detect_sub_passband_3db(&raw_curve);
+        let hpf_band = super::super::optimize::detect_sub_passband_3db(&hpf_curve);
+
+        let raw_band = raw_band.expect("raw curve should have passband");
+        let hpf_band = hpf_band.expect("hpf curve should have passband");
+
+        // The raw curve has full bass extension, so the low bound should be low
+        assert!(
+            raw_band.0 < 40.0,
+            "raw curve low bound should be ~20-30 Hz, got {:.1}",
+            raw_band.0
+        );
+        // The HPF pulls up the low bound significantly
+        assert!(
+            hpf_band.0 > 50.0,
+            "hpf curve low bound should be pulled up by HPF, got {:.1}",
+            hpf_band.0
+        );
+        // The high bound should be similar for both (HPF doesn't affect high end)
+        assert!(
+            (raw_band.1 - hpf_band.1).abs() < 30.0,
+            "high bounds should be similar: raw={:.1} hpf={:.1}",
+            raw_band.1,
+            hpf_band.1
+        );
     }
 }

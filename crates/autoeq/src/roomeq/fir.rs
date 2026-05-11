@@ -160,8 +160,8 @@ pub fn generate_fir_correction_with_gd_target(
         .copied()
         .filter(|d| d.abs() > 1e-6)
     {
-        let delay_samples = (delay_ms * 1e-3 * sample_rate).round() as isize;
-        coeffs = apply_sample_shift(&coeffs, delay_samples);
+        let delay_samples = delay_ms * 1e-3 * sample_rate;
+        coeffs = apply_fractional_sample_shift(&coeffs, delay_samples);
     }
 
     Ok(coeffs)
@@ -181,8 +181,8 @@ pub(crate) fn apply_gd_delay_to_fir_coefficients(
     if delay_ms.abs() <= 1e-6 {
         return coeffs.to_vec();
     }
-    let delay_samples = (delay_ms * 1e-3 * sample_rate).round() as isize;
-    apply_sample_shift(coeffs, delay_samples)
+    let delay_samples = delay_ms * 1e-3 * sample_rate;
+    apply_fractional_sample_shift(coeffs, delay_samples)
 }
 
 /// Shift FIR coefficients by a given number of samples (positive = later).
@@ -204,6 +204,33 @@ fn apply_sample_shift(coeffs: &[f64], shift: isize) -> Vec<f64> {
         }
     }
 
+    shifted
+}
+
+/// Shift FIR coefficients by a fractional number of samples using linear
+/// interpolation. Positive shift = later (delays the signal).
+fn apply_fractional_sample_shift(coeffs: &[f64], shift: f64) -> Vec<f64> {
+    let n = coeffs.len();
+    if shift.abs() < 1e-9 {
+        return coeffs.to_vec();
+    }
+    let mut shifted = vec![0.0; n];
+    for i in 0..n {
+        let src = i as f64 - shift;
+        let idx = src.floor();
+        let frac = src - idx;
+        let idx = idx as isize;
+        if idx < 0 || idx >= n as isize {
+            continue;
+        }
+        let v0 = coeffs[idx as usize];
+        if frac.abs() < 1e-9 || idx + 1 >= n as isize {
+            shifted[i] = v0;
+        } else {
+            let v1 = coeffs[(idx + 1) as usize];
+            shifted[i] = (1.0 - frac) * v0 + frac * v1;
+        }
+    }
     shifted
 }
 
@@ -451,6 +478,68 @@ mod tests {
         assert!(
             err.to_string().contains("Unknown FIR phase type"),
             "Error should mention unknown phase type"
+        );
+    }
+
+    #[test]
+    fn fractional_delay_preserves_impulse_shape_better_than_rounding() {
+        // An impulse at sample 5: [0,0,0,0,0,1,0,0,0,0]
+        let coeffs: Vec<f64> = (0..10).map(|i| if i == 5 { 1.0 } else { 0.0 }).collect();
+        // Target delay: 2.3 samples
+        let delay_ms = 2.3 / 48000.0 * 1000.0;
+
+        // Old integer-rounding method
+        let old_samples = (delay_ms * 1e-3 * 48000.0f64).round() as isize;
+        let old_shifted = super::apply_sample_shift(&coeffs, old_samples);
+
+        // New fractional method
+        let new_shifted = super::apply_fractional_sample_shift(&coeffs, 2.3);
+
+        // The integer method rounds to 2 samples, so impulse is at index 7
+        assert_eq!(old_shifted[7], 1.0);
+        assert_eq!(old_shifted[6], 0.0);
+
+        // The fractional method should spread the impulse between 7 and 8
+        assert!(
+            new_shifted[7] > 0.6 && new_shifted[7] < 0.8,
+            "fractional delay should place 0.7 of impulse at idx 7, got {}",
+            new_shifted[7]
+        );
+        assert!(
+            new_shifted[8] > 0.2 && new_shifted[8] < 0.4,
+            "fractional delay should place 0.3 of impulse at idx 8, got {}",
+            new_shifted[8]
+        );
+    }
+
+    #[test]
+    fn fractional_delay_is_zero_for_integer_shift() {
+        let coeffs: Vec<f64> = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let shifted = super::apply_fractional_sample_shift(&coeffs, 2.0);
+        // Exactly 2.0 samples should be identical to integer shift
+        assert_eq!(shifted[0], 0.0);
+        assert_eq!(shifted[1], 0.0);
+        assert_eq!(shifted[2], 1.0);
+        assert_eq!(shifted[3], 2.0);
+        assert_eq!(shifted[4], 3.0);
+    }
+
+    #[test]
+    fn fractional_delay_handles_negative_shift() {
+        let coeffs: Vec<f64> = vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0];
+        // Negative shift = advance by 1.5 samples
+        let shifted = super::apply_fractional_sample_shift(&coeffs, -1.5);
+        // Original impulse at idx 3; after advancing 1.5, it should be at idx 1.5
+        // So we expect energy at idx 1 and 2
+        assert!(
+            shifted[1] > 0.4 && shifted[1] < 0.6,
+            "expected ~0.5 at idx 1, got {}",
+            shifted[1]
+        );
+        assert!(
+            shifted[2] > 0.4 && shifted[2] < 0.6,
+            "expected ~0.5 at idx 2, got {}",
+            shifted[2]
         );
     }
 }

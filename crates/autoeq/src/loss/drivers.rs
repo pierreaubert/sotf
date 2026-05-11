@@ -366,6 +366,46 @@ pub fn compute_drivers_combined_response(
     combined_complex.mapv(|z| 20.0 * z.norm().max(1e-12).log10())
 }
 
+/// Compute the combined complex response of all drivers.
+///
+/// Same logic as `compute_drivers_combined_response()` but returns the raw
+/// complex sum so that both magnitude (SPL) and phase can be extracted.
+pub fn compute_drivers_combined_response_complex(
+    data: &DriversLossData,
+    gains: &[f64],
+    crossover_freqs: &[f64],
+    delays: Option<&[f64]>,
+    sample_rate: f64,
+) -> Array1<Complex64> {
+    validate_driver_args(data, gains, crossover_freqs, delays);
+
+    let n_drivers = data.drivers.len();
+    let driver_curves = prepare_driver_curves(data, crossover_freqs);
+
+    let mut combined_complex = Array1::<Complex64>::zeros(data.freq_grid.len());
+
+    for i in 0..n_drivers {
+        let delay_s = delays.map(|d| d[i]).unwrap_or(0.0) / 1000.0;
+        let filters = build_crossover_filters_for_driver(
+            i,
+            n_drivers,
+            data.crossover_type,
+            crossover_freqs,
+            sample_rate,
+        );
+        let driver_complex = compute_single_driver_complex(
+            &data.freq_grid,
+            &driver_curves[i],
+            gains[i],
+            delay_s,
+            &filters,
+        );
+        combined_complex += &driver_complex;
+    }
+
+    combined_complex
+}
+
 /// Compute per-driver frequency responses with crossovers, gains, and delays applied
 ///
 /// Same logic as `compute_drivers_combined_response()` but returns individual

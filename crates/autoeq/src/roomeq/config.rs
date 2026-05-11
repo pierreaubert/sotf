@@ -266,7 +266,9 @@ fn validate_optimizer_config(opt: &OptimizerConfig, result: &mut ValidationResul
     }
 
     // Validate PEQ model
-    let valid_peq_models = ["pk", "ls-pk-hs", "free"];
+    let valid_peq_models = [
+        "pk", "hp-pk", "ls-pk", "hp-pk-lp", "ls-pk-hs", "free-pk-free", "free",
+    ];
     if !valid_peq_models.contains(&opt.peq_model.as_str()) {
         result.add_warning(format!(
             "Unknown peq_model '{}', may not be supported",
@@ -1388,6 +1390,45 @@ mod tests {
                 .iter()
                 .any(|w| w.contains("Unknown algorithm")),
             "Unknown algorithm should produce a warning, but warnings: {:?}",
+            result.warnings
+        );
+    }
+
+    #[test]
+    fn test_all_peq_models_accepted() {
+        use crate::cli::PeqModel;
+        for model in PeqModel::all() {
+            let mut config = config_with_algorithm("autoeq:de");
+            config.optimizer.peq_model = model.to_string();
+            let result = validate_room_config(&config);
+            let has_peq_warning = result
+                .warnings
+                .iter()
+                .any(|w| w.contains("Unknown peq_model"));
+            assert!(
+                !has_peq_warning,
+                "PEQ model '{}' should be accepted without warning, but got: {:?}",
+                model, result.warnings
+            );
+        }
+    }
+
+    #[test]
+    fn test_unknown_peq_model_warns_not_errors() {
+        let mut config = config_with_algorithm("autoeq:de");
+        config.optimizer.peq_model = "bogus_model".to_string();
+        let result = validate_room_config(&config);
+        assert!(
+            result.is_valid,
+            "Unknown peq_model should warn, not error. Errors: {:?}",
+            result.errors
+        );
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.contains("Unknown peq_model")),
+            "Unknown peq_model should produce a warning, but warnings: {:?}",
             result.warnings
         );
     }

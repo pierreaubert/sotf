@@ -260,7 +260,9 @@ fn generate_phase_only_fir(freqs: &[f64], phase_deg: &[f64], config: &FirDesignC
     // DC and Nyquist must be real
     spectrum[0] = Complex64::new(1.0, 0.0);
     if n_bins > 1 {
-        spectrum[n_bins - 1] = Complex64::new(spectrum[n_bins - 1].re, 0.0);
+        // Preserve magnitude when forcing Nyquist to real; if phase is 90°
+        // copying .re alone would collapse the bin to zero.
+        spectrum[n_bins - 1] = Complex64::new(spectrum[n_bins - 1].norm(), 0.0);
     }
 
     // Build full spectrum (conjugate symmetric)
@@ -372,7 +374,23 @@ fn interpolate_phase_log_space(
             let idx = idx.min(n_src - 1).max(1);
 
             let t = (f_log - src_log[idx - 1]) / (src_log[idx] - src_log[idx - 1]);
-            src_phase[idx - 1] + t * (src_phase[idx] - src_phase[idx - 1])
+            let mut delta = src_phase[idx] - src_phase[idx - 1];
+            // Shortest-arc interpolation across the 360° wrap boundary
+            while delta > 180.0 {
+                delta -= 360.0;
+            }
+            while delta < -180.0 {
+                delta += 360.0;
+            }
+            let mut interp = src_phase[idx - 1] + t * delta;
+            // Normalize result to [-180, 180]
+            while interp > 180.0 {
+                interp -= 360.0;
+            }
+            while interp < -180.0 {
+                interp += 360.0;
+            }
+            interp
         })
         .collect()
 }
@@ -392,17 +410,32 @@ fn smooth_phase_log_freq(
         let low_log = center_log - half_width;
         let high_log = center_log + half_width;
 
-        let mut sum = 0.0;
+        let mut sum_sin = 0.0;
+        let mut sum_cos = 0.0;
         let mut count = 0.0;
         for j in 0..len {
             let f_log = freq[j].log2();
             if f_log >= low_log && f_log <= high_log {
-                sum += phase[j];
+                let rad = phase[j].to_radians();
+                sum_sin += rad.sin();
+                sum_cos += rad.cos();
                 count += 1.0;
             }
         }
 
-        smoothed[i] = if count > 0.0 { sum / count } else { phase[i] };
+        smoothed[i] = if count > 0.0 {
+            let mut avg_deg = sum_sin.atan2(sum_cos).to_degrees();
+            // Normalize to [-180, 180] for consistency
+            while avg_deg > 180.0 {
+                avg_deg -= 360.0;
+            }
+            while avg_deg < -180.0 {
+                avg_deg += 360.0;
+            }
+            avg_deg
+        } else {
+            phase[i]
+        };
     }
 
     smoothed
@@ -497,6 +530,85 @@ mod tests {
             (mid[0] - (-22.5)).abs() < 1.0,
             "expected ~-22.5, got {:.1}",
             mid[0]
+        );
+    }
+
+    #[test]
+    fn interpolate_phase_log_space_uses_shortest_arc_across_wrap_boundary() {
+        // Phase wraps from +179° to -179°. The shortest arc goes through ±180°,
+        // not through 0°. Without wrap handling the midpoint would be 0°.
+        let src_freqs = vec![100.0, 1000.0];
+        let src_phase = vec![179.0, -179.0];
+
+        let result = interpolate_phase_log_space(&src_freqs, &src_phase, &[316.0]);
+
+        // Midpoint via shortest arc: 179 + 0.5 * (-358 + 360) = 180°
+        let diff = (result[0] - 180.0).abs().min((result[0] + 180.0).abs());
+        assert!(
+            diff < 1.0,
+            "expected ~±180° at wrap boundary, got {:.1}°",
+            result[0]
+        );
+    }
+
+    #[test]
+    fn smooth_phase_log_freq_uses_circular_mean_at_wrap_boundary() {
+        // Two phase values straddling the 360°/0° boundary: 350° and 10°.
+        // The circular mean is ~0°, not the arithmetic mean of 180°.
+        let freq = Array1::from_vec(vec![100.0, 200.0, 400.0]);
+        let phase = Array1::from_vec(vec![350.0, 10.0, 0.0]);
+
+        let smoothed = smooth_phase_log_freq(&phase, &freq, 2.0);
+
+        // The middle point (200 Hz) is within 1 octave of both neighbors,
+        // so it should average 350° and 10° circularly → ~0°.
+        let diff = smoothed[1].abs().min((smoothed[1] - 360.0).abs());
+        assert!(
+            diff < 10.0,
+            "circular mean of 350° and 10° should be ~0°, got {:.1}°",
+            smoothed[1]
+        );
+    }
+
+    #[test]
+    fn generate_phase_only_fir_preserves_nyquist_magnitude_at_90_deg() {
+        use num_complex::Complex64;
+        use rustfft::FftPlanner;
+
+        // When the excess phase at Nyquist is 90°, forcing the bin to be real
+        // by copying .re and zeroing .im collapses the magnitude to 0. The fix
+        // preserves the magnitude by using .norm() for the real part.
+        let sample_rate = 48000.0;
+        let freqs = vec![20.0, sample_rate / 2.0];
+        let phase_deg = vec![0.0, 90.0];
+
+        let config = FirDesignConfig {
+            n_taps: 255,
+            sample_rate,
+            pre_ringing: None,
+            ..Default::default()
+        };
+
+        let fir = generate_phase_only_fir(&freqs, &phase_deg, &config);
+        assert_eq!(fir.len(), 255);
+
+        // FFT the FIR to check magnitude at Nyquist
+        let fft_size = fir.len().next_power_of_two() * 4;
+        let mut planner = FftPlanner::new();
+        let fft = planner.plan_fft_forward(fft_size);
+        let mut buffer: Vec<Complex64> = fir
+            .iter()
+            .map(|&x| Complex64::new(x, 0.0))
+            .collect();
+        buffer.resize(fft_size, Complex64::new(0.0, 0.0));
+        fft.process(&mut buffer);
+
+        let nyquist_bin = fft_size / 2;
+        let nyquist_mag_db = 20.0 * buffer[nyquist_bin].norm().log10();
+        assert!(
+            nyquist_mag_db > -15.0,
+            "Nyquist magnitude should be preserved (> -15 dB), got {:.1} dB",
+            nyquist_mag_db
         );
     }
 

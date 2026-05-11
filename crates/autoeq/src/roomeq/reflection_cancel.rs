@@ -85,7 +85,7 @@ pub fn compute_reflection_cancellation(
 
     // Step 4: Compute gain = sqrt(reflection_energy / direct_energy).
     // This is the amplitude ratio of the reflection relative to the direct sound.
-    if direct.peak_energy <= 0.0 {
+    if direct.peak_energy <= 0.0 || first_reflection.peak_energy < 0.0 {
         return None;
     }
     let raw_gain = (first_reflection.peak_energy / direct.peak_energy).sqrt();

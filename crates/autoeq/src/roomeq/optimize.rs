@@ -240,6 +240,7 @@ pub(super) fn detect_sub_passband_3db(curve: &Curve) -> Option<(f64, f64)> {
     // bandwidth at the lowest measured frequency), return that lowest
     // frequency.
     let mut low_3db = smoothed.freq[0];
+    let mut found_low_3db = false;
     for i in (0..peak_idx).rev() {
         let s_here = smoothed.spl[i];
         if s_here <= three_db {
@@ -253,12 +254,14 @@ pub(super) fn detect_sub_passband_3db(curve: &Curve) -> Option<(f64, f64)> {
             } else {
                 f0
             };
+            found_low_3db = true;
             break;
         }
     }
 
     // Walk right from the peak to find the high -3 dB crossing.
     let mut high_3db = smoothed.freq[smoothed.freq.len() - 1];
+    let mut found_high_3db = false;
     for i in (peak_idx + 1)..smoothed.spl.len() {
         let s_here = smoothed.spl[i];
         if s_here <= three_db {
@@ -272,11 +275,12 @@ pub(super) fn detect_sub_passband_3db(curve: &Curve) -> Option<(f64, f64)> {
             } else {
                 f1
             };
+            found_high_3db = true;
             break;
         }
     }
 
-    if high_3db > low_3db {
+    if (found_low_3db || found_high_3db) && high_3db > low_3db {
         Some((low_3db, high_3db))
     } else {
         None

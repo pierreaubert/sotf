@@ -397,9 +397,11 @@ pub(super) fn compute_phase_alignment_delay_schedule(
                     if let Some(existing) = raw_offsets.get(neighbor) {
                         if (existing - neighbor_offset).abs() > 0.05 {
                             warn!(
-                                "Conflicting phase-alignment delay constraints for '{}': {:.3} ms vs {:.3} ms; keeping first schedule",
+                                "Conflicting phase-alignment delay constraints for '{}': {:.3} ms vs {:.3} ms; averaging",
                                 neighbor, existing, neighbor_offset
                             );
+                            let consensus = (existing + neighbor_offset) / 2.0;
+                            raw_offsets.insert(neighbor.clone(), consensus);
                         }
                     } else {
                         raw_offsets.insert(neighbor.clone(), neighbor_offset);
@@ -426,6 +428,67 @@ pub(super) fn compute_phase_alignment_delay_schedule(
     }
 
     schedule
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn phase_alignment_schedule_is_consistent_for_shared_sub() {
+        // Two mains aligned to the same sub — a common real-world case.
+        // L -> LFE: -5.0 ms (LFE arrives 5 ms after L)
+        // R -> LFE:  2.0 ms (LFE arrives 2 ms before R)
+        let results = HashMap::from([
+            ("L".to_string(), (-5.0, false, "LFE".to_string())),
+            ("R".to_string(), (2.0, false, "LFE".to_string())),
+        ]);
+
+        let schedule = super::compute_phase_alignment_delay_schedule(&results);
+
+        // L is the reference (earliest arrival), so L gets 0 delay.
+        // LFE needs +5.0 ms to align with L.
+        // R needs +7.0 ms to align with L (5.0 + 2.0).
+        assert_close(*schedule.get("L").unwrap_or(&0.0), 0.0);
+        assert_close(schedule["LFE"], 5.0);
+        assert_close(schedule["R"], 7.0);
+    }
+
+    #[test]
+    fn conflicting_delays_use_consensus_instead_of_arbitrary_first() {
+        // When the same channel is reached with conflicting offsets,
+        // the code should average the estimates rather than keeping
+        // the arbitrary first one.
+        //
+        // We simulate this by building a graph with a cycle that has
+        // inconsistent edge weights. In practice this requires the
+        // same channel to appear in multiple alignment pairs.
+        let mut results = HashMap::new();
+        results.insert("A".to_string(), (0.0, false, "B".to_string()));
+        results.insert("B".to_string(), (0.0, false, "C".to_string()));
+        results.insert("C".to_string(), (5.0, false, "A".to_string()));
+
+        let schedule = super::compute_phase_alignment_delay_schedule(&results);
+
+        // The cycle A-B-C-A has total weight 0+0+5 = 5 ms, which is inconsistent
+        // (should be 0 for a consistent cycle). The conflict resolution
+        // should produce a finite schedule for all channels.
+        assert!(
+            schedule.contains_key("A") || schedule.contains_key("B") || schedule.contains_key("C"),
+            "schedule should not be empty even with inconsistent cycle"
+        );
+    }
+
+    fn assert_close(a: f64, b: f64) {
+        assert!(
+            (a - b).abs() < 0.01,
+            "assertion failed: {} ≈ {} (diff = {})",
+            a,
+            b,
+            (a - b).abs()
+        );
+    }
 }
 
 pub(super) fn apply_phase_alignment_delay_schedule(

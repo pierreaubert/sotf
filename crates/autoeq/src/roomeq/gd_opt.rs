@@ -776,13 +776,30 @@ fn compute_sum_gd(
         // Sum complex responses at f0 and f1
         let mut sum0 = Complex64::new(0.0, 0.0);
         let mut sum1 = Complex64::new(0.0, 0.0);
+        let mut expected_mag0 = 0.0;
+        let mut expected_mag1 = 0.0;
 
         for (ch, cp) in channels.iter().zip(ch_params.iter()) {
-            sum0 += channel_complex_at(ch, idx0, cp, config);
-            sum1 += channel_complex_at(ch, idx1, cp, config);
+            let h0 = channel_complex_at(ch, idx0, cp, config);
+            let h1 = channel_complex_at(ch, idx1, cp, config);
+            sum0 += h0;
+            sum1 += h1;
+            expected_mag0 += h0.norm();
+            expected_mag1 += h1.norm();
         }
 
         // GD = -dφ/dω
+        // Guard against near-zero summed magnitude where arg() is numerically unstable.
+        // When channels cancel destructively the summed magnitude can be orders of
+        // magnitude below the individual magnitudes, making the phase (and thus GD)
+        // hypersensitive to tiny perturbations.
+        const MIN_SUM_MAG_RATIO: f64 = 1e-3;
+        if sum0.norm() < MIN_SUM_MAG_RATIO * expected_mag0
+            || sum1.norm() < MIN_SUM_MAG_RATIO * expected_mag1
+        {
+            gd_ms.push(0.0);
+            continue;
+        }
         let phase0 = sum0.arg();
         let phase1 = sum1.arg();
         let d_phase = unwrap_phase_diff(phase1 - phase0);
@@ -1163,6 +1180,59 @@ mod tests {
             "last in-band GD should use backward difference; got {:?}",
             gd
         );
+    }
+
+    #[test]
+    fn compute_sum_gd_is_stable_at_destructive_interference() {
+        // Two channels that cancel destructively at 100 Hz and nearly cancel at 100.1 Hz.
+        // The tiny phase perturbation between the two frequencies causes arg() to jump
+        // ~180° when the summed magnitude is near zero, producing a phantom GD spike.
+        let freq = Array1::from_vec(vec![100.0, 100.1, 200.0]);
+        let ch1 = ChannelMeasurementInput {
+            freq: freq.clone(),
+            spl: Array1::zeros(3),
+            phase: Array1::from_vec(vec![0.0, 0.0, 0.0]),
+            coherence: Array1::from_elem(3, 0.95),
+        };
+        // ch2 phases chosen so that at 100 Hz sum arg ≈ -π/2, at 100.1 Hz sum arg ≈ π/2
+        let ch2 = ChannelMeasurementInput {
+            freq: freq.clone(),
+            spl: Array1::zeros(3),
+            phase: Array1::from_vec(vec![
+                std::f64::consts::PI + 0.001,
+                std::f64::consts::PI - 0.001,
+                0.0,
+            ]),
+            coherence: Array1::from_elem(3, 0.95),
+        };
+
+        let config = GdOptConfig {
+            sample_rate: 48000.0,
+            max_delay_ms: 10.0,
+            ap_per_channel: 0,
+            ap_min_freq: 20.0,
+            ap_max_freq: 300.0,
+            ap_min_q: 0.3,
+            ap_max_q: 10.0,
+            optimize_polarity: false,
+            ..GdOptConfig::default()
+        };
+
+        // Zero delays for both channels
+        let params = vec![0.0, 0.0];
+        let band_indices = vec![0, 1, 2];
+
+        let gd = compute_sum_gd(&[ch1, ch2], &params, &band_indices, &config);
+
+        // Without a guard, the first bin would see a ~π rad phase jump across a tiny
+        // frequency step, producing a GD spike of ~5000 ms. With the fix it should
+        // be clamped to 0 when the summed magnitude is below threshold.
+        assert!(
+            gd[0].abs() < 100.0,
+            "GD at destructive-interference null should be clamped, got {} ms",
+            gd[0]
+        );
+        assert!(gd[0].is_finite());
     }
 
     #[test]

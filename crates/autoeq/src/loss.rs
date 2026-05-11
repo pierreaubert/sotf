@@ -32,7 +32,7 @@ pub mod types;
 pub use asymmetric::{AsymmetricLossConfig, flat_loss_asymmetric, weighted_mse_asymmetric};
 pub use drivers::{
     CrossoverType, DriverMeasurement, DriversLossData, compute_drivers_combined_response,
-    compute_per_driver_responses, drivers_flat_loss,
+    compute_drivers_combined_response_complex, compute_per_driver_responses, drivers_flat_loss,
 };
 pub use flat::flat_loss;
 pub use headphone::{headphone_loss, headphone_loss_with_target};

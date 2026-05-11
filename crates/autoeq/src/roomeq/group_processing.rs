@@ -529,6 +529,95 @@ mod tests {
     }
 
     #[test]
+    fn average_power_curve_preserves_phase_when_all_inputs_have_phase() {
+        use std::f64::consts::PI;
+        let c1 = Curve {
+            freq: array![100.0, 200.0, 400.0],
+            spl: array![80.0, 80.0, 80.0],
+            phase: Some(array![0.0, 45.0, 90.0]),
+            ..Default::default()
+        };
+        let c2 = Curve {
+            freq: array![100.0, 200.0, 400.0],
+            spl: array![80.0, 80.0, 80.0],
+            phase: Some(array![0.0, 45.0, 90.0]),
+            ..Default::default()
+        };
+        let avg = average_power_curve(&[c1, c2]).unwrap();
+        assert!(
+            avg.phase.is_some(),
+            "average_power_curve should preserve phase when all inputs have phase"
+        );
+        let phase = avg.phase.unwrap();
+        // Same-phase curves should average to the same phase
+        assert!(
+            (phase[0]).abs() < 1.0,
+            "same 0° phase should average to ~0°, got {}",
+            phase[0]
+        );
+        assert!(
+            (phase[1] - 45.0).abs() < 1.0,
+            "same 45° phase should average to ~45°, got {}",
+            phase[1]
+        );
+        assert!(
+            (phase[2] - 90.0).abs() < 1.0,
+            "same 90° phase should average to ~90°, got {}",
+            phase[2]
+        );
+    }
+
+    #[test]
+    fn average_power_curve_returns_none_phase_when_any_input_lacks_phase() {
+        let c1 = Curve {
+            freq: array![100.0, 200.0],
+            spl: array![80.0, 80.0],
+            phase: Some(array![0.0, 0.0]),
+            ..Default::default()
+        };
+        let c2 = Curve {
+            freq: array![100.0, 200.0],
+            spl: array![80.0, 80.0],
+            phase: None,
+            ..Default::default()
+        };
+        let avg = average_power_curve(&[c1, c2]).unwrap();
+        assert!(
+            avg.phase.is_none(),
+            "average_power_curve should return None phase when any input lacks phase"
+        );
+    }
+
+    #[test]
+    fn average_power_curve_vector_averages_opposing_phases() {
+        let c1 = Curve {
+            freq: array![100.0],
+            spl: array![80.0],
+            phase: Some(array![0.0]),
+            ..Default::default()
+        };
+        let c2 = Curve {
+            freq: array![100.0],
+            spl: array![80.0],
+            phase: Some(array![180.0]),
+            ..Default::default()
+        };
+        let avg = average_power_curve(&[c1, c2]).unwrap();
+        let phase = avg.phase.expect("phase should be present");
+        // 0° and 180° perfectly cancel; atan2(0,0) returns 0.0
+        assert!(
+            phase[0].abs() < 1.0,
+            "opposing phases should have mean angle ~0° (or undefined), got {}",
+            phase[0]
+        );
+        // Magnitude should reflect cancellation: pressure average of 1 and -1 is 0
+        let expected_power = 10.0 * ((10.0_f64.powf(8.0) + 10.0_f64.powf(8.0)) / 2.0).log10();
+        // With complex averaging, magnitude will be much lower due to cancellation
+        // The key thing is phase is preserved, not the exact SPL value
+        assert!(avg.spl[0] < expected_power, "cancelled phases should reduce SPL magnitude");
+    }
+
+    #[test]
     fn production_multiseat_path_emits_per_sub_and_global_eq_when_enabled() {
         let group = MultiSubGroup {
             name: "subs".to_string(),
@@ -884,7 +973,7 @@ fn average_power_curve(curves: &[Curve]) -> Result<Curve> {
             message: "Cannot average an empty multi-seat curve set".to_string(),
         });
     };
-    let mut power_sum = Array1::<f64>::zeros(first.freq.len());
+    let all_have_phase = curves.iter().all(|c| c.phase.is_some());
     for (idx, curve) in curves.iter().enumerate() {
         if curve.freq.len() != first.freq.len()
             || curve
@@ -900,15 +989,51 @@ fn average_power_curve(curves: &[Curve]) -> Result<Curve> {
                 ),
             });
         }
-        power_sum = power_sum + curve.spl.mapv(|spl| 10.0_f64.powf(spl / 10.0));
     }
-    let avg_power = power_sum / curves.len() as f64;
-    Ok(Curve {
-        freq: first.freq.clone(),
-        spl: avg_power.mapv(|power| 10.0 * power.max(1e-12).log10()),
-        phase: None,
-        ..Default::default()
-    })
+
+    if all_have_phase {
+        // Complex vector average: preserves phase when all inputs have it
+        use num_complex::Complex64;
+        let n = curves.len() as f64;
+        let mut sum_re = Array1::<f64>::zeros(first.freq.len());
+        let mut sum_im = Array1::<f64>::zeros(first.freq.len());
+        for curve in curves {
+            let phase = curve.phase.as_ref().unwrap();
+            for i in 0..first.freq.len() {
+                let pressure = 10.0_f64.powf(curve.spl[i] / 20.0);
+                let rad = phase[i].to_radians();
+                sum_re[i] += pressure * rad.cos();
+                sum_im[i] += pressure * rad.sin();
+            }
+        }
+        let mut spl = Array1::<f64>::zeros(first.freq.len());
+        let mut phase_out = Array1::<f64>::zeros(first.freq.len());
+        for i in 0..first.freq.len() {
+            let z = Complex64::new(sum_re[i] / n, sum_im[i] / n);
+            let mag = z.norm();
+            spl[i] = 20.0 * mag.max(1e-12).log10();
+            phase_out[i] = if mag > 1e-12 { z.arg().to_degrees() } else { 0.0 };
+        }
+        Ok(Curve {
+            freq: first.freq.clone(),
+            spl,
+            phase: Some(phase_out),
+            ..Default::default()
+        })
+    } else {
+        // Power (energy) average when phase is unavailable or mixed
+        let mut power_sum = Array1::<f64>::zeros(first.freq.len());
+        for curve in curves {
+            power_sum = power_sum + curve.spl.mapv(|spl| 10.0_f64.powf(spl / 10.0));
+        }
+        let avg_power = power_sum / curves.len() as f64;
+        Ok(Curve {
+            freq: first.freq.clone(),
+            spl: avg_power.mapv(|power| 10.0 * power.max(1e-12).log10()),
+            phase: None,
+            ..Default::default()
+        })
+    }
 }
 
 fn flat_loss_score(curve: &Curve, min_freq: f64, max_freq: f64) -> f64 {

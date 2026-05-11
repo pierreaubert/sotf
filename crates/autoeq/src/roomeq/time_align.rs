@@ -200,8 +200,10 @@ pub fn estimate_arrival_from_phase_detailed(
     // τ = -slope / (2π), convert seconds → milliseconds
     let delay_ms = -slope / (2.0 * PI) * 1000.0;
 
-    // Sanity check: plausible acoustic propagation time (0–500 ms)
-    if delay_ms >= 0.0 && delay_ms < 500.0 {
+    // Sanity check: plausible acoustic propagation time (-50–500 ms).
+    // Negative delays are valid when a speaker is closer than the reference
+    // channel used for relative alignment.
+    if delay_ms > -50.0 && delay_ms < 500.0 {
         Ok(delay_ms)
     } else {
         Err(PhaseArrivalError::ImplausibleDelay { delay_ms })
@@ -498,6 +500,33 @@ mod tests {
     }
 
     #[test]
+    fn negative_relative_delay_is_accepted() {
+        use ndarray::Array1;
+
+        // Synthesize a phase curve for τ = -10 ms (closer than reference)
+        let tau_ms = -10.0_f64;
+        let tau_s = tau_ms / 1000.0;
+        let freqs: Vec<f64> = (20..=2000).step_by(10).map(|f| f as f64).collect();
+        let phase_deg: Vec<f64> = freqs.iter().map(|&f| -360.0 * f * tau_s).collect();
+
+        let curve = crate::Curve {
+            freq: Array1::from_vec(freqs),
+            spl: Array1::zeros(phase_deg.len()),
+            phase: Some(Array1::from_vec(phase_deg)),
+            ..Default::default()
+        };
+
+        let estimated = estimate_arrival_from_phase(&curve, 200.0, 2000.0);
+
+        assert!(
+            estimated.is_some(),
+            "negative delays within -50 ms should be accepted, got {:?}",
+            estimated
+        );
+        assert!((estimated.unwrap() - tau_ms).abs() < 0.5);
+    }
+
+    #[test]
     fn test_estimate_arrival_from_phase() {
         use ndarray::Array1;
 
@@ -573,9 +602,11 @@ mod tests {
     fn test_estimate_arrival_from_phase_detailed_reports_implausible_delay() {
         use ndarray::Array1;
 
-        let tau_ms = -2.0_f64;
+        // Use -55 ms (outside the accepted -50..500 ms window) to test rejection.
+        // Fine 1 Hz grid ensures unwrap_phase_degrees sees < 180° per step.
+        let tau_ms = -55.0_f64;
         let tau_s = tau_ms / 1000.0;
-        let freqs: Vec<f64> = (100..=3000).step_by(20).map(|f| f as f64).collect();
+        let freqs: Vec<f64> = (100..=3000).map(|f| f as f64).collect();
         let phase_deg: Vec<f64> = freqs.iter().map(|&f| -360.0 * f * tau_s).collect();
 
         let curve = crate::Curve {
@@ -589,7 +620,7 @@ mod tests {
 
         assert!(matches!(
             err,
-            PhaseArrivalError::ImplausibleDelay { delay_ms } if delay_ms < 0.0
+            PhaseArrivalError::ImplausibleDelay { delay_ms } if delay_ms < -50.0
         ));
     }
 

@@ -339,7 +339,6 @@ fn complex_sum_mains(curves: &[&Curve]) -> Curve {
     assert!(!curves.is_empty(), "complex_sum_mains needs ≥ 1 curve");
     let n = curves.iter().map(|c| c.spl.len()).min().unwrap();
     let freq = curves[0].freq.slice(ndarray::s![..n]).to_owned();
-    let divisor = curves.len() as f64;
 
     let mut spl = ndarray::Array1::<f64>::zeros(n);
     let mut phase = ndarray::Array1::<f64>::zeros(n);
@@ -350,10 +349,12 @@ fn complex_sum_mains(curves: &[&Curve]) -> Curve {
             let phi = c.phase.as_ref().expect("phase checked by caller")[i].to_radians();
             sum += Complex::from_polar(mag, phi);
         }
-        sum /= divisor;
         spl[i] = 20.0 * sum.norm().max(1e-12).log10();
         phase[i] = sum.arg().to_degrees();
     }
+    // Unwrap so downstream processing (e.g., GD computation, delay estimation)
+    // sees a continuous phase curve rather than [-180, 180] discontinuities.
+    phase = super::phase_utils::unwrap_phase_degrees(&phase);
 
     Curve {
         freq,
@@ -519,6 +520,8 @@ fn predict_bass_management_sum(
         spl[i] = 20.0 * sum.norm().max(1e-12).log10();
         phase[i] = sum.arg().to_degrees();
     }
+    // Unwrap to prevent 360° discontinuities from confusing downstream alignment.
+    phase = super::phase_utils::unwrap_phase_degrees(&phase);
 
     Some(Curve {
         freq: main_filtered.freq,
@@ -530,8 +533,21 @@ fn predict_bass_management_sum(
 
 fn bass_management_objective(curve: Option<&Curve>, xover_freq: f64) -> Option<f64> {
     let curve = curve?;
-    let min_freq = (xover_freq / 2.0).max(20.0);
-    let max_freq = (xover_freq * 2.0).min(2_000.0).max(min_freq + 1.0);
+    // Use a symmetric band around the crossover in log-frequency space.
+    // When a cap (20 Hz low or 2 kHz high) is hit, adjust the other side
+    // to maintain equal octave span on both sides.
+    let mut min_freq = xover_freq / 2.0;
+    let mut max_freq = xover_freq * 2.0;
+    if min_freq < 20.0 || max_freq > 2000.0 {
+        let ratio = if min_freq < 20.0 {
+            xover_freq / 20.0
+        } else {
+            2000.0 / xover_freq
+        };
+        min_freq = (xover_freq / ratio).max(20.0);
+        max_freq = (xover_freq * ratio).min(2000.0);
+    }
+    max_freq = max_freq.max(min_freq + 1.0);
     Some(compute_flat_loss(curve, min_freq, max_freq))
 }
 

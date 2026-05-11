@@ -11,9 +11,34 @@
 use crate::Curve;
 use crate::loss::{CrossoverType, DriverMeasurement, DriversLossData};
 use log::{info, warn};
+use ndarray::Array1;
 use std::error::Error;
 
 use super::types::OptimizerConfig;
+
+/// Apply polarity inversion to a driver curve.
+///
+/// When phase data is present, adds 180° to model polarity inversion.
+/// When phase is missing, uses a constant 180° phase (pure polarity inversion)
+/// rather than adding 180° to minimum-phase reconstruction, which would break
+/// the Hilbert-transform relationship between log-magnitude and phase.
+fn apply_polarity_inversion_to_driver(curve: &Curve, inverted: bool) -> DriverMeasurement {
+    let mut new_curve = curve.clone();
+    if inverted {
+        let n = new_curve.freq.len();
+        let phase = new_curve
+            .phase
+            .clone()
+            .unwrap_or_else(|| Array1::from_elem(n, 0.0));
+        new_curve.phase = Some(phase.mapv(|x| x + 180.0));
+    }
+
+    DriverMeasurement {
+        freq: new_curve.freq,
+        spl: new_curve.spl,
+        phase: new_curve.phase,
+    }
+}
 
 /// Optimize crossover for a group of driver measurements using autoeq's workflow
 ///
@@ -122,27 +147,7 @@ pub fn optimize_crossover(
         let modified_drivers: Vec<DriverMeasurement> = sorted_drivers
             .iter()
             .enumerate()
-            .map(|(idx, curve)| {
-                let mut new_curve = curve.clone();
-                if inversions[idx] {
-                    // Use minimum-phase reconstruction when phase data is missing,
-                    // rather than synthetic 180 deg (which assumes physically impossible
-                    // perfect all-pass behavior and produces wrong crossover optimization)
-                    let phase = new_curve.phase.clone().unwrap_or_else(|| {
-                        super::phase_utils::reconstruct_minimum_phase(
-                            &new_curve.freq,
-                            &new_curve.spl,
-                        )
-                    });
-                    new_curve.phase = Some(phase.mapv(|x| x + 180.0));
-                }
-
-                DriverMeasurement {
-                    freq: new_curve.freq,
-                    spl: new_curve.spl,
-                    phase: new_curve.phase,
-                }
-            })
+            .map(|(idx, curve)| apply_polarity_inversion_to_driver(curve, inversions[idx]))
             .collect();
 
         // Note: DriversLossData::new sorts internally, but we already sorted, so order is preserved.
@@ -200,18 +205,20 @@ pub fn optimize_crossover(
     );
 
     // Compute the combined response (using the best modified data)
-    let combined_response = crate::loss::compute_drivers_combined_response(
+    let combined_complex = crate::loss::compute_drivers_combined_response_complex(
         &drivers_data,
         &result.gains,
         &result.crossover_freqs,
         Some(&result.delays),
         sample_rate,
     );
+    let combined_spl = combined_complex.mapv(|z| 20.0 * z.norm().max(1e-12).log10());
+    let combined_phase = combined_complex.mapv(|z| z.arg().to_degrees());
 
     let combined_curve = Curve {
         freq: drivers_data.freq_grid.clone(),
-        spl: combined_response,
-        phase: None,
+        spl: combined_spl,
+        phase: Some(combined_phase),
         ..Default::default()
     };
 
@@ -259,6 +266,93 @@ pub fn optimize_crossover(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ndarray::Array1;
+
+    #[test]
+    fn polarity_inversion_with_missing_phase_uses_constant_180_deg() {
+        let curve = Curve {
+            freq: Array1::from_vec(vec![100.0, 1000.0]),
+            spl: Array1::from_vec(vec![0.0, 0.0]),
+            phase: None,
+            ..Default::default()
+        };
+
+        let driver = apply_polarity_inversion_to_driver(&curve, true);
+
+        let phase = driver.phase.expect("phase should be present");
+        assert!((phase[0] - 180.0).abs() < 1e-9);
+        assert!((phase[1] - 180.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn polarity_inversion_with_existing_phase_adds_180_deg() {
+        let curve = Curve {
+            freq: Array1::from_vec(vec![100.0, 1000.0]),
+            spl: Array1::from_vec(vec![0.0, 0.0]),
+            phase: Some(Array1::from_vec(vec![30.0, -45.0])),
+            ..Default::default()
+        };
+
+        let driver = apply_polarity_inversion_to_driver(&curve, true);
+
+        let phase = driver.phase.expect("phase should be present");
+        assert!((phase[0] - 210.0).abs() < 1e-9);
+        assert!((phase[1] - 135.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn no_polarity_inversion_preserves_missing_phase() {
+        let curve = Curve {
+            freq: Array1::from_vec(vec![100.0, 1000.0]),
+            spl: Array1::from_vec(vec![0.0, 0.0]),
+            phase: None,
+            ..Default::default()
+        };
+
+        let driver = apply_polarity_inversion_to_driver(&curve, false);
+
+        assert!(driver.phase.is_none());
+    }
+
+    #[test]
+    fn combined_curve_preserves_phase_from_complex_sum() {
+        let drivers = vec![
+            Curve {
+                freq: Array1::from_vec(vec![100.0, 1000.0]),
+                spl: Array1::from_vec(vec![0.0, 0.0]),
+                phase: Some(Array1::from_vec(vec![0.0, 0.0])),
+                ..Default::default()
+            },
+            Curve {
+                freq: Array1::from_vec(vec![100.0, 1000.0]),
+                spl: Array1::from_vec(vec![0.0, 0.0]),
+                phase: Some(Array1::from_vec(vec![180.0, 180.0])),
+                ..Default::default()
+            },
+        ];
+
+        let result = optimize_crossover(
+            drivers,
+            CrossoverType::None,
+            48000.0,
+            &OptimizerConfig {
+                num_filters: 1,
+                max_iter: 10,
+                population: 4,
+                seed: Some(42),
+                ..Default::default()
+            },
+            None,
+            None,
+        );
+
+        assert!(result.is_ok());
+        let (_, _, _, combined_curve, _) = result.unwrap();
+        assert!(
+            combined_curve.phase.is_some(),
+            "combined curve should preserve phase"
+        );
+    }
 
     #[test]
     fn test_parse_crossover_type() {
