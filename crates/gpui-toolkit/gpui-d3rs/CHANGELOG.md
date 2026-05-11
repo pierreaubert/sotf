@@ -1,3 +1,9 @@
+# Unreleased
+
+## Features
+
+- `gpu3d::Lines3DElement`: new GPUI element rendering line / polygon scenes via CPU projection (`Camera3D::project_to_screen`) + `gpui::PathBuilder`. Same orbit / pan / zoom semantics as `Surface3DElement` through a shared `Lines3DState` (`Rc<RefCell<_>>`); parents wire mouse handlers to drive the embedded `OrbitControls`. Designed for sparse 3D scenes (~50 vertices) where a full wgpu pipeline would be overkill.
+
 # 0.6.8
 
 ## Features

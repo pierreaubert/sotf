@@ -53,9 +53,9 @@ pub use sotf_audio_player::room_eq_types::{
     CustomTargetCurve, DelayDetectionState, DelayDetectionStatus, DriverDspChain, DspChainMetadata,
     DspChainOutput, DspPluginConfig, EqFilterConfig, ExcursionProtectionConfig, MixedModeUiConfig,
     MixedPhaseUiConfig, MultiMeasurementUiConfig, MultiSeatConfig, MultiSpeakerMode,
-    PhaseAlignmentConfig, PreRingingConfig, RoomEqDataSource,
-    RoomEqFirConfig, RoomEqMeasurementsFile, RoomEqOptimizationMode, RoomEqSpeakerConfig,
-    RoomEqStep, SchroederSplitConfig, SimplePresetConfig, SpeakerConfigType, SubOptimizerUiConfig,
+    PhaseAlignmentConfig, PreRingingConfig, RoomEqDataSource, RoomEqFirConfig,
+    RoomEqMeasurementsFile, RoomEqOptimizationMode, RoomEqSpeakerConfig, RoomEqStep,
+    SchroederSplitConfig, SimplePresetConfig, SpeakerConfigType, SubOptimizerUiConfig,
     TargetCurveControlPoint, TargetResponseUiConfig, VoGConfig,
 };
 pub type CrossoverType = sotf_audio_player::room_eq_types::RoomEqCrossoverType;

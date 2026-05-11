@@ -1,3 +1,12 @@
+# Unreleased
+
+## Features
+
+- `analyzer_channel_correlation`: new `ChannelCorrelationMonitor` maintaining a sliding-window inter-channel Pearson r matrix (400 ms EMA window). Frame-alignment safe across split `add_frames` calls; heap-allocated scratch supports arbitrary channel counts (no >32ch truncation); upper-triangle-only storage halves the memory footprint.
+- `LoudnessMonitor` embeds the correlation monitor behind an opt-in `spatial_enabled` flag (default off, builder `with_spatial()`). When on, `LoudnessData.correlation_matrix` carries the row-major matrix and `correlation_samples_seen` distinguishes cold-start from settled state. Default-off keeps CLI / meter consumers free of N² compute and serialization payload.
+- `plugin_layout::viz_names::SPATIAL_SPIDER` const so layouts opt into the spatial-spider custom-viz hook without stringly-typed names.
+- `SpeakerPosition::to_cartesian()` / `spherical_to_cartesian()` extracted from the inline VBAP path so the spatial-spider widget can reuse the conversion.
+
 # 0.5.91
 
 ## Fixes

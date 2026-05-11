@@ -1,3 +1,7 @@
+# Unreleased
+
+- Layout opts into the spatial-spider visualiser via `VizSlot::Custom { name: viz_names::SPATIAL_SPIDER, position: VizPosition::FullCenter }`. The app-gpui layout renderer picks this up automatically and appends the spider panel below the main control row.
+
 # 0.5.3
 
 - Content-aware dialogue ducking now uses windowed envelope evidence with a short hold, avoiding false ducking on quiet centered noise or steady mono-compatible music while staying active through sustained speech.

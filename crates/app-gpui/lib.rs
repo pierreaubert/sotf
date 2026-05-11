@@ -82,7 +82,10 @@ pub use ui::{
 // `sotf-player::autoeq::apply` so the TUI shares the same algorithm; we
 // re-export through the GPUI lib so `tests/room_eq_apply_tests.rs` keeps
 // building.
-pub use components::room_eq::render::should_render_filter_plot;
+pub use components::room_eq::render::{
+    calculate_room_eq_log_trend, is_room_eq_sub_or_lfe_channel, room_eq_passband_trend_fit_domain,
+    room_eq_trend_fit_domain, should_render_filter_plot, sum_room_eq_responses_db,
+};
 pub use sotf_audio_player::autoeq::{classify_channel_eq_filters, upsert_named_room_eq_plugins};
 
 // Re-export EQ chart functions and constants for testing

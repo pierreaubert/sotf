@@ -791,9 +791,8 @@ impl PlayerView {
         use crate::app::types::{ChannelOptResult, EqFilterConfig, OptimizationStatus};
         use autoeq::roomeq::CallbackAction;
         use sotf_audio_player::autoeq::{
-            PipelineStepId, PipelineStepStatus, RoomOptimizationCallback,
-            RoomOptimizationProgress, run_room_optimization,
-            run_room_optimization_with_probe_arrivals,
+            PipelineStepId, PipelineStepStatus, RoomOptimizationCallback, RoomOptimizationProgress,
+            run_room_optimization, run_room_optimization_with_probe_arrivals,
         };
         use sotf_audio_player::room_eq_types::RoomEqWizardMode;
 
@@ -1306,6 +1305,29 @@ impl PlayerView {
                                     })
                                     .unwrap_or_default();
 
+                                // Post-optimization stages (spectral-alignment, VoG)
+                                // push standalone "gain" plugins onto the chain when a
+                                // flat-gain correction is needed. They modify the
+                                // reported `final_curve` but never make it into
+                                // `channel_res.biquads`, so the EQ-filter Sum line
+                                // would otherwise be offset from the Corrected curve.
+                                let preamp_gain_db: f64 = room_result
+                                    .channels
+                                    .get(name)
+                                    .map(|chain| {
+                                        chain
+                                            .plugins
+                                            .iter()
+                                            .filter(|p| p.plugin_type.eq_ignore_ascii_case("gain"))
+                                            .filter_map(|p| {
+                                                p.parameters
+                                                    .get("gain_db")
+                                                    .and_then(|v| v.as_f64())
+                                            })
+                                            .sum()
+                                    })
+                                    .unwrap_or(0.0);
+
                                 ChannelOptResult {
                                     channel_name: name.clone(),
                                     pre_score: channel_res.pre_score,
@@ -1321,6 +1343,7 @@ impl PlayerView {
                                         })
                                         .collect(),
                                     broadband_filters: bb_filters,
+                                    preamp_gain_db,
                                     crossover_freqs: None,
                                     driver_gains: None,
                                     original_response: Some(
@@ -1472,10 +1495,7 @@ fn is_active_step(status: sotf_audio_player::autoeq::PipelineStepStatus) -> bool
 /// (`Started`/`InProgress`) entries in `step_history` to `Completed`
 /// so the strip reads as a fully-green summary instead of leaving
 /// "what was running when the run ended" half-coloured.
-fn finalize_pipeline_step_state(
-    room_eq: &mut crate::app::types::RoomEqState,
-    succeeded: bool,
-) {
+fn finalize_pipeline_step_state(room_eq: &mut crate::app::types::RoomEqState, succeeded: bool) {
     use sotf_audio_player::autoeq::PipelineStepStatus;
     room_eq.current_step = None;
     if succeeded {
@@ -1545,11 +1565,7 @@ fn render_pipeline_step_strip(
                 .bg(bg)
                 .border_1()
                 .border_color(border)
-                .child(
-                    Text::new(step.label())
-                        .size(TextSize::Xs)
-                        .color(fg),
-                ),
+                .child(Text::new(step.label()).size(TextSize::Xs).color(fg)),
         );
     }
 

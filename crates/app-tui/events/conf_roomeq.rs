@@ -739,6 +739,20 @@ pub fn poll_room_eq_optimization(app: &mut App) -> bool {
                             })
                             .collect(),
                         broadband_filters: vec![],
+                        preamp_gain_db: r
+                            .channels
+                            .get(name)
+                            .map(|chain| {
+                                chain
+                                    .plugins
+                                    .iter()
+                                    .filter(|p| p.plugin_type.eq_ignore_ascii_case("gain"))
+                                    .filter_map(|p| {
+                                        p.parameters.get("gain_db").and_then(|v| v.as_f64())
+                                    })
+                                    .sum()
+                            })
+                            .unwrap_or(0.0),
                         crossover_freqs: None,
                         driver_gains: None,
                         original_response: Some(

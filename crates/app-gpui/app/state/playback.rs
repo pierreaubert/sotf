@@ -18,6 +18,9 @@ pub struct PlaybackState {
 
     // GPUI-specific: display data from audio engine
     pub input_loudness_info: Option<LoudnessData>,
+    /// Output-side loudness data. Includes per-channel true-peaks (level
+    /// meters, SPL spider) AND the inter-channel correlation matrix
+    /// (Correlation spider) — both are produced by the same LoudnessMonitor.
     pub loudness_info: Option<LoudnessData>,
     pub spectrum_info: Option<SpectrumData>,
     pub compressor_info: Option<CompressorData>,

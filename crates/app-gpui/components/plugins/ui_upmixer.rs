@@ -82,8 +82,16 @@ pub struct UpmixerRenderState<'a> {
     pub is_editing: bool,
     pub selected_param: usize,
     pub config_open: bool,
-    /// 0=none, 1=LFE, 2=Dialogue, 3=Ambient, 4=Height, 5=HR Direct, 6=Decorrelation, 7=Analysis, 8=Diagnostic
+    /// 0=none, 1=LFE, 2=Dialogue, 3=Ambient, 4=Height, 5=HR Direct,
+    /// 6=Decorrelation, 7=Analysis, 8=Diagnostic, 9=Spatial
     pub upmixer_tab: usize,
+    /// Live per-channel loudness. Drives both spider modes — the SPL view
+    /// reads `true_peaks_dbtp`, the Correlation view reads
+    /// `correlation_matrix`. Both are populated by the same LoudnessMonitor
+    /// poll path, so no separate correlation field is needed.
+    pub loudness_info: Option<sotf_audio_player::LoudnessData>,
+    /// Shared spatial-spider UI state (view mode, ref channel, 3D camera).
+    pub spatial_spider: crate::components::plugins::spatial_spider::SpatialSpiderUiState,
 }
 
 /// Parameter indices derived from param_specs::upmixer::PARAMS at compile time.
@@ -141,7 +149,7 @@ mod param_idx {
 }
 
 /// Configuration menu items
-const CONFIG_ITEMS: [&str; 8] = [
+const CONFIG_ITEMS: [&str; 9] = [
     "LFE & Bass",
     "Dialogue",
     "Ambient",
@@ -150,6 +158,7 @@ const CONFIG_ITEMS: [&str; 8] = [
     "Decorrelation",
     "Analysis",
     "Diagnostic",
+    "Spatial",
 ];
 
 /// Render the upmixer plugin controls
@@ -190,6 +199,12 @@ pub fn render_upmixer_plugin(
         theme,
     );
 
+    // Permanent spatial-spider graph row, always visible below the tabs.
+    // The Spatial tab itself hosts the controls (mode toggles + ref-channel
+    // selector); switching to other tabs leaves the graph in place so the
+    // user can keep watching the field while editing parameters elsewhere.
+    let spider_graph_row = render_spider_graph_row(d, &state, theme);
+
     div()
         .w_full()
         .bg(app_background)
@@ -207,9 +222,10 @@ pub fn render_upmixer_plugin(
                         .spacing(StackSpacing::Xs)
                         .child(main_area)
                         .child(tab_bar)
-                        .when((1..=8).contains(&selected_config), |el| {
+                        .when((1..=9).contains(&selected_config), |el| {
                             el.child(config_row)
                         })
+                        .child(spider_graph_row)
                         .build(),
                 )
                 .child(output_column)
@@ -455,6 +471,7 @@ fn render_tab_bar(
                     5 => "cfg-decorr",
                     6 => "cfg-analysis",
                     7 => "cfg-diagnostic",
+                    8 => "cfg-spatial",
                     _ => "cfg-unknown",
                 },
                 label,
@@ -658,6 +675,7 @@ fn render_config_row(
         6 => render_config_decorrelation(d, entity, plugin_idx, state, theme).into_any_element(),
         7 => render_config_analysis(d, entity, plugin_idx, state, theme).into_any_element(),
         8 => render_config_diagnostic(d, entity, plugin_idx, state, theme).into_any_element(),
+        9 => render_config_spatial(d, entity, plugin_idx, state, theme).into_any_element(),
         _ => div().into_any_element(),
     };
 
@@ -1442,4 +1460,53 @@ fn render_diag_toggle(
                     }
                 }),
         )
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Spatial tab: SPL / correlation spider visualizer
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Spatial tab content — only the controls (view-mode toggle, SPL /
+/// Correlation toggle, reference-channel dropdown). The graph itself lives
+/// in a permanent row below the tab bar (see `render_spider_graph_row`).
+fn render_config_spatial(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    state: &UpmixerRenderState,
+    theme: &Theme,
+) -> impl IntoElement {
+    use crate::components::plugins::spatial_spider::{
+        SpatialSpiderSnapshot, render_spatial_spider_controls, resolve_speaker_config,
+    };
+
+    let snapshot = SpatialSpiderSnapshot {
+        loudness: state.loudness_info.clone(),
+        ui: state.spatial_spider.clone(),
+    };
+    let cfg_opt = resolve_speaker_config(&snapshot, Some(state.speaker_config));
+    render_spatial_spider_controls(d, entity, plugin_idx, &snapshot, cfg_opt, theme)
+}
+
+/// Permanent spider graph row below the tab bar. Always visible regardless
+/// of which tab is selected, so the user can watch the spatial field while
+/// editing parameters in any tab.
+fn render_spider_graph_row(
+    d: &Ds,
+    state: &UpmixerRenderState,
+    theme: &Theme,
+) -> impl IntoElement {
+    use crate::components::plugins::spatial_spider::{
+        SpatialSpiderSnapshot, render_spatial_spider_graph, resolve_speaker_config,
+    };
+
+    let snapshot = SpatialSpiderSnapshot {
+        loudness: state.loudness_info.clone(),
+        ui: state.spatial_spider.clone(),
+    };
+    let cfg_opt = resolve_speaker_config(&snapshot, Some(state.speaker_config));
+    div()
+        .w_full()
+        .pt(d.pad_y)
+        .child(render_spatial_spider_graph(d, &snapshot, cfg_opt, theme))
 }

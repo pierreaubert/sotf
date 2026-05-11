@@ -12,6 +12,7 @@ pub mod common;
 pub mod custom_view_registry;
 pub mod editing;
 pub mod level_meters;
+pub mod spatial_spider;
 pub mod theme;
 pub mod ticks;
 
@@ -171,6 +172,18 @@ pub fn render_plugin_content(
     // Fallback: generic layout renderer for plugins with PluginLayout definitions
     if settings.layout().is_some() {
         let d = Ds::from_cx(cx);
+        // Snapshot live audio data for plugins whose layout opts into the
+        // spatial-spider visualization. The renderer ignores this when the
+        // plugin's layout has no matching `VizSlot::Custom` entry.
+        let spider_snapshot = {
+            let app = &entity.read(cx).app;
+            Some(
+                crate::components::plugins::spatial_spider::SpatialSpiderSnapshot {
+                    loudness: app.playback.loudness_info.clone(),
+                    ui: app.spatial_spider.clone(),
+                },
+            )
+        };
         return ui_layout_renderer::render_from_layout(
             &d,
             entity.clone(),
@@ -183,6 +196,7 @@ pub fn render_plugin_content(
             available_width,
             theme,
             &plugin_theme,
+            spider_snapshot,
         );
     }
 

@@ -286,6 +286,8 @@ pub struct App {
     // Plugin UI states
     pub upmixer_config_open: bool,
     pub upmixer_tab: usize,
+    /// State for the spatial spider visualizer (shared across upmixer / XTC / AAE).
+    pub spatial_spider: crate::components::plugins::spatial_spider::SpatialSpiderUiState,
     pub spectrum_tilt_select_open: bool,
     pub spectrum_reference_select_open: bool,
     pub show_add_plugin_menu: bool,
@@ -457,6 +459,8 @@ impl App {
             scan_ctrl: sotf_audio_player::ScanController::new(),
             upmixer_config_open: false,
             upmixer_tab: 1,
+            spatial_spider:
+                crate::components::plugins::spatial_spider::SpatialSpiderUiState::default(),
             spectrum_tilt_select_open: false,
             spectrum_reference_select_open: false,
             show_add_plugin_menu: false,

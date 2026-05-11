@@ -801,8 +801,6 @@ sotf_plugins::serde_param_default! {
     mono_to_stereo_specs::PARAMS;
     fn default_mono_to_stereo_width() -> f64 = "stereo_width";
     fn default_mono_to_stereo_haas_delay_ms() -> f64 = "haas_delay_ms";
-    fn default_mono_to_stereo_enable_comp_eq() -> bool = "enable_comp_eq";
-    fn default_mono_to_stereo_comp_eq_depth_db() -> f64 = "comp_eq_depth_db";
     fn default_mono_to_stereo_decor_low_hz() -> f64 = "decor_low_hz";
     fn default_mono_to_stereo_decor_high_hz() -> f64 = "decor_high_hz";
     fn default_mono_to_stereo_freq_dependent() -> bool = "freq_dependent";
@@ -1675,10 +1673,6 @@ pub enum PluginSettings {
         stereo_width: f64,
         #[serde(default = "default_mono_to_stereo_haas_delay_ms")]
         haas_delay_ms: f64,
-        #[serde(default = "default_mono_to_stereo_enable_comp_eq")]
-        enable_comp_eq: bool,
-        #[serde(default = "default_mono_to_stereo_comp_eq_depth_db")]
-        comp_eq_depth_db: f64,
         #[serde(default = "default_mono_to_stereo_decor_low_hz")]
         decor_low_hz: f64,
         #[serde(default = "default_mono_to_stereo_decor_high_hz")]
@@ -3158,8 +3152,6 @@ impl PluginSettings {
             Self::MonoToStereo {
                 stereo_width,
                 haas_delay_ms,
-                enable_comp_eq,
-                comp_eq_depth_db,
                 decor_low_hz,
                 decor_high_hz,
                 freq_dependent,
@@ -3168,8 +3160,6 @@ impl PluginSettings {
                 json!({
                     "stereo_width": stereo_width,
                     "haas_delay_ms": haas_delay_ms,
-                    "enable_comp_eq": enable_comp_eq,
-                    "comp_eq_depth_db": comp_eq_depth_db,
                     "decor_low_hz": decor_low_hz,
                     "decor_high_hz": decor_high_hz,
                     "freq_dependent": freq_dependent,
@@ -3682,8 +3672,6 @@ impl PluginSettings {
                 Self::MonoToStereo {
                     stereo_width: p(ms, "stereo_width").default_f64(),
                     haas_delay_ms: p(ms, "haas_delay_ms").default_f64(),
-                    enable_comp_eq: p(ms, "enable_comp_eq").default_bool(),
-                    comp_eq_depth_db: p(ms, "comp_eq_depth_db").default_f64(),
                     decor_low_hz: p(ms, "decor_low_hz").default_f64(),
                     decor_high_hz: p(ms, "decor_high_hz").default_f64(),
                     freq_dependent: p(ms, "freq_dependent").default_bool(),

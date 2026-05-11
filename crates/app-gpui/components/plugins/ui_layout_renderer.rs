@@ -42,6 +42,7 @@ use std::collections::HashMap;
 ///
 /// This replaces individual `render_*_plugin()` functions. Call this for any
 /// plugin that has a `PluginLayout` definition (i.e., `settings.layout().is_some()`).
+#[allow(clippy::too_many_arguments)]
 pub fn render_from_layout(
     d: &Ds,
     entity: Entity<AppState>,
@@ -54,6 +55,7 @@ pub fn render_from_layout(
     available_width: f32,
     theme: &Theme,
     plugin_theme: &PluginTheme,
+    spider_snapshot: Option<crate::components::plugins::spatial_spider::SpatialSpiderSnapshot>,
 ) -> AnyElement {
     let layout = settings
         .layout()
@@ -89,6 +91,7 @@ pub fn render_from_layout(
         active_tab,
         plugin_data,
         &chassis_theme,
+        spider_snapshot.as_ref(),
     )
 }
 
@@ -96,6 +99,7 @@ pub fn render_from_layout(
 // Internal Rendering
 // ============================================================================
 
+#[allow(clippy::too_many_arguments)]
 fn render_solved_layout(
     d: &Ds,
     entity: Entity<AppState>,
@@ -110,6 +114,7 @@ fn render_solved_layout(
     active_tab: usize,
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     theme: &Theme,
+    spider_snapshot: Option<&crate::components::plugins::spatial_spider::SpatialSpiderSnapshot>,
 ) -> AnyElement {
     let mut root = div().flex().flex_col().gap(d.section);
 
@@ -152,6 +157,7 @@ fn render_solved_layout(
                     selected_param,
                     active_tab,
                     plugin_data,
+                    spider_snapshot,
                     theme,
                 ));
             }
@@ -177,7 +183,50 @@ fn render_solved_layout(
     }
 
     root = root.child(row);
+
+    // Custom visualizations rendered at the root level (FullCenter position).
+    // BelowGroup positions are handled inside render_main_column where the
+    // target group is in scope.
+    if let Some(snapshot) = spider_snapshot.as_ref() {
+        for viz in layout.visualizations {
+            if let VizSlot::Custom { name, position } = viz
+                && *name == sotf_plugins::plugin_layout::viz_names::SPATIAL_SPIDER
+                && matches!(position, VizPosition::FullCenter)
+            {
+                root = root.child(render_spatial_spider_viz(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    snapshot,
+                    theme,
+                ));
+            }
+        }
+    }
+
     root.into_any_element()
+}
+
+/// Render the spatial spider (SPL / correlation) panel for any layout-driven
+/// plugin that opts in via `VizSlot::Custom { name: "spatial_spider", ... }`.
+/// Thin wrapper around the shared
+/// [`spatial_spider::render_spatial_spider_panel`] — bundles in the speaker
+/// config inference from the loudness data's channel count.
+fn render_spatial_spider_viz(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    snapshot: &crate::components::plugins::spatial_spider::SpatialSpiderSnapshot,
+    theme: &Theme,
+) -> AnyElement {
+    crate::components::plugins::spatial_spider::render_spatial_spider_panel(
+        d,
+        entity,
+        plugin_idx,
+        snapshot,
+        None,
+        theme,
+    )
 }
 
 /// Render the config (left) column.
@@ -220,6 +269,7 @@ fn render_config_column(
 }
 
 /// Render the main (center) column with groups and tabs.
+#[allow(clippy::too_many_arguments)]
 fn render_main_column(
     d: &Ds,
     entity: Entity<AppState>,
@@ -233,6 +283,9 @@ fn render_main_column(
     selected_param: usize,
     active_tab: usize,
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
+    spider_snapshot: Option<
+        &crate::components::plugins::spatial_spider::SpatialSpiderSnapshot,
+    >,
     theme: &Theme,
 ) -> impl IntoElement {
     let mut center = div().flex().flex_col().gap(d.section).flex_1();
@@ -323,6 +376,7 @@ fn render_main_column(
                 solved,
                 plugin_data,
                 theme,
+                spider_snapshot,
             ));
         }
         center = center.child(container);
@@ -465,6 +519,7 @@ fn render_output_column(
 }
 
 /// Render a control group (titled section with controls).
+#[allow(clippy::too_many_arguments)]
 fn render_group(
     d: &Ds,
     entity: Entity<AppState>,
@@ -479,6 +534,9 @@ fn render_group(
     solved: &SolvedLayout,
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     theme: &Theme,
+    spider_snapshot: Option<
+        &crate::components::plugins::spatial_spider::SpatialSpiderSnapshot,
+    >,
 ) -> impl IntoElement {
     // Slider groups (vertical meters) carry their own visual frame via
     // tick marks and labels, so the chassis-box wrapper is redundant.
@@ -565,6 +623,22 @@ fn render_group(
                         plugin_data,
                         theme,
                     ));
+                }
+                VizSlot::Custom {
+                    name,
+                    position: VizPosition::BelowGroup(target),
+                } if *target == group.title
+                    && *name == sotf_plugins::plugin_layout::viz_names::SPATIAL_SPIDER =>
+                {
+                    if let Some(snapshot) = spider_snapshot {
+                        col = col.child(render_spatial_spider_viz(
+                            d,
+                            entity.clone(),
+                            plugin_idx,
+                            snapshot,
+                            theme,
+                        ));
+                    }
                 }
                 _ => {}
             }

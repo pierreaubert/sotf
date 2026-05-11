@@ -1,5 +1,15 @@
 # 0.6.6 (unreleased)
 
+## Spatial spider visualizer
+
+- New `components/plugins/spatial_spider/` module with `SpiderDisc2D` (2D horizontal disc) and `SpiderView3D` (two intersecting reference planes) elements. Both consume the polygon geometry built by `spatial_spider::data` and are themed via `SpiderColors::from_theme(&Theme)`.
+- 2D disc shows concentric grid rings, radial rays every 30°, per-channel polygon (fill + stroke), speaker dots tinted toward `theme.error` for anti-phase correlation, channel labels, and a small centred LFE indicator.
+- 3D view uses `d3rs::gpu3d::Lines3DElement` (new CPU-projected line/polygon renderer) with full mouse interactivity — left-drag rotates, middle-drag pans, scroll-wheel zooms via the embedded `OrbitControls`.
+- Header bar exposes 2D/3D view toggle, SPL/Correlation mode toggle, and a reference-channel dropdown (Correlation mode only). The active reference channel is highlighted with a ring on its speaker dot.
+- Single shared `render_spatial_spider_panel` helper backs both the upmixer's Spatial tab (custom view) and the generic `ui_layout_renderer` `"spatial_spider"` custom-viz hook so they stay in lockstep.
+- AAE plugin opts into the spider via `VizSlot::Custom { name: viz_names::SPATIAL_SPIDER, position: VizPosition::FullCenter }` in its layout. Other multichannel plugins can opt in with the same one-line entry; `BelowGroup` positioning is honoured as well as `FullCenter`.
+- Shared `SpatialSpiderUiState` on `AppState` survives tab toggles (view mode, ref-channel, orbit-camera state).
+
 ## Room EQ: new strategy options in dropdowns
 
 - `MULTI_MEASUREMENT_STRATEGY_OPTIONS` now exposes `"spatial_robustness"`

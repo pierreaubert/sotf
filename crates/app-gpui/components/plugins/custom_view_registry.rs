@@ -311,7 +311,14 @@ fn render_upmixer(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerView>) -
         auto_gain_smoothing_ms,
     } = ctx.settings
     {
-        let upmixer_tab = ctx.entity.read(cx).app.upmixer_tab;
+        let (upmixer_tab, loudness_info, spatial_spider) = {
+            let app = &ctx.entity.read(cx).app;
+            (
+                app.upmixer_tab,
+                app.playback.loudness_info.clone(),
+                app.spatial_spider.clone(),
+            )
+        };
         let d = Ds::from_cx(cx);
         super::render_upmixer_plugin(
             &d,
@@ -369,6 +376,8 @@ fn render_upmixer(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerView>) -
                 selected_param: ctx.selected_param,
                 config_open: false,
                 upmixer_tab,
+                loudness_info,
+                spatial_spider,
             },
             ctx.theme,
             ctx.plugin_theme,

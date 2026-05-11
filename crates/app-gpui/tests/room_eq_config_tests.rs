@@ -818,6 +818,7 @@ fn build_mock_results(speaker_labels: &[&str]) -> (Vec<ChannelOptResult>, DspCha
                 gain_db: -3.0,
             }],
             broadband_filters: vec![],
+            preamp_gain_db: 0.0,
             crossover_freqs: None,
             driver_gains: None,
             original_response: None,

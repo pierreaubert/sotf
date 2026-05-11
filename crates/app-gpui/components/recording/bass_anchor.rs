@@ -135,10 +135,7 @@ impl PlayerView {
             );
             for ch in &results.channels {
                 let reliable = ch.bass_anchor_stability_deg < 20.0;
-                let lb_part = match (
-                    ch.bass_anchor_loopback_phase_deg,
-                    ch.bass_anchor_coherence,
-                ) {
+                let lb_part = match (ch.bass_anchor_loopback_phase_deg, ch.bass_anchor_coherence) {
                     (Some(lb), Some(coh)) => format!(", lb {:+.1}°, γ² {:.3}", lb, coh),
                     _ => String::new(),
                 };

@@ -71,6 +71,33 @@ where
     })
 }
 
+/// Default crossover reference key emitted into recordings.json when a
+/// bass-managed sub channel is detected and the caller has no explicit
+/// crossover choice. Matches the key used in `default_bass_management_crossovers`.
+pub const DEFAULT_BASS_MANAGEMENT_CROSSOVER_KEY: &str = "lfe_xover";
+
+/// Default `crossovers` map (LR24, 40–120 Hz optimization range) suitable
+/// for bass-managed home-cinema layouts written by the recording apps.
+///
+/// The roomeq workflow refuses to run a bass-managed sub without a crossover
+/// reference, so saving a recording with an LFE channel and no crossover left
+/// the JSON unusable until manually edited. Emitting this default lets the
+/// optimizer pick the best crossover frequency in a sensible range.
+pub fn default_bass_management_crossovers()
+-> HashMap<String, autoeq::roomeq::CrossoverConfig> {
+    let mut map = HashMap::new();
+    map.insert(
+        DEFAULT_BASS_MANAGEMENT_CROSSOVER_KEY.to_string(),
+        autoeq::roomeq::CrossoverConfig {
+            crossover_type: "LR24".to_string(),
+            frequency: None,
+            frequencies: None,
+            frequency_range: Some((40.0, 120.0)),
+        },
+    );
+    map
+}
+
 /// Room EQ workflow step
 ///
 /// Flow: LoadData → Delay → Process → Configure → Optimize → Review → Export
@@ -3257,6 +3284,12 @@ pub struct ChannelOptResult {
     pub eq_filters: Vec<EqFilterConfig>,
     /// Broadband pre-correction filters (lowshelf/highshelf), separate from main EQ
     pub broadband_filters: Vec<EqFilterConfig>,
+    /// Flat-gain (preamp) applied by post-optimization stages (spectral-alignment,
+    /// channel-matching, Voice of God). Not a biquad — a constant dB offset that
+    /// must be added to the EQ-filter sum so the displayed Sum matches what was
+    /// actually applied to `final_curve`.
+    #[serde(default)]
+    pub preamp_gain_db: f64,
     pub crossover_freqs: Option<Vec<f64>>,
     pub driver_gains: Option<Vec<f64>>,
     pub original_response: Option<Vec<(f64, f64)>>,

@@ -96,6 +96,7 @@ exclude = [
     "crates/3rdparties/coreaudio-rs",
     "crates/3rdparties/mach2",
     "crates/3rdparties/gpui_macos",
+    "crates/3rdparties/nnnoiseless",
 ]
 resolver = "3"
 
@@ -462,6 +463,7 @@ gpui_macos = { path = "crates/3rdparties/gpui_macos" }
 # - coreaudio-rs: cfg(target_os = "ios") doesn't include tvos
 # - mach2: compile_error! gate doesn't include tvos
 [patch.crates-io]
+nnnoiseless = { path = "crates/3rdparties/nnnoiseless" }
 psm = { path = "crates/3rdparties/psm" }
 zed-font-kit = { path = "crates/3rdparties/zed-font-kit" }
 coreaudio-rs = { path = "crates/3rdparties/coreaudio-rs" }

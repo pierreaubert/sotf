@@ -3807,7 +3807,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-d3rs"
-version = "0.6.7"
+version = "0.6.8"
 dependencies = [
  "approx",
  "autoeq",
@@ -6343,8 +6343,6 @@ dependencies = [
 [[package]]
 name = "nnnoiseless"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9db67d9a640853b7de65c5de1f9e8d6c130fc50504b19e6a90fa86c19a2f8d5a"
 dependencies = [
  "num-complex 0.2.4",
  "once_cell",
@@ -10249,8 +10247,10 @@ dependencies = [
  "cpal",
  "driver-hal",
  "env_logger",
+ "glam",
  "gpui",
  "gpui-builder",
+ "gpui-d3rs",
  "gpui-design",
  "gpui-ios",
  "gpui-keybinding",
@@ -10457,7 +10457,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-aae"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "criterion",
  "hound",
@@ -10641,7 +10641,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-denoiser"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "hound",
  "math-dsp",
@@ -10799,9 +10799,8 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-mono-to-stereo"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
- "rand 0.9.4",
  "realfft",
  "rustfft 6.4.1",
  "serde",
@@ -10927,7 +10926,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-xtc"
-version = "0.5.36"
+version = "0.5.37"
 dependencies = [
  "arc-swap",
  "criterion",

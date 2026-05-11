@@ -419,5 +419,4 @@ impl PlayerView {
             .detach();
         }
     }
-
 }

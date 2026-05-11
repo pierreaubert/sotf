@@ -589,9 +589,8 @@ impl_param_accessors! {
         params: param_specs::mono_to_stereo::PARAMS,
         layout: Some(&param_specs::mono_to_stereo::LAYOUT),
         fields: [
-            stereo_width: f64, haas_delay_ms: f64, enable_comp_eq: bool,
-            comp_eq_depth_db: f64, decor_low_hz: f64, decor_high_hz: f64,
-            freq_dependent: bool,
+            stereo_width: f64, haas_delay_ms: f64, decor_low_hz: f64,
+            decor_high_hz: f64, freq_dependent: bool,
         ]
     },
     Crossfeed {

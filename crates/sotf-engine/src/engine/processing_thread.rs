@@ -971,8 +971,14 @@ fn create_plugin_legacy(
         }
 
         "loudness_monitor" => {
+            // Engine-created LoudnessMonitors carry the inter-channel
+            // correlation matrix so the spatial-spider visualiser has data
+            // to render. Direct `LoudnessMonitor::new` callers (CLI tools,
+            // tests) keep the matrix off by default to avoid pulling N²
+            // memory and compute into consumers that don't need it.
             let plugin = LoudnessMonitorPlugin::new(channels)
-                .map_err(|e| format!("Failed to create loudness monitor: {}", e))?;
+                .map_err(|e| format!("Failed to create loudness monitor: {}", e))?
+                .with_spatial();
             Ok(Box::new(plugin))
         }
 
@@ -1612,12 +1618,14 @@ mod tests {
             // - Convolution requires an IR file on disk
             // - Upmixer/BinauralDecoder/Pnd use FFT overlap-add that returns 0 frames
             //   on first call, which triggers an assertion in PluginHost
+            // - SpeechDenoiser requires block sizes that are multiples of 480
             let skip_process = matches!(
                 plugin_type,
                 PluginType::Convolution
                     | PluginType::Upmixer
                     | PluginType::BinauralDecoder
                     | PluginType::Pnd
+                    | PluginType::SpeechDenoiser
             );
             if skip_process {
                 continue;

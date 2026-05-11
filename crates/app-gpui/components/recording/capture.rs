@@ -1822,7 +1822,9 @@ impl PlayerView {
         use crate::app::types::RoomEqMeasurementsFile;
         use autoeq::{OptimizerConfig, RecordingConfiguration, RoomConfig};
         use sotf_audio_player::room_eq_types::{
-            build_speakers_from_recordings, ctc_system_config_for_speaker_names,
+            DEFAULT_BASS_MANAGEMENT_CROSSOVER_KEY, build_speakers_from_recordings,
+            ctc_system_config_for_speaker_names, default_bass_management_crossovers,
+            room_eq_channel_is_bass_output,
         };
 
         let recording_dir = match self.ensure_named_recording_directory(cx) {
@@ -2102,15 +2104,23 @@ impl PlayerView {
             // roomeq uses it to interpret the layout (LFE/sub
             // detection, bass-management routing). Flipping CTC on
             // later does not require re-recording.
-            let system =
-                ctc_system_config_for_speaker_names(speakers.keys().map(String::as_str), None);
+            let has_bass_output = speakers
+                .keys()
+                .any(|name| room_eq_channel_is_bass_output(name));
+            let bass_management_crossover = has_bass_output
+                .then(|| DEFAULT_BASS_MANAGEMENT_CROSSOVER_KEY.to_string());
+            let system = ctc_system_config_for_speaker_names(
+                speakers.keys().map(String::as_str),
+                bass_management_crossover,
+            );
+            let crossovers = has_bass_output.then(default_bass_management_crossovers);
 
             // Build RoomConfig
             let room_config = RoomConfig {
                 version: "1.1.0".to_string(),
                 system,
                 speakers,
-                crossovers: None,
+                crossovers,
                 target_curve: None,
                 optimizer: OptimizerConfig::default(),
                 recording_config: Some(recording_config),
