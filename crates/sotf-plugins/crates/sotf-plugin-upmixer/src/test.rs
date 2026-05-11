@@ -1057,7 +1057,7 @@ mod upmixer_tests {
     }
 
     #[test]
-    fn test_crossover_gains_energy_normalization() {
+    fn test_crossover_gains_preserve_lr4_complex_sum() {
         let mut plugin = UpmixerPlugin::new(
             2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
         );
@@ -1066,19 +1066,20 @@ mod upmixer_tests {
         let nbins = plugin.lfe_low_gains.len();
         assert_eq!(nbins, plugin.mains_high_gains.len());
 
-        // Check that |low|^2 + |high|^2 ≈ 1 across spectrum
+        // Raw LR4 crossover paths preserve the complex summed response. They
+        // are intentionally not forced into per-bin power normalization.
         for (idx, (&low, &high)) in plugin
             .lfe_low_gains
             .iter()
             .zip(plugin.mains_high_gains.iter())
             .enumerate()
         {
-            let power = low.norm_sqr() + high.norm_sqr();
+            let summed = low + high;
             assert!(
-                (power - 1.0).abs() < 1e-3,
-                "Crossover power not normalized at bin {}: {}",
+                (summed.norm() - 1.0).abs() < 3e-3,
+                "LR4 crossover complex sum is not near unity at bin {}: {:?}",
                 idx,
-                power
+                summed
             );
         }
 
@@ -2526,6 +2527,348 @@ mod upmixer_tests {
             (plugin.multi_source_threshold - 0.5).abs() < 1e-6,
             "Threshold should be clamped to max 0.5, got {}",
             plugin.multi_source_threshold
+        );
+    }
+
+    // ============================================================================
+    // BUG REGRESSION TESTS
+    // ============================================================================
+
+    /// BUG 1: LFE crossover normalization breaks LR4 phase alignment.
+    ///
+    /// A true LR4 crossover has the property that |low_h| + |high_h| = 1 (magnitude
+    /// sum, not power sum). At the crossover frequency, each path is -6dB (0.5),
+    /// so |low|² + |high|² = 0.5, not 1.0. The current normalization divides by
+    /// sqrt(|low_h|² + |high_h|²), which at crossover is sqrt(0.5) ≈ 0.707. This
+    /// boosts both paths by ~6dB at crossover, creating a gain bump. Away from
+    /// crossover, the normalization factor varies with frequency, distorting the
+    /// natural LR4 response curve.
+    ///
+    /// The fix is to remove the normalization step. The squared responses already
+    /// have the correct LR4 shape without per-bin magnitude normalization.
+    ///
+    /// This test verifies that the plugin's crossover gains match the raw (un-normalized)
+    /// LR4 response. Currently it FAILS because the normalization distorts the gains.
+    #[test]
+    fn test_lr4_crossover_gains_match_raw_response() {
+        use math_audio_iir_fir::{Biquad, BiquadFilterType};
+        use rustfft::num_complex::Complex;
+
+        let cutoff = 120.0_f64;
+        let srate = 44100.0_f64;
+        let q = 1.0 / std::f64::consts::SQRT_2;
+
+        let low_section = Biquad::new(BiquadFilterType::Lowpass, cutoff, srate, q, 0.0);
+        let high_section = Biquad::new(BiquadFilterType::Highpass, cutoff, srate, q, 0.0);
+
+        let mut plugin = UpmixerPlugin::new(
+            2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+        plugin.initialize(44100).unwrap();
+
+        let freq_per_bin = srate / plugin.fft_size as f64;
+        let num_bins = plugin.lfe_low_gains.len();
+
+        // Check that plugin gains match raw LR4 at several key frequencies
+        let test_bins = [
+            1,                                      // DC-ish
+            (cutoff * 0.5 / freq_per_bin) as usize, // Half crossover
+            (cutoff / freq_per_bin) as usize,       // Crossover
+            (cutoff * 2.0 / freq_per_bin) as usize, // 2x crossover
+            (num_bins / 2),                         // Mid-band
+        ];
+
+        let mut max_deviation = 0.0_f64;
+        let mut worst_bin = 0usize;
+
+        for &bin in &test_bins {
+            if bin >= num_bins {
+                continue;
+            }
+            let f = bin as f64 * freq_per_bin;
+
+            // Compute raw LR4 response
+            let low_resp = low_section.complex_response(f);
+            let high_resp = high_section.complex_response(f);
+            let raw_low_h = low_resp * low_resp;
+            let raw_high_h = high_resp * high_resp;
+
+            // Get plugin gains (cast f32 -> f64 for comparison)
+            let plugin_low = plugin.lfe_low_gains[bin];
+            let plugin_high = plugin.mains_high_gains[bin];
+            let plugin_low_f64 = Complex::new(plugin_low.re as f64, plugin_low.im as f64);
+            let plugin_high_f64 = Complex::new(plugin_high.re as f64, plugin_high.im as f64);
+
+            // Compare magnitudes
+            let low_mag_diff = (plugin_low_f64.norm() - raw_low_h.norm()).abs();
+            let high_mag_diff = (plugin_high_f64.norm() - raw_high_h.norm()).abs();
+            let deviation = low_mag_diff.max(high_mag_diff);
+
+            if deviation > max_deviation {
+                max_deviation = deviation;
+                worst_bin = bin;
+            }
+
+            // The plugin gains should match the raw LR4 response (within f32 precision)
+            assert!(
+                low_mag_diff < 1e-5,
+                "Low gain at bin {} ({:.1} Hz): plugin={:.6} raw={:.6} diff={:.6e}. \
+                 Normalization is distorting the LR4 low-pass response.",
+                bin,
+                f,
+                plugin_low_f64.norm(),
+                raw_low_h.norm(),
+                low_mag_diff
+            );
+            assert!(
+                high_mag_diff < 1e-5,
+                "High gain at bin {} ({:.1} Hz): plugin={:.6} raw={:.6} diff={:.6e}. \
+                 Normalization is distorting the LR4 high-pass response.",
+                bin,
+                f,
+                plugin_high_f64.norm(),
+                raw_high_h.norm(),
+                high_mag_diff
+            );
+        }
+
+        // Log the worst deviation for diagnostics
+        let worst_f = worst_bin as f64 * freq_per_bin;
+        let low_resp = low_section.complex_response(worst_f);
+        let high_resp = high_section.complex_response(worst_f);
+        let raw_low_h = low_resp * low_resp;
+        let raw_high_h = high_resp * high_resp;
+        let plugin_low = plugin.lfe_low_gains[worst_bin];
+        let plugin_high = plugin.mains_high_gains[worst_bin];
+
+        // If we reach here without assertion failure, the gains match perfectly.
+        // Otherwise, this summary helps diagnose the worst-case distortion.
+        eprintln!(
+            "LR4 crossover: worst deviation at bin {} ({:.1} Hz): \
+             low_diff={:.2e} high_diff={:.2e}",
+            worst_bin,
+            worst_f,
+            (plugin_low.norm() as f64 - raw_low_h.norm()).abs(),
+            (plugin_high.norm() as f64 - raw_high_h.norm()).abs(),
+        );
+    }
+
+    /// BUG 2: VOICE_END_BIN range in centroid computation includes Nyquist bin.
+    ///
+    /// When voice_end_bin equals spectrum_size - 1 (the Nyquist bin), the inclusive
+    /// range voice_start_bin..=voice_end_bin includes the Nyquist bin which has zero
+    /// energy. The voice_end_bin is clamped to `spectrum_size - 1` by the `.min()` in
+    /// recache_bin_indices. With a high voice_freq_max_hz, this clamping kicks in and
+    /// includes the Nyquist bin unnecessarily.
+    ///
+    /// This test sets voice_freq_max_hz very high so that the clamping activates,
+    /// and verifies that cached_voice_end_bin does NOT equal the Nyquist bin index.
+    #[test]
+    fn test_voice_end_bin_does_not_reach_nyquist() {
+        let mut plugin = UpmixerPlugin::new(
+            2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+        plugin.initialize(44100).unwrap();
+
+        let spectrum_size = plugin.fft_size / 2 + 1;
+        let nyquist_bin = spectrum_size - 1;
+
+        // Set voice_freq_max_hz very high so the clamping kicks in
+        plugin.voice_freq_max_hz = 50000.0; // Above Nyquist (22050 Hz)
+        plugin.recache_bin_indices();
+
+        // With the current code, the clamped voice_end_bin equals the Nyquist bin
+        // because (50000 / 21.5).min(1023.9) = 1023 = spectrum_size - 1
+        // The inclusive range ..= then includes this bin unnecessarily.
+        //
+        // The fix should use an exclusive upper bound: voice_end_bin should be
+        // one less than the clamped value, so the range doesn't reach Nyquist.
+        assert!(
+            plugin.cached_voice_end_bin < nyquist_bin,
+            "voice_end_bin ({}) should not reach the Nyquist bin ({}) — \
+             the Nyquist bin has zero energy and its inclusion in the inclusive \
+             range voice_start_bin..=voice_end_bin is an off-by-one error. \
+             The fix should subtract 1 from the clamped end bin.",
+            plugin.cached_voice_end_bin,
+            nyquist_bin
+        );
+    }
+
+    /// BUG 3: Sub-harmonic synthesis envelope tracks post-synthesis LFE output.
+    ///
+    /// The sub-harmonic synthesis iterates over time_out_channels[lfe_idx] sample-by-
+    /// sample, using the LFE output as the envelope source. Because the LFE output
+    /// already contains the previously synthesized sub-harmonic content, the envelope
+    /// follower tracks a feedback loop rather than the raw input bass energy.
+    ///
+    /// This test demonstrates that after input silence, the `subharmonic_amp_envelope`
+    /// remains elevated because the LFE output contains sub-harmonic energy (self-
+    /// reinforcement). A properly designed envelope would track the frequency-domain
+    /// LFE magnitude (input bass energy) and decay to zero when the input stops.
+    #[test]
+    fn test_subharmonic_envelope_tracks_input_not_output() {
+        use sotf_host::ProcessContext;
+
+        let mut plugin = UpmixerPlugin::new(
+            2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0,
+            true, // enable sub-harmonic
+            0.5,
+        );
+        plugin.initialize(44100).unwrap();
+        plugin
+            .set_parameter(
+                ParameterId::from("subharmonic_gain"),
+                ParameterValue::Float(1.0),
+            )
+            .unwrap();
+
+        let num_frames = 2048;
+        let sr = 44100.0;
+        let context = ProcessContext {
+            sample_rate: 44100,
+            num_frames,
+        };
+
+        // Phase 1: Process blocks of strong bass to charge the envelope
+        for _ in 0..20 {
+            let mut input = vec![0.0_f32; num_frames * 2];
+            for i in 0..num_frames {
+                let t = i as f32 / sr;
+                let bass = (2.0 * std::f32::consts::PI * 80.0 * t).sin() * 0.7;
+                input[i * 2] = bass;
+                input[i * 2 + 1] = bass;
+            }
+            let mut output = vec![0.0_f32; num_frames * 6];
+            plugin.process(&input, &mut output, &context).unwrap();
+        }
+
+        let amp_env_after_bass = plugin.subharmonic_amp_envelope;
+        assert!(
+            amp_env_after_bass > 0.1,
+            "Amp envelope should be charged after bass: {}",
+            amp_env_after_bass
+        );
+
+        // Phase 2: Send silence. The LFE output from the crossover should be zero
+        // (no input bass). But the sub-harmonic synthesis adds energy to the LFE
+        // output, which the envelope then detects as "activity".
+        let silent_input = vec![0.0_f32; num_frames * 2];
+
+        // After just 2 blocks of silence, check the envelope
+        for _ in 0..2 {
+            let mut output = vec![0.0_f32; num_frames * 6];
+            plugin
+                .process(&silent_input, &mut output, &context)
+                .unwrap();
+        }
+
+        let amp_env_after_silence = plugin.subharmonic_amp_envelope;
+
+        // The release coefficient for 50ms at 44100 Hz is ~0.000453.
+        // After 2 blocks (4096 samples): decay ≈ (1 - 0.000453)^4096 ≈ 0.156
+        // So the envelope should decay to ~15.6% of its value.
+        //
+        // But with output-tracking, the sub-harmonic energy in the LFE output
+        // keeps the envelope higher than the pure release decay would allow.
+        //
+        // Expected with pure release: amp_env_after_bass * 0.156
+        // Actual with self-reinforcement: higher than expected
+        let expected_with_pure_release = amp_env_after_bass * 0.16;
+
+        assert!(
+            amp_env_after_silence <= expected_with_pure_release,
+            "Sub-harmonic amp envelope after 2 blocks of silence: {:.4} \
+             (expected ≤ {:.4} with pure release decay). \
+             The envelope is higher than expected because the sub-harmonic \
+             synthesis tracks the LFE output (which contains sub-harmonic energy) \
+             instead of the input bass energy. This self-reinforcement extends \
+             the envelope beyond the configured release time.",
+            amp_env_after_silence,
+            expected_with_pure_release
+        );
+    }
+
+    /// BUG 4: direct2 secondary source DOA uses per-ERB-band angle, not per-bin.
+    ///
+    /// The DOA angle for the secondary source (doa2_band) is computed once per ERB
+    /// band from the eigenvector magnitudes, then applied to every bin within that
+    /// band. For standard ERB mode (~40-50 bands), low-frequency bands can span
+    /// hundreds of Hz, and the DOA angle can vary significantly within a band.
+    /// This causes spatial smearing of the secondary source.
+    ///
+    /// This test verifies that the number of unique DOA values in direct2_doa_per_bin
+    /// is bounded by the number of ERB bands (not the number of bins with energy).
+    /// A per-bin DOA implementation would produce as many unique values as bins.
+    #[test]
+    fn test_direct2_doa_is_constant_within_erb_band() {
+        let fft_size = 2048;
+        let mut plugin = UpmixerPlugin::new(
+            fft_size, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+        plugin.initialize(44100).unwrap();
+
+        plugin.multi_source_extraction = true;
+        // Use a very low threshold so extraction activates easily
+        plugin.multi_source_threshold = 0.01;
+
+        // Two uncorrelated sources at different frequencies to produce different DOA
+        // angles across the spectrum. L = 1 kHz sine, R = 3 kHz sine.
+        // These are in the upmix region (above bandpass_bin ~ 5 bins).
+        let mut input = vec![0.0f32; fft_size * 2];
+        for i in 0..fft_size {
+            let t = i as f32 / 44100.0;
+            input[i * 2] = (2.0 * std::f32::consts::PI * 1000.0 * t).sin() * 0.5;
+            input[i * 2 + 1] = (2.0 * std::f32::consts::PI * 3000.0 * t).sin() * 0.5;
+        }
+        let mut output = vec![0.0f32; fft_size * plugin.num_output_channels];
+
+        // Run many blocks for covariance to converge
+        for _ in 0..50 {
+            plugin.process_fft_block(&input, &mut output);
+        }
+
+        let spec_size = fft_size / 2 + 1;
+        let bandpass_bin = plugin.cached_bandpass_bin;
+
+        // Collect DOA values from bins that have non-zero direct2 energy
+        let mut doa_values: Vec<(usize, f32)> = Vec::new();
+        for i in bandpass_bin..spec_size {
+            let energy = plugin.direct2[i].norm_sqr();
+            if energy > 1e-12 {
+                doa_values.push((i, plugin.direct2_doa_per_bin[i]));
+            }
+        }
+
+        assert!(
+            !doa_values.is_empty(),
+            "direct2 should have non-zero energy for multi-source input. \
+             Got {} bins with energy above threshold. \
+             bandpass_bin={}, spec_size={}, multi_source_extraction={}, threshold={}",
+            doa_values.len(),
+            bandpass_bin,
+            spec_size,
+            plugin.multi_source_extraction,
+            plugin.multi_source_threshold
+        );
+
+        // Count unique DOA values (using bits representation for exact comparison)
+        let unique_doas: std::collections::HashSet<u32> =
+            doa_values.iter().map(|(_, d)| d.to_bits()).collect();
+
+        // With per-band DOA, the number of unique values is bounded by the number
+        // of ERB bands. With per-bin DOA, it would be close to the number of bins.
+        // The fix should compute DOA per-bin (or at least per fine-ERB band).
+        assert!(
+            unique_doas.len() > plugin.erb_bands.len(),
+            "Found {} unique DOA values across {} active bins with {} ERB bands. \
+             The number of unique DOA values ({}) should exceed the ERB band count ({}) \
+             if DOA is computed per-bin. Currently DOA is constant within each ERB band, \
+             causing spatial smearing of the secondary source.",
+            unique_doas.len(),
+            doa_values.len(),
+            plugin.erb_bands.len(),
+            unique_doas.len(),
+            plugin.erb_bands.len()
         );
     }
 }

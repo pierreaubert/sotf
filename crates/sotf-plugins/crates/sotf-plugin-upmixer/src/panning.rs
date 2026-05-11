@@ -5,6 +5,11 @@
 use super::UpmixerPlugin;
 use math_audio_dsp::fast_math::fast_cos;
 
+#[inline(always)]
+fn direct2_speaker_gain(doa2: f32, speaker_azimuth_rad: f32) -> f32 {
+    fast_cos(doa2 - speaker_azimuth_rad).max(0.0)
+}
+
 impl UpmixerPlugin {
     #[inline]
     pub(super) fn apply_vbap_panning_and_inverse_fft(&mut self) {
@@ -169,7 +174,7 @@ impl UpmixerPlugin {
                             // Gain = max(0, cos(doa2 - spk_az)) provides soft directional routing.
                             if multi_source {
                                 let doa2 = self.direct2_doa_per_bin[i];
-                                let d2_gain = fast_cos(doa2 - spk_az_rad).max(0.0);
+                                let d2_gain = direct2_speaker_gain(doa2, spk_az_rad);
                                 out += self.direct2[i] * (d2_gain * dg);
                             }
 
@@ -197,5 +202,22 @@ impl UpmixerPlugin {
                 .process(&mut self.temp_freq_out, &mut self.time_out_channels[ch])
                 .unwrap();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn direct2_speaker_gain_routes_secondary_source_by_doa() {
+        let doa = 30.0_f32.to_radians();
+        let aligned = direct2_speaker_gain(doa, 30.0_f32.to_radians());
+        let orthogonal = direct2_speaker_gain(doa, 120.0_f32.to_radians());
+        let opposite = direct2_speaker_gain(doa, 210.0_f32.to_radians());
+
+        assert!((aligned - 1.0).abs() < 0.002);
+        assert!(orthogonal < 0.002);
+        assert_eq!(opposite, 0.0);
     }
 }

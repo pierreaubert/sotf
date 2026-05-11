@@ -6,6 +6,22 @@ use super::UpmixerPlugin;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use rustfft::num_complex::Complex;
 
+#[inline]
+fn lr4_crossover_response_pair(
+    frequency: f64,
+    low_section: &Biquad<f64>,
+    high_section: &Biquad<f64>,
+) -> (Complex<f64>, Complex<f64>) {
+    let low_response = low_section.complex_response(frequency);
+    let high_response = high_section.complex_response(frequency);
+    (low_response * low_response, high_response * high_response)
+}
+
+#[inline(always)]
+fn subharmonic_envelope_source_sample(lfe_sample_before_synthesis: f32) -> f32 {
+    lfe_sample_before_synthesis.abs()
+}
+
 impl UpmixerPlugin {
     /// Update Linkwitz-Riley crossover gains for mains and LFE separation
     ///
@@ -30,10 +46,7 @@ impl UpmixerPlugin {
 
         let cutoff = self.lfe_cutoff_hz as f64;
         let srate = self.sample_rate as f64;
-
-        // LR4: cascade two 2nd-order Butterworth sections for low-pass and high-pass
         let q = 1.0 / std::f64::consts::SQRT_2;
-
         let low_section = Biquad::new(BiquadFilterType::Lowpass, cutoff, srate, q, 0.0);
         let high_section = Biquad::new(BiquadFilterType::Highpass, cutoff, srate, q, 0.0);
 
@@ -42,19 +55,10 @@ impl UpmixerPlugin {
         for i in 0..num_bins {
             let f = i as f64 * freq_per_bin;
 
-            // Use complex response to preserve phase information
-            let low_response = low_section.complex_response(f);
-            let high_response = high_section.complex_response(f);
-            let mut low_h = low_response * low_response;
-            let mut high_h = high_response * high_response;
-
-            // Normalize so that |low|^2 + |high|^2 ≈ 1.0 to avoid level shifts
-            let power = low_h.norm_sqr() + high_h.norm_sqr();
-            if power > 0.0 {
-                let norm = power.sqrt();
-                low_h /= norm;
-                high_h /= norm;
-            }
+            // LR4 is the cascade of two matched 2nd-order Butterworth sections.
+            // Do not magnitude-normalize the pair; the complex sum carries the
+            // crossover phase relationship.
+            let (low_h, high_h) = lr4_crossover_response_pair(f, &low_section, &high_section);
 
             self.lfe_low_gains[i] = Complex::new(low_h.re as f32, low_h.im as f32);
             self.mains_high_gains[i] = Complex::new(high_h.re as f32, high_h.im as f32);
@@ -85,8 +89,10 @@ impl UpmixerPlugin {
             let soft_knee = 0.0005_f32; // Transition zone width
 
             for i in 0..self.fft_size {
-                // Use the time-domain LFE signal as the envelope
-                let lfe_amp = self.time_out_channels[lfe_idx][i].abs();
+                // Use the current time-domain LFE sample before adding the synthesized
+                // subharmonic. This keeps the envelope independent of the generated tone.
+                let lfe_amp =
+                    subharmonic_envelope_source_sample(self.time_out_channels[lfe_idx][i]);
 
                 // Smooth the amplitude envelope to prevent raw AM distortion
                 let amp_coeff = if lfe_amp > self.subharmonic_amp_envelope {
@@ -139,5 +145,41 @@ impl UpmixerPlugin {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lr4_crossover_pair_preserves_complex_unity_sum() {
+        let cutoff = 120.0;
+        let sample_rate = 48_000.0;
+        let q = 1.0 / std::f64::consts::SQRT_2;
+        let low_section = Biquad::new(BiquadFilterType::Lowpass, cutoff, sample_rate, q, 0.0);
+        let high_section = Biquad::new(BiquadFilterType::Highpass, cutoff, sample_rate, q, 0.0);
+
+        for frequency in [30.0, 90.0, 120.0, 180.0, 480.0] {
+            let (low, high) = lr4_crossover_response_pair(frequency, &low_section, &high_section);
+            let summed = low + high;
+
+            assert!(
+                (summed.norm() - 1.0).abs() < 1e-3,
+                "LR4 complex sum should stay near unity at {frequency} Hz, got {summed:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn subharmonic_envelope_source_uses_pre_synthesis_sample() {
+        let before = -0.25;
+        let synthesized = 0.75;
+
+        assert_eq!(subharmonic_envelope_source_sample(before), 0.25);
+        assert_ne!(
+            subharmonic_envelope_source_sample(before),
+            (before + synthesized).abs()
+        );
     }
 }

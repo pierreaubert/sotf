@@ -37,6 +37,10 @@ const HEIGHT_REVERB_WEIGHT: f32 = 0.4;
 const HEIGHT_GAIN_MAX_RISE: f32 = 0.035;
 /// Fastest per-frame decrease in final height gains after all masking.
 const HEIGHT_GAIN_MAX_FALL: f32 = 0.07;
+/// Fast response when the mask closes for transient ducking.
+const HEIGHT_GAIN_DUCK_ALPHA: f32 = 0.16;
+/// Slower response when the mask opens again, preventing crackle on recovery.
+const HEIGHT_GAIN_RECOVERY_ALPHA: f32 = 0.045;
 
 #[inline(always)]
 fn smooth_slew_limited(
@@ -61,6 +65,15 @@ fn smooth_slew_limited(
     let smoothed = previous + alpha * diff;
     let limited_diff = (smoothed - previous).clamp(-max_fall, max_rise);
     (previous + limited_diff).clamp(HEIGHT_GATE_FLOOR, 1.0)
+}
+
+#[inline(always)]
+fn height_gain_temporal_alpha(target: f32, previous: f32) -> f32 {
+    if target < previous {
+        HEIGHT_GAIN_DUCK_ALPHA
+    } else {
+        HEIGHT_GAIN_RECOVERY_ALPHA
+    }
 }
 
 impl UpmixerPlugin {
@@ -268,10 +281,8 @@ impl UpmixerPlugin {
             *s *= gate;
         }
 
-        // Temporal smoothing: asymmetric attack/release blend with previous frame.
-        // Fast attack for transient ducking, slow release to prevent crackle on mask recovery.
-        let attack_alpha = 0.16_f32;
-        let release_alpha = 0.045_f32;
+        // Temporal smoothing: fast gain reduction for transient ducking, slower recovery to
+        // prevent crackle as the height mask opens back up.
         for (s, (gain, prev)) in smoothed
             .iter()
             .zip(
@@ -281,11 +292,7 @@ impl UpmixerPlugin {
             )
             .take(n)
         {
-            let alpha = if *s < *prev {
-                attack_alpha
-            } else {
-                release_alpha
-            };
+            let alpha = height_gain_temporal_alpha(*s, *prev);
             let blended = alpha * s + (1.0 - alpha) * *prev;
             let delta = (blended - *prev).clamp(-HEIGHT_GAIN_MAX_FALL, HEIGHT_GAIN_MAX_RISE);
             let blended = (*prev + delta).clamp(HEIGHT_MASK_FLOOR, 1.0);
@@ -331,6 +338,19 @@ mod tests {
             1.0 - down <= HEIGHT_GATE_MAX_FALL + 1e-6,
             "gate fell too quickly: {}",
             1.0 - down
+        );
+    }
+
+    #[test]
+    fn height_gain_temporal_alpha_ducks_faster_than_it_recovers() {
+        let duck = height_gain_temporal_alpha(0.2, 0.8);
+        let recover = height_gain_temporal_alpha(0.8, 0.2);
+
+        assert_eq!(duck, HEIGHT_GAIN_DUCK_ALPHA);
+        assert_eq!(recover, HEIGHT_GAIN_RECOVERY_ALPHA);
+        assert!(
+            duck > recover,
+            "height mask should close faster for ducking than it reopens"
         );
     }
 }

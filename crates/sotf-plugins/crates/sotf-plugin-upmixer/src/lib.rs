@@ -63,6 +63,13 @@ const PHASE_SHIFT_270: Complex<f32> = Complex::new(0.0, -1.0); // -i
 // Plugin Implementation
 // ============================================================================
 
+#[inline]
+fn hr_delay_buffer_len(fft_size: usize, hop_size: usize, hr_fft_size: usize) -> usize {
+    let main_latency = fft_size.saturating_sub(hop_size);
+    let hr_latency = hr_fft_size.saturating_sub(hr_fft_size / 2);
+    main_latency.saturating_sub(hr_latency) * 2
+}
+
 fn periodic_sqrt_hann_window(size: usize) -> Vec<f32> {
     (0..size)
         .map(|i| {
@@ -416,7 +423,8 @@ pub struct UpmixerPlugin {
     hr_temp_freq_out: Vec<Complex<f32>>,
     /// Pre-allocated temp buffer for delay-compensated HR input (avoids hot-path allocation)
     hr_delay_temp: Vec<f32>,
-    /// Exact temporal delay buffer to phase-align the fast HR OLA path with the slow Main OLA path
+    /// Delay buffer that phase-aligns the fast HR OLA path with the slow Main OLA path.
+    /// Empty when both paths already have matching overlap latency.
     hr_delay_buffer: Vec<f32>,
     /// Ring buffer cursor for delay buffer
     hr_delay_cursor: usize,
@@ -854,11 +862,8 @@ impl UpmixerPlugin {
             hr_delay_temp: vec![0.0; fft_size * 2],
             // Delay buffer to align physical OLA overlap latency:
             // main_latency = fft_size - hop_size, hr_latency = hr_fft_size - hr_fft_size/2
-            // delay = (main_latency - hr_latency) * 2 (stereo interleaved)
-            hr_delay_buffer: vec![
-                0.0;
-                ((fft_size - hop_size) - (hr_fft_size - (hr_fft_size / 2))) * 2
-            ],
+            // delay = max(main_latency - hr_latency, 0) * 2 (stereo interleaved)
+            hr_delay_buffer: vec![0.0; hr_delay_buffer_len(fft_size, hop_size, hr_fft_size)],
             hr_delay_cursor: 0,
 
             // Sized to match main ring buffer (fft_size * 4) since all input feeds HR before drain
@@ -1390,7 +1395,7 @@ impl UpmixerPlugin {
         let hr_fft_size = self.hr_fft_size;
         self.hr_delay_temp = vec![0.0; new_fft_size * 2];
         self.hr_delay_buffer =
-            vec![0.0; ((new_fft_size - hop_size) - (hr_fft_size - (hr_fft_size / 2))) * 2];
+            vec![0.0; hr_delay_buffer_len(new_fft_size, hop_size, hr_fft_size)];
         self.hr_delay_cursor = 0;
         self.hr_output_accumulator = vec![0.0; accumulator_frames * nch];
         self.hr_output_accumulator_mask = accumulator_frames - 1;
@@ -2210,6 +2215,26 @@ impl Plugin for UpmixerPlugin {
 
     fn latency_samples(&self) -> usize {
         self.fft_size
+    }
+}
+
+#[cfg(test)]
+mod local_tests {
+    use super::*;
+
+    #[test]
+    fn hr_delay_buffer_len_is_zero_when_ola_latencies_match() {
+        assert_eq!(hr_delay_buffer_len(512, 256, 512), 0);
+    }
+
+    #[test]
+    fn hr_delay_buffer_len_saturates_when_hr_path_is_not_faster() {
+        assert_eq!(hr_delay_buffer_len(512, 256, 1024), 0);
+    }
+
+    #[test]
+    fn hr_delay_buffer_len_aligns_default_hr_path() {
+        assert_eq!(hr_delay_buffer_len(2048, 1024, 512), 1536);
     }
 }
 

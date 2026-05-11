@@ -3,13 +3,13 @@
 // ============================================================================
 //
 // Uses intensity-vector-based direction-of-arrival (DOA) estimation per ERB band
-// and diffuseness-based energy-preserving direct/ambient decomposition.
+// and diffuseness-based direct/ambient decomposition.
 //
 // For each ERB band:
 // 1. Compute active intensity vector I = Re(P * V*) where P = (L+R)/2, V = (L-R)/2
 // 2. DOA angle = atan2(I_y, I_x) gives per-band panning direction
 // 3. Diffuseness psi = 1 - |I| / (P_energy * V_energy) measures how diffuse the field is
-// 4. direct_gain = sqrt(1 - psi), ambient_gain = sqrt(psi) for energy preservation
+// 4. Base split gains are sqrt(1 - psi) and sqrt(psi); user boost controls are applied later.
 
 use super::UpmixerPlugin;
 use math_audio_dsp::fast_math::{fast_atan2, fast_cos, fast_sin};
@@ -37,6 +37,7 @@ const DOA_SMOOTHING_ALPHA: f32 = 0.2;
 /// Smoothing alpha for diffuseness, which directly modulates ambient/height routing.
 const DIFFUSENESS_SMOOTHING_ALPHA: f32 = 0.18;
 const DIFFUSENESS_MAX_STEP: f32 = 0.08;
+const DIFFUSENESS_ENERGY_FLOOR: f32 = 1e-12;
 /// Dialogue control smoothing for spatial decomposition. This is intentionally
 /// slower than detector smoothing because it modulates center, ambience, and
 /// decorrelation over the whole sound field.
@@ -88,16 +89,14 @@ fn median5(arr: [f32; 5]) -> f32 {
 /// - Diffuseness psi = 1 - |I| / sqrt(E_p * E_v), clamped to [0, 1]
 /// - direct_gain = sqrt(1 - psi), ambient_gain = sqrt(psi)
 ///
-/// This ensures direct^2 + ambient^2 = 1 (energy preservation).
-///
-/// Returns (diffuseness, doa_angle, direct_gain_base, ambient_gain_base)
+/// The returned base gains satisfy direct^2 + ambient^2 = 1 before user boost controls.
 #[inline]
 fn compute_diffuseness_and_doa(
     freq_left: &[Complex<f32>],
     freq_right: &[Complex<f32>],
     start_bin: usize,
     end_bin: usize,
-) -> (f32, f32, f32, f32) {
+) -> DiffusenessAndDoa {
     let mut intensity_re = 0.0_f32; // Re part of intensity (left-right axis)
     let mut intensity_im = 0.0_f32; // Im part of intensity (front-back axis)
     let mut pressure_energy = 0.0_f32;
@@ -130,18 +129,38 @@ fn compute_diffuseness_and_doa(
     // When |I| is large relative to energies, the field is directional (psi -> 0)
     // When |I| is small, the field is diffuse (psi -> 1)
     let energy_product = (pressure_energy * velocity_energy).sqrt();
-    let diffuseness = if energy_product > 1e-12 {
+    let reliable = energy_product > DIFFUSENESS_ENERGY_FLOOR;
+    let diffuseness = if reliable {
         (1.0 - intensity_magnitude / energy_product).clamp(0.0, 1.0)
     } else {
-        1.0 // No signal = treat as diffuse
+        0.0
     };
 
-    // Energy-preserving decomposition:
-    // direct_gain^2 + ambient_gain^2 = 1
-    let direct_gain = (1.0 - diffuseness).max(0.0).sqrt();
-    let ambient_gain = diffuseness.max(0.0).sqrt();
+    DiffusenessAndDoa {
+        diffuseness,
+        doa,
+        reliable,
+    }
+}
 
-    (diffuseness, doa, direct_gain, ambient_gain)
+#[derive(Debug, Clone, Copy)]
+struct DiffusenessAndDoa {
+    diffuseness: f32,
+    doa: f32,
+    reliable: bool,
+}
+
+#[cfg(test)]
+impl DiffusenessAndDoa {
+    #[inline(always)]
+    fn direct_gain(self) -> f32 {
+        (1.0 - self.diffuseness).max(0.0).sqrt()
+    }
+
+    #[inline(always)]
+    fn ambient_gain(self) -> f32 {
+        self.diffuseness.max(0.0).sqrt()
+    }
 }
 
 #[inline(always)]
@@ -171,6 +190,90 @@ fn smooth_diffuseness(previous: f32, target: f32, smoothing_scale: f32) -> f32 {
     let smoothed = previous + alpha * (target - previous);
     let limited_diff = (smoothed - previous).clamp(-max_step, max_step);
     (previous + limited_diff).clamp(0.0, 1.0)
+}
+
+#[inline(always)]
+fn update_diffuseness_state(
+    smoothed_diffuseness: &mut f32,
+    initialized: &mut bool,
+    analysis: DiffusenessAndDoa,
+    smoothing_scale: f32,
+) -> f32 {
+    if !analysis.reliable {
+        return *smoothed_diffuseness;
+    }
+
+    if !*initialized {
+        *smoothed_diffuseness = analysis.diffuseness;
+        *initialized = true;
+        analysis.diffuseness
+    } else {
+        let smoothed =
+            smooth_diffuseness(*smoothed_diffuseness, analysis.diffuseness, smoothing_scale);
+        *smoothed_diffuseness = smoothed;
+        smoothed
+    }
+}
+
+#[inline(always)]
+fn ambient_gain_with_controls(diffuseness: f32, ambient_boost: f32, dialogue_control: f32) -> f32 {
+    diffuseness.max(0.0).sqrt() * ambient_boost * (1.0 - dialogue_control)
+}
+
+#[inline(always)]
+fn principal_eigenvector(
+    c_xx: f32,
+    c_yy: f32,
+    c_xy: Complex<f32>,
+    lambda1: f32,
+) -> (Complex<f32>, Complex<f32>) {
+    if c_xy.norm_sqr() > 1e-18 {
+        let v = lambda1 - c_xx;
+        let norm = (c_xy.norm_sqr() + v * v).sqrt();
+        if norm > 1e-9 {
+            (c_xy / norm, Complex::new(v / norm, 0.0))
+        } else if c_xx >= c_yy {
+            (Complex::new(1.0, 0.0), Complex::new(0.0, 0.0))
+        } else {
+            (Complex::new(0.0, 0.0), Complex::new(1.0, 0.0))
+        }
+    } else if c_xx >= c_yy {
+        (Complex::new(1.0, 0.0), Complex::new(0.0, 0.0))
+    } else {
+        (Complex::new(0.0, 0.0), Complex::new(1.0, 0.0))
+    }
+}
+
+#[inline(always)]
+fn transition_crossfade_weight(bin: usize, transition_start: usize, transition_width: f32) -> f32 {
+    if transition_width <= 0.0 {
+        return 1.0;
+    }
+    let linear_t = ((bin - transition_start) as f32 / transition_width).clamp(0.0, 1.0);
+    0.5 - 0.5 * fast_cos(std::f32::consts::PI * linear_t)
+}
+
+#[inline(always)]
+fn normalize_decorrelation_blend(blended: Complex<f32>) -> Complex<f32> {
+    let mag_sq = blended.norm_sqr();
+    if mag_sq > 1e-9 {
+        blended * (1.0 / mag_sq.sqrt())
+    } else {
+        Complex::new(1.0, 0.0)
+    }
+}
+
+#[inline(always)]
+fn bin_intensity_doa(left: Complex<f32>, right: Complex<f32>) -> Option<f32> {
+    let p = (left + right) * 0.5;
+    let v = (left - right) * 0.5;
+    let energy_product = (p.norm_sqr() * v.norm_sqr()).sqrt();
+    if energy_product <= DIFFUSENESS_ENERGY_FLOOR {
+        return None;
+    }
+
+    let intensity = p * v.conj();
+    Some(fast_atan2(intensity.im, intensity.re))
 }
 
 impl UpmixerPlugin {
@@ -276,35 +379,29 @@ impl UpmixerPlugin {
             }
 
             // --- Intensity-vector DOA and diffuseness (Phase 1 & 2) ---
-            let (raw_diffuseness, raw_doa, direct_gain_base, _ambient_gain_base) =
-                compute_diffuseness_and_doa(
-                    &self.freq_domain_left,
-                    &self.freq_domain_right,
-                    start_bin,
-                    end_bin,
-                );
+            let diffuseness_analysis = compute_diffuseness_and_doa(
+                &self.freq_domain_left,
+                &self.freq_domain_right,
+                start_bin,
+                end_bin,
+            );
+            let raw_diffuseness = diffuseness_analysis.diffuseness;
+            let raw_doa = diffuseness_analysis.doa;
             let diffuseness = if band_idx < self.smoothed_diffuseness.len()
                 && band_idx < self.diffuseness_initialized.len()
             {
-                if !self.diffuseness_initialized[band_idx] {
-                    self.smoothed_diffuseness[band_idx] = raw_diffuseness;
-                    self.diffuseness_initialized[band_idx] = true;
-                    raw_diffuseness
-                } else {
-                    let smoothed = smooth_diffuseness(
-                        self.smoothed_diffuseness[band_idx],
-                        raw_diffuseness,
-                        analysis_smoothing_scale,
-                    );
-                    self.smoothed_diffuseness[band_idx] = smoothed;
-                    smoothed
-                }
+                update_diffuseness_state(
+                    &mut self.smoothed_diffuseness[band_idx],
+                    &mut self.diffuseness_initialized[band_idx],
+                    diffuseness_analysis,
+                    analysis_smoothing_scale,
+                )
             } else {
                 raw_diffuseness
             };
 
             // Smooth DOA angle with one-pole filter (angle wrapping handled)
-            if band_idx < self.doa_angle.len() {
+            if diffuseness_analysis.reliable && band_idx < self.doa_angle.len() {
                 let prev_doa = self.doa_angle[band_idx];
                 let mut delta = raw_doa - prev_doa;
                 if delta > std::f32::consts::PI {
@@ -355,40 +452,20 @@ impl UpmixerPlugin {
             // Uses intensity-vector DOA for direction and diffuseness for decomposition
             let needs_upmix = transition_start.max(start_bin) < end_bin;
             if needs_upmix {
-                // Diffuseness-based ambient gain (energy-preserving)
-                // ambient_gain_base = sqrt(psi) where psi is smoothed diffuseness
-                // Scale by ambient_boost parameter and dialogue weight
-                let ambient_gain_base = diffuseness.max(0.0).sqrt();
-                let ambient_gain =
-                    ambient_gain_base * self.ambient_boost.current() * (1.0 - dialogue_control);
+                // Diffuseness-based ambient gain. The base sqrt(psi) split is energy preserving;
+                // ambient_boost and dialogue control are user/scene controls applied on top.
+                let ambient_gain = ambient_gain_with_controls(
+                    diffuseness,
+                    self.ambient_boost.current(),
+                    dialogue_control,
+                );
 
                 // Effective coherence for center extraction: blend coherence with dialogue
                 let eff_coh = coherence + (1.0 - coherence) * dialogue_control;
 
-                // Direct gain from diffuseness decomposition
-                // direct_gain_base = sqrt(1 - psi), already energy-preserving
-                let _direct_scale = direct_gain_base;
-
-                // Use PCA eigenvector for projection (still needed for directional decomposition)
-                let (ev_l, ev_r) = if c_xy.norm_sqr() > 1e-18 {
-                    let v = lambda1 - c_xx;
-                    let norm = (c_xy.norm_sqr() + v * v).sqrt();
-                    if norm > 1e-9 {
-                        (c_xy / norm, Complex::new(v / norm, 0.0))
-                    } else {
-                        if c_xx >= c_yy {
-                            (Complex::new(1.0, 0.0), Complex::new(0.0, 0.0))
-                        } else {
-                            (Complex::new(0.0, 0.0), Complex::new(1.0, 0.0))
-                        }
-                    }
-                } else {
-                    if c_xx >= c_yy {
-                        (Complex::new(1.0, 0.0), Complex::new(0.0, 0.0))
-                    } else {
-                        (Complex::new(0.0, 0.0), Complex::new(1.0, 0.0))
-                    }
-                };
+                // Use PCA eigenvector for projection (still needed for directional decomposition).
+                // c_xy is complex; retaining it in ev_l preserves inter-channel phase.
+                let (ev_l, ev_r) = principal_eigenvector(c_xx, c_yy, c_xy, lambda1);
 
                 // --- 2nd eigenvector (multi-source extraction) ---
                 // lambda2 = trace - lambda1 (already have trace and lambda1 from coherence computation)
@@ -424,8 +501,8 @@ impl UpmixerPlugin {
                     let l = self.freq_domain_left[i];
                     let r = self.freq_domain_right[i];
 
-                    // Blend factor: 0.0 = pure pass-through, 1.0 = pure upmix
-                    let t = (i - transition_start) as f32 / transition_width;
+                    // Smooth raised-cosine blend: 0.0 = pass-through, 1.0 = upmix.
+                    let t = transition_crossfade_weight(i, transition_start, transition_width);
 
                     // Project onto principal component for directional extraction
                     let proj = l * ev_l.conj() + r * ev_r.conj();
@@ -459,7 +536,7 @@ impl UpmixerPlugin {
                         let proj2 = l * ev2_l.conj() + r * ev2_r.conj();
                         // Scalar projection amplitude; route as mono secondary source
                         self.direct2[i] = proj2 * t;
-                        self.direct2_doa_per_bin[i] = doa2_band;
+                        self.direct2_doa_per_bin[i] = bin_intensity_doa(l, r).unwrap_or(doa2_band);
                     } else {
                         self.direct2[i] = Complex::new(0.0, 0.0);
                         self.direct2_doa_per_bin[i] = 0.0;
@@ -491,7 +568,7 @@ impl UpmixerPlugin {
                     if extract_second {
                         let proj2 = l * ev2_l.conj() + r * ev2_r.conj();
                         self.direct2[i] = proj2;
-                        self.direct2_doa_per_bin[i] = doa2_band;
+                        self.direct2_doa_per_bin[i] = bin_intensity_doa(l, r).unwrap_or(doa2_band);
                     } else {
                         self.direct2[i] = Complex::new(0.0, 0.0);
                         self.direct2_doa_per_bin[i] = 0.0;
@@ -542,16 +619,8 @@ impl UpmixerPlugin {
                 } else {
                     for (i, d) in decor.iter().enumerate().take(spec_size) {
                         let blended = Complex::new(strength * d.re + id_w, strength * d.im);
-                        // Normalize magnitude to 1.0 to preserve spectral balance (magnitude-preserving phase blend)
-                        let mag_sq = blended.norm_sqr();
-                        if mag_sq > 1e-9 {
-                            // Fast inverse sqrt: one Newton-Raphson iteration on the hardware rsqrt seed.
-                            // ~0.1% error, ~3x faster than 1/sqrt for all-pass filter blending.
-                            let rsqrt = sotf_host::simd::fast_inv_sqrt(mag_sq);
-                            self.blended_decorrelation_filters[ch][i] = blended * rsqrt;
-                        } else {
-                            self.blended_decorrelation_filters[ch][i] = Complex::new(1.0, 0.0);
-                        }
+                        self.blended_decorrelation_filters[ch][i] =
+                            normalize_decorrelation_blend(blended);
                     }
                 }
             }
@@ -607,19 +676,140 @@ mod tests {
         left[1] = Complex::new(1.0, 0.0);
         right[1] = Complex::new(0.0, 1.0);
 
-        let (diffuseness, doa, direct_gain, ambient_gain) =
-            compute_diffuseness_and_doa(&left, &right, 1, 2);
+        let analysis = compute_diffuseness_and_doa(&left, &right, 1, 2);
 
         assert!(
-            diffuseness < 0.01,
-            "quadrature intensity should remain directional, got diffuseness {diffuseness}"
+            analysis.diffuseness < 0.01,
+            "quadrature intensity should remain directional, got diffuseness {}",
+            analysis.diffuseness
         );
         assert!(
-            doa.abs() > 1.0,
-            "DOA should preserve the imaginary intensity axis, got {doa}"
+            analysis.doa.abs() > 1.0,
+            "DOA should preserve the imaginary intensity axis, got {}",
+            analysis.doa
         );
-        assert!(direct_gain > 0.99);
-        assert!(ambient_gain < 0.1);
+        assert!(analysis.reliable);
+        assert!(analysis.direct_gain() > 0.99);
+        assert!(analysis.ambient_gain() < 0.1);
+    }
+
+    #[test]
+    fn near_silence_diffuseness_is_unreliable_not_ambient() {
+        let left = vec![Complex::new(1e-10, 0.0); 4];
+        let right = vec![Complex::new(-1e-10, 0.0); 4];
+
+        let analysis = compute_diffuseness_and_doa(&left, &right, 1, 3);
+
+        assert!(!analysis.reliable);
+        assert_eq!(analysis.diffuseness, 0.0);
+        assert_eq!(analysis.ambient_gain(), 0.0);
+        assert_eq!(analysis.direct_gain(), 1.0);
+    }
+
+    #[test]
+    fn silence_carries_previous_diffuseness_in_processing_state() {
+        let mut previous = 0.35;
+        let mut initialized = true;
+        let unreliable = DiffusenessAndDoa {
+            diffuseness: 0.0,
+            doa: 0.0,
+            reliable: false,
+        };
+
+        let selected = update_diffuseness_state(&mut previous, &mut initialized, unreliable, 1.0);
+
+        assert_eq!(selected, 0.35);
+        assert_eq!(previous, 0.35);
+        assert!(initialized);
+    }
+
+    #[test]
+    fn complex_principal_eigenvector_preserves_covariance_phase() {
+        let c_xx = 1.0;
+        let c_yy = 1.0;
+        let c_xy = Complex::new(0.0, 0.8);
+        let lambda1 = 1.8;
+
+        let (ev_l, ev_r) = principal_eigenvector(c_xx, c_yy, c_xy, lambda1);
+
+        assert!(
+            ev_l.im.abs() > 0.7,
+            "principal eigenvector should retain complex covariance phase: {ev_l:?}"
+        );
+
+        let lhs_l = ev_l * c_xx + ev_r * c_xy;
+        let lhs_r = ev_l * c_xy.conj() + ev_r * c_yy;
+        let rhs_l = ev_l * lambda1;
+        let rhs_r = ev_r * lambda1;
+
+        assert!((lhs_l - rhs_l).norm() < 1e-5, "left residual too large");
+        assert!((lhs_r - rhs_r).norm() < 1e-5, "right residual too large");
+    }
+
+    #[test]
+    fn ambient_gain_is_energy_preserving_only_before_user_boosts() {
+        let diffuseness: f32 = 0.64;
+        let base_direct = (1.0 - diffuseness).sqrt();
+        let base_ambient = ambient_gain_with_controls(diffuseness, 1.0, 0.0);
+
+        assert!((base_direct * base_direct + base_ambient * base_ambient - 1.0).abs() < 1e-6);
+
+        let boosted_ambient = ambient_gain_with_controls(diffuseness, 1.5, 0.0);
+        assert!(boosted_ambient > base_ambient);
+    }
+
+    #[test]
+    fn transition_crossfade_uses_raised_cosine_shape() {
+        let start = 10;
+        let width = 8.0;
+
+        let first = transition_crossfade_weight(start, start, width);
+        let quarter = transition_crossfade_weight(start + 2, start, width);
+        let middle = transition_crossfade_weight(start + 4, start, width);
+        let three_quarter = transition_crossfade_weight(start + 6, start, width);
+        let last = transition_crossfade_weight(start + 8, start, width);
+
+        assert!(first.abs() < 1e-6);
+        assert!((middle - 0.5).abs() < 0.002);
+        assert!((last - 1.0).abs() < 0.002);
+        assert!(quarter < 0.25, "raised cosine should ease in below linear");
+        assert!(
+            three_quarter > 0.75,
+            "raised cosine should ease out above linear"
+        );
+    }
+
+    #[test]
+    fn decorrelation_blend_normalization_is_unit_magnitude() {
+        let blended = Complex::new(0.37, -0.61);
+        let normalized = normalize_decorrelation_blend(blended);
+
+        assert!((normalized.norm() - 1.0).abs() < 1e-6);
+        assert_eq!(
+            normalize_decorrelation_blend(Complex::new(0.0, 0.0)),
+            Complex::new(1.0, 0.0)
+        );
+    }
+
+    #[test]
+    fn bin_intensity_doa_varies_per_frequency_bin() {
+        let left_a = Complex::new(1.0, 0.0);
+        let right_a = Complex::new(0.2, 0.0);
+        let left_b = Complex::new(0.2, 0.0);
+        let right_b = Complex::new(1.0, 0.0);
+
+        let doa_a = bin_intensity_doa(left_a, right_a).unwrap();
+        let doa_b = bin_intensity_doa(left_b, right_b).unwrap();
+
+        assert!(
+            (doa_a - doa_b).abs() > 1.0,
+            "per-bin secondary DOA should react to per-bin L/R direction"
+        );
+    }
+
+    #[test]
+    fn bin_intensity_doa_ignores_silent_bins() {
+        assert!(bin_intensity_doa(Complex::new(0.0, 0.0), Complex::new(0.0, 0.0)).is_none());
     }
 
     #[test]

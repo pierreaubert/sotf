@@ -9,6 +9,34 @@ use sotf_host::speaker_config::{
     calculate_panning_gain, calculate_panning_gain_with_wraparound, get_speaker_config,
 };
 
+#[inline]
+fn subharmonic_envelope_coeff(time_ms: f32, sample_rate: u32) -> f32 {
+    let time_sec = (time_ms / 1000.0).max(1e-6);
+    let sample_rate = (sample_rate as f32).max(1.0);
+    1.0 - (-1.0_f32 / (time_sec * sample_rate)).exp()
+}
+
+#[inline]
+fn inclusive_voice_bin_range(
+    voice_min_hz: f32,
+    voice_max_hz: f32,
+    freq_per_bin: f32,
+    spectrum_size: usize,
+) -> (usize, usize) {
+    if spectrum_size <= 1 || freq_per_bin <= 0.0 {
+        return (0, 0);
+    }
+
+    // The real FFT Nyquist bin is valid memory, but it has no neighboring
+    // positive-frequency partner and is not useful for voice-band centroiding.
+    let last_voice_bin = spectrum_size.saturating_sub(2);
+    let start = (voice_min_hz / freq_per_bin).max(0.0) as usize;
+    let end = (voice_max_hz / freq_per_bin).max(0.0) as usize;
+    let start = start.min(last_voice_bin);
+    let end = end.min(last_voice_bin).max(start);
+    (start, end)
+}
+
 impl UpmixerPlugin {
     /// Change speaker configuration at runtime
     pub(super) fn change_speaker_config(&mut self, config_id: &str) -> PluginResult<()> {
@@ -271,9 +299,14 @@ impl UpmixerPlugin {
             ((self.bandpass_hz * self.fft_size as f32) / self.sample_rate as f32) as usize;
 
         let spectrum_size = self.fft_size / 2 + 1;
-        self.cached_voice_start_bin = (self.voice_freq_min_hz / freq_per_bin) as usize;
-        self.cached_voice_end_bin =
-            (self.voice_freq_max_hz / freq_per_bin).min(spectrum_size as f32 - 1.0) as usize;
+        let (voice_start_bin, voice_end_bin) = inclusive_voice_bin_range(
+            self.voice_freq_min_hz,
+            self.voice_freq_max_hz,
+            freq_per_bin,
+            spectrum_size,
+        );
+        self.cached_voice_start_bin = voice_start_bin;
+        self.cached_voice_end_bin = voice_end_bin;
 
         self.recache_dialogue_weights();
     }
@@ -308,9 +341,47 @@ impl UpmixerPlugin {
         let sr = self.sample_rate as f32;
         self.cached_subharmonic_phase_inc =
             2.0 * std::f32::consts::PI * self.subharmonic_freq_hz / sr;
-        let attack_sec = self.subharmonic_attack_ms / 1000.0;
-        let release_sec = self.subharmonic_release_ms / 1000.0;
-        self.cached_subharmonic_attack_coeff = 1.0 - (-1.0 / (attack_sec * sr)).exp();
-        self.cached_subharmonic_release_coeff = 1.0 - (-1.0 / (release_sec * sr)).exp();
+        self.cached_subharmonic_attack_coeff =
+            subharmonic_envelope_coeff(self.subharmonic_attack_ms, self.sample_rate);
+        self.cached_subharmonic_release_coeff =
+            subharmonic_envelope_coeff(self.subharmonic_release_ms, self.sample_rate);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn subharmonic_envelope_coeff_is_explicit_f32_and_finite() {
+        let coeff = subharmonic_envelope_coeff(1.0, 384_000);
+        let expected = 1.0 - (-1.0_f32 / (0.001 * 384_000.0)).exp();
+
+        assert!(coeff.is_finite());
+        assert!((coeff - expected).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn subharmonic_envelope_coeff_handles_zero_time_safely() {
+        let coeff = subharmonic_envelope_coeff(0.0, 48_000);
+
+        assert!(coeff.is_finite());
+        assert!((0.0..=1.0).contains(&coeff));
+    }
+
+    #[test]
+    fn voice_bin_range_excludes_nyquist_for_inclusive_iteration() {
+        let spectrum_size = 1025;
+        let freq_per_bin = 44_100.0 / 2048.0;
+        let (_start, end) = inclusive_voice_bin_range(300.0, 50_000.0, freq_per_bin, spectrum_size);
+
+        assert_eq!(end, spectrum_size - 2);
+    }
+
+    #[test]
+    fn voice_bin_range_keeps_end_at_or_after_start() {
+        let (start, end) = inclusive_voice_bin_range(3000.0, 300.0, 20.0, 128);
+
+        assert_eq!(start, end);
     }
 }
