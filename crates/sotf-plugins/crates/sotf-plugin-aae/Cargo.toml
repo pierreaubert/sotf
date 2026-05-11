@@ -1,7 +1,7 @@
 [package]
 name = "sotf-plugin-aae"
 description = "SOTF Active Acoustic Enhancement plugin - LARES-inspired multichannel reverb"
-version = "0.5.2"
+version = "0.5.3"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true

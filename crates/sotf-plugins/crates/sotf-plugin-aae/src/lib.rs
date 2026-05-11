@@ -42,6 +42,15 @@ const LFE_CROSSOVER_HZ: f32 = 120.0;
 const MAX_PRE_DELAY_MS: f32 = 100.0;
 const DIALOGUE_ATTACK_MS: f32 = 10.0;
 const DIALOGUE_RELEASE_MS: f32 = 150.0;
+const DIALOGUE_LEVEL_FAST_MS: f32 = 35.0;
+const DIALOGUE_LEVEL_SLOW_MS: f32 = 180.0;
+const DIALOGUE_MOD_SMOOTH_MS: f32 = 40.0;
+const DIALOGUE_ANALYSIS_WINDOW_MS: f32 = 50.0;
+const DIALOGUE_HOLD_MS: f32 = 600.0;
+const DIALOGUE_MIN_CENTER_LEVEL: f32 = 0.06;
+const DIALOGUE_MIN_MODULATION: f32 = 0.10;
+const FINAL_OUTPUT_CEILING: f32 = 1.0;
+const FINAL_LIMITER_RELEASE_MS: f32 = 60.0;
 
 pub struct AaePlugin {
     sample_rate: u32,
@@ -79,6 +88,23 @@ pub struct AaePlugin {
     dialogue_duck_gain: f32,
     dialogue_attack_coeff: f32,
     dialogue_release_coeff: f32,
+    dialogue_level_fast: f32,
+    dialogue_level_slow: f32,
+    dialogue_modulation: f32,
+    dialogue_level_fast_coeff: f32,
+    dialogue_level_slow_coeff: f32,
+    dialogue_mod_coeff: f32,
+    dialogue_hold_samples: usize,
+    dialogue_hold_remaining: usize,
+    dialogue_window_center_sum: f32,
+    dialogue_window_side_sum: f32,
+    dialogue_window_fill: usize,
+    dialogue_window_samples: usize,
+    dialogue_voiced_center: bool,
+
+    // Linked emergency limiter state for the rendered multichannel output.
+    final_limiter_gain: f32,
+    final_limiter_release_coeff: f32,
 
     // Parameter smoothers
     dry_smoother: Smoother,
@@ -147,6 +173,8 @@ impl AaePlugin {
         let sr = 48000u32;
         let pre_delay_samples = (params.pre_delay_ms * 0.001 * sr as f32).round() as usize;
 
+        let dialogue_window_samples = ms_to_samples(DIALOGUE_ANALYSIS_WINDOW_MS, sr);
+
         let mut plugin = Self {
             sample_rate: sr,
             speaker_config,
@@ -183,6 +211,33 @@ impl AaePlugin {
             dialogue_duck_gain: 1.0,
             dialogue_attack_coeff: smoothing_coeff(DIALOGUE_ATTACK_MS, sr as f32),
             dialogue_release_coeff: smoothing_coeff(DIALOGUE_RELEASE_MS, sr as f32),
+            dialogue_level_fast: 0.0,
+            dialogue_level_slow: 0.0,
+            dialogue_modulation: 0.0,
+            dialogue_level_fast_coeff: smoothing_coeff_for_samples(
+                DIALOGUE_LEVEL_FAST_MS,
+                sr as f32,
+                dialogue_window_samples,
+            ),
+            dialogue_level_slow_coeff: smoothing_coeff_for_samples(
+                DIALOGUE_LEVEL_SLOW_MS,
+                sr as f32,
+                dialogue_window_samples,
+            ),
+            dialogue_mod_coeff: smoothing_coeff_for_samples(
+                DIALOGUE_MOD_SMOOTH_MS,
+                sr as f32,
+                dialogue_window_samples,
+            ),
+            dialogue_hold_samples: ms_to_samples(DIALOGUE_HOLD_MS, sr),
+            dialogue_hold_remaining: 0,
+            dialogue_window_center_sum: 0.0,
+            dialogue_window_side_sum: 0.0,
+            dialogue_window_fill: 0,
+            dialogue_window_samples,
+            dialogue_voiced_center: false,
+            final_limiter_gain: 1.0,
+            final_limiter_release_coeff: smoothing_coeff(FINAL_LIMITER_RELEASE_MS, sr as f32),
             dry_smoother: Smoother::new(params.dry_level, 5.0, sr),
             er_smoother: Smoother::new(params.er_level, 5.0, sr),
             late_smoother: Smoother::new(params.late_level, 5.0, sr),
@@ -203,10 +258,17 @@ impl AaePlugin {
         let n_ch = self.num_output_channels;
 
         // Direct signal: stereo L at +30° az, R at -30° az.
-        let direct_sources = [SourcePosition::new(30.0, 0.0), SourcePosition::new(-30.0, 0.0)];
+        let direct_sources = [
+            SourcePosition::new(30.0, 0.0),
+            SourcePosition::new(-30.0, 0.0),
+        ];
         let mut direct = compute_vbap_matrix(cfg, &direct_sources, None).into_iter();
-        let mut left = direct.next().expect("compute_vbap_matrix returns one row per source");
-        let mut right = direct.next().expect("compute_vbap_matrix returns one row per source");
+        let mut left = direct
+            .next()
+            .expect("compute_vbap_matrix returns one row per source");
+        let mut right = direct
+            .next()
+            .expect("compute_vbap_matrix returns one row per source");
         normalize_gains_l2(&mut left);
         normalize_gains_l2(&mut right);
         self.direct_gains_l = left;
@@ -281,8 +343,38 @@ impl AaePlugin {
 
         let center = ((l + r) * 0.5).abs();
         let side = ((l - r) * 0.5).abs();
-        let centeredness = center / (center + side + 1e-6);
-        let speech_like = center > 0.02 && centeredness > 0.75;
+        self.dialogue_window_center_sum += center;
+        self.dialogue_window_side_sum += side;
+        self.dialogue_window_fill += 1;
+
+        if self.dialogue_window_fill >= self.dialogue_window_samples {
+            let inv_window = 1.0 / self.dialogue_window_fill as f32;
+            let window_center = self.dialogue_window_center_sum * inv_window;
+            let window_side = self.dialogue_window_side_sum * inv_window;
+            let centeredness = window_center / (window_center + window_side + 1e-6);
+
+            self.dialogue_level_fast = window_center
+                + self.dialogue_level_fast_coeff * (self.dialogue_level_fast - window_center);
+            self.dialogue_level_slow = window_center
+                + self.dialogue_level_slow_coeff * (self.dialogue_level_slow - window_center);
+            let modulation = (self.dialogue_level_fast - self.dialogue_level_slow).max(0.0)
+                / (self.dialogue_level_slow + 1e-4);
+            self.dialogue_modulation =
+                modulation + self.dialogue_mod_coeff * (self.dialogue_modulation - modulation);
+
+            self.dialogue_voiced_center =
+                self.dialogue_level_slow > DIALOGUE_MIN_CENTER_LEVEL && centeredness > 0.75;
+            if self.dialogue_voiced_center && self.dialogue_modulation > DIALOGUE_MIN_MODULATION {
+                self.dialogue_hold_remaining = self.dialogue_hold_samples;
+            }
+
+            self.dialogue_window_center_sum = 0.0;
+            self.dialogue_window_side_sum = 0.0;
+            self.dialogue_window_fill = 0;
+        }
+
+        let speech_like = self.dialogue_voiced_center && self.dialogue_hold_remaining > 0;
+        self.dialogue_hold_remaining = self.dialogue_hold_remaining.saturating_sub(1);
         let target = if speech_like {
             10.0_f32.powf(-self.params.dialogue_attenuation_db / 20.0)
         } else {
@@ -321,6 +413,41 @@ impl AaePlugin {
         let out_ch = self.num_output_channels;
         let auto_gain = self.auto_gain.as_mut().unwrap();
         auto_gain.measure_and_apply(output, num_frames, out_ch, speaker_config)
+    }
+
+    fn apply_output_safety_limit(&mut self, output: &mut [f32], num_frames: usize, out_ch: usize) {
+        for frame in 0..num_frames {
+            let start = frame * out_ch;
+            let frame_samples = &mut output[start..start + out_ch];
+            let peak = frame_samples
+                .iter()
+                .map(|v| v.abs())
+                .fold(0.0_f32, f32::max);
+
+            let target_gain = if peak > FINAL_OUTPUT_CEILING {
+                FINAL_OUTPUT_CEILING / peak
+            } else {
+                1.0
+            };
+
+            if target_gain < self.final_limiter_gain {
+                self.final_limiter_gain = target_gain;
+            } else {
+                self.final_limiter_gain = target_gain
+                    + self.final_limiter_release_coeff * (self.final_limiter_gain - target_gain);
+            }
+
+            // Do not let release smoothing permit an overshoot.
+            if peak * self.final_limiter_gain > FINAL_OUTPUT_CEILING {
+                self.final_limiter_gain = FINAL_OUTPUT_CEILING / peak;
+            }
+
+            if self.final_limiter_gain < 0.999_999 {
+                for sample in frame_samples {
+                    *sample *= self.final_limiter_gain;
+                }
+            }
+        }
     }
 }
 
@@ -617,6 +744,24 @@ impl Plugin for AaePlugin {
         self.dialogue_duck_gain = 1.0;
         self.dialogue_attack_coeff = smoothing_coeff(DIALOGUE_ATTACK_MS, sr);
         self.dialogue_release_coeff = smoothing_coeff(DIALOGUE_RELEASE_MS, sr);
+        self.dialogue_level_fast = 0.0;
+        self.dialogue_level_slow = 0.0;
+        self.dialogue_modulation = 0.0;
+        self.dialogue_window_center_sum = 0.0;
+        self.dialogue_window_side_sum = 0.0;
+        self.dialogue_window_fill = 0;
+        self.dialogue_window_samples = ms_to_samples(DIALOGUE_ANALYSIS_WINDOW_MS, sample_rate);
+        self.dialogue_level_fast_coeff =
+            smoothing_coeff_for_samples(DIALOGUE_LEVEL_FAST_MS, sr, self.dialogue_window_samples);
+        self.dialogue_level_slow_coeff =
+            smoothing_coeff_for_samples(DIALOGUE_LEVEL_SLOW_MS, sr, self.dialogue_window_samples);
+        self.dialogue_mod_coeff =
+            smoothing_coeff_for_samples(DIALOGUE_MOD_SMOOTH_MS, sr, self.dialogue_window_samples);
+        self.dialogue_hold_samples = ms_to_samples(DIALOGUE_HOLD_MS, sample_rate);
+        self.dialogue_hold_remaining = 0;
+        self.dialogue_voiced_center = false;
+        self.final_limiter_gain = 1.0;
+        self.final_limiter_release_coeff = smoothing_coeff(FINAL_LIMITER_RELEASE_MS, sr);
 
         // Smoothers
         self.dry_smoother = Smoother::new(self.params.dry_level, 5.0, sample_rate);
@@ -644,6 +789,15 @@ impl Plugin for AaePlugin {
         self.fdn.reset();
         self.lfe_filter_state = 0.0;
         self.dialogue_duck_gain = 1.0;
+        self.dialogue_level_fast = 0.0;
+        self.dialogue_level_slow = 0.0;
+        self.dialogue_modulation = 0.0;
+        self.dialogue_hold_remaining = 0;
+        self.dialogue_window_center_sum = 0.0;
+        self.dialogue_window_side_sum = 0.0;
+        self.dialogue_window_fill = 0;
+        self.dialogue_voiced_center = false;
+        self.final_limiter_gain = 1.0;
         if let Some(auto_gain) = &mut self.auto_gain {
             auto_gain.reset();
         }
@@ -718,7 +872,6 @@ impl Plugin for AaePlugin {
             .iter()
             .find(|s| s.is_lfe)
             .map(|s| s.channel);
-
         for frame in 0..num_frames {
             let l = input[frame * in_ch];
             let r = input[frame * in_ch + 1];
@@ -752,6 +905,9 @@ impl Plugin for AaePlugin {
             for ap in &mut self.diffusion_allpass {
                 diffused = ap.process(diffused);
             }
+            let mut lfe_wet_sum = 0.0_f32;
+            let mut lfe_wet_energy = 0.0_f32;
+            let mut lfe_wet_sources = 0usize;
 
             // ── Early reflections ────────────────────────────────────
             if !self.params.solo_late {
@@ -763,7 +919,11 @@ impl Plugin for AaePlugin {
                         continue;
                     }
                     let gains = &self.er_gains[tap_idx];
-                    let scaled = tap_val * er_gain * wet_duck;
+                    let source_scaled = tap_val * er_gain;
+                    let scaled = source_scaled * wet_duck;
+                    lfe_wet_sum += source_scaled;
+                    lfe_wet_energy += source_scaled * source_scaled;
+                    lfe_wet_sources += 1;
                     for (ch_idx, &g) in gains.iter().enumerate() {
                         output[frame * out_ch + ch_idx] += scaled * g;
                     }
@@ -785,7 +945,11 @@ impl Plugin for AaePlugin {
                         continue;
                     }
                     let gains = &self.fdn_gains[line_idx];
-                    let scaled = line_val * late_gain * wet_duck;
+                    let source_scaled = line_val * late_gain;
+                    let scaled = source_scaled * wet_duck;
+                    lfe_wet_sum += source_scaled;
+                    lfe_wet_energy += source_scaled * source_scaled;
+                    lfe_wet_sources += 1;
                     for (ch_idx, &g) in gains.iter().enumerate() {
                         output[frame * out_ch + ch_idx] += scaled * g;
                     }
@@ -794,16 +958,20 @@ impl Plugin for AaePlugin {
 
             // ── LFE extraction ───────────────────────────────────────
             if let Some(lfe_idx) = lfe_ch {
-                // One-pole LP on the reverb feed
+                // One-pole LP on source-domain wet energy. This keeps the LFE
+                // independent of speaker layout and avoids cancellation from
+                // summing decorrelated routed speaker feeds.
+                let lfe_source = signed_rms(lfe_wet_sum, lfe_wet_energy, lfe_wet_sources, diffused);
                 let lp_coeff = self.lfe_filter_coeff;
                 self.lfe_filter_state =
-                    lp_coeff * self.lfe_filter_state + (1.0 - lp_coeff) * diffused;
+                    lp_coeff * self.lfe_filter_state + (1.0 - lp_coeff) * lfe_source;
                 output[frame * out_ch + lfe_idx] += self.lfe_filter_state * lfe_gain * wet_duck;
             }
         }
 
         flush_denormals_inplace(output);
         self.apply_auto_gain(output, num_frames)?;
+        self.apply_output_safety_limit(output, num_frames, out_ch);
         flush_denormals_inplace(output);
         Ok(num_frames)
     }
@@ -827,10 +995,34 @@ fn smoothing_coeff(time_ms: f32, sample_rate: f32) -> f32 {
     (-1.0 / (time_ms * 0.001 * sample_rate)).exp()
 }
 
+fn smoothing_coeff_for_samples(time_ms: f32, sample_rate: f32, samples: usize) -> f32 {
+    (-(samples.max(1) as f32) / (time_ms * 0.001 * sample_rate)).exp()
+}
+
 /// Compute one-pole low-pass filter coefficient from cutoff frequency.
 fn compute_lp_coeff(cutoff_hz: f32, sample_rate: f32) -> f32 {
     let w = (2.0 * std::f32::consts::PI * cutoff_hz / sample_rate).min(0.99);
     (-w).exp()
+}
+
+fn ms_to_samples(time_ms: f32, sample_rate: u32) -> usize {
+    (time_ms * 0.001 * sample_rate as f32).round().max(1.0) as usize
+}
+
+fn signed_rms(sum: f32, energy: f32, count: usize, polarity_hint: f32) -> f32 {
+    if count == 0 || energy <= 0.0 {
+        return 0.0;
+    }
+
+    let rms = (energy / count as f32).sqrt();
+    let polarity = if sum.abs() > 1e-12 {
+        sum
+    } else if polarity_hint.abs() > 1e-12 {
+        polarity_hint
+    } else {
+        1.0
+    };
+    rms.copysign(polarity)
 }
 
 #[cfg(test)]
@@ -1075,17 +1267,87 @@ mod tests {
         p.params.content_aware = true;
         p.params.dialogue_attenuation_db = 12.0;
 
-        for _ in 0..4096 {
-            p.dialogue_duck_for_frame(0.5, 0.5);
+        let sr = 48000.0_f32;
+        for i in 0..48000 {
+            let t = i as f32 / sr;
+            let syllable = if (t * 6.0).fract() < 0.55 { 1.0 } else { 0.12 };
+            let sample = (std::f32::consts::TAU * 180.0 * t).sin() * 0.45 * syllable;
+            p.dialogue_duck_for_frame(sample, sample);
         }
         assert!(
-            p.dialogue_duck_gain < 0.5,
+            p.dialogue_duck_gain < 0.8,
             "centered speech-like input should reduce wet gain, got {}",
             p.dialogue_duck_gain
         );
 
         p.params.content_aware = false;
         assert_eq!(p.dialogue_duck_for_frame(0.5, 0.5), 1.0);
+    }
+
+    #[test]
+    fn test_content_aware_ignores_quiet_centered_noise() {
+        let mut p = make_plugin();
+        p.params.content_aware = true;
+        p.params.dialogue_attenuation_db = 12.0;
+
+        for _ in 0..48000 {
+            p.dialogue_duck_for_frame(0.025, 0.025);
+        }
+
+        assert!(
+            p.dialogue_duck_gain > 0.95,
+            "quiet centered noise should not trigger dialogue ducking, got {}",
+            p.dialogue_duck_gain
+        );
+    }
+
+    #[test]
+    fn test_content_aware_ignores_steady_centered_music() {
+        let mut p = make_plugin();
+        p.params.content_aware = true;
+        p.params.dialogue_attenuation_db = 12.0;
+
+        let sr = 48000.0_f32;
+        for i in 0..144000 {
+            let t = i as f32 / sr;
+            let sample = (std::f32::consts::TAU * 220.0 * t).sin() * 0.4;
+            p.dialogue_duck_for_frame(sample, sample);
+        }
+
+        assert!(
+            p.dialogue_duck_gain > 0.9,
+            "steady centered tonal content should not keep wet gain ducked, got {}",
+            p.dialogue_duck_gain
+        );
+    }
+
+    #[test]
+    fn test_content_aware_holds_through_sustained_centered_voice() {
+        let mut p = make_plugin();
+        p.params.content_aware = true;
+        p.params.dialogue_attenuation_db = 12.0;
+
+        let sr = 48000.0_f32;
+        for i in 0..9600 {
+            let t = i as f32 / sr;
+            let syllable = if (t * 7.0).fract() < 0.5 { 1.0 } else { 0.2 };
+            let sample = (std::f32::consts::TAU * 190.0 * t).sin() * 0.45 * syllable;
+            p.dialogue_duck_for_frame(sample, sample);
+        }
+        let ducked_after_modulation = p.dialogue_duck_gain;
+
+        for i in 0..19200 {
+            let t = i as f32 / sr;
+            let sample = (std::f32::consts::TAU * 190.0 * t).sin() * 0.32;
+            p.dialogue_duck_for_frame(sample, sample);
+        }
+
+        assert!(
+            ducked_after_modulation < 0.9 && p.dialogue_duck_gain < 0.8,
+            "sustained centered voice should stay ducked after syllabic onset, before={} after={}",
+            ducked_after_modulation,
+            p.dialogue_duck_gain
+        );
     }
 
     #[test]
@@ -1227,6 +1489,119 @@ mod tests {
             (ratio - 1.0).abs() < 0.01,
             "Allpass energy ratio should be ~1.0, got {ratio}"
         );
+    }
+
+    #[test]
+    fn test_lfe_tracks_late_reverb_tail() {
+        let params = AaePluginParams {
+            dry_level: 0.0,
+            er_level: 0.0,
+            late_level: 1.0,
+            lfe_level: 1.0,
+            pre_delay_ms: 0.0,
+            content_aware: false,
+            ..AaePluginParams::default()
+        };
+        let mut p = AaePlugin::from_params(params);
+        p.initialize(48000).unwrap();
+
+        let lfe_idx = p
+            .speaker_config
+            .speakers
+            .iter()
+            .find(|speaker| speaker.is_lfe)
+            .map(|speaker| speaker.channel)
+            .expect("default 5.1 config has an LFE channel");
+
+        let chunk = 512;
+        let mut input = vec![0.0_f32; chunk * 2];
+        input[0] = 1.0;
+        input[1] = 1.0;
+        let mut output = vec![0.0_f32; chunk * p.num_output_channels];
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames: chunk,
+        };
+
+        let mut late_lfe_energy = 0.0_f32;
+        let mut frame_offset = 0usize;
+        for block in 0..120 {
+            p.process(&input, &mut output, &context).unwrap();
+            for frame in 0..chunk {
+                if frame_offset + frame > 12000 {
+                    let sample = output[frame * p.num_output_channels + lfe_idx];
+                    late_lfe_energy += sample * sample;
+                }
+            }
+            input.fill(0.0);
+            frame_offset += chunk;
+            if block > 80 && late_lfe_energy > 1e-10 {
+                break;
+            }
+        }
+
+        assert!(
+            late_lfe_energy > 1e-10,
+            "LFE should contain low-passed late reverb tail energy, got {late_lfe_energy}"
+        );
+    }
+
+    #[test]
+    fn test_lfe_source_energy_does_not_cancel_with_signed_sum() {
+        let source = signed_rms(0.0, 2.0, 2, -0.5);
+
+        assert!(
+            (source + 1.0).abs() < 1e-6,
+            "source-domain LFE energy should survive cancellation and use polarity hint, got {source}"
+        );
+    }
+
+    #[test]
+    fn test_output_safety_limit_bounds_final_mix() {
+        let params = AaePluginParams {
+            dry_level: 1.0,
+            er_level: 1.0,
+            late_level: 1.0,
+            lfe_level: 1.0,
+            pre_delay_ms: 0.0,
+            safety_limit_db: 0.0,
+            content_aware: false,
+            ..AaePluginParams::default()
+        };
+        let mut p = AaePlugin::from_params(params);
+        p.initialize(48000).unwrap();
+
+        let n = 4096;
+        let input = vec![2.0_f32; n * 2];
+        let mut output = vec![0.0; n * p.output_channels()];
+        p.process(
+            &input,
+            &mut output,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: n,
+            },
+        )
+        .unwrap();
+
+        let max = output.iter().copied().map(f32::abs).fold(0.0, f32::max);
+        assert!(
+            max <= 1.0 + 1e-6,
+            "final output should respect the 0 dBFS safety limit, max={max}"
+        );
+    }
+
+    #[test]
+    fn test_output_safety_limit_preserves_channel_ratios() {
+        let mut p = make_plugin();
+        let mut output = vec![2.0, 1.0, -0.5, 0.25, 0.0, -1.0];
+
+        p.apply_output_safety_limit(&mut output, 1, 6);
+
+        assert!((output[0] - 1.0).abs() < 1e-6);
+        assert!((output[1] - 0.5).abs() < 1e-6);
+        assert!((output[2] + 0.25).abs() < 1e-6);
+        assert!((output[5] + 0.5).abs() < 1e-6);
     }
 
     #[test]

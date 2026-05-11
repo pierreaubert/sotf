@@ -1,3 +1,9 @@
+# 0.5.3
+
+- Content-aware dialogue ducking now uses windowed envelope evidence with a short hold, avoiding false ducking on quiet centered noise or steady mono-compatible music while staying active through sustained speech.
+- LFE extraction now follows source-domain wet ER/FDN energy instead of signed routed speaker sums, so decorrelated channels cannot cancel the LFE send.
+- The final rendered output now uses a linked safety limiter after auto-gain, preserving multichannel ratios while bounding summed dry, early, late, and LFE contributions.
+
 # 0.5.2
 
 - ER delay storage now provisions max preset delay plus max modulation headroom, uses fixed tap/state arrays, and supports preset changes without reallocating.
@@ -12,4 +18,3 @@ Bug fixes
 # 0.5.0
 
 Initial version
-
