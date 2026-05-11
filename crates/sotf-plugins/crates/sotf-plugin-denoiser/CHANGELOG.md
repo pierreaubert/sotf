@@ -1,3 +1,7 @@
+# 0.5.5
+
+- Fix a latetnt bug in ring buffer allocation
+
 # 0.5.4
 
 - Removed the bundled hiss reducer, transient/click repair, and RNNoise speech-denoiser features. They now live in dedicated plugins (`sotf-plugin-hiss-reducer`, `sotf-plugin-declick`, `sotf-plugin-speech-denoiser`), which all share the new `plugins-denoiser` DSP crate.

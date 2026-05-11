@@ -51,6 +51,10 @@ pub use config::DenoiserPluginParams;
 /// Number of frequency bands for display/monitoring
 const NUM_DISPLAY_BANDS: usize = 30;
 
+/// Host audio callbacks commonly use 4096-frame blocks. Low-latency mode uses
+/// a smaller FFT, but should still accept one full callback safely.
+const MIN_IN_PLACE_BLOCK_FRAMES: usize = 4096;
+
 // ============================================================================
 // Exposed Data Structure
 // ============================================================================
@@ -323,8 +327,9 @@ impl DenoiserPlugin {
         // Overlap-add buffers
         // Input buffer needs to hold fft_size samples (interleaved)
         let input_buffer = vec![0.0_f32; fft_size * channels * 2];
-        // Output ring buffer: power-of-2 capacity >= fft_size * 4
-        let ring_capacity = (fft_size * 4).next_power_of_two();
+        // Output ring buffer includes the advertised in-place block size plus
+        // one FFT-sized overlap tail that may be written before draining.
+        let ring_capacity = Self::output_ring_capacity_for_fft(fft_size);
         let output_accumulator = vec![vec![0.0_f32; ring_capacity]; channels];
         let time_out_channels = vec![vec![0.0_f32; fft_size]; channels];
 
@@ -627,6 +632,18 @@ impl DenoiserPlugin {
         plugin
     }
 
+    fn prepared_in_place_frames_for_fft(fft_size: usize) -> usize {
+        (fft_size * 4).max(MIN_IN_PLACE_BLOCK_FRAMES)
+    }
+
+    fn output_ring_capacity_for_fft(fft_size: usize) -> usize {
+        (Self::prepared_in_place_frames_for_fft(fft_size) + fft_size).next_power_of_two()
+    }
+
+    fn max_in_place_frames(&self) -> usize {
+        Self::prepared_in_place_frames_for_fft(self.fft_size)
+    }
+
     /// Process one FFT block
     fn process_fft_block(&mut self) {
         // Extract block from input buffer (fft_size * channels samples)
@@ -927,7 +944,7 @@ impl InPlacePlugin for DenoiserPlugin {
             ));
         }
 
-        let max_in_place_frames = self.output_accumulator[0].len();
+        let max_in_place_frames = self.max_in_place_frames();
         if num_frames > max_in_place_frames {
             #[cfg(target_arch = "x86_64")]
             unsafe {

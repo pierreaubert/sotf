@@ -153,6 +153,30 @@ fn test_output_nonzero() {
 }
 
 #[test]
+fn test_low_latency_accepts_warm_4096_frame_in_place_blocks() {
+    let mut plugin = DenoiserPlugin::new(2, true);
+    plugin.initialize(SAMPLE_RATE).unwrap();
+
+    let num_frames = 4096;
+    let context = ProcessContext {
+        sample_rate: SAMPLE_RATE,
+        num_frames,
+    };
+
+    assert_eq!(plugin.max_in_place_frames(), num_frames);
+    assert!(
+        plugin.output_accumulator[0].len() >= num_frames + plugin.fft_size,
+        "output ring must reserve one FFT-sized overlap tail beyond the safe in-place block"
+    );
+
+    for freq in [1000.0, 1200.0] {
+        let mut input = make_test_signal(num_frames, 2, freq);
+        let processed = plugin.process_in_place(&mut input, &context).unwrap();
+        assert_eq!(processed, num_frames);
+    }
+}
+
+#[test]
 fn test_latency() {
     let plugin = DenoiserPlugin::new(2, false);
     assert_eq!(plugin.latency_samples(), 2048);
@@ -185,7 +209,7 @@ fn test_rejects_oversized_classical_in_place_block() {
     let mut plugin = DenoiserPlugin::new(2, false);
     plugin.initialize(SAMPLE_RATE).unwrap();
 
-    let num_frames = plugin.output_accumulator[0].len() + 1;
+    let num_frames = plugin.max_in_place_frames() + 1;
     let mut buffer = make_test_signal(num_frames, 2, 1000.0);
     let context = ProcessContext {
         sample_rate: SAMPLE_RATE,
@@ -196,6 +220,11 @@ fn test_rejects_oversized_classical_in_place_block() {
     assert!(
         err.contains("Block too large"),
         "Expected oversized block error, got: {}",
+        err
+    );
+    assert!(
+        err.contains(&plugin.max_in_place_frames().to_string()),
+        "Expected error to report prepared safe limit, got: {}",
         err
     );
 }
