@@ -221,7 +221,7 @@ impl Render for DemoView {
 }
 
 fn main() {
-    let platform = gpui_miniapp::current_platform();
+    let platform = gpui_miniapp::current_platform().expect("failed to initialize GPUI platform");
     Application::with_platform(platform).run(|cx: &mut App| {
         let bounds = Bounds::centered(None, size(px(900.0), px(550.0)), cx);
         cx.open_window(

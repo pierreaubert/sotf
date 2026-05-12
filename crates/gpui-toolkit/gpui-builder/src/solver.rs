@@ -447,17 +447,30 @@ fn distribute_remaining(
     // Flex children split leftover (clamped to available, not unbounded)
     let flex_remaining = (distributable - used_by_fractional).max(0.0);
     if flex_total_weight > 0.0 {
-        for child in children.iter_mut() {
+        // First pass: compute proportional shares with min floor.
+        let mut flex_shares: Vec<(usize, f32)> = Vec::new();
+        let mut total_flex = 0.0_f32;
+        for (i, child) in children.iter().enumerate() {
             if child.user_collapsed || child.solver_collapsed {
                 continue;
             }
             if let Sizing::Flex { min, weight } = child.node.sizing() {
-                // Each flex child gets its proportional share, at least min but
-                // never more than available.
                 let proportional = flex_remaining * (weight / flex_total_weight);
                 let share = proportional.max(min).min(flex_remaining);
-                child.allocated_size = share;
+                flex_shares.push((i, share));
+                total_flex += share;
             }
+        }
+
+        // Second pass: if total exceeds available space, scale proportionally.
+        let scale = if total_flex > flex_remaining && total_flex > 0.0 {
+            flex_remaining / total_flex
+        } else {
+            1.0
+        };
+
+        for (i, share) in flex_shares {
+            children[i].allocated_size = share * scale;
         }
     }
 }
@@ -961,6 +974,32 @@ mod tests {
                 "width={width}: total={total} (children={total_children} + dividers={dividers})"
             );
         }
+    }
+
+    #[test]
+    fn flex_min_sum_exceeds_remaining_is_scaled_down() {
+        // Two flex children each with min=50 and weight=1 in a container
+        // with only 80 pixels of remaining space. Without scaling, each
+        // would get 50 (total 100 > 80). The fix scales them down so the
+        // total never exceeds the available space.
+        let children = [
+            simple_slot("a", Sizing::Flex { min: 50.0, weight: 1.0 }),
+            simple_slot("b", Sizing::Flex { min: 50.0, weight: 1.0 }),
+        ];
+        let root = LayoutNode::Container(ContainerNode {
+            id: "root",
+            axis: Axis::Horizontal,
+            auto_axis: None,
+            sizing: Sizing::flex(0.0),
+            children: &children,
+            divider_size: 0.0,
+        });
+
+        let solved = solve(&root, 80.0, 600.0, &LayoutPreferences::default());
+        let a = solved.find("a").unwrap();
+        let b = solved.find("b").unwrap();
+        assert_eq!(a.width + b.width, 80.0, "total flex allocation should not exceed available space");
+        assert!(a.width >= 0.0 && b.width >= 0.0);
     }
 
     // ===== App-like layout test =====

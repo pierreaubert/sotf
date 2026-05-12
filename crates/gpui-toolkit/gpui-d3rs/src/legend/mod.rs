@@ -24,10 +24,10 @@
 
 use crate::color::D3Color;
 
-#[cfg(feature = "gpui")]
+#[cfg(all(feature = "gpui", not(test)))]
 mod render;
 
-#[cfg(feature = "gpui")]
+#[cfg(all(feature = "gpui", not(test)))]
 pub use render::render_legend;
 
 /// Position of the legend relative to the chart

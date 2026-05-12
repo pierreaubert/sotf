@@ -245,7 +245,7 @@ impl Render for DemoView {
 }
 
 fn main() {
-    let platform = gpui_miniapp::current_platform();
+    let platform = gpui_miniapp::current_platform().expect("failed to initialize GPUI platform");
     gpui::Application::with_platform(platform).run(move |cx: &mut gpui::App| {
         cx.open_window(
             WindowOptions {

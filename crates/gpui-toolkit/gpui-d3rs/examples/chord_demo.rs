@@ -92,7 +92,7 @@ impl Render for ChordDemo {
 }
 
 fn main() {
-    let platform = gpui_miniapp::current_platform();
+    let platform = gpui_miniapp::current_platform().expect("failed to initialize GPUI platform");
     Application::with_platform(platform).run(|cx: &mut App| {
         cx.open_window(
             WindowOptions {

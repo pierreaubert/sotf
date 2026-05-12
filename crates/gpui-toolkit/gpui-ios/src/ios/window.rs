@@ -1683,15 +1683,15 @@ impl PlatformWindow for IosWindow {
         detail: Option<&str>,
         answers: &[PromptButton],
     ) -> Option<futures::channel::oneshot::Receiver<usize>> {
-        // Would use UIAlertController
-        let (_tx, rx) = futures::channel::oneshot::channel();
+        let (tx, rx) = futures::channel::oneshot::channel();
+        let tx = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
 
         unsafe {
             // Create UIAlertController
-            let title = msg;
-            let message = detail.unwrap_or("");
-
             let alert_style: i64 = 1; // UIAlertControllerStyleAlert
+
+            let title = std::ffi::CString::new(msg).ok()?;
+            let message = std::ffi::CString::new(detail.unwrap_or("")).ok()?;
 
             let title_str: *mut Object =
                 msg_send![class!(NSString), stringWithUTF8String: title.as_ptr()];
@@ -1706,20 +1706,29 @@ impl PlatformWindow for IosWindow {
             ];
 
             // Add buttons
-            for (_index, button) in answers.iter().enumerate() {
+            for (index, button) in answers.iter().enumerate() {
+                let label = std::ffi::CString::new(button.label()).ok()?;
                 let button_title: *mut Object = msg_send![
                     class!(NSString),
-                    stringWithUTF8String: button.label().as_str().as_ptr()
+                    stringWithUTF8String: label.as_ptr()
                 ];
 
                 let action_style: i64 = if button.is_cancel() { 1 } else { 0 }; // UIAlertActionStyleCancel or Default
 
-                // Note: In production, this would need a block that calls tx.send(index)
+                let tx_clone = tx.clone();
+                let block = block2::RcBlock::new(move |_action: *mut Object| {
+                    if let Ok(mut guard) = tx_clone.lock() {
+                        if let Some(sender) = guard.take() {
+                            let _ = sender.send(index);
+                        }
+                    }
+                });
+
                 let action: *mut Object = msg_send![
                     class!(UIAlertAction),
                     actionWithTitle: button_title
                     style: action_style
-                    handler: ptr::null::<Object>()
+                    handler: block
                 ];
 
                 let _: () = msg_send![alert, addAction: action];

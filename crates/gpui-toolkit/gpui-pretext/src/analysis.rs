@@ -130,8 +130,13 @@ pub fn normalize_whitespace_pre_wrap(text: &str) -> String {
     let mut chars = text.chars().peekable();
     while let Some(ch) = chars.next() {
         if ch == '\r' {
+            // Consume all consecutive \r and at most one following \n
+            // so that \r\r\n produces a single \n instead of double.
+            while chars.peek() == Some(&'\r') {
+                chars.next();
+            }
             if chars.peek() == Some(&'\n') {
-                chars.next(); // consume \n
+                chars.next();
             }
             result.push('\n');
         } else if ch == '\x0C' {

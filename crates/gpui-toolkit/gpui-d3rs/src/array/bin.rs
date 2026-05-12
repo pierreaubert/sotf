@@ -392,9 +392,7 @@ mod tests {
     fn test_bin_zero_thresholds() {
         // Zero thresholds should return a single bin instead of panicking
         let data = vec![1.0, 2.0, 3.0];
-        let bins = BinGenerator::new()
-            .thresholds_count(0)
-            .generate(&data);
+        let bins = BinGenerator::new().thresholds_count(0).generate(&data);
         assert_eq!(bins.len(), 1);
         assert_eq!(bins[0].values.len(), 3);
     }

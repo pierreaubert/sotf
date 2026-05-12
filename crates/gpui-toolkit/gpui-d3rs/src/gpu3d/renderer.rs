@@ -41,7 +41,8 @@ impl Uniforms {
             // Avoid log(0).
             let min_v = min.max(1e-10).log10();
             let max_v = max.max(1e-10).log10();
-            (1.0, min_v, max_v - min_v)
+            let range = (max_v - min_v).max(1e-10);
+            (1.0, min_v, range)
         } else {
             (0.0, 0.0, 1.0)
         };
@@ -716,15 +717,15 @@ impl Surface3DRenderer {
         let buffer_slice = staging_buffer.slice(..);
         let (tx, rx) = std::sync::mpsc::channel();
         buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
-            tx.send(result).unwrap();
+            let _ = tx.send(result);
         });
 
         let _ = self.device.poll(wgpu::PollType::Wait {
             submission_index: Default::default(),
-            timeout: None,
+            timeout: Some(std::time::Duration::from_secs(5)),
         });
 
-        match rx.recv() {
+        match rx.recv_timeout(std::time::Duration::from_secs(5)) {
             Ok(Ok(())) => {
                 let data = buffer_slice.get_mapped_range();
 

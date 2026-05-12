@@ -259,7 +259,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let demo_type = args.get(1).cloned().unwrap_or_else(|| "sinc".to_string());
 
-    let platform = gpui_miniapp::current_platform();
+    let platform = gpui_miniapp::current_platform().expect("failed to initialize GPUI platform");
     gpui::Application::with_platform(platform).run(move |cx: &mut gpui::App| {
         cx.open_window(
             WindowOptions {

@@ -74,7 +74,7 @@ pub mod shape;
 pub mod sphere_gallery;
 #[cfg(all(feature = "gpui", not(test)))]
 pub mod surface;
-#[cfg(feature = "gpui")]
+#[cfg(all(feature = "gpui", not(test)))]
 pub mod text;
 pub mod timer;
 pub mod transition;

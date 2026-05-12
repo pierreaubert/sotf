@@ -128,7 +128,7 @@ impl Render for HierarchyDemo {
 }
 
 fn main() {
-    let platform = gpui_miniapp::current_platform();
+    let platform = gpui_miniapp::current_platform().expect("failed to initialize GPUI platform");
     Application::with_platform(platform).run(|cx: &mut App| {
         let bounds = Bounds::centered(None, size(px(800.0), px(600.0)), cx);
         cx.open_window(

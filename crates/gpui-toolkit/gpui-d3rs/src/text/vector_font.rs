@@ -4,8 +4,7 @@
 //! Font data from <https://paulbourke.net/dataformats/hershey/>
 //! Public domain - no usage restrictions.
 
-use gpui::prelude::*;
-use gpui::{Hsla, PathBuilder, canvas, hsla, point, px};
+use gpui::{Hsla, IntoElement, PathBuilder, Styled, canvas, hsla, point, px};
 use std::collections::HashMap;
 use std::f32::consts::PI;
 use std::sync::LazyLock;
