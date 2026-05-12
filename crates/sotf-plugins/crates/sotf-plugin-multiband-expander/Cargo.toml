@@ -1,7 +1,7 @@
 [package]
 name = "sotf-plugin-multiband-expander"
 description = "SOTF Multiband Expander plugin - multiband dynamic range expansion"
-version = "0.5.22"
+version = "0.5.23"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -25,5 +25,4 @@ sotf-host = { workspace = true }
 math-dsp = { workspace = true }
 math-iir-fir = { workspace = true }
 serde = { workspace = true }
-realfft = { workspace = true }
 rustfft = { workspace = true }
