@@ -10665,7 +10665,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-downmix"
-version = "0.5.22"
+version = "0.5.23"
 dependencies = [
  "math-dsp",
  "math-iir-fir",
