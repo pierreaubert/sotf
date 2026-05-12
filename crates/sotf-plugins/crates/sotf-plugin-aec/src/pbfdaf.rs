@@ -151,7 +151,11 @@ impl Pbfdaf {
         }
 
         // Update weights: W[m] += μ * conj(FDL[m]) ⊙ E / (total_power + δ)
-        let leak = 1.0 - 1e-5;
+        // Leakage applied once per block (every B samples).
+        // leak = 1 - 1e-3 gives τ ≈ -T_block / ln(leak) ≈ 5.3 s at 48 kHz / 256
+        // which is ~100× faster than the old 1e-5 (530 s) and still avoids
+        // drift during stationary signals.
+        let leak = 1.0 - 1e-3;
         for p in 0..self.num_partitions {
             let fdl_idx = (self.fdl_head + p) % self.num_partitions;
             for k in 0..self.fft_size {
@@ -203,7 +207,6 @@ impl Pbfdaf {
         self.output_buf.copy_from_slice(&other.output_buf);
     }
 
-    #[cfg(test)]
     pub(crate) fn adaptive_state_energy(&self) -> f32 {
         self.weights
             .iter()

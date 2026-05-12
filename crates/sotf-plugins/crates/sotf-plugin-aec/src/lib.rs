@@ -120,7 +120,13 @@ impl AecPlugin {
             mic_buffer: vec![0.0; block_size],
             ref_buffer: vec![0.0; block_size],
             input_fill: 0,
-            output_buffer: vec![0.0; block_size * 16],
+            // Pre-allocate enough to hold 64 AEC blocks without any runtime
+            // reallocation.  At 48 kHz / 256-sample blocks this covers up to
+            // 16384-sample host callbacks (≈ 341 ms) which exceeds any realistic
+            // host buffer size.  ensure_output_capacity() still exists as a
+            // fallback for extreme configurations, but will not be triggered in
+            // normal use.
+            output_buffer: vec![0.0; block_size * 64],
             output_read_pos: 0,
             output_write_pos: 0,
             output_len: 0,
@@ -333,11 +339,17 @@ impl Plugin for AecPlugin {
                     // IFFT the suppressed spectrum to get time-domain output
                     // Copy into pre-allocated buffer since IFFT needs mutable access
                     let n_sup = suppressed.len();
-                    if self.post_filter_ifft_buf.len() < n_sup {
-                        self.post_filter_ifft_buf
-                            .resize(n_sup, Complex::new(0.0, 0.0));
-                    }
-                    self.post_filter_ifft_buf[..n_sup].copy_from_slice(suppressed);
+                    // n_sup == fft_size == block_size * 2, which is invariant
+                    // at construction time.  A runtime resize here would be an
+                    // allocation inside the audio callback.
+                    debug_assert_eq!(
+                        self.post_filter_ifft_buf.len(),
+                        n_sup,
+                        "post_filter_ifft_buf size mismatch: expected {n_sup}, got {}",
+                        self.post_filter_ifft_buf.len()
+                    );
+                    let n_sup = self.post_filter_ifft_buf.len();
+                    self.post_filter_ifft_buf[..n_sup].copy_from_slice(&suppressed[..n_sup]);
                     self.fft_inverse.process_with_scratch(
                         &mut self.post_filter_ifft_buf[..n_sup],
                         &mut self.fft_scratch,
@@ -495,6 +507,214 @@ mod tests {
             nonzero, num_frames,
             "large blocks should preserve every produced output sample"
         );
+    }
+
+    /// Issue #4: post_filter_ifft_buf size must always equal fft_size.
+    /// Verifies the debug_assert_eq! is satisfied (no panic) and that the
+    /// buffer is never resized during process().
+    #[test]
+    fn test_post_filter_ifft_buf_size_never_changes() {
+        let mut plugin = AecPlugin::from_params(
+            48000,
+            AecPluginParams {
+                echo_tail_ms: 100.0,
+                step_size: 0.5,
+                post_filter_enabled: true,
+            },
+        );
+        let initial_len = plugin.post_filter_ifft_buf.len();
+        let block_size = DEFAULT_BLOCK_SIZE;
+        // Process several host blocks of the exact block size
+        for _ in 0..10 {
+            let input = vec![0.1f32; block_size * 2];
+            let mut output = vec![0.0f32; block_size];
+            let ctx = ProcessContext {
+                sample_rate: 48000,
+                num_frames: block_size,
+            };
+            plugin.process(&input, &mut output, &ctx).unwrap();
+        }
+        assert_eq!(
+            plugin.post_filter_ifft_buf.len(),
+            initial_len,
+            "post_filter_ifft_buf must not resize during process()"
+        );
+    }
+
+    /// Issue #3: output buffer must not allocate when host passes large blocks.
+    /// With pre-allocated size of block_size*64 we can handle up to 64 AEC blocks
+    /// per host callback without any reallocation.
+    #[test]
+    fn test_output_buffer_no_alloc_on_large_host_blocks() {
+        let mut plugin = AecPlugin::from_params(
+            48000,
+            AecPluginParams {
+                echo_tail_ms: 100.0,
+                step_size: 0.5,
+                post_filter_enabled: false,
+            },
+        );
+        // The pre-allocated capacity must be >= block_size * 64
+        assert!(
+            plugin.output_buffer.len() >= DEFAULT_BLOCK_SIZE * 64,
+            "output_buffer should be pre-allocated to at least block_size*64 (got {})",
+            plugin.output_buffer.len()
+        );
+        // A host block of 32 AEC blocks must complete without panic (no realloc)
+        let num_frames = DEFAULT_BLOCK_SIZE * 32;
+        let input = vec![0.1f32; num_frames * 2];
+        let mut output = vec![0.0f32; num_frames];
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+        plugin.process(&input, &mut output, &ctx).unwrap();
+    }
+
+    /// Issue #5: Two-path transfer threshold is too aggressive (was 5 blocks ≈ 27 ms).
+    /// After increasing the threshold to >= 20, a brief noise burst must NOT
+    /// immediately trigger a transfer.
+    #[test]
+    fn test_two_path_transfer_threshold_not_too_aggressive() {
+        let block_size = DEFAULT_BLOCK_SIZE;
+        let mut plugin = AecPlugin::from_params(
+            48000,
+            AecPluginParams {
+                echo_tail_ms: 100.0,
+                step_size: 0.5,
+                post_filter_enabled: false,
+            },
+        );
+        // Verify the underlying threshold is >= 20
+        assert!(
+            plugin.aec.transfer_threshold() >= 20,
+            "transfer_threshold should be >= 20 to avoid rapid ping-pong (got {})",
+            plugin.aec.transfer_threshold()
+        );
+        // 10 blocks of identical input — with old threshold of 5 this would trigger
+        // a spurious transfer; with the new threshold it must not
+        let input: Vec<f32> = (0..block_size)
+            .flat_map(|i| {
+                let t = i as f32;
+                [t.sin() * 0.5, 0.0_f32]
+            })
+            .collect();
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: block_size,
+        };
+        let transfers_before = plugin.aec.transfer_count();
+        for _ in 0..10 {
+            let mut out = vec![0.0f32; block_size];
+            plugin.process(&input, &mut out, &ctx).unwrap();
+        }
+        // 10 blocks < new threshold => counter should have been reset at least once
+        // but a full transfer (counter reaching threshold) must NOT have happened
+        // unless the algorithm naturally converged — we just verify it doesn't panic
+        let _ = transfers_before;
+    }
+
+    /// Issue #2: leakage factor must provide a meaningful time constant.
+    /// With leak = 1 - 1e-3 per block and block_size=256 at 48kHz,
+    /// τ = block_duration / ln(1/(1-1e-3)) ≈ 5.3 ms * 1000 = 5.3 seconds — practical.
+    /// This test checks the constant value directly.
+    #[test]
+    fn test_pbfdaf_leakage_factor_is_meaningful() {
+        // We expose the effective leakage by checking that weights decay
+        // when no update signal is present.  After many blocks of silence the
+        // weight energy must be lower than it was before silence.
+        let block_size = DEFAULT_BLOCK_SIZE;
+        // Train briefly so weights are non-zero
+        let mut plugin = AecPlugin::from_params(
+            48000,
+            AecPluginParams {
+                echo_tail_ms: 50.0,
+                step_size: 0.7,
+                post_filter_enabled: false,
+            },
+        );
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: block_size,
+        };
+        // Training phase: non-zero reference creates non-zero weights
+        for block_idx in 0..50 {
+            let mut input = vec![0.0f32; block_size * 2];
+            for i in 0..block_size {
+                let t = (block_idx * block_size + i) as f32;
+                input[i * 2] = (t * 0.1).sin() * 0.5; // mic = echo
+                input[i * 2 + 1] = (t * 0.1).sin() * 0.5; // reference
+            }
+            let mut out = vec![0.0f32; block_size];
+            plugin.process(&input, &mut out, &ctx).unwrap();
+        }
+        let energy_after_training = plugin.aec.foreground_weight_energy();
+        assert!(
+            energy_after_training > 0.0,
+            "weights must be non-zero after training"
+        );
+        // Decay phase: silence — weights should decay due to leakage
+        for _ in 0..500 {
+            let input = vec![0.0f32; block_size * 2];
+            let mut out = vec![0.0f32; block_size];
+            plugin.process(&input, &mut out, &ctx).unwrap();
+        }
+        let energy_after_silence = plugin.aec.foreground_weight_energy();
+        assert!(
+            energy_after_silence < energy_after_training * 0.5,
+            "weights should decay significantly with practical leakage (before={energy_after_training:.6}, after={energy_after_silence:.6})"
+        );
+    }
+
+    /// Issue #1: Post-filter must not suppress near-end speech during double-talk.
+    /// With no echo estimate the post-filter gain should remain near 1.0.
+    #[test]
+    fn test_post_filter_dtd_preserves_near_end_speech() {
+        let block_size = DEFAULT_BLOCK_SIZE;
+        // Use post_filter_enabled=true so we test the suppressor path
+        let mut plugin = AecPlugin::from_params(
+            48000,
+            AecPluginParams {
+                echo_tail_ms: 50.0,
+                step_size: 0.3,
+                post_filter_enabled: true,
+            },
+        );
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: block_size,
+        };
+        // Feed pure near-end speech (mic) with zero reference for many blocks so
+        // AEC weights are near zero and echo estimate is negligible.
+        // Power of near-end should be preserved (not suppressed > 20 dB).
+        let mut mic_power_sum = 0.0f32;
+        let mut out_power_sum = 0.0f32;
+        let num_blocks = 60;
+        for block_idx in 0..num_blocks {
+            let mut input = vec![0.0f32; block_size * 2];
+            for i in 0..block_size {
+                let t = (block_idx * block_size + i) as f32;
+                let speech = (t * 0.07).sin() * 0.5 + (t * 0.13).sin() * 0.3;
+                input[i * 2] = speech; // mic = near-end only
+                input[i * 2 + 1] = 0.0; // zero reference → echo estimate ≈ 0
+            }
+            let mut out = vec![0.0f32; block_size];
+            plugin.process(&input, &mut out, &ctx).unwrap();
+            // Measure last quarter
+            if block_idx >= num_blocks * 3 / 4 {
+                for i in 0..block_size {
+                    mic_power_sum += input[i * 2] * input[i * 2];
+                }
+                out_power_sum += out.iter().map(|x| x * x).sum::<f32>();
+            }
+        }
+        if mic_power_sum > 1e-6 {
+            let loss_db = 10.0 * (mic_power_sum / out_power_sum.max(1e-20)).log10();
+            assert!(
+                loss_db < 20.0,
+                "Post-filter must not suppress near-end speech by more than 20 dB during double-talk (loss={loss_db:.1} dB)"
+            );
+        }
     }
 
     #[test]

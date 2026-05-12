@@ -9,6 +9,11 @@
 use rustfft::num_complex::Complex;
 
 /// Residual echo suppression post-filter.
+///
+/// Includes a simple power-ratio double-talk detector (DTD): when the
+/// microphone power significantly exceeds the echo estimate power, near-end
+/// speech is likely present and the suppressor is bypassed to avoid muffling
+/// it.
 #[derive(Debug)]
 pub struct ResidualEchoSuppressor {
     /// Over-subtraction factor (1.0-2.0, higher = more aggressive)
@@ -22,6 +27,16 @@ pub struct ResidualEchoSuppressor {
     spectrum_size: usize,
     /// Pre-allocated output buffer (avoids hot-path allocation)
     output_buf: Vec<Complex<f32>>,
+    // ---- Double-talk detector state ----
+    /// Smoothed microphone power (across all bins)
+    dtd_mic_power: f32,
+    /// Smoothed echo-estimate power (across all bins)
+    dtd_echo_power: f32,
+    /// Power smoothing factor for DTD (slower than per-bin gain smoothing)
+    dtd_alpha: f32,
+    /// DTD threshold: when mic_power > dtd_threshold * echo_power → double-talk
+    /// 6 dB = power ratio 4.0 gives adequate margin.
+    dtd_threshold: f32,
 }
 
 impl ResidualEchoSuppressor {
@@ -38,7 +53,11 @@ impl ResidualEchoSuppressor {
             smoothed_gains: vec![1.0; spectrum_size],
             gain_alpha: 0.8,
             spectrum_size,
-            output_buf: vec![Complex::new(0.0, 0.0); spectrum_size * 2],
+            output_buf: vec![Complex::new(0.0, 0.0); spectrum_size],
+            dtd_mic_power: 0.0,
+            dtd_echo_power: 0.0,
+            dtd_alpha: 0.9,
+            dtd_threshold: 4.0, // 6 dB advantage → near-end speech detected
         }
     }
 
@@ -59,14 +78,57 @@ impl ResidualEchoSuppressor {
         debug_assert!(echo_estimate_spectrum.len() >= self.spectrum_size);
 
         let n = error_spectrum.len();
-        if self.output_buf.len() < n {
-            self.output_buf.resize(n, Complex::new(0.0, 0.0));
-        }
+        debug_assert_eq!(
+            self.output_buf.len(),
+            n,
+            "output_buf size should equal spectrum size"
+        );
 
-        for k in 0..n {
-            if k < self.spectrum_size {
-                let s_error = error_spectrum[k].norm_sqr();
-                let s_echo = echo_estimate_spectrum[k].norm_sqr();
+        // Double-talk detector: compare total mic power to total echo-estimate
+        // power.  If the microphone (error) energy substantially exceeds the
+        // echo estimate energy, a near-end speaker is active and we must not
+        // over-suppress.
+        let raw_mic_pwr: f32 = error_spectrum[..self.spectrum_size]
+            .iter()
+            .map(|c| c.norm_sqr())
+            .sum::<f32>();
+        let raw_echo_pwr: f32 = echo_estimate_spectrum[..self.spectrum_size]
+            .iter()
+            .map(|c| c.norm_sqr())
+            .sum::<f32>();
+        self.dtd_mic_power =
+            self.dtd_alpha * self.dtd_mic_power + (1.0 - self.dtd_alpha) * raw_mic_pwr;
+        self.dtd_echo_power =
+            self.dtd_alpha * self.dtd_echo_power + (1.0 - self.dtd_alpha) * raw_echo_pwr;
+
+        // Double-talk detected when mic power >> echo power by dtd_threshold.
+        // In that case bypass suppression (copy input directly).
+        let double_talk = self.dtd_mic_power > self.dtd_threshold * (self.dtd_echo_power + 1e-20);
+
+        // n == spectrum_size (invariant enforced by debug_assert_eq! above),
+        // so the inner `k < self.spectrum_size` branch is always taken.
+        if double_talk {
+            // Pass through without modification — reset gains toward 1.0 so
+            // there is no abrupt change when double-talk ends.
+            for (k, (out, &e)) in self
+                .output_buf
+                .iter_mut()
+                .zip(error_spectrum.iter())
+                .enumerate()
+            {
+                self.smoothed_gains[k] =
+                    self.gain_alpha * self.smoothed_gains[k] + (1.0 - self.gain_alpha) * 1.0;
+                *out = e;
+            }
+        } else {
+            for (k, (out, (&e, &echo))) in self
+                .output_buf
+                .iter_mut()
+                .zip(error_spectrum.iter().zip(echo_estimate_spectrum.iter()))
+                .enumerate()
+            {
+                let s_error = e.norm_sqr();
+                let s_echo = echo.norm_sqr();
 
                 // Wiener-style gain: G = max((|E|² - β|Ê|²) / |E|², G_min)
                 let speech_est = (s_error - self.beta * s_echo).max(0.0);
@@ -80,9 +142,7 @@ impl ResidualEchoSuppressor {
                 self.smoothed_gains[k] =
                     self.gain_alpha * self.smoothed_gains[k] + (1.0 - self.gain_alpha) * gain;
 
-                self.output_buf[k] = error_spectrum[k] * self.smoothed_gains[k];
-            } else {
-                self.output_buf[k] = error_spectrum[k];
+                *out = e * self.smoothed_gains[k];
             }
         }
 
@@ -92,6 +152,8 @@ impl ResidualEchoSuppressor {
     /// Reset suppressor state.
     pub fn reset(&mut self) {
         self.smoothed_gains.fill(1.0);
+        self.dtd_mic_power = 0.0;
+        self.dtd_echo_power = 0.0;
     }
 
     /// Set over-subtraction factor.
