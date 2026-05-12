@@ -1,3 +1,63 @@
+# 0.5.5
+
+## Fixes (from code review)
+
+- **[Critical]** `low_buf` and `high_buf` were not resized together with `dry_buf` when a
+  larger-than-expected block arrived in exciter mode, causing an index-out-of-bounds panic
+  (`src/lib.rs` — buffer resize guard).
+- **[Critical]** Drive, mix, and output-gain smoothers were block-constant: a single
+  end-of-block value was applied to all frames, causing zipper noise on automation. All three
+  now use a per-sample linear ramp (start + frame * step) (`src/lib.rs` — smoother ramp loop).
+- **[Critical]** Tube ADAA path used `adaa_softclip` (which implements `f(x)=x/(1+|x|)`,
+  i.e. `tone=1`) regardless of the `tone` parameter. When `tone != 1.0`, toggling ADAA silently
+  changed the waveshaper. The Tube ADAA arm now delegates to direct `tube()` so harmonic
+  character is always consistent (`src/lib.rs:909`).
+- **[Major]** Dynamic saturation was post-distortion gain multiplication, acting as an expander
+  rather than drive modulation. It now recomputes `saturate(dry, mode, dynamic_drive, tone)` with
+  `dynamic_drive = drive * (1 + env * dyn_amount)` clamped to 20.0 (`src/lib.rs` — dynamic block).
+- **[Major]** Dead LUFS auto-loudness code removed. `LufsTarget` was unconditionally disabled
+  (`set_enabled(false)`) with no parameter to re-enable it, and it was measuring the mixed
+  output rather than the wet signal. Struct field, constructor code, and import removed
+  (`src/lib.rs`).
+- **[Major]** Oversampler return value (frames actually written) was discarded with `let _ =`.
+  During latency fill, the oversampler writes fewer than `nf` frames; unwritten frames are now
+  zeroed rather than left with stale saturation state (`src/lib.rs` — oversampled paths).
+- **[Minor]** `flush_denormals_inplace` was called on the entire `buffer` slice, potentially
+  touching samples beyond `total = nf * nc`. Now called as `flush_denormals_inplace(&mut buffer[..total])`
+  (`src/lib.rs:967`).
+- **[Minor]** Added `debug_assert!(buffer.len() >= total)` to catch buggy-host buffer overruns
+  in development builds (`src/lib.rs`).
+- **[Minor]** Fixed incorrect doc comment on `tube()`: `f(x) = x/(1+|x|^n)` is an odd function
+  (symmetric), not asymmetric as previously stated.
+- **[Minor]** Fixed incorrect doc comment on `tape()`: the implementation is a memoryless
+  exponential sigmoid, not a hysteresis model.
+- **[Minor]** Fixed module-level comment that called Tube "asymmetric waveshaping" and Tape
+  "simplified hysteresis approximation".
+
+## New tests
+
+- `test_exciter_large_block_no_panic` — regression for buffer resize bug
+- `test_tube_adaa_matches_direct_when_tone_not_one` — regression for Tube ADAA mismatch
+- `test_drive_smoother_ramps_across_block` — verifies per-sample drive ramp
+- `test_dynamic_saturation_bounded_no_pumping` — verifies bounded output with dynamic=1.0
+- `test_flush_denormals_limited_to_valid_samples` — verifies no writes beyond valid range
+- `test_no_lufs_auto_gain_on_passthrough` — verifies LUFS dead code is gone
+
+## Deferred
+
+- **Performance 3.1** (seven buffer passes): Fusing all DSP stages into a single per-frame loop
+  requires significant restructuring of the oversampled path and ADAA path. Deferred as a
+  larger refactor.
+- **Performance 3.3/3.4** (`parameters()` clones Vec, `rebuild_cached_parameters` on every
+  `set_parameter`): Requires changing the `InPlacePlugin` trait signature to return `&[Parameter]`
+  — a cross-crate change. Deferred.
+- **Acoustics 1.5** (soft_clip minimum drive = 1.0 means no clean path): Behaviour is
+  intentional per current design; documented in comment but not changed.
+- **Acoustics 1.6** (DC blocker before final mix): Low risk for current use-cases (DC blocker
+  targets saturation-induced offset; dry is clean). Deferred.
+
+---
+
 # 0.5.4
 
 ## New

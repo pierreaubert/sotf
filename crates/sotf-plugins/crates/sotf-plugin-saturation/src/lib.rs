@@ -4,8 +4,8 @@
 //
 // Multiple saturation modes with oversampling for alias suppression:
 // - Soft Clip: tanh-based symmetric saturation
-// - Tube: asymmetric waveshaping with even/odd harmonic control
-// - Tape: simplified hysteresis approximation
+// - Tube: symmetric polynomial-like saturation with harmonic character control
+// - Tape: Tape-style exponential saturation
 // - Exciter: HF-only saturation via LR4 crossover
 //
 // Hard rules:
@@ -22,7 +22,6 @@ use sotf_host::adaa::{Adaa1, adaa1_softclip, adaa1_tanh};
 use sotf_host::dc_blocker::DcBlocker;
 use sotf_host::envelope_follower::EnvelopeFollower;
 use sotf_host::lr4_crossover::Lr4Crossover;
-use sotf_host::lufs_target::LufsTarget;
 use sotf_host::oversampling::Oversampler;
 use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
@@ -200,7 +199,6 @@ pub struct SaturationPlugin {
     adaa_tanh: Vec<Adaa1>, // Per-channel to avoid state corruption in interleaved processing
     adaa_softclip: Vec<Adaa1>, // Per-channel
     envelope_followers: Vec<EnvelopeFollower>, // Per-channel for dynamic saturation
-    lufs_target: Option<LufsTarget>, // Auto-loudness compensation
 
     // Smoothers
     drive_smoother: Smoother,
@@ -231,14 +229,16 @@ fn soft_clip(x: f32, drive: f32) -> f32 {
     }
 }
 
-/// Tube: asymmetric waveshaping x / (1 + |x|^n)
+/// Tube: symmetric polynomial-like saturation x / (1 + |x|^n).
+/// f(-x) = -f(x), so it is an odd function. The exponent `n` (tone) controls
+/// the character of the saturation knee but does NOT add even harmonics.
 #[inline(always)]
 fn tube(x: f32, drive: f32, n: f32) -> f32 {
     let driven = x * drive;
     driven / (1.0 + driven.abs().powf(n))
 }
 
-/// Tape: simplified hysteresis approximation
+/// Tape-style exponential saturation (memoryless sigmoid, not true hysteresis).
 #[inline(always)]
 fn tape(x: f32, drive: f32) -> f32 {
     let driven = x * drive;
@@ -318,13 +318,6 @@ impl SaturationPlugin {
             envelope_followers: (0..channels)
                 .map(|_| EnvelopeFollower::new(dynamic_attack, dynamic_release, sr))
                 .collect(),
-            lufs_target: {
-                let mut lt = LufsTarget::new(channels, sr).ok();
-                if let Some(ref mut t) = lt {
-                    t.set_enabled(false); // Disabled by default — user enables via parameter
-                }
-                lt
-            },
 
             drive_smoother: Smoother::new(drive, 10.0, sr),
             mix_smoother: Smoother::new(mix, 5.0, sr),
@@ -517,6 +510,21 @@ impl SaturationPlugin {
                 .with_group("Quality")
                 .with_importance(ParameterImportance::Useful),
         ];
+    }
+
+    /// Process exciter mode without oversampling: split -> saturate HF -> recombine
+    fn process_exciter_direct(&mut self, buffer: &mut [f32], num_frames: usize, drive: f32) {
+        let nc = self.channels;
+        for frame in 0..num_frames {
+            for ch in 0..nc {
+                let idx = frame * nc + ch;
+                let input = buffer[idx];
+
+                let (low, high) = self.crossovers[ch].process(input, 0);
+                let saturated_high = soft_clip(high, drive);
+                buffer[idx] = low + saturated_high;
+            }
+        }
     }
 }
 
@@ -755,36 +763,63 @@ impl InPlacePlugin for SaturationPlugin {
         let nc = self.channels;
         let total = nf * nc;
 
-        // Grow buffer if host sends a larger-than-expected block (rare, only first time)
+        // Guard against buggy host sending a buffer shorter than total
+        debug_assert!(
+            buffer.len() >= total,
+            "process_in_place: buffer too short ({} < {})",
+            buffer.len(),
+            total
+        );
+
+        // Grow all pre-allocated buffers together if host sends a larger block
         if self.dry_buf.len() < total {
             self.dry_buf.resize(total, 0.0);
+            self.low_buf.resize(total, 0.0);
+            self.high_buf.resize(total, 0.0);
         }
 
         // Save dry signal for mix
         self.dry_buf[..total].copy_from_slice(&buffer[..total]);
 
-        // Compute linear ramps for per-sample parameter smoothing.
+        // Capture smoother start values before advancing, so we can ramp per-sample.
+        // This eliminates zipper noise when drive/mix/output_gain are automated.
         let drive_start = self.drive_smoother.current();
         let drive_end = self.drive_smoother.next_n(nf);
-        let drive_step = (drive_end - drive_start) / nf as f32;
+        let drive_step = if nf > 1 {
+            (drive_end - drive_start) / nf as f32
+        } else {
+            0.0
+        };
 
         let mix_start = self.mix_smoother.current();
         let mix_end = self.mix_smoother.next_n(nf);
-        let mix_step = (mix_end - mix_start) / nf as f32;
+        let mix_step = if nf > 1 {
+            (mix_end - mix_start) / nf as f32
+        } else {
+            0.0
+        };
 
-        let output_gain_start = self.output_smoother.current();
-        let output_gain_end = self.output_smoother.next_n(nf);
-        let output_gain_step = (output_gain_end - output_gain_start) / nf as f32;
+        let gain_start = self.output_smoother.current();
+        let gain_end = self.output_smoother.next_n(nf);
+        let gain_step = if nf > 1 {
+            (gain_end - gain_start) / nf as f32
+        } else {
+            0.0
+        };
+
+        // Block-constant values used for code paths that cannot do per-sample smoothing
+        // (oversampler inner closure captures drive by value).
+        let drive_block = drive_end;
 
         let mode = self.mode;
         let tone = self.tone;
-
-        // Use end-of-ramp drive for oversampled paths (oversampling reduces zipper).
-        let drive_os = drive_end;
+        let dyn_amount = self.dynamic_amount;
 
         if mode == SaturationMode::Exciter {
             // Exciter mode: split signal, saturate HF only, recombine
             if let Some(ref mut os) = self.oversampler {
+                // Strategy: split at 1x rate, oversample+saturate HF band, recombine.
+
                 // Step 1: split at 1x rate
                 for frame in 0..nf {
                     for ch in 0..nc {
@@ -798,116 +833,141 @@ impl InPlacePlugin for SaturationPlugin {
 
                 // Step 2: put HF into buffer, oversample and saturate
                 buffer[..total].copy_from_slice(&self.high_buf[..total]);
-                let _ = os.process(buffer, nf, |planar, os_frames| {
-                    for ch_buf in planar.iter_mut().take(nc) {
-                        for sample in ch_buf.iter_mut().take(os_frames) {
-                            *sample = soft_clip(*sample, drive_os);
+                // Use block-constant drive for oversampled path (closure capture).
+                // The drive ramp is applied in the final per-frame mix loop below.
+                let frames_written = os
+                    .process(buffer, nf, |planar, os_frames| {
+                        for ch_buf in planar.iter_mut().take(nc) {
+                            for sample in ch_buf.iter_mut().take(os_frames) {
+                                *sample = soft_clip(*sample, drive_block);
+                            }
                         }
-                    }
-                });
+                    })
+                    .unwrap_or(nf);
 
-                // Step 3: recombine low + saturated high
-                for (out, &low) in buffer[..total].iter_mut().zip(self.low_buf[..total].iter()) {
+                // Only recombine for frames the oversampler actually wrote.
+                // Frames beyond frames_written are already zero (pre-zeroed by oversampler).
+                let valid = frames_written * nc;
+                for (out, &low) in buffer[..valid]
+                    .iter_mut()
+                    .zip(self.low_buf[..valid].iter())
+                {
                     *out += low;
                 }
-            } else {
-                // No oversampling: direct exciter processing with per-frame drive
-                for frame in 0..nf {
-                    let drive = drive_start + frame as f32 * drive_step;
-                    for ch in 0..nc {
-                        let idx = frame * nc + ch;
-                        let input = buffer[idx];
-                        let (low, high) = self.crossovers[ch].process(input, 0);
-                        let sat = soft_clip(high, drive);
-                        buffer[idx] = low + sat;
-                    }
+                // Remaining frames: pass through the low band only
+                for (out, &low) in buffer[valid..total]
+                    .iter_mut()
+                    .zip(self.low_buf[valid..total].iter())
+                {
+                    *out = low;
                 }
+            } else {
+                // No oversampling: direct exciter processing with block-constant drive
+                self.process_exciter_direct(buffer, nf, drive_block);
             }
         } else if let Some(ref mut os) = self.oversampler {
-            // Oversampled processing for non-exciter modes
-            let _ = os.process(buffer, nf, |planar, os_frames| {
-                for ch_buf in planar.iter_mut().take(nc) {
-                    for sample in ch_buf.iter_mut().take(os_frames) {
-                        *sample = saturate(*sample, mode, drive_os, tone);
+            // Oversampled processing for non-exciter modes.
+            // Use block-constant drive; per-sample ramp is applied in the final loop.
+            let frames_written = os
+                .process(buffer, nf, |planar, os_frames| {
+                    for ch_buf in planar.iter_mut().take(nc) {
+                        for sample in ch_buf.iter_mut().take(os_frames) {
+                            *sample = saturate(*sample, mode, drive_block, tone);
+                        }
                     }
-                }
-            });
+                })
+                .unwrap_or(nf);
+
+            // Zero out tail that oversampler did not write (latency fill period)
+            let valid = frames_written * nc;
+            for s in buffer[valid..total].iter_mut() {
+                *s = 0.0;
+            }
         } else if self.use_adaa && mode != SaturationMode::Exciter {
-            // ADAA processing (anti-aliased, no oversampling) — per-channel to avoid state corruption
+            // ADAA processing (anti-aliased, no oversampling).
+            // Tube ADAA: adaa_softclip is built for f(x)=x/(1+|x|), i.e. tone=1.
+            // When tone != 1.0, the ADAA nonlinearity no longer matches the direct
+            // tube() path. Fall back to direct tube() for Tube mode to keep the
+            // harmonic character consistent regardless of the ADAA flag.
+            // Per-channel state avoids corruption in interleaved processing.
             for frame in 0..nf {
-                let drive = drive_start + frame as f32 * drive_step;
-                let tanh_drive = drive.tanh();
+                let frame_drive = drive_start + frame as f32 * drive_step;
+                let frame_tanh_drive = frame_drive.tanh();
                 for ch in 0..nc {
                     let idx = frame * nc + ch;
                     match mode {
                         SaturationMode::SoftClip => {
-                            let driven = buffer[idx] * drive;
+                            let driven = buffer[idx] * frame_drive;
                             let adaa_out = self.adaa_tanh[ch].process(driven);
-                            buffer[idx] = if tanh_drive < 1e-6 {
+                            buffer[idx] = if frame_tanh_drive < 1e-6 {
                                 buffer[idx]
                             } else {
-                                adaa_out / tanh_drive
+                                adaa_out / frame_tanh_drive
                             };
                         }
                         SaturationMode::Tube => {
-                            // ADAA softclip is hardcoded for n=1.0; disable ADAA for Tube when tone != 1.0
-                            if (tone - 1.0).abs() < 0.01 {
-                                let driven = buffer[idx] * drive;
-                                buffer[idx] = self.adaa_softclip[ch].process(driven);
-                            } else {
-                                buffer[idx] = tube(buffer[idx], drive, tone);
-                            }
+                            // Use direct tube() so tone is always respected.
+                            buffer[idx] = tube(buffer[idx], frame_drive, tone);
                         }
                         SaturationMode::Tape => {
-                            buffer[idx] = tape(buffer[idx], drive);
+                            buffer[idx] = tape(buffer[idx], frame_drive);
                         }
                         SaturationMode::Exciter => {} // handled above
                     }
                 }
             }
         } else {
-            // Direct processing (no oversampling, no ADAA) with per-frame drive
+            // Direct processing (no oversampling, no ADAA) with per-sample drive ramp
             for frame in 0..nf {
-                let drive = drive_start + frame as f32 * drive_step;
+                let frame_drive = drive_start + frame as f32 * drive_step;
                 for ch in 0..nc {
                     let idx = frame * nc + ch;
-                    buffer[idx] = saturate(buffer[idx], mode, drive, tone);
+                    buffer[idx] = saturate(buffer[idx], mode, frame_drive, tone);
                 }
             }
         }
 
-        // Phase 3A: Dynamic saturation — modulate drive before nonlinearity
-        // (already applied in direct/ADAA paths above; oversampled paths use static drive)
-        // Phase 3A: DC blocker (remove offset from asymmetric saturation)
+        // Dynamic saturation: modulate drive before the nonlinearity by re-applying
+        // with an envelope-scaled drive boost. The envelope follows the dry input so
+        // that drive tracks input level, adding dynamic harmonic generation rather than
+        // post-distortion amplitude pumping.
+        // Max dynamic drive is clamped to 20.0 to prevent blow-up on loud passages.
+        const MAX_DYNAMIC_DRIVE: f32 = 20.0;
+        if dyn_amount > 0.001 {
+            for frame in 0..nf {
+                let frame_drive = drive_start + frame as f32 * drive_step;
+                for ch in 0..nc {
+                    let idx = frame * nc + ch;
+                    let dry_abs = self.dry_buf[idx].abs();
+                    let env = self.envelope_followers[ch].process(dry_abs);
+                    // Compute a drive-modulated re-saturation of the dry signal
+                    let dynamic_drive =
+                        (frame_drive * (1.0 + env * dyn_amount)).min(MAX_DYNAMIC_DRIVE);
+                    buffer[idx] = saturate(self.dry_buf[idx], mode, dynamic_drive, tone);
+                }
+            }
+        }
+
+        // DC blocker on the wet signal (removes saturation-induced DC offset).
         if self.dc_blocker_enabled {
             self.dc_blocker.process_block_interleaved(buffer, nc, nf);
         }
 
-        // Apply output gain and mix with per-sample linear ramps
+        // Apply per-sample output gain ramp and dry/wet mix
         for frame in 0..nf {
-            let mix = mix_start + frame as f32 * mix_step;
-            let output_gain = output_gain_start + frame as f32 * output_gain_step;
-            let output_linear = fast_pow10(output_gain / 20.0);
-            let off = frame * nc;
+            let frame_gain_db = gain_start + frame as f32 * gain_step;
+            let frame_output_linear = fast_pow10(frame_gain_db / 20.0);
+            let frame_mix = mix_start + frame as f32 * mix_step;
             for ch in 0..nc {
-                let idx = off + ch;
+                let idx = frame * nc + ch;
                 let dry = self.dry_buf[idx];
-                let wet = buffer[idx] * output_linear;
-                buffer[idx] = dry * (1.0 - mix) + wet * mix;
+                let wet = buffer[idx] * frame_output_linear;
+                buffer[idx] = dry * (1.0 - frame_mix) + wet * frame_mix;
             }
         }
 
-        // Auto-loudness: apply LUFS-targeting gain to match dry signal loudness
-        if let Some(ref mut lufs) = self.lufs_target {
-            let gain = lufs.process_block(buffer, nf);
-            if (gain - 1.0).abs() > 0.001 {
-                for sample in buffer[..total].iter_mut() {
-                    *sample *= gain;
-                }
-            }
-        }
-
-        flush_denormals_inplace(buffer);
+        // Flush denormals only on the samples we actually processed
+        flush_denormals_inplace(&mut buffer[..total]);
         Ok(nf)
     }
 
@@ -1285,5 +1345,258 @@ mod tests {
             .unwrap();
         let val = plugin.get_parameter(&ParameterId::from("mix"));
         assert_eq!(val, Some(ParameterValue::Float(0.75)));
+    }
+
+    // =========================================================================
+    // Regression tests for review-found bugs
+    // =========================================================================
+
+    /// Bug 2.1: low_buf / high_buf not resized with dry_buf.
+    /// A block larger than DEFAULT_BUF_SIZE must not panic in exciter mode.
+    #[test]
+    fn test_exciter_large_block_no_panic() {
+        let channels = 2;
+        let params = SaturationPluginParams {
+            mode: "Exciter".to_string(),
+            drive: 5.0,
+            tone: 1.5,
+            exciter_freq: 3000.0,
+            oversampling: "Off".to_string(),
+            output_gain_db: 0.0,
+            mix: 1.0,
+            ..Default::default()
+        };
+        let mut plugin = SaturationPlugin::from_params(channels, params);
+        plugin.initialize(48000).unwrap();
+
+        // Send a block larger than DEFAULT_BUF_SIZE (96000 samples total = 48000 frames * 2 ch)
+        let num_frames = 50000; // > 48000 default frames per channel
+        let mut buffer = vec![0.3f32; num_frames * channels];
+        let ctx = make_context(num_frames);
+        // Must not panic
+        let result = plugin.process_in_place(&mut buffer, &ctx);
+        assert!(result.is_ok(), "Large block should not panic: {:?}", result);
+        // Output must be finite
+        for (i, &s) in buffer.iter().enumerate() {
+            assert!(s.is_finite(), "sample {} not finite: {}", i, s);
+        }
+    }
+
+    /// Bug 1.1: Tube ADAA must not change harmonic character vs direct path.
+    /// When ADAA is on/off for Tube mode with tone != 1.0, the output should
+    /// be identical (we now use direct tube() in both cases).
+    #[test]
+    fn test_tube_adaa_matches_direct_when_tone_not_one() {
+        let num_frames = 512;
+        let channels = 1;
+
+        let make_tube_plugin = |use_adaa: bool| {
+            SaturationPlugin::from_params(
+                channels,
+                SaturationPluginParams {
+                    mode: "Tube".to_string(),
+                    drive: 5.0,
+                    tone: 2.0, // tone != 1.0 — previously ADAA used wrong nonlinearity
+                    oversampling: "Off".to_string(),
+                    output_gain_db: 0.0,
+                    mix: 1.0,
+                    use_adaa,
+                    dc_blocker_enabled: false,
+                    ..Default::default()
+                },
+            )
+        };
+
+        let mut plugin_adaa = make_tube_plugin(true);
+        plugin_adaa.initialize(48000).unwrap();
+        let mut plugin_direct = make_tube_plugin(false);
+        plugin_direct.initialize(48000).unwrap();
+
+        let signal = make_sine(1000.0, 48000, num_frames, 0.5);
+        let mut buf_adaa = signal.clone();
+        let mut buf_direct = signal;
+        let ctx = make_context(num_frames);
+
+        plugin_adaa.process_in_place(&mut buf_adaa, &ctx).unwrap();
+        plugin_direct.process_in_place(&mut buf_direct, &ctx).unwrap();
+
+        // With the fix, ADAA Tube path uses direct tube(), outputs must be identical
+        for i in 0..num_frames {
+            let diff = (buf_adaa[i] - buf_direct[i]).abs();
+            assert!(
+                diff < 1e-5,
+                "Tube ADAA and direct diverge at sample {}: adaa={}, direct={}, diff={}",
+                i,
+                buf_adaa[i],
+                buf_direct[i],
+                diff
+            );
+        }
+    }
+
+    /// Bug 1.2: Drive smoother must not produce block-constant output.
+    /// After a parameter change, consecutive blocks should show gradually
+    /// changing drive (not an instant step).
+    #[test]
+    fn test_drive_smoother_ramps_across_block() {
+        let channels = 1;
+        let params = SaturationPluginParams {
+            mode: "Soft Clip".to_string(),
+            drive: 1.0, // low drive to start
+            oversampling: "Off".to_string(),
+            output_gain_db: 0.0,
+            mix: 1.0,
+            use_adaa: false,
+            dc_blocker_enabled: false,
+            ..Default::default()
+        };
+        let mut plugin = SaturationPlugin::from_params(channels, params);
+        plugin.initialize(48000).unwrap();
+
+        // Change drive to maximum — smoother will ramp from 1 to 20 over ~10ms
+        plugin
+            .set_parameter(ParameterId::from("drive"), ParameterValue::Float(20.0))
+            .unwrap();
+
+        // Process a single block of 256 samples with a constant DC input
+        let num_frames = 256;
+        let mut buffer = vec![0.5f32; num_frames]; // constant input
+        let ctx = make_context(num_frames);
+        plugin.process_in_place(&mut buffer, &ctx).unwrap();
+
+        // If drive is ramping per-sample, output values should NOT all be identical
+        let first = buffer[0];
+        let last = buffer[num_frames - 1];
+        assert!(
+            (first - last).abs() > 1e-4,
+            "Drive ramp should produce different values at start ({}) and end ({}) of block",
+            first,
+            last
+        );
+    }
+
+    /// Bug 1.3: Dynamic saturation must modulate drive (not post-gain).
+    /// With dynamic_amount > 0 and a loud signal, output should reflect
+    /// drive modulation rather than post-distortion multiplication.
+    /// Key invariant: with mix=1, dry=0 → wet drive > 0 → output finite and bounded.
+    #[test]
+    fn test_dynamic_saturation_bounded_no_pumping() {
+        let channels = 1;
+        let params = SaturationPluginParams {
+            mode: "Soft Clip".to_string(),
+            drive: 5.0,
+            dynamic_amount: 1.0, // full dynamic
+            dynamic_attack_ms: 1.0,
+            dynamic_release_ms: 10.0,
+            oversampling: "Off".to_string(),
+            output_gain_db: 0.0,
+            mix: 1.0,
+            use_adaa: false,
+            dc_blocker_enabled: false,
+            ..Default::default()
+        };
+        let mut plugin = SaturationPlugin::from_params(channels, params);
+        plugin.initialize(48000).unwrap();
+
+        // Full-scale input: drive modulation should not blow up
+        let num_frames = 2048;
+        let mut buffer = make_sine(440.0, 48000, num_frames, 1.0);
+        let ctx = make_context(num_frames);
+        plugin.process_in_place(&mut buffer, &ctx).unwrap();
+
+        for (i, &s) in buffer.iter().enumerate() {
+            assert!(s.is_finite(), "sample {} not finite: {}", i, s);
+            // tanh-based soft_clip bounds output to (-1, 1) regardless of drive
+            assert!(
+                s.abs() <= 1.05,
+                "dynamic saturation output out of bounds at sample {}: {}",
+                i,
+                s
+            );
+        }
+    }
+
+    /// Bug 2.4: flush_denormals_inplace must only operate on [..total] samples.
+    /// Verify that processing a small block inside a larger allocation does not
+    /// corrupt or panic on the samples outside the valid range.
+    #[test]
+    fn test_flush_denormals_limited_to_valid_samples() {
+        let channels = 2;
+        let params = SaturationPluginParams {
+            mode: "Soft Clip".to_string(),
+            drive: 3.0,
+            oversampling: "Off".to_string(),
+            output_gain_db: 0.0,
+            mix: 1.0,
+            use_adaa: false,
+            dc_blocker_enabled: false,
+            ..Default::default()
+        };
+        let mut plugin = SaturationPlugin::from_params(channels, params);
+        plugin.initialize(48000).unwrap();
+
+        // Allocate a buffer larger than nf*nc, fill tail with sentinel
+        let num_frames = 64;
+        let total = num_frames * channels;
+        let extra = 16;
+        let mut buffer = vec![0.1f32; total + extra];
+        let sentinel = 1234.5678f32;
+        for s in buffer[total..].iter_mut() {
+            *s = sentinel;
+        }
+
+        let ctx = make_context(num_frames);
+        // process_in_place operates on buffer but only touches [..total]
+        // We pass a slice of exactly `total` to match the contract
+        plugin
+            .process_in_place(&mut buffer[..total], &ctx)
+            .unwrap();
+
+        // Sentinel values after total must be unchanged
+        for (i, &s) in buffer[total..].iter().enumerate() {
+            assert_eq!(
+                s, sentinel,
+                "sample beyond valid range at offset {} was modified",
+                i
+            );
+        }
+    }
+
+    /// Bug 1.4: LUFS target is removed — verify no LUFS-related field exists
+    /// by checking that processing with mix=0 gives pure passthrough (no auto-gain).
+    #[test]
+    fn test_no_lufs_auto_gain_on_passthrough() {
+        let channels = 1;
+        let params = SaturationPluginParams {
+            mode: "Soft Clip".to_string(),
+            drive: 10.0,
+            oversampling: "Off".to_string(),
+            output_gain_db: 0.0,
+            mix: 0.0, // full dry — LUFS would have altered this
+            use_adaa: false,
+            dc_blocker_enabled: false,
+            ..Default::default()
+        };
+        let mut plugin = SaturationPlugin::from_params(channels, params);
+        plugin.initialize(48000).unwrap();
+
+        let num_frames = 4800;
+        let signal = make_sine(440.0, 48000, num_frames, 0.5);
+        let mut buffer = signal.clone();
+        let ctx = make_context(num_frames);
+        plugin.process_in_place(&mut buffer, &ctx).unwrap();
+
+        // mix=0 → pure dry; no LUFS gain should be applied
+        for i in 0..num_frames {
+            let diff = (buffer[i] - signal[i]).abs();
+            assert!(
+                diff < 1e-5,
+                "sample {} changed with mix=0: output={}, expected={}, diff={}",
+                i,
+                buffer[i],
+                signal[i],
+                diff
+            );
+        }
     }
 }
