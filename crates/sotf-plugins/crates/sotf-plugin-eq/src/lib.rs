@@ -78,9 +78,13 @@ pub struct EqPluginParams {
 }
 
 /// Per-band coefficient transition state for parameter smoothing.
+/// Stores per-stage old and new coefficients so all biquad stages transition
+/// smoothly, not just the first one (fixes glitch for order > 2 bands).
 struct BandTransition {
-    old_coeffs: BiquadCoefficients,
-    new_coeffs: BiquadCoefficients,
+    /// Old coefficients for each stage (len = num_stages for this band).
+    old_coeffs_per_stage: Vec<BiquadCoefficients>,
+    /// New coefficients for each stage (len = num_stages for this band).
+    new_coeffs_per_stage: Vec<BiquadCoefficients>,
     samples_remaining: usize,
     total_samples: usize,
 }
@@ -98,8 +102,8 @@ pub struct EqPlugin {
     cache_update_counter: usize,
     cached_parameters: Vec<Parameter>,
     /// Per-band transition state. Outer index = band, applies to all channels.
-    /// For multi-stage bands, we transition only the first stage's coefficients
-    /// (others are derived from Butterworth Q staggering).
+    /// Each transition stores per-stage old/new coefficients so all biquad stages
+    /// interpolate smoothly (fixes glitch for high-order bands with order > 2).
     transitions: Vec<Option<BandTransition>>,
     /// Oversampling factor: 1 (off), 2, or 4.
     oversampling_factor: u32,
@@ -507,12 +511,18 @@ impl EqPlugin {
                         {
                             let t =
                                 1.0 - (trans.samples_remaining as f64 / trans.total_samples as f64);
-                            let interpolated = trans.old_coeffs.lerp(&trans.new_coeffs, t);
-                            if let Some((first, rest)) = stages.split_first_mut() {
-                                s = first.process_with_coefficients(s, &interpolated);
-                                for stage in rest {
-                                    s = stage.process(s);
-                                }
+                            // Interpolate all stages so multi-order bands don't glitch
+                            for (i, stage) in stages.iter_mut().enumerate() {
+                                let interpolated =
+                                    if let (Some(old), Some(new)) = (
+                                        trans.old_coeffs_per_stage.get(i),
+                                        trans.new_coeffs_per_stage.get(i),
+                                    ) {
+                                        old.lerp(new, t)
+                                    } else {
+                                        stage.coefficients()
+                                    };
+                                s = stage.process_with_coefficients(s, &interpolated);
                             }
                         } else {
                             for stage in stages {
@@ -675,17 +685,25 @@ impl InPlacePlugin for EqPlugin {
                     if !v.is_finite() {
                         return Err("Value is not finite".into());
                     }
-                    // Capture old coefficients from primary stage before updating.
-                    let old_coeffs = if let Some(Some(active)) = self.transitions.get(b_idx) {
-                        let t =
-                            1.0 - (active.samples_remaining as f64 / active.total_samples as f64);
-                        Some(active.old_coeffs.lerp(&active.new_coeffs, t))
-                    } else {
-                        self.filters[0]
-                            .get(b_idx)
-                            .and_then(|stages| stages.first())
-                            .map(|f| f.coefficients())
-                    };
+                    // Capture old per-stage coefficients before updating.
+                    // If a transition is already in progress, interpolate to the current
+                    // mid-point so the new transition starts from the actual running state.
+                    let old_coeffs_per_stage: Vec<BiquadCoefficients> =
+                        if let Some(Some(active)) = self.transitions.get(b_idx) {
+                            let t = 1.0
+                                - (active.samples_remaining as f64 / active.total_samples as f64);
+                            active
+                                .old_coeffs_per_stage
+                                .iter()
+                                .zip(active.new_coeffs_per_stage.iter())
+                                .map(|(old, new)| old.lerp(new, t))
+                                .collect()
+                        } else {
+                            self.filters[0]
+                                .get(b_idx)
+                                .map(|stages| stages.iter().map(|f| f.coefficients()).collect())
+                                .unwrap_or_default()
+                        };
 
                     let order = self.band_orders.get(b_idx).copied().unwrap_or(2);
                     let num_stages = order / 2;
@@ -725,20 +743,20 @@ impl InPlacePlugin for EqPlugin {
                             }
                         }
                     }
-                    // Start a coefficient transition for primary stage
-                    if let Some(old) = old_coeffs
+                    // Start a per-stage coefficient transition covering all biquad stages
+                    if !old_coeffs_per_stage.is_empty()
                         && let Some(stages) = self.filters[0].get(b_idx)
-                        && let Some(primary) = stages.first()
                     {
-                        let new_coeffs = primary.coefficients();
+                        let new_coeffs_per_stage: Vec<BiquadCoefficients> =
+                            stages.iter().map(|f| f.coefficients()).collect();
                         let total = self.transition_samples();
                         if total > 0 {
                             while self.transitions.len() <= b_idx {
                                 self.transitions.push(None);
                             }
                             self.transitions[b_idx] = Some(BandTransition {
-                                old_coeffs: old,
-                                new_coeffs,
+                                old_coeffs_per_stage,
+                                new_coeffs_per_stage,
                                 samples_remaining: total,
                                 total_samples: total,
                             });
@@ -909,7 +927,7 @@ impl InPlacePlugin for EqPlugin {
             let has_transitions = self.transitions.iter().any(|t| t.is_some());
 
             if has_transitions {
-                // Process with per-sample coefficient interpolation on primary stage
+                // Process with per-sample coefficient interpolation on ALL stages
                 for frame in 0..num_frames {
                     for ch in 0..nc {
                         let idx = frame * nc + ch;
@@ -918,15 +936,19 @@ impl InPlacePlugin for EqPlugin {
                             if let Some(trans) =
                                 self.transitions.get(band_idx).and_then(|t| t.as_ref())
                             {
-                                // Interpolate primary stage coefficients
+                                // Interpolate all stages so multi-order bands don't glitch
                                 let t = 1.0
                                     - (trans.samples_remaining as f64 / trans.total_samples as f64);
-                                let interpolated = trans.old_coeffs.lerp(&trans.new_coeffs, t);
-                                if let Some((first, rest)) = stages.split_first_mut() {
-                                    s = first.process_with_coefficients(s, &interpolated);
-                                    for stage in rest {
-                                        s = stage.process(s);
-                                    }
+                                for (i, stage) in stages.iter_mut().enumerate() {
+                                    let interpolated = if let (Some(old), Some(new)) = (
+                                        trans.old_coeffs_per_stage.get(i),
+                                        trans.new_coeffs_per_stage.get(i),
+                                    ) {
+                                        old.lerp(new, t)
+                                    } else {
+                                        stage.coefficients()
+                                    };
+                                    s = stage.process_with_coefficients(s, &interpolated);
                                 }
                             } else {
                                 for stage in stages {
@@ -1557,6 +1579,122 @@ mod tests {
         }
         for (i, &s) in silence.iter().enumerate() {
             assert!(s.abs() < 1e-6, "sample {} not silent after reset: {}", i, s);
+        }
+    }
+
+    #[test]
+    fn test_multi_stage_transition_covers_all_stages() {
+        // A 4th-order band (2 biquad stages) should start a transition that covers
+        // both stages, not just the first. Verify by checking the transition
+        // stores coefficients for all N/2 stages.
+        let params = EqPluginParams {
+            filters: vec![BiquadFilterConfig {
+                filter_type: "peak".to_string(),
+                freq: 1000.0,
+                q: 1.0,
+                db_gain: 0.0,
+                order: 4, // 2 stages
+            }],
+            channel_filters: None,
+            auto_gain: Default::default(),
+        };
+        let mut p = EqPlugin::from_params(1, 48000, params).unwrap();
+        InPlacePlugin::initialize(&mut p, 48000).unwrap();
+        InPlacePlugin::set_parameter(
+            &mut p,
+            ParameterId::from("auto_gain_enabled"),
+            ParameterValue::Bool(false),
+        )
+        .unwrap();
+
+        // Trigger a gain change
+        InPlacePlugin::set_parameter(
+            &mut p,
+            ParameterId::from("band_0_gain"),
+            ParameterValue::Float(6.0),
+        )
+        .unwrap();
+
+        // Transition should exist and cover 2 stages (order=4 => 2 stages)
+        assert!(p.transitions[0].is_some());
+        let trans = p.transitions[0].as_ref().unwrap();
+        assert_eq!(
+            trans.old_coeffs_per_stage.len(),
+            2,
+            "4th-order band should transition 2 stages"
+        );
+        assert_eq!(
+            trans.new_coeffs_per_stage.len(),
+            2,
+            "4th-order band should transition 2 stages"
+        );
+    }
+
+    #[test]
+    fn test_allpass_in_band_template() {
+        // AllPass should be included in the BAND_TEMPLATE filter type choices.
+        use crate::params::BAND_TEMPLATE;
+        use sotf_host::param_specs::ParamType;
+        let filter_type_spec = BAND_TEMPLATE
+            .iter()
+            .find(|s| s.engine_key == "filter_type")
+            .expect("BAND_TEMPLATE must have a filter_type param");
+        if let ParamType::Choice { labels, .. } = filter_type_spec.param_type {
+            assert!(
+                labels.iter().any(|&c| c == "AllPass"),
+                "AllPass must be in BAND_TEMPLATE filter type choices; found: {:?}",
+                labels
+            );
+        } else {
+            panic!("filter_type param should be a Choice type");
+        }
+    }
+
+    #[test]
+    fn test_multi_stage_transition_output_is_finite() {
+        // A 4th-order peak with a gain change during transition should produce
+        // only finite output (regression: old code only interpolated stage 0,
+        // stages 1+ snapped immediately causing potential NaN on extreme settings).
+        let params = EqPluginParams {
+            filters: vec![BiquadFilterConfig {
+                filter_type: "peak".to_string(),
+                freq: 1000.0,
+                q: 8.0, // high Q to stress test numerical stability
+                db_gain: 0.0,
+                order: 4,
+            }],
+            channel_filters: None,
+            auto_gain: Default::default(),
+        };
+        let mut p = EqPlugin::from_params(1, 48000, params).unwrap();
+        InPlacePlugin::initialize(&mut p, 48000).unwrap();
+        InPlacePlugin::set_parameter(
+            &mut p,
+            ParameterId::from("auto_gain_enabled"),
+            ParameterValue::Bool(false),
+        )
+        .unwrap();
+
+        // Warmup
+        let mut buf = vec![0.5f32; 256];
+        p.process_in_place(&mut buf, &ProcessContext { sample_rate: 48000, num_frames: 256 })
+            .unwrap();
+
+        // Trigger transition
+        InPlacePlugin::set_parameter(
+            &mut p,
+            ParameterId::from("band_0_gain"),
+            ParameterValue::Float(18.0),
+        )
+        .unwrap();
+
+        // Process during transition
+        let mut buf = vec![0.5f32; 512];
+        p.process_in_place(&mut buf, &ProcessContext { sample_rate: 48000, num_frames: 512 })
+            .unwrap();
+
+        for (i, &s) in buf.iter().enumerate() {
+            assert!(s.is_finite(), "sample {} not finite during 4th-order transition: {}", i, s);
         }
     }
 
