@@ -1,3 +1,33 @@
+# 0.5.4
+
+## Fixes
+
+- **Issue #5 (high):** Removed hard 4096-frame cap on internal processing buffers (`src/lib.rs`).
+  Buffers now grow dynamically when the host block size exceeds the pre-allocated capacity,
+  allowing offline renderers and non-standard hosts that use large blocks to work without error.
+  The common real-time path (blocks ≤ 4096) remains allocation-free.
+- **Issue #2 (high):** `update_latency_compensation` now returns `Result<(), String>` and
+  propagates `DawHost::build()` failures (`src/lib.rs`). On error, both delay lines are zeroed
+  so the plugin stays audible while compensation is disabled. Callers (`rebuild_path_a`,
+  `rebuild_path_b`) propagate the error with `?`. Existing test helpers updated accordingly.
+- **Issue #3 (medium):** `process()` now guards the `mix_smoother.set_target()` call with a
+  comparison against the current target, skipping the call when the value has not changed
+  (`src/lib.rs`). Eliminates redundant work on every block when the mix is settled.
+- **Issue #4 (medium):** Replaced the magic constants `20.5` and `19999.5` in
+  `band_mask_active()` with named associated constants `BAND_MASK_MIN_HZ`,
+  `BAND_MASK_MAX_HZ`, and `BAND_MASK_EDGE_EPSILON` with explanatory doc-comments
+  (`src/lib.rs`). Behaviour is unchanged.
+
+## Deferred / Skipped
+
+- **Issue #1** (rename `gain` to `mixed_gain` in the fast path): The referenced function
+  `process_empty_path_fast` does not exist in this version's code. Review claim does not
+  match the actual implementation — skipped.
+- **Issue #6** (cache trig computation in fast path): Same as #1 — `process_empty_path_fast`
+  and `can_use_empty_path_fast_path` are absent from this codebase. Skipped.
+- **Issue #7** (avoid `Vec` clone in `parameters()`): Cosmetic / speculative optimization
+  requiring cross-crate `Arc<Vec<Parameter>>` changes. Deferred.
+
 # 0.5.3
 
 ## Fixes

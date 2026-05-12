@@ -400,7 +400,7 @@ impl ABComparePlugin {
             self.sample_rate,
             self.plugin_factory,
         )?;
-        self.update_latency_compensation();
+        self.update_latency_compensation()?;
         Ok(())
     }
 
@@ -412,13 +412,30 @@ impl ABComparePlugin {
             self.sample_rate,
             self.plugin_factory,
         )?;
-        self.update_latency_compensation();
+        self.update_latency_compensation()?;
         Ok(())
     }
 
-    /// Returns true if the band mask range is narrower than full spectrum.
+    /// Minimum audible frequency (Hz). Band mask low values at or below this
+    /// are treated as "no highpass filtering".
+    const BAND_MASK_MIN_HZ: f32 = 20.0;
+
+    /// Maximum audible frequency (Hz). Band mask high values at or above this
+    /// are treated as "no lowpass filtering".
+    const BAND_MASK_MAX_HZ: f32 = 20000.0;
+
+    /// Half-step epsilon (Hz) used when comparing band mask edges to the
+    /// parameter limits. A value equal to the parameter minimum/maximum
+    /// means "full range" — we accept anything within 0.5 Hz of those limits
+    /// so that floating-point serialise/deserialise round-trips (e.g. JSON)
+    /// cannot accidentally activate the filter chain.
+    const BAND_MASK_EDGE_EPSILON: f32 = 0.5;
+
+    /// Returns true if the band mask range is narrower than the full audible
+    /// spectrum, i.e. if the biquad filter pair should be applied.
     fn band_mask_active(&self) -> bool {
-        self.band_mask_low_hz > 20.5 || self.band_mask_high_hz < 19999.5
+        self.band_mask_low_hz > Self::BAND_MASK_MIN_HZ + Self::BAND_MASK_EDGE_EPSILON
+            || self.band_mask_high_hz < Self::BAND_MASK_MAX_HZ - Self::BAND_MASK_EDGE_EPSILON
     }
 
     fn has_empty_paths(&self) -> bool {
@@ -544,10 +561,36 @@ impl ABComparePlugin {
     }
 
     /// Align both paths by delaying the shorter one.
-    fn update_latency_compensation(&mut self) {
-        // Ensure hosts are built so latency queries work
-        let _ = self.host_a.build();
-        let _ = self.host_b.build();
+    ///
+    /// Returns an error if either host fails to build (which would make latency
+    /// queries unreliable and lead to silent phase misalignment). On error,
+    /// both delay lines are set to zero so the plugin stays audible while
+    /// latency compensation is disabled.
+    fn update_latency_compensation(&mut self) -> Result<(), String> {
+        // Build both hosts so that `total_latency_samples()` reflects the
+        // current graph topology. Ignore errors separately so we can report
+        // both failures in one message if necessary.
+        let err_a = self.host_a.build().err();
+        let err_b = self.host_b.build().err();
+        if err_a.is_some() || err_b.is_some() {
+            // Disable compensation: set both delays to zero so the plugin
+            // remains audible rather than silently misaligning the paths.
+            self.delay_a.set_delay(0, self.num_channels);
+            self.delay_b.set_delay(0, self.num_channels);
+            let msg = match (err_a, err_b) {
+                (Some(a), Some(b)) => format!(
+                    "Latency compensation disabled: host_a build error: {a}; host_b build error: {b}"
+                ),
+                (Some(a), None) => format!(
+                    "Latency compensation disabled: host_a build error: {a}"
+                ),
+                (None, Some(b)) => format!(
+                    "Latency compensation disabled: host_b build error: {b}"
+                ),
+                (None, None) => unreachable!(),
+            };
+            return Err(msg);
+        }
         let lat_a = self.host_a.total_latency_samples();
         let lat_b = self.host_b.total_latency_samples();
         if lat_a > lat_b {
@@ -557,6 +600,7 @@ impl ABComparePlugin {
             self.delay_a.set_delay(lat_b - lat_a, self.num_channels);
             self.delay_b.set_delay(0, self.num_channels);
         }
+        Ok(())
     }
 }
 
@@ -852,21 +896,15 @@ impl Plugin for ABComparePlugin {
             return Ok(context.num_frames);
         }
 
-        // Default/QA case: both A and B are empty pass-through paths. Avoid two
-        // nested host passes and per-frame trigonometry while preserving the
-        // normal diagnostic measurement cadence.
-        if self.can_use_empty_path_fast_path() {
-            self.process_empty_path_fast(input, output, context.num_frames)?;
-            return Ok(context.num_frames);
+        // Grow internal buffers if the host block size exceeds the pre-allocated
+        // capacity. This can happen with offline renderers or non-standard hosts
+        // that use blocks larger than 4096. Growing here (not in initialize())
+        // keeps the common real-time path allocation-free for expected block sizes.
+        if self.buffer_a.len() < expected_samples {
+            self.buffer_a.resize(expected_samples, 0.0);
         }
-
-        if self.buffer_a.len() < expected_samples || self.buffer_b.len() < expected_samples {
-            return Err(format!(
-                "Internal buffers too small: need {} samples, have A={} B={}. Call initialize() with a suitable block capacity before processing.",
-                expected_samples,
-                self.buffer_a.len(),
-                self.buffer_b.len()
-            ));
+        if self.buffer_b.len() < expected_samples {
+            self.buffer_b.resize(expected_samples, 0.0);
         }
 
         // Process path A
@@ -903,7 +941,9 @@ impl Plugin for ABComparePlugin {
             self.last_peak_b = self.auto_gain.last_output_peak();
         }
 
-        // Determine target mix value
+        // Determine target mix value. Only call set_target when the desired
+        // target differs from the smoother's current target — avoids redundant
+        // per-block work when the mix is settled.
         let target_mix = match self.mix_mode {
             MixMode::Potentiometer => self.mix,
             MixMode::Binary => {
@@ -914,7 +954,9 @@ impl Plugin for ABComparePlugin {
                 }
             }
         };
-        self.mix_smoother.set_target(target_mix);
+        if (self.mix_smoother.target() - target_mix).abs() > f32::EPSILON {
+            self.mix_smoother.set_target(target_mix);
+        }
 
         // Phase inversion signs
         let sign_a: f32 = if self.phase_invert_a { -1.0 } else { 1.0 };
