@@ -1,7 +1,7 @@
 [package]
 name = "sotf-plugin-speech-denoiser"
 description = "SOTF speech denoiser plugin - RNNoise voice denoising"
-version = "0.5.5"
+version = "0.5.4"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
