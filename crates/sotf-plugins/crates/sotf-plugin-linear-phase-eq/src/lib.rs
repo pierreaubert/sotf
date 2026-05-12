@@ -338,14 +338,25 @@ impl LinearPhaseEqPlugin {
         let fir_length = self.fir_length();
         let nyquist = sr / 2.0;
 
-        // Sample the combined magnitude response at logarithmically-spaced frequencies
-        let num_points = MAG_RESPONSE_POINTS;
+        // Scale sampling density with FIR length so narrow peaks are captured.
+        // For an N-tap FIR we need at least 2*N frequency samples; round to a
+        // power-of-two for consistency and clamp to a minimum of MAG_RESPONSE_POINTS.
+        let num_points = MAG_RESPONSE_POINTS.max(fir_length * 2).next_power_of_two();
         let mut freqs = Vec::with_capacity(num_points);
         let mut magnitudes_db = Vec::with_capacity(num_points);
 
-        // Include DC
-        freqs.push(1.0); // Use 1 Hz instead of 0 to avoid log issues
-        magnitudes_db.push(0.0);
+        // DC point (1 Hz proxy to avoid log(0)):
+        // Compute the actual combined DC gain from all active bands instead of
+        // hardcoding 0 dB. A highpass/lowshelf-cut will attenuate near DC, so
+        // this value can be strongly negative.
+        freqs.push(1.0);
+        let mut dc_db = 0.0_f64;
+        for band in &self.bands {
+            if band.active {
+                dc_db += band.biquad.log_result(1.0);
+            }
+        }
+        magnitudes_db.push(dc_db);
 
         let log_min = 1.0_f64.ln();
         let log_max = nyquist.ln();
@@ -355,11 +366,22 @@ impl LinearPhaseEqPlugin {
             let freq = (log_min + t * (log_max - log_min)).exp();
             freqs.push(freq);
 
-            // Sum the dB contribution from all active bands
+            // Sum the dB contribution from all active bands.
+            //
+            // Lowpass and Highpass filters have gain_db == 0 by definition
+            // (their passband is 0 dB), but they still contribute meaningful
+            // frequency-dependent attenuation — always include them.
+            // For shelf/peak filters, skip bands with near-zero gain (flat response).
             let mut combined_db = 0.0;
             for band in &self.bands {
-                if band.active && band.gain_db.abs() > 1e-6 {
-                    combined_db += band.biquad.log_result(freq);
+                if band.active {
+                    let include = match band.filter_type {
+                        BiquadFilterType::Lowpass | BiquadFilterType::Highpass => true,
+                        _ => band.gain_db.abs() > 1e-6,
+                    };
+                    if include {
+                        combined_db += band.biquad.log_result(freq);
+                    }
                 }
             }
             magnitudes_db.push(combined_db);
@@ -1177,6 +1199,138 @@ mod tests {
         assert!(
             max_asymmetry < 0.01,
             "Impulse response not symmetrical: max asymmetry = {max_asymmetry}"
+        );
+    }
+
+    /// Helper: measure RMS level of a sine after EQ latency has passed.
+    ///
+    /// Feeds `blocks_total` blocks of a pure sine at `freq_hz` through `plugin`,
+    /// returns the RMS computed over the last half of the blocks.
+    fn rms_after_latency(
+        plugin: &mut LinearPhaseEqPlugin,
+        freq_hz: f32,
+        sr: u32,
+        num_frames: usize,
+        blocks_total: usize,
+    ) -> f64 {
+        let nc = plugin.channels;
+        let latency = plugin.latency_samples();
+        let measure_from = blocks_total / 2;
+        let mut sum_sq = 0.0f64;
+        let mut n = 0usize;
+        for block in 0..blocks_total {
+            let mut buf = vec![0.0f32; num_frames * nc];
+            let base = block * num_frames;
+            for frame in 0..num_frames {
+                let t = (base + frame) as f32 / sr as f32;
+                let s = (2.0 * std::f32::consts::PI * freq_hz * t).sin() * 0.5;
+                for ch in 0..nc {
+                    buf[frame * nc + ch] = s;
+                }
+            }
+            let ctx = ProcessContext { sample_rate: sr, num_frames };
+            plugin.process_in_place(&mut buf, &ctx).unwrap();
+            if block >= measure_from && block * num_frames > latency + num_frames {
+                for &s in &buf {
+                    sum_sq += (s as f64) * (s as f64);
+                    n += 1;
+                }
+            }
+        }
+        if n > 0 { (sum_sq / n as f64).sqrt() } else { 0.0 }
+    }
+
+    /// Bug #2 (🔴): Highpass filter at 200 Hz should attenuate 50 Hz content.
+    ///
+    /// Before the fix, lowpass/highpass bands were skipped entirely (gain_db==0
+    /// satisfied the `gain_db.abs() > 1e-6` guard), making the plugin all-pass.
+    #[test]
+    fn test_highpass_attenuates_below_cutoff() {
+        let sr = 48000u32;
+        let params = LinearPhaseEqPluginParams {
+            num_filters: 1,
+            fir_length_index: 2, // 4096 taps for clean HP response
+            auto_gain: false,
+            mix: 1.0,
+            filters: vec![BandConfig {
+                filter_type: "Highpass".to_string(),
+                frequency: 800.0,
+                q: 0.707,
+                gain_db: 0.0,
+                active: true,
+            }],
+        };
+        let mut plugin = LinearPhaseEqPlugin::from_params(1, sr, params).unwrap();
+        let num_frames = 256;
+        let blocks = (plugin.latency_samples() / num_frames) + 20;
+
+        // 50 Hz is well below the 800 Hz cutoff — should be strongly attenuated.
+        let rms_50hz = rms_after_latency(&mut plugin, 50.0, sr, num_frames, blocks);
+        // 4000 Hz is well above the cutoff — should pass with near-unity gain.
+        let rms_4khz = rms_after_latency(&mut plugin, 4000.0, sr, num_frames, blocks);
+
+        // Reset between frequency measurements.
+        plugin.reset();
+
+        assert!(
+            rms_4khz > 0.01,
+            "4 kHz should pass through HP filter, got rms={rms_4khz:.4}"
+        );
+        // At 50 Hz (far below 800 Hz cutoff), expect at least 20 dB attenuation.
+        let attenuation_db = if rms_50hz < 1e-10 {
+            120.0f64
+        } else {
+            20.0 * (rms_4khz / rms_50hz).log10()
+        };
+        assert!(
+            attenuation_db > 15.0,
+            "Expected >15 dB attenuation at 50 Hz vs 4 kHz, got {attenuation_db:.1} dB"
+        );
+    }
+
+    /// Bug #1 (🔴): Lowshelf cut should attenuate DC / low frequencies.
+    ///
+    /// Before the fix, the DC point was hardcoded to 0 dB, making lowshelf-cut
+    /// and highpass filters produce incorrect FIR shapes at low frequencies.
+    #[test]
+    fn test_lowshelf_cut_attenuates_low_frequencies() {
+        let sr = 48000u32;
+        // -12 dB lowshelf at 500 Hz should visibly attenuate a 100 Hz tone.
+        let params = LinearPhaseEqPluginParams {
+            num_filters: 1,
+            fir_length_index: 2,
+            auto_gain: false,
+            mix: 1.0,
+            filters: vec![BandConfig {
+                filter_type: "Lowshelf".to_string(),
+                frequency: 500.0,
+                q: 0.707,
+                gain_db: -12.0,
+                active: true,
+            }],
+        };
+        let mut plugin = LinearPhaseEqPlugin::from_params(1, sr, params).unwrap();
+        let num_frames = 256;
+        let blocks = (plugin.latency_samples() / num_frames) + 20;
+
+        let rms_100hz = rms_after_latency(&mut plugin, 100.0, sr, num_frames, blocks);
+        plugin.reset();
+        let rms_8khz = rms_after_latency(&mut plugin, 8000.0, sr, num_frames, blocks);
+
+        // 8 kHz should be near passband (≥ 0.35 of input 0.5 amplitude).
+        assert!(
+            rms_8khz > 0.20,
+            "8 kHz should be in passband, rms={rms_8khz:.4}"
+        );
+        // 100 Hz should be at least 6 dB below 8 kHz (cut is -12 dB).
+        let attenuation_db = if rms_100hz < 1e-10 {
+            120.0f64
+        } else {
+            20.0 * (rms_8khz / rms_100hz).log10()
+        };
+        assert!(
+            attenuation_db > 6.0,
+            "Expected >6 dB low-frequency attenuation with lowshelf cut, got {attenuation_db:.1} dB"
         );
     }
 
