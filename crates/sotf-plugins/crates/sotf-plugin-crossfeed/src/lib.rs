@@ -305,12 +305,25 @@ const HEAD_RADIUS_M: f32 = 0.0875;
 /// Speed of sound in m/s
 const SPEED_OF_SOUND: f32 = 343.0;
 
-/// Compute ITD in ms from yaw angle (degrees) and static offset.
-/// Positive yaw = turned right = right ear closer to source = shorter right path.
-fn compute_dynamic_itd_ms(head_yaw_deg: f32, static_itd_ms: f32) -> f32 {
+/// Compute per-ear ITD delays (ms) from yaw angle (degrees) and static offset.
+///
+/// Returns `(delay_l, delay_r)` where `delay_l` is the delay on the L→R crossfeed path
+/// and `delay_r` is the delay on the R→L crossfeed path.
+///
+/// Acoustic model: the crossfeed path for the ear *farther* from the source gets the
+/// longer delay.  With positive yaw (head turned right) the left ear is farther, so
+/// the L→R path (carrying left-channel signal to the right ear) is longer.
+///
+/// `base = static_itd_ms / 2` so that when yaw = 0 both paths carry equal delay
+/// summing to `static_itd_ms`.
+fn compute_differential_itd_ms(head_yaw_deg: f32, static_itd_ms: f32) -> (f32, f32) {
     let yaw_rad = head_yaw_deg * std::f32::consts::PI / 180.0;
-    let dynamic_itd_ms = HEAD_RADIUS_M * yaw_rad.sin() / SPEED_OF_SOUND * 1000.0;
-    (static_itd_ms + dynamic_itd_ms).clamp(0.0, 1.0)
+    let dynamic_ms = HEAD_RADIUS_M * yaw_rad.sin() / SPEED_OF_SOUND * 1000.0;
+    let base = static_itd_ms * 0.5;
+    // Positive yaw → left ear farther → longer L→R crossfeed delay
+    let delay_l = (base + dynamic_ms).clamp(0.0, 1.0);
+    let delay_r = (base - dynamic_ms).clamp(0.0, 1.0);
+    (delay_l, delay_r)
 }
 
 impl CrossfeedPlugin {
@@ -516,6 +529,36 @@ impl CrossfeedPlugin {
             0.0,
         );
 
+        // Meier: LPF + allpass — must be recomputed for every sample rate change
+        self.meier_lpf_l = Biquad::new(
+            math_audio_iir_fir::BiquadFilterType::Lowpass,
+            650.0,
+            sr,
+            0.707,
+            0.0,
+        );
+        self.meier_lpf_r = Biquad::new(
+            math_audio_iir_fir::BiquadFilterType::Lowpass,
+            650.0,
+            sr,
+            0.707,
+            0.0,
+        );
+        self.meier_allpass_l = Biquad::new(
+            math_audio_iir_fir::BiquadFilterType::AllPass,
+            1000.0,
+            sr,
+            0.5,
+            0.0,
+        );
+        self.meier_allpass_r = Biquad::new(
+            math_audio_iir_fir::BiquadFilterType::AllPass,
+            1000.0,
+            sr,
+            0.5,
+            0.0,
+        );
+
         // Multiband: true LR4 crossover
         self.mb_crossover_l.reinit(
             &[self.params.mb_low_freq_hz, self.params.mb_mid_high_freq_hz],
@@ -576,36 +619,58 @@ impl CrossfeedPlugin {
         let fh = fast_pow10(self.params.mb_high_feed_db / 20.0);
         let has_itd = self.params.itd_delay_ms > 0.0;
 
+        // Resize band buffers if needed (normally pre-allocated in initialize())
+        for b in &mut self.mb_bands_l {
+            if b.len() < nf {
+                b.resize(nf, 0.0);
+            }
+        }
+        for b in &mut self.mb_bands_r {
+            if b.len() < nf {
+                b.resize(nf, 0.0);
+            }
+        }
+
+        // Process each sample through the crossover using the pre-allocated band buffers.
+        // We call process_frame one sample at a time but write into pre-allocated slices,
+        // avoiding 8 per-sample stack array allocations.
+        // Use split_at_mut to convince the borrow checker that the three band slices are
+        // disjoint, since indexing `[Vec; 3]` multiple times mutably in one expression
+        // violates the alias rules at the array level.
         for i in 0..nf {
-            let xl = self.dry_l[i];
-            let xr = self.dry_r[i];
+            let input_l = [self.dry_l[i]];
+            let input_r = [self.dry_r[i]];
 
-            // Split each channel into 3 bands using true LR4 crossover
-            let input_l = [xl];
-            let input_r = [xr];
-
-            let mut band0_l = [0.0f32];
-            let mut band1_l = [0.0f32];
-            let mut band2_l = [0.0f32];
-            let mut band0_r = [0.0f32];
-            let mut band1_r = [0.0f32];
-            let mut band2_r = [0.0f32];
-
+            let (bl01, bl2) = self.mb_bands_l.split_at_mut(2);
+            let (bl0, bl1) = bl01.split_at_mut(1);
             self.mb_crossover_l.process_frame(
                 &input_l,
-                &mut [&mut band0_l[..], &mut band1_l[..], &mut band2_l[..]],
-            );
-            self.mb_crossover_r.process_frame(
-                &input_r,
-                &mut [&mut band0_r[..], &mut band1_r[..], &mut band2_r[..]],
+                &mut [
+                    &mut bl0[0][i..i + 1],
+                    &mut bl1[0][i..i + 1],
+                    &mut bl2[0][i..i + 1],
+                ],
             );
 
-            let low_l = band0_l[0];
-            let mid_l = band1_l[0];
-            let high_l = band2_l[0];
-            let low_r = band0_r[0];
-            let mid_r = band1_r[0];
-            let high_r = band2_r[0];
+            let (br01, br2) = self.mb_bands_r.split_at_mut(2);
+            let (br0, br1) = br01.split_at_mut(1);
+            self.mb_crossover_r.process_frame(
+                &input_r,
+                &mut [
+                    &mut br0[0][i..i + 1],
+                    &mut br1[0][i..i + 1],
+                    &mut br2[0][i..i + 1],
+                ],
+            );
+        }
+
+        for i in 0..nf {
+            let low_l = self.mb_bands_l[0][i];
+            let mid_l = self.mb_bands_l[1][i];
+            let high_l = self.mb_bands_l[2][i];
+            let low_r = self.mb_bands_r[0][i];
+            let mid_r = self.mb_bands_r[1][i];
+            let high_r = self.mb_bands_r[2][i];
 
             // Compute crossfeed signal per band
             let mut cross_l = fl * low_l + fm * mid_l + fh * high_l;
@@ -653,10 +718,8 @@ impl InPlacePlugin for CrossfeedPlugin {
             if v.is_finite() {
                 self.params.head_yaw_deg = v.clamp(-90.0, 90.0);
                 self.yaw_smoother.set_target(self.params.head_yaw_deg);
-                let effective =
-                    compute_dynamic_itd_ms(self.params.head_yaw_deg, self.params.itd_delay_ms);
-                self.itd_delay_l.set_delay(effective, self.sample_rate);
-                self.itd_delay_r.set_delay(effective, self.sample_rate);
+                // Do NOT update delay lines here — process_in_place owns delay line updates
+                // via the yaw smoother, preventing the double-discontinuity bug.
             }
             self.rebuild_cached_parameters();
             return Ok(());
@@ -670,11 +733,7 @@ impl InPlacePlugin for CrossfeedPlugin {
             4 | 5 => self.update_filters(),                     // bauer_fcut_hz, bauer_feed_db
             7 | 8 => self.update_filters(), // mb_low_freq_hz, mb_mid_high_freq_hz
             12 => {
-                // itd_delay_ms
-                let effective =
-                    compute_dynamic_itd_ms(self.params.head_yaw_deg, self.params.itd_delay_ms);
-                self.itd_delay_l.set_delay(effective, self.sample_rate);
-                self.itd_delay_r.set_delay(effective, self.sample_rate);
+                // itd_delay_ms — delay lines are updated in process_in_place, not here.
             }
             13 => {
                 // autogain_enabled
@@ -725,10 +784,10 @@ impl InPlacePlugin for CrossfeedPlugin {
         self.update_filters();
         self.mix_smoother = Smoother::new(self.params.mix, 20.0, sr);
         self.yaw_smoother = Smoother::new(self.params.head_yaw_deg, 10.0, sr);
-        let effective_itd =
-            compute_dynamic_itd_ms(self.params.head_yaw_deg, self.params.itd_delay_ms);
-        self.itd_delay_l = DelayLine::new(effective_itd, sr);
-        self.itd_delay_r = DelayLine::new(effective_itd, sr);
+        let (itd_l, itd_r) =
+            compute_differential_itd_ms(self.params.head_yaw_deg, self.params.itd_delay_ms);
+        self.itd_delay_l = DelayLine::new(itd_l, sr);
+        self.itd_delay_r = DelayLine::new(itd_r, sr);
         if let Some(ag) = &mut self.auto_gain {
             ag.set_sample_rate(sr).map_err(|e| e.to_string())?;
         }
@@ -778,12 +837,15 @@ impl InPlacePlugin for CrossfeedPlugin {
             let _ = ag.measure_input(buffer);
         }
 
-        // Advance yaw smoother and update ITD delay per block
-        let smoothed_yaw = self.yaw_smoother.advance();
+        // Advance yaw smoother by the full block size (not just 1 sample).
+        // This gives the correct smoothing rate: a 10ms time-constant at 48kHz means
+        // the yaw settles in ~480 samples, regardless of block size.
+        let smoothed_yaw = self.yaw_smoother.next_n(nf);
         if smoothed_yaw.abs() > 0.01 || self.params.itd_delay_ms > 0.0 {
-            let effective = compute_dynamic_itd_ms(smoothed_yaw, self.params.itd_delay_ms);
-            self.itd_delay_l.set_delay(effective, self.sample_rate);
-            self.itd_delay_r.set_delay(effective, self.sample_rate);
+            let (itd_l, itd_r) =
+                compute_differential_itd_ms(smoothed_yaw, self.params.itd_delay_ms);
+            self.itd_delay_l.set_delay(itd_l, self.sample_rate);
+            self.itd_delay_r.set_delay(itd_r, self.sample_rate);
         }
 
         deinterleave_stereo(buffer, &mut self.dry_l[..nf], &mut self.dry_r[..nf]);
@@ -798,8 +860,18 @@ impl InPlacePlugin for CrossfeedPlugin {
             }
         }
 
-        let mix = self.mix_smoother.next_n(nf);
+        // Apply mix with a linear ramp across the block to avoid zipper noise.
+        // `current()` is the mix value at the start of this block; `next_n(nf)` advances
+        // it to the end-of-block value.
+        let mix_start = self.mix_smoother.current();
+        let mix_end = self.mix_smoother.next_n(nf);
+        let mix_step = if nf > 1 {
+            (mix_end - mix_start) / nf as f32
+        } else {
+            0.0
+        };
         for i in 0..nf {
+            let mix = mix_start + mix_step * i as f32;
             self.dry_l[i] = self.dry_l[i] * (1.0 - mix) + self.wet_l[i] * mix;
             self.dry_r[i] = self.dry_r[i] * (1.0 - mix) + self.wet_r[i] * mix;
         }
@@ -1056,7 +1128,10 @@ mod tests {
         let onset_no_delay = find_r_onset(0.0);
         let onset_with_delay = find_r_onset(0.5);
 
-        // 0.5ms at 48kHz = 24 samples. The delayed version should arrive later.
+        // With the differential-ITD model, itd_delay_ms is split equally across the two
+        // crossfeed paths (base = itd_ms / 2 per path when yaw = 0).
+        // So 0.5ms → each path gets 0.25ms = 12 samples at 48kHz.
+        // The delayed version should arrive later.
         assert!(
             onset_with_delay > onset_no_delay,
             "ITD 0.5ms should delay R onset: no_delay_onset={}, delayed_onset={}",
@@ -1064,11 +1139,12 @@ mod tests {
             onset_with_delay
         );
 
-        // The difference should be approximately 24 samples
+        // The difference should be approximately 12 samples (0.25ms at 48kHz, half of 0.5ms ITD)
         let diff = onset_with_delay - onset_no_delay;
         assert!(
-            (diff as i32 - 24).unsigned_abs() <= 3,
-            "ITD difference should be ~24 samples (0.5ms@48kHz), got {} (onset_no={}, onset_with={})",
+            (diff as i32 - 12).unsigned_abs() <= 3,
+            "ITD difference should be ~12 samples (0.25ms per path at 48kHz), got {} \
+             (onset_no={}, onset_with={})",
             diff,
             onset_no_delay,
             onset_with_delay
@@ -1149,6 +1225,187 @@ mod tests {
         assert!(
             low_crossfeed > high_crossfeed * 1.5,
             "Low-frequency crossfeed ({low_crossfeed:.4}) should be significantly more than high-frequency ({high_crossfeed:.4})"
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // Regression tests for bugs fixed from code review
+    // -------------------------------------------------------------------------
+
+    /// Bug: Meier filters were not updated when sample rate changed from 44100 to 48000.
+    /// Verify that both sample rates produce consistent crossfeed RMS for a tone well
+    /// below the 650 Hz LPF cutoff (should pass freely at both rates).
+    #[test]
+    fn test_meier_filter_coefficients_correct_after_sample_rate_change() {
+        let n = 8000usize;
+        let freq = 200.0f32;
+
+        let measure_rms = |sr: u32| -> f32 {
+            let mut params = CrossfeedPluginParams::from_preset(CrossfeedPreset::Meier);
+            params.mode = CrossfeedMode::Meier;
+            params.mix = 1.0;
+            let mut p = CrossfeedPlugin::new(params).unwrap();
+            p.initialize(sr).unwrap();
+
+            let mut buf: Vec<f32> = (0..n)
+                .flat_map(|i| {
+                    let t = i as f32 / sr as f32;
+                    let s = (2.0 * std::f32::consts::PI * freq * t).sin() * 0.5;
+                    [s, 0.0f32]
+                })
+                .collect();
+            p.process_in_place(
+                &mut buf,
+                &ProcessContext {
+                    sample_rate: sr,
+                    num_frames: n,
+                },
+            )
+            .unwrap();
+
+            let tail_start = (n * 3 / 4) * 2;
+            let rms: f32 = buf[tail_start..]
+                .chunks(2)
+                .map(|c| c[1] * c[1])
+                .sum::<f32>();
+            (rms / (n / 4) as f32).sqrt()
+        };
+
+        let rms_44 = measure_rms(44100);
+        let rms_48 = measure_rms(48000);
+
+        assert!(
+            rms_44 > 0.001,
+            "Meier crossfeed should produce output at 44100: rms={rms_44}"
+        );
+        assert!(
+            rms_48 > 0.001,
+            "Meier crossfeed should produce output at 48000: rms={rms_48}"
+        );
+        // At 200 Hz (well below cutoff) both rates should produce similar gain. 20% tolerance.
+        let ratio = if rms_44 > rms_48 {
+            rms_44 / rms_48
+        } else {
+            rms_48 / rms_44
+        };
+        assert!(
+            ratio < 1.2,
+            "Meier crossfeed at 200 Hz should be consistent across sample rates \
+             (44100={rms_44:.4}, 48000={rms_48:.4}, ratio={ratio:.3})"
+        );
+    }
+
+    /// Bug: ITD was modeled symmetrically — both crossfeed paths got the same delay.
+    /// With positive yaw, the L→R path should be longer than the R→L path.
+    #[test]
+    fn test_itd_yaw_asymmetry() {
+        let sr = 48000u32;
+        let n = 300usize;
+
+        let find_onset = |impulse_on_left: bool, yaw_deg: f32| -> usize {
+            let params = CrossfeedPluginParams {
+                mode: CrossfeedMode::Bauer,
+                bauer_feed_db: 6.0,
+                itd_delay_ms: 0.5,
+                head_yaw_deg: yaw_deg,
+                mix: 1.0,
+                ..CrossfeedPluginParams::default()
+            };
+            let mut p = CrossfeedPlugin::new(params).unwrap();
+            p.initialize(sr).unwrap();
+
+            let mut buffer = vec![0.0f32; n * 2];
+            if impulse_on_left {
+                buffer[0] = 1.0;
+            } else {
+                buffer[1] = 1.0;
+            }
+
+            p.process_in_place(
+                &mut buffer,
+                &ProcessContext {
+                    sample_rate: sr,
+                    num_frames: n,
+                },
+            )
+            .unwrap();
+
+            let threshold = 0.001;
+            for f in 0..n {
+                let idx = if impulse_on_left { f * 2 + 1 } else { f * 2 };
+                if buffer[idx].abs() > threshold {
+                    return f;
+                }
+            }
+            n
+        };
+
+        // At yaw=0: symmetric — both paths carry equal delay (base = 0.25 ms each)
+        let onset_l_to_r_yaw0 = find_onset(true, 0.0);
+        let onset_r_to_l_yaw0 = find_onset(false, 0.0);
+        assert!(
+            (onset_l_to_r_yaw0 as i32 - onset_r_to_l_yaw0 as i32).unsigned_abs() <= 2,
+            "At yaw=0 both paths should have equal delay: L→R={onset_l_to_r_yaw0}, R→L={onset_r_to_l_yaw0}"
+        );
+
+        // At positive yaw: L→R path should be longer (larger onset index)
+        let onset_l_to_r_pos = find_onset(true, 45.0);
+        let onset_r_to_l_pos = find_onset(false, 45.0);
+        assert!(
+            onset_l_to_r_pos >= onset_r_to_l_pos,
+            "Positive yaw: L→R delay ({onset_l_to_r_pos}) should be >= R→L ({onset_r_to_l_pos})"
+        );
+    }
+
+    /// Bug: mix smoother advanced to end-of-block value and applied it uniformly,
+    /// causing a step discontinuity instead of a ramp.
+    /// Verify that after a mix change the right channel output increases across the block.
+    #[test]
+    fn test_mix_ramp_no_step_discontinuity() {
+        let sr = 48000u32;
+        let n = 512usize;
+
+        let mut params = CrossfeedPluginParams::from_preset(CrossfeedPreset::Default);
+        params.mode = CrossfeedMode::Bauer;
+        params.mix = 0.0;
+        let mut p = CrossfeedPlugin::new(params).unwrap();
+        p.initialize(sr).unwrap();
+
+        // Warm-up block to settle smoother at mix=0
+        let mut warmup = vec![0.5f32; n * 2];
+        p.process_in_place(
+            &mut warmup,
+            &ProcessContext {
+                sample_rate: sr,
+                num_frames: n,
+            },
+        )
+        .unwrap();
+
+        // Jump mix to 1.0
+        p.set_parameter(
+            sotf_host::parameters::ParameterId("mix".to_string()),
+            sotf_host::parameters::ParameterValue::Float(1.0),
+        )
+        .unwrap();
+
+        // Process DC on L only
+        let mut buf: Vec<f32> = (0..n).flat_map(|_| [1.0f32, 0.0f32]).collect();
+        p.process_in_place(
+            &mut buf,
+            &ProcessContext {
+                sample_rate: sr,
+                num_frames: n,
+            },
+        )
+        .unwrap();
+
+        // Right channel: dry_r=0, wet_r>0 (crossfeed).  With a ramp, early < late.
+        let first_r = buf[1].abs();
+        let last_r = buf[(n - 1) * 2 + 1].abs();
+        assert!(
+            last_r > first_r,
+            "Mix ramp: last right sample ({last_r:.6}) should exceed first ({first_r:.6})"
         );
     }
 }
