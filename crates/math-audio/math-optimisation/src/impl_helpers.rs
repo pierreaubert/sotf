@@ -10,7 +10,12 @@ where
 {
     pub(crate) fn energy(&self, x: &Array1<f64>) -> f64 {
         let base = (self.func)(x);
-        base + self.penalty(x)
+        let energy = base + self.penalty(x);
+        if energy.is_finite() {
+            energy
+        } else {
+            f64::INFINITY
+        }
     }
 
     pub(crate) fn penalty(&self, x: &Array1<f64>) -> f64 {

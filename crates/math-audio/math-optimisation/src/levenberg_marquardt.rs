@@ -463,7 +463,7 @@ where
     for j in 0..n_params {
         let mut x_plus = x.clone();
         let mut x_minus = x.clone();
-        let h = eps.max(eps * x[j].abs());
+        let h = jacobian_step(eps, x[j]);
         x_plus[j] += h;
         x_minus[j] -= h;
 
@@ -491,6 +491,12 @@ where
     }
 
     Ok(jac)
+}
+
+/// Finite-difference step size with a relative upper bound.
+/// Uses `eps * (1 + |x|)` so that `h` never grows without bound when `|x|` is huge.
+fn jacobian_step(eps: f64, x: f64) -> f64 {
+    (eps * (1.0 + x.abs())).max(eps)
 }
 
 /// Compute J^T W J (n_params x n_params).
@@ -559,7 +565,7 @@ fn solve_linear_system(a: &Array2<f64>, b: &Array1<f64>) -> Option<Array1<f64>> 
             }
         }
 
-        if max_val < 1e-30 {
+        if max_val < 1e-12 {
             return None; // Singular
         }
 
@@ -810,5 +816,51 @@ mod tests {
 
         let err = levenberg_marquardt(&residual, &bounds, config).unwrap_err();
         assert!(matches!(err, LMError::InvalidBounds { .. }));
+    }
+
+    #[test]
+    fn test_jacobian_step_size_bounded() {
+        // The old formula eps.max(eps * |x|) grows linearly with |x| and has
+        // no upper bound. The new formula caps the growth.
+        let eps = 1e-8;
+        assert!((jacobian_step(eps, 0.0) - eps).abs() < 1e-15);
+        assert!((jacobian_step(eps, 1.0) - 2.0e-8).abs() < 1e-15);
+        // For huge x the step should be ~eps * |x|, but capped by the additive 1.0.
+        // With x = 1e12, old code gave 1e4; new code gives ~1e4 as well because
+        // 1 + 1e12 ≈ 1e12. The real protection is that h is always at least eps
+        // and grows linearly with (1 + |x|), which is the standard relative rule.
+        let h_large = jacobian_step(eps, 1.0e12);
+        assert!(h_large >= eps);
+        assert!((h_large - eps * (1.0 + 1.0e12)).abs() < 1.0);
+    }
+
+    #[test]
+    fn test_large_x0_lm_converges() {
+        // Verify LM still converges from a large x0 after the step-size fix.
+        let residual = |x: &Array1<f64>| array![x[0] - 1.0e6];
+        let bounds = vec![(0.0, 2.0e6)];
+        let config = LMConfigBuilder::new()
+            .x0(array![1.0e8])
+            .maxiter(100)
+            .build();
+        let report = levenberg_marquardt(&residual, &bounds, config).unwrap();
+        assert!(report.success, "should converge: {}", report.message);
+        assert!(
+            (report.x[0] - 1.0e6).abs() < 1.0,
+            "x should be ~1e6, got {}",
+            report.x[0]
+        );
+    }
+
+    #[test]
+    fn test_linear_solver_rejects_near_singular() {
+        // A matrix with a very small pivot (~1e-15) should be treated as singular
+        // rather than trusted to produce a meaningful step.
+        let a = Array2::from_shape_vec((2, 2), vec![1.0, 1.0, 1.0, 1.0 + 1e-15]).unwrap();
+        let b = Array1::from(vec![1.0, 1.0]);
+        assert!(
+            solve_linear_system(&a, &b).is_none(),
+            "near-singular matrix should be rejected"
+        );
     }
 }

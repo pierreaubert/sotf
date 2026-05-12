@@ -14,7 +14,7 @@ use rayon::prelude::*;
 
 use crate::CallbackAction;
 use crate::error::{DEError, Result};
-use crate::init_sobol::init_sobol;
+use crate::init_sobol::init_halton;
 use crate::parallel_eval::ParallelConfig;
 
 const MIN_LENGTHSCALE: f64 = 1e-3;
@@ -622,7 +622,7 @@ fn initial_design(config: &BayesOptConfig, initial_samples: usize) -> Vec<Array1
     }
 
     let needed = initial_samples.saturating_sub(samples.len());
-    for s in init_sobol(config.bounds.len(), needed, &config.bounds) {
+    for s in init_halton(config.bounds.len(), needed, &config.bounds) {
         samples.push(Array1::from(s));
     }
     samples
@@ -684,7 +684,7 @@ fn candidate_pool(
 ) -> Vec<Array1<f64>> {
     let mut candidates = Vec::with_capacity(size);
     let sobol_count = size / 2;
-    for s in init_sobol(config.bounds.len(), sobol_count, &config.bounds) {
+    for s in init_halton(config.bounds.len(), sobol_count, &config.bounds) {
         let x = Array1::from(s);
         if is_new_point(
             &normalize(&x, &config.bounds),
@@ -717,7 +717,7 @@ fn is_new_point(
     pending_original: &[Array1<f64>],
     bounds: &[(f64, f64)],
 ) -> bool {
-    let min_dist2 = 1e-18;
+    let min_dist2 = 1e-12 / (x_norm.len().max(1) as f64);
     if existing_norm
         .iter()
         .any(|x| squared_distance(x_norm, x) < min_dist2)
@@ -1490,5 +1490,43 @@ mod tests {
         };
         let report = bayesian_multi_objective(&f, cfg).unwrap();
         assert!(!report.pareto_front.is_empty());
+    }
+
+    #[test]
+    fn is_new_point_scales_with_dimension() {
+        // In 1D the old fixed threshold 1e-18 (distance 1e-9) is too lax:
+        // points 1e-7 apart have squared distance 1e-14 > 1e-18, so they are
+        // wrongly admitted as distinct. A dimension-scaled threshold catches
+        // more duplicates in low dimensions.
+        let bounds_1d = vec![(0.0, 1.0)];
+        let q1 = Array1::from_vec(vec![0.5]);
+        let q2 = Array1::from_vec(vec![0.5 + 1e-7]);
+        assert!(
+            !is_new_point(&normalize(&q2, &bounds_1d), &[normalize(&q1, &bounds_1d)], &[], &bounds_1d),
+            "points 1e-7 apart in 1D should be treated as duplicates"
+        );
+
+        // In high dimensions the old threshold is too strict relative to the
+        // natural scale of the space. With a scaled threshold, points that
+        // differ by a small but meaningful amount in every coordinate are
+        // still accepted as distinct.
+        let bounds_100d = vec![(0.0, 1.0); 100];
+        let p1 = Array1::from_vec(vec![0.5; 100]);
+        let mut p2 = p1.clone();
+        for i in 0..100 {
+            p2[i] += 1e-8; // small but clear perturbation
+        }
+        assert!(
+            is_new_point(&normalize(&p2, &bounds_100d), &[normalize(&p1, &bounds_100d)], &[], &bounds_100d),
+            "points differing by 1e-8 in every coordinate should be distinct in 100D"
+        );
+
+        // Exact duplicates must still be rejected regardless of dimension.
+        let r1 = Array1::from_vec(vec![0.3; 50]);
+        let r2 = r1.clone();
+        assert!(
+            !is_new_point(&normalize(&r2, &bounds_100d), &[normalize(&r1, &bounds_100d)], &[], &bounds_100d),
+            "exact duplicates should be rejected in 50D"
+        );
     }
 }

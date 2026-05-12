@@ -207,17 +207,8 @@ pub type PenaltyTuple = (ScalarConstraintFn, f64);
 /// Callback function type
 pub type CallbackFn = Box<dyn FnMut(&DEIntermediate) -> CallbackAction>;
 
-pub(crate) fn argmin(v: &Array1<f64>) -> (usize, f64) {
-    let mut best_i = 0usize;
-    let mut best_v = v[0];
-    for (i, &val) in v.iter().enumerate() {
-        if val < best_v {
-            best_v = val;
-            best_i = i;
-        }
-    }
-    (best_i, best_v)
-}
+mod argmin;
+pub(crate) use argmin::argmin;
 
 /// Differential Evolution mutation/crossover strategy.
 ///
@@ -547,15 +538,14 @@ impl AdaptiveState {
         self.successful_cr.push(cr_val);
     }
 
-    /// Sample adaptive F parameter using conservative normal distribution
+    /// Sample adaptive F parameter using Cauchy distribution (heavy tails).
+    /// JADE/SHADE literature uses Cauchy for F and Normal for CR.
     fn sample_f<R: Rng + ?Sized>(&self, rng: &mut R) -> f64 {
-        let u1: f64 = rng.random::<f64>().max(1e-15);
-        let u2: f64 = rng.random::<f64>();
+        let u = rng.random::<f64>().clamp(1e-10, 1.0 - 1e-10);
+        let cauchy = (std::f64::consts::PI * (u - 0.5)).tan();
+        let sample = self.f_m + 0.1 * cauchy;
 
-        let normal = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
-        let sample = self.f_m + 0.05 * normal;
-
-        sample.clamp(0.3, 1.0)
+        sample.clamp(0.1, 1.5)
     }
 
     /// Sample adaptive CR parameter using conservative Gaussian distribution
@@ -612,13 +602,11 @@ impl Default for AdaptiveConfig {
     }
 }
 
-/// Polishing configuration using NLopt local optimizer within bounds.
+/// Polishing configuration for coordinate-wise local search within bounds.
 #[derive(Debug, Clone)]
 pub struct PolishConfig {
     /// Whether polishing is enabled.
     pub enabled: bool,
-    /// Local optimizer algorithm name (e.g., "neldermead", "sbplx", "cobyla").
-    pub algo: String,
     /// Maximum function evaluations for polishing (e.g., 200*n).
     pub maxeval: usize,
 }
@@ -1062,7 +1050,20 @@ where
             };
         }
 
-        let npop = self.config.popsize * n_free;
+        let is_lshade = matches!(
+            self.config.strategy,
+            Strategy::LShadeBin | Strategy::LShadeExp
+        );
+        let mut npop = if is_lshade {
+            self.config.lshade.initial_population_size(n_free)
+        } else {
+            self.config.popsize * n_free
+        };
+        let max_nfev = if is_lshade {
+            self.config.maxiter * npop
+        } else {
+            0
+        };
         let _bounds_span = &self.upper - &self.lower;
 
         if self.config.disp {
@@ -1180,7 +1181,12 @@ where
                         }
                     });
             }
-            base + p
+            let energy = base + p;
+            if energy.is_finite() {
+                energy
+            } else {
+                f64::INFINITY
+            }
         });
 
         let t_eval0 = Instant::now();
@@ -1567,6 +1573,39 @@ where
             }
             let t_select = t_select0.elapsed();
 
+            // L-SHADE: linear population size reduction
+            if is_lshade {
+                let current_npop = self
+                    .config
+                    .lshade
+                    .current_population_size(n_free, nfev, max_nfev);
+                if current_npop < pop.nrows() {
+                    let mut indices: Vec<usize> = (0..pop.nrows()).collect();
+                    indices.sort_by(|&a, &b| {
+                        energies[a]
+                            .partial_cmp(&energies[b])
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    });
+                    let keep: Vec<usize> = indices.into_iter().take(current_npop).collect();
+
+                    let mut new_pop = Array2::zeros((current_npop, n));
+                    let mut new_energies = Array1::zeros(current_npop);
+                    for (new_i, &old_i) in keep.iter().enumerate() {
+                        new_pop.row_mut(new_i).assign(&pop.row(old_i));
+                        new_energies[new_i] = energies[old_i];
+                    }
+                    pop = new_pop;
+                    energies = new_energies;
+                    npop = current_npop;
+
+                    if let Some(ref archive) = external_archive {
+                        if let Ok(mut arch) = archive.write() {
+                            arch.resize(self.config.lshade.current_archive_size(current_npop));
+                        }
+                    }
+                }
+            }
+
             t_build_tot += t_build;
             t_eval_tot += t_eval;
             t_select_tot += t_select;
@@ -1682,6 +1721,7 @@ where
 #[cfg(test)]
 mod strategy_tests {
     use super::*;
+    use rand::SeedableRng;
 
     #[test]
     fn test_parse_strategy_variants() {
@@ -1697,5 +1737,28 @@ mod strategy_tests {
             "randtobest1exp".parse::<Strategy>().unwrap(),
             Strategy::RandToBest1Exp
         ));
+    }
+
+    #[test]
+    fn sample_f_uses_cauchy_heavy_tails() {
+        // JADE/SHADE literature requires Cauchy sampling for F so that
+        // occasional large mutation factors can escape local minima.
+        // A Normal(0.5, 0.05) has negligible probability outside [0.1, 0.9]
+        // (≈8σ). A Cauchy(0.5, 0.1) has ~15% mass outside that range.
+        let config = AdaptiveConfig::default();
+        let state = AdaptiveState::new(&config);
+        let mut rng = StdRng::seed_from_u64(42);
+        let mut extreme = 0;
+        for _ in 0..200 {
+            let f = state.sample_f(&mut rng);
+            if f < 0.1 || f > 0.9 {
+                extreme += 1;
+            }
+        }
+        assert!(
+            extreme > 5,
+            "Cauchy sampling should produce heavy tails, got {} extreme values",
+            extreme
+        );
     }
 }

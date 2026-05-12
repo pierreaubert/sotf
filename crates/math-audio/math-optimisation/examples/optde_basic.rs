@@ -55,7 +55,6 @@ fn main() {
     // Optional polishing with a local optimizer
     cfg.polish = Some(PolishConfig {
         enabled: true,
-        algo: "neldermead".into(),
         maxeval: 400,
     });
 

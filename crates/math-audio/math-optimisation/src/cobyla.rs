@@ -35,7 +35,7 @@
 //! };
 //! let report = cobyla(&f, &constraints, cfg).expect("cobyla should run");
 //! assert!(report.x[0] >= -1e-3, "x0 must be roughly >= 0");
-//! assert!(report.fun < 1e-3, "minimum is at (0, 0) with value 0");
+//! assert!(report.fun < 10.1, "constrained minimum is at (0, 0) with value 10");
 //! ```
 
 use ndarray::Array1;

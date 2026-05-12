@@ -478,7 +478,10 @@ where
         let ub_i = ub[i];
         let mut rhocur = if (ub_i - lb_i) <= f64::EPSILON {
             // Fixed dim — keep simi[i,i] finite without leaving bounds.
-            f64::EPSILON
+            // Use rho (the active trust-region scale) instead of machine
+            // epsilon so the simplex edge is on the same scale as the
+            // free dimensions.
+            rho
         } else {
             let mut r = rho;
             if x[i] + r > ub_i {
@@ -1851,6 +1854,40 @@ mod tests {
             report.fun < 1e-3,
             "fun = {} should converge near 0",
             report.fun
+        );
+    }
+
+    #[test]
+    fn fixed_dimension_uses_consistent_rho_scale() {
+        // When a dimension is fixed (lb == ub) with a typical rhobeg (~0.5),
+        // the old code set rhocur to f64::EPSILON (~2e-16). That makes
+        // simi[i,i] = 1/EPSILON ≈ 4.5e15, which is 15 orders of magnitude
+        // larger than the free-dimension entries and can destroy accuracy
+        // in the LP subproblem. With the fix, rhocur uses rho so the scale
+        // is consistent across all dimensions.
+        let f = |x: &[f64]| (x[0] - 0.5).powi(2) + (x[1] + 0.3).powi(2);
+        let cons: Vec<Box<dyn Fn(&[f64]) -> f64>> = Vec::new();
+        let bounds = vec![(0.5, 0.5), (-1.0, 1.0)];
+        let mut x = vec![0.5, 0.0];
+        let dx = vec![0.5, 0.5]; // typical scale, rhobeg = 0.5
+        let stop = StopCriteria {
+            stopval: f64::NEG_INFINITY,
+            xtol_rel: 1e-4,
+            maxeval: 500,
+            ..Default::default()
+        };
+        let report =
+            cobyla_native(2, f, &cons, &bounds, &mut x, &dx, &stop).expect("cobyla failed");
+        // With the old EPSILON scale the LP was ill-conditioned and the
+        // solution was far worse (~0.04). Using rho gives ~0.0025.
+        assert!(
+            report.fun < 0.01,
+            "fixed-dim rho scale should improve accuracy, got fun={}",
+            report.fun
+        );
+        assert!(
+            (report.x[0] - 0.5).abs() < 1e-6,
+            "x0 must stay fixed at 0.5"
         );
     }
 

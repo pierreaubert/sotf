@@ -411,7 +411,7 @@ fn sobol_unit<const D: usize>(num_points: usize, _seed: u64) -> Vec<[f64; D]> {
     // `init_sobol` returns `Vec<Vec<f64>>` over user-supplied bounds; we
     // request `[0,1]^D` and copy into a stack array per point.
     let unit_bounds: Vec<(f64, f64)> = (0..D).map(|_| (0.0, 1.0)).collect();
-    let raw = crate::init_sobol::init_sobol(D, num_points, &unit_bounds);
+    let raw = crate::init_sobol::init_halton(D, num_points, &unit_bounds);
     raw.into_iter()
         .map(|v| {
             let mut out = [0.0_f64; D];

@@ -1,3 +1,42 @@
+# 0.5.9
+
+## Bug fixes
+
+- **L-SHADE population reduction wired into main loop**: `current_population_size`
+  is now called every generation for `LShadeBin` / `LShadeExp` strategies. The
+  worst individuals are culled and the external archive is resized accordingly.
+  Initial L-SHADE population now uses `lshade.initial_population_size(n_free)`
+  instead of the generic `popsize * n_free`.
+- **NaN/Inf guards in DE selection**: `argmin` now skips non-finite values,
+  treating them as `+inf`. The energy closure and `impl_helpers::energy`
+  sanitize non-finite results to `f64::INFINITY`, preventing a single bad
+  evaluation from silently corrupting the optimisation.
+- **Adaptive mutation uses Cauchy for F**: `AdaptiveState::sample_f` now draws
+  from a Cauchy distribution (heavy tails allow occasional large mutation
+  factors) as required by JADE/SHADE literature. `sample_cr` continues to use
+  Normal.
+- **`init_sobol` replaced with proper Halton sequence**: The old implementation
+  used non-coprime bases for `dim > 4` (cycling via `dim % 10`). It is now a
+  true Halton sequence using the first `n` primes as Van der Corput bases.
+  `init_sobol` is retained as a deprecated alias; internal code migrates to
+  `init_halton`.
+- **LM Jacobian step bounded**: `jacobian_step` now uses `eps * (1 + |x|)`
+  instead of the unbounded `eps * |x|`, preventing catastrophic cancellation
+  when `|x|` is huge.
+- **LM linear solver stricter threshold**: Singularity threshold in
+  `solve_linear_system` raised from `1e-30` to `1e-12` so near-singular matrices
+  are rejected rather than trusted to produce wild steps.
+- **BO deduplication threshold scaled by dimension**: The hard-coded `1e-18`
+  squared-distance threshold in `is_new_point` is now `1e-12 / n`, avoiding
+  the admission of near-duplicates in low dimensions and excessive rejection
+  in high dimensions.
+- **Removed no-op `PolishConfig::algo` field**: The field was documented as a
+  local-optimizer selector but was completely ignored. Removing it eliminates
+  API clutter and misleading expectations.
+- **COBYLA fixed-dimension scaling**: When `lb == ub`, `rhocur` now uses `rho`
+  instead of `f64::EPSILON`, keeping the simplex edge on the same scale as
+  free dimensions and avoiding ill-conditioned `simi` entries.
+
 # 0.5.8
 
 ## New features

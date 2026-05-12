@@ -1,7 +1,8 @@
-/// Generate Sobol quasi-random sequence for initialization.
+/// Generate Halton quasi-random sequence for initialization.
 ///
-/// Uses Van der Corput sequences in co-prime bases for better parameter space
-/// coverage than pure random initialization.
+/// Uses Van der Corput sequences in the first `dimensions` prime bases.
+/// This provides better parameter space coverage than pure random
+/// initialization and avoids the correlated-base bug of the old fallback.
 ///
 /// # Arguments
 /// * `dimensions` - Number of dimensions (parameters)
@@ -10,23 +11,15 @@
 ///
 /// # Returns
 /// Vector of parameter vectors sampled from the quasi-random sequence
-pub fn init_sobol(dimensions: usize, num_samples: usize, bounds: &[(f64, f64)]) -> Vec<Vec<f64>> {
+pub fn init_halton(dimensions: usize, num_samples: usize, bounds: &[(f64, f64)]) -> Vec<Vec<f64>> {
+    let bases = halton_bases(dimensions);
     let mut samples = Vec::with_capacity(num_samples);
 
     for i in 0..num_samples {
         let mut sample = Vec::with_capacity(dimensions);
 
         for (dim, &(lower, upper)) in bounds.iter().enumerate().take(dimensions) {
-            let base = match dim {
-                0 => 2,
-                1 => 3,
-                2 => 5,
-                3 => 7,
-                4 => 11,
-                _ => 2 + (dim % 10),
-            };
-
-            let quasi_random = van_der_corput(i + 1, base);
+            let quasi_random = van_der_corput(i + 1, bases[dim]);
             sample.push(lower + quasi_random * (upper - lower));
         }
 
@@ -34,6 +27,56 @@ pub fn init_sobol(dimensions: usize, num_samples: usize, bounds: &[(f64, f64)]) 
     }
 
     samples
+}
+
+/// Deprecated alias for [`init_halton`].
+/// The old name claimed a Sobol sequence, but the implementation was a
+/// Halton-style Van der Corput construction.
+#[deprecated(since = "0.5.9", note = "Use init_halton instead")]
+pub fn init_sobol(dimensions: usize, num_samples: usize, bounds: &[(f64, f64)]) -> Vec<Vec<f64>> {
+    init_halton(dimensions, num_samples, bounds)
+}
+
+/// Return the first `n` prime numbers to use as Halton bases.
+fn halton_bases(n: usize) -> Vec<usize> {
+    let mut primes = Vec::with_capacity(n);
+    let mut candidate = 2;
+    while primes.len() < n {
+        if is_prime(candidate) {
+            primes.push(candidate);
+        }
+        candidate += 1;
+    }
+    primes
+}
+
+fn is_prime(n: usize) -> bool {
+    if n < 2 {
+        return false;
+    }
+    if n == 2 {
+        return true;
+    }
+    if n % 2 == 0 {
+        return false;
+    }
+    let mut i = 3;
+    while i * i <= n {
+        if n % i == 0 {
+            return false;
+        }
+        i += 2;
+    }
+    true
+}
+
+#[cfg(test)]
+fn gcd(a: usize, b: usize) -> usize {
+    if b == 0 {
+        a
+    } else {
+        gcd(b, a % b)
+    }
 }
 
 /// Van der Corput sequence for quasi-random number generation.
@@ -69,9 +112,9 @@ mod tests {
     }
 
     #[test]
-    fn test_init_sobol() {
+    fn test_init_halton() {
         let bounds = vec![(0.0, 10.0), (0.1, 5.0), (-12.0, 12.0)];
-        let samples = init_sobol(3, 5, &bounds);
+        let samples = init_halton(3, 5, &bounds);
 
         assert_eq!(samples.len(), 5);
         for sample in &samples {
@@ -80,5 +123,37 @@ mod tests {
             assert!((0.1..=5.0).contains(&sample[1]));
             assert!((-12.0..=12.0).contains(&sample[2]));
         }
+    }
+
+    #[test]
+    fn test_halton_bases_are_coprime() {
+        // The old fallback used bases like 2 + (dim % 10), which are not coprime
+        // (e.g. dim 8 used base 10, dim 10 used base 2 again). A proper Halton
+        // sequence uses the first n primes, which are pairwise coprime.
+        let bases = halton_bases(20);
+        for i in 0..bases.len() {
+            for j in (i + 1)..bases.len() {
+                assert_eq!(
+                    gcd(bases[i], bases[j]),
+                    1,
+                    "bases {} and {} must be coprime",
+                    bases[i],
+                    bases[j]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_halton_no_cycling() {
+        // With the old dim%10 cycling, dim 10 reused base 2, causing correlation.
+        // Halton uses unique primes for each dimension.
+        let bases = halton_bases(15);
+        let unique: std::collections::HashSet<_> = bases.iter().cloned().collect();
+        assert_eq!(
+            unique.len(),
+            bases.len(),
+            "each dimension must have a unique base"
+        );
     }
 }

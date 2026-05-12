@@ -146,12 +146,16 @@ The crate also includes a Levenberg-Marquardt local optimizer for nonlinear leas
 
 ```rust
 use math_audio_optimisation::levenberg_marquardt::{levenberg_marquardt, LMConfigBuilder};
+use ndarray::array;
 
+let residual = |x: &ndarray::Array1<f64>| x.clone();
+let bounds = vec![(-10.0, 10.0); 2];
 let config = LMConfigBuilder::new()
-    .max_iterations(100)
+    .x0(array![3.0, -2.0])
+    .maxiter(100)
     .build();
 
-let result = levenberg_marquardt(&residual_fn, &jacobian_fn, &x0, config);
+let result = levenberg_marquardt(&residual, &bounds, config).unwrap();
 ```
 
 ## Integration

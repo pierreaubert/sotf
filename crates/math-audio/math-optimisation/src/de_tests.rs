@@ -1,4 +1,4 @@
-use crate::{CallbackAction, DEConfigBuilder, DifferentialEvolution, PolishConfig, Strategy};
+use crate::{CallbackAction, DEConfigBuilder, DifferentialEvolution, LShadeConfig, PolishConfig, Strategy};
 use ndarray::{Array1, array};
 use rand::SeedableRng;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -345,6 +345,82 @@ mod config_validation_tests {
 
         assert!(result.is_ok());
     }
+
+    #[test]
+    fn test_lshade_population_reduction_wired() {
+        let sphere = |x: &Array1<f64>| x.iter().map(|&xi| xi * xi).sum::<f64>();
+
+        let lshade = LShadeConfig {
+            np_init: 18,
+            np_final: 4,
+            p: 0.11,
+            arc_rate: 2.1,
+            memory_size: 6,
+        };
+
+        let config = DEConfigBuilder::new()
+            .seed(42)
+            .maxiter(50)
+            .strategy(Strategy::LShadeBin)
+            .lshade(lshade)
+            .build()
+            .expect("popsize must be >= 4");
+
+        let mut de =
+            DifferentialEvolution::new(&sphere, array![-5.0f64, -5.0], array![5.0f64, 5.0])
+                .unwrap();
+        *de.config_mut() = config;
+        let report = de.solve();
+
+        // With 2 free dimensions, L-SHADE initial NP = 18*2 = 36.
+        // After 50 generations the population should have been reduced well
+        // below the initial size.
+        assert!(
+            report.population.nrows() < 20,
+            "L-SHADE should reduce population below 20, got {}",
+            report.population.nrows()
+        );
+    }
+
+    #[test]
+    fn test_nan_objective_does_not_corrupt_selection() {
+        // A single NaN evaluation in the population must not derail the
+        // optimizer: argmin should skip it and the run should still converge.
+        use std::sync::atomic::AtomicUsize;
+        let call_count = AtomicUsize::new(0);
+        let f = |x: &Array1<f64>| {
+            let c = call_count.fetch_add(1, Ordering::SeqCst);
+            if c == 4 {
+                f64::NAN
+            } else {
+                x.iter().map(|&xi| xi * xi).sum::<f64>()
+            }
+        };
+
+        let config = DEConfigBuilder::new()
+            .seed(42)
+            .maxiter(100)
+            .popsize(10)
+            .build()
+            .expect("popsize must be >= 4");
+
+        let mut de =
+            DifferentialEvolution::new(&f, array![-5.0f64, -5.0], array![5.0f64, 5.0])
+                .unwrap();
+        *de.config_mut() = config;
+        let report = de.solve();
+
+        assert!(
+            report.fun.is_finite(),
+            "best fitness must be finite, got {}",
+            report.fun
+        );
+        assert!(
+            report.fun < 1.0,
+            "should converge despite one NaN eval: f={}",
+            report.fun
+        );
+    }
 }
 
 #[cfg(test)]
@@ -361,7 +437,6 @@ mod polish_tests {
             .popsize(10)
             .polish(PolishConfig {
                 enabled: true,
-                algo: "neldermead".to_string(),
                 maxeval: 100,
             })
             .build()
