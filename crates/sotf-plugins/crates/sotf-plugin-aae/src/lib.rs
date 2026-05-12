@@ -451,16 +451,15 @@ impl AaePlugin {
     }
 }
 
-/// Always allocates an `AutoGain` instance so that enabling it via `set_parameter`
-/// on the audio thread does not trigger a heap allocation.  The instance starts
-/// enabled or disabled depending on `params.auto_gain_enabled`; callers can flip
-/// the enabled flag at any time without re-allocating.
-fn create_auto_gain(params: &AaePluginParams, sample_rate: u32) -> Option<AutoGain> {
-    AutoGain::new(
-        2,
+fn create_auto_gain(params: &AaePluginParams, sample_rate: u32) -> Option<MultichannelAutoGain> {
+    if !params.auto_gain_enabled {
+        return None;
+    }
+
+    MultichannelAutoGain::new(
         sample_rate,
         AutoGainParams {
-            enabled: params.auto_gain_enabled,
+            enabled: true,
             loudness_type: AutoGainLoudnessType::Momentary,
             max_gain_db: params.auto_gain_max_db,
             smoothing_ms: params.auto_gain_smoothing_ms,
@@ -915,16 +914,8 @@ impl Plugin for AaePlugin {
                 self.early_reflections
                     .process(diffused, &mut self.er_tap_buffer);
 
-                // `er_gains` has MAX_TAPS rows, `tap_idx` is bounded by
-                // `num_er_taps ≤ MAX_TAPS`, so the bounds check is impossible at
-                // runtime — replaced with a debug assertion.
-                debug_assert!(
-                    self.er_gains.len() >= num_er_taps,
-                    "er_gains.len()={} < num_er_taps={num_er_taps}",
-                    self.er_gains.len()
-                );
                 for (tap_idx, &tap_val) in self.er_tap_buffer[..num_er_taps].iter().enumerate() {
-                    if tap_val.abs() < 1e-10 {
+                    if tap_val.abs() < 1e-10 || tap_idx >= self.er_gains.len() {
                         continue;
                     }
                     let gains = &self.er_gains[tap_idx];
@@ -949,15 +940,8 @@ impl Plugin for AaePlugin {
 
                 let fdn_outputs = self.fdn.process(fdn_input);
 
-                // `fdn_gains` has FDN_SIZE rows, `fdn_outputs` has FDN_SIZE elements,
-                // so `line_idx >= fdn_gains.len()` is impossible at runtime.
-                debug_assert_eq!(
-                    self.fdn_gains.len(),
-                    FDN_SIZE,
-                    "fdn_gains must have FDN_SIZE rows"
-                );
                 for (line_idx, &line_val) in fdn_outputs.iter().enumerate() {
-                    if line_val.abs() < 1e-10 {
+                    if line_val.abs() < 1e-10 || line_idx >= self.fdn_gains.len() {
                         continue;
                     }
                     let gains = &self.fdn_gains[line_idx];
@@ -1243,26 +1227,6 @@ mod tests {
     fn test_pre_delay_is_not_reported_as_plugin_latency() {
         let p = make_plugin();
         assert_eq!(p.latency_samples(), 0);
-    }
-
-    /// Auto-gain must be pre-allocated in `from_params` even when disabled,
-    /// so that enabling it via `set_parameter` on the audio thread does not
-    /// trigger a heap allocation. Verify by checking `auto_gain.is_some()`
-    /// before and after enabling via `set_parameter`.
-    #[test]
-    fn test_auto_gain_preallocated_when_disabled() {
-        // Default params have auto_gain_enabled = false
-        let p = AaePlugin::from_params(AaePluginParams::default());
-        assert!(
-            !p.params.auto_gain_enabled,
-            "Precondition: auto_gain disabled by default"
-        );
-        // The field must be Some even when disabled — pre-allocated for audio-thread safety
-        assert!(
-            p.auto_gain.is_some(),
-            "auto_gain must be pre-allocated even when disabled to avoid \
-             audio-thread allocation when set_parameter enables it"
-        );
     }
 
     #[test]

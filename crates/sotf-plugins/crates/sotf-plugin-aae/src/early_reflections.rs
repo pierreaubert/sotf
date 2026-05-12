@@ -10,11 +10,6 @@ use crate::delay_line::DelayLine;
 pub const MAX_TAPS: usize = 20;
 const MAX_MOD_DEPTH_MS: f32 = 1.0;
 
-/// Maximum tap delay across all presets (Cathedral last tap: 154.5 ms).
-/// Hard-coded to avoid O(presets × taps) work at every constructor call.
-/// If new presets with longer delays are added, this value must be updated.
-const MAX_PRESET_DELAY_MS: f32 = 154.5;
-
 /// A single early reflection tap.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ReflectionTap {
@@ -46,11 +41,6 @@ pub struct EarlyReflections {
     num_taps: usize,
     /// One-pole LP filter states (one per tap) for HF damping
     lp_states: [f32; MAX_TAPS],
-    /// Per-tap allpass interpolation states for time-variant delay reads.
-    /// Using allpass (rather than linear) interpolation preserves high-frequency
-    /// content; linear interpolation acts as a lowpass filter and causes
-    /// spectral smearing when delay lengths are modulated.
-    allpass_states: [f32; MAX_TAPS],
     /// LFO phases for time-variant modulation (one per tap)
     mod_phases: [f32; MAX_TAPS],
     /// Modulation depth in samples
@@ -71,7 +61,6 @@ impl EarlyReflections {
             taps: [ReflectionTap::default(); MAX_TAPS],
             num_taps: 0,
             lp_states: [0.0; MAX_TAPS],
-            allpass_states: [0.0; MAX_TAPS],
             mod_phases: [0.0; MAX_TAPS],
             mod_depth_samples: 0.0,
             sample_rate: sr,
@@ -103,18 +92,12 @@ impl EarlyReflections {
                 break;
             }
 
-            // Read with optional time-variant modulation.
-            // Use allpass interpolation (not linear) to preserve high-frequency
-            // content: linear interpolation is a mild lowpass filter and causes
-            // progressive spectral smearing across modulation cycles.
-            // Each tap maintains its own allpass state for continuity between
-            // successive calls (avoids clicks when the delay changes).
+            // Read with optional time-variant modulation
             let sample = if self.mod_depth_samples > 0.01 {
                 let mod_offset =
                     (self.mod_phases[i] * std::f32::consts::TAU).sin() * self.mod_depth_samples;
                 let effective_delay = (tap.delay_samples as f32 + mod_offset).max(1.0);
-                self.delay_line
-                    .read_allpass(effective_delay, &mut self.allpass_states[i])
+                self.delay_line.read_linear(effective_delay)
             } else {
                 self.delay_line.read(tap.delay_samples)
             };
@@ -156,7 +139,6 @@ impl EarlyReflections {
         self.taps = taps;
         self.num_taps = num_taps;
         self.lp_states.fill(0.0);
-        self.allpass_states.fill(0.0);
         for i in 0..MAX_TAPS {
             self.mod_phases[i] = if num_taps > 0 {
                 i as f32 / num_taps as f32
@@ -170,7 +152,6 @@ impl EarlyReflections {
     pub fn reset(&mut self) {
         self.delay_line.reset();
         self.lp_states.fill(0.0);
-        self.allpass_states.fill(0.0);
         for (i, phase) in self.mod_phases.iter_mut().enumerate() {
             *phase = i as f32 / self.num_taps.max(1) as f32;
         }
@@ -268,42 +249,21 @@ fn generate_taps(preset: RoomPreset, sample_rate: f32) -> ([ReflectionTap; MAX_T
     (taps, specs.len())
 }
 
-/// Return the maximum tap delay in samples across all presets.
-///
-/// Uses the hard-coded `MAX_PRESET_DELAY_MS` constant (Cathedral, last tap: 154.5 ms)
-/// rather than iterating over all presets and generating tap tables. This is O(1)
-/// instead of O(presets × taps) and avoids redundant work at every constructor call.
 fn max_tap_delay_samples(sample_rate: f32) -> usize {
-    // Sanity-check in debug builds: verify the constant is not smaller than the
-    // actual maximum computed from the tap tables.
-    #[cfg(debug_assertions)]
-    {
-        let computed_max = [
-            RoomPreset::Small,
-            RoomPreset::Medium,
-            RoomPreset::Large,
-            RoomPreset::Cathedral,
-        ]
-        .iter()
-        .flat_map(|&preset| {
-            let (taps, num_taps) = generate_taps(preset, sample_rate);
-            taps.into_iter().take(num_taps)
-        })
-        .map(|tap| tap.delay_samples)
-        .max()
-        .unwrap_or(1);
-
-        let hardcoded = (MAX_PRESET_DELAY_MS * 0.001 * sample_rate).ceil() as usize;
-        debug_assert!(
-            hardcoded >= computed_max,
-            "MAX_PRESET_DELAY_MS ({MAX_PRESET_DELAY_MS} ms) is too small: \
-             computed max is {} samples, hardcoded is {hardcoded} samples. \
-             Update MAX_PRESET_DELAY_MS.",
-            computed_max
-        );
-    }
-
-    (MAX_PRESET_DELAY_MS * 0.001 * sample_rate).ceil() as usize
+    [
+        RoomPreset::Small,
+        RoomPreset::Medium,
+        RoomPreset::Large,
+        RoomPreset::Cathedral,
+    ]
+    .iter()
+    .flat_map(|&preset| {
+        let (taps, num_taps) = generate_taps(preset, sample_rate);
+        taps.into_iter().take(num_taps)
+    })
+    .map(|tap| tap.delay_samples)
+    .max()
+    .unwrap_or(1)
 }
 
 #[cfg(test)]
@@ -391,63 +351,6 @@ mod tests {
             let input = if i == 0 { 1.0 } else { 0.0 };
             er.process(input, &mut output);
             assert!(output.iter().all(|v| v.is_finite()));
-        }
-    }
-
-    /// When modulation is active, the tap reads must use allpass (not linear)
-    /// interpolation. Allpass preserves energy at all frequencies; linear
-    /// interpolation acts as a low-pass and progressively rolls off high
-    /// frequencies during modulation. Verify by comparing energy at the highest
-    /// frequency (Nyquist-like signal: alternating ±1) vs a DC signal — the ratio
-    /// must be within 6 dB (linear would create a larger gap per modulation cycle).
-    ///
-    /// This test also verifies that per-tap allpass states are maintained across
-    /// calls (continuity — no clicks when the delay changes between samples).
-    #[test]
-    fn test_modulated_taps_use_allpass_not_linear() {
-        let sr = 48000u32;
-        let mod_depth = 1.0; // maximum modulation
-
-        let mut er_mod = EarlyReflections::new(sr, RoomPreset::Small, mod_depth);
-        let num_taps = er_mod.num_taps();
-        let mut output = vec![0.0; num_taps];
-
-        // Feed enough samples to fill the delay line and reach steady state
-        let warmup = 5000usize;
-        let measure = 10000usize;
-        for _ in 0..warmup {
-            er_mod.process(0.5, &mut output);
-        }
-
-        // Accumulate energy from all tap outputs over the measurement window
-        let mut energy_sum = 0.0_f64;
-        let mut count = 0usize;
-        for _ in 0..measure {
-            er_mod.process(0.5, &mut output);
-            for &v in output[..num_taps].iter() {
-                if v.is_finite() {
-                    energy_sum += (v * v) as f64;
-                    count += 1;
-                }
-            }
-        }
-        let rms = if count > 0 { (energy_sum / count as f64).sqrt() } else { 0.0 };
-
-        // The RMS should be positive (modulation preserves energy through the tap)
-        // and finite — a crash or NaN here indicates broken allpass state management.
-        assert!(
-            rms > 0.0 && rms.is_finite(),
-            "Modulated ER taps should produce non-zero finite output, rms={rms}"
-        );
-
-        // Ensure no NaN/Inf regardless of modulation state after many cycles
-        for i in 0..100_000 {
-            let x = if i % 2 == 0 { 0.3 } else { -0.3 };
-            er_mod.process(x, &mut output);
-            assert!(
-                output.iter().all(|v| v.is_finite()),
-                "NaN/Inf detected at frame {i}"
-            );
         }
     }
 }

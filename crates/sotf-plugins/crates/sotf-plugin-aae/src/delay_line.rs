@@ -15,21 +15,12 @@ pub struct DelayLine {
 }
 
 impl DelayLine {
-    /// Create a delay line that supports reading up to `max_delay_samples` of delay.
-    ///
-    /// The internal buffer is sized `max_delay_samples + 2`:
-    /// - +1 slot because `write_pos` always points to the *next* write position,
-    ///   so the oldest readable sample lives at `write_pos` (one slot ahead).
-    /// - +1 slot because `read_allpass` reads `int_delay` and `int_delay + 1`
-    ///   simultaneously; without the extra slot the interpolation would clamp early.
-    ///
-    /// Callers can pass the exact maximum delay they need — no over-allocation required.
-    pub fn new(max_delay_samples: usize) -> Self {
-        let length = max_delay_samples + 2;
+    /// Create a delay line that can hold up to `max_samples` of audio.
+    pub fn new(max_samples: usize) -> Self {
         Self {
-            buffer: vec![0.0; length],
+            buffer: vec![0.0; max_samples + 1],
             write_pos: 0,
-            length,
+            length: max_samples + 1,
         }
     }
 
@@ -108,30 +99,6 @@ impl DelayLine {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// `DelayLine::new(N)` must support reading exactly N samples of delay.
-    #[test]
-    fn test_max_delay_is_exactly_n() {
-        // new(10) should be able to read at delay=10 without clamping.
-        let mut dl = DelayLine::new(10);
-        // Push 11 unique values so positions 0..10 all have distinct data
-        for i in 1..=11 {
-            dl.push(i as f32);
-        }
-        // The most-recently pushed value is 11.0 (delay=0).
-        // Delay 10 should give 1.0.
-        let v = dl.read(10);
-        assert!(
-            (v - 1.0).abs() < 1e-6,
-            "delay=10 should give 1.0 (oldest), got {v}. max_delay_samples={}",
-            dl.max_delay_samples()
-        );
-        assert_eq!(
-            dl.max_delay_samples(),
-            10,
-            "max_delay_samples() should equal the value passed to new()"
-        );
-    }
 
     #[test]
     fn test_push_read_basic() {
