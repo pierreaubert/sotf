@@ -991,7 +991,7 @@ fn test_latency_compensation() {
         .unwrap();
     host_b.build().unwrap();
     plugin.host_b = host_b;
-    plugin.update_latency_compensation();
+    plugin.update_latency_compensation().unwrap();
 
     // Verify reported latency = max of both paths
     assert_eq!(plugin.latency_samples(), latency_frames);
@@ -1085,7 +1085,7 @@ fn test_latency_compensation_reset() {
         .unwrap();
     host_b.build().unwrap();
     plugin.host_b = host_b;
-    plugin.update_latency_compensation();
+    plugin.update_latency_compensation().unwrap();
 
     // Fill delay with non-zero data
     let num_frames = 64;
@@ -1131,7 +1131,7 @@ fn test_latency_compensation_equal_latency() {
     host_b.build().unwrap();
     plugin.host_a = host_a;
     plugin.host_b = host_b;
-    plugin.update_latency_compensation();
+    plugin.update_latency_compensation().unwrap();
 
     // No compensation needed — both delays should be 0
     assert_eq!(plugin.delay_a.len, 0);
@@ -1311,5 +1311,144 @@ fn test_band_mask_reduces_out_of_band_energy() {
         "Band mask should reduce energy: full={}, masked={}",
         energy_full,
         energy_masked
+    );
+}
+
+// ========================================================================
+// Issue #5: Large block support (buffer capping bug)
+// ========================================================================
+
+/// Regression test for the hard 4096-frame buffer cap.
+///
+/// Before the fix, `process()` returned an error for blocks > 4096 frames.
+/// After the fix, the buffers grow dynamically to accommodate the request.
+#[test]
+fn test_large_block_beyond_4096_succeeds() {
+    let channels = 2;
+    let mut plugin = ABComparePlugin::new(channels).unwrap();
+    plugin.initialize(48000).unwrap();
+
+    // Use a block size of 8192 frames (2× the old hard cap)
+    let num_frames = 8192;
+    let input = vec![0.3f32; num_frames * channels];
+    let mut output = vec![0.0f32; num_frames * channels];
+    let context = ProcessContext {
+        sample_rate: 48000,
+        num_frames,
+    };
+
+    // Before the fix this would return Err("Internal buffers too small…").
+    // After the fix it must succeed.
+    plugin
+        .process(&input, &mut output, &context)
+        .expect("process should succeed for blocks larger than 4096 frames");
+}
+
+// ========================================================================
+// Issue #2: update_latency_compensation propagates build errors
+// ========================================================================
+
+/// Verify that `update_latency_compensation` returns `Err` when a host
+/// cannot build (due to a cycle in the graph), and that both delay lines
+/// are zeroed as a safe fallback.
+///
+/// `DawHost::build()` rejects graphs that contain cycles. We create such a
+/// cycle by adding two nodes with `add_node` and then wiring them in a loop
+/// via `add_edge` (cycle detection only happens inside `build()`).
+#[test]
+fn test_latency_compensation_returns_error_on_broken_host() {
+    use sotf_host::host::GraphEdge;
+
+    let channels = 2;
+    let mut plugin = ABComparePlugin::new(channels).unwrap();
+    plugin.initialize(48000).unwrap();
+
+    // Build a host whose graph has a cycle so that build() will fail.
+    let mut cyclic_host = DawHost::new(channels, 48000);
+
+    // Add two passthrough nodes
+    let node_a = cyclic_host
+        .add_node(
+            "a".to_string(),
+            Box::new(LatencyPassthrough { channels, latency: 0 }),
+        )
+        .unwrap();
+    let node_b = cyclic_host
+        .add_node(
+            "b".to_string(),
+            Box::new(LatencyPassthrough { channels, latency: 0 }),
+        )
+        .unwrap();
+
+    // Wire a→b and b→a: this creates a cycle
+    cyclic_host.add_edge(GraphEdge::new(node_a, node_b)).unwrap();
+    cyclic_host.add_edge(GraphEdge::new(node_b, node_a)).unwrap();
+
+    // Replace host_b: update_latency_compensation will try to build this
+    // cyclic host, which must fail.
+    plugin.host_b = cyclic_host;
+
+    let result = plugin.update_latency_compensation();
+    assert!(
+        result.is_err(),
+        "update_latency_compensation should return Err when a host build fails (cycle)"
+    );
+
+    // Both delay lines should be zeroed (safe fallback — plugin stays audible)
+    assert_eq!(
+        plugin.delay_a.len, 0,
+        "delay_a should be zeroed on build failure"
+    );
+    assert_eq!(
+        plugin.delay_b.len, 0,
+        "delay_b should be zeroed on build failure"
+    );
+}
+
+// ========================================================================
+// Issue #4: band_mask_active boundary — named constants, no magic offsets
+// ========================================================================
+
+/// Verifies that band_mask_active() returns false at the full-spectrum edges.
+/// Values exactly at the parameter min/max must NOT trigger the filter.
+#[test]
+fn test_band_mask_active_at_full_spectrum_edges() {
+    let params = ABComparePluginParams {
+        band_mask_low_hz: 20.0,   // parameter minimum
+        band_mask_high_hz: 20000.0, // parameter maximum
+        ..Default::default()
+    };
+    let plugin = ABComparePlugin::from_params(2, params).unwrap();
+    assert!(
+        !plugin.band_mask_active(),
+        "band_mask_active should be false when both edges are at full-spectrum limits"
+    );
+}
+
+/// Verifies that a very small deviation inside the parameter range activates the mask.
+#[test]
+fn test_band_mask_active_triggers_at_narrowed_range() {
+    // High-pass raised to 100 Hz — mask should activate
+    let params_hp = ABComparePluginParams {
+        band_mask_low_hz: 100.0,
+        band_mask_high_hz: 20000.0,
+        ..Default::default()
+    };
+    let plugin_hp = ABComparePlugin::from_params(2, params_hp).unwrap();
+    assert!(
+        plugin_hp.band_mask_active(),
+        "band_mask_active should be true when low cutoff is above minimum"
+    );
+
+    // Low-pass lowered to 10000 Hz — mask should activate
+    let params_lp = ABComparePluginParams {
+        band_mask_low_hz: 20.0,
+        band_mask_high_hz: 10000.0,
+        ..Default::default()
+    };
+    let plugin_lp = ABComparePlugin::from_params(2, params_lp).unwrap();
+    assert!(
+        plugin_lp.band_mask_active(),
+        "band_mask_active should be true when high cutoff is below maximum"
     );
 }

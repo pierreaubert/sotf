@@ -1,7 +1,7 @@
 [package]
 name = "sotf-plugin-ab-compare"
 description = "SOTF AB Compare plugin - A/B comparison"
-version = "0.5.3"
+version = "0.5.4"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
