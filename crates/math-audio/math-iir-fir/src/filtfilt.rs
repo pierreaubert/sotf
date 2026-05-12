@@ -81,7 +81,21 @@ pub fn sosfilt<T: FilterFloat>(signal: &[T], sections: &[BiquadCoefficients<T>])
 /// # Returns
 ///
 /// A filtered signal of the same length as the input, with zero phase distortion.
-pub fn filtfilt<T: FilterFloat>(signal: &[T], sections: &[BiquadCoefficients<T>]) -> Vec<T> {
+/// Apply forward-reverse filtering with an explicit padding length.
+///
+/// See [`filtfilt`] for the filtering algorithm.  The `padlen` argument
+/// controls how many samples of odd-reflected padding are added at each
+/// end of the signal.  A larger value reduces edge transients for narrow
+/// high-order filters but increases computation time.
+///
+/// # Panics
+///
+/// Panics if `padlen` exceeds `signal.len() - 1`.
+pub fn filtfilt_with_padlen<T: FilterFloat>(
+    signal: &[T],
+    sections: &[BiquadCoefficients<T>],
+    padlen: usize,
+) -> Vec<T> {
     if signal.is_empty() || sections.is_empty() {
         return signal.to_vec();
     }
@@ -93,8 +107,11 @@ pub fn filtfilt<T: FilterFloat>(signal: &[T], sections: &[BiquadCoefficients<T>]
         return signal.to_vec();
     }
 
-    // Pad length: enough for the impulse response to decay
-    let padlen = (3 * (2 * sections.len() + 1)).min(n - 1);
+    assert!(
+        padlen < n,
+        "padlen ({padlen}) must not exceed signal.len() - 1 ({n})",
+    );
+
     let two = lit::<T>(2.0);
 
     // Build padded signal with odd reflection at both ends
@@ -141,6 +158,42 @@ pub fn filtfilt<T: FilterFloat>(signal: &[T], sections: &[BiquadCoefficients<T>]
 
     // Trim padding
     data[padlen..padlen + n].to_vec()
+}
+
+/// Apply forward-reverse filtering (zero-phase) through a cascade of biquad sections.
+///
+/// Equivalent to MATLAB's `filtfilt` or `scipy.signal.sosfiltfilt`.
+///
+/// The signal is extended at both ends using odd reflection to reduce edge
+/// transients. Steady-state initial conditions are computed for each section
+/// to further minimize startup artifacts.
+///
+/// Because the filter is applied twice (forward + backward), the effective
+/// filter order is doubled and the magnitude response is squared. A 2nd-order
+/// Butterworth becomes effectively 4th-order with -80 dB/decade rolloff.
+///
+/// The default padding length is `6 * (2 * sections.len() + 1)` samples on
+/// each side (capped at `signal.len() - 1`).  For very narrow high-order
+/// filters on short signals this may still be insufficient; use
+/// [`filtfilt_with_padlen`] to specify a larger value.
+///
+/// # Returns
+///
+/// A filtered signal of the same length as the input, with zero phase distortion.
+pub fn filtfilt<T: FilterFloat>(signal: &[T], sections: &[BiquadCoefficients<T>]) -> Vec<T> {
+    if signal.is_empty() || sections.is_empty() {
+        return signal.to_vec();
+    }
+
+    let n = signal.len();
+    if n < 2 {
+        return signal.to_vec();
+    }
+
+    // Issue #8: increased multiplier from 3 to 6 for better edge handling
+    // with narrow high-order filters.
+    let padlen = (6 * (2 * sections.len() + 1)).min(n - 1);
+    filtfilt_with_padlen(signal, sections, padlen)
 }
 
 // ---------------------------------------------------------------------------
@@ -494,5 +547,32 @@ mod tests {
             (last - 0.42).abs() < 0.05,
             "DC should pass through lowpass, got {last}"
         );
+    }
+
+    #[test]
+    fn test_filtfilt_narrow_filter_short_signal() {
+        // Issue #8: a 16th-order Butterworth at 50 Hz on a short signal.
+        // With the old fixed padlen the edges can show transient mismatch.
+        // We verify that the output at the edges stays within bounds of the
+        // input range (no huge overshoot from bad padding / initial state).
+        let n = 80;
+        let mut signal = vec![0.0f64; n];
+        for i in 20..60 {
+            signal[i] = 1.0;
+        }
+
+        // 16th-order lowpass at 50 Hz — extremely narrow, long IR.
+        let sections = lowpass(16, 50.0, 48000.0);
+        let filtered = filtfilt(&signal, &sections);
+
+        // After zero-phase filtering a 0→1→0 box, every sample should lie
+        // in [0, 1] (a lowpass cannot create overshoot beyond the input
+        // range when the initial state is properly matched).
+        for (i, &v) in filtered.iter().enumerate() {
+            assert!(
+                v >= -0.01 && v <= 1.01,
+                "sample {i} out of range: {v} (expected [0, 1])"
+            );
+        }
     }
 }
