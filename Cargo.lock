@@ -10799,7 +10799,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-mono-to-stereo"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "rand 0.9.4",
  "realfft",
