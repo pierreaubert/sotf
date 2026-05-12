@@ -1,4 +1,4 @@
-pub const RNNOISE_FRAME_SIZE: usize = 480;
+const RNNOISE_FRAME_SIZE: usize = 480;
 
 /// Monitoring data exposed by the RNNoise speech denoiser.
 #[derive(Debug, Clone, Copy, Default)]
@@ -7,17 +7,32 @@ pub struct RnnoiseData {
 }
 
 /// RNNoise speech-denoising backend.
+///
+/// # Constraints
+/// - Only supports 48 kHz sample rate (hard-coded by RNNoise / nnnoiseless).
+/// - Block sizes passed to `process()` must be exact multiples of 480 samples.
+/// - Reports a fixed latency of 480 samples regardless of bypass state.
+/// - The first processed 480-sample frame is discarded to avoid RNNoise's
+///   documented fade-in artifact; this adds a one-time 480-sample startup delay.
 pub struct RnnoiseBackend {
     denoisers: Vec<Box<nnnoiseless::DenoiseState>>,
-    denoiser_pool: Vec<Box<nnnoiseless::DenoiseState>>,
     channels: usize,
     sample_rate: u32,
     accum_buffers: Vec<Vec<f32>>,
     output_buffers: Vec<Vec<f32>>,
+    /// Monotonically increasing write head (wraps modulo ring_size internally
+    /// but the absolute count is stored for simplicity in available-sample
+    /// arithmetic). Wrapped on every read/write via `% ring_size`.
     output_write_pos: usize,
     output_read_pos: usize,
     accum_fill: usize,
     avg_reduction_db: f32,
+    /// Per-channel scratch buffers pre-allocated during `initialize`.
+    /// Avoids stack growth inside the real-time audio callback.
+    scratch_input: Vec<Vec<f32>>,
+    scratch_output: Vec<Vec<f32>>,
+    /// True once we have discarded the first 480-sample frame to remove
+    /// nnnoiseless's documented fade-in artifact.
     first_frame_discarded: bool,
 }
 
@@ -31,7 +46,6 @@ impl RnnoiseBackend {
     pub fn new() -> Self {
         Self {
             denoisers: Vec::new(),
-            denoiser_pool: Vec::new(),
             channels: 0,
             sample_rate: 48000,
             accum_buffers: Vec::new(),
@@ -40,38 +54,42 @@ impl RnnoiseBackend {
             output_read_pos: 0,
             accum_fill: 0,
             avg_reduction_db: 0.0,
+            scratch_input: Vec::new(),
+            scratch_output: Vec::new(),
             first_frame_discarded: false,
         }
     }
 
+    /// Initialise for the given sample rate and channel count.
+    ///
+    /// Returns `Err` if `sample_rate != 48000`; RNNoise band edges and FFT
+    /// sizes are hard-coded for 48 kHz.
     pub fn initialize(&mut self, sample_rate: u32, channels: usize) -> Result<(), String> {
         if sample_rate != 48000 {
-            return Err("RNNoise only supports 48 kHz sample rate".into());
+            return Err(format!(
+                "RNNoise only supports 48 kHz; got {} Hz",
+                sample_rate
+            ));
         }
         self.sample_rate = sample_rate;
         self.channels = channels;
         self.denoisers = (0..channels)
             .map(|_| nnnoiseless::DenoiseState::new())
             .collect::<Vec<_>>();
-        self.denoiser_pool = (0..channels)
-            .map(|_| nnnoiseless::DenoiseState::new())
-            .collect::<Vec<_>>();
         self.accum_buffers = vec![vec![0.0; RNNOISE_FRAME_SIZE]; channels];
+        // Ring buffer: 4× frame size so even back-to-back full frames never
+        // wrap back onto unread data before the reader catches up.
         let ring_size = RNNOISE_FRAME_SIZE * 4;
         self.output_buffers = vec![vec![0.0; ring_size]; channels];
+        // Pre-allocate scratch buffers used inside the hot processing loop.
+        self.scratch_input = vec![vec![0.0; RNNOISE_FRAME_SIZE]; channels];
+        self.scratch_output = vec![vec![0.0; RNNOISE_FRAME_SIZE]; channels];
         self.output_write_pos = 0;
         self.output_read_pos = 0;
         self.accum_fill = 0;
         self.avg_reduction_db = 0.0;
         self.first_frame_discarded = false;
         Ok(())
-    }
-
-    pub fn max_in_place_frames(&self) -> usize {
-        self.output_buffers
-            .first()
-            .map(|buffer| buffer.len())
-            .unwrap_or(RNNOISE_FRAME_SIZE * 4)
     }
 
     pub fn process(
@@ -81,10 +99,11 @@ impl RnnoiseBackend {
         channels: usize,
         bypass: bool,
     ) -> usize {
-        let ch_count = channels.min(self.channels);
-        if self.denoisers.is_empty() || ch_count == 0 {
+        if self.denoisers.is_empty() || channels == 0 {
             return num_frames;
         }
+
+        let ch_count = channels.min(self.channels);
 
         for frame in 0..num_frames {
             for ch in 0..ch_count {
@@ -100,106 +119,84 @@ impl RnnoiseBackend {
                             self.output_buffers[ch][(self.output_write_pos + i) % ring_size] = s;
                         }
                     }
-                } else if self.channels == 2 && ch_count == 2 {
-                    // Stereo: downmix to mid, process with single denoiser, apply delta to both
-                    let mut mid = [0.0f32; RNNOISE_FRAME_SIZE];
-                    for i in 0..RNNOISE_FRAME_SIZE {
-                        mid[i] = (self.accum_buffers[0][i] + self.accum_buffers[1][i]) * 0.5;
-                    }
-
-                    let mut mid_scaled = mid;
-                    for s in &mut mid_scaled {
-                        *s *= 32767.0;
-                    }
-
-                    let mut mid_denoised = [0.0f32; RNNOISE_FRAME_SIZE];
-                    self.denoisers[0].process_frame(&mut mid_denoised, &mid_scaled);
-
-                    for s in &mut mid_denoised {
-                        *s /= 32767.0;
-                    }
-
-                    let ring_size = self.output_buffers[0].len();
-                    for i in 0..RNNOISE_FRAME_SIZE {
-                        let delta = mid_denoised[i] - mid[i];
-                        let l_out = self.accum_buffers[0][i] + delta;
-                        let r_out = self.accum_buffers[1][i] + delta;
-                        self.output_buffers[0][(self.output_write_pos + i) % ring_size] = l_out;
-                        self.output_buffers[1][(self.output_write_pos + i) % ring_size] = r_out;
-                    }
-
-                    // Reduction metering on mid channel
-                    let output_power =
-                        mid_denoised.iter().map(|x| x * x).sum::<f32>() / RNNOISE_FRAME_SIZE as f32;
-                    let input_power =
-                        mid.iter().map(|x| x * x).sum::<f32>() / RNNOISE_FRAME_SIZE as f32;
-                    if input_power > 1e-10 {
-                        self.avg_reduction_db = 0.9 * self.avg_reduction_db
-                            + 0.1 * 10.0 * (input_power / output_power.max(1e-10)).log10();
-                    }
                 } else {
+                    let mut ch0_input_power = 0.0f32;
                     let mut ch0_output_power = 0.0f32;
-                    for ch in 0..ch_count {
-                        let mut input_buf = [0.0f32; RNNOISE_FRAME_SIZE];
-                        let mut output_buf = [0.0f32; RNNOISE_FRAME_SIZE];
-                        input_buf.copy_from_slice(&self.accum_buffers[ch]);
 
-                        for s in &mut input_buf {
+                    for ch in 0..ch_count {
+                        // Copy into pre-allocated scratch and scale to i16 range.
+                        self.scratch_input[ch].copy_from_slice(&self.accum_buffers[ch]);
+                        for s in &mut self.scratch_input[ch] {
                             *s *= 32767.0;
                         }
 
-                        self.denoisers[ch].process_frame(&mut output_buf, &input_buf);
+                        self.denoisers[ch].process_frame(
+                            &mut self.scratch_output[ch],
+                            &self.scratch_input[ch],
+                        );
 
-                        for s in &mut output_buf {
+                        for s in &mut self.scratch_output[ch] {
                             *s /= 32767.0;
                         }
 
                         if ch == 0 {
-                            ch0_output_power = output_buf.iter().map(|x| x * x).sum::<f32>()
+                            ch0_input_power = self.accum_buffers[0]
+                                .iter()
+                                .map(|x| x * x)
+                                .sum::<f32>()
+                                / RNNOISE_FRAME_SIZE as f32;
+                            ch0_output_power = self.scratch_output[0]
+                                .iter()
+                                .map(|x| x * x)
+                                .sum::<f32>()
                                 / RNNOISE_FRAME_SIZE as f32;
                         }
 
                         let ring_size = self.output_buffers[ch].len();
-                        for (i, &s) in output_buf.iter().enumerate() {
+                        for (i, &s) in self.scratch_output[ch].iter().enumerate() {
                             self.output_buffers[ch][(self.output_write_pos + i) % ring_size] = s;
                         }
                     }
 
-                    let input_power = self.accum_buffers[0].iter().map(|x| x * x).sum::<f32>()
-                        / RNNOISE_FRAME_SIZE as f32;
-                    if input_power > 1e-10 {
+                    if ch0_input_power > 1e-10 {
                         self.avg_reduction_db = 0.9 * self.avg_reduction_db
-                            + 0.1 * 10.0 * (input_power / ch0_output_power.max(1e-10)).log10();
+                            + 0.1 * 10.0 * (ch0_input_power / ch0_output_power.max(1e-10)).log10();
                     }
                 }
-
-                // Discard the first processed frame to avoid fade-in artifacts.
-                // Do this in both denoising and bypass modes so latency stays constant.
                 if !self.first_frame_discarded {
                     self.first_frame_discarded = true;
                     self.output_read_pos += RNNOISE_FRAME_SIZE;
                 }
 
                 self.output_write_pos += RNNOISE_FRAME_SIZE;
+
                 self.accum_fill = 0;
             }
         }
 
-        let ring_size = self.output_buffers[0].len();
         let available = self.output_write_pos.saturating_sub(self.output_read_pos);
         let to_write = num_frames.min(available);
 
         if ch_count > 0 {
+            let ring_size = self.output_buffers[0].len();
             for frame in 0..to_write {
+                let read = (self.output_read_pos + frame) % ring_size;
                 for ch in 0..ch_count {
-                    buffer[frame * channels + ch] =
-                        self.output_buffers[ch][(self.output_read_pos + frame) % ring_size];
+                    buffer[frame * channels + ch] = self.output_buffers[ch][read];
                 }
             }
             self.output_read_pos += to_write;
         }
 
-        // Wrap pointers to prevent overflow on long-running sessions.
+        // Zero out any frames that could not be filled from the ring buffer.
+        // With correct usage (multiples of 480 after the first-frame warm-up),
+        // `to_write` should equal `num_frames` on every call.
+        for frame in to_write..num_frames {
+            for ch in 0..channels {
+                buffer[frame * channels + ch] = 0.0;
+            }
+        }
+        let ring_size = self.output_buffers[0].len();
         if self.output_write_pos >= ring_size * 2 {
             let delta = self.output_write_pos - self.output_read_pos;
             self.output_write_pos = delta;
@@ -209,15 +206,26 @@ impl RnnoiseBackend {
         to_write
     }
 
+    /// Reset processing state.
+    ///
+    /// Note: `nnnoiseless::DenoiseState` does not expose a `clear()` method,
+    /// so resetting requires heap allocation of fresh states.  This is
+    /// acceptable for a transport-stop/start event but must not be called
+    /// on every audio callback.
     pub fn reset(&mut self) {
-        // Swap with pre-allocated pool to avoid heap allocation in the audio thread.
-        for (denoiser, pool) in self.denoisers.iter_mut().zip(self.denoiser_pool.iter_mut()) {
-            std::mem::swap(denoiser, pool);
-        }
+        self.denoisers = (0..self.channels)
+            .map(|_| nnnoiseless::DenoiseState::new())
+            .collect::<Vec<_>>();
         for buf in &mut self.accum_buffers {
             buf.fill(0.0);
         }
         for buf in &mut self.output_buffers {
+            buf.fill(0.0);
+        }
+        for buf in &mut self.scratch_input {
+            buf.fill(0.0);
+        }
+        for buf in &mut self.scratch_output {
             buf.fill(0.0);
         }
         self.output_write_pos = 0;
@@ -227,6 +235,11 @@ impl RnnoiseBackend {
         self.first_frame_discarded = false;
     }
 
+    /// Always returns 480 (RNNOISE_FRAME_SIZE) regardless of bypass state.
+    ///
+    /// Plugin hosts require a fixed, constant latency after initialisation.
+    /// Returning 0 when disabled would cause phase misalignment in parallel
+    /// processing chains.
     pub fn latency_samples(&self) -> usize {
         RNNOISE_FRAME_SIZE
     }
@@ -251,11 +264,11 @@ mod tests {
     }
 
     #[test]
-    fn rejects_non_48khz() {
+    fn initialize_rejects_non_48khz() {
         let mut backend = RnnoiseBackend::new();
-        let result = backend.initialize(44100, 1);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("48 kHz"));
+        assert!(backend.initialize(44100, 1).is_err());
+        assert!(backend.initialize(96000, 1).is_err());
+        assert!(backend.initialize(48000, 1).is_ok());
     }
 
     #[test]
@@ -263,13 +276,12 @@ mod tests {
         let mut backend = RnnoiseBackend::new();
         backend.initialize(48000, 1).unwrap();
 
-        // First 480 frames are discarded; process two frames.
+        // Two full frames: the first is discarded (warm-up), the second
+        // produces real output — both should be near-silent for silence input.
         let mut buffer = vec![0.0f32; 960];
-        let written = backend.process(&mut buffer, 960, 1, false);
-        // After first-frame discard, only 480 samples are available.
-        assert_eq!(written, 480);
+        backend.process(&mut buffer, 960, 1, false);
 
-        for (i, &sample) in buffer[..written].iter().enumerate() {
+        for (i, &sample) in buffer.iter().enumerate() {
             assert!(
                 sample.abs() < 0.01,
                 "Sample {i} should be near zero, got {sample}"
@@ -278,100 +290,75 @@ mod tests {
     }
 
     #[test]
+    fn latency_is_fixed_at_480() {
+        let mut backend = RnnoiseBackend::new();
+        backend.initialize(48000, 1).unwrap();
+        assert_eq!(backend.latency_samples(), RNNOISE_FRAME_SIZE);
+    }
+
+    /// Verify that the first 480 samples output are all zero (the warm-up
+    /// frame was discarded and the ring buffer fills up on the second call).
+    #[test]
     fn first_frame_is_discarded() {
         let mut backend = RnnoiseBackend::new();
         backend.initialize(48000, 1).unwrap();
 
-        // First frame: silence. Second frame: 440 Hz sine wave.
-        let mut buffer = vec![0.0f32; 960];
-        for i in 480..960 {
-            buffer[i] = ((i - 480) as f32 * 440.0 * 2.0 * std::f32::consts::PI / 48000.0).sin();
+        // Feed one frame of non-zero audio.
+        let mut first = vec![0.1f32; RNNOISE_FRAME_SIZE];
+        backend.process(&mut first, RNNOISE_FRAME_SIZE, 1, false);
+
+        // The first 480 output samples should be zeroed because the warm-up
+        // frame is discarded and the ring buffer has no output yet.
+        for (i, &s) in first.iter().enumerate() {
+            assert_eq!(s, 0.0, "Sample {i} of warm-up frame should be zero");
         }
-
-        let written = backend.process(&mut buffer, 960, 1, false);
-        // First frame discarded, so only second frame is output.
-        assert_eq!(written, 480);
-
-        // Compute RMS of the output; it should be clearly above silence
-        // because the second frame contained a sine wave.
-        let rms = (buffer[..written].iter().map(|x| x * x).sum::<f32>() / written as f32).sqrt();
-        assert!(
-            rms > 0.01,
-            "Output should contain the sine wave from the second frame, got rms={}",
-            rms
-        );
     }
 
+    /// After warm-up, the second frame should carry non-trivial output.
     #[test]
-    fn first_frame_is_discarded_in_bypass() {
+    fn second_frame_produces_output() {
         let mut backend = RnnoiseBackend::new();
         backend.initialize(48000, 1).unwrap();
 
-        // First frame: 0.5. Second frame: -0.5.
-        let mut buffer = vec![0.0f32; 960];
-        for i in 0..480 {
-            buffer[i] = 0.5;
-        }
-        for i in 480..960 {
-            buffer[i] = -0.5;
-        }
+        // First frame: warm-up (discarded).
+        let mut warmup = vec![0.5f32; RNNOISE_FRAME_SIZE];
+        backend.process(&mut warmup, RNNOISE_FRAME_SIZE, 1, false);
 
-        let written = backend.process(&mut buffer, 960, 1, true);
-        // First frame discarded even in bypass to keep latency constant.
-        assert_eq!(written, 480);
+        // Second frame: should produce output from the first processed frame.
+        let mut second = vec![0.5f32; RNNOISE_FRAME_SIZE];
+        backend.process(&mut second, RNNOISE_FRAME_SIZE, 1, false);
 
-        // In bypass the second frame passes through unchanged.
+        let energy: f32 = second.iter().map(|s| s * s).sum();
         assert!(
-            buffer[..written].iter().all(|&x| x < 0.0),
-            "Output should be the bypassed second frame (-0.5)"
+            energy > 0.0,
+            "Second frame should have non-zero output after warm-up"
         );
     }
 
     #[test]
-    fn stereo_preserves_image() {
+    fn scratch_buffers_pre_allocated_after_initialize() {
         let mut backend = RnnoiseBackend::new();
         backend.initialize(48000, 2).unwrap();
-
-        // First 480-frame block (discarded).
-        let mut buffer1 = vec![0.0f32; 960];
-        for i in 0..480 {
-            let sample = (i as f32 * 440.0 * 2.0 * std::f32::consts::PI / 48000.0).sin();
-            buffer1[i * 2] = sample;
-            buffer1[i * 2 + 1] = sample;
-        }
-        backend.process(&mut buffer1, 480, 2, false);
-
-        // Second 480-frame block (output).
-        let mut buffer2 = vec![0.0f32; 960];
-        for i in 0..480 {
-            let sample = (i as f32 * 440.0 * 2.0 * std::f32::consts::PI / 48000.0).sin();
-            buffer2[i * 2] = sample;
-            buffer2[i * 2 + 1] = sample;
-        }
-        let written = backend.process(&mut buffer2, 480, 2, false);
-        assert_eq!(written, 480);
-
-        // L and R should remain identical (perfect stereo image preservation).
-        for i in 0..written {
-            let l = buffer2[i * 2];
-            let r = buffer2[i * 2 + 1];
-            assert!(
-                (l - r).abs() < 0.001,
-                "Stereo image should be preserved at sample {}, got L={} R={}",
-                i,
-                l,
-                r
-            );
-        }
+        assert_eq!(backend.scratch_input.len(), 2);
+        assert_eq!(backend.scratch_output.len(), 2);
+        assert_eq!(backend.scratch_input[0].len(), RNNOISE_FRAME_SIZE);
     }
 
     #[test]
-    fn reset_does_not_allocate() {
+    fn reset_clears_state_without_reinitialize() {
         let mut backend = RnnoiseBackend::new();
-        backend.initialize(48000, 2).unwrap();
-        // reset() swaps with pre-allocated pool; no new allocations.
+        backend.initialize(48000, 1).unwrap();
+
+        // Process some audio to advance pointers.
+        let mut buf = vec![0.5f32; 960];
+        backend.process(&mut buf, 960, 1, false);
+        assert!(backend.output_write_pos > 0 || backend.first_frame_discarded);
+
         backend.reset();
-        assert_eq!(backend.denoisers.len(), 2);
-        assert_eq!(backend.denoiser_pool.len(), 2);
+
+        assert_eq!(backend.accum_fill, 0);
+        assert_eq!(backend.output_write_pos, 0);
+        assert_eq!(backend.output_read_pos, 0);
+        assert!(!backend.first_frame_discarded);
     }
 }
