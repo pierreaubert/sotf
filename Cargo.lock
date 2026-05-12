@@ -10811,7 +10811,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-multiband-compressor"
-version = "0.5.10"
+version = "0.5.11"
 dependencies = [
  "math-dsp",
  "math-iir-fir",
