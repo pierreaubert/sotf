@@ -1,3 +1,85 @@
+# 0.5.24
+
+## Fixes
+
+- **§2.1 `all_frequencies` sort order after parameter changes** (`src/lib.rs`): Re-sort and
+  dedup `all_frequencies` after every `set_parameter` call that modifies a frequency. Previously,
+  setting `frequency` above `frequency_2` left the vector unsorted, causing incorrect band
+  overlap on the next `initialize()` call passed to `MultibandLr4Crossover::reinit`.
+
+- **§2.2 `parse_extra_freq_index` aliasing** (`src/lib.rs:196-200`): Changed
+  `idx.saturating_sub(2)` to `if idx >= 2 { Some(idx - 2) } else { None }`. Previously
+  `"frequency_1"` would saturate to 0 and alias `"frequency_2"`. Now it correctly returns
+  `None` for indices < 2, making the rejection explicit and safe against future validation
+  changes.
+
+- **§4.1 `crossover_type` parameter validated** (`src/lib.rs:new_multiway`): `new` and
+  `new_multiway` now return an error for any `crossover_type` string other than `"lr24"` or
+  `"lr4"` (case-insensitive). Previously passing `"LR12"` or `"BW18"` was silently accepted
+  but LR4 was used, violating the API contract.
+
+- **§4.2 `CrossoverMode::from_str` allocation removed** (`src/lib.rs:22-28`): Replaced
+  `s.to_lowercase().as_str()` match with `eq_ignore_ascii_case` comparisons. Eliminates a
+  `String` allocation on every call, making the hot path allocation-free.
+
+- **§4.3 `reset()` snaps smoothers to target** (`src/lib.rs:336-341`): `reset()` now calls
+  `smoother.reset(smoother.target())` for the primary and all extra frequency smoothers.
+  Previously a mid-transition reset would leave the smoother's `current != target`, causing a
+  discontinuous frequency jump (click) at the start of the next processed block.
+
+- **§1.4 Nyquist clamp in `initialize()`** (`src/lib.rs:289`): Before passing frequencies to
+  `Lr4Crossover::reinit` or `MultibandLr4Crossover::reinit`, each frequency is now clamped to
+  `sample_rate * 0.5 * 0.99`. Prevents nonsense biquad coefficients when a stored frequency
+  exceeds Nyquist at a low sample rate (e.g. 20 kHz crossover at 32 kHz SR).
+
+- **§4.4 Test tolerance tightened** (`src/lib.rs:test_crossover_both_bands_sum_preserves_energy`):
+  RMS energy-preservation tolerance tightened from 15 % to 1 % (`0.15` → `0.01`). Settle
+  window increased from 2000 to 5000 samples to ensure full filter settlement.
+
+## New Tests
+
+- `test_all_frequencies_remain_sorted_after_primary_update` — verifies §2.1 fix for primary
+  frequency above secondary.
+- `test_all_frequencies_remain_sorted_after_extra_freq_update` — verifies §2.1 fix for
+  `frequency_2` moved below primary.
+- `test_parse_extra_freq_index_rejects_idx_less_than_2` — verifies §2.2 fix.
+- `test_unsupported_crossover_type_returns_error` — verifies §4.1 fix; also confirms
+  case-insensitive acceptance of `"lr24"`, `"LR4"`, `"LR24"`.
+- `test_crossover_mode_from_str_is_case_insensitive` — verifies §4.2 fix.
+- `test_reset_snaps_smoothers_to_target` — verifies §4.3 fix.
+- `test_initialize_clamps_frequency_to_nyquist` — verifies §1.4 fix.
+
+## Deferred (cross-crate or requires unsafe)
+
+- **§1.1 Zipper noise from block-constant smoothing**: Fixing this requires per-sample
+  coefficient updates inside the hot loop or a sub-block interpolation API from `LogSmoother`.
+  Deferred to a follow-up that touches `math-dsp/smoothing.rs` and the crossover hot path
+  together.
+
+- **§1.2 `flush_denormals_inplace` threshold** (`math-dsp/simd.rs:909`): `DENORM_THRESHOLD`
+  is `1e-30` instead of `f32::MIN_POSITIVE ≈ 1.18e-38`. Fix is a one-liner but lives in
+  `math-dsp`, outside this crate's scope. Tracked for a `math-dsp` patch release.
+
+- **§3.1 Per-frame `split_at_mut` in hot loop**: The suggested fix uses `unsafe` which is
+  prohibited without explicit approval. Alternatively restructuring `MultibandLr4Crossover`
+  to accept a flat output buffer would eliminate the per-frame slice construction without
+  `unsafe`, but requires a `math-iir-fir` API change. Deferred.
+
+- **§3.2 `MultibandLr4Crossover` copy-vs-swap**: The `copy_from_slice` → `mem::swap`
+  optimization lives in `math-iir-fir/lr4_crossover.rs`. Deferred to a `math-iir-fir` patch.
+
+- **§3.3 Redundant `flush_denormals_inplace` on x86_64**: Gating behind `#[cfg(target_arch = "aarch64")]`
+  is harmless here but the root cause (§1.2 wrong threshold) is in `math-dsp`. Keeping the
+  call as a safety net until §1.2 is fixed.
+
+- **§3.4 `rebuild_cached_parameters` allocation on every set_parameter**: Not fixing in this
+  pass to avoid scope creep; the schema-only-at-init refactor touches the parameter API
+  contract. Tracked separately.
+
+- **§4.5 / §4.6 Additional test coverage**: Stereo imaging, automation smoothness, multiband
+  energy preservation, and buffer bounds `debug_assert`s are desirable additions; deferred to
+  avoid enlarging this bugfix PR.
+
 # 0.5.23
 
 ## New
