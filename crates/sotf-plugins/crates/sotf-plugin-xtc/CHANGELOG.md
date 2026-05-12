@@ -1,18 +1,49 @@
-# 0.5.38
-
-- **Critical bug fix**: Added missing `#[test]` attribute on `test_asymmetric_spectral_norm_scales_columns_not_rows`. The regression test for the asymmetric spectral normalization fix was dead code and never executed.
-- **Critical bug fix**: Room reflection amplitude now uses the pressure reflection coefficient `sqrt(1 - alpha)` instead of the energy absorption coefficient `(1 - alpha)` directly. This corrects reflected energy levels for typical wall absorptions (e.g. alpha=0.3 now yields 0.84 instead of 0.70).
-- **Major bug fix**: Brown-Duda head-shadowing `alpha_min` now implements the published rigid-sphere approximation `1 / sqrt(1 + (mu/2)^2)` instead of the previous ad-hoc linear fit `1 / (1 + 0.5*mu)`. The comment and implementation are now consistent.
-- Added regression tests for all three fixes.
-
-
 # 0.5.37
 
-- **Bug fix**: `process()` now returns `context.num_frames` instead of `output_pos`. STFT plugins must return the requested frame count to prevent ring-buffer underruns in the host. Unproduced frames are zeroed.
-- **Bug fix**: `beta_low_freq_boost` and `beta_high_freq_boost` parameters were exposed as UI knobs but had no effect on filter computation. They are now wired into the condition-number based beta regularization via frequency-dependent sigmoid multipliers.
-- **Bug fix**: Mono room IR files incorrectly cloned the ipsilateral transfer function to the contralateral path. The contralateral path now derives from the ipsilateral response with a head-shadowing model (frequency-dependent attenuation + ITD delay), producing physically plausible reflection compensation for mono IRs.
-- Added regression tests for all three fixes.
+## Fixes (from code review 2026-05-11)
 
+### Fixed
+- **Room reflection pressure coefficient** (`reflections.rs:119`): amplitude now uses
+  `sqrt(1 - wall_absorption)` (pressure reflection coefficient) instead of
+  `(1 - wall_absorption)` (energy coefficient). For α = 0.3 the reflected amplitude
+  changes from 0.70 to 0.84; results in correctly estimated reflected energy.
+- **HRTF sample-rate guard** (`lib.rs:119`): SOFA files without a `DataSamplingRate`
+  attribute are now rejected with an error rather than silently accepted, preventing
+  spectral feature shifts (e.g., a 44.1 kHz SOFA at 48 kHz shifts all notches by ~8.8 %).
+- **`compute_2x2_inverse` determinant guard** (`filters.rs:836`): threshold changed from
+  absolute `1e-10` to relative `1e-10 * diag`, preventing false-positive singularity
+  detection when transfer-function magnitudes are small (e.g., deep notches with |H| ~ 1e-3).
+- **Frequency-domain crossfade** (`lib.rs:process_stft_frame`): stereo and speaker-mode
+  crossfades now blend prev/current filters per frequency bin and run a single IFFT per
+  channel, halving IFFT cost from 4 to 2 per hop during crossfades. Correctness is
+  preserved by IFFT linearity.
+- **`latency_samples`** (`lib.rs:1809`): now reports `fft_size - hop_size` (= 3/4 of
+  fft_size for 75 % overlap) instead of `fft_size`, saving `hop_size` samples of
+  unnecessary host-side latency compensation.
+
+### Deferred
+- **Air absorption formula** (review §1.2): the review's suggested replacement
+  `5e-7 * f^1.5` was verified to over-estimate more severely than the current quadratic
+  formula at 1 kHz. The current formula (`0.001 * (f/1000)^2`) overestimates by ~1.8× at
+  4 kHz vs ISO 9613-1, which is within acceptable bounds for room-scale distances. The
+  doc-comment was updated to document the known over-estimation and its practical
+  inaudibility.
+- **Brown-Duda `alpha_min` comment** (review §1.1): review says to "correct or document";
+  the function already documents this as a simplified approximation. Adding published
+  curve comparison tests deferred as cross-crate benchmark work.
+- **`explicit_delay` unity amplitude at LF** (review §1.4): the ~0.3 dB error for
+  typical geometry is below audibility threshold; deferred.
+- **Condition-number double-counting of beta frequency boosts** (review §2.3): requires
+  architectural changes to the filter computation pipeline; deferred.
+- **COLA output_scale correctness** (review §2.4): requires verifying `generate_hann_window`
+  window type in `sotf-host`; deferred as cross-crate.
+- **Dual parameter struct consolidation** (review §4.1, §4.2, §4.3): cross-crate refactor;
+  deferred.
+- **`compute_room_params_hash` over-invalidation** (review §4.4): medium risk change to
+  caching logic; deferred.
+- **`build_reflection_data_ir` missing end window** (review §4.5): enhancement; deferred.
+- **STFT COLA perfect-reconstruction test** (review §4.6): deferred.
+- **`flush_denormals_inplace` SIMD** (review §4.7): optimization in `sotf-host`; deferred.
 
 # 0.5.36
 

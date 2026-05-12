@@ -114,11 +114,15 @@ fn load_hrtf_for_xtc(
 
     let sofa = SofaFile::load(path)?;
 
-    // Reject SOFA files with mismatched sample rate — using unmatched
-    // HRTF data shifts all spectral features and corrupts the plant matrix.
-    if let Some(sofa_sr) = sofa.data_sample_rate
-        && (sofa_sr - sample_rate as f32).abs() > 1.0
-    {
+    // Reject SOFA files with missing or mismatched sample rate.
+    // A missing sample rate means all spectral features could be shifted in
+    // frequency (e.g., a 44.1 kHz file loaded at 48 kHz shifts notches by ~8.8 %).
+    let sofa_sr = sofa.data_sample_rate.ok_or_else(|| {
+        "HRTF SOFA file does not declare a sample rate. \
+         Resample the file and ensure it carries a valid DataSamplingRate attribute."
+            .to_string()
+    })?;
+    if (sofa_sr - sample_rate as f32).abs() > 1.0 {
         return Err(format!(
             "SOFA sample rate ({} Hz) differs from plugin sample rate ({} Hz). \
              Resample the SOFA file or match sample rates.",
@@ -476,6 +480,98 @@ pub struct XtcPlugin {
 // ============================================================================
 // Free-function filter helpers (avoid borrow checker issues with &mut self)
 // ============================================================================
+
+/// Apply a linearly-blended XTC filter for left channel in the frequency domain.
+///
+/// Computes: ifft_input[b] = ((1-α)·prev.filter_ll[b] + α·curr.filter_ll[b])·fft_l[b]
+///                          + ((1-α)·prev.filter_lr[b] + α·curr.filter_lr[b])·fft_r[b]
+///
+/// This is equivalent to `(1-α)·IFFT(prev) + α·IFFT(curr)` by IFFT linearity,
+/// but requires only one IFFT per channel instead of two.
+#[inline(always)]
+fn apply_filter_left_blended(
+    ifft_input: &mut [Complex<f32>],
+    fft_l: &[Complex<f32>],
+    fft_r: &[Complex<f32>],
+    prev: &XtcFilters,
+    curr: &XtcFilters,
+    alpha: f32,
+) {
+    let one_minus_alpha = 1.0 - alpha;
+    let n = ifft_input.len();
+    for bin in 0..n {
+        let ll = prev.filter_ll[bin] * one_minus_alpha + curr.filter_ll[bin] * alpha;
+        let lr = prev.filter_lr[bin] * one_minus_alpha + curr.filter_lr[bin] * alpha;
+        ifft_input[bin] = fft_l[bin] * ll + fft_r[bin] * lr;
+    }
+    ifft_input[0].im = 0.0;
+    ifft_input[n - 1].im = 0.0;
+}
+
+/// Apply a linearly-blended XTC filter for right channel in the frequency domain.
+///
+/// Mirrors `apply_filter_left_blended` for the right channel, handling the symmetric
+/// case (filter_rl = filter_lr, filter_rr = filter_ll) when both filters agree.
+#[inline(always)]
+fn apply_filter_right_blended(
+    ifft_input: &mut [Complex<f32>],
+    fft_l: &[Complex<f32>],
+    fft_r: &[Complex<f32>],
+    prev: &XtcFilters,
+    curr: &XtcFilters,
+    alpha: f32,
+) {
+    let one_minus_alpha = 1.0 - alpha;
+    let n = ifft_input.len();
+    let (prev_rl, prev_rr): (&[Complex<f32>], &[Complex<f32>]) = if prev.is_symmetric {
+        (&prev.filter_lr, &prev.filter_ll)
+    } else {
+        (
+            prev.filter_rl.as_ref().unwrap(),
+            prev.filter_rr.as_ref().unwrap(),
+        )
+    };
+    let (curr_rl, curr_rr): (&[Complex<f32>], &[Complex<f32>]) = if curr.is_symmetric {
+        (&curr.filter_lr, &curr.filter_ll)
+    } else {
+        (
+            curr.filter_rl.as_ref().unwrap(),
+            curr.filter_rr.as_ref().unwrap(),
+        )
+    };
+    for bin in 0..n {
+        let rl = prev_rl[bin] * one_minus_alpha + curr_rl[bin] * alpha;
+        let rr = prev_rr[bin] * one_minus_alpha + curr_rr[bin] * alpha;
+        ifft_input[bin] = fft_l[bin] * rl + fft_r[bin] * rr;
+    }
+    ifft_input[0].im = 0.0;
+    ifft_input[n - 1].im = 0.0;
+}
+
+/// Apply a linearly-blended filter pair for a speaker output in the frequency domain.
+///
+/// Equivalent to `apply_filter_left_blended` but for speaker-mode filters.
+#[inline(always)]
+fn apply_filter_pair_blended(
+    ifft_input: &mut [Complex<f32>],
+    fft_l: &[Complex<f32>],
+    fft_r: &[Complex<f32>],
+    prev_l: &[Complex<f32>],
+    prev_r: &[Complex<f32>],
+    curr_l: &[Complex<f32>],
+    curr_r: &[Complex<f32>],
+    alpha: f32,
+) {
+    let one_minus_alpha = 1.0 - alpha;
+    let n = ifft_input.len();
+    for bin in 0..n {
+        let fl = prev_l[bin] * one_minus_alpha + curr_l[bin] * alpha;
+        let fr = prev_r[bin] * one_minus_alpha + curr_r[bin] * alpha;
+        ifft_input[bin] = fft_l[bin] * fl + fft_r[bin] * fr;
+    }
+    ifft_input[0].im = 0.0;
+    ifft_input[n - 1].im = 0.0;
+}
 
 /// Apply XTC filter for left channel: ifft_input = filter_ll * fft_l + filter_lr * fft_r
 #[inline(always)]
@@ -1095,33 +1191,24 @@ impl XtcPlugin {
                 if can_crossfade {
                     let prev_filters = self.prev_filters.as_ref().unwrap();
                     let prev_speaker_filters = prev_filters.speaker_filters.as_ref().unwrap();
-                    apply_filter_pair(
+                    // Blend prev and current filters in frequency domain → 1 IFFT instead of 2.
+                    apply_filter_pair_blended(
                         &mut self.ifft_input,
                         &self.fft_output_l,
                         &self.fft_output_r,
                         &prev_speaker_filters[speaker_idx][0],
                         &prev_speaker_filters[speaker_idx][1],
-                    );
-                    self.fft_inverse
-                        .process(&mut self.ifft_input, &mut self.prev_ifft_output)
-                        .expect("IFFT processing failed");
-
-                    apply_filter_pair(
-                        &mut self.ifft_input,
-                        &self.fft_output_l,
-                        &self.fft_output_r,
                         &filters_for_speaker[0],
                         &filters_for_speaker[1],
+                        alpha,
                     );
                     self.fft_inverse
                         .process(&mut self.ifft_input, &mut self.ifft_output)
                         .expect("IFFT processing failed");
 
                     for i in 0..fft_size {
-                        let val =
-                            (1.0 - alpha) * self.prev_ifft_output[i] + alpha * self.ifft_output[i];
                         let idx = (self.next_add_position + i) & mask;
-                        let s = val * self.analysis_window[i] * scale;
+                        let s = self.ifft_output[i] * self.analysis_window[i] * scale;
                         self.output_accumulator[idx * output_channels + speaker_idx] += s;
                     }
                 } else {
@@ -1143,74 +1230,50 @@ impl XtcPlugin {
                     }
                 }
             }
-        } else if let Some(prev_filters) = self
-            .prev_filters
-            .as_ref()
-            .filter(|_| self.crossfade_progress < 1.0)
+        } else if self.crossfade_progress < 1.0
+            && let Some(prev_filters) = self.prev_filters.as_ref()
         {
             let alpha = self.crossfade_progress;
             // Use cached filter snapshot (loaded once per process() call)
             let current_filters = &self.cached_current_filters;
 
-            // --- Left channel with crossfade ---
-            // 1. IFFT with prev_filters into prev_ifft_output
-            apply_filter_left(
+            // --- Left channel with frequency-domain crossfade (1 IFFT instead of 2) ---
+            // Blend prev and current filters per bin, then run a single IFFT.
+            // Valid because IFFT is linear: (1-α)·IFFT(prev) + α·IFFT(curr) = IFFT(blended).
+            apply_filter_left_blended(
                 &mut self.ifft_input,
                 &self.fft_output_l,
                 &self.fft_output_r,
                 prev_filters,
-            );
-            self.fft_inverse
-                .process(&mut self.ifft_input, &mut self.prev_ifft_output)
-                .expect("IFFT processing failed");
-
-            // 2. IFFT with current filters into ifft_output
-            apply_filter_left(
-                &mut self.ifft_input,
-                &self.fft_output_l,
-                &self.fft_output_r,
                 current_filters,
+                alpha,
             );
             self.fft_inverse
                 .process(&mut self.ifft_input, &mut self.ifft_output)
                 .expect("IFFT processing failed");
 
-            // 3. Blend and Accumulate Left
             for i in 0..fft_size {
-                let val = (1.0 - alpha) * self.prev_ifft_output[i] + alpha * self.ifft_output[i];
                 let idx = (self.next_add_position + i) & mask;
-                let s = val * self.analysis_window[i] * scale;
+                let s = self.ifft_output[i] * self.analysis_window[i] * scale;
                 self.output_accumulator[idx * 2] += s;
             }
 
-            // --- Right channel with crossfade ---
-            // 1. IFFT with prev_filters into prev_ifft_output
-            apply_filter_right(
+            // --- Right channel with frequency-domain crossfade (1 IFFT instead of 2) ---
+            apply_filter_right_blended(
                 &mut self.ifft_input,
                 &self.fft_output_l,
                 &self.fft_output_r,
                 prev_filters,
-            );
-            self.fft_inverse
-                .process(&mut self.ifft_input, &mut self.prev_ifft_output)
-                .expect("IFFT processing failed");
-
-            // 2. IFFT with current filters into ifft_output
-            apply_filter_right(
-                &mut self.ifft_input,
-                &self.fft_output_l,
-                &self.fft_output_r,
                 current_filters,
+                alpha,
             );
             self.fft_inverse
                 .process(&mut self.ifft_input, &mut self.ifft_output)
                 .expect("IFFT processing failed");
 
-            // 3. Blend and Accumulate Right
             for i in 0..fft_size {
-                let val = (1.0 - alpha) * self.prev_ifft_output[i] + alpha * self.ifft_output[i];
                 let idx = (self.next_add_position + i) & mask;
-                let s = val * self.analysis_window[i] * scale;
+                let s = self.ifft_output[i] * self.analysis_window[i] * scale;
                 self.output_accumulator[idx * 2 + 1] += s;
             }
         } else {
@@ -1746,6 +1809,9 @@ impl Plugin for XtcPlugin {
     }
 
     fn latency_samples(&self) -> usize {
-        self.fft_size
+        // With 75% overlap (hop_size = fft_size/4) and immediate draining of the first
+        // hop after filling the first STFT frame, the first output sample appears after
+        // fft_size - hop_size input samples (= 3/4 of fft_size for 75% overlap).
+        self.fft_size - self.hop_size
     }
 }

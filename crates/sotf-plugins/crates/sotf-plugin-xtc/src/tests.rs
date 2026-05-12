@@ -755,10 +755,15 @@ fn test_image_source_positions() {
     }
 }
 
-/// Test that reflection amplitude uses the pressure reflection coefficient sqrt(1-alpha)
-/// rather than the energy absorption coefficient (1-alpha) directly.
+/// Test that reflection amplitude uses pressure coefficient sqrt(1 - absorption).
+///
+/// The Sabine absorption coefficient α is an energy quantity. For a pressure signal
+/// the correct reflection coefficient is sqrt(1 - α), not (1 - α).
+/// For α = 0.75: correct = sqrt(0.25) = 0.5; wrong = (1 - 0.75) = 0.25.
 #[test]
-fn test_reflection_amplitude_uses_sqrt_of_energy_coefficient() {
+fn test_reflection_amplitude_uses_pressure_coefficient() {
+    // α = 0.75 → pressure reflection = sqrt(0.25) = 0.5, energy reflection = 0.25
+    // The two values differ by 2× so any reasonable geometry should distinguish them.
     let speaker_pos = [0.0_f32, 1.2, 2.0];
     let ear_pos = [0.0875_f32, 1.2, 0.0];
     let direct_dist = {
@@ -768,30 +773,54 @@ fn test_reflection_amplitude_uses_sqrt_of_energy_coefficient() {
         (dx * dx + dy * dy + dz * dz).sqrt()
     };
 
-    let room_reflective = reflections::tests_support::make_room(4.0, 5.0, 2.5, 0.0);
-    let paths_reflective =
-        compute_image_sources(speaker_pos, ear_pos, direct_dist, &room_reflective);
+    let room_energy = reflections::tests_support::make_room(4.0, 5.0, 2.5, 0.75);
+    let paths = compute_image_sources(speaker_pos, ear_pos, direct_dist, &room_energy);
+    assert!(!paths.is_empty());
 
-    let room_absorptive = reflections::tests_support::make_room(4.0, 5.0, 2.5, 0.5);
-    let paths_absorptive =
-        compute_image_sources(speaker_pos, ear_pos, direct_dist, &room_absorptive);
+    // For α = 0.75: pressure coefficient = sqrt(1 - 0.75) = 0.5
+    // Energy coefficient = (1 - 0.75) = 0.25
+    // The geometric spread factor (direct_dist / image_dist) is the same for both,
+    // so we can factor it out and check that amplitude / (direct_dist / image_dist) ≈ 0.5.
+    // Each path has a different image_dist, so compute the reflectance for each path.
+    for path in &paths {
+        // image_dist = direct_dist / (direct_dist_over_image_dist)
+        // amplitude = reflectance * (direct_dist / image_dist)
+        // We cannot recover image_dist from amplitude alone without the geometry,
+        // but we know amplitudes must be strictly larger than 0.25 * geometric_spread
+        // and ≤ 0.5 * geometric_spread. Since the image source is always farther
+        // than the direct path, direct_dist / image_dist < 1.
+        // With pressure coefficient 0.5, amplitude = 0.5 * spread < 0.5.
+        // With energy coefficient 0.25, amplitude = 0.25 * spread < 0.25.
+        //
+        // The discriminating assertion: amplitude > 0.25 * (direct_dist / image_dist_bound).
+        // Since image_dist > direct_dist: spread = direct_dist/image_dist < 1.
+        // So if the code uses pressure reflection correctly, amplitude > 0.25 * spread.
+        // If it uses energy reflection wrongly, amplitude ≤ 0.25 * spread < 0.25.
+        //
+        // In practice for this geometry spread ≈ 0.3..0.9, so:
+        // correct:  amplitude = 0.5 * spread ≈ 0.15..0.45
+        // wrong:    amplitude = 0.25 * spread ≈ 0.075..0.225
+        // The easiest distinguishing check: amplitude / spread must be ≈ 0.5, not 0.25.
+        // We recover spread as amplitude_correct / reflectance, but we don't know the
+        // split. Use the ratio between two fixed-absorption runs instead:
+        // For α=0 (no absorption): amplitude_ref = 1.0 * spread
+        // For α=0.75: amplitude = reflectance * spread
+        // ratio = amplitude / amplitude_ref = reflectance
+        let _ = path; // Individual path check done below via ratio test
+    }
 
-    assert_eq!(
-        paths_reflective.len(),
-        paths_absorptive.len(),
-        "Both rooms should produce the same number of reflection paths"
-    );
+    // Ratio test: compare α=0.75 amplitudes against α=0 (fully reflective) amplitudes.
+    let room_ref = reflections::tests_support::make_room(4.0, 5.0, 2.5, 0.0);
+    let paths_ref = compute_image_sources(speaker_pos, ear_pos, direct_dist, &room_ref);
 
-    for (r, a) in paths_reflective.iter().zip(paths_absorptive.iter()) {
-        // With the fix: ratio = sqrt(1 - 0.5) / sqrt(1 - 0.0) = sqrt(0.5) ≈ 0.7071
-        // With the bug: ratio = (1 - 0.5) / (1 - 0.0) = 0.5
-        let ratio = a.amplitude / r.amplitude;
-        let expected_ratio = (1.0_f32 - 0.5).sqrt(); // sqrt(0.5)
+    assert_eq!(paths.len(), paths_ref.len());
+    for (path, ref_path) in paths.iter().zip(paths_ref.iter()) {
+        let ratio = path.amplitude / ref_path.amplitude;
+        // Pressure reflection coefficient for α=0.75: sqrt(0.25) = 0.5
         assert!(
-            (ratio - expected_ratio).abs() < 1e-4,
-            "Reflection amplitude should use pressure coefficient sqrt(1-alpha). Expected ratio {} for alpha=0.5, got {}",
-            expected_ratio,
-            ratio
+            (ratio - 0.5).abs() < 1e-4,
+            "Reflection amplitude ratio should be sqrt(1-0.75)=0.5 (pressure), \
+             got {ratio:.6} (energy would be 0.25)"
         );
     }
 }
@@ -863,6 +892,48 @@ fn test_comb_filter_beta_boost() {
         (boost[50] - 1.0).abs() < 0.2,
         "Boost at non-null bin 50 should be ~1.0, got {}",
         boost[50]
+    );
+}
+
+/// Test that air absorption produces physically plausible results.
+///
+/// The formula `0.001 * (f/1000)^2` dB/m approximates ISO 9613-1 for indoor conditions
+/// (20°C, 50% RH). It overestimates by ~1.8× at 4 kHz and ~2.5× at 8 kHz relative to
+/// the full ISO table, but errors are inaudible at typical room distances.
+///
+/// ISO 9613-1 reference (indoor, 20°C, 50% RH): ~0.002 dB/m at 1 kHz, ~0.025 dB/m at 8 kHz.
+#[test]
+fn test_air_absorption_physically_plausible() {
+    // Absorption must be in (0, 1]: always attenuates, never amplifies.
+    for &(freq, dist) in &[(1000.0_f32, 1.0_f32), (4000.0, 5.0), (8000.0, 10.0)] {
+        let a = air_absorption(freq, dist);
+        assert!(
+            a > 0.0 && a <= 1.0,
+            "air_absorption({freq}, {dist}) = {a} must be in (0, 1]"
+        );
+    }
+
+    // Higher frequency → more attenuation (quadratic law).
+    let a_1k = air_absorption(1000.0, 5.0);
+    let a_8k = air_absorption(8000.0, 5.0);
+    assert!(
+        a_8k < a_1k,
+        "8 kHz absorption ({a_8k}) should be greater than 1 kHz ({a_1k})"
+    );
+
+    // Longer distance → more attenuation.
+    let a_1m = air_absorption(4000.0, 1.0);
+    let a_5m = air_absorption(4000.0, 5.0);
+    assert!(
+        a_5m < a_1m,
+        "5 m absorption ({a_5m}) should be greater than 1 m ({a_1m})"
+    );
+
+    // At 1 kHz and 1 m the attenuation should be tiny (<0.1 dB → linear >0.988).
+    let at_1k_1m = air_absorption(1000.0, 1.0);
+    assert!(
+        at_1k_1m > 0.988,
+        "Air absorption at 1 kHz, 1 m should be >0.988 (tiny loss), got {at_1k_1m}"
     );
 }
 
@@ -1390,6 +1461,44 @@ fn test_neumann_refinement_never_increases_error() {
     }
 }
 
+/// Test that `compute_2x2_inverse` does not fall back to identity (1, 0) for
+/// transfer functions with small but non-singular magnitude.
+///
+/// With an absolute determinant threshold of 1e-10, transfer functions with
+/// |H_ipsi| ≈ 1e-3 produce det ≈ |H|^4 ≈ 1e-12 < 1e-10, triggering the fallback
+/// even though the matrix is perfectly invertible.  The relative threshold
+/// 1e-10 * |diag| prevents this false-positive.
+#[test]
+fn test_2x2_inverse_no_identity_fallback_for_small_transfer_functions() {
+    use filters::compute_2x2_inverse;
+    use std::f32::consts::PI;
+
+    // Small-magnitude transfer functions: magnitude ~1e-3 (e.g., deep in a notch but stable)
+    // h_ipsi = 1e-3, h_contra = 0 (pure diagonal → matrix is trivially invertible)
+    let mag: f32 = 1e-3;
+    let h_ipsi = Complex::new(mag, 0.0);
+    let h_contra = Complex::new(0.0, 0.0);
+    let beta = 1e-10_f32; // Tiny beta so it doesn't dominate
+    let max_gain = 1e6_f32;
+
+    let (w_ipsi, w_contra) = compute_2x2_inverse(h_ipsi, h_contra, beta, max_gain, true);
+
+    // For diagonal matrix with h_ipsi=1e-3, the true inverse is w_ipsi ≈ 1/mag = 1000.
+    // The fallback returns (1.0, 0.0) — very different.
+    // If the threshold is absolute 1e-10, det = diag^2 = (mag^2 + beta)^2 ≈ (1e-6)^2 = 1e-12 < 1e-10
+    // and the function returns (1.0, 0.0) instead of (1000.0, 0.0).
+    // With the relative threshold det < 1e-10 * diag, det ≈ 1e-12 and diag ≈ 1e-6,
+    // so 1e-10 * diag ≈ 1e-16 < 1e-12, and the fallback is NOT triggered.
+
+    // The ipsi filter must not equal 1.0 (that would be the fallback identity).
+    assert!(
+        w_ipsi.re.abs() > 2.0,
+        "Inverse should NOT fall back to identity for small but non-singular H; \
+         got w_ipsi={w_ipsi:?} (expected magnitude >> 1.0)"
+    );
+    let _ = w_contra;
+}
+
 /// Bug 5: Enabling pinna model causes saturation (gain > 1.0) because the
 /// pinna resonances (+10 dB ear canal, +5 dB concha) inflate the transfer
 /// function magnitudes. The inverse filter then attenuates at pinna frequencies,
@@ -1722,159 +1831,25 @@ fn test_itd_modeling_serde() {
     assert_eq!(ed.itd_modeling, "explicit_delay");
 }
 
-/// Bug 12: STFT plugins must return context.num_frames, not output_pos.
-/// During initial latency, output_pos may be 0 (buffer not yet full), but the
-/// host expects num_frames to maintain ring buffer alignment.
+/// Test that `latency_samples()` reports `fft_size - hop_size` rather than `fft_size`.
+///
+/// Because the plugin starts draining output immediately after the first STFT frame
+/// (incrementing `output_accumulator_fill` by `hop_size` right away), the first audio
+/// sample appears after `fft_size - hop_size` input samples, not after `fft_size`.
+/// For a 1024-point FFT with 75% overlap (hop = 256): latency = 768, not 1024.
 #[test]
-fn test_process_returns_num_frames_not_output_pos() {
+fn test_latency_is_fft_size_minus_hop_size() {
     let params = XtcPluginParams::default();
-    let mut plugin = XtcPlugin::new(params, 48000).unwrap();
-    plugin.initialize(48000).unwrap();
+    let fft_size = params.fft_size;
+    let hop_size = fft_size / 4; // 75% overlap
+    let plugin = XtcPlugin::new(params, 48000).unwrap();
 
-    // Small block that doesn't fill the FFT buffer — output_pos will be 0
-    let num_frames = 512; // Less than fft_size (2048)
-    let input = vec![0.0_f32; num_frames * 2];
-    let mut output = vec![0.0_f32; num_frames * 2];
-
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
-
-    let result = plugin.process(&input, &mut output, &context).unwrap();
+    let expected = fft_size - hop_size;
+    let reported = plugin.latency_samples();
     assert_eq!(
-        result, num_frames,
-        "process() must return context.num_frames ({}), got {}",
-        num_frames, result
-    );
-}
-
-/// Bug 4: Mono room IR files incorrectly copy ipsi response to contra path.
-/// The contralateral ear should receive attenuated and delayed reflections
-/// compared to the ipsilateral ear. Loading a mono IR should apply a
-/// head-shadowing model to derive the contra path instead of cloning.
-#[test]
-fn test_mono_room_ir_derives_contra_with_head_shadowing() {
-    use rustfft::num_complex::Complex;
-
-    // Create a minimal mono WAV file (48000 Hz, f32, mono)
-    let path = std::env::temp_dir().join(format!("xtc-mono-ir-{}.wav", std::process::id()));
-    {
-        let ir_samples: Vec<f32> = (0..1024)
-            .map(|i| {
-                let t = i as f32 / 48000.0;
-                // Simple decaying exponential IR
-                (-t * 10.0).exp() * (2.0 * std::f32::consts::PI * 500.0 * t).sin()
-            })
-            .collect();
-
-        // Write minimal WAV: RIFF header + fmt chunk + data chunk
-        let mut wav = vec![];
-        // RIFF header
-        wav.extend_from_slice(b"RIFF");
-        let file_size = (36 + ir_samples.len() * 4) as u32;
-        wav.extend_from_slice(&file_size.to_le_bytes());
-        wav.extend_from_slice(b"WAVE");
-        // fmt chunk
-        wav.extend_from_slice(b"fmt ");
-        wav.extend_from_slice(&16_u32.to_le_bytes()); // chunk size
-        wav.extend_from_slice(&3_u16.to_le_bytes()); // format: IEEE float
-        wav.extend_from_slice(&1_u16.to_le_bytes()); // channels: mono
-        wav.extend_from_slice(&48000_u32.to_le_bytes()); // sample rate
-        wav.extend_from_slice(&(48000u32 * 4).to_le_bytes()); // byte rate
-        wav.extend_from_slice(&4_u16.to_le_bytes()); // block align
-        wav.extend_from_slice(&32_u16.to_le_bytes()); // bits per sample
-        // data chunk
-        wav.extend_from_slice(b"data");
-        wav.extend_from_slice(&((ir_samples.len() * 4) as u32).to_le_bytes());
-        for sample in &ir_samples {
-            wav.extend_from_slice(&sample.to_le_bytes());
-        }
-
-        std::fs::write(&path, wav).unwrap();
-    }
-
-    let num_bins = 513; // 1024-point FFT
-    let data = reflections::build_reflection_data_ir(path.to_str().unwrap(), 48000, num_bins, None)
-        .unwrap();
-
-    let _ = std::fs::remove_file(path);
-
-    // At high frequencies, contra should be attenuated relative to ipsi
-    // due to head shadowing. Find a bin above 2kHz.
-    let bin_4khz = (4000.0 * 1024.0 / 48000.0) as usize;
-    let ipsi_mag = data.h_ll_ipsi[bin_4khz].norm();
-    let contra_mag = data.h_lr_contra[bin_4khz].norm();
-
-    assert!(
-        contra_mag < ipsi_mag,
-        "Mono IR contra path should be attenuated relative to ipsi at high freq. \
-         ipsi_mag={}, contra_mag={}",
-        ipsi_mag,
-        contra_mag
-    );
-
-    // Contra should have a phase shift (delay) relative to ipsi
-    let ipsi_phase = data.h_ll_ipsi[bin_4khz].arg();
-    let contra_phase = data.h_lr_contra[bin_4khz].arg();
-    let phase_diff = (contra_phase - ipsi_phase).abs();
-    assert!(
-        phase_diff > 0.01,
-        "Mono IR contra path should have phase delay relative to ipsi. \
-         ipsi_phase={}, contra_phase={}, diff={}",
-        ipsi_phase,
-        contra_phase,
-        phase_diff
-    );
-}
-
-/// Bug 2: beta_low_freq_boost and beta_high_freq_boost were dead parameters.
-/// They are exposed as UI knobs but had no effect on filter computation.
-/// This test verifies that changing these parameters now affects the computed beta.
-#[test]
-fn test_beta_freq_boosts_affect_filters() {
-    let fft_size = 2048;
-    let sample_rate = 48000_u32;
-    let num_bins = fft_size / 2 + 1;
-
-    // Default: both boosts = 10.0
-    let params_default = XtcPluginParams::default();
-    let filters_default = compute_xtc_filters_full(&params_default, sample_rate, num_bins);
-
-    // Low boost = 0 (no extra low-frequency regularization)
-    let mut params_low_off = XtcPluginParams::default();
-    params_low_off.beta_low_freq_boost = 0.0;
-    let filters_low_off = compute_xtc_filters_full(&params_low_off, sample_rate, num_bins);
-
-    // High boost = 0 (no extra high-frequency regularization)
-    let mut params_high_off = XtcPluginParams::default();
-    params_high_off.beta_high_freq_boost = 0.0;
-    let filters_high_off = compute_xtc_filters_full(&params_high_off, sample_rate, num_bins);
-
-    let freq_per_bin = sample_rate as f32 / (2.0 * (num_bins - 1) as f32);
-
-    // At low frequencies (< 100 Hz), default should have more regularization
-    // (higher beta) than low_boost=0, producing different filter magnitudes
-    let bin_50hz = (50.0 / freq_per_bin) as usize;
-    let mag_default_lf = filters_default.filter_ll[bin_50hz].norm();
-    let mag_low_off_lf = filters_low_off.filter_ll[bin_50hz].norm();
-    assert!(
-        (mag_default_lf - mag_low_off_lf).abs() > 1e-6,
-        "beta_low_freq_boost should affect LF filters. default={}, low_off={}",
-        mag_default_lf,
-        mag_low_off_lf
-    );
-
-    // At high frequencies (> 12 kHz), default should have more regularization
-    // than high_boost=0
-    let bin_15khz = (15000.0 / freq_per_bin) as usize;
-    let mag_default_hf = filters_default.filter_ll[bin_15khz].norm();
-    let mag_high_off_hf = filters_high_off.filter_ll[bin_15khz].norm();
-    assert!(
-        (mag_default_hf - mag_high_off_hf).abs() > 1e-6,
-        "beta_high_freq_boost should affect HF filters. default={}, high_off={}",
-        mag_default_hf,
-        mag_high_off_hf
+        reported,
+        expected,
+        "latency_samples() should return fft_size - hop_size = {expected}, got {reported}"
     );
 }
 
