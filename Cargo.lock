@@ -10723,7 +10723,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-hal-input"
-version = "0.5.83"
+version = "0.5.84"
 dependencies = [
  "driver-hal",
  "log",

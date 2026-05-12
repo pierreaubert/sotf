@@ -111,6 +111,8 @@ impl Plugin for HalInputPlugin {
             .with_description("Reads audio from macOS apps via HAL driver")
     }
 
+
+
     fn input_channels(&self) -> usize {
         0 // Source plugin - no input
     }
@@ -121,8 +123,8 @@ impl Plugin for HalInputPlugin {
 
     fn parameters(&self) -> Vec<Parameter> {
         vec![
-            Parameter::new_int("channels", "Output Channels", 2, 1, 16)
-                .with_description("Number of output channels")
+            Parameter::new_int("input_channels", "Input Channels", 2, 1, 16)
+                .with_description("Number of HAL input channels (structural — set at construction time)")
                 .with_group("Configuration")
                 .with_importance(ParameterImportance::Critical),
             Parameter::new_int(
@@ -157,12 +159,15 @@ impl Plugin for HalInputPlugin {
                 let hal_rate = reader.sample_rate();
                 if hal_rate != sample_rate {
                     self.sample_rate_mismatch = true;
-                    log::warn!(
+                    // No in-crate resampler is available; playing at mismatched rates
+                    // produces incorrect pitch and duration.  Fail loudly so the caller
+                    // can either configure the HAL to match the engine rate or insert a
+                    // Resampler plugin upstream.
+                    return Err(format!(
                         "[HAL Input] Sample rate mismatch: HAL native rate {} Hz != engine rate {} Hz. \
-                         Audio quality may be degraded without resampling.",
-                        hal_rate,
-                        sample_rate
-                    );
+                         Configure the HAL device to {} Hz or insert a resampler plugin.",
+                        hal_rate, sample_rate, sample_rate
+                    ));
                 }
             }
         }
@@ -176,29 +181,32 @@ impl Plugin for HalInputPlugin {
     }
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        let param_channels = ParameterId::from("channels");
+        let param_input_channels = ParameterId::from("input_channels");
 
-        if id == param_channels {
-            if let Some(channels) = value.as_int() {
-                if !(1..=16).contains(&channels) {
-                    return Err("Channels must be between 1 and 16".to_string());
-                }
-                self.channels = channels as usize;
-                Ok(())
-            } else {
-                Err("Channels parameter must be an integer".to_string())
-            }
+        if id == param_input_channels {
+            // `input_channels` is a structural parameter: the HalInputReader is created
+            // during new() with a fixed channel count.  Changing it at runtime would
+            // desync the reader's channel count from the plugin's reported output_channels,
+            // causing buffer-size mismatches or channel misalignment.
+            //
+            // Callers must construct a new plugin instance to change the channel count.
+            let _ = value;
+            Err(
+                "input_channels is a structural parameter and cannot be changed after construction. \
+                 Create a new HalInputPlugin with the desired channel count."
+                    .to_string(),
+            )
         } else {
             Err(format!("Unknown parameter: {}", id))
         }
     }
 
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        let param_channels = ParameterId::from("channels");
+        let param_input_channels = ParameterId::from("input_channels");
         let param_underrun = ParameterId::from("underrun_count");
         let param_sr_mismatch = ParameterId::from("sample_rate_mismatch");
 
-        if id == &param_channels {
+        if id == &param_input_channels {
             Some(ParameterValue::Int(self.channels as i32))
         } else if id == &param_underrun {
             Some(ParameterValue::Int(
@@ -244,14 +252,20 @@ impl Plugin for HalInputPlugin {
                     log::trace!("[AUDIO FLOW] HAL->Daemon: no frames available (underrun)");
                 }
 
-                // Zero-fill any remaining samples if we didn't read enough
+                // Zero-fill any remaining samples if we didn't read enough.
+                // Only count as an underrun when we received *some* samples but fewer
+                // than expected (partial read).  A fully empty read (0 samples) is
+                // normal during device startup or device switching and must not pollute
+                // the diagnostic counter — it is logged at trace level above.
                 if samples_read < output.len() {
-                    self.underrun_counter.fetch_add(1, Ordering::Relaxed);
-                    log::debug!(
-                        "[HAL Input] Buffer underrun: read {} samples, expected {}",
-                        samples_read,
-                        output.len()
-                    );
+                    if samples_read > 0 {
+                        self.underrun_counter.fetch_add(1, Ordering::Relaxed);
+                        log::debug!(
+                            "[HAL Input] Buffer underrun: read {} samples, expected {}",
+                            samples_read,
+                            output.len()
+                        );
+                    }
                     output[samples_read..].fill(0.0);
                 }
             } else {
@@ -265,5 +279,150 @@ impl Plugin for HalInputPlugin {
         }
 
         Ok(context.num_frames)
+    }
+}
+
+// ============================================================================
+// Tests (platform-independent, no `hal` feature required)
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sotf_host::parameters::ParameterValue;
+    use sotf_host::plugin::{Plugin, ProcessContext};
+
+    // -----------------------------------------------------------------------
+    // Helper: build a plugin struct directly without going through new() so
+    // tests run on non-macOS / without the `hal` feature.
+    // -----------------------------------------------------------------------
+    fn stub_plugin(channels: usize) -> HalInputPlugin {
+        HalInputPlugin {
+            channels,
+            underrun_counter: Arc::new(AtomicU64::new(0)),
+            sample_rate_mismatch: false,
+            #[cfg(all(target_os = "macos", feature = "hal"))]
+            reader: None,
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Bug fix 1: parameter name mismatch
+    // The registered parameter ID must be "input_channels" (matching params.rs),
+    // NOT "channels".
+    // -----------------------------------------------------------------------
+    #[test]
+    fn parameters_exposes_input_channels_id() {
+        let plugin = stub_plugin(2);
+        let params = plugin.parameters();
+        let ids: Vec<&str> = params.iter().map(|p| p.id.0.as_str()).collect();
+        assert!(
+            ids.contains(&"input_channels"),
+            "expected parameter id 'input_channels', got: {:?}",
+            ids
+        );
+        assert!(
+            !ids.contains(&"channels"),
+            "stale 'channels' id must not appear, got: {:?}",
+            ids
+        );
+    }
+
+    #[test]
+    fn get_parameter_input_channels_returns_value() {
+        let plugin = stub_plugin(4);
+        let id = ParameterId::from("input_channels");
+        let val = plugin.get_parameter(&id);
+        assert_eq!(val, Some(ParameterValue::Int(4)));
+    }
+
+    #[test]
+    fn get_parameter_old_channels_id_returns_none() {
+        let plugin = stub_plugin(2);
+        let id = ParameterId::from("channels");
+        let val = plugin.get_parameter(&id);
+        assert_eq!(
+            val, None,
+            "old 'channels' id must return None after rename to 'input_channels'"
+        );
+    }
+
+    #[test]
+    fn set_parameter_input_channels_id_is_rejected_post_construction() {
+        // After construction the channel count is structural — changing it
+        // without reinitializing the reader would desync channel count vs
+        // reader config. set_parameter must return Err.
+        let mut plugin = stub_plugin(2);
+        let id = ParameterId::from("input_channels");
+        let result = plugin.set_parameter(id, ParameterValue::Int(6));
+        assert!(
+            result.is_err(),
+            "set_parameter for 'input_channels' must return Err (read-only post-construction)"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Bug fix 2: underrun counter only on partial reads (samples_read > 0)
+    // A fully empty read (0 samples) during startup must NOT increment.
+    // -----------------------------------------------------------------------
+    #[test]
+    fn underrun_count_not_incremented_on_fully_empty_read() {
+        // The non-hal path fills the buffer with silence (analogous to a
+        // fully-empty HAL read).  The underrun counter must stay at 0.
+        let ctx = ProcessContext {
+            num_frames: 4,
+            sample_rate: 48000,
+        };
+        let input: Vec<f32> = vec![];
+        let mut output: Vec<f32> = vec![0.0f32; ctx.num_frames * 2];
+        let mut p = stub_plugin(2);
+        let _ = p.process(&input, &mut output, &ctx);
+        assert_eq!(
+            p.underrun_count(),
+            0,
+            "empty read (non-hal silence fill) must not count as underrun"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Bug fix 3: initialize() returns Err on sample rate mismatch (hal only)
+    // On non-hal builds initialize() must succeed regardless of sample_rate.
+    // -----------------------------------------------------------------------
+    #[test]
+    fn initialize_succeeds_on_non_hal_build() {
+        let mut p = stub_plugin(2);
+        // On non-hal builds any sample rate is fine — no reader to check against.
+        assert!(p.initialize(44100).is_ok());
+        assert!(p.initialize(96000).is_ok());
+    }
+
+    // -----------------------------------------------------------------------
+    // process() returns num_frames even on non-hal (silence) path
+    // -----------------------------------------------------------------------
+    #[test]
+    fn process_returns_num_frames() {
+        let ctx = ProcessContext {
+            num_frames: 8,
+            sample_rate: 48000,
+        };
+        let input: Vec<f32> = vec![];
+        let mut output: Vec<f32> = vec![0.0f32; ctx.num_frames * 2];
+        let mut p = stub_plugin(2);
+        let result = p.process(&input, &mut output, &ctx);
+        assert_eq!(result, Ok(8));
+    }
+
+    #[test]
+    fn process_rejects_wrong_output_buffer_size() {
+        let ctx = ProcessContext {
+            num_frames: 4,
+            sample_rate: 48000,
+        };
+        let input: Vec<f32> = vec![];
+        // Buffer too small: 7 instead of 4*2=8
+        let mut output: Vec<f32> = vec![0.0f32; 7];
+        let mut p = stub_plugin(2);
+        let result = p.process(&input, &mut output, &ctx);
+        assert!(result.is_err(), "wrong buffer size must return Err");
     }
 }
