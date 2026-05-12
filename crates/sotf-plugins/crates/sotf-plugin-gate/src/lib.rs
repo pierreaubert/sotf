@@ -418,7 +418,7 @@ impl GatePlugin {
 
 impl InPlacePlugin for GatePlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Gate", "1.2.0", "SotF")
+        PluginInfo::new("Gate", "1.3.0", "SotF")
     }
     fn channels(&self) -> usize {
         self.channels
@@ -552,10 +552,12 @@ impl InPlacePlugin for GatePlugin {
                     atten_target
                 };
 
+                // target > envelope means attenuation is increasing (gate closing) → release.
+                // target < envelope means attenuation is decreasing (gate opening) → attack.
                 let coeff = if target > self.envelope[0] {
-                    self.attack_coeff
+                    self.release_coeff // closing
                 } else {
-                    self.release_coeff
+                    self.attack_coeff  // opening
                 };
                 self.envelope[0] = target + coeff * (self.envelope[0] - target);
                 let gain = (1.0 - mix) + mix * fast_pow10(-self.envelope[0] / DB_CONVERSION_FACTOR);
@@ -597,10 +599,12 @@ impl InPlacePlugin for GatePlugin {
                         atten_target
                     };
 
+                    // target > envelope means attenuation is increasing (gate closing) → release.
+                    // target < envelope means attenuation is decreasing (gate opening) → attack.
                     let coeff = if target > self.envelope[ch] {
-                        self.attack_coeff
+                        self.release_coeff // closing
                     } else {
-                        self.release_coeff
+                        self.attack_coeff  // opening
                     };
                     self.envelope[ch] = target + coeff * (self.envelope[ch] - target);
                     let gain =
@@ -619,7 +623,14 @@ impl InPlacePlugin for GatePlugin {
         self.cache_update_counter += 1;
         if self.cache_update_counter >= 10 {
             self.cache_update_counter = 0;
-            let is_open = self.envelope.iter().any(|&a| a < 0.1);
+            // In linked mode only envelope[0] is updated; envelope[1..] stay at 0.0
+            // (their init value), so using any() would always return true even when
+            // the gate is fully closed.  Use envelope[0] as the sole authority.
+            let is_open = if self.link_channels {
+                self.envelope[0] < 0.1
+            } else {
+                self.envelope.iter().any(|&a| a < 0.1)
+            };
             if self.link_channels {
                 self.monitoring_levels.fill(self.envelope[0]);
             } else {
@@ -630,7 +641,11 @@ impl InPlacePlugin for GatePlugin {
             });
         }
 
-        flush_denormals_inplace(buffer);
+        // Only flush denormals in the audio output region.  When external sidechain
+        // is active the buffer is wider (stride = channels * 2): writing to the
+        // sidechain half is harmless but inconsistent with read-only sidechain usage.
+        let audio_len = num_frames * self.channels;
+        flush_denormals_inplace(&mut buffer[..audio_len]);
         Ok(num_frames)
     }
     fn latency_samples(&self) -> usize {
