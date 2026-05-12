@@ -7770,7 +7770,7 @@ dependencies = [
 
 [[package]]
 name = "plugins-denoiser"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "nnnoiseless",
 ]
@@ -10878,7 +10878,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-speech-denoiser"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "hound",
  "plugins-denoiser",

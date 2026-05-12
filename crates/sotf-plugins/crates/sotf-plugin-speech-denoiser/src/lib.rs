@@ -88,9 +88,13 @@ impl InPlacePlugin for SpeechDenoiserPlugin {
         param_bridge::get_parameter(SP, id, |i| self.param_value(i))
     }
 
+    /// Initialize the plugin at the given sample rate.
+    ///
+    /// Returns `Err` if `sample_rate != 48000`; RNNoise is hard-coded for
+    /// 48 kHz and will silently corrupt the frequency response at any other
+    /// rate.
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
-        self.inner.initialize(sample_rate, self.channels);
-        Ok(())
+        self.inner.initialize(sample_rate, self.channels)
     }
 
     fn reset(&mut self) {
@@ -103,26 +107,42 @@ impl InPlacePlugin for SpeechDenoiserPlugin {
         context: &ProcessContext,
     ) -> PluginResult<usize> {
         if self.enabled {
-            let max_in_place_frames = self.inner.max_in_place_frames();
-            if context.num_frames > max_in_place_frames {
+            // Validate buffer length before touching any index.
+            let expected_len = context.num_frames * self.channels;
+            if buffer.len() < expected_len {
                 return Err(format!(
-                    "Block too large for RNNoise speech denoiser: {} frames exceeds prepared safe maximum {}",
-                    context.num_frames, max_in_place_frames
+                    "Buffer too small: {} < {} (num_frames={} * channels={})",
+                    buffer.len(),
+                    expected_len,
+                    context.num_frames,
+                    self.channels
                 ));
             }
+
+            // RNNoise processes in fixed 480-sample frames.  Arbitrary block
+            // sizes cause periodic zero-padding dropouts; reject upfront.
+            const RNNOISE_FRAME_SIZE: usize = 480;
+            if !context.num_frames.is_multiple_of(RNNOISE_FRAME_SIZE) {
+                return Err(format!(
+                    "RNNoise requires block sizes that are a multiple of {}; got {}",
+                    RNNOISE_FRAME_SIZE, context.num_frames
+                ));
+            }
+
             self.inner
                 .process(buffer, context.num_frames, self.channels);
-            Ok(context.num_frames)
-        } else {
-            Ok(context.num_frames)
         }
+        Ok(context.num_frames)
     }
 
+    /// Returns a fixed latency of 480 samples regardless of the `enabled`
+    /// flag.
+    ///
+    /// Plugin hosts require latency to remain constant after initialisation.
+    /// Returning 0 when disabled would cause phase cancellation in parallel
+    /// processing chains and misalignment with other latency-compensated
+    /// tracks.
     fn latency_samples(&self) -> usize {
-        if self.enabled {
-            self.inner.latency_samples()
-        } else {
-            0
-        }
+        self.inner.latency_samples()
     }
 }
