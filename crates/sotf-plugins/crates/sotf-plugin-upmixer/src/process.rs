@@ -35,12 +35,12 @@ impl UpmixerPlugin {
                 let l = self.freq_domain_left[i];
                 let r = self.freq_domain_right[i];
                 let current_power = l.norm_sqr() + r.norm_sqr();
-                let prev_power = self.prev_magnitude_spectrum[i];
+                let prev_power = self.prev_power_spectrum[i];
                 let diff = current_power - prev_power;
                 if diff > 0.0 {
                     flux += diff;
                 }
-                self.prev_magnitude_spectrum[i] = current_power;
+                self.prev_power_spectrum[i] = current_power;
             }
 
             flux /= spectrum_size as f32;

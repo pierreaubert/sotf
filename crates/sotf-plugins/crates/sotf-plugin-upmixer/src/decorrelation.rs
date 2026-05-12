@@ -204,7 +204,14 @@ impl UpmixerPlugin {
                 0.08_f32 * hf_ratio * mid_reduction
             };
 
-            let phase_warp = (self.decor_lfo_phase + 0.37_f32 * i as f32).sin() * depth;
+            // Normalize the per-bin phase offset by the number of bins so the
+            // spatial oscillation pattern is FFT-size invariant. Without this,
+            // a 512-point FFT produces a different decorrelation pattern than
+            // a 2048-point FFT for the same audio content.
+            let phase_warp = (self.decor_lfo_phase
+                + 0.37_f32 * std::f32::consts::TAU * (i as f32 / half as f32))
+                .sin()
+                * depth;
 
             let base_l = self.decor_base_phases_left[i];
             let base_r = self.decor_base_phases_right[i];

@@ -626,10 +626,16 @@ impl UpmixerPlugin {
             }
         }
 
-        // Cross-fade decorrelation filters during mode/bypass transitions
+        // Cross-fade decorrelation filters during mode/bypass transitions.
+        // 25 blocks at 48kHz/2048/50%-overlap ≈ 535ms, which is long enough to
+        // avoid audible swish/phase artifacts from the abrupt all-pass phase change.
+        // A cosine crossfade shape (equal-power) avoids the click at t=0 that a
+        // linear ramp produces when the two phase responses differ widely.
         if self.decorrelation_crossfade_remaining > 0 {
-            let total = 5.0_f32;
-            let t = 1.0 - (self.decorrelation_crossfade_remaining as f32 / total);
+            let total = 25.0_f32;
+            let t_linear = 1.0 - (self.decorrelation_crossfade_remaining as f32 / total);
+            // Equal-power crossfade shape
+            let t = 0.5 - 0.5 * (std::f32::consts::PI * t_linear).cos();
             for ch in 0..num_ch {
                 if ch < self.prev_blended_filters_for_crossfade.len() {
                     let prev = &self.prev_blended_filters_for_crossfade[ch];

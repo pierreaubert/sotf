@@ -298,11 +298,6 @@ pub struct UpmixerPlugin {
     // Temporary buffer for height gain smoothing (avoid real-time allocation)
     height_band_gains_temp: Vec<f32>,
 
-    // Energy correction smoothing for L/R decomposition (eliminates ERB band-edge gain jumps)
-    energy_correction_per_bin: Vec<f32>,
-    energy_correction_temp: Vec<f32>,
-    energy_correction_prev: Vec<f32>,
-
     // Precomputed per-bin frequency weights for height mask (hf_ratio^0.7)
     // Depends only on sample_rate, bandpass_hz, height_hf_cap_hz — recomputed in initialize()
     height_freq_weights: Vec<f32>,
@@ -453,8 +448,8 @@ pub struct UpmixerPlugin {
     hr_transient_env: f32,
     height_transient_env_slow: f32,
     hr_energy_smooth: f32,
-    /// Previous frame magnitude spectrum for spectral flux calculation
-    prev_magnitude_spectrum: Vec<f32>,
+    /// Previous frame power spectrum (squared magnitude) for spectral flux calculation
+    prev_power_spectrum: Vec<f32>,
     /// Smoothed spectral flux for transient normalization
     spectral_flux_smooth: f32,
 
@@ -778,10 +773,6 @@ impl UpmixerPlugin {
             height_band_gains_prev: vec![frequency_domain::HEIGHT_MASK_FLOOR; spectrum_size],
             height_band_gains_temp: vec![0.0; spectrum_size],
 
-            energy_correction_per_bin: vec![1.0; spectrum_size],
-            energy_correction_temp: vec![1.0; spectrum_size],
-            energy_correction_prev: vec![1.0; spectrum_size],
-
             height_freq_weights: vec![0.0; spectrum_size],
 
             safety_cap_linear: if default_safety_cap_db() >= 0.0 {
@@ -877,7 +868,7 @@ impl UpmixerPlugin {
             hr_transient_env: 0.0,
             height_transient_env_slow: 0.0,
             hr_energy_smooth: 0.0,
-            prev_magnitude_spectrum: vec![0.0; spectrum_size],
+            prev_power_spectrum: vec![0.0; spectrum_size],
             spectral_flux_smooth: 0.0,
 
             // Intensity-vector DOA state (will be resized in calculate_erb_bands)
@@ -1212,10 +1203,11 @@ impl UpmixerPlugin {
     pub fn from_params(params: UpmixerPluginParams) -> Self {
         // Low-latency mode halves the FFT size from 2048 to 1024 (21ms vs 43ms at 48kHz).
         // If the user explicitly set a custom fft_size, low_latency overrides it.
+        // Round up to the nearest power of two to satisfy the invariant required by new().
         let fft_size = if params.low_latency {
             1024
         } else {
-            params.fft_size
+            params.fft_size.next_power_of_two()
         };
         let mut plugin = Self::new(
             fft_size,
@@ -1369,11 +1361,8 @@ impl UpmixerPlugin {
         self.height_band_gains = vec![frequency_domain::HEIGHT_MASK_FLOOR; spectrum_size];
         self.height_band_gains_prev = vec![frequency_domain::HEIGHT_MASK_FLOOR; spectrum_size];
         self.height_band_gains_temp = vec![0.0; spectrum_size];
-        self.energy_correction_per_bin = vec![1.0; spectrum_size];
-        self.energy_correction_temp = vec![1.0; spectrum_size];
-        self.energy_correction_prev = vec![1.0; spectrum_size];
         self.height_freq_weights = vec![0.0; spectrum_size];
-        self.prev_magnitude_spectrum = vec![0.0; spectrum_size];
+        self.prev_power_spectrum = vec![0.0; spectrum_size];
         self.height_prev_magnitude = vec![0.0; spectrum_size];
         self.height_flux_gate = vec![0.0; spectrum_size];
         self.blended_decorrelation_filters = vec![vec![Complex::new(1.0, 0.0); spectrum_size]; nch];
@@ -1573,7 +1562,7 @@ impl Plugin for UpmixerPlugin {
                         ch_filters.fill(Complex::new(1.0, 0.0));
                     }
                 }
-                self.decorrelation_crossfade_remaining = 5;
+                self.decorrelation_crossfade_remaining = 25;
                 self.generate_decorrelation_filters();
                 self.prev_decorrelation_strength = -1.0;
             }
@@ -1613,7 +1602,7 @@ impl Plugin for UpmixerPlugin {
                         ch_filters.fill(Complex::new(1.0, 0.0));
                     }
                 }
-                self.decorrelation_crossfade_remaining = 5;
+                self.decorrelation_crossfade_remaining = 25;
                 self.generate_decorrelation_filters();
                 self.prev_decorrelation_strength = -1.0;
             }
@@ -1679,7 +1668,7 @@ impl Plugin for UpmixerPlugin {
 
         // Initialize spectral flux buffers
         let spectrum_size = self.fft_size / 2 + 1;
-        self.prev_magnitude_spectrum = vec![0.0; spectrum_size];
+        self.prev_power_spectrum = vec![0.0; spectrum_size];
         self.spectral_flux_smooth = 0.0;
 
         // Initialize height spectral flux gate buffers
@@ -1840,7 +1829,7 @@ impl Plugin for UpmixerPlugin {
         self.diffuseness_initialized.fill(false);
         self.hr_transient_env = 0.0;
         self.hr_energy_smooth = 0.0;
-        self.prev_magnitude_spectrum.fill(0.0);
+        self.prev_power_spectrum.fill(0.0);
         self.spectral_flux_smooth = 0.0;
         self.doa_angle.fill(0.0);
         self.height_prev_magnitude.fill(0.0);
@@ -1862,11 +1851,6 @@ impl Plugin for UpmixerPlugin {
         self.height_band_gains_prev
             .fill(frequency_domain::HEIGHT_MASK_FLOOR);
         self.height_band_gains_temp.fill(0.0);
-
-        // Reset energy correction smoothing to unity
-        self.energy_correction_per_bin.fill(1.0);
-        self.energy_correction_temp.fill(1.0);
-        self.energy_correction_prev.fill(1.0);
 
         self.prev_safety_scale = 1.0;
         self.final_safety_scale = 1.0;
@@ -2098,6 +2082,16 @@ impl Plugin for UpmixerPlugin {
                 self.process_fft_block(&temp_input, &mut output_block);
 
                 self.temp_input_block = temp_input;
+
+                // Guard: ensure the new block fits in the ring buffer before writing.
+                // Ring capacity is 4*fft_size frames; each block adds hop_size frames.
+                debug_assert!(
+                    self.output_accumulator_fill + self.hop_size <= self.output_accumulator_mask + 1,
+                    "Main accumulator overflow: fill {} + hop {} > capacity {}",
+                    self.output_accumulator_fill,
+                    self.hop_size,
+                    self.output_accumulator_mask + 1,
+                );
 
                 // Accumulate to ring buffer (flat interleaved)
                 for i in 0..self.fft_size {
