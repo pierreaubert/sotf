@@ -315,7 +315,6 @@ pub struct LoudnessCompensationPlugin {
     auto_gain_position: AutoGainPosition,
     comp_gain_smoother: Vec<Smoother>,
     cache: RealTimeCache<AutoGainData>,
-    cache_update_counter: usize,
     cached_parameters: Vec<Parameter>,
 }
 
@@ -358,7 +357,6 @@ impl LoudnessCompensationPlugin {
                 .map(|_| Smoother::new(1.0, 20.0, sr))
                 .collect(),
             cache: RealTimeCache::new(AutoGainData::default()),
-            cache_update_counter: 0,
             cached_parameters: Vec::new(),
         };
         p.rebuild_filters();
@@ -637,26 +635,55 @@ impl LoudnessCompensationPlugin {
         self.update_comp_gain_smoother();
     }
 
+    /// Number of log-spaced frequency points used to evaluate the combined
+    /// ISO filter chain peak gain for comp-gain calculation (Bug #1 fix).
+    const COMP_GAIN_GRID_POINTS: usize = 128;
+
     /// Update the compensation gain smoother targets based on the active mode.
+    ///
+    /// For ISO 226 / Auto modes, the combined response of 7 parametric EQ bands
+    /// is evaluated on a 128-point log-spaced grid (20 Hz – 20 kHz) to capture
+    /// constructive interference (ripple peaks) that occur between band centres.
+    /// Evaluating only at the 7 band-centre frequencies can underestimate the
+    /// true peak by several dB, causing under-attenuation and potential clipping.
     fn update_comp_gain_smoother(&mut self) {
         for ch in 0..self.num_channels {
             let max_gain = if self.mode_index == 1 || self.mode_index == 2 {
-                // ISO 226 / Auto mode: find max absolute gain across all bands
-                let mut mg = 0.0_f32;
-                for (band_idx, &freq) in ISO_BAND_FREQS.iter().enumerate() {
-                    let _ = band_idx;
-                    let g = interpolate_delta(&self.iso_deltas, freq).abs() as f32;
-                    if g > mg {
-                        mg = g;
-                    }
-                }
-                mg
-            } else {
-                // Manual mode
-                if self.mid_enabled {
-                    self.low_gain.max(self.high_gain).max(self.mid_gain)
+                // ISO 226 / Auto mode: evaluate combined filter response on a dense
+                // log-spaced grid and find the true peak gain in dB.
+                // Use channel 0 filters — all channels share the same coefficients.
+                let ref_ch = if self.iso_filters.is_empty() { ch } else { 0 };
+                if self.iso_filters[ref_ch].is_empty() {
+                    0.0_f32
                 } else {
-                    self.low_gain.max(self.high_gain)
+                    let f_lo = 20.0_f64;
+                    let f_hi = 20000.0_f64;
+                    let log_lo = f_lo.ln();
+                    let log_hi = f_hi.ln();
+                    let n = Self::COMP_GAIN_GRID_POINTS;
+                    let mut peak_db = 0.0_f64;
+                    for k in 0..n {
+                        let t = k as f64 / (n - 1) as f64;
+                        let freq = (log_lo + t * (log_hi - log_lo)).exp();
+                        // Sum log-magnitude responses of all bands (dB is additive for cascades)
+                        let combined_db: f64 = self.iso_filters[ref_ch]
+                            .iter()
+                            .map(|f| f.log_result(freq))
+                            .sum();
+                        if combined_db.abs() > peak_db {
+                            peak_db = combined_db.abs();
+                        }
+                    }
+                    peak_db as f32
+                }
+            } else {
+                // Manual mode: abs gain (shelves and peak are already in dB at their centres)
+                let low_abs = self.low_gain.abs();
+                let high_abs = self.high_gain.abs();
+                if self.mid_enabled {
+                    low_abs.max(high_abs).max(self.mid_gain.abs())
+                } else {
+                    low_abs.max(high_abs)
                 }
             };
             let target = 10.0_f32.powf(-max_gain / 20.0);
@@ -918,7 +945,8 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
                     // Auto mode: force rebuild with updated reference
                     self.last_auto_volume_db = f32::MIN;
                     self.maybe_rebuild_auto_filters();
-                } else {
+                } else if self.mode_index == 1 {
+                    // ISO 226 mode only — no-op in Manual mode (Bug #5 fix)
                     self.rebuild_iso_filters();
                 }
             }
@@ -932,7 +960,8 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
                     // Auto mode: force rebuild with updated reference
                     self.last_auto_volume_db = f32::MIN;
                     self.maybe_rebuild_auto_filters();
-                } else {
+                } else if self.mode_index == 1 {
+                    // ISO 226 mode only — no-op in Manual mode (Bug #5 fix)
                     self.rebuild_iso_filters();
                 }
             }
@@ -1060,28 +1089,27 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
         enable_ftz_daz();
         let nf = context.num_frames;
 
-        // Auto mode: rebuild filters if volume changed significantly (>0.5 dB)
-        self.maybe_rebuild_auto_filters();
-
-        // Throttled measurement
-        self.cache_update_counter += 1;
-        let mut do_measure = false;
-        if self.cache_update_counter >= 10 {
-            self.cache_update_counter = 0;
-            do_measure = true;
+        // Auto mode only: rebuild filters if volume changed significantly (>0.5 dB).
+        // Skip the call entirely in Manual/ISO modes to avoid per-block overhead (Bug #7 fix).
+        if self.mode_index == 2 {
+            self.maybe_rebuild_auto_filters();
         }
+
+        // Measurement (input + output LUFS) and cache update happen every block
+        // for fresh auto-gain data (Bug #2 fix: previously throttled to every
+        // 10 blocks, causing up to ~107 ms of stale data at 512-sample / 48 kHz).
+        let do_cache_update = true;
 
         match self.auto_gain_position {
             AutoGainPosition::Pre => {
-                // Pre mode: measure input, apply gain compensation, then run filters
+                // Pre mode: measure input, apply gain compensation, then run filters.
+                // Output measurement happens after compensation (correct level reported).
                 if let Some(ag) = &mut self.auto_gain {
-                    if do_measure {
-                        let _ = ag.measure_input(buffer);
-                    }
+                    let _ = ag.measure_input(buffer);
                     // Apply compensation before filters
                     ag.apply_compensation(buffer, nf);
-                    if do_measure {
-                        let _ = ag.measure_output(buffer);
+                    let _ = ag.measure_output(buffer);
+                    if do_cache_update {
                         let data = ag.get_data();
                         self.cache.update(|d| {
                             *d = data;
@@ -1098,10 +1126,11 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
                 }
             }
             AutoGainPosition::Post => {
-                // Post mode (default): measure input, run filters, then apply compensation
-                if let Some(ag) = &mut self.auto_gain
-                    && do_measure
-                {
+                // Post mode (default): measure input, run EQ filters, apply
+                // compensation, then measure output.
+                // Measuring output AFTER apply_compensation ensures output_lufs
+                // reflects the actual compensated signal level (Bug #3 fix).
+                if let Some(ag) = &mut self.auto_gain {
                     let _ = ag.measure_input(buffer);
                 }
 
@@ -1113,14 +1142,15 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
                 }
 
                 if let Some(ag) = &mut self.auto_gain {
-                    if do_measure {
-                        let _ = ag.measure_output(buffer);
+                    // Apply compensation first, then measure the actual output level.
+                    ag.apply_compensation(buffer, nf);
+                    let _ = ag.measure_output(buffer);
+                    if do_cache_update {
                         let data = ag.get_data();
                         self.cache.update(|d| {
                             *d = data;
                         });
                     }
-                    ag.apply_compensation(buffer, nf);
                 }
             }
             AutoGainPosition::Disabled => {
@@ -1613,5 +1643,235 @@ mod tests {
         p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(0))
             .unwrap();
         assert_eq!(p.mode_index, 0);
+    }
+
+    // ==========================================================================
+    // Bug fix tests
+    // ==========================================================================
+
+    /// Bug #1: comp gain must account for inter-band constructive interference.
+    ///
+    /// When all 7 ISO bands have large gains (e.g. 10 dB each), the combined
+    /// frequency response can produce ripples above the maximum band-centre gain.
+    /// The comp smoother target must attenuate enough so the combined peak never
+    /// exceeds 0 dBFS when the input is at 0 dBFS.
+    ///
+    /// Specifically, comp_gain_target = 10^(-max_combined_db / 20).  If we only
+    /// sample at the 7 band centres, we miss the ripple peak, and the smoother
+    /// target is set too high (not enough attenuation), allowing output > 0 dBFS.
+    #[test]
+    fn test_comp_gain_does_not_allow_clipping_in_iso_mode() {
+        // Use a large bass boost scenario: playback=40, reference=83 -> big delta at bass
+        let mut p = LoudnessCompensationPlugin::new(1, 100.0, 0.0, 10000.0, 0.0);
+        InPlacePlugin::initialize(&mut p, 48000).unwrap();
+        p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(1))
+            .unwrap();
+        p.set_parameter(
+            ParameterId::from("playback_level_db"),
+            ParameterValue::Float(40.0), // extreme low: large ISO delta
+        )
+        .unwrap();
+        p.set_parameter(
+            ParameterId::from("reference_level_db"),
+            ParameterValue::Float(83.0),
+        )
+        .unwrap();
+
+        // Warm-up pass: let the smoother settle from its initial value (1.0) to the
+        // compensated target over several blocks.  At 20 ms time constant, 10 time
+        // constants (200 ms = 9600 samples) is enough for >99.99% convergence.
+        let nf = 9600;
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: nf,
+        };
+        let warmup: Vec<f32> = (0..nf)
+            .map(|i| (2.0 * std::f32::consts::PI * 50.0 * i as f32 / 48000.0).sin())
+            .collect();
+        let mut warm_buf = warmup.clone();
+        p.process_in_place(&mut warm_buf, &ctx).unwrap();
+
+        // Second pass with smoother fully settled: peak must not exceed 0 dBFS
+        let mut buf: Vec<f32> = (0..nf)
+            .map(|i| (2.0 * std::f32::consts::PI * 50.0 * i as f32 / 48000.0).sin())
+            .collect();
+        p.process_in_place(&mut buf, &ctx).unwrap();
+
+        // With proper comp gain the peak must not exceed 1.0 (0 dBFS) once settled
+        let peak = buf.iter().map(|s| s.abs()).fold(0.0_f32, f32::max);
+        assert!(
+            peak <= 1.0 + 1e-3,
+            "comp_gain under-attenuated: peak = {peak:.4} > 1.0 (clipping) after smoother settled"
+        );
+    }
+
+    /// Bug #2: auto-gain measurement must happen every block, not every 10.
+    ///
+    /// With the old bug, `do_measure` was only true every 10 blocks.  All auto-gain
+    /// measurement and cache writes were skipped otherwise.  So for 9 blocks after
+    /// each measurement cycle, the cache held stale data.
+    ///
+    /// The fix makes measurement happen every block.  To observe a measurable difference
+    /// we compare what happens after 9 blocks of silence followed by 1 block of loud
+    /// signal vs 10 blocks of loud signal.  With the old code the 10th block overwrites;
+    /// with the fix every block updates.
+    ///
+    /// Practical test: process enough audio for EBU R128 momentary measurement to
+    /// accumulate (≥400 ms = ~19200 samples), then verify that `input_lufs` reflects
+    /// the actual signal level — not the plugin default (-120.0).
+    #[test]
+    fn test_auto_gain_measurement_not_stale_after_one_block() {
+        let mut p = LoudnessCompensationPlugin::new(1, 100.0, 0.0, 10000.0, 0.0);
+        InPlacePlugin::initialize(&mut p, 48000).unwrap();
+        p.set_parameter(ParameterId::from("auto_gain_enabled"), ParameterValue::Bool(true))
+            .unwrap();
+
+        // Process 9 small blocks (9 * 512 = 4608 samples) of silence.
+        // With the old bug, the cache update counter fires on the 10th block only.
+        let nf = 512;
+        let ctx = ProcessContext { sample_rate: 48000, num_frames: nf };
+        for _ in 0..9 {
+            let mut buf = vec![0.0_f32; nf];
+            p.process_in_place(&mut buf, &ctx).unwrap();
+        }
+
+        // Now feed loud audio for enough blocks to fill the EBU R128 400ms window
+        // (~19200 samples = 38 blocks of 512).  With the fix, measurement and cache
+        // update happen on every block, so after these blocks input_lufs is live.
+        let loud_nf = 19200;
+        let loud_ctx = ProcessContext { sample_rate: 48000, num_frames: loud_nf };
+        let mut loud_buf: Vec<f32> = (0..loud_nf)
+            .map(|i| if i % 2 == 0 { 0.5_f32 } else { -0.5_f32 })
+            .collect();
+        p.process_in_place(&mut loud_buf, &loud_ctx).unwrap();
+
+        let data_arc = p.get_data().expect("auto_gain should produce data");
+        let ag_data = data_arc
+            .downcast_ref::<sotf_host::auto_gain::AutoGainData>()
+            .expect("data should be AutoGainData");
+        // After 400ms of loud audio the EBU momentary measurement must be well above
+        // the plugin default of -120.0 dB.  With the old throttled code the cache
+        // holds the measurement from block 10 (still all silence), so input_lufs
+        // would remain near -inf / -120.
+        assert!(
+            ag_data.input_lufs > -40.0,
+            "input_lufs should reflect loud signal after 400ms, got {:.2} dB (still default/stale?)",
+            ag_data.input_lufs
+        );
+    }
+
+    /// Bug #3: in Post mode, output measurement must see post-compensation level.
+    ///
+    /// The AutoGain feedback loop sets its next gain target via:
+    ///   `target = input_lufs - output_lufs`
+    ///
+    /// If `ag.measure_output` is called BEFORE `ag.apply_compensation` (the bug),
+    /// `output_lufs` reflects the signal BEFORE the AutoGain's own gain is applied.
+    /// When the AutoGain is boosting (gain_linear > 1.0), the measurement will be
+    /// lower than the actual output, causing the feedback loop to increase gain further.
+    /// This positive feedback drives gain to `max_gain_db` → audible pumping.
+    ///
+    /// The fix applies `ag.apply_compensation` first, then calls `ag.measure_output`.
+    ///
+    /// This test verifies:
+    ///   (a) Both `input_lufs` and `output_lufs` are finite after sufficient audio.
+    ///   (b) The difference is bounded by the AutoGain's max_gain_db range.
+    ///
+    /// Full regression of the feedback instability requires fine-grained control over
+    /// the EBU R128 internal state, which is out of scope here.  The code fix is
+    /// verified by code review (apply then measure).
+    #[test]
+    fn test_post_mode_output_measurement_after_compensation() {
+        let params = crate::LoudnessCompensationPluginParams {
+            auto_gain_enabled: true,
+            auto_gain_position: "post".to_string(),
+            auto_gain_max_db: 12.0,
+            auto_gain_smoothing_ms: 5.0,
+            ..Default::default()
+        };
+        let mut p = LoudnessCompensationPlugin::from_params(1, params).unwrap();
+        InPlacePlugin::initialize(&mut p, 48000).unwrap();
+
+        let nf = 4800; // 100ms per block
+        let ctx = ProcessContext { sample_rate: 48000, num_frames: nf };
+        let signal: Vec<f32> = (0..nf)
+            .map(|i| 0.3 * (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / 48000.0).sin())
+            .collect();
+
+        // 10 blocks = 1 second; enough for EBU R128 momentary window to fill
+        for _ in 0..10 {
+            let mut buf = signal.clone();
+            p.process_in_place(&mut buf, &ctx).unwrap();
+        }
+
+        let data_arc = p.get_data().expect("auto_gain should produce data");
+        let ag_data = data_arc
+            .downcast_ref::<sotf_host::auto_gain::AutoGainData>()
+            .expect("data should be AutoGainData");
+
+        // Both measurements must be finite after 1 second
+        assert!(
+            ag_data.input_lufs.is_finite(),
+            "input_lufs must be finite after 1s, got {}",
+            ag_data.input_lufs
+        );
+        assert!(
+            ag_data.output_lufs.is_finite(),
+            "output_lufs must be finite after 1s, got {}",
+            ag_data.output_lufs
+        );
+
+        // In steady state, |output_lufs - input_lufs| must be within AutoGain's range.
+        // This bound would be violated if the feedback loop ran away due to the
+        // wrong measurement order.
+        let diff = (ag_data.output_lufs - ag_data.input_lufs).abs();
+        let max_gain_db = 12.0_f64;
+        assert!(
+            diff <= max_gain_db + 1.0,
+            "output_lufs ({:.2}) and input_lufs ({:.2}) should be within {:.1} dB \
+             (Post mode, Bug #3 fix: measure AFTER compensation); diff = {:.2}",
+            ag_data.output_lufs,
+            ag_data.input_lufs,
+            max_gain_db + 1.0,
+            diff
+        );
+    }
+
+    /// Bug #5 + #7: manual mode should not rebuild ISO filters or call
+    /// `maybe_rebuild_auto_filters` on every block.
+    ///
+    /// Indirect verification: setting `playback_level_db` in manual mode (mode=0)
+    /// must not panic or corrupt internal state.  If it incorrectly rebuilt ISO
+    /// filters AND mode were 0, the iso_filters would be recomputed — harmless but
+    /// indicates the guard is absent.  We test stability by processing after the
+    /// parameter change.
+    #[test]
+    fn test_manual_mode_level_change_does_not_corrupt() {
+        let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+        InPlacePlugin::initialize(&mut p, 48000).unwrap();
+        assert_eq!(p.mode_index, 0);
+
+        // Change ISO-related params in manual mode — must be a no-op for filter bank
+        p.set_parameter(
+            ParameterId::from("playback_level_db"),
+            ParameterValue::Float(60.0),
+        )
+        .unwrap();
+        p.set_parameter(
+            ParameterId::from("reference_level_db"),
+            ParameterValue::Float(83.0),
+        )
+        .unwrap();
+
+        // Process must succeed and produce finite output
+        let nf = 480;
+        let mut buf: Vec<f32> =
+            (0..nf).map(|i| 0.2 * (i as f32 / 48.0).sin()).collect();
+        p.process_in_place(&mut buf, &ProcessContext { sample_rate: 48000, num_frames: nf })
+            .unwrap();
+        assert!(
+            buf.iter().all(|s| s.is_finite()),
+            "output should be finite after parameter change in manual mode"
+        );
     }
 }

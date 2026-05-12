@@ -10778,7 +10778,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-loudness-compensation"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "criterion",
  "math-iir-fir",
