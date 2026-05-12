@@ -47,7 +47,11 @@ impl TwoPathAec {
             power_bg: 1.0,
             power_alpha: 0.95,
             transfer_count: 0,
-            transfer_threshold: 5,
+            // Require 25 consecutive blocks (≈ 133 ms at 48 kHz / 256) where
+            // background has at least 1 dB advantage (power ratio < 0.794).
+            // The old value of 5 blocks (≈ 27 ms) triggered rapid foreground /
+            // background ping-pong on non-stationary signals.
+            transfer_threshold: 25,
             block_size,
             output_buf: vec![0.0; block_size],
         }
@@ -77,8 +81,10 @@ impl TwoPathAec {
         self.power_fg = self.power_alpha * self.power_fg + (1.0 - self.power_alpha) * pow_fg;
         self.power_bg = self.power_alpha * self.power_bg + (1.0 - self.power_alpha) * pow_bg;
 
-        // Check if background is consistently better
-        if self.power_bg < self.power_fg * 0.95 {
+        // Check if background is consistently better by at least 1 dB
+        // (power ratio 10^(-1/10) ≈ 0.794).  The old 5% margin (0.95) was too
+        // loose and triggered transfers on routine fluctuations.
+        if self.power_bg < self.power_fg * 0.794 {
             self.transfer_count += 1;
         } else {
             self.transfer_count = 0;
@@ -121,6 +127,22 @@ impl TwoPathAec {
     /// Get the processing block size.
     pub fn block_size(&self) -> usize {
         self.block_size
+    }
+
+    /// Get the transfer threshold (minimum consecutive better-background frames
+    /// required before promoting background → foreground).
+    pub fn transfer_threshold(&self) -> usize {
+        self.transfer_threshold
+    }
+
+    /// Get the current consecutive-better-background counter.
+    pub fn transfer_count(&self) -> usize {
+        self.transfer_count
+    }
+
+    /// Sum of squared foreground filter weights (useful for testing leakage decay).
+    pub fn foreground_weight_energy(&self) -> f32 {
+        self.foreground.adaptive_state_energy()
     }
 }
 
