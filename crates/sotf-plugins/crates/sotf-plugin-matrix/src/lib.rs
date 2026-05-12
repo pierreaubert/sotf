@@ -51,6 +51,9 @@ pub struct MatrixPlugin {
     channel_state_smoothers: Vec<Smoother>,
     active_connections: Vec<(usize, usize, usize)>,
     ch_gains_buffer: Vec<f32>,
+    /// Resolved (phys_in, phys_out, phase_sign) per active connection, rebuilt
+    /// alongside active_connections to avoid per-sample channel-map lookups.
+    connection_phys: Vec<(usize, usize, f32)>,
     cached_parameters: Vec<sotf_host::parameters::Parameter>,
     /// Global gain (from PARAMS spec), linear coefficient 0.0–1.0
     gain: f64,
@@ -79,6 +82,7 @@ impl MatrixPlugin {
             channel_state_smoothers: Vec::new(),
             active_connections: Vec::new(),
             ch_gains_buffer: Vec::new(),
+            connection_phys: Vec::new(),
             cached_parameters: Vec::new(),
             gain: 0.0,
         };
@@ -116,6 +120,7 @@ impl MatrixPlugin {
             channel_state_smoothers: Vec::new(),
             active_connections: Vec::new(),
             ch_gains_buffer: Vec::new(),
+            connection_phys: Vec::new(),
             cached_parameters: Vec::new(),
             gain: 0.0,
         };
@@ -171,6 +176,7 @@ impl MatrixPlugin {
             channel_state_smoothers: Vec::new(),
             active_connections: Vec::new(),
             ch_gains_buffer: Vec::new(),
+            connection_phys: Vec::new(),
             cached_parameters: Vec::new(),
             gain: 0.0,
         };
@@ -254,6 +260,7 @@ impl MatrixPlugin {
         let num_inputs = self.num_inputs();
         let num_outputs = self.num_outputs();
         self.active_connections.clear();
+        self.connection_phys.clear();
 
         for out_ch in 0..num_outputs {
             for in_ch in 0..num_inputs {
@@ -262,6 +269,20 @@ impl MatrixPlugin {
                 let current = self.gain_smoothers[idx].current();
                 if target.abs() > 1e-4 || (current - target).abs() > 1e-4 {
                     self.active_connections.push((in_ch, out_ch, idx));
+                    // Pre-resolve physical channel indices and phase_sign so the
+                    // hot process() loop does not branch on channel maps per sample.
+                    let phys_in = if self.input_channel_map.is_empty() {
+                        in_ch
+                    } else {
+                        self.input_channel_map[in_ch]
+                    };
+                    let phys_out = if self.output_channel_map.is_empty() {
+                        out_ch
+                    } else {
+                        self.output_channel_map[out_ch]
+                    };
+                    let phase_sign = if self.phase_invert[idx] { -1.0f32 } else { 1.0f32 };
+                    self.connection_phys.push((phys_in, phys_out, phase_sign));
                 }
             }
         }
@@ -339,6 +360,8 @@ impl MatrixPlugin {
             return Err("OOB".into());
         }
         self.phase_invert[idx] = invert;
+        // Rebuild connection_phys so the pre-resolved phase_sign stays in sync.
+        self.update_active_connections();
         Ok(())
     }
 
@@ -678,30 +701,31 @@ impl Plugin for MatrixPlugin {
             }
         }
 
-        for &(logical_in, logical_out, idx) in &self.active_connections {
-            let phys_in = if self.input_channel_map.is_empty() {
-                logical_in
-            } else {
-                self.input_channel_map[logical_in]
-            };
-            let phys_out = if self.output_channel_map.is_empty() {
-                logical_out
-            } else {
-                self.output_channel_map[logical_out]
-            };
-
-            let phase_sign = if self.phase_invert[idx] { -1.0 } else { 1.0 };
-
-            for frame in 0..num_frames {
+        // Frames outer, connections inner: keeps the current frame's input/output
+        // samples in L1 cache while iterating the (much smaller) connection list.
+        // Previously, connections were outer and frames inner, which caused the input
+        // buffer to be scanned once per connection — cache-thrashing for dense matrices.
+        //
+        // connection_phys holds pre-resolved (phys_in, phys_out, phase_sign) built by
+        // update_active_connections(), so no per-sample channel-map branch is needed.
+        //
+        // NOTE: update_active_connections() is NOT called here. It is only called by
+        // parameter mutators (set_gain, set_matrix, set_phase_invert, apply_preset)
+        // when the matrix actually changes. Calling it every block was O(N²) wasted work.
+        for frame in 0..num_frames {
+            let base_out = frame * out_channels;
+            let base_in = frame * in_channels;
+            for (&(_logical_in, logical_out, idx), &(phys_in, phys_out, phase_sign)) in
+                self.active_connections.iter().zip(self.connection_phys.iter())
+            {
+                // advance() is called once per sample per connection to maintain
+                // correct per-sample gain interpolation (5 ms smoother).
                 let gain = self.gain_smoothers[idx].advance() * phase_sign;
-                let ch_gain = self.ch_gains_buffer[frame * out_channels + logical_out];
-
-                output[frame * out_channels + phys_out] +=
-                    input[frame * in_channels + phys_in] * gain * ch_gain;
+                let ch_gain = self.ch_gains_buffer[base_out + logical_out];
+                output[base_out + phys_out] +=
+                    input[base_in + phys_in] * gain * ch_gain;
             }
         }
-
-        self.update_active_connections();
 
         Ok(num_frames)
     }
