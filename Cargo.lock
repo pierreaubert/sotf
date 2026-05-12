@@ -10755,7 +10755,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-limiter"
-version = "0.5.8"
+version = "0.5.9"
 dependencies = [
  "math-dsp",
  "serde",
