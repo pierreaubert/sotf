@@ -1,7 +1,7 @@
 [package]
 name = "sotf-plugin-channel-mute-solo"
 description = "SOTF Channel Mute/Solo plugin - per-channel mute/solo/dim"
-version = "0.5.60"
+version = "0.5.61"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true

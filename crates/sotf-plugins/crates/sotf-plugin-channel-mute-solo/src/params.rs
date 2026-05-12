@@ -34,7 +34,7 @@ pub const PARAMS: &[ParamSpec] = &[
     ParamSpec::float(
         "Fade Time",
         "fade_ms",
-        10.0,
+        5.0,
         0.0,
         100.0,
         1.0,
