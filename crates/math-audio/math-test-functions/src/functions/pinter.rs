@@ -18,7 +18,7 @@ pub fn pinter(x: &Array1<f64>) -> f64 {
         let x_next = if i == n - 1 { x[0] } else { x[i + 1] };
 
         let ai = x_prev * xi.sin() + (x_next - xi).sin();
-        let bi = x_prev.powi(2) - 2.0 * xi + 3.0 * x_next - (1.0 + xi).cos() + 1.0;
+        let bi = x_prev.powi(2) - 2.0 * xi + 3.0 * x_next - xi.cos() + 1.0;
 
         sum1 += ii * xi.powi(2);
         sum2 += 20.0 * ii * ai.powi(2).sin();

@@ -6,7 +6,7 @@ use ndarray::Array1;
 /// Global minimum: f(x) = -N at x = (7.70628, 7.70628, ..., 7.70628)
 /// Bounds: x_i in [0.25, 10]
 pub fn vincent(x: &Array1<f64>) -> f64 {
-    -x.iter().map(|&xi| (10.0 * xi).sin()).sum::<f64>()
+    -x.iter().map(|&xi| (10.0 * xi.ln()).sin()).sum::<f64>()
 }
 #[cfg(test)]
 mod tests {

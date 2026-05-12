@@ -20,7 +20,7 @@ pub fn langermann(x: &Array1<f64>) -> f64 {
             * (-inner_sum / std::f64::consts::PI).exp()
             * (std::f64::consts::PI * inner_sum).cos();
     }
-    sum
+    -sum
 }
 #[cfg(test)]
 mod tests {

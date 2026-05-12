@@ -8,5 +8,8 @@ use ndarray::Array1;
 pub fn bird(x: &Array1<f64>) -> f64 {
     let x1 = x[0];
     let x2 = x[1];
-    x1.sin() * (x2 - 15.0).exp() + (x1 - x2.cos()).powi(2)
+    let term1 = x1.sin() * ((1.0 - x2.cos()).powi(2)).exp();
+    let term2 = x2.cos() * ((1.0 - x1.sin()).powi(2)).exp();
+    let term3 = (x1 - x2).powi(2);
+    term1 + term2 + term3
 }

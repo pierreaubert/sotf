@@ -14,5 +14,12 @@ pub fn keanes_bump_objective(x: &Array1<f64>) -> f64 {
         .map(|(i, &xi)| (i + 1) as f64 * xi.powi(2))
         .sum();
 
-    -(sum_cos4 - 2.0 * prod_cos2).abs() / sum_i_xi2.sqrt()
+    let denom = sum_i_xi2.sqrt();
+    if denom == 0.0 {
+        // All inputs are zero. For N=2, the numerator also vanishes and the limit is 0.
+        // For N != 2, the objective tends to -infinity.
+        if x.len() == 2 { 0.0 } else { f64::NEG_INFINITY }
+    } else {
+        -(sum_cos4 - 2.0 * prod_cos2).abs() / denom
+    }
 }

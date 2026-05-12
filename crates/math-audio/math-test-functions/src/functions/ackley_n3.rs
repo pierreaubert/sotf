@@ -8,11 +8,8 @@ use ndarray::Array1;
 pub fn ackley_n3(x: &Array1<f64>) -> f64 {
     let x1 = x[0];
     let x2 = x[1];
-    -200.0
-        * (-0.02 * (x1.powi(2) + x2.powi(2)).sqrt()).exp()
-        * (2.0 * std::f64::consts::PI * x1).cos()
-        * (2.0 * std::f64::consts::PI * x2).cos()
-        + 5.0 * (3.0 * (x1 + x2)).exp()
+    -200.0 * (-0.02 * (x1.powi(2) + x2.powi(2)).sqrt()).exp()
+        + 5.0 * ((3.0 * x1).cos() + (3.0 * x2).sin()).exp()
 }
 
 #[cfg(test)]

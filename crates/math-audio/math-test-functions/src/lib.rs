@@ -61,7 +61,7 @@ pub fn get_function_metadata() -> HashMap<String, FunctionMetadata> {
         FunctionMetadata {
             name: "ackley_n2".to_string(),
             bounds: vec![(-32.768, 32.768); 2],
-            global_minima: vec![(vec![-1.0, -1.0], -200.0)],
+            global_minima: vec![(vec![0.0, 0.0], -200.0)],
             inequality_constraints: vec![],
             equality_constraints: vec![],
             description: "Modified Ackley N.2 function".to_string(),
@@ -103,7 +103,7 @@ pub fn get_function_metadata() -> HashMap<String, FunctionMetadata> {
         FunctionMetadata {
             name: "alpine_n2".to_string(),
             bounds: vec![(0.0, 10.0); 2],
-            global_minima: vec![(vec![7.917, 7.917], -12.259)],
+            global_minima: vec![(vec![7.917, 7.917], -7.885)],
             inequality_constraints: vec![],
             equality_constraints: vec![],
             description: "Alpine N.2 function".to_string(),
@@ -452,7 +452,7 @@ pub fn get_function_metadata() -> HashMap<String, FunctionMetadata> {
         FunctionMetadata {
             name: "dixons_price".to_string(),
             bounds: vec![(-10.0, 10.0); 2],
-            global_minima: vec![(vec![1.0, 0.5], 0.0)],
+            global_minima: vec![(vec![1.0, std::f64::consts::FRAC_1_SQRT_2], 0.0)],
             inequality_constraints: vec![],
             equality_constraints: vec![],
             description: "Dixon's Price function".to_string(),
@@ -578,7 +578,7 @@ pub fn get_function_metadata() -> HashMap<String, FunctionMetadata> {
         FunctionMetadata {
             name: "freudenstein_roth".to_string(),
             bounds: vec![(-10.0, 10.0); 2],
-            global_minima: vec![(vec![5.0, 4.0], 0.0), (vec![11.41, -0.8968], 48.9842)],
+            global_minima: vec![(vec![5.0, 4.0], 0.0)],
             inequality_constraints: vec![],
             equality_constraints: vec![],
             description: "Freudenstein and Roth function".to_string(),
@@ -815,7 +815,7 @@ pub fn get_function_metadata() -> HashMap<String, FunctionMetadata> {
         FunctionMetadata {
             name: "keanes_bump_objective".to_string(),
             bounds: vec![(0.0, 10.0); 2],
-            global_minima: vec![(vec![1.393249, 0.0], 0.673668)],
+            global_minima: vec![(vec![1.393249, 0.0], -0.673668)],
             inequality_constraints: vec![],
             equality_constraints: vec![],
             description: "Keane's Bump objective function".to_string(),
@@ -1053,7 +1053,7 @@ pub fn get_function_metadata() -> HashMap<String, FunctionMetadata> {
         FunctionMetadata {
             name: "qing".to_string(),
             bounds: vec![(-500.0, 500.0); 2],
-            global_minima: vec![(vec![std::f64::consts::SQRT_2, 2.0], 0.0)],
+            global_minima: vec![(vec![1.0, std::f64::consts::SQRT_2], 0.0)],
             inequality_constraints: vec![],
             equality_constraints: vec![],
             description: "Qing function".to_string(),
@@ -1067,7 +1067,7 @@ pub fn get_function_metadata() -> HashMap<String, FunctionMetadata> {
         FunctionMetadata {
             name: "quadratic".to_string(),
             bounds: vec![(-10.0, 10.0); 2],
-            global_minima: vec![(vec![0.19388, 0.48513], -3873.7243)],
+            global_minima: vec![(vec![0.0, 0.0], 0.0)],
             inequality_constraints: vec![],
             equality_constraints: vec![],
             description: "Quadratic function".to_string(),
@@ -1423,7 +1423,7 @@ pub fn get_function_metadata() -> HashMap<String, FunctionMetadata> {
         FunctionMetadata {
             name: "trid".to_string(),
             bounds: vec![(-4.0, 4.0); 2],
-            global_minima: vec![(vec![1.0, 2.0], -2.0)],
+            global_minima: vec![(vec![2.0, 2.0], -2.0)],
             inequality_constraints: vec![],
             equality_constraints: vec![],
             description: "Trid function".to_string(),
@@ -1595,50 +1595,111 @@ mod tests {
     /// This uses a match statement to map function names to actual function calls
     fn call_function(name: &str, x: &Array1<f64>) -> Option<f64> {
         match name {
-            // Unimodal functions
-            "sphere" => Some(sphere(x)),
-            "rosenbrock" => Some(rosenbrock(x)),
-            "booth" => Some(booth(x)),
-            "matyas" => Some(matyas(x)),
+            "ackley" => Some(ackley(x)),
+            "ackley_n2" => Some(ackley_n2(x)),
+            "ackley_n3" => Some(ackley_n3(x)),
+            "alpine_n1" => Some(alpine_n1(x)),
+            "alpine_n2" => Some(alpine_n2(x)),
             "beale" => Some(beale(x)),
-            "himmelblau" => Some(himmelblau(x)),
-            "sum_squares" => Some(sum_squares(x)),
-            "different_powers" => Some(different_powers(x)),
-            "elliptic" => Some(elliptic(x)),
+            "bent_cigar" => Some(bent_cigar(x)),
+            "bent_cigar_alt" => Some(bent_cigar_alt(x)),
+            "binh_korn_constraint1" => None,
+            "binh_korn_constraint2" => None,
+            "binh_korn_weighted" => None,
+            "bird" => Some(bird(x)),
+            "bohachevsky1" => Some(bohachevsky1(x)),
+            "bohachevsky2" => Some(bohachevsky2(x)),
+            "bohachevsky3" => Some(bohachevsky3(x)),
+            "booth" => Some(booth(x)),
+            "branin" => Some(branin(x)),
+            "brown" => Some(brown(x)),
+            "bukin_n6" => Some(bukin_n6(x)),
+            "chung_reynolds" => Some(chung_reynolds(x)),
             "cigar" => Some(cigar(x)),
-            "tablet" => Some(tablet(x)),
+            "colville" => Some(colville(x)),
+            "cosine_mixture" => Some(cosine_mixture(x)),
+            "cross_in_tray" => Some(cross_in_tray(x)),
+            "de_jong_step2" => Some(de_jong_step2(x)),
+            "dejong_f5_foxholes" => Some(dejong_f5_foxholes(x)),
+            "different_powers" => Some(different_powers(x)),
             "discus" => Some(discus(x)),
-            "ridge" => Some(ridge(x)),
-            "sharp_ridge" => Some(sharp_ridge(x)),
+            "dixons_price" => Some(dixons_price(x)),
+            "drop_wave" => Some(drop_wave(x)),
+            "easom" => Some(easom(x)),
+            "eggholder" => Some(eggholder(x)),
+            "elliptic" => Some(elliptic(x)),
+            "epistatic_michalewicz" => Some(epistatic_michalewicz(x)),
+            "expanded_griewank_rosenbrock" => Some(expanded_griewank_rosenbrock(x)),
+            "exponential" => Some(exponential(x)),
+            "forrester_2008" => Some(forrester_2008(x)),
+            "freudenstein_roth" => Some(freudenstein_roth(x)),
+            "goldstein_price" => Some(goldstein_price(x)),
+            "gramacy_lee_2012" => Some(gramacy_lee_2012(x)),
+            "gramacy_lee_function" => Some(gramacy_lee_function(x)),
+            "griewank" => Some(griewank(x)),
+            "griewank2" => Some(griewank2(x)),
+            "happy_cat" => Some(happy_cat(x)),
+            "happycat" => Some(happycat(x)),
+            "hartman_3d" => Some(hartman_3d(x)),
+            "hartman_4d" => Some(hartman_4d(x)),
+            "hartman_6d" => Some(hartman_6d(x)),
+            "himmelblau" => Some(himmelblau(x)),
+            "holder_table" => Some(holder_table(x)),
+            "katsuura" => Some(katsuura(x)),
+            "keanes_bump_constraint1" => None,
+            "keanes_bump_constraint2" => None,
+            "keanes_bump_objective" => Some(keanes_bump_objective(x)),
+            "lampinen_simplified" => Some(lampinen_simplified(x)),
+            "langermann" => Some(langermann(x)),
+            "levi13" => Some(levi13(x)),
+            "levy" => Some(levy(x)),
+            "levy_n13" => Some(levy_n13(x)),
+            "matyas" => Some(matyas(x)),
+            "mccormick" => Some(mccormick(x)),
+            "michalewicz" => Some(michalewicz(x)),
+            "mishras_bird_constraint" => None,
+            "mishras_bird_objective" => None,
+            "periodic" => Some(periodic(x)),
             "perm_0_d_beta" => Some(perm_0_d_beta(x)),
             "perm_d_beta" => Some(perm_d_beta(x)),
-
-            // Multimodal functions
-            "ackley" => Some(ackley(x)),
-            "rastrigin" => Some(rastrigin(x)),
-            "griewank" => Some(griewank(x)),
-            "schwefel" => Some(schwefel(x)),
-            "branin" => Some(branin(x)),
-            "goldstein_price" => Some(goldstein_price(x)),
-            "six_hump_camel" => Some(six_hump_camel(x)),
-            "hartman_4d" => Some(hartman_4d(x)),
-            "xin_she_yang_n1" => Some(xin_she_yang_n1(x)),
-            "katsuura" => Some(katsuura(x)),
-            "happycat" => Some(happycat(x)),
-
-            // Modern functions
-            "gramacy_lee_2012" => Some(gramacy_lee_2012(x)),
-            "forrester_2008" => Some(forrester_2008(x)),
+            "pinter" => Some(pinter(x)),
+            "powell" => Some(powell(x)),
             "power_sum" => Some(power_sum(x)),
+            "qing" => Some(qing(x)),
+            "quadratic" => Some(quadratic(x)),
+            "quartic" => Some(quartic(x)),
+            "rastrigin" => Some(rastrigin(x)),
+            "ridge" => Some(ridge(x)),
+            "rosenbrock" => Some(rosenbrock(x)),
+            "rosenbrock_disk_constraint" => None,
+            "rosenbrock_objective" => Some(rosenbrock_objective(x)),
+            "rotated_hyper_ellipsoid" => Some(rotated_hyper_ellipsoid(x)),
+            "salomon" => Some(salomon(x)),
+            "salomon_corrected" => Some(salomon_corrected(x)),
+            "schaffer_n2" => Some(schaffer_n2(x)),
+            "schaffer_n4" => Some(schaffer_n4(x)),
+            "schwefel" => Some(schwefel(x)),
+            "schwefel2" => Some(schwefel2(x)),
+            "sharp_ridge" => Some(sharp_ridge(x)),
             "shekel" => Some(shekel(x)),
-            "gramacy_lee_function" => Some(gramacy_lee_function(x)),
-
-            // Composite functions
-            "expanded_griewank_rosenbrock" => Some(expanded_griewank_rosenbrock(x)),
-
-            // Constrained functions (skip constraint tests for now)
-            "rosenbrock_disk_constraint" | "binh_korn_constraint1" => None,
-
+            "shubert" => Some(shubert(x)),
+            "six_hump_camel" => Some(six_hump_camel(x)),
+            "sphere" => Some(sphere(x)),
+            "step" => Some(step(x)),
+            "styblinski_tang2" => Some(styblinski_tang2(x)),
+            "sum_of_different_powers" => Some(sum_of_different_powers(x)),
+            "sum_squares" => Some(sum_squares(x)),
+            "tablet" => Some(tablet(x)),
+            "three_hump_camel" => Some(three_hump_camel(x)),
+            "trid" => Some(trid(x)),
+            "vincent" => Some(vincent(x)),
+            "whitley" => Some(whitley(x)),
+            "xin_she_yang_n1" => Some(xin_she_yang_n1(x)),
+            "xin_she_yang_n2" => Some(xin_she_yang_n2(x)),
+            "xin_she_yang_n3" => Some(xin_she_yang_n3(x)),
+            "xin_she_yang_n4" => Some(xin_she_yang_n4(x)),
+            "zakharov" => Some(zakharov(x)),
+            "zakharov2" => Some(zakharov2(x)),
             _ => None,
         }
     }
@@ -1809,6 +1870,137 @@ mod tests {
         let x = Array1::from_vec(vec![1.0, 0.5]);
         assert!((perm_0_d_beta(&x) - 0.0).abs() < tolerance);
         assert!((perm_d_beta(&x) - 0.0).abs() < tolerance);
+    }
+
+    #[test]
+    fn test_bird_matches_literature() {
+        // Standard Bird function should evaluate to approximately -106.764537
+        // at (4.70104, 3.15294)
+        let x = Array1::from_vec(vec![4.70104, 3.15294]);
+        let val = bird(&x);
+        assert!(
+            (val - (-106.764537)).abs() < 1.0,
+            "bird at (4.70104, 3.15294) should be ~-106.764537, got {}",
+            val
+        );
+    }
+
+    #[test]
+    fn test_gramacy_lee_2012_finite_at_zero() {
+        let x = Array1::from_vec(vec![0.0]);
+        let val = gramacy_lee_2012(&x);
+        assert!(
+            val.is_finite(),
+            "gramacy_lee_2012 at 0 should be finite, got {}",
+            val
+        );
+    }
+
+    #[test]
+    fn test_keanes_bump_finite_at_origin() {
+        let x = Array1::from_vec(vec![0.0, 0.0]);
+        let val = keanes_bump_objective(&x);
+        assert!(
+            val.is_finite(),
+            "keanes_bump_objective at origin should be finite, got {}",
+            val
+        );
+    }
+
+    #[test]
+    fn test_alpine_n2_finite_on_negative() {
+        let x = Array1::from_vec(vec![-1.0, -1.0]);
+        let val = alpine_n2(&x);
+        assert!(
+            val.is_finite(),
+            "alpine_n2 on negative input should be finite, got {}",
+            val
+        );
+    }
+
+    #[test]
+    fn test_ackley_n2_correct_minimum() {
+        // ackley_n2 minimum is at (0, 0) with value -200, not at (-1, -1)
+        let x_good = Array1::from_vec(vec![0.0, 0.0]);
+        let val_good = ackley_n2(&x_good);
+        assert!(
+            (val_good - (-200.0)).abs() < 1e-3,
+            "ackley_n2 at (0,0) should be -200, got {}",
+            val_good
+        );
+
+        let x_bad = Array1::from_vec(vec![-1.0, -1.0]);
+        let val_bad = ackley_n2(&x_bad);
+        assert!(
+            (val_bad - (-200.0)).abs() > 1e-3,
+            "ackley_n2 at (-1,-1) should NOT be -200, got {}",
+            val_bad
+        );
+    }
+
+    #[test]
+    fn test_step_correct_minimum() {
+        // step minimum is 0 at e.g. (0,0), not at (0.5, 0.5)
+        let x_good = Array1::from_vec(vec![0.0, 0.0]);
+        let val_good = step(&x_good);
+        assert_eq!(val_good, 0.0, "step at (0,0) should be 0");
+
+        let x_bad = Array1::from_vec(vec![0.5, 0.5]);
+        let val_bad = step(&x_bad);
+        assert_ne!(val_bad, 0.0, "step at (0.5, 0.5) should NOT be 0");
+    }
+
+    #[test]
+    fn test_qing_correct_minimum() {
+        // qing minimum is at (±1, ±√2) with value 0, not at (√2, 2.0)
+        let x_good = Array1::from_vec(vec![1.0, 2.0_f64.sqrt()]);
+        let val_good = qing(&x_good);
+        assert!(
+            val_good.abs() < 1e-10,
+            "qing at (1, sqrt(2)) should be 0, got {}",
+            val_good
+        );
+
+        let x_bad = Array1::from_vec(vec![2.0_f64.sqrt(), 2.0]);
+        let val_bad = qing(&x_bad);
+        assert!(
+            val_bad.abs() > 1e-3,
+            "qing at (sqrt(2), 2.0) should NOT be 0, got {}",
+            val_bad
+        );
+    }
+
+    #[test]
+    fn test_alpine_n2_correct_minimum() {
+        // alpine_n2 minimum for 2D is approximately -7.885 at (7.917, 7.917)
+        let x = Array1::from_vec(vec![7.917, 7.917]);
+        let val = alpine_n2(&x);
+        assert!(
+            (val - (-7.885)).abs() < 0.5,
+            "alpine_n2 at (7.917, 7.917) should be ~-7.885, got {}",
+            val
+        );
+    }
+
+    #[test]
+    fn test_freudenstein_roth_global_minimum() {
+        // Global minimum is at (5, 4) with value 0
+        let x_global = Array1::from_vec(vec![5.0, 4.0]);
+        let val_global = freudenstein_roth(&x_global);
+        assert!(
+            val_global.abs() < 1e-10,
+            "freudenstein_roth at (5,4) should be 0, got {}",
+            val_global
+        );
+
+        // (11.41, -0.8968) is a local minimum, not global
+        let x_local = Array1::from_vec(vec![11.41, -0.8968]);
+        let val_local = freudenstein_roth(&x_local);
+        assert!(
+            val_local.abs() > 1.0,
+            "freudenstein_roth at (11.41, -0.8968) should NOT be 0 (it's a local min ~48.98), got {}",
+            val_local
+        );
     }
 
     #[test]

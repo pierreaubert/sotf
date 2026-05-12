@@ -9,7 +9,12 @@ use ndarray::Array1;
 pub fn gramacy_lee_2012(x: &Array1<f64>) -> f64 {
     let x1 = x[0];
     let pi = std::f64::consts::PI;
-    (10.0 * pi * x1).sin() / (2.0 * x1) + (x1 - 1.0).powi(4)
+    if x1 == 0.0 {
+        // Limit as x→0 of sin(10πx)/(2x) = 5π
+        5.0 * pi + (x1 - 1.0).powi(4)
+    } else {
+        (10.0 * pi * x1).sin() / (2.0 * x1) + (x1 - 1.0).powi(4)
+    }
 }
 #[cfg(test)]
 mod tests {

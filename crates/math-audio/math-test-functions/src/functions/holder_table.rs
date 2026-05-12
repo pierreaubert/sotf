@@ -9,5 +9,5 @@ pub fn holder_table(x: &Array1<f64>) -> f64 {
     let x1 = x[0];
     let x2 = x[1];
     let exp_term = (1.0 - (x1.powi(2) + x2.powi(2)).sqrt() / std::f64::consts::PI).abs();
-    -(x1 * x2).sin().abs() * exp_term.exp()
+    -(x1.sin() * x2.cos()).abs() * exp_term.exp()
 }
