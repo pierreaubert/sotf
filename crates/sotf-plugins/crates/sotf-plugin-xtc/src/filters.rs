@@ -833,7 +833,11 @@ pub(crate) fn compute_2x2_inverse(
 
     let det = diag * diag - off_diag * off_diag;
 
-    if det.abs() < 1e-10 {
+    // Use a relative threshold to avoid falsely detecting singularity when the
+    // transfer function magnitudes are small (e.g., in a deep notch).
+    // An absolute 1e-10 triggers for |H| ~ 1e-3 where det ~ 1e-12, even though
+    // the matrix is perfectly invertible.
+    if det.abs() < 1e-10 * diag.abs() {
         return (Complex::new(1.0, 0.0), Complex::new(0.0, 0.0));
     }
 
