@@ -424,66 +424,6 @@ impl ResamplerPlugin {
         Ok(())
     }
 
-    /// Flush any remaining buffered input frames through the resampler.
-    ///
-    /// This zero-pads the residual buffer to a full chunk and processes it,
-    /// returning the final output frames. Call this when the input stream ends
-    /// to avoid losing trailing audio.
-    pub fn flush(&mut self, output: &mut [f32]) -> Result<usize, String> {
-        let resampler = self.resampler.as_mut().ok_or("Resampler not initialized")?;
-        let chunk_size = self.chunk_size;
-        let max_output_frames = resampler.output_frames_max();
-
-        if self.residual_frames == 0 {
-            return Ok(0);
-        }
-
-        // Zero-pad residual input to full chunk size
-        for ch in 0..self.num_channels {
-            self.input_buffer[ch].fill(0.0);
-            self.input_buffer[ch][..self.residual_frames]
-                .copy_from_slice(&self.residual_input[ch][..self.residual_frames]);
-        }
-
-        let input_adapter =
-            SequentialSliceOfVecs::new(&self.input_buffer, self.num_channels, chunk_size)
-                .map_err(|e| format!("Input adapter error: {:?}", e))?;
-        let mut output_adapter = SequentialSliceOfVecs::new_mut(
-            &mut self.output_buffer,
-            self.num_channels,
-            max_output_frames,
-        )
-        .map_err(|e| format!("Output adapter error: {:?}", e))?;
-
-        let (_, output_frames) = resampler
-            .process_into_buffer(&input_adapter, &mut output_adapter, None)
-            .map_err(|e| format!("Resampling failed: {:?}", e))?;
-
-        // Check output buffer capacity
-        let new_output_samples = output_frames * self.num_channels;
-        if new_output_samples > output.len() {
-            return Err(format!(
-                "Output buffer too small: need {} samples, got {}",
-                new_output_samples,
-                output.len()
-            ));
-        }
-
-        // Convert planar to interleaved
-        Self::planar_to_interleaved(
-            &self.output_buffer,
-            &mut output[..new_output_samples],
-            output_frames,
-            self.num_channels,
-        );
-
-        self.residual_frames = 0;
-        for ch in 0..self.num_channels {
-            self.residual_input[ch].fill(0.0);
-        }
-
-        Ok(output_frames)
-    }
 }
 
 impl Plugin for ResamplerPlugin {

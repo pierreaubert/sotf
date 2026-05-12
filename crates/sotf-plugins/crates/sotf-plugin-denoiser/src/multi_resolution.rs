@@ -319,11 +319,6 @@ impl MultiResState {
                 state.smoothed_gain[k] = (snr / (snr + reduction_linear)).max(floor_linear);
             }
 
-            // Silence unused parameter warnings — attack/release are no longer used
-            // in this path but are kept in the function signature for API stability.
-            let _ = attack_coeff;
-            let _ = release_coeff;
-
             // Spectral flux: mean |magnitude_change| across bins
             let mut flux = 0.0_f32;
             for k in 0..spectrum_size {

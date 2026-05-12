@@ -327,7 +327,7 @@ impl Plugin for CrossoverPlugin {
             let clamped_freqs: Vec<f32> = self
                 .all_frequencies
                 .iter()
-                .map(|&f| f.min(nyquist))
+                .map(|&f| f.min(nyquist_limit))
                 .collect();
             mb.reinit(&clamped_freqs, sample_rate as f32, self.num_channels);
         }
