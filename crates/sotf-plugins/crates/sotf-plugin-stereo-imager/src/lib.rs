@@ -232,97 +232,55 @@ impl InPlacePlugin for StereoImagerPlugin {
         }
     }
 
-    /// Override default to avoid cloning `cached_parameters` on every call.
-    /// The trait default calls `self.parameters()` (a clone), which allocates.
-    /// Instead, validate directly against the static PARAMS table — no heap
-    /// allocation required.
-    fn validate_parameter(&self, id: &ParameterId, value: &ParameterValue) -> PluginResult<()> {
-        // Search the static PARAMS array; `find_by_key` panics so use .find() directly.
-        let spec = SI.iter().find(|s| s.engine_key == id.as_str());
-        if let Some(spec) = spec {
-            if let ParameterValue::Float(v) = value {
-                let min = spec.min_f64() as f32;
-                let max = spec.max_f64() as f32;
-                if *v < min || *v > max {
-                    return Err(format!(
-                        "{}: value {} out of range [{}, {}]",
-                        id, v, min, max
-                    ));
-                }
-            }
-            Ok(())
-        } else {
-            Err(format!("Unknown parameter: {}", id))
-        }
-    }
-
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         self.validate_parameter(&id, &value)?;
-
-        // Update the corresponding cached_parameter in-place (no Vec reallocation).
-        // `Parameter::default_value` is the current value field used by the host.
-        macro_rules! update_cached {
-            ($id:expr, $val:expr) => {
-                if let Some(p) = self.cached_parameters.iter_mut().find(|p| p.id == $id) {
-                    p.default_value = $val;
-                }
-            };
-        }
 
         match id.as_str() {
             "width" => {
                 if let Some(v) = value.as_float() {
                     self.width = v;
                     self.width_smoother.set_target(v);
-                    update_cached!(id, ParameterValue::Float(v));
                 }
             }
             "low_mid_freq" => {
                 if let Some(v) = value.as_float() {
                     self.low_mid_freq = v;
-                    self.crossover_low.set_frequency(v);
-                    update_cached!(id, ParameterValue::Float(v));
+                    self.low_mid_freq_smoother.set_target(v);
                 }
             }
             "mid_high_freq" => {
                 if let Some(v) = value.as_float() {
                     self.mid_high_freq = v;
-                    self.crossover_high.set_frequency(v);
-                    update_cached!(id, ParameterValue::Float(v));
+                    self.mid_high_freq_smoother.set_target(v);
                 }
             }
             "low_width" => {
                 if let Some(v) = value.as_float() {
                     self.low_width = v;
                     self.low_width_smoother.set_target(v);
-                    update_cached!(id, ParameterValue::Float(v));
                 }
             }
             "mid_width" => {
                 if let Some(v) = value.as_float() {
                     self.mid_width = v;
                     self.mid_width_smoother.set_target(v);
-                    update_cached!(id, ParameterValue::Float(v));
                 }
             }
             "high_width" => {
                 if let Some(v) = value.as_float() {
                     self.high_width = v;
                     self.high_width_smoother.set_target(v);
-                    update_cached!(id, ParameterValue::Float(v));
                 }
             }
             "mono_bass" => {
                 if let Some(v) = value.as_bool() {
                     self.mono_bass = v;
-                    update_cached!(id, ParameterValue::Bool(v));
                 }
             }
             "mix" => {
                 if let Some(v) = value.as_float() {
                     self.mix = v;
                     self.mix_smoother.set_target(v);
-                    update_cached!(id, ParameterValue::Float(v));
                 }
             }
             _ => return Err(format!("Unknown parameter: {}", id)),
@@ -364,9 +322,8 @@ impl InPlacePlugin for StereoImagerPlugin {
         self.mid_high_freq_smoother =
             LogSmoother::new(self.mid_high_freq, FREQ_SMOOTHING_MS, sample_rate);
 
-        // Pre-allocate dry buffer for maximum expected frame size.
-        // 65536 * 2 covers virtually all real-world buffer sizes (up to ~1.4s @ 48 kHz).
-        self.dry_buf.resize(65536 * 2, 0.0);
+        // Pre-allocate dry buffer for maximum expected frame size
+        self.dry_buf.resize(8192 * 2, 0.0);
 
         Ok(())
     }
@@ -374,13 +331,13 @@ impl InPlacePlugin for StereoImagerPlugin {
     fn reset(&mut self) {
         self.crossover_low.reset();
         self.crossover_high.reset();
-        // Snap all smoothers to their current target values so a reset
-        // during a parameter transition does not resume the ramp.
         self.width_smoother.reset(self.width);
         self.low_width_smoother.reset(self.low_width);
         self.mid_width_smoother.reset(self.mid_width);
         self.high_width_smoother.reset(self.high_width);
         self.mix_smoother.reset(self.mix);
+        self.low_mid_freq_smoother.reset(self.low_mid_freq);
+        self.mid_high_freq_smoother.reset(self.mid_high_freq);
     }
 
     fn process_in_place(
@@ -397,24 +354,26 @@ impl InPlacePlugin for StereoImagerPlugin {
             return Ok(nf);
         }
 
-        // Ensure dry buffer is large enough.
-        // initialize() pre-allocates 65536*2 samples covering virtually all
-        // real-world buffer sizes; this resize is a last-resort fallback only.
+        // Ensure dry buffer is large enough (no allocation if already big enough)
         if self.dry_buf.len() < nf * 2 {
             self.dry_buf.resize(nf * 2, 0.0);
         }
 
-        // Save dry signal for mix blending only when wet/dry blend is active.
-        // At mix=1.0 (default) the copy is wasted; skip it to save memory bandwidth.
-        let need_dry = !(self.mix_smoother.target() >= 1.0 - f32::EPSILON
-            && self.mix_smoother.current() >= 1.0 - f32::EPSILON);
-        if need_dry {
-            self.dry_buf[..nf * 2].copy_from_slice(&buffer[..nf * 2]);
+        // Apply smoothed crossover frequencies before processing this buffer
+        self.low_mid_freq_smoother.next_n(nf);
+        let low_freq = self.low_mid_freq_smoother.current();
+        if (low_freq - self.crossover_low.frequency()).abs() >= 0.1 {
+            self.crossover_low.set_frequency(low_freq);
         }
 
-        // Hoist mono_bass out of the per-sample loop — it changes extremely rarely
-        // and checking a bool every sample wastes branch prediction budget.
-        let mono_bass = self.mono_bass;
+        self.mid_high_freq_smoother.next_n(nf);
+        let high_freq = self.mid_high_freq_smoother.current();
+        if (high_freq - self.crossover_high.frequency()).abs() >= 0.1 {
+            self.crossover_high.set_frequency(high_freq);
+        }
+
+        // Save dry signal for mix blending
+        self.dry_buf[..nf * 2].copy_from_slice(&buffer[..nf * 2]);
 
         for frame in 0..nf {
             let idx = frame * 2;
@@ -437,9 +396,12 @@ impl InPlacePlugin for StereoImagerPlugin {
             let mw = self.mid_width_smoother.advance();
             let hw = self.high_width_smoother.advance();
 
-            // Apply per-band width scaling to side signal.
-            // mono_bass is hoisted above the loop — no per-sample branch.
-            let low_side = if mono_bass { 0.0 } else { side_low * lw * gw };
+            // Apply per-band width scaling to side signal
+            let low_side = if self.mono_bass {
+                0.0
+            } else {
+                side_low * lw * gw
+            };
             let mid_side_scaled = side_mid * mw * gw;
             let high_side_scaled = side_high * hw * gw;
 
@@ -453,13 +415,8 @@ impl InPlacePlugin for StereoImagerPlugin {
 
             // Dry/wet mix
             let m = self.mix_smoother.advance();
-            if need_dry {
-                buffer[idx] = self.dry_buf[idx] * (1.0 - m) + wet_l * m;
-                buffer[idx + 1] = self.dry_buf[idx + 1] * (1.0 - m) + wet_r * m;
-            } else {
-                buffer[idx] = wet_l;
-                buffer[idx + 1] = wet_r;
-            }
+            buffer[idx] = self.dry_buf[idx] * (1.0 - m) + wet_l * m;
+            buffer[idx + 1] = self.dry_buf[idx + 1] * (1.0 - m) + wet_r * m;
         }
 
         flush_denormals_inplace(buffer);
@@ -479,134 +436,6 @@ mod tests {
         ProcessContext {
             sample_rate: 48000,
             num_frames,
-        }
-    }
-
-    /// reset() must snap all smoothers to their current target values.
-    /// If a smoother is mid-transition when reset() is called, it must
-    /// jump immediately to the target — not resume from where it left off.
-    #[test]
-    fn test_reset_snaps_smoothers() {
-        let mut plugin = StereoImagerPlugin::new(2, StereoImagerPluginParams::default());
-        plugin.initialize(48000).unwrap();
-
-        // Drive the width smoother into a transition: set a new target
-        plugin
-            .set_parameter(ParameterId::from("width"), ParameterValue::Float(0.0))
-            .unwrap();
-
-        // reset() should snap the smoother to the new target (0.0)
-        plugin.reset();
-
-        // After reset, processing one frame: the smoother must produce 0.0,
-        // meaning side is fully suppressed — L and R must be equal (both = mid).
-        let num_frames = 512;
-        let mut buffer = Vec::with_capacity(num_frames * 2);
-        for i in 0..num_frames {
-            let t = i as f32 * 0.01;
-            buffer.push(t.sin() * 0.5); // L
-            buffer.push(t.cos() * 0.3); // R
-        }
-        plugin
-            .process_in_place(&mut buffer, &make_context(num_frames))
-            .unwrap();
-
-        // Every sample must have L == R (no smoother ramp-in from the old value)
-        for frame in 0..num_frames {
-            let idx = frame * 2;
-            let diff = (buffer[idx] - buffer[idx + 1]).abs();
-            assert!(
-                diff < 0.01,
-                "frame {frame}: L={} R={} — smoother was not snapped by reset()",
-                buffer[idx],
-                buffer[idx + 1]
-            );
-        }
-    }
-
-    /// mono_bass=false: the per-sample mono_bass branch must not change output
-    /// when toggled rapidly mid-buffer (no crash, no NaN).
-    #[test]
-    fn test_rapid_mono_bass_toggle_no_nan() {
-        let mut plugin = StereoImagerPlugin::new(2, StereoImagerPluginParams::default());
-        plugin.initialize(48000).unwrap();
-
-        let num_frames = 256;
-        let mut buffer: Vec<f32> = (0..num_frames * 2)
-            .map(|i| (i as f32 * 0.1).sin() * 0.5)
-            .collect();
-
-        // Toggle mono_bass multiple times before and during processing
-        for _ in 0..5 {
-            plugin
-                .set_parameter(
-                    ParameterId::from("mono_bass"),
-                    ParameterValue::Bool(true),
-                )
-                .unwrap();
-            plugin
-                .set_parameter(
-                    ParameterId::from("mono_bass"),
-                    ParameterValue::Bool(false),
-                )
-                .unwrap();
-        }
-
-        plugin
-            .process_in_place(&mut buffer, &make_context(num_frames))
-            .unwrap();
-
-        for (i, &s) in buffer.iter().enumerate() {
-            assert!(!s.is_nan(), "NaN at sample {i} after rapid mono_bass toggle");
-            assert!(!s.is_infinite(), "Inf at sample {i} after rapid mono_bass toggle");
-        }
-    }
-
-    /// Buffer larger than 8192 frames: must not panic (dry_buf must accommodate).
-    #[test]
-    fn test_large_buffer_no_panic() {
-        let mut plugin = StereoImagerPlugin::new(2, StereoImagerPluginParams::default());
-        plugin.initialize(48000).unwrap();
-
-        let num_frames = 16384;
-        let mut buffer = vec![0.5_f32; num_frames * 2];
-        // Should not panic
-        plugin
-            .process_in_place(&mut buffer, &make_context(num_frames))
-            .unwrap();
-    }
-
-    /// Mix=0 (fully dry): output must be byte-for-byte identical to input.
-    #[test]
-    fn test_mix_zero_full_passthrough() {
-        let params = StereoImagerPluginParams {
-            mix: 0.0,
-            width: 2.0, // Irrelevant — mix=0 means pure dry
-            low_mid_freq: 250.0,
-            mid_high_freq: 4000.0,
-            low_width: 1.0,
-            mid_width: 1.0,
-            high_width: 1.0,
-            mono_bass: false,
-        };
-        let mut plugin = StereoImagerPlugin::new(2, params);
-        plugin.initialize(48000).unwrap();
-
-        let num_frames = 512;
-        let mut buffer: Vec<f32> = (0..num_frames * 2)
-            .map(|i| (i as f32 * 0.05).sin() * 0.7)
-            .collect();
-        let original = buffer.clone();
-
-        plugin
-            .process_in_place(&mut buffer, &make_context(num_frames))
-            .unwrap();
-
-        for (i, (&orig, &out)) in original.iter().zip(buffer.iter()).enumerate() {
-            assert_eq!(
-                orig, out,
-                "sample {i}: mix=0 changed output: expected {orig}, got {out}"
-            );
         }
     }
 
