@@ -200,6 +200,10 @@ pub fn compute_lfe_filter(
     // Level adjustment from dB
     let level_gain = 10.0_f32.powf(lfe_level / 20.0);
 
+    // Combined gain: distance attenuation × user level. No additional factor —
+    // LFE channels in cinema are calibrated +10 dB hotter than mains (ITU-R BS.775-3)
+    // so an arbitrary -3 dB reduction would make the subwoofer path too quiet.
+    // The user-adjustable lfe_level is the sole gain control beyond distance attenuation.
     let lfe_gain = distance_atten * level_gain;
 
     log::info!(
