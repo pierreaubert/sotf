@@ -1,7 +1,7 @@
 [package]
 name = "sotf-plugin-saturation"
 description = "SOTF Saturation / Harmonic Exciter plugin"
-version = "0.5.5"
+version = "0.5.4"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
