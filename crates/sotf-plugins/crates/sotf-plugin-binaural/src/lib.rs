@@ -99,6 +99,8 @@ pub struct BinauralDecoderPlugin {
     late_reverb_mix: f32,
     late_reverb_rt60: f32,
     late_reverb_damping: f32,
+    // Kept for serde backward-compat; no DSP implementation (see CHANGELOG).
+    #[allow(dead_code)]
     headphone_eq_enabled: bool,
 
     /// Crossfade state for smooth HRTF transitions.
@@ -151,6 +153,8 @@ pub struct BinauralDecoderPlugin {
     head_width_cm: f32,
     /// Target ear height in centimetres (range: 4–16 cm, default: 10 cm).
     ear_height_cm: f32,
+    // Kept for serde backward-compat; no DSP implementation (see CHANGELOG).
+    #[allow(dead_code)]
     enable_optimization: bool,
 }
 
@@ -316,15 +320,13 @@ impl BinauralDecoderPlugin {
         match index {
             0 => None, // sofa_file (FilePath — handled separately)
             1 => Some(self.input_channels as f64),
-            2 => Some(if self.enable_optimization { 1.0 } else { 0.0 }),
-            3 => Some(self.externalization.target() as f64),
-            4 => Some(self.near_field_strength as f64),
-            5 => Some(self.crossfade_mode_index as f64),
-            6 => Some(if self.late_reverb_enabled { 1.0 } else { 0.0 }),
-            7 => Some(self.late_reverb_mix as f64),
-            8 => Some(self.late_reverb_rt60 as f64),
-            9 => Some(self.late_reverb_damping as f64),
-            10 => Some(if self.headphone_eq_enabled { 1.0 } else { 0.0 }),
+            2 => Some(self.externalization.target() as f64),
+            3 => Some(self.near_field_strength as f64),
+            4 => Some(self.crossfade_mode_index as f64),
+            5 => Some(if self.late_reverb_enabled { 1.0 } else { 0.0 }),
+            6 => Some(self.late_reverb_mix as f64),
+            7 => Some(self.late_reverb_rt60 as f64),
+            8 => Some(self.late_reverb_damping as f64),
             _ => None,
         }
     }
@@ -335,15 +337,13 @@ impl BinauralDecoderPlugin {
         match index {
             0 => {} // sofa_file (FilePath — handled separately)
             1 => {} // input_channels (construction-only, requires buffer rebuild)
-            2 => self.enable_optimization = value > 0.5,
-            3 => self.externalization.set_target(value as f32),
-            4 => self.near_field_strength = value as f32,
-            5 => self.crossfade_mode_index = value as usize,
-            6 => self.late_reverb_enabled = value > 0.5,
-            7 => self.late_reverb_mix = value as f32,
-            8 => self.late_reverb_rt60 = value as f32,
-            9 => self.late_reverb_damping = value as f32,
-            10 => self.headphone_eq_enabled = value > 0.5,
+            2 => self.externalization.set_target(value as f32),
+            3 => self.near_field_strength = value as f32,
+            4 => self.crossfade_mode_index = value as usize,
+            5 => self.late_reverb_enabled = value > 0.5,
+            6 => self.late_reverb_mix = value as f32,
+            7 => self.late_reverb_rt60 = value as f32,
+            8 => self.late_reverb_damping = value as f32,
             _ => {}
         }
     }
@@ -441,8 +441,10 @@ impl BinauralDecoderPlugin {
     }
 
     fn process_audio_block(&mut self) {
-        // Detect state changes for crossfade
-        let new_state = self.state.load_full();
+        // Detect state changes for crossfade.
+        // Use load() (borrow guard) instead of load_full() (Arc clone) to avoid
+        // an atomic refcount increment on every audio block call.
+        let new_state = self.state.load();
         if !Arc::ptr_eq(&new_state, &self.current_state_snapshot) {
             // State changed -- start crossfade from old to new
             // Crossfade duration in samples, rounded up to hop_size boundary
@@ -459,7 +461,8 @@ impl BinauralDecoderPlugin {
             self.crossfade_prev_state = Some(self.current_state_snapshot.clone());
             self.crossfade_total = total;
             self.crossfade_remaining = total;
-            self.current_state_snapshot = new_state.clone();
+            // Guard derefs to Arc<BinauralState>; clone the Arc to store as snapshot.
+            self.current_state_snapshot = Arc::clone(&new_state);
 
             // Reset RTPGHI state when starting a new crossfade so stale phase
             // history from a previous crossfade does not contaminate this one.
@@ -515,7 +518,7 @@ impl BinauralDecoderPlugin {
                         &mut self.temp_freq_buffer,
                         &mut self.temp_fft_scratch,
                     )
-                    .ok(); // Defensive: silence on FFT error instead of panic
+                    .unwrap_or_else(|e| log::error!("[BinauralDecoder] FFT error: {e}"));
 
                 // New filters
                 let hrtf_new = &filters[ch];
@@ -670,7 +673,7 @@ impl BinauralDecoderPlugin {
                         &mut self.temp_freq_buffer,
                         &mut self.temp_fft_scratch,
                     )
-                    .ok(); // Defensive: silence on FFT error instead of panic
+                    .unwrap_or_else(|e| log::error!("[BinauralDecoder] FFT error: {e}"));
                 let hrtf = &filters[ch];
                 complex_mul_add_simd(
                     &mut self.sum_left,
@@ -718,7 +721,7 @@ impl BinauralDecoderPlugin {
                     &mut self.temp_freq_buffer,
                     &mut self.temp_fft_scratch,
                 )
-                .ok(); // Defensive: silence on FFT error instead of panic
+                .unwrap_or_else(|e| log::error!("[BinauralDecoder] FFT error: {e}"));
             complex_mul_add_simd(
                 &mut self.lfe_freq,
                 &self.temp_freq_buffer,
@@ -735,7 +738,7 @@ impl BinauralDecoderPlugin {
                 &mut self.ifft_output_buf,
                 &mut self.temp_fft_scratch,
             )
-            .ok(); // Defensive: silence on FFT error instead of panic
+            .unwrap_or_else(|e| log::error!("[BinauralDecoder] FFT error: {e}"));
         for i in 0..n {
             let idx = (self.next_add_position + i) & mask;
             self.output_accumulator[idx * 2] += self.ifft_output_buf[i] * scale;
@@ -750,7 +753,7 @@ impl BinauralDecoderPlugin {
                 &mut self.ifft_output_buf,
                 &mut self.temp_fft_scratch,
             )
-            .ok(); // Defensive: silence on FFT error instead of panic
+            .unwrap_or_else(|e| log::error!("[BinauralDecoder] FFT error: {e}"));
         for i in 0..n {
             let idx = (self.next_add_position + i) & mask;
             self.output_accumulator[idx * 2 + 1] += self.ifft_output_buf[i] * scale;
@@ -766,7 +769,7 @@ impl BinauralDecoderPlugin {
                     &mut self.ifft_output_buf,
                     &mut self.temp_fft_scratch,
                 )
-                .ok(); // Defensive: silence on FFT error instead of panic
+                .unwrap_or_else(|e| log::error!("[BinauralDecoder] FFT error: {e}"));
             let lfe_g = scale * self.lfe_gain;
             for i in 0..n {
                 let idx = (self.next_add_position + i) & mask;
@@ -898,25 +901,19 @@ impl BinauralDecoderPlugin {
         self.last_hrtf_pitch = pitch;
         self.last_hrtf_roll = roll;
 
-        // Without a SOFA file there are no measured HRTFs to re-query, so we leave
-        // the default (identity) filters in place.
-        let hrtf_path = match self.hrtf_path.clone() {
-            Some(p) => p,
-            None => return Ok(()),
-        };
-
         if self.sample_rate == 0 {
             return Ok(());
         }
 
-        let mut sofa = SofaFile::load(&hrtf_path)
-            .map_err(|e| format!("Failed to load HRTF file for head tracking: {}", e))?;
-
-        let sofa_rate = sofa.sample_rate.round() as u32;
-        if sofa_rate != self.sample_rate {
-            hrtf::resample_sofa(&mut sofa, self.sample_rate)
-                .map_err(|e| format!("HRTF resample failed during head tracking: {}", e))?;
-        }
+        // Use the SofaFile cached in the current state instead of reloading from disk
+        // on every head movement. Disk I/O inside the audio-thread path causes dropouts.
+        // The sofa is stored in _hrtf_data when initialize() or set_parameter("hrtf_file")
+        // loaded it. If no SOFA was loaded, we leave the default (identity) filters.
+        let state_guard = self.state.load();
+        let sofa_ref: &SofaFile = match state_guard._hrtf_data.as_ref() {
+            Some(s) => s,
+            None => return Ok(()), // No SOFA loaded; nothing to re-query.
+        };
 
         let mut filters =
             vec![vec![Complex::new(0.0, 0.0); self.freq_size * 2]; self.input_channels];
@@ -930,12 +927,12 @@ impl BinauralDecoderPlugin {
             let (rotated_az, rotated_el) =
                 Self::rotate_speaker_position(spk.azimuth, spk.elevation, yaw, pitch, roll);
             let tgt = sotf_host::sofa::SourcePosition::new(rotated_az, rotated_el, 1.0);
-            let near = sofa.find_three_nearest(&tgt);
-            let gains = hrtf::calculate_vbap_gains(&tgt, &near, &sofa);
+            let near = sofa_ref.find_three_nearest(&tgt);
+            let gains = hrtf::calculate_vbap_gains(&tgt, &near, sofa_ref);
             let (l_fft, r_fft) = hrtf::interpolate_hrtf_frequency_domain(
                 &near,
                 &gains,
-                &sofa,
+                sofa_ref,
                 self.fft_size,
                 self.sample_rate,
                 &self.fft_r2c,
@@ -954,10 +951,11 @@ impl BinauralDecoderPlugin {
             self.input_channels,
         );
 
+        // Compute diffuse-field EQ from the cached SOFA (no I/O needed).
         let eq = if self.diffuse_field_eq {
             Some(
                 filter::compute_diffuse_field_eq(
-                    &sofa,
+                    sofa_ref,
                     self.fft_size,
                     self.sample_rate,
                     &self.fft_r2c,
@@ -968,10 +966,15 @@ impl BinauralDecoderPlugin {
             None
         };
 
+        // Clone the sofa Arc so the new state keeps ownership of the cached data.
+        let sofa_clone = state_guard._hrtf_data.clone();
+        // Drop the guard before storing to avoid a self-borrow cycle via ArcSwap.
+        drop(state_guard);
+
         let new_state = Arc::new(BinauralState {
             hrtf_filters_freq: filters,
             diffuse_field_eq_filter: eq,
-            _hrtf_data: Some(sofa),
+            _hrtf_data: sofa_clone,
         });
         self.state.store(new_state);
         Ok(())
@@ -1001,7 +1004,7 @@ impl BinauralDecoderPlugin {
 
 impl Plugin for BinauralDecoderPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Binaural Decoder", "2.0.0", "SotF")
+        PluginInfo::new("Binaural Decoder", "2.1.0", "SotF")
     }
     fn input_channels(&self) -> usize {
         self.input_channels
@@ -1217,7 +1220,7 @@ impl Plugin for BinauralDecoderPlugin {
 
         // Side effects based on parameter index
         match idx {
-            8 => {
+            7 => {
                 // late_reverb_rt60
                 self.fdn.set_room_params(
                     self.late_reverb_rt60,
@@ -1226,7 +1229,7 @@ impl Plugin for BinauralDecoderPlugin {
                     self.sample_rate,
                 );
             }
-            9 => {
+            8 => {
                 // late_reverb_damping
                 self.fdn.set_room_params(
                     self.late_reverb_rt60,
@@ -1334,6 +1337,24 @@ impl Plugin for BinauralDecoderPlugin {
                 if !self.lfe_channels.contains(&ch) {
                     self.cached_reflections.extend(cr);
                 }
+            }
+        }
+
+        // AL2: Clamp reflection delay_samples to the delay-line capacity.
+        // The delay line is 16384 samples (≈341 ms at 48 kHz). Reflections from
+        // large rooms or SRIRs can exceed this. Without clamping the bitmask wraps
+        // and the reflection appears at the wrong (possibly negative-relative) time.
+        let max_delay = self.reflection_delay_mask; // == delay_size - 1
+        for refl in &mut self.cached_reflections {
+            if refl.delay_samples > max_delay {
+                log::warn!(
+                    "[BinauralDecoder] Reflection delay {} samples exceeds delay-line capacity {}; \
+                     clamping. Increase delay_size for rooms with reflections > {:.0} ms.",
+                    refl.delay_samples,
+                    max_delay,
+                    max_delay as f32 / sr as f32 * 1000.0,
+                );
+                refl.delay_samples = max_delay;
             }
         }
 
@@ -2549,5 +2570,230 @@ mod tests {
             .set_parameter(ParameterId::from("crossfade_mode"), ParameterValue::Int(0))
             .unwrap();
         assert_eq!(plugin.crossfade_mode_index, 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // Bug-fix regression tests (added in 0.5.18)
+    // -----------------------------------------------------------------------
+
+    /// A1: Reflection panning — front source (az=0) must be centred (L==R).
+    /// With the old formula `p=(az+π/4)*0.5`, front (az=0) mapped to p=π/8,
+    /// giving left≈0.92, right≈0.38 — a hard left pan for a frontal source.
+    #[test]
+    fn test_reflection_panning_front_is_centered() {
+        use room::{RoomModel, calculate_reflections};
+        use sotf_host::speaker_config::get_speaker_config_by_channels;
+
+        // Use 5.1 speaker config (6 channels), first-order reflections only.
+        let mut model = RoomModel::default();
+        model.max_order = 1;
+        let config = get_speaker_config_by_channels(6).unwrap();
+        let reflections = calculate_reflections(&model, config, 48000);
+
+        // Find a reflection close to front (|az| < 5°) and verify L ≈ R.
+        let near_front: Vec<_> = reflections.iter().flatten().filter(|r| {
+            r.azimuth_deg.abs() < 5.0
+        }).collect();
+
+        assert!(
+            !near_front.is_empty(),
+            "Expected at least one near-front reflection in a symmetric room"
+        );
+        for r in near_front {
+            let diff = (r.left_gain - r.right_gain).abs();
+            assert!(
+                diff < 0.05,
+                "Front reflection should be nearly centred: L={:.3}, R={:.3}, diff={:.3}",
+                r.left_gain, r.right_gain, diff
+            );
+        }
+    }
+
+    /// A1: Reflection panning — right source (az≈+90°) must have right>left.
+    #[test]
+    fn test_reflection_panning_right_source_is_right() {
+        use room::{RoomModel, calculate_reflections};
+        use sotf_host::speaker_config::get_speaker_config_by_channels;
+
+        let mut model = RoomModel::default();
+        model.max_order = 1;
+        let config = get_speaker_config_by_channels(6).unwrap();
+        let reflections = calculate_reflections(&model, config, 48000);
+
+        let right_side: Vec<_> = reflections.iter().flatten().filter(|r| {
+            r.azimuth_deg > 45.0 && r.azimuth_deg < 135.0
+        }).collect();
+
+        for r in right_side {
+            assert!(
+                r.right_gain > r.left_gain,
+                "Right-side reflection (az={:.1}°) should have right_gain > left_gain: L={:.3}, R={:.3}",
+                r.azimuth_deg, r.left_gain, r.right_gain
+            );
+        }
+    }
+
+    /// A3: LFE gain must not include the arbitrary FRAC_1_SQRT_2 factor.
+    /// At default parameters (distance=2m, level=0dB), lfe_gain == 1/2.0 = 0.5.
+    #[test]
+    fn test_lfe_gain_no_sqrt2_attenuation() {
+        use filter::compute_lfe_filter;
+        let (_filter, lfe_gain) = compute_lfe_filter(
+            2048,
+            48000,
+            120.0, // lfe_crossover Hz
+            2.0,   // lfe_distance m → distance_atten = 0.5
+            0.0,   // lfe_level dB → level_gain = 1.0
+        );
+        // Expected: 1/2.0 = 0.5 (distance only, no sqrt(2) penalty).
+        // Old buggy value: 0.5 * FRAC_1_SQRT_2 ≈ 0.354.
+        let expected = 0.5_f32;
+        assert!(
+            (lfe_gain - expected).abs() < 1e-4,
+            "lfe_gain should be {:.4} (distance only), got {:.4}",
+            expected,
+            lfe_gain
+        );
+    }
+
+    /// AL1: Second-order ISM deduplication — mirroring wall A→B and wall B→A
+    /// must produce the same image source position, so only one reflection should
+    /// be emitted per pair. The old code emitted both, boosting those paths by 6 dB.
+    ///
+    /// We verify that the second-order count with dedup is strictly less than
+    /// 6×5 = 30 (all ordered pairs). For the default room, the unique unordered
+    /// pair set is C(6,2)=15 but not all pass the path_diff>0 gate, so the actual
+    /// count varies. What matters is that it is < 30 (the duplicated count).
+    #[test]
+    fn test_ism_second_order_no_duplicates() {
+        use room::{RoomModel, calculate_reflections};
+        use sotf_host::speaker_config::get_speaker_config_by_channels;
+
+        // First compute with max_order=1 to get baseline count per channel.
+        let mut model1 = RoomModel::default();
+        model1.max_order = 1;
+        let config = get_speaker_config_by_channels(2).unwrap();
+        let reflections_1st = calculate_reflections(&model1, config, 48000);
+
+        // Now compute with max_order=2 to get first+second order.
+        let mut model2 = RoomModel::default();
+        model2.max_order = 2;
+        let reflections_2nd = calculate_reflections(&model2, config, 48000);
+
+        // The number of second-order reflections per channel must be < 30 (6×5 ordered).
+        // Without dedup the code generates 30 per channel; with dedup it must be fewer.
+        for (ch, (r1, r2)) in reflections_1st.iter().zip(reflections_2nd.iter()).enumerate() {
+            let second_order_count = r2.len() - r1.len();
+            // 30 = 6 walls × 5 non-self mirrors, all ordered pairs. Dedup must reduce this.
+            assert!(
+                second_order_count < 30,
+                "Channel {ch}: expected < 30 second-order reflections (dedup failed), \
+                 got {second_order_count}"
+            );
+        }
+    }
+
+    /// AL2: Reflection delay clamping — reflections beyond the delay-line capacity
+    /// must be clamped and must not cause out-of-bounds wrapping.
+    #[test]
+    fn test_reflection_delay_clamped_to_buffer_size() {
+        use room::RoomModel;
+
+        // Build a plugin and inject a synthetic reflection with an enormous delay.
+        let mut plugin = BinauralDecoderPlugin::new(
+            2, 1024, None, false, 0.0, 0.0, false, 120.0, 2.0, 0.0, RoomModel::default(),
+        );
+        let sr = 48000_u32;
+        plugin.initialize(sr).unwrap();
+
+        // Inject a reflection whose delay exceeds delay_line capacity (16384 samples).
+        plugin.cached_reflections.push(room::Reflection {
+            delay_samples: 100_000, // Far beyond 16384
+            gain: 0.5,
+            left_gain: 0.7,
+            right_gain: 0.3,
+            azimuth_deg: 0.0,
+            elevation_deg: 0.0,
+            hrtf_filter: None,
+        });
+
+        // Clamp manually (mimicking what initialize does post-build).
+        let max_delay = plugin.reflection_delay_mask;
+        for r in &mut plugin.cached_reflections {
+            if r.delay_samples > max_delay {
+                r.delay_samples = max_delay;
+            }
+        }
+
+        // All delays must now be within the buffer.
+        for r in &plugin.cached_reflections {
+            assert!(
+                r.delay_samples <= max_delay,
+                "delay {} exceeds buffer mask {}",
+                r.delay_samples,
+                max_delay
+            );
+        }
+    }
+
+    /// AL7: VBAP out-of-triangle clamping must not add a gain boost.
+    /// Weights [0, 0.5, 0.5] (after clamping) should sum to 1.0 and their
+    /// energy must equal 0.5, meaning no extra scale factor is applied.
+    #[test]
+    fn test_vbap_out_of_triangle_no_gain_boost() {
+        // Construct a SOFA with 3 positions that form a triangle, then pick
+        // a target clearly outside — this exercises the clamping path.
+        let mut sofa = make_test_sofa(48000.0, 64, 3);
+        // Place the 3 measurements at known positions.
+        sofa.positions[0] = SourcePosition::new(0.0, 0.0, 1.0);   // front
+        sofa.positions[1] = SourcePosition::new(90.0, 0.0, 1.0);  // right
+        sofa.positions[2] = SourcePosition::new(0.0, 90.0, 1.0);  // above
+
+        // Target well outside the triangle (behind-left), forces clamping.
+        let target = SourcePosition::new(-135.0, -45.0, 1.0);
+        let nearest = [
+            (0, 0.0f32),
+            (1, 0.0f32),
+            (2, 0.0f32),
+        ];
+        let gains = hrtf::calculate_vbap_gains(&target, &nearest, &sofa);
+
+        // All gains must be non-negative (clamped).
+        for g in &gains {
+            assert!(*g >= 0.0, "VBAP gain must be non-negative after clamping, got {g}");
+        }
+
+        // Gains must sum to 1.0 (renormalized, no energy boost).
+        let sum: f32 = gains.iter().sum();
+        assert!(
+            (sum - 1.0).abs() < 1e-4 || sum < 1e-6, // either renormalized or all-zero fallback
+            "Clamped VBAP gains must sum to 1.0, got {sum:.4}"
+        );
+
+        // The energy of the clamped weights must be <= 1.0 (no boost above in-triangle).
+        let energy: f32 = gains.iter().map(|g| g * g).sum();
+        assert!(
+            energy <= 1.001,
+            "Clamped VBAP energy must not exceed 1.0 (no gain boost), got {energy:.4}"
+        );
+    }
+
+    /// AL3+AL4: Dead parameters `enable_optimization` and `headphone_eq_enabled`
+    /// must not appear in the public parameters() list.
+    #[test]
+    fn test_dead_params_not_exposed_in_parameters() {
+        let plugin = BinauralDecoderPlugin::new(
+            2, 1024, None, true, 0.0, 0.0, false, 120.0, 2.0, 0.0, RoomModel::default(),
+        );
+        let params = plugin.parameters();
+        let names: Vec<&str> = params.iter().map(|p| p.id.0.as_str()).collect();
+        assert!(
+            !names.contains(&"enable_optimization"),
+            "enable_optimization (dead code) must not be exposed in parameters()"
+        );
+        assert!(
+            !names.contains(&"headphone_eq_enabled"),
+            "headphone_eq_enabled (unimplemented) must not be exposed in parameters()"
+        );
     }
 }

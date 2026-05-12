@@ -3,6 +3,7 @@ use rustfft::num_complex::Complex;
 use serde::{Deserialize, Serialize};
 use sotf_host::sofa::SourcePosition;
 use sotf_host::speaker_config::{SpeakerConfig, SpeakerPosition};
+use std::collections::HashSet;
 use std::path::Path;
 
 // ============================================================================
@@ -205,9 +206,15 @@ pub fn calculate_reflections(
             &mut channel_reflections,
         );
 
-        // 2nd-order reflections: mirror each 1st-order image across the other 5 walls
+        // 2nd-order reflections: mirror each 1st-order image across the other 5 walls.
+        // Deduplication is required: mirroring wall A then wall B produces the same
+        // image as mirroring B then A. Without dedup, orthogonal-wall pairs each
+        // contribute a duplicate reflection boosting those paths by 6 dB.
         if room.max_order >= 2 {
             let mut second_order_images: Vec<([f32; 3], usize, usize)> = Vec::new();
+            // Track already-seen image positions at 1 cm resolution to skip duplicates.
+            let mut seen_positions: HashSet<(i32, i32, i32)> = HashSet::new();
+
             for &(img_pos, wall_idx) in &images {
                 // Mirror this 1st-order image across each wall except the one it was reflected from
                 let second_images = [
@@ -226,7 +233,16 @@ pub fn calculate_reflections(
                 ];
                 for (wall2_idx, pos) in second_images {
                     if wall2_idx != wall_idx {
-                        second_order_images.push((pos, wall_idx, wall2_idx));
+                        // Quantize to 1 cm to detect geometrically identical images
+                        // produced by reversing the wall-pair order (A→B == B→A).
+                        let key = (
+                            (pos[0] * 100.0).round() as i32,
+                            (pos[1] * 100.0).round() as i32,
+                            (pos[2] * 100.0).round() as i32,
+                        );
+                        if seen_positions.insert(key) {
+                            second_order_images.push((pos, wall_idx, wall2_idx));
+                        }
                     }
                 }
             }
@@ -249,9 +265,12 @@ pub fn calculate_reflections(
 
                     let az = dx.atan2(dy);
                     let el = dz.atan2((dx * dx + dy * dy).sqrt());
-                    let p = (az + std::f32::consts::PI / 4.0) * 0.5;
-                    let left = p.cos().abs();
-                    let right = p.sin().abs();
+                    // Standard constant-power sine-law panning.
+                    // az convention: 0 = front, π/2 = right, −π/2 = left.
+                    // sin(az) = -1 at left, 0 at front/back, +1 at right.
+                    let pan = az.sin();
+                    let left = ((1.0 - pan) * 0.5).sqrt();
+                    let right = ((1.0 + pan) * 0.5).sqrt();
 
                     channel_reflections.push(Reflection {
                         delay_samples,
@@ -299,9 +318,12 @@ fn add_image_reflections(
 
             let az = dx.atan2(dy);
             let el = dz.atan2((dx * dx + dy * dy).sqrt());
-            let p = (az + std::f32::consts::PI / 4.0) * 0.5;
-            let left = p.cos().abs();
-            let right = p.sin().abs();
+            // Standard constant-power sine-law panning.
+            // az convention: 0 = front, π/2 = right, −π/2 = left.
+            // sin(az) = -1 at left, 0 at front/back, +1 at right.
+            let pan = az.sin();
+            let left = ((1.0 - pan) * 0.5).sqrt();
+            let right = ((1.0 + pan) * 0.5).sqrt();
 
             channel_reflections.push(Reflection {
                 delay_samples,
@@ -439,11 +461,12 @@ fn ssir_result_to_reflections(
             None => (0.0, 0.0),
         };
 
-        // Simple L/R panning from azimuth (same formula as ISM)
+        // Standard constant-power sine-law panning (same formula as ISM).
+        // az convention: 0 = front, π/2 = right, −π/2 = left.
         let az_rad = azimuth_deg.to_radians();
-        let p = (az_rad + std::f32::consts::PI / 4.0) * 0.5;
-        let left_gain = p.cos().abs();
-        let right_gain = p.sin().abs();
+        let pan = az_rad.sin();
+        let left_gain = ((1.0 - pan) * 0.5).sqrt();
+        let right_gain = ((1.0 + pan) * 0.5).sqrt();
 
         reflections.push(Reflection {
             delay_samples,

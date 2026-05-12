@@ -10540,7 +10540,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-binaural"
-version = "0.5.17"
+version = "0.5.18"
 dependencies = [
  "arc-swap",
  "audioadapter-buffers",

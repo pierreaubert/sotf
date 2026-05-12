@@ -77,6 +77,7 @@ pub fn calculate_vbap_gains(
     // Check if point is inside triangle (all weights non-negative)
     // If outside, clamp to valid range and warn
     let mut weights = [w0, w1, w2];
+    let mut was_clamped = false;
 
     if weights.iter().any(|&w| w < -0.01) {
         // Point is significantly outside triangle
@@ -87,6 +88,7 @@ pub fn calculate_vbap_gains(
             w1,
             w2
         );
+        was_clamped = true;
 
         // Clamp negative weights to zero
         for w in &mut weights {
@@ -95,7 +97,7 @@ pub fn calculate_vbap_gains(
             }
         }
 
-        // Renormalize
+        // Renormalize so the clamped weights sum to 1.0.
         let sum: f32 = weights.iter().sum();
         if sum > 1e-6 {
             for w in &mut weights {
@@ -107,14 +109,22 @@ pub fn calculate_vbap_gains(
         }
     }
 
-    // Energy normalization for VBAP
-    // Ensures constant perceived loudness across panning positions
-    let energy = weights[0] * weights[0] + weights[1] * weights[1] + weights[2] * weights[2];
-    if energy > 1e-6 {
-        let scale = 1.0 / energy.sqrt();
-        [weights[0] * scale, weights[1] * scale, weights[2] * scale]
+    if was_clamped {
+        // For out-of-triangle targets the weights are already renormalized to sum 1.0.
+        // Do NOT apply energy normalization: clamped weights like [0, 0.5, 0.5] have
+        // energy = 0.5, so scale = sqrt(2) ≈ 1.41 — a +3 dB unintended boost.
+        weights
     } else {
-        [1.0, 0.0, 0.0]
+        // For in-triangle targets apply VBAP energy normalization to maintain constant
+        // perceived loudness as the source moves between measurement positions.
+        let energy =
+            weights[0] * weights[0] + weights[1] * weights[1] + weights[2] * weights[2];
+        if energy > 1e-6 {
+            let scale = 1.0 / energy.sqrt();
+            [weights[0] * scale, weights[1] * scale, weights[2] * scale]
+        } else {
+            [1.0, 0.0, 0.0]
+        }
     }
 }
 
