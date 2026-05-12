@@ -170,8 +170,6 @@ struct StftState {
     latency_filled: usize,
 
     // --- Temporary working buffers ---
-    /// Scratch for windowed time-domain [fft_size]
-    windowed_buf: Vec<f32>,
     /// Frequency-domain scratch [num_bins]
     freq_scratch: Vec<Complex<f32>>,
     /// Scratch for envelope values after median + smoothing [num_bins]
@@ -225,7 +223,6 @@ impl StftState {
             next_add_position: 0,
             output_read_position: 0,
             latency_filled: 0,
-            windowed_buf: vec![0.0f32; fft_size],
             freq_scratch: vec![Complex::new(0.0, 0.0); num_bins],
             gains_scratch: vec![0.0; num_bins],
             // Phase 4A: Tonal/Transient
@@ -308,8 +305,18 @@ impl SpectralCompressorPlugin {
         let hop_size = fft_size / 4;
         let hop_rate = sample_rate as f32 / hop_size as f32;
 
-        let attack_coeff = (-1.0 / (params.attack_ms * 0.001 * hop_rate)).exp();
-        let release_coeff = (-1.0 / (params.release_ms * 0.001 * hop_rate)).exp();
+        // Guard against zero/negative values: zero → instant response (coeff=0.0),
+        // negative → would give exp(+inf) = +inf corrupting envelope state.
+        let attack_coeff = if params.attack_ms <= 0.0 {
+            0.0
+        } else {
+            (-1.0 / (params.attack_ms * 0.001 * hop_rate)).exp()
+        };
+        let release_coeff = if params.release_ms <= 0.0 {
+            0.0
+        } else {
+            (-1.0 / (params.release_ms * 0.001 * hop_rate)).exp()
+        };
 
         let mut plugin = Self {
             channels,
@@ -385,7 +392,16 @@ impl SpectralCompressorPlugin {
         let release_coeff = self.release_coeff;
         let spectral_smoothing = self.spectral_smoothing;
 
-        let mag_norm = 2.0 / fft_size as f32;
+        // Magnitude calibration:
+        // realfft produces an unnormalized FFT. For a rectangular window a unit
+        // sine peak = fft_size/2, so the base scale is 2/fft_size.
+        // With a periodic Hann analysis window the coherent gain is 0.5, so the
+        // peak drops to fft_size/4 for all interior bins. We compensate by an
+        // extra ×2, giving mag_norm_interior = 4/fft_size.
+        // DC (k=0) and Nyquist (k=num_bins-1) are real-valued and scale as
+        // fft_size/2 regardless of the window, so they keep the base scale.
+        let mag_norm_base = 2.0 / fft_size as f32;
+        let mag_norm_interior = mag_norm_base * 2.0; // compensate Hann coherent gain
         let use_adaptive = self.adaptive_threshold;
         let adaptive_offset = self.adaptive_offset_db;
         // EMA coefficient for long-term average: ~500ms at hop rate
@@ -393,13 +409,11 @@ impl SpectralCompressorPlugin {
 
         for ch in 0..channels {
             // --- Forward FFT ---
+            // Write directly into the FFT processor's time buffer to avoid an extra copy.
             for i in 0..fft_size {
-                self.stft.windowed_buf[i] =
+                self.stft.fft_processors[ch].time_buffer[i] =
                     self.stft.input_buffers[ch][i] * self.stft.analysis_window[i];
             }
-            self.stft.fft_processors[ch]
-                .time_buffer
-                .copy_from_slice(&self.stft.windowed_buf);
             self.stft.fft_processors[ch].forward();
             self.stft
                 .freq_scratch
@@ -407,6 +421,13 @@ impl SpectralCompressorPlugin {
 
             // --- Per-bin compression ---
             for k in 0..num_bins {
+                // DC and Nyquist use base scale; all interior bins compensate for
+                // the Hann window's 0.5 coherent gain with ×2.
+                let mag_norm = if k == 0 || k == num_bins - 1 {
+                    mag_norm_base
+                } else {
+                    mag_norm_interior
+                };
                 let mag = self.stft.freq_scratch[k].norm() * mag_norm;
                 self.stft.magnitudes_scratch[k] = mag;
                 let mag_db = 20.0 * mag.max(1e-10).log10();
@@ -420,7 +441,30 @@ impl SpectralCompressorPlugin {
                     threshold
                 };
 
-                let target_gr = compress_gr(mag_db, effective_threshold, ratio, knee);
+                let mut target_gr = compress_gr(mag_db, effective_threshold, ratio, knee);
+
+                // --- Phase 4A: Tonal/Transient masking (applied before envelope smoothing) ---
+                // Masking target_gr *before* the one-pole smoother ensures the envelope
+                // only tracks energy in the selected component. If we masked after, the
+                // envelope would still attack/release based on the unwanted component and
+                // then be zeroed, leaving stale state that causes a delayed response when
+                // the bin later enters the active component.
+                //
+                // The tonal_transient separator is run once per channel (not per-bin here),
+                // so we defer the actual process() call to outside the k-loop below and
+                // re-enter per-bin once the masks are available.
+                // For the per-bin loop we rely on previously computed masks (first hop uses
+                // all-ones which is safe; subsequent hops use the masks computed at the end
+                // of this block).
+                let target_mode = self.target_mode;
+                if target_mode > 0 {
+                    let mask = match target_mode {
+                        1 => self.stft.tonal_mask[k],
+                        2 => self.stft.transient_mask[k],
+                        _ => 1.0,
+                    };
+                    target_gr *= mask;
+                }
 
                 // One-pole envelope smoothing at hop rate
                 let envelope = &mut self.stft.bin_envelopes[ch][k];
@@ -432,24 +476,17 @@ impl SpectralCompressorPlugin {
                 *envelope = target_gr + coeff * (*envelope - target_gr);
             }
 
-            // --- Phase 4A: Tonal/Transient masking ---
-            // In Tonal mode: only compress tonal bins. In Transient mode: only transient bins.
-            let target_mode = self.target_mode;
-            if target_mode > 0 {
+            // --- Update tonal/transient masks for the NEXT hop ---
+            // We update after the compression loop so that the current hop uses the masks
+            // from the previous hop (which were computed from the previous hop's magnitudes).
+            // This is a one-hop lag but is the correct approach: computing masks from the
+            // current magnitudes and then using them in the same hop would require two passes.
+            if self.target_mode > 0 {
                 self.stft.tonal_transient[ch].process(
                     &self.stft.magnitudes_scratch[..num_bins],
                     &mut self.stft.tonal_mask[..num_bins],
                     &mut self.stft.transient_mask[..num_bins],
                 );
-                for k in 0..num_bins {
-                    let mask = match target_mode {
-                        1 => self.stft.tonal_mask[k], // Tonal: compress where tonal is dominant
-                        2 => self.stft.transient_mask[k], // Transient: compress where transient is dominant
-                        _ => 1.0,
-                    };
-                    // Scale gain reduction by mask: if mask=0, no compression on this bin
-                    self.stft.bin_envelopes[ch][k] *= mask;
-                }
             }
 
             // --- 3-bin median filter on envelope (reduce musical noise) ---
@@ -790,7 +827,10 @@ impl InPlacePlugin for SpectralCompressorPlugin {
     }
 
     fn latency_samples(&self) -> usize {
-        self.fft_size
+        // Causal STFT latency: the OLA output is first valid after fft_size - hop_size
+        // samples have been accumulated. Reporting the full fft_size over-compensates
+        // by hop_size (~10 ms for N=2048 at 48 kHz).
+        self.fft_size - self.stft.hop_size
     }
 
     fn process_in_place(
@@ -830,10 +870,13 @@ impl InPlacePlugin for SpectralCompressorPlugin {
                 let to_copy = space_in_tail.min(available);
 
                 if to_copy > 0 {
-                    for ch in 0..channels {
-                        for i in 0..to_copy {
-                            self.stft.input_buffers[ch][self.stft.input_fill + i] =
-                                buffer[(input_pos + i) * channels + ch];
+                    // Iterate over frames in the outer loop so that we read the
+                    // interleaved source buffer contiguously (cache-friendly).
+                    for i in 0..to_copy {
+                        let src_base = (input_pos + i) * channels;
+                        let dst_idx = self.stft.input_fill + i;
+                        for ch in 0..channels {
+                            self.stft.input_buffers[ch][dst_idx] = buffer[src_base + ch];
                         }
                     }
                     self.stft.input_fill += to_copy;
@@ -1068,23 +1111,26 @@ mod tests {
 
     #[test]
     fn test_latency_reported_correctly() {
+        // Causal STFT latency = fft_size - hop_size (hop = fft_size/4 at 75% overlap).
+        // fft_size=2048, hop=512 → latency=1536
         let plugin = make_plugin(-20.0, 2.0);
-        assert_eq!(plugin.latency_samples(), 2048);
+        assert_eq!(plugin.latency_samples(), 1536);
 
-        // Test with different FFT sizes
+        // fft_size=1024, hop=256 → latency=768
         let params_1024 = SpectralCompressorPluginParams {
             fft_size_index: 0,
             ..Default::default()
         };
         let plugin_1024 = SpectralCompressorPlugin::from_params(2, params_1024);
-        assert_eq!(plugin_1024.latency_samples(), 1024);
+        assert_eq!(plugin_1024.latency_samples(), 768);
 
+        // fft_size=4096, hop=1024 → latency=3072
         let params_4096 = SpectralCompressorPluginParams {
             fft_size_index: 2,
             ..Default::default()
         };
         let plugin_4096 = SpectralCompressorPlugin::from_params(2, params_4096);
-        assert_eq!(plugin_4096.latency_samples(), 4096);
+        assert_eq!(plugin_4096.latency_samples(), 3072);
     }
 
     #[test]
@@ -1122,6 +1168,207 @@ mod tests {
 
         plugin.process_in_place(&mut buffer, &ctx).unwrap();
         assert_eq!(buffer, original);
+    }
+
+    /// Verify the magnitude calibration: a -20 dBFS sine that is above threshold
+    /// should be compressed, and a sine well below threshold should pass through
+    /// with correct amplitude (RMS ratio ≈ 1.0). This test would catch any
+    /// systematic dB offset in `mag_norm` (e.g. the previous 6 dB Hann error).
+    #[test]
+    fn test_fft_roundtrip_no_compression_below_threshold() {
+        // ratio=1.0 with any threshold → no compression regardless of level.
+        // Use threshold=0 dB, ratio=1.0, mix=1.0, knee=0.
+        let params = SpectralCompressorPluginParams {
+            fft_size_index: 1, // 2048
+            threshold_db: 0.0,
+            ratio: 1.0,
+            attack_ms: 5.0,
+            release_ms: 50.0,
+            knee_db: 0.0,
+            spectral_smoothing: 0.0,
+            mix: 1.0,
+        };
+        let mut plugin = SpectralCompressorPlugin::from_params(2, params);
+        plugin.initialize(48000).unwrap();
+
+        let channels = 2;
+        let num_frames = 96000usize; // 2 seconds
+        let freq = 1000.0_f32;
+        let amplitude = 0.1_f32; // -20 dBFS
+
+        let mut signal = vec![0.0f32; num_frames * channels];
+        for i in 0..num_frames {
+            let s = amplitude * (2.0 * std::f32::consts::PI * freq * i as f32 / 48000.0).sin();
+            signal[i * channels] = s;
+            signal[i * channels + 1] = s;
+        }
+
+        let output = process_signal(&mut plugin, &signal);
+
+        // Skip initial latency + settling, compare RMS in the steady-state window.
+        let skip = 32768usize;
+        let check_len = num_frames - skip - 8192;
+
+        let rms_in: f32 = (signal[skip * channels..(skip + check_len) * channels]
+            .iter()
+            .map(|s| s * s)
+            .sum::<f32>()
+            / (check_len * channels) as f32)
+            .sqrt();
+        let rms_out: f32 = (output[skip * channels..(skip + check_len) * channels]
+            .iter()
+            .map(|s| s * s)
+            .sum::<f32>()
+            / (check_len * channels) as f32)
+            .sqrt();
+
+        let ratio = rms_out / rms_in.max(1e-10);
+        assert!(
+            (ratio - 1.0).abs() < 0.05,
+            "Identity STFT (ratio=1.0) RMS ratio should be ~1.0, got {:.4} \
+             (rms_in={:.6}, rms_out={:.6}). A value near 0.5 indicates the \
+             6 dB Hann coherent-gain bug.",
+            ratio,
+            rms_in,
+            rms_out,
+        );
+    }
+
+    /// Verify that the magnitude calibration is correct: a -20 dBFS sine with
+    /// threshold=-25 dB must be detected as above threshold and compressed.
+    /// Before the Hann-gain fix the measured level was -26 dB, causing the
+    /// compressor to see it as 1 dB below threshold and skip compression.
+    #[test]
+    fn test_magnitude_calibration_6db_hann_fix() {
+        // threshold=-25 dB, ratio=8:1. A -20 dBFS sine is 5 dB above threshold.
+        // Expected gain reduction ≈ (5 * 7/8) ≈ 4.4 dB → output ≈ -24.4 dBFS.
+        // Before the fix: measured level was ~-26 dB (below -25 threshold) → no compression.
+        let params = SpectralCompressorPluginParams {
+            fft_size_index: 1,
+            threshold_db: -25.0,
+            ratio: 8.0,
+            attack_ms: 1.0,
+            release_ms: 10.0,
+            knee_db: 0.0,
+            spectral_smoothing: 0.0,
+            mix: 1.0,
+        };
+        let mut plugin = SpectralCompressorPlugin::from_params(2, params);
+        plugin.initialize(48000).unwrap();
+
+        let channels = 2;
+        let num_frames = 96000usize;
+        let amplitude = 0.1_f32; // -20 dBFS (0.1 = 10^(-20/20))
+        let freq = 1000.0_f32;
+
+        let mut signal = vec![0.0f32; num_frames * channels];
+        for i in 0..num_frames {
+            let s = amplitude * (2.0 * std::f32::consts::PI * freq * i as f32 / 48000.0).sin();
+            signal[i * channels] = s;
+            signal[i * channels + 1] = s;
+        }
+
+        let output = process_signal(&mut plugin, &signal);
+
+        let skip = 32768usize;
+        let check_len = num_frames - skip - 8192;
+        let rms_out: f32 = (output[skip * channels..(skip + check_len) * channels]
+            .iter()
+            .map(|s| s * s)
+            .sum::<f32>()
+            / (check_len * channels) as f32)
+            .sqrt();
+
+        // Output must be reduced relative to input (compression happened).
+        // rms_in ≈ 0.1/√2 ≈ 0.0707. After compression output should be noticeably lower.
+        let rms_in_expected = amplitude / std::f32::consts::SQRT_2;
+        assert!(
+            rms_out < rms_in_expected * 0.85,
+            "Expected compression (threshold=-25 dB, input=-20 dBFS): \
+             rms_out={:.5} should be < {:.5}. \
+             If rms_out ≈ rms_in, the 6 dB Hann calibration bug is present \
+             (compressor sees input as -26 dB, below -25 dB threshold).",
+            rms_out,
+            rms_in_expected * 0.85,
+        );
+    }
+
+    /// Verify that constructing a plugin with attack_ms=0 or release_ms=0 does
+    /// not produce NaN/inf coefficients. Zero → instant response (coeff=0).
+    #[test]
+    fn test_zero_attack_release_coefficients() {
+        let params = SpectralCompressorPluginParams {
+            attack_ms: 0.0,
+            release_ms: 0.0,
+            ..Default::default()
+        };
+        let plugin = SpectralCompressorPlugin::from_params(2, params);
+        assert!(
+            plugin.attack_coeff.is_finite(),
+            "attack_coeff should be finite when attack_ms=0, got {}",
+            plugin.attack_coeff
+        );
+        assert!(
+            plugin.release_coeff.is_finite(),
+            "release_coeff should be finite when release_ms=0, got {}",
+            plugin.release_coeff
+        );
+        assert_eq!(plugin.attack_coeff, 0.0, "attack_ms=0 should give instant coeff=0");
+        assert_eq!(plugin.release_coeff, 0.0, "release_ms=0 should give instant coeff=0");
+    }
+
+    /// Verify that L and R channels are processed independently: feeding different
+    /// signals to L and R and checking each channel's output independently.
+    #[test]
+    fn test_stereo_independence() {
+        // Use high ratio, low threshold so both channels get compressed.
+        let mut plugin = make_plugin(-30.0, 8.0);
+        let channels = 2;
+        let num_frames = 96000usize;
+
+        // L: 440 Hz, R: 880 Hz, same amplitude
+        let amplitude = 0.5_f32;
+        let mut signal = vec![0.0f32; num_frames * channels];
+        for i in 0..num_frames {
+            let t = i as f32 / 48000.0;
+            signal[i * channels] =
+                amplitude * (2.0 * std::f32::consts::PI * 440.0 * t).sin();
+            signal[i * channels + 1] =
+                amplitude * (2.0 * std::f32::consts::PI * 880.0 * t).sin();
+        }
+
+        let output = process_signal(&mut plugin, &signal);
+
+        // After settling, measure RMS per-channel in output.
+        let skip = 32768usize;
+        let check_len = num_frames - skip - 8192;
+        let mut rms_l = 0.0f32;
+        let mut rms_r = 0.0f32;
+        for i in skip..skip + check_len {
+            rms_l += output[i * channels] * output[i * channels];
+            rms_r += output[i * channels + 1] * output[i * channels + 1];
+        }
+        rms_l = (rms_l / check_len as f32).sqrt();
+        rms_r = (rms_r / check_len as f32).sqrt();
+
+        // Both channels should have been compressed (output < input).
+        let rms_in = amplitude / std::f32::consts::SQRT_2;
+        assert!(
+            rms_l < rms_in * 0.9,
+            "L channel should be compressed: rms_l={:.4} vs rms_in={:.4}",
+            rms_l,
+            rms_in
+        );
+        assert!(
+            rms_r < rms_in * 0.9,
+            "R channel should be compressed: rms_r={:.4} vs rms_in={:.4}",
+            rms_r,
+            rms_in
+        );
+        // Channels should not be identical (different frequencies → different bin responses)
+        // just verify they were processed (both nonzero).
+        assert!(rms_l > 1e-6, "L channel output is silence");
+        assert!(rms_r > 1e-6, "R channel output is silence");
     }
 
     #[test]

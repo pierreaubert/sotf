@@ -10866,7 +10866,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-spectral-compressor"
-version = "0.5.21"
+version = "0.5.22"
 dependencies = [
  "math-dsp",
  "realfft",
