@@ -120,6 +120,173 @@ impl RealFftProcessor {
 }
 
 // ============================================================================
+// BatchedRealFftProcessor
+// ============================================================================
+
+/// Batched wrapper around `realfft` for independent real FFTs that share the
+/// same FFT size.
+///
+/// Buffers are stored flat in channel-major order:
+/// - `time_buffers`: `[channel][sample]`
+/// - `freq_buffers`: `[channel][bin]`
+///
+/// This keeps each channel contiguous for `realfft`, avoids one allocation per
+/// channel, and reuses the same FFT plans and scratch buffers across all
+/// channels. The FFTs are still computed sequentially; this type is a portable
+/// baseline rather than a platform-specific batched FFT backend.
+pub struct BatchedRealFftProcessor {
+    channels: usize,
+    fft_size: usize,
+    spectrum_size: usize,
+    fft_forward: Arc<dyn RealToComplex<f32>>,
+    fft_inverse: Option<Arc<dyn ComplexToReal<f32>>>,
+    forward_scratch: Vec<Complex<f32>>,
+    inverse_scratch: Vec<Complex<f32>>,
+    time_buffers: Vec<f32>,
+    freq_buffers: Vec<Complex<f32>>,
+}
+
+impl BatchedRealFftProcessor {
+    /// Create a forward-only batched FFT processor.
+    pub fn new_forward_only(channels: usize, fft_size: usize) -> Self {
+        Self::new(channels, fft_size, false)
+    }
+
+    /// Create a bidirectional batched FFT processor.
+    pub fn new_bidirectional(channels: usize, fft_size: usize) -> Self {
+        Self::new(channels, fft_size, true)
+    }
+
+    fn new(channels: usize, fft_size: usize, include_inverse: bool) -> Self {
+        assert!(channels > 0, "BatchedRealFftProcessor requires at least one channel");
+
+        let spectrum_size = fft_size / 2 + 1;
+        let mut planner = RealFftPlanner::<f32>::new();
+        let fft_forward = planner.plan_fft_forward(fft_size);
+        let fft_inverse = if include_inverse {
+            Some(planner.plan_fft_inverse(fft_size))
+        } else {
+            None
+        };
+
+        let forward_scratch = vec![Complex::new(0.0, 0.0); fft_forward.get_scratch_len()];
+        let inverse_scratch = fft_inverse
+            .as_ref()
+            .map(|fft| vec![Complex::new(0.0, 0.0); fft.get_scratch_len()])
+            .unwrap_or_default();
+
+        Self {
+            channels,
+            fft_size,
+            spectrum_size,
+            fft_forward,
+            fft_inverse,
+            forward_scratch,
+            inverse_scratch,
+            time_buffers: vec![0.0; channels * fft_size],
+            freq_buffers: vec![Complex::new(0.0, 0.0); channels * spectrum_size],
+        }
+    }
+
+    pub fn channels(&self) -> usize {
+        self.channels
+    }
+
+    pub fn fft_size(&self) -> usize {
+        self.fft_size
+    }
+
+    pub fn spectrum_size(&self) -> usize {
+        self.spectrum_size
+    }
+
+    pub fn time_buffers(&self) -> &[f32] {
+        &self.time_buffers
+    }
+
+    pub fn time_buffers_mut(&mut self) -> &mut [f32] {
+        &mut self.time_buffers
+    }
+
+    pub fn freq_buffers(&self) -> &[Complex<f32>] {
+        &self.freq_buffers
+    }
+
+    pub fn freq_buffers_mut(&mut self) -> &mut [Complex<f32>] {
+        &mut self.freq_buffers
+    }
+
+    pub fn time_channel(&self, ch: usize) -> &[f32] {
+        debug_assert!(ch < self.channels);
+        let range = self.time_range(ch);
+        &self.time_buffers[range]
+    }
+
+    pub fn time_channel_mut(&mut self, ch: usize) -> &mut [f32] {
+        debug_assert!(ch < self.channels);
+        let range = self.time_range(ch);
+        &mut self.time_buffers[range]
+    }
+
+    pub fn freq_channel(&self, ch: usize) -> &[Complex<f32>] {
+        debug_assert!(ch < self.channels);
+        let range = self.freq_range(ch);
+        &self.freq_buffers[range]
+    }
+
+    pub fn freq_channel_mut(&mut self, ch: usize) -> &mut [Complex<f32>] {
+        debug_assert!(ch < self.channels);
+        let range = self.freq_range(ch);
+        &mut self.freq_buffers[range]
+    }
+
+    /// Perform forward FFTs for all channels.
+    /// The caller should fill each time-domain channel buffer before calling this.
+    pub fn forward_all(&mut self) {
+        for ch in 0..self.channels {
+            let time_range = self.time_range(ch);
+            let freq_range = self.freq_range(ch);
+            self.fft_forward
+                .process_with_scratch(
+                    &mut self.time_buffers[time_range],
+                    &mut self.freq_buffers[freq_range],
+                    &mut self.forward_scratch,
+                )
+                .expect("FFT forward failed");
+        }
+    }
+
+    /// Perform inverse FFTs for all channels.
+    /// Panics if this processor was created with `new_forward_only`.
+    pub fn inverse_all(&mut self) {
+        let fft_inverse = self
+            .fft_inverse
+            .as_ref()
+            .expect("Inverse FFT not available (forward-only processor)");
+
+        for ch in 0..self.channels {
+            let time_range = self.time_range(ch);
+            let freq_range = self.freq_range(ch);
+            fft_inverse
+                .process_with_scratch(
+                    &mut self.freq_buffers[freq_range],
+                    &mut self.time_buffers[time_range],
+                    &mut self.inverse_scratch,
+                )
+                .expect("FFT inverse failed");
+        }
+    }
+
+    fn time_range(&self, ch: usize) -> std::ops::Range<usize> {
+        ch * self.fft_size..(ch + 1) * self.fft_size
+    }
+
+    fn freq_range(&self, ch: usize) -> std::ops::Range<usize> {
+        ch * self.spectrum_size..(ch + 1) * self.spectrum_size
+    }
+}
+
+// ============================================================================
 // RingAccumulator
 // ============================================================================
 
@@ -660,5 +827,102 @@ mod tests {
             max_output < 0.01,
             "After reset + silence, max output should be ~0, got {max_output}"
         );
+    }
+}
+
+#[cfg(test)]
+mod batched_real_fft_processor_tests {
+    use super::*;
+
+    const EPSILON: f32 = 1e-3;
+
+    fn fill_signal(buffer: &mut [f32], ch: usize) {
+        for (i, sample) in buffer.iter_mut().enumerate() {
+            let phase = i as f32 * 0.13 + ch as f32 * 0.37;
+            *sample = phase.sin() + 0.25 * (phase * 2.7).cos();
+        }
+    }
+
+    fn assert_complex_close(actual: Complex<f32>, expected: Complex<f32>) {
+        assert!((actual.re - expected.re).abs() <= EPSILON);
+        assert!((actual.im - expected.im).abs() <= EPSILON);
+    }
+
+    fn assert_slice_close(actual: &[f32], expected: &[f32]) {
+        assert_eq!(actual.len(), expected.len());
+        for (actual, expected) in actual.iter().zip(expected) {
+            assert!((actual - expected).abs() <= EPSILON);
+        }
+    }
+
+    #[test]
+    fn forward_matches_independent_processors_for_representative_channel_counts() {
+        for channels in [1, 2, 8, 16, 24] {
+            let fft_size = 64;
+            let mut batched = BatchedRealFftProcessor::new_forward_only(channels, fft_size);
+
+            for ch in 0..channels {
+                fill_signal(batched.time_channel_mut(ch), ch);
+            }
+
+            let inputs = batched.time_buffers().to_vec();
+            batched.forward_all();
+
+            for ch in 0..channels {
+                let mut independent = RealFftProcessor::new_forward_only(fft_size);
+                independent
+                    .time_buffer
+                    .copy_from_slice(&inputs[ch * fft_size..(ch + 1) * fft_size]);
+                independent.forward();
+
+                for (actual, expected) in batched.freq_channel(ch).iter().zip(&independent.freq_buffer) {
+                    assert_complex_close(*actual, *expected);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn bidirectional_round_trip_restores_each_channel_after_scaling() {
+        let channels = 8;
+        let fft_size = 128;
+        let mut batched = BatchedRealFftProcessor::new_bidirectional(channels, fft_size);
+
+        for ch in 0..channels {
+            fill_signal(batched.time_channel_mut(ch), ch);
+        }
+
+        let original = batched.time_buffers().to_vec();
+        batched.forward_all();
+        batched.inverse_all();
+
+        for ch in 0..channels {
+            let mut expected = original[ch * fft_size..(ch + 1) * fft_size].to_vec();
+            for sample in &mut expected {
+                *sample *= fft_size as f32;
+            }
+            assert_slice_close(batched.time_channel(ch), &expected);
+        }
+    }
+
+    #[test]
+    fn channel_slices_use_flat_channel_major_layout() {
+        let channels = 3;
+        let fft_size = 4;
+        let spectrum_size = fft_size / 2 + 1;
+        let mut batched = BatchedRealFftProcessor::new_forward_only(channels, fft_size);
+
+        for ch in 0..channels {
+            for (i, sample) in batched.time_channel_mut(ch).iter_mut().enumerate() {
+                *sample = (ch * 10 + i) as f32;
+            }
+            for (i, bin) in batched.freq_channel_mut(ch).iter_mut().enumerate() {
+                *bin = Complex::new((ch * 10 + i) as f32, ch as f32);
+            }
+        }
+
+        assert_eq!(batched.time_buffers(), &[0.0, 1.0, 2.0, 3.0, 10.0, 11.0, 12.0, 13.0, 20.0, 21.0, 22.0, 23.0]);
+        assert_eq!(batched.freq_buffers().len(), channels * spectrum_size);
+        assert_eq!(batched.freq_channel(2)[1], Complex::new(21.0, 2.0));
     }
 }

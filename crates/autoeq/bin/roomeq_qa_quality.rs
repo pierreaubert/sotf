@@ -4136,6 +4136,7 @@ mod tests {
                 timestamp: "test".to_string(),
                 inter_channel_deviation: None,
                 epa_per_channel: None,
+                epa_multichannel: None,
                 group_delay: None,
                 perceptual_metrics: None,
                 home_cinema_layout: None,

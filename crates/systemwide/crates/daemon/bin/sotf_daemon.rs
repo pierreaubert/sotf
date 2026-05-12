@@ -1757,6 +1757,8 @@ mod tests {
             channel_peaks: Arc::new(vec![0.5, 0.75]),
             true_peaks_dbtp: Arc::new(vec![-2.0, -1.0]),
             correlation_lr: Some(0.42),
+            correlation_matrix: Arc::new(Vec::new()),
+            correlation_samples_seen: 0,
         };
 
         let json = loudness_data_to_json(&loudness);

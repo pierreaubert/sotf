@@ -636,7 +636,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sensitivity_affects_audio_output() {
+    fn test_sensitivity_low_level_step_affects_audio_output() {
         let channels = 1;
         let num_frames = 2400; // 50ms at 48kHz
 
@@ -728,7 +728,7 @@ mod tests {
     }
 
     #[test]
-    fn test_reset_resets_smoothers() {
+    fn test_reset_snaps_smoother_to_target() {
         let channels = 1;
         let mut plugin = TransientShaperPlugin::new(channels);
         plugin.initialize(48000).unwrap();
@@ -810,7 +810,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sensitivity_affects_audio_output() {
+    fn test_sensitivity_threshold_gate_affects_audio_output() {
         // Sensitivity is a threshold gate: with sensitivity_db = +12 the
         // threshold is raised 20× (to ~0.02 linear), so a low-level signal
         // that would otherwise be shaped is left unmodified (gain = 1.0).
@@ -926,7 +926,7 @@ mod tests {
     }
 
     #[test]
-    fn test_reset_resets_smoothers() {
+    fn test_reset_starts_processing_from_clean_smoother_state() {
         // Set attack to +100%, let the smoother start ramping, then reset().
         // The very first processed sample after reset should use the settled
         // target value (attack=1.0), not an intermediate ramp value.
