@@ -29,8 +29,8 @@ pub struct MvdrBeamformer {
     diag_load: f32,
     /// Smoothing factor for covariance estimation
     alpha: f32,
-    /// Energy threshold for noise detection
-    noise_threshold: f32,
+    /// Energy threshold for noise detection (public for testing)
+    pub noise_threshold: f32,
     /// Frame counter for initial learning period
     frame_count: usize,
     /// Pre-allocated weight buffer: [bin][mic]
@@ -87,19 +87,27 @@ impl MvdrBeamformer {
     pub fn update_noise_covariance(&mut self, stft_channels: &[Vec<Complex<f32>>]) {
         let m = self.num_mics.min(stft_channels.len());
 
-        // Simple energy-based noise detection
-        let total_energy: f32 =
-            stft_channels[0].iter().map(|c| c.norm_sqr()).sum::<f32>() / self.spectrum_size as f32;
+        // Energy-based noise detection: average energy across all channels so
+        // that a quiet mic 0 while other mics are active does not misclassify
+        // target frames as noise (bug §1.6).  The unconditional 20-frame
+        // learning period is removed because it contaminates the covariance
+        // with the target signal whenever the source is active at startup
+        // (bug §1.7).
+        let total_energy: f32 = stft_channels[..m]
+            .iter()
+            .map(|ch| ch.iter().map(|c| c.norm_sqr()).sum::<f32>())
+            .sum::<f32>()
+            / (self.spectrum_size * m) as f32;
 
-        let is_noise = self.frame_count < 20 || total_energy < self.noise_threshold;
+        let is_noise = total_energy < self.noise_threshold;
         self.frame_count += 1;
 
         if !is_noise {
             return;
         }
 
-        let a = Complex::new(self.alpha, 0.0);
-        let b = Complex::new(1.0 - self.alpha, 0.0);
+        let alpha = self.alpha;
+        let one_minus_alpha = 1.0 - self.alpha;
         let mm = m * m;
 
         for k in 0..self.spectrum_size {
@@ -125,9 +133,16 @@ impl MvdrBeamformer {
             }
 
             // R = α*R + (1-α)*outer
+            // Use real scalar multiplies — a purely-real complex multiply
+            // costs 4 muls + 2 adds, but here the scalars are real so we
+            // can do 2 muls + 1 add per element (§3.3).
             for idx in 0..mm {
-                self.noise_cov[cov_off + idx] =
-                    self.noise_cov[cov_off + idx] * a + self.scratch_outer[idx] * b;
+                let r = &mut self.noise_cov[cov_off + idx];
+                let s = self.scratch_outer[idx];
+                *r = Complex::new(
+                    r.re * alpha + s.re * one_minus_alpha,
+                    r.im * alpha + s.im * one_minus_alpha,
+                );
             }
         }
     }
@@ -277,6 +292,13 @@ impl MvdrBeamformer {
             self.output_buf[k] = sum;
         }
         &self.output_buf[..spectrum_size]
+    }
+
+    /// Read-only view of the noise covariance flat buffer.
+    /// Exposed for testing only.
+    #[cfg(test)]
+    pub fn noise_cov_snapshot(&self) -> &[Complex<f32>] {
+        &self.noise_cov
     }
 
     /// Reset noise covariance to identity.

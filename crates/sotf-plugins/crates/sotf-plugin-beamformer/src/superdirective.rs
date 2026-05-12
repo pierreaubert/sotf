@@ -87,7 +87,13 @@ impl SuperdirectiveBeamformer {
 
                 let gamma_inv_d = match gamma_reg.try_inverse() {
                     Some(inv) => &inv * &d,
-                    None => d.clone(),
+                    // Coherence matrix is singular: fall back immediately to
+                    // explicit uniform delay-and-sum weights (1/m per mic).
+                    // Returning here avoids the confusing path where d.clone()
+                    // accidentally produced the same result through cancellation.
+                    None => {
+                        return vec![Complex::new(1.0 / m as f32, 0.0); m];
+                    }
                 };
 
                 let d_h = d.adjoint();
