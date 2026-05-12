@@ -59,35 +59,41 @@ fn test_multiband_compressor_ms_mode_roundtrip() {
         .set_parameter(ParameterId::from("ratio"), ParameterValue::Float(1.0))
         .unwrap();
 
-    // Generate a stereo signal with different L/R content
-    let num_frames = 4800;
-    let mut input = vec![0.0f32; num_frames * 2];
-    for i in 0..num_frames {
+    // Generate a stereo signal with different L/R content.
+    // Stay within the 4096-frame pre-alloc limit; use two 2400-frame blocks.
+    let block = 2400usize;
+    let total = block * 2;
+    let mut signal = vec![0.0f32; total * 2];
+    for i in 0..total {
         let t = i as f32 / 48000.0;
         // Left: 440Hz, Right: 880Hz — different content per channel
-        input[i * 2] = (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.3;
-        input[i * 2 + 1] = (2.0 * std::f32::consts::PI * 880.0 * t).sin() * 0.3;
+        signal[i * 2] = (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.3;
+        signal[i * 2 + 1] = (2.0 * std::f32::consts::PI * 880.0 * t).sin() * 0.3;
     }
-    let original = input.clone();
+    let original = signal.clone();
 
     let context = ProcessContext {
         sample_rate: 48000,
-        num_frames,
+        num_frames: block,
     };
 
-    plugin.process_in_place(&mut input, &context).unwrap();
+    // Process both blocks; the second block is in the settled region.
+    plugin.process_in_place(&mut signal[..block * 2], &context).unwrap();
+    plugin.process_in_place(&mut signal[block * 2..], &context).unwrap();
 
     // With ratio=1 (no compression), output should preserve energy and stereo image.
     // The crossover filters shift phase, so sample-level identity is not expected.
-    // Instead verify: (1) no NaNs, (2) RMS is preserved within ~1dB, (3) stereo channels differ.
-    assert!(!input.iter().any(|x| x.is_nan()), "No NaNs in output");
+    // Instead verify: (1) no NaNs, (2) RMS is preserved within ~4dB, (3) stereo channels differ.
+    assert!(!signal.iter().any(|x| x.is_nan()), "No NaNs in output");
 
-    let skip = 2000 * 2;
+    // Compare only the settled second block (skip first block entirely)
+    let skip = block * 2;
     let orig_rms: f32 = (original[skip..].iter().map(|x| x * x).sum::<f32>()
         / (original.len() - skip) as f32)
         .sqrt();
-    let out_rms: f32 =
-        (input[skip..].iter().map(|x| x * x).sum::<f32>() / (input.len() - skip) as f32).sqrt();
+    let out_rms: f32 = (signal[skip..].iter().map(|x| x * x).sum::<f32>()
+        / (signal.len() - skip) as f32)
+        .sqrt();
     let rms_ratio_db = 20.0 * (out_rms / orig_rms).log10();
 
     assert!(
@@ -95,11 +101,14 @@ fn test_multiband_compressor_ms_mode_roundtrip() {
         "M/S mode with ratio=1 should preserve RMS within 4dB. Got {rms_ratio_db:.1}dB"
     );
 
-    // Stereo channels should still differ (M/S decode preserved channel separation)
-    let l_rms: f32 = input[skip..].chunks(2).map(|c| c[0] * c[0]).sum::<f32>();
-    let r_rms: f32 = input[skip..].chunks(2).map(|c| c[1] * c[1]).sum::<f32>();
+    // Stereo channels should still differ sample-by-sample (M/S decode preserved separation).
+    // Since L=440Hz and R=880Hz, they cannot be equal at all frames simultaneously.
+    let different_frames = signal[skip..]
+        .chunks(2)
+        .filter(|c| (c[0] - c[1]).abs() > 0.001)
+        .count();
     assert!(
-        (l_rms - r_rms).abs() > 0.001,
-        "L and R channels should remain different after M/S roundtrip"
+        different_frames > 10,
+        "L and R channels should remain different after M/S roundtrip; only {different_frames} different frames found"
     );
 }
