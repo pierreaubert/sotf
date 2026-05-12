@@ -1,7 +1,7 @@
 [package]
 name = "sotf-plugin-ambisonics"
 description = "SOTF Ambisonics Decoder plugin - AllRAD decoding from HOA to speaker layouts"
-version = "0.5.3"
+version = "0.5.4"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true

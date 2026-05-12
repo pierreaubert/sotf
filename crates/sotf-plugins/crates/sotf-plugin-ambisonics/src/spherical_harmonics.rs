@@ -20,7 +20,17 @@ pub fn channel_count(order: usize) -> usize {
 
 /// Extract (degree, index) from ACN channel number.
 /// ACN = l² + l + m
+///
+/// The floating-point sqrt is exact for the values used here (ACN ≤ 15 for
+/// MAX_ORDER = 3), but would break for ACN ≥ 48.  Guard with a debug_assert
+/// so that increasing MAX_ORDER without updating this function fails early in
+/// debug builds.
 pub fn acn_to_degree_index(acn: usize) -> (i32, i32) {
+    debug_assert!(
+        acn <= channel_count(MAX_ORDER),
+        "acn={acn} exceeds channel_count(MAX_ORDER={}); update acn_to_degree_index for larger orders",
+        MAX_ORDER
+    );
     let l = (acn as f64).sqrt() as i32;
     let m = acn as i32 - l * l - l;
     (l, m)
@@ -152,6 +162,23 @@ mod tests {
         assert_eq!(channel_count(1), 4); // FOA: W, Y, Z, X
         assert_eq!(channel_count(2), 9); // SOA
         assert_eq!(channel_count(3), 16); // TOA
+    }
+
+    /// All ACN values up to and including the maximum supported channel count
+    /// must decode without triggering the debug_assert.
+    #[test]
+    fn test_acn_to_degree_index_all_valid() {
+        for acn in 0..=channel_count(MAX_ORDER) {
+            let (l, m) = acn_to_degree_index(acn);
+            // Verify round-trip: l² + l + m == acn
+            assert_eq!(
+                l * l + l + m,
+                acn as i32,
+                "round-trip failed for acn={acn}: l={l}, m={m}"
+            );
+            // m is in [-l, l]
+            assert!(m >= -l && m <= l, "m={m} out of range [-{l},{l}] for acn={acn}");
+        }
     }
 
     #[test]
