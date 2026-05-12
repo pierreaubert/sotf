@@ -216,9 +216,25 @@ impl PndAnalyzer {
         }
         self.drift_dirty = false;
 
-        // Compute median of drift_history[..drift_count] using O(n) selection.
-        let len = self.drift_count.min(self.drift_history_capacity);
-        self.median_scratch[..len].copy_from_slice(&self.drift_history[..len]);
+        // Compute median of the circular drift_history using O(n) selection.
+        // When the buffer has wrapped (drift_count >= capacity), valid data starts
+        // at drift_write_pos and wraps around — NOT at index 0.
+        let cap = self.drift_history_capacity;
+        let len = self.drift_count.min(cap);
+        if self.drift_count < cap {
+            // Buffer has not wrapped yet: valid data occupies [0..len] linearly.
+            self.median_scratch[..len].copy_from_slice(&self.drift_history[..len]);
+        } else {
+            // Buffer has wrapped: oldest entry is at drift_write_pos.
+            // Entries [write_pos..cap] come first, then [0..write_pos].
+            let tail = cap - self.drift_write_pos; // number of entries from write_pos to end
+            self.median_scratch[..tail]
+                .copy_from_slice(&self.drift_history[self.drift_write_pos..cap]);
+            if self.drift_write_pos > 0 {
+                self.median_scratch[tail..len]
+                    .copy_from_slice(&self.drift_history[..self.drift_write_pos]);
+            }
+        }
 
         let mid = len / 2;
         self.median_scratch[..len].select_nth_unstable_by(mid, |a, b| {
@@ -410,6 +426,61 @@ mod tests {
             "Changing analysis window should not reallocate history storage"
         );
         assert_eq!(analyzer.drift_count, 0, "Should reset drift count");
+    }
+
+    /// After the drift history wraps around, the median should reflect the most
+    /// recent entries, not the stale values at the start of the array.
+    ///
+    /// We test the internal `current_drift_estimate()` directly by manually
+    /// writing known values into the circular buffer and verifying the median
+    /// returned after a wrap is the median of the most recent entries.
+    #[test]
+    fn test_drift_history_wraps_correctly() {
+        let mut analyzer = PndAnalyzer::new(2048, 44100, 100.0);
+        // capacity = floor(100 * 44100 / 1000 / 512) = floor(4410/512) = 8
+        let cap = analyzer.drift_history_capacity;
+        assert!(cap >= 4, "capacity should be >= 4, got {cap}");
+
+        // Phase 1: Fill the whole buffer with 1.0 (stable, no drift).
+        for _ in 0..cap {
+            analyzer.drift_history[analyzer.drift_write_pos] = 1.0;
+            analyzer.drift_write_pos = (analyzer.drift_write_pos + 1) % cap;
+        }
+        analyzer.drift_count = cap;
+        analyzer.drift_dirty = true;
+        let est = analyzer.current_drift_estimate();
+        assert!(
+            (est - 1.0).abs() < 1e-5,
+            "Baseline median should be 1.0, got {est}"
+        );
+
+        // Phase 2: Overwrite the entire buffer with 1.05 (simulated drift).
+        for _ in 0..cap {
+            analyzer.drift_history[analyzer.drift_write_pos] = 1.05;
+            analyzer.drift_write_pos = (analyzer.drift_write_pos + 1) % cap;
+        }
+        // drift_count stays at cap (buffer has wrapped)
+        analyzer.drift_dirty = true;
+
+        let est2 = analyzer.current_drift_estimate();
+        assert!(
+            (est2 - 1.05).abs() < 1e-5,
+            "After full overwrite, median should be 1.05 (not stale 1.0), got {est2}"
+        );
+
+        // Phase 3: Partial overwrite — write half the slots with 2.0.
+        // The median should reflect the mixed content, not be stuck at 1.05 or 1.0.
+        for _ in 0..cap / 2 {
+            analyzer.drift_history[analyzer.drift_write_pos] = 2.0;
+            analyzer.drift_write_pos = (analyzer.drift_write_pos + 1) % cap;
+        }
+        analyzer.drift_dirty = true;
+        let est3 = analyzer.current_drift_estimate();
+        // Half slots = 1.05, half = 2.0.  Median should be strictly between them.
+        assert!(
+            est3 > 1.05 && est3 <= 2.0,
+            "Partial-overwrite median should be between 1.05 and 2.0, got {est3}"
+        );
     }
 
     #[test]

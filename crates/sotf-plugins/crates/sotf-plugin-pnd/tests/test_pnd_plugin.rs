@@ -166,18 +166,13 @@ fn test_pnd_known_drift_correction() {
         measured_freq
     );
 
-    // If correction works, output error < input error
-    // Note: relaxed check — the PND may need more time to fully converge
-    if output_error < input_error {
-        // PND is correcting in the right direction
-    } else {
-        // Even if not fully corrected, output should be in a reasonable range
-        assert!(
-            output_error < 10.0,
-            "Output frequency error ({:.1}Hz) should be small. Input freq={:.1}Hz, output freq={:.1}Hz",
-            output_error,
-            drift_freq,
-            measured_freq
-        );
-    }
+    // The PND must at minimum not make the frequency error worse.
+    // After 2 seconds at block_size=1024 the corrector has had ample time to
+    // converge, so the output frequency should be closer to 440 Hz than the
+    // raw input (444.4 Hz).
+    assert!(
+        output_error < input_error,
+        "PND should correct drift: output error ({output_error:.2}Hz) should be less than \
+         input error ({input_error:.2}Hz). input_freq={drift_freq:.1}Hz, measured_freq={measured_freq:.1}Hz"
+    );
 }
