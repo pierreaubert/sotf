@@ -71,11 +71,13 @@ impl DenoiserPlugin {
             // Pass 2: Smooth gains across frequency bins
             self.smooth_gains_across_frequency(ch);
 
-            // Pass 2b: Psychoacoustic masking — skip denoising for masked bins
+            // Pass 2b: Psychoacoustic masking — skip denoising for masked bins.
+            // Guard: only apply masking when speech presence probability is above 0.1
+            // to prevent noise masking itself on noise-only frames.
             if self.psychoacoustic_masking {
                 self.compute_masking_thresholds(ch);
                 for k in 0..self.spectrum_size {
-                    if self.is_noise_masked(ch, k) {
+                    if self.speech_presence[ch][k] >= 0.1 && self.is_noise_masked(ch, k) {
                         self.gain[ch][k] = 1.0;
                     }
                 }
