@@ -70,7 +70,10 @@ const SPEED_OF_SOUND: f32 = 343.0; // m/s at 20°C
 /// # Arguments
 /// * `freq_hz` - Frequency in Hz
 /// * `geometry` - Microphone array geometry
-/// * `azimuth_deg` - Steering azimuth angle in degrees (0° = broadside)
+/// * `azimuth_deg` - Steering azimuth angle in degrees.
+///   Convention: for a linear array along the x-axis, 0° is **endfire**
+///   (wave travels along the array axis) and 90° is **broadside** (wave
+///   arrives perpendicular to the array).
 /// * `elevation_deg` - Steering elevation angle in degrees (0° = horizontal)
 ///
 /// # Returns
@@ -152,11 +155,33 @@ mod tests {
             spacing_m: 0.05,
         };
 
-        // At broadside (0°), both mics receive the wave simultaneously
-        // → all steering vector phases should be zero (unit magnitude)
+        // At broadside (90°), the wave arrives perpendicular to the x-axis
+        // array, so all mics receive it simultaneously → phases should be equal
+        // (unit magnitude, zero phase difference).
         let sv = compute_steering_vector(1000.0, &geom, 90.0, 0.0);
-        // At 90°, wave travels along array axis → different delays
         assert_eq!(sv.len(), 2);
+        // Both elements should be real (zero phase delay at broadside)
+        for c in &sv {
+            assert!(c.im.abs() < 1e-4, "Expected near-zero imag at broadside, got {c}");
+        }
+    }
+
+    #[test]
+    fn test_endfire_steering() {
+        let geom = ArrayGeometry::Linear {
+            num_mics: 2,
+            spacing_m: 0.05,
+        };
+
+        // At endfire (0°), the wave travels along the array axis, so mics
+        // receive it at different times → phases should differ.
+        let sv = compute_steering_vector(1000.0, &geom, 0.0, 0.0);
+        assert_eq!(sv.len(), 2);
+        // The first mic is at origin → zero phase; second mic has non-zero phase
+        assert!(sv[0].im.abs() < 1e-6, "mic 0 at origin should have zero phase");
+        // At non-trivial frequency the second mic should have a different phase
+        let phase_diff = (sv[1].re - sv[0].re).abs() + (sv[1].im - sv[0].im).abs();
+        assert!(phase_diff > 0.01, "Endfire steering should produce phase delay: {phase_diff}");
     }
 
     #[test]
