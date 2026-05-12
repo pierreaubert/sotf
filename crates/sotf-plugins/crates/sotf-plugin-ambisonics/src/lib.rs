@@ -33,6 +33,15 @@ pub type AmbisonicsDecoderParams = AmbisonicsDecoderConfig;
 /// Crossover frequency for dual-band decoding (Hz).
 const DUAL_BAND_CROSSOVER_HZ: f32 = 700.0;
 
+/// Maximum number of Ambisonics input channels: (MAX_ORDER+1)² = 16.
+const MAX_AMBI_CHANNELS: usize = (spherical_harmonics::MAX_ORDER + 1)
+    * (spherical_harmonics::MAX_ORDER + 1);
+
+/// Maximum block size pre-allocated in `initialize()` for dual-band scratch
+/// buffers.  Hosts should not request blocks larger than this; a
+/// `debug_assert!` fires in debug builds if they do.
+const MAX_BLOCK_FRAMES: usize = 8192;
+
 pub struct AmbisonicsDecoderPlugin {
     order: usize,
     target_layout: String,
@@ -266,14 +275,13 @@ impl Plugin for AmbisonicsDecoderPlugin {
                 sample_rate as f32,
                 self.input_channels,
             ));
-            // Pre-allocate scratch buffers for max expected frame size (4096)
-            let max_batch = 4096 * self.input_channels;
-            if self.lf_buffer.len() < max_batch {
-                self.lf_buffer.resize(max_batch, 0.0);
-            }
-            if self.hf_buffer.len() < max_batch {
-                self.hf_buffer.resize(max_batch, 0.0);
-            }
+            // Pre-allocate scratch buffers for the worst-case block size
+            // (MAX_BLOCK_FRAMES × MAX_AMBI_CHANNELS).  The process() hot path
+            // must not resize these buffers — a debug_assert! guards that
+            // contract.
+            let max_batch = MAX_BLOCK_FRAMES * MAX_AMBI_CHANNELS;
+            self.lf_buffer.resize(max_batch, 0.0);
+            self.hf_buffer.resize(max_batch, 0.0);
         }
         // Pre-allocate per-frame decode scratch
         self.lf_frame.resize(self.output_channels, 0.0);
@@ -325,14 +333,23 @@ impl Plugin for AmbisonicsDecoderPlugin {
             // decode_matrix after, we take() the crossover (moves it out of self),
             // run the split loop, then restore it.
 
-            // Ensure scratch buffers are sized for this batch.
+            // Scratch buffers were pre-allocated in initialize() for
+            // MAX_BLOCK_FRAMES × MAX_AMBI_CHANNELS.  Resizing here would
+            // allocate on the audio thread; use a debug_assert! instead so
+            // oversized blocks fail loudly in debug builds.
             let batch_len = num_frames * in_ch;
-            if self.lf_buffer.len() < batch_len {
-                self.lf_buffer.resize(batch_len, 0.0);
-            }
-            if self.hf_buffer.len() < batch_len {
-                self.hf_buffer.resize(batch_len, 0.0);
-            }
+            debug_assert!(
+                self.lf_buffer.len() >= batch_len,
+                "lf_buffer too small: {} < {} (call initialize() before process())",
+                self.lf_buffer.len(),
+                batch_len
+            );
+            debug_assert!(
+                self.hf_buffer.len() >= batch_len,
+                "hf_buffer too small: {} < {} (call initialize() before process())",
+                self.hf_buffer.len(),
+                batch_len
+            );
 
             // --- Phase 1: crossover split ---
             // take() avoids a double-borrow between self.crossover (&mut) and
@@ -692,6 +709,44 @@ mod tests {
         for s in &output {
             assert!(s.abs() < 1e-10, "Expected silence for zero input, got {s}");
         }
+    }
+
+    /// Dual-band processing must succeed for blocks larger than 4096 frames
+    /// (the old hard-coded limit) without allocating in the hot path.
+    ///
+    /// This is a regression test for the callback-time allocation bug: the old
+    /// code called `resize()` in `process()` whenever `num_frames * in_ch`
+    /// exceeded the pre-allocated buffer size.
+    #[test]
+    fn test_dual_band_large_block_no_alloc() {
+        let config = AmbisonicsDecoderConfig {
+            order: 1,
+            target_layout: "5.1".to_owned(),
+            max_re_weighting: true,
+            dual_band: true,
+        };
+        let mut plugin = AmbisonicsDecoderPlugin::new(&config).unwrap();
+        plugin.initialize(48000).unwrap();
+
+        // Use a block larger than the old 4096-frame limit.
+        // initialize() now pre-allocates for MAX_BLOCK_FRAMES=8192, so this
+        // must not trigger a resize inside process().
+        let num_frames = 5000;
+        let in_ch = 4; // FOA
+        let out_ch = 6; // 5.1
+
+        let input = vec![0.1_f32; num_frames * in_ch];
+        let mut output = vec![0.0_f32; num_frames * out_ch];
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+
+        let frames = plugin.process(&input, &mut output, &ctx).unwrap();
+        assert_eq!(frames, num_frames);
+        // Output must be finite and non-zero (non-silence input with a real matrix)
+        let energy: f32 = output.iter().map(|s| s * s).sum();
+        assert!(energy > 0.0, "Expected non-zero output for non-zero input");
     }
 
     /// Toggling dual_band via set_parameter rebuilds the matrices and crossover.

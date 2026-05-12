@@ -10495,7 +10495,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-ambisonics"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "approx",
  "criterion",
