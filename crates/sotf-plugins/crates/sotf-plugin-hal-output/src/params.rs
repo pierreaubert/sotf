@@ -10,7 +10,7 @@
 //! Nothing else needs to change.
 
 use serde::{Deserialize, Serialize};
-use sotf_host::param_specs::{ParamSpec, find_by_key as pk};
+use sotf_host::param_specs::ParamSpec;
 use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
 
@@ -18,30 +18,21 @@ use sotf_host::plugin_params::PluginParamDef;
 // Parameter Specifications
 // ============================================================================
 
-pub const PARAMS: &[ParamSpec] = &[ParamSpec::int(
-    "Output Channels",
-    "output_channels",
-    2,
-    1,
-    16,
-    1,
-    "ch",
-    "General",
-)
-.structural()
-.doc("Number of HAL output channels")];
+// Channel count is fixed at plugin construction time and is not a runtime-settable
+// parameter — the plugin sink has no adjustable parameters exposed to the host.
+pub const PARAMS: &[ParamSpec] = &[];
 
 // ============================================================================
 // UI Layout
 // ============================================================================
 
 pub const LAYOUT: PluginLayout = PluginLayout {
-    config: &[ControlSpec::knob(0)], // output_channels
+    config: &[],
     main: &[],
     output: &[],
     tabs: &[],
     visualizations: &[],
-    column_constraints: &[ColumnConstraint::config(120.0, 0.5)],
+    column_constraints: &[],
     dynamic_sections: &[],
 };
 
@@ -51,26 +42,11 @@ pub const LAYOUT: PluginLayout = PluginLayout {
 
 /// HAL Output plugin parameters.
 ///
-/// All serde defaults are derived from PARAMS — adding a field here with
-/// the correct default function is enough to support old presets that
-/// don't have the new field.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Params {
-    #[serde(default = "d_output_channels")]
-    pub output_channels: f64,
-}
-
-fn d_output_channels() -> f64 {
-    pk(PARAMS, "output_channels").default_f64()
-}
-
-impl Default for Params {
-    fn default() -> Self {
-        Self {
-            output_channels: d_output_channels(),
-        }
-    }
-}
+/// This plugin has no runtime-settable parameters — the channel count is
+/// fixed at construction time. The struct exists to satisfy the
+/// `PluginParamDef` interface required for UI registration.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Params {}
 
 // ============================================================================
 // PluginParamDef implementation
@@ -82,18 +58,11 @@ impl PluginParamDef for Params {
     const VERSION: u32 = 1;
     const PLUGIN_TYPE_KEY: &'static str = "hal_output";
 
-    fn param_value(&self, index: usize) -> Option<f64> {
-        match index {
-            0 => Some(self.output_channels),
-            _ => None,
-        }
+    fn param_value(&self, _index: usize) -> Option<f64> {
+        None
     }
 
-    fn set_param_value(&mut self, index: usize, value: f64) {
-        if index == 0 {
-            self.output_channels = value;
-        }
-    }
+    fn set_param_value(&mut self, _index: usize, _value: f64) {}
 }
 
 // ============================================================================
@@ -105,35 +74,43 @@ mod tests {
     use super::*;
 
     #[test]
-    fn param_index_coverage() {
+    fn params_is_empty() {
+        // No runtime-settable parameters — PARAMS must remain empty.
+        assert_eq!(PARAMS.len(), 0, "PARAMS should have no entries");
+    }
+
+    #[test]
+    fn param_value_always_none() {
+        // Querying any index must return None (no parameters defined).
         let p = Params::default();
-        for i in 0..PARAMS.len() {
-            assert!(
-                p.param_value(i).is_some(),
-                "param_value({}) returned None",
-                i
-            );
-        }
-        assert!(
-            p.param_value(PARAMS.len()).is_none(),
-            "param_value beyond PARAMS.len() should return None"
-        );
+        assert!(p.param_value(0).is_none());
+        assert!(p.param_value(usize::MAX).is_none());
     }
 
     #[test]
     fn roundtrip_serde() {
+        // Empty struct serialises to `{}` and deserialises back without error.
         let original = Params::default();
         let json = serde_json::to_value(&original).unwrap();
-        let restored: Params = serde_json::from_value(json).unwrap();
-        assert_eq!(original.output_channels, restored.output_channels);
+        let _restored: Params = serde_json::from_value(json).unwrap();
     }
 
     #[test]
     fn deserialize_empty_json_uses_defaults() {
-        let p: Params = serde_json::from_str("{}").unwrap();
-        assert_eq!(
-            p.output_channels,
-            pk(PARAMS, "output_channels").default_f64()
+        // Old presets with unknown fields (e.g. `output_channels`) must not fail.
+        let _p: Params = serde_json::from_str("{}").unwrap();
+    }
+
+    #[test]
+    fn deserialize_old_preset_with_output_channels_ignores_unknown_field() {
+        // Old presets that serialised `output_channels` must be accepted silently
+        // via serde's default deny_unknown_fields absence.
+        let result: Result<Params, _> =
+            serde_json::from_str(r#"{"output_channels": 4}"#);
+        // serde by default ignores unknown fields, so this should succeed.
+        assert!(
+            result.is_ok(),
+            "Old preset with output_channels should deserialise without error"
         );
     }
 }

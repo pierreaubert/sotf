@@ -1,7 +1,7 @@
 [package]
 name = "sotf-plugin-hal-output"
 description = "SOTF HAL Output plugin - macOS audio HAL output"
-version = "0.5.8"
+version = "0.5.9"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
