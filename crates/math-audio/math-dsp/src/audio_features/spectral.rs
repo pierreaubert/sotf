@@ -84,11 +84,10 @@ pub fn compute_spectral_features(samples: &[f32], sample_rate: u32) -> Vec<f32> 
 
         // --- Flatness ---
         // aubio flatness: geometric_mean(cvec.norm()) / mean(cvec.norm())
-        // CVec norm has n_bins-1 = 256 elements for geometric_mean (indices 0..256)
-        // but mean uses all n_bins = 257 elements
-        // Actually looking at aubio CVec: norm has n_bins elements (0..n_bins)
-        // geometric_mean needs multiple of 8, so use norms[0..256]
-        let geo = geometric_mean(&norms[..256]);
+        // geometric_mean needs a multiple of 8, so use the largest multiple of 8
+        // <= norms.len() instead of a hardcoded value.
+        let geo_len = (norms.len() / 8) * 8;
+        let geo = geometric_mean(&norms[..geo_len]);
         if geo == 0.0 {
             values_flatness.push(0.0);
         } else {

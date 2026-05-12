@@ -3,7 +3,15 @@
 //! Implements K-weighting, momentary/short-term/integrated loudness,
 //! sample peak, and true peak (4x oversampling).
 
+use std::collections::VecDeque;
 use std::f64::consts::PI;
+
+// In tests we use a much smaller cap so overflow behaviour can be exercised
+// quickly without allocating gigabytes of audio.
+#[cfg(test)]
+const MAX_GATING_BLOCKS: usize = 100;
+#[cfg(not(test))]
+const MAX_GATING_BLOCKS: usize = 36_000;
 
 // ── Mode bitflags ───────────────────────────────────────────────────────────
 
@@ -357,7 +365,7 @@ pub struct EbuR128 {
     shortterm_ring: SubBlockRing,
 
     // Integrated gating: store all block energies for two-pass gating
-    gating_blocks: Vec<f64>,
+    gating_blocks: VecDeque<f64>,
 
     // Peak tracking
     sample_peak: Vec<f64>,
@@ -401,9 +409,9 @@ impl EbuR128 {
             gating_blocks: if mode.has(Mode::I) {
                 // Pre-allocate for ~10 minutes (6000 blocks at 10 blocks/sec)
                 // to avoid re-allocations on the audio thread hot path.
-                Vec::with_capacity(6_000)
+                VecDeque::with_capacity(6_000)
             } else {
-                Vec::new()
+                VecDeque::new()
             },
             sample_peak: vec![0.0; nc],
             prev_sample_peak: vec![0.0; nc],
@@ -477,11 +485,10 @@ impl EbuR128 {
             // unbounded memory growth during long playback sessions.
             // When full, drop the oldest block (approximation acceptable for
             // integrated loudness which is already a long-term average).
-            const MAX_GATING_BLOCKS: usize = 36_000;
             if self.gating_blocks.len() >= MAX_GATING_BLOCKS {
-                self.gating_blocks.remove(0);
+                self.gating_blocks.pop_front();
             }
-            self.gating_blocks.push(mean_energy);
+            self.gating_blocks.push_back(mean_energy);
         }
 
         // Reset accumulators
@@ -763,6 +770,42 @@ mod tests {
         assert!(
             (album_lufs - global_lufs).abs() < 0.5,
             "Album LUFS {album_lufs} should match global {global_lufs}"
+        );
+    }
+
+    #[test]
+    fn gating_blocks_overflow_oldest_dropped() {
+        // Issue #1: when gating_blocks exceeds MAX_GATING_BLOCKS the oldest
+        // block must be dropped.  With the old Vec::remove(0) this was O(n);
+        // with VecDeque::pop_front() it is O(1).
+        let sr = 48000;
+        // Need > MAX_GATING_BLOCKS sub-blocks.  Each sub-block is 100 ms,
+        // so 101 blocks = 10.1 s → 48000 * 10.1 ≈ 484800 frames.
+        let duration_s = 11;
+        let num_frames = sr * duration_s;
+        let mut samples = vec![0.0f32; num_frames * 2];
+
+        for i in 0..num_frames {
+            let t = i as f64 / sr as f64;
+            let s = (2.0 * PI * 440.0 * t).sin() as f32 * 0.5;
+            samples[i * 2] = s;
+            samples[i * 2 + 1] = s;
+        }
+
+        let mut meter = EbuR128::new(2, sr as u32, Mode::I).unwrap();
+        meter.add_frames_f32(&samples).unwrap();
+
+        // Gating must still produce a valid result after overflow.
+        let lufs = meter.loudness_global().unwrap();
+        assert!(
+            lufs > -30.0 && lufs < 5.0,
+            "global loudness should be reasonable after overflow, got {lufs}"
+        );
+
+        let result = meter.gating_block_count_and_energy();
+        assert!(
+            result.is_some(),
+            "gating_block_count_and_energy should work after overflow"
         );
     }
 }

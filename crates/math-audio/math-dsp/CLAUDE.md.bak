@@ -1,4 +1,4 @@
-# math-dsp (lib: `math_audio_dsp`, version: 0.5.16)
+# math-dsp (lib: `math_audio_dsp`, version: 0.4.8)
 
 DSP utilities for signal generation, analysis, and audio feature extraction.
 

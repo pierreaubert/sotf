@@ -155,12 +155,14 @@ fn unwrap_phase(phases: &[f32]) -> Vec<f32> {
     let two_pi = 2.0 * std::f32::consts::PI;
 
     for i in 1..phases.len() {
-        let mut diff = phases[i] - phases[i - 1];
-        // Wrap diff to [-pi, pi]
-        diff = ((diff + std::f32::consts::PI) % two_pi) - std::f32::consts::PI;
-        if diff < -std::f32::consts::PI {
-            diff += two_pi;
-        }
+        let diff = phases[i] - phases[i - 1];
+        // Issue #2: use rem_euclid instead of `%` for robust wrap-to-pi.
+        let wrapped = diff.rem_euclid(two_pi);
+        let diff = if wrapped > std::f32::consts::PI {
+            wrapped - two_pi
+        } else {
+            wrapped
+        };
         unwrapped.push(unwrapped[i - 1] + diff);
     }
 
@@ -480,5 +482,19 @@ mod tests {
         let result = instantaneous_frequency(&[1.0], 48000.0);
         assert_eq!(result.frequencies.len(), 1);
         assert_eq!(result.amplitudes.len(), 1);
+    }
+
+    #[test]
+    fn test_unwrap_phase_negative_diff() {
+        // Issue #2: `%` on f32 gives wrong results for negative operands.
+        // A phase jump of -3π/2 should unwrap to +π/2 (a +2π correction).
+        let phases = vec![0.0f32, -4.712389f32]; // 0, -3π/2
+        let unwrapped = unwrap_phase(&phases);
+        // The unwrapped second value should be close to +π/2 (~1.5708).
+        assert!(
+            (unwrapped[1] - 1.5708).abs() < 0.01,
+            "Expected ~1.5708 for -3π/2 unwrapped, got {}",
+            unwrapped[1]
+        );
     }
 }

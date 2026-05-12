@@ -1,3 +1,32 @@
+# 0.5.17
+
+## Bug fixes
+
+- `ebur128`: `gating_blocks` changed from `Vec` to `VecDeque` to eliminate
+  O(n) `remove(0)` shifts on the audio hot path once the 1-hour cap is
+  reached (#1).
+- `instantaneous_frequency`: phase unwrapping now uses `rem_euclid` instead
+  of `%` for robust wrap-to-π behavior with negative differences (#2).
+- `audio_features::utils::geometric_mean` now asserts that the input length
+  is a multiple of 8.  Previously `chunks_exact(8)` silently dropped the
+  remainder, producing wrong results for non-multiple-of-8 slices (#3).
+- `audio_features::spectral`: spectral flatness no longer hardcodes 256
+  bins; it uses the largest multiple of 8 `<= norms.len()` (#4).
+- `audio_features::chroma`: `pip_track` now returns empty pitch/mag vectors
+  instead of erroring when the frequency mask is empty (e.g. very low
+  sample rates where Nyquist < fmin) (#5).
+- `analysis::compute_thd_from_ir`: harmonic extraction window minimum is now
+  frequency-dependent (`3 * sample_rate / (harmonic_order * start_freq)`)
+  instead of a fixed 256 samples, preventing windows that are too short for
+  low fundamentals or too long for low sample rates (#6).
+- `analysis::compute_coherence_from_realizations`: now returns `Err` for
+  `N < 4` instead of silently returning γ² = 1, which is statistically
+  meaningless (#7).
+- `fast_exp2`: documented the silent `[-126, 126]` clamp (#9).
+- `fdn`: documented the rationale for the `±4` safety clamp (#10).
+- Synchronized version strings in `README.md` and `CLAUDE.md` with
+  `Cargo.toml` (#8).
+
 # 0.5.16
 
 ## New features

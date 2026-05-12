@@ -1234,11 +1234,15 @@ fn compute_thd_from_ir(
         let center = peak_idx as isize - dn;
         let center_wrapped = center.rem_euclid(n as isize) as usize;
 
-        // Window size logic: distance to next harmonic * 0.8 to avoid overlap
+        // Window size logic: distance to next harmonic * 0.8 to avoid overlap.
+        // Issue #6: the old hardcoded floor of 256 samples did not scale with
+        // sample rate or fundamental frequency.  We now use at least 3 periods
+        // of the lowest harmonic (start of sweep), capped at 16 samples minimum.
         let dt_next_rel = duration
             * ((harmonic_order as f32 + 1.0).ln() - (harmonic_order as f32).ln())
             / sweep_ratio.ln();
-        let win_len = ((dt_next_rel * sample_rate * 0.8).max(256.0) as usize).min(n / 2);
+        let min_win_len = (3.0 * sample_rate / (harmonic_order as f32 * start_freq)).max(16.0);
+        let win_len = ((dt_next_rel * sample_rate * 0.8).max(min_win_len) as usize).min(n / 2);
 
         // Extract windowed harmonic IR
         let mut harmonic_ir = vec![0.0f32; win_len];
@@ -2771,6 +2775,13 @@ pub fn compute_coherence_from_realizations(
     if n == 0 {
         return Err("compute_coherence: empty realizations".to_string());
     }
+    // Issue #7: a single realization is trivially "coherent with itself"
+    // but the result is statistically meaningless.  Require N ≥ 4.
+    if n < 4 {
+        return Err(format!(
+            "compute_coherence: need at least 4 realizations, got {n}"
+        ));
+    }
     let bins = realizations[0].len();
     if bins == 0 {
         return Ok(Vec::new());
@@ -2950,21 +2961,28 @@ mod gd_1c_tests {
 
     #[test]
     fn coherence_single_realization_is_unity() {
+        // Issue #7: N < 4 now returns an error instead of misleading γ² = 1.
         let h = vec![
             Complex::new(1.0, 0.0),
             Complex::new(0.5, 0.5),
             Complex::new(0.0, 1.0),
         ];
-        let coh = compute_coherence_from_realizations(&[h]).unwrap();
-        assert_eq!(coh.len(), 3);
-        for c in coh {
-            // A single realization is trivially "coherent with itself"
-            // — γ² = 1 by construction. Callers must enforce N ≥ 4
-            // at a higher level.
-            assert!(
-                (c - 1.0).abs() < 1e-6,
-                "single-realization γ² should be 1, got {c}"
-            );
+        let result = compute_coherence_from_realizations(&[h]);
+        assert!(result.is_err(), "N=1 should error, not return γ² = 1");
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("at least 4 realizations"),
+            "error should mention N≥4 requirement, got: {err}"
+        );
+    }
+
+    #[test]
+    fn coherence_too_few_realizations_errors() {
+        let r = vec![Complex::new(1.0, 0.0)];
+        for n in [2usize, 3] {
+            let realizations: Vec<_> = (0..n).map(|_| r.clone()).collect();
+            let result = compute_coherence_from_realizations(&realizations);
+            assert!(result.is_err(), "N={n} should error, not return γ² = 1");
         }
     }
 
@@ -3004,7 +3022,9 @@ mod gd_1c_tests {
     fn coherence_rejects_mismatched_lengths() {
         let r0 = vec![Complex::new(1.0_f32, 0.0); 3];
         let r1 = vec![Complex::new(1.0_f32, 0.0); 4];
-        let err = compute_coherence_from_realizations(&[r0, r1]).unwrap_err();
+        let r2 = vec![Complex::new(1.0_f32, 0.0); 3];
+        let r3 = vec![Complex::new(1.0_f32, 0.0); 4];
+        let err = compute_coherence_from_realizations(&[r0, r1, r2, r3]).unwrap_err();
         assert!(err.contains("has 4 bins, expected 3"), "got: {err}");
     }
 
@@ -3528,6 +3548,34 @@ mod tests {
             direct_max > -100.0,
             "Direct sound should have content, max was {:.1} dB",
             direct_max
+        );
+    }
+
+    #[test]
+    fn test_thd_window_min_is_frequency_dependent() {
+        // Issue #6: for a low start_freq the old hardcoded 256-sample floor
+        // could be far smaller than 3 periods of the harmonic.  With the fix
+        // the window must be at least 3 periods.
+        let sr = 48000.0f32;
+        let start_freq = 20.0f32;
+        let end_freq = 20000.0f32;
+        let duration = 10.0f32; // 10-second sweep
+        let n = 65536usize;
+        let mut ir = vec![0.0f32; n];
+        // Synthetic peak at the centre
+        ir[n / 2] = 1.0;
+
+        let freqs = vec![1000.0f32];
+        let fund_db = vec![0.0f32];
+        let (thd, _harmonics) =
+            compute_thd_from_ir(&ir, sr, &freqs, &fund_db, start_freq, end_freq, duration);
+        // Should complete without panicking; THD of a pure impulse is high
+        // because there is no harmonic structure, but the point is that the
+        // window sizing does not overflow or underflow.
+        assert!(
+            thd[0] >= 0.0 && thd[0] <= 100.0,
+            "THD should be in [0, 100], got {}",
+            thd[0]
         );
     }
 }

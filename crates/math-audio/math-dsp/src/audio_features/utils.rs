@@ -26,6 +26,11 @@ pub fn mean(input: &[f32]) -> f32 {
 /// Optimized geometric mean (from bliss, courtesy of Jacques-Henri Jourdan).
 /// Only works for input of size a multiple of 8, with values in [0, 2^65].
 pub fn geometric_mean(input: &[f32]) -> f32 {
+    assert!(
+        input.len().is_multiple_of(8),
+        "geometric_mean input length must be a multiple of 8, got {}",
+        input.len()
+    );
     let mut exponents: i32 = 0;
     let mut mantissas: f64 = 1.;
     for ch in input.chunks_exact(8) {
@@ -195,6 +200,15 @@ mod tests {
 
         let numbers = vec![4.0, 2.0, 1.0, 4.0, 2.0, 1.0, 2.0, 2.0];
         assert!(0.0001 > (2.0 - geometric_mean(&numbers)).abs());
+    }
+
+    #[test]
+    #[should_panic(expected = "geometric_mean input length must be a multiple of 8")]
+    fn test_geometric_mean_panics_on_non_multiple_of_8() {
+        // Issue #3: chunks_exact(8) silently drops the remainder, producing
+        // a wrong result when the length is not a multiple of 8.
+        let numbers = vec![1.0f32; 9];
+        geometric_mean(&numbers);
     }
 
     #[test]

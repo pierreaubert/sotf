@@ -1181,14 +1181,15 @@ pub fn aggregate_tone_phase(phasors: &[TonePhasorWindow]) -> TonePhaseResult {
 /// values toward `0.0` indicate uncorrelated noise on either side.
 /// Returns `None` when the inputs disagree on length / start indices
 /// or when either stream has zero energy.
-pub fn phasor_coherence(
-    a: &[TonePhasorWindow],
-    b: &[TonePhasorWindow],
-) -> Option<f64> {
+pub fn phasor_coherence(a: &[TonePhasorWindow], b: &[TonePhasorWindow]) -> Option<f64> {
     if a.is_empty() || a.len() != b.len() {
         return None;
     }
-    if !a.iter().zip(b).all(|(p, q)| p.start == q.start && p.len == q.len) {
+    if !a
+        .iter()
+        .zip(b)
+        .all(|(p, q)| p.start == q.start && p.len == q.len)
+    {
         return None;
     }
     let mut cross_re = 0.0_f64;
@@ -1921,9 +1922,17 @@ mod tests {
     fn steady_tone_length_and_fade_envelope() {
         let sr = 48_000_u32;
         let s = gen_steady_tone(30.0, 1.0, 50.0, sr, 0.5);
-        assert_eq!(s.len(), 48_000, "1 s @ 48 kHz must be exactly 48 000 samples");
+        assert_eq!(
+            s.len(),
+            48_000,
+            "1 s @ 48 kHz must be exactly 48 000 samples"
+        );
         // Endpoints sit on the half-Hann fade — should be zero.
-        assert!(s[0].abs() < 1e-6, "fade-in must start at zero, got {}", s[0]);
+        assert!(
+            s[0].abs() < 1e-6,
+            "fade-in must start at zero, got {}",
+            s[0]
+        );
         assert!(s[s.len() - 1].abs() < 1e-6, "fade-out must end at zero");
         // Steady region should hit the requested amplitude (at amp=0.5).
         let steady_start = (0.06 * sr as f32) as usize; // 60 ms in

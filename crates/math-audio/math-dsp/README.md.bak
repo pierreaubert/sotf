@@ -3,7 +3,7 @@
 DSP utilities for audio signal generation and FFT-based analysis.
 
 **Library name:** `math_audio_dsp`
-**Version:** 0.5.16
+**Version:** 0.4.8
 
 ## Overview
 

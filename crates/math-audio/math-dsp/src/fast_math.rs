@@ -33,11 +33,17 @@ pub fn fast_log10(x: f32) -> f32 {
     fast_log2(x) * std::f32::consts::LOG10_2
 }
 
-/// Fast approximation of base-2 exponential
+/// Fast approximation of base-2 exponential.
 ///
 /// Splits x into integer and fractional parts, uses bit manipulation for the
 /// integer part and a degree-4 Taylor polynomial for the fractional part.
 /// Max relative error ~0.08%.
+///
+/// # Caveat
+///
+/// The input is silently clamped to `[-126, 126]` to prevent IEEE-754
+/// overflow/underflow.  Values outside this range saturate to the nearest
+/// boundary rather than returning `inf` or `0`.
 #[inline]
 pub fn fast_exp2(x: f32) -> f32 {
     // Clamp to avoid overflow/underflow

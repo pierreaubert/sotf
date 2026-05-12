@@ -212,14 +212,16 @@ fn pip_track(
     let mut pitches = Vec::with_capacity(taken_columns * length);
     let mut mags = Vec::with_capacity(taken_columns * length);
 
-    let beginning = freq_mask
-        .iter()
-        .position(|&b| b)
-        .ok_or_else(|| ChromaError("in pip_track: no freq mask".to_string()))?;
-    let end = freq_mask
-        .iter()
-        .rposition(|&b| b)
-        .ok_or_else(|| ChromaError("in pip_track: no freq mask".to_string()))?;
+    // Issue #5: guard against empty freq mask (e.g. very low sample rates
+    // where the first FFT bin is already above fmax).
+    let beginning = match freq_mask.iter().position(|&b| b) {
+        Some(b) => b,
+        None => return Ok((pitches, mags)),
+    };
+    let end = match freq_mask.iter().rposition(|&b| b) {
+        Some(e) => e,
+        None => return Ok((pitches, mags)),
+    };
 
     let zipped = Zip::indexed(spectrum.slice(s![beginning..end - 3, ..]))
         .and(spectrum.slice(s![beginning + 1..end - 2, ..]))
@@ -361,5 +363,20 @@ mod tests {
         for (expected, actual) in normalized.iter().zip(expected.iter()) {
             assert!((expected - actual).abs() < 1e-6);
         }
+    }
+
+    #[test]
+    fn test_chroma_empty_freq_mask_low_sr() {
+        // Issue #5: very low sample rates can produce an empty freq mask
+        // because Nyquist is below fmin (150 Hz).  This should not panic.
+        let sr = 200u32; // Nyquist = 100 Hz < fmin = 150 Hz
+        // Need at least WINDOW_SIZE (8192) + 1 samples for reflect_pad.
+        let signal = vec![0.5f32; 8200];
+        let result = compute_chroma_features(&signal, sr);
+        assert!(
+            result.is_ok(),
+            "low-SR chroma should not error: {:?}",
+            result
+        );
     }
 }

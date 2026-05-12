@@ -152,7 +152,9 @@ impl Fdn {
             out_r += self.scratch[i] * self.output_gains[i][1];
         }
 
-        // Safety clamp
+        // Safety clamp: ±4 gives ~24 dB of headroom above unity, which is
+        // enough for dense late reverb while preventing runaway feedback from
+        // producing non-finite output if the FDN matrix becomes unstable.
         (out_l.clamp(-4.0, 4.0), out_r.clamp(-4.0, 4.0))
     }
 
