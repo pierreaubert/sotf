@@ -10788,7 +10788,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-matrix"
-version = "0.5.88"
+version = "0.5.89"
 dependencies = [
  "log",
  "serde",
