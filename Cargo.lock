@@ -10846,7 +10846,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-resampler"
-version = "0.5.22"
+version = "0.5.23"
 dependencies = [
  "audioadapter-buffers",
  "log",

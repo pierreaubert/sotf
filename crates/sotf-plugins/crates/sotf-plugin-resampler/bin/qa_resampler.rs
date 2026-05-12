@@ -15,7 +15,7 @@ fn main() {
     // Test 1: Resampling produces output with correct ratio
     println!("\n[Test 1] 44.1kHz → 48kHz resampling");
     let mut plugin = ResamplerPlugin::new_default(channels, input_sr, output_sr).unwrap();
-    plugin.initialize(output_sr).unwrap();
+    plugin.initialize(input_sr).unwrap();
 
     let num_frames = 1024;
     let input = vec![0.5f32; num_frames * channels];
