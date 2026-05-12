@@ -80,13 +80,20 @@ impl<'a> Voronoi<'a> {
         let mut result = Vec::new();
         let n = clipped.len();
         // Remove trailing duplicate of first point
+        let eps = self.epsilon();
         let mut end = n;
-        while end >= 4 && clipped[0] == clipped[end - 2] && clipped[1] == clipped[end - 1] {
+        while end >= 4
+            && (clipped[0] - clipped[end - 2]).abs() <= eps
+            && (clipped[1] - clipped[end - 1]).abs() <= eps
+        {
             end -= 2;
         }
         for i in (0..end).step_by(2) {
             // Skip consecutive duplicates
-            if i >= 2 && clipped[i] == clipped[i - 2] && clipped[i + 1] == clipped[i - 1] {
+            if i >= 2
+                && (clipped[i] - clipped[i - 2]).abs() <= eps
+                && (clipped[i + 1] - clipped[i - 1]).abs() <= eps
+            {
                 continue;
             }
             result.push((clipped[i], clipped[i + 1]));
@@ -500,17 +507,30 @@ impl<'a> Voronoi<'a> {
         if x.is_nan() { None } else { Some([x, y]) }
     }
 
+    /// Characteristic length scale of the bounding box.
+    fn bbox_scale(&self) -> f64 {
+        let w = (self.xmax - self.xmin).abs();
+        let h = (self.ymax - self.ymin).abs();
+        w.max(h).max(1.0)
+    }
+
+    /// Geometric epsilon relative to the bounding box size.
+    fn epsilon(&self) -> f64 {
+        1e-9 * self.bbox_scale()
+    }
+
     /// Edge code: which edge(s) of the bounding box a point lies on.
     fn edgecode(&self, x: f64, y: f64) -> u8 {
+        let eps = self.epsilon();
         let mut code = 0u8;
-        if x == self.xmin {
+        if (x - self.xmin).abs() <= eps {
             code |= 0b0001;
-        } else if x == self.xmax {
+        } else if (x - self.xmax).abs() <= eps {
             code |= 0b0010;
         }
-        if y == self.ymin {
+        if (y - self.ymin).abs() <= eps {
             code |= 0b0100;
-        } else if y == self.ymax {
+        } else if (y - self.ymax).abs() <= eps {
             code |= 0b1000;
         }
         code
@@ -536,12 +556,15 @@ impl<'a> Voronoi<'a> {
     fn simplify(&self, p: Option<Vec<f64>>) -> Option<Vec<f64>> {
         let mut p = p?;
         if p.len() > 4 {
+            let eps = self.epsilon();
             let mut i = 0;
             while i < p.len() && p.len() > 4 {
                 let j = (i + 2) % p.len();
                 let k = (i + 4) % p.len();
-                if (p[i] == p[j] && p[j] == p[k]) || (p[i + 1] == p[j + 1] && p[j + 1] == p[k + 1])
-                {
+                // 2D cross product for collinearity (axis-aligned or diagonal)
+                let cross =
+                    (p[j] - p[i]) * (p[k + 1] - p[i + 1]) - (p[j + 1] - p[i + 1]) * (p[k] - p[i]);
+                if cross.abs() <= eps * eps {
                     p.remove(j + 1);
                     p.remove(j);
                     if i >= 2 {
@@ -635,6 +658,41 @@ mod tests {
 
         assert!(v.contains(0, 1.0, 1.0));
         assert!(v.contains(1, 9.0, 1.0));
+    }
+
+    /// Diagonal collinear points in a polygon should be simplified.
+    /// Three points on the line y = x should reduce to two points.
+    #[test]
+    fn test_simplify_diagonal_collinear() {
+        let points = vec![(0.0, 0.0), (10.0, 0.0), (5.0, 10.0)];
+        let d = Delaunay::from_points(&points);
+        let v = d.voronoi([0.0, 0.0, 10.0, 10.0]);
+
+        // Craft a polygon with a diagonal collinear middle point
+        let poly = vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 0.0];
+        let simplified = v.simplify(Some(poly));
+        assert!(simplified.is_some());
+        let s = simplified.unwrap();
+        assert_eq!(
+            s.len(),
+            6,
+            "should remove the middle diagonal collinear point, got {s:?}"
+        );
+    }
+
+    /// Points computed near the clipping boundary should still be recognized as on-edge.
+    #[test]
+    fn test_edgecode_near_boundary() {
+        let points = vec![(0.0, 0.0), (10.0, 0.0), (5.0, 10.0)];
+        let d = Delaunay::from_points(&points);
+        let v = d.voronoi([0.0, 0.0, 10.0, 10.0]);
+
+        // A point that is mathematically exactly on xmin but computed with tiny fp error
+        let code = v.edgecode(1e-15, 5.0);
+        assert!(
+            code != 0,
+            "point extremely close to xmin should have an edge code"
+        );
     }
 
     #[test]

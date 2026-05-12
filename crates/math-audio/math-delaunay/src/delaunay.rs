@@ -55,13 +55,8 @@ impl Delaunay {
             let mut col: Vec<usize> = (0..n).collect();
             col.sort_by(|&i, &j| {
                 points[2 * i]
-                    .partial_cmp(&points[2 * j])
-                    .unwrap_or(std::cmp::Ordering::Equal)
-                    .then(
-                        points[2 * i + 1]
-                            .partial_cmp(&points[2 * j + 1])
-                            .unwrap_or(std::cmp::Ordering::Equal),
-                    )
+                    .total_cmp(&points[2 * j])
+                    .then(points[2 * i + 1].total_cmp(&points[2 * j + 1]))
             });
             collinear_vec = col;
 
@@ -253,7 +248,16 @@ impl Delaunay {
         let ex = x3 - x1;
         let ey = y3 - y1;
         let ab = (dx * ey - dy * ex) * 2.0;
-        if ab.abs() < 1e-9 {
+        let max_coord = x1
+            .abs()
+            .max(y1.abs())
+            .max(x2.abs())
+            .max(y2.abs())
+            .max(x3.abs())
+            .max(y3.abs());
+        let max_coord = if max_coord == 0.0 { 1.0 } else { max_coord };
+        let threshold = 1e-9 * max_coord * max_coord;
+        if ab.abs() < threshold {
             ((x1 + x2 + x3) / 3.0, (y1 + y2 + y3) / 3.0)
         } else {
             let d = 1.0 / ab;
@@ -264,14 +268,25 @@ impl Delaunay {
     }
 }
 
+/// Compute a characteristic coordinate scale from a flat coordinate array.
+fn coord_scale(coords: &[f64]) -> f64 {
+    let mut max = 0.0f64;
+    for i in (0..coords.len()).step_by(2) {
+        max = max.max(coords[i].abs()).max(coords[i + 1].abs());
+    }
+    if max == 0.0 { 1.0 } else { max }
+}
+
 fn is_collinear(triangles: &[usize], coords: &[f64]) -> bool {
+    let scale = coord_scale(coords);
+    let threshold = 1e-10 * scale * scale;
     for i in (0..triangles.len()).step_by(3) {
         let a = 2 * triangles[i];
         let b = 2 * triangles[i + 1];
         let c = 2 * triangles[i + 2];
         let cross = (coords[c] - coords[a]) * (coords[b + 1] - coords[a + 1])
             - (coords[b] - coords[a]) * (coords[c + 1] - coords[a + 1]);
-        if cross > 1e-10 {
+        if cross.abs() > threshold {
             return false;
         }
     }
@@ -300,6 +315,36 @@ mod tests {
     fn test_collinear() {
         let d = Delaunay::from_points(&[(0.0, 0.0), (1.0, 0.0), (2.0, 0.0), (3.0, 0.0)]);
         assert!(!d.collinear.is_empty());
+    }
+
+    /// Very small coordinates should NOT be considered collinear when they form a valid triangle.
+    /// The cross product is 1e-12, which is below the old hardcoded 1e-10 threshold.
+    #[test]
+    fn test_small_scale_not_collinear() {
+        let d = Delaunay::from_points(&[(0.0, 0.0), (1e-6, 0.0), (0.0, 1e-6)]);
+        assert!(
+            d.collinear.is_empty(),
+            "micro-scale triangle should NOT be collinear"
+        );
+        assert!(!d.triangles.is_empty(), "should produce triangles");
+    }
+
+    /// Large coordinates that are genuinely collinear should still be detected.
+    #[test]
+    fn test_large_scale_collinear() {
+        let d = Delaunay::from_points(&[(0.0, 0.0), (1e9, 1.0), (2e9, 2.0)]);
+        assert!(
+            !d.collinear.is_empty(),
+            "large-scale collinear points should be detected"
+        );
+    }
+
+    /// NaN coordinates should be handled deterministically without panics.
+    #[test]
+    fn test_nan_coordinates_handled() {
+        let d = Delaunay::from_points(&[(0.0, 0.0), (f64::NAN, 1.0), (1.0, f64::NAN)]);
+        // Should not panic; collinear detection with NaN should be stable
+        assert!(d.len() == 3, "should have 3 points");
     }
 
     // ================================================================
