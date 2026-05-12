@@ -12,6 +12,11 @@ use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 /// Maximum number of bands supported.
 const MAX_BANDS: usize = 32;
 
+/// One-pole gain smoother time constant in milliseconds.
+/// At 10 ms the gain reaches ~63% of a step change in ~10 ms,
+/// which is fast enough for automation while eliminating zipper noise.
+const GAIN_SMOOTH_MS: f32 = 10.0;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BandMergePluginParams {
     #[serde(default = "default_num_bands")]
@@ -42,6 +47,11 @@ pub struct BandMergePlugin {
     /// deviates from perfect reconstruction. Updated each process() call.
     reconstruction_error_db: f32,
     cached_parameters: Vec<Parameter>,
+    // ---- gain smoothing ----
+    /// Per-band one-pole gain smoother to prevent zipper noise during automation.
+    band_gain_smoothers: [sotf_host::smoothing::Smoother; MAX_BANDS],
+    /// Sample rate, needed to reinitialise smoothers on initialize().
+    sample_rate: u32,
 }
 
 impl BandMergePlugin {
@@ -52,6 +62,8 @@ impl BandMergePlugin {
         if bands > MAX_BANDS {
             return Err(format!("Max {} bands", MAX_BANDS));
         }
+        // Default sample rate before initialize() is called.
+        const DEFAULT_SR: u32 = 48000;
         let mut p = Self {
             output_channels,
             num_bands: bands,
@@ -61,6 +73,10 @@ impl BandMergePlugin {
             band_mutes: [false; MAX_BANDS],
             reconstruction_error_db: 0.0,
             cached_parameters: Vec::new(),
+            band_gain_smoothers: std::array::from_fn(|_| {
+                sotf_host::smoothing::Smoother::new(1.0, GAIN_SMOOTH_MS, DEFAULT_SR)
+            }),
+            sample_rate: DEFAULT_SR,
         };
         p.rebuild_cached_parameters();
         Ok(p)
@@ -74,6 +90,8 @@ impl BandMergePlugin {
         for (i, &g) in params.band_gains_db.iter().enumerate().take(params.bands) {
             p.band_gains_db[i] = g;
             p.band_gains_linear[i] = db_to_linear(g);
+            // Snap smoother to the preset value immediately (no ramp on load).
+            p.band_gain_smoothers[i].reset(db_to_linear(g));
         }
         for (i, &m) in params.band_mutes.iter().enumerate().take(params.bands) {
             p.band_mutes[i] = m;
@@ -163,7 +181,10 @@ impl Plugin for BandMergePlugin {
                         .ok_or_else(|| format!("band_{}_gain_db must be a float", i))?;
                     if v.is_finite() {
                         self.band_gains_db[i] = v;
-                        self.band_gains_linear[i] = db_to_linear(v);
+                        let linear = db_to_linear(v);
+                        self.band_gains_linear[i] = linear;
+                        // Update smoother target so gain transitions are glitch-free.
+                        self.band_gain_smoothers[i].set_target(linear);
                         self.rebuild_cached_parameters();
                     }
                     return Ok(());
@@ -205,10 +226,20 @@ impl Plugin for BandMergePlugin {
         }
         None
     }
-    fn initialize(&mut self, _sample_rate: u32) -> PluginResult<()> {
+    fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        self.sample_rate = sample_rate;
+        for i in 0..MAX_BANDS {
+            self.band_gain_smoothers[i].set_time(GAIN_SMOOTH_MS, sample_rate);
+        }
         Ok(())
     }
-    fn reset(&mut self) {}
+    fn reset(&mut self) {
+        // Snap all smoothers to their current target so playback resumes
+        // without a ramp artefact after a transport reset.
+        for i in 0..self.num_bands {
+            self.band_gain_smoothers[i].reset(self.band_gains_linear[i]);
+        }
+    }
 
     fn process(
         &mut self,
@@ -227,6 +258,18 @@ impl Plugin for BandMergePlugin {
         let mut reference_energy = 0.0_f64;
         let mut output_energy = 0.0_f64;
 
+        // Pre-compute effective gains for this frame block:
+        // muted bands have effective gain 0.0, which eliminates the per-sample branch
+        // and allows the inner loop to be auto-vectorized by the compiler.
+        let mut effective_gains = [0.0f32; MAX_BANDS];
+        for (band, eg) in effective_gains.iter_mut().enumerate().take(self.num_bands) {
+            // Advance the smoother by `num_frames` steps. Using next_n() is
+            // equivalent to advancing sample-by-sample for the purpose of the
+            // block-wise smoother, and avoids calling it inside the innermost loop.
+            let smoothed = self.band_gain_smoothers[band].next_n(num_frames);
+            *eg = if self.band_mutes[band] { 0.0 } else { smoothed };
+        }
+
         for frame in 0..num_frames {
             let in_off = frame * in_ch;
             let out_off = frame * out_ch;
@@ -236,9 +279,7 @@ impl Plugin for BandMergePlugin {
                 for band in 0..self.num_bands {
                     let sample = input[in_off + band * out_ch + ch];
                     ref_sum += sample;
-                    if !self.band_mutes[band] {
-                        sum += sample * self.band_gains_linear[band];
-                    }
+                    sum += sample * effective_gains[band];
                 }
                 output[out_off + ch] = sum;
                 reference_energy += (ref_sum as f64) * (ref_sum as f64);
@@ -298,6 +339,7 @@ mod tests {
     #[test]
     fn test_band_merge_with_gain() {
         let mut p = BandMergePlugin::new(1, 2).unwrap();
+        p.initialize(48000).unwrap();
         // Set band 0 gain to +6 dB (~2x), band 1 gain stays at 0 dB (1x)
         p.set_parameter(
             ParameterId::from("band_0_gain_db"),
@@ -305,20 +347,27 @@ mod tests {
         )
         .unwrap();
 
-        // Band 0: 1.0, Band 1: 1.0
-        let i = vec![1.0, 1.0];
-        let mut o = vec![0.0];
-        p.process(
-            &i,
-            &mut o,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1,
-            },
-        )
-        .unwrap();
-        // Band 0 * 2.0 + Band 1 * 1.0 = 3.0
-        assert!((o[0] - 3.0).abs() < 0.01, "got {}", o[0]);
+        // Process in small blocks to let the smoother converge across many calls.
+        // The smoother advances `num_frames` steps per process() call, so the
+        // total convergence is: 100 calls × 128 frames = 12 800 steps (>>480).
+        let block = 128usize;
+        let i_block = vec![1.0f32; block * 2]; // band0=1.0, band1=1.0
+        let mut o_block = vec![0.0f32; block];
+        let mut last = 0.0f32;
+        for _ in 0..100 {
+            p.process(
+                &i_block,
+                &mut o_block,
+                &ProcessContext {
+                    sample_rate: 48000,
+                    num_frames: block,
+                },
+            )
+            .unwrap();
+            last = o_block[block - 1];
+        }
+        // After settling: Band 0 * 2.0 + Band 1 * 1.0 = 3.0
+        assert!((last - 3.0).abs() < 0.01, "got {last}");
     }
 
     #[test]
@@ -346,6 +395,7 @@ mod tests {
     #[test]
     fn test_band_merge_mute_and_gain_combined() {
         let mut p = BandMergePlugin::new(1, 3).unwrap();
+        p.initialize(48000).unwrap();
         // Mute band 0
         p.set_parameter(ParameterId::from("band_0_mute"), ParameterValue::Bool(true))
             .unwrap();
@@ -356,20 +406,27 @@ mod tests {
         )
         .unwrap();
 
-        // 3 bands, 1 channel: band0=10.0, band1=1.0, band2=1.0
-        let i = vec![10.0, 1.0, 1.0];
-        let mut o = vec![0.0];
-        p.process(
-            &i,
-            &mut o,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1,
-            },
-        )
-        .unwrap();
-        // band0 muted, band1 * 1.0 + band2 * 2.0 = 3.0
-        assert!((o[0] - 3.0).abs() < 0.01, "got {}", o[0]);
+        // Process in small blocks (see test_band_merge_with_gain for rationale).
+        // 3 bands, 1 channel: band0=10.0, band1=1.0, band2=1.0 per frame.
+        let block = 128usize;
+        let frame = [10.0f32, 1.0, 1.0];
+        let i_block: Vec<f32> = frame.iter().copied().cycle().take(block * 3).collect();
+        let mut o_block = vec![0.0f32; block];
+        let mut last = 0.0f32;
+        for _ in 0..100 {
+            p.process(
+                &i_block,
+                &mut o_block,
+                &ProcessContext {
+                    sample_rate: 48000,
+                    num_frames: block,
+                },
+            )
+            .unwrap();
+            last = o_block[block - 1];
+        }
+        // After settling: band0 muted, band1 * 1.0 + band2 * 2.0 = 3.0
+        assert!((last - 3.0).abs() < 0.01, "got {last}");
     }
 
     #[test]
@@ -481,5 +538,98 @@ mod tests {
         let params = p.parameters();
         // 1 (bands) + 3 * 2 (gain + mute per band) + 1 (reconstruction_error_db) = 8
         assert_eq!(params.len(), 8);
+    }
+
+    /// Gain changes must be smoothed: after a step change from 0 dB to +6 dB,
+    /// the output on the very first frame must be between the old gain (1.0)
+    /// and the new gain (~2.0), not equal to 2.0.  This verifies there is no
+    /// step discontinuity (zipper noise) on the first processed frame.
+    #[test]
+    fn test_gain_change_is_smoothed() {
+        let mut p = BandMergePlugin::new(1, 2).unwrap();
+        // initialize() sets the smoother coefficient for 48 kHz.
+        p.initialize(48000).unwrap();
+
+        // Band gains start at 0 dB (linear 1.0).  Process one frame to lock
+        // the smoother at 1.0 (unity).
+        let i_unity = vec![1.0f32, 1.0]; // band0=1.0, band1=1.0
+        let mut o = vec![0.0f32];
+        p.process(
+            &i_unity,
+            &mut o,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 1,
+            },
+        )
+        .unwrap();
+        assert!((o[0] - 2.0).abs() < 1e-4, "baseline unity: got {}", o[0]);
+
+        // Now apply a +6 dB step to band 0.  The linear gain jumps from 1.0 → ~2.0.
+        p.set_parameter(
+            ParameterId::from("band_0_gain_db"),
+            ParameterValue::Float(6.0206),
+        )
+        .unwrap();
+
+        // First frame after the step: the smoother must NOT have reached 2.0 yet.
+        // At 48 kHz with a 10 ms time constant the gain after 1 sample is
+        // approximately 1.002 — strictly between 1.0 and 2.0.
+        let mut o_step = vec![0.0f32];
+        p.process(
+            &i_unity,
+            &mut o_step,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 1,
+            },
+        )
+        .unwrap();
+
+        // band0_smoothed (≈1.002) + band1_gain (1.0) = ≈2.002, well below 3.0
+        assert!(
+            o_step[0] > 2.0 && o_step[0] < 2.1,
+            "expected smoothed output between 2.0 and 2.1 on first frame after gain step, got {}",
+            o_step[0]
+        );
+    }
+
+    /// reset() must snap smoothers to their current target immediately so that
+    /// playback resumes at the correct gain without an unwanted ramp.
+    #[test]
+    fn test_reset_snaps_smoother() {
+        // Minimum 2 bands required by the plugin.
+        // Both bands will have input 1.0; band 0 gets +6 dB (~2.0 linear), band 1 stays at 0 dB.
+        let mut p = BandMergePlugin::new(1, 2).unwrap();
+        p.initialize(48000).unwrap();
+
+        // Apply a gain that the smoother has not yet reached.
+        p.set_parameter(
+            ParameterId::from("band_0_gain_db"),
+            ParameterValue::Float(6.0206), // ~2.0 linear
+        )
+        .unwrap();
+
+        // reset() should snap the smoother to 2.0 immediately.
+        p.reset();
+
+        // First frame after reset must already be at the target gain.
+        // Input: [band0=1.0, band1=1.0]; expected output: 2.0*1.0 + 1.0*1.0 = 3.0.
+        let i = vec![1.0f32, 1.0]; // 2 bands, 1 channel, 1 frame
+        let mut o = vec![0.0f32];
+        p.process(
+            &i,
+            &mut o,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 1,
+            },
+        )
+        .unwrap();
+        assert!(
+            (o[0] - 3.0).abs() < 0.01,
+            "after reset(), first frame should equal settled output (~3.0), got {}",
+            o[0]
+        );
     }
 }
