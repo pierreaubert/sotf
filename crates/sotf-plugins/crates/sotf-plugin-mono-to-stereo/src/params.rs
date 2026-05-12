@@ -95,6 +95,11 @@ pub const LAYOUT: PluginLayout = PluginLayout {
 /// All serde defaults are derived from PARAMS — adding a field here with
 /// the correct default function is enough to support old presets that
 /// don't have the new field.
+///
+/// Note: `enable_comp_eq` and `comp_eq_depth_db` fields that may appear in
+/// old presets are silently ignored by serde (unknown fields). The compensation
+/// EQ was never implemented; those parameters have been removed to avoid
+/// presenting a non-functional control.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Params {
     #[serde(default = "d_stereo_width")]
@@ -217,5 +222,20 @@ mod tests {
             p.freq_dependent,
             pk(PARAMS, "freq_dependent").default_bool()
         );
+    }
+
+    /// Old presets that contain enable_comp_eq / comp_eq_depth_db fields should
+    /// deserialize without error — serde silently ignores unknown fields.
+    #[test]
+    fn deserialize_old_preset_with_comp_eq_fields() {
+        let json = r#"{
+            "stereo_width": 0.7,
+            "enable_comp_eq": true,
+            "comp_eq_depth_db": 2.0,
+            "decor_low_hz": 400.0
+        }"#;
+        let p: Params = serde_json::from_str(json).unwrap();
+        assert!((p.stereo_width - 0.7).abs() < 1e-9);
+        assert!((p.decor_low_hz - 400.0).abs() < 1e-9);
     }
 }
