@@ -54,8 +54,14 @@ impl ToneFilter {
             };
         }
 
-        // Pole position
-        let a1 = -diff / sum;
+        // Pole position — clamped to avoid placing the pole on or outside the unit
+        // circle when the gain ratio is extreme (e.g. g_ny ≈ 0 with g_dc finite).
+        // Without the clamp, |a1| → 1, making the time constant of the filter
+        // approach infinity (non-decaying FDN feedback loop).
+        // The limit ±0.999 keeps the pole at |z| ≤ 0.999, giving a worst-case
+        // time constant of ~1000 / ln(1/0.999) ≈ 999 samples, well-behaved even
+        // at extreme RT60 / treble-ratio combinations.
+        let a1 = (-diff / sum).clamp(-0.999, 0.999);
 
         // From H(1) = g_dc: (b0 + b1) = g_dc * (1 + a1)
         // From H(-1) = g_ny: (b0 - b1) = g_ny * (1 - a1)
@@ -104,7 +110,7 @@ impl ToneFilter {
             self.a1 = 0.0;
             return;
         }
-        self.a1 = -diff / sum;
+        self.a1 = (-diff / sum).clamp(-0.999, 0.999);
         let h_dc = g_dc * (1.0 + self.a1);
         let h_ny = g_ny * (1.0 - self.a1);
         self.b0 = (h_dc + h_ny) * 0.5;
@@ -194,6 +200,71 @@ mod tests {
             let output = f.process(1.0);
             assert!(output.abs() < 1e-10);
         }
+    }
+
+    /// When g_ny is very small relative to g_dc (bright room with fast treble decay),
+    /// a1 approaches -1.0, placing the FDN feedback pole very close to z = +1 (DC).
+    /// Without clamping, the impulse response barely decays over 100k samples — making
+    /// the reverb tail effectively infinite. The clamped design should produce measurable
+    /// decay in 100k samples (≪ 2 second tail at 48 kHz).
+    #[test]
+    fn test_extreme_gain_ratio_decays_properly() {
+        // treble_ratio = 0.2, rt60 = 0.3s → g_ny can be extremely small.
+        // With g_ny = 1e-6, unclamped a1 ≈ -0.999998, pole ≈ +0.999998,
+        // time constant ≈ 4.5M samples — effectively non-decaying.
+        let g_dc = 0.95_f32;
+        let g_ny = 1e-6_f32;
+        let mut f = ToneFilter::new(g_dc, g_ny);
+
+        // Feed an impulse followed by silence
+        let first_out = f.process(1.0);
+        assert!(
+            first_out.is_finite(),
+            "First output must be finite, got {first_out}"
+        );
+
+        let mut output = 0.0_f32;
+        for _ in 0..100_000 {
+            output = f.process(0.0);
+            assert!(
+                output.is_finite(),
+                "Output diverged: {output}"
+            );
+        }
+        // After 100k samples (> 2s at 48 kHz) signal must have decayed to at least
+        // 10% of the initial peak — i.e., at least 20 dB attenuation.
+        // Without the clamp this fails because the pole is at ~0.999998.
+        assert!(
+            output.abs() < first_out.abs() * 0.1,
+            "Filter should decay >20 dB in 100k samples. first_out={first_out}, \
+             output_at_100k={output} (ratio {})",
+            output.abs() / first_out.abs().max(1e-30)
+        );
+    }
+
+    /// Mirror test: g_dc << g_ny — a1 approaches +1, pole approaches z = -1 (Nyquist).
+    #[test]
+    fn test_extreme_inverse_ratio_decays_properly() {
+        let g_dc = 1e-6_f32;
+        let g_ny = 0.95_f32;
+        let mut f = ToneFilter::new(g_dc, g_ny);
+
+        let first_out = f.process(1.0);
+        assert!(first_out.is_finite());
+
+        let mut output = 0.0_f32;
+        for _ in 0..100_000 {
+            output = f.process(0.0);
+            assert!(
+                output.is_finite(),
+                "Output diverged (pole at Nyquist): {output}"
+            );
+        }
+        assert!(
+            output.abs() < first_out.abs() * 0.1,
+            "Filter should decay >20 dB in 100k samples. first_out={first_out}, \
+             output_at_100k={output}"
+        );
     }
 
     #[test]
