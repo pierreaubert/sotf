@@ -465,6 +465,7 @@ fn make_bare_backend_config() -> autoeq::roomeq::OptimizerConfig {
         min_cut_envelope: None,
         epa_config: None,
         group_delay: None,
+        from_measurement_slope_override: None,
     }
 }
 
