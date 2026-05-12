@@ -124,8 +124,11 @@ impl GainPlugin {
         if params.channel_gains.is_empty() {
             Ok(Self::new(channels, params.gain_db))
         } else {
-            if params.channel_gains.len() != channels {
-                return Err("Mismatch".into());
+            let actual = params.channel_gains.len();
+            if actual != channels {
+                return Err(format!(
+                    "channel_gains length mismatch: expected {channels}, got {actual}"
+                ));
             }
             Self::new_per_channel(params.channel_gains)
         }
@@ -215,7 +218,10 @@ impl InPlacePlugin for GainPlugin {
         // Validate against parameter definitions
         // For per-channel gains, we might need a template since they are dynamic
         if id == self.param_gain_db {
-            Parameter::new_float("gain_db", "Gain", 0.0, -100.0, 24.0).validate(&val)?;
+            // Use spec-derived range so validation matches what rebuild_cached_parameters advertises.
+            let min = pk(GN, "gain_db").min_f64() as f32;
+            let max = pk(GN, "gain_db").max_f64() as f32;
+            Parameter::new_float("gain_db", "Gain", 0.0, min, max).validate(&val)?;
             if let Some(v) = val.as_float()
                 && v.is_finite()
             {
@@ -244,7 +250,10 @@ impl InPlacePlugin for GainPlugin {
         if let Some(s) = id.as_str().strip_prefix("gain_db_")
             && let Ok(ch) = s.parse::<usize>()
         {
-            Parameter::new_float("gain_db_ch", "Gain Ch", 0.0, -100.0, 24.0).validate(&val)?;
+            // Use spec-derived range for per-channel gains — same range as global gain.
+            let min = pk(GN, "gain_db").min_f64() as f32;
+            let max = pk(GN, "gain_db").max_f64() as f32;
+            Parameter::new_float("gain_db_ch", "Gain Ch", 0.0, min, max).validate(&val)?;
             if let Some(v) = val.as_float()
                 && v.is_finite()
             {
@@ -321,6 +330,66 @@ mod tests {
         )
         .unwrap();
         assert!((b[0] - 1.0).abs() < 1e-5);
+    }
+
+    /// set_parameter must reject values outside the param-spec range [-60, 20].
+    /// Prior to fix, set_parameter validated against hardcoded [-100, 24] while
+    /// rebuild_cached_parameters used [-60, 20] from the spec — they disagreed.
+    #[test]
+    fn test_set_parameter_rejects_out_of_range_gain() {
+        let mut p = GainPlugin::new(2, 0.0);
+        // +21 dB is above the param spec max of +20 dB — must be rejected.
+        let result = p.set_parameter(
+            ParameterId::from("gain_db"),
+            ParameterValue::Float(21.0),
+        );
+        assert!(
+            result.is_err(),
+            "gain_db=21.0 should be rejected (spec max is 20.0), but got Ok"
+        );
+        // -61 dB is below the param spec min of -60 dB — must be rejected.
+        let result = p.set_parameter(
+            ParameterId::from("gain_db"),
+            ParameterValue::Float(-61.0),
+        );
+        assert!(
+            result.is_err(),
+            "gain_db=-61.0 should be rejected (spec min is -60.0), but got Ok"
+        );
+        // Values within spec range must be accepted.
+        let result = p.set_parameter(
+            ParameterId::from("gain_db"),
+            ParameterValue::Float(20.0),
+        );
+        assert!(result.is_ok(), "gain_db=20.0 should be accepted (spec max), got Err");
+        let result = p.set_parameter(
+            ParameterId::from("gain_db"),
+            ParameterValue::Float(-60.0),
+        );
+        assert!(result.is_ok(), "gain_db=-60.0 should be accepted (spec min), got Err");
+    }
+
+    /// from_params error message must include expected and actual channel counts.
+    #[test]
+    fn test_from_params_mismatch_error_is_descriptive() {
+        let params = GainPluginParams {
+            gain_db: 0.0,
+            channel_gains: vec![0.0, 0.0, 0.0], // 3 channels
+        };
+        match GainPlugin::from_params(2, params) {
+            Ok(_) => panic!("Should fail: 3 channel_gains for 2-channel plugin"),
+            Err(err) => {
+                // Must contain both the expected (2) and actual (3) lengths.
+                assert!(
+                    err.contains('2') || err.contains("expected"),
+                    "Error should mention expected channel count (2), got: {err:?}"
+                );
+                assert!(
+                    err.contains('3') || err.contains("got") || err.contains("actual"),
+                    "Error should mention actual channel count (3), got: {err:?}"
+                );
+            }
+        }
     }
 
     /// Sample rate deferred initialization: create gain plugin, call
