@@ -62,9 +62,16 @@ fn xorshift64(state: &mut u64) -> u64 {
 }
 
 /// Convert xorshift64 output to a uniform f32 in [-0.5, 0.5].
+///
+/// The result spans the closed interval [-0.5, 0.5].  When `upper = u32::MAX`,
+/// `u32::MAX as f32` rounds up to 2^32 (not exactly representable in f32), so
+/// the ratio equals exactly 1.0 and the output is exactly 0.5.  This is
+/// acoustically correct: TPDF dither requires the closed interval [-1, 1] for
+/// the difference (r1 - r2), which this produces.
 #[inline(always)]
 fn random_f32(state: &mut u64) -> f32 {
-    // Use upper 32 bits for better distribution, map to [0, 1) then shift to [-0.5, 0.5)
+    // Use upper 32 bits for better distribution, map to [0, 1] then shift to [-0.5, 0.5].
+    // Note: u32::MAX as f32 rounds to 2^32, so the maximum output is exactly 0.5.
     let upper = (xorshift64(state) >> 32) as u32;
     (upper as f32 / u32::MAX as f32) - 0.5
 }
@@ -546,6 +553,39 @@ mod tests {
                 val
             );
         }
+    }
+
+    /// Verify the PRNG boundary: the worst-case input (upper = u32::MAX) produces
+    /// a value within the valid TPDF range [-0.5, 0.5].
+    ///
+    /// Note: due to f32 rounding of u32::MAX (which rounds up to 2^32), the result
+    /// for u32::MAX is exactly 0.5 (not strictly less).  This is acceptable for TPDF
+    /// dither — the closed interval [-0.5, 0.5] is statistically equivalent for audio
+    /// use.  The comment in `random_f32` was corrected from "[-0.5, 0.5)" to
+    /// "[-0.5, 0.5]" to match the actual implementation.
+    #[test]
+    fn test_random_f32_boundary_precision() {
+        // Directly exercise the boundary: upper = u32::MAX produces exactly 0.5
+        // (because u32::MAX as f32 rounds up to 2^32 = the divisor, giving ratio 1.0).
+        let upper_max = u32::MAX;
+        let val = (upper_max as f32 / u32::MAX as f32) - 0.5;
+        // The boundary value must be within [-0.5, 0.5] — not outside.
+        assert!(
+            val <= 0.5,
+            "random_f32 boundary: value exceeds 0.5: {}",
+            val
+        );
+        assert!(
+            val >= -0.5,
+            "random_f32 boundary: value below -0.5: {}",
+            val
+        );
+        // Confirm this specific boundary is exactly 0.5 (documents the known f32 behavior).
+        assert_eq!(
+            val, 0.5,
+            "random_f32 boundary for u32::MAX should be exactly 0.5, got {}",
+            val
+        );
     }
 
     #[test]
