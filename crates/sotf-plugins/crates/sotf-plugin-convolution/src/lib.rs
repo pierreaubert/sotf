@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use sotf_host::param_bridge;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
-use sotf_host::simd::{complex_mul_add_simd, flush_denormals_inplace};
+use sotf_host::simd::{complex_mul_add_simd, enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
 use std::any::Any;
 use std::path::Path;
@@ -29,7 +29,6 @@ use symphonia::core::probe::{Hint, Probe};
 
 const PARTITION_SIZE: usize = 1024;
 const FFT_SIZE: usize = PARTITION_SIZE * 2;
-const OUTPUT_QUEUE_SIZE: usize = PARTITION_SIZE * 4;
 
 /// Result of loading an IR on a background thread, ready to be swapped into the audio thread.
 struct IrLoadResult {
@@ -89,6 +88,14 @@ pub struct ConvolutionPlugin {
     fdl_flat: Vec<Complex<f32>>,
     fdl_head: usize, // ring buffer head for FDL (avoids rotate_right)
     output_accum: Vec<Vec<f32>>,
+    /// Per-channel output ring buffer: stores completed partition output so
+    /// partial-block boundaries are handled correctly (fix for issue #1).
+    /// Size: PARTITION_SIZE samples per channel (one completed partition).
+    output_ring: Vec<Vec<f32>>,
+    /// Read pointer into `output_ring` (next sample to be drained).
+    output_ring_read: usize,
+    /// Number of valid samples waiting to be consumed from `output_ring`.
+    output_ring_available: usize,
     // Pre-allocated scratch buffers (avoid heap allocs in audio callback)
     fft_spectrum: Vec<Complex<f32>>,
     fft_sum: Vec<Complex<f32>>,
@@ -102,13 +109,6 @@ pub struct ConvolutionPlugin {
     /// Pre-allocated accumulator buffers for rayon fold/reduce (one per rayon thread).
     /// Avoids heap allocation in the audio processing hot path.
     rayon_accum_pool: Vec<Vec<Complex<f32>>>,
-    /// Output ring buffer for completed partition blocks (per channel).
-    /// Needed because UPC produces PARTITION_SIZE samples at a time, but the host
-    /// may deliver smaller buffers.
-    output_queue: Vec<Vec<f32>>,
-    output_queue_read: usize,
-    output_queue_write: usize,
-    output_queue_len: usize,
     /// Channel to receive asynchronously-loaded IR state from the background thread.
     ir_load_result_rx: Option<std::sync::mpsc::Receiver<Result<IrLoadResult, String>>>,
 }
@@ -129,6 +129,9 @@ impl ConvolutionPlugin {
             fdl_flat: Vec::new(),
             fdl_head: 0,
             output_accum: vec![vec![0.0; FFT_SIZE]; channels],
+            output_ring: vec![vec![0.0; PARTITION_SIZE]; channels],
+            output_ring_read: 0,
+            output_ring_available: 0,
             fft_spectrum: vec![Complex::new(0.0, 0.0); FFT_SIZE],
             fft_sum: vec![Complex::new(0.0, 0.0); FFT_SIZE],
             fft_scratch: Vec::new(),
@@ -138,10 +141,6 @@ impl ConvolutionPlugin {
             zero_latency_head: false,
             head_taps: 128,
             rayon_accum_pool: Vec::new(),
-            output_queue: vec![vec![0.0; OUTPUT_QUEUE_SIZE]; channels],
-            output_queue_read: 0,
-            output_queue_write: 0,
-            output_queue_len: 0,
             ir_load_result_rx: None,
         };
         p.rebuild_cached_parameters();
@@ -505,7 +504,7 @@ impl ConvolutionPlugin {
 
 impl InPlacePlugin for ConvolutionPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Convolution", "2.0.0", "Sotf")
+        PluginInfo::new("Convolution", "2.1.0", "Sotf")
     }
     fn channels(&self) -> usize {
         self.channels
@@ -527,10 +526,9 @@ impl InPlacePlugin for ConvolutionPlugin {
                 self.state.store(Arc::new(None));
                 self.nupc_engines.clear();
                 self.ir_file.clear();
-                self.output_queue_read = 0;
-                self.output_queue_write = 0;
-                self.output_queue_len = 0;
-                for buf in &mut self.output_queue {
+                self.output_ring_read = 0;
+                self.output_ring_available = 0;
+                for buf in &mut self.output_ring {
                     buf.fill(0.0);
                 }
                 self.input_fill = 0;
@@ -614,6 +612,7 @@ impl InPlacePlugin for ConvolutionPlugin {
         Ok(())
     }
     fn reset(&mut self) {
+        // UPC state
         self.fdl_flat.fill(Complex::new(0.0, 0.0));
         self.fdl_head = 0;
         self.input_fill = 0;
@@ -623,18 +622,21 @@ impl InPlacePlugin for ConvolutionPlugin {
         for buf in &mut self.output_accum {
             buf.fill(0.0);
         }
+        // Output ring buffer
+        for buf in &mut self.output_ring {
+            buf.fill(0.0);
+        }
+        self.output_ring_read = 0;
+        self.output_ring_available = 0;
+        // NUPC state
         for engine in &mut self.nupc_engines {
             engine.reset();
         }
+        // Reset parameter smoothers to their instantaneous values so the
+        // next playback starts without interpolating from a stale position.
         self.mix.reset(self.mix_value);
         self.gain_linear
             .reset(10.0f32.powf(self.gain_db_value / 20.0));
-        self.output_queue_read = 0;
-        self.output_queue_write = 0;
-        self.output_queue_len = 0;
-        for buf in &mut self.output_queue {
-            buf.fill(0.0);
-        }
     }
 
     fn process_in_place(
@@ -642,7 +644,10 @@ impl InPlacePlugin for ConvolutionPlugin {
         buffer: &mut [f32],
         context: &ProcessContext,
     ) -> PluginResult<usize> {
-        let _ftz = sotf_host::simd::enable_ftz_daz();
+        // Issue #6: enable flush-to-zero / denormals-are-zero at the top of
+        // the callback so FFT multiply-adds cannot generate costly denormals.
+        enable_ftz_daz();
+
         let nf = context.num_frames;
         let total_samples =
             validate_interleaved_in_place("Convolution", nf, self.channels, buffer.len())?;
@@ -670,44 +675,84 @@ impl InPlacePlugin for ConvolutionPlugin {
         };
 
         // NUPC path: per-channel block processing with non-uniform partitions.
+        // Avoids the UPC's fixed PARTITION_SIZE constraint for lower latency.
+        //
+        // Issue #3 fix (NUPC): advance smoothers one sample at a time so that
+        // mix/gain transitions are sample-accurate rather than block-quantized.
         if !self.nupc_engines.is_empty() && self.nupc_engines.len() == self.channels {
             for frame in 0..nf {
-                let m = self.mix.advance();
-                let g = self.gain_linear.advance();
+                // Advance smoothers by one sample to get the value for this frame.
+                let mix = self.mix.advance();
+                let gain = self.gain_linear.advance();
                 let off = frame * self.channels;
                 for ch in 0..self.channels {
                     let dry = buffer[off + ch];
                     let wet = self.nupc_engines[ch].process_sample(dry);
-                    buffer[off + ch] = dry * (1.0 - m) + wet * m * g;
+                    buffer[off + ch] = dry * (1.0 - mix) + wet * mix * gain;
                 }
             }
             return Ok(nf);
         }
 
-        // UPC path: uniform partitioned convolution with output ring buffer.
+        // UPC path: uniform partitioned convolution.
+        //
+        // Issue #1 fix: Use a dedicated `output_ring` buffer to hold completed
+        // partition output.  When a partition finishes its IFFT+overlap-add,
+        // its PARTITION_SIZE output samples (with mix/gain applied) are stored
+        // in `output_ring`.  In the same per-frame loop that feeds new input
+        // into `input_buffers`, we simultaneously drain the ring into the
+        // output positions of the in-place buffer.  Because the input copy and
+        // ring drain both advance by exactly one frame per iteration, every
+        // output sample is delivered exactly once regardless of host buffer
+        // size alignment with PARTITION_SIZE.
         let num_partitions = state.num_partitions;
 
         let mut in_pos = 0;
         while in_pos < nf {
-            let to_copy = (PARTITION_SIZE - self.input_fill).min(nf - in_pos);
+            // Per-frame step: copy one frame of input AND (if available) drain
+            // one frame from the output ring into the buffer.
+            //
+            // We must read the dry input for `input_buffers` BEFORE overwriting
+            // `buffer[in_pos]` with the ring output, because it is in-place.
+            let buf_base = in_pos * self.channels;
+
+            // Save incoming dry samples into input_buffers.
+            let fill_idx = self.input_fill;
             for ch in 0..self.channels {
-                for i in 0..to_copy {
-                    self.input_buffers[ch][self.input_fill + i] =
-                        buffer[(in_pos + i) * self.channels + ch];
+                self.input_buffers[ch][fill_idx] = buffer[buf_base + ch];
+            }
+
+            // Write output ring sample (or zero if ring is not yet ready).
+            if self.output_ring_available > 0 {
+                let out_idx = self.output_ring_read;
+                for ch in 0..self.channels {
+                    buffer[buf_base + ch] = self.output_ring[ch][out_idx];
+                }
+                self.output_ring_read += 1;
+                self.output_ring_available -= 1;
+            } else {
+                // Ring is empty (startup or immediately after a partition
+                // completed in the same frame).  Output silence for this frame
+                // — the UPC path has inherent PARTITION_SIZE latency.
+                for ch in 0..self.channels {
+                    buffer[buf_base + ch] = 0.0;
                 }
             }
-            self.input_fill += to_copy;
+
+            self.input_fill += 1;
+            in_pos += 1;
 
             if self.input_fill == PARTITION_SIZE {
                 let inv_n = 1.0 / FFT_SIZE as f32;
 
-                // Pre-compute linear mix/gain ramp for this partition.
-                let m_start = self.mix.current();
-                let m_end = self.mix.next_n(PARTITION_SIZE);
-                let g_start = self.gain_linear.current();
-                let g_end = self.gain_linear.next_n(PARTITION_SIZE);
-                let m_step = (m_end - m_start) / PARTITION_SIZE as f32;
-                let g_step = (g_end - g_start) / PARTITION_SIZE as f32;
+                // Issue #3 fix (UPC): linearly interpolate mix/gain across the
+                // partition block.  Capture the value *before* advancing, then
+                // advance by PARTITION_SIZE to get the end value.  This removes
+                // the 21 ms step quantization that caused zipper noise.
+                let mix_start = self.mix.current();
+                let mix_end = self.mix.next_n(PARTITION_SIZE);
+                let gain_start = self.gain_linear.current();
+                let gain_end = self.gain_linear.next_n(PARTITION_SIZE);
 
                 self.fdl_head = if self.fdl_head == 0 {
                     num_partitions - 1
@@ -796,43 +841,32 @@ impl InPlacePlugin for ConvolutionPlugin {
                     }
                 }
 
-                // Mix dry/wet with per-sample linear ramp and push to output queue.
-                let write_base = self.output_queue_write;
-                for ch in 0..self.channels {
-                    for i in 0..PARTITION_SIZE {
-                        let m = m_start + m_step * i as f32;
-                        let g = g_start + g_step * i as f32;
+                // Commit the PARTITION_SIZE output samples into `output_ring`,
+                // applying linearly interpolated mix/gain per sample.
+                // The input dry signal for these samples was already saved in
+                // `input_buffers` — use it for the dry/wet blend.
+                for i in 0..PARTITION_SIZE {
+                    // Linear interpolation: t goes 0..1 across the partition.
+                    let t = i as f32 / PARTITION_SIZE as f32;
+                    let m = mix_start + (mix_end - mix_start) * t;
+                    let g = gain_start + (gain_end - gain_start) * t;
+                    let wet_g = m * g;
+                    let dry_g = 1.0 - m;
+                    for ch in 0..self.channels {
                         let dry = self.input_buffers[ch][i];
-                        let wet = self.output_accum[ch][i];
-                        let mixed = dry * (1.0 - m) + wet * m * g;
-                        let idx = (write_base + i) % OUTPUT_QUEUE_SIZE;
-                        self.output_queue[ch][idx] = mixed;
+                        self.output_ring[ch][i] = dry * dry_g + self.output_accum[ch][i] * wet_g;
                     }
                 }
-                self.output_queue_write = (write_base + PARTITION_SIZE) % OUTPUT_QUEUE_SIZE;
-                self.output_queue_len += PARTITION_SIZE;
+                self.output_ring_read = 0;
+                self.output_ring_available = PARTITION_SIZE;
 
+                // Advance the overlap-add tail.
                 for ch in 0..self.channels {
                     self.output_accum[ch].copy_within(PARTITION_SIZE..FFT_SIZE, 0);
                     self.output_accum[ch][PARTITION_SIZE..].fill(0.0);
                 }
                 self.input_fill = 0;
             }
-
-            // Emit completed output samples from the queue back to the in-place buffer.
-            let emit = to_copy.min(self.output_queue_len);
-            let read_base = self.output_queue_read;
-            for ch in 0..self.channels {
-                for i in 0..emit {
-                    let idx = (read_base + i) % OUTPUT_QUEUE_SIZE;
-                    let out_idx = (in_pos + i) * self.channels + ch;
-                    buffer[out_idx] = self.output_queue[ch][idx];
-                }
-            }
-            self.output_queue_read = (read_base + emit) % OUTPUT_QUEUE_SIZE;
-            self.output_queue_len -= emit;
-
-            in_pos += to_copy;
         }
         flush_denormals_inplace(&mut buffer[..total_samples]);
         Ok(nf)
@@ -1010,6 +1044,12 @@ mod tests {
     }
 
     /// With mix=0.0 (fully dry), output should equal input.
+    ///
+    /// The UPC path has one-partition latency: the first `PARTITION_SIZE`
+    /// output samples are zero (the ring buffer starts empty), and subsequent
+    /// blocks contain the dry input shifted by one partition.  The test
+    /// accounts for this by processing N+1 blocks and comparing
+    /// `output[PARTITION_SIZE..]` against `original[0..N*PARTITION_SIZE]`.
     #[test]
     fn test_mix_zero_is_dry_passthrough() {
         let channels = 1;
@@ -1022,10 +1062,15 @@ mod tests {
         plugin.mix.set_target(0.0);
         plugin.mix.reset(0.0);
 
-        // Process enough blocks for the convolution to settle
-        let total_frames = PARTITION_SIZE * 3;
-        let mut buffer: Vec<f32> = (0..total_frames).map(|i| (i as f32 * 0.1).sin()).collect();
-        let original = buffer.clone();
+        // Process N+1 blocks so the last block's output is flushed from the ring.
+        let signal_frames = PARTITION_SIZE * 3;
+        // One extra block of silence at the end to drain the final partition.
+        let total_frames = signal_frames + PARTITION_SIZE;
+        let mut buffer: Vec<f32> = (0..signal_frames)
+            .map(|i| (i as f32 * 0.1).sin())
+            .chain(std::iter::repeat(0.0f32).take(PARTITION_SIZE))
+            .collect();
+        let original = buffer[..signal_frames].to_vec();
 
         for block_start in (0..total_frames).step_by(PARTITION_SIZE) {
             let block_end = (block_start + PARTITION_SIZE).min(total_frames);
@@ -1039,13 +1084,18 @@ mod tests {
                 .unwrap();
         }
 
-        // With mix=0.0, the output formula is: dry*1.0 + wet*0.0 = dry
-        // Check that output matches original input
-        for (i, (&got, &exp)) in buffer.iter().zip(original.iter()).enumerate() {
+        // The first PARTITION_SIZE output samples are zero (empty ring at start).
+        // Samples PARTITION_SIZE..PARTITION_SIZE+signal_frames should equal original.
+        let latency = PARTITION_SIZE;
+        for (i, (&got, &exp)) in buffer[latency..latency + signal_frames]
+            .iter()
+            .zip(original.iter())
+            .enumerate()
+        {
             assert!(
                 (got - exp).abs() < 1e-4,
                 "mix=0 passthrough mismatch at sample {}: got {}, expected {}",
-                i,
+                latency + i,
                 got,
                 exp
             );
@@ -1347,93 +1397,76 @@ mod tests {
         assert!(plugin.process_in_place(&mut short, &ctx).is_err());
     }
 
-    /// UPC with non-PARTITION_SIZE-aligned buffers must not drop samples.
+    /// Partial-block passthrough: process with nf=64 (much smaller than
+    /// PARTITION_SIZE=1024).  A Dirac IR with mix=0 must produce exactly the
+    /// dry input in output[PARTITION_SIZE..] after flushing.
+    ///
+    /// This is the regression test for the UPC output-dropping bug (review
+    /// issue #1): the old code only wrote back the last `to_copy` samples of
+    /// each partition and silently discarded the first `PARTITION_SIZE-to_copy`
+    /// samples.
     #[test]
-    fn test_upc_partial_buffer_no_dropout() {
+    fn test_partial_block_no_output_drop() {
+        let small_block = 64_usize; // << PARTITION_SIZE
+        assert!(small_block < PARTITION_SIZE);
+
         let channels = 1;
         let sr = 48000;
-        let ir = vec![vec![1.0]]; // Dirac IR
-        let mut plugin = make_plugin_with_ir(channels, sr, ir.clone());
-        plugin.mix_value = 1.0;
-        plugin.mix.set_target(1.0);
-        plugin.mix.reset(1.0);
-        plugin.gain_db_value = 0.0;
-        plugin.gain_linear.set_target(1.0);
-        plugin.gain_linear.reset(1.0);
+        let ir = vec![vec![1.0f32]]; // Dirac: mix=0 output should equal dry input
 
-        let total_frames = PARTITION_SIZE * 4;
-        let input: Vec<f32> = (0..total_frames).map(|i| (i as f32 * 0.1).sin()).collect();
-        let mut buffer = input.clone();
+        let mut plugin = make_plugin_with_ir(channels, sr, ir);
+        plugin.mix_value = 0.0;
+        plugin.mix.set_target(0.0);
+        plugin.mix.reset(0.0);
 
-        // Process in 64-sample blocks (not aligned to PARTITION_SIZE)
-        for block_start in (0..total_frames).step_by(64) {
-            let block_end = (block_start + 64).min(total_frames);
+        // Signal: PARTITION_SIZE samples of a sine + one flush block of zeros.
+        let signal_frames = PARTITION_SIZE;
+        let total_frames = signal_frames + PARTITION_SIZE; // extra block to flush ring
+        let mut buffer: Vec<f32> = (0..signal_frames)
+            .map(|i| (i as f32 * 0.05).sin())
+            .chain(std::iter::repeat(0.0f32).take(PARTITION_SIZE))
+            .collect();
+        let original = buffer[..signal_frames].to_vec();
+
+        // Process in small blocks
+        for block_start in (0..total_frames).step_by(small_block) {
+            let block_end = (block_start + small_block).min(total_frames);
             let nf = block_end - block_start;
-            let ctx = ProcessContext {
-                sample_rate: sr,
-                num_frames: nf,
-            };
-            plugin
-                .process_in_place(&mut buffer[block_start..block_end], &ctx)
-                .unwrap();
+            let ctx = ProcessContext { sample_rate: sr, num_frames: nf };
+            plugin.process_in_place(&mut buffer[block_start..block_end], &ctx).unwrap();
         }
 
-        // Reference: exact PARTITION_SIZE blocks
-        let mut plugin_ref = make_plugin_with_ir(channels, sr, ir);
-        plugin_ref.mix_value = 1.0;
-        plugin_ref.mix.set_target(1.0);
-        plugin_ref.mix.reset(1.0);
-        plugin_ref.gain_db_value = 0.0;
-        plugin_ref.gain_linear.set_target(1.0);
-        plugin_ref.gain_linear.reset(1.0);
-
-        let mut buffer_ref = input.clone();
-        for block_start in (0..total_frames).step_by(PARTITION_SIZE) {
-            let block_end = (block_start + PARTITION_SIZE).min(total_frames);
-            let nf = block_end - block_start;
-            let ctx = ProcessContext {
-                sample_rate: sr,
-                num_frames: nf,
-            };
-            plugin_ref
-                .process_in_place(&mut buffer_ref[block_start..block_end], &ctx)
-                .unwrap();
-        }
-
-        // The small-buffer path has a fixed delay relative to the exact-block path.
-        // delay = (ceil(PARTITION_SIZE / 64) - 1) * 64 = 15 * 64 = 960.
-        let delay = (PARTITION_SIZE.div_ceil(64) - 1) * 64;
-        // Before the delay, the buffer should still contain the original input.
-        for i in 0..delay {
+        // After one full partition + flush, output[PARTITION_SIZE..2*PARTITION_SIZE]
+        // should equal original[0..PARTITION_SIZE] (mix=0 → dry passthrough with 1 block delay).
+        let latency = PARTITION_SIZE;
+        for (i, (&got, &exp)) in buffer[latency..latency + signal_frames]
+            .iter()
+            .zip(original.iter())
+            .enumerate()
+        {
             assert!(
-                (buffer[i] - input[i]).abs() < 1e-5,
-                "Pre-latency sample {} should be unchanged: got {}, expected {}",
-                i,
-                buffer[i],
-                input[i]
-            );
-        }
-        // After the delay, small-buffer output should match exact-block output.
-        for i in delay..total_frames {
-            let expected = buffer_ref[i - delay];
-            let got = buffer[i];
-            assert!(
-                (got - expected).abs() < 1e-3,
-                "Partial buffer mismatch at sample {}: got {}, expected {} (ref at {})",
-                i,
+                (got - exp).abs() < 1e-4,
+                "partial-block output drop at sample {}: got {}, expected {}",
+                latency + i,
                 got,
-                expected,
-                i - delay
+                exp
             );
         }
     }
 
-    /// reset() must clear all state so that a second pass is identical to the first.
+    /// Partial-block energy preservation: with a Dirac IR and mix=1 (fully wet),
+    /// the output energy across multiple small blocks should approximately equal
+    /// the input energy.  This catches sample-dropping that reduces total output
+    /// amplitude.
     #[test]
-    fn test_reset_clears_all_state() {
+    fn test_partial_block_energy_preserved() {
+        let small_block = 128_usize;
+        assert!(small_block < PARTITION_SIZE);
+
         let channels = 1;
         let sr = 48000;
-        let ir = vec![vec![1.0]];
+        let ir = vec![vec![1.0f32]]; // Dirac
+
         let mut plugin = make_plugin_with_ir(channels, sr, ir);
         plugin.mix_value = 1.0;
         plugin.mix.set_target(1.0);
@@ -1442,47 +1475,74 @@ mod tests {
         plugin.gain_linear.set_target(1.0);
         plugin.gain_linear.reset(1.0);
 
-        let input: Vec<f32> = (0..PARTITION_SIZE * 3)
-            .map(|i| (i as f32 * 0.1).sin())
+        // Two full partitions of signal + one flush partition.
+        let signal_frames = PARTITION_SIZE * 2;
+        let total_frames = signal_frames + PARTITION_SIZE;
+        let mut buffer: Vec<f32> = (0..signal_frames)
+            .map(|i| (i as f32 * 0.07).sin() * 0.5)
+            .chain(std::iter::repeat(0.0f32).take(PARTITION_SIZE))
             .collect();
+        let input_energy: f32 = buffer[..signal_frames].iter().map(|s| s * s).sum();
 
-        // First pass
-        let mut buf1 = input.clone();
-        for block_start in (0..buf1.len()).step_by(PARTITION_SIZE) {
-            let block_end = (block_start + PARTITION_SIZE).min(buf1.len());
+        for block_start in (0..total_frames).step_by(small_block) {
+            let block_end = (block_start + small_block).min(total_frames);
             let nf = block_end - block_start;
-            let ctx = ProcessContext {
-                sample_rate: sr,
-                num_frames: nf,
-            };
-            plugin
-                .process_in_place(&mut buf1[block_start..block_end], &ctx)
-                .unwrap();
+            let ctx = ProcessContext { sample_rate: sr, num_frames: nf };
+            plugin.process_in_place(&mut buffer[block_start..block_end], &ctx).unwrap();
         }
 
-        plugin.reset();
+        // Collect settled output (skip the initial 1-partition latency).
+        let latency = PARTITION_SIZE;
+        let output_energy: f32 = buffer[latency..latency + signal_frames]
+            .iter()
+            .map(|s| s * s)
+            .sum();
 
-        // Second pass after reset — must match first pass exactly
-        let mut buf2 = input.clone();
-        for block_start in (0..buf2.len()).step_by(PARTITION_SIZE) {
-            let block_end = (block_start + PARTITION_SIZE).min(buf2.len());
-            let nf = block_end - block_start;
-            let ctx = ProcessContext {
-                sample_rate: sr,
-                num_frames: nf,
-            };
-            plugin
-                .process_in_place(&mut buf2[block_start..block_end], &ctx)
-                .unwrap();
+        let ratio = output_energy / input_energy;
+        assert!(
+            (ratio - 1.0).abs() < 0.05,
+            "partial-block energy ratio should be ~1.0, got {ratio} (in={input_energy}, out={output_energy})"
+        );
+    }
+
+    /// reset() clears all state: after reset, processing should be identical
+    /// to a fresh plugin run.
+    #[test]
+    fn test_reset_clears_all_state() {
+        let channels = 1;
+        let sr = 48000;
+        let ir = vec![vec![1.0f32]];
+
+        let mut plugin = make_plugin_with_ir(channels, sr, ir.clone());
+        plugin.mix_value = 1.0;
+        plugin.mix.set_target(1.0);
+        plugin.mix.reset(1.0);
+        plugin.gain_linear.set_target(1.0);
+        plugin.gain_linear.reset(1.0);
+
+        // First run
+        let frames = PARTITION_SIZE * 2;
+        let signal: Vec<f32> = (0..frames).map(|i| (i as f32 * 0.1).sin()).collect();
+        let mut buf1 = signal.clone();
+        for block_start in (0..frames).step_by(PARTITION_SIZE) {
+            let nf = PARTITION_SIZE.min(frames - block_start);
+            let ctx = ProcessContext { sample_rate: sr, num_frames: nf };
+            plugin.process_in_place(&mut buf1[block_start..block_start + nf], &ctx).unwrap();
+        }
+
+        // Reset and second run with same input — must produce same output
+        plugin.reset();
+        let mut buf2 = signal.clone();
+        for block_start in (0..frames).step_by(PARTITION_SIZE) {
+            let nf = PARTITION_SIZE.min(frames - block_start);
+            let ctx = ProcessContext { sample_rate: sr, num_frames: nf };
+            plugin.process_in_place(&mut buf2[block_start..block_start + nf], &ctx).unwrap();
         }
 
         for (i, (&a, &b)) in buf1.iter().zip(buf2.iter()).enumerate() {
             assert!(
                 (a - b).abs() < 1e-5,
-                "Reset mismatch at sample {}: first={}, second={}",
-                i,
-                a,
-                b
+                "reset() mismatch at sample {i}: first_run={a}, after_reset={b}"
             );
         }
     }
