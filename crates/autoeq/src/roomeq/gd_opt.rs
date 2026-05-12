@@ -420,6 +420,12 @@ pub fn optimize_group_delay_adaptive(
     if sweep_realisations.len() < 2 {
         return Err("Adaptive AP bootstrap requires at least 2 sweep realisations (N >= 2)".into());
     }
+    if sweep_realisations.len() < 4 {
+        log::warn!(
+            "GD-Opt adaptive bootstrap has only {} sweep realisations; variance estimate is unstable below N=4",
+            sweep_realisations.len()
+        );
+    }
 
     // Start with delay-only (0 APs)
     let mut best_config = GdOptConfig {
@@ -757,6 +763,9 @@ fn compute_sum_gd(
     // Interior bins use forward differences; the final bin uses a backward
     // difference so it is not pulled toward an out-of-band raw-grid neighbor.
     let mut gd_ms = Vec::with_capacity(band_indices.len());
+    let mut guarded_bins = 0usize;
+    let mut guarded_first_freq_hz = None;
+    let mut guarded_min_ratio = f64::INFINITY;
 
     for (bi, &idx) in band_indices.iter().enumerate() {
         let (idx0, idx1) = if bi + 1 < band_indices.len() {
@@ -794,9 +803,20 @@ fn compute_sum_gd(
         // magnitude below the individual magnitudes, making the phase (and thus GD)
         // hypersensitive to tiny perturbations.
         const MIN_SUM_MAG_RATIO: f64 = 1e-3;
-        if sum0.norm() < MIN_SUM_MAG_RATIO * expected_mag0
-            || sum1.norm() < MIN_SUM_MAG_RATIO * expected_mag1
-        {
+        let ratio0 = if expected_mag0 > 0.0 {
+            sum0.norm() / expected_mag0
+        } else {
+            0.0
+        };
+        let ratio1 = if expected_mag1 > 0.0 {
+            sum1.norm() / expected_mag1
+        } else {
+            0.0
+        };
+        if ratio0 < MIN_SUM_MAG_RATIO || ratio1 < MIN_SUM_MAG_RATIO {
+            guarded_bins += 1;
+            guarded_first_freq_hz.get_or_insert(f0);
+            guarded_min_ratio = guarded_min_ratio.min(ratio0.min(ratio1));
             gd_ms.push(0.0);
             continue;
         }
@@ -812,6 +832,15 @@ fn compute_sum_gd(
         };
 
         gd_ms.push(gd_s * 1000.0);
+    }
+
+    if guarded_bins > 0 {
+        log::debug!(
+            "GD-Opt sum-GD magnitude guard suppressed {} bin(s); first {:.1} Hz, min summed/expected magnitude ratio {:.3e}",
+            guarded_bins,
+            guarded_first_freq_hz.unwrap_or(0.0),
+            guarded_min_ratio
+        );
     }
 
     gd_ms

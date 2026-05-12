@@ -162,6 +162,21 @@ pub struct EpaChannelMetrics {
     pub post: crate::loss::epa::score::EpaScore,
 }
 
+/// Aggregate EPA metrics for the whole reproduced channel set.
+///
+/// Channels are combined with BS.1770-style energy weights before EPA scoring:
+/// front/main channels use unit weight, surround channels use +1.5 dB energy
+/// weight, and LFE/subwoofer channels are excluded.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct EpaMultichannelMetrics {
+    /// EPA score computed from the aggregate initial (pre-EQ) response.
+    pub pre: crate::loss::epa::score::EpaScore,
+    /// EPA score computed from the aggregate final (post-EQ) response.
+    pub post: crate::loss::epa::score::EpaScore,
+    /// Human-readable aggregation standard/approximation.
+    pub standard: String,
+}
+
 /// Compact perceptual scorecard for downstream QA and UIs.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct PerceptualMetrics {
@@ -233,6 +248,10 @@ pub struct OptimizationMetadata {
     /// using the configured `EpaConfig` (or defaults when unset).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub epa_per_channel: Option<HashMap<String, EpaChannelMetrics>>,
+    /// Whole-system EPA psychoacoustic metrics computed after BS.1770-style
+    /// channel-energy aggregation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub epa_multichannel: Option<EpaMultichannelMetrics>,
     /// Group delay optimisation summary (GD-Opt v2, Phase GD-4).
     /// Present when GD-Opt was attempted (success or skip with advisory).
     #[serde(default, skip_serializing_if = "Option::is_none")]

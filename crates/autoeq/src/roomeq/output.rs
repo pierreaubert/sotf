@@ -1,10 +1,12 @@
 //! Output generation for room EQ DSP chains
 
 use super::types::{
-    ChannelDspChain, DriverDspChain, DspChainOutput, EpaChannelMetrics, MixedModeConfig,
-    OptimizationMetadata, PluginConfigWrapper,
+    ChannelDspChain, DriverDspChain, DspChainOutput, EpaChannelMetrics, EpaMultichannelMetrics,
+    MixedModeConfig, OptimizationMetadata, PluginConfigWrapper,
 };
-use crate::loss::epa::score::{EpaConfig, compute_epa_normalized};
+use crate::loss::epa::score::{
+    EpaConfig, compute_epa_multichannel_normalized, compute_epa_normalized, infer_epa_channel_role,
+};
 use math_audio_iir_fir::Biquad;
 use ndarray::Array1;
 use serde_json::json;
@@ -36,6 +38,66 @@ pub fn compute_epa_per_channel(
         out.insert(name.clone(), EpaChannelMetrics { pre, post });
     }
     if out.is_empty() { None } else { Some(out) }
+}
+
+/// Compute aggregate EPA metrics from all channel curves using BS.1770-style
+/// channel energy weights.
+///
+/// This is a frequency-response approximation for room-EQ reports. It does
+/// not replace time-domain LUFS metering, but it avoids treating stereo or
+/// surround systems as unrelated monaural measurements.
+pub fn compute_epa_multichannel(
+    channels: &HashMap<String, ChannelDspChain>,
+    config: &EpaConfig,
+) -> Option<EpaMultichannelMetrics> {
+    let mut entries: Vec<_> = channels
+        .iter()
+        .filter_map(|(name, chain)| {
+            let (Some(initial), Some(final_)) = (&chain.initial_curve, &chain.final_curve) else {
+                return None;
+            };
+            Some((name.as_str(), initial, final_))
+        })
+        .collect();
+    entries.sort_by(|a, b| a.0.cmp(b.0));
+
+    let (_, first_initial, _) = entries.first()?;
+    let freqs = first_initial.freq.as_slice();
+    if freqs.is_empty() {
+        return None;
+    }
+
+    if !entries.iter().all(|(_, initial, final_)| {
+        same_frequency_grid(freqs, &initial.freq) && same_frequency_grid(freqs, &final_.freq)
+    }) {
+        log::warn!("Skipping multichannel EPA aggregation: channel frequency grids do not match");
+        return None;
+    }
+
+    let pre_channels: Vec<_> = entries
+        .iter()
+        .map(|(name, initial, _)| (initial.spl.as_slice(), infer_epa_channel_role(name)))
+        .collect();
+    let post_channels: Vec<_> = entries
+        .iter()
+        .map(|(name, _, final_)| (final_.spl.as_slice(), infer_epa_channel_role(name)))
+        .collect();
+
+    let pre = compute_epa_multichannel_normalized(freqs, &pre_channels, config)?;
+    let post = compute_epa_multichannel_normalized(freqs, &post_channels, config)?;
+
+    Some(EpaMultichannelMetrics {
+        pre,
+        post,
+        standard: "BS.1770-style channel energy aggregation over EPA spectra".to_string(),
+    })
+}
+
+fn same_frequency_grid(a: &[f64], b: &[f64]) -> bool {
+    a.len() == b.len()
+        && a.iter()
+            .zip(b.iter())
+            .all(|(&x, &y)| (x - y).abs() <= 1e-6 * x.abs().max(y.abs()).max(1.0))
 }
 
 const DISPLAY_MIN_FREQ: f64 = math_audio_iir_fir::AUDIBLE_MIN_FREQ;
@@ -1359,6 +1421,7 @@ mod tests {
             timestamp: "2025-01-01T00:00:00Z".to_string(),
             inter_channel_deviation: None,
             epa_per_channel: None,
+            epa_multichannel: None,
             group_delay: None,
             perceptual_metrics: None,
             home_cinema_layout: None,
@@ -1396,6 +1459,7 @@ mod tests {
             timestamp: "2025-01-01T00:00:00Z".to_string(),
             inter_channel_deviation: None,
             epa_per_channel: None,
+            epa_multichannel: None,
             group_delay: None,
             perceptual_metrics: None,
             home_cinema_layout: None,

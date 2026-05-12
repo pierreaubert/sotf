@@ -31,8 +31,8 @@ use super::types::{
 };
 
 // Private module imports for extracted functions
-use super::speaker_eq::process_single_speaker;
 use super::slope;
+use super::speaker_eq::process_single_speaker;
 
 use super::crossover_utils::check_group_consistency;
 use super::group_processing::{
@@ -957,9 +957,7 @@ fn resolve_from_measurement_slope(config: &RoomConfig) -> f64 {
         }
     }
 
-    info!(
-        "  FromMeasurement: no usable reference channel — defaulting to 0.0 dB/octave"
-    );
+    info!("  FromMeasurement: no usable reference channel — defaulting to 0.0 dB/octave");
     0.0
 }
 
@@ -2675,6 +2673,8 @@ fn optimize_room_impl(
 
     let epa_cfg = config.optimizer.epa_config.clone().unwrap_or_default();
     let epa_per_channel = crate::roomeq::output::compute_epa_per_channel(&channel_chains, &epa_cfg);
+    let epa_multichannel =
+        crate::roomeq::output::compute_epa_multichannel(&channel_chains, &epa_cfg);
 
     let metadata = OptimizationMetadata {
         pre_score: avg_pre_score,
@@ -2685,6 +2685,7 @@ fn optimize_room_impl(
         timestamp: chrono::Utc::now().to_rfc3339(),
         inter_channel_deviation: None,
         epa_per_channel,
+        epa_multichannel,
         group_delay: group_delay_summary,
         perceptual_metrics: None,
         home_cinema_layout: None,

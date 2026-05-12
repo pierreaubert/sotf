@@ -1891,5 +1891,3 @@ pub(super) fn sum_sub_output_responses_on_grid(
         ..Default::default()
     })
 }
-
-

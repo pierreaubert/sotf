@@ -596,10 +596,7 @@ mod tests {
         let fft_size = fir.len().next_power_of_two() * 4;
         let mut planner = FftPlanner::new();
         let fft = planner.plan_fft_forward(fft_size);
-        let mut buffer: Vec<Complex64> = fir
-            .iter()
-            .map(|&x| Complex64::new(x, 0.0))
-            .collect();
+        let mut buffer: Vec<Complex64> = fir.iter().map(|&x| Complex64::new(x, 0.0)).collect();
         buffer.resize(fft_size, Complex64::new(0.0, 0.0));
         fft.process(&mut buffer);
 

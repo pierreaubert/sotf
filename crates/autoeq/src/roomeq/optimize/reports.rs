@@ -141,6 +141,8 @@ pub(super) fn refresh_final_reports(
     let epa_cfg = config.optimizer.epa_config.clone().unwrap_or_default();
     result.metadata.epa_per_channel =
         crate::roomeq::output::compute_epa_per_channel(&result.channels, &epa_cfg);
+    result.metadata.epa_multichannel =
+        crate::roomeq::output::compute_epa_multichannel(&result.channels, &epa_cfg);
     update_perceptual_metrics(&mut result.metadata, Some(&result.channels), Some(config));
 
     let ir_inputs: Vec<_> = result

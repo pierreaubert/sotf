@@ -268,6 +268,7 @@ fn perceptual_metrics_report_epa_and_timing_confidence() {
                 },
             ),
         ])),
+        epa_multichannel: None,
         group_delay: Some(group_delay),
         perceptual_metrics: None,
         home_cinema_layout: None,
@@ -355,6 +356,7 @@ fn perceptual_metrics_report_role_bass_dialog_and_headroom_guards() {
                 post: score(2.0),
             },
         )])),
+        epa_multichannel: None,
         group_delay: None,
         perceptual_metrics: None,
         home_cinema_layout: None,
@@ -1026,7 +1028,6 @@ fn phase_linear_gd_target_is_encoded_into_fir_not_delay_plugin() {
             .all(|plugin| plugin.plugin_type != "delay")),
         "PhaseLinear GD must be encoded in FIR coefficients, not delay plugins"
     );
-
 
     // With fractional-sample delay, the impulse energy is interpolated across
     // adjacent taps. A threshold of 0.3 catches all non-trivial shifts while

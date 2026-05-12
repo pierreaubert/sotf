@@ -76,6 +76,129 @@ pub struct EpaScore {
     pub loudness_balance: f64,
 }
 
+/// BS.1770-style channel role for multichannel EPA aggregation.
+///
+/// This is used for frequency-response diagnostics, not for time-domain LUFS
+/// metering. It follows the BS.1770 convention of unit weight for front/main
+/// programme channels, +1.5 dB energy weight for surround channels, and no
+/// contribution from LFE/subwoofer channels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EpaChannelRole {
+    Main,
+    Surround,
+    Lfe,
+}
+
+/// Infer a coarse EPA channel role from a room-EQ channel name.
+pub fn infer_epa_channel_role(channel_name: &str) -> EpaChannelRole {
+    let name = channel_name.to_ascii_lowercase();
+    let compact: String = name
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .collect();
+
+    if compact.contains("lfe")
+        || compact.contains("subwoofer")
+        || compact == "sub"
+        || compact.starts_with("sub")
+    {
+        EpaChannelRole::Lfe
+    } else if compact.contains("surround")
+        || compact.contains("rear")
+        || compact.contains("side")
+        || compact == "ls"
+        || compact == "rs"
+        || compact == "sl"
+        || compact == "sr"
+    {
+        EpaChannelRole::Surround
+    } else {
+        EpaChannelRole::Main
+    }
+}
+
+/// BS.1770-style channel energy weight for a coarse EPA role.
+pub fn epa_channel_energy_weight(role: EpaChannelRole) -> f64 {
+    match role {
+        EpaChannelRole::Main => 1.0,
+        EpaChannelRole::Surround => 1.41,
+        EpaChannelRole::Lfe => 0.0,
+    }
+}
+
+fn interpolate_log_frequency(freqs: &[f64], values: &[f64], target_hz: f64) -> Option<f64> {
+    if freqs.is_empty() || freqs.len() != values.len() || target_hz <= 0.0 {
+        return None;
+    }
+    if target_hz <= freqs[0] {
+        return Some(values[0]);
+    }
+    for i in 0..freqs.len().saturating_sub(1) {
+        let f0 = freqs[i];
+        let f1 = freqs[i + 1];
+        if target_hz <= f1 {
+            let denom = f1.ln() - f0.ln();
+            if denom.abs() < 1e-12 {
+                return Some(values[i]);
+            }
+            let t = ((target_hz.ln() - f0.ln()) / denom).clamp(0.0, 1.0);
+            return Some(values[i] + t * (values[i + 1] - values[i]));
+        }
+    }
+    values.last().copied()
+}
+
+/// Combine level-relative channel spectra into one BS.1770-style EPA score.
+///
+/// Inputs are normalized room-EQ SPL curves. Each channel is first lifted to
+/// `config.listening_level_phon`, then channel energies are summed with
+/// BS.1770-style role weights. The aggregate curve is evaluated at its own
+/// 1 kHz level so the EPA loudness model preserves the +3 dB effect of two
+/// equal programme channels instead of re-normalizing it away.
+pub fn compute_epa_multichannel_normalized(
+    freqs: &[f64],
+    channel_spl_rel: &[(&[f64], EpaChannelRole)],
+    config: &EpaConfig,
+) -> Option<EpaScore> {
+    if freqs.is_empty() || channel_spl_rel.is_empty() {
+        return None;
+    }
+
+    if !channel_spl_rel.iter().any(|(spl_rel, role)| {
+        spl_rel.len() == freqs.len() && epa_channel_energy_weight(*role) > 0.0
+    }) {
+        return None;
+    }
+
+    let aggregate_spl: Vec<f64> = (0..freqs.len())
+        .map(|idx| {
+            let mut energy_sum = 0.0;
+            for &(spl_rel, role) in channel_spl_rel {
+                if spl_rel.len() != freqs.len() {
+                    continue;
+                }
+                let weight = epa_channel_energy_weight(role);
+                if weight <= 0.0 {
+                    continue;
+                }
+                energy_sum +=
+                    weight * 10.0_f64.powf((spl_rel[idx] + config.listening_level_phon) / 10.0);
+            }
+            if energy_sum > 0.0 {
+                10.0 * energy_sum.log10()
+            } else {
+                -100.0
+            }
+        })
+        .collect();
+
+    let aggregate_level_1khz = interpolate_log_frequency(freqs, &aggregate_spl, 1000.0)
+        .unwrap_or(config.listening_level_phon);
+    let mut aggregate_config = config.clone();
+    aggregate_config.listening_level_phon = aggregate_level_1khz;
+    Some(compute_epa(freqs, &aggregate_spl, &aggregate_config))
+}
+
 /// Compute EPA score from a frequency response.
 pub fn compute_epa(freqs: &[f64], spl_db: &[f64], config: &EpaConfig) -> EpaScore {
     // 1. Compute specific loudness across Bark bands
@@ -434,6 +557,70 @@ mod tests {
             loss_abs,
             loss_rel
         );
+    }
+
+    #[test]
+    fn multichannel_epa_increases_loudness_for_stereo_programme() {
+        let (freqs, spl_rel) = make_flat_response(0.0);
+        let config = EpaConfig::default();
+        let mono = compute_epa_multichannel_normalized(
+            &freqs,
+            &[(&spl_rel, EpaChannelRole::Main)],
+            &config,
+        )
+        .unwrap();
+        let stereo = compute_epa_multichannel_normalized(
+            &freqs,
+            &[
+                (&spl_rel, EpaChannelRole::Main),
+                (&spl_rel, EpaChannelRole::Main),
+            ],
+            &config,
+        )
+        .unwrap();
+
+        assert!(
+            stereo.total_loudness_sone > mono.total_loudness_sone,
+            "two equal programme channels should be louder than one"
+        );
+    }
+
+    #[test]
+    fn multichannel_epa_excludes_lfe_role() {
+        let (freqs, spl_rel) = make_flat_response(0.0);
+        let config = EpaConfig::default();
+        let main = compute_epa_multichannel_normalized(
+            &freqs,
+            &[(&spl_rel, EpaChannelRole::Main)],
+            &config,
+        )
+        .unwrap();
+        let with_lfe = compute_epa_multichannel_normalized(
+            &freqs,
+            &[
+                (&spl_rel, EpaChannelRole::Main),
+                (&spl_rel, EpaChannelRole::Lfe),
+            ],
+            &config,
+        )
+        .unwrap();
+
+        assert!(
+            (main.total_loudness_sone - with_lfe.total_loudness_sone).abs() < 1e-9,
+            "LFE should not contribute to BS.1770-style aggregate EPA loudness"
+        );
+    }
+
+    #[test]
+    fn channel_role_inference_covers_common_surround_and_lfe_names() {
+        assert_eq!(infer_epa_channel_role("left"), EpaChannelRole::Main);
+        assert_eq!(
+            infer_epa_channel_role("surround_left"),
+            EpaChannelRole::Surround
+        );
+        assert_eq!(infer_epa_channel_role("Ls"), EpaChannelRole::Surround);
+        assert_eq!(infer_epa_channel_role("LFE"), EpaChannelRole::Lfe);
+        assert_eq!(infer_epa_channel_role("subwoofer"), EpaChannelRole::Lfe);
     }
 
     #[test]

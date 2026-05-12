@@ -1104,7 +1104,10 @@ mod tests {
         // The normalized weights sum to n. So weights_raw = weights_norm * total_raw / n.
         // We know total_raw = 0.5 + 0.792481 + 0.792481 + 0.5 = 2.5849625.
         let expected_total_raw = 2.584962500721156;
-        let raw: Vec<f64> = weights.iter().map(|&w| w * expected_total_raw / n).collect();
+        let raw: Vec<f64> = weights
+            .iter()
+            .map(|&w| w * expected_total_raw / n)
+            .collect();
 
         assert_close(raw[0], 0.5);
         assert_close(raw[1], 0.792481250360578);

@@ -11,7 +11,7 @@ use crate::constraints::{
     CeilingConstraintData, MinGainConstraintData, SpacingConstraintData, constraint_ceiling,
     constraint_min_gain, constraint_spacing,
 };
-use crate::de::init_sobol::init_sobol;
+use crate::de::init_sobol::init_halton;
 use crate::de::{
     CallbackAction, DEConfig, DEConfigBuilder, DEIntermediate, DEReport, Init, Mutation,
     NonlinearConstraintHelper, ParallelConfig, Strategy, differential_evolution,
@@ -467,7 +467,7 @@ pub fn optimize_filters_autoeq_with_callback(
     };
 
     // Generate Sobol quasi-random population for better space coverage
-    let sobol_samples = init_sobol(
+    let sobol_samples = init_halton(
         x.len(),
         setup.population_size.saturating_sub(smart_guesses.len()),
         &setup.bounds,

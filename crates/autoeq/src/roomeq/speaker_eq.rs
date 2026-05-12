@@ -348,8 +348,7 @@ pub(super) fn process_single_speaker(
         // the slope falls into the noise floor and the resulting target
         // tilt is unphysically steep.
         if effective_target.shape == TargetShape::FromMeasurement {
-            let is_sub_or_lfe =
-                super::home_cinema::role_for_channel(channel_name).is_sub_or_lfe();
+            let is_sub_or_lfe = super::home_cinema::role_for_channel(channel_name).is_sub_or_lfe();
             let measured_slope = if let Some(override_slope) =
                 room_config.optimizer.from_measurement_slope_override
             {

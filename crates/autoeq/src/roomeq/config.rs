@@ -267,7 +267,13 @@ fn validate_optimizer_config(opt: &OptimizerConfig, result: &mut ValidationResul
 
     // Validate PEQ model
     let valid_peq_models = [
-        "pk", "hp-pk", "ls-pk", "hp-pk-lp", "ls-pk-hs", "free-pk-free", "free",
+        "pk",
+        "hp-pk",
+        "ls-pk",
+        "hp-pk-lp",
+        "ls-pk-hs",
+        "free-pk-free",
+        "free",
     ];
     if !valid_peq_models.contains(&opt.peq_model.as_str()) {
         result.add_warning(format!(

@@ -401,6 +401,7 @@ Information about the optimization process.
 | `timestamp` | string | ISO 8601 timestamp of optimization |
 | `inter_channel_deviation` | object or null | Inter-channel SPL consistency metric (present when >1 channel) |
 | `epa_per_channel` | object or null | Per-channel EPA psychoacoustic metrics computed on the pre-EQ and post-EQ frequency responses. Emitted for every channel that has both `initial_curve` and `final_curve` populated, regardless of `loss_type`. See [EPA Per-Channel Metrics](#epa-per-channel-metrics). |
+| `epa_multichannel` | object or null | Whole-system EPA metrics after BS.1770-style channel-energy aggregation. Main/front channels use unit energy weight, surround channels use +1.5 dB, and LFE/subwoofer channels are excluded. |
 
 ### EPA Per-Channel Metrics
 
@@ -423,6 +424,13 @@ normalization.
 | `loudness_balance` | number | Uniformity of specific loudness across Bark bands (0..=1, 1 = perfectly uniform). |
 
 EPA tuning knobs are described in [`INPUT_FORMAT.md`](./INPUT_FORMAT.md#epa-configuration).
+
+### EPA Multichannel Metrics
+
+`metadata.epa_multichannel` has the same `pre` and `post` EPA score fields as
+`epa_per_channel`, but the input spectrum is first aggregated across channels
+with BS.1770-style energy weights. This is a frequency-response diagnostic, not
+a replacement for time-domain LUFS metering.
 
 ### Inter-Channel Deviation (ICD)
 

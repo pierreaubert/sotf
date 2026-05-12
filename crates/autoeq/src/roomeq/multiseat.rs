@@ -36,6 +36,20 @@ fn mso_objective_regressed(objective_before: f64, objective_after: f64) -> bool 
             && objective_after > objective_before + MSO_OBJECTIVE_REGRESSION_TOLERANCE)
 }
 
+#[derive(Debug, Clone, Copy)]
+struct MsoObjectiveBreakdown {
+    selected_objective: f64,
+    seat_variance: f64,
+    average_flatness: f64,
+    primary_flatness: f64,
+    primary_constraint: f64,
+    modal_projection: f64,
+    mean_output_loss: f64,
+    null_deficit: f64,
+    headroom_pressure: f64,
+    extension_deficit: f64,
+}
+
 /// Result of multi-seat optimization
 #[derive(Debug, Clone)]
 pub struct MultiSeatOptimizationResult {
@@ -377,12 +391,27 @@ pub fn optimize_multiseat(
     let mut final_allpass_filters = optimal_allpass_filters;
 
     if mso_objective_regressed(objective_before, objective_after) {
+        let before_breakdown = mso_objective_breakdown(
+            &initial_responses,
+            Some(&initial_complex_responses),
+            modal_basis.as_ref(),
+            &objective_context,
+            config,
+        );
+        let after_breakdown = mso_objective_breakdown(
+            &final_responses,
+            Some(&final_complex_responses),
+            modal_basis.as_ref(),
+            &objective_context,
+            config,
+        );
         warn!(
             "  MSO result rejected: {} regressed {:.6} -> {:.6}; keeping identity gain/delay/polarity/all-pass state",
             objective_name(config.strategy.clone()),
             objective_before,
             objective_after
         );
+        log_mso_regression_breakdown(before_breakdown, after_breakdown);
         final_gains = initial_gains;
         final_delays = initial_delays;
         final_polarities = initial_polarities;
@@ -1070,14 +1099,16 @@ fn null_deficit_penalty_from_responses(
     violation_rms_db(violations) * MSO_NULL_DEFICIT_WEIGHT
 }
 
-fn output_preservation_penalty(responses: &[Vec<f64>], context: &MsoObjectiveContext) -> f64 {
+fn mean_output_loss_penalty(responses: &[Vec<f64>], context: &MsoObjectiveContext) -> f64 {
     let avg_spl = mean_response_curve(responses);
     let candidate_mean = mean_level(&avg_spl);
     let mean_loss = context.baseline_mean_level_db - candidate_mean;
-    let broadband_loss_penalty =
-        (mean_loss - MSO_MAX_MEAN_OUTPUT_LOSS_DB).max(0.0) * MSO_OUTPUT_LOSS_WEIGHT;
+    (mean_loss - MSO_MAX_MEAN_OUTPUT_LOSS_DB).max(0.0) * MSO_OUTPUT_LOSS_WEIGHT
+}
 
-    broadband_loss_penalty + null_deficit_penalty_from_responses(responses, context)
+fn output_preservation_penalty(responses: &[Vec<f64>], context: &MsoObjectiveContext) -> f64 {
+    mean_output_loss_penalty(responses, context)
+        + null_deficit_penalty_from_responses(responses, context)
 }
 
 fn headroom_pressure_penalty(responses: &[Vec<f64>], context: &MsoObjectiveContext) -> f64 {
@@ -1113,23 +1144,18 @@ fn average_perceptual_from_responses(responses: &[Vec<f64>], context: &MsoObject
     average_flatness_from_responses(responses) + mso_resource_penalty(responses, context)
 }
 
-/// Primary-seat flatness with a quadratic penalty when other seats
-/// exceed `max_deviation_db` from the primary's response at each frequency.
-fn primary_constrained_from_responses(
+fn primary_flatness_and_constraint(
     responses: &[Vec<f64>],
     primary_seat: usize,
     max_deviation_db: f64,
-    context: Option<&MsoObjectiveContext>,
-) -> f64 {
+) -> (f64, f64) {
     let num_freqs = responses[0].len();
     let primary = &responses[primary_seat];
 
-    // Primary flatness (spectral std-dev)
     let mean = primary.iter().sum::<f64>() / primary.len() as f64;
     let primary_flatness =
         (primary.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / primary.len() as f64).sqrt();
 
-    // Constraint penalty: RMS of excess deviation at other seats
     let mut penalty_sum = 0.0;
     let mut penalty_count = 0usize;
     for (seat_idx, seat) in responses.iter().enumerate() {
@@ -1144,18 +1170,32 @@ fn primary_constrained_from_responses(
             penalty_count += 1;
         }
     }
-    let penalty = if penalty_count > 0 {
+    let constraint = if penalty_count > 0 {
         (penalty_sum / penalty_count as f64).sqrt()
     } else {
         0.0
     };
+
+    (primary_flatness, constraint)
+}
+
+/// Primary-seat flatness with a quadratic penalty when other seats
+/// exceed `max_deviation_db` from the primary's response at each frequency.
+fn primary_constrained_from_responses(
+    responses: &[Vec<f64>],
+    primary_seat: usize,
+    max_deviation_db: f64,
+    context: Option<&MsoObjectiveContext>,
+) -> f64 {
+    let (primary_flatness, constraint) =
+        primary_flatness_and_constraint(responses, primary_seat, max_deviation_db);
 
     // Weight 10× ensures constraint satisfaction dominates marginal flatness gains
     let resource_penalty = context
         .map(|ctx| mso_resource_penalty(responses, ctx))
         .unwrap_or(0.0);
 
-    primary_flatness + 10.0 * penalty + resource_penalty
+    primary_flatness + 10.0 * constraint + resource_penalty
 }
 
 fn objective_name(strategy: MultiSeatStrategy) -> &'static str {
@@ -1197,6 +1237,84 @@ fn objective_from_responses(
             )
         }
     }
+}
+
+fn mso_objective_breakdown(
+    responses: &[Vec<f64>],
+    complex_responses: Option<&[Vec<Complex64>]>,
+    modal_basis: Option<&ModalBasis>,
+    context: &MsoObjectiveContext,
+    config: &MultiSeatConfig,
+) -> MsoObjectiveBreakdown {
+    let seat_variance = variance_from_responses(responses);
+    let average_flatness = average_flatness_from_responses(responses);
+    let primary_seat = config.primary_seat.min(responses.len().saturating_sub(1));
+    let (primary_flatness, primary_constraint) =
+        primary_flatness_and_constraint(responses, primary_seat, config.max_deviation_db);
+    let modal_projection = complex_responses
+        .zip(modal_basis)
+        .map(|(complex, basis)| modal_projection_loss(complex, basis))
+        .unwrap_or(0.0);
+    let mean_output_loss = mean_output_loss_penalty(responses, context);
+    let null_deficit = null_deficit_penalty_from_responses(responses, context);
+    let headroom_pressure = headroom_pressure_penalty(responses, context);
+    let extension_deficit = extension_preservation_penalty(responses, context);
+    let resource_penalty = mean_output_loss + null_deficit + headroom_pressure + extension_deficit;
+    let selected_objective = match config.strategy {
+        MultiSeatStrategy::MinimizeVariance => seat_variance,
+        MultiSeatStrategy::Average => average_flatness + resource_penalty,
+        MultiSeatStrategy::PrimaryWithConstraints => {
+            primary_flatness + 10.0 * primary_constraint + resource_penalty
+        }
+        MultiSeatStrategy::ModalBasis => {
+            SFM_MODAL_LOSS_WEIGHT * modal_projection + resource_penalty
+        }
+        MultiSeatStrategy::ContinuousArea => {
+            unreachable!("ContinuousArea handled by optimize_multiseat_continuous_area")
+        }
+    };
+
+    MsoObjectiveBreakdown {
+        selected_objective,
+        seat_variance,
+        average_flatness,
+        primary_flatness,
+        primary_constraint,
+        modal_projection,
+        mean_output_loss,
+        null_deficit,
+        headroom_pressure,
+        extension_deficit,
+    }
+}
+
+fn log_mso_regression_breakdown(before: MsoObjectiveBreakdown, after: MsoObjectiveBreakdown) {
+    warn!(
+        "  MSO rollback breakdown selected={:.4}->{:.4}, variance={:.4}->{:.4}, average_flatness={:.4}->{:.4}, primary_flatness={:.4}->{:.4}, primary_constraint={:.4}->{:.4}, modal_projection={:.4}->{:.4}",
+        before.selected_objective,
+        after.selected_objective,
+        before.seat_variance,
+        after.seat_variance,
+        before.average_flatness,
+        after.average_flatness,
+        before.primary_flatness,
+        after.primary_flatness,
+        before.primary_constraint,
+        after.primary_constraint,
+        before.modal_projection,
+        after.modal_projection
+    );
+    warn!(
+        "  MSO rollback resource penalties mean_output_loss={:.4}->{:.4}, null_deficit={:.4}->{:.4}, headroom_pressure={:.4}->{:.4}, extension_deficit={:.4}->{:.4}",
+        before.mean_output_loss,
+        after.mean_output_loss,
+        before.null_deficit,
+        after.null_deficit,
+        before.headroom_pressure,
+        after.headroom_pressure,
+        before.extension_deficit,
+        after.extension_deficit
+    );
 }
 
 /// Compute variance of SPL across all seats for given gains and delays.
@@ -2048,7 +2166,7 @@ fn single_seat_flatness(combined: &[Vec<f64>]) -> f64 {
 fn sobol_probe<const D: usize>(num_points: usize, bounds: &[(f64, f64); D]) -> Vec<[f64; D]> {
     // Reuse the math-optimisation Sobol in [0,1]^D, then scale.
     let unit_bounds: Vec<(f64, f64)> = (0..D).map(|_| (0.0, 1.0)).collect();
-    let raw = math_audio_optimisation::init_sobol::init_sobol(D, num_points, &unit_bounds);
+    let raw = math_audio_optimisation::init_sobol::init_halton(D, num_points, &unit_bounds);
     raw.into_iter()
         .map(|v| {
             let mut out = [0.0_f64; D];

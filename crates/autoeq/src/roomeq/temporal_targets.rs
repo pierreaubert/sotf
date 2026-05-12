@@ -4,6 +4,10 @@
 //! to room mode ringing. These thresholds define the maximum acceptable
 //! decay time at each frequency — below threshold, ringing is inaudible;
 //! above, it degrades perceived bass articulation.
+//!
+//! `impulse_analysis::detect_room_modes` evaluates these thresholds for each
+//! detected modal peak and stores the resulting severity on `RoomMode` for
+//! optimizer/reporting diagnostics.
 
 /// Perceptual decay thresholds for artificial test stimuli.
 /// Returns the maximum acceptable T60-like decay time in seconds.

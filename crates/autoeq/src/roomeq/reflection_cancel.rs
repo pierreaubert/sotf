@@ -63,21 +63,31 @@ pub fn compute_reflection_cancellation(
     config: &ReflectionCancellationConfig,
 ) -> Option<ReflectionCancellationResult> {
     if !config.enabled {
+        log::info!("Reflection cancellation skipped: feature is disabled");
         return None;
     }
 
     // Step 1: Find the direct sound segment.
-    let direct = ssir_result.direct_sound()?;
+    let Some(direct) = ssir_result.direct_sound() else {
+        log::info!("Reflection cancellation skipped: no detectable direct sound segment");
+        return None;
+    };
 
     // Step 2: Find the first non-direct-sound segment with significant energy.
     // "Significant" = peak_energy > 0 (any detectable reflection).
-    let first_reflection = ssir_result.reflections().find(|s| s.peak_energy > 0.0)?;
+    let Some(first_reflection) = ssir_result.reflections().find(|s| s.peak_energy > 0.0) else {
+        log::info!("Reflection cancellation skipped: no detectable first reflection");
+        return None;
+    };
 
     // Step 3: Compute delay in samples between direct sound TOA and reflection TOA.
     let delay_samples = first_reflection
         .toa_sample
         .saturating_sub(direct.toa_sample);
     if delay_samples == 0 {
+        log::info!(
+            "Reflection cancellation skipped: first reflection has zero delay relative to direct sound"
+        );
         return None;
     }
 
@@ -86,6 +96,11 @@ pub fn compute_reflection_cancellation(
     // Step 4: Compute gain = sqrt(reflection_energy / direct_energy).
     // This is the amplitude ratio of the reflection relative to the direct sound.
     if direct.peak_energy <= 0.0 || first_reflection.peak_energy < 0.0 {
+        log::warn!(
+            "Reflection cancellation skipped: non-positive direct/reflection energy (direct={:.3e}, reflection={:.3e})",
+            direct.peak_energy,
+            first_reflection.peak_energy
+        );
         return None;
     }
     let raw_gain = (first_reflection.peak_energy / direct.peak_energy).sqrt();

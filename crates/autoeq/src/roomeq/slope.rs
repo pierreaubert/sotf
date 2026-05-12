@@ -37,12 +37,24 @@ pub fn estimate_slope_db_per_octave(curve: &Curve, min_freq: f64, max_freq: f64)
     }
 
     if n < 2 {
+        log::warn!(
+            "Slope estimation failed: only {} point(s) in [{:.1}, {:.1}] Hz window",
+            n,
+            min_freq,
+            max_freq
+        );
         return None;
     }
 
     let nf = n as f64;
     let denom = nf * sum_xx - sum_x * sum_x;
     if denom.abs() < 1e-30 {
+        log::warn!(
+            "Slope estimation failed: degenerate regression in [{:.1}, {:.1}] Hz window (denominator {:.3e})",
+            min_freq,
+            max_freq,
+            denom
+        );
         return None;
     }
 

@@ -97,6 +97,9 @@ pub struct RoomMode {
     pub frequency: f64,
     /// Estimated Q factor (narrowness)
     pub q: f64,
+    /// Amount by which this mode exceeds the perceptual temporal-decay threshold.
+    /// `0.0` means the estimated Q is below the threshold from `temporal_targets`.
+    pub temporal_severity_db: f64,
     /// Prominence in dB (how much it stands above the surrounding response)
     pub prominence_db: f64,
     /// Index into the frequency array
@@ -137,6 +140,7 @@ pub fn analyze_decomposed_correction(
 ) -> DecomposedCorrectionResult {
     // Step 1: Detect room modes (narrow peaks below Schroeder frequency)
     let room_modes = detect_room_modes(freq, spl, config);
+    log_temporal_mode_summary(&room_modes);
 
     // Step 2: Build per-frequency correction weights
     let correction_weights = build_correction_weights(freq, &room_modes, config);
@@ -197,9 +201,12 @@ pub fn detect_room_modes(
         let q = estimate_peak_q(freq, spl, i);
 
         if q >= config.min_mode_q {
+            let temporal_severity_db =
+                super::temporal_targets::temporal_severity(freq[i], q, false);
             modes.push(RoomMode {
                 frequency: freq[i],
                 q,
+                temporal_severity_db,
                 prominence_db: prominence,
                 index: i,
             });
@@ -207,6 +214,26 @@ pub fn detect_room_modes(
     }
 
     modes
+}
+
+fn log_temporal_mode_summary(modes: &[RoomMode]) {
+    let severe_modes: Vec<&RoomMode> = modes
+        .iter()
+        .filter(|mode| mode.temporal_severity_db > 0.0)
+        .collect();
+    if severe_modes.is_empty() {
+        return;
+    }
+
+    let max_severity = severe_modes
+        .iter()
+        .map(|mode| mode.temporal_severity_db)
+        .fold(0.0, f64::max);
+    log::info!(
+        "Detected {} temporally severe room mode(s); max temporal severity {:.2} dB",
+        severe_modes.len(),
+        max_severity
+    );
 }
 
 /// Compute local baseline SPL around a peak (median of surrounding values).
@@ -626,6 +653,7 @@ pub fn build_ssir_correction_weights(
     //    rather than by reflection-heavy full-window magnitude.
     let mode_spl = fdw_magnitude_db.as_ref().unwrap_or(spl);
     let room_modes = detect_room_modes(freq, mode_spl, config);
+    log_temporal_mode_summary(&room_modes);
 
     // 3. Boundary between modal region and diffuse region.
     //
@@ -997,6 +1025,7 @@ mod tests {
         let modes = vec![RoomMode {
             frequency: 60.0,
             q: 5.0,
+            temporal_severity_db: 0.0,
             prominence_db: 8.0,
             index: 1,
         }];

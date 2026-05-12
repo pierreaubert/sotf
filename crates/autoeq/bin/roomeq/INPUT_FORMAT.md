@@ -670,10 +670,11 @@ EPA tuning knobs. Every field is optional and serde-defaulted, so omitting
 | `treble_weight` | number | `0.8` | Weight applied to the treble RMS contribution. |
 
 The EPA metrics (`pre`/`post` per channel) are always emitted in the output
-JSON under `metadata.epa_per_channel`, regardless of which `loss_type` is
-selected — EPA is usable as a diagnostic even when the optimizer is minimizing
-a different objective. See [`OUTPUT_FORMAT.md`](./OUTPUT_FORMAT.md) for the
-per-channel EPA score fields.
+JSON under `metadata.epa_per_channel`, with a whole-system BS.1770-style
+aggregate under `metadata.epa_multichannel`, regardless of which `loss_type`
+is selected — EPA is usable as a diagnostic even when the optimizer is
+minimizing a different objective. See [`OUTPUT_FORMAT.md`](./OUTPUT_FORMAT.md)
+for the EPA score fields.
 
 ### PEQ Models
 

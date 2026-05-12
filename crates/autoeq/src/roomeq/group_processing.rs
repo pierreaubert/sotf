@@ -221,29 +221,27 @@ pub(super) fn process_speaker_group(
         ),
     })?;
 
-    let (global_eq_filters, post_score, final_curve) = if eq_score_regressed(
-        pre_global_eq_score,
-        post_score,
-    ) {
-        warn!(
-            "  Global EQ rejected for speaker group {}: flat loss {:.6} -> {:.6}",
-            channel_name, pre_global_eq_score, post_score
-        );
-        (Vec::new(), pre_global_eq_score, combined_curve.clone())
-    } else {
-        info!("  Optimized {} Global EQ filters", global_eq_filters.len());
-        info!(
-            "  Pre-score: {:.6}, Post-score: {:.6}",
-            pre_global_eq_score, post_score
-        );
-        let global_resp = response::compute_peq_complex_response(
-            &global_eq_filters,
-            &combined_curve.freq,
-            sample_rate,
-        );
-        let final_curve = response::apply_complex_response(&combined_curve, &global_resp);
-        (global_eq_filters, post_score, final_curve)
-    };
+    let (global_eq_filters, post_score, final_curve) =
+        if eq_score_regressed(pre_global_eq_score, post_score) {
+            warn!(
+                "  Global EQ rejected for speaker group {}: flat loss {:.6} -> {:.6}",
+                channel_name, pre_global_eq_score, post_score
+            );
+            (Vec::new(), pre_global_eq_score, combined_curve.clone())
+        } else {
+            info!("  Optimized {} Global EQ filters", global_eq_filters.len());
+            info!(
+                "  Pre-score: {:.6}, Post-score: {:.6}",
+                pre_global_eq_score, post_score
+            );
+            let global_resp = response::compute_peq_complex_response(
+                &global_eq_filters,
+                &combined_curve.freq,
+                sample_rate,
+            );
+            let final_curve = response::apply_complex_response(&combined_curve, &global_resp);
+            (global_eq_filters, post_score, final_curve)
+        };
 
     // 9. Build Output DSP Chain
     // We now have per-driver filters AND global filters.
@@ -431,12 +429,18 @@ mod tests {
             cea2034_cache: None,
         };
 
-        let result =
-            process_cardioid("LFE", &cardioid, &room_config, 48000.0, Path::new("."));
-        assert!(result.is_ok(), "Cardioid processing should succeed: {:?}", result);
+        let result = process_cardioid("LFE", &cardioid, &room_config, 48000.0, Path::new("."));
+        assert!(
+            result.is_ok(),
+            "Cardioid processing should succeed: {:?}",
+            result
+        );
         let (_chain, _pre, post, _initial, _final, _filters, _mean, _arrival, _fir) =
             result.unwrap();
-        assert!(post.is_finite(), "post_score must be finite after regression guard");
+        assert!(
+            post.is_finite(),
+            "post_score must be finite after regression guard"
+        );
     }
 
     #[test]
@@ -614,7 +618,10 @@ mod tests {
         let expected_power = 10.0 * ((10.0_f64.powf(8.0) + 10.0_f64.powf(8.0)) / 2.0).log10();
         // With complex averaging, magnitude will be much lower due to cancellation
         // The key thing is phase is preserved, not the exact SPL value
-        assert!(avg.spl[0] < expected_power, "cancelled phases should reduce SPL magnitude");
+        assert!(
+            avg.spl[0] < expected_power,
+            "cancelled phases should reduce SPL magnitude"
+        );
     }
 
     #[test]
@@ -1012,7 +1019,11 @@ fn average_power_curve(curves: &[Curve]) -> Result<Curve> {
             let z = Complex64::new(sum_re[i] / n, sum_im[i] / n);
             let mag = z.norm();
             spl[i] = 20.0 * mag.max(1e-12).log10();
-            phase_out[i] = if mag > 1e-12 { z.arg().to_degrees() } else { 0.0 };
+            phase_out[i] = if mag > 1e-12 {
+                z.arg().to_degrees()
+            } else {
+                0.0
+            };
         }
         Ok(Curve {
             freq: first.freq.clone(),
@@ -1931,11 +1942,8 @@ pub(super) fn process_cardioid(
             pre_score,
             post_score
         );
-        let eq_resp = response::compute_peq_complex_response(
-            &eq_filters,
-            &combined_curve.freq,
-            sample_rate,
-        );
+        let eq_resp =
+            response::compute_peq_complex_response(&eq_filters, &combined_curve.freq, sample_rate);
         let final_curve = response::apply_complex_response(&combined_curve, &eq_resp);
         (eq_filters, post_score, final_curve)
     };

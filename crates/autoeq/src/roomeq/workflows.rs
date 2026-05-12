@@ -686,6 +686,8 @@ pub(super) fn optimize_stereo_2_0_with_progress(
 
     let epa_cfg = config.optimizer.epa_config.clone().unwrap_or_default();
     let epa_per_channel = crate::roomeq::output::compute_epa_per_channel(&channel_chains, &epa_cfg);
+    let epa_multichannel =
+        crate::roomeq::output::compute_epa_multichannel(&channel_chains, &epa_cfg);
 
     Ok(RoomOptimizationResult {
         channels: channel_chains,
@@ -701,6 +703,7 @@ pub(super) fn optimize_stereo_2_0_with_progress(
             timestamp: chrono::Utc::now().to_rfc3339(),
             inter_channel_deviation: None,
             epa_per_channel,
+            epa_multichannel,
             group_delay: None,
             perceptual_metrics: None,
             home_cinema_layout: None,
@@ -1509,6 +1512,8 @@ pub(super) fn optimize_stereo_2_1_with_progress(
 
     let epa_cfg = config.optimizer.epa_config.clone().unwrap_or_default();
     let epa_per_channel = crate::roomeq::output::compute_epa_per_channel(&channel_chains, &epa_cfg);
+    let epa_multichannel =
+        crate::roomeq::output::compute_epa_multichannel(&channel_chains, &epa_cfg);
 
     Ok(RoomOptimizationResult {
         channels: channel_chains,
@@ -1524,6 +1529,7 @@ pub(super) fn optimize_stereo_2_1_with_progress(
             timestamp: chrono::Utc::now().to_rfc3339(),
             inter_channel_deviation: None,
             epa_per_channel,
+            epa_multichannel,
             group_delay: None,
             perceptual_metrics: None,
             home_cinema_layout: Some(super::home_cinema::analyze_layout(config)),
@@ -1750,6 +1756,8 @@ fn optimize_home_cinema_no_sub(
 
     let epa_cfg = config.optimizer.epa_config.clone().unwrap_or_default();
     let epa_per_channel = crate::roomeq::output::compute_epa_per_channel(&channel_chains, &epa_cfg);
+    let epa_multichannel =
+        crate::roomeq::output::compute_epa_multichannel(&channel_chains, &epa_cfg);
     let multi_seat_correction = Some(super::home_cinema::multi_seat_correction_report(
         config,
         &channel_results,
@@ -1770,6 +1778,7 @@ fn optimize_home_cinema_no_sub(
             timestamp: chrono::Utc::now().to_rfc3339(),
             inter_channel_deviation: None,
             epa_per_channel,
+            epa_multichannel,
             group_delay: None,
             perceptual_metrics: None,
             home_cinema_layout: Some(super::home_cinema::analyze_layout(config)),
@@ -2749,6 +2758,8 @@ fn optimize_home_cinema_with_sub(
 
     let epa_cfg = config.optimizer.epa_config.clone().unwrap_or_default();
     let epa_per_channel = crate::roomeq::output::compute_epa_per_channel(&channel_chains, &epa_cfg);
+    let epa_multichannel =
+        crate::roomeq::output::compute_epa_multichannel(&channel_chains, &epa_cfg);
     let multi_seat_correction = Some(super::home_cinema::multi_seat_correction_report(
         config,
         &channel_results,
@@ -2769,6 +2780,7 @@ fn optimize_home_cinema_with_sub(
             timestamp: chrono::Utc::now().to_rfc3339(),
             inter_channel_deviation: None,
             epa_per_channel,
+            epa_multichannel,
             group_delay: None,
             perceptual_metrics: None,
             home_cinema_layout: Some(super::home_cinema::analyze_layout(config)),

@@ -734,11 +734,7 @@ mod tests {
             result
         );
         let delay = result.unwrap();
-        assert!(
-            delay.abs() < 0.01,
-            "Expected ~0 ms, got {} ms",
-            delay
-        );
+        assert!(delay.abs() < 0.01, "Expected ~0 ms, got {} ms", delay);
     }
 
     #[test]
