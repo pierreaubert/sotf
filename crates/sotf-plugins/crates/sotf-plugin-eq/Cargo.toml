@@ -1,7 +1,7 @@
 [package]
 name = "sotf-plugin-eq"
 description = "SOTF EQ plugin - parametric equalizer with biquad filters"
-version = "0.5.65"
+version = "0.5.66"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true

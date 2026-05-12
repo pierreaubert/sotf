@@ -61,6 +61,7 @@ pub const BAND_TEMPLATE: &[ParamSpec] = &[
             "Highpass",
             "Bandpass",
             "Notch",
+            "AllPass",
         ],
         "Filter",
     )
