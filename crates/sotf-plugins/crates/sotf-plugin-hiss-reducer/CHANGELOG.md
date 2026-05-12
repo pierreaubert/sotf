@@ -1,3 +1,27 @@
+# 0.5.5
+
+- **Fix (critical): removed dead `low_latency` parameter** (`src/params.rs`, `src/lib.rs`). The
+  underlying `HissReducer` is a simple first-order IIR filter with no FFT at all; exposing a
+  "Low Latency (smaller FFT)" toggle was pure dead UI surface that silently did nothing. The
+  parameter is removed from `PARAMS`, `LAYOUT`, `HissReducerPluginParams`, and `params::Params`.
+  Serialised presets that include `low_latency` will silently drop the field via serde's default
+  handling — no migration needed.
+- **Fix (high): parameter changes no longer reset DSP state** (`src/lib.rs:set_parameter`).
+  Previously every change to `threshold_db`, `frequency_hz`, or `strength` called
+  `rebuild_reducer()`, which re-created the `HissReducer` from scratch and reset all IIR history
+  and envelope-follower state, causing audible clicks. The fix calls
+  `reducer.set_params(frequency_hz, threshold_db, strength)` in-place instead; internal
+  coefficients are updated without touching filter state. `rebuild_reducer()` is now removed.
+- **Fix (medium): initial sample-rate mismatch** (`src/lib.rs:from_params`). The plugin stored
+  `sample_rate: 44100` before `initialize()` was called, but `HissReducer::new()` internally
+  defaults to 48000 Hz. Changing it later in `initialize(44100)` would silently re-derive filter
+  coefficients for a different rate, altering the frequency response. The stored default is now
+  48000 to match the reducer's construction-time default. Callers must still call `initialize()`
+  with the actual host sample rate — this fix only removes the inconsistency before that call.
+- **Deferred: `latency_samples` reporting** (review issue 4). The review assumed FFT-based
+  processing. `HissReducer` is a sample-by-sample IIR lowpass with no look-ahead or buffering;
+  its group delay is sub-sample and reporting `0` is correct for this implementation.
+
 # 0.5.4
 
 - Initial release. Split out of `sotf-plugin-denoiser` into a dedicated stationary high-frequency hiss reducer.

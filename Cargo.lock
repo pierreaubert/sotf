@@ -10745,7 +10745,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-hiss-reducer"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "hound",
  "plugins-denoiser",
