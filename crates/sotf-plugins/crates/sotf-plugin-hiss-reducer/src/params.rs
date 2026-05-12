@@ -31,14 +31,10 @@ pub const PARAMS: &[ParamSpec] = &[
     ParamSpec::float("Strength", "strength", 0.5, 0.0, 1.0, 0.01, "", "General")
         .scaled(100.0)
         .doc("Hiss attenuation strength"),
-    ParamSpec::bool_param("Low Latency", "low_latency", false, "General")
-        .structural()
-        .setup()
-        .doc("Use a smaller FFT"),
 ];
 
 pub const LAYOUT: PluginLayout = PluginLayout {
-    config: &[ControlSpec::toggle(4)],
+    config: &[],
     main: &[ControlGroup {
         title: "HISS",
         controls: &[
@@ -51,10 +47,7 @@ pub const LAYOUT: PluginLayout = PluginLayout {
     output: &[],
     tabs: &[],
     visualizations: &[],
-    column_constraints: &[
-        ColumnConstraint::config(100.0, 0.5),
-        ColumnConstraint::main(320.0),
-    ],
+    column_constraints: &[ColumnConstraint::main(320.0)],
     dynamic_sections: &[],
 };
 
@@ -68,8 +61,6 @@ pub struct Params {
     pub frequency_hz: f64,
     #[serde(default = "d_strength")]
     pub strength: f64,
-    #[serde(default = "d_low_latency")]
-    pub low_latency: bool,
 }
 
 fn d_enabled() -> bool {
@@ -84,9 +75,6 @@ fn d_frequency_hz() -> f64 {
 fn d_strength() -> f64 {
     pk(PARAMS, "strength").default_f64()
 }
-fn d_low_latency() -> bool {
-    pk(PARAMS, "low_latency").default_bool()
-}
 
 impl Default for Params {
     fn default() -> Self {
@@ -95,7 +83,6 @@ impl Default for Params {
             threshold_db: d_threshold_db(),
             frequency_hz: d_frequency_hz(),
             strength: d_strength(),
-            low_latency: d_low_latency(),
         }
     }
 }
@@ -112,7 +99,6 @@ impl PluginParamDef for Params {
             1 => Some(self.threshold_db),
             2 => Some(self.frequency_hz),
             3 => Some(self.strength),
-            4 => Some(if self.low_latency { 1.0 } else { 0.0 }),
             _ => None,
         }
     }
@@ -123,7 +109,6 @@ impl PluginParamDef for Params {
             1 => self.threshold_db = value,
             2 => self.frequency_hz = value,
             3 => self.strength = value,
-            4 => self.low_latency = value > 0.5,
             _ => {}
         }
     }

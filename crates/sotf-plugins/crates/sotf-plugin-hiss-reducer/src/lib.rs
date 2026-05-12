@@ -18,8 +18,6 @@ pub struct HissReducerPluginParams {
     pub frequency_hz: f32,
     #[serde(default = "d_strength")]
     pub strength: f32,
-    #[serde(default = "d_low_latency")]
-    pub low_latency: bool,
 }
 
 fn d_enabled() -> bool {
@@ -34,9 +32,6 @@ fn d_frequency_hz() -> f32 {
 fn d_strength() -> f32 {
     pk(HP, "strength").default_f32()
 }
-fn d_low_latency() -> bool {
-    pk(HP, "low_latency").default_bool()
-}
 
 impl Default for HissReducerPluginParams {
     fn default() -> Self {
@@ -45,7 +40,6 @@ impl Default for HissReducerPluginParams {
             threshold_db: d_threshold_db(),
             frequency_hz: d_frequency_hz(),
             strength: d_strength(),
-            low_latency: d_low_latency(),
         }
     }
 }
@@ -67,7 +61,10 @@ impl HissReducerPlugin {
     pub fn from_params(channels: usize, params: HissReducerPluginParams) -> Self {
         let mut plugin = Self {
             channels,
-            sample_rate: 44100,
+            // Match HissReducer::new()'s internal default so the stored
+            // sample_rate is consistent with the reducer's initial coefficients
+            // before initialize() is called.
+            sample_rate: 48000,
             initialized: false,
             reducer: Self::build_reducer(channels, &params),
             params,
@@ -83,20 +80,12 @@ impl HissReducerPlugin {
         reducer
     }
 
-    fn rebuild_reducer(&mut self) {
-        self.reducer = Self::build_reducer(self.channels, &self.params);
-        if self.initialized {
-            self.reducer.initialize(self.sample_rate);
-        }
-    }
-
     fn param_value(&self, index: usize) -> Option<f64> {
         match index {
             0 => Some(if self.params.enabled { 1.0 } else { 0.0 }),
             1 => Some(self.params.threshold_db as f64),
             2 => Some(self.params.frequency_hz as f64),
             3 => Some(self.params.strength as f64),
-            4 => Some(if self.params.low_latency { 1.0 } else { 0.0 }),
             _ => None,
         }
     }
@@ -126,11 +115,18 @@ impl InPlacePlugin for HissReducerPlugin {
             1 => self.params.threshold_db = v as f32,
             2 => self.params.frequency_hz = v as f32,
             3 => self.params.strength = v as f32,
-            4 => self.params.low_latency = v > 0.5,
             _ => {}
         })?;
+        // For continuous parameters (threshold, frequency, strength) update the
+        // reducer in-place via set_params() to preserve DSP state (IIR history,
+        // envelope followers) and avoid audible clicks. Only the enabled flag
+        // (idx == 0) needs no reducer update at all.
         if idx != 0 {
-            self.rebuild_reducer();
+            self.reducer.set_params(
+                self.params.frequency_hz,
+                self.params.threshold_db,
+                self.params.strength,
+            );
         }
         self.rebuild_cached_parameters();
         Ok(())
