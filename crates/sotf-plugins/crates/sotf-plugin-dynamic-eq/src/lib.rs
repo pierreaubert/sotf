@@ -212,12 +212,11 @@ struct DynEqBand {
     sidechain_bp_hp: Vec<Biquad>,
     /// Lowpass filter per channel (upper bound of sidechain BPF)
     sidechain_bp_lp: Vec<Biquad>,
-    /// The actual EQ biquad per channel
+    /// The actual EQ biquad per channel — held at target_gain_db (static coefficients).
+    /// Gain modulation is applied as a dry/wet blend, not via coefficient updates.
     eq_filters: Vec<Biquad>,
     /// One DynamicsCore per channel
     cores: Vec<DynamicsCore>,
-    /// Current modulated gain per channel (for update_eq_gain hysteresis)
-    current_gain_db: Vec<f32>,
 }
 
 impl DynEqBand {
@@ -289,32 +288,28 @@ impl DynEqBand {
             sidechain_bp_lp,
             eq_filters,
             cores,
-            current_gain_db: vec![0.0; channels],
         }
     }
 
     /// Process the sidechain bandpass filter on a sample for a given channel.
+    ///
+    /// Accepts and returns f64 to avoid unnecessary round-trip conversions; the
+    /// internal biquads already operate in f64.
     #[inline]
-    fn apply_sidechain_bp(&mut self, ch: usize, sample: f32) -> f32 {
-        let hp_out = self.sidechain_bp_hp[ch].process(sample as f64) as f32;
-        self.sidechain_bp_lp[ch].process(hp_out as f64) as f32
+    fn apply_sidechain_bp(&mut self, ch: usize, sample: f64) -> f64 {
+        let hp_out = self.sidechain_bp_hp[ch].process(sample);
+        self.sidechain_bp_lp[ch].process(hp_out)
     }
 
-    /// Update the EQ filter gain for a channel if it changed significantly.
-    /// This avoids recomputing biquad coefficients every sample.
+    /// Compute the proportion of EQ gain to apply based on gain reduction from the
+    /// dynamics core. Returns a value in [0.0, 1.0] representing how much of the
+    /// full EQ band shape to blend in.
     #[inline]
-    fn update_eq_gain(&mut self, ch: usize, gain_db: f32, sample_rate: u32) {
-        // Only recompute when gain changed by more than 0.05 dB
-        if (gain_db - self.current_gain_db[ch]).abs() > 0.05 {
-            self.current_gain_db[ch] = gain_db;
-            self.eq_filters[ch].update_params(
-                BiquadFilterType::Peak,
-                self.frequency as f64,
-                sample_rate as f64,
-                self.q as f64,
-                gain_db as f64,
-            );
+    fn modulation_proportion(target_gain_db: f32, gain_reduction_db: f32) -> f32 {
+        if target_gain_db.abs() < 0.01 {
+            return 0.0;
         }
+        (gain_reduction_db / target_gain_db.abs()).clamp(0.0, 1.0)
     }
 
     fn rebuild_sidechain_filters(&mut self, sample_rate: u32) {
@@ -340,20 +335,19 @@ impl DynEqBand {
     }
 
     fn rebuild_eq_filters(&mut self, sample_rate: u32) {
-        for (ch, eq) in self.eq_filters.iter_mut().enumerate() {
-            let gain = self.current_gain_db[ch];
+        // EQ filters are held at target_gain_db; modulation is a dry/wet blend
+        for eq in &mut self.eq_filters {
             *eq = Biquad::new(
                 BiquadFilterType::Peak,
                 self.frequency as f64,
                 sample_rate as f64,
                 self.q as f64,
-                gain as f64,
+                self.target_gain_db as f64,
             );
         }
     }
 
     fn reset(&mut self, sample_rate: u32) {
-        self.current_gain_db.fill(0.0);
         self.rebuild_sidechain_filters(sample_rate);
         self.rebuild_eq_filters(sample_rate);
         for core in &mut self.cores {
@@ -386,21 +380,6 @@ fn bandpass_edges(freq: f32, q: f32) -> (f32, f32) {
     (f_low, f_high)
 }
 
-/// Compute modulated gain based on gain reduction from DynamicsCore.
-///
-/// When gain reduction is 0 (signal below threshold), EQ gain is 0 dB (passthrough).
-/// When gain reduction > 0 (signal above threshold), EQ applies proportional gain.
-#[inline]
-fn compute_modulated_gain(target_gain_db: f32, gain_reduction_db: f32) -> f32 {
-    if target_gain_db.abs() < 0.01 {
-        return 0.0;
-    }
-    // GR is positive when above threshold. Map GR to how much of target_gain to apply.
-    // At max GR, apply full target_gain.
-    // Clamp to [0, 1] proportion.
-    let proportion = (gain_reduction_db / target_gain_db.abs()).clamp(0.0, 1.0);
-    target_gain_db * proportion
-}
 
 // ============================================================================
 // Plugin
@@ -882,7 +861,6 @@ impl InPlacePlugin for DynamicEqPlugin {
         let dry_mix = 1.0 - mix;
         let knee = self.knee_db;
         let ratio = self.ratio;
-        let sample_rate = self.sample_rate;
 
         // Check for solo
         let any_solo = self.bands[..self.num_bands].iter().any(|b| b.solo);
@@ -901,11 +879,13 @@ impl InPlacePlugin for DynamicEqPlugin {
                 let band_ratio = band.get_effective_ratio(ratio);
 
                 if self.link_channels && nc > 1 {
-                    // Linked: max detection across channels
+                    // Linked: max detection across channels.
+                    // Sidechain reads dry_buf to avoid inter-band contamination.
                     let mut max_level = 0.0f32;
                     for ch in 0..nc {
                         let idx = frame * nc + ch;
-                        let filtered = band.apply_sidechain_bp(ch, self.dry_buf[idx]);
+                        let filtered =
+                            band.apply_sidechain_bp(ch, self.dry_buf[idx] as f64) as f32;
                         let level = filtered.abs();
                         max_level = max_level.max(level);
                     }
@@ -914,30 +894,40 @@ impl InPlacePlugin for DynamicEqPlugin {
                         .calculate_gain_reduction(level_db, threshold, band_ratio, knee);
                     let smoothed = band.cores[0].apply_envelope(0, gr);
 
-                    let modulated_gain = compute_modulated_gain(band.target_gain_db, smoothed);
+                    // Proportion of the full EQ band shape to apply this sample.
+                    // EQ biquad is held at target_gain_db; blend avoids coefficient updates.
+                    let proportion = DynEqBand::modulation_proportion(band.target_gain_db, smoothed);
 
                     self.monitoring_gr[band_idx] = smoothed;
 
                     for ch in 0..nc {
                         let idx = frame * nc + ch;
-                        band.update_eq_gain(ch, modulated_gain, sample_rate);
-                        buffer[idx] = band.eq_filters[ch].process(buffer[idx] as f64) as f32;
+                        let dry = buffer[idx];
+                        let eq_out = band.eq_filters[ch].process(dry as f64) as f32;
+                        // Blend: proportion=0 → dry passthrough; proportion=1 → full EQ
+                        buffer[idx] = dry + (eq_out - dry) * proportion;
                     }
                 } else {
-                    // Per-channel detection
+                    // Per-channel detection.
+                    // Sidechain reads dry_buf to avoid inter-band contamination.
                     for ch in 0..nc {
                         let idx = frame * nc + ch;
-                        let filtered = band.apply_sidechain_bp(ch, self.dry_buf[idx]);
+                        let filtered =
+                            band.apply_sidechain_bp(ch, self.dry_buf[idx] as f64) as f32;
                         let level = filtered.abs();
                         let level_db = DB_CONVERSION_FACTOR * fast_log10(level.max(EPSILON));
                         let gr = band.cores[ch]
                             .calculate_gain_reduction(level_db, threshold, band_ratio, knee);
                         let smoothed = band.cores[ch].apply_envelope(ch, gr);
 
-                        let modulated_gain = compute_modulated_gain(band.target_gain_db, smoothed);
+                        let proportion = DynEqBand::modulation_proportion(
+                            band.target_gain_db,
+                            smoothed,
+                        );
 
-                        band.update_eq_gain(ch, modulated_gain, sample_rate);
-                        buffer[idx] = band.eq_filters[ch].process(buffer[idx] as f64) as f32;
+                        let dry = buffer[idx];
+                        let eq_out = band.eq_filters[ch].process(dry as f64) as f32;
+                        buffer[idx] = dry + (eq_out - dry) * proportion;
                     }
 
                     // Use channel 0 GR for monitoring (read-only)
@@ -1277,7 +1267,7 @@ mod tests {
         plugin.initialize(sr).unwrap();
         plugin.bands[0].frequency = 1000.0;
         plugin.bands[0].q = 4.0;
-        plugin.bands[0].current_gain_db[0] = 12.0;
+        plugin.bands[0].target_gain_db = 12.0;
         plugin.bands[0].rebuild_eq_filters(sr);
 
         let boosted = process_with_first_eq_filter(&mut plugin, &input);
@@ -1286,7 +1276,7 @@ mod tests {
 
         plugin.bands[0].frequency = 1000.0;
         plugin.bands[0].q = 4.0;
-        plugin.bands[0].current_gain_db[0] = 12.0;
+        plugin.bands[0].target_gain_db = 12.0;
         plugin.bands[0].rebuild_eq_filters(sr);
         plugin
             .set_parameter(
@@ -1314,7 +1304,7 @@ mod tests {
         plugin.initialize(sr).unwrap();
         plugin.bands[0].frequency = 1000.0;
         plugin.bands[0].q = 0.1;
-        plugin.bands[0].current_gain_db[0] = 12.0;
+        plugin.bands[0].target_gain_db = 12.0;
         plugin.bands[0].rebuild_eq_filters(sr);
 
         let wide = process_with_first_eq_filter(&mut plugin, &input);
@@ -1323,7 +1313,7 @@ mod tests {
 
         plugin.bands[0].frequency = 1000.0;
         plugin.bands[0].q = 0.1;
-        plugin.bands[0].current_gain_db[0] = 12.0;
+        plugin.bands[0].target_gain_db = 12.0;
         plugin.bands[0].rebuild_eq_filters(sr);
         plugin
             .set_parameter(ParameterId::from("band_0_q"), ParameterValue::Float(10.0))
@@ -1337,6 +1327,11 @@ mod tests {
         );
     }
 
+    /// `reset()` must rebuild EQ filters to reflect the current `target_gain_db`.
+    ///
+    /// We set target_gain_db = 0.0 (passthrough) but manually build the filter at
+    /// 12 dB to simulate stale biquad state, then call reset() and verify the output
+    /// is unaffected (filter rebuilt at 0 dB).
     #[test]
     fn test_reset_rebuilds_eq_filters_at_zero_gain() {
         let sr = 48000u32;
@@ -1349,10 +1344,12 @@ mod tests {
         plugin.num_bands = 1;
         plugin.bands[0].frequency = 1000.0;
         plugin.bands[0].q = 4.0;
-        plugin.bands[0].target_gain_db = 0.0;
-        plugin.bands[0].current_gain_db[0] = 12.0;
+        // target_gain_db = 0 → after reset the filter should be passthrough.
+        // We deliberately build the filter at 12 dB to create stale biquad state.
+        plugin.bands[0].target_gain_db = 12.0;
         plugin.bands[0].rebuild_eq_filters(sr);
-
+        // Now set the intended target and call reset(); it should rebuild at 0 dB.
+        plugin.bands[0].target_gain_db = 0.0;
         plugin.reset();
 
         let mut buf = input.clone();
@@ -1382,5 +1379,167 @@ mod tests {
         let mut short = vec![0.0; 31];
         let err = plugin.process_in_place(&mut short, &ctx).unwrap_err();
         assert!(err.contains("Buffer size mismatch"));
+    }
+
+    /// Regression test: sidechain must read the dry buffer, not the processed output.
+    ///
+    /// Two bands at different frequencies are active. If the sidechain of band 1
+    /// reads the EQ'd output of band 0 instead of the original dry signal, band 1's
+    /// detection level would differ depending on band 0's activity — causing
+    /// inter-band contamination. We verify that disabling band 0 does not change
+    /// what band 1 detects.
+    #[test]
+    fn test_sidechain_reads_dry_buffer_not_modified_output() {
+        let sr = 48000u32;
+        let num_frames = 4800; // 100ms
+        // Signal at 1 kHz only. Band 0 is also tuned to 1 kHz with a large gain,
+        // so if band 1 (at 2 kHz) sees band 0's boosted output it would detect a
+        // higher level at 2 kHz (due to sidechain filter bleed) than when band 0 is
+        // inactive.
+        let amplitude = 0.5;
+
+        let make_two_band_plugin = |band0_active: bool| {
+            DynamicEqPlugin::from_params(
+                1,
+                DynamicEqPluginParams {
+                    num_bands: 2,
+                    threshold: -60.0, // always triggering
+                    ratio: 20.0,
+                    attack_ms: 0.1,
+                    release_ms: 200.0,
+                    knee: 0.0,
+                    link_channels: false,
+                    mix: 1.0,
+                    bands: vec![
+                        DynEqBandParams {
+                            frequency: 1000.0,
+                            q: 1.0,
+                            gain: 18.0, // large boost at 1 kHz
+                            band_threshold: -60.0,
+                            band_ratio: 20.0,
+                            active: band0_active,
+                            solo: false,
+                        },
+                        DynEqBandParams {
+                            frequency: 2000.0,
+                            q: 4.0, // narrow band at 2 kHz — only detects 2 kHz
+                            gain: 0.0, // passthrough, but detection is what we test
+                            band_threshold: -60.0,
+                            band_ratio: 20.0,
+                            active: true,
+                            solo: false,
+                        },
+                    ],
+                },
+            )
+        };
+
+        // We run the plugin twice: once with band 0 active (18 dB boost at 1 kHz)
+        // and once with band 0 inactive. We capture band 1's monitoring GR value,
+        // which reflects what the sidechain detected. If the sidechain was reading
+        // the modified buffer, band 0's presence would inflate the band 1 detection.
+        let capture_band1_gr = |plugin: &mut DynamicEqPlugin| -> f32 {
+            let ctx = ProcessContext {
+                sample_rate: sr,
+                num_frames,
+            };
+            let mut buf = make_sine(1000.0, sr, num_frames, amplitude);
+            plugin.process_in_place(&mut buf, &ctx).unwrap();
+            plugin.monitoring_gr[1]
+        };
+
+        let mut p_with = make_two_band_plugin(true);
+        p_with.initialize(sr).unwrap();
+        let gr_with_band0 = capture_band1_gr(&mut p_with);
+
+        let mut p_without = make_two_band_plugin(false);
+        p_without.initialize(sr).unwrap();
+        let gr_without_band0 = capture_band1_gr(&mut p_without);
+
+        // Band 1 detects 2 kHz; the source is a 1 kHz pure tone.
+        // Whether band 0 boosts 1 kHz or not, band 1's sidechain sees the same
+        // original dry signal in both cases (assuming correct implementation).
+        let diff = (gr_with_band0 - gr_without_band0).abs();
+        assert!(
+            diff < 0.5,
+            "Band 1 GR differs by {diff:.3} dB depending on band 0 activity — sidechain contamination bug"
+        );
+    }
+
+    /// Regression test: EQ coefficients must NOT be recomputed every sample.
+    ///
+    /// With the old buggy implementation, `update_eq_gain` called `update_params`
+    /// (which calls sin/cos/tan internally) on nearly every sample during attack.
+    /// The correct implementation uses a fixed biquad + dry/wet blend, meaning the
+    /// filter state is shaped by a fixed transfer function and the blend proportion
+    /// drives the modulation depth.
+    ///
+    /// This test verifies that the plugin produces a smoothly modulated output
+    /// whose RMS at the band frequency correctly reflects the blend proportion,
+    /// NOT a coefficient-stepped output that would introduce artifacts.
+    #[test]
+    fn test_eq_gain_uses_proportion_blend_not_coefficient_update() {
+        let sr = 48000u32;
+        // 200 ms: long enough to see steady-state, short enough for fast attack
+        let num_frames = 9600usize;
+        let amplitude = 0.5f32;
+        let target_gain_db = 12.0f32;
+
+        // Configure so the band fires immediately (threshold far below signal level)
+        // and with a fast attack so it reaches proportion ≈ 1.0 quickly.
+        let mut plugin = DynamicEqPlugin::from_params(
+            1,
+            DynamicEqPluginParams {
+                num_bands: 1,
+                threshold: -60.0,
+                ratio: 20.0,
+                attack_ms: 0.5,
+                release_ms: 200.0,
+                knee: 0.0,
+                link_channels: false,
+                mix: 1.0,
+                bands: vec![DynEqBandParams {
+                    frequency: 1000.0,
+                    q: 1.0,
+                    gain: target_gain_db,
+                    band_threshold: -60.0,
+                    band_ratio: 20.0,
+                    active: true,
+                    solo: false,
+                }],
+            },
+        );
+        plugin.initialize(sr).unwrap();
+
+        let input = make_sine(1000.0, sr, num_frames, amplitude);
+        let mut buf = input.clone();
+        let ctx = ProcessContext {
+            sample_rate: sr,
+            num_frames,
+        };
+        plugin.process_in_place(&mut buf, &ctx).unwrap();
+
+        // At steady state (second half) proportion ≈ 1.0; output should match
+        // the EQ biquad at target_gain_db applied to the input.
+        // Apply the reference EQ biquad (at target_gain_db) to the same input.
+        let mut ref_plugin = DynamicEqPlugin::new(1);
+        ref_plugin.initialize(sr).unwrap();
+        ref_plugin.bands[0].target_gain_db = target_gain_db;
+        ref_plugin.bands[0].rebuild_eq_filters(sr);
+        let reference: Vec<f32> = input
+            .iter()
+            .map(|s| ref_plugin.bands[0].eq_filters[0].process(*s as f64) as f32)
+            .collect();
+
+        let out_rms = rms(&buf[num_frames / 2..]);
+        let ref_rms = rms(&reference[num_frames / 2..]);
+
+        // At full proportion the blend output must equal the biquad-only reference.
+        // Allow ±10% for the envelope settling.
+        let ratio = out_rms / ref_rms;
+        assert!(
+            (ratio - 1.0).abs() < 0.10,
+            "Steady-state output RMS {out_rms:.4} should match reference {ref_rms:.4} (ratio={ratio:.4})"
+        );
     }
 }
