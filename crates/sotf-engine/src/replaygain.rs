@@ -21,10 +21,7 @@ pub fn analyze_file_limited<P: AsRef<Path>>(
     path: P,
     max_samples: Option<usize>,
 ) -> AudioDecoderResult<ReplayGainInfo> {
-    log::info!(
-        "[Replay Gain] Analyze : {}",
-        path.as_ref().to_str().unwrap()
-    );
+    log::info!("[Replay Gain] Analyze : {}", path.as_ref().display());
 
     let mut decoder = create_decoder(path.as_ref())?;
     let spec = decoder.spec();
@@ -94,5 +91,18 @@ mod tests {
             result,
             Err(AudioDecoderError::UnsupportedFormat(_))
         ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn analyze_non_utf8_path_does_not_panic() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+        use std::path::PathBuf;
+
+        let path = PathBuf::from(OsString::from_vec(vec![b'n', b'o', b'n', 0xff, b'.', b'w']));
+        let result = std::panic::catch_unwind(|| analyze_file(path));
+
+        assert!(result.is_ok());
     }
 }

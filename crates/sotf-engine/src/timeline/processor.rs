@@ -35,8 +35,27 @@ impl TimelineProcessor {
     ///
     /// Returns None if the transport is not playing or has reached the end.
     pub fn next_frame(&mut self) -> Result<Option<AudioFrame>, String> {
+        let mut frame = AudioFrame {
+            data: Vec::with_capacity(self.timeline.frame_size * self.timeline.output_channels),
+            num_frames: 0,
+            num_channels: self.timeline.output_channels,
+            sample_rate: self.timeline.transport.sample_rate,
+        };
+        if self.next_frame_into(&mut frame)? {
+            Ok(Some(frame))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Process one block into a caller-owned frame buffer.
+    ///
+    /// Returns `Ok(false)` when the transport is not playing or has reached the
+    /// end. Reusing the same `AudioFrame` across calls keeps its data allocation
+    /// hot for offline rendering or direct engine integration.
+    pub fn next_frame_into(&mut self, frame: &mut AudioFrame) -> Result<bool, String> {
         if !self.timeline.transport.playing {
-            return Ok(None);
+            return Ok(false);
         }
 
         // Check if we've passed the end of all content
@@ -44,7 +63,7 @@ impl TimelineProcessor {
         if duration > 0 && self.timeline.transport.position_samples >= duration {
             // Check if looping — if not, we're done
             if self.timeline.transport.loop_range.is_none() {
-                return Ok(None);
+                return Ok(false);
             }
         }
 
@@ -57,13 +76,19 @@ impl TimelineProcessor {
         }
 
         let frames = self.timeline.process(&mut self.output_buf[..total])?;
+        let samples = frames * ch;
 
-        Ok(Some(AudioFrame {
-            data: self.output_buf[..frames * ch].to_vec(),
-            num_frames: frames,
-            num_channels: ch,
-            sample_rate: self.timeline.transport.sample_rate,
-        }))
+        if frame.data.len() < samples {
+            frame.data.resize(samples, 0.0);
+        } else {
+            frame.data.truncate(samples);
+        }
+        frame.data[..samples].copy_from_slice(&self.output_buf[..samples]);
+        frame.num_frames = frames;
+        frame.num_channels = ch;
+        frame.sample_rate = self.timeline.transport.sample_rate;
+
+        Ok(true)
     }
 
     /// Process the entire timeline and collect all frames.
@@ -72,12 +97,20 @@ impl TimelineProcessor {
         self.timeline.transport.seek(0);
         self.timeline.transport.play();
 
-        let mut all_samples = Vec::new();
-        loop {
-            match self.next_frame()? {
-                Some(frame) => all_samples.extend_from_slice(&frame.data),
-                None => break,
-            }
+        let capacity = self
+            .timeline
+            .duration_samples()
+            .saturating_mul(self.timeline.output_channels as u64)
+            .min(usize::MAX as u64) as usize;
+        let mut all_samples = Vec::with_capacity(capacity);
+        let mut frame = AudioFrame {
+            data: Vec::with_capacity(self.timeline.frame_size * self.timeline.output_channels),
+            num_frames: 0,
+            num_channels: self.timeline.output_channels,
+            sample_rate: self.timeline.transport.sample_rate,
+        };
+        while self.next_frame_into(&mut frame)? {
+            all_samples.extend_from_slice(&frame.data);
         }
         Ok(all_samples)
     }
@@ -100,16 +133,17 @@ impl TimelineProcessor {
         self.timeline.seek(0);
         self.timeline.transport.play();
 
-        loop {
-            match self.next_frame()? {
-                Some(frame) => {
-                    for &s in &frame.data {
-                        writer
-                            .write_sample(s.clamp(-1.0f32, 1.0))
-                            .map_err(|e| format!("Write error: {e}"))?;
-                    }
-                }
-                None => break,
+        let mut frame = AudioFrame {
+            data: Vec::with_capacity(self.timeline.frame_size * self.timeline.output_channels),
+            num_frames: 0,
+            num_channels: self.timeline.output_channels,
+            sample_rate: self.timeline.transport.sample_rate,
+        };
+        while self.next_frame_into(&mut frame)? {
+            for &s in &frame.data {
+                writer
+                    .write_sample(s.clamp(-1.0f32, 1.0))
+                    .map_err(|e| format!("Write error: {e}"))?;
             }
         }
 
@@ -184,10 +218,7 @@ mod tests {
         assert!(samples.len() >= 4800);
         // Check DC value (skip first sample for decoder warmup)
         for &s in &samples[1..4800] {
-            assert!(
-                (s - 0.7).abs() < 0.02,
-                "Expected ~0.7, got {s}"
-            );
+            assert!((s - 0.7).abs() < 0.02, "Expected ~0.7, got {s}");
         }
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -211,6 +242,37 @@ mod tests {
 
         assert!(samples.len() >= 2048);
         assert!(proc.is_finished());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn next_frame_into_reuses_frame_allocation() {
+        let dir = std::env::temp_dir().join("sotf_test_tl_next_frame_into");
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("src.wav");
+        create_dc_wav(&src, 48000, 1, 2048, 0.4);
+
+        let mut tl = Timeline::new(1, 48000, 1024);
+        let mut track = Track::new("T1", 1, 48000);
+        track.add_region(Region::new(Clip::from_file(&src, 2048), 0));
+        tl.add_track(track);
+        tl.build().unwrap();
+        tl.transport.play();
+
+        let mut proc = TimelineProcessor::new(tl);
+        let mut frame = AudioFrame {
+            data: Vec::with_capacity(1024),
+            num_frames: 0,
+            num_channels: 1,
+            sample_rate: 48000,
+        };
+
+        assert!(proc.next_frame_into(&mut frame).unwrap());
+        let ptr = frame.data.as_ptr();
+        assert!(proc.next_frame_into(&mut frame).unwrap());
+
+        assert_eq!(frame.data.as_ptr(), ptr);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

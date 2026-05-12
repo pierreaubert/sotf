@@ -11,20 +11,26 @@ mod tests {
     use std::path::Path;
 
     /// Create a test WAV file with a constant DC value per channel.
-    fn create_dc_wav(path: &Path, sample_rate: u32, channels: u16, num_frames: usize, dc: f32) {
+    fn create_dc_wav(
+        path: &Path,
+        sample_rate: u32,
+        channels: u16,
+        num_frames: usize,
+        dc: f32,
+    ) -> hound::Result<()> {
         let spec = hound::WavSpec {
             channels,
             sample_rate,
             bits_per_sample: 32,
             sample_format: hound::SampleFormat::Float,
         };
-        let mut writer = hound::WavWriter::create(path, spec).unwrap();
+        let mut writer = hound::WavWriter::create(path, spec)?;
         for _ in 0..num_frames {
             for _ in 0..channels {
-                writer.write_sample(dc).unwrap();
+                writer.write_sample(dc)?;
             }
         }
-        writer.finalize().unwrap();
+        writer.finalize()
     }
 
     fn temp_dir(name: &str) -> std::path::PathBuf {
@@ -41,7 +47,7 @@ mod tests {
         let ch = 2;
         let frames = 4800;
         let dc = 0.5;
-        create_dc_wav(&wav_path, sr, ch, frames, dc);
+        create_dc_wav(&wav_path, sr, ch, frames, dc).unwrap();
 
         let mut timeline = Timeline::new(ch as usize, sr, 1024);
 
@@ -84,8 +90,8 @@ mod tests {
         let sr = 48000;
         let ch: u16 = 1;
         let frames = 2048;
-        create_dc_wav(&wav1, sr, ch, frames, 0.3);
-        create_dc_wav(&wav2, sr, ch, frames, 0.4);
+        create_dc_wav(&wav1, sr, ch, frames, 0.3).unwrap();
+        create_dc_wav(&wav2, sr, ch, frames, 0.4).unwrap();
 
         let mut timeline = Timeline::new(ch as usize, sr, 1024);
 
@@ -121,7 +127,7 @@ mod tests {
         let dir = temp_dir("mute");
         let wav = dir.join("audio.wav");
         let sr = 48000;
-        create_dc_wav(&wav, sr, 1, 2048, 1.0);
+        create_dc_wav(&wav, sr, 1, 2048, 1.0).unwrap();
 
         let mut timeline = Timeline::new(1, sr, 1024);
 
@@ -138,7 +144,10 @@ mod tests {
 
         // Muted track should produce silence
         for (i, &s) in output.iter().enumerate() {
-            assert!(s.abs() < 1e-6, "Sample {i}: muted track should be silent, got {s}");
+            assert!(
+                s.abs() < 1e-6,
+                "Sample {i}: muted track should be silent, got {s}"
+            );
         }
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -150,8 +159,8 @@ mod tests {
         let wav1 = dir.join("t1.wav");
         let wav2 = dir.join("t2.wav");
         let sr = 48000;
-        create_dc_wav(&wav1, sr, 1, 2048, 0.5);
-        create_dc_wav(&wav2, sr, 1, 2048, 0.8);
+        create_dc_wav(&wav1, sr, 1, 2048, 0.5).unwrap();
+        create_dc_wav(&wav2, sr, 1, 2048, 0.8).unwrap();
 
         let mut timeline = Timeline::new(1, sr, 1024);
 
@@ -188,7 +197,7 @@ mod tests {
         let dir = temp_dir("offset");
         let wav = dir.join("audio.wav");
         let sr = 48000;
-        create_dc_wav(&wav, sr, 1, 2048, 0.9);
+        create_dc_wav(&wav, sr, 1, 2048, 0.9).unwrap();
 
         let mut timeline = Timeline::new(1, sr, 1024);
 
@@ -203,7 +212,10 @@ mod tests {
         let mut output1 = vec![0.0f32; 1024];
         timeline.process(&mut output1).unwrap();
         for (i, &s) in output1.iter().enumerate() {
-            assert!(s.abs() < 1e-6, "Block 1, sample {i}: should be silent, got {s}");
+            assert!(
+                s.abs() < 1e-6,
+                "Block 1, sample {i}: should be silent, got {s}"
+            );
         }
 
         // Second block (1024..2048): clip is playing → DC
@@ -226,7 +238,7 @@ mod tests {
         let wav = dir.join("audio.wav");
         let sr = 48000;
         let frames = 4800;
-        create_dc_wav(&wav, sr, 1, frames, 1.0);
+        create_dc_wav(&wav, sr, 1, frames, 1.0).unwrap();
 
         let block_size = 1024;
         let mut timeline = Timeline::new(1, sr, block_size);
@@ -272,7 +284,7 @@ mod tests {
         let dir = temp_dir("loop");
         let wav = dir.join("audio.wav");
         let sr = 48000;
-        create_dc_wav(&wav, sr, 1, 4096, 0.6);
+        create_dc_wav(&wav, sr, 1, 4096, 0.6).unwrap();
 
         let mut timeline = Timeline::new(1, sr, 1024);
 
@@ -304,17 +316,11 @@ mod tests {
         let mut timeline = Timeline::new(2, 48000, 1024);
 
         let mut t1 = Track::new("T1", 2, 48000);
-        t1.add_region(Region::new(
-            Clip::new(AudioSource::Driver, 48000),
-            0,
-        ));
+        t1.add_region(Region::new(Clip::new(AudioSource::Driver, 48000), 0));
         timeline.add_track(t1);
 
         let mut t2 = Track::new("T2", 2, 48000);
-        t2.add_region(Region::new(
-            Clip::new(AudioSource::Driver, 24000),
-            48000,
-        ));
+        t2.add_region(Region::new(Clip::new(AudioSource::Driver, 24000), 48000));
         timeline.add_track(t2);
 
         // T1: [0, 48000), T2: [48000, 72000)

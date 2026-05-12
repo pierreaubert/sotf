@@ -62,9 +62,10 @@ pub enum DecoderCommand {
     Play(AudioSource),
     /// Start playing an audio source at a specific position in seconds
     PlayAt(AudioSource, f64),
-    /// Start silent source (for HAL input plugins)
-    /// Sends empty frames at regular intervals for source plugins
-    StartSilentSource,
+    /// Start silent source (for HAL input plugins).
+    /// Sends empty frames at regular intervals for source plugins using the
+    /// configured pipeline input channel count.
+    StartSilentSource(usize),
     /// Pause decoding
     Pause,
     /// Resume decoding

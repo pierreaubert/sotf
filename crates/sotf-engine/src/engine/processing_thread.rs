@@ -8,16 +8,7 @@ use super::{
     DecoderMessage, PluginConfig, ProcessingCommand, ProcessingMessage, ProcessingResponse,
     ThreadEvent,
 };
-use sotf_plugins::{
-    AecPlugin, AecPluginParams, BeamformerPlugin, BeamformerPluginParams, CompressorPluginParams,
-    ConvolutionPlugin, ConvolutionPluginParams, CrossoverPlugin, CrossoverPluginParams,
-    DeEsserPlugin, DeEsserPluginParams, DelayPlugin, DelayPluginParams, DenoiserPlugin,
-    DenoiserPluginParams, DynamicEqPlugin, DynamicEqPluginParams, EqPluginParams,
-    ExpanderPluginParams, GainPluginParams, GatePluginParams, Host, LimiterPluginParams,
-    LoudnessCompensationPluginParams, LoudnessMonitorPlugin, MultibandCompressorPluginParams,
-    MultibandExpanderPluginParams, Plugin, PluginHost, SpectrumAnalyzerPlugin, SpectrumConfig,
-    StereoImagerPluginParams, UpmixerPluginParams,
-};
+use sotf_plugins::{Host, Plugin, PluginHost};
 
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
 use std::time::Duration;
@@ -222,6 +213,31 @@ impl ProcessingState {
         }
     }
 
+    fn compute_crossfade_step(input_frames: usize, sample_rate: u32) -> f32 {
+        if input_frames == 0 {
+            return 1.0;
+        }
+
+        let crossfade_duration_ms = 50.0;
+        let block_duration_ms = (input_frames as f32 * 1000.0) / sample_rate as f32;
+        (block_duration_ms / crossfade_duration_ms).min(0.5)
+    }
+
+    fn fade_in_unblended_tail(
+        output: &mut [f32],
+        blend_samples: usize,
+        output_samples: usize,
+        alpha: f32,
+    ) {
+        if output_samples <= blend_samples {
+            return;
+        }
+
+        for sample in &mut output[blend_samples..output_samples] {
+            *sample *= alpha;
+        }
+    }
+
     /// Process a frame
     /// Returns the actual number of output frames written
     fn process_frame(
@@ -260,10 +276,8 @@ impl ProcessingState {
             let blend_samples = output_samples.min(prev_actual * self.channels);
 
             // Compute crossfade step from actual frame size (~50ms crossfade)
-            if self.crossfade_step == 0.0 && input_frames > 0 {
-                let crossfade_duration_ms = 50.0;
-                let block_duration_ms = (input_frames as f32 * 1000.0) / self.sample_rate as f32;
-                self.crossfade_step = (block_duration_ms / crossfade_duration_ms).min(0.5);
+            if self.crossfade_step == 0.0 {
+                self.crossfade_step = Self::compute_crossfade_step(input_frames, self.sample_rate);
             }
 
             // Blend buffers: output = (1-alpha)*prev + alpha*current
@@ -273,6 +287,7 @@ impl ProcessingState {
                 &self.prev_process_buffer[..blend_samples],
                 alpha,
             );
+            Self::fade_in_unblended_tail(output, blend_samples, output_samples, alpha);
 
             // Advance crossfade
             self.crossfade_progress = (self.crossfade_progress + self.crossfade_step).min(1.0);
@@ -906,592 +921,6 @@ fn create_plugin(
     sotf_plugins::create_plugin(plugin_type, parameters, channels, sample_rate)
 }
 
-/// Legacy inline factory -- kept for reference, replaced by `sotf_plugins::create_plugin`.
-#[allow(dead_code, unreachable_code)]
-fn create_plugin_legacy(
-    plugin_type: &str,
-    parameters: &serde_json::Value,
-    channels: usize,
-    sample_rate: u32,
-) -> Result<Box<dyn Plugin>, String> {
-    use sotf_plugins::{
-        BinauralDecoderPlugin, CompressorPlugin, CrossfeedPlugin, CrossfeedPluginParams, EqPlugin,
-        ExpanderPlugin, GainPlugin, GatePlugin, InPlacePluginAdapter, LimiterPlugin,
-        LoudnessCompensationPlugin, MatrixPlugin, MultibandCompressorPlugin,
-        MultibandExpanderPlugin, UpmixerPlugin,
-    };
-
-    match plugin_type {
-        "gain" => {
-            let params: GainPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse gain plugin parameters: {}", e))?;
-
-            let plugin = GainPlugin::from_params(channels, params)?;
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
-        }
-
-        "upmixer" => {
-            // Upmixer is always 2->5 channels
-            if channels != 2 {
-                return Err(format!(
-                    "Upmixer requires 2 input channels, got {}",
-                    channels
-                ));
-            }
-
-            let params: UpmixerPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse upmixer plugin parameters: {}", e))?;
-
-            let plugin = UpmixerPlugin::from_params(params);
-            Ok(Box::new(plugin))
-        }
-
-        "eq" | "parametric_eq" => {
-            let params: EqPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse EQ plugin parameters: {}", e))?;
-
-            let plugin = EqPlugin::from_params(channels, sample_rate, params)?;
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
-        }
-
-        "compressor" => {
-            let params: CompressorPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse compressor plugin parameters: {}", e))?;
-
-            let plugin = CompressorPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
-        }
-
-        "limiter" => {
-            let params: LimiterPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse limiter plugin parameters: {}", e))?;
-
-            let plugin = LimiterPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
-        }
-
-        "loudness_monitor" => {
-            // Engine-created LoudnessMonitors carry the inter-channel
-            // correlation matrix so the spatial-spider visualiser has data
-            // to render. Direct `LoudnessMonitor::new` callers (CLI tools,
-            // tests) keep the matrix off by default to avoid pulling N²
-            // memory and compute into consumers that don't need it.
-            let plugin = LoudnessMonitorPlugin::new(channels)
-                .map_err(|e| format!("Failed to create loudness monitor: {}", e))?
-                .with_spatial();
-            Ok(Box::new(plugin))
-        }
-
-        "spectrum_analyzer" => {
-            // Check for config in parameters
-            let config: SpectrumConfig = if parameters.is_null() {
-                SpectrumConfig::default()
-            } else {
-                serde_json::from_value(parameters.clone())
-                    .unwrap_or_else(|_| SpectrumConfig::default())
-            };
-
-            let plugin = SpectrumAnalyzerPlugin::with_config(channels, config)
-                .map_err(|e| format!("Failed to create spectrum analyzer: {}", e))?;
-            Ok(Box::new(plugin))
-        }
-
-        "convolution" => {
-            let params: ConvolutionPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse convolution plugin parameters: {}", e))?;
-
-            let plugin = ConvolutionPlugin::from_params(channels, sample_rate, params)
-                .map_err(|e| format!("Failed to create convolution plugin: {}", e))?;
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
-        }
-
-        "gate" => {
-            let params: GatePluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse gate plugin parameters: {}", e))?;
-
-            let plugin = GatePlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
-        }
-
-        "de_esser" => {
-            let params: DeEsserPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse de-esser plugin parameters: {}", e))?;
-
-            let plugin = DeEsserPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
-        }
-
-        "dynamic_eq" => {
-            let params: DynamicEqPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse dynamic EQ plugin parameters: {}", e))?;
-
-            let plugin = DynamicEqPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
-        }
-
-        "expander" => {
-            let params: ExpanderPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse expander plugin parameters: {}", e))?;
-
-            let plugin = ExpanderPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
-        }
-
-        "multiband_compressor" => {
-            let params: MultibandCompressorPluginParams =
-                serde_json::from_value(parameters.clone()).map_err(|e| {
-                    format!(
-                        "Failed to parse multiband compressor plugin parameters: {}",
-                        e
-                    )
-                })?;
-
-            let plugin = MultibandCompressorPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
-        }
-
-        "multiband_expander" => {
-            let params: MultibandExpanderPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| {
-                    format!(
-                        "Failed to parse multiband expander plugin parameters: {}",
-                        e
-                    )
-                })?;
-
-            let plugin = MultibandExpanderPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
-        }
-
-        "delay" => {
-            let params: DelayPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse delay plugin parameters: {}", e))?;
-
-            let plugin = DelayPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
-        }
-
-        "aec" => {
-            let params: AecPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse AEC plugin parameters: {}", e))?;
-
-            let plugin = AecPlugin::from_params(sample_rate, params);
-            Ok(Box::new(plugin))
-        }
-
-        "beamformer" => {
-            let params: BeamformerPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse beamformer plugin parameters: {}", e))?;
-
-            let plugin = BeamformerPlugin::from_params(sample_rate, params);
-            Ok(Box::new(plugin))
-        }
-
-        #[cfg(feature = "iamf")]
-        "ambisonics_decoder" => {
-            let config: sotf_plugin_ambisonics::AmbisonicsDecoderConfig =
-                serde_json::from_value(parameters.clone())
-                    .map_err(|e| format!("Failed to parse ambisonics decoder parameters: {}", e))?;
-
-            let mut plugin = sotf_plugin_ambisonics::AmbisonicsDecoderPlugin::new(&config)?;
-            plugin.initialize(sample_rate)?;
-            Ok(Box::new(plugin))
-        }
-
-        #[cfg(not(feature = "iamf"))]
-        "ambisonics_decoder" => Err("Ambisonics decoder requires the 'iamf' feature".to_string()),
-
-        "loudness_compensation" => {
-            let params: LoudnessCompensationPluginParams =
-                serde_json::from_value(parameters.clone()).map_err(|e| {
-                    format!(
-                        "Failed to parse loudness compensation plugin parameters: {}",
-                        e
-                    )
-                })?;
-
-            let plugin = LoudnessCompensationPlugin::from_params(channels, params)?;
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
-        }
-
-        "fletcher_munson" => {
-            // Backward compat: route to LoudnessCompensation in Auto mode
-            use sotf_plugins::plugin_loudness_compensation::FletcherMunsonCompat;
-
-            let fm: FletcherMunsonCompat = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse Fletcher-Munson plugin parameters: {}", e))?;
-            let lc_params = fm.into_loudness_compensation_params();
-
-            let plugin = LoudnessCompensationPlugin::from_params(channels, lc_params)?;
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
-        }
-
-        "matrix" => {
-            #[derive(Debug, Clone, serde::Deserialize)]
-            struct MatrixPluginParams {
-                // Dense mapping parameters (legacy)
-                #[serde(default)]
-                input_channels: Option<usize>,
-                #[serde(default)]
-                output_channels: Option<usize>,
-                // Sparse mapping parameters
-                #[serde(default)]
-                input_channel_map: Option<Vec<usize>>,
-                #[serde(default)]
-                output_channel_map: Option<Vec<usize>>,
-                // Matrix data
-                matrix: Vec<f32>,
-                // Channel states for Mute/Solo
-                #[serde(default)]
-                channel_states: Option<Vec<sotf_plugins::ChannelState>>,
-            }
-
-            let params: MatrixPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse matrix plugin parameters: {}", e))?;
-
-            {
-                let off_diag: Vec<_> = params
-                    .matrix
-                    .iter()
-                    .enumerate()
-                    .filter(|(idx, v)| {
-                        let cols = params
-                            .input_channels
-                            .or(params.input_channel_map.as_ref().map(|m| m.len()))
-                            .unwrap_or(1);
-                        let row = idx / cols;
-                        let col = idx % cols;
-                        row != col && v.abs() > 1e-6
-                    })
-                    .map(|(idx, v)| format!("[{}]={:.3}", idx, v))
-                    .collect();
-                log::debug!(
-                    "[create_plugin:matrix] deserialized matrix len={}, off-diagonal entries: {:?}",
-                    params.matrix.len(),
-                    off_diag,
-                );
-            }
-
-            // Determine if using sparse or dense mapping
-            let mut plugin = if let (Some(in_map), Some(out_map)) =
-                (params.input_channel_map, params.output_channel_map)
-            {
-                // Sparse mapping
-                MatrixPlugin::with_sparse_mapping(in_map, out_map, params.matrix)
-                    .map_err(|e| format!("Failed to create sparse matrix plugin: {}", e))?
-            } else if let (Some(in_ch), Some(out_ch)) =
-                (params.input_channels, params.output_channels)
-            {
-                // Auto-resize only for square matrices (in_ch == out_ch) that don't
-                // match the current chain channel count. Non-square matrices (in_ch != out_ch)
-                // intentionally change channel count (e.g., 1→2 for recording routing)
-                // and must be used as-is when in_ch matches the chain.
-                if in_ch == out_ch && in_ch != channels {
-                    log::info!(
-                        "[create_plugin:matrix] Resizing square matrix from {}x{} to {}x{} to match chain",
-                        in_ch,
-                        out_ch,
-                        channels,
-                        channels
-                    );
-                    let mut matrix = params.matrix;
-                    crate::plugins::resize_matrix(&mut matrix, in_ch, out_ch, channels, channels);
-                    MatrixPlugin::with_matrix(channels, channels, matrix)
-                        .map_err(|e| format!("Failed to create resized matrix plugin: {}", e))?
-                } else {
-                    // Use the matrix as configured (including non-square channel-changing matrices)
-                    MatrixPlugin::with_matrix(in_ch, out_ch, params.matrix)
-                        .map_err(|e| format!("Failed to create matrix plugin: {}", e))?
-                }
-            } else {
-                return Err(
-                    "Matrix plugin requires either (input_channels, output_channels) \
-                     or (input_channel_map, output_channel_map)"
-                        .to_string(),
-                );
-            };
-
-            if let Some(mut states) = params.channel_states {
-                // Resize channel_states if it doesn't match the plugin's output channels
-                let needed = plugin.output_channels();
-                if states.len() != needed {
-                    log::info!(
-                        "[Engine] Resizing channel_states from {} to {} entries",
-                        states.len(),
-                        needed
-                    );
-                    states.resize(needed, sotf_plugins::ChannelState::default());
-                }
-                log::debug!(
-                    "[Engine] Matrix Plugin created with channel_states: {:?}",
-                    states
-                );
-                plugin = plugin.with_channel_states(states);
-            } else {
-                log::trace!("[Engine] Matrix Plugin created WITHOUT channel_states");
-            }
-
-            Ok(Box::new(plugin))
-        }
-
-        "binaural_decoder" => {
-            use sotf_plugins::BinauralDecoderParams;
-
-            let params: BinauralDecoderParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse binaural decoder parameters: {}", e))?;
-
-            let plugin = BinauralDecoderPlugin::from_params(params);
-            Ok(Box::new(plugin))
-        }
-
-        "crossover" => {
-            let params: CrossoverPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse crossover plugin parameters: {}", e))?;
-
-            let plugin = CrossoverPlugin::from_params(channels, &params)?;
-            Ok(Box::new(plugin))
-        }
-
-        // HAL plugins (macOS only, requires 'hal' feature)
-        #[cfg(all(target_os = "macos", feature = "hal"))]
-        "hal_input" => {
-            use sotf_plugins::{HalInputPlugin, HalInputPluginParams};
-
-            let params: HalInputPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse HAL input plugin parameters: {}", e))?;
-
-            let plugin = HalInputPlugin::from_params(params)?;
-            Ok(Box::new(plugin))
-        }
-
-        #[cfg(all(target_os = "macos", feature = "hal"))]
-        "hal_output" => {
-            use sotf_plugins::{HalOutputPlugin, HalOutputPluginParams};
-
-            let params: HalOutputPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse HAL output plugin parameters: {}", e))?;
-
-            let plugin = HalOutputPlugin::from_params(params)?;
-            Ok(Box::new(plugin))
-        }
-
-        "channel_mute_solo" => {
-            use sotf_plugins::{
-                ChannelMuteSoloParams, ChannelMuteSoloPlugin, InPlacePluginAdapter,
-            };
-
-            let params: ChannelMuteSoloParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse channel_mute_solo parameters: {}", e))?;
-
-            let plugin = ChannelMuteSoloPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
-        }
-
-        "xtc" | "crosstalk_cancellation" => {
-            use sotf_plugins::{XtcPlugin, XtcPluginParams};
-
-            // XTC requires exactly 2 channels (stereo)
-            if channels != 2 {
-                return Err(format!(
-                    "XTC plugin requires 2 input channels (stereo), got {}",
-                    channels
-                ));
-            }
-
-            let params: XtcPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse XTC plugin parameters: {}", e))?;
-
-            let plugin = XtcPlugin::from_params(params, sample_rate)?;
-            Ok(Box::new(plugin))
-        }
-
-        "denoiser" | "wiener_denoiser" => {
-            use sotf_plugins::InPlacePluginAdapter;
-
-            let params: DenoiserPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse denoiser plugin parameters: {}", e))?;
-
-            let plugin = DenoiserPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
-        }
-
-        "pnd" | "varispeed" => {
-            use sotf_plugins::{PndPlugin, PndPluginParams};
-
-            let params: PndPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse PND plugin parameters: {}", e))?;
-
-            let plugin = PndPlugin::from_params(channels, params);
-            Ok(Box::new(plugin))
-        }
-
-        "ab_compare" | "ab" => {
-            use sotf_plugins::{ABComparePlugin, ABComparePluginParams};
-
-            let params: ABComparePluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse A/B compare plugin parameters: {}", e))?;
-
-            let mut plugin = ABComparePlugin::from_params(channels, params)?;
-            plugin.initialize(sample_rate)?;
-            Ok(Box::new(plugin))
-        }
-
-        "resampler" => {
-            use sotf_plugins::ResamplerPlugin;
-
-            #[derive(serde::Deserialize)]
-            struct ResamplerParams {
-                input_sample_rate: u32,
-                output_sample_rate: u32,
-                #[serde(default = "default_chunk_size")]
-                chunk_size: usize,
-            }
-            fn default_chunk_size() -> usize {
-                1024
-            }
-
-            let params: ResamplerParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse resampler plugin parameters: {}", e))?;
-
-            let plugin = ResamplerPlugin::new(
-                channels,
-                params.input_sample_rate,
-                params.output_sample_rate,
-                params.chunk_size,
-            )
-            .map_err(|e| format!("Failed to create resampler: {}", e))?;
-
-            Ok(Box::new(plugin))
-        }
-
-        "band_split" => {
-            use sotf_plugins::{BandSplitPlugin, BandSplitPluginParams};
-
-            let params: BandSplitPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse band_split parameters: {}", e))?;
-
-            let plugin = BandSplitPlugin::from_params(channels, &params)?;
-            Ok(Box::new(plugin))
-        }
-
-        "band_merge" => {
-            use sotf_plugins::{BandMergePlugin, BandMergePluginParams};
-
-            let params: BandMergePluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse band_merge parameters: {}", e))?;
-
-            // `channels` is the current chain channel count (= output_channels * bands after a split).
-            // BandMerge::from_params expects output_channels, so divide by bands.
-            let output_channels = channels / params.bands;
-            let plugin = BandMergePlugin::from_params(output_channels, &params)?;
-            Ok(Box::new(plugin))
-        }
-
-        "downmix" => {
-            use sotf_plugins::{DownmixPlugin, DownmixPluginParams};
-
-            let mut params: DownmixPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse downmix parameters: {}", e))?;
-            if params.input_channels != channels {
-                log::info!(
-                    "[create_plugin:downmix] Adapting input_channels from {} to current chain width {}",
-                    params.input_channels,
-                    channels
-                );
-                params.input_channels = channels;
-            }
-
-            let plugin = DownmixPlugin::from_params(params);
-            Ok(Box::new(plugin))
-        }
-
-        "mono_to_stereo" => {
-            use sotf_plugins::{MonoToStereoPlugin, MonoToStereoPluginParams};
-
-            let params: MonoToStereoPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse mono_to_stereo parameters: {}", e))?;
-
-            let plugin = MonoToStereoPlugin::from_params(channels, params);
-            Ok(Box::new(plugin))
-        }
-
-        "crossfeed" => {
-            // Crossfeed requires exactly 2 channels (stereo)
-            if channels != 2 {
-                return Err(format!(
-                    "Crossfeed plugin requires 2 input channels (stereo), got {}",
-                    channels
-                ));
-            }
-
-            let params: CrossfeedPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse crossfeed plugin parameters: {}", e))?;
-
-            let plugin = CrossfeedPlugin::new(params)
-                .map_err(|e| format!("Failed to create crossfeed plugin: {}", e))?;
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
-        }
-
-        "stereo_imager" => {
-            let params: StereoImagerPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse stereo imager plugin parameters: {}", e))?;
-
-            let plugin = sotf_plugins::StereoImagerPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
-        }
-
-        "transient_shaper" => {
-            use sotf_plugins::{TransientShaperPlugin, TransientShaperPluginParams};
-
-            let params: TransientShaperPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| {
-                    format!("Failed to parse transient shaper plugin parameters: {}", e)
-                })?;
-
-            let plugin = TransientShaperPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
-        }
-
-        "saturation" => {
-            use sotf_plugins::{SaturationPlugin, SaturationPluginParams};
-
-            let params: SaturationPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse saturation plugin parameters: {}", e))?;
-
-            let plugin = SaturationPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
-        }
-
-        "linear_phase_eq" => {
-            use sotf_plugins::{LinearPhaseEqPlugin, LinearPhaseEqPluginParams};
-
-            let params: LinearPhaseEqPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse linear-phase EQ plugin parameters: {}", e))?;
-
-            let plugin = LinearPhaseEqPlugin::from_params(channels, sample_rate, params)
-                .map_err(|e| format!("Failed to create linear-phase EQ plugin: {}", e))?;
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
-        }
-
-        "spectral_compressor" => {
-            use sotf_plugins::{SpectralCompressorPlugin, SpectralCompressorPluginParams};
-
-            let params: SpectralCompressorPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| {
-                    format!(
-                        "Failed to parse spectral compressor plugin parameters: {}",
-                        e
-                    )
-                })?;
-
-            let plugin = SpectralCompressorPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
-        }
-
-        other => Err(format!("Unknown plugin type: {}", other)),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1606,6 +1035,20 @@ mod tests {
             warnings
         );
         assert_eq!(host.output_channels(), 2);
+    }
+
+    #[test]
+    fn invalid_spectrum_analyzer_config_is_reported() {
+        let config = PluginConfig::new("spectrum_analyzer", serde_json::json!("not an object"));
+
+        let (_host, warnings) = build_plugin_host(&[config], 48_000, 2).unwrap();
+
+        assert_eq!(warnings.len(), 1);
+        assert!(
+            warnings[0].contains("Failed to parse spectrum analyzer params"),
+            "unexpected warning: {}",
+            warnings[0]
+        );
     }
 
     #[test]
@@ -2039,6 +1482,21 @@ mod tests {
             // Zero-length buffers — must not panic
             let _ = plugin.process(&[], &mut [], &context);
         }
+    }
+
+    #[test]
+    fn crossfade_zero_frame_block_completes_instead_of_leaking_prev_host() {
+        assert_eq!(ProcessingState::compute_crossfade_step(0, 48_000), 1.0);
+    }
+
+    #[test]
+    fn crossfade_fades_in_unblended_new_host_tail() {
+        let mut output = vec![1.0; 8];
+
+        ProcessingState::fade_in_unblended_tail(&mut output, 4, 8, 0.25);
+
+        assert_eq!(&output[..4], &[1.0; 4]);
+        assert_eq!(&output[4..], &[0.25; 4]);
     }
 
     // ── Thread isolation tests for send_or_interrupt ──

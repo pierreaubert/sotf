@@ -878,8 +878,18 @@ impl PluginChain {
         };
 
         // Save to file
-        let json = serde_json::to_string_pretty(&preset)?;
-        std::fs::write(&full_path, json)?;
+        let json = serde_json::to_string_pretty(&preset).map_err(|e| {
+            log::error!("Failed to serialize plugin chain preset: {}", e);
+            e
+        })?;
+        std::fs::write(&full_path, json).map_err(|e| {
+            log::error!(
+                "Failed to write plugin chain preset to {}: {}",
+                full_path.display(),
+                e
+            );
+            e
+        })?;
 
         log::info!("Saved plugin chain to {}", full_path.display());
         Ok(())
@@ -920,7 +930,14 @@ impl PluginChain {
         log::debug!("Full path: {}", full_path.display());
 
         // Load from file
-        let json = std::fs::read_to_string(&full_path)?;
+        let json = std::fs::read_to_string(&full_path).map_err(|e| {
+            log::error!(
+                "Failed to read plugin chain preset from {}: {}",
+                full_path.display(),
+                e
+            );
+            e
+        })?;
         log::debug!("Read {} bytes from file", json.len());
 
         // Parse as raw JSON so individual plugin failures don't reject the file.
@@ -929,7 +946,14 @@ impl PluginChain {
             Err(_) => {
                 // Fall back to loading as legacy format (direct JSON array)
                 log::info!("Loading legacy plugin preset format (no version field)");
-                let plugins: Vec<serde_json::Value> = serde_json::from_str(&json)?;
+                let plugins: Vec<serde_json::Value> = serde_json::from_str(&json).map_err(|e| {
+                    log::error!(
+                        "Failed to parse plugin chain preset {} as current or legacy JSON: {}",
+                        full_path.display(),
+                        e
+                    );
+                    e
+                })?;
                 PluginPresetRaw {
                     version: 0, // Mark as legacy
                     plugins,
@@ -1063,7 +1087,12 @@ impl PluginChain {
     /// Update input channels for plugins that depend on the output of previous plugins (BinauralDecoder, Matrix)
     /// This should be called after any plugin chain modification (add, remove, move, toggle)
     pub fn update_channel_dependent_plugins(&mut self) {
-        let mut current_channels = 2; // Start with stereo
+        self.update_channel_dependent_plugins_for_input(2);
+    }
+
+    /// Update channel-dependent plugins for a known source/input channel count.
+    pub fn update_channel_dependent_plugins_for_input(&mut self, input_channels: usize) {
+        let mut current_channels = input_channels.max(1);
 
         for i in 0..self.plugins.len() {
             // Update plugins that depend on input channels
@@ -1974,6 +2003,21 @@ mod tests {
                     *channels, 10,
                     "EQ after 5.1.4 upmixer should have 10 channels"
                 );
+            } else {
+                panic!("expected EQ");
+            }
+        }
+    }
+
+    #[test]
+    fn test_update_channels_respects_mono_input() {
+        let mut chain = PluginChain::new();
+        chain.add_plugin(&PluginType::EQ);
+        chain.update_channel_dependent_plugins_for_input(1);
+
+        if let Some(p) = chain.get_plugin(0) {
+            if let PluginSettings::EQ { channels, .. } = &p.settings {
+                assert_eq!(*channels, 1, "EQ on mono input should stay mono");
             } else {
                 panic!("expected EQ");
             }

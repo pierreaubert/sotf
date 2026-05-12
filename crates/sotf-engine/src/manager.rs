@@ -182,7 +182,10 @@ impl StreamingState {
             4 => Self::Paused,
             5 => Self::Seeking,
             6 => Self::Error,
-            other => panic!("invalid StreamingState discriminant: {}", other),
+            other => {
+                log::warn!("invalid StreamingState discriminant: {}", other);
+                Self::Error
+            }
         }
     }
 }
@@ -238,15 +241,23 @@ impl AudioEngineManager {
     pub fn load_file<P: AsRef<Path>>(&mut self, file_path: P) -> AudioDecoderResult<AudioFileInfo> {
         let path = file_path.as_ref().to_path_buf();
 
-        self.set_state(StreamingState::Loading);
-
         // Stop any current playback
-        self.stop()?;
+        if let Err(e) = self.stop() {
+            self.set_state(StreamingState::Error);
+            return Err(e);
+        }
+        self.set_state(StreamingState::Loading);
 
         log::debug!("[AudioEngineManager] Loading file: {:?}", path);
 
         // Probe the file to get format and spec information
-        let (format, spec) = probe_file(&path)?;
+        let (format, spec) = match probe_file(&path) {
+            Ok(info) => info,
+            Err(e) => {
+                self.set_state(StreamingState::Error);
+                return Err(e);
+            }
+        };
 
         let duration_seconds = spec.duration().map(|d| d.as_secs_f64());
 
@@ -284,13 +295,22 @@ impl AudioEngineManager {
                 format_hint: _,
                 seekable: _,
             } => {
+                if let Err(e) = self.stop() {
+                    self.set_state(StreamingState::Error);
+                    return Err(e);
+                }
                 self.set_state(StreamingState::Loading);
-                self.stop()?;
 
                 log::debug!("[AudioEngineManager] Loading URL: {}", url);
 
                 // Create decoder from source to probe spec
-                let decoder = crate::decoder::create_decoder_from_source(&source)?;
+                let decoder = match crate::decoder::create_decoder_from_source(&source) {
+                    Ok(decoder) => decoder,
+                    Err(e) => {
+                        self.set_state(StreamingState::Error);
+                        return Err(e);
+                    }
+                };
                 let spec = decoder.spec().clone();
                 let format = decoder.format();
                 let duration_seconds = spec.duration().map(|d| d.as_secs_f64());
@@ -315,8 +335,11 @@ impl AudioEngineManager {
                 Ok(audio_info)
             }
             AudioSource::ServiceStream { service, track_id } => {
+                if let Err(e) = self.stop() {
+                    self.set_state(StreamingState::Error);
+                    return Err(e);
+                }
                 self.set_state(StreamingState::Loading);
-                self.stop()?;
 
                 log::debug!(
                     "[AudioEngineManager] Loading service stream: {}:{}",
@@ -699,6 +722,7 @@ impl AudioEngineManager {
         let _guard = self.cmd_mutex.lock().unwrap();
         log::debug!("[AudioEngineManager] Stopping");
 
+        let mut shutdown_error = None;
         if let Some(mut engine_arc) = self.engine.swap(None) {
             // shutdown() is internally thread-safe now as it just sends a command.
             // stop() is best-effort: if it fails (e.g., decoder ACK timeout after
@@ -710,7 +734,9 @@ impl AudioEngineManager {
                         e
                     );
                 }
-                engine.shutdown().map_err(AudioDecoderError::IoError)?;
+                if let Err(e) = engine.shutdown() {
+                    shutdown_error = Some(AudioDecoderError::IoError(e));
+                }
             } else {
                 // Another thread is holding a reference (e.g. status polling).
                 // Send commands via the shared Arc.
@@ -720,14 +746,20 @@ impl AudioEngineManager {
                         e
                     );
                 }
-                engine_arc.shutdown().map_err(AudioDecoderError::IoError)?;
+                if let Err(e) = engine_arc.shutdown() {
+                    shutdown_error = Some(AudioDecoderError::IoError(e));
+                }
             }
         }
 
         self.set_state(StreamingState::Idle);
         *self.last_seen_source.lock().unwrap() = None;
 
-        Ok(())
+        if let Some(e) = shutdown_error {
+            Err(e)
+        } else {
+            Ok(())
+        }
     }
 
     /// Seek to position in seconds
@@ -1089,6 +1121,24 @@ mod tests {
         let event = manager.try_recv_event();
         assert!(matches!(event, Some(StreamingEvent::EndOfStream)));
         assert_eq!(manager.get_state(), StreamingState::Idle);
+    }
+
+    #[test]
+    fn invalid_atomic_state_maps_to_error_instead_of_panicking() {
+        let manager = AudioEngineManager::new();
+        manager.state.store(255, Ordering::Relaxed);
+
+        assert_eq!(manager.get_state(), StreamingState::Error);
+    }
+
+    #[test]
+    fn failed_load_does_not_leave_manager_loading() {
+        let mut manager = AudioEngineManager::new();
+
+        let result = manager.load_file("/definitely/not/a/real/file.wav");
+
+        assert!(result.is_err());
+        assert_eq!(manager.get_state(), StreamingState::Error);
     }
 
     #[test]

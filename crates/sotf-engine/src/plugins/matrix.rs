@@ -149,6 +149,9 @@ fn is_ms_decode_matrix(in_ch: usize, out_ch: usize, matrix: &[f32]) -> bool {
 pub fn apply_matrix_preset(in_ch: usize, out_ch: usize, matrix: &mut Vec<f32>, preset: &str) {
     matrix.resize(in_ch * out_ch, 0.0);
     matrix.fill(0.0);
+    if in_ch == 0 || out_ch == 0 {
+        return;
+    }
 
     match preset {
         "Identity" => {
@@ -261,5 +264,19 @@ pub fn upmixer_output_channels(speaker_config: &str) -> usize {
             );
             6
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mono_mix_with_zero_channels_leaves_empty_matrix() {
+        let mut matrix = vec![1.0];
+
+        apply_matrix_preset(0, 2, &mut matrix, "Mono Mix");
+
+        assert!(matrix.is_empty());
     }
 }

@@ -128,13 +128,12 @@ impl Track {
             }
             let clip_position = overlap_start - region_start;
             // Apply time-stretch: map clip position to source position
-            let stretched_pos = if region.clip.time_stretch_ratio != 1.0
-                && region.clip.time_stretch_ratio > 0.0
-            {
-                (clip_position as f64 * region.clip.time_stretch_ratio) as u64
-            } else {
-                clip_position
-            };
+            let stretched_pos =
+                if region.clip.time_stretch_ratio != 1.0 && region.clip.time_stretch_ratio > 0.0 {
+                    (clip_position as f64 * region.clip.time_stretch_ratio) as u64
+                } else {
+                    clip_position
+                };
             // Apply reverse: read from end of source instead of start
             let source_position = if region.clip.reverse {
                 let end = region.clip.source_offset_samples + region.clip.duration_samples;
@@ -170,8 +169,11 @@ impl Track {
                         .map_err(|e| format!("Failed to open source: {e}"))?;
                 if work.source_position > 0 {
                     if let Err(e) = decoder.seek(work.source_position) {
-                    log::warn!("Seek failed for region {} on track '{}': {e}", work.region_idx, self.name);
-                }
+                        return Err(format!(
+                            "Seek failed for region {} on track '{}': {e}",
+                            work.region_idx, self.name
+                        ));
+                    }
                 }
                 self.decoders.insert(
                     work.region_idx,
@@ -181,16 +183,31 @@ impl Track {
                     },
                 );
             } else {
-                let dec = self.decoders.get_mut(&work.region_idx).unwrap();
+                let dec = self.decoders.get_mut(&work.region_idx).ok_or_else(|| {
+                    format!(
+                        "Missing active decoder for region {} on track '{}'",
+                        work.region_idx, self.name
+                    )
+                })?;
                 if dec.source_position != work.source_position {
-                    let _ = dec.decoder.seek(work.source_position);
+                    dec.decoder.seek(work.source_position).map_err(|e| {
+                        format!(
+                            "Seek failed for region {} on track '{}': {e}",
+                            work.region_idx, self.name
+                        )
+                    })?;
                     dec.source_position = work.source_position;
                 }
             }
 
             // Decode
             self.decode_buf.clear();
-            let dec = self.decoders.get_mut(&work.region_idx).unwrap();
+            let dec = self.decoders.get_mut(&work.region_idx).ok_or_else(|| {
+                format!(
+                    "Missing active decoder for region {} on track '{}'",
+                    work.region_idx, self.name
+                )
+            })?;
             let decoded = dec
                 .decoder
                 .decode_into(&mut self.decode_buf)
@@ -216,8 +233,10 @@ impl Track {
 
             // Mix decoded audio into mix_buf with per-clip gain/fade
             let region = &self.regions[work.region_idx];
+            let clip_gain = region.clip.linear_gain();
             for frame in 0..usable_frames {
-                let gain = region.clip.gain_at(work.clip_position + frame as u64);
+                let gain =
+                    clip_gain * region.clip.fade_gain_at(work.clip_position + frame as u64);
                 for ch in 0..self.channels.min(src_channels) {
                     let src_idx = frame * src_channels + ch;
                     let dst_idx = (work.offset_in_block + frame) * self.channels + ch;
@@ -253,7 +272,12 @@ impl Track {
         } else {
             let copy_len = total_samples.min(output.len());
             output[..copy_len].copy_from_slice(&self.mix_buf[..copy_len]);
-            Self::apply_volume_pan(&mut output[..copy_len], self.channels, self.volume, self.pan);
+            Self::apply_volume_pan(
+                &mut output[..copy_len],
+                self.channels,
+                self.volume,
+                self.pan,
+            );
             Ok(num_frames)
         }
     }
@@ -284,5 +308,73 @@ impl Track {
                 *s *= volume;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::decoder::error::{AudioDecoderError, AudioDecoderResult};
+    use crate::decoder::formats::AudioFormat;
+    use crate::decoder::source::AudioSource;
+    use crate::timeline::clip::{Clip, Region};
+
+    struct FailingSeekDecoder {
+        spec: AudioSpec,
+    }
+
+    impl AudioDecoder for FailingSeekDecoder {
+        fn spec(&self) -> &AudioSpec {
+            &self.spec
+        }
+
+        fn format(&self) -> AudioFormat {
+            AudioFormat::Wav
+        }
+
+        fn decode_into(&mut self, dest: &mut DecodedAudio) -> AudioDecoderResult<usize> {
+            dest.samples.clear();
+            dest.spec = self.spec.clone();
+            dest.samples.resize(self.spec.channels as usize, 0.5);
+            Ok(1)
+        }
+
+        fn seek(&mut self, _frame_position: u64) -> AudioDecoderResult<()> {
+            Err(AudioDecoderError::SeekFailed("synthetic failure".into()))
+        }
+
+        fn position(&self) -> u64 {
+            0
+        }
+
+        fn is_eof(&self) -> bool {
+            false
+        }
+    }
+
+    #[test]
+    fn render_block_keeps_decoder_position_when_seek_fails() {
+        let mut track = Track::new("seek-test", 1, 48_000);
+        track.add_region(Region::new(Clip::new(AudioSource::Driver, 1_000), 0));
+        track.decoders.insert(
+            0,
+            ActiveDecoder {
+                decoder: Box::new(FailingSeekDecoder {
+                    spec: AudioSpec {
+                        sample_rate: 48_000,
+                        channels: 1,
+                        bits_per_sample: 32,
+                        total_frames: None,
+                    },
+                }),
+                source_position: 0,
+            },
+        );
+
+        let mut output = vec![0.0; 16];
+        let err = track.render_block(10, 16, &mut output).unwrap_err();
+
+        assert!(err.contains("Seek failed for region 0"));
+        assert_eq!(track.decoders.get(&0).unwrap().source_position, 0);
     }
 }

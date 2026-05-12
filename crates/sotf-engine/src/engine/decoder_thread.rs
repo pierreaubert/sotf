@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 use driver_hal::HalInputReader;
 
 const SPIN_MS_SLEEP_DECODER: u64 = 1;
+const SEND_OR_INTERRUPT_MAX_RETRIES: usize = 200;
 #[cfg(all(target_os = "macos", feature = "hal"))]
 const HAL_RECONNECT_INTERVAL: Duration = Duration::from_secs(1);
 /// Maximum size of resample staging buffer to prevent unbounded growth.
@@ -131,6 +132,7 @@ fn send_or_interrupt<T>(
     rx: &Receiver<DecoderCommand>,
     mut msg: T,
 ) -> Result<Option<(DecoderCommand, T)>, String> {
+    let mut retries = 0;
     loop {
         match tx.try_send(msg) {
             Ok(_) => return Ok(None),
@@ -138,6 +140,10 @@ fn send_or_interrupt<T>(
                 // Buffer full - check for interruption
                 if let Ok(cmd) = rx.try_recv() {
                     return Ok(Some((cmd, returned_msg)));
+                }
+                retries += 1;
+                if retries > SEND_OR_INTERRUPT_MAX_RETRIES {
+                    return Err("Decoder output queue stuck for >200ms".to_string());
                 }
                 msg = returned_msg;
                 std::thread::sleep(Duration::from_millis(1));
@@ -225,6 +231,7 @@ struct DecoderState {
     current_source: Option<AudioSource>,
     spec: Option<AudioSpec>,
     silent_source: bool, // For HAL input plugins (no file source)
+    silent_source_channels: usize,
     decode_buffer: Option<DecodedAudio>,
     resample_output_buffer: Vec<f32>,
     /// Staging buffer: accumulates resampled output across decode chunks so that
@@ -265,6 +272,7 @@ impl DecoderState {
             current_source: None,
             spec: None,
             silent_source: false,
+            silent_source_channels: 2,
             decode_buffer: None,
             resample_output_buffer: Vec::new(),
             resample_staging: SampleQueue::new(),
@@ -525,7 +533,10 @@ impl DecoderState {
         // Decode next chunk
         let decode_result = {
             let decoder = self.decoder.as_mut().ok_or("No decoder")?;
-            let decode_buffer = self.decode_buffer.as_mut().unwrap();
+            let decode_buffer = self
+                .decode_buffer
+                .as_mut()
+                .expect("decode buffer must be initialized before decoding");
             decoder.decode_into(decode_buffer)
         };
 
@@ -538,8 +549,13 @@ impl DecoderState {
                 let mut total_send_time = Duration::ZERO;
 
                 // Add to buffer (reusing resampler_buffer as general sample buffer)
-                self.resampler_buffer
-                    .extend_from_slice(&self.decode_buffer.as_ref().unwrap().samples);
+                self.resampler_buffer.extend_from_slice(
+                    &self
+                        .decode_buffer
+                        .as_ref()
+                        .expect("decode buffer must exist after successful decode")
+                        .samples,
+                );
 
                 // Process buffer in frame_size chunks
                 while self.resampler_buffer.len() >= frame_size * channels {
@@ -716,7 +732,10 @@ impl DecoderState {
                         self.chunk_buffer[copy_len..padded_len].fill(0.0);
                         self.resampler_buffer.clear();
 
-                        let resampler = self.resampler.as_mut().expect("checked above");
+                        let resampler = self
+                            .resampler
+                            .as_mut()
+                            .expect("resampler must exist in resampled EOS flush path");
                         let max_output_frames = resampler.output_frames_for_input(frame_size);
                         let output_len = max_output_frames * channels;
 
@@ -925,9 +944,10 @@ impl DecoderState {
     }
 
     /// Start silent source mode (for HAL input plugins)
-    fn start_silent_source(&mut self) {
+    fn start_silent_source(&mut self, channels: usize) {
         self.stop(); // Clear any existing decoder
         self.silent_source = true;
+        self.silent_source_channels = channels.max(1);
 
         #[cfg(all(target_os = "macos", feature = "hal"))]
         {
@@ -1017,7 +1037,10 @@ impl DecoderState {
                     self.resample_output_buffer.clear();
                 }
 
-                let resampler = self.resampler.as_mut().unwrap();
+                let resampler = self
+                    .resampler
+                    .as_mut()
+                    .expect("HAL resampler must exist after creation/config validation");
                 let max_output_frames = resampler.output_frames_for_input(frame_size);
                 let output_len = max_output_frames * hal_channels;
 
@@ -1118,7 +1141,8 @@ impl DecoderState {
 
         // Fallback to silent frame if no reader (or not macOS)
         // Use frame_send_buffer to avoid allocation for silent frames
-        let silent_len = frame_size * 2; // Assume stereo
+        let silent_channels = self.silent_source_channels.max(1);
+        let silent_len = frame_size * silent_channels;
         if self.frame_send_buffer.len() < silent_len {
             self.frame_send_buffer.resize(silent_len, 0.0);
         }
@@ -1127,7 +1151,7 @@ impl DecoderState {
         let frame_data =
             take_frame_buffer(&mut self.frame_send_buffer, &self.recycle_rx, silent_len);
 
-        let frame = AudioFrame::new(frame_data, frame_size, 2, target_sample_rate);
+        let frame = AudioFrame::new(frame_data, frame_size, silent_channels, target_sample_rate);
         message_tx
             .send(DecoderMessage::Frame(frame))
             .map_err(|_| "Failed to send silent frame")?;
@@ -1204,8 +1228,8 @@ fn run_decoder_thread(
                         response_tx.send(DecoderResponse::Ok).ok();
                     }
                 }
-                DecoderCommand::StartSilentSource => {
-                    state.start_silent_source();
+                DecoderCommand::StartSilentSource(channels) => {
+                    state.start_silent_source(channels);
                 }
                 DecoderCommand::Pause => {
                     state.paused = true;
@@ -1348,8 +1372,8 @@ fn run_decoder_thread(
                                     response_tx.send(DecoderResponse::Ok).ok();
                                 }
                             }
-                            DecoderCommand::StartSilentSource => {
-                                state.start_silent_source();
+                            DecoderCommand::StartSilentSource(channels) => {
+                                state.start_silent_source(channels);
                             }
                             DecoderCommand::QueueNext(path) => {
                                 log::debug!(
@@ -1449,8 +1473,8 @@ fn run_decoder_thread(
                                 response_tx.send(DecoderResponse::Ok).ok();
                             }
                         }
-                        DecoderCommand::StartSilentSource => {
-                            state.start_silent_source();
+                        DecoderCommand::StartSilentSource(channels) => {
+                            state.start_silent_source(channels);
                         }
                         DecoderCommand::Pause => {
                             state.paused = true;
@@ -1540,6 +1564,18 @@ mod tests {
     }
 
     #[test]
+    fn send_or_interrupt_errors_when_queue_stays_full() {
+        let (message_tx, _message_rx) = std::sync::mpsc::sync_channel(1);
+        message_tx.send(DecoderMessage::EndOfStream).unwrap();
+
+        let (_command_tx, command_rx) = std::sync::mpsc::channel();
+
+        let result = send_or_interrupt(&message_tx, &command_rx, DecoderMessage::Flush);
+
+        assert!(result.unwrap_err().contains("queue stuck"));
+    }
+
+    #[test]
     fn sample_queue_consume_advances_cursor_without_front_memmove() {
         let mut queue = SampleQueue::new();
         queue.extend_from_slice(&[0.0, 1.0, 2.0, 3.0]);
@@ -1566,6 +1602,31 @@ mod tests {
             frames_to_sample_count(frame_size + 1, channels, buffer_len),
             buffer_len
         );
+    }
+
+    #[test]
+    fn silent_source_fallback_uses_configured_channel_count() {
+        let (_recycle_tx, recycle_rx) = std::sync::mpsc::channel();
+        let mut state = DecoderState::new(recycle_rx);
+        state.start_silent_source(6);
+
+        let (message_tx, message_rx) = std::sync::mpsc::sync_channel(1);
+        let (_command_tx, command_rx) = std::sync::mpsc::channel();
+        let (response_tx, _response_rx) = std::sync::mpsc::channel();
+
+        let (processed, pending) = state
+            .process_hal_input(&message_tx, &command_rx, &response_tx, 128, 48_000)
+            .unwrap();
+
+        assert!(processed);
+        assert!(pending.is_none());
+        let DecoderMessage::Frame(frame) = message_rx.try_recv().unwrap() else {
+            panic!("expected silent audio frame");
+        };
+        assert_eq!(frame.num_frames, 128);
+        assert_eq!(frame.num_channels, 6);
+        assert_eq!(frame.data.len(), 128 * 6);
+        assert!(frame.data.iter().all(|&sample| sample == 0.0));
     }
 
     /// Regression test for the upmixer silence bug with cross-rate resampling.

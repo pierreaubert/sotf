@@ -440,7 +440,7 @@ fn run_manager_thread(
     }
 
     // Create GC thread for off-audio-thread deallocation
-    let mut gc_thread = GcThread::new();
+    let mut gc_thread = GcThread::new()?;
     let gc_tx = gc_thread.sender();
 
     // Create threads
@@ -598,7 +598,9 @@ fn run_manager_thread(
     // Start silent source mode (driver playback: audio from driver, not file)
     if config.driver_mode {
         log::info!("[Manager Thread] Starting silent source mode for driver input");
-        decoder_thread.send_command(super::DecoderCommand::StartSilentSource)?;
+        decoder_thread.send_command(super::DecoderCommand::StartSilentSource(
+            config.input_channels.max(1),
+        ))?;
     }
 
     // Setup config watcher if enabled
@@ -679,7 +681,9 @@ fn run_manager_thread(
                 );
 
                 let should_exit = matches!(response, ManagerResponse::Shutdown);
-                response_tx.send(response).ok();
+                if let Err(e) = response_tx.send(response) {
+                    log::trace!("[Manager Thread] Response receiver dropped: {}", e);
+                }
 
                 if should_exit {
                     log::debug!("[Manager Thread] Shutdown response sent, exiting loop");
@@ -924,6 +928,20 @@ fn estimate_update_timeout(plugins: &[super::PluginConfig]) -> std::time::Durati
 
     // Cap at 10 seconds (for very complex chains)
     std::time::Duration::from_millis(timeout_ms.min(10000))
+}
+
+fn estimate_graph_update_timeout(
+    graph_config: &super::types::PluginGraphConfig,
+) -> std::time::Duration {
+    let plugins: Vec<_> = graph_config
+        .nodes
+        .iter()
+        .map(|node| super::PluginConfig {
+            plugin_type: node.plugin_type.clone(),
+            parameters: node.parameters.clone(),
+        })
+        .collect();
+    estimate_update_timeout(&plugins)
 }
 
 fn wait_for_processing_ack(
@@ -1248,8 +1266,8 @@ fn apply_plugin_graph_update(
         .map_err(|_| ConfigError::ChannelDisconnected)?;
 
     let old_channels = state.load().num_channels;
-    let (output_channels, latency_samples) =
-        wait_for_plugin_chain_update(processing, std::time::Duration::from_millis(5000))?;
+    let timeout = estimate_graph_update_timeout(&graph_config);
+    let (output_channels, latency_samples) = wait_for_plugin_chain_update(processing, timeout)?;
 
     let mut new_state = (**state.load()).clone();
     new_state.num_channels = output_channels;
@@ -1280,56 +1298,8 @@ fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), Config
             config.parameters
         );
 
-        // Check if plugin type is recognized (case-insensitive)
-        let valid_types = [
-            "eq",
-            "gain",
-            "upmixer",
-            "compressor",
-            "gate",
-            "limiter",
-            "expander",
-            "multiband_compressor",
-            "multiband_expander",
-            "loudness_compensation",
-            "loudness_monitor",
-            "spectrum_analyzer",
-            "channel_mute_solo",
-            "binaural_decoder",
-            "matrix",
-            "convolution",
-            "crossover",
-            "delay",
-            "resampler",
-            "xtc",
-            "fletcher_munson",
-            "denoiser",
-            "declick",
-            "hiss_reducer",
-            "speech_denoiser",
-            "pnd",
-            "ab_compare",
-            "band_split",
-            "band_merge",
-            "downmix",
-            "mono_to_stereo",
-            "crossfeed",
-            "aec",
-            "beamformer",
-            "ambisonics_decoder",
-            "stereo_imager",
-            "transient_shaper",
-            "de_esser",
-            "dither",
-            "dynamic_eq",
-            "saturation",
-            "linear_phase_eq",
-            "spectral_compressor",
-            "aae",
-        ];
-
         let plugin_type_lower = config.plugin_type.to_lowercase();
-        if !valid_types.contains(&plugin_type_lower.as_str()) {
+        if !sotf_plugins::is_supported_plugin_type(&plugin_type_lower) {
             log::error!(
                 "[Manager Thread] Validation failed: Unknown plugin type '{}'",
                 config.plugin_type
@@ -2108,6 +2078,23 @@ mod tests {
         // logs a warning but succeeds — the playback thread handles downmix.
         let result = ensure_output_channel_capacity(6, 2, Some("Built-in Output"));
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn graph_update_timeout_uses_node_complexity() {
+        let graph = crate::engine::types::PluginGraphConfig {
+            nodes: (0..3)
+                .map(|id| crate::engine::types::PluginGraphNodeConfig {
+                    id,
+                    plugin_type: "convolution".to_string(),
+                    parameters: serde_json::json!({}),
+                    input_channels: 2,
+                })
+                .collect(),
+            edges: vec![],
+        };
+
+        assert!(estimate_graph_update_timeout(&graph) > std::time::Duration::from_millis(5000));
     }
 
     #[test]

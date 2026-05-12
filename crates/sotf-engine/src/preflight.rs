@@ -134,23 +134,27 @@ fn get_current_username() -> Result<String, PreflightError> {
 
 #[cfg(target_os = "linux")]
 fn check_linux_audio_cards() -> Result<(), PreflightError> {
-    use std::fs;
     use std::path::Path;
 
-    let cards_path = Path::new("/proc/asound/cards");
+    check_linux_audio_cards_at(Path::new("/proc/asound/cards"))
+}
+
+#[cfg(target_os = "linux")]
+fn check_linux_audio_cards_at(cards_path: &std::path::Path) -> Result<(), PreflightError> {
+    use std::fs;
 
     // Check if /proc/asound/cards exists
     if !cards_path.exists() {
-        log::warn!("[Preflight] /proc/asound/cards does not exist - ALSA may not be available");
-        return Err(PreflightError::ConfigError(
-            "/proc/asound/cards does not exist. ALSA sound system may not be available."
-                .to_string(),
-        ));
+        log::warn!(
+            "[Preflight] {} does not exist - skipping ALSA card check",
+            cards_path.display()
+        );
+        return Ok(());
     }
 
     // Read the cards file
     let contents = fs::read_to_string(cards_path).map_err(|e| {
-        PreflightError::ConfigError(format!("Failed to read /proc/asound/cards: {}", e))
+        PreflightError::ConfigError(format!("Failed to read {}: {}", cards_path.display(), e))
     })?;
 
     // Check if the file is empty or contains "no soundcards"
@@ -232,6 +236,15 @@ mod tests {
             Err(e) => {
                 panic!("Unexpected error type: {:?}", e);
             }
+        }
+
+        #[cfg(target_os = "linux")]
+        #[test]
+        fn missing_linux_audio_cards_file_is_not_fatal() {
+            let missing = std::env::temp_dir().join("sotf_missing_asound_cards");
+            let _ = std::fs::remove_file(&missing);
+
+            assert!(check_linux_audio_cards_at(&missing).is_ok());
         }
     }
 

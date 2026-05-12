@@ -203,7 +203,7 @@ fn test_decoder_command_variants() {
         DecoderCommand::Resume,
         DecoderCommand::Stop,
         DecoderCommand::Shutdown,
-        DecoderCommand::StartSilentSource,
+        DecoderCommand::StartSilentSource(6),
     ];
 
     for cmd in commands {
@@ -213,7 +213,9 @@ fn test_decoder_command_variants() {
             DecoderCommand::Resume => {}
             DecoderCommand::Stop => {}
             DecoderCommand::Shutdown => {}
-            DecoderCommand::StartSilentSource => {}
+            DecoderCommand::StartSilentSource(channels) => {
+                assert_eq!(channels, 6);
+            }
             _ => {}
         }
     }

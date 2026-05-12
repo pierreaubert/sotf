@@ -1297,6 +1297,29 @@ fn match_device_priority(devices: &[(String, String)], identifier: &str) -> Opti
     None
 }
 
+fn summarize_available_device_names(device_info: &[(String, String)], limit: usize) -> String {
+    let mut names: Vec<String> = device_info
+        .iter()
+        .filter_map(|(_, name)| {
+            let trimmed = name.trim();
+            (!trimmed.is_empty()).then(|| trimmed.to_string())
+        })
+        .collect();
+    names.sort();
+    names.dedup();
+
+    let shown: Vec<&str> = names.iter().take(limit).map(String::as_str).collect();
+    if names.len() > limit {
+        format!(
+            "{} ... and {} more",
+            shown.join(", "),
+            names.len().saturating_sub(limit)
+        )
+    } else {
+        shown.join(", ")
+    }
+}
+
 /// Find an audio device by name or ID with prioritization
 pub fn find_device(
     host: &cpal::Host,
@@ -1331,14 +1354,14 @@ pub fn find_device(
         Ok(devices[idx].clone())
     } else {
         // Device not found - provide helpful error message with available devices
-        let available_names: Vec<String> =
-            device_info.iter().map(|(_, name)| name.clone()).collect();
         let device_type = if is_input { "input" } else { "output" };
+        let available_summary = summarize_available_device_names(&device_info, 12);
         Err(format!(
-            "Audio device '{}' not found. Available {} devices: {}",
+            "Audio device '{}' not found. Available {} devices ({} total): {}",
             identifier,
             device_type,
-            available_names.join(", ")
+            device_info.len(),
+            available_summary
         ))
     }
 }
@@ -1602,6 +1625,19 @@ mod tests {
 
         // Non-matching
         assert_eq!(match_device_priority(&devices, "Not Found"), None);
+    }
+
+    #[test]
+    fn summarize_available_device_names_limits_long_lists() {
+        let devices: Vec<(String, String)> = (0..20)
+            .map(|i| (format!("id{i}"), format!("Device {i:02}")))
+            .collect();
+
+        let summary = summarize_available_device_names(&devices, 5);
+
+        assert!(summary.contains("Device 00"));
+        assert!(summary.contains("and 15 more"));
+        assert!(!summary.contains("Device 19"));
     }
 
     #[test]

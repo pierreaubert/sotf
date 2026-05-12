@@ -5,7 +5,7 @@
 // Used for: bounce-to-disk, batch processing, headless server rendering.
 // Single-threaded synchronous pipeline: decode → process → write.
 
-use crate::decoder::core::{DecodedAudio};
+use crate::decoder::core::DecodedAudio;
 use crate::decoder::source::AudioSource;
 use crate::engine::{PluginConfig, build_plugin_host};
 use std::path::{Path, PathBuf};
@@ -39,7 +39,9 @@ impl OfflineRenderConfig {
         Self {
             source,
             output_path: output_path.into(),
-            format: OutputFormat::Wav { bits_per_sample: 32 },
+            format: OutputFormat::Wav {
+                bits_per_sample: 32,
+            },
             plugins: Vec::new(),
             frame_size: 1024,
             output_sample_rate: None,
@@ -61,6 +63,30 @@ impl RenderProgress {
     pub fn percent(&self) -> Option<f32> {
         self.total_frames
             .map(|t| (self.frames_processed as f32 / t.max(1) as f32) * 100.0)
+    }
+}
+
+struct TimelineRenderStateGuard<'a> {
+    timeline: &'a mut crate::timeline::Timeline,
+    saved_loop: Option<(u64, u64)>,
+}
+
+impl<'a> TimelineRenderStateGuard<'a> {
+    fn new(timeline: &'a mut crate::timeline::Timeline) -> Self {
+        let saved_loop = timeline.transport.loop_range.take();
+        timeline.seek(0);
+        timeline.transport.play();
+        Self {
+            timeline,
+            saved_loop,
+        }
+    }
+}
+
+impl Drop for TimelineRenderStateGuard<'_> {
+    fn drop(&mut self) {
+        self.timeline.transport.pause();
+        self.timeline.transport.loop_range = self.saved_loop.take();
     }
 }
 
@@ -94,7 +120,11 @@ pub fn render_offline(
         OutputFormat::Wav { bits_per_sample } => hound::WavSpec {
             channels: output_channels as u16,
             sample_rate,
-            bits_per_sample: if bits_per_sample == 32 { 32 } else { bits_per_sample },
+            bits_per_sample: if bits_per_sample == 32 {
+                32
+            } else {
+                bits_per_sample
+            },
             sample_format: if bits_per_sample == 32 {
                 hound::SampleFormat::Float
             } else {
@@ -215,7 +245,11 @@ pub fn render_timeline(
         OutputFormat::Wav { bits_per_sample } => hound::WavSpec {
             channels: ch as u16,
             sample_rate: sr,
-            bits_per_sample: if *bits_per_sample == 32 { 32 } else { *bits_per_sample },
+            bits_per_sample: if *bits_per_sample == 32 {
+                32
+            } else {
+                *bits_per_sample
+            },
             sample_format: if *bits_per_sample == 32 {
                 hound::SampleFormat::Float
             } else {
@@ -227,16 +261,14 @@ pub fn render_timeline(
     let mut writer = hound::WavWriter::create(output_path.as_ref(), wav_spec)
         .map_err(|e| format!("Failed to create output: {e}"))?;
 
-    // Disable looping for bounce — we render exactly once through the timeline
-    let saved_loop = timeline.transport.loop_range.take();
-    timeline.seek(0);
-    timeline.transport.play();
+    // Disable looping for bounce — we render exactly once through the timeline.
+    let mut render_state = TimelineRenderStateGuard::new(timeline);
 
     let mut output = vec![0.0f32; nf * ch];
     let mut frames_processed: u64 = 0;
 
     while frames_processed < duration {
-        let frames = timeline.process(&mut output)?;
+        let frames = render_state.timeline.process(&mut output)?;
         let write_samples = frames * ch;
 
         match wav_spec.sample_format {
@@ -267,8 +299,6 @@ pub fn render_timeline(
         }
     }
 
-    timeline.transport.pause();
-    timeline.transport.loop_range = saved_loop;
     writer
         .finalize()
         .map_err(|e| format!("Finalize error: {e}"))?;
@@ -343,7 +373,9 @@ mod tests {
         let config = OfflineRenderConfig {
             source: AudioSource::File(input_path.clone()),
             output_path: output_path.clone(),
-            format: OutputFormat::Wav { bits_per_sample: 32 },
+            format: OutputFormat::Wav {
+                bits_per_sample: 32,
+            },
             plugins: vec![PluginConfig {
                 plugin_type: "gain".to_string(),
                 parameters: serde_json::json!({ "gain_db": -6.0 }),
@@ -356,7 +388,10 @@ mod tests {
 
         // Read input and output
         let in_reader = hound::WavReader::open(&input_path).unwrap();
-        let in_samples: Vec<f32> = in_reader.into_samples::<f32>().map(|s| s.unwrap()).collect();
+        let in_samples: Vec<f32> = in_reader
+            .into_samples::<f32>()
+            .map(|s| s.unwrap())
+            .collect();
 
         let out_reader = hound::WavReader::open(&output_path).unwrap();
         let out_samples: Vec<f32> = out_reader
@@ -391,23 +426,23 @@ mod tests {
 
         create_test_wav(&input_path, 48000, 1, 9600);
 
-        let config = OfflineRenderConfig::new(
-            AudioSource::File(input_path),
-            &output_path,
-        );
+        let config = OfflineRenderConfig::new(AudioSource::File(input_path), &output_path);
 
         let mut progress_calls = 0u32;
         let mut last_frames = 0u64;
 
-        render_offline(&config, Some(&mut |p: &RenderProgress| {
-            progress_calls += 1;
-            assert!(
-                p.frames_processed >= last_frames,
-                "Progress should be monotonically increasing"
-            );
-            last_frames = p.frames_processed;
-            assert!(p.total_frames.is_some());
-        }))
+        render_offline(
+            &config,
+            Some(&mut |p: &RenderProgress| {
+                progress_calls += 1;
+                assert!(
+                    p.frames_processed >= last_frames,
+                    "Progress should be monotonically increasing"
+                );
+                last_frames = p.frames_processed;
+                assert!(p.total_frames.is_some());
+            }),
+        )
         .unwrap();
 
         assert!(
@@ -437,13 +472,57 @@ mod tests {
         tl.add_track(t);
         tl.build().unwrap();
 
-        let fmt = OutputFormat::Wav { bits_per_sample: 32 };
+        let fmt = OutputFormat::Wav {
+            bits_per_sample: 32,
+        };
         render_timeline(&mut tl, &out, &fmt, None).unwrap();
 
         let reader = hound::WavReader::open(&out).unwrap();
         assert_eq!(reader.spec().sample_rate, 48000);
         let samples: Vec<f32> = reader.into_samples::<f32>().map(|s| s.unwrap()).collect();
-        assert!(samples.len() >= 4800, "Should have at least 4800 samples, got {}", samples.len());
+        assert!(
+            samples.len() >= 4800,
+            "Should have at least 4800 samples, got {}",
+            samples.len()
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn render_timeline_restores_loop_range_when_progress_panics() {
+        use crate::timeline::clip::{Clip, Region};
+        use crate::timeline::timeline::Timeline;
+        use crate::timeline::track::Track;
+
+        let dir = std::env::temp_dir().join("sotf_test_render_timeline_panic");
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("src.wav");
+        let out = dir.join("bounced.wav");
+        create_test_wav(&src, 48000, 1, 4800);
+
+        let mut tl = Timeline::new(1, 48000, 1024);
+        let mut t = Track::new("T1", 1, 48000);
+        t.add_region(Region::new(Clip::from_file(&src, 4800), 0));
+        tl.add_track(t);
+        tl.transport.loop_range = Some((128, 256));
+        tl.build().unwrap();
+
+        let fmt = OutputFormat::Wav {
+            bits_per_sample: 32,
+        };
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            render_timeline(
+                &mut tl,
+                &out,
+                &fmt,
+                Some(&mut |_p: &RenderProgress| panic!("progress panic")),
+            )
+        }));
+
+        assert!(result.is_err());
+        assert_eq!(tl.transport.loop_range, Some((128, 256)));
+        assert!(!tl.transport.playing);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

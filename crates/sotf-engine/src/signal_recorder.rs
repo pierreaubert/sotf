@@ -551,7 +551,11 @@ pub fn record_and_analyze(
         .build_input_stream(
             &input_config,
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                let mut recorded = recorded_samples_clone.lock().unwrap();
+                let mut recorded = match recorded_samples_clone.try_lock() {
+                    Ok(guard) => guard,
+                    Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+                    Err(std::sync::TryLockError::WouldBlock) => return,
+                };
 
                 // Extract only the specified input channel
                 // Data is interleaved: [ch0, ch1, ..., chN, ch0, ch1, ..., chN, ...]
@@ -982,7 +986,14 @@ pub fn record_and_analyze_multi(
                 for frame in data.chunks(hardware_input_channels) {
                     for (mic_i, &ch_idx) in input_channels_vec.iter().enumerate() {
                         if ch_idx < frame.len() {
-                            buffers_clone[mic_i].lock().unwrap().push(frame[ch_idx]);
+                            let mut buffer = match buffers_clone[mic_i].try_lock() {
+                                Ok(guard) => guard,
+                                Err(std::sync::TryLockError::Poisoned(poisoned)) => {
+                                    poisoned.into_inner()
+                                }
+                                Err(std::sync::TryLockError::WouldBlock) => continue,
+                            };
+                            buffer.push(frame[ch_idx]);
                         }
                     }
                 }
@@ -1531,9 +1542,8 @@ fn play_per_channel_and_record_mono(
         ));
     }
 
-    let min_input_ch = (input_channel as usize)
-        .max(loopback_input_channel.map(|c| c as usize).unwrap_or(0))
-        + 1;
+    let min_input_ch =
+        (input_channel as usize).max(loopback_input_channel.map(|c| c as usize).unwrap_or(0)) + 1;
     let default_input_config = input_device
         .default_input_config()
         .map_err(|e| format!("[{log_tag}] Failed to get default input config: {}", e))?;
@@ -1585,9 +1595,9 @@ fn play_per_channel_and_record_mono(
     // Pre-allocate enough capacity to cover the playback duration plus
     // the 0.5 s settle tail at the host's input rate; that keeps every
     // realloc out of the cpal callback.
-    let expected_input_samples =
-        ((total_frames as f64 * input_sr as f64 / sample_rate as f64) as usize)
-            + (input_sr as usize / 2);
+    let expected_input_samples = ((total_frames as f64 * input_sr as f64 / sample_rate as f64)
+        as usize)
+        + (input_sr as usize / 2);
     let capture_buffers: Arc<Mutex<(Vec<f32>, Option<Vec<f32>>)>> = Arc::new(Mutex::new((
         Vec::with_capacity(expected_input_samples),
         loopback_input_channel.map(|_| Vec::with_capacity(expected_input_samples)),
@@ -1602,7 +1612,11 @@ fn play_per_channel_and_record_mono(
         .build_input_stream(
             &input_config,
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                let mut guard = capture_clone.lock().unwrap();
+                let mut guard = match capture_clone.try_lock() {
+                    Ok(guard) => guard,
+                    Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+                    Err(std::sync::TryLockError::WouldBlock) => return,
+                };
                 let (recorded, loopback_opt) = &mut *guard;
                 for frame in data.chunks(hw_ch) {
                     if input_ch_idx >= frame.len() {
@@ -2451,12 +2465,8 @@ pub fn analyze_bass_anchor_recording(
             ));
         }
         let segment = &recorded[start..end];
-        let mic_phasors = math_audio_dsp::signals::tone_phase_phasors(
-            segment,
-            bass_freq_hz,
-            sample_rate,
-            nw,
-        );
+        let mic_phasors =
+            math_audio_dsp::signals::tone_phase_phasors(segment, bass_freq_hz, sample_rate, nw);
         let mic = math_audio_dsp::signals::aggregate_tone_phase(&mic_phasors);
 
         let (phase_deg, stability_deg, loopback_phase_deg, coherence) = match loopback_recorded {
@@ -2502,16 +2512,9 @@ pub fn analyze_bass_anchor_recording(
                 // loopback I/Q per sub-window. γ²=1 → linearly related
                 // (clean acoustic + electronic chain); γ²→0 → mic is
                 // dominated by noise uncorrelated with the playback.
-                let coherence = math_audio_dsp::signals::phasor_coherence(
-                    &mic_phasors,
-                    &lb_phasors,
-                );
-                (
-                    diff,
-                    combined_std,
-                    Some(lb_res.phase_deg),
-                    coherence,
-                )
+                let coherence =
+                    math_audio_dsp::signals::phasor_coherence(&mic_phasors, &lb_phasors);
+                (diff, combined_std, Some(lb_res.phase_deg), coherence)
             }
             None => (mic.phase_deg, mic.stability_deg, None, None),
         };
@@ -2645,7 +2648,12 @@ fn run_bass_anchor_core(
         );
     }
 
-    Ok((results, capture.recorded, capture.loopback_recorded, capture.input_sr))
+    Ok((
+        results,
+        capture.recorded,
+        capture.loopback_recorded,
+        capture.input_sr,
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -4172,7 +4180,7 @@ mod tests {
         let channel_indices = vec![0_u16, 1];
         let channel_names = vec!["L".to_string(), "R".to_string()];
         let acoustic_phase_deg = [10.0_f32, -20.0]; // what we want to recover
-        let source_phase_deg = 70.0_f32;            // common source-side shift
+        let source_phase_deg = 70.0_f32; // common source-side shift
 
         let tone_samples = (bass_duration_s * sample_rate as f32).round() as usize;
         let fade_n = ((fade_ms / 1000.0) * sample_rate as f32).round() as usize;

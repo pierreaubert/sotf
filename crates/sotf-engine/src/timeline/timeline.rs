@@ -88,6 +88,24 @@ impl Timeline {
         let total = nf * self.output_channels;
         let pos = self.transport.position_samples;
 
+        let any_solo =
+            self.tracks.iter().any(|t| t.solo) || self.midi_tracks.iter().any(|t| t.solo);
+        let has_active_audio = self
+            .tracks
+            .iter()
+            .any(|t| !t.muted && (!any_solo || t.solo));
+        let has_active_midi = self
+            .midi_tracks
+            .iter()
+            .any(|t| !t.muted && (!any_solo || t.solo));
+        let out_len = total.min(output.len());
+
+        if !has_active_audio && !has_active_midi && self.master_chain.plugin_count() == 0 {
+            output[..out_len].fill(0.0);
+            self.transport.advance(nf);
+            return Ok(nf);
+        }
+
         // Ensure buffers
         if self.mix_buf.len() < total {
             self.mix_buf.resize(total, 0.0);
@@ -97,9 +115,6 @@ impl Timeline {
         }
         self.mix_buf[..total].fill(0.0);
 
-        let any_solo = self.tracks.iter().any(|t| t.solo)
-            || self.midi_tracks.iter().any(|t| t.solo);
-
         // Render audio tracks
         for track in &mut self.tracks {
             if track.muted || (any_solo && !track.solo) {
@@ -108,8 +123,11 @@ impl Timeline {
             self.track_buf[..total].fill(0.0);
             track.render_block(pos, nf, &mut self.track_buf[..total])?;
             mix_with_channel_adapt(
-                &self.track_buf, track.channels,
-                &mut self.mix_buf, self.output_channels, nf,
+                &self.track_buf,
+                track.channels,
+                &mut self.mix_buf,
+                self.output_channels,
+                nf,
             );
         }
 
@@ -122,13 +140,15 @@ impl Timeline {
             self.track_buf[..total].fill(0.0);
             midi_track.render_block(pos, nf, sr, &mut self.track_buf[..total])?;
             mix_with_channel_adapt(
-                &self.track_buf, midi_track.output_channels(),
-                &mut self.mix_buf, self.output_channels, nf,
+                &self.track_buf,
+                midi_track.output_channels(),
+                &mut self.mix_buf,
+                self.output_channels,
+                nf,
             );
         }
 
         // Process through master chain
-        let out_len = total.min(output.len());
         if self.master_chain.plugin_count() > 0 {
             self.master_chain
                 .process(&self.mix_buf[..total], &mut output[..out_len])?;

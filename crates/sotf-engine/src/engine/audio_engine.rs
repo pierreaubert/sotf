@@ -41,7 +41,12 @@ impl AudioEngine {
         // Try to receive any response that arrived (non-blocking).
         // If the manager sent one for a previous command, consume it
         // so it doesn't pollute future synchronous calls.
-        while self.manager.try_recv_response().is_some() {}
+        for _ in 0..1024 {
+            if self.manager.try_recv_response().is_none() {
+                return;
+            }
+        }
+        log::trace!("[AudioEngine] Stopped draining manager responses after 1024 messages");
     }
 
     fn send_expect_ok(&self, command: ManagerCommand) -> Result<(), String> {

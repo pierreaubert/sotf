@@ -791,14 +791,30 @@ impl PluginSettings {
 
         match spec.param_type {
             param_specs::ParamType::FilePath => {
-                // Return the file path string directly
+                const CONVOLUTION_IR_FILE_IDX: usize =
+                    param_specs::index_of(param_specs::convolution::PARAMS, "ir_file");
+                const BINAURAL_SOFA_FILE_IDX: usize =
+                    param_specs::index_of(param_specs::binaural::PARAMS, "sofa_file");
+                const AB_PATH_A_CONFIG_IDX: usize =
+                    param_specs::index_of(param_specs::ab_compare::PARAMS, "path_a_config");
+                const AB_PATH_B_CONFIG_IDX: usize =
+                    param_specs::index_of(param_specs::ab_compare::PARAMS, "path_b_config");
+
+                // Return the file path string directly. Indices are derived from
+                // PARAMS so param reordering fails fast instead of drifting.
                 match self {
-                    Self::Convolution { ir_file, .. } if index == 0 => Some(ir_file.clone()),
-                    Self::BinauralDecoder { sofa_file, .. } if index == 0 => {
+                    Self::Convolution { ir_file, .. } if index == CONVOLUTION_IR_FILE_IDX => {
+                        Some(ir_file.clone())
+                    }
+                    Self::BinauralDecoder { sofa_file, .. } if index == BINAURAL_SOFA_FILE_IDX => {
                         Some(sofa_file.clone())
                     }
-                    Self::ABCompare { path_a_file, .. } if index == 9 => Some(path_a_file.clone()),
-                    Self::ABCompare { path_b_file, .. } if index == 10 => Some(path_b_file.clone()),
+                    Self::ABCompare { path_a_file, .. } if index == AB_PATH_A_CONFIG_IDX => {
+                        Some(path_a_file.clone())
+                    }
+                    Self::ABCompare { path_b_file, .. } if index == AB_PATH_B_CONFIG_IDX => {
+                        Some(path_b_file.clone())
+                    }
                     _ => None,
                 }
             }
@@ -806,38 +822,78 @@ impl PluginSettings {
                 self.param_value(index).map(|v| format!("{}", f2b(v)))
             }
             param_specs::ParamType::Choice { .. } => {
+                const UPMIXER_SPEAKER_CONFIG_IDX: usize =
+                    param_specs::index_of(param_specs::upmixer::PARAMS, "speaker_config");
+                const AAE_SPEAKER_CONFIG_IDX: usize =
+                    param_specs::index_of(param_specs::aae::PARAMS, "speaker_config");
+                const AAE_ROOM_PRESET_IDX: usize =
+                    param_specs::index_of(param_specs::aae::PARAMS, "room_preset");
+                const AMBISONICS_TARGET_LAYOUT_IDX: usize =
+                    param_specs::index_of(param_specs::ambisonics::PARAMS, "target_layout");
+                const BAND_SPLIT_CROSSOVER_TYPE_IDX: usize =
+                    param_specs::index_of(param_specs::band_split::PARAMS, "crossover_type");
+                const CROSSFEED_MODE_IDX: usize =
+                    param_specs::index_of(param_specs::crossfeed::PARAMS, "crossfeed_mode");
+                const CROSSFEED_PRESET_IDX: usize =
+                    param_specs::index_of(param_specs::crossfeed::PARAMS, "crossfeed_preset");
+                const COMPRESSOR_SIDECHAIN_HPF_ORDER_IDX: usize =
+                    param_specs::index_of(param_specs::compressor::PARAMS, "sidechain_hpf_order");
+                const COMPRESSOR_DETECTION_MODE_IDX: usize =
+                    param_specs::index_of(param_specs::compressor::PARAMS, "detection_mode");
+                const EXPANDER_DETECTION_MODE_IDX: usize =
+                    param_specs::index_of(param_specs::expander::PARAMS, "detection_mode");
+                const MULTIBAND_EXPANDER_DETECTION_MODE_IDX: usize = param_specs::index_of(
+                    param_specs::multiband_expander::GLOBAL_PARAMS,
+                    "detection_mode",
+                );
+
                 // String-typed choices need special handling
                 match self {
-                    Self::Upmixer { speaker_config, .. } if index == 0 => {
+                    Self::Upmixer { speaker_config, .. } if index == UPMIXER_SPEAKER_CONFIG_IDX => {
                         Some(speaker_config.clone())
                     }
-                    Self::AAE { speaker_config, .. } if index == 0 => Some(speaker_config.clone()),
-                    Self::AAE { room_preset, .. } if index == 6 => Some(room_preset.clone()),
-                    Self::AmbisonicsDecoder { target_layout, .. } if index == 1 => {
+                    Self::AAE { speaker_config, .. } if index == AAE_SPEAKER_CONFIG_IDX => {
+                        Some(speaker_config.clone())
+                    }
+                    Self::AAE { room_preset, .. } if index == AAE_ROOM_PRESET_IDX => {
+                        Some(room_preset.clone())
+                    }
+                    Self::AmbisonicsDecoder { target_layout, .. }
+                        if index == AMBISONICS_TARGET_LAYOUT_IDX =>
+                    {
                         Some(target_layout.clone())
                     }
-                    Self::BandSplit { crossover_type, .. } if index == 1 => {
+                    Self::BandSplit { crossover_type, .. }
+                        if index == BAND_SPLIT_CROSSOVER_TYPE_IDX =>
+                    {
                         Some(crossover_type.clone())
                     }
-                    Self::Crossfeed { mode, .. } if index == 0 => Some(format!(
+                    Self::Crossfeed { mode, .. } if index == CROSSFEED_MODE_IDX => Some(format!(
                         "{}",
                         serde_json::to_value(mode).unwrap_or_default()
                     )),
-                    Self::Crossfeed { preset, .. } if index == 1 => Some(format!(
-                        "{}",
-                        serde_json::to_value(preset).unwrap_or_default()
-                    )),
+                    Self::Crossfeed { preset, .. } if index == CROSSFEED_PRESET_IDX => Some(
+                        format!("{}", serde_json::to_value(preset).unwrap_or_default()),
+                    ),
                     Self::Compressor {
                         sidechain_hpf_order,
                         ..
-                    } if index == 10 => Some(sidechain_hpf_order.clone()),
-                    Self::Compressor { detection_mode, .. } if index == 11 => {
+                    } if index == COMPRESSOR_SIDECHAIN_HPF_ORDER_IDX => {
+                        Some(sidechain_hpf_order.clone())
+                    }
+                    Self::Compressor { detection_mode, .. }
+                        if index == COMPRESSOR_DETECTION_MODE_IDX =>
+                    {
                         Some(detection_mode.clone())
                     }
-                    Self::Expander { detection_mode, .. } if index == 13 => {
+                    Self::Expander { detection_mode, .. }
+                        if index == EXPANDER_DETECTION_MODE_IDX =>
+                    {
                         Some(detection_mode.clone())
                     }
-                    Self::MultibandExpander { detection_mode, .. } if index == 16 => {
+                    Self::MultibandExpander { detection_mode, .. }
+                        if index == MULTIBAND_EXPANDER_DETECTION_MODE_IDX =>
+                    {
                         Some(detection_mode.clone())
                     }
                     _ => {

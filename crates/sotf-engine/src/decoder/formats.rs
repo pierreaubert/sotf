@@ -52,6 +52,8 @@ pub struct SymphoniaDecoder {
     position: u64,
     /// Track ID in the format
     track_id: u32,
+    /// Decoded packet consumed during channel probing for non-seekable sources.
+    pending_decoded: Option<DecodedAudio>,
     /// End of stream flag
     eof: bool,
 }
@@ -101,13 +103,15 @@ impl SymphoniaDecoder {
         let sample_rate = codec_params
             .sample_rate
             .ok_or_else(|| AudioDecoderError::InvalidFile("No sample rate found".to_string()))?;
+        let bits_per_sample = codec_params.bits_per_sample.unwrap_or(16);
+        let total_frames = codec_params.n_frames;
 
         // For streaming sources we cannot re-open the source to probe channels,
         // so if channel info is not in codec params we decode the first packet
         // and continue from there (no reset possible for non-seekable streams).
         let channels_opt = codec_params.channels.map(|layout| layout.count() as u16);
 
-        let (final_format_reader, final_decoder, channels) = match channels_opt {
+        let (final_format_reader, final_decoder, channels, pending_decoded) = match channels_opt {
             None => {
                 let mut temp_decoder =
                     CODEC_REGISTRY
@@ -119,23 +123,20 @@ impl SymphoniaDecoder {
                             ))
                         })?;
 
-                let mut detected_channels = None;
-                // We consume the first packet; the decoder will continue from the second.
-                // This is acceptable for streaming — we lose one packet of audio.
-                if let Ok(packet) = format_reader.next_packet()
-                    && packet.track_id() == track_id
-                    && let Ok(decoded) = temp_decoder.decode(&packet)
-                {
-                    detected_channels = Some(decoded.spec().channels.count() as u16);
-                }
+                let pending_spec = AudioSpec {
+                    sample_rate,
+                    channels: 0,
+                    bits_per_sample: bits_per_sample as u16,
+                    total_frames,
+                };
+                let (channels, pending_decoded) = Self::decode_probe_packet_for_channels(
+                    &mut format_reader,
+                    &mut temp_decoder,
+                    track_id,
+                    Some(pending_spec),
+                )?;
 
-                let channels = detected_channels.ok_or_else(|| {
-                    AudioDecoderError::InvalidFile(
-                        "No channel information found even after decoding first packet".to_string(),
-                    )
-                })?;
-
-                (format_reader, temp_decoder, channels)
+                (format_reader, temp_decoder, channels, pending_decoded)
             }
             Some(channels) => {
                 let decoder = CODEC_REGISTRY
@@ -146,12 +147,9 @@ impl SymphoniaDecoder {
                             codec_params.codec, e
                         ))
                     })?;
-                (format_reader, decoder, channels)
+                (format_reader, decoder, channels, None)
             }
         };
-
-        let bits_per_sample = codec_params.bits_per_sample.unwrap_or(16);
-        let total_frames = codec_params.n_frames;
 
         let spec = AudioSpec {
             sample_rate,
@@ -181,6 +179,7 @@ impl SymphoniaDecoder {
             decoder: final_decoder,
             position: 0,
             track_id,
+            pending_decoded,
             eof: false,
         })
     }
@@ -193,13 +192,70 @@ impl SymphoniaDecoder {
             codecs::CODEC_TYPE_MP3 => AudioFormat::Mp3,
             codecs::CODEC_TYPE_AAC => AudioFormat::Aac,
             codecs::CODEC_TYPE_VORBIS => AudioFormat::Vorbis,
-            codecs::CODEC_TYPE_ALAC => AudioFormat::Aac, // ALAC in M4A container
+            codecs::CODEC_TYPE_ALAC => AudioFormat::Alac,
             codecs::CODEC_TYPE_PCM_S16LE
             | codecs::CODEC_TYPE_PCM_S24LE
             | codecs::CODEC_TYPE_PCM_S32LE
             | codecs::CODEC_TYPE_PCM_F32LE
             | codecs::CODEC_TYPE_PCM_F64LE => AudioFormat::Wav,
             _ => AudioFormat::Mp3, // fallback
+        }
+    }
+
+    fn decode_probe_packet_for_channels(
+        format_reader: &mut Box<dyn FormatReader>,
+        decoder: &mut Box<dyn Decoder>,
+        track_id: u32,
+        pending_spec: Option<AudioSpec>,
+    ) -> AudioDecoderResult<(u16, Option<DecodedAudio>)> {
+        let mut decode_errors = 0u32;
+
+        loop {
+            let packet = match format_reader.next_packet() {
+                Ok(packet) => packet,
+                Err(SymphoniaError::IoError(ref err))
+                    if err.kind() == std::io::ErrorKind::UnexpectedEof =>
+                {
+                    return Err(AudioDecoderError::InvalidFile(
+                        "No channel information found before end of stream".to_string(),
+                    ));
+                }
+                Err(err) => return Err(AudioDecoderError::from(err)),
+            };
+
+            if packet.track_id() != track_id {
+                continue;
+            }
+
+            match decoder.decode(&packet) {
+                Ok(decoded) => {
+                    let channels = decoded.spec().channels.count() as u16;
+                    let frame_count = decoded.frames();
+
+                    let pending = if let Some(mut spec) = pending_spec {
+                        spec.channels = channels;
+                        let mut audio = DecodedAudio::new(spec);
+                        audio.frame_position = 0;
+                        Self::convert_audio_buffer_into(decoded, &mut audio.samples)?;
+                        debug_assert_eq!(audio.frame_count(), frame_count);
+                        Some(audio)
+                    } else {
+                        None
+                    };
+
+                    return Ok((channels, pending));
+                }
+                Err(SymphoniaError::DecodeError(_)) | Err(SymphoniaError::ResetRequired) => {
+                    decode_errors += 1;
+                    if decode_errors > 32 {
+                        return Err(AudioDecoderError::InvalidFile(
+                            "No channel information found after decoding probe packets".to_string(),
+                        ));
+                    }
+                    decoder.reset();
+                }
+                Err(e) => return Err(AudioDecoderError::from(e)),
+            }
         }
     }
 
@@ -253,6 +309,8 @@ impl SymphoniaDecoder {
         let sample_rate = codec_params
             .sample_rate
             .ok_or_else(|| AudioDecoderError::InvalidFile("No sample rate found".to_string()))?;
+        let bits_per_sample = codec_params.bits_per_sample.unwrap_or(16);
+        let total_frames = codec_params.n_frames;
 
         // For AAC and some other codecs, channel information may not be available
         // until the first packet is decoded. Try to get it from codec params first,
@@ -272,21 +330,12 @@ impl SymphoniaDecoder {
                             ))
                         })?;
 
-                // Decode first packet to get channel info
-                let mut detected_channels = None;
-                if let Ok(packet) = format_reader.next_packet()
-                    && packet.track_id() == track_id
-                    && let Ok(decoded) = temp_decoder.decode(&packet)
-                {
-                    detected_channels = Some(decoded.spec().channels.count() as u16);
-                }
-
-                // If we still don't have channel info, fail
-                let channels = detected_channels.ok_or_else(|| {
-                    AudioDecoderError::InvalidFile(
-                        "No channel information found even after decoding first packet".to_string(),
-                    )
-                })?;
+                let (channels, _) = Self::decode_probe_packet_for_channels(
+                    &mut format_reader,
+                    &mut temp_decoder,
+                    track_id,
+                    None,
+                )?;
 
                 // Reset the format reader by creating a new one
                 let file = File::open(path)?;
@@ -332,9 +381,6 @@ impl SymphoniaDecoder {
             }
         };
 
-        let bits_per_sample = codec_params.bits_per_sample.unwrap_or(16);
-        let total_frames = codec_params.n_frames;
-
         let spec = AudioSpec {
             sample_rate,
             channels,
@@ -361,6 +407,7 @@ impl SymphoniaDecoder {
             decoder: final_decoder,
             position: 0,
             track_id,
+            pending_decoded: None,
             eof: false,
         })
     }
@@ -514,6 +561,14 @@ impl AudioDecoder for SymphoniaDecoder {
         dest.frame_position = self.position;
         dest.spec = self.spec.clone(); // Ensure spec matches
 
+        if let Some(pending) = self.pending_decoded.take() {
+            let frame_count = pending.frame_count();
+            dest.frame_position = self.position;
+            dest.samples.extend_from_slice(&pending.samples);
+            self.position += frame_count as u64;
+            return Ok(frame_count);
+        }
+
         let mut consecutive_errors: u32 = 0;
 
         loop {
@@ -595,6 +650,7 @@ impl AudioDecoder for SymphoniaDecoder {
     }
 
     fn seek(&mut self, frame_position: u64) -> AudioDecoderResult<()> {
+        self.pending_decoded = None;
         // Use Symphonia's seek functionality
         // frame_position is in PCM frames (track time-base). Use TimeStamp, not Time-in-seconds.
         match self.format_reader.seek(
@@ -644,9 +700,17 @@ mod tests_decoder {
         assert_eq!(AudioFormat::Flac.as_str(), "FLAC");
         assert_eq!(AudioFormat::Mp3.as_str(), "MP3");
         assert_eq!(AudioFormat::Aac.as_str(), "AAC");
+        assert_eq!(AudioFormat::Alac.as_str(), "ALAC");
         assert_eq!(AudioFormat::Wav.as_str(), "WAV");
         assert_eq!(AudioFormat::Vorbis.as_str(), "Vorbis");
         assert_eq!(AudioFormat::Aiff.as_str(), "AIFF");
+    }
+
+    #[test]
+    fn test_alac_codec_maps_to_lossless_alac_format() {
+        let format = SymphoniaDecoder::format_from_codec(symphonia::core::codecs::CODEC_TYPE_ALAC);
+        assert_eq!(format, AudioFormat::Alac);
+        assert!(format.is_lossless());
     }
 
     // Integration tests would go here with actual audio files:
@@ -672,6 +736,7 @@ pub enum AudioFormat {
     Flac,
     Mp3,
     Aac,
+    Alac,
     Wav,
     Vorbis,
     Aiff,
@@ -714,6 +779,7 @@ impl AudioFormat {
             AudioFormat::Flac => "FLAC",
             AudioFormat::Mp3 => "MP3",
             AudioFormat::Aac => "AAC",
+            AudioFormat::Alac => "ALAC",
             AudioFormat::Wav => "WAV",
             AudioFormat::Vorbis => "Vorbis",
             AudioFormat::Aiff => "AIFF",
@@ -728,6 +794,7 @@ impl AudioFormat {
             AudioFormat::Flac => "flac",
             AudioFormat::Mp3 => "mp3",
             AudioFormat::Aac => "m4a",
+            AudioFormat::Alac => "m4a",
             AudioFormat::Wav => "wav",
             AudioFormat::Vorbis => "ogg",
             AudioFormat::Aiff => "aiff",
@@ -741,7 +808,8 @@ impl AudioFormat {
         match self {
             AudioFormat::Flac => true,
             AudioFormat::Mp3 => false,
-            AudioFormat::Aac => false, // Usually not, could be ALAC but we'll assume lossy
+            AudioFormat::Aac => false,
+            AudioFormat::Alac => true,
             AudioFormat::Wav => true,
             AudioFormat::Vorbis => false,
             AudioFormat::Aiff => true,
@@ -757,6 +825,7 @@ impl AudioFormat {
             AudioFormat::Flac,
             AudioFormat::Mp3,
             AudioFormat::Aac,
+            AudioFormat::Alac,
             AudioFormat::Wav,
             AudioFormat::Vorbis,
             AudioFormat::Aiff,
@@ -868,6 +937,11 @@ mod tests {
         assert_eq!(aac.extension(), "m4a");
         assert!(!aac.is_lossless());
 
+        let alac = AudioFormat::Alac;
+        assert_eq!(alac.as_str(), "ALAC");
+        assert_eq!(alac.extension(), "m4a");
+        assert!(alac.is_lossless());
+
         // Test WAV
         let wav = AudioFormat::Wav;
         assert_eq!(wav.as_str(), "WAV");
@@ -890,11 +964,12 @@ mod tests {
     #[test]
     fn test_supported_formats() {
         let formats = AudioFormat::supported_formats();
-        let expected_count = if cfg!(feature = "iamf") { 7 } else { 6 };
+        let expected_count = if cfg!(feature = "iamf") { 8 } else { 7 };
         assert_eq!(formats.len(), expected_count);
         assert!(formats.contains(&AudioFormat::Flac));
         assert!(formats.contains(&AudioFormat::Mp3));
         assert!(formats.contains(&AudioFormat::Aac));
+        assert!(formats.contains(&AudioFormat::Alac));
         assert!(formats.contains(&AudioFormat::Wav));
         assert!(formats.contains(&AudioFormat::Vorbis));
         assert!(formats.contains(&AudioFormat::Aiff));
@@ -903,6 +978,7 @@ mod tests {
         assert!(formats_string.contains("FLAC"));
         assert!(formats_string.contains("MP3"));
         assert!(formats_string.contains("AAC"));
+        assert!(formats_string.contains("ALAC"));
         assert!(formats_string.contains("WAV"));
         assert!(formats_string.contains("Vorbis"));
         assert!(formats_string.contains("AIFF"));

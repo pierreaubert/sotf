@@ -54,6 +54,12 @@ impl IamfAudioDecoder {
             eof: false,
         })
     }
+
+    fn prepare_decode_dest(dest: &mut DecodedAudio, spec: &AudioSpec, frame_position: u64) {
+        dest.samples.clear();
+        dest.spec = spec.clone();
+        dest.frame_position = frame_position;
+    }
 }
 
 impl AudioDecoder for IamfAudioDecoder {
@@ -69,6 +75,9 @@ impl AudioDecoder for IamfAudioDecoder {
         if self.eof {
             return Ok(0);
         }
+
+        let frame_position = self.decoder.position();
+        Self::prepare_decode_dest(dest, &self.spec, frame_position);
 
         let iamf_spec = self.decoder.spec();
         let max_frames = iamf_spec.num_samples_per_frame as usize;
@@ -111,5 +120,36 @@ impl AudioDecoder for IamfAudioDecoder {
 
     fn is_eof(&self) -> bool {
         self.eof
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prepare_decode_dest_overwrites_reused_buffer() {
+        let spec = AudioSpec {
+            sample_rate: 48_000,
+            channels: 6,
+            bits_per_sample: 32,
+            total_frames: None,
+        };
+        let mut dest = DecodedAudio {
+            spec: AudioSpec {
+                sample_rate: 44_100,
+                channels: 2,
+                bits_per_sample: 16,
+                total_frames: Some(10),
+            },
+            samples: vec![1.0, 2.0, 3.0],
+            frame_position: 12,
+        };
+
+        IamfAudioDecoder::prepare_decode_dest(&mut dest, &spec, 256);
+
+        assert!(dest.samples.is_empty());
+        assert_eq!(dest.spec, spec);
+        assert_eq!(dest.frame_position, 256);
     }
 }

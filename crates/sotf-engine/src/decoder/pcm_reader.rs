@@ -20,8 +20,8 @@ pub struct PcmDecoder {
     reader: Box<dyn Read + Send>,
     position: u64,
     eof: bool,
-    /// Temporary byte buffer for reading from the stream
-    read_buf: Vec<u8>,
+    /// Aligned temporary sample buffer for reading from the stream.
+    read_buf: Vec<f32>,
 }
 
 impl PcmDecoder {
@@ -46,14 +46,15 @@ impl PcmDecoder {
             total_frames,
         };
 
-        // Pre-allocate read buffer for one "chunk" (~1024 frames)
-        let chunk_bytes = 1024 * channels as usize * 4; // 4 bytes per f32
+        // Pre-allocate one chunk of aligned f32 storage. The reader writes
+        // directly into its byte view, then we bulk-copy decoded samples.
+        let chunk_samples = 1024 * channels as usize;
         Self {
             spec,
             reader,
             position: 0,
             eof: false,
-            read_buf: vec![0u8; chunk_bytes],
+            read_buf: vec![0.0; chunk_samples],
         }
     }
 }
@@ -77,11 +78,12 @@ impl AudioDecoder for PcmDecoder {
         dest.spec = self.spec.clone();
 
         // Read a chunk of raw bytes
-        let bytes_to_read = self.read_buf.len();
+        let read_bytes = bytemuck::cast_slice_mut::<f32, u8>(&mut self.read_buf);
+        let bytes_to_read = read_bytes.len();
         let mut total_read = 0;
 
         while total_read < bytes_to_read {
-            match self.reader.read(&mut self.read_buf[total_read..]) {
+            match self.reader.read(&mut read_bytes[total_read..]) {
                 Ok(0) => {
                     self.eof = true;
                     break;
@@ -105,18 +107,15 @@ impl AudioDecoder for PcmDecoder {
         let usable_bytes = total_read - (total_read % 4);
         let num_samples = usable_bytes / 4;
 
-        // Convert bytes to f32 samples
-        dest.samples.reserve(num_samples);
-        for i in 0..num_samples {
-            let offset = i * 4;
-            let bytes = [
-                self.read_buf[offset],
-                self.read_buf[offset + 1],
-                self.read_buf[offset + 2],
-                self.read_buf[offset + 3],
-            ];
-            dest.samples.push(f32::from_le_bytes(bytes));
+        #[cfg(target_endian = "big")]
+        {
+            for sample in &mut self.read_buf[..num_samples] {
+                let bits = u32::from_le_bytes(sample.to_ne_bytes());
+                *sample = f32::from_bits(bits);
+            }
         }
+        dest.samples
+            .extend_from_slice(&self.read_buf[..num_samples]);
 
         let frames = num_samples / self.spec.channels as usize;
         self.position += frames as u64;
@@ -173,6 +172,29 @@ mod tests {
         assert!((dest.samples[0] - 0.5).abs() < 1e-6);
         assert!((dest.samples[1] - (-0.5)).abs() < 1e-6);
         assert_eq!(decoder.position(), 4);
+    }
+
+    #[test]
+    fn test_pcm_decoder_reuses_destination_capacity() {
+        let samples = vec![0.25f32; 4096];
+        let mut bytes = Vec::new();
+        for s in &samples {
+            bytes.extend_from_slice(&s.to_le_bytes());
+        }
+
+        let reader = Box::new(Cursor::new(bytes));
+        let mut decoder = PcmDecoder::new(48000, 2, 32, Some(2048), reader);
+        let mut dest = DecodedAudio::new(decoder.spec().clone());
+
+        let frames = decoder.decode_into(&mut dest).unwrap();
+        assert_eq!(frames, 1024);
+        let ptr = dest.samples.as_ptr();
+        let capacity = dest.samples.capacity();
+
+        let frames = decoder.decode_into(&mut dest).unwrap();
+        assert_eq!(frames, 1024);
+        assert_eq!(dest.samples.as_ptr(), ptr);
+        assert_eq!(dest.samples.capacity(), capacity);
     }
 
     #[test]

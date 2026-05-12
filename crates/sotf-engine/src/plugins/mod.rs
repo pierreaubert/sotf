@@ -453,6 +453,21 @@ sotf_plugins::serde_param_default! {
     fn default_upmixer_auto_gain_smoothing_ms() -> f64 = "auto_gain_smoothing_ms";
 }
 
+fn upmixer_frequency_resolution_label(frequency_resolution: usize) -> &'static str {
+    match frequency_resolution {
+        0 => "erb",
+        1 => "fine_erb",
+        2 => "per_bin",
+        other => {
+            log::warn!(
+                "Invalid upmixer frequency_resolution {}; falling back to erb",
+                other
+            );
+            "erb"
+        }
+    }
+}
+
 use sotf_plugins::param_specs::aae as aae_specs;
 
 sotf_plugins::serde_param_default! {
@@ -2455,12 +2470,7 @@ impl PluginSettings {
                     "ambient_boost": ambient_boost,
                     "safety_cap_db": safety_cap_db,
                     "low_latency": low_latency,
-                    "frequency_resolution": match frequency_resolution {
-                        0 => "erb",
-                        1 => "fine_erb",
-                        2 => "per_bin",
-                        _ => "erb",
-                    },
+                    "frequency_resolution": upmixer_frequency_resolution_label(*frequency_resolution),
                     "rear_ambient_boost": rear_ambient_boost,
                     "dialogue_weight": dialogue_weight,
                     "voice_freq_min_hz": voice_freq_min_hz,

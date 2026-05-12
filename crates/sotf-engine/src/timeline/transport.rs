@@ -60,7 +60,17 @@ impl Transport {
 
     /// Seek to a position in seconds.
     pub fn seek_seconds(&mut self, seconds: f64) {
-        self.position_samples = (seconds * self.sample_rate as f64) as u64;
+        if !seconds.is_finite() || seconds <= 0.0 {
+            self.position_samples = 0;
+            return;
+        }
+
+        let samples = seconds * self.sample_rate as f64;
+        self.position_samples = if samples >= u64::MAX as f64 {
+            u64::MAX
+        } else {
+            samples as u64
+        };
     }
 
     pub fn play(&mut self) {
@@ -134,6 +144,17 @@ mod tests {
         let mut t = Transport::new(48000);
         t.seek(96000);
         assert_eq!(t.position_seconds(), 2.0);
+    }
+
+    #[test]
+    fn test_transport_seek_seconds_clamps_invalid_values() {
+        let mut t = Transport::new(48000);
+        t.seek_seconds(f64::NAN);
+        assert_eq!(t.position_samples, 0);
+        t.seek_seconds(-1.0);
+        assert_eq!(t.position_samples, 0);
+        t.seek_seconds(f64::MAX);
+        assert_eq!(t.position_samples, u64::MAX);
     }
 
     #[test]

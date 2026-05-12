@@ -123,17 +123,23 @@ pub fn analyze_waveform<P: AsRef<Path>>(path: P) -> AudioDecoderResult<Vec<u8>> 
     Ok(waveform)
 }
 
-/// Legacy waveform analysis that loads the entire file into memory.
-/// Used as fallback for files without frame count metadata.
+const LEGACY_RMS_WINDOW_FRAMES: usize = 1024;
+
+/// Fallback waveform analysis for files without frame count metadata.
+///
+/// Keeps only per-window RMS values instead of the full mono sample stream, so
+/// memory use grows with file duration / window size rather than sample count.
 fn analyze_waveform_legacy<P: AsRef<Path>>(path: P) -> AudioDecoderResult<Vec<u8>> {
     log::debug!(
-        "[Waveform] Legacy analyze (no frame count): {}",
+        "[Waveform] Windowed analyze (no frame count): {}",
         path.as_ref().to_str().unwrap_or("unknown")
     );
 
     let mut decoder = create_decoder(path.as_ref())?;
 
-    let mut mono_samples: Vec<f32> = Vec::new();
+    let mut rms_windows: Vec<f32> = Vec::new();
+    let mut sum_squares = 0.0f64;
+    let mut count = 0usize;
 
     while let Some(decoded) = decoder.decode_next()? {
         if decoded.is_empty() {
@@ -148,11 +154,23 @@ fn analyze_waveform_legacy<P: AsRef<Path>>(path: P) -> AudioDecoderResult<Vec<u8
                     sum += samples[frame_start + ch];
                 }
             }
-            mono_samples.push(sum / channels as f32);
+            let mono = sum / channels as f32;
+            sum_squares += (mono as f64) * (mono as f64);
+            count += 1;
+
+            if count >= LEGACY_RMS_WINDOW_FRAMES {
+                rms_windows.push((sum_squares / count as f64).sqrt() as f32);
+                sum_squares = 0.0;
+                count = 0;
+            }
         }
     }
 
-    Ok(compute_waveform(&mono_samples))
+    if count > 0 {
+        rms_windows.push((sum_squares / count as f64).sqrt() as f32);
+    }
+
+    Ok(compute_waveform(&rms_windows))
 }
 
 #[cfg(test)]

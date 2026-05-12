@@ -48,6 +48,7 @@ sotf-iamf = { workspace = true, optional = true }
 sotf-plugin-ambisonics = { workspace = true, optional = true }
 sotf-streaming = { workspace = true, optional = true }
 num-complex = { workspace = true }
+bytemuck = { workspace = true }
 
 # TUI framework
 ratatui = { workspace = true }

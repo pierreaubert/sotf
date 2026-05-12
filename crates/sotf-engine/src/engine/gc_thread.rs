@@ -27,14 +27,8 @@ pub struct GcThread {
     handle: Option<std::thread::JoinHandle<()>>,
 }
 
-impl Default for GcThread {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl GcThread {
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self, String> {
         let (tx, rx) = crossbeam::channel::unbounded::<GcItem>();
         let handle = std::thread::Builder::new()
             .name("gc".to_string())
@@ -48,12 +42,12 @@ impl GcThread {
                     }
                 }
             })
-            .expect("Failed to spawn GC thread");
+            .map_err(|e| format!("Failed to spawn GC thread: {}", e))?;
 
-        Self {
+        Ok(Self {
             sender: tx,
             handle: Some(handle),
-        }
+        })
     }
 
     pub fn sender(&self) -> GcSender {

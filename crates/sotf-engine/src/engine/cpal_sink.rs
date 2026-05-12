@@ -9,10 +9,10 @@ use super::ThreadEvent;
 use super::audio_sink::{AudioSink, SinkConfig, SinkOpenResult};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, SampleFormat, Stream, StreamConfig};
-use rtrb::{Consumer, Producer, RingBuffer};
-use std::sync::Arc;
+use rtrb::{Consumer, CopyToUninit, Producer, RingBuffer, chunks::WriteChunkUninit};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::Sender;
+use std::sync::{Arc, Mutex};
 
 /// Max input channels for the stack-allocated downmix coefficient arrays.
 #[allow(dead_code)]
@@ -37,6 +37,26 @@ fn should_fallback_from_virtual_default(
     allow_virtual: bool,
 ) -> bool {
     requested_device.is_none() && !allow_virtual && is_virtual_output_device_name(candidate_name)
+}
+
+fn send_thread_event(event_tx: &Sender<ThreadEvent>, event: ThreadEvent, context: &str) {
+    if let Err(e) = event_tx.send(event) {
+        log::trace!("[CpalSink] Dropped event in {}: {}", context, e);
+    }
+}
+
+/// Bulk-copy a slice into a ring buffer chunk using memcpy instead of per-element iteration.
+fn write_chunk_bulk(mut chunk: WriteChunkUninit<'_, f32>, data: &[f32]) {
+    let (first, second) = chunk.as_mut_slices();
+    let first_len = first.len().min(data.len());
+    data[..first_len].copy_to_uninit(&mut first[..first_len]);
+    let remaining = data.len() - first_len;
+    if remaining > 0 {
+        let second_len = second.len().min(remaining);
+        data[first_len..first_len + second_len].copy_to_uninit(&mut second[..second_len]);
+    }
+    // Safety: every committed slot above was initialized by copy_to_uninit.
+    unsafe { chunk.commit(data.len()) };
 }
 
 /// Shared state between the playback thread and cpal callback.
@@ -80,9 +100,23 @@ pub struct CpalSink {
     channels: usize,
     event_tx: Option<Sender<ThreadEvent>>,
     allow_virtual_output: bool,
-    /// Callback count at last stall check
+    stall_check: Mutex<StallCheckState>,
+}
+
+struct StallCheckState {
+    /// Callback count observed when the callback last advanced.
     last_callback_count: u64,
+    /// Time when the callback count last advanced.
     last_callback_check: std::time::Instant,
+}
+
+impl Default for StallCheckState {
+    fn default() -> Self {
+        Self {
+            last_callback_count: 0,
+            last_callback_check: std::time::Instant::now(),
+        }
+    }
 }
 
 impl Default for CpalSink {
@@ -105,8 +139,13 @@ impl CpalSink {
             channels: 0,
             event_tx: None,
             allow_virtual_output: false,
-            last_callback_count: 0,
-            last_callback_check: std::time::Instant::now(),
+            stall_check: Mutex::new(StallCheckState::default()),
+        }
+    }
+
+    fn reset_stall_check(&self) {
+        if let Ok(mut stall_check) = self.stall_check.lock() {
+            *stall_check = StallCheckState::default();
         }
     }
 
@@ -268,9 +307,11 @@ impl AudioSink for CpalSink {
             event_tx.clone(),
         )?;
 
-        event_tx
-            .send(ThreadEvent::PlaybackChannelsChanged(channels))
-            .ok();
+        send_thread_event(
+            &event_tx,
+            ThreadEvent::PlaybackChannelsChanged(channels),
+            "open channel update",
+        );
 
         log::info!(
             "[CpalSink] Opened - {}Hz, {}ch, format: {:?}, device: '{}'",
@@ -288,8 +329,7 @@ impl AudioSink for CpalSink {
         self.output_format = output_format;
         self.buffer_capacity = buffer_capacity;
         self.channels = channels;
-        self.last_callback_count = 0;
-        self.last_callback_check = std::time::Instant::now();
+        self.reset_stall_check();
 
         Ok(SinkOpenResult {
             channels,
@@ -302,7 +342,7 @@ impl AudioSink for CpalSink {
 
         match producer.write_chunk_uninit(data.len()) {
             Ok(chunk) => {
-                chunk.fill_from_iter(data.iter().copied());
+                write_chunk_bulk(chunk, data);
                 Ok(data.len())
             }
             Err(_) => Ok(0), // Buffer full
@@ -356,10 +396,13 @@ impl AudioSink for CpalSink {
         let device = self.device.as_ref().ok_or("No device")?;
 
         // Pause old stream
+        let mut old_stream_paused = false;
         if let Some(ref stream) = self.stream
             && let Err(e) = stream.pause()
         {
             log::warn!("[CpalSink] Failed to pause old stream: {}", e);
+        } else if self.stream.is_some() {
+            old_stream_paused = true;
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
 
@@ -383,17 +426,33 @@ impl AudioSink for CpalSink {
         let buffer_capacity =
             playback_buffer_capacity(config.sample_rate, channels, config.buffer_ms);
 
-        let (producer, state, stream) = Self::build_stream(
+        let (producer, state, stream) = match Self::build_stream(
             device,
             &stream_config,
             buffer_capacity,
             output_format,
             event_tx.clone(),
-        )?;
+        ) {
+            Ok(parts) => parts,
+            Err(err) => {
+                if old_stream_paused
+                    && let Some(ref stream) = self.stream
+                    && let Err(resume_err) = stream.play()
+                {
+                    log::warn!(
+                        "[CpalSink] Failed to resume old stream after reconfigure failure: {}",
+                        resume_err
+                    );
+                }
+                return Err(err);
+            }
+        };
 
-        event_tx
-            .send(ThreadEvent::PlaybackChannelsChanged(channels))
-            .ok();
+        send_thread_event(
+            &event_tx,
+            ThreadEvent::PlaybackChannelsChanged(channels),
+            "reconfigure channel update",
+        );
 
         log::info!(
             "[CpalSink] Reconfigured - {}Hz, {}ch, format: {:?}",
@@ -411,8 +470,7 @@ impl AudioSink for CpalSink {
         self.output_format = output_format;
         self.buffer_capacity = buffer_capacity;
         self.channels = channels;
-        self.last_callback_count = 0;
-        self.last_callback_check = std::time::Instant::now();
+        self.reset_stall_check();
 
         Ok(SinkOpenResult {
             channels,
@@ -425,12 +483,15 @@ impl AudioSink for CpalSink {
             return false;
         };
         let current = state.callback_count.load(Ordering::Relaxed);
-        // We can't update last_callback_count through &self, so we check
-        // if the callback count hasn't changed since the last check by
-        // comparing against the stored value. The playback thread loop
-        // calls update_stall_check() to advance the timer.
-        current == self.last_callback_count
-            && self.last_callback_check.elapsed() > std::time::Duration::from_secs(3)
+        let Ok(mut stall_check) = self.stall_check.lock() else {
+            return false;
+        };
+        if current != stall_check.last_callback_count {
+            stall_check.last_callback_count = current;
+            stall_check.last_callback_check = std::time::Instant::now();
+            return false;
+        }
+        stall_check.last_callback_check.elapsed() > std::time::Duration::from_secs(3)
     }
 
     fn device_name(&self) -> &str {
@@ -450,9 +511,11 @@ impl CpalSink {
     pub fn update_stall_check(&mut self) {
         if let Some(state) = &self.state {
             let current = state.callback_count.load(Ordering::Relaxed);
-            if current != self.last_callback_count {
-                self.last_callback_count = current;
-                self.last_callback_check = std::time::Instant::now();
+            if let Ok(mut stall_check) = self.stall_check.lock()
+                && current != stall_check.last_callback_count
+            {
+                stall_check.last_callback_count = current;
+                stall_check.last_callback_check = std::time::Instant::now();
             }
         }
     }
@@ -597,10 +660,6 @@ fn read_ring_buffer(
     state: &CpalPlaybackState,
     capacity: usize,
 ) -> bool {
-    state
-        .total_callback_samples
-        .fetch_add(requested as u64, Ordering::Relaxed);
-
     if state.flush_requested.load(Ordering::Relaxed) {
         let available = consumer.slots().min(requested);
         if available > 0
@@ -608,6 +667,9 @@ fn read_ring_buffer(
         {
             chunk.commit_all();
         }
+        state
+            .total_callback_samples
+            .fetch_add(available as u64, Ordering::Relaxed);
         scratch[..requested].fill(0.0);
         if consumer.slots() == 0 {
             state.flush_requested.store(false, Ordering::Relaxed);
@@ -632,6 +694,9 @@ fn read_ring_buffer(
             scratch[first_len..first_len + second_len].copy_from_slice(second);
         }
         chunk.commit_all();
+        state
+            .total_callback_samples
+            .fetch_add(requested as u64, Ordering::Relaxed);
     } else {
         let available = consumer.slots().min(requested);
         if let Ok(chunk) = consumer.read_chunk(available) {
@@ -646,6 +711,9 @@ fn read_ring_buffer(
             }
             chunk.commit_all();
         }
+        state
+            .total_callback_samples
+            .fetch_add(available as u64, Ordering::Relaxed);
         if available < requested {
             scratch[available..requested].fill(0.0);
         }
@@ -736,12 +804,11 @@ fn build_output_stream_f32(
             },
             move |err| {
                 log::warn!("[CpalSink] Stream error: {}", err);
-                event_tx
-                    .send(ThreadEvent::ProcessingError(format!(
-                        "Stream error: {}",
-                        err
-                    )))
-                    .ok();
+                send_thread_event(
+                    &event_tx,
+                    ThreadEvent::ProcessingError(format!("Stream error: {}", err)),
+                    "f32 stream error",
+                );
             },
             None,
         )
@@ -792,12 +859,11 @@ where
             },
             move |err| {
                 log::warn!("[CpalSink] Stream error: {}", err);
-                event_tx
-                    .send(ThreadEvent::ProcessingError(format!(
-                        "Stream error: {}",
-                        err
-                    )))
-                    .ok();
+                send_thread_event(
+                    &event_tx,
+                    ThreadEvent::ProcessingError(format!("Stream error: {}", err)),
+                    "integer stream error",
+                );
             },
             None,
         )
@@ -854,8 +920,42 @@ mod tests {
     }
 
     #[test]
+    fn is_stalled_updates_observed_callback_count_without_external_polling() {
+        let mut sink = CpalSink::new();
+        let state = Arc::new(CpalPlaybackState::new(128));
+        sink.state = Some(Arc::clone(&state));
+        {
+            let mut stall_check = sink.stall_check.lock().unwrap();
+            stall_check.last_callback_check =
+                std::time::Instant::now() - std::time::Duration::from_secs(4);
+        }
+
+        state.callback_count.store(1, Ordering::Relaxed);
+
+        assert!(!sink.is_stalled());
+        let stall_check = sink.stall_check.lock().unwrap();
+        assert_eq!(stall_check.last_callback_count, 1);
+    }
+
+    #[test]
     fn fallback_output_format_defaults_to_f32_requested_channels_when_missing() {
         assert_eq!(fallback_output_format(None, 2), (SampleFormat::F32, 2));
+    }
+
+    #[test]
+    fn read_ring_buffer_counts_only_consumed_samples_on_underrun() {
+        let (mut producer, mut consumer) = RingBuffer::<f32>::new(8);
+        let chunk = producer.write_chunk_uninit(3).unwrap();
+        chunk.fill_from_iter([0.25, 0.5, 0.75]);
+
+        let state = CpalPlaybackState::new(8);
+        let mut scratch = [1.0; 6];
+
+        let underrun = read_ring_buffer(&mut consumer, &mut scratch, 6, &state, 8);
+
+        assert!(underrun);
+        assert_eq!(scratch, [0.25, 0.5, 0.75, 0.0, 0.0, 0.0]);
+        assert_eq!(state.total_callback_samples.load(Ordering::Relaxed), 3);
     }
 
     #[test]

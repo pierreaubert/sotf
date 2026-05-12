@@ -29,13 +29,43 @@ impl EQFilter {
     }
 
     pub fn to_biquad(&self, sample_rate: f64) -> Biquad {
-        Biquad::new(
-            self.filter_type,
-            self.frequency,
-            sample_rate,
-            self.q,
-            self.gain_db,
-        )
+        let frequency = if self.frequency.is_finite() && self.frequency > 0.0 {
+            let nyquist = sample_rate * 0.5;
+            self.frequency.min(nyquist * 0.999)
+        } else {
+            log::warn!(
+                "Invalid EQ frequency {}; falling back to 1000 Hz",
+                self.frequency
+            );
+            1000.0
+        };
+        let q = if self.q.is_finite() && self.q > 0.0 {
+            self.q
+        } else {
+            log::warn!("Invalid EQ Q {}; falling back to 0.707", self.q);
+            0.707
+        };
+        let gain_db = if self.gain_db.is_finite() {
+            self.gain_db
+        } else {
+            log::warn!("Invalid EQ gain {}; falling back to 0 dB", self.gain_db);
+            0.0
+        };
+
+        Biquad::new(self.filter_type, frequency, sample_rate, q, gain_db)
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.frequency.is_finite() || self.frequency <= 0.0 {
+            return Err(format!("Invalid EQ frequency: {}", self.frequency));
+        }
+        if !self.q.is_finite() || self.q <= 0.0 {
+            return Err(format!("Invalid EQ Q: {}", self.q));
+        }
+        if !self.gain_db.is_finite() {
+            return Err(format!("Invalid EQ gain: {}", self.gain_db));
+        }
+        Ok(())
     }
 
     /// Parse a single APO filter line
@@ -92,7 +122,9 @@ impl EQFilter {
             .and_then(|s| s.parse::<f64>().ok())
             .unwrap_or(0.707); // Default Q value
 
-        Ok(Self::new(filter_type, frequency, q, gain_db))
+        let filter = Self::new(filter_type, frequency, q, gain_db);
+        filter.validate()?;
+        Ok(filter)
     }
 
     /// Parse APO format file and return a vector of EQ filters
@@ -135,5 +167,29 @@ impl EQFilter {
         } else {
             Ok(filters)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn apo_parser_rejects_invalid_frequency_and_q() {
+        assert!(EQFilter::from_apo_line("Filter 1: ON PK Fc 0 Hz Gain 1 dB Q 1").is_err());
+        assert!(EQFilter::from_apo_line("Filter 1: ON PK Fc 100 Hz Gain 1 dB Q 0").is_err());
+        assert!(EQFilter::from_apo_line("Filter 1: ON PK Fc NaN Hz Gain 1 dB Q 1").is_err());
+    }
+
+    #[test]
+    fn to_biquad_sanitizes_invalid_direct_values() {
+        let filter = EQFilter::new(BiquadFilterType::Peak, -10.0, 0.0, f64::NAN);
+        let biquad = filter.to_biquad(48_000.0);
+
+        assert!(biquad.freq.is_finite());
+        assert!(biquad.freq > 0.0);
+        assert!(biquad.q.is_finite());
+        assert!(biquad.q > 0.0);
+        assert_eq!(biquad.db_gain, 0.0);
     }
 }

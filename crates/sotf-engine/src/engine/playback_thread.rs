@@ -1260,7 +1260,7 @@ fn run_playback_thread(
                     Err(_) => {
                         // FRAME DROPPED: popped from sync channel but can't write to ring buffer
                         frames_dropped += 1;
-                        if frames_dropped % 100 == 1 {
+                        if frames_dropped % 500 == 1 {
                             log::warn!(
                                 "[Playback Thread] FRAME DROPPED count: {} (buffer full)",
                                 frames_dropped
@@ -1404,7 +1404,7 @@ fn run_playback_thread(
     };
     let audio_duration = total_frames as f64 / sample_rate as f64;
     let avg_samples_per_callback = total_samples.checked_div(total_callbacks).unwrap_or(0);
-    log::warn!(
+    log::info!(
         "[Playback Thread] CALLBACK RATE: {} callbacks, {} total samples ({} frames) in {:.3}s = {} effective Hz (expected {}Hz), audio_duration={:.3}s, avg_samples/callback={}, channels={}",
         total_callbacks,
         total_samples,
@@ -1416,7 +1416,7 @@ fn run_playback_thread(
         avg_samples_per_callback,
         channels,
     );
-    log::warn!(
+    log::info!(
         "[Playback Thread] FRAME ACCOUNTING: received={}, written={}, dropped={}, blocked={}, written_samples={}, written_audio={:.3}s",
         frames_received,
         frames_written,
@@ -1623,11 +1623,6 @@ fn read_ring_buffer(
     state: &PlaybackState,
     capacity: usize,
 ) -> bool {
-    // Track sample count (callback_count is tracked by callers, once per cpal callback)
-    state
-        .total_callback_samples
-        .fetch_add(requested as u64, Ordering::Relaxed);
-
     if state.flush_requested.load(Ordering::Relaxed) {
         let available = consumer.slots().min(requested);
         if available > 0
@@ -1635,6 +1630,9 @@ fn read_ring_buffer(
         {
             chunk.commit_all();
         }
+        state
+            .total_callback_samples
+            .fetch_add(available as u64, Ordering::Relaxed);
 
         scratch[..requested].fill(0.0);
 
@@ -1666,6 +1664,9 @@ fn read_ring_buffer(
         }
 
         chunk.commit_all();
+        state
+            .total_callback_samples
+            .fetch_add(requested as u64, Ordering::Relaxed);
     } else {
         // Not enough data (underrun)
         let available = consumer.slots().min(requested);
@@ -1683,6 +1684,9 @@ fn read_ring_buffer(
             }
             chunk.commit_all();
         }
+        state
+            .total_callback_samples
+            .fetch_add(available as u64, Ordering::Relaxed);
 
         // Zero pad the rest
         if available < requested {
@@ -1917,6 +1921,22 @@ mod tests {
         assert_eq!(scratch, [0.0; 4]);
         assert_eq!(consumer.slots(), 0);
         assert!(!state.flush_requested.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn read_ring_buffer_counts_only_consumed_samples_on_underrun() {
+        let (mut producer, mut consumer) = RingBuffer::<f32>::new(8);
+        let chunk = producer.write_chunk_uninit(3).unwrap();
+        chunk.fill_from_iter([0.25, 0.5, 0.75]);
+
+        let state = PlaybackState::new(8);
+        let mut scratch = [1.0; 6];
+
+        let underrun = read_ring_buffer(&mut consumer, &mut scratch, 6, &state, 8);
+
+        assert!(underrun);
+        assert_eq!(scratch, [0.25, 0.5, 0.75, 0.0, 0.0, 0.0]);
+        assert_eq!(state.total_callback_samples.load(Ordering::Relaxed), 3);
     }
 
     #[test]

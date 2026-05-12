@@ -93,7 +93,16 @@ impl Clip {
     /// Compute the gain multiplier for a given position within the clip (in samples).
     /// Includes per-clip gain and fade envelopes.
     pub fn gain_at(&self, position_in_clip: u64) -> f32 {
-        let base_gain = 10.0f32.powf(self.gain_db / 20.0);
+        self.linear_gain() * self.fade_gain_at(position_in_clip)
+    }
+
+    /// Convert the clip gain from dB to linear gain.
+    pub fn linear_gain(&self) -> f32 {
+        10.0f32.powf(self.gain_db / 20.0)
+    }
+
+    /// Compute only the fade envelope for a position within the clip.
+    pub fn fade_gain_at(&self, position_in_clip: u64) -> f32 {
         let effective_dur = self.effective_duration_samples();
 
         // Fade-in
@@ -116,7 +125,7 @@ impl Clip {
             1.0
         };
 
-        base_gain * fade_in_gain * fade_out_gain
+        fade_in_gain * fade_out_gain
     }
 }
 

@@ -5,8 +5,8 @@
 // Opens a cpal input stream and feeds samples into a ring buffer.
 // The recording system reads from the consumer end of the ring buffer.
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 /// Configuration for audio input.
 #[derive(Debug, Clone)]

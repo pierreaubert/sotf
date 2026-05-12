@@ -101,7 +101,9 @@ impl MidiTrack {
                         NoteEventKind::NoteOff { note: *note }
                     }
                     sotf_audio_player_midi::message::MidiMessage::ControlChange {
-                        controller, value, ..
+                        controller,
+                        value,
+                        ..
                     } => NoteEventKind::ControlChange {
                         controller: *controller,
                         value: *value,
@@ -271,10 +273,9 @@ impl InstrumentPlugin for TestSynth {
             let mut sample = 0.0f32;
             for voice in &mut self.voices {
                 if voice.active {
-                    sample +=
-                        (voice.phase * 2.0 * std::f32::consts::PI).sin()
-                            * voice.velocity
-                            * self.amplitude;
+                    sample += (voice.phase * 2.0 * std::f32::consts::PI).sin()
+                        * voice.velocity
+                        * self.amplitude;
                     voice.phase += voice.frequency / self.sample_rate;
                     if voice.phase >= 1.0 {
                         voice.phase -= 1.0;
