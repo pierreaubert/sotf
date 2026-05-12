@@ -958,12 +958,18 @@ impl InPlacePlugin for DenoiserPlugin {
 
         let block_samples = self.fft_size * self.channels;
 
-        // Phase 0: Feed samples to PND analyzers
+        // Phase 0: Feed samples to PND analyzers.
+        // De-interleave each channel into temp_input_block (first num_frames elements)
+        // and pass the whole block at once — one analyze() call per channel instead of
+        // one per sample, reducing function-call overhead by num_frames×.
         if self.polyphonic_detection {
-            for i in 0..num_frames {
-                for ch in 0..self.channels {
-                    self.pnd_analyzers[ch].analyze(&[buffer[i * self.channels + ch]]);
+            let channels = self.channels;
+            for ch in 0..channels {
+                // Reuse temp_input_block[0..num_frames] as a de-interleave scratch.
+                for i in 0..num_frames {
+                    self.temp_input_block[i] = buffer[i * channels + ch];
                 }
+                self.pnd_analyzers[ch].analyze(&self.temp_input_block[..num_frames]);
             }
         }
 

@@ -120,13 +120,13 @@ impl DenoiserPlugin {
                     &mut self.tt_transient_mask[..self.spectrum_size],
                 );
                 for k in 0..self.spectrum_size {
-                    // Transient-dominant bins: reduce denoising strength (preserve attacks)
-                    // tonal_mask = how tonal this bin is (0..1)
-                    // Blend: tonal bins keep current gain, transient bins push gain toward 1.0
+                    // Transient-dominant bins: preserve attacks by blending gain toward 1.0.
+                    // A weight of 1.0 means fully transient → keep the signal as-is (gain=1.0).
+                    // A weight of 0.0 means fully tonal → apply the computed Wiener gain unchanged.
+                    // The 0.5 factor gives a half-strength blend at full transient weight.
                     let transient_weight = self.tt_transient_mask[k];
-                    self.gain[ch][k] =
-                        self.gain[ch][k] * (1.0 - transient_weight) + transient_weight;
-                    // preserve transients (blend toward 1.0)
+                    let t = transient_weight * 0.5;
+                    self.gain[ch][k] = self.gain[ch][k] * (1.0 - t) + t;
                 }
             }
 
@@ -135,11 +135,16 @@ impl DenoiserPlugin {
                 self.smooth_gains_across_frequency(ch);
             }
 
-            // Pass 2b: Psychoacoustic masking — skip denoising for masked bins
+            // Pass 2b: Psychoacoustic masking — skip denoising for masked bins.
+            // Guard: only apply masking when speech presence probability is above a
+            // minimum threshold (0.1). On noise-only frames the signal power equals
+            // the noise power, so the noise can "mask itself" (especially at low
+            // frequencies where Bark spreading is wide), incorrectly bypassing
+            // denoising on bins that should be attenuated.
             if self.psychoacoustic_masking {
                 self.compute_masking_thresholds(ch);
                 for k in 0..self.spectrum_size {
-                    if self.is_noise_masked(ch, k) {
+                    if self.speech_presence[ch][k] >= 0.1 && self.is_noise_masked(ch, k) {
                         self.gain[ch][k] = 1.0;
                     }
                 }
@@ -457,7 +462,7 @@ impl DenoiserPlugin {
 
         for (env_val, gain_val) in envelope.iter().zip(self.gain[channel].iter_mut()).take(n) {
             if *env_val > mean_env + 0.13 {
-                // 0.13 in log10 units ≈ 3 dB above mean
+                // 0.13 in log10(power) units = 1.3 dB above mean (10 * 0.13 = 1.3 dB)
                 *gain_val = gain_val.max(floor_gain);
             }
         }

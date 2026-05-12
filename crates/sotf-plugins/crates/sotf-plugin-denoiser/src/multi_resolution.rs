@@ -308,16 +308,21 @@ impl MultiResState {
             }
             state.frame_counter += 1;
 
-            // Wiener gain computation (raw gain — temporal smoothing is applied
-            // by the large-FFT path in calculate_wiener_gains, so we avoid
-            // double-smoothing by storing the unsmoothed gain here).
+            // Wiener gain computation — no temporal smoothing here.
+            // The large-FFT path in calculate_wiener_gains() applies its own
+            // temporal smoother after combine_gains(); applying it here too
+            // would cause double-smoothing (~2 extra frames of attack/release lag).
             for k in 0..spectrum_size {
                 let signal_power = state.freq_domain[k].norm_sqr();
                 let noise_power = state.noise_psd[k].max(EPSILON);
                 let snr = ((signal_power - noise_power).max(0.0)) / noise_power;
-                let g = (snr / (snr + reduction_linear)).max(floor_linear);
-                state.smoothed_gain[k] = g;
+                state.smoothed_gain[k] = (snr / (snr + reduction_linear)).max(floor_linear);
             }
+
+            // Silence unused parameter warnings — attack/release are no longer used
+            // in this path but are kept in the function signature for API stability.
+            let _ = attack_coeff;
+            let _ = release_coeff;
 
             // Spectral flux: mean |magnitude_change| across bins
             let mut flux = 0.0_f32;
