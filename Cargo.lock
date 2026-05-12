@@ -10528,7 +10528,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-beamformer"
-version = "0.5.1"
+version = "0.5.0"
 dependencies = [
  "math-dsp",
  "nalgebra",
