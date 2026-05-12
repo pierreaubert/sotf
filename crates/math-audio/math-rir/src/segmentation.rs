@@ -62,7 +62,7 @@ pub(crate) fn build_segments(
         let duration = onset.saturating_sub(prev_onset);
 
         // Direct sound (event index 0) is always kept; only reflections are subject to merging
-        if i > 1 && duration < min_segment {
+        if i > 0 && duration < min_segment {
             // Too short: merge with predecessor (skip this onset)
             continue;
         }
@@ -251,5 +251,49 @@ mod tests {
 
         // The second reflection should be merged, leaving only 2 segments
         assert_eq!(segments.len(), 2);
+    }
+
+    #[test]
+    fn test_first_reflection_merged_when_too_short() {
+        // The first reflection (event index 1) should also be subject to merging
+        // if its segment is shorter than min_segment. The comment says
+        // "only reflections are subject to merging" — the direct sound is exempt.
+        let mut rir = vec![0.0001f32; 2400];
+        rir[100] = 1.0; // direct sound
+        rir[110] = 0.5; // first reflection very close to DS
+
+        let reflections = vec![DetectedReflection {
+            toa_sample: 110,
+            peak_energy: 0.25,
+            doa: None,
+        }];
+
+        // min_segment = 48 samples (1ms). The gap from DS onset (0) to R1 onset (110)
+        // is 110 samples, which is > 48, so it would NOT be merged. We need a larger
+        // min_segment to trigger merging. Use 6ms = 288 samples.
+        let config = SsirConfig {
+            sample_rate: 48000.0,
+            direct_sound_window_ms: (0.1, 0.1), // tiny DS window so R1 is detected
+            min_segment_ms: 6.0,                // 288 samples — gap 110 < 288
+            mixing_time_ms: Some(40.0),
+            ..SsirConfig::default()
+        };
+
+        let segments = build_segments(
+            &rir,
+            100,
+            None,
+            &reflections,
+            config.mixing_time_samples(),
+            &config,
+        );
+
+        // The first reflection should be merged into the direct sound,
+        // leaving only 1 segment (the direct sound).
+        assert_eq!(
+            segments.len(),
+            1,
+            "first reflection should be merged when its segment is shorter than min_segment"
+        );
     }
 }

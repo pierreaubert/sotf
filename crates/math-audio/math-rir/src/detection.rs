@@ -37,6 +37,19 @@ pub(crate) fn find_direct_sound_toa(rir: &[f32], config: &SsirConfig) -> Option<
     // Step 2: Find peaks in log magnitude with minimum distance
     let peaks = find_peaks_with_min_distance(&log_mag, min_distance);
     if peaks.is_empty() {
+        // Signals with fewer than 3 samples have no local maxima in the
+        // traditional sense — fall back to the global maximum if one exists.
+        if rir.len() < 3 {
+            return rir
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| {
+                    a.abs()
+                        .partial_cmp(&b.abs())
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .map(|(i, _)| i);
+        }
         return None;
     }
 
@@ -262,11 +275,23 @@ fn median_of(values: &mut [f64]) -> f64 {
     if len == 0 {
         return 0.0;
     }
-    values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    if len.is_multiple_of(2) {
-        (values[len / 2 - 1] + values[len / 2]) / 2.0
+    // Partition non-finite values to the end so they don't corrupt the median.
+    let mut write = 0;
+    for read in 0..len {
+        if values[read].is_finite() {
+            values.swap(write, read);
+            write += 1;
+        }
+    }
+    let valid_len = write;
+    if valid_len == 0 {
+        return f64::NAN;
+    }
+    values[..valid_len].sort_by(|a, b| a.total_cmp(b));
+    if valid_len.is_multiple_of(2) {
+        (values[valid_len / 2 - 1] + values[valid_len / 2]) / 2.0
     } else {
-        values[len / 2]
+        values[valid_len / 2]
     }
 }
 
@@ -344,5 +369,29 @@ mod tests {
         let toas: Vec<usize> = reflections.iter().map(|r| r.toa_sample).collect();
         assert!(toas.iter().any(|&t| (t as i64 - 288).unsigned_abs() < 48));
         assert!(toas.iter().any(|&t| (t as i64 - 480).unsigned_abs() < 48));
+    }
+
+    #[test]
+    fn test_find_direct_sound_toa_short_rir() {
+        // Very short RIRs (< 3 samples) have no local maxima in the traditional sense,
+        // but the global maximum should still be found as the direct sound.
+        let rir = vec![0.0f32, 1.0f32];
+        let config = SsirConfig::new(48000.0);
+        let toa = find_direct_sound_toa(&rir, &config);
+        assert_eq!(toa, Some(1), "should find the global max in a 2-sample RIR");
+    }
+
+    #[test]
+    fn test_median_of_with_nan() {
+        // NaN values should not corrupt the median — they should be ignored
+        // and the median computed from the finite values only.
+        let mut values = [3.0, f64::NAN, 1.0, 2.0];
+        let m = median_of(&mut values);
+        assert!(
+            m.is_finite(),
+            "median should be finite when finite values exist, got {}",
+            m
+        );
+        assert_eq!(m, 2.0, "median of [1, 2, 3] should be 2.0");
     }
 }

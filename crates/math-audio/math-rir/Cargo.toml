@@ -1,6 +1,6 @@
 [package]
 name = "math-rir"
-version = "0.5.3"
+version = "0.5.4"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Room Impulse Response analysis: SSIR-based reflection detection, segmentation, and mixing time estimation"
