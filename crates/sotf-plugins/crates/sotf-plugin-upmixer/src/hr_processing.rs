@@ -72,16 +72,29 @@ impl UpmixerPlugin {
                 continue;
             }
 
-            // Process bins only above cutoff
+            // Process bins with a raised-cosine transition band to avoid brick-wall
+            // Gibbs ringing. A hard cutoff at hf_cut creates pre/post echoes around
+            // transients — precisely when the HR path is most active.
+            // Transition region: [hf_cut - transition_bw, hf_cut], width = 8 bins.
+            let transition_bw = 8.0 * freq_per_bin;
             self.hr_temp_freq_out.fill(Complex::new(0.0, 0.0));
 
             for i in 0..hr_spectrum_size {
                 let freq = i as f32 * freq_per_bin;
-                if freq > hf_cut {
+                let gain = if freq <= hf_cut - transition_bw {
+                    0.0
+                } else if freq >= hf_cut {
+                    1.0
+                } else {
+                    // Raised cosine: smoothly ramps from 0 to 1 over transition_bw
+                    let t = (freq - (hf_cut - transition_bw)) / transition_bw;
+                    0.5 - 0.5 * (std::f32::consts::PI * t).cos()
+                };
+                if gain > 0.0 {
                     let l = self.hr_freq_domain_left[i];
                     let r = self.hr_freq_domain_right[i];
                     self.hr_temp_freq_out[i] =
-                        (l * panning_gain_left + r * panning_gain_right) * gain_scale;
+                        (l * panning_gain_left + r * panning_gain_right) * gain_scale * gain;
                 }
             }
 
