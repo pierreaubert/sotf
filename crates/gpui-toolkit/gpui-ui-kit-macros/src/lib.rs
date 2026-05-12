@@ -31,6 +31,7 @@
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::punctuated::Punctuated;
+use syn::spanned::Spanned;
 use syn::{Data, DeriveInput, Expr, Fields, Lit, Meta, Token, parse_macro_input};
 
 /// Derive macro for component themes.
@@ -44,6 +45,13 @@ use syn::{Data, DeriveInput, Expr, Fields, Lit, Meta, Token, parse_macro_input};
 /// - Only works on structs with named fields
 /// - Every field must have a `#[theme(...)]` attribute
 /// - Each field needs both a default value and a mapping from Theme
+///
+/// # Struct-Level Attributes
+///
+/// | Attribute | Description | Default |
+/// |-----------|-------------|---------|
+/// | `theme_path` | Path to the global Theme type | `crate::theme::Theme` |
+/// | `gpui_path`  | Path to the gpui crate | `gpui` |
 ///
 /// # Attribute Reference
 ///
@@ -182,12 +190,13 @@ use syn::{Data, DeriveInput, Expr, Fields, Lit, Meta, Token, parse_macro_input};
 ///
 /// # Compile Errors
 ///
-/// The macro will panic at compile time if:
+/// The macro emits a compile error if:
 /// - A field is missing the `#[theme(...)]` attribute
 /// - A field is missing `default`, `default_f32`, or `default_expr`
 /// - A field is missing `from` or `from_expr`
 /// - An expression in `from_expr` or `default_expr` fails to parse
-#[proc_macro_derive(ComponentTheme, attributes(theme))]
+/// - A numeric literal is out of range for the expected type
+#[proc_macro_derive(ComponentTheme, attributes(theme, theme_path, gpui_path))]
 pub fn derive_component_theme(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
@@ -195,16 +204,77 @@ pub fn derive_component_theme(input: TokenStream) -> TokenStream {
     let fields = match &input.data {
         Data::Struct(data) => match &data.fields {
             Fields::Named(fields) => &fields.named,
-            _ => panic!("ComponentTheme only supports structs with named fields"),
+            _ => {
+                return syn::Error::new(
+                    proc_macro2::Span::call_site(),
+                    "ComponentTheme only supports structs with named fields",
+                )
+                .to_compile_error()
+                .into();
+            }
         },
-        _ => panic!("ComponentTheme only supports structs"),
+        _ => {
+            return syn::Error::new(
+                proc_macro2::Span::call_site(),
+                "ComponentTheme only supports structs",
+            )
+            .to_compile_error()
+            .into();
+        }
+    };
+
+    // Parse struct-level attributes for theme_path and gpui_path
+    let mut theme_path_str = "crate::theme::Theme".to_string();
+    let mut gpui_path_str = "gpui".to_string();
+
+    for attr in &input.attrs {
+        if attr.path().is_ident("theme_path") {
+            if let Meta::NameValue(nv) = &attr.meta
+                && let Expr::Lit(lit) = &nv.value
+                && let Lit::Str(s) = &lit.lit
+            {
+                theme_path_str = s.value();
+            }
+        } else if attr.path().is_ident("gpui_path")
+            && let Meta::NameValue(nv) = &attr.meta
+            && let Expr::Lit(lit) = &nv.value
+            && let Lit::Str(s) = &lit.lit
+        {
+            gpui_path_str = s.value();
+        }
+    }
+
+    let theme_path: syn::Type = match syn::parse_str(&theme_path_str) {
+        Ok(t) => t,
+        Err(e) => {
+            return syn::Error::new(
+                proc_macro2::Span::call_site(),
+                format!("Invalid theme_path: {e}"),
+            )
+            .to_compile_error()
+            .into();
+        }
+    };
+
+    let gpui_path: syn::Path = match syn::parse_str(&gpui_path_str) {
+        Ok(p) => p,
+        Err(e) => {
+            return syn::Error::new(
+                proc_macro2::Span::call_site(),
+                format!("Invalid gpui_path: {e}"),
+            )
+            .to_compile_error()
+            .into();
+        }
     };
 
     let mut default_fields = Vec::new();
     let mut from_fields = Vec::new();
+    let mut errors: Vec<syn::Error> = Vec::new();
 
     for field in fields {
         let field_name = field.ident.as_ref().unwrap();
+        let field_span = field.ident.span();
 
         // Find the #[theme(...)] attribute
         let theme_attr = field
@@ -213,41 +283,95 @@ pub fn derive_component_theme(input: TokenStream) -> TokenStream {
             .find(|attr| attr.path().is_ident("theme"));
 
         let Some(attr) = theme_attr else {
-            panic!("Field `{}` is missing #[theme(...)] attribute", field_name);
+            errors.push(syn::Error::new(
+                field_span,
+                format!("Field `{field_name}` is missing #[theme(...)] attribute"),
+            ));
+            continue;
         };
 
         let mut default_value: Option<u32> = None;
+        let mut default_hex_lit: Option<String> = None;
         let mut default_f32: Option<f64> = None;
         let mut default_expr_str: Option<String> = None;
         let mut from_field: Option<syn::Ident> = None;
         let mut from_expr: Option<String> = None;
 
         // Parse the attribute arguments
-        let nested = attr
-            .parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)
-            .expect("Failed to parse theme attribute");
+        let nested = match attr.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated) {
+            Ok(n) => n,
+            Err(e) => {
+                errors.push(syn::Error::new(
+                    attr.span(),
+                    format!("Failed to parse theme attribute: {e}"),
+                ));
+                continue;
+            }
+        };
 
         for meta in nested {
             match meta {
                 Meta::NameValue(nv) => {
-                    let ident = nv.path.get_ident().expect("Expected identifier");
+                    let ident = match nv.path.get_ident() {
+                        Some(i) => i,
+                        None => {
+                            errors.push(syn::Error::new(
+                                nv.path.span(),
+                                "Expected identifier",
+                            ));
+                            continue;
+                        }
+                    };
                     match ident.to_string().as_str() {
                         "default" => {
                             if let Expr::Lit(lit) = &nv.value
                                 && let Lit::Int(int_lit) = &lit.lit
                             {
-                                default_value = Some(int_lit.base10_parse().unwrap());
+                                match int_lit.base10_parse::<u32>() {
+                                    Ok(v) => {
+                                        default_value = Some(v);
+                                        default_hex_lit = Some(int_lit.to_string());
+                                    }
+                                    Err(e) => {
+                                        errors.push(syn::Error::new(
+                                            int_lit.span(),
+                                            format!(
+                                                "Unable to parse default value for field `{field_name}`: {e}"
+                                            ),
+                                        ));
+                                    }
+                                }
                             }
                         }
                         "default_f32" => {
                             if let Expr::Lit(lit) = &nv.value {
                                 match &lit.lit {
                                     Lit::Float(f) => {
-                                        default_f32 = Some(f.base10_parse().unwrap());
+                                        match f.base10_parse::<f64>() {
+                                            Ok(v) => default_f32 = Some(v),
+                                            Err(e) => {
+                                                errors.push(syn::Error::new(
+                                                    f.span(),
+                                                    format!(
+                                                        "Unable to parse default_f32 value for field `{field_name}`: {e}"
+                                                    ),
+                                                ));
+                                            }
+                                        }
                                     }
                                     Lit::Int(i) => {
                                         // Allow integers like 0 or 1
-                                        default_f32 = Some(i.base10_parse::<i64>().unwrap() as f64);
+                                        match i.base10_parse::<i64>() {
+                                            Ok(v) => default_f32 = Some(v as f64),
+                                            Err(e) => {
+                                                errors.push(syn::Error::new(
+                                                    i.span(),
+                                                    format!(
+                                                        "Unable to parse default_f32 value for field `{field_name}`: {e}"
+                                                    ),
+                                                ));
+                                            }
+                                        }
                                     }
                                     _ => {}
                                 }
@@ -272,19 +396,36 @@ pub fn derive_component_theme(input: TokenStream) -> TokenStream {
                                 from_expr = Some(s.value());
                             }
                         }
-                        _ => panic!("Unknown theme attribute: {}", ident),
+                        _ => {
+                            errors.push(syn::Error::new(
+                                ident.span(),
+                                format!("Unknown theme attribute: {ident}"),
+                            ));
+                        }
                     }
                 }
-                _ => panic!("Expected name = value in theme attribute"),
+                _ => {
+                    errors.push(syn::Error::new(
+                        meta.span(),
+                        "Expected name = value in theme attribute",
+                    ));
+                }
             }
         }
 
         // Generate Default field based on type
         if let Some(expr_str) = default_expr_str {
             // Arbitrary expression (for Option types, nested themes, etc.)
-            let expr: syn::Expr = syn::parse_str(&expr_str).unwrap_or_else(|_| {
-                panic!("Failed to parse default_expr for field `{}`", field_name)
-            });
+            let expr: syn::Expr = match syn::parse_str(&expr_str) {
+                Ok(e) => e,
+                Err(_) => {
+                    errors.push(syn::Error::new(
+                        field_span,
+                        format!("Failed to parse default_expr for field `{field_name}`"),
+                    ));
+                    continue;
+                }
+            };
             default_fields.push(quote! {
                 #field_name: #expr
             });
@@ -294,29 +435,51 @@ pub fn derive_component_theme(input: TokenStream) -> TokenStream {
                 #field_name: #f32_val as f32
             });
         } else if let Some(default_val) = default_value {
-            // Check if it's RGB (6 hex digits) or RGBA (8 hex digits)
-            let default_expr = if default_val > 0xFFFFFF {
-                // RGBA - use rgba()
-                quote! { gpui::rgba(#default_val) }
+            // Check if it's RGB (6 hex digits) or RGBA (8 hex digits) by
+            // inspecting the original literal string rather than the numeric
+            // value. This avoids misclassifying transparent colors such as
+            // 0x00000000 as RGB.
+            let is_rgba = default_hex_lit.as_ref().map_or_else(
+                || default_val > 0xFFFFFF,
+                |lit| {
+                    let digits = lit
+                        .trim_start_matches("0x")
+                        .trim_start_matches("0X");
+                    digits.len() == 8
+                },
+            );
+
+            let default_expr = if is_rgba {
+                quote! { #gpui_path::rgba(#default_val) }
             } else {
-                // RGB - use rgb()
-                quote! { gpui::rgb(#default_val) }
+                quote! { #gpui_path::rgb(#default_val) }
             };
 
             default_fields.push(quote! {
                 #field_name: #default_expr
             });
         } else {
-            panic!(
-                "Field `{}` is missing `default`, `default_f32`, or `default_expr` in #[theme(...)]",
-                field_name
-            );
+            errors.push(syn::Error::new(
+                field_span,
+                format!(
+                    "Field `{field_name}` is missing `default`, `default_f32`, or `default_expr` in #[theme(...)]"
+                ),
+            ));
+            continue;
         }
 
         // Generate From<&Theme> field
         if let Some(expr_str) = from_expr {
-            let expr: syn::Expr = syn::parse_str(&expr_str)
-                .unwrap_or_else(|_| panic!("Failed to parse from_expr for field `{}`", field_name));
+            let expr: syn::Expr = match syn::parse_str(&expr_str) {
+                Ok(e) => e,
+                Err(_) => {
+                    errors.push(syn::Error::new(
+                        field_span,
+                        format!("Failed to parse from_expr for field `{field_name}`"),
+                    ));
+                    continue;
+                }
+            };
             from_fields.push(quote! {
                 #field_name: #expr
             });
@@ -325,11 +488,22 @@ pub fn derive_component_theme(input: TokenStream) -> TokenStream {
                 #field_name: theme.#from
             });
         } else {
-            panic!(
-                "Field `{}` needs either `from` or `from_expr` in #[theme(...)]",
-                field_name
-            );
+            errors.push(syn::Error::new(
+                field_span,
+                format!(
+                    "Field `{field_name}` needs either `from` or `from_expr` in #[theme(...)]"
+                ),
+            ));
+            continue;
         }
+    }
+
+    if !errors.is_empty() {
+        let mut combined = errors.remove(0);
+        for e in errors {
+            combined.combine(e);
+        }
+        return combined.to_compile_error().into();
     }
 
     let expanded = quote! {
@@ -341,8 +515,8 @@ pub fn derive_component_theme(input: TokenStream) -> TokenStream {
             }
         }
 
-        impl From<&crate::theme::Theme> for #name {
-            fn from(theme: &crate::theme::Theme) -> Self {
+        impl From<&#theme_path> for #name {
+            fn from(theme: &#theme_path) -> Self {
                 Self {
                     #(#from_fields),*
                 }

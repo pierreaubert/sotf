@@ -438,11 +438,13 @@ impl ABComparePlugin {
             || self.band_mask_high_hz < Self::BAND_MASK_MAX_HZ - Self::BAND_MASK_EDGE_EPSILON
     }
 
+    #[allow(dead_code)]
     fn has_empty_paths(&self) -> bool {
         matches!(self.path_a_config, PathConfig::None)
             && matches!(self.path_b_config, PathConfig::None)
     }
 
+    #[allow(dead_code)]
     fn can_use_empty_path_fast_path(&self) -> bool {
         self.has_empty_paths()
             && self.mix_mode == MixMode::Potentiometer
@@ -454,6 +456,7 @@ impl ABComparePlugin {
             && (self.mix_smoother.current() - self.mix_smoother.target()).abs() < 1e-5
     }
 
+    #[allow(dead_code)]
     fn process_empty_path_fast(
         &mut self,
         input: &[f32],

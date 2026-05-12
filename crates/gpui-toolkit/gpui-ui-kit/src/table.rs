@@ -209,6 +209,18 @@ impl PaginationState {
             self.total_items.div_ceil(self.page_size)
         }
     }
+
+    /// Calculate the displayed item range (1-based, inclusive).
+    /// Returns `(0, 0)` when `page_size == 0` to avoid nonsensical math.
+    pub fn page_range(&self) -> (usize, usize) {
+        if self.page_size == 0 {
+            (0, 0)
+        } else {
+            let start = self.current_page * self.page_size + 1;
+            let end = ((self.current_page + 1) * self.page_size).min(self.total_items);
+            (start, end)
+        }
+    }
 }
 
 /// Table component
@@ -615,8 +627,7 @@ impl<T: 'static> Table<T> {
                 .border_color(theme.header_border);
 
             // Page info
-            let start_item = current_page * pagination.page_size + 1;
-            let end_item = ((current_page + 1) * pagination.page_size).min(pagination.total_items);
+            let (start_item, end_item) = pagination.page_range();
             pagination_bar =
                 pagination_bar.child(div().text_xs().text_color(theme.pagination_text).child(
                     format!(
@@ -721,5 +732,34 @@ impl<T: 'static> IntoElement for Table<T> {
 
     fn into_element(self) -> Self::Element {
         gpui::Component::new(self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PaginationState;
+
+    #[test]
+    fn test_pagination_zero_page_size() {
+        let p = PaginationState {
+            current_page: 0,
+            page_size: 0,
+            total_items: 100,
+        };
+        let (start, end) = p.page_range();
+        assert_eq!((start, end), (0, 0));
+        assert_eq!(p.total_pages(), 0);
+    }
+
+    #[test]
+    fn test_pagination_normal_page_range() {
+        let p = PaginationState {
+            current_page: 1,
+            page_size: 10,
+            total_items: 25,
+        };
+        let (start, end) = p.page_range();
+        assert_eq!((start, end), (11, 20));
+        assert_eq!(p.total_pages(), 3);
     }
 }

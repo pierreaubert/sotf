@@ -524,7 +524,8 @@ fn build_line_text(
         }
         let graphemes: Vec<&str> = segments[end_seg].graphemes(true).collect();
         let skip = if start_seg == end_seg { start_graph } else { 0 };
-        for g in graphemes.iter().skip(skip).take(end_graph - skip) {
+        let take_count = end_graph.saturating_sub(skip);
+        for g in graphemes.iter().skip(skip).take(take_count) {
             text.push_str(g);
         }
     } else if has_hyphen {

@@ -187,6 +187,7 @@ pub(crate) fn apply_gd_delay_to_fir_coefficients(
 
 /// Shift FIR coefficients by a given number of samples (positive = later).
 /// Pads with zeros on the appropriate side and truncates to maintain length.
+#[allow(dead_code)]
 fn apply_sample_shift(coeffs: &[f64], shift: isize) -> Vec<f64> {
     let n = coeffs.len();
     let mut shifted = vec![0.0; n];
@@ -215,6 +216,7 @@ fn apply_fractional_sample_shift(coeffs: &[f64], shift: f64) -> Vec<f64> {
         return coeffs.to_vec();
     }
     let mut shifted = vec![0.0; n];
+    #[allow(clippy::needless_range_loop)]
     for i in 0..n {
         let src = i as f64 - shift;
         let idx = src.floor();

@@ -394,18 +394,20 @@ impl ShowcaseView {
                     let my: f32 = event.position.y.into();
                     let ww: f32 = ws.width.into();
                     let wh: f32 = ws.height.into();
-                    match (target, is_h) {
-                        (DragTarget::Sidebar, true) => {
-                            view.sidebar_ratio_h = (mx / ww).clamp(0.08, 0.45)
-                        }
-                        (DragTarget::Sidebar, false) => {
-                            view.sidebar_ratio_v = (my / wh).clamp(0.08, 0.45)
-                        }
-                        (DragTarget::Inspector, true) => {
-                            view.inspector_ratio_h = (1.0 - mx / ww).clamp(0.08, 0.45)
-                        }
-                        (DragTarget::Inspector, false) => {
-                            view.inspector_ratio_v = (1.0 - my / wh).clamp(0.08, 0.45)
+                    if ww > 0.0 && wh > 0.0 {
+                        match (target, is_h) {
+                            (DragTarget::Sidebar, true) => {
+                                view.sidebar_ratio_h = (mx / ww).clamp(0.08, 0.45)
+                            }
+                            (DragTarget::Sidebar, false) => {
+                                view.sidebar_ratio_v = (my / wh).clamp(0.08, 0.45)
+                            }
+                            (DragTarget::Inspector, true) => {
+                                view.inspector_ratio_h = (1.0 - mx / ww).clamp(0.08, 0.45)
+                            }
+                            (DragTarget::Inspector, false) => {
+                                view.inspector_ratio_v = (1.0 - my / wh).clamp(0.08, 0.45)
+                            }
                         }
                     }
                 }),

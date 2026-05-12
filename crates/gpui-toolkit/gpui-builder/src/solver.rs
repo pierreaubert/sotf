@@ -297,8 +297,8 @@ fn allocate_main_axis(
                 child.allocated_size = size;
                 unconditional_fixed += size;
             }
-            Sizing::Text { .. } => {
-                let size = child.computed_text_size.expect("text size pre-computed");
+            Sizing::Text { min, .. } => {
+                let size = child.computed_text_size.unwrap_or(min);
                 child.allocated_size = size;
                 unconditional_fixed += size;
             }
@@ -369,13 +369,12 @@ fn allocate_main_axis(
     let remaining = (available - unconditional_fixed - divider_space_after).max(0.0);
 
     // Pass D: Distribute remaining among visible collapsible-Fixed + Fractional + Flex
-    distribute_remaining(children, remaining, available, axis, prefs);
+    distribute_remaining(children, remaining, axis, prefs);
 }
 
 fn distribute_remaining(
     children: &mut [ChildInfo<'_>],
     remaining: f32,
-    _available_total: f32,
     axis: Axis,
     prefs: &LayoutPreferences<'_>,
 ) {
@@ -393,8 +392,8 @@ fn distribute_remaining(
                 child.allocated_size = size;
                 used_by_fixed += size;
             }
-            Sizing::Text { .. } => {
-                let size = child.computed_text_size.expect("text size pre-computed");
+            Sizing::Text { min, .. } => {
+                let size = child.computed_text_size.unwrap_or(min);
                 child.allocated_size = size;
                 used_by_fixed += size;
             }

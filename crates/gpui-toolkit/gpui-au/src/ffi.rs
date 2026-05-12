@@ -1,7 +1,7 @@
 //! C-compatible FFI functions for embedding GPUI in macOS Audio Unit ViewControllers.
 
 use crate::helpers::nslog;
-use crate::window::{PENDING_VIEW, PendingViewInfo, au_window};
+use crate::window::{PENDING_VIEW, PendingViewInfo, with_au_window};
 use gpui::{
     App, AppCell, AppContext, Context, ElementId, InteractiveElement as _, IntoElement,
     MouseButton, ParentElement, PlatformInput, Render, RequestFrameOptions,
@@ -104,10 +104,10 @@ pub extern "C" fn gpui_au_create(
     plugin_type: *const c_char,
 ) -> *mut AuContext {
     init_logger();
-    nslog("SOTF gpui_au_create: entry\0");
+    nslog(b"SOTF gpui_au_create: entry");
 
     if ns_view.is_null() || plugin_type.is_null() {
-        nslog("SOTF gpui_au_create: null pointer argument!\0");
+        nslog(b"SOTF gpui_au_create: null pointer argument!");
         return std::ptr::null_mut();
     }
 
@@ -115,17 +115,17 @@ pub extern "C" fn gpui_au_create(
         match CStr::from_ptr(plugin_type).to_str() {
             Ok(s) => s.to_string(),
             Err(_) => {
-                nslog("SOTF gpui_au_create: invalid UTF-8\0");
+                nslog(b"SOTF gpui_au_create: invalid UTF-8");
                 return std::ptr::null_mut();
             }
         }
     };
 
     let msg = format!(
-        "SOTF gpui_au_create: plugin={}, size={}x{} @{:.1}x, view={:p}\0",
+        "SOTF gpui_au_create: plugin={}, size={}x{} @{:.1}x, view={:p}",
         plugin_type_str, width, height, scale, ns_view
     );
-    nslog(&msg);
+    nslog(msg.as_bytes());
 
     // Store the NSView info in a thread-local so AuWindow::new() can read it
     // during the open_window() call inside app.run().
@@ -138,7 +138,7 @@ pub extern "C" fn gpui_au_create(
         });
     });
 
-    nslog("SOTF gpui_au_create: creating GPUI Application\0");
+    nslog(b"SOTF gpui_au_create: creating GPUI Application");
     let platform = Rc::new(crate::AuPlatform::new());
     let app = gpui::Application::with_platform(platform);
 
@@ -146,15 +146,17 @@ pub extern "C" fn gpui_au_create(
     // AppCell is pub (doc(hidden)). We clone the Rc to keep AppCell alive after run() consumes
     // Application. Without this, AppCell is deallocated when run() returns because AuPlatform::run()
     // calls the callback immediately (unlike macOS which blocks on [NSApp run]).
-    let app_cell: Rc<AppCell> = unsafe {
-        let rc: &Rc<AppCell> = std::mem::transmute(&app);
-        rc.clone()
-    };
-    nslog("SOTF gpui_au_create: Rc<AppCell> cloned for lifetime management\0");
+    //
+    // transmute_copy is used instead of transmuting references because transmuting
+    // references violates Rust's aliasing rules and is unsound.
+    let app_cell: Rc<AppCell> = unsafe { std::mem::transmute_copy(&app) };
+    nslog(b"SOTF gpui_au_create: Rc<AppCell> cloned for lifetime management");
 
+    let window_opened = std::rc::Rc::new(std::cell::Cell::new(false));
+    let window_opened_clone = window_opened.clone();
     let pt = plugin_type_str.clone();
     app.run(move |cx: &mut App| {
-        nslog("SOTF gpui_au_create: inside app.run callback\0");
+        nslog(b"SOTF gpui_au_create: inside app.run callback");
         match cx.open_window(
             WindowOptions {
                 window_bounds: None,
@@ -167,15 +169,23 @@ pub extern "C" fn gpui_au_create(
                 })
             },
         ) {
-            Ok(_handle) => nslog("SOTF gpui_au_create: window opened OK\0"),
+            Ok(_handle) => {
+                nslog(b"SOTF gpui_au_create: window opened OK");
+                window_opened_clone.set(true);
+            }
             Err(e) => {
-                let msg = format!("SOTF gpui_au_create: open_window FAILED: {e:#}\0");
-                nslog(&msg);
+                let msg = format!("SOTF gpui_au_create: open_window FAILED: {e:#}");
+                nslog(msg.as_bytes());
             }
         }
     });
 
-    nslog("SOTF gpui_au_create: app.run() returned, context ready\0");
+    if !window_opened.get() {
+        nslog(b"SOTF gpui_au_create: returning null because open_window failed");
+        return std::ptr::null_mut();
+    }
+
+    nslog(b"SOTF gpui_au_create: app.run() returned, context ready");
 
     let context = Box::new(AuContext {
         _plugin_type: plugin_type_str,
@@ -188,12 +198,12 @@ pub extern "C" fn gpui_au_create(
 #[unsafe(no_mangle)]
 pub extern "C" fn gpui_au_destroy(context: *mut AuContext) {
     if !context.is_null() {
-        nslog("SOTF gpui_au_destroy: cleaning up\0");
+        nslog(b"SOTF gpui_au_destroy: cleaning up");
         crate::window::unregister_au_window();
         unsafe {
             drop(Box::from_raw(context));
         }
-        nslog("SOTF gpui_au_destroy: done\0");
+        nslog(b"SOTF gpui_au_destroy: done");
     }
 }
 
@@ -206,13 +216,13 @@ pub extern "C" fn gpui_au_request_frame(context: *mut AuContext) {
     if context.is_null() {
         return;
     }
-    if let Some(window) = au_window() {
+    with_au_window(|window| {
         let cb = window.request_frame_callback.borrow_mut().take();
         if let Some(mut cb) = cb {
             cb(RequestFrameOptions::default());
             window.request_frame_callback.borrow_mut().replace(cb);
         }
-    }
+    });
 }
 
 /// Handle view resize from the host.
@@ -221,9 +231,9 @@ pub extern "C" fn gpui_au_resize(context: *mut AuContext, width: f32, height: f3
     if context.is_null() {
         return;
     }
-    if let Some(window) = au_window() {
+    with_au_window(|window| {
         window.handle_resize(width, height, scale);
-    }
+    });
 }
 
 // ── Mouse Events ──────────────────────────────────────────────────────────────
@@ -314,7 +324,7 @@ pub extern "C" fn gpui_au_scroll_wheel(context: *mut AuContext, x: f32, y: f32, 
 }
 
 fn dispatch_to_window(event: PlatformInput) {
-    if let Some(window) = au_window() {
+    with_au_window(|window| {
         window.dispatch_input(event);
-    }
+    });
 }

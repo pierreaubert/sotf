@@ -193,6 +193,14 @@ impl Treemap {
         self
     }
 
+    /// Recursively validate that all node values are finite and non-negative.
+    fn validate_values(node: &TreemapNode) -> bool {
+        if !node.value.is_finite() || node.value < 0.0 {
+            return false;
+        }
+        node.children.iter().all(Self::validate_values)
+    }
+
     /// Enable hover highlighting (default: true).
     pub fn hover(mut self, enabled: bool) -> Self {
         self.hover_enabled = enabled;
@@ -205,10 +213,18 @@ impl Treemap {
         validate_dimensions(self.width, self.height)?;
 
         let total_value = self.root.total_value();
-        if total_value <= 0.0 {
+        if !total_value.is_finite() || total_value <= 0.0 {
             return Err(ChartError::InvalidData {
                 field: "root",
-                reason: "Total value must be positive",
+                reason: "Total value must be positive and finite",
+            });
+        }
+
+        // Validate all node values are finite
+        if !Self::validate_values(&self.root) {
+            return Err(ChartError::InvalidData {
+                field: "node",
+                reason: "All node values must be finite and non-negative",
             });
         }
 
@@ -611,6 +627,8 @@ fn tile_squarify(
     y1: f64,
     total: f64,
 ) -> Vec<(f64, f64, f64, f64)> {
+    // Filter out zero-value children to avoid division by zero
+    let children: Vec<_> = children.iter().filter(|(_, v)| *v > 0.0).copied().collect();
     if children.is_empty() {
         return Vec::new();
     }
@@ -620,7 +638,7 @@ fn tile_squarify(
 
     // Sort by value descending for better packing
     let mut sorted: Vec<_> = children.iter().map(|(n, v)| (*n, *v)).collect();
-    sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+    sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
     let mut rects = Vec::new();
     let mut remaining: Vec<_> = sorted.iter().collect();
@@ -832,5 +850,54 @@ mod tests {
             .build();
 
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_treemap_nan_value() {
+        let root = TreemapNode::new("Root", f64::NAN);
+        let result = treemap(&root).build();
+        assert!(matches!(result, Err(ChartError::InvalidData { .. })));
+    }
+
+    #[test]
+    fn test_treemap_infinite_value() {
+        let root = TreemapNode::new("Root", f64::INFINITY);
+        let result = treemap(&root).build();
+        assert!(matches!(result, Err(ChartError::InvalidData { .. })));
+    }
+
+    #[test]
+    fn test_treemap_zero_value_child() {
+        let root = TreemapNode::new("Root", 0.0)
+            .add_child(TreemapNode::new("A", 30.0))
+            .add_child(TreemapNode::new("B", 0.0))
+            .add_child(TreemapNode::new("C", 70.0));
+
+        // Should build without panicking (zero-value child filtered)
+        let result = treemap(&root).tiling_method(TilingMethod::Squarify).build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_treemap_all_zero_children() {
+        let root = TreemapNode::new("Root", 0.0)
+            .add_child(TreemapNode::new("A", 0.0))
+            .add_child(TreemapNode::new("B", 0.0));
+
+        let result = treemap(&root).build();
+        assert!(matches!(result, Err(ChartError::InvalidData { .. })));
+    }
+
+    #[test]
+    fn test_tile_squarify_with_zero_value_children() {
+        let node_a = TreemapNode::new("A", 10.0);
+        let node_b = TreemapNode::new("B", 0.0);
+        let node_c = TreemapNode::new("C", 0.0);
+        let children = vec![(&node_a, 10.0), (&node_b, 0.0), (&node_c, 0.0)];
+
+        let rects = tile_squarify(&children, 0.0, 0.0, 100.0, 100.0, 10.0);
+        // Should not panic and should return at least the non-zero child's rect
+        assert!(!rects.is_empty());
+        assert!(rects.iter().all(|(x0, y0, x1, y1)| x0.is_finite() && y0.is_finite() && x1.is_finite() && y1.is_finite()));
     }
 }

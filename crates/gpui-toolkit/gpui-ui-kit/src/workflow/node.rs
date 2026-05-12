@@ -242,7 +242,7 @@ impl RenderOnce for WorkflowNode {
             // Content area with ports
             .child({
                 // Calculate content height using adjusted values
-                let content_height = adjusted_height - header_height - 4.0;
+                let content_height = (adjusted_height - header_height - 4.0).max(0.0);
                 let padding = theme.node_content_padding;
                 let available = (content_height - 2.0 * padding).max(0.0);
 

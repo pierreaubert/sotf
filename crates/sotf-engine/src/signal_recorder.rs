@@ -1598,6 +1598,7 @@ fn play_per_channel_and_record_mono(
     let expected_input_samples = ((total_frames as f64 * input_sr as f64 / sample_rate as f64)
         as usize)
         + (input_sr as usize / 2);
+    #[allow(clippy::type_complexity)]
     let capture_buffers: Arc<Mutex<(Vec<f32>, Option<Vec<f32>>)>> = Arc::new(Mutex::new((
         Vec::with_capacity(expected_input_samples),
         loopback_input_channel.map(|_| Vec::with_capacity(expected_input_samples)),

@@ -321,7 +321,7 @@ impl BoxPlotChart {
                 if bin.is_empty() {
                     return None;
                 }
-                bin.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                bin.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                 let x_center = x_min + (i as f64 + 0.5) * bin_width;
                 BoxStats::from_sorted(x_center, bin)
             })

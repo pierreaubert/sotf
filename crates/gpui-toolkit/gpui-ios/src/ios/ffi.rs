@@ -45,6 +45,16 @@ pub(crate) fn register_window(window: *const super::window::IosWindow) {
     }
 }
 
+pub(crate) fn unregister_window(window: *const super::window::IosWindow) {
+    if let Some(wrapper) = IOS_WINDOW_LIST.get() {
+        unsafe {
+            let windows = &mut *wrapper.0.get();
+            windows.retain(|&w| w != window);
+            log::info!("GPUI iOS: Unregistered window {:p}", window);
+        }
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn gpui_ios_get_window() -> *mut c_void {
     if let Some(wrapper) = IOS_WINDOW_LIST.get() {
@@ -303,5 +313,22 @@ pub fn run_app() {
         if let Some(callback) = callback {
             callback();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_register_and_unregister_window() {
+        let _ = IOS_WINDOW_LIST.set(WindowListWrapper(std::cell::UnsafeCell::new(Vec::new())));
+
+        let dummy: *const super::window::IosWindow = 0x1234 as *const _;
+        register_window(dummy);
+        assert_eq!(unsafe { &*IOS_WINDOW_LIST.get().unwrap().0.get() }.len(), 1);
+
+        unregister_window(dummy);
+        assert!(unsafe { &*IOS_WINDOW_LIST.get().unwrap().0.get() }.is_empty());
     }
 }

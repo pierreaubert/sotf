@@ -288,7 +288,7 @@ impl Theme {
     pub fn resolved_font_family(&self, cx: &App) -> SharedString {
         self.font_family
             .clone()
-            .unwrap_or_else(|| SharedString::from(cx.design().typography.font_family))
+            .unwrap_or_else(|| SharedString::from(cx.design().typography.font_family.clone()))
     }
 
     /// Create theme from ThemeId

@@ -217,6 +217,13 @@ impl MomentumScroller {
         self.active
     }
 
+    /// Returns true if the scroller has naturally decelerated to a stop.
+    /// This is only meaningful when called after `step()` returned `None`
+    /// while the scroller was previously active.
+    pub fn is_finished(&self) -> bool {
+        !self.active
+    }
+
     pub fn position_x(&self) -> f32 {
         self.last_x
     }
@@ -232,4 +239,45 @@ pub struct MomentumDelta {
     pub dy: f32,
     pub position_x: f32,
     pub position_y: f32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_momentum_scroller_is_finished() {
+        let mut scroller = MomentumScroller::new();
+        assert!(!scroller.is_finished());
+
+        scroller.fling(100.0, 0.0, 0.0, 0.0);
+        assert!(!scroller.is_finished());
+
+        // Exhaust the fling
+        while scroller.step().is_some() {}
+        assert!(scroller.is_finished());
+    }
+
+    #[test]
+    fn test_step_may_return_none_without_finishing() {
+        let mut scroller = MomentumScroller::new();
+        scroller.fling(100.0, 0.0, 0.0, 0.0);
+
+        // First step should produce a delta
+        assert!(scroller.step().is_some());
+
+        // An immediate second step may have dt < 1e-6 and return None
+        // without the scroller being finished.
+        let result = scroller.step();
+        if result.is_none() {
+            assert!(
+                scroller.is_active(),
+                "scroller should still be active after sub-microsecond dt"
+            );
+            assert!(
+                !scroller.is_finished(),
+                "scroller should not be finished after sub-microsecond dt"
+            );
+        }
+    }
 }

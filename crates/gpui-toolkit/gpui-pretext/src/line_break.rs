@@ -1432,6 +1432,17 @@ struct KPItem {
     flagged: bool,
     /// Width added at this break position (e.g., hyphen width for soft hyphen).
     break_width: f64,
+    /// Width of trailing glue at this breakpoint (e.g., space width).
+    /// Subtracted from the line width because trailing spaces are not
+    /// rendered in CSS-like text layout.
+    #[allow(dead_code)]
+    glue_width: f64,
+    /// Stretch of the trailing glue at this breakpoint.
+    #[allow(dead_code)]
+    glue_stretch: f64,
+    /// Shrink of the trailing glue at this breakpoint.
+    #[allow(dead_code)]
+    glue_shrink: f64,
 }
 
 /// An active node in the Knuth-Plass DP.
@@ -1478,18 +1489,25 @@ fn build_kp_items(
         penalty: f64::NEG_INFINITY, // forced break (start)
         flagged: false,
         break_width: 0.0,
+        glue_width: 0.0,
+        glue_stretch: 0.0,
+        glue_shrink: 0.0,
     });
 
     let mut cum_width = 0.0;
     let mut cum_stretch = 0.0;
     let mut cum_shrink = 0.0;
+    let mut line_start_width = 0.0;
+    let mut last_glue_width = 0.0;
+    let mut last_glue_stretch = 0.0;
+    let mut last_glue_shrink = 0.0;
 
     for i in 0..widths.len() {
         let kind = kinds[i];
         let w = if kind == SegmentBreakKind::Tab {
-            // For tabs, use a nominal width; actual advance depends on position
-            // which the DP will handle approximately via cumulative widths.
-            get_tab_advance(cum_width, prepared.tab_stop_advance)
+            // Use line-relative width rather than paragraph cumulative width
+            // so that tabs on later lines advance correctly.
+            get_tab_advance(cum_width - line_start_width, prepared.tab_stop_advance)
         } else {
             widths[i]
         };
@@ -1506,12 +1524,19 @@ fn build_kp_items(
                     penalty: f64::NEG_INFINITY,
                     flagged: false,
                     break_width: 0.0,
+                    glue_width: 0.0,
+                    glue_stretch: 0.0,
+                    glue_shrink: 0.0,
                 });
+                line_start_width = cum_width;
+                last_glue_width = 0.0;
+                last_glue_stretch = 0.0;
+                last_glue_shrink = 0.0;
             }
             SegmentBreakKind::Space | SegmentBreakKind::PreservedSpace => {
                 // Glue: the space has width, stretch, and shrink.
                 // Standard Knuth-Plass model: space_width with ±stretch/shrink.
-                // We use 1/3 of space width for stretch and 1/6 for shrink
+                // We use 1/2 of space width for stretch and 1/3 for shrink
                 // (approximation of TeX's interword spacing model).
                 let stretch = w * 0.5;
                 let shrink = w * 0.333;
@@ -1530,7 +1555,13 @@ fn build_kp_items(
                     penalty: params.line_penalty,
                     flagged: false,
                     break_width: 0.0,
+                    glue_width: w,
+                    glue_stretch: stretch,
+                    glue_shrink: shrink,
                 });
+                last_glue_width = w;
+                last_glue_stretch = stretch;
+                last_glue_shrink = shrink;
             }
             SegmentBreakKind::ZeroWidthBreak => {
                 // Zero-width break opportunity.
@@ -1543,7 +1574,13 @@ fn build_kp_items(
                     penalty: params.line_penalty,
                     flagged: false,
                     break_width: 0.0,
+                    glue_width: 0.0,
+                    glue_stretch: 0.0,
+                    glue_shrink: 0.0,
                 });
+                last_glue_width = 0.0;
+                last_glue_stretch = 0.0;
+                last_glue_shrink = 0.0;
             }
             SegmentBreakKind::SoftHyphen => {
                 // Discretionary hyphen: penalty for hyphenation, flagged.
@@ -1556,7 +1593,13 @@ fn build_kp_items(
                     penalty: params.hyphen_penalty,
                     flagged: true,
                     break_width: prepared.discretionary_hyphen_width,
+                    glue_width: 0.0,
+                    glue_stretch: 0.0,
+                    glue_shrink: 0.0,
                 });
+                last_glue_width = 0.0;
+                last_glue_stretch = 0.0;
+                last_glue_shrink = 0.0;
             }
             SegmentBreakKind::Tab => {
                 cum_width += w;
@@ -1575,7 +1618,13 @@ fn build_kp_items(
                     penalty: params.line_penalty,
                     flagged: false,
                     break_width: 0.0,
+                    glue_width: w,
+                    glue_stretch: stretch,
+                    glue_shrink: shrink,
                 });
+                last_glue_width = w;
+                last_glue_stretch = stretch;
+                last_glue_shrink = shrink;
             }
             SegmentBreakKind::Text | SegmentBreakKind::Glue => {
                 // For CJK text segments that were split into per-grapheme units
@@ -1610,20 +1659,42 @@ fn build_kp_items(
                                 penalty: 1000.0, // very high penalty: emergency only
                                 flagged: false,
                                 break_width: 0.0,
+                                glue_width: 0.0,
+                                glue_stretch: 0.0,
+                                glue_shrink: 0.0,
                             });
                         }
                     }
                 } else {
                     cum_width += w;
+
+                    // Add a segment-level breakpoint for adjacent Text segments.
+                    // This is needed for CJK text which is split into per-grapheme
+                    // units during prepare — without these breakpoints, KP cannot
+                    // break between CJK characters.
+                    if kind == SegmentBreakKind::Text
+                        && i + 1 < widths.len()
+                        && kinds[i + 1] == SegmentBreakKind::Text
+                    {
+                        items.push(KPItem {
+                            segment_index: i + 1,
+                            grapheme_index: 0,
+                            total_width: cum_width,
+                            total_stretch: cum_stretch,
+                            total_shrink: cum_shrink,
+                            penalty: 100.0, // moderate penalty: prefer word breaks
+                            flagged: false,
+                            break_width: 0.0,
+                            glue_width: 0.0,
+                            glue_stretch: 0.0,
+                            glue_shrink: 0.0,
+                        });
+                    }
                 }
 
-                // For CJK: each text segment can break after it (CJK
-                // characters were already split into single-char segments
-                // during prepare). We check if the next segment is also Text
-                // to add an inter-CJK break opportunity. But this is already
-                // handled by the segment splitting, so we just add content
-                // width without a break here — breaks are created at space/
-                // soft-hyphen/zero-width positions.
+                last_glue_width = 0.0;
+                last_glue_stretch = 0.0;
+                last_glue_shrink = 0.0;
             }
         }
     }
@@ -1638,6 +1709,9 @@ fn build_kp_items(
         penalty: f64::NEG_INFINITY,
         flagged: false,
         break_width: 0.0,
+        glue_width: last_glue_width,
+        glue_stretch: last_glue_stretch,
+        glue_shrink: last_glue_shrink,
     });
 
     items
@@ -1657,12 +1731,13 @@ fn compute_adjustment_ratio(
     max_width: f64,
     break_width: f64,
 ) -> f64 {
-    // Line width = content_width_at_b - content_width_at_a + break_width
-    // But we need to be careful: the cumulative width at `a` includes the
-    // glue/space *at* breakpoint `a`, which should NOT be on the new line.
-    // The items already have total_width set after the space, so
-    // content on line from a to b = items[b].total_width - items[a].total_width + break_width
-    let line_width = items[b].total_width - items[a].total_width + break_width;
+    // Line width = content_width_at_b - content_width_at_a + break_width - trailing_glue_at_b
+    // Trailing glue (e.g., a space at the end of a line) is not rendered in
+    // CSS-like text layout, so its width is excluded from the line width.
+    let line_width = items[b].total_width
+        - items[a].total_width
+        + break_width
+        - items[b].glue_width;
 
     let diff = max_width - line_width;
 
@@ -1672,7 +1747,9 @@ fn compute_adjustment_ratio(
 
     if diff > 0.0 {
         // Line is short, needs stretching.
-        let stretch = items[b].total_stretch - items[a].total_stretch;
+        let stretch = items[b].total_stretch
+            - items[a].total_stretch
+            - items[b].glue_stretch;
         if stretch > 1e-6 {
             diff / stretch
         } else {
@@ -1681,7 +1758,9 @@ fn compute_adjustment_ratio(
         }
     } else {
         // Line is long, needs shrinking.
-        let shrink = items[b].total_shrink - items[a].total_shrink;
+        let shrink = items[b].total_shrink
+            - items[a].total_shrink
+            - items[b].glue_shrink;
         if shrink > 1e-6 {
             diff / shrink
         } else {
@@ -1863,6 +1942,8 @@ fn knuth_plass_chunk(
     }
 
     // Find the best node at the end of paragraph (last item).
+    // Only nodes that reach the end-of-paragraph are valid; otherwise
+    // trailing text would be silently dropped.
     let last_item_idx = items.len() - 1;
     let best_node_idx = active
         .iter()
@@ -1873,20 +1954,7 @@ fn knuth_plass_chunk(
                 .partial_cmp(&nodes[b].total_demerits)
                 .unwrap_or(std::cmp::Ordering::Equal)
         })
-        .copied();
-
-    // If no node reached the end, pick the best active node overall.
-    let best_node_idx = best_node_idx.or_else(|| {
-        active
-            .iter()
-            .min_by(|&&a, &&b| {
-                nodes[a]
-                    .total_demerits
-                    .partial_cmp(&nodes[b].total_demerits)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
-            .copied()
-    })?;
+        .copied()?;
 
     // Trace back the path to collect breakpoints.
     let mut breaks = Vec::new();
@@ -1959,9 +2027,7 @@ fn breakpoints_to_lines(
 
         while seg < end_seg.min(widths.len()) {
             let kind = kinds[seg];
-            if seg == end_seg.saturating_sub(0) && end_graph > 0 && seg == end_seg {
-                break;
-            }
+            // Partial end segments are handled after the loop.
             if kind == SegmentBreakKind::SoftHyphen || kind == SegmentBreakKind::HardBreak {
                 seg += 1;
                 continue;

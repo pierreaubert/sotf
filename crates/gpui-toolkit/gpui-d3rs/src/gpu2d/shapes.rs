@@ -471,21 +471,29 @@ where
     let y_range_span = y_range_max - y_range_min;
 
     // Pre-compute relative positions
-    let x_positions: Vec<f32> = x_ticks
-        .iter()
-        .map(|&x| {
-            let x_range = x_scale.scale(x);
-            ((x_range - x_range_min) / x_range_span) as f32
-        })
-        .collect();
+    let x_positions: Vec<f32> = if x_range_span == 0.0 {
+        vec![]
+    } else {
+        x_ticks
+            .iter()
+            .map(|&x| {
+                let x_range = x_scale.scale(x);
+                ((x_range - x_range_min) / x_range_span) as f32
+            })
+            .collect()
+    };
 
-    let y_positions: Vec<f32> = y_ticks
-        .iter()
-        .map(|&y| {
-            let y_range = y_scale.scale(y);
-            (1.0 - (y_range - y_range_min) / y_range_span) as f32
-        })
-        .collect();
+    let y_positions: Vec<f32> = if y_range_span == 0.0 {
+        vec![]
+    } else {
+        y_ticks
+            .iter()
+            .map(|&y| {
+                let y_range = y_scale.scale(y);
+                (1.0 - (y_range - y_range_min) / y_range_span) as f32
+            })
+            .collect()
+    };
 
     let line_width = config.line_width;
     let line_color = [
@@ -620,27 +628,35 @@ where
     let range_span = range_max - range_min;
 
     // Pre-compute tick data
-    let tick_data: Vec<(f32, String)> = ticks
-        .iter()
-        .map(|&value| {
-            let pos = ((scale.scale(value) - range_min) / range_span) as f32;
-            let label = format_tick(value, &config.tick_format);
-            (pos, label)
-        })
-        .collect();
+    let tick_data: Vec<(f32, String)> = if range_span == 0.0 {
+        vec![]
+    } else {
+        ticks
+            .iter()
+            .map(|&value| {
+                let pos = ((scale.scale(value) - range_min) / range_span) as f32;
+                let label = format_tick(value, &config.tick_format);
+                (pos, label)
+            })
+            .collect()
+    };
 
     // Minor ticks
-    let minor_ticks: Vec<f32> = config
-        .minor_tick_values
-        .as_ref()
-        .map(|values| {
-            values
-                .iter()
-                .map(|&v| ((scale.scale(v) - range_min) / range_span) as f32)
-                .filter(|p| (0.0..=1.0).contains(p))
-                .collect()
-        })
-        .unwrap_or_default();
+    let minor_ticks: Vec<f32> = if range_span == 0.0 {
+        vec![]
+    } else {
+        config
+            .minor_tick_values
+            .as_ref()
+            .map(|values| {
+                values
+                    .iter()
+                    .map(|&v| ((scale.scale(v) - range_min) / range_span) as f32)
+                    .filter(|p| (0.0..=1.0).contains(p))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
 
     let orientation = config.orientation;
     let tick_size = config.tick_size;

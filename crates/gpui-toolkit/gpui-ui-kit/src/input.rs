@@ -100,9 +100,10 @@ thread_local! {
 /// Evict oldest entries if thread-local storage exceeds maximum size.
 /// This prevents unbounded memory growth when cleanup functions are not called.
 /// Returns the number of entries evicted from each map.
-fn trim_thread_local_storage() -> (usize, usize) {
+fn trim_thread_local_storage() -> (usize, usize, usize) {
     let mut focus_evicted = 0;
     let mut edit_evicted = 0;
+    let mut origins_evicted = 0;
 
     FOCUS_HANDLES.with(|handles| {
         let mut handles = handles.borrow_mut();
@@ -124,7 +125,27 @@ fn trim_thread_local_storage() -> (usize, usize) {
         }
     });
 
-    (focus_evicted, edit_evicted)
+    TEXT_ORIGINS.with(|origins| {
+        let mut origins = origins.borrow_mut();
+        while origins.len() > MAX_THREAD_LOCAL_INPUT_STATES {
+            if let Some(key) = origins.keys().next().cloned() {
+                origins.remove(&key);
+                origins_evicted += 1;
+            }
+        }
+    });
+
+    (focus_evicted, edit_evicted, origins_evicted)
+}
+
+/// Convert a keystroke to an insertable character, explicitly handling the
+/// space key so it works even when GPUI reports `key_char == None`.
+fn keystroke_to_char(keystroke: &Keystroke) -> Option<char> {
+    if keystroke.key == "space" || keystroke.key == " " {
+        Some(' ')
+    } else {
+        keystroke.key_char.as_ref().and_then(|s| s.chars().next())
+    }
 }
 
 /// Returns true if any `Input` component is currently in editing mode.
@@ -186,11 +207,12 @@ pub fn cleanup_stale_input_states(retained_ids: &std::collections::HashSet<Eleme
 ///
 /// # Returns
 /// A tuple of (focus_handle_count, edit_state_count)
-pub fn input_state_count() -> (usize, usize) {
+pub fn input_state_count() -> (usize, usize, usize) {
     let _ = trim_thread_local_storage();
     let focus_count = FOCUS_HANDLES.with(|handles| handles.borrow().len());
     let edit_count = EDIT_STATES.with(|states| states.borrow().len());
-    (focus_count, edit_count)
+    let origins_count = TEXT_ORIGINS.with(|origins| origins.borrow().len());
+    (focus_count, edit_count, origins_count)
 }
 
 /// Clear all input states.
@@ -1401,8 +1423,8 @@ impl RenderOnce for Input {
                         window.refresh();
                     }
                     _ => {
-                        if let Some(char_text) = event.keystroke.key_char.as_ref() {
-                            state.insert_text(char_text);
+                        if let Some(ch) = keystroke_to_char(&event.keystroke) {
+                            state.insert_text(&ch.to_string());
                             let text = state.text.clone();
                             drop(state);
                             if let Some(ref handler) = on_text_change_key {
@@ -1543,5 +1565,47 @@ impl IntoElement for Input {
 
     fn into_element(self) -> Self::Element {
         gpui::Component::new(self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{trim_thread_local_storage, TEXT_ORIGINS, MAX_THREAD_LOCAL_INPUT_STATES, keystroke_to_char};
+    use gpui::{ElementId, SharedString, Keystroke, Modifiers};
+
+    #[test]
+    fn test_keystroke_to_char_space() {
+        let ks = Keystroke {
+            key: "space".into(),
+            key_char: None,
+            modifiers: Modifiers::default(),
+        };
+        assert_eq!(keystroke_to_char(&ks), Some(' '));
+    }
+
+    #[test]
+    fn test_text_origins_trimmed() {
+        // Fill TEXT_ORIGINS beyond the limit
+        TEXT_ORIGINS.with(|origins| {
+            let mut origins = origins.borrow_mut();
+            origins.clear();
+            for i in 0..=MAX_THREAD_LOCAL_INPUT_STATES {
+                origins.insert(
+                    ElementId::Name(SharedString::from(format!("origin-{}", i))),
+                    i as f32,
+                );
+            }
+        });
+
+        let (_, _, evicted) = trim_thread_local_storage();
+        assert!(evicted > 0, "TEXT_ORIGINS should have been trimmed");
+
+        let count = TEXT_ORIGINS.with(|origins| origins.borrow().len());
+        assert!(
+            count <= MAX_THREAD_LOCAL_INPUT_STATES,
+            "TEXT_ORIGINS count {} should be <= {}",
+            count,
+            MAX_THREAD_LOCAL_INPUT_STATES
+        );
     }
 }

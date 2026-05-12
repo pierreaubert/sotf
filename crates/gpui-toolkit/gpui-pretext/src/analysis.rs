@@ -126,7 +126,21 @@ pub fn normalize_whitespace_normal(text: &str) -> String {
 }
 
 pub fn normalize_whitespace_pre_wrap(text: &str) -> String {
-    text.replace("\r\n", "\n").replace(['\r', '\x0C'], "\n")
+    let mut result = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\r' {
+            if chars.peek() == Some(&'\n') {
+                chars.next(); // consume \n
+            }
+            result.push('\n');
+        } else if ch == '\x0C' {
+            result.push('\n');
+        } else {
+            result.push(ch);
+        }
+    }
+    result
 }
 
 // ---------------------------------------------------------------------------

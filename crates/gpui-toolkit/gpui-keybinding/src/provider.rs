@@ -43,6 +43,9 @@ impl KeybindingCategory {
 pub struct DocumentedKeybinding {
     /// Display string for the key combination (e.g. "Ctrl+B", "⌘B").
     pub key: String,
+    /// Optional raw key spec used for conflict detection (e.g. "ctrl-shift-k").
+    /// When present, conflict detection groups by this value instead of `key`.
+    pub raw_key_spec: Option<String>,
     /// Description of what the keybinding does.
     pub description: String,
     /// Category for grouping in UI.
@@ -57,9 +60,15 @@ impl DocumentedKeybinding {
     ) -> Self {
         Self {
             key: key.into(),
+            raw_key_spec: None,
             description: description.into(),
             category,
         }
+    }
+
+    pub fn with_raw_key_spec(mut self, spec: impl Into<String>) -> Self {
+        self.raw_key_spec = Some(spec.into());
+        self
     }
 }
 

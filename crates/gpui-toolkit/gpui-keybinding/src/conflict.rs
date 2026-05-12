@@ -15,15 +15,21 @@ pub struct KeyConflict {
 
 /// Detect conflicting keybindings in a set of documented bindings.
 ///
-/// Returns conflicts where the same display key string appears more than once.
+/// Returns conflicts where the same raw key spec (or display key when no raw
+/// spec is present) appears more than once.
 /// Operates on `DocumentedKeybinding` (which has the display key) rather than
 /// GPUI `KeyBinding` (which doesn't expose its key spec).
 pub fn detect_conflicts(bindings: &[DocumentedKeybinding]) -> Vec<KeyConflict> {
     let mut groups: HashMap<String, Vec<String>> = HashMap::new();
 
     for binding in bindings {
+        let conflict_key = binding
+            .raw_key_spec
+            .as_ref()
+            .unwrap_or(&binding.key)
+            .clone();
         groups
-            .entry(binding.key.clone())
+            .entry(conflict_key)
             .or_default()
             .push(binding.description.clone());
     }
@@ -63,5 +69,31 @@ mod tests {
         assert_eq!(conflicts.len(), 1);
         assert_eq!(conflicts[0].key, "Ctrl+F");
         assert_eq!(conflicts[0].count, 2);
+    }
+
+    #[test]
+    fn test_detects_conflict_on_raw_key_spec() {
+        // Two bindings with different display strings but same raw key spec.
+        let bindings = vec![
+            DocumentedKeybinding::new("⌘S", "Save", KeybindingCategory::FileOps)
+                .with_raw_key_spec("secondary-s"),
+            DocumentedKeybinding::new("Ctrl+S", "Save", KeybindingCategory::FileOps)
+                .with_raw_key_spec("secondary-s"),
+        ];
+        let conflicts = detect_conflicts(&bindings);
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0].key, "secondary-s");
+        assert_eq!(conflicts[0].count, 2);
+    }
+
+    #[test]
+    fn test_no_conflict_when_raw_key_spec_differs() {
+        let bindings = vec![
+            DocumentedKeybinding::new("⌘S", "Save", KeybindingCategory::FileOps)
+                .with_raw_key_spec("secondary-s"),
+            DocumentedKeybinding::new("Ctrl+O", "Open", KeybindingCategory::FileOps)
+                .with_raw_key_spec("secondary-o"),
+        ];
+        assert!(detect_conflicts(&bindings).is_empty());
     }
 }

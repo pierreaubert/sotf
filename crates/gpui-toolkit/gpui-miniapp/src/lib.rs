@@ -40,24 +40,34 @@ use std::rc::Rc;
 /// publishable consumers don't have to declare them. Examples and demos that
 /// need a custom `Application::with_platform(...)` should call this helper
 /// instead of inlining the cfg-cascade themselves.
-pub fn current_platform() -> Rc<dyn gpui::Platform> {
+pub fn current_platform() -> Result<Rc<dyn gpui::Platform>, String> {
     #[cfg(target_os = "macos")]
     {
-        Rc::new(gpui_macos::MacPlatform::new(false))
+        Ok(Rc::new(gpui_macos::MacPlatform::new(false)))
     }
     #[cfg(target_os = "linux")]
     {
-        gpui_linux::current_platform(false)
+        Ok(gpui_linux::current_platform(false))
     }
     #[cfg(target_os = "windows")]
     {
-        Rc::new(
-            gpui_windows::WindowsPlatform::new(false).expect("failed to create Windows platform"),
-        )
+        gpui_windows::WindowsPlatform::new(false)
+            .map(|p| Rc::new(p) as Rc<dyn gpui::Platform>)
+            .map_err(|e| format!("failed to create Windows platform: {e:?}"))
     }
     #[cfg(any(target_os = "ios", target_os = "tvos"))]
     {
-        gpui_ios::current_platform(false)
+        Ok(gpui_ios::current_platform(false))
+    }
+    #[cfg(not(any(
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "windows",
+        target_os = "ios",
+        target_os = "tvos"
+    )))]
+    {
+        compile_error!("unsupported platform for gpui-miniapp")
     }
 }
 
@@ -234,7 +244,15 @@ impl MiniApp {
     {
         let config_clone = config.clone();
 
-        gpui::Application::with_platform(current_platform()).run(move |cx: &mut App| {
+        let platform = match current_platform() {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("MiniApp platform error: {e}");
+                return;
+            }
+        };
+
+        gpui::Application::with_platform(platform).run(move |cx: &mut App| {
             // Initialize theme state if enabled
             if config_clone.with_theme {
                 cx.set_global(ThemeState::with_variant(config_clone.initial_theme));
@@ -417,7 +435,7 @@ impl MiniApp {
             );
 
             if config_clone.scrollable {
-                cx.open_window(
+                if let Err(e) = cx.open_window(
                     WindowOptions {
                         window_bounds: Some(WindowBounds::Windowed(bounds)),
                         titlebar: Some(TitlebarOptions {
@@ -432,10 +450,12 @@ impl MiniApp {
                             inner: inner_view.into(),
                         })
                     },
-                )
-                .unwrap();
+                ) {
+                    eprintln!("MiniApp window error: {e:?}");
+                    return;
+                }
             } else {
-                cx.open_window(
+                if let Err(e) = cx.open_window(
                     WindowOptions {
                         window_bounds: Some(WindowBounds::Windowed(bounds)),
                         titlebar: Some(TitlebarOptions {
@@ -445,8 +465,10 @@ impl MiniApp {
                         ..Default::default()
                     },
                     |_, cx| build_view(cx),
-                )
-                .unwrap();
+                ) {
+                    eprintln!("MiniApp window error: {e:?}");
+                    return;
+                }
             }
 
             cx.activate(true);
@@ -544,7 +566,7 @@ impl MiniApp {
 
 #[cfg(test)]
 mod tests {
-    use super::MiniAppConfig;
+    use super::{MiniAppConfig, current_platform};
     use gpui_ui_kit::i18n::Language;
     use gpui_ui_kit::theme::ThemeVariant;
 
@@ -825,5 +847,12 @@ mod tests {
         assert_eq!(config_default.scrollable, config_new.scrollable);
         assert_eq!(config_default.with_theme, config_new.with_theme);
         assert_eq!(config_default.with_i18n, config_new.with_i18n);
+    }
+
+    #[test]
+    fn test_current_platform_returns_ok() {
+        // On supported platforms current_platform should succeed.
+        let result = current_platform();
+        assert!(result.is_ok(), "current_platform failed: {:?}", result.err());
     }
 }

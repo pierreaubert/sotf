@@ -461,6 +461,7 @@ pub struct Spring {
 impl Spring {
     /// Create a new spring with custom parameters
     pub fn new(stiffness: f32, damping: f32, mass: f32) -> Self {
+        assert!(mass > 0.0, "spring mass must be positive, got {}", mass);
         Self {
             stiffness,
             damping,
@@ -508,7 +509,8 @@ impl Spring {
     pub fn force(&self, displacement: f32, velocity: f32) -> f32 {
         let spring_force = -self.stiffness * displacement;
         let damping_force = -self.damping * velocity;
-        (spring_force + damping_force) / self.mass
+        let mass = self.mass.max(1e-6);
+        (spring_force + damping_force) / mass
     }
 
     /// Step the spring simulation forward by dt seconds
@@ -784,6 +786,25 @@ mod tests {
 
         let result = interpolate(0.0, 100.0, Easing::Linear, 1.0);
         assert_eq!(result, 100.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "spring mass must be positive")]
+    fn test_spring_zero_mass_panics() {
+        Spring::new(100.0, 10.0, 0.0);
+    }
+
+    #[test]
+    fn test_spring_force_zero_mass_safe() {
+        // Direct field mutation bypasses the new() assert; force() should
+        // still be safe via the max(1e-6) clamp.
+        let spring = Spring {
+            stiffness: 100.0,
+            damping: 10.0,
+            mass: 0.0,
+        };
+        let f = spring.force(10.0, 5.0);
+        assert!(f.is_finite(), "force should be finite even with mass=0");
     }
 
     #[test]

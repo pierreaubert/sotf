@@ -123,12 +123,14 @@ impl RenderOnce for Port {
 
         if let Some(handler) = on_mouse_down {
             result = result.on_mouse_down(MouseButton::Left, move |_event, window, cx| {
+                cx.stop_propagation();
                 handler(direction, index, window, cx);
             });
         }
 
         if let Some(handler) = on_mouse_up {
             result = result.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
+                cx.stop_propagation();
                 handler(direction, index, window, cx);
             });
         }

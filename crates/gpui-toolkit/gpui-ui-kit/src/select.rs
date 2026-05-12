@@ -27,6 +27,8 @@ use crate::theme::ThemeExt;
 thread_local! {
     static SELECT_FOCUS_HANDLES: RefCell<HashMap<ElementId, FocusHandle>> =
         RefCell::new(HashMap::new());
+    static SELECT_FOCUS_SUBS: RefCell<HashMap<ElementId, Subscription>> =
+        RefCell::new(HashMap::new());
 }
 
 /// Theme colors for select styling
@@ -264,7 +266,7 @@ impl Select {
     }
 
     /// Build into element
-    fn build(self, global_theme: &crate::theme::Theme, theme: &SelectTheme, cx: &mut App) -> Div {
+    fn build(self, global_theme: &crate::theme::Theme, theme: &SelectTheme, window: &mut Window, cx: &mut App) -> Div {
         let (py, _text_size_class) = match self.size {
             SelectSize::Xs => (px(2.0), "xs"),
             SelectSize::Sm => (px(4.0), "sm"),
@@ -344,6 +346,19 @@ impl Select {
         let on_toggle_rc = self.on_toggle.map(std::rc::Rc::new);
         let on_change_rc = self.on_change.map(std::rc::Rc::new);
         let on_highlight_rc = self.on_highlight.map(std::rc::Rc::new);
+
+        // Register focus-out handler to close dropdown when user clicks outside.
+        if let Some(ref toggle_handler) = on_toggle_rc {
+            let toggle_for_blur = toggle_handler.clone();
+            let sub = window.on_focus_out(&focus_handle, cx, move |_event, window, cx| {
+                toggle_for_blur(false, window, cx);
+            });
+            SELECT_FOCUS_SUBS.with(|subs| {
+                let mut subs = subs.borrow_mut();
+                let _old = subs.remove(&dropdown_id);
+                subs.insert(dropdown_id.clone(), sub);
+            });
+        }
 
         let currently_open = self.is_open;
         let num_options = self.options.len();
@@ -540,7 +555,23 @@ impl Select {
                 dropdown = dropdown.child(option_el);
             }
 
-            // Wrap dropdown in deferred() with priority to render on top of other elements
+            // Backdrop overlay to catch outside clicks and close the dropdown
+            let toggle_for_backdrop = on_toggle_rc.clone();
+            let backdrop = div()
+                .absolute()
+                .inset_0()
+                .on_mouse_down(MouseButton::Left, move |_event, window, cx| {
+                    if let Some(ref handler) = toggle_for_backdrop {
+                        handler(false, window, cx);
+                    }
+                });
+
+            // Stop propagation on the dropdown so clicks inside it don't reach the backdrop
+            dropdown = dropdown.on_mouse_down(MouseButton::Left, |_event, _window, cx| {
+                cx.stop_propagation();
+            });
+
+            container = container.child(deferred(backdrop).with_priority(0));
             container = container.child(deferred(dropdown).with_priority(1));
         }
 
@@ -549,7 +580,7 @@ impl Select {
 }
 
 impl RenderOnce for Select {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         // Register in accessibility tree
         let effective_label = self
             .aria_label
@@ -571,7 +602,7 @@ impl RenderOnce for Select {
             .clone()
             .unwrap_or_else(|| SelectTheme::from(&global_theme));
 
-        self.build(&global_theme, &theme, cx)
+        self.build(&global_theme, &theme, window, cx)
     }
 }
 
@@ -580,5 +611,22 @@ impl IntoElement for Select {
 
     fn into_element(self) -> Self::Element {
         gpui::Component::new(self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Select, SelectOption};
+
+    #[test]
+    fn test_select_open_with_backdrop_smoke() {
+        let _select = Select::new("test-select")
+            .placeholder("Choose")
+            .options(vec![
+                SelectOption::new("1", "Option 1"),
+                SelectOption::new("2", "Option 2"),
+            ])
+            .is_open(true)
+            .on_toggle(|_open, _window, _cx| {});
     }
 }

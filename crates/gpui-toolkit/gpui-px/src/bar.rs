@@ -5,7 +5,8 @@ use crate::line::LegendPosition;
 use crate::{
     DEFAULT_COLOR, DEFAULT_HEIGHT, DEFAULT_PADDING_FRACTION, DEFAULT_TITLE_FONT_SIZE,
     DEFAULT_WIDTH, ScaleType, TITLE_AREA_HEIGHT, extent_padded, validate_data_array,
-    validate_data_length, validate_dimensions, validate_positive,
+    validate_data_length, validate_dimensions, validate_positive, validate_range,
+    validate_range_log,
 };
 use d3rs::axis::{AxisConfig, DefaultAxisTheme, render_axis};
 use d3rs::color::D3Color;
@@ -390,6 +391,15 @@ impl BarChart {
             - margin_bottom
             - height_for_legend as f64)
             .max(0.0);
+
+        // Validate explicit y_range
+        if let Some([min, max]) = self.y_range {
+            if self.y_scale_type == ScaleType::Log {
+                validate_range_log(min, max, "y_range")?;
+            } else {
+                validate_range(min, max, "y_range")?;
+            }
+        }
 
         // Calculate y domain with padding - include all series
         // Use explicit y_range if set, otherwise calculate from data
@@ -906,5 +916,24 @@ mod tests {
         let values = vec![10.0, 25.0, 15.0];
         let result = bar(&categories, &values).y_range(0.0, 50.0).build();
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_bar_y_range_reversal_rejected() {
+        let categories = vec!["A", "B", "C"];
+        let values = vec![10.0, 25.0, 15.0];
+        let result = bar(&categories, &values).y_range(50.0, 0.0).build();
+        assert!(matches!(result, Err(ChartError::InvalidData { .. })));
+    }
+
+    #[test]
+    fn test_bar_log_scale_negative_y_range_rejected() {
+        let categories = vec!["A", "B", "C"];
+        let values = vec![10.0, 25.0, 15.0];
+        let result = bar(&categories, &values)
+            .y_scale(ScaleType::Log)
+            .y_range(-1.0, 100.0)
+            .build();
+        assert!(matches!(result, Err(ChartError::InvalidData { .. })));
     }
 }

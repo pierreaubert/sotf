@@ -16,6 +16,9 @@ use crate::ComponentTheme;
 use crate::theme::ThemeExt;
 use gpui::prelude::*;
 use gpui::*;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
 
 /// Split direction
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -41,6 +44,18 @@ pub struct SplitPaneTheme {
     pub divider_active: Rgba,
 }
 
+/// Drag state stored in thread-local storage so it survives re-renders.
+#[derive(Clone, Copy, Debug)]
+struct SplitPaneDragState {
+    start_pos: f32,
+    start_ratio: f32,
+    is_vertical: bool,
+}
+
+thread_local! {
+    static SPLIT_PANE_DRAG_STATES: RefCell<HashMap<ElementId, SplitPaneDragState>> = RefCell::new(HashMap::new());
+}
+
 /// A split pane component with a draggable divider
 pub struct SplitPane {
     id: ElementId,
@@ -51,7 +66,7 @@ pub struct SplitPane {
     min_first: Pixels,
     min_second: Pixels,
     divider_width: Pixels,
-    on_resize: Option<Box<dyn Fn(f32, &mut Window, &mut App) + 'static>>,
+    on_resize: Option<Rc<dyn Fn(f32, &mut Window, &mut App) + 'static>>,
 }
 
 impl SplitPane {
@@ -114,7 +129,7 @@ impl SplitPane {
 
     /// Called when the user drags the divider (receives new ratio)
     pub fn on_resize(mut self, handler: impl Fn(f32, &mut Window, &mut App) + 'static) -> Self {
-        self.on_resize = Some(Box::new(handler));
+        self.on_resize = Some(Rc::new(handler));
         self
     }
 
@@ -122,8 +137,9 @@ impl SplitPane {
     pub fn build_with_theme(self, theme: &SplitPaneTheme) -> Stateful<Div> {
         let divider_color = theme.divider;
         let divider_hover = theme.divider_hover;
+        let _divider_active = theme.divider_active;
 
-        let mut container = div().id(self.id).size_full().flex().overflow_hidden();
+        let mut container = div().id(self.id.clone()).size_full().flex().overflow_hidden();
 
         container = match self.direction {
             SplitDirection::Horizontal => container.flex_row(),
@@ -144,8 +160,12 @@ impl SplitPane {
                 .min_h(self.min_first),
         };
 
+        let is_vertical = self.direction == SplitDirection::Horizontal;
+        let on_resize = self.on_resize;
+        let id = self.id.clone();
+
         // Divider
-        let divider = match self.direction {
+        let mut divider = match self.direction {
             SplitDirection::Horizontal => div()
                 .id("split-divider")
                 .w(self.divider_width)
@@ -164,6 +184,28 @@ impl SplitPane {
                 .hover(move |s| s.bg(divider_hover)),
         };
 
+        // Drag start
+        if on_resize.is_some() {
+            let start_ratio = self.ratio;
+            divider = divider.on_mouse_down(MouseButton::Left, move |event, _window, _cx| {
+                let pos: f32 = if is_vertical {
+                    event.position.x.into()
+                } else {
+                    event.position.y.into()
+                };
+                SPLIT_PANE_DRAG_STATES.with(|states| {
+                    states.borrow_mut().insert(
+                        id.clone(),
+                        SplitPaneDragState {
+                            start_pos: pos,
+                            start_ratio,
+                            is_vertical,
+                        },
+                    );
+                });
+            });
+        }
+
         // Second pane
         let second_pane = div().flex_1().overflow_hidden().children(self.second);
 
@@ -172,10 +214,41 @@ impl SplitPane {
             SplitDirection::Vertical => second_pane.w_full().min_h(self.min_second),
         };
 
+        container = container.child(first_pane).child(divider).child(second_pane);
+
+        // Drag move / end on the container so tracking continues when the
+        // cursor leaves the thin divider.
+        if let Some(resize_cb) = on_resize {
+            let id_move = self.id.clone();
+            container = container.on_mouse_move(move |event, window, cx| {
+                SPLIT_PANE_DRAG_STATES.with(|states| {
+                    if let Some(state) = states.borrow().get(&id_move).copied() {
+                        let pos: f32 = if state.is_vertical {
+                            event.position.x.into()
+                        } else {
+                            event.position.y.into()
+                        };
+                        let viewport: f32 = if state.is_vertical {
+                            window.viewport_size().width.into()
+                        } else {
+                            window.viewport_size().height.into()
+                        };
+                        let delta = pos - state.start_pos;
+                        let new_ratio = (state.start_ratio + delta / viewport).clamp(0.0, 1.0);
+                        resize_cb(new_ratio, window, cx);
+                    }
+                });
+            });
+
+            let id_up = self.id.clone();
+            container = container.on_mouse_up(MouseButton::Left, move |_event, _window, _cx| {
+                SPLIT_PANE_DRAG_STATES.with(|states| {
+                    states.borrow_mut().remove(&id_up);
+                });
+            });
+        }
+
         container
-            .child(first_pane)
-            .child(divider)
-            .child(second_pane)
     }
 }
 
@@ -192,5 +265,17 @@ impl IntoElement for SplitPane {
 
     fn into_element(self) -> Self::Element {
         gpui::Component::new(self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SplitPane;
+
+    #[test]
+    fn test_split_pane_drag_handlers_do_not_panic() {
+        let _el = SplitPane::new("test-split")
+            .on_resize(|_ratio, _window, _cx| {})
+            .build_with_theme(&super::SplitPaneTheme::default());
     }
 }

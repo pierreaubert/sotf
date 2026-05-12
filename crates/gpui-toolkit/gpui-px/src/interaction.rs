@@ -381,6 +381,18 @@ impl Default for WheelConfig {
     }
 }
 
+/// Clamp log-scale domain bounds to a small positive epsilon and ensure min < max.
+fn clamp_log_domain(min: f64, max: f64) -> (f64, f64) {
+    let epsilon = 1e-10;
+    let min = if min.is_finite() && min > epsilon { min } else { epsilon };
+    let max = if max.is_finite() && max > epsilon { max } else { epsilon };
+    if min >= max {
+        (min, min + epsilon)
+    } else {
+        (min, max)
+    }
+}
+
 /// Apply mouse wheel zoom to chart interaction state.
 ///
 /// # Arguments
@@ -411,10 +423,18 @@ pub fn apply_wheel_zoom(
     };
 
     // Apply zoom centered on mouse position
-    let new_x_min = focus_x - (focus_x - x_min) * factor;
-    let new_x_max = focus_x + (x_max - focus_x) * factor;
-    let new_y_min = focus_y - (focus_y - y_min) * factor;
-    let new_y_max = focus_y + (y_max - focus_y) * factor;
+    let mut new_x_min = focus_x - (focus_x - x_min) * factor;
+    let mut new_x_max = focus_x + (x_max - focus_x) * factor;
+    let mut new_y_min = focus_y - (focus_y - y_min) * factor;
+    let mut new_y_max = focus_y + (y_max - focus_y) * factor;
+
+    // Clamp log scale domains to stay positive
+    if interaction.x_is_log {
+        (new_x_min, new_x_max) = clamp_log_domain(new_x_min, new_x_max);
+    }
+    if interaction.y_is_log {
+        (new_y_min, new_y_max) = clamp_log_domain(new_y_min, new_y_max);
+    }
 
     interaction.zoom_to(new_x_min, new_x_max, new_y_min, new_y_max);
 }
@@ -744,7 +764,7 @@ mod interactive_chart {
             let y_range = y_max - y_min;
 
             // For log scale, we need to handle panning differently
-            let (new_x_min, new_x_max) = if interaction.x_is_log {
+            let (mut new_x_min, mut new_x_max) = if interaction.x_is_log {
                 // For log scale, pan in log space
                 let log_min = x_min.log10();
                 let log_max = x_max.log10();
@@ -759,7 +779,7 @@ mod interactive_chart {
                 (x_min + delta, x_max + delta)
             };
 
-            let (new_y_min, new_y_max) = if interaction.y_is_log {
+            let (mut new_y_min, mut new_y_max) = if interaction.y_is_log {
                 let log_min = y_min.log10();
                 let log_max = y_max.log10();
                 let log_range = log_max - log_min;
@@ -773,6 +793,14 @@ mod interactive_chart {
                 let delta = (dy as f64 / plot_height as f64) * y_range;
                 (y_min + delta, y_max + delta)
             };
+
+            // Clamp log scale domains to stay positive
+            if interaction.x_is_log {
+                (new_x_min, new_x_max) = clamp_log_domain(new_x_min, new_x_max);
+            }
+            if interaction.y_is_log {
+                (new_y_min, new_y_max) = clamp_log_domain(new_y_min, new_y_max);
+            }
 
             interaction.zoom_to(new_x_min, new_x_max, new_y_min, new_y_max);
         }
@@ -1124,6 +1152,51 @@ mod tests {
         interaction.cancel_brush();
         assert!(!interaction.is_brushing());
         assert!(interaction.current_brush_selection().is_none());
+    }
+
+    #[test]
+    fn test_wheel_zoom_clamps_log_scale() {
+        let mut interaction = ChartInteraction::new(1.0, 100.0, 1.0, 100.0)
+            .with_log_x(true)
+            .with_log_y(true)
+            .with_size(500.0, 500.0);
+        let config = WheelConfig::default();
+
+        // Zoom in aggressively at the lower-left corner
+        apply_wheel_zoom(&mut interaction, -10.0, 10.0, 10.0, &config);
+
+        let (x_min, x_max) = interaction.x_domain();
+        let (y_min, y_max) = interaction.y_domain();
+        assert!(x_min > 0.0, "log x_min should be clamped above 0, got {}", x_min);
+        assert!(y_min > 0.0, "log y_min should be clamped above 0, got {}", y_min);
+        assert!(x_min < x_max);
+        assert!(y_min < y_max);
+    }
+
+    #[test]
+    fn test_pan_clamps_log_scale() {
+        #[cfg(feature = "gpui")]
+        {
+            use super::interactive_chart::*;
+            let state = InteractiveChartState::new(1.0, 100.0, 1.0, 100.0)
+                .with_log_x(true)
+                .with_log_y(true)
+                .with_size(500.0, 500.0);
+
+            // Pan far to the left/down
+            state.apply_pan(-5000.0, 5000.0);
+
+            let (x_min, x_max) = state.x_domain();
+            let (y_min, y_max) = state.y_domain();
+            assert!(x_min > 0.0, "log x_min should be clamped above 0, got {}", x_min);
+            assert!(y_min > 0.0, "log y_min should be clamped above 0, got {}", y_min);
+            assert!(x_min < x_max);
+            assert!(y_min < y_max);
+        }
+        #[cfg(not(feature = "gpui"))]
+        {
+            // Skip when gpui feature is not available
+        }
     }
 
     #[cfg(feature = "gpui")]

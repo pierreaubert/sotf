@@ -47,22 +47,50 @@ thread_local! {
 /// Wrapper for a raw pointer to make it Send+Sync for Mutex storage.
 /// SAFETY: The pointer is only accessed from the main thread.
 struct AuWindowPtr(*const AuWindow);
-unsafe impl Send for AuWindowPtr {}
-unsafe impl Sync for AuWindowPtr {}
+
+impl AuWindowPtr {
+    #[cfg(all(debug_assertions, not(test)))]
+    fn assert_main_thread() {
+        use objc::{class, msg_send, runtime::{BOOL, YES}};
+        unsafe {
+            let is_main: BOOL = msg_send![class!(NSThread), isMainThread];
+            assert!(
+                is_main == YES,
+                "AuWindowPtr must only be used on the main thread"
+            );
+        }
+    }
+
+    #[cfg(any(not(debug_assertions), test))]
+    fn assert_main_thread() {}
+}
+
+unsafe impl Send for AuWindowPtr {
+    // Pointer is only valid on the main thread; debug builds assert this.
+}
+unsafe impl Sync for AuWindowPtr {
+    // Same as Send.
+}
 
 /// Global window pointer, used by `gpui_au_request_frame` to find the window.
 /// Single-instance: only one AU GPUI window per process (each AU appex is its own process).
 /// Uses Mutex instead of OnceLock to support view destruction and re-creation (common in DAWs).
 static AU_WINDOW: std::sync::Mutex<Option<AuWindowPtr>> = std::sync::Mutex::new(None);
 
-/// Get a reference to the current AU window, if any.
-/// Returns None if no window is registered or the pointer is null.
-pub(crate) fn au_window() -> Option<&'static AuWindow> {
+/// Execute a callback with a reference to the current AU window, if any.
+/// The mutex guard is held for the duration of the callback, ensuring the
+/// window pointer remains valid.
+pub(crate) fn with_au_window<F, R>(f: F) -> Option<R>
+where
+    F: FnOnce(&AuWindow) -> R,
+{
+    AuWindowPtr::assert_main_thread();
     let guard = AU_WINDOW.lock().ok()?;
-    guard
-        .as_ref()
-        .filter(|p| !p.0.is_null())
-        .map(|p| unsafe { &*p.0 })
+    let ptr = guard.as_ref()?.0;
+    if ptr.is_null() {
+        return None;
+    }
+    Some(f(unsafe { &*ptr }))
 }
 
 /// Unregister the current AU window (called during destroy).
@@ -143,16 +171,16 @@ impl AuWindow {
     /// `gpui_au_create` before calling `app.run()` / `open_window()`.
     pub fn new(_handle: AnyWindowHandle, _params: WindowParams) -> anyhow::Result<Self> {
         use crate::helpers::nslog;
-        nslog("SOTF AuWindow::new: entry\0");
+        nslog(b"SOTF AuWindow::new: entry");
 
         let view_info = PENDING_VIEW.with(|pv| pv.borrow_mut().take());
         let (ns_view, width, height, scale) = match view_info {
             Some(info) => {
-                nslog("SOTF AuWindow::new: PENDING_VIEW found\0");
+                nslog(b"SOTF AuWindow::new: PENDING_VIEW found");
                 (info.ns_view, info.width, info.height, info.scale)
             }
             None => {
-                nslog("SOTF AuWindow::new: No PENDING_VIEW — creating without renderer\0");
+                nslog(b"SOTF AuWindow::new: No PENDING_VIEW -- creating without renderer");
                 return Ok(Self {
                     view: std::ptr::null_mut(),
                     bounds: Cell::new(Bounds {
@@ -179,7 +207,7 @@ impl AuWindow {
         };
 
         // Configure the NSView with a CAMetalLayer for wgpu rendering.
-        nslog("SOTF AuWindow::new: setting up CAMetalLayer\0");
+        nslog(b"SOTF AuWindow::new: setting up CAMetalLayer");
         unsafe {
             let _: () = msg_send![ns_view, setWantsLayer: true];
 
@@ -217,7 +245,7 @@ impl AuWindow {
         };
 
         // Initialize wgpu renderer (Metal backend)
-        nslog("SOTF AuWindow::new: initializing wgpu renderer\0");
+        nslog(b"SOTF AuWindow::new: initializing wgpu renderer");
         let pixel_w = (width * scale) as i32;
         let pixel_h = (height * scale) as i32;
 
@@ -234,15 +262,15 @@ impl AuWindow {
         };
         let gpu_context: GpuContext = Rc::new(RefCell::new(None));
 
-        nslog("SOTF AuWindow::new: creating wgpu renderer\0");
+        nslog(b"SOTF AuWindow::new: creating wgpu renderer");
         match WgpuRenderer::new(gpu_context, &raw_window, config, None) {
             Ok(renderer) => {
-                nslog("SOTF AuWindow::new: wgpu renderer created OK\0");
+                nslog(b"SOTF AuWindow::new: wgpu renderer created OK");
                 *au_window.renderer.lock() = Some(renderer);
             }
             Err(e) => {
-                let msg = format!("SOTF AuWindow::new: wgpu renderer FAILED: {e:#}\0");
-                nslog(&msg);
+                let msg = format!("SOTF AuWindow::new: wgpu renderer FAILED: {e:#}");
+                nslog(msg.as_bytes());
             }
         }
 
@@ -257,8 +285,8 @@ impl AuWindow {
         if let Ok(mut guard) = AU_WINDOW.lock() {
             *guard = Some(AuWindowPtr(ptr));
         }
-        let msg = format!("SOTF AuWindow: registered at {:p}\0", ptr);
-        nslog(&msg);
+        let msg = format!("SOTF AuWindow: registered at {:p}", ptr);
+        nslog(msg.as_bytes());
     }
 
     /// Request a frame render (called from Swift via FFI)
@@ -599,5 +627,17 @@ impl PlatformAtlas for FallbackAtlas {
 
     fn remove(&self, key: &AtlasKey) {
         self.state.lock().tiles.remove(key);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_with_au_window_returns_none_when_unregistered() {
+        // Ensure that with_au_window returns None when no window is registered
+        let result = with_au_window(|_window| 42);
+        assert!(result.is_none());
     }
 }

@@ -130,8 +130,8 @@ impl WorkflowNodeData {
         let header_height = 28.0;
         let padding = 8.0;
         let border = 2.0;
-        let content_height = self.height - header_height - 2.0 * border;
-        let available = content_height - 2.0 * padding;
+        let content_height = (self.height - header_height - 2.0 * border).max(0.0);
+        let available = (content_height - 2.0 * padding).max(0.0);
 
         let y = if self.input_count == 0 {
             self.position.y + self.height / 2.0
@@ -153,8 +153,8 @@ impl WorkflowNodeData {
         let header_height = 28.0;
         let padding = 8.0;
         let border = 2.0;
-        let content_height = self.height - header_height - 2.0 * border;
-        let available = content_height - 2.0 * padding;
+        let content_height = (self.height - header_height - 2.0 * border).max(0.0);
+        let available = (content_height - 2.0 * padding).max(0.0);
 
         let y = if self.output_count == 0 {
             self.position.y + self.height / 2.0

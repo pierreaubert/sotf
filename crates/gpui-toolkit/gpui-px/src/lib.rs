@@ -297,13 +297,13 @@ pub(crate) fn validate_data_length(
 
 /// Validate chart dimensions are positive.
 pub(crate) fn validate_dimensions(width: f32, height: f32) -> Result<(), ChartError> {
-    if width <= 0.0 {
+    if !width.is_finite() || width <= 0.0 {
         return Err(ChartError::InvalidDimension {
             field: "width",
             value: width,
         });
     }
-    if height <= 0.0 {
+    if !height.is_finite() || height <= 0.0 {
         return Err(ChartError::InvalidDimension {
             field: "height",
             value: height,
@@ -349,6 +349,29 @@ pub(crate) fn validate_positive(values: &[f64], field: &'static str) -> Result<(
         return Err(ChartError::InvalidData {
             field,
             reason: "contains non-positive values for log scale",
+        });
+    }
+    Ok(())
+}
+
+/// Validate that an explicit range has min < max.
+pub(crate) fn validate_range(min: f64, max: f64, field: &'static str) -> Result<(), ChartError> {
+    if !matches!(min.partial_cmp(&max), Some(std::cmp::Ordering::Less)) {
+        return Err(ChartError::InvalidData {
+            field,
+            reason: "range min must be less than max",
+        });
+    }
+    Ok(())
+}
+
+/// Validate that an explicit range is strictly positive (for log scale).
+pub(crate) fn validate_range_log(min: f64, max: f64, field: &'static str) -> Result<(), ChartError> {
+    validate_range(min, max, field)?;
+    if min <= 0.0 || max <= 0.0 {
+        return Err(ChartError::InvalidData {
+            field,
+            reason: "log scale range must be strictly positive",
         });
     }
     Ok(())
@@ -522,6 +545,42 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn test_validate_dimensions_nan_width() {
+        let result = validate_dimensions(f32::NAN, 400.0);
+        assert!(matches!(
+            result,
+            Err(ChartError::InvalidDimension {
+                field: "width",
+                value: _,
+            })
+        ));
+    }
+
+    #[test]
+    fn test_validate_dimensions_nan_height() {
+        let result = validate_dimensions(600.0, f32::NAN);
+        assert!(matches!(
+            result,
+            Err(ChartError::InvalidDimension {
+                field: "height",
+                value: _,
+            })
+        ));
+    }
+
+    #[test]
+    fn test_validate_dimensions_infinite_width() {
+        let result = validate_dimensions(f32::INFINITY, 400.0);
+        assert!(matches!(
+            result,
+            Err(ChartError::InvalidDimension {
+                field: "width",
+                value: _,
+            })
+        ));
+    }
+
     // validate_grid_dimensions tests
     #[test]
     fn test_validate_grid_dimensions_valid() {
@@ -606,6 +665,65 @@ mod tests {
             Err(ChartError::InvalidData {
                 field: "x",
                 reason: "contains non-positive values for log scale"
+            })
+        ));
+    }
+
+    #[test]
+    fn test_validate_range_valid() {
+        assert!(validate_range(1.0, 10.0, "x").is_ok());
+    }
+
+    #[test]
+    fn test_validate_range_reversed() {
+        let result = validate_range(10.0, 1.0, "x");
+        assert!(matches!(
+            result,
+            Err(ChartError::InvalidData {
+                field: "x",
+                reason: "range min must be less than max"
+            })
+        ));
+    }
+
+    #[test]
+    fn test_validate_range_equal() {
+        let result = validate_range(5.0, 5.0, "x");
+        assert!(matches!(
+            result,
+            Err(ChartError::InvalidData {
+                field: "x",
+                reason: "range min must be less than max"
+            })
+        ));
+    }
+
+    #[test]
+    fn test_validate_range_log_valid() {
+        assert!(validate_range_log(1.0, 10.0, "x").is_ok());
+    }
+
+    #[test]
+    fn test_validate_range_log_negative_min() {
+        let result = validate_range_log(-1.0, 10.0, "x");
+        assert!(matches!(
+            result,
+            Err(ChartError::InvalidData {
+                field: "x",
+                reason: "log scale range must be strictly positive"
+            })
+        ));
+    }
+
+    #[test]
+    fn test_validate_range_log_zero_max() {
+        let result = validate_range_log(1.0, 0.0, "x");
+        // Range reversal is caught first
+        assert!(matches!(
+            result,
+            Err(ChartError::InvalidData {
+                field: "x",
+                reason: "range min must be less than max"
             })
         ));
     }

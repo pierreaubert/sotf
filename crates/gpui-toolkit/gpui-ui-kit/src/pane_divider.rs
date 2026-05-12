@@ -274,25 +274,24 @@ impl PaneDivider {
         let hover_fg = theme.foreground_hover;
         base = base.hover(move |style| style.bg(hover_bg).text_color(hover_fg));
 
-        // Mouse down handler: double-click toggles, single click starts drag
-        if on_toggle.is_some() || on_drag_start.is_some() {
-            base = base.on_mouse_down(MouseButton::Left, move |event, window, cx| {
-                if event.click_count == 2 {
-                    // Double-click: toggle collapse
-                    if let Some(ref toggle_cb) = on_toggle {
-                        toggle_cb(true, window, cx);
-                    }
-                } else if event.click_count == 1 {
-                    // Single click: start drag
-                    if let Some(ref drag_cb) = on_drag_start {
-                        let pos: f32 = if is_vertical {
-                            event.position.x.into()
-                        } else {
-                            event.position.y.into()
-                        };
-                        drag_cb(pos, window, cx);
-                    }
+        // Double-click toggle (uses on_click for correct click_count() method)
+        if let Some(toggle_cb) = on_toggle {
+            base = base.on_click(move |event, window, cx| {
+                if event.click_count() == 2 {
+                    toggle_cb(true, window, cx);
                 }
+            });
+        }
+
+        // Single click starts drag
+        if let Some(drag_cb) = on_drag_start {
+            base = base.on_mouse_down(MouseButton::Left, move |event, window, cx| {
+                let pos: f32 = if is_vertical {
+                    event.position.x.into()
+                } else {
+                    event.position.y.into()
+                };
+                drag_cb(pos, window, cx);
             });
         }
 
@@ -420,5 +419,19 @@ impl IntoElement for PaneDivider {
 
     fn into_element(self) -> Self::Element {
         self.build()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CollapseDirection, PaneDivider};
+
+    #[test]
+    fn test_pane_divider_builds_with_handlers() {
+        // Smoke test: building with both toggle and drag handlers should not panic.
+        let _el = PaneDivider::vertical("test-divider", CollapseDirection::Left)
+            .on_toggle(|_collapsed, _window, _cx| {})
+            .on_drag_start(|_pos, _window, _cx| {})
+            .build();
     }
 }

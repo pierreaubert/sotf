@@ -265,17 +265,24 @@ where
     let mut relative_points: Vec<(f32, f32)> = Vec::with_capacity(data.len());
     for point in data {
         let x_range = x_scale.scale(point.x);
-        let x_rel = ((x_range - x_min) / x_range_span) as f32;
+        let x_rel = if x_range_span == 0.0 {
+            0.5_f32
+        } else {
+            ((x_range - x_min) / x_range_span) as f32
+        };
         let y_range = y_scale.scale(point.y);
         // y_range is in screen coordinates
         // For inverted range (typical: range(height, 0)), y_min > y_max
         // y_range=0 (top) should map to y_rel=0, y_range=y_min (bottom) should map to y_rel=1
-        let y_rel = if y_min > y_max {
-            // Inverted range: y_min is at bottom, y_max (0) is at top
-            (y_range / y_min) as f32
+        let y_range_span = y_max - y_min;
+        let y_rel = if y_range_span == 0.0 {
+            0.5_f32
+        } else if y_min > y_max {
+            // Inverted range: y_min is at bottom, y_max is at top
+            ((y_range - y_max) / (y_min - y_max)) as f32
         } else {
             // Normal range: y_min is at top (0), y_max is at bottom
-            ((y_range - y_min) / (y_max - y_min)) as f32
+            ((y_range - y_min) / y_range_span) as f32
         };
         relative_points.push((x_rel, y_rel));
     }
@@ -487,4 +494,48 @@ where
     .size_full()
     .absolute()
     .inset_0()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::scale::{LinearScale, Scale};
+
+    #[test]
+    fn test_line_y_rel_inverted_range_with_zero() {
+        // Inverted range where y_min == 0.0 used to divide by zero
+        let y_scale = LinearScale::new().domain(0.0, 100.0).range(0.0, -100.0);
+        let (y_min, y_max) = y_scale.range();
+        assert_eq!(y_min, 0.0);
+        assert_eq!(y_max, -100.0);
+
+        // Simulate the y_rel calculation logic inline
+        let y_range = y_scale.scale(50.0); // should be -50.0
+        let y_range_span = y_max - y_min;
+        assert!(y_range_span != 0.0);
+        let y_rel = if y_min > y_max {
+            ((y_range - y_max) / (y_min - y_max)) as f32
+        } else {
+            ((y_range - y_min) / y_range_span) as f32
+        };
+        // 50% of domain should map to middle of relative coords
+        assert!((y_rel - 0.5).abs() < 1e-5, "y_rel should be 0.5, got {}", y_rel);
+    }
+
+    #[test]
+    fn test_line_flat_range() {
+        let y_scale = LinearScale::new().domain(0.0, 100.0).range(50.0, 50.0);
+        let (y_min, y_max) = y_scale.range();
+        let y_range = y_scale.scale(25.0);
+        let y_range_span = y_max - y_min;
+        assert_eq!(y_range_span, 0.0);
+        let y_rel = if y_range_span == 0.0 {
+            0.5_f32
+        } else if y_min > y_max {
+            ((y_range - y_max) / (y_min - y_max)) as f32
+        } else {
+            ((y_range - y_min) / y_range_span) as f32
+        };
+        assert_eq!(y_rel, 0.5);
+    }
 }

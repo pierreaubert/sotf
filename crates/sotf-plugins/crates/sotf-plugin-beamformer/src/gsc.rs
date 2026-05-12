@@ -108,6 +108,7 @@ impl GscBeamformer {
     ///
     /// # Returns
     /// Single beamformed output sample
+    #[allow(clippy::needless_range_loop)]
     pub fn process_sample(&mut self, mic_samples: &[f32]) -> f32 {
         let m = self.num_mics.min(mic_samples.len());
         let num_refs = self.blocking_matrix.len();

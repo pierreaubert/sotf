@@ -182,8 +182,8 @@ impl Force for ForceManyBody {
                 let dy = node_j.y - node_i.y;
                 let mut l2 = dx * dx + dy * dy;
 
-                if l2 == 0.0 {
-                    l2 = 1e-6; // Small epsilon to avoid division by zero
+                if l2 < 1e-12 {
+                    l2 = 1e-12; // Small epsilon to avoid division by zero
                 }
 
                 let l = l2.sqrt();
@@ -441,6 +441,26 @@ mod tests {
         assert!(node0.vy > 0.0);
         // Equal components due to 45-degree angle
         assert!((node0.vx - node0.vy).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_force_many_body_near_zero_distance() {
+        // Two nodes almost exactly on top of each other
+        let n0 = SimulationNode::new(0, 0.0, 0.0);
+        let n1 = SimulationNode::new(1, 1e-15, 1e-15);
+        let nodes = vec![n0.clone(), n1.clone()];
+
+        let mut force = ForceManyBody::new();
+        force.force(1.0, &nodes);
+
+        let node0 = n0.borrow();
+        let node1 = n1.borrow();
+
+        // Should not produce NaN or infinite velocities
+        assert!(node0.vx.is_finite(), "vx should be finite");
+        assert!(node0.vy.is_finite(), "vy should be finite");
+        assert!(node1.vx.is_finite(), "vx should be finite");
+        assert!(node1.vy.is_finite(), "vy should be finite");
     }
 
     #[test]

@@ -487,10 +487,10 @@ impl_param_accessors! {
         layout: Some(&param_specs::binaural::LAYOUT),
         fields: [
             sofa_file: skip, input_channels: usize,
-            enable_optimization: bool, externalization: f64, near_field_strength: f64,
+            externalization: f64, near_field_strength: f64,
             crossfade_mode: usize,
             late_reverb_enabled: bool, late_reverb_mix: f64, late_reverb_rt60: f64,
-            late_reverb_damping: f64, headphone_eq_enabled: bool,
+            late_reverb_damping: f64,
         ]
     },
     XTC {
@@ -538,7 +538,7 @@ impl_param_accessors! {
         layout: Some(&param_specs::hiss_reducer::LAYOUT),
         fields: [
             enabled: bool, threshold_db: f64, frequency_hz: f64,
-            strength: f64, low_latency: bool,
+            strength: f64,
         ]
     },
     SpeechDenoiser {

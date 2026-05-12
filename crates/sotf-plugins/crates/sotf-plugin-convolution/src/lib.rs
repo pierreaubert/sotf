@@ -653,8 +653,8 @@ impl InPlacePlugin for ConvolutionPlugin {
             validate_interleaved_in_place("Convolution", nf, self.channels, buffer.len())?;
 
         // Check for asynchronously-loaded IR results and swap them in.
-        if let Some(ref rx) = self.ir_load_result_rx {
-            if let Ok(result) = rx.try_recv() {
+        if let Some(ref rx) = self.ir_load_result_rx
+            && let Ok(result) = rx.try_recv() {
                 self.ir_load_result_rx = None;
                 match result {
                     Ok(loaded) => self.apply_ir_state(loaded),
@@ -666,7 +666,6 @@ impl InPlacePlugin for ConvolutionPlugin {
                     }
                 }
             }
-        }
 
         let state_guard = self.state.load();
         let state = match state_guard.as_ref() {

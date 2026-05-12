@@ -889,3 +889,25 @@ fn test_serialization_old_format_compat() {
     assert_eq!(node.max_input_count, None);
     assert_eq!(node.max_output_count, None);
 }
+
+// ============================================================================
+// Content Height Clamp Tests
+// ============================================================================
+
+#[test]
+fn test_port_positions_clamped_for_tiny_node() {
+    let node = WorkflowNodeData::new("Tiny", Position::new(0.0, 0.0))
+        .with_ports(2, 2)
+        .with_size(160.0, 10.0);
+
+    let p0 = node.input_port_position(0);
+    let p1 = node.input_port_position(1);
+
+    // Without clamping content_height to >= 0, spacing becomes negative and
+    // ports invert (p0.y > p1.y). With the fix they stay ordered.
+    assert!(
+        p0.y <= p1.y,
+        "ports must stay ordered top-to-bottom even for tiny nodes"
+    );
+    assert!(p0.y >= 0.0, "port y must not be above node top");
+}

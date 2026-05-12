@@ -5,7 +5,7 @@ use crate::error::ChartError;
 use crate::{
     DEFAULT_HEIGHT, DEFAULT_TITLE_FONT_SIZE, DEFAULT_WIDTH, ScaleType, TITLE_AREA_HEIGHT,
     extent_padded, validate_data_array, validate_dimensions, validate_grid_dimensions,
-    validate_monotonic, validate_positive,
+    validate_monotonic, validate_positive, validate_range, validate_range_log,
 };
 use d3rs::axis::{AxisConfig, DefaultAxisTheme, render_axis};
 #[cfg(feature = "gpu-2d")]
@@ -153,7 +153,15 @@ impl HeatmapChart {
                 }
                 v.clone()
             }
-            None => (0..self.grid_width).map(|i| i as f64).collect(),
+            None => {
+                if self.x_scale_type == ScaleType::Log {
+                    return Err(ChartError::InvalidData {
+                        field: "x",
+                        reason: "log scale requires explicit positive x values",
+                    });
+                }
+                (0..self.grid_width).map(|i| i as f64).collect()
+            }
         };
 
         // Generate or validate y values
@@ -174,7 +182,15 @@ impl HeatmapChart {
                 }
                 v.clone()
             }
-            None => (0..self.grid_height).map(|i| i as f64).collect(),
+            None => {
+                if self.y_scale_type == ScaleType::Log {
+                    return Err(ChartError::InvalidData {
+                        field: "y",
+                        reason: "log scale requires explicit positive y values",
+                    });
+                }
+                (0..self.grid_height).map(|i| i as f64).collect()
+            }
         };
 
         // Define margins
@@ -194,6 +210,22 @@ impl HeatmapChart {
         let plot_height =
             (self.height as f64 - title_height as f64 - margin_top - margin_bottom).max(0.0);
 
+        // Validate explicit ranges
+        if let Some([min, max]) = self.x_range {
+            if self.x_scale_type == ScaleType::Log {
+                validate_range_log(min, max, "x_range")?;
+            } else {
+                validate_range(min, max, "x_range")?;
+            }
+        }
+        if let Some([min, max]) = self.y_range {
+            if self.y_scale_type == ScaleType::Log {
+                validate_range_log(min, max, "y_range")?;
+            } else {
+                validate_range(min, max, "y_range")?;
+            }
+        }
+
         // Calculate domains with padding, or use explicit ranges if set
         let (x_min, x_max) = if let Some([min, max]) = self.x_range {
             (min, max)
@@ -207,7 +239,7 @@ impl HeatmapChart {
         };
 
         // Create HeatmapData
-        let heatmap_data = HeatmapData::new(x_values, y_values, self.z.clone());
+        let heatmap_data = HeatmapData::new(x_values, y_values, self.z);
 
         // Build config with color scale
         let color_fn = self.color_scale.to_fn();
@@ -654,6 +686,13 @@ mod tests {
     }
 
     #[test]
+    fn test_heatmap_log_scale_auto_axes() {
+        let z = vec![1.0; 4]; // 2x2 grid
+        let result = heatmap(&z, 2, 2).x_scale(ScaleType::Log).build();
+        assert!(matches!(result, Err(ChartError::InvalidData { .. })));
+    }
+
+    #[test]
     fn test_heatmap_builder_chain() {
         let z = vec![1.0; 9]; // 3x3 grid
         let result = heatmap(&z, 3, 3)
@@ -673,5 +712,24 @@ mod tests {
             .y_range(-5.0, 5.0)
             .build();
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_heatmap_range_reversal_rejected() {
+        let z = vec![1.0; 9];
+        let result = heatmap(&z, 3, 3).x_range(10.0, 0.0).build();
+        assert!(matches!(result, Err(ChartError::InvalidData { .. })));
+    }
+
+    #[test]
+    fn test_heatmap_log_scale_negative_range_rejected() {
+        let z = vec![1.0; 9];
+        let x = vec![1.0, 2.0, 3.0];
+        let result = heatmap(&z, 3, 3)
+            .x(&x)
+            .x_scale(ScaleType::Log)
+            .x_range(-1.0, 10.0)
+            .build();
+        assert!(matches!(result, Err(ChartError::InvalidData { .. })));
     }
 }

@@ -145,11 +145,13 @@ impl Platform for IosPlatform {
 
     fn open_url(&self, url: &str) {
         unsafe {
-            let url_string: *mut Object =
-                msg_send![class!(NSString), stringWithUTF8String: url.as_ptr()];
-            let url: *mut Object = msg_send![class!(NSURL), URLWithString: url_string];
-            let app: *mut Object = msg_send![class!(UIApplication), sharedApplication];
-            let _: () = msg_send![app, openURL: url options: std::ptr::null::<Object>() completionHandler: std::ptr::null::<Object>()];
+            if let Ok(c_url) = std::ffi::CString::new(url) {
+                let url_string: *mut Object =
+                    msg_send![class!(NSString), stringWithUTF8String: c_url.as_ptr()];
+                let url: *mut Object = msg_send![class!(NSURL), URLWithString: url_string];
+                let app: *mut Object = msg_send![class!(UIApplication), sharedApplication];
+                let _: () = msg_send![app, openURL: url options: std::ptr::null::<Object>() completionHandler: std::ptr::null::<Object>()];
+            }
         }
     }
 
@@ -232,9 +234,11 @@ impl Platform for IosPlatform {
         unsafe {
             let pasteboard: *mut Object = msg_send![class!(UIPasteboard), generalPasteboard];
             if let Some(text) = item.text() {
-                let ns_string: *mut Object =
-                    msg_send![class!(NSString), stringWithUTF8String: text.as_ptr()];
-                let _: () = msg_send![pasteboard, setString: ns_string];
+                if let Ok(c_text) = std::ffi::CString::new(text) {
+                    let ns_string: *mut Object =
+                        msg_send![class!(NSString), stringWithUTF8String: c_text.as_ptr()];
+                    let _: () = msg_send![pasteboard, setString: ns_string];
+                }
             }
         }
     }

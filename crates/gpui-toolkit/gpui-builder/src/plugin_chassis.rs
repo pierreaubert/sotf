@@ -170,6 +170,9 @@ impl ChassisLayout {
             };
         }
 
+        // Helper: normalize priority — NaN is treated as never-collapse (1.0).
+        let effective_priority = |p: f32| if p.is_nan() { 1.0 } else { p };
+
         // Step 1+2: collapse lowest-priority sections until min-sum fits.
         loop {
             let min_sum: f32 = self
@@ -188,9 +191,9 @@ impl ChassisLayout {
             // tie, drop the rightmost (later in input order) — this keeps
             // earlier "primary" sections visible longer.
             let drop_idx = (0..n).filter(|i| visible[*i]).min_by(|a, b| {
-                self.sections[*a]
-                    .priority
-                    .partial_cmp(&self.sections[*b].priority)
+                let pa = effective_priority(self.sections[*a].priority);
+                let pb = effective_priority(self.sections[*b].priority);
+                pa.partial_cmp(&pb)
                     .unwrap_or(std::cmp::Ordering::Equal)
                     .then(b.cmp(a)) // tie-break: later index drops first
             });
@@ -208,7 +211,7 @@ impl ChassisLayout {
                 .iter()
                 .zip(self.sections.iter())
                 .filter(|(v, _)| **v)
-                .all(|(_, s)| s.priority >= 1.0)
+                .all(|(_, s)| effective_priority(s.priority) >= 1.0)
             {
                 break;
             }
@@ -226,6 +229,7 @@ impl ChassisLayout {
             .sum();
 
         let extra_space = (available_width - min_sum).max(0.0);
+        let mut clipped = false;
 
         if preferred_extra <= 0.0 || visible_indices.is_empty() {
             // No section wants more than its min — give everyone min, leftover
@@ -246,13 +250,23 @@ impl ChassisLayout {
             let leftover = available_width - allocated;
             if leftover > 0.0
                 && let Some(&i) = visible_indices.iter().max_by(|a, b| {
-                    self.sections[**a]
-                        .priority
-                        .partial_cmp(&self.sections[**b].priority)
+                    let pa = effective_priority(self.sections[**a].priority);
+                    let pb = effective_priority(self.sections[**b].priority);
+                    pa.partial_cmp(&pb)
                         .unwrap_or(std::cmp::Ordering::Equal)
                 })
             {
                 widths[i] += leftover;
+            }
+        }
+
+        // If min_sum still exceeds available_width, clip proportionally.
+        let final_min_sum: f32 = visible_indices.iter().map(|&i| widths[i]).sum();
+        if final_min_sum > available_width && !visible_indices.is_empty() {
+            clipped = true;
+            let scale = available_width / final_min_sum;
+            for &i in &visible_indices {
+                widths[i] *= scale;
             }
         }
 
@@ -272,7 +286,7 @@ impl ChassisLayout {
 
         SolvedChassis {
             sections: solved_sections,
-            total_width,
+            total_width: if clipped { available_width } else { total_width },
         }
     }
 }
@@ -529,5 +543,55 @@ mod tests {
         assert!(solved.section("a").unwrap().visible);
         assert!(solved.section("b").unwrap().visible);
         assert!(!solved.section("c").unwrap().visible);
+    }
+
+    #[test]
+    fn nan_priority_treated_as_never_collapse() {
+        // NaN priority should be treated as 1.0 (never collapse).
+        let chassis = ChassisLayout::new(
+            HeaderSpec {
+                brand_mark: String::new(),
+                title: String::new(),
+                subtitle: String::new(),
+            },
+            vec![
+                section("a", "A", 200.0, 200.0, 0.5),
+                section("b", "B", 200.0, 200.0, f32::NAN), // should behave like primary
+            ],
+        );
+        // Total min = 400; available 300 forces a drop.
+        let solved = chassis.solve(300.0);
+        assert!(solved.section("b").unwrap().visible, "NaN priority section should remain visible");
+        assert!(!solved.section("a").unwrap().visible, "lower-priority section should be dropped");
+    }
+
+    #[test]
+    fn clipped_total_width_never_exceeds_available() {
+        // One protected section remains visible but its min_width exceeds available_width.
+        let chassis = ChassisLayout::new(
+            HeaderSpec {
+                brand_mark: String::new(),
+                title: String::new(),
+                subtitle: String::new(),
+            },
+            vec![
+                section("a", "A", 200.0, 200.0, 0.5), // collapsible
+                section("b", "B", 280.0, 280.0, 1.0), // primary, never collapse
+            ],
+        );
+        // Total min = 480; available 100 → a drops, b stays but min_sum > available.
+        let solved = chassis.solve(100.0);
+        assert!(!solved.section("a").unwrap().visible);
+        assert!(solved.section("b").unwrap().visible);
+        assert!(
+            solved.total_width <= 100.0 + 0.01,
+            "total_width={} exceeded available 100.0",
+            solved.total_width
+        );
+        let sum: f32 = solved.visible().map(|s| s.width).sum();
+        assert!(
+            (sum - solved.total_width).abs() < 0.01,
+            "total_width should equal sum of visible widths"
+        );
     }
 }

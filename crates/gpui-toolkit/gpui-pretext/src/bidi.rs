@@ -87,6 +87,16 @@ fn classify_char(code: u32) -> BidiType {
     }
 }
 
+/// Compute per-character bidi embedding levels.
+///
+/// This is a simplified implementation that uses a ratio heuristic to
+/// determine the paragraph embedding level instead of the Unicode-standard
+/// first-strong-character rule. If fewer than ~30% of characters are
+/// strongly directional (R, AL, or AN), the paragraph is treated as LTR
+/// (level 0); otherwise it is treated as RTL (level 1).
+///
+/// Returns `None` if the text contains no strongly directional characters,
+/// indicating uniform LTR.
 fn compute_bidi_levels(s: &str) -> Option<Vec<i8>> {
     let chars: Vec<char> = s.chars().collect();
     let len = chars.len();
@@ -236,7 +246,9 @@ fn compute_bidi_levels(s: &str) -> Option<Vec<i8>> {
 }
 
 /// Compute per-segment bidi levels from the full text and segment start offsets.
-/// Returns `None` if the text contains no RTL characters.
+///
+/// Returns `None` if the text contains no strongly directional characters,
+/// in which case all segments are implicitly LTR (level 0).
 pub fn compute_segment_levels(normalized: &str, seg_starts: &[usize]) -> Option<Vec<i8>> {
     let bidi_levels = compute_bidi_levels(normalized)?;
 
@@ -244,8 +256,18 @@ pub fn compute_segment_levels(normalized: &str, seg_starts: &[usize]) -> Option<
     // Build a byte→char-index map.
     let byte_to_char: Vec<usize> = {
         let mut map = vec![0usize; normalized.len() + 1];
-        for (ci, (bi, _)) in normalized.char_indices().enumerate() {
+        let mut ci = 0;
+        for (bi, ch) in normalized.char_indices() {
             map[bi] = ci;
+            for slot in map.iter_mut().take(bi + ch.len_utf8()).skip(bi + 1) {
+                *slot = ci;
+            }
+            ci += 1;
+        }
+        if normalized.is_empty() {
+            map[normalized.len()] = 0;
+        } else {
+            map[normalized.len()] = ci - 1;
         }
         map
     };
@@ -271,6 +293,13 @@ mod tests {
     }
 
     #[test]
+    fn test_segment_level_terminal_rtl_offset() {
+        let text = "مرحبا";
+        let segments = compute_segment_levels(text, &[text.len()]).unwrap();
+        assert_eq!(segments, vec![1]);
+    }
+
+    #[test]
     fn test_rtl_arabic() {
         let levels = compute_bidi_levels("مرحبا").unwrap();
         assert!(levels.iter().all(|&l| l > 0));
@@ -287,5 +316,20 @@ mod tests {
         let text = "Hello world";
         let starts = vec![0, 6];
         assert!(compute_segment_levels(text, &starts).is_none());
+    }
+
+    #[test]
+    fn test_segment_levels_end_offset() {
+        // End-of-string offset should map to the last char index, not 0.
+        let text = "Hello";
+        let starts = vec![0, text.len()];
+        // LTR text returns None (no RTL chars)
+        assert!(compute_segment_levels(text, &starts).is_none());
+
+        // For RTL text, verify the end offset doesn't wrap to level 0.
+        let text = "مرحبا";
+        let starts = vec![0, text.len()];
+        let levels = compute_segment_levels(text, &starts).unwrap();
+        assert!(levels.iter().all(|&l| l > 0), "end offset should have RTL level, not 0");
     }
 }

@@ -522,8 +522,9 @@ pub(crate) struct IosWindow {
     modifiers: Cell<Modifiers>,
     /// Track if a touch is currently pressed
     touch_pressed: Cell<bool>,
-    /// Touch gesture state machine — distinguishes taps from scroll drags.
-    touch_state: Cell<TouchState>,
+    /// Per-touch gesture state machine — distinguishes taps from scroll drags.
+    /// Keyed by the UITouch pointer address.
+    touch_states: RefCell<HashMap<usize, TouchState>>,
     /// Velocity tracker — records recent touch samples during drag gestures
     /// so we can compute the release velocity when the finger lifts.
     velocity_tracker: RefCell<VelocityTracker>,
@@ -537,12 +538,38 @@ pub(crate) struct IosWindow {
     renderer: Mutex<Option<WgpuRenderer>>,
 }
 
-// Required for raw_window_handle
+// Required for raw_window_handle.
+// SAFETY: All IosWindow raw pointers are only accessed from the main thread.
 unsafe impl Send for IosWindow {}
 unsafe impl Sync for IosWindow {}
 
+impl Drop for IosWindow {
+    fn drop(&mut self) {
+        // Unregister from the global window list so lifecycle callbacks
+        // don't dereference freed memory.
+        super::ffi::unregister_window(self as *const Self);
+
+        // Clear Objective-C ivars so post-destruction callbacks find null
+        // instead of a dangling pointer.
+        unsafe {
+            if !self.view.is_null() {
+                (*self.view).set_ivar(GPUI_WINDOW_IVAR, std::ptr::null::<c_void>());
+            }
+            if !self.text_input_view.is_null() {
+                (*self.text_input_view).set_ivar(GPUI_WINDOW_IVAR, std::ptr::null::<c_void>());
+            }
+        }
+    }
+}
+
 impl IosWindow {
     pub fn new(handle: AnyWindowHandle, _params: WindowParams) -> anyhow::Result<Self> {
+        #[cfg(debug_assertions)]
+        unsafe {
+            let is_main: BOOL = msg_send![class!(NSThread), isMainThread];
+            assert!(is_main == YES, "IosWindow must be created on the main thread");
+        }
+
         // Create the window on the main screen
         let screen = IosDisplay::main();
         let screen_bounds = screen.bounds();
@@ -633,7 +660,7 @@ impl IosWindow {
                 mouse_position: Cell::new(Point::default()),
                 modifiers: Cell::new(Modifiers::default()),
                 touch_pressed: Cell::new(false),
-                touch_state: Cell::new(TouchState::Idle),
+                touch_states: RefCell::new(HashMap::new()),
                 velocity_tracker: RefCell::new(VelocityTracker::new()),
                 momentum_scroller: RefCell::new(MomentumScroller::new()),
                 renderer: Mutex::new(None),
@@ -844,7 +871,9 @@ impl IosWindow {
 
         self.mouse_position.set(position);
 
-        let mut ts = self.touch_state.get();
+        let touch_id = touch as usize;
+        let mut states = self.touch_states.borrow_mut();
+        let mut ts = states.get(&touch_id).copied().unwrap_or(TouchState::Idle);
 
         let emit = |input: PlatformInput| -> DispatchEventResult {
             if let Some(callback) = self.input_callback.borrow_mut().as_mut() {
@@ -1055,7 +1084,8 @@ impl IosWindow {
                     }
                     TouchState::Idle => {}
                 }
-                ts = TouchState::Idle;
+                states.remove(&touch_id);
+                return;
             }
 
             UITouchPhase::Stationary => {
@@ -1064,7 +1094,7 @@ impl IosWindow {
             }
         }
 
-        self.touch_state.set(ts);
+        states.insert(touch_id, ts);
     }
 
     /// Query the safe area insets from the UIView.
@@ -1090,8 +1120,8 @@ impl IosWindow {
             let insets: UIEdgeInsets = msg_send![self.view, safeAreaInsets];
             (
                 insets.top as f32,
-                insets.bottom as f32,
                 insets.left as f32,
+                insets.bottom as f32,
                 insets.right as f32,
             )
         }
@@ -1230,9 +1260,12 @@ impl IosWindow {
                     }));
                 }
             }
-        } else {
-            // Fling finished — emit one final Ended event so GPUI knows
-            // the scroll gesture is truly complete.
+        } else if scroller.is_finished() {
+            // Fling truly finished — emit one final Ended event so GPUI knows
+            // the scroll gesture is complete.  We only do this when
+            // `is_finished()` is true, which distinguishes a natural stop
+            // from a sub-microsecond `dt` where `step()` returns `None`
+            // but the scroller is still active.
             let position = gpui::point(
                 gpui::px(scroller.position_x()),
                 gpui::px(scroller.position_y()),
@@ -1344,22 +1377,24 @@ impl IosWindow {
             // Even if dispatch_text_input captured the text, we still send key
             // events so GPUI triggers a re-render cycle (which runs
             // drain_pending_text and updates the UI).
-            for c in text_str.chars() {
-                let keystroke = gpui::Keystroke {
-                    modifiers: Modifiers::default(),
-                    key: c.to_string(),
-                    key_char: Some(c.to_string()),
-                };
+            //
+            // We send the *entire* composed string as a single KeyDown event
+            // rather than one event per codepoint, so grapheme clusters
+            // (e.g. emoji with ZWJ, combining characters) stay intact.
+            let keystroke = gpui::Keystroke {
+                modifiers: Modifiers::default(),
+                key: text_str.clone(),
+                key_char: Some(text_str),
+            };
 
-                let event = PlatformInput::KeyDown(gpui::KeyDownEvent {
-                    keystroke,
-                    is_held: false,
-                    prefer_character_input: true,
-                });
+            let event = PlatformInput::KeyDown(gpui::KeyDownEvent {
+                keystroke,
+                is_held: false,
+                prefer_character_input: true,
+            });
 
-                if let Some(callback) = self.input_callback.borrow_mut().as_mut() {
-                    callback(event);
-                }
+            if let Some(callback) = self.input_callback.borrow_mut().as_mut() {
+                callback(event);
             }
         }
     }

@@ -1598,11 +1598,10 @@ where
                     energies = new_energies;
                     npop = current_npop;
 
-                    if let Some(ref archive) = external_archive {
-                        if let Ok(mut arch) = archive.write() {
+                    if let Some(ref archive) = external_archive
+                        && let Ok(mut arch) = archive.write() {
                             arch.resize(self.config.lshade.current_archive_size(current_npop));
                         }
-                    }
                 }
             }
 

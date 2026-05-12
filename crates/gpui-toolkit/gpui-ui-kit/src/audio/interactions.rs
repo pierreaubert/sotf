@@ -206,7 +206,7 @@ pub fn handle_scroll(
         }
         DragOrientation::Horizontal => {
             if delta_x.abs() > 0.0001 {
-                -delta_x // Positive x = right = increase
+                delta_x // Positive x = right = decrease (consistent with vertical)
             } else if delta_y.abs() > 0.0001 {
                 delta_y
             } else {
@@ -264,4 +264,24 @@ pub fn handle_drag(
         delta_norm,
         1.0,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{handle_scroll, InteractionConfig, ScrollDelta};
+    use crate::scale::Scale;
+    use gpui::{Modifiers, point, px};
+
+    #[test]
+    fn test_horizontal_scroll_direction_consistent() {
+        // Horizontal scroll should behave consistently with vertical:
+        // positive delta (right/down) decreases value.
+        let config = InteractionConfig::horizontal(0.0, 100.0, Scale::Linear, 200.0);
+        let delta = ScrollDelta::Pixels(point(px(10.0), px(0.0)));
+        let result = handle_scroll(&delta, &Modifiers::default(), 50.0, &config);
+        assert!(
+            result.unwrap() < 50.0,
+            "positive horizontal scroll should decrease value"
+        );
+    }
 }

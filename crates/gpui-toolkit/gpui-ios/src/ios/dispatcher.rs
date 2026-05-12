@@ -12,7 +12,7 @@ use objc::{
     runtime::{BOOL, YES},
     sel, sel_impl,
 };
-use std::{ffi::c_void, ptr::NonNull, time::Duration};
+use std::{convert::TryInto, ffi::c_void, ptr::NonNull, time::Duration};
 
 type dispatch_queue_t = *mut std::ffi::c_void;
 type dispatch_time_t = u64;
@@ -96,18 +96,23 @@ impl PlatformDispatcher for IosDispatcher {
         let context = runnable.into_raw().as_ptr() as *mut c_void;
         unsafe {
             let queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0);
-            let when = dispatch_time(DISPATCH_TIME_NOW, duration.as_nanos() as i64);
+            let when = dispatch_time(
+                DISPATCH_TIME_NOW,
+                duration.as_nanos().try_into().unwrap_or(i64::MAX),
+            );
             dispatch_after_f(when, queue, context, Some(trampoline));
         }
     }
 
     fn spawn_realtime(&self, f: Box<dyn FnOnce() + Send>) {
-        thread::Builder::new()
+        if let Err(e) = thread::Builder::new()
             .name("gpui-ios-realtime".into())
             .spawn(move || {
                 f();
             })
-            .ok();
+        {
+            log::error!("Failed to spawn realtime thread: {e}");
+        }
     }
 }
 

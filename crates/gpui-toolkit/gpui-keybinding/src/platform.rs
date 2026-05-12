@@ -53,6 +53,10 @@ fn format_single_key(key_spec: &str) -> String {
 
     for (i, part) in parts.iter().enumerate() {
         if i == parts.len() - 1 {
+            if part.is_empty() {
+                // Trailing dash — treat the whole spec as the key name.
+                return key_spec.to_string();
+            }
             key = format_key_name(part);
         } else {
             match *part {
@@ -128,5 +132,12 @@ mod tests {
         assert_eq!(label, "⌘+S");
         #[cfg(not(target_os = "macos"))]
         assert_eq!(label, "Ctrl+S");
+    }
+
+    #[test]
+    fn test_trailing_dash_returns_original() {
+        // A trailing dash should not produce an empty key label.
+        assert_eq!(format_key_label("ctrl-"), "ctrl-");
+        assert_eq!(format_key_label("shift-"), "shift-");
     }
 }

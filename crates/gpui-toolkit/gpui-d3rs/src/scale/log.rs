@@ -171,7 +171,10 @@ impl Scale<f64, f64> for LogScale {
         let log_max = self.domain_max.log(self.base);
 
         let value = if self.clamped {
-            value.clamp(self.domain_min, self.domain_max)
+            value.clamp(
+                self.domain_min.min(self.domain_max),
+                self.domain_min.max(self.domain_max),
+            )
         } else {
             value
         };
@@ -186,7 +189,10 @@ impl Scale<f64, f64> for LogScale {
         let log_max = self.domain_max.log(self.base);
 
         let value = if self.clamped {
-            value.clamp(self.range_min, self.range_max)
+            value.clamp(
+                self.range_min.min(self.range_max),
+                self.range_min.max(self.range_max),
+            )
         } else {
             value
         };

@@ -4,7 +4,8 @@ use crate::error::ChartError;
 use crate::{
     DEFAULT_COLOR, DEFAULT_HEIGHT, DEFAULT_PADDING_FRACTION, DEFAULT_TITLE_FONT_SIZE,
     DEFAULT_WIDTH, ScaleType, TITLE_AREA_HEIGHT, extent_padded, validate_data_array,
-    validate_data_length, validate_dimensions, validate_positive,
+    validate_data_length, validate_dimensions, validate_positive, validate_range,
+    validate_range_log,
 };
 use d3rs::axis::{AxisConfig, AxisTheme, render_axis};
 use d3rs::color::D3Color;
@@ -156,7 +157,7 @@ fn generate_log_ticks(min: f64, max: f64) -> Vec<f64> {
         ticks.push(final_decade);
     }
 
-    ticks.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    ticks.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     ticks.dedup();
     ticks
 }
@@ -861,6 +862,22 @@ impl LineChart {
             - margin_bottom
             - height_for_legend as f64)
             .max(0.0);
+
+        // Validate explicit ranges
+        if let Some([min, max]) = self.x_range {
+            if self.x_scale_type == ScaleType::Log {
+                validate_range_log(min, max, "x_range")?;
+            } else {
+                validate_range(min, max, "x_range")?;
+            }
+        }
+        if let Some([min, max]) = self.y_range {
+            if self.y_scale_type == ScaleType::Log {
+                validate_range_log(min, max, "y_range")?;
+            } else {
+                validate_range(min, max, "y_range")?;
+            }
+        }
 
         // Calculate domains with padding - include all series in Y-axis range
         // Use user-provided ranges if set, otherwise auto-calculate from data
@@ -1977,5 +1994,24 @@ mod tests {
             .y_label("dB")
             .build();
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_line_range_reversal_rejected() {
+        let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let y = vec![10.0, 20.0, 30.0, 40.0, 50.0];
+        let result = line(&x, &y).x_range(100.0, 10.0).build();
+        assert!(matches!(result, Err(ChartError::InvalidData { .. })));
+    }
+
+    #[test]
+    fn test_line_log_scale_negative_range_rejected() {
+        let x = vec![10.0, 100.0, 1000.0];
+        let y = vec![1.0, 2.0, 3.0];
+        let result = line(&x, &y)
+            .x_scale(ScaleType::Log)
+            .x_range(-10.0, 100.0)
+            .build();
+        assert!(matches!(result, Err(ChartError::InvalidData { .. })));
     }
 }

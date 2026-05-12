@@ -103,6 +103,7 @@ pub struct BeamformerPlugin {
     /// output is accumulated here; `ola_read_pos` advances by `hop` each frame.
     ola_buffer: Vec<f32>,
     ola_read_pos: usize,
+    ola_write_pos: usize,
     /// FFT processor
     fft: RealFftProcessor,
     /// Per-channel frequency domain data
@@ -113,9 +114,6 @@ pub struct BeamformerPlugin {
     window: Vec<f32>,
     /// STFT first-frame flag
     stft_filled: bool,
-    /// Overlap-add accumulator
-    ola_buffer: Vec<f32>,
-    ola_write_pos: usize,
     /// Parameters
     param_steer_angle: ParameterId,
     param_type: ParameterId,

@@ -266,18 +266,24 @@ impl IosTextSystemState {
                         .is_some())
             } {
                 log::error!(
-                    "Failed to read traits for font {:?}",
-                    font.postscript_name().unwrap()
+                    "Failed to read traits for font {}",
+                    font.postscript_name().as_deref().unwrap_or("<unknown>")
                 );
                 continue;
             }
             let font_id = FontId(self.fonts.len());
             font_ids.push(font_id);
-            let postscript_name = font.postscript_name().unwrap();
-            self.font_ids_by_postscript_name
-                .insert(postscript_name.clone(), font_id);
-            self.postscript_names_by_font_id
-                .insert(font_id, postscript_name);
+            if let Some(postscript_name) = font.postscript_name() {
+                self.font_ids_by_postscript_name
+                    .insert(postscript_name.clone(), font_id);
+                self.postscript_names_by_font_id
+                    .insert(font_id, postscript_name);
+            } else {
+                log::warn!(
+                    "Font '{}' has no PostScript name; skipping name-based lookups",
+                    font.full_name()
+                );
+            }
             self.fonts.push(font);
         }
         Ok(font_ids)
@@ -624,7 +630,7 @@ fn apply_features_and_fallbacks(
         let mut keys = vec![kCTFontFeatureSettingsAttribute];
         let mut values = vec![feature_array as *const _];
 
-        if let Some(fallbacks) = fallbacks {
+        let fallback_array = if let Some(fallbacks) = fallbacks {
             if !fallbacks.fallback_list().is_empty() {
                 let fallback_array =
                     CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks);
@@ -656,8 +662,13 @@ fn apply_features_and_fallbacks(
                 }
                 keys.push(kCTFontCascadeListAttribute);
                 values.push(fallback_array as *const _);
+                Some(fallback_array)
+            } else {
+                None
             }
-        }
+        } else {
+            None
+        };
 
         let attrs = CFDictionaryCreate(
             kCFAllocatorDefault,
@@ -669,6 +680,10 @@ fn apply_features_and_fallbacks(
         );
         let new_descriptor = CTFontDescriptorCreateWithAttributes(attrs);
         CFRelease(attrs as _);
+        CFRelease(feature_array as _);
+        if let Some(fallback_array) = fallback_array {
+            CFRelease(fallback_array as _);
+        }
         let new_descriptor = CTFontDescriptor::wrap_under_create_rule(new_descriptor);
         let new_font = CTFontCreateCopyWithAttributes(
             font.native_font().as_concrete_TypeRef(),

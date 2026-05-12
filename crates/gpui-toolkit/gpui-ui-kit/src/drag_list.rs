@@ -17,6 +17,9 @@ use crate::ComponentTheme;
 use crate::theme::ThemeExt;
 use gpui::prelude::*;
 use gpui::*;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
 
 /// Theme colors for drag list
 #[derive(Debug, Clone, ComponentTheme)]
@@ -67,6 +70,12 @@ pub enum DragListOrientation {
     Horizontal,
 }
 
+// Thread-local drag state keyed by list element ID.
+// Stores the source index of the item being dragged.
+thread_local! {
+    static DRAG_LIST_DRAG_STATE: RefCell<HashMap<ElementId, usize>> = RefCell::new(HashMap::new());
+}
+
 /// A reorderable drag list component
 pub struct DragList {
     id: ElementId,
@@ -74,7 +83,7 @@ pub struct DragList {
     orientation: DragListOrientation,
     show_handles: bool,
     gap: Pixels,
-    on_reorder: Option<Box<dyn Fn(usize, usize, &mut Window, &mut App) + 'static>>,
+    on_reorder: Option<Rc<dyn Fn(usize, usize, &mut Window, &mut App) + 'static>>,
 }
 
 impl DragList {
@@ -113,23 +122,27 @@ impl DragList {
         mut self,
         handler: impl Fn(usize, usize, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_reorder = Some(Box::new(handler));
+        self.on_reorder = Some(Rc::new(handler));
         self
     }
 
     /// Build with theme
     pub fn build_with_theme(self, theme: &DragListTheme) -> Stateful<Div> {
-        let mut container = div().id(self.id).flex();
+        let mut container = div().id(self.id.clone()).flex();
 
         container = match self.orientation {
             DragListOrientation::Vertical => container.flex_col().gap(self.gap),
             DragListOrientation::Horizontal => container.flex_row().gap(self.gap),
         };
 
-        for item in self.items {
+        let on_reorder = self.on_reorder;
+        let list_id = self.id.clone();
+
+        for (idx, item) in self.items.into_iter().enumerate() {
             let hover_bg = theme.item_hover;
+            let item_id = item.id.clone();
             let mut row = div()
-                .id(ElementId::from(item.id))
+                .id(ElementId::from(item_id))
                 .flex()
                 .items_center()
                 .gap_2()
@@ -154,7 +167,43 @@ impl DragList {
 
             row = row.child(div().flex_1().child(item.content));
 
+            // Attach drag logic when a reorder handler is provided.
+            if let Some(ref handler) = on_reorder {
+                let _handler_down = handler.clone();
+                let list_id_down = list_id.clone();
+                row = row.on_mouse_down(MouseButton::Left, move |_event, _window, _cx| {
+                    DRAG_LIST_DRAG_STATE.with(|state| {
+                        state.borrow_mut().insert(list_id_down.clone(), idx);
+                    });
+                });
+
+                let handler_up = handler.clone();
+                let list_id_up = list_id.clone();
+                row = row.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
+                    DRAG_LIST_DRAG_STATE.with(|state| {
+                        let mut state = state.borrow_mut();
+                        if let Some(source_idx) = state.get(&list_id_up).copied() {
+                            if source_idx != idx {
+                                handler_up(source_idx, idx, window, cx);
+                            }
+                            state.remove(&list_id_up);
+                        }
+                    });
+                    cx.stop_propagation();
+                });
+            }
+
             container = container.child(row);
+        }
+
+        // If a drag is released outside any row, clear the state.
+        if on_reorder.is_some() {
+            let list_id_clear = list_id.clone();
+            container = container.on_mouse_up(MouseButton::Left, move |_event, _window, _cx| {
+                DRAG_LIST_DRAG_STATE.with(|state| {
+                    state.borrow_mut().remove(&list_id_clear);
+                });
+            });
         }
 
         container
@@ -174,5 +223,24 @@ impl IntoElement for DragList {
 
     fn into_element(self) -> Self::Element {
         gpui::Component::new(self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DragItem, DragList};
+    use gpui::{div, prelude::*};
+
+    #[test]
+    fn test_drag_list_builds_with_reorder_handler() {
+        let _el = DragList::new(
+            "test-drag-list",
+            vec![
+                DragItem::new("a", div().child("A")),
+                DragItem::new("b", div().child("B")),
+            ],
+        )
+        .on_reorder(|_from, _to, _window, _cx| {})
+        .build_with_theme(&super::DragListTheme::default());
     }
 }

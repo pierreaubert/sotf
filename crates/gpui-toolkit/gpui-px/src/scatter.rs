@@ -5,7 +5,8 @@ use crate::line::LegendPosition;
 use crate::{
     DEFAULT_COLOR, DEFAULT_HEIGHT, DEFAULT_PADDING_FRACTION, DEFAULT_TITLE_FONT_SIZE,
     DEFAULT_WIDTH, ScaleType, TITLE_AREA_HEIGHT, extent_padded, validate_data_array,
-    validate_data_length, validate_dimensions, validate_positive,
+    validate_data_length, validate_dimensions, validate_positive, validate_range,
+    validate_range_log,
 };
 use d3rs::axis::{AxisConfig, DefaultAxisTheme, render_axis};
 use d3rs::color::D3Color;
@@ -391,6 +392,22 @@ impl ScatterChart {
             - margin_bottom
             - height_for_legend as f64)
             .max(0.0);
+
+        // Validate explicit ranges
+        if let Some([min, max]) = self.x_range {
+            if self.x_scale_type == ScaleType::Log {
+                validate_range_log(min, max, "x_range")?;
+            } else {
+                validate_range(min, max, "x_range")?;
+            }
+        }
+        if let Some([min, max]) = self.y_range {
+            if self.y_scale_type == ScaleType::Log {
+                validate_range_log(min, max, "y_range")?;
+            } else {
+                validate_range(min, max, "y_range")?;
+            }
+        }
 
         // Calculate domains with padding - include all series, or use explicit ranges if set
         let (x_min, x_max) = if let Some([min, max]) = self.x_range {
@@ -947,5 +964,24 @@ mod tests {
             .color(0x1f77b4)
             .build();
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_scatter_range_reversal_rejected() {
+        let x = vec![1.0, 2.0, 3.0];
+        let y = vec![10.0, 20.0, 30.0];
+        let result = scatter(&x, &y).x_range(100.0, 10.0).build();
+        assert!(matches!(result, Err(ChartError::InvalidData { .. })));
+    }
+
+    #[test]
+    fn test_scatter_log_scale_negative_range_rejected() {
+        let x = vec![10.0, 100.0, 1000.0];
+        let y = vec![1.0, 2.0, 3.0];
+        let result = scatter(&x, &y)
+            .y_scale(ScaleType::Log)
+            .y_range(-1.0, 100.0)
+            .build();
+        assert!(matches!(result, Err(ChartError::InvalidData { .. })));
     }
 }

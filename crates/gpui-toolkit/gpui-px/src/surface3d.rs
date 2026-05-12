@@ -165,7 +165,15 @@ impl Surface3DChart {
                 }
                 v.clone()
             }
-            None => (0..self.grid_width).map(|i| i as f64).collect(),
+            None => {
+                if self.x_log {
+                    return Err(ChartError::InvalidData {
+                        field: "x",
+                        reason: "log scale requires explicit positive x values",
+                    });
+                }
+                (0..self.grid_width).map(|i| i as f64).collect()
+            }
         };
 
         // Generate or validate y values
@@ -186,16 +194,24 @@ impl Surface3DChart {
                 }
                 v.clone()
             }
-            None => (0..self.grid_height).map(|i| i as f64).collect(),
+            None => {
+                if self.y_log {
+                    return Err(ChartError::InvalidData {
+                        field: "y",
+                        reason: "log scale requires explicit positive y values",
+                    });
+                }
+                (0..self.grid_height).map(|i| i as f64).collect()
+            }
         };
 
         // Reshape z into Vec<Vec<f64>>
         // z is row-major (y varies slowly, x varies quickly)
         let mut z_grid = Vec::with_capacity(self.grid_height);
-        for y_idx in 0..self.grid_height {
-            let start = y_idx * self.grid_width;
-            let end = start + self.grid_width;
-            z_grid.push(self.z[start..end].to_vec());
+        let mut z = self.z;
+        for _ in 0..self.grid_height {
+            let row: Vec<f64> = z.drain(..self.grid_width).collect();
+            z_grid.push(row);
         }
 
         // Calculate plot area (reserve space for title if present)
@@ -315,5 +331,33 @@ pub fn surface3d(z: &[f64], grid_width: usize, grid_height: usize) -> Surface3DC
         y_label: None,
         z_label: None,
         external_state: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_surface3d_builds() {
+        let z = vec![
+            1.0, 2.0, 3.0,
+            4.0, 5.0, 6.0,
+            7.0, 8.0, 9.0,
+        ];
+        let result = surface3d(&z, 3, 3).build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_surface3d_with_custom_axes() {
+        let z = vec![1.0, 2.0, 3.0, 4.0];
+        let x = vec![0.0, 1.0];
+        let y = vec![0.0, 1.0];
+        let result = surface3d(&z, 2, 2)
+            .x(&x)
+            .y(&y)
+            .build();
+        assert!(result.is_ok());
     }
 }

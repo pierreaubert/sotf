@@ -178,7 +178,7 @@ impl Element for VolumeKnobFillElement {
 
                     // Draw arc from left to right along the bottom of the circle
                     // We'll approximate with line segments for a smooth curve
-                    let start_angle = (dy / radius).asin();
+                    let start_angle = (dy / radius).clamp(-1.0, 1.0).asin();
                     let end_angle = PI - start_angle;
 
                     // Number of segments for smooth arc
@@ -594,5 +594,23 @@ impl RenderOnce for VolumeKnob {
                     .text_color(text_color_final)
                     .child(self.label),
             )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_asin_clamp_prevents_nan() {
+        // The knob computes (dy / radius).asin().
+        // Due to floating-point error the ratio can marginally exceed [-1, 1],
+        // which would make asin return NaN. Clamping prevents this.
+        for &ratio in &[-1.1_f32, -1.0, -0.5, 0.0, 0.5, 1.0, 1.1] {
+            let result = ratio.clamp(-1.0, 1.0).asin();
+            assert!(
+                !result.is_nan(),
+                "asin should not produce NaN for ratio {}",
+                ratio
+            );
+        }
     }
 }

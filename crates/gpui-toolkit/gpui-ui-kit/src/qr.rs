@@ -229,6 +229,13 @@ impl AnimatedQrCode {
     }
 }
 
+/// Clamp scroll range so that at least one module stays visible.
+fn clamped_scroll_range(total_modules: usize, viewport_modules: f32) -> f32 {
+    (total_modules as f32 - viewport_modules)
+        .max(0.0)
+        .min(total_modules.saturating_sub(1) as f32)
+}
+
 impl Render for AnimatedQrCode {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
@@ -270,7 +277,7 @@ impl Render for AnimatedQrCode {
         // How many modules fit in the viewport at the zoomed scale
         let viewport_modules = (size_f32 / zoomed_module_px).floor();
         // Total scrollable range in modules (including quiet zones)
-        let scroll_range = total_modules as f32 - viewport_modules;
+        let scroll_range = clamped_scroll_range(total_modules, viewport_modules);
 
         // Ping-pong progress: 0→1→0 over cycle_duration
         let cycle_secs = self.cycle_duration.as_secs_f32();
@@ -281,7 +288,7 @@ impl Render for AnimatedQrCode {
         let eased = ease_in_out_cubic(t);
 
         // Scroll both axes together (diagonal pan)
-        let offset_modules = eased * scroll_range.max(0.0);
+        let offset_modules = eased * scroll_range;
 
         let colors: Vec<QrColor> = self
             .matrix
@@ -473,5 +480,22 @@ fn ease_in_out_cubic(t: f32) -> f32 {
         4.0 * t * t * t
     } else {
         1.0 - (-2.0 * t + 2.0).powi(3) / 2.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::clamped_scroll_range;
+
+    #[test]
+    fn test_scroll_range_clamped() {
+        // viewport larger than total -> no scrolling
+        assert_eq!(clamped_scroll_range(10, 15.0), 0.0);
+        // normal case
+        assert_eq!(clamped_scroll_range(10, 3.0), 7.0);
+        // viewport < 1 module -> keep at least one module visible
+        assert_eq!(clamped_scroll_range(10, 0.0), 9.0);
+        // single module -> no scrolling
+        assert_eq!(clamped_scroll_range(1, 0.5), 0.0);
     }
 }

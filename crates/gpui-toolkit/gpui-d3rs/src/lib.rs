@@ -29,7 +29,7 @@
 //! let output = scale.scale(50.0); // 250.0
 //! ```
 
-#![cfg_attr(feature = "gpui", recursion_limit = "512")]
+#![cfg_attr(feature = "gpui", recursion_limit = "1024")]
 
 pub mod array;
 pub mod brush;
@@ -59,7 +59,7 @@ pub mod fetch;
 pub mod geo;
 #[cfg(all(feature = "gpu-2d", not(test)))]
 pub mod gpu2d;
-#[cfg(feature = "gpu-3d")]
+#[cfg(all(feature = "gpu-3d", not(test)))]
 pub mod gpu3d;
 #[cfg(all(feature = "gpui", not(test)))]
 pub mod grid;
@@ -70,7 +70,7 @@ pub mod quadtree;
 pub mod random;
 pub mod sankey;
 pub mod shape;
-#[cfg(feature = "gpu-3d")]
+#[cfg(all(feature = "gpu-3d", not(test)))]
 pub mod sphere_gallery;
 #[cfg(all(feature = "gpui", not(test)))]
 pub mod surface;

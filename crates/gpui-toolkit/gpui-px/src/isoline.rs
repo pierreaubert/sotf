@@ -4,7 +4,8 @@ use crate::error::ChartError;
 use crate::{
     DEFAULT_COLOR, DEFAULT_HEIGHT, DEFAULT_TITLE_FONT_SIZE, DEFAULT_WIDTH, ScaleType,
     TITLE_AREA_HEIGHT, extent_padded, validate_data_array, validate_dimensions,
-    validate_grid_dimensions, validate_monotonic, validate_positive,
+    validate_grid_dimensions, validate_monotonic, validate_positive, validate_range,
+    validate_range_log,
 };
 use d3rs::axis::{AxisConfig, DefaultAxisTheme, render_axis};
 use d3rs::color::D3Color;
@@ -146,7 +147,15 @@ impl IsolineChart {
                 }
                 v.clone()
             }
-            None => (0..self.grid_width).map(|i| i as f64).collect(),
+            None => {
+                if self.x_scale_type == ScaleType::Log {
+                    return Err(ChartError::InvalidData {
+                        field: "x",
+                        reason: "log scale requires explicit positive x values",
+                    });
+                }
+                (0..self.grid_width).map(|i| i as f64).collect()
+            }
         };
 
         // Generate or validate y values
@@ -167,7 +176,15 @@ impl IsolineChart {
                 }
                 v.clone()
             }
-            None => (0..self.grid_height).map(|i| i as f64).collect(),
+            None => {
+                if self.y_scale_type == ScaleType::Log {
+                    return Err(ChartError::InvalidData {
+                        field: "y",
+                        reason: "log scale requires explicit positive y values",
+                    });
+                }
+                (0..self.grid_height).map(|i| i as f64).collect()
+            }
         };
 
         // Calculate plot area (reserve space for title and axes)
@@ -184,6 +201,22 @@ impl IsolineChart {
         let plot_height = (self.height as f64) - title_height as f64 - bottom_margin;
 
         let theme = DefaultAxisTheme;
+
+        // Validate explicit ranges
+        if let Some([min, max]) = self.x_range {
+            if self.x_scale_type == ScaleType::Log {
+                validate_range_log(min, max, "x_range")?;
+            } else {
+                validate_range(min, max, "x_range")?;
+            }
+        }
+        if let Some([min, max]) = self.y_range {
+            if self.y_scale_type == ScaleType::Log {
+                validate_range_log(min, max, "y_range")?;
+            } else {
+                validate_range(min, max, "y_range")?;
+            }
+        }
 
         // Calculate domains with padding, or use explicit ranges if set
         let (x_min, x_max) = if let Some([min, max]) = self.x_range {
@@ -583,5 +616,24 @@ mod tests {
             .y_range(-5.0, 5.0)
             .build();
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_isoline_range_reversal_rejected() {
+        let z = vec![1.0; 9];
+        let result = isoline(&z, 3, 3).y_range(10.0, 0.0).build();
+        assert!(matches!(result, Err(ChartError::InvalidData { .. })));
+    }
+
+    #[test]
+    fn test_isoline_log_scale_negative_range_rejected() {
+        let z = vec![1.0; 9];
+        let x = vec![1.0, 2.0, 3.0];
+        let result = isoline(&z, 3, 3)
+            .x(&x)
+            .x_scale(ScaleType::Log)
+            .x_range(-1.0, 10.0)
+            .build();
+        assert!(matches!(result, Err(ChartError::InvalidData { .. })));
     }
 }

@@ -129,6 +129,16 @@ pub fn cleanup_number_input_state(id: &ElementId) {
     trim_number_input_storage();
 }
 
+/// Convert a keystroke to an insertable character, explicitly handling the
+/// space key so it works even when GPUI reports `key_char == None`.
+fn keystroke_to_char(keystroke: &Keystroke) -> Option<char> {
+    if keystroke.key == "space" || keystroke.key == " " {
+        Some(' ')
+    } else {
+        keystroke.key_char.as_ref().and_then(|s| s.chars().next())
+    }
+}
+
 /// Internal editing state for the number input
 #[derive(Clone, Default)]
 struct NumberEditState {
@@ -731,7 +741,11 @@ impl RenderOnce for NumberInput {
             });
             let id = self.id.clone();
             NUMBER_INPUT_FOCUS_SUBS.with(|subs| {
-                subs.borrow_mut().insert(id, sub);
+                let mut subs = subs.borrow_mut();
+                // Explicitly cancel the previous subscription before inserting
+                // the new one to avoid re-entrancy hazards.
+                let _old = subs.remove(&id);
+                subs.insert(id, sub);
             });
         }
 
@@ -1086,9 +1100,7 @@ impl RenderOnce for NumberInput {
                         }
                         _ => {
                             // Character input - use key_char for actual text characters
-                            if let Some(text) = event.keystroke.key_char.as_ref()
-                                && let Some(ch) = text.chars().next()
-                            {
+                            if let Some(ch) = keystroke_to_char(&event.keystroke) {
                                 state.insert_char(ch);
                                 drop(state);
                                 window.refresh();
@@ -1152,5 +1164,21 @@ impl RenderOnce for NumberInput {
         // Use +/- buttons or keyboard to adjust value.
 
         container.child(input_row)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::keystroke_to_char;
+    use gpui::{Keystroke, Modifiers};
+
+    #[test]
+    fn test_keystroke_to_char_space() {
+        let ks = Keystroke {
+            key: "space".into(),
+            key_char: None,
+            modifiers: Modifiers::default(),
+        };
+        assert_eq!(keystroke_to_char(&ks), Some(' '));
     }
 }

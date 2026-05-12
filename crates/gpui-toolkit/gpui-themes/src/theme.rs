@@ -836,7 +836,7 @@ impl EditorTheme {
             }
         }
 
-        let mut code = format!(
+        let code = format!(
             r#"/// {} theme
 pub fn {}() -> EditorTheme {{
     EditorTheme {{
@@ -908,6 +908,61 @@ pub fn {}() -> EditorTheme {{
         separator_size: {:.1},
         font_family: "{}".to_string(),
         design_language: "{}".to_string(),
+
+        plugin_colors: PluginColors {{
+            eq: {},
+            gain: {},
+            upmixer: {},
+            compressor: {},
+            limiter: {},
+            gate: {},
+            loudness: {},
+            binaural: {},
+            convolution: {},
+            monitor: {},
+            spectrum: {},
+            mute_solo: {},
+        }},
+        graph_colors: GraphColors {{
+            input: {},
+            target: {},
+            filter_response: {},
+            corrected: {},
+            error: {},
+            deviation: {},
+            grid: {},
+            secondary_line: {},
+            directivity_er: {},
+            directivity_sp: {},
+        }},
+        band_colors: vec![
+{}
+        ],
+        eq_curve_colors: EQCurveColors {{
+            background: {},
+            grid: {},
+            curve_boost: {},
+            curve_cut: {},
+            fill_boost: {},
+            fill_cut: {},
+            zero_line: {},
+        }},
+        spectrum_colors: SpectrumColors {{
+            background: {},
+            bass: {},
+            mids: {},
+            treble: {},
+        }},
+        meter_colors: MeterColors {{
+            background: {},
+            normal: {},
+            warning: {},
+            clip: {},
+            peak: {},
+            text: {},
+        }},
+    }}
+}}
 "#,
             self.name,
             self.name.to_lowercase().replace(' ', "_"),
@@ -956,13 +1011,61 @@ pub fn {}() -> EditorTheme {{
             self.separator_size,
             self.font_family,
             self.design_language,
+            color_to_rust(&self.plugin_colors.eq),
+            color_to_rust(&self.plugin_colors.gain),
+            color_to_rust(&self.plugin_colors.upmixer),
+            color_to_rust(&self.plugin_colors.compressor),
+            color_to_rust(&self.plugin_colors.limiter),
+            color_to_rust(&self.plugin_colors.gate),
+            color_to_rust(&self.plugin_colors.loudness),
+            color_to_rust(&self.plugin_colors.binaural),
+            color_to_rust(&self.plugin_colors.convolution),
+            color_to_rust(&self.plugin_colors.monitor),
+            color_to_rust(&self.plugin_colors.spectrum),
+            color_to_rust(&self.plugin_colors.mute_solo),
+            color_to_rust(&self.graph_colors.input),
+            color_to_rust(&self.graph_colors.target),
+            color_to_rust(&self.graph_colors.filter_response),
+            color_to_rust(&self.graph_colors.corrected),
+            color_to_rust(&self.graph_colors.error),
+            color_to_rust(&self.graph_colors.deviation),
+            color_to_rust(&self.graph_colors.grid),
+            color_to_rust(&self.graph_colors.secondary_line),
+            color_to_rust(&self.graph_colors.directivity_er),
+            color_to_rust(&self.graph_colors.directivity_sp),
+            self.band_colors
+                .iter()
+                .map(|c| format!("            {},", color_to_rust(c)))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            color_to_rust(&self.eq_curve_colors.background),
+            color_to_rust(&self.eq_curve_colors.grid),
+            color_to_rust(&self.eq_curve_colors.curve_boost),
+            color_to_rust(&self.eq_curve_colors.curve_cut),
+            color_to_rust(&self.eq_curve_colors.fill_boost),
+            color_to_rust(&self.eq_curve_colors.fill_cut),
+            color_to_rust(&self.eq_curve_colors.zero_line),
+            color_to_rust(&self.spectrum_colors.background),
+            color_to_rust(&self.spectrum_colors.bass),
+            color_to_rust(&self.spectrum_colors.mids),
+            color_to_rust(&self.spectrum_colors.treble),
+            color_to_rust(&self.meter_colors.background),
+            color_to_rust(&self.meter_colors.normal),
+            color_to_rust(&self.meter_colors.warning),
+            color_to_rust(&self.meter_colors.clip),
+            color_to_rust(&self.meter_colors.peak),
+            color_to_rust(&self.meter_colors.text),
         );
 
-        // Add plugin_colors, graph_colors, etc. (abbreviated for length)
-        code.push_str("        // ... plugin_colors, graph_colors, etc.\n");
-        code.push_str("    }\n}\n");
-
         code
+    }
+
+    /// Validate theme invariants.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.band_colors.is_empty() {
+            return Err("band_colors must not be empty".to_string());
+        }
+        Ok(())
     }
 
     /// Create a GPUI-compatible button theme
@@ -1108,5 +1211,44 @@ mod tests {
         let loaded = EditorTheme::from_json(&json).unwrap();
         assert_eq!(loaded.name, theme.name);
         assert_eq!(loaded.background.r, theme.background.r);
+    }
+
+    #[test]
+    fn test_to_rust_code_includes_nested_structs() {
+        let theme = EditorTheme::dark();
+        let code = theme.to_rust_code();
+        // Should contain nested struct initializations, not abbreviated comment.
+        assert!(
+            code.contains("PluginColors {"),
+            "Rust code should include PluginColors initialization"
+        );
+        assert!(
+            code.contains("GraphColors {"),
+            "Rust code should include GraphColors initialization"
+        );
+        assert!(
+            code.contains("EQCurveColors {"),
+            "Rust code should include EQCurveColors initialization"
+        );
+        assert!(
+            code.contains("SpectrumColors {"),
+            "Rust code should include SpectrumColors initialization"
+        );
+        assert!(
+            code.contains("MeterColors {"),
+            "Rust code should include MeterColors initialization"
+        );
+        assert!(
+            !code.contains("plugin_colors, graph_colors, etc."),
+            "Rust code should not contain abbreviated placeholder"
+        );
+    }
+
+    #[test]
+    fn test_validate_band_colors_non_empty() {
+        let mut theme = EditorTheme::dark();
+        assert!(theme.validate().is_ok());
+        theme.band_colors.clear();
+        assert!(theme.validate().is_err());
     }
 }

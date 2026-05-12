@@ -87,6 +87,23 @@ impl PieChart {
             validate_data_length(labels.len(), self.values.len(), "labels", "values")?;
         }
 
+        // Reject negative values
+        if self.values.iter().any(|&v| v < 0.0) {
+            return Err(ChartError::InvalidData {
+                field: "values",
+                reason: "pie chart values must be non-negative",
+            });
+        }
+
+        // Ensure sum is strictly positive
+        let total: f64 = self.values.iter().sum();
+        if total <= 0.0 {
+            return Err(ChartError::InvalidData {
+                field: "values",
+                reason: "pie chart values must sum to a positive number",
+            });
+        }
+
         // Calculate plot area
         let title_height = if self.title.is_some() {
             TITLE_AREA_HEIGHT
@@ -251,4 +268,30 @@ impl PieChart {
 /// ```
 pub fn donut(values: &[f64]) -> PieChart {
     pie(values).hole(0.5)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pie_negative_values_rejected() {
+        let values = vec![10.0, -5.0, 30.0];
+        let result = pie(&values).build();
+        assert!(matches!(result, Err(ChartError::InvalidData { .. })));
+    }
+
+    #[test]
+    fn test_pie_all_zero_values_rejected() {
+        let values = vec![0.0, 0.0, 0.0];
+        let result = pie(&values).build();
+        assert!(matches!(result, Err(ChartError::InvalidData { .. })));
+    }
+
+    #[test]
+    fn test_pie_valid_values() {
+        let values = vec![10.0, 20.0, 30.0];
+        let result = pie(&values).build();
+        assert!(result.is_ok());
+    }
 }

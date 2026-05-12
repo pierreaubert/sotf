@@ -116,12 +116,15 @@ impl AreaChart {
         let (x_min, x_max) = extent_padded(&self.x, DEFAULT_PADDING_FRACTION);
 
         // Calculate Y domain considering y and y0
-        let y_iter = self.y.iter();
+        let y_data_min = self.y.iter().copied().fold(f64::INFINITY, f64::min);
         let (y_min, y_max) = if let Some(ref y0) = self.y0 {
-            let all_y: Vec<f64> = y_iter.chain(y0.iter()).copied().collect();
+            let all_y: Vec<f64> = self.y.iter().chain(y0.iter()).copied().collect();
             extent_padded(&all_y, DEFAULT_PADDING_FRACTION)
+        } else if self.y_scale_type == ScaleType::Log {
+            // For log scale, use data minimum as baseline instead of 0.0
+            extent_padded(&self.y, DEFAULT_PADDING_FRACTION)
         } else {
-            let mut all_y: Vec<f64> = y_iter.copied().collect();
+            let mut all_y: Vec<f64> = self.y.to_vec();
             all_y.push(0.0); // Include baseline 0
             extent_padded(&all_y, DEFAULT_PADDING_FRACTION)
         };
@@ -141,12 +144,18 @@ impl AreaChart {
                 .zip(y0.iter())
                 .map(|((&x, &y1), &y0)| AreaDatum { x, y0, y1 })
                 .collect(),
-            None => self
-                .x
-                .iter()
-                .zip(self.y.iter())
-                .map(|(&x, &y1)| AreaDatum { x, y0: 0.0, y1 })
-                .collect(),
+            None => {
+                let y0 = if self.y_scale_type == ScaleType::Log {
+                    y_data_min
+                } else {
+                    0.0
+                };
+                self.x
+                    .iter()
+                    .zip(self.y.iter())
+                    .map(|(&x, &y1)| AreaDatum { x, y0, y1 })
+                    .collect()
+            }
         };
 
         let color = D3Color::from_hex(self.color);
@@ -321,5 +330,27 @@ pub fn area(x: &[f64], y: &[f64]) -> AreaChart {
         height: DEFAULT_HEIGHT,
         x_scale_type: ScaleType::Linear,
         y_scale_type: ScaleType::Linear,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_area_log_scale_without_y0_uses_data_min() {
+        let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let y = vec![10.0, 20.0, 30.0, 40.0, 50.0];
+        let result = area(&x, &y).y_scale(ScaleType::Log).build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_area_log_scale_with_y0_validates_positive() {
+        let x = vec![1.0, 2.0, 3.0];
+        let y = vec![10.0, 20.0, 30.0];
+        let y0 = vec![0.0, 0.0, 0.0];
+        let result = area(&x, &y).y0(&y0).y_scale(ScaleType::Log).build();
+        assert!(matches!(result, Err(ChartError::InvalidData { .. })));
     }
 }

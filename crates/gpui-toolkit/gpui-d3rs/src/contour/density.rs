@@ -134,7 +134,7 @@ impl DensityEstimator {
     pub fn estimate(&self, points: &[(f64, f64)]) -> Vec<f64> {
         let mut grid = vec![0.0; self.width * self.height];
 
-        if points.is_empty() {
+        if points.is_empty() || self.width <= 1 || self.height <= 1 {
             return grid;
         }
 
@@ -187,7 +187,7 @@ impl DensityEstimator {
     pub fn estimate_weighted(&self, points: &[(f64, f64, f64)]) -> Vec<f64> {
         let mut grid = vec![0.0; self.width * self.height];
 
-        if points.is_empty() {
+        if points.is_empty() || self.width <= 1 || self.height <= 1 {
             return grid;
         }
 
@@ -355,5 +355,14 @@ mod tests {
 
         let grid = estimator.estimate_weighted(&points);
         assert_eq!(grid.len(), 100);
+    }
+
+    #[test]
+    fn test_density_single_dimension() {
+        let points = vec![(0.5, 0.5)];
+        let estimator = DensityEstimator::new().bandwidth(0.2).size(1, 1);
+        let grid = estimator.estimate(&points);
+        assert_eq!(grid.len(), 1);
+        assert_eq!(grid[0], 0.0);
     }
 }

@@ -188,7 +188,6 @@ impl TreeView {
             let is_expanded = expanded.contains(&node.id);
             let is_selected = selected.as_ref() == Some(&node.id);
             let has_children = !node.children.is_empty() && !node.leaf;
-            let indent = px(f32::from(indent_size) * depth as f32);
 
             // Build node row
             let hover_bg = theme.hover_bg;
@@ -197,8 +196,8 @@ impl TreeView {
                 .flex()
                 .items_center()
                 .gap_1()
-                .pl(indent)
-                .px_2()
+                .pl(px(f32::from(indent_size) * depth as f32 + 8.0))
+                .pr_2()
                 .py(px(3.0))
                 .text_sm()
                 .rounded(px(4.0))

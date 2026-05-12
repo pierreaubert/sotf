@@ -626,6 +626,9 @@ impl ThemeEditor {
         self.theme = match preset {
             "dark" => EditorTheme::dark(),
             "light" => EditorTheme::light(),
+            "high_contrast" => EditorTheme::high_contrast(),
+            "nord" => EditorTheme::nord(),
+            "dracula" => EditorTheme::dracula(),
             _ => EditorTheme::dark(),
         };
         self.showcase.update(cx, |showcase, _| {
@@ -1047,13 +1050,34 @@ impl ThemeEditor {
                             Button::new("copy-btn", "Copy to Clipboard")
                                 .variant(ButtonVariant::Primary)
                                 .size(ButtonSize::Md)
-                                .build(),
+                                .build()
+                                .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                                    let content = if this.export_format == "json" {
+                                        this.theme.to_json().unwrap_or_default()
+                                    } else {
+                                        this.theme.to_rust_code()
+                                    };
+                                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(content));
+                                })),
                         )
                         .child(
                             Button::new("save-btn", "Save to File")
                                 .variant(ButtonVariant::Secondary)
                                 .size(ButtonSize::Md)
-                                .build(),
+                                .build()
+                                .on_click(cx.listener(|this, _: &ClickEvent, _window, _cx| {
+                                    let content = if this.export_format == "json" {
+                                        this.theme.to_json().unwrap_or_default()
+                                    } else {
+                                        this.theme.to_rust_code()
+                                    };
+                                    let filename = format!("{}_theme.{}", this.theme.name.to_lowercase().replace(' ', "_"), this.export_format);
+                                    if let Err(e) = std::fs::write(&filename, content) {
+                                        eprintln!("Failed to save theme to {filename}: {e}");
+                                    } else {
+                                        println!("Theme saved to {filename}");
+                                    }
+                                })),
                         )
                         .build(),
                 )
@@ -1107,6 +1131,33 @@ impl ThemeEditor {
                                     .build()
                                     .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                                         this.load_preset("light", cx);
+                                    })),
+                            )
+                            .child(
+                                Button::new("preset-high-contrast", "High Contrast")
+                                    .variant(ButtonVariant::Ghost)
+                                    .size(ButtonSize::Sm)
+                                    .build()
+                                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                                        this.load_preset("high_contrast", cx);
+                                    })),
+                            )
+                            .child(
+                                Button::new("preset-nord", "Nord")
+                                    .variant(ButtonVariant::Ghost)
+                                    .size(ButtonSize::Sm)
+                                    .build()
+                                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                                        this.load_preset("nord", cx);
+                                    })),
+                            )
+                            .child(
+                                Button::new("preset-dracula", "Dracula")
+                                    .variant(ButtonVariant::Ghost)
+                                    .size(ButtonSize::Sm)
+                                    .build()
+                                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                                        this.load_preset("dracula", cx);
                                     })),
                             )
                             .build(),

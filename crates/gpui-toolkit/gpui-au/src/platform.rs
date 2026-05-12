@@ -83,11 +83,11 @@ impl Platform for AuPlatform {
 
     fn run(&self, on_finish_launching: Box<dyn 'static + FnOnce()>) {
         use crate::helpers::nslog;
-        nslog("SOTF AuPlatform::run: calling on_finish_launching immediately\0");
+        nslog(b"SOTF AuPlatform::run: calling on_finish_launching immediately");
         // AU extensions don't own the application event loop.
         // Call on_finish_launching immediately — the host DAW's run loop is already active.
         on_finish_launching();
-        nslog("SOTF AuPlatform::run: on_finish_launching completed\0");
+        nslog(b"SOTF AuPlatform::run: on_finish_launching completed");
     }
 
     fn quit(&self) {
@@ -121,10 +121,10 @@ impl Platform for AuPlatform {
         options: WindowParams,
     ) -> anyhow::Result<Box<dyn PlatformWindow>> {
         use crate::helpers::nslog;
-        nslog("SOTF AuPlatform::open_window: entry\0");
+        nslog(b"SOTF AuPlatform::open_window: entry");
         let window = Box::new(AuWindow::new(handle, options)?);
         AuWindow::register_global(&window);
-        nslog("SOTF AuPlatform::open_window: done\0");
+        nslog(b"SOTF AuPlatform::open_window: done");
         Ok(window)
     }
 
@@ -226,13 +226,14 @@ impl Platform for AuPlatform {
             let pasteboard: *mut objc::runtime::Object =
                 msg_send![class!(NSPasteboard), generalPasteboard];
             let _: () = msg_send![pasteboard, clearContents];
-            if let Some(text) = item.text() {
-                let ns_string: *mut objc::runtime::Object =
-                    msg_send![class!(NSString), stringWithUTF8String: text.as_ptr()];
-                let array: *mut objc::runtime::Object =
-                    msg_send![class!(NSArray), arrayWithObject: ns_string];
-                let _: bool = msg_send![pasteboard, writeObjects: array];
-            }
+            if let Some(text) = item.text()
+                && let Ok(c_text) = std::ffi::CString::new(text) {
+                    let ns_string: *mut objc::runtime::Object =
+                        msg_send![class!(NSString), stringWithUTF8String: c_text.as_ptr()];
+                    let array: *mut objc::runtime::Object =
+                        msg_send![class!(NSArray), arrayWithObject: ns_string];
+                    let _: bool = msg_send![pasteboard, writeObjects: array];
+                }
         }
     }
 
@@ -240,8 +241,10 @@ impl Platform for AuPlatform {
         unsafe {
             let pasteboard: *mut objc::runtime::Object =
                 msg_send![class!(NSPasteboard), generalPasteboard];
-            let string_type: *mut objc::runtime::Object =
-                msg_send![class!(NSPasteboardType), string];
+            let string_type: *mut objc::runtime::Object = msg_send![
+                class!(NSString),
+                stringWithUTF8String: c"public.utf8-plain-text".as_ptr()
+            ];
             let string: *mut objc::runtime::Object =
                 msg_send![pasteboard, stringForType: string_type];
             if string.is_null() {

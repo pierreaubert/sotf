@@ -1105,7 +1105,10 @@ impl RenderOnce for VerticalSlider {
             let has_change_handler = on_change_rc.is_some();
             let focus_handle_track = focus_handle.clone();
             track = track.on_mouse_down(MouseButton::Left, move |event, window, cx| {
-                cx.stop_propagation();
+                // Note: we do NOT call cx.stop_propagation() here.
+                // The container also has an on_mouse_down that handles focus,
+                // selection, and external drag_start. Stopping propagation
+                // would break those handlers when the user clicks on the track.
 
                 // Focus for keyboard navigation (focus follows click)
                 if let Some(ref fh) = focus_handle_track {

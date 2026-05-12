@@ -13,7 +13,7 @@ use objc::{
     runtime::{BOOL, YES},
     sel, sel_impl,
 };
-use std::{ffi::c_void, ptr::NonNull, time::Duration};
+use std::{convert::TryInto, ffi::c_void, ptr::NonNull, time::Duration};
 
 type dispatch_queue_t = *mut std::ffi::c_void;
 type dispatch_time_t = u64;
@@ -97,22 +97,48 @@ impl PlatformDispatcher for AuDispatcher {
         let context = runnable.into_raw().as_ptr() as *mut c_void;
         unsafe {
             let queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0);
-            let when = dispatch_time(DISPATCH_TIME_NOW, duration.as_nanos() as i64);
+            let when = dispatch_time(
+                DISPATCH_TIME_NOW,
+                duration.as_nanos().try_into().unwrap_or(i64::MAX),
+            );
             dispatch_after_f(when, queue, context, Some(trampoline));
         }
     }
 
     fn spawn_realtime(&self, f: Box<dyn FnOnce() + Send>) {
-        thread::Builder::new()
-            .name("gpui-ios-realtime".into())
+        if let Err(e) = thread::Builder::new()
+            .name("gpui-au-realtime".into())
             .spawn(move || {
                 f();
             })
-            .ok();
+        {
+            log::error!("Failed to spawn realtime thread: {e}");
+        }
     }
 }
 
 unsafe extern "C" fn trampoline(runnable: *mut c_void) {
     let task = unsafe { RunnableVariant::from_raw(NonNull::new_unchecked(runnable as *mut ())) };
     task.run();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_nanos_overflow_saturates() {
+        // A Duration large enough to overflow i64 nanoseconds
+        let duration = Duration::from_secs(u64::MAX);
+        let nanos: i64 = duration.as_nanos().try_into().unwrap_or(i64::MAX);
+        assert_eq!(nanos, i64::MAX);
+    }
+
+    #[test]
+    fn test_spawn_realtime_does_not_panic_on_failure() {
+        // This is primarily a compile-time / smoke test that spawn_realtime
+        // logs an error rather than panicking or silently dropping.
+        let dispatcher = AuDispatcher;
+        dispatcher.spawn_realtime(Box::new(|| {}));
+    }
 }

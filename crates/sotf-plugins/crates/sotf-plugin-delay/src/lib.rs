@@ -331,7 +331,7 @@ impl InPlacePlugin for DelayPlugin {
         for frame in 0..num_frames {
             // Advance smoothers once per sample so parameter changes ramp smoothly
             // instead of jumping at block boundaries (prevents zipper noise / pitch glitch).
-            let base_delay_samples = self.delay_smoother.advance();
+            let _base_delay_samples = self.delay_smoother.advance();
             let fb = self.feedback_smoother.advance();
             let mix = self.mix_smoother.advance();
 

@@ -300,6 +300,7 @@ pub fn calculate_reflections(
 
 /// Constant-power sine-law panning from azimuth (radians).
 /// az = 0 -> front (balanced), az = +π/2 -> right, az = -π/2 -> left.
+#[allow(dead_code)]
 fn azimuth_to_pan_gains(az: f32) -> (f32, f32) {
     let pan = az.sin(); // -1 = left, 0 = front/back, 1 = right
     let left = ((1.0 - pan) * 0.5).sqrt();

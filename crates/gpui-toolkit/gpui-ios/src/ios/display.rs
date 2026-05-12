@@ -21,14 +21,16 @@ impl IosDisplay {
         }
     }
 
-    pub fn all() -> impl Iterator<Item = Self> {
+    pub fn all() -> Vec<Self> {
         unsafe {
             let screens: *mut objc::runtime::Object = msg_send![class!(UIScreen), screens];
             let count: usize = msg_send![screens, count];
-            (0..count).map(move |i| {
+            let mut result = Vec::with_capacity(count);
+            for i in 0..count {
                 let screen: *mut objc::runtime::Object = msg_send![screens, objectAtIndex: i];
-                Self { screen }
-            })
+                result.push(Self { screen });
+            }
+            result
         }
     }
 

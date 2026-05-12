@@ -112,9 +112,12 @@ impl MeasureCache {
     ) -> Option<Vec<f64>> {
         // Check if already computed
         if let Some(metrics) = self.cache.get(seg)
-            && metrics.grapheme_widths.is_some()
+            && let Some(ref gw) = metrics.grapheme_widths
         {
-            return metrics.grapheme_widths.clone();
+            if gw.is_empty() {
+                return None; // sentinel: single-grapheme segment
+            }
+            return Some(gw.clone());
         }
 
         let graphemes: Vec<&str> = seg.graphemes(true).collect();
@@ -151,9 +154,12 @@ impl MeasureCache {
     ) -> Option<Vec<f64>> {
         // Check if already computed
         if let Some(metrics) = self.cache.get(seg)
-            && metrics.grapheme_prefix_widths.is_some()
+            && let Some(ref pw) = metrics.grapheme_prefix_widths
         {
-            return metrics.grapheme_prefix_widths.clone();
+            if pw.is_empty() {
+                return None; // sentinel: single-grapheme segment
+            }
+            return Some(pw.clone());
         }
 
         let graphemes: Vec<&str> = seg.graphemes(true).collect();

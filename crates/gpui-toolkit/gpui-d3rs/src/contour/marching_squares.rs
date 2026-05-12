@@ -820,6 +820,9 @@ impl ContourGenerator {
 
     /// Transform grid x coordinate to output coordinate.
     fn transform_x(&self, px: f64) -> f64 {
+        if self.width <= 1 {
+            return self.x0;
+        }
         if let Some(ref x_vals) = self.x_values {
             let idx = px.floor() as usize;
             let frac = px - px.floor();
@@ -837,6 +840,9 @@ impl ContourGenerator {
 
     /// Transform grid y coordinate to output coordinate.
     fn transform_y(&self, py: f64) -> f64 {
+        if self.height <= 1 {
+            return self.y0;
+        }
         if let Some(ref y_vals) = self.y_values {
             let idx = py.floor() as usize;
             let frac = py - py.floor();
@@ -942,5 +948,11 @@ mod tests {
         ]);
 
         assert!(ring.is_closed());
+    }
+
+    #[test]
+    fn test_transform_single_dimension() {
+        let generator = ContourGenerator::new(1, 1);
+        assert_eq!(generator.contour(&[1.0], 0.5).coordinates.len(), 0);
     }
 }

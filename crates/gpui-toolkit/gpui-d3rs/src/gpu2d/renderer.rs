@@ -475,6 +475,16 @@ impl Chart2DRenderer {
 
     /// Begin a new frame
     pub fn begin_frame(&mut self, width: u32, height: u32, background_color: Color4) {
+        // Guard against zero viewport to prevent divide-by-zero in pixel_to_ndc shader
+        if width == 0 || height == 0 {
+            self.background_color = background_color;
+            self.line_batch.clear();
+            self.rect_batch.clear();
+            self.circle_batch.clear();
+            self.triangle_batch.clear();
+            self.text_batch.clear();
+            return;
+        }
         self.resize(width, height);
         self.background_color = background_color;
         self.line_batch.clear();
@@ -808,15 +818,15 @@ impl Chart2DRenderer {
         let buffer_slice = staging_buffer.slice(..);
         let (tx, rx) = std::sync::mpsc::channel();
         buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
-            tx.send(result).unwrap();
+            let _ = tx.send(result);
         });
 
         let _ = self.device.poll(wgpu::PollType::Wait {
             submission_index: Default::default(),
-            timeout: None,
+            timeout: Some(std::time::Duration::from_secs(5)),
         });
 
-        match rx.recv() {
+        match rx.recv_timeout(std::time::Duration::from_secs(5)) {
             Ok(Ok(())) => {
                 let data = buffer_slice.get_mapped_range();
 
