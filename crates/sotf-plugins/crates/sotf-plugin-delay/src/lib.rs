@@ -287,7 +287,8 @@ impl InPlacePlugin for DelayPlugin {
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
         // Extra headroom for LFO modulation and interpolation guard samples
-        self.max_samples = ((MAX_DELAY_MS * 0.001 * sample_rate as f32) as usize + 4).next_power_of_two();
+        self.max_samples =
+            ((MAX_DELAY_MS * 0.001 * sample_rate as f32) as usize + 4).next_power_of_two();
         self.buffer.resize(self.max_samples * self.channels, 0.0);
         self.delay_smoother = Smoother::new(
             self.delay_ms * sample_rate as f32 / 1000.0,

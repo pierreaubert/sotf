@@ -984,12 +984,7 @@ impl InPlacePlugin for DenoiserPlugin {
             let floor = self.floor_linear;
             let channels = self.channels;
             if let Some(ref mut mrs) = self.multi_res_state {
-                mrs.feed_and_process(
-                    &buffer[..total_samples],
-                    channels,
-                    reduction,
-                    floor,
-                );
+                mrs.feed_and_process(&buffer[..total_samples], channels, reduction, floor);
             }
         }
 

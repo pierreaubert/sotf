@@ -1136,52 +1136,70 @@ mod tests {
     }
 }
 
-    #[test]
-    fn test_latency_uses_rubato_output_delay() {
-        let resampler = ResamplerPlugin::with_quality(2, 44100, 48000, 1024, ResamplerQuality::Medium).unwrap();
-        let latency = resampler.latency_samples();
-        // Old heuristic was 64 (128/2); rubato reports 69 for this configuration.
-        assert_eq!(latency, 69, "latency_samples should use rubato output_delay, not sinc_len/2");
-    }
+#[test]
+fn test_latency_uses_rubato_output_delay() {
+    let resampler =
+        ResamplerPlugin::with_quality(2, 44100, 48000, 1024, ResamplerQuality::Medium).unwrap();
+    let latency = resampler.latency_samples();
+    // Old heuristic was 64 (128/2); rubato reports 69 for this configuration.
+    assert_eq!(
+        latency, 69,
+        "latency_samples should use rubato output_delay, not sinc_len/2"
+    );
+}
 
-    #[test]
-    fn test_flush_produces_trailing_output() {
-        let mut resampler = ResamplerPlugin::new(2, 44100, 48000, 1024).unwrap();
-        resampler.initialize(44100).unwrap();
+#[test]
+fn test_flush_produces_trailing_output() {
+    let mut resampler = ResamplerPlugin::new(2, 44100, 48000, 1024).unwrap();
+    resampler.initialize(44100).unwrap();
 
-        // Process a partial chunk (512 frames)
-        let num_frames = 512;
-        let input = vec![0.5_f32; num_frames * 2];
-        let max_output = resampler.output_frames_for_input(num_frames);
-        let mut output = vec![0.0_f32; max_output * 2];
-        let ctx = ProcessContext {
-            sample_rate: 44100,
-            num_frames,
-        };
-        let produced = resampler.process(&input, &mut output, &ctx).unwrap();
-        assert_eq!(produced, 0, "Partial chunk should produce no output yet");
+    // Process a partial chunk (512 frames)
+    let num_frames = 512;
+    let input = vec![0.5_f32; num_frames * 2];
+    let max_output = resampler.output_frames_for_input(num_frames);
+    let mut output = vec![0.0_f32; max_output * 2];
+    let ctx = ProcessContext {
+        sample_rate: 44100,
+        num_frames,
+    };
+    let produced = resampler.process(&input, &mut output, &ctx).unwrap();
+    assert_eq!(produced, 0, "Partial chunk should produce no output yet");
 
-        // Flush should produce output for the buffered partial chunk
-        let mut flush_buf = vec![0.0_f32; max_output * 2];
-        let flush_output = resampler.flush(&mut flush_buf).unwrap();
-        assert!(flush_output > 0, "Flush should produce trailing output");
-    }
+    // Flush should produce output for the buffered partial chunk
+    let mut flush_buf = vec![0.0_f32; max_output * 2];
+    let flush_output = resampler.flush(&mut flush_buf).unwrap();
+    assert!(flush_output > 0, "Flush should produce trailing output");
+}
 
-    #[test]
-    fn test_rebuild_resampler_reuses_buffers() {
-        let mut resampler = ResamplerPlugin::new(2, 44100, 48000, 1024).unwrap();
-        
-        let input_ptr = resampler.input_buffer[0].as_ptr();
-        let output_ptr = resampler.output_buffer[0].as_ptr();
-        let residual_ptr = resampler.residual_input[0].as_ptr();
+#[test]
+fn test_rebuild_resampler_reuses_buffers() {
+    let mut resampler = ResamplerPlugin::new(2, 44100, 48000, 1024).unwrap();
 
-        // Switch quality via set_parameter (calls rebuild_resampler internally)
-        resampler.set_parameter(
+    let input_ptr = resampler.input_buffer[0].as_ptr();
+    let output_ptr = resampler.output_buffer[0].as_ptr();
+    let residual_ptr = resampler.residual_input[0].as_ptr();
+
+    // Switch quality via set_parameter (calls rebuild_resampler internally)
+    resampler
+        .set_parameter(
             ParameterId::from("quality"),
             ParameterValue::String("high".to_string()),
-        ).unwrap();
+        )
+        .unwrap();
 
-        assert_eq!(resampler.input_buffer[0].as_ptr(), input_ptr, "input_buffer was reallocated");
-        assert_eq!(resampler.output_buffer[0].as_ptr(), output_ptr, "output_buffer was reallocated");
-        assert_eq!(resampler.residual_input[0].as_ptr(), residual_ptr, "residual_input was reallocated");
-    }
+    assert_eq!(
+        resampler.input_buffer[0].as_ptr(),
+        input_ptr,
+        "input_buffer was reallocated"
+    );
+    assert_eq!(
+        resampler.output_buffer[0].as_ptr(),
+        output_ptr,
+        "output_buffer was reallocated"
+    );
+    assert_eq!(
+        resampler.residual_input[0].as_ptr(),
+        residual_ptr,
+        "residual_input was reallocated"
+    );
+}

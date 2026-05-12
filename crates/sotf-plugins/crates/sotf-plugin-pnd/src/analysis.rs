@@ -223,8 +223,9 @@ impl PndAnalyzer {
             self.median_scratch[..len].copy_from_slice(&self.drift_history[..len]);
         } else {
             let first = self.drift_history_capacity - self.drift_write_pos;
-            self.median_scratch[..first]
-                .copy_from_slice(&self.drift_history[self.drift_write_pos..self.drift_write_pos + first]);
+            self.median_scratch[..first].copy_from_slice(
+                &self.drift_history[self.drift_write_pos..self.drift_write_pos + first],
+            );
             if self.drift_write_pos > 0 {
                 self.median_scratch[first..len]
                     .copy_from_slice(&self.drift_history[..self.drift_write_pos]);

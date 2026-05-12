@@ -168,7 +168,10 @@ mod tests {
         let snapshot = output.clone();
         mag.measure_and_apply(&mut output, 1024, cfg.total_channels, cfg)
             .unwrap();
-        assert_eq!(output, snapshot, "disabled MultichannelAutoGain must not modify output");
+        assert_eq!(
+            output, snapshot,
+            "disabled MultichannelAutoGain must not modify output"
+        );
     }
 
     #[test]
@@ -228,7 +231,11 @@ mod tests {
         let cfg = get_speaker_config("5.1").unwrap();
         let mut output: Vec<f32> = Vec::new();
         let res = mag.measure_and_apply(&mut output, 8, 0, cfg);
-        assert!(res.is_ok(), "out_ch == 0 should be a graceful no-op, got {:?}", res);
+        assert!(
+            res.is_ok(),
+            "out_ch == 0 should be a graceful no-op, got {:?}",
+            res
+        );
     }
 
     #[test]

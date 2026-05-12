@@ -2298,7 +2298,10 @@ mod tests {
         let cfg = get_speaker_config("5.1").unwrap();
         let m = compute_vbap_matrix(
             cfg,
-            &[SourcePosition::new(30.0, 0.0), SourcePosition::new(-30.0, 0.0)],
+            &[
+                SourcePosition::new(30.0, 0.0),
+                SourcePosition::new(-30.0, 0.0),
+            ],
             None,
         );
         assert_eq!(m.len(), 2);

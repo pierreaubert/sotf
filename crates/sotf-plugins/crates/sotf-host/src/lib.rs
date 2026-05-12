@@ -68,7 +68,6 @@ pub use analyzer_spectrum::{
 pub use auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, AutoGainParams};
 pub use host::{DawHost, GraphEdge, Host};
 pub use lufs_target::LufsTarget;
-pub use multichannel_auto_gain::MultichannelAutoGain;
 pub use math_audio_dsp::auto_makeup::MeasuredMakeup;
 pub use math_audio_dsp::channel_linking::{compute_linked_levels, link_stereo};
 pub use math_audio_dsp::dc_blocker::DcBlocker;
@@ -82,6 +81,7 @@ pub use math_audio_dsp::simd::enable_ftz_daz;
 pub use math_audio_dsp::true_peak::TruePeakDetector;
 pub use math_audio_iir_fir::fir_crossover::{FirCrossover, MultibandFirCrossover};
 pub use math_audio_iir_fir::lr4_crossover::{Lr4Crossover, MultibandLr4Crossover};
+pub use multichannel_auto_gain::MultichannelAutoGain;
 pub use oversampling::{
     OversampledPlugin, Oversampler, interleaved_to_planar, planar_to_interleaved,
 };

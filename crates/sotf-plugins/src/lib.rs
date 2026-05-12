@@ -10,7 +10,7 @@ pub use sotf_host::serde_param_default;
 
 // Shared plugin factory
 pub mod factory;
-pub use factory::create_plugin;
+pub use factory::{SUPPORTED_PLUGIN_TYPES, create_plugin, is_supported_plugin_type};
 
 // Re-export infrastructure modules from sotf-host
 pub use sotf_host::analyzer;

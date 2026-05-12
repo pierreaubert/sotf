@@ -107,7 +107,8 @@ impl InPlacePlugin for SpeechDenoiserPlugin {
         if buffer.len() < expected_len {
             return Err(format!(
                 "Buffer too small: {} < {}",
-                buffer.len(), expected_len
+                buffer.len(),
+                expected_len
             ));
         }
 
@@ -145,7 +146,9 @@ mod tests {
         plugin.initialize(48000).expect("initialize");
 
         // Process 960 frames: first 480 discarded (startup delay), second 480 pass through.
-        let mut buffer: Vec<f32> = (0..1920).map(|i| ((i % 100) as f32 - 50.0) / 100.0).collect();
+        let mut buffer: Vec<f32> = (0..1920)
+            .map(|i| ((i % 100) as f32 - 50.0) / 100.0)
+            .collect();
         let input = buffer.clone();
         let context = ProcessContext {
             sample_rate: 48000,

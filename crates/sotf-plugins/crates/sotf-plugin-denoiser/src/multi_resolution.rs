@@ -197,11 +197,7 @@ impl MultiResState {
             pos += to_copy;
 
             while self.input_buffer_fill >= block_samples {
-                self.process_small_block(
-                    num_channels,
-                    reduction_linear,
-                    floor_linear,
-                );
+                self.process_small_block(num_channels, reduction_linear, floor_linear);
             }
         }
     }

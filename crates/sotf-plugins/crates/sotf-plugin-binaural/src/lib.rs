@@ -2569,15 +2569,7 @@ mod tests {
         let mut left = vec![Complex::new(1.0, 0.0); freq_size];
         let mut right = vec![Complex::new(1.0, 0.0); freq_size];
         // Source at 90° right -> should shadow left ear strongly
-        hrtf::apply_near_field_shadowing(
-            &mut left,
-            &mut right,
-            90.0,
-            0.0,
-            fft_size,
-            48000,
-            1.0,
-        );
+        hrtf::apply_near_field_shadowing(&mut left, &mut right, 90.0, 0.0, fft_size, 48000, 1.0);
         let k_5k = (5000.0 * fft_size as f32 / 48000.0).round() as usize;
         let k = k_5k.min(freq_size - 1);
         let atten_db = 20.0 * left[k].norm().log10();

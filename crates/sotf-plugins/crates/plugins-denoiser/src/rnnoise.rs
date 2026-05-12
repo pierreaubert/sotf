@@ -97,8 +97,7 @@ impl RnnoiseBackend {
                     for ch in 0..ch_count {
                         let ring_size = self.output_buffers[ch].len();
                         for (i, &s) in self.accum_buffers[ch].iter().enumerate() {
-                            self.output_buffers[ch]
-                                [(self.output_write_pos + i) % ring_size] = s;
+                            self.output_buffers[ch][(self.output_write_pos + i) % ring_size] = s;
                         }
                     }
                 } else if self.channels == 2 && ch_count == 2 {
@@ -130,10 +129,10 @@ impl RnnoiseBackend {
                     }
 
                     // Reduction metering on mid channel
-                    let output_power = mid_denoised.iter().map(|x| x * x).sum::<f32>()
-                        / RNNOISE_FRAME_SIZE as f32;
-                    let input_power = mid.iter().map(|x| x * x).sum::<f32>()
-                        / RNNOISE_FRAME_SIZE as f32;
+                    let output_power =
+                        mid_denoised.iter().map(|x| x * x).sum::<f32>() / RNNOISE_FRAME_SIZE as f32;
+                    let input_power =
+                        mid.iter().map(|x| x * x).sum::<f32>() / RNNOISE_FRAME_SIZE as f32;
                     if input_power > 1e-10 {
                         self.avg_reduction_db = 0.9 * self.avg_reduction_db
                             + 0.1 * 10.0 * (input_power / output_power.max(1e-10)).log10();
@@ -162,8 +161,7 @@ impl RnnoiseBackend {
 
                         let ring_size = self.output_buffers[ch].len();
                         for (i, &s) in output_buf.iter().enumerate() {
-                            self.output_buffers[ch]
-                                [(self.output_write_pos + i) % ring_size] = s;
+                            self.output_buffers[ch][(self.output_write_pos + i) % ring_size] = s;
                         }
                     }
 
@@ -287,8 +285,7 @@ mod tests {
         // First frame: silence. Second frame: 440 Hz sine wave.
         let mut buffer = vec![0.0f32; 960];
         for i in 480..960 {
-            buffer[i] =
-                ((i - 480) as f32 * 440.0 * 2.0 * std::f32::consts::PI / 48000.0).sin();
+            buffer[i] = ((i - 480) as f32 * 440.0 * 2.0 * std::f32::consts::PI / 48000.0).sin();
         }
 
         let written = backend.process(&mut buffer, 960, 1, false);
@@ -338,8 +335,7 @@ mod tests {
         // First 480-frame block (discarded).
         let mut buffer1 = vec![0.0f32; 960];
         for i in 0..480 {
-            let sample =
-                (i as f32 * 440.0 * 2.0 * std::f32::consts::PI / 48000.0).sin();
+            let sample = (i as f32 * 440.0 * 2.0 * std::f32::consts::PI / 48000.0).sin();
             buffer1[i * 2] = sample;
             buffer1[i * 2 + 1] = sample;
         }
@@ -348,8 +344,7 @@ mod tests {
         // Second 480-frame block (output).
         let mut buffer2 = vec![0.0f32; 960];
         for i in 0..480 {
-            let sample =
-                (i as f32 * 440.0 * 2.0 * std::f32::consts::PI / 48000.0).sin();
+            let sample = (i as f32 * 440.0 * 2.0 * std::f32::consts::PI / 48000.0).sin();
             buffer2[i * 2] = sample;
             buffer2[i * 2 + 1] = sample;
         }

@@ -1394,8 +1394,7 @@ impl UpmixerPlugin {
         let hop_size = self.hop_size;
         let hr_fft_size = self.hr_fft_size;
         self.hr_delay_temp = vec![0.0; new_fft_size * 2];
-        self.hr_delay_buffer =
-            vec![0.0; hr_delay_buffer_len(new_fft_size, hop_size, hr_fft_size)];
+        self.hr_delay_buffer = vec![0.0; hr_delay_buffer_len(new_fft_size, hop_size, hr_fft_size)];
         self.hr_delay_cursor = 0;
         self.hr_output_accumulator = vec![0.0; accumulator_frames * nch];
         self.hr_output_accumulator_mask = accumulator_frames - 1;

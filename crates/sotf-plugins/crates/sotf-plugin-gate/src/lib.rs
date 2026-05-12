@@ -699,7 +699,8 @@ mod tests {
         // With fast attack (1 ms) the gate should be essentially fully open
         // within the last 10 ms of the loud section.
         let tail_start = loud_len - sr as usize / 100;
-        let avg_output: f32 = loud[tail_start..].iter().sum::<f32>() / (loud_len - tail_start) as f32;
+        let avg_output: f32 =
+            loud[tail_start..].iter().sum::<f32>() / (loud_len - tail_start) as f32;
         assert!(
             avg_output > input_level * 0.95,
             "Gate should open quickly with fast attack (1 ms), but avg output was {avg_output}"
@@ -737,7 +738,8 @@ mod tests {
         // With fast release (1 ms) the gate should be essentially fully closed
         // within the last 10 ms of the quiet section.
         let tail_start = quiet_len - sr as usize / 100;
-        let avg_output: f32 = quiet[tail_start..].iter().sum::<f32>() / (quiet_len - tail_start) as f32;
+        let avg_output: f32 =
+            quiet[tail_start..].iter().sum::<f32>() / (quiet_len - tail_start) as f32;
         assert!(
             avg_output < quiet_input * 0.1,
             "Gate should close quickly with fast release (1 ms), but avg output was {avg_output}"

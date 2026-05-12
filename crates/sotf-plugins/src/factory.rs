@@ -25,6 +25,72 @@ use crate::{
     UpmixerPluginParams, XtcPlugin, XtcPluginParams,
 };
 
+/// Plugin type strings accepted by [`create_plugin`].
+pub const SUPPORTED_PLUGIN_TYPES: &[&str] = &[
+    "gain",
+    "eq",
+    "parametric_eq",
+    "compressor",
+    "expander",
+    "limiter",
+    "gate",
+    "delay",
+    "convolution",
+    "upmixer",
+    "aae",
+    "active_acoustic_enhancement",
+    "downmix",
+    "mono_to_stereo",
+    "multiband_compressor",
+    "multiband_expander",
+    "de_esser",
+    "dynamic_eq",
+    "linear_phase_eq",
+    "spectral_compressor",
+    "stereo_imager",
+    "transient_shaper",
+    "saturation",
+    "loudness_compensation",
+    "fletcher_munson",
+    "crossfeed",
+    "xtc",
+    "crosstalk_cancellation",
+    "denoiser",
+    "wiener_denoiser",
+    "speech_denoiser",
+    "rnnoise",
+    "rnnoise_denoiser",
+    "hiss_reducer",
+    "hiss",
+    "declick",
+    "transient_repair",
+    "pnd",
+    "varispeed",
+    "binaural_decoder",
+    "crossover",
+    "matrix",
+    "channel_mute_solo",
+    "loudness_monitor",
+    "spectrum_analyzer",
+    "resampler",
+    "band_split",
+    "band_merge",
+    "ab_compare",
+    "ab",
+    "aec",
+    "beamformer",
+    "ambisonics_decoder",
+    #[cfg(all(target_os = "macos", feature = "hal"))]
+    "hal_input",
+    #[cfg(all(target_os = "macos", feature = "hal"))]
+    "hal_output",
+];
+
+pub fn is_supported_plugin_type(plugin_type: &str) -> bool {
+    let lower = plugin_type.to_lowercase();
+    SUPPORTED_PLUGIN_TYPES.contains(&lower.as_str())
+}
+
 /// Create a plugin instance from its type string and JSON parameters.
 ///
 /// Supports all plugin types in the SOTF ecosystem. This is the single
@@ -315,7 +381,7 @@ pub fn create_plugin(
                 SpectrumConfig::default()
             } else {
                 serde_json::from_value(parameters.clone())
-                    .unwrap_or_else(|_| SpectrumConfig::default())
+                    .map_err(|e| format!("Failed to parse spectrum analyzer params: {e}"))?
             };
             let plugin = SpectrumAnalyzerPlugin::with_config(channels, config)
                 .map_err(|e| format!("Failed to create spectrum analyzer: {e}"))?;
@@ -502,4 +568,18 @@ fn resize_matrix(
         new_matrix[i * new_in + i] = 1.0;
     }
     *matrix = new_matrix;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn supported_plugin_type_list_covers_factory_aliases() {
+        assert!(is_supported_plugin_type("gain"));
+        assert!(is_supported_plugin_type("EQ"));
+        assert!(is_supported_plugin_type("rnnoise"));
+        assert!(is_supported_plugin_type("active_acoustic_enhancement"));
+        assert!(!is_supported_plugin_type("definitely_missing"));
+    }
 }

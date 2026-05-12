@@ -1,5 +1,5 @@
-use sotf_plugin_downmix::DownmixPlugin;
 use sotf_host::plugin::{Plugin, ProcessContext};
+use sotf_plugin_downmix::DownmixPlugin;
 
 /// Verify that a pure tone passing through the phase-coherent STFT path
 /// has constant amplitude (no OLA flutter). This proves the sqrt(Hann)
@@ -10,10 +10,12 @@ fn test_pure_tone_no_ola_flutter() {
     plugin.initialize(48000).unwrap();
 
     // Enable phase coherence (activates STFT path)
-    plugin.set_parameter(
-        plugin.parameters()[4].id.clone(),
-        sotf_host::parameters::ParameterValue::Bool(true),
-    ).unwrap();
+    plugin
+        .set_parameter(
+            plugin.parameters()[4].id.clone(),
+            sotf_host::parameters::ParameterValue::Bool(true),
+        )
+        .unwrap();
 
     let freq = 1000.0_f32;
     let sr = 48000.0_f32;
@@ -31,7 +33,10 @@ fn test_pure_tone_no_ola_flutter() {
             input[i * 2] = sample;
             input[i * 2 + 1] = sample;
         }
-        let ctx = ProcessContext { num_frames: block_size, sample_rate: 48000 };
+        let ctx = ProcessContext {
+            num_frames: block_size,
+            sample_rate: 48000,
+        };
         plugin.process(&input, &mut output, &ctx).unwrap();
     }
 
@@ -44,11 +49,18 @@ fn test_pure_tone_no_ola_flutter() {
             input[i * 2] = sample;
             input[i * 2 + 1] = sample;
         }
-        let ctx = ProcessContext { num_frames: block_size, sample_rate: 48000 };
+        let ctx = ProcessContext {
+            num_frames: block_size,
+            sample_rate: 48000,
+        };
         plugin.process(&input, &mut output, &ctx).unwrap();
 
         // Measure peak amplitude of left channel in this block
-        let peak = output.iter().step_by(2).map(|&s| s.abs()).fold(0.0f32, f32::max);
+        let peak = output
+            .iter()
+            .step_by(2)
+            .map(|&s| s.abs())
+            .fold(0.0f32, f32::max);
         amplitudes.push(peak);
     }
 
@@ -60,6 +72,8 @@ fn test_pure_tone_no_ola_flutter() {
     assert!(
         ratio > 0.95,
         "Amplitude flutter detected: min={:.4}, max={:.4}, ratio={:.4}",
-        min_amp, max_amp, ratio
+        min_amp,
+        max_amp,
+        ratio
     );
 }

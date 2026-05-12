@@ -273,7 +273,8 @@ impl Plugin for CrossoverPlugin {
         let nyquist = sample_rate as f32 * 0.5 * 0.99;
         let freq = self.freq_smoother.target().min(nyquist);
         self.freq_smoother = LogSmoother::new(freq, 20.0, sample_rate);
-        self.crossover_2way.reinit(freq, sample_rate as f32, self.num_channels);
+        self.crossover_2way
+            .reinit(freq, sample_rate as f32, self.num_channels);
         self.low_buf.resize(self.num_channels, 0.0);
         self.high_buf.resize(self.num_channels, 0.0);
 
@@ -282,7 +283,11 @@ impl Plugin for CrossoverPlugin {
                 let f = smoother.target().min(nyquist);
                 *smoother = LogSmoother::new(f, 20.0, sample_rate);
             }
-            let clamped_freqs: Vec<f32> = self.all_frequencies.iter().map(|&f| f.min(nyquist)).collect();
+            let clamped_freqs: Vec<f32> = self
+                .all_frequencies
+                .iter()
+                .map(|&f| f.min(nyquist))
+                .collect();
             mb.reinit(&clamped_freqs, sample_rate as f32, self.num_channels);
         }
 

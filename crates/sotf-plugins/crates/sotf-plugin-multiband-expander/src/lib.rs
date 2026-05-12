@@ -975,17 +975,20 @@ impl MultibandExpanderPlugin {
             solo: bool,
         }
         let hop_rate = self.sample_rate as f32 / ss.hop_size as f32;
-        let mut band_info = vec![BandInfo {
-            th: 0.0,
-            rat: 1.0,
-            kn: 0.0,
-            rg: 0.0,
-            hys: 0.0,
-            hs: 0,
-            bypass: false,
-            active: true,
-            solo: false,
-        }; self.num_bands];
+        let mut band_info = vec![
+            BandInfo {
+                th: 0.0,
+                rat: 1.0,
+                kn: 0.0,
+                rg: 0.0,
+                hys: 0.0,
+                hs: 0,
+                bypass: false,
+                active: true,
+                solo: false,
+            };
+            self.num_bands
+        ];
         for (b, info) in band_info.iter_mut().enumerate() {
             let bp = self.band_params.get(b);
             let hold_ms = bp.and_then(|p| p.hold_ms).unwrap_or(self.hold_ms);

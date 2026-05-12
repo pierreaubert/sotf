@@ -627,7 +627,8 @@ impl InPlacePlugin for ConvolutionPlugin {
             engine.reset();
         }
         self.mix.reset(self.mix_value);
-        self.gain_linear.reset(10.0f32.powf(self.gain_db_value / 20.0));
+        self.gain_linear
+            .reset(10.0f32.powf(self.gain_db_value / 20.0));
         self.output_queue_read = 0;
         self.output_queue_write = 0;
         self.output_queue_len = 0;
@@ -1441,7 +1442,9 @@ mod tests {
         plugin.gain_linear.set_target(1.0);
         plugin.gain_linear.reset(1.0);
 
-        let input: Vec<f32> = (0..PARTITION_SIZE * 3).map(|i| (i as f32 * 0.1).sin()).collect();
+        let input: Vec<f32> = (0..PARTITION_SIZE * 3)
+            .map(|i| (i as f32 * 0.1).sin())
+            .collect();
 
         // First pass
         let mut buf1 = input.clone();
@@ -1452,7 +1455,9 @@ mod tests {
                 sample_rate: sr,
                 num_frames: nf,
             };
-            plugin.process_in_place(&mut buf1[block_start..block_end], &ctx).unwrap();
+            plugin
+                .process_in_place(&mut buf1[block_start..block_end], &ctx)
+                .unwrap();
         }
 
         plugin.reset();
@@ -1466,7 +1471,9 @@ mod tests {
                 sample_rate: sr,
                 num_frames: nf,
             };
-            plugin.process_in_place(&mut buf2[block_start..block_end], &ctx).unwrap();
+            plugin
+                .process_in_place(&mut buf2[block_start..block_end], &ctx)
+                .unwrap();
         }
 
         for (i, (&a, &b)) in buf1.iter().zip(buf2.iter()).enumerate() {

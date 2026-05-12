@@ -1,9 +1,9 @@
 // Integration tests for Limiter plugin
 
-use sotf_host::{InPlacePlugin, InPlacePluginAdapter, PluginHost};
-use sotf_plugin_limiter::LimiterPlugin;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::ProcessContext;
+use sotf_host::{InPlacePlugin, InPlacePluginAdapter, PluginHost};
+use sotf_plugin_limiter::LimiterPlugin;
 
 #[test]
 fn test_limiter_prevents_clipping() {
@@ -75,17 +75,19 @@ fn test_limiter_soft_mode() {
 #[test]
 fn test_feed_forward_lookahead_tracks_peak() {
     let mut plugin = LimiterPlugin::new(
-        2,   // stereo
+        2,    // stereo
         -1.0, // threshold
         50.0, // release
         5.0,  // 5 ms lookahead (~240 samples @ 48k)
         false,
     );
     plugin.initialize(48000).unwrap();
-    plugin.set_parameter(
-        ParameterId::from("feed_forward"),
-        ParameterValue::Bool(true),
-    ).unwrap();
+    plugin
+        .set_parameter(
+            ParameterId::from("feed_forward"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
 
     // Build a buffer with a loud transient in the middle.
     let mut buffer = vec![0.0f32; 512 * 2];
@@ -115,11 +117,8 @@ fn test_feed_forward_lookahead_tracks_peak() {
 #[test]
 fn test_more_than_32_channels() {
     let mut plugin = LimiterPlugin::new(
-        48,   // 48 channels
-        -1.0,
-        50.0,
-        1.0,
-        false,
+        48, // 48 channels
+        -1.0, 50.0, 1.0, false,
     );
     plugin.initialize(48000).unwrap();
 

@@ -246,7 +246,6 @@ impl LtRtPhaseSplitter {
             stage.reset();
         }
     }
-
 }
 
 impl DownmixPlugin {
@@ -909,8 +908,10 @@ impl DownmixPlugin {
                     );
 
                     let effective_blend = blend * self.phase_coherence_strength;
-                    self.out_freq_l[bin] = self.out_freq_l[bin] * (1.0 - effective_blend) + aligned_l * effective_blend;
-                    self.out_freq_r[bin] = self.out_freq_r[bin] * (1.0 - effective_blend) + aligned_r * effective_blend;
+                    self.out_freq_l[bin] = self.out_freq_l[bin] * (1.0 - effective_blend)
+                        + aligned_l * effective_blend;
+                    self.out_freq_r[bin] = self.out_freq_r[bin] * (1.0 - effective_blend)
+                        + aligned_r * effective_blend;
                 }
             }
         }
@@ -1020,7 +1021,9 @@ impl Plugin for DownmixPlugin {
                 .map(|_| LtRtPhaseSplitter::new(sample_rate))
                 .collect();
         }
-        self.ltrt_front_idx = (0..self.input_ch).map(|ch| self.front_channel_index(ch)).collect();
+        self.ltrt_front_idx = (0..self.input_ch)
+            .map(|ch| self.front_channel_index(ch))
+            .collect();
         for s in &mut self.coeff_smoothers {
             s.set_time(PARAM_SMOOTH_MS, sample_rate);
         }
@@ -1537,8 +1540,12 @@ mod tests {
             let p_ref = measure_phase(freq, &mut |x| splitter_ref.process_ref(x));
             let p_quad = measure_phase(freq, &mut |x| splitter_quad.process_quad(x));
             let mut diff = p_quad - p_ref;
-            while diff > PI { diff -= 2.0 * PI; }
-            while diff < -PI { diff += 2.0 * PI; }
+            while diff > PI {
+                diff -= 2.0 * PI;
+            }
+            while diff < -PI {
+                diff += 2.0 * PI;
+            }
             let err = (diff.abs() - PI / 2.0).abs();
             max_err = max_err.max(err);
         }
@@ -1563,14 +1570,28 @@ mod tests {
 
         // Map both channels equally to the left output (right output gets nothing)
         plugin.target_coeffs = vec![
-            DownmixCoeffs { left_gain: 0.5, right_gain: 0.0 },
-            DownmixCoeffs { left_gain: 0.5, right_gain: 0.0 },
+            DownmixCoeffs {
+                left_gain: 0.5,
+                right_gain: 0.0,
+            },
+            DownmixCoeffs {
+                left_gain: 0.5,
+                right_gain: 0.0,
+            },
         ];
         // Reset smoothers to new targets
         plugin.coeff_smoothers.clear();
         for c in &plugin.target_coeffs {
-            plugin.coeff_smoothers.push(Smoother::new(c.left_gain, PARAM_SMOOTH_MS, plugin.sample_rate));
-            plugin.coeff_smoothers.push(Smoother::new(c.right_gain, PARAM_SMOOTH_MS, plugin.sample_rate));
+            plugin.coeff_smoothers.push(Smoother::new(
+                c.left_gain,
+                PARAM_SMOOTH_MS,
+                plugin.sample_rate,
+            ));
+            plugin.coeff_smoothers.push(Smoother::new(
+                c.right_gain,
+                PARAM_SMOOTH_MS,
+                plugin.sample_rate,
+            ));
         }
 
         let freq = 1000.0;
@@ -1597,18 +1618,21 @@ mod tests {
         assert!(
             amp_full > amp_half,
             "Full strength ({}) should produce higher amplitude than half strength ({})",
-            amp_full, amp_half
+            amp_full,
+            amp_half
         );
         assert!(
             amp_half > amp_none,
             "Half strength ({}) should produce higher amplitude than no coherence ({})",
-            amp_half, amp_none
+            amp_half,
+            amp_none
         );
         // Full alignment should recover significant amplitude (substantially more than none)
         assert!(
             amp_full > amp_none * 5.0,
             "Full strength ({}) should be much higher than no coherence ({})",
-            amp_full, amp_none
+            amp_full,
+            amp_none
         );
     }
 
@@ -1629,7 +1653,10 @@ mod tests {
                 // Channel 1 is 180° out of phase
                 input[i * 2 + 1] = -(2.0 * std::f32::consts::PI * freq * t).sin();
             }
-            let ctx = ProcessContext { num_frames: block_size, sample_rate: sr as u32 };
+            let ctx = ProcessContext {
+                num_frames: block_size,
+                sample_rate: sr as u32,
+            };
             plugin.process(&input, &mut output, &ctx).unwrap();
         }
         // Measure average amplitude of left channel over last few blocks
@@ -1641,9 +1668,16 @@ mod tests {
                 input[i * 2] = (2.0 * std::f32::consts::PI * freq * t).sin();
                 input[i * 2 + 1] = -(2.0 * std::f32::consts::PI * freq * t).sin();
             }
-            let ctx = ProcessContext { num_frames: block_size, sample_rate: sr as u32 };
+            let ctx = ProcessContext {
+                num_frames: block_size,
+                sample_rate: sr as u32,
+            };
             plugin.process(&input, &mut output, &ctx).unwrap();
-            let peak = output.iter().step_by(2).map(|&s| s.abs()).fold(0.0f32, f32::max);
+            let peak = output
+                .iter()
+                .step_by(2)
+                .map(|&s| s.abs())
+                .fold(0.0f32, f32::max);
             total_amp += peak;
         }
         total_amp / measure_blocks as f32

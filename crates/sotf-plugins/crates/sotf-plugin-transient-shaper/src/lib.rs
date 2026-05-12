@@ -641,7 +641,9 @@ mod tests {
         let mut plugin_high = TransientShaperPlugin::from_params(channels, params_high);
         plugin_high.initialize(48000).unwrap();
         let mut buffer_high = signal.clone();
-        plugin_high.process_in_place(&mut buffer_high, &ctx).unwrap();
+        plugin_high
+            .process_in_place(&mut buffer_high, &ctx)
+            .unwrap();
 
         // The outputs should differ
         let mut total_diff = 0.0f32;

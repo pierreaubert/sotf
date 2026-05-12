@@ -459,9 +459,11 @@ mod tests {
             for j in 0..n {
                 if i != j {
                     assert_eq!(
-                        d.matrix[i * n + j], 0.0,
+                        d.matrix[i * n + j],
+                        0.0,
                         "silence off-diagonal ({},{}) not zero",
-                        i, j
+                        i,
+                        j
                     );
                 }
             }

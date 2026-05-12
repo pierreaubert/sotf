@@ -518,7 +518,6 @@ impl SaturationPlugin {
                 .with_importance(ParameterImportance::Useful),
         ];
     }
-
 }
 
 // ============================================================================

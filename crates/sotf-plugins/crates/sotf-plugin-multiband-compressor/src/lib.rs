@@ -360,23 +360,23 @@ impl MultibandCompressorPlugin {
     /// Order must match params::GLOBAL_PARAMS exactly.
     fn set_param_value(&mut self, index: usize, value: f64) {
         match index {
-            0 => self.num_bands = value.round() as usize,      // num_bands
-            1 => self._crossover_preset = value as i32,        // crossover_preset
+            0 => self.num_bands = value.round() as usize, // num_bands
+            1 => self._crossover_preset = value as i32,   // crossover_preset
             2 => self.crossover_frequencies[0] = value as f32, // crossover_freq_1
             3 => self.crossover_frequencies[1] = value as f32, // crossover_freq_2
             4 => self.crossover_frequencies[2] = value as f32, // crossover_freq_3
             5 => self.crossover_frequencies[3] = value as f32, // crossover_freq_4
-            6 => self.threshold_db = value as f32,             // threshold
-            7 => self.ratio = value as f32,                    // ratio
-            8 => self.attack_ms = value as f32,                // attack
-            9 => self.release_ms = value as f32,               // release
-            10 => self.knee_db = value as f32,                 // knee
-            11 => self.mix = value as f32,                     // mix
-            12 => self.link_channels = value > 0.5,            // link_channels
+            6 => self.threshold_db = value as f32,        // threshold
+            7 => self.ratio = value as f32,               // ratio
+            8 => self.attack_ms = value as f32,           // attack
+            9 => self.release_ms = value as f32,          // release
+            10 => self.knee_db = value as f32,            // knee
+            11 => self.mix = value as f32,                // mix
+            12 => self.link_channels = value > 0.5,       // link_channels
             13 => self.per_band_lookahead_ms = value.clamp(0.0, 10.0) as f32, // per_band_lookahead_ms
-            14 => self.ms_mode = value > 0.5,                  // ms_mode
-            15 => self.sidechain_tilt_db = value as f32,       // sidechain_tilt_db
-            16 => self.link_amount = value as f32,             // link_amount
+            14 => self.ms_mode = value > 0.5,                                 // ms_mode
+            15 => self.sidechain_tilt_db = value as f32,                      // sidechain_tilt_db
+            16 => self.link_amount = value as f32,                            // link_amount
             _ => {}
         }
     }

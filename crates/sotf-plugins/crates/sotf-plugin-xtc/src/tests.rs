@@ -1,8 +1,9 @@
 use super::*;
 use filters::{
     compute_beta, compute_beta_smooth, compute_geometry_cache, compute_xtc_filters_full,
-    head_shadowing_brown_duda, head_shadowing_complex, head_shadowing_filter, head_shadowing_woodworth, sanitize_filter,
-    soft_limit_complex_magnitude, woodworth_diffraction_path,
+    head_shadowing_brown_duda, head_shadowing_complex, head_shadowing_filter,
+    head_shadowing_woodworth, sanitize_filter, soft_limit_complex_magnitude,
+    woodworth_diffraction_path,
 };
 use reflections::{air_absorption, compute_image_sources, compute_reflection_beta_boost};
 
@@ -768,10 +769,12 @@ fn test_reflection_amplitude_uses_sqrt_of_energy_coefficient() {
     };
 
     let room_reflective = reflections::tests_support::make_room(4.0, 5.0, 2.5, 0.0);
-    let paths_reflective = compute_image_sources(speaker_pos, ear_pos, direct_dist, &room_reflective);
+    let paths_reflective =
+        compute_image_sources(speaker_pos, ear_pos, direct_dist, &room_reflective);
 
     let room_absorptive = reflections::tests_support::make_room(4.0, 5.0, 2.5, 0.5);
-    let paths_absorptive = compute_image_sources(speaker_pos, ear_pos, direct_dist, &room_absorptive);
+    let paths_absorptive =
+        compute_image_sources(speaker_pos, ear_pos, direct_dist, &room_absorptive);
 
     assert_eq!(
         paths_reflective.len(),
@@ -1746,7 +1749,6 @@ fn test_process_returns_num_frames_not_output_pos() {
     );
 }
 
-
 /// Bug 4: Mono room IR files incorrectly copy ipsi response to contra path.
 /// The contralateral ear should receive attenuated and delayed reflections
 /// compared to the ipsilateral ear. Loading a mono IR should apply a
@@ -1793,13 +1795,8 @@ fn test_mono_room_ir_derives_contra_with_head_shadowing() {
     }
 
     let num_bins = 513; // 1024-point FFT
-    let data = reflections::build_reflection_data_ir(
-        path.to_str().unwrap(),
-        48000,
-        num_bins,
-        None,
-    )
-    .unwrap();
+    let data = reflections::build_reflection_data_ir(path.to_str().unwrap(), 48000, num_bins, None)
+        .unwrap();
 
     let _ = std::fs::remove_file(path);
 
@@ -1831,7 +1828,6 @@ fn test_mono_room_ir_derives_contra_with_head_shadowing() {
     );
 }
 
-
 /// Bug 2: beta_low_freq_boost and beta_high_freq_boost were dead parameters.
 /// They are exposed as UI knobs but had no effect on filter computation.
 /// This test verifies that changing these parameters now affects the computed beta.
@@ -1843,28 +1839,17 @@ fn test_beta_freq_boosts_affect_filters() {
 
     // Default: both boosts = 10.0
     let params_default = XtcPluginParams::default();
-    let filters_default = compute_xtc_filters_full(&params_default,
-        sample_rate,
-        num_bins,
-    );
+    let filters_default = compute_xtc_filters_full(&params_default, sample_rate, num_bins);
 
     // Low boost = 0 (no extra low-frequency regularization)
     let mut params_low_off = XtcPluginParams::default();
     params_low_off.beta_low_freq_boost = 0.0;
-    let filters_low_off = compute_xtc_filters_full(
-        &params_low_off,
-        sample_rate,
-        num_bins,
-    );
+    let filters_low_off = compute_xtc_filters_full(&params_low_off, sample_rate, num_bins);
 
     // High boost = 0 (no extra high-frequency regularization)
     let mut params_high_off = XtcPluginParams::default();
     params_high_off.beta_high_freq_boost = 0.0;
-    let filters_high_off = compute_xtc_filters_full(
-        &params_high_off,
-        sample_rate,
-        num_bins,
-    );
+    let filters_high_off = compute_xtc_filters_full(&params_high_off, sample_rate, num_bins);
 
     let freq_per_bin = sample_rate as f32 / (2.0 * (num_bins - 1) as f32);
 

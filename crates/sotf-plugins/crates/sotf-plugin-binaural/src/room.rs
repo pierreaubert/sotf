@@ -506,15 +506,17 @@ mod tests {
             max_order: 2,
             speed_of_sound: 343.0,
         };
-        let speakers: &'static [SpeakerPosition] =
-            Box::leak(vec![SpeakerPosition {
+        let speakers: &'static [SpeakerPosition] = Box::leak(
+            vec![SpeakerPosition {
                 label: "L",
                 name: "Left",
                 channel: 0,
                 azimuth: -30.0,
                 elevation: 0.0,
                 is_lfe: false,
-            }].into_boxed_slice());
+            }]
+            .into_boxed_slice(),
+        );
         let speaker_config = SpeakerConfig {
             id: "test",
             name: "test",

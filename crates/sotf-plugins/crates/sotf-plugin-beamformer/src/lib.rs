@@ -221,8 +221,12 @@ impl BeamformerPlugin {
             self.sample_rate as f32,
             0.01,
         ));
-        let delays =
-            compute_steering_delays(&geometry, self.steer_angle_deg, 0.0, self.sample_rate as f32);
+        let delays = compute_steering_delays(
+            &geometry,
+            self.steer_angle_deg,
+            0.0,
+            self.sample_rate as f32,
+        );
         self.gsc = GscBeamformer::new(self.num_mics, &delays, 32, 0.01);
     }
 
@@ -410,8 +414,7 @@ impl Plugin for BeamformerPlugin {
                         for _j in 0..hop {
                             self.push_output(self.ola_buffer[self.ola_write_pos]);
                             self.ola_buffer[self.ola_write_pos] = 0.0;
-                            self.ola_write_pos =
-                                (self.ola_write_pos + 1) % self.ola_buffer.len();
+                            self.ola_write_pos = (self.ola_write_pos + 1) % self.ola_buffer.len();
                         }
 
                         // Shift input buffers: keep the last (FFT_SIZE - hop) samples
@@ -549,12 +552,13 @@ mod tests {
                 sample_rate: 48000,
                 num_frames: chunk_size,
             };
-            plugin.process(
-                &input[start * 2..(start + chunk_size) * 2],
-                &mut output[start..start + chunk_size],
-                &context,
-            )
-            .unwrap();
+            plugin
+                .process(
+                    &input[start * 2..(start + chunk_size) * 2],
+                    &mut output[start..start + chunk_size],
+                    &context,
+                )
+                .unwrap();
         }
 
         // Skip latency and transient
@@ -603,12 +607,13 @@ mod tests {
                 sample_rate: 48000,
                 num_frames: chunk_size,
             };
-            plugin.process(
-                &input[start * 2..(start + chunk_size) * 2],
-                &mut output[start..start + chunk_size],
-                &context,
-            )
-            .unwrap();
+            plugin
+                .process(
+                    &input[start * 2..(start + chunk_size) * 2],
+                    &mut output[start..start + chunk_size],
+                    &context,
+                )
+                .unwrap();
         }
 
         let latency = plugin.latency_samples();
@@ -621,11 +626,8 @@ mod tests {
             .map(|&x| x * x)
             .sum::<f32>()
             / (end - start) as f32;
-        let output_rms: f32 = output[start..end]
-            .iter()
-            .map(|&x| x * x)
-            .sum::<f32>()
-            / (end - start) as f32;
+        let output_rms: f32 =
+            output[start..end].iter().map(|&x| x * x).sum::<f32>() / (end - start) as f32;
 
         let ratio = output_rms.sqrt() / input_rms.sqrt();
         assert!(

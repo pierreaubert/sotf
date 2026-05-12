@@ -635,7 +635,6 @@ impl DynamicEqPlugin {
             .with_importance(ParameterImportance::Useful),
         ];
     }
-
 }
 
 impl InPlacePlugin for DynamicEqPlugin {

@@ -220,16 +220,10 @@ impl InPlacePlugin for StereoImagerPlugin {
                     return Err(format!("{}: Value is infinite", id));
                 }
                 if *v < *min as f32 {
-                    return Err(format!(
-                        "{}: Value {} is below minimum {}",
-                        id, v, min
-                    ));
+                    return Err(format!("{}: Value {} is below minimum {}", id, v, min));
                 }
                 if *v > *max as f32 {
-                    return Err(format!(
-                        "{}: Value {} is above maximum {}",
-                        id, v, max
-                    ));
+                    return Err(format!("{}: Value {} is above maximum {}", id, v, max));
                 }
                 Ok(())
             }
@@ -694,7 +688,15 @@ mod tests {
 
         // Process a buffer to let the smoother advance
         let mut buffer = vec![0.5_f32; 512 * 2];
-        plugin.process_in_place(&mut buffer, &ProcessContext { num_frames: 512, sample_rate: 48000 }).unwrap();
+        plugin
+            .process_in_place(
+                &mut buffer,
+                &ProcessContext {
+                    num_frames: 512,
+                    sample_rate: 48000,
+                },
+            )
+            .unwrap();
 
         // After processing, the frequency should have moved toward the target
         let new_freq = plugin.crossover_low.frequency();
@@ -712,7 +714,15 @@ mod tests {
 
         // Process many more buffers until the frequency reaches the target
         for _ in 0..200 {
-            plugin.process_in_place(&mut buffer, &ProcessContext { num_frames: 512, sample_rate: 48000 }).unwrap();
+            plugin
+                .process_in_place(
+                    &mut buffer,
+                    &ProcessContext {
+                        num_frames: 512,
+                        sample_rate: 48000,
+                    },
+                )
+                .unwrap();
         }
 
         let final_freq = plugin.crossover_low.frequency();
@@ -738,10 +748,16 @@ mod tests {
                 .set_parameter(ParameterId::from("width"), ParameterValue::Float(v))
                 .unwrap();
             plugin
-                .set_parameter(ParameterId::from("low_mid_freq"), ParameterValue::Float(200.0 + v * 10.0))
+                .set_parameter(
+                    ParameterId::from("low_mid_freq"),
+                    ParameterValue::Float(200.0 + v * 10.0),
+                )
                 .unwrap();
             plugin
-                .set_parameter(ParameterId::from("mid_high_freq"), ParameterValue::Float(3000.0 + v * 100.0))
+                .set_parameter(
+                    ParameterId::from("mid_high_freq"),
+                    ParameterValue::Float(3000.0 + v * 100.0),
+                )
                 .unwrap();
             plugin
                 .set_parameter(ParameterId::from("mix"), ParameterValue::Float(v.min(1.0)))
@@ -759,4 +775,3 @@ mod tests {
         );
     }
 }
-

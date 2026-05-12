@@ -504,11 +504,8 @@ impl InPlacePlugin for LimiterPlugin {
                 } else if old_peak >= self.lookahead_peak_max && frame_peak < old_peak {
                     // We displaced the previous max with a smaller value;
                     // rescan to find the new max.
-                    self.lookahead_peak_max = self
-                        .lookahead_peaks
-                        .iter()
-                        .copied()
-                        .fold(0.0f32, f32::max);
+                    self.lookahead_peak_max =
+                        self.lookahead_peaks.iter().copied().fold(0.0f32, f32::max);
                 }
                 self.lookahead_peak_max
             } else {

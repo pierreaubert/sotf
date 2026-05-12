@@ -545,7 +545,8 @@ fn compute_xtc_filters_hrtf(
     let max_gain_linear = 10.0_f32.powf(params.max_gain_db / 20.0);
 
     // Build condition-number based beta LUT
-    let beta_lut = build_beta_lut_condition_number(num_bins, cache.freq_per_bin, params, Some(hrtf));
+    let beta_lut =
+        build_beta_lut_condition_number(num_bins, cache.freq_per_bin, params, Some(hrtf));
 
     for bin in 0..num_bins {
         let freq = bin as f32 * cache.freq_per_bin;
@@ -1437,12 +1438,10 @@ pub(crate) fn compute_beta_condition_number_full(
 /// Apply frequency-dependent beta boosts (low/high) to the base beta value.
 #[inline]
 fn apply_beta_freq_boosts(beta: f32, freq: f32, params: &XtcPluginParams) -> f32 {
-    let low_factor = 1.0
-        + params.beta_low_freq_boost
-            * (1.0 / (1.0 + (-(100.0 - freq) / 30.0).exp()));
-    let high_factor = 1.0
-        + params.beta_high_freq_boost
-            * (1.0 / (1.0 + (-(freq - 12000.0) / 1500.0).exp()));
+    let low_factor =
+        1.0 + params.beta_low_freq_boost * (1.0 / (1.0 + (-(100.0 - freq) / 30.0).exp()));
+    let high_factor =
+        1.0 + params.beta_high_freq_boost * (1.0 / (1.0 + (-(freq - 12000.0) / 1500.0).exp()));
     beta * low_factor * high_factor
 }
 

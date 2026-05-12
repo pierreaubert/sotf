@@ -40,7 +40,9 @@ fn test_multiband_compressor_processing() {
             sample_rate: 48000,
             num_frames: end - offset,
         };
-        plugin.process_in_place(&mut input[offset * 2..end * 2], &context).unwrap();
+        plugin
+            .process_in_place(&mut input[offset * 2..end * 2], &context)
+            .unwrap();
         offset = end;
     }
 
@@ -85,7 +87,9 @@ fn test_multiband_compressor_ms_mode_roundtrip() {
             sample_rate: 48000,
             num_frames: end - offset,
         };
-        plugin.process_in_place(&mut input[offset * 2..end * 2], &context).unwrap();
+        plugin
+            .process_in_place(&mut input[offset * 2..end * 2], &context)
+            .unwrap();
         offset = end;
     }
 

@@ -162,10 +162,7 @@ pub fn compute_steering_delays(
         .iter()
         .cloned()
         .fold(f32::NEG_INFINITY, f32::max);
-    propagation_delays
-        .iter()
-        .map(|d| max_delay - d)
-        .collect()
+    propagation_delays.iter().map(|d| max_delay - d).collect()
 }
 
 #[cfg(test)]
@@ -227,7 +224,7 @@ mod tests {
         let sv_broadside = compute_steering_vector(1000.0, &geom, 0.0, 0.0);
         let phase_diff = (sv_broadside[1].im.atan2(sv_broadside[1].re)
             - sv_broadside[0].im.atan2(sv_broadside[0].re))
-            .abs();
+        .abs();
         assert!(
             phase_diff < 1e-5,
             "0° should be broadside (phase_diff={phase_diff})"
@@ -237,7 +234,7 @@ mod tests {
         let sv_endfire = compute_steering_vector(1000.0, &geom, 90.0, 0.0);
         let phase_diff_endfire = (sv_endfire[1].im.atan2(sv_endfire[1].re)
             - sv_endfire[0].im.atan2(sv_endfire[0].re))
-            .abs();
+        .abs();
         let expected = 2.0 * std::f32::consts::PI * 1000.0 * 0.05 / SPEED_OF_SOUND;
         assert!(
             (phase_diff_endfire - expected).abs() < 1e-4,
