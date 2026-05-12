@@ -822,29 +822,29 @@ fn render_response_comparison_graph(
     // The sub_lowpass is left alone because its absolute level (relative to
     // the un-de-preamped mains) is what places it correctly in-room, and we
     // want the combined "Main + Sub" sum to reflect that physical balance.
-    let prepare_overlay_series =
-        |points: &[(f64, f64)], subtract_preamp: bool| -> Option<(Vec<f64>, Vec<f64>)> {
-            if points.is_empty() {
-                return None;
-            }
-            let preamp = if subtract_preamp { preamp_gain_db } else { 0.0 };
-            let overlay_freqs: Vec<f64> = points.iter().map(|(f, _)| *f).collect();
-            let overlay_raw: Vec<f64> = points.iter().map(|(_, db)| *db - preamp).collect();
-            let overlay_values: Vec<f64> = if normalize_to_target && let Some(target) = target_curve
-            {
-                let target_vals = interpolate_target_at_frequencies(&overlay_freqs, target);
-                overlay_raw
-                    .iter()
-                    .zip(target_vals.iter())
-                    .map(|(&v, &target)| v - target)
-                    .collect()
-            } else {
-                overlay_raw.iter().map(|&db| db - standard_offset).collect()
-            };
-            let overlay_smooth =
-                dsp::smooth_response_f64(&overlay_freqs, &overlay_values, smoothing_octaves);
-            Some((overlay_freqs, sanitize(&overlay_smooth)))
+    let prepare_overlay_series = |points: &[(f64, f64)],
+                                  subtract_preamp: bool|
+     -> Option<(Vec<f64>, Vec<f64>)> {
+        if points.is_empty() {
+            return None;
+        }
+        let preamp = if subtract_preamp { preamp_gain_db } else { 0.0 };
+        let overlay_freqs: Vec<f64> = points.iter().map(|(f, _)| *f).collect();
+        let overlay_raw: Vec<f64> = points.iter().map(|(_, db)| *db - preamp).collect();
+        let overlay_values: Vec<f64> = if normalize_to_target && let Some(target) = target_curve {
+            let target_vals = interpolate_target_at_frequencies(&overlay_freqs, target);
+            overlay_raw
+                .iter()
+                .zip(target_vals.iter())
+                .map(|(&v, &target)| v - target)
+                .collect()
+        } else {
+            overlay_raw.iter().map(|&db| db - standard_offset).collect()
         };
+        let overlay_smooth =
+            dsp::smooth_response_f64(&overlay_freqs, &overlay_values, smoothing_octaves);
+        Some((overlay_freqs, sanitize(&overlay_smooth)))
+    };
 
     // Power-sum two dB curves sharing a frequency grid.
     // Returns the predicted combined SPL assuming uncorrelated summation —

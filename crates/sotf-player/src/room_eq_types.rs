@@ -83,8 +83,7 @@ pub const DEFAULT_BASS_MANAGEMENT_CROSSOVER_KEY: &str = "lfe_xover";
 /// reference, so saving a recording with an LFE channel and no crossover left
 /// the JSON unusable until manually edited. Emitting this default lets the
 /// optimizer pick the best crossover frequency in a sensible range.
-pub fn default_bass_management_crossovers()
--> HashMap<String, autoeq::roomeq::CrossoverConfig> {
+pub fn default_bass_management_crossovers() -> HashMap<String, autoeq::roomeq::CrossoverConfig> {
     let mut map = HashMap::new();
     map.insert(
         DEFAULT_BASS_MANAGEMENT_CROSSOVER_KEY.to_string(),
@@ -619,9 +618,7 @@ pub fn build_speakers_from_recordings(
     channel_names: &[String],
     channel_speakers: Option<&std::collections::HashMap<String, String>>,
 ) -> HashMap<String, autoeq::SpeakerConfig> {
-    use autoeq::read::{
-        InlineMeasurement, MeasurementMultiple, MeasurementRef, MeasurementSingle,
-    };
+    use autoeq::read::{InlineMeasurement, MeasurementMultiple, MeasurementRef, MeasurementSingle};
     use autoeq::{MeasurementSource, SpeakerConfig};
 
     let mut grouped: BTreeMap<usize, Vec<&ChannelRecording>> = BTreeMap::new();
@@ -1043,9 +1040,12 @@ impl RoomEqMeasurementsFile {
         json: &str,
         base_dir: Option<&std::path::Path>,
     ) -> Result<Vec<ChannelMeasurement>, String> {
-        let room_config: autoeq::RoomConfig = serde_json::from_str(json)
-            .map_err(|e| format!("Parse error: {}", e))?;
-        log::info!("Loaded {} speakers (RoomConfig format)", room_config.speakers.len());
+        let room_config: autoeq::RoomConfig =
+            serde_json::from_str(json).map_err(|e| format!("Parse error: {}", e))?;
+        log::info!(
+            "Loaded {} speakers (RoomConfig format)",
+            room_config.speakers.len()
+        );
         Ok(Self::channels_from_room_config(room_config, base_dir))
     }
 
@@ -4741,12 +4741,8 @@ mod tests {
         for (channel_index, channel_label) in [(0, "L"), (1, "R"), (2, "LFE")] {
             for mic_idx in 0..4 {
                 let display = format!("{} (Mic {})", channel_label, mic_idx + 1);
-                let mut rec = ChannelRecording::with_mic_position(
-                    channel_index,
-                    display.clone(),
-                    mic_idx,
-                    0,
-                );
+                let mut rec =
+                    ChannelRecording::with_mic_position(channel_index, display.clone(), mic_idx, 0);
                 rec.state = ChannelRecordingState::Done;
                 let safe = display.replace([' ', '(', ')'], "_");
                 rec.result = Some(RecordingResult {
@@ -4803,7 +4799,9 @@ mod tests {
                         );
                     }
                 }
-                other => panic!("expected MeasurementSource::Multiple for {channel}, got {other:?}"),
+                other => {
+                    panic!("expected MeasurementSource::Multiple for {channel}, got {other:?}")
+                }
             }
         }
     }

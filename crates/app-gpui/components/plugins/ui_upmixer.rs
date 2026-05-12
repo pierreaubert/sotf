@@ -1491,11 +1491,7 @@ fn render_config_spatial(
 /// Permanent spider graph row below the tab bar. Always visible regardless
 /// of which tab is selected, so the user can watch the spatial field while
 /// editing parameters in any tab.
-fn render_spider_graph_row(
-    d: &Ds,
-    state: &UpmixerRenderState,
-    theme: &Theme,
-) -> impl IntoElement {
+fn render_spider_graph_row(d: &Ds, state: &UpmixerRenderState, theme: &Theme) -> impl IntoElement {
     use crate::components::plugins::spatial_spider::{
         SpatialSpiderSnapshot, render_spatial_spider_graph, resolve_speaker_config,
     };

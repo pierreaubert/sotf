@@ -39,6 +39,7 @@ __pycache__
 /*.wav
 /*.json.bz2
 /todos.md
+/reviews
 
 # node
 /site/node_modules

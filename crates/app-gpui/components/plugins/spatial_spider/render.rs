@@ -1075,8 +1075,8 @@ fn build_body(
     };
 
     let palette = SpiderColors::from_theme(theme);
-    let highlight = matches!(spider_mode, SpiderMode::CorrelationFromRef { .. })
-        .then_some(ref_channel);
+    let highlight =
+        matches!(spider_mode, SpiderMode::CorrelationFromRef { .. }).then_some(ref_channel);
     // Container fixes both dimensions explicitly so the child's
     // `relative(1.0)` request resolves to a non-zero rect. Going through a
     // flex parent has bitten us before — `relative(1.0)` width inside a

@@ -2221,8 +2221,7 @@ pub(crate) fn save_recordings(app: &mut App) {
         return;
     }
 
-    let mic_calibration_paths_value =
-        app.recording.recording_config.mic_calibration_paths.clone();
+    let mic_calibration_paths_value = app.recording.recording_config.mic_calibration_paths.clone();
 
     let configuration = RecordingConfiguration {
         playback_device_name: Some(app.recording.playback_config.device_name.clone()),

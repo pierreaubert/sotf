@@ -220,12 +220,7 @@ fn render_spatial_spider_viz(
     theme: &Theme,
 ) -> AnyElement {
     crate::components::plugins::spatial_spider::render_spatial_spider_panel(
-        d,
-        entity,
-        plugin_idx,
-        snapshot,
-        None,
-        theme,
+        d, entity, plugin_idx, snapshot, None, theme,
     )
 }
 
@@ -283,9 +278,7 @@ fn render_main_column(
     selected_param: usize,
     active_tab: usize,
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
-    spider_snapshot: Option<
-        &crate::components::plugins::spatial_spider::SpatialSpiderSnapshot,
-    >,
+    spider_snapshot: Option<&crate::components::plugins::spatial_spider::SpatialSpiderSnapshot>,
     theme: &Theme,
 ) -> impl IntoElement {
     let mut center = div().flex().flex_col().gap(d.section).flex_1();
@@ -534,9 +527,7 @@ fn render_group(
     solved: &SolvedLayout,
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     theme: &Theme,
-    spider_snapshot: Option<
-        &crate::components::plugins::spatial_spider::SpatialSpiderSnapshot,
-    >,
+    spider_snapshot: Option<&crate::components::plugins::spatial_spider::SpatialSpiderSnapshot>,
 ) -> impl IntoElement {
     // Slider groups (vertical meters) carry their own visual frame via
     // tick marks and labels, so the chassis-box wrapper is redundant.

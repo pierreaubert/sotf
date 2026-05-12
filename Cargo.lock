@@ -5810,14 +5810,14 @@ dependencies = [
 
 [[package]]
 name = "math-delaunay"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "delaunator",
 ]
 
 [[package]]
 name = "math-dsp"
-version = "0.5.16"
+version = "0.5.17"
 dependencies = [
  "approx",
  "clap",
@@ -5838,7 +5838,7 @@ dependencies = [
 
 [[package]]
 name = "math-iir-fir"
-version = "0.5.10"
+version = "0.5.11"
 dependencies = [
  "base64 0.22.1",
  "byteorder",
@@ -5854,7 +5854,7 @@ dependencies = [
 
 [[package]]
 name = "math-optimisation"
-version = "0.5.8"
+version = "0.5.9"
 dependencies = [
  "clap",
  "directories",
@@ -5871,7 +5871,7 @@ dependencies = [
 
 [[package]]
 name = "math-rir"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "math-iir-fir",
  "rayon",
@@ -5879,7 +5879,7 @@ dependencies = [
 
 [[package]]
 name = "math-test-functions"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "clap",
  "directories",
@@ -10166,6 +10166,7 @@ name = "sotf-engine"
 version = "1.0.27"
 dependencies = [
  "arc-swap",
+ "bytemuck",
  "chrono",
  "clap",
  "cpal",

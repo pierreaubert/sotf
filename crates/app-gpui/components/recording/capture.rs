@@ -2107,8 +2107,8 @@ impl PlayerView {
             let has_bass_output = speakers
                 .keys()
                 .any(|name| room_eq_channel_is_bass_output(name));
-            let bass_management_crossover = has_bass_output
-                .then(|| DEFAULT_BASS_MANAGEMENT_CROSSOVER_KEY.to_string());
+            let bass_management_crossover =
+                has_bass_output.then(|| DEFAULT_BASS_MANAGEMENT_CROSSOVER_KEY.to_string());
             let system = ctc_system_config_for_speaker_names(
                 speakers.keys().map(String::as_str),
                 bass_management_crossover,
