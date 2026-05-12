@@ -20,11 +20,20 @@ pub enum CrossoverMode {
 
 impl CrossoverMode {
     fn from_str(s: &str) -> Result<Self, String> {
-        match s.to_lowercase().as_str() {
-            "low" | "lowpass" | "lp" => Ok(CrossoverMode::Lowpass),
-            "high" | "highpass" | "hp" => Ok(CrossoverMode::Highpass),
-            "both" => Ok(CrossoverMode::Both),
-            _ => Err(format!("Invalid output mode: {}", s)),
+        if s.eq_ignore_ascii_case("low")
+            || s.eq_ignore_ascii_case("lowpass")
+            || s.eq_ignore_ascii_case("lp")
+        {
+            Ok(CrossoverMode::Lowpass)
+        } else if s.eq_ignore_ascii_case("high")
+            || s.eq_ignore_ascii_case("highpass")
+            || s.eq_ignore_ascii_case("hp")
+        {
+            Ok(CrossoverMode::Highpass)
+        } else if s.eq_ignore_ascii_case("both") {
+            Ok(CrossoverMode::Both)
+        } else {
+            Err(format!("Invalid output mode: {}", s))
         }
     }
 
@@ -78,20 +87,28 @@ pub struct CrossoverPlugin {
 impl CrossoverPlugin {
     pub fn new(
         num_channels: usize,
-        _crossover_type: &str,
+        crossover_type: &str,
         frequency: f64,
         output: &str,
     ) -> Result<Self, String> {
-        Self::new_multiway(num_channels, _crossover_type, frequency, output, &[])
+        Self::new_multiway(num_channels, crossover_type, frequency, output, &[])
     }
 
     pub fn new_multiway(
         num_channels: usize,
-        _crossover_type: &str,
+        crossover_type: &str,
         frequency: f64,
         output: &str,
         extra_frequencies: &[f64],
     ) -> Result<Self, String> {
+        if !crossover_type.eq_ignore_ascii_case("lr24")
+            && !crossover_type.eq_ignore_ascii_case("lr4")
+        {
+            return Err(format!(
+                "Unsupported crossover type: '{}'. Only LR24/LR4 is supported.",
+                crossover_type
+            ));
+        }
         let mode = CrossoverMode::from_str(output)?;
         let sr = 48000;
 
@@ -193,10 +210,11 @@ impl CrossoverPlugin {
 
     /// Parse "frequency_N" into an extra smoother index (0-based).
     /// "frequency_2" -> Some(0), "frequency_3" -> Some(1), etc.
+    /// Returns None for indices < 2 to prevent aliasing "frequency_1" onto index 0.
     fn parse_extra_freq_index(s: &str) -> Option<usize> {
         s.strip_prefix("frequency_")
             .and_then(|idx_str| idx_str.parse::<usize>().ok())
-            .map(|idx| idx.saturating_sub(2))
+            .and_then(|idx| if idx >= 2 { Some(idx - 2) } else { None })
     }
 }
 
@@ -225,9 +243,13 @@ impl Plugin for CrossoverPlugin {
             let val = value.as_float().unwrap_or(1000.0);
             if val.is_finite() {
                 self.freq_smoother.set_target(val);
-                // Update first frequency in multi-way list
+                // Update first frequency in multi-way list and re-sort to maintain
+                // sorted order. MultibandLr4Crossover requires sorted frequencies.
                 if !self.all_frequencies.is_empty() {
                     self.all_frequencies[0] = val;
+                    self.all_frequencies
+                        .sort_by(|a, b| a.partial_cmp(b).unwrap());
+                    self.all_frequencies.dedup();
                 }
                 self.rebuild_cached_parameters();
             }
@@ -245,6 +267,9 @@ impl Plugin for CrossoverPlugin {
                 let freq_idx = smoother_idx + 1; // offset: extra smoothers start at freq index 1
                 if freq_idx < self.all_frequencies.len() {
                     self.all_frequencies[freq_idx] = val;
+                    self.all_frequencies
+                        .sort_by(|a, b| a.partial_cmp(b).unwrap());
+                    self.all_frequencies.dedup();
                 }
                 self.rebuild_cached_parameters();
             }
@@ -270,9 +295,13 @@ impl Plugin for CrossoverPlugin {
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
-        self.freq_smoother = LogSmoother::new(self.freq_smoother.target(), 20.0, sample_rate);
+        // Clamp all frequencies to just below Nyquist to prevent nonsense biquad
+        // coefficients at low sample rates (e.g. 32 kHz with a 20 kHz crossover).
+        let nyquist_limit = sample_rate as f32 * 0.5 * 0.99;
+        let clamped_primary = self.freq_smoother.target().min(nyquist_limit);
+        self.freq_smoother = LogSmoother::new(clamped_primary, 20.0, sample_rate);
         self.crossover_2way.reinit(
-            self.freq_smoother.target(),
+            clamped_primary,
             sample_rate as f32,
             self.num_channels,
         );
@@ -280,8 +309,20 @@ impl Plugin for CrossoverPlugin {
         self.high_buf.resize(self.num_channels, 0.0);
 
         if let Some(ref mut mb) = self.multiband {
-            for smoother in &mut self.extra_freq_smoothers {
-                *smoother = LogSmoother::new(smoother.target(), 20.0, sample_rate);
+            // extra_freq_smoothers[i] corresponds to all_frequencies[i+1].
+            for (freq, smoother) in self
+                .all_frequencies
+                .iter_mut()
+                .skip(1)
+                .zip(self.extra_freq_smoothers.iter_mut())
+            {
+                let clamped = smoother.target().min(nyquist_limit);
+                *freq = clamped;
+                *smoother = LogSmoother::new(clamped, 20.0, sample_rate);
+            }
+            // Clamp all_frequencies[0] (primary, already clamped above).
+            if !self.all_frequencies.is_empty() {
+                self.all_frequencies[0] = clamped_primary;
             }
             mb.reinit(&self.all_frequencies, sample_rate as f32, self.num_channels);
         }
@@ -295,6 +336,12 @@ impl Plugin for CrossoverPlugin {
 
     fn reset(&mut self) {
         self.crossover_2way.reset();
+        // Reset smoothers to their targets so that a mid-transition reset does not
+        // cause a click from the remaining interpolation step on the next block.
+        self.freq_smoother.reset(self.freq_smoother.target());
+        for s in &mut self.extra_freq_smoothers {
+            s.reset(s.target());
+        }
         if let Some(ref mut mb) = self.multiband {
             mb.reset();
         }
@@ -564,8 +611,9 @@ mod tests {
         )
         .unwrap();
 
-        // Compare RMS of input vs RMS of (low+high) over the settled region
-        let settle = 2000;
+        // Compare RMS of input vs RMS of (low+high) over the settled region.
+        // Use at least 5000 samples for settle to ensure the filter has fully settled.
+        let settle = 5000;
         let input_rms: f32 = (input[settle..].iter().map(|s| s * s).sum::<f32>()
             / (num_frames - settle) as f32)
             .sqrt();
@@ -581,7 +629,7 @@ mod tests {
 
         let ratio = sum_rms / input_rms;
         assert!(
-            (ratio - 1.0).abs() < 0.15,
+            (ratio - 1.0).abs() < 0.01,
             "RMS ratio should be near 1.0 (flat sum), got {}",
             ratio
         );
@@ -817,6 +865,208 @@ mod tests {
         assert!(
             has_signal,
             "Output should contain non-zero samples after frequency change"
+        );
+    }
+
+    // ── New tests for review fixes ─────────────────────────────────────────
+
+    /// §2.1: Setting 'frequency' to a value larger than the second crossover
+    /// point must not leave all_frequencies unsorted.
+    #[test]
+    fn test_all_frequencies_remain_sorted_after_primary_update() {
+        // 3-way: [500, 5000]
+        let mut p = CrossoverPlugin::new_multiway(1, "LR24", 500.0, "both", &[5000.0]).unwrap();
+        p.initialize(48000).unwrap();
+
+        // Move primary frequency above the second point — without the fix this
+        // would leave all_frequencies = [10000, 5000] (unsorted).
+        p.set_parameter(
+            ParameterId::from("frequency"),
+            ParameterValue::Float(10000.0),
+        )
+        .unwrap();
+
+        // Verify the vector is still in ascending order.
+        let freqs = p.all_frequencies.clone();
+        let mut sorted = freqs.clone();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_eq!(
+            freqs, sorted,
+            "all_frequencies must remain sorted after primary frequency change; got {:?}",
+            freqs
+        );
+
+        // Plugin must still produce finite output.
+        let num_frames = 1000;
+        let input: Vec<f32> = (0..num_frames).map(|i| (i as f32 * 0.1).sin()).collect();
+        let num_bands = p.num_bands();
+        let mut output = vec![0.0f32; num_frames * num_bands];
+        p.process(
+            &input,
+            &mut output,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames,
+            },
+        )
+        .unwrap();
+        assert!(output.iter().all(|s| s.is_finite()));
+    }
+
+    /// §2.1: Setting 'frequency_2' to a value smaller than 'frequency' must
+    /// also maintain sorted order.
+    #[test]
+    fn test_all_frequencies_remain_sorted_after_extra_freq_update() {
+        // 3-way: [500, 5000]
+        let mut p = CrossoverPlugin::new_multiway(1, "LR24", 500.0, "both", &[5000.0]).unwrap();
+        p.initialize(48000).unwrap();
+
+        // Move frequency_2 below the primary — without the fix this would leave
+        // all_frequencies = [500, 200] (unsorted).
+        p.set_parameter(
+            ParameterId::from("frequency_2"),
+            ParameterValue::Float(200.0),
+        )
+        .unwrap();
+
+        let freqs = p.all_frequencies.clone();
+        let mut sorted = freqs.clone();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_eq!(
+            freqs, sorted,
+            "all_frequencies must remain sorted after frequency_2 change; got {:?}",
+            freqs
+        );
+    }
+
+    /// §2.2: "frequency_1" must NOT be parsed as a valid extra-freq parameter.
+    #[test]
+    fn test_parse_extra_freq_index_rejects_idx_less_than_2() {
+        // "frequency_1" should return None — it is not a valid parameter.
+        assert_eq!(CrossoverPlugin::parse_extra_freq_index("frequency_1"), None);
+        assert_eq!(CrossoverPlugin::parse_extra_freq_index("frequency_0"), None);
+        // "frequency_2" must still map to smoother index 0.
+        assert_eq!(
+            CrossoverPlugin::parse_extra_freq_index("frequency_2"),
+            Some(0)
+        );
+        // "frequency_3" must map to smoother index 1.
+        assert_eq!(
+            CrossoverPlugin::parse_extra_freq_index("frequency_3"),
+            Some(1)
+        );
+    }
+
+    /// §4.1: Unsupported crossover type strings must return an error.
+    #[test]
+    fn test_unsupported_crossover_type_returns_error() {
+        let result = CrossoverPlugin::new(1, "LR12", 1000.0, "low");
+        assert!(
+            result.is_err(),
+            "LR12 crossover type must be rejected with an error"
+        );
+        let result2 = CrossoverPlugin::new(1, "BW18", 1000.0, "low");
+        assert!(
+            result2.is_err(),
+            "BW18 crossover type must be rejected with an error"
+        );
+        // Case-insensitive acceptance of the supported types.
+        assert!(CrossoverPlugin::new(1, "lr24", 1000.0, "low").is_ok());
+        assert!(CrossoverPlugin::new(1, "LR4", 1000.0, "low").is_ok());
+        assert!(CrossoverPlugin::new(1, "LR24", 1000.0, "low").is_ok());
+    }
+
+    /// §4.2: CrossoverMode::from_str must be case-insensitive (no allocation path).
+    #[test]
+    fn test_crossover_mode_from_str_is_case_insensitive() {
+        assert_eq!(
+            CrossoverMode::from_str("LOW"),
+            Ok(CrossoverMode::Lowpass)
+        );
+        assert_eq!(
+            CrossoverMode::from_str("Lowpass"),
+            Ok(CrossoverMode::Lowpass)
+        );
+        assert_eq!(
+            CrossoverMode::from_str("HP"),
+            Ok(CrossoverMode::Highpass)
+        );
+        assert_eq!(
+            CrossoverMode::from_str("BOTH"),
+            Ok(CrossoverMode::Both)
+        );
+    }
+
+    /// §4.3: reset() must snap smoothers to their targets to avoid a
+    /// click on the next block when a parameter was mid-transition.
+    #[test]
+    fn test_reset_snaps_smoothers_to_target() {
+        let mut p = CrossoverPlugin::new(1, "LR24", 1000.0, "low").unwrap();
+        p.initialize(48000).unwrap();
+
+        // Start a slow parameter transition (20 ms @ 48 kHz = ~960 samples to converge).
+        p.set_parameter(
+            ParameterId::from("frequency"),
+            ParameterValue::Float(5000.0),
+        )
+        .unwrap();
+
+        // Process only a few samples so the smoother is mid-transition.
+        let input = vec![0.0f32; 16];
+        let mut output = vec![0.0f32; 16];
+        p.process(
+            &input,
+            &mut output,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 16,
+            },
+        )
+        .unwrap();
+
+        // Reset must snap the smoother current to target.
+        p.reset();
+        let current = p.freq_smoother.current();
+        let target = p.freq_smoother.target();
+        assert_eq!(
+            current, target,
+            "After reset(), smoother current ({}) must equal target ({})",
+            current, target
+        );
+    }
+
+    /// §1.4: initialize() at a low sample rate must not produce NaN/Inf even
+    /// when the stored frequency exceeds Nyquist.
+    #[test]
+    fn test_initialize_clamps_frequency_to_nyquist() {
+        // At 32 kHz, Nyquist is 16 kHz. A crossover at 20 kHz exceeds it.
+        let mut p = CrossoverPlugin::new(1, "LR24", 20000.0, "low").unwrap();
+        p.initialize(32000).unwrap();
+
+        // The effective frequency must be below Nyquist.
+        let effective = p.freq_smoother.target();
+        assert!(
+            effective < 16000.0,
+            "Frequency must be clamped below Nyquist (16 kHz) at 32 kHz sample rate, got {}",
+            effective
+        );
+
+        // Output must be finite.
+        let num_frames = 1000;
+        let input = vec![1.0f32; num_frames];
+        let mut output = vec![0.0f32; num_frames];
+        p.process(
+            &input,
+            &mut output,
+            &ProcessContext {
+                sample_rate: 32000,
+                num_frames,
+            },
+        )
+        .unwrap();
+        assert!(
+            output.iter().all(|s| s.is_finite()),
+            "Output must be finite after initialize at low sample rate"
         );
     }
 }
