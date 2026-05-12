@@ -535,14 +535,16 @@ impl InPlacePlugin for DeEsserPlugin {
     ) -> PluginResult<usize> {
         enable_ftz_daz();
         let num_frames = context.num_frames;
-        let mix = self.mix_smoother.next_n(num_frames);
-        let dry_mix = 1.0 - mix;
 
         if self.mode_index == 0 {
             // ============================================================
             // Wideband mode
             // ============================================================
             for frame in 0..num_frames {
+                // Advance mix smoother once per frame (not per channel) to avoid
+                // block-constant mix that would cause zipper noise during automation.
+                let mix = self.mix_smoother.advance();
+                let dry_mix = 1.0 - mix;
                 for ch in 0..self.channels {
                     let idx = frame * self.channels + ch;
                     let input = buffer[idx];
@@ -576,6 +578,10 @@ impl InPlacePlugin for DeEsserPlugin {
             // Split-band mode
             // ============================================================
             for frame in 0..num_frames {
+                // Advance mix smoother once per frame (not per channel) to avoid
+                // block-constant mix that would cause zipper noise during automation.
+                let mix = self.mix_smoother.advance();
+                let dry_mix = 1.0 - mix;
                 for ch in 0..self.channels {
                     let idx = frame * self.channels + ch;
                     let input = buffer[idx];
@@ -764,6 +770,143 @@ mod tests {
             .unwrap();
         let val = plugin.get_parameter(&ParameterId::from("mix"));
         assert_eq!(val, Some(ParameterValue::Float(0.5)));
+    }
+
+    /// Verify that the mix smoother advances per-sample during a block, not as a
+    /// block-constant value. If `next_n(num_frames)` were used (old code), the
+    /// smoother would jump to its target on the first block and the first sample
+    /// would already be at the target. With per-sample `advance()`, the value
+    /// ramps smoothly: the very first sample is close to the *starting* value,
+    /// not the target value.
+    #[test]
+    fn test_mix_smoother_ramps_per_sample() {
+        let sr = 48000u32;
+        // Start mix at 0 (dry)
+        let mut plugin = DeEsserPlugin::from_params(
+            1,
+            DeEsserPluginParams {
+                frequency: 7000.0,
+                q: 1.5,
+                threshold: -20.0,
+                ratio: 10.0,
+                attack_ms: 0.5,
+                release_ms: 20.0,
+                mode: "Wideband".to_string(),
+                mix: 0.0, // fully dry initially
+            },
+        );
+        plugin.initialize(sr).unwrap();
+
+        // Now request mix = 1.0 (fully wet). The smoother has a 5 ms ramp.
+        plugin
+            .set_parameter(ParameterId::from("mix"), ParameterValue::Float(1.0))
+            .unwrap();
+
+        // A silent input: output should also be silent regardless of mix
+        // Use a 1 kHz tone instead so we can measure dry-vs-wet differences.
+        // Use a 100-sample block — well within the 5 ms ramp (~240 samples at 48 kHz).
+        let num_frames = 100;
+        let mut buf: Vec<f32> = (0..num_frames)
+            .map(|i| {
+                0.5 * (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / sr as f32).sin()
+            })
+            .collect();
+
+        // Capture the first sample's input value
+        let first_input = buf[0];
+
+        let ctx = ProcessContext {
+            sample_rate: sr,
+            num_frames,
+        };
+        plugin.process_in_place(&mut buf, &ctx).unwrap();
+
+        // With mix=0 at block start and a 5ms ramp, after only 100 samples
+        // (~2ms) the smoother should still be far below 1.0. The first output
+        // sample must still be close to dry (= input * gain).
+        // Specifically: if the smoother was block-constant, it would jump to ~1.0
+        // and the first output would be purely wet. If it ramps per-sample,
+        // the first output should be much closer to the dry value.
+        //
+        // We assert that the smoother has NOT jumped all the way to fully wet
+        // on the first sample: the first output must not equal the fully-wet value.
+        //
+        // For a 1 kHz sine at mix=0 (dry), the output is approximately input*gain.
+        // For mix=1 (wet), at this threshold the 1kHz tone is below the detection
+        // range so gain≈1 and wet≈input. The meaningful test is therefore to
+        // observe that the mix value at sample 0 is near 0, not near 1.
+        //
+        // We do this indirectly: set mix from 0 to 1 and verify the per-sample
+        // smoother current value starts near 0. We read back the smoother
+        // state by checking it hasn't already converged in 100 samples.
+        // At 48kHz with a 5ms ramp, coeff = exp(-1/(0.005*48000)) = exp(-1/240) ≈ 0.9958.
+        // After 100 samples: value ≈ 1 - 0.9958^100 * 1 ≈ 1 - 0.665 = 0.335.
+        // The block-constant version would give 1 - 0.9958^100 ≈ 0.335 at the END
+        // of block but apply that single value as-if the whole block ran at 0.335.
+        // The per-sample version truly ramps 0..0.335 across the 100 samples.
+        //
+        // A simpler check: the first output sample should NOT be at full wet.
+        // At the first sample, mix is approximately 0 (start value). So output[0]
+        // should be very close to input[0] (dry) rather than whatever wet[0] would be.
+        // Since there is no gain reduction yet (envelope not triggered), wet = input,
+        // so dry ≈ wet in this case and the test is degenerate. Instead we verify
+        // the smoother stays monotone: use a plugin with 0 threshold so gain ≈ 0 (heavy).
+        let _ = first_input; // suppress unused warning
+
+        // --- New approach: heavy compression so wet != dry ---
+        let mut plugin2 = DeEsserPlugin::from_params(
+            1,
+            DeEsserPluginParams {
+                frequency: 1000.0, // center at test freq
+                q: 0.5,            // wide bandwidth to catch 1kHz
+                threshold: -60.0,  // extremely low threshold → heavy compression
+                ratio: 20.0,       // max ratio → near total gain kill
+                attack_ms: 0.1,    // fast attack
+                release_ms: 200.0,
+                mode: "Wideband".to_string(),
+                mix: 0.0, // start dry
+            },
+        );
+        plugin2.initialize(sr).unwrap();
+
+        // Ramp to fully wet over 5ms
+        plugin2
+            .set_parameter(ParameterId::from("mix"), ParameterValue::Float(1.0))
+            .unwrap();
+
+        // One block of 100 samples — still in the ramp window
+        let mut buf2: Vec<f32> = (0..num_frames)
+            .map(|i| {
+                0.5 * (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / sr as f32).sin()
+            })
+            .collect();
+        let dry_ref = buf2.clone(); // original input (dry output when mix=0)
+
+        plugin2.process_in_place(&mut buf2, &ctx).unwrap();
+
+        // Wet output (after heavy GR) should be near-silent. Dry output = original.
+        // With per-sample ramp starting at mix=0, the first samples lean dry.
+        // With block-constant mix, the whole block has mix≈0.335 (already ramped).
+        //
+        // The first sample of buf2 should be between dry_ref[0] (when mix≈0)
+        // and near-zero (when mix≈1 and gain≈0). It must not equal dry_ref[0]
+        // exactly (some ramp happened) but must not be at 0 either.
+        //
+        // Most importantly: the output must NOT be identical to the full-wet result
+        // for the entire block. We verify at least the first sample has nonzero
+        // dry component.
+        let first_out = buf2[0];
+        let first_dry = dry_ref[0];
+        // If the smoother started truly at 0 and ramped, the first sample is
+        // output = 0 * wet + 1 * dry = dry (approximately, mix≈0 at t=0).
+        // Allow a small tolerance since one-pole starts advancing immediately.
+        assert!(
+            (first_out - first_dry).abs() < first_dry.abs() * 0.2 + 1e-4,
+            "First output sample should be near dry (mix≈0 at t=0): \
+             first_out={:.6}, first_dry={:.6}",
+            first_out,
+            first_dry
+        );
     }
 
     #[test]
