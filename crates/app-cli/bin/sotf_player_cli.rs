@@ -2064,10 +2064,9 @@ fn create_mono_to_stereo_plugin_config(args: &MonoToStereoArgs) -> Result<Plugin
         parameters: json!({
             "stereo_width": args.stereo_width,
             "haas_delay_ms": args.haas_delay_ms,
-            "enable_comp_eq": args.enable_comp_eq,
-            "comp_eq_depth_db": args.comp_eq_depth_db,
             "decor_low_hz": args.decor_low_hz,
             "decor_high_hz": args.decor_high_hz,
+            "freq_dependent": args.enable_comp_eq,
         }),
     })
 }
@@ -3516,11 +3515,9 @@ fn build_rack_mode_plugins(
                     plugin.settings = PluginSettings::MonoToStereo {
                         stereo_width: plugins.mono_to_stereo.stereo_width as f64,
                         haas_delay_ms: plugins.mono_to_stereo.haas_delay_ms as f64,
-                        enable_comp_eq: plugins.mono_to_stereo.enable_comp_eq,
-                        comp_eq_depth_db: plugins.mono_to_stereo.comp_eq_depth_db as f64,
                         decor_low_hz: plugins.mono_to_stereo.decor_low_hz as f64,
                         decor_high_hz: plugins.mono_to_stereo.decor_high_hz as f64,
-                        freq_dependent: true,
+                        freq_dependent: plugins.mono_to_stereo.enable_comp_eq,
                     };
                 }
                 log::info!("Rack: Added MonoToStereo plugin");
