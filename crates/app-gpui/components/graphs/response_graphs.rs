@@ -153,7 +153,8 @@ pub fn render_line_chart(
 
     // Add remaining series
     for s in series.iter().skip(1) {
-        chart = chart.add_series(
+        chart = chart.add_series_with_x(
+            &s.x_values,
             &s.y_values,
             Some(&s.label),
             s.color,

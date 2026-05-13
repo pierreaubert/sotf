@@ -115,6 +115,101 @@ pub struct RoomEqDropdowns {
     pub dragging_control_point: Option<usize>,
 }
 
+/// Per-graph controls in the RoomEQ review report.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RoomEqReviewGraphSettings {
+    pub smoothing_octaves: f64,
+    pub smoothing_open: bool,
+    pub y_axis_auto: bool,
+    pub show_trend: bool,
+    pub normalize_to_trend: bool,
+}
+
+impl RoomEqReviewGraphSettings {
+    pub fn spl_default() -> Self {
+        Self {
+            smoothing_octaves: 1.0 / 6.0,
+            smoothing_open: false,
+            y_axis_auto: false,
+            show_trend: false,
+            normalize_to_trend: false,
+        }
+    }
+
+    pub fn eq_default() -> Self {
+        Self {
+            smoothing_octaves: 0.0,
+            smoothing_open: false,
+            y_axis_auto: false,
+            show_trend: false,
+            normalize_to_trend: false,
+        }
+    }
+}
+
+impl Default for RoomEqReviewGraphSettings {
+    fn default() -> Self {
+        Self::spl_default()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RoomEqReviewGraphId {
+    OverviewOriginal,
+    OverviewEq,
+    OverviewCorrected,
+    ChannelFull,
+    ChannelZoom,
+    ChannelEq,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RoomEqReviewGraphSettingsSet {
+    pub overview_original: RoomEqReviewGraphSettings,
+    pub overview_eq: RoomEqReviewGraphSettings,
+    pub overview_corrected: RoomEqReviewGraphSettings,
+    pub channel_full: RoomEqReviewGraphSettings,
+    pub channel_zoom: RoomEqReviewGraphSettings,
+    pub channel_eq: RoomEqReviewGraphSettings,
+}
+
+impl RoomEqReviewGraphSettingsSet {
+    pub fn get(&self, id: RoomEqReviewGraphId) -> &RoomEqReviewGraphSettings {
+        match id {
+            RoomEqReviewGraphId::OverviewOriginal => &self.overview_original,
+            RoomEqReviewGraphId::OverviewEq => &self.overview_eq,
+            RoomEqReviewGraphId::OverviewCorrected => &self.overview_corrected,
+            RoomEqReviewGraphId::ChannelFull => &self.channel_full,
+            RoomEqReviewGraphId::ChannelZoom => &self.channel_zoom,
+            RoomEqReviewGraphId::ChannelEq => &self.channel_eq,
+        }
+    }
+
+    pub fn get_mut(&mut self, id: RoomEqReviewGraphId) -> &mut RoomEqReviewGraphSettings {
+        match id {
+            RoomEqReviewGraphId::OverviewOriginal => &mut self.overview_original,
+            RoomEqReviewGraphId::OverviewEq => &mut self.overview_eq,
+            RoomEqReviewGraphId::OverviewCorrected => &mut self.overview_corrected,
+            RoomEqReviewGraphId::ChannelFull => &mut self.channel_full,
+            RoomEqReviewGraphId::ChannelZoom => &mut self.channel_zoom,
+            RoomEqReviewGraphId::ChannelEq => &mut self.channel_eq,
+        }
+    }
+}
+
+impl Default for RoomEqReviewGraphSettingsSet {
+    fn default() -> Self {
+        Self {
+            overview_original: RoomEqReviewGraphSettings::spl_default(),
+            overview_eq: RoomEqReviewGraphSettings::eq_default(),
+            overview_corrected: RoomEqReviewGraphSettings::spl_default(),
+            channel_full: RoomEqReviewGraphSettings::spl_default(),
+            channel_zoom: RoomEqReviewGraphSettings::spl_default(),
+            channel_eq: RoomEqReviewGraphSettings::eq_default(),
+        }
+    }
+}
+
 impl Default for RoomEqDropdowns {
     fn default() -> Self {
         Self {
@@ -226,6 +321,8 @@ pub struct RoomEqState {
     pub review_chart_state: Option<InteractiveChartStateWrapper>,
     /// Whether to auto-scale Y axis for review graph.
     pub review_y_axis_auto: bool,
+    /// Per-graph controls used by the Python-style RoomEQ report charts.
+    pub review_graph_settings: RoomEqReviewGraphSettingsSet,
     /// Interactive chart state for progress chart (zoom/pan) - initialized lazily
     pub progress_chart_state: Option<InteractiveChartStateWrapper>,
     /// Custom target curve for manual entry mode
@@ -291,10 +388,11 @@ impl Default for RoomEqState {
             dropdowns: RoomEqDropdowns::default(),
             status_message: String::new(),
             error_message: None,
-            review_smoothing_octaves: 1.0, // Default to 1 octave smoothing
+            review_smoothing_octaves: 1.0 / 6.0, // Match display-roomeq.py default
             review_selected_channel: 0,
             review_chart_state: None,
-            review_y_axis_auto: true,
+            review_y_axis_auto: false,
+            review_graph_settings: RoomEqReviewGraphSettingsSet::default(),
             progress_chart_state: None,
             custom_target_curve: CustomTargetCurve::new_flat(),
             show_advanced_config: false,

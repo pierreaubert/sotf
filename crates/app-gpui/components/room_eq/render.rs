@@ -1,3 +1,4 @@
+use crate::app::types::room_eq::RoomEqReviewGraphSettings;
 use crate::components::design::Ds;
 use crate::components::graphs::common::render_empty_state;
 use crate::components::icons::IconName;
@@ -5,9 +6,26 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, StackSpacing, Text, TextSize, TextWeight, VStack,
+    Button, ButtonSize, ButtonVariant, HStack, StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 use sotf_audio::signal_analysis as dsp;
+use std::collections::BTreeSet;
+
+const ROOM_EQ_PYTHON_DEFAULT_SMOOTHING_OCTAVES: f64 = 1.0 / 6.0;
+const ROOM_EQ_CHANNEL_COLORS: [u32; 10] = [
+    0x1f77b4, // blue
+    0xff7f0e, // orange
+    0x2ca02c, // green
+    0xd62728, // red
+    0x9467bd, // purple
+    0x8c564b, // brown
+    0xe377c2, // pink
+    0x7f7f7f, // gray
+    0xbcbd22, // olive
+    0x17becf, // cyan
+];
+
+const ROOM_EQ_DRIVER_OPACITIES: [f32; 4] = [1.0, 0.78, 0.58, 0.42];
 
 /// Whether the Review step should render the per-filter plot for a
 /// channel result.
@@ -44,7 +62,7 @@ pub fn is_room_eq_sub_or_lfe_channel(channel_name: &str) -> bool {
 
 pub fn room_eq_passband_trend_fit_domain(freqs: &[f64], values: &[f64]) -> Option<(f64, f64)> {
     const PASSBAND_DROP_DB: f64 = 3.0;
-    const LOG_INSET_FRACTION: f64 = 0.20;
+    const LOG_INSET_FRACTION: f64 = 0.10;
 
     let points: Vec<(f64, f64)> = freqs
         .iter()
@@ -231,12 +249,2405 @@ pub fn sum_room_eq_responses_db(
                 let im = main_amp * main_phase.sin() + sub_amp * sub_phase.sin();
                 20.0 * re.hypot(im).max(1.0e-12).log10()
             } else {
-                let power = 10.0_f64.powf(main_db / 10.0) + 10.0_f64.powf(sub_db / 10.0);
-                10.0 * power.max(1.0e-24).log10()
+                let main_amp = 10.0_f64.powf(main_db / 20.0);
+                let sub_amp = 10.0_f64.powf(sub_db / 20.0);
+                20.0 * (main_amp + sub_amp).max(1.0e-12).log10()
             };
             (f, sum_db)
         })
         .collect()
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RoomEqReportCurve {
+    pub freq: Vec<f64>,
+    pub spl: Vec<f64>,
+    pub phase: Option<Vec<f64>>,
+}
+
+impl RoomEqReportCurve {
+    fn is_empty(&self) -> bool {
+        self.freq.is_empty() || self.spl.is_empty()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RoomEqReportIr {
+    pub time_ms: Vec<f64>,
+    pub amplitude: Vec<f64>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RoomEqReportDriverCurve {
+    pub driver_name: String,
+    pub curve: RoomEqReportCurve,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RoomEqReportFilter {
+    pub filter_type: String,
+    pub freq: f64,
+    pub q: f64,
+    pub db_gain: f64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RoomEqReportEqPass {
+    pub label: String,
+    pub display_name: String,
+    pub color: u32,
+    pub filters: Vec<RoomEqReportFilter>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RoomEqReportEpaScore {
+    pub preference: f64,
+    pub evaluation: f64,
+    pub potency: f64,
+    pub activity: f64,
+    pub sharpness_acum: f64,
+    pub roughness: f64,
+    pub total_loudness_sone: f64,
+    pub loudness_balance: f64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RoomEqReportEpaComparison {
+    pub pre: RoomEqReportEpaScore,
+    pub post: RoomEqReportEpaScore,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RoomEqReportBassRoute {
+    pub source_channel: String,
+    pub destination: String,
+    pub route_kind: String,
+    pub group_id: Option<String>,
+    pub crossover_type: String,
+    pub high_pass_hz: Option<f64>,
+    pub low_pass_hz: Option<f64>,
+    pub gain_db: f64,
+    pub matrix_gain: f64,
+    pub delay_ms: f64,
+    pub polarity_inverted: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RoomEqReportBassGroup {
+    pub group_id: String,
+    pub roles: Vec<String>,
+    pub crossover_type: String,
+    pub selected_crossover_hz: Option<f64>,
+    pub main_delay_ms: f64,
+    pub bass_route_delay_ms: f64,
+    pub polarity_inverted: bool,
+    pub trim_db: f64,
+    pub advisories: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RoomEqReportBassSubOutput {
+    pub output_role: String,
+    pub strategy_source: String,
+    pub gain_db: f64,
+    pub delay_ms: f64,
+    pub polarity_inverted: bool,
+    pub headroom_contribution_db: f64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RoomEqReportBassHeadroomOutput {
+    pub output_role: String,
+    pub rms_bus_gain_db: f64,
+    pub coherent_peak_gain_db: f64,
+    pub lfe_contribution_db: f64,
+    pub margin_db: f64,
+    pub worst_frequency_hz: f64,
+    pub pass: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RoomEqReportBassHeadroom {
+    pub model: String,
+    pub headroom_margin_db: f64,
+    pub pass: bool,
+    pub margin_db: f64,
+    pub worst_frequency_hz: f64,
+    pub per_output: Vec<RoomEqReportBassHeadroomOutput>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RoomEqReportBassManagement {
+    pub enabled: bool,
+    pub crossover_type: String,
+    pub crossover_frequency_hz: Option<f64>,
+    pub lfe_playback_gain_db: f64,
+    pub applied_sub_gain_db: Option<f64>,
+    pub input_channels: Vec<String>,
+    pub output_channels: Vec<String>,
+    pub physical_outputs: Vec<String>,
+    pub route_count: usize,
+    pub advisory: String,
+    pub advisories: Vec<String>,
+    pub routes: Vec<RoomEqReportBassRoute>,
+    pub groups: Vec<RoomEqReportBassGroup>,
+    pub sub_outputs: Vec<RoomEqReportBassSubOutput>,
+    pub headroom: Option<RoomEqReportBassHeadroom>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RoomEqReportChannel {
+    pub name: String,
+    pub initial_curve: Option<RoomEqReportCurve>,
+    pub final_curve: Option<RoomEqReportCurve>,
+    pub eq_response: Option<RoomEqReportCurve>,
+    pub target_curve: Option<RoomEqReportCurve>,
+    pub pre_ir: Option<RoomEqReportIr>,
+    pub post_ir: Option<RoomEqReportIr>,
+    pub driver_initial_curves: Vec<RoomEqReportDriverCurve>,
+    pub eq_passes: Vec<RoomEqReportEqPass>,
+    pub epa: Option<RoomEqReportEpaComparison>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RoomEqReportData {
+    pub version: String,
+    pub pre_score: Option<f64>,
+    pub post_score: Option<f64>,
+    pub algorithm: Option<String>,
+    pub loss_type: Option<String>,
+    pub iterations: Option<usize>,
+    pub timestamp: Option<String>,
+    pub epa_preference_avg: Option<(f64, f64)>,
+    pub bass_management: Option<RoomEqReportBassManagement>,
+    pub channels: Vec<RoomEqReportChannel>,
+}
+
+#[derive(Clone)]
+struct RoomEqChartSeries {
+    channel_name: Option<String>,
+    label: String,
+    curve: RoomEqReportCurve,
+    color: u32,
+    stroke_width: f32,
+    opacity: f32,
+}
+
+pub fn room_eq_python_default_smoothing_octaves() -> f64 {
+    ROOM_EQ_PYTHON_DEFAULT_SMOOTHING_OCTAVES
+}
+
+pub fn room_eq_channel_sort_key(channel_name: &str) -> (u16, String) {
+    const CHANNEL_ORDER: &[(&str, u16)] = &[
+        ("L", 10),
+        ("LEFT", 10),
+        ("R", 20),
+        ("RIGHT", 20),
+        ("C", 30),
+        ("CENTER", 30),
+        ("LFE", 40),
+        ("SUB", 40),
+        ("SUBWOOFER", 40),
+        ("LFE1", 41),
+        ("LFE2", 42),
+        ("SL", 50),
+        ("SURROUND LEFT", 50),
+        ("LS", 50),
+        ("SR", 60),
+        ("SURROUND RIGHT", 60),
+        ("RS", 60),
+        ("SBL", 70),
+        ("SURROUND BACK LEFT", 70),
+        ("LBS", 70),
+        ("LB", 70),
+        ("SBR", 80),
+        ("SURROUND BACK RIGHT", 80),
+        ("RBS", 80),
+        ("RB", 80),
+        ("FHL", 90),
+        ("FRONT HEIGHT LEFT", 90),
+        ("FHR", 100),
+        ("FRONT HEIGHT RIGHT", 100),
+        ("BHL", 110),
+        ("BACK HEIGHT LEFT", 110),
+        ("BHR", 120),
+        ("BACK HEIGHT RIGHT", 120),
+    ];
+
+    let upper = channel_name.to_ascii_uppercase();
+    if let Some((_, order)) = CHANNEL_ORDER.iter().find(|(key, _)| upper == *key) {
+        return (*order, channel_name.to_string());
+    }
+
+    for (key, order) in CHANNEL_ORDER {
+        if upper.starts_with(key)
+            && (upper.len() == key.len()
+                || upper[key.len()..]
+                    .chars()
+                    .next()
+                    .is_some_and(|ch| !ch.is_alphanumeric()))
+        {
+            return (*order, channel_name.to_string());
+        }
+    }
+
+    (1000, channel_name.to_string())
+}
+
+pub fn room_eq_report_data_from_dsp_output(
+    output: &autoeq::roomeq::DspChainOutput,
+) -> RoomEqReportData {
+    let mut channels: Vec<RoomEqReportChannel> = output
+        .channels
+        .iter()
+        .map(|(map_name, chain)| {
+            let name = if chain.channel.is_empty() {
+                map_name.clone()
+            } else {
+                chain.channel.clone()
+            };
+            let driver_initial_curves = chain
+                .drivers
+                .as_deref()
+                .unwrap_or_default()
+                .iter()
+                .filter_map(|driver| {
+                    driver.initial_curve.as_ref().and_then(|curve| {
+                        room_eq_report_curve_from_curve_data(curve).map(|curve| {
+                            RoomEqReportDriverCurve {
+                                driver_name: driver.name.clone(),
+                                curve,
+                            }
+                        })
+                    })
+                })
+                .collect();
+
+            let epa = output
+                .metadata
+                .as_ref()
+                .and_then(|metadata| metadata.epa_per_channel.as_ref())
+                .and_then(|per_channel| per_channel.get(&name))
+                .map(room_eq_report_epa_comparison_from_metrics);
+
+            RoomEqReportChannel {
+                name,
+                initial_curve: chain
+                    .initial_curve
+                    .as_ref()
+                    .and_then(room_eq_report_curve_from_curve_data),
+                final_curve: chain
+                    .final_curve
+                    .as_ref()
+                    .and_then(room_eq_report_curve_from_curve_data),
+                eq_response: chain
+                    .eq_response
+                    .as_ref()
+                    .and_then(room_eq_report_curve_from_curve_data),
+                target_curve: chain
+                    .target_curve
+                    .as_ref()
+                    .and_then(room_eq_report_curve_from_curve_data),
+                pre_ir: chain
+                    .pre_ir
+                    .as_ref()
+                    .and_then(room_eq_report_ir_from_waveform),
+                post_ir: chain
+                    .post_ir
+                    .as_ref()
+                    .and_then(room_eq_report_ir_from_waveform),
+                driver_initial_curves,
+                eq_passes: room_eq_report_eq_passes_from_plugins(&chain.plugins),
+                epa,
+            }
+        })
+        .collect();
+    channels.sort_by_key(|channel| room_eq_channel_sort_key(&channel.name));
+
+    let metadata = output.metadata.as_ref();
+    RoomEqReportData {
+        version: output.version.clone(),
+        pre_score: metadata.map(|m| m.pre_score),
+        post_score: metadata.map(|m| m.post_score),
+        algorithm: metadata.map(|m| m.algorithm.clone()),
+        loss_type: metadata.and_then(|m| m.loss_type.clone()),
+        iterations: metadata.map(|m| m.iterations),
+        timestamp: metadata.map(|m| m.timestamp.clone()),
+        epa_preference_avg: metadata.and_then(room_eq_report_epa_preference_avg),
+        bass_management: metadata
+            .and_then(|m| m.bass_management.as_ref())
+            .map(room_eq_report_bass_management_from_report),
+        channels,
+    }
+}
+
+pub fn room_eq_report_channel_has_renderable_data(channel: &RoomEqReportChannel) -> bool {
+    channel.initial_curve.is_some()
+        || channel.final_curve.is_some()
+        || channel.eq_response.is_some()
+        || channel.pre_ir.is_some()
+        || channel.post_ir.is_some()
+        || !channel.eq_passes.is_empty()
+        || channel.epa.is_some()
+}
+
+fn room_eq_report_curve_from_curve_data(
+    curve: &autoeq::roomeq::CurveData,
+) -> Option<RoomEqReportCurve> {
+    let mut points = Vec::<(f64, f64)>::new();
+    let mut phase_values = curve.phase.as_ref().map(|_| Vec::<f64>::new());
+
+    for (idx, (&freq, &spl)) in curve.freq.iter().zip(curve.spl.iter()).enumerate() {
+        if freq.is_finite() && freq > 0.0 && spl.is_finite() {
+            points.push((freq, spl));
+            if let (Some(source_phase), Some(out_phase)) =
+                (curve.phase.as_ref(), phase_values.as_mut())
+            {
+                if let Some(&phase) = source_phase.get(idx)
+                    && phase.is_finite()
+                {
+                    out_phase.push(phase);
+                } else {
+                    phase_values = None;
+                }
+            }
+        }
+    }
+
+    let phase = phase_values.filter(|phase| phase.len() == points.len());
+    (!points.is_empty()).then(|| RoomEqReportCurve {
+        freq: points.iter().map(|(freq, _)| *freq).collect(),
+        spl: points.iter().map(|(_, spl)| *spl).collect(),
+        phase,
+    })
+}
+
+fn room_eq_report_ir_from_waveform(ir: &autoeq::roomeq::IrWaveform) -> Option<RoomEqReportIr> {
+    let points: Vec<(f64, f64)> = ir
+        .time_ms
+        .iter()
+        .zip(ir.amplitude.iter())
+        .filter_map(|(&time_ms, &amplitude)| {
+            (time_ms.is_finite() && amplitude.is_finite()).then_some((time_ms, amplitude))
+        })
+        .collect();
+    (!points.is_empty()).then(|| RoomEqReportIr {
+        time_ms: points.iter().map(|(time_ms, _)| *time_ms).collect(),
+        amplitude: points.iter().map(|(_, amplitude)| *amplitude).collect(),
+    })
+}
+
+fn room_eq_report_eq_passes_from_plugins(
+    plugins: &[autoeq::roomeq::PluginConfigWrapper],
+) -> Vec<RoomEqReportEqPass> {
+    plugins
+        .iter()
+        .filter(|plugin| plugin.plugin_type == "eq")
+        .filter_map(|plugin| {
+            let label = plugin
+                .parameters
+                .get("label")
+                .and_then(|value| value.as_str())
+                .unwrap_or("")
+                .to_string();
+            let filters = plugin
+                .parameters
+                .get("filters")
+                .or_else(|| plugin.parameters.get("filter"))
+                .and_then(|value| value.as_array())
+                .map(|filters| {
+                    filters
+                        .iter()
+                        .filter_map(room_eq_report_filter_from_json)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            (!filters.is_empty()).then(|| RoomEqReportEqPass {
+                display_name: room_eq_report_pass_display_name(&label).to_string(),
+                color: room_eq_report_pass_color(&label),
+                label,
+                filters,
+            })
+        })
+        .collect()
+}
+
+fn room_eq_report_filter_from_json(value: &serde_json::Value) -> Option<RoomEqReportFilter> {
+    let filter_type = value
+        .get("filter_type")
+        .or_else(|| value.get("type"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("peak")
+        .to_string();
+    let freq = value
+        .get("freq")
+        .or_else(|| value.get("frequency"))
+        .and_then(|value| value.as_f64())?;
+    let q = value
+        .get("q")
+        .and_then(|value| value.as_f64())
+        .unwrap_or(1.0);
+    let db_gain = value
+        .get("db_gain")
+        .or_else(|| value.get("gain_db"))
+        .or_else(|| value.get("gain"))
+        .and_then(|value| value.as_f64())
+        .unwrap_or(0.0);
+    Some(RoomEqReportFilter {
+        filter_type,
+        freq,
+        q,
+        db_gain,
+    })
+}
+
+fn room_eq_report_pass_display_name(label: &str) -> &'static str {
+    match label {
+        "cea2034_speaker_correction" => "Pass 1: Speaker Correction (CEA2034)",
+        "room_eq_correction" => "Pass 2: Room EQ",
+        "user_preference" => "Pass 3: User Preference",
+        _ => "Room EQ",
+    }
+}
+
+fn room_eq_report_pass_color(label: &str) -> u32 {
+    match label {
+        "cea2034_speaker_correction" => 0xffa500,
+        "room_eq_correction" => 0x6464ff,
+        "user_preference" => 0xb464ff,
+        _ => 0x6464ff,
+    }
+}
+
+fn room_eq_report_epa_score_from_score(
+    score: &autoeq::loss::epa::score::EpaScore,
+) -> RoomEqReportEpaScore {
+    RoomEqReportEpaScore {
+        preference: score.preference,
+        evaluation: score.evaluation,
+        potency: score.potency,
+        activity: score.activity,
+        sharpness_acum: score.sharpness_acum,
+        roughness: score.roughness,
+        total_loudness_sone: score.total_loudness_sone,
+        loudness_balance: score.loudness_balance,
+    }
+}
+
+fn room_eq_report_epa_comparison_from_metrics(
+    metrics: &autoeq::roomeq::EpaChannelMetrics,
+) -> RoomEqReportEpaComparison {
+    RoomEqReportEpaComparison {
+        pre: room_eq_report_epa_score_from_score(&metrics.pre),
+        post: room_eq_report_epa_score_from_score(&metrics.post),
+    }
+}
+
+fn room_eq_report_epa_preference_avg(
+    metadata: &autoeq::roomeq::OptimizationMetadata,
+) -> Option<(f64, f64)> {
+    let per_channel = metadata.epa_per_channel.as_ref()?;
+    if per_channel.is_empty() {
+        return None;
+    }
+    let mut pre_sum = 0.0;
+    let mut post_sum = 0.0;
+    let mut pre_count = 0.0;
+    let mut post_count = 0.0;
+    for metrics in per_channel.values() {
+        pre_sum += metrics.pre.preference;
+        pre_count += 1.0;
+        post_sum += metrics.post.preference;
+        post_count += 1.0;
+    }
+    (pre_count > 0.0 && post_count > 0.0).then_some((pre_sum / pre_count, post_sum / post_count))
+}
+
+fn room_eq_report_bass_management_from_report(
+    report: &autoeq::roomeq::BassManagementReport,
+) -> RoomEqReportBassManagement {
+    let routes = report
+        .routing_graph
+        .as_ref()
+        .map(|graph| {
+            graph
+                .routes
+                .iter()
+                .map(|route| RoomEqReportBassRoute {
+                    source_channel: route.source_channel.clone(),
+                    destination: route.destination.clone(),
+                    route_kind: route.route_kind.clone(),
+                    group_id: route.group_id.clone(),
+                    crossover_type: route.crossover_type.clone(),
+                    high_pass_hz: route.high_pass_hz,
+                    low_pass_hz: route.low_pass_hz,
+                    gain_db: route.gain_db,
+                    matrix_gain: route.matrix_gain,
+                    delay_ms: route.delay_ms,
+                    polarity_inverted: route.polarity_inverted,
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let mut physical_outputs: BTreeSet<String> = routes
+        .iter()
+        .filter(|route| {
+            matches!(
+                route.route_kind.as_str(),
+                "redirected_bass_lowpass_to_sub" | "lfe_lowpass_to_sub"
+            )
+        })
+        .map(|route| route.destination.clone())
+        .collect();
+    if physical_outputs.is_empty() && !report.physical_sub_output.is_empty() {
+        physical_outputs.insert(report.physical_sub_output.clone());
+    }
+
+    let mut advisories: BTreeSet<String> = BTreeSet::new();
+    if !report.advisory.is_empty() && report.advisory != "ok" {
+        advisories.insert(report.advisory.clone());
+    }
+    if let Some(graph) = report.routing_graph.as_ref() {
+        advisories.extend(
+            graph
+                .advisories
+                .iter()
+                .filter(|item| !item.is_empty() && item.as_str() != "ok")
+                .cloned(),
+        );
+    }
+
+    let groups = if report.groups.is_empty() {
+        report
+            .optimization
+            .as_ref()
+            .map(|opt| opt.group_results.as_slice())
+            .unwrap_or_default()
+    } else {
+        report.groups.as_slice()
+    };
+    let sub_outputs = if report.sub_outputs.is_empty() {
+        report
+            .optimization
+            .as_ref()
+            .map(|opt| opt.sub_output_results.as_slice())
+            .unwrap_or_default()
+    } else {
+        report.sub_outputs.as_slice()
+    };
+
+    RoomEqReportBassManagement {
+        enabled: report.enabled,
+        crossover_type: report.crossover_type.clone(),
+        crossover_frequency_hz: report.crossover_frequency_hz,
+        lfe_playback_gain_db: report.lfe_playback_gain_db,
+        applied_sub_gain_db: report.applied_sub_gain_db,
+        input_channels: report
+            .routing_graph
+            .as_ref()
+            .map(|graph| graph.input_channels.clone())
+            .unwrap_or_default(),
+        output_channels: report
+            .routing_graph
+            .as_ref()
+            .map(|graph| graph.output_channels.clone())
+            .unwrap_or_default(),
+        physical_outputs: physical_outputs.into_iter().collect(),
+        route_count: routes.len(),
+        advisory: report.advisory.clone(),
+        advisories: advisories.into_iter().collect(),
+        routes,
+        groups: groups
+            .iter()
+            .map(|group| RoomEqReportBassGroup {
+                group_id: group.group_id.clone(),
+                roles: group.roles.clone(),
+                crossover_type: group.crossover_type.clone(),
+                selected_crossover_hz: group.selected_crossover_hz,
+                main_delay_ms: group.main_delay_ms,
+                bass_route_delay_ms: group.bass_route_delay_ms,
+                polarity_inverted: group.polarity_inverted,
+                trim_db: group.trim_db,
+                advisories: group
+                    .advisories
+                    .iter()
+                    .filter(|item| !item.is_empty() && item.as_str() != "ok")
+                    .cloned()
+                    .collect(),
+            })
+            .collect(),
+        sub_outputs: sub_outputs
+            .iter()
+            .map(|output| RoomEqReportBassSubOutput {
+                output_role: output.output_role.clone(),
+                strategy_source: output.strategy_source.clone(),
+                gain_db: output.gain_db,
+                delay_ms: output.delay_ms,
+                polarity_inverted: output.polarity_inverted,
+                headroom_contribution_db: output.headroom_contribution_db,
+            })
+            .collect(),
+        headroom: report
+            .headroom_simulation
+            .as_ref()
+            .map(|headroom| RoomEqReportBassHeadroom {
+                model: headroom.model.clone(),
+                headroom_margin_db: headroom.headroom_margin_db,
+                pass: headroom.pass,
+                margin_db: headroom.margin_db,
+                worst_frequency_hz: headroom.worst_frequency_hz,
+                per_output: headroom
+                    .per_output
+                    .iter()
+                    .map(|output| RoomEqReportBassHeadroomOutput {
+                        output_role: output.output_role.clone(),
+                        rms_bus_gain_db: output.rms_bus_gain_db,
+                        coherent_peak_gain_db: output.coherent_peak_gain_db,
+                        lfe_contribution_db: output.lfe_contribution_db,
+                        margin_db: output.margin_db,
+                        worst_frequency_hz: output.worst_frequency_hz,
+                        pass: output.pass,
+                    })
+                    .collect(),
+            }),
+    }
+}
+
+pub fn room_eq_report_y_range<'a>(
+    curves: impl IntoIterator<Item = Option<&'a RoomEqReportCurve>>,
+) -> (f64, f64) {
+    let mut max_spl = f64::NEG_INFINITY;
+    for curve in curves.into_iter().flatten() {
+        for &spl in &curve.spl {
+            if spl.is_finite() {
+                max_spl = max_spl.max(spl);
+            }
+        }
+    }
+
+    if !max_spl.is_finite() {
+        return (-20.0, 30.0);
+    }
+
+    let upper = (max_spl / 5.0).ceil() * 5.0;
+    (upper - 50.0, upper)
+}
+
+pub fn room_eq_report_eq_y_range<'a>(
+    curves: impl IntoIterator<Item = Option<&'a RoomEqReportCurve>>,
+) -> (f64, f64) {
+    let mut min_spl = f64::INFINITY;
+    let mut max_spl = f64::NEG_INFINITY;
+    for curve in curves.into_iter().flatten() {
+        for &spl in &curve.spl {
+            if spl.is_finite() {
+                min_spl = min_spl.min(spl);
+                max_spl = max_spl.max(spl);
+            }
+        }
+    }
+
+    if !min_spl.is_finite() || !max_spl.is_finite() {
+        return (-15.0, 15.0);
+    }
+
+    let upper = ((max_spl / 5.0).ceil() * 5.0 + 5.0).min(20.0);
+    let lower = ((min_spl / 5.0).floor() * 5.0 - 5.0).max(-20.0);
+    if upper <= lower {
+        (lower, lower + 1.0)
+    } else {
+        (lower, upper)
+    }
+}
+
+pub(crate) fn render_room_eq_report_summary(
+    d: Ds,
+    report: &RoomEqReportData,
+    theme: &crate::theme::Theme,
+) -> impl IntoElement {
+    let improvement = report
+        .pre_score
+        .zip(report.post_score)
+        .map(|(pre, post)| pre - post);
+
+    div()
+        .p(d.card)
+        .w_full()
+        .bg(theme.surface)
+        .rounded(d.r_lg)
+        .border_1()
+        .border_color(theme.border)
+        .child(
+            VStack::new()
+                .spacing(StackSpacing::Sm)
+                .child(
+                    Text::new("Optimization Summary")
+                        .weight(TextWeight::Semibold)
+                        .size(TextSize::Sm)
+                        .color(theme.text_primary),
+                )
+                .child(
+                    div()
+                        .grid()
+                        .grid_cols(4)
+                        .gap(d.gap_md)
+                        .child(render_room_eq_stat_item("Version", &report.version, theme))
+                        .child(render_room_eq_stat_item(
+                            "Algorithm",
+                            report.algorithm.as_deref().unwrap_or("N/A"),
+                            theme,
+                        ))
+                        .child(render_room_eq_stat_item(
+                            "Loss function",
+                            report.loss_type.as_deref().unwrap_or("N/A"),
+                            theme,
+                        ))
+                        .child(render_room_eq_stat_item(
+                            "Iterations",
+                            &report
+                                .iterations
+                                .map(|value| value.to_string())
+                                .unwrap_or_else(|| "N/A".to_string()),
+                            theme,
+                        ))
+                        .child(render_room_eq_stat_item(
+                            "Score Before",
+                            &fmt_optional_number(report.pre_score, "{:.2}"),
+                            theme,
+                        ))
+                        .child(render_room_eq_stat_item(
+                            "Score After",
+                            &fmt_optional_number(report.post_score, "{:.2}"),
+                            theme,
+                        ))
+                        .child(render_room_eq_colored_stat_item(
+                            "Improvement",
+                            &fmt_optional_number(improvement, "{:.2}"),
+                            improvement.map(|v| v >= 0.0).unwrap_or(true),
+                            theme,
+                        ))
+                        .child(render_room_eq_stat_item(
+                            "Timestamp",
+                            report.timestamp.as_deref().unwrap_or("N/A"),
+                            theme,
+                        )),
+                )
+                .when_some(report.epa_preference_avg, |el, (pre, post)| {
+                    let delta = post - pre;
+                    el.child(render_room_eq_colored_stat_item(
+                        "EPA Preference (avg)",
+                        &format!("{pre:.2} -> {post:.2} ({delta:+.2})"),
+                        delta >= 0.0,
+                        theme,
+                    ))
+                }),
+        )
+        .into_any_element()
+}
+
+pub(crate) fn render_room_eq_bass_management_report(
+    d: Ds,
+    bass: &RoomEqReportBassManagement,
+    theme: &crate::theme::Theme,
+) -> impl IntoElement {
+    div()
+        .p(d.card)
+        .w_full()
+        .bg(theme.surface)
+        .rounded(d.r_lg)
+        .border_1()
+        .border_color(theme.success)
+        .child(
+            VStack::new()
+                .spacing(StackSpacing::Md)
+                .child(
+                    Text::new("Bass Management")
+                        .weight(TextWeight::Semibold)
+                        .size(TextSize::Sm)
+                        .color(theme.text_primary),
+                )
+                .child(
+                    div()
+                        .grid()
+                        .grid_cols(4)
+                        .gap(d.gap_md)
+                        .child(render_room_eq_stat_item(
+                            "Enabled",
+                            if bass.enabled { "yes" } else { "no" },
+                            theme,
+                        ))
+                        .child(render_room_eq_stat_item(
+                            "Crossover",
+                            &format!(
+                                "{} @ {}",
+                                bass.crossover_type,
+                                fmt_optional_hz(bass.crossover_frequency_hz)
+                            ),
+                            theme,
+                        ))
+                        .child(render_room_eq_stat_item(
+                            "LFE gain",
+                            &fmt_db(bass.lfe_playback_gain_db),
+                            theme,
+                        ))
+                        .child(render_room_eq_stat_item(
+                            "Shared sub gain",
+                            &fmt_optional_db(bass.applied_sub_gain_db),
+                            theme,
+                        ))
+                        .child(render_room_eq_stat_item(
+                            "Physical bass outputs",
+                            &if bass.physical_outputs.is_empty() {
+                                "-".to_string()
+                            } else {
+                                bass.physical_outputs.join(", ")
+                            },
+                            theme,
+                        ))
+                        .child(render_room_eq_stat_item(
+                            "Route count",
+                            &bass.route_count.to_string(),
+                            theme,
+                        ))
+                        .child(render_room_eq_stat_item(
+                            "Graph mode",
+                            if bass.route_count > 0 {
+                                "route branches"
+                            } else {
+                                "linear / none"
+                            },
+                            theme,
+                        )),
+                )
+                .when(!bass.advisories.is_empty(), |el| {
+                    el.child(
+                        Text::new(bass.advisories.join("; "))
+                            .size(TextSize::Xs)
+                            .color(theme.warning),
+                    )
+                })
+                .when(!bass.routes.is_empty(), |el| {
+                    el.child(render_room_eq_bass_routing_chart(bass, theme))
+                        .child(render_room_eq_bass_routes_table(d, bass, theme))
+                })
+                .when_some(bass.headroom.as_ref(), |el, headroom| {
+                    el.child(render_room_eq_bass_headroom_chart(headroom, theme))
+                })
+                .when(!bass.groups.is_empty(), |el| {
+                    el.child(render_room_eq_bass_groups_table(d, bass, theme))
+                })
+                .when(!bass.sub_outputs.is_empty(), |el| {
+                    el.child(render_room_eq_bass_sub_outputs_table(d, bass, theme))
+                }),
+        )
+        .into_any_element()
+}
+
+fn render_room_eq_stat_item(
+    label: &str,
+    value: &str,
+    theme: &crate::theme::Theme,
+) -> gpui::AnyElement {
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(2.0))
+        .child(
+            Text::new(label.to_string())
+                .size(TextSize::Xs)
+                .weight(TextWeight::Semibold)
+                .color(theme.text_secondary),
+        )
+        .child(
+            Text::new(value.to_string())
+                .size(TextSize::Sm)
+                .color(theme.text_primary),
+        )
+        .into_any_element()
+}
+
+fn render_room_eq_colored_stat_item(
+    label: &str,
+    value: &str,
+    positive: bool,
+    theme: &crate::theme::Theme,
+) -> gpui::AnyElement {
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(2.0))
+        .child(
+            Text::new(label.to_string())
+                .size(TextSize::Xs)
+                .weight(TextWeight::Semibold)
+                .color(theme.text_secondary),
+        )
+        .child(
+            Text::new(value.to_string())
+                .size(TextSize::Sm)
+                .weight(TextWeight::Semibold)
+                .color(if positive { theme.success } else { theme.error }),
+        )
+        .into_any_element()
+}
+
+fn room_eq_sankey_display_routes(bass: &RoomEqReportBassManagement) -> Vec<RoomEqReportBassRoute> {
+    let mut routes = bass.routes.clone();
+    for output in &bass.output_channels {
+        if is_room_eq_sub_or_lfe_channel(output) {
+            continue;
+        }
+        if !bass.input_channels.iter().any(|input| input == output) {
+            continue;
+        }
+        if routes
+            .iter()
+            .any(|route| route.source_channel == *output && route.destination == *output)
+        {
+            continue;
+        }
+        routes.push(RoomEqReportBassRoute {
+            source_channel: output.clone(),
+            destination: output.clone(),
+            route_kind: "main_highpass_to_self".to_string(),
+            group_id: None,
+            crossover_type: bass.crossover_type.clone(),
+            high_pass_hz: bass.crossover_frequency_hz,
+            low_pass_hz: None,
+            gain_db: 0.0,
+            matrix_gain: 1.0,
+            delay_ms: 0.0,
+            polarity_inverted: false,
+        });
+    }
+    routes
+}
+
+fn render_room_eq_bass_routing_chart(
+    bass: &RoomEqReportBassManagement,
+    theme: &crate::theme::Theme,
+) -> gpui::AnyElement {
+    use d3rs::sankey::{SankeyLayout, SankeyLinkInput};
+    use d3rs::shape::path::PathBuilder as D3PathBuilder;
+
+    let mut node_names = Vec::<String>::new();
+    let mut add_node = |name: String| {
+        if !node_names.iter().any(|existing| existing == &name) {
+            node_names.push(name);
+        }
+    };
+
+    for channel in &bass.input_channels {
+        add_node(format!("in: {channel}"));
+    }
+    for channel in &bass.output_channels {
+        add_node(format!("out: {channel}"));
+    }
+
+    let display_routes = room_eq_sankey_display_routes(bass);
+    let links: Vec<SankeyLinkInput> = display_routes
+        .iter()
+        .map(|route| {
+            let source = format!("in: {}", route.source_channel);
+            let target = format!("out: {}", route.destination);
+            add_node(source.clone());
+            add_node(target.clone());
+            SankeyLinkInput {
+                source,
+                target,
+                value: route.matrix_gain.abs().max(0.05),
+            }
+        })
+        .collect();
+
+    if links.is_empty() {
+        return render_empty_state(IconName::AudioWaveform, "No routing graph data", theme);
+    }
+
+    let width = 1200.0;
+    let height = (260.0 + 18.0 * display_routes.len() as f64).clamp(420.0, 760.0);
+    let result = SankeyLayout::new()
+        .width(width)
+        .height(height)
+        .margins(16.0, 24.0, 16.0, 24.0)
+        .node_width(16.0)
+        .node_padding(18.0)
+        .compute(&node_names, &links);
+
+    let mut paths = Vec::<d3rs::shape::path::Path>::new();
+    let mut colors = Vec::<Hsla>::new();
+    for (link, route) in result.links.iter().zip(display_routes.iter()) {
+        let source = &result.nodes[link.source];
+        let target = &result.nodes[link.target];
+        let sx = source.x1;
+        let tx = target.x0;
+        let cx = (sx + tx) / 2.0;
+        let half_width = link.width / 2.0;
+        paths.push(
+            D3PathBuilder::new()
+                .move_to(sx, link.y0 - half_width)
+                .cubic_curve_to(
+                    cx,
+                    link.y0 - half_width,
+                    cx,
+                    link.y1 - half_width,
+                    tx,
+                    link.y1 - half_width,
+                )
+                .line_to(tx, link.y1 + half_width)
+                .cubic_curve_to(
+                    cx,
+                    link.y1 + half_width,
+                    cx,
+                    link.y0 + half_width,
+                    sx,
+                    link.y0 + half_width,
+                )
+                .close_path()
+                .build(),
+        );
+        colors.push(room_eq_route_color(&route.route_kind).opacity(0.52));
+    }
+
+    for node in &result.nodes {
+        paths.push(
+            D3PathBuilder::new()
+                .move_to(node.x0, node.y0)
+                .line_to(node.x1, node.y0)
+                .line_to(node.x1, node.y1)
+                .line_to(node.x0, node.y1)
+                .close_path()
+                .build(),
+        );
+        colors.push(Hsla::from(theme.text_secondary).opacity(0.86));
+    }
+
+    let max_layer = result
+        .nodes
+        .iter()
+        .map(|node| node.layer)
+        .max()
+        .unwrap_or_default();
+    let labels: Vec<(String, f64, f64, bool)> = result
+        .nodes
+        .iter()
+        .filter(|node| node.y1 - node.y0 > 5.0)
+        .map(|node| {
+            let is_right = node.layer > max_layer / 2;
+            let x = if is_right {
+                node.x0 - 6.0
+            } else {
+                node.x1 + 6.0
+            };
+            let y = (node.y0 + node.y1) / 2.0;
+            (node.id.clone(), x, y, is_right)
+        })
+        .collect();
+
+    let chart = div()
+        .relative()
+        .w(px(width as f32))
+        .h(px(height as f32))
+        .bg(theme.surface)
+        .border_1()
+        .border_color(theme.border)
+        .rounded(px(4.0))
+        .overflow_hidden()
+        .child(
+            canvas(
+                move |bounds, _, _| {
+                    let bounds_width: f32 = bounds.size.width.into();
+                    let bounds_height: f32 = bounds.size.height.into();
+                    let scale_x = bounds_width / width as f32;
+                    let scale_y = bounds_height / height as f32;
+                    paths
+                        .iter()
+                        .filter_map(|path| {
+                            room_eq_d3rs_path_to_gpui(path, bounds, 0.0, 0.0, scale_x, scale_y)
+                        })
+                        .collect::<Vec<_>>()
+                },
+                move |_bounds, paths, window, _| {
+                    for (idx, path) in paths.into_iter().enumerate() {
+                        if let Some(color) = colors.get(idx) {
+                            window.paint_path(path, *color);
+                        }
+                    }
+                },
+            )
+            .size_full(),
+        )
+        .children(labels.into_iter().map(|(label, x, y, is_right)| {
+            let mut label_el = div()
+                .absolute()
+                .top(px(y as f32 - 6.0))
+                .text_size(px(10.0))
+                .line_height(px(11.0))
+                .text_color(theme.text_primary);
+            if is_right {
+                label_el = label_el.right(px((width - x) as f32));
+            } else {
+                label_el = label_el.left(px(x as f32));
+            }
+            label_el.child(label)
+        }))
+        .into_any_element();
+
+    VStack::new()
+        .spacing(StackSpacing::Xs)
+        .child(
+            Text::new("Bass Management Routing Graph")
+                .weight(TextWeight::Semibold)
+                .size(TextSize::Xs)
+                .color(theme.text_primary),
+        )
+        .child(chart)
+        .into_any_element()
+}
+
+fn render_room_eq_bass_headroom_chart(
+    headroom: &RoomEqReportBassHeadroom,
+    theme: &crate::theme::Theme,
+) -> gpui::AnyElement {
+    use gpui_px::{BarTheme, LegendPosition, bar};
+
+    let labels: Vec<String> = headroom
+        .per_output
+        .iter()
+        .map(|output| output.output_role.clone())
+        .collect();
+    let rms: Vec<f64> = headroom
+        .per_output
+        .iter()
+        .map(|output| output.rms_bus_gain_db)
+        .collect();
+    let peak: Vec<f64> = headroom
+        .per_output
+        .iter()
+        .map(|output| output.coherent_peak_gain_db)
+        .collect();
+    let lfe: Vec<f64> = headroom
+        .per_output
+        .iter()
+        .map(|output| output.lfe_contribution_db)
+        .collect();
+    let bar_theme = BarTheme {
+        plot_background: theme.surface,
+        title_color: theme.text_primary,
+        legend_text_color: theme.text_secondary,
+    };
+
+    let chart = bar(&labels, &rms)
+        .label("RMS programme gain")
+        .color(0x4a90d9)
+        .add_series(&peak, Some("Coherent peak gain"), 0xe74c3c, 0.78)
+        .add_series(&lfe, Some("LFE contribution"), 0xe67e22, 0.72)
+        .legend_position(LegendPosition::Bottom)
+        .theme(bar_theme)
+        .size(1200.0, 320.0)
+        .build()
+        .map(|chart| chart.into_any_element())
+        .unwrap_or_else(|e| {
+            log::warn!("RoomEQ bass headroom chart build failed: {e:?}");
+            render_empty_state(
+                IconName::AudioWaveform,
+                "Unable to render headroom chart",
+                theme,
+            )
+        });
+
+    VStack::new()
+        .spacing(StackSpacing::Xs)
+        .child(
+            Text::new(format!(
+                "Bass Bus Headroom Simulation ({}, {}, margin {}, worst {})",
+                headroom.model,
+                if headroom.pass { "pass" } else { "fail" },
+                fmt_db(headroom.margin_db),
+                fmt_hz(headroom.worst_frequency_hz)
+            ))
+            .weight(TextWeight::Semibold)
+            .size(TextSize::Xs)
+            .color(theme.text_primary),
+        )
+        .child(chart)
+        .into_any_element()
+}
+
+fn render_room_eq_bass_routes_table(
+    d: Ds,
+    bass: &RoomEqReportBassManagement,
+    theme: &crate::theme::Theme,
+) -> gpui::AnyElement {
+    render_room_eq_table(
+        d,
+        "Bass Routes",
+        &[
+            "Source",
+            "Destination",
+            "Kind",
+            "XO",
+            "Gain",
+            "Delay",
+            "Polarity",
+        ],
+        bass.routes.iter().map(|route| {
+            vec![
+                route.source_channel.clone(),
+                route.destination.clone(),
+                route_display_name(&route.route_kind).to_string(),
+                format!(
+                    "{} @ {}",
+                    route.crossover_type,
+                    fmt_optional_hz(route.high_pass_hz.or(route.low_pass_hz))
+                ),
+                fmt_db(route.gain_db),
+                fmt_ms(route.delay_ms),
+                if route.polarity_inverted {
+                    "inverted"
+                } else {
+                    "normal"
+                }
+                .to_string(),
+            ]
+        }),
+        theme,
+    )
+}
+
+fn render_room_eq_bass_groups_table(
+    d: Ds,
+    bass: &RoomEqReportBassManagement,
+    theme: &crate::theme::Theme,
+) -> gpui::AnyElement {
+    render_room_eq_table(
+        d,
+        "Per-Speaker-Group Crossovers",
+        &[
+            "Group",
+            "Roles",
+            "Type",
+            "Selected XO",
+            "Main delay",
+            "Bass delay",
+            "Invert",
+            "Trim",
+            "Advisories",
+        ],
+        bass.groups.iter().map(|group| {
+            vec![
+                group.group_id.clone(),
+                group.roles.join(", "),
+                group.crossover_type.clone(),
+                fmt_optional_hz(group.selected_crossover_hz),
+                fmt_ms(group.main_delay_ms),
+                fmt_ms(group.bass_route_delay_ms),
+                if group.polarity_inverted { "yes" } else { "no" }.to_string(),
+                fmt_db(group.trim_db),
+                if group.advisories.is_empty() {
+                    "-".to_string()
+                } else {
+                    group.advisories.join(", ")
+                },
+            ]
+        }),
+        theme,
+    )
+}
+
+fn render_room_eq_bass_sub_outputs_table(
+    d: Ds,
+    bass: &RoomEqReportBassManagement,
+    theme: &crate::theme::Theme,
+) -> gpui::AnyElement {
+    render_room_eq_table(
+        d,
+        "Physical Bass Outputs",
+        &["Output", "Strategy", "Gain", "Delay", "Invert", "Headroom"],
+        bass.sub_outputs.iter().map(|output| {
+            vec![
+                output.output_role.clone(),
+                output.strategy_source.clone(),
+                fmt_db(output.gain_db),
+                fmt_ms(output.delay_ms),
+                if output.polarity_inverted {
+                    "yes"
+                } else {
+                    "no"
+                }
+                .to_string(),
+                fmt_db(output.headroom_contribution_db),
+            ]
+        }),
+        theme,
+    )
+}
+
+fn render_room_eq_table(
+    d: Ds,
+    title: &str,
+    headers: &[&str],
+    rows: impl IntoIterator<Item = Vec<String>>,
+    theme: &crate::theme::Theme,
+) -> gpui::AnyElement {
+    let rows: Vec<Vec<String>> = rows.into_iter().collect();
+    let cols = headers.len().min(u16::MAX as usize) as u16;
+    VStack::new()
+        .spacing(StackSpacing::Xs)
+        .child(
+            Text::new(title.to_string())
+                .weight(TextWeight::Semibold)
+                .size(TextSize::Xs)
+                .color(theme.text_primary),
+        )
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .border_1()
+                .border_color(theme.border)
+                .rounded(d.r_md)
+                .overflow_hidden()
+                .child(
+                    div()
+                        .grid()
+                        .grid_cols(cols)
+                        .bg(theme.background_secondary)
+                        .children(headers.iter().map(|header| {
+                            div().p(d.pad_y_half).child(
+                                Text::new((*header).to_string())
+                                    .size(TextSize::Xs)
+                                    .weight(TextWeight::Semibold)
+                                    .color(theme.text_secondary),
+                            )
+                        })),
+                )
+                .children(rows.into_iter().map(|row| {
+                    div()
+                        .grid()
+                        .grid_cols(cols)
+                        .children(row.into_iter().map(|cell| {
+                            div()
+                                .p(d.pad_y_half)
+                                .border_t_1()
+                                .border_color(theme.border)
+                                .child(Text::new(cell).size(TextSize::Xs).color(theme.text_primary))
+                        }))
+                })),
+        )
+        .into_any_element()
+}
+
+fn route_display_name(kind: &str) -> &'static str {
+    match kind {
+        "main_highpass_to_self" => "main high-pass",
+        "main_highpass" => "main high-pass",
+        "redirected_bass_lowpass_to_sub" => "redirected bass",
+        "lfe_lowpass_to_sub" => "LFE to sub",
+        "full_range" => "full range",
+        _ => "route",
+    }
+}
+
+fn room_eq_route_color(kind: &str) -> Hsla {
+    match kind {
+        "main_highpass_to_self" | "main_highpass" => Hsla::from(rgba_from_u32(0x4a90d9)),
+        "redirected_bass_lowpass_to_sub" => Hsla::from(rgba_from_u32(0x2ecc71)),
+        "lfe_lowpass_to_sub" => Hsla::from(rgba_from_u32(0xe67e22)),
+        _ => Hsla::from(rgba_from_u32(0x7f8c8d)),
+    }
+}
+
+fn room_eq_d3rs_path_to_gpui(
+    path: &d3rs::shape::path::Path,
+    bounds: Bounds<Pixels>,
+    offset_x: f32,
+    offset_y: f32,
+    scale_x: f32,
+    scale_y: f32,
+) -> Option<Path<Pixels>> {
+    use d3rs::shape::path::PathCommand;
+
+    let mut builder = PathBuilder::fill();
+    let origin = bounds.origin;
+    let mut current_x = 0.0_f32;
+    let mut current_y = 0.0_f32;
+    let tx = |x: f64| x as f32 * scale_x + offset_x;
+    let ty = |y: f64| y as f32 * scale_y + offset_y;
+
+    for command in path.commands() {
+        match command {
+            PathCommand::MoveTo { x, y } => {
+                current_x = tx(*x);
+                current_y = ty(*y);
+                builder.move_to(origin + point(px(current_x), px(current_y)));
+            }
+            PathCommand::LineTo { x, y } => {
+                current_x = tx(*x);
+                current_y = ty(*y);
+                builder.line_to(origin + point(px(current_x), px(current_y)));
+            }
+            PathCommand::HorizontalLineTo { x } => {
+                current_x = tx(*x);
+                builder.line_to(origin + point(px(current_x), px(current_y)));
+            }
+            PathCommand::VerticalLineTo { y } => {
+                current_y = ty(*y);
+                builder.line_to(origin + point(px(current_x), px(current_y)));
+            }
+            PathCommand::CubicCurveTo {
+                x1,
+                y1,
+                x2,
+                y2,
+                x,
+                y,
+            } => {
+                let (x1, y1) = (tx(*x1), ty(*y1));
+                let (x2, y2) = (tx(*x2), ty(*y2));
+                let (x, y) = (tx(*x), ty(*y));
+                for step in 1..=16 {
+                    let t = step as f32 / 16.0;
+                    let u = 1.0 - t;
+                    let px_value = u * u * u * current_x
+                        + 3.0 * u * u * t * x1
+                        + 3.0 * u * t * t * x2
+                        + t * t * t * x;
+                    let py_value = u * u * u * current_y
+                        + 3.0 * u * u * t * y1
+                        + 3.0 * u * t * t * y2
+                        + t * t * t * y;
+                    builder.line_to(origin + point(px(px_value), px(py_value)));
+                }
+                current_x = x;
+                current_y = y;
+            }
+            PathCommand::ClosePath => {
+                builder.close();
+            }
+            _ => {}
+        }
+    }
+
+    builder.build().ok()
+}
+
+fn fmt_optional_number(value: Option<f64>, _fmt: &str) -> String {
+    value
+        .map(|value| format!("{value:.2}"))
+        .unwrap_or_else(|| "-".to_string())
+}
+
+fn fmt_db(value: f64) -> String {
+    format!("{value:+.2} dB")
+}
+
+fn fmt_optional_db(value: Option<f64>) -> String {
+    value.map(fmt_db).unwrap_or_else(|| "-".to_string())
+}
+
+fn fmt_hz(value: f64) -> String {
+    format!("{value:.1} Hz")
+}
+
+fn fmt_optional_hz(value: Option<f64>) -> String {
+    value.map(fmt_hz).unwrap_or_else(|| "-".to_string())
+}
+
+fn fmt_ms(value: f64) -> String {
+    format!("{value:.3} ms")
+}
+
+pub(crate) fn render_room_eq_report_overview(
+    d: Ds,
+    report: &RoomEqReportData,
+    theme: &crate::theme::Theme,
+    original_settings: RoomEqReviewGraphSettings,
+    eq_settings: RoomEqReviewGraphSettings,
+    corrected_settings: RoomEqReviewGraphSettings,
+    original_controls: Option<gpui::AnyElement>,
+    eq_controls: Option<gpui::AnyElement>,
+    corrected_controls: Option<gpui::AnyElement>,
+) -> impl IntoElement {
+    let mut original_series = Vec::new();
+    let mut corrected_series = Vec::new();
+    let mut eq_series = Vec::new();
+
+    for (idx, channel) in report.channels.iter().enumerate() {
+        let color = ROOM_EQ_CHANNEL_COLORS[idx % ROOM_EQ_CHANNEL_COLORS.len()];
+        if channel.driver_initial_curves.is_empty() {
+            if let Some(curve) = channel.initial_curve.clone() {
+                original_series.push(RoomEqChartSeries {
+                    channel_name: Some(channel.name.clone()),
+                    label: format!("Original: {}", channel.name),
+                    curve,
+                    color,
+                    stroke_width: 2.0,
+                    opacity: 1.0,
+                });
+            }
+        } else {
+            for (driver_idx, driver) in channel.driver_initial_curves.iter().enumerate() {
+                original_series.push(RoomEqChartSeries {
+                    channel_name: Some(channel.name.clone()),
+                    label: format!("Original: {}/{}", channel.name, driver.driver_name),
+                    curve: driver.curve.clone(),
+                    color,
+                    stroke_width: 2.0,
+                    opacity: ROOM_EQ_DRIVER_OPACITIES[driver_idx % ROOM_EQ_DRIVER_OPACITIES.len()],
+                });
+            }
+        }
+
+        if let Some(curve) = channel.eq_response.clone() {
+            eq_series.push(RoomEqChartSeries {
+                channel_name: Some(channel.name.clone()),
+                label: format!("EQ: {}", channel.name),
+                curve,
+                color,
+                stroke_width: 2.0,
+                opacity: 1.0,
+            });
+        }
+
+        if let Some(curve) = channel.final_curve.clone() {
+            corrected_series.push(RoomEqChartSeries {
+                channel_name: Some(channel.name.clone()),
+                label: format!("Corrected: {}", channel.name),
+                curve,
+                color,
+                stroke_width: 2.0,
+                opacity: 1.0,
+            });
+        }
+    }
+    add_room_eq_corrected_lfe_sums(report, &mut corrected_series);
+
+    div()
+        .p(d.card)
+        .w_full()
+        .bg(theme.surface)
+        .rounded(d.r_lg)
+        .border_1()
+        .border_color(theme.border)
+        .child(
+            VStack::new()
+                .spacing(StackSpacing::Md)
+                .child(
+                    Text::new("All Channels Overview")
+                        .weight(TextWeight::Semibold)
+                        .size(TextSize::Sm)
+                        .color(theme.text_primary),
+                )
+                .child(render_room_eq_curve_chart(
+                    "All Original Curves",
+                    original_series,
+                    theme,
+                    original_settings,
+                    (20.0, 20000.0),
+                    (-40.0, 10.0),
+                    "SPL (dB)",
+                    "room-eq-overview-original",
+                    None,
+                    original_controls,
+                ))
+                .child(render_room_eq_curve_chart(
+                    "All EQ Responses",
+                    eq_series,
+                    theme,
+                    eq_settings,
+                    (20.0, 20000.0),
+                    (-15.0, 15.0),
+                    "EQ (dB)",
+                    "room-eq-overview-eq",
+                    None,
+                    eq_controls,
+                ))
+                .child(render_room_eq_curve_chart(
+                    "All Corrected Curves",
+                    corrected_series,
+                    theme,
+                    corrected_settings,
+                    (20.0, 20000.0),
+                    (-40.0, 10.0),
+                    "SPL (dB)",
+                    "room-eq-overview-corrected",
+                    None,
+                    corrected_controls,
+                )),
+        )
+        .into_any_element()
+}
+
+fn add_room_eq_corrected_lfe_sums(
+    report: &RoomEqReportData,
+    corrected_series: &mut Vec<RoomEqChartSeries>,
+) {
+    let Some(lfe_channel) = report.channels.iter().find(|channel| {
+        is_room_eq_sub_or_lfe_channel(&channel.name) && channel.final_curve.is_some()
+    }) else {
+        return;
+    };
+    let Some(lfe_curve) = lfe_channel.final_curve.as_ref() else {
+        return;
+    };
+
+    for target in ["L", "R", "C"] {
+        let Some((idx, channel)) = report
+            .channels
+            .iter()
+            .enumerate()
+            .find(|(_, channel)| room_eq_is_named_main_channel(&channel.name, target))
+        else {
+            continue;
+        };
+        let Some(main_curve) = channel.final_curve.as_ref() else {
+            continue;
+        };
+        let summed = sum_room_eq_report_curves_db(main_curve, lfe_curve);
+        if summed.is_empty() {
+            continue;
+        }
+        corrected_series.push(RoomEqChartSeries {
+            channel_name: Some(channel.name.clone()),
+            label: format!("Corrected: {}+{}", channel.name, lfe_channel.name),
+            curve: summed,
+            color: ROOM_EQ_CHANNEL_COLORS[idx % ROOM_EQ_CHANNEL_COLORS.len()],
+            stroke_width: 2.6,
+            opacity: 0.72,
+        });
+    }
+}
+
+fn room_eq_is_named_main_channel(channel_name: &str, target: &str) -> bool {
+    let normalized = channel_name.trim().to_ascii_uppercase();
+    match target {
+        "L" => matches!(normalized.as_str(), "L" | "LEFT"),
+        "R" => matches!(normalized.as_str(), "R" | "RIGHT"),
+        "C" => matches!(normalized.as_str(), "C" | "CENTER" | "CENTRE"),
+        _ => false,
+    }
+}
+
+fn sum_room_eq_report_curves_db(
+    main: &RoomEqReportCurve,
+    sub: &RoomEqReportCurve,
+) -> RoomEqReportCurve {
+    let main_points: Vec<(f64, f64)> = main
+        .freq
+        .iter()
+        .zip(main.spl.iter())
+        .map(|(&freq, &spl)| (freq, spl))
+        .collect();
+    let sub_points: Vec<(f64, f64)> = sub
+        .freq
+        .iter()
+        .zip(sub.spl.iter())
+        .map(|(&freq, &spl)| (freq, spl))
+        .collect();
+    let main_phase = room_eq_phase_points(main);
+    let sub_phase = room_eq_phase_points(sub);
+    let points = sum_room_eq_responses_db(
+        &main_points,
+        &sub_points,
+        main_phase.as_deref(),
+        sub_phase.as_deref(),
+    );
+    RoomEqReportCurve {
+        freq: points.iter().map(|(freq, _)| *freq).collect(),
+        spl: points.iter().map(|(_, spl)| *spl).collect(),
+        phase: None,
+    }
+}
+
+fn room_eq_phase_points(curve: &RoomEqReportCurve) -> Option<Vec<(f64, f64)>> {
+    let phase = curve.phase.as_ref()?;
+    (phase.len() == curve.freq.len()).then(|| {
+        curve
+            .freq
+            .iter()
+            .zip(phase.iter())
+            .map(|(&freq, &phase)| (freq, phase))
+            .collect()
+    })
+}
+
+pub(crate) fn render_room_eq_report_channel(
+    d: Ds,
+    channel: &RoomEqReportChannel,
+    theme: &crate::theme::Theme,
+    full_settings: RoomEqReviewGraphSettings,
+    zoom_settings: RoomEqReviewGraphSettings,
+    eq_settings: RoomEqReviewGraphSettings,
+    full_controls: Option<gpui::AnyElement>,
+    zoom_controls: Option<gpui::AnyElement>,
+    eq_controls: Option<gpui::AnyElement>,
+    interactive_state: Option<&gpui_px::interaction::InteractiveChartState>,
+) -> impl IntoElement {
+    let reference = channel
+        .final_curve
+        .as_ref()
+        .or(channel.initial_curve.as_ref());
+    let zoom_center = reference
+        .map(|curve| room_eq_average_spl_in_range(curve, 20.0, 1200.0))
+        .unwrap_or(0.0);
+
+    let mut full_series = Vec::new();
+    if let Some(curve) = channel.initial_curve.clone() {
+        full_series.push(RoomEqChartSeries {
+            channel_name: Some(channel.name.clone()),
+            label: "Before EQ".to_string(),
+            curve,
+            color: 0xff6464,
+            stroke_width: 2.0,
+            opacity: 0.8,
+        });
+    }
+    if let Some(curve) = channel.final_curve.clone() {
+        full_series.push(RoomEqChartSeries {
+            channel_name: Some(channel.name.clone()),
+            label: "After EQ".to_string(),
+            curve,
+            color: 0x64c864,
+            stroke_width: 2.0,
+            opacity: 0.9,
+        });
+    }
+
+    let mut eq_series = Vec::new();
+    if let Some(curve) = channel.eq_response.clone() {
+        eq_series.push(RoomEqChartSeries {
+            channel_name: Some(channel.name.clone()),
+            label: format!("EQ: {}", channel.name),
+            curve,
+            color: 0x1f77b4,
+            stroke_width: 2.0,
+            opacity: 1.0,
+        });
+    }
+
+    div()
+        .w_full()
+        .child(
+            VStack::new()
+                .spacing(StackSpacing::Md)
+                .child(
+                    Text::new(format!("Channel: {}", channel.name))
+                        .weight(TextWeight::Semibold)
+                        .size(TextSize::Sm)
+                        .color(theme.text_primary),
+                )
+                .child(
+                    div()
+                        .grid()
+                        .grid_cols(2)
+                        .gap(d.section)
+                        .child(render_room_eq_curve_chart(
+                            "Full Range",
+                            full_series.clone(),
+                            theme,
+                            full_settings,
+                            (20.0, 20000.0),
+                            (-40.0, 10.0),
+                            "SPL (dB)",
+                            "room-eq-channel-full",
+                            interactive_state,
+                            full_controls,
+                        ))
+                        .child(render_room_eq_curve_chart(
+                            "Zoomed 20-1200 Hz",
+                            full_series,
+                            theme,
+                            zoom_settings,
+                            (20.0, 1200.0),
+                            (zoom_center - 10.0, zoom_center + 10.0),
+                            "SPL (dB)",
+                            "room-eq-channel-zoom",
+                            None,
+                            zoom_controls,
+                        )),
+                )
+                .child(render_room_eq_curve_chart(
+                    "EQ Response",
+                    eq_series,
+                    theme,
+                    eq_settings,
+                    (20.0, 20000.0),
+                    (-15.0, 15.0),
+                    "EQ (dB)",
+                    "room-eq-channel-eq",
+                    None,
+                    eq_controls,
+                ))
+                .when(
+                    channel.pre_ir.is_some() || channel.post_ir.is_some(),
+                    |el| el.child(render_room_eq_ir_chart(channel, theme)),
+                )
+                .when_some(channel.epa.as_ref(), |el, epa| {
+                    el.child(render_room_eq_epa_table(d, epa, theme))
+                })
+                .when(!channel.eq_passes.is_empty(), |el| {
+                    el.child(render_room_eq_filter_details(d, &channel.eq_passes, theme))
+                }),
+        )
+        .into_any_element()
+}
+
+fn render_room_eq_epa_table(
+    d: Ds,
+    epa: &RoomEqReportEpaComparison,
+    theme: &crate::theme::Theme,
+) -> gpui::AnyElement {
+    let rows = [
+        epa_metric_row(
+            "preference",
+            "Preference",
+            epa.pre.preference,
+            epa.post.preference,
+            "{:+.2}",
+        ),
+        epa_metric_row(
+            "evaluation",
+            "Evaluation",
+            epa.pre.evaluation,
+            epa.post.evaluation,
+            "{:+.2}",
+        ),
+        epa_metric_row(
+            "potency",
+            "Potency",
+            epa.pre.potency,
+            epa.post.potency,
+            "{:+.2}",
+        ),
+        epa_metric_row(
+            "activity",
+            "Activity",
+            epa.pre.activity,
+            epa.post.activity,
+            "{:+.2}",
+        ),
+        epa_metric_row(
+            "sharpness_acum",
+            "Sharpness (acum)",
+            epa.pre.sharpness_acum,
+            epa.post.sharpness_acum,
+            "{:+.2}",
+        ),
+        epa_metric_row(
+            "roughness",
+            "Roughness",
+            epa.pre.roughness,
+            epa.post.roughness,
+            "{:+.3}",
+        ),
+        epa_metric_row(
+            "total_loudness_sone",
+            "Total loudness (sone)",
+            epa.pre.total_loudness_sone,
+            epa.post.total_loudness_sone,
+            "{:+.2}",
+        ),
+        epa_metric_row(
+            "loudness_balance",
+            "Loudness balance",
+            epa.pre.loudness_balance,
+            epa.post.loudness_balance,
+            "{:+.3}",
+        ),
+    ];
+
+    VStack::new()
+        .spacing(StackSpacing::Xs)
+        .child(render_room_eq_table(
+            d,
+            "EPA Psychoacoustic Scores",
+            &["Metric", "Before EQ", "After EQ", "Delta"],
+            rows.into_iter()
+                .map(|(_, label, pre, post, delta, _)| vec![label, pre, post, delta]),
+            theme,
+        ))
+        .child(
+            Text::new(
+                "Higher is better for Preference / Evaluation / Total loudness / Loudness balance; lower is better for Activity / Sharpness deviation / Roughness.",
+            )
+            .size(TextSize::Xs)
+            .color(theme.text_secondary),
+        )
+        .into_any_element()
+}
+
+fn epa_metric_row(
+    field: &str,
+    label: &str,
+    pre: f64,
+    post: f64,
+    fmt: &str,
+) -> (bool, String, String, String, String, bool) {
+    let delta = post - pre;
+    let higher_is_better = matches!(
+        field,
+        "preference" | "evaluation" | "total_loudness_sone" | "loudness_balance"
+    );
+    let improved = delta.abs() < 1.0e-9 || (delta > 0.0) == higher_is_better;
+    (
+        improved,
+        label.to_string(),
+        fmt_signed(pre, fmt),
+        fmt_signed(post, fmt),
+        if delta.abs() < 1.0e-9 {
+            "=".to_string()
+        } else {
+            fmt_signed(delta, "{:+.3}")
+        },
+        improved,
+    )
+}
+
+fn render_room_eq_filter_details(
+    d: Ds,
+    passes: &[RoomEqReportEqPass],
+    theme: &crate::theme::Theme,
+) -> gpui::AnyElement {
+    let has_labeled = passes.iter().any(|pass| !pass.label.is_empty());
+
+    VStack::new()
+        .spacing(StackSpacing::Sm)
+        .child(
+            Text::new(if has_labeled {
+                "EQ Filters (3-Pass Pipeline)"
+            } else {
+                "EQ Filters"
+            })
+            .weight(TextWeight::Semibold)
+            .size(TextSize::Xs)
+            .color(theme.text_primary),
+        )
+        .children(passes.iter().map(|pass| {
+            VStack::new()
+                .spacing(StackSpacing::Xs)
+                .child(
+                    Text::new(pass.display_name.clone())
+                        .weight(TextWeight::Semibold)
+                        .size(TextSize::Xs)
+                        .color(rgba_from_u32(pass.color)),
+                )
+                .child(render_room_eq_table(
+                    d,
+                    "",
+                    &["#", "Type", "Frequency", "Q", "Gain"],
+                    pass.filters.iter().enumerate().map(|(idx, filter)| {
+                        vec![
+                            (idx + 1).to_string(),
+                            filter.filter_type.to_ascii_uppercase(),
+                            fmt_hz(filter.freq),
+                            format!("{:.2}", filter.q),
+                            fmt_db(filter.db_gain),
+                        ]
+                    }),
+                    theme,
+                ))
+        }))
+        .into_any_element()
+}
+
+fn rgba_from_u32(color: u32) -> Rgba {
+    let r = ((color >> 16) & 0xff) as f32 / 255.0;
+    let g = ((color >> 8) & 0xff) as f32 / 255.0;
+    let b = (color & 0xff) as f32 / 255.0;
+    Rgba { r, g, b, a: 1.0 }
+}
+
+fn fmt_signed(value: f64, fmt: &str) -> String {
+    match fmt {
+        "{:+.3}" => format!("{value:+.3}"),
+        _ => format!("{value:+.2}"),
+    }
+}
+
+fn render_room_eq_curve_chart(
+    title: &str,
+    mut series: Vec<RoomEqChartSeries>,
+    theme: &crate::theme::Theme,
+    settings: RoomEqReviewGraphSettings,
+    x_range: (f64, f64),
+    y_range: (f64, f64),
+    y_label: &str,
+    interactive_id: &'static str,
+    interactive_state: Option<&gpui_px::interaction::InteractiveChartState>,
+    controls: Option<gpui::AnyElement>,
+) -> gpui::AnyElement {
+    use crate::components::graphs::common::theme_to_chart_theme;
+    use gpui_px::{LegendPosition, ScaleType, line};
+
+    series.retain(|series| !series.curve.is_empty());
+    let Some(_) = series.first() else {
+        return VStack::new()
+            .spacing(StackSpacing::Xs)
+            .child(
+                Text::new(title.to_string())
+                    .weight(TextWeight::Semibold)
+                    .size(TextSize::Xs)
+                    .color(theme.text_primary),
+            )
+            .child(render_empty_state(
+                IconName::AudioWaveform,
+                "No data",
+                theme,
+            ))
+            .into_any_element();
+    };
+
+    let prepared = prepare_room_eq_chart_series(&series, settings, x_range, y_label);
+    let Some((first, first_y, first_trend)) = prepared.first() else {
+        return div().into_any_element();
+    };
+    let auto_y_range =
+        room_eq_chart_y_range(prepared.iter().map(|(_, y, _)| y.as_slice()), y_label)
+            .unwrap_or(y_range);
+    let chart_theme = theme_to_chart_theme(theme);
+    let (x_min, x_max) = interactive_state
+        .filter(|s| s.is_zoomed())
+        .map(|s| s.x_domain())
+        .unwrap_or(x_range);
+    let (y_min, y_max) = interactive_state
+        .filter(|s| s.is_zoomed())
+        .map(|s| s.y_domain())
+        .unwrap_or(if settings.y_axis_auto {
+            auto_y_range
+        } else {
+            y_range
+        });
+
+    let mut chart = line(&first.curve.freq, first_y)
+        .x_scale(ScaleType::Log)
+        .x_range(x_min, x_max)
+        .y_range(y_min, y_max)
+        .y_label(y_label)
+        .label(&first.label)
+        .legend_position(LegendPosition::Right)
+        .color(first.color)
+        .stroke_width(first.stroke_width)
+        .opacity(first.opacity)
+        .theme(chart_theme)
+        .size(1200.0, 360.0);
+
+    if let Some(trend) = first_trend {
+        chart = chart.add_series_with_x(
+            &trend.freq,
+            &trend.spl,
+            Some(&trend.label),
+            trend.color,
+            1.0,
+            0.45,
+        );
+    }
+
+    for (series, y, trend) in prepared.iter().skip(1) {
+        chart = chart.add_series_with_x(
+            &series.curve.freq,
+            y,
+            Some(&series.label),
+            series.color,
+            series.stroke_width,
+            series.opacity,
+        );
+        if let Some(trend) = trend {
+            chart = chart.add_series_with_x(
+                &trend.freq,
+                &trend.spl,
+                Some(&trend.label),
+                trend.color,
+                1.0,
+                0.45,
+            );
+        }
+    }
+
+    let ref_curve = &first.curve;
+    if y_label == "SPL (dB)"
+        && let (Some(&x0), Some(&x1)) = (ref_curve.freq.first(), ref_curve.freq.last())
+    {
+        chart = chart.add_series_with_x(
+            &[x0, x1],
+            &[0.0, 0.0],
+            Some("Target (0 dB)"),
+            0x999999,
+            1.0,
+            0.5,
+        );
+    } else if y_label == "EQ (dB)" {
+        chart = chart.add_series_with_x(
+            &[20.0, 20000.0],
+            &[0.0, 0.0],
+            Some("0 dB"),
+            0x999999,
+            1.0,
+            0.5,
+        );
+    }
+
+    let chart_element = match chart.build() {
+        Ok(chart) => {
+            if let Some(state) = interactive_state {
+                gpui_px::interaction::interactive(interactive_id, chart, state.clone())
+                    .build()
+                    .into_any_element()
+            } else {
+                chart.into_any_element()
+            }
+        }
+        Err(e) => {
+            log::warn!("RoomEQ report chart build failed for {title}: {e:?}");
+            render_empty_state(IconName::AudioWaveform, "Unable to render chart", theme)
+        }
+    };
+
+    VStack::new()
+        .spacing(StackSpacing::Xs)
+        .child(
+            HStack::new()
+                .spacing(StackSpacing::Sm)
+                .child(
+                    Text::new(title.to_string())
+                        .weight(TextWeight::Semibold)
+                        .size(TextSize::Xs)
+                        .color(theme.text_primary),
+                )
+                .when_some(controls, |el, controls| el.child(controls)),
+        )
+        .child(chart_element)
+        .into_any_element()
+}
+
+#[derive(Clone)]
+struct RoomEqTrendSeries {
+    label: String,
+    freq: Vec<f64>,
+    spl: Vec<f64>,
+    color: u32,
+}
+
+fn prepare_room_eq_chart_series(
+    series: &[RoomEqChartSeries],
+    settings: RoomEqReviewGraphSettings,
+    _x_range: (f64, f64),
+    y_label: &str,
+) -> Vec<(RoomEqChartSeries, Vec<f64>, Option<RoomEqTrendSeries>)> {
+    series
+        .iter()
+        .cloned()
+        .map(|series| {
+            let mut y = room_eq_smoothed_spl(&series.curve, settings.smoothing_octaves);
+            let trend = if y_label == "SPL (dB)" {
+                room_eq_trend_for_curve(&series, &y, settings.normalize_to_trend)
+            } else {
+                None
+            };
+            if settings.normalize_to_trend
+                && let Some((slope, intercept, _domain)) = room_eq_trend_coefficients(&series, &y)
+            {
+                for (&freq, value) in series.curve.freq.iter().zip(y.iter_mut()) {
+                    if freq.is_finite() && freq > 0.0 {
+                        *value -= slope * freq.log10() + intercept;
+                    }
+                }
+            }
+            (series, y, if settings.show_trend { trend } else { None })
+        })
+        .collect()
+}
+
+fn room_eq_trend_for_curve(
+    series: &RoomEqChartSeries,
+    y: &[f64],
+    normalized: bool,
+) -> Option<RoomEqTrendSeries> {
+    let (slope, intercept, domain) = room_eq_trend_coefficients(series, y)?;
+    let values = if normalized {
+        vec![0.0, 0.0]
+    } else {
+        vec![
+            slope * domain.0.log10() + intercept,
+            slope * domain.1.log10() + intercept,
+        ]
+    };
+    Some(RoomEqTrendSeries {
+        label: format!("Trend {}", series.label),
+        freq: vec![domain.0, domain.1],
+        spl: values,
+        color: series.color,
+    })
+}
+
+fn room_eq_trend_coefficients(
+    series: &RoomEqChartSeries,
+    values: &[f64],
+) -> Option<(f64, f64, (f64, f64))> {
+    let channel_name = series.channel_name.as_deref().unwrap_or(&series.label);
+    if is_room_eq_sub_or_lfe_channel(channel_name) {
+        let domain = room_eq_passband_trend_fit_domain(&series.curve.freq, values)?;
+        let average = room_eq_average_value_in_domain(&series.curve.freq, values, domain)?;
+        Some((0.0, average, domain))
+    } else {
+        let domain = room_eq_trend_fit_domain(channel_name, &series.curve.freq)?;
+        let (slope, intercept) = calculate_room_eq_log_trend(&series.curve.freq, values, domain)?;
+        Some((slope, intercept, domain))
+    }
+}
+
+fn room_eq_average_value_in_domain(
+    freqs: &[f64],
+    values: &[f64],
+    domain: (f64, f64),
+) -> Option<f64> {
+    let mut sum = 0.0;
+    let mut count = 0.0;
+    for (&freq, &value) in freqs.iter().zip(values.iter()) {
+        if freq.is_finite() && freq >= domain.0 && freq <= domain.1 && value.is_finite() {
+            sum += value;
+            count += 1.0;
+        }
+    }
+    (count > 0.0).then_some(sum / count)
+}
+
+fn room_eq_chart_y_range<'a>(
+    values: impl IntoIterator<Item = &'a [f64]>,
+    y_label: &str,
+) -> Option<(f64, f64)> {
+    let mut min_value = f64::INFINITY;
+    let mut max_value = f64::NEG_INFINITY;
+    for value in values.into_iter().flatten() {
+        if value.is_finite() {
+            min_value = min_value.min(*value);
+            max_value = max_value.max(*value);
+        }
+    }
+    if !min_value.is_finite() || !max_value.is_finite() {
+        return None;
+    }
+    if y_label == "EQ (dB)" {
+        let lower = ((min_value / 5.0).floor() * 5.0 - 5.0).max(-30.0);
+        let upper = ((max_value / 5.0).ceil() * 5.0 + 5.0).min(30.0);
+        return Some(if upper <= lower {
+            (lower, lower + 1.0)
+        } else {
+            (lower, upper)
+        });
+    }
+    let upper = ((max_value / 5.0).ceil() * 5.0).max(5.0);
+    let lower = (min_value / 5.0).floor() * 5.0;
+    Some(if upper - lower < 20.0 {
+        (lower - 5.0, upper + 5.0)
+    } else {
+        (lower, upper)
+    })
+}
+
+fn render_room_eq_ir_chart(
+    channel: &RoomEqReportChannel,
+    theme: &crate::theme::Theme,
+) -> gpui::AnyElement {
+    use crate::components::graphs::common::theme_to_chart_theme;
+    use gpui_px::{LegendPosition, ScaleType, line};
+
+    let primary = channel.pre_ir.as_ref().or(channel.post_ir.as_ref());
+    let Some(primary) = primary else {
+        return div().into_any_element();
+    };
+
+    let mut y_min = f64::INFINITY;
+    let mut y_max = f64::NEG_INFINITY;
+    for ir in [&channel.pre_ir, &channel.post_ir].into_iter().flatten() {
+        for &amp in &ir.amplitude {
+            y_min = y_min.min(amp);
+            y_max = y_max.max(amp);
+        }
+    }
+    if !y_min.is_finite() || !y_max.is_finite() || y_max <= y_min {
+        y_min = -1.0;
+        y_max = 1.0;
+    }
+
+    let (primary_label, primary_color) = if channel.pre_ir.is_some() {
+        ("Before", 0xff6464)
+    } else {
+        ("After", 0x64c864)
+    };
+    let mut chart = line(&primary.time_ms, &primary.amplitude)
+        .x_scale(ScaleType::Linear)
+        .x_range(
+            *primary.time_ms.first().unwrap_or(&0.0),
+            *primary.time_ms.last().unwrap_or(&1.0),
+        )
+        .y_range(y_min, y_max)
+        .y_label("Amplitude")
+        .label(primary_label)
+        .legend_position(LegendPosition::Right)
+        .color(primary_color)
+        .stroke_width(1.5)
+        .opacity(0.9)
+        .theme(theme_to_chart_theme(theme))
+        .size(1200.0, 260.0);
+
+    if channel.pre_ir.is_some()
+        && let Some(post_ir) = channel.post_ir.as_ref()
+    {
+        chart = chart.add_series_with_x(
+            &post_ir.time_ms,
+            &post_ir.amplitude,
+            Some("After"),
+            0x64c864,
+            1.5,
+            0.9,
+        );
+    }
+
+    let chart_element = chart
+        .build()
+        .map(|chart| chart.into_any_element())
+        .unwrap_or_else(|e| {
+            log::warn!("RoomEQ IR chart build failed: {e:?}");
+            render_empty_state(
+                IconName::AudioWaveform,
+                "Unable to render impulse response",
+                theme,
+            )
+        });
+
+    VStack::new()
+        .spacing(StackSpacing::Xs)
+        .child(
+            Text::new("Impulse Response")
+                .weight(TextWeight::Semibold)
+                .size(TextSize::Xs)
+                .color(theme.text_primary),
+        )
+        .child(chart_element)
+        .into_any_element()
+}
+
+fn room_eq_smoothed_spl(curve: &RoomEqReportCurve, smoothing_octaves: f64) -> Vec<f64> {
+    if smoothing_octaves <= 0.0 {
+        return curve.spl.clone();
+    }
+    dsp::smooth_response_f64(&curve.freq, &curve.spl, smoothing_octaves)
+        .into_iter()
+        .map(|value| if value.is_finite() { value } else { 0.0 })
+        .collect()
+}
+
+fn room_eq_average_spl_in_range(curve: &RoomEqReportCurve, min_freq: f64, max_freq: f64) -> f64 {
+    let mut sum = 0.0;
+    let mut count = 0.0;
+    for (&freq, &spl) in curve.freq.iter().zip(curve.spl.iter()) {
+        if freq >= min_freq && freq <= max_freq && spl.is_finite() {
+            sum += spl;
+            count += 1.0;
+        }
+    }
+    if count > 0.0 { sum / count } else { 0.0 }
 }
 
 /// Interpolate a sampled curve at a single frequency using log-frequency linear interpolation.

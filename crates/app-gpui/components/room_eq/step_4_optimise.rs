@@ -458,43 +458,8 @@ impl PlayerView {
                 let chart_state = room_eq.progress_chart_state.as_ref().map(|w| w.inner());
                 let chart_theme = theme_to_chart_theme(&theme);
 
-                // Filter out status messages (loss <= 0.0 or non-finite)
-                // Also skip completion messages (iter==0 after real data — draws line back to 0)
-                // Group by channel name, preserving insertion order
-                let mut channel_order: Vec<String> = Vec::new();
-                let mut channel_data: std::collections::HashMap<String, (Vec<f64>, Vec<f64>)> =
-                    std::collections::HashMap::new();
-                let mut all_losses: Vec<f64> = Vec::new();
-
-                let mut epa_data: std::collections::HashMap<String, (Vec<f64>, Vec<f64>)> =
-                    std::collections::HashMap::new();
-
-                for (iter, loss, speaker, epa) in &history {
-                    if !loss.is_finite() || *loss <= 0.0 {
-                        continue;
-                    }
-                    // Skip completion/status messages that would draw a line back to x=0
-                    // These have iter==0 after the channel already has progress data
-                    if *iter == 0 && channel_data.contains_key(speaker) {
-                        continue;
-                    }
-                    all_losses.push(*loss);
-                    if !channel_data.contains_key(speaker) {
-                        channel_order.push(speaker.clone());
-                        channel_data.insert(speaker.clone(), (Vec::new(), Vec::new()));
-                    }
-                    let (iters, losses) = channel_data.get_mut(speaker).unwrap();
-                    iters.push(*iter as f64);
-                    losses.push(*loss);
-
-                    if let Some(ep) = epa {
-                        let entry = epa_data
-                            .entry(speaker.clone())
-                            .or_insert_with(|| (Vec::new(), Vec::new()));
-                        entry.0.push(*iter as f64);
-                        entry.1.push(*ep);
-                    }
-                }
+                let (channel_order, progress_series, all_losses) =
+                    room_eq_progress_chart_series(&history);
                 let current_loss_val = all_losses.last().copied().unwrap_or(0.0);
                 let best_loss = all_losses.iter().copied().fold(f64::INFINITY, f64::min);
 
@@ -515,10 +480,10 @@ impl PlayerView {
                     1.0
                 };
 
-                // X range: each channel restarts at 0
-                let x_max_data = channel_data
-                    .values()
-                    .map(|(iters, _)| iters.last().copied().unwrap_or(0.0))
+                // X range: each optimizer pass uses its own iteration counter.
+                let x_max_data = progress_series
+                    .iter()
+                    .flat_map(|series| series.iterations.iter().copied())
                     .fold(0.0_f64, f64::max)
                     .max(100.0);
                 let (x_min, x_max) = chart_state
@@ -559,30 +524,46 @@ impl PlayerView {
                     0x7f7f7f, // gray
                 ];
 
-                // Build chart: first channel is the primary series, rest are added
-                let chart = if let Some(first_ch) = channel_order.first() {
-                    let (iters, losses) = &channel_data[first_ch];
-                    let (iters, losses) = downsample_xy(iters, losses, 80);
+                // Build chart: each channel pass is its own series so a
+                // backend iteration reset does not draw a line backwards.
+                let chart = if let Some(first_series) = progress_series
+                    .iter()
+                    .find(|series| !series.iterations.is_empty())
+                {
+                    let (iters, losses) =
+                        downsample_xy(&first_series.iterations, &first_series.losses, 80);
+                    let first_color_idx = channel_order
+                        .iter()
+                        .position(|ch| ch == &first_series.channel)
+                        .unwrap_or(0);
                     let mut builder = line(&iters, &losses)
                         .title("Optimization Process")
                         .x_label("Iterations")
                         .y_label("Loss")
-                        .label(format!("Loss {}", first_ch))
+                        .label(first_series.loss_label())
                         .x_range(x_min, x_max)
                         .y_range(y_min_domain, y_max_domain)
-                        .color(channel_colors[0])
+                        .color(channel_colors[first_color_idx % channel_colors.len()])
                         .stroke_width(2.0)
                         .theme(chart_theme)
                         .size(700.0, 250.0);
 
-                    for (idx, ch_name) in channel_order.iter().enumerate().skip(1) {
-                        let (ch_iters, ch_losses) = &channel_data[ch_name];
-                        let (ch_iters, ch_losses) = downsample_xy(ch_iters, ch_losses, 80);
-                        let color = channel_colors[idx % channel_colors.len()];
+                    for series in progress_series
+                        .iter()
+                        .filter(|series| !series.iterations.is_empty())
+                        .skip(1)
+                    {
+                        let (ch_iters, ch_losses) =
+                            downsample_xy(&series.iterations, &series.losses, 80);
+                        let color_idx = channel_order
+                            .iter()
+                            .position(|ch| ch == &series.channel)
+                            .unwrap_or(0);
+                        let color = channel_colors[color_idx % channel_colors.len()];
                         builder = builder.add_series_with_x(
                             &ch_iters,
                             &ch_losses,
-                            Some(&format!("Loss {}", ch_name)),
+                            Some(&series.loss_label()),
                             color,
                             2.0,
                             1.0,
@@ -598,13 +579,13 @@ impl PlayerView {
                     // improved candidate, so the raw values sit in a narrow
                     // band (typically ~3-6). A fixed [0, 10] range would
                     // flatten these out and look like a constant line.
-                    let has_epa = channel_order
+                    let has_epa = progress_series
                         .iter()
-                        .any(|ch| epa_data.get(ch).is_some_and(|(v, _)| !v.is_empty()));
+                        .any(|series| !series.epa_iterations.is_empty());
                     if has_epa {
-                        let (epa_min, epa_max) = epa_data
-                            .values()
-                            .flat_map(|(_, vals)| vals.iter().copied())
+                        let (epa_min, epa_max) = progress_series
+                            .iter()
+                            .flat_map(|series| series.epa_values.iter().copied())
                             .filter(|v| v.is_finite())
                             .fold((f64::INFINITY, f64::NEG_INFINITY), |(min, max), v| {
                                 (min.min(v), max.max(v))
@@ -619,23 +600,27 @@ impl PlayerView {
                             (0.0, 10.0)
                         };
                         builder = builder.y2_label("EPA Preference").y2_range(y2_lo, y2_hi);
-                        for (idx, ch_name) in channel_order.iter().enumerate() {
-                            if let Some((ep_iters, ep_vals)) = epa_data.get(ch_name)
-                                && !ep_iters.is_empty()
-                            {
-                                let (ep_iters, ep_vals) = downsample_xy(ep_iters, ep_vals, 80);
-                                let color = channel_colors[idx % channel_colors.len()];
-                                builder = builder
-                                    .add_series_y2_with_x(
-                                        &ep_iters,
-                                        &ep_vals,
-                                        Some(&format!("EPA {}", ch_name)),
-                                        color,
-                                        1.0,
-                                        0.6,
-                                    )
-                                    .series_dash_array(StrokeDashArray::Dashed);
-                            }
+                        for series in progress_series
+                            .iter()
+                            .filter(|series| !series.epa_iterations.is_empty())
+                        {
+                            let (ep_iters, ep_vals) =
+                                downsample_xy(&series.epa_iterations, &series.epa_values, 80);
+                            let color_idx = channel_order
+                                .iter()
+                                .position(|ch| ch == &series.channel)
+                                .unwrap_or(0);
+                            let color = channel_colors[color_idx % channel_colors.len()];
+                            builder = builder
+                                .add_series_y2_with_x(
+                                    &ep_iters,
+                                    &ep_vals,
+                                    Some(&series.epa_label()),
+                                    color,
+                                    1.0,
+                                    0.6,
+                                )
+                                .series_dash_array(StrokeDashArray::Dashed);
                         }
                     }
 
@@ -1624,6 +1609,116 @@ fn downsample_xy(x: &[f64], y: &[f64], max_points: usize) -> (Vec<f64>, Vec<f64>
         }
     }
     (xs, ys)
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RoomEqProgressChartSeries {
+    pub channel: String,
+    pub pass: usize,
+    pub iterations: Vec<f64>,
+    pub losses: Vec<f64>,
+    pub epa_iterations: Vec<f64>,
+    pub epa_values: Vec<f64>,
+}
+
+impl RoomEqProgressChartSeries {
+    fn new(channel: String, pass: usize) -> Self {
+        Self {
+            channel,
+            pass,
+            iterations: Vec::new(),
+            losses: Vec::new(),
+            epa_iterations: Vec::new(),
+            epa_values: Vec::new(),
+        }
+    }
+
+    fn loss_label(&self) -> String {
+        if self.pass == 1 {
+            format!("Loss {}", self.channel)
+        } else {
+            format!("Loss {} pass {}", self.channel, self.pass)
+        }
+    }
+
+    fn epa_label(&self) -> String {
+        if self.pass == 1 {
+            format!("EPA {}", self.channel)
+        } else {
+            format!("EPA {} pass {}", self.channel, self.pass)
+        }
+    }
+}
+
+pub fn room_eq_progress_chart_series(
+    history: &[(usize, f64, String, Option<f64>)],
+) -> (Vec<String>, Vec<RoomEqProgressChartSeries>, Vec<f64>) {
+    let mut channel_order = Vec::new();
+    let mut active_by_channel: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
+    let mut pass_count_by_channel: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
+    let mut series = Vec::new();
+    let mut all_losses = Vec::new();
+
+    for (iteration, loss, channel, epa) in history {
+        if !loss.is_finite() || *loss <= 0.0 {
+            continue;
+        }
+
+        let active_idx = match active_by_channel.get(channel).copied() {
+            Some(idx) => idx,
+            None => {
+                if !channel_order.iter().any(|existing| existing == channel) {
+                    channel_order.push(channel.clone());
+                }
+                let pass = pass_count_by_channel
+                    .entry(channel.clone())
+                    .and_modify(|count| *count += 1)
+                    .or_insert(1);
+                series.push(RoomEqProgressChartSeries::new(channel.clone(), *pass));
+                let idx = series.len() - 1;
+                active_by_channel.insert(channel.clone(), idx);
+                idx
+            }
+        };
+
+        // Completion/status records sometimes reuse iteration 0 after a
+        // channel already emitted real progress. Keep them out of the chart.
+        if *iteration == 0 && !series[active_idx].iterations.is_empty() {
+            continue;
+        }
+
+        let active_idx = if series[active_idx]
+            .iterations
+            .last()
+            .is_some_and(|last| (*iteration as f64) < *last)
+        {
+            let pass = pass_count_by_channel
+                .entry(channel.clone())
+                .and_modify(|count| *count += 1)
+                .or_insert(1);
+            series.push(RoomEqProgressChartSeries::new(channel.clone(), *pass));
+            let idx = series.len() - 1;
+            active_by_channel.insert(channel.clone(), idx);
+            idx
+        } else {
+            active_idx
+        };
+
+        let series = &mut series[active_idx];
+        series.iterations.push(*iteration as f64);
+        series.losses.push(*loss);
+        if let Some(epa) = epa
+            && epa.is_finite()
+        {
+            series.epa_iterations.push(*iteration as f64);
+            series.epa_values.push(*epa);
+        }
+        all_losses.push(*loss);
+    }
+
+    (channel_order, series, all_losses)
 }
 
 /// Compute group delay from a Curve's phase data.

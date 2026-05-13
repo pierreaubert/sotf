@@ -30,7 +30,8 @@ mod step_5_review;
 pub mod step_6_export;
 
 pub use step_4_optimise::{
-    room_eq_channel_chain_by_name, room_eq_display_response_points, room_eq_initial_response_points,
+    RoomEqProgressChartSeries, room_eq_channel_chain_by_name, room_eq_display_response_points,
+    room_eq_initial_response_points, room_eq_progress_chart_series,
 };
 
 impl PlayerView {

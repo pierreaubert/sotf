@@ -110,12 +110,16 @@ pub use ui::{
 // building.
 #[cfg(not(test))]
 pub use components::room_eq::render::{
-    calculate_room_eq_log_trend, is_room_eq_sub_or_lfe_channel, room_eq_passband_trend_fit_domain,
+    RoomEqReportCurve, RoomEqReportData, calculate_room_eq_log_trend,
+    is_room_eq_sub_or_lfe_channel, room_eq_channel_sort_key, room_eq_passband_trend_fit_domain,
+    room_eq_python_default_smoothing_octaves, room_eq_report_channel_has_renderable_data,
+    room_eq_report_data_from_dsp_output, room_eq_report_eq_y_range, room_eq_report_y_range,
     room_eq_trend_fit_domain, should_render_filter_plot, sum_room_eq_responses_db,
 };
 #[cfg(not(test))]
 pub use components::room_eq::{
-    room_eq_channel_chain_by_name, room_eq_display_response_points, room_eq_initial_response_points,
+    RoomEqProgressChartSeries, room_eq_channel_chain_by_name, room_eq_display_response_points,
+    room_eq_initial_response_points, room_eq_progress_chart_series,
 };
 #[cfg(not(test))]
 pub use sotf_audio_player::autoeq::{classify_channel_eq_filters, upsert_named_room_eq_plugins};

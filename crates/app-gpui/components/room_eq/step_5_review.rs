@@ -3,40 +3,39 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, Card, HStack, Select, SelectOption, StackSpacing, Text,
+    Card, HStack, Select, SelectOption, SelectSize, StackSpacing, TabItem, TabVariant, Tabs, Text,
     TextSize, TextWeight, Toggle, VStack,
 };
 
-use super::render::render_channel_result_card;
+use super::render::{
+    render_channel_result_card, render_room_eq_bass_management_report,
+    render_room_eq_report_channel, render_room_eq_report_overview, render_room_eq_report_summary,
+    room_eq_report_channel_has_renderable_data, room_eq_report_data_from_dsp_output,
+};
+use crate::app::types::room_eq::{RoomEqReviewGraphId, RoomEqReviewGraphSettings};
 
 impl PlayerView {
     pub(crate) fn render_room_eq_review(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let d = Ds::from_cx(cx);
         let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
         let room_eq = &state.app.measurement_state.room_eq_state;
 
-        let pre_score = room_eq.average_pre_score();
-        let post_score = room_eq.average_post_score();
-        let smoothing_octaves = room_eq.review_smoothing_octaves;
-        let smoothing_dropdown_open = room_eq.dropdowns.review_smoothing_open;
-        let selected_channel_idx = room_eq.review_selected_channel;
-        let channel_results = room_eq.channel_results.clone();
-
+        let report = room_eq
+            .dsp_output
+            .as_ref()
+            .map(room_eq_report_data_from_dsp_output);
+        let pre_score = report
+            .as_ref()
+            .and_then(|report| report.pre_score)
+            .unwrap_or_else(|| room_eq.average_pre_score());
+        let post_score = report
+            .as_ref()
+            .and_then(|report| report.post_score)
+            .unwrap_or_else(|| room_eq.average_post_score());
+        let graph_settings = room_eq.review_graph_settings.clone();
         let view = cx.entity().clone();
-
-        // Smoothing options
-        let smoothing_options = vec![
-            SelectOption::new("0", "None"),
-            SelectOption::new("0.25", "1/4 Oct"),
-            SelectOption::new("0.5", "1/2 Oct"),
-            SelectOption::new("1", "1 Oct"),
-            SelectOption::new("2", "2 Oct"),
-            SelectOption::new("3", "3 Oct"),
-        ];
-
-        let selected_smoothing = format!("{}", smoothing_octaves);
-        let y_axis_auto = room_eq.review_y_axis_auto;
 
         VStack::new()
             .spacing(StackSpacing::Md)
@@ -49,149 +48,6 @@ impl PlayerView {
                 Text::new(translations.roomeq_review_desc)
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
-            )
-            // Channel selection buttons
-            .when(channel_results.len() > 1, |vstack| {
-                vstack.child(
-                    Card::new()
-                        .background(theme.surface)
-                        .header_background(theme.background_secondary)
-                        .border(theme.border)
-                        .header(
-                            Text::new(translations.roomeq_select_channel)
-                                .color(theme.text_primary)
-                                .weight(TextWeight::Semibold),
-                        )
-                        .content(HStack::new().spacing(StackSpacing::Xs).children(
-                            channel_results.iter().enumerate().map(|(idx, result)| {
-                                let is_selected = idx == selected_channel_idx;
-                                let channel_name = result.channel_name.clone();
-
-                                Button::new(
-                                    SharedString::from(format!("channel_select_{}", idx)),
-                                    channel_name,
-                                )
-                                .variant(if is_selected {
-                                    ButtonVariant::Primary
-                                } else {
-                                    ButtonVariant::Secondary
-                                })
-                                .size(ButtonSize::Sm)
-                                .theme(theme.to_button_theme())
-                                .on_click_event(cx.listener(move |view, _, _, cx| {
-                                    view.state.update(cx, |state, _| {
-                                        state
-                                            .app
-                                            .measurement_state
-                                            .room_eq_state
-                                            .review_selected_channel = idx;
-                                    });
-                                    cx.notify();
-                                }))
-                            }),
-                        )),
-                )
-            })
-            // Graph settings card
-            .child(
-                Card::new()
-                    .background(theme.surface)
-                    .header_background(theme.background_secondary)
-                    .border(theme.border)
-                    .header(
-                        Text::new(translations.roomeq_graph_settings)
-                            .color(theme.text_primary)
-                            .weight(TextWeight::Semibold),
-                    )
-                    .content(
-                        HStack::new()
-                            .spacing(StackSpacing::Md)
-                            .child(
-                                HStack::new()
-                                    .spacing(StackSpacing::Xs)
-                                    .child(
-                                        Text::new(translations.roomeq_smoothing_label)
-                                            .size(TextSize::Xs)
-                                            .color(theme.text_secondary),
-                                    )
-                                    .child(
-                                        Select::new("review_smoothing_select")
-                                            .options(smoothing_options)
-                                            .selected(selected_smoothing)
-                                            .placeholder("Smoothing")
-                                            .is_open(smoothing_dropdown_open)
-                                            .theme(theme.to_select_theme())
-                                            .on_toggle({
-                                                let view = view.clone();
-                                                move |open, _window, cx| {
-                                                    view.update(cx, |this, cx| {
-                                                        this.state.update(cx, |state, _| {
-                                                            state
-                                                                .app
-                                                                .measurement_state
-                                                                .room_eq_state
-                                                                .dropdowns
-                                                                .review_smoothing_open = open;
-                                                        });
-                                                        cx.notify();
-                                                    });
-                                                }
-                                            })
-                                            .on_change({
-                                                let view = view.clone();
-                                                move |value, _window, cx| {
-                                                    view.update(cx, |this, cx| {
-                                                        this.state.update(cx, |state, _| {
-                                                            if let Ok(oct) = value.parse::<f64>() {
-                                                                state
-                                                                    .app
-                                                                    .measurement_state
-                                                                    .room_eq_state
-                                                                    .review_smoothing_octaves = oct;
-                                                            }
-                                                            state
-                                                                .app
-                                                                .measurement_state
-                                                                .room_eq_state
-                                                                .dropdowns
-                                                                .review_smoothing_open = false;
-                                                        });
-                                                        cx.notify();
-                                                    });
-                                                }
-                                            }),
-                                    ),
-                            )
-                            .child(
-                                HStack::new()
-                                    .spacing(StackSpacing::Xs)
-                                    .child(
-                                        Text::new(translations.roomeq_y_axis_auto)
-                                            .size(TextSize::Xs)
-                                            .color(theme.text_secondary),
-                                    )
-                                    .child(
-                                        Toggle::new("review_y_axis_auto")
-                                            .checked(y_axis_auto)
-                                            .theme(theme.to_toggle_theme())
-                                            .on_change({
-                                                let view = view.clone();
-                                                move |checked, _window, cx| {
-                                                    view.update(cx, |this, cx| {
-                                                        this.state.update(cx, |state, _| {
-                                                            state
-                                                                .app
-                                                                .measurement_state
-                                                                .room_eq_state
-                                                                .review_y_axis_auto = checked;
-                                                        });
-                                                        cx.notify();
-                                                    });
-                                                }
-                                            }),
-                                    ),
-                            ),
-                    ),
             )
             .child(
                 Card::new()
@@ -230,6 +86,49 @@ impl PlayerView {
                                 ),
                         ),
                     ),
+            )
+            .when_some(report.as_ref(), |vstack, report| {
+                vstack.child(render_room_eq_report_summary(d, report, &theme))
+            })
+            .when_some(report.as_ref(), |vstack, report| {
+                let original_id = RoomEqReviewGraphId::OverviewOriginal;
+                let eq_id = RoomEqReviewGraphId::OverviewEq;
+                let corrected_id = RoomEqReviewGraphId::OverviewCorrected;
+                vstack.child(render_room_eq_report_overview(
+                    d,
+                    report,
+                    &theme,
+                    *graph_settings.get(original_id),
+                    *graph_settings.get(eq_id),
+                    *graph_settings.get(corrected_id),
+                    Some(render_review_graph_controls(
+                        original_id,
+                        *graph_settings.get(original_id),
+                        true,
+                        view.clone(),
+                        &theme,
+                    )),
+                    Some(render_review_graph_controls(
+                        eq_id,
+                        *graph_settings.get(eq_id),
+                        false,
+                        view.clone(),
+                        &theme,
+                    )),
+                    Some(render_review_graph_controls(
+                        corrected_id,
+                        *graph_settings.get(corrected_id),
+                        true,
+                        view.clone(),
+                        &theme,
+                    )),
+                ))
+            })
+            .when_some(
+                report
+                    .as_ref()
+                    .and_then(|report| report.bass_management.as_ref()),
+                |vstack, bass| vstack.child(render_room_eq_bass_management_report(d, bass, &theme)),
             )
             // Selected channel result
             .child(self.render_selected_channel_result(cx))
@@ -272,7 +171,84 @@ impl PlayerView {
         let selected_idx = room_eq.review_selected_channel;
         let smoothing_octaves = room_eq.review_smoothing_octaves;
         let y_axis_auto = room_eq.review_y_axis_auto;
+        let graph_settings = room_eq.review_graph_settings.clone();
         let chart_state = room_eq.review_chart_state.as_ref().map(|w| w.inner());
+        let report = room_eq
+            .dsp_output
+            .as_ref()
+            .map(room_eq_report_data_from_dsp_output);
+        let channel_names: Vec<String> = report
+            .as_ref()
+            .map(|report| {
+                report
+                    .channels
+                    .iter()
+                    .map(|channel| channel.name.clone())
+                    .collect()
+            })
+            .unwrap_or_else(|| {
+                channel_results
+                    .iter()
+                    .map(|result| result.channel_name.clone())
+                    .collect()
+            });
+        let selected_idx_for_tabs = selected_idx.min(channel_names.len().saturating_sub(1));
+        let channel_tabs = render_room_eq_channel_tabs(
+            channel_names,
+            selected_idx_for_tabs,
+            cx.entity().clone(),
+            &theme,
+        );
+
+        if let Some(report) = report.as_ref()
+            && !report.channels.is_empty()
+        {
+            let idx = selected_idx.min(report.channels.len().saturating_sub(1));
+            let channel = &report.channels[idx];
+            if room_eq_report_channel_has_renderable_data(channel) {
+                let full_id = RoomEqReviewGraphId::ChannelFull;
+                let zoom_id = RoomEqReviewGraphId::ChannelZoom;
+                let eq_id = RoomEqReviewGraphId::ChannelEq;
+                return render_room_eq_channel_panel(
+                    d,
+                    &theme,
+                    translations.roomeq_select_channel,
+                    channel_tabs,
+                    render_room_eq_report_channel(
+                        d,
+                        channel,
+                        &theme,
+                        *graph_settings.get(full_id),
+                        *graph_settings.get(zoom_id),
+                        *graph_settings.get(eq_id),
+                        Some(render_review_graph_controls(
+                            full_id,
+                            *graph_settings.get(full_id),
+                            true,
+                            cx.entity().clone(),
+                            &theme,
+                        )),
+                        Some(render_review_graph_controls(
+                            zoom_id,
+                            *graph_settings.get(zoom_id),
+                            true,
+                            cx.entity().clone(),
+                            &theme,
+                        )),
+                        Some(render_review_graph_controls(
+                            eq_id,
+                            *graph_settings.get(eq_id),
+                            false,
+                            cx.entity().clone(),
+                            &theme,
+                        )),
+                        chart_state,
+                    )
+                    .into_any_element(),
+                )
+                .into_any_element();
+            }
+        }
 
         if channel_results.is_empty() {
             return VStack::new()
@@ -342,15 +318,275 @@ impl PlayerView {
             });
         }
 
-        render_channel_result_card(
+        render_room_eq_channel_panel(
             d,
-            display_result,
             &theme,
-            smoothing_octaves,
-            y_axis_auto,
-            chart_state,
-            has_fir,
+            translations.roomeq_select_channel,
+            channel_tabs,
+            render_channel_result_card(
+                d,
+                display_result,
+                &theme,
+                smoothing_octaves,
+                y_axis_auto,
+                chart_state,
+                has_fir,
+            )
+            .into_any_element(),
         )
         .into_any_element()
     }
+}
+
+fn render_room_eq_channel_panel(
+    d: Ds,
+    theme: &crate::theme::Theme,
+    title: impl Into<SharedString>,
+    tabs: gpui::AnyElement,
+    body: gpui::AnyElement,
+) -> impl IntoElement {
+    Card::new()
+        .background(theme.surface)
+        .header_background(theme.background_secondary)
+        .border(theme.border)
+        .header(
+            Text::new(title.into())
+                .color(theme.text_primary)
+                .weight(TextWeight::Semibold),
+        )
+        .content(
+            VStack::new()
+                .spacing(StackSpacing::Md)
+                .child(tabs)
+                .child(div().p(d.card).child(body)),
+        )
+}
+
+fn render_room_eq_channel_tabs(
+    channel_names: Vec<String>,
+    selected_idx: usize,
+    view: Entity<PlayerView>,
+    theme: &crate::theme::Theme,
+) -> gpui::AnyElement {
+    if channel_names.is_empty() {
+        return div().into_any_element();
+    }
+
+    Tabs::new("room-eq-review-channel-tabs")
+        .tabs(
+            channel_names
+                .into_iter()
+                .enumerate()
+                .map(|(idx, name)| TabItem::new(format!("channel-{idx}"), name))
+                .collect(),
+        )
+        .selected_index(selected_idx)
+        .variant(TabVariant::Pills)
+        .theme(theme.to_tabs_theme())
+        .on_change(move |idx, _window, cx| {
+            view.update(cx, |this, cx| {
+                this.state.update(cx, |state, _| {
+                    state
+                        .app
+                        .measurement_state
+                        .room_eq_state
+                        .review_selected_channel = idx;
+                });
+                cx.notify();
+            });
+        })
+        .into_any_element()
+}
+
+fn render_review_graph_controls(
+    graph_id: RoomEqReviewGraphId,
+    settings: RoomEqReviewGraphSettings,
+    allow_trend_controls: bool,
+    view: Entity<PlayerView>,
+    theme: &crate::theme::Theme,
+) -> gpui::AnyElement {
+    HStack::new()
+        .spacing(StackSpacing::Xs)
+        .child(
+            Select::new(SharedString::from(format!(
+                "room-eq-review-smoothing-{graph_id:?}"
+            )))
+            .options(room_eq_smoothing_options())
+            .selected(room_eq_smoothing_value(settings.smoothing_octaves))
+            .placeholder("Smoothing")
+            .size(SelectSize::Sm)
+            .is_open(settings.smoothing_open)
+            .theme(theme.to_select_theme())
+            .on_toggle({
+                let view = view.clone();
+                move |open, _window, cx| {
+                    view.update(cx, |this, cx| {
+                        this.state.update(cx, |state, _| {
+                            state
+                                .app
+                                .measurement_state
+                                .room_eq_state
+                                .review_graph_settings
+                                .get_mut(graph_id)
+                                .smoothing_open = open;
+                        });
+                        cx.notify();
+                    });
+                }
+            })
+            .on_change({
+                let view = view.clone();
+                move |value, _window, cx| {
+                    view.update(cx, |this, cx| {
+                        this.state.update(cx, |state, _| {
+                            if let Ok(octaves) = value.as_ref().parse::<f64>() {
+                                let settings = state
+                                    .app
+                                    .measurement_state
+                                    .room_eq_state
+                                    .review_graph_settings
+                                    .get_mut(graph_id);
+                                settings.smoothing_octaves = octaves;
+                                settings.smoothing_open = false;
+                            }
+                        });
+                        cx.notify();
+                    });
+                }
+            }),
+        )
+        .child(
+            HStack::new()
+                .spacing(StackSpacing::Xs)
+                .child(
+                    Text::new("Auto")
+                        .size(TextSize::Xs)
+                        .color(theme.text_secondary),
+                )
+                .child(
+                    Toggle::new(SharedString::from(format!(
+                        "room-eq-review-auto-{graph_id:?}"
+                    )))
+                    .checked(settings.y_axis_auto)
+                    .theme(theme.to_toggle_theme())
+                    .on_change({
+                        let view = view.clone();
+                        move |checked, _window, cx| {
+                            view.update(cx, |this, cx| {
+                                this.state.update(cx, |state, _| {
+                                    state
+                                        .app
+                                        .measurement_state
+                                        .room_eq_state
+                                        .review_graph_settings
+                                        .get_mut(graph_id)
+                                        .y_axis_auto = checked;
+                                });
+                                cx.notify();
+                            });
+                        }
+                    }),
+                ),
+        )
+        .when(allow_trend_controls, |controls| {
+            controls
+                .child(
+                    HStack::new()
+                        .spacing(StackSpacing::Xs)
+                        .child(
+                            Text::new("Trend")
+                                .size(TextSize::Xs)
+                                .color(theme.text_secondary),
+                        )
+                        .child(
+                            Toggle::new(SharedString::from(format!(
+                                "room-eq-review-trend-{graph_id:?}"
+                            )))
+                            .checked(settings.show_trend)
+                            .theme(theme.to_toggle_theme())
+                            .on_change({
+                                let view = view.clone();
+                                move |checked, _window, cx| {
+                                    view.update(cx, |this, cx| {
+                                        this.state.update(cx, |state, _| {
+                                            state
+                                                .app
+                                                .measurement_state
+                                                .room_eq_state
+                                                .review_graph_settings
+                                                .get_mut(graph_id)
+                                                .show_trend = checked;
+                                        });
+                                        cx.notify();
+                                    });
+                                }
+                            }),
+                        ),
+                )
+                .child(
+                    HStack::new()
+                        .spacing(StackSpacing::Xs)
+                        .child(
+                            Text::new("Normalize")
+                                .size(TextSize::Xs)
+                                .color(theme.text_secondary),
+                        )
+                        .child(
+                            Toggle::new(SharedString::from(format!(
+                                "room-eq-review-normalize-{graph_id:?}"
+                            )))
+                            .checked(settings.normalize_to_trend)
+                            .theme(theme.to_toggle_theme())
+                            .on_change({
+                                let view = view.clone();
+                                move |checked, _window, cx| {
+                                    view.update(cx, |this, cx| {
+                                        this.state.update(cx, |state, _| {
+                                            state
+                                                .app
+                                                .measurement_state
+                                                .room_eq_state
+                                                .review_graph_settings
+                                                .get_mut(graph_id)
+                                                .normalize_to_trend = checked;
+                                        });
+                                        cx.notify();
+                                    });
+                                }
+                            }),
+                        ),
+                )
+        })
+        .into_any_element()
+}
+
+fn room_eq_smoothing_options() -> Vec<SelectOption> {
+    vec![
+        SelectOption::new("0.16666666666666666", "1/6 Oct"),
+        SelectOption::new("0.3333333333333333", "1/3 Oct"),
+        SelectOption::new("0.5", "1/2 Oct"),
+        SelectOption::new("1", "1 Oct"),
+        SelectOption::new("0.08333333333333333", "1/12 Oct"),
+        SelectOption::new("0.041666666666666664", "1/24 Oct"),
+        SelectOption::new("0.020833333333333332", "1/48 Oct"),
+        SelectOption::new("0", "Raw"),
+    ]
+}
+
+fn room_eq_smoothing_value(value: f64) -> &'static str {
+    const OPTIONS: &[(f64, &str)] = &[
+        (1.0 / 6.0, "0.16666666666666666"),
+        (1.0 / 3.0, "0.3333333333333333"),
+        (0.5, "0.5"),
+        (1.0, "1"),
+        (1.0 / 12.0, "0.08333333333333333"),
+        (1.0 / 24.0, "0.041666666666666664"),
+        (1.0 / 48.0, "0.020833333333333332"),
+        (0.0, "0"),
+    ];
+    OPTIONS
+        .iter()
+        .find(|(candidate, _)| (value - *candidate).abs() < 1.0e-9)
+        .map(|(_, key)| *key)
+        .unwrap_or("0.16666666666666666")
 }

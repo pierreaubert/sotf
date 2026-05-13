@@ -66,25 +66,27 @@ fn test_room_eq_to_room_config_simple() {
 
 #[test]
 fn test_room_eq_to_room_config_preserves_raw_sweep_ctc_config() {
-    let mut state = RoomEqState::default();
-    state.channel_measurements = vec![
-        make_dummy_measurement("L"),
-        make_dummy_measurement("R"),
-        make_dummy_measurement("LFE [mic 1]"),
-    ];
-    state.init_speaker_configs();
-    state.ctc_config = Some(autoeq::roomeq::CtcConfig {
-        enabled: true,
-        matrix_source: "raw_sweep".to_string(),
-        reference_sweep: Some(PathBuf::from("ctc_reference_sweep.wav")),
-        measurements: Some(autoeq::roomeq::CtcMeasurementConfig {
-            speakers: vec!["L".to_string(), "R".to_string(), "LFE [mic 1]".to_string()],
-            mics: vec!["left_ear".to_string(), "right_ear".to_string()],
-            head_positions: Vec::new(),
-            files: Vec::new(),
+    let mut state = RoomEqState {
+        channel_measurements: vec![
+            make_dummy_measurement("L"),
+            make_dummy_measurement("R"),
+            make_dummy_measurement("LFE [mic 1]"),
+        ],
+        ctc_config: Some(autoeq::roomeq::CtcConfig {
+            enabled: true,
+            matrix_source: "raw_sweep".to_string(),
+            reference_sweep: Some(PathBuf::from("ctc_reference_sweep.wav")),
+            measurements: Some(autoeq::roomeq::CtcMeasurementConfig {
+                speakers: vec!["L".to_string(), "R".to_string(), "LFE [mic 1]".to_string()],
+                mics: vec!["left_ear".to_string(), "right_ear".to_string()],
+                head_positions: Vec::new(),
+                files: Vec::new(),
+            }),
+            ..Default::default()
         }),
         ..Default::default()
-    });
+    };
+    state.init_speaker_configs();
 
     let config = state.to_room_config();
     let ctc = config.ctc.expect("ctc config");
@@ -118,20 +120,22 @@ fn test_room_eq_to_room_config_preserves_raw_sweep_ctc_config() {
 
 #[test]
 fn test_room_eq_to_room_config_disables_imported_ctc_config() {
-    let mut state = RoomEqState::default();
-    state.channel_measurements = vec![make_dummy_measurement("L"), make_dummy_measurement("R")];
-    state.init_speaker_configs();
-    state.ctc_config = Some(autoeq::roomeq::CtcConfig {
-        enabled: true,
-        matrix_source: "measured".to_string(),
-        measurements: Some(autoeq::roomeq::CtcMeasurementConfig {
-            speakers: vec!["L".to_string(), "R".to_string()],
-            mics: vec!["left_ear".to_string(), "right_ear".to_string()],
-            head_positions: Vec::new(),
-            files: Vec::new(),
+    let mut state = RoomEqState {
+        channel_measurements: vec![make_dummy_measurement("L"), make_dummy_measurement("R")],
+        ctc_config: Some(autoeq::roomeq::CtcConfig {
+            enabled: true,
+            matrix_source: "measured".to_string(),
+            measurements: Some(autoeq::roomeq::CtcMeasurementConfig {
+                speakers: vec!["L".to_string(), "R".to_string()],
+                mics: vec!["left_ear".to_string(), "right_ear".to_string()],
+                head_positions: Vec::new(),
+                files: Vec::new(),
+            }),
+            ..Default::default()
         }),
         ..Default::default()
-    });
+    };
+    state.init_speaker_configs();
 
     let config = state.to_room_config();
     let ctc = config.ctc.expect("ctc config metadata is preserved");
@@ -145,12 +149,14 @@ fn test_room_eq_to_room_config_disables_imported_ctc_config() {
 
 #[test]
 fn test_room_eq_to_room_config_emits_bass_management_without_ctc() {
-    let mut state = RoomEqState::default();
-    state.channel_measurements = vec![
-        make_dummy_measurement("L"),
-        make_dummy_measurement("R"),
-        make_dummy_measurement("LFE"),
-    ];
+    let mut state = RoomEqState {
+        channel_measurements: vec![
+            make_dummy_measurement("L"),
+            make_dummy_measurement("R"),
+            make_dummy_measurement("LFE"),
+        ],
+        ..Default::default()
+    };
     state.init_speaker_configs();
 
     let config = state.to_room_config();
@@ -175,12 +181,14 @@ fn test_room_eq_to_room_config_emits_bass_management_without_ctc() {
 
 #[test]
 fn test_room_eq_to_room_config_preserves_imported_system_and_crossovers() {
-    let mut state = RoomEqState::default();
-    state.channel_measurements = vec![
-        make_dummy_measurement("L"),
-        make_dummy_measurement("R"),
-        make_dummy_measurement("LFE"),
-    ];
+    let mut state = RoomEqState {
+        channel_measurements: vec![
+            make_dummy_measurement("L"),
+            make_dummy_measurement("R"),
+            make_dummy_measurement("LFE"),
+        ],
+        ..Default::default()
+    };
     state.init_speaker_configs();
 
     let mut speakers = HashMap::new();
@@ -272,22 +280,24 @@ fn test_load_from_recording_marks_ctc_fallback_as_measured() {
     }
 
     let dir = tempfile::tempdir().unwrap();
-    let mut recording = RecordingState::default();
-    recording.recording_directory = Some(dir.path().to_string_lossy().to_string());
-    recording.ctc_reference_sweep_path = Some(
-        dir.path()
-            .join("ctc_reference_sweep.wav")
-            .to_string_lossy()
-            .to_string(),
-    );
+    let mut recording = RecordingState {
+        recording_directory: Some(dir.path().to_string_lossy().to_string()),
+        ctc_reference_sweep_path: Some(
+            dir.path()
+                .join("ctc_reference_sweep.wav")
+                .to_string_lossy()
+                .to_string(),
+        ),
+        channel_recordings: vec![
+            ctc_ir_recording(0, 0),
+            ctc_ir_recording(0, 1),
+            ctc_ir_recording(1, 0),
+            ctc_ir_recording(1, 1),
+        ],
+        ..Default::default()
+    };
     recording.recording_config.channel_mappings = vec![0, 1];
     recording.recording_config.ctc_matrix_strategy = CtcMatrixExportStrategy::RawSweep;
-    recording.channel_recordings = vec![
-        ctc_ir_recording(0, 0),
-        ctc_ir_recording(0, 1),
-        ctc_ir_recording(1, 0),
-        ctc_ir_recording(1, 1),
-    ];
 
     let mut room_eq = RoomEqState::default();
     room_eq.load_from_recording(&recording);
@@ -1224,12 +1234,11 @@ fn simulate_save_to_rack(
         if let Some(chain) = dsp_output.channels.get(*name) {
             let mut channel_eq_filters: Vec<EQFilter> = Vec::new();
             for plugin in &chain.plugins {
-                if plugin.plugin_type.eq_ignore_ascii_case("eq") {
-                    if let Some(filters) =
+                if plugin.plugin_type.eq_ignore_ascii_case("eq")
+                    && let Some(filters) =
                         plugin.parameters.get("filters").and_then(|f| f.as_array())
-                    {
-                        channel_eq_filters.extend(parse_eq_filters_from_json(filters));
-                    }
+                {
+                    channel_eq_filters.extend(parse_eq_filters_from_json(filters));
                 }
             }
             per_channel_filters.push(channel_eq_filters);
@@ -1259,10 +1268,10 @@ fn simulate_save_to_rack(
             }
         } else {
             let insert_idx = graph.user_plugin_insert_index();
-            if graph.insert_plugin(insert_idx, &PluginType::EQ).is_ok() {
-                if let Some(eq_plugin) = graph.get_plugin_mut(insert_idx) {
-                    eq_plugin.settings = new_settings;
-                }
+            if graph.insert_plugin(insert_idx, &PluginType::EQ).is_ok()
+                && let Some(eq_plugin) = graph.get_plugin_mut(insert_idx)
+            {
+                eq_plugin.settings = new_settings;
             }
         }
     }
@@ -1270,9 +1279,12 @@ fn simulate_save_to_rack(
     (total_filters, per_channel_filters)
 }
 
+type FilterTriple = (f64, f64, f64);
+type ChannelFilters<'a> = (&'a str, Vec<FilterTriple>);
+
 /// Build a DspChainOutput using autoeq format keys ("freq", "db_gain")
 /// which is what the real optimizer produces.
-fn build_autoeq_dsp_output(channels: &[(&str, Vec<(f64, f64, f64)>)]) -> DspChainOutput {
+fn build_autoeq_dsp_output(channels: &[ChannelFilters<'_>]) -> DspChainOutput {
     let mut map = std::collections::HashMap::new();
     for (name, filters) in channels {
         let filter_json: Vec<serde_json::Value> = filters
@@ -1384,7 +1396,7 @@ fn test_save_to_rack_update_existing_eq() {
 #[test]
 fn test_save_to_rack_5_1_surround() {
     let labels = ["FL", "FR", "C", "LFE", "SL", "SR"];
-    let channels: Vec<(&str, Vec<(f64, f64, f64)>)> = labels
+    let channels: Vec<ChannelFilters<'_>> = labels
         .iter()
         .enumerate()
         .map(|(i, &name)| (name, vec![((i + 1) as f64 * 100.0, 1.0, -3.0)]))
