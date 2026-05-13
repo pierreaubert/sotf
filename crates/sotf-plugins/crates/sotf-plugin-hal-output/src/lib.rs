@@ -242,10 +242,7 @@ mod tests {
     #[test]
     fn new_rejects_zero_channels() {
         match HalOutputPlugin::new(0) {
-            Err(e) => assert!(
-                e.contains("Invalid channel count"),
-                "unexpected error: {e}"
-            ),
+            Err(e) => assert!(e.contains("Invalid channel count"), "unexpected error: {e}"),
             Ok(_) => panic!("expected Err for 0 channels"),
         }
     }
@@ -253,10 +250,7 @@ mod tests {
     #[test]
     fn new_rejects_too_many_channels() {
         match HalOutputPlugin::new(17) {
-            Err(e) => assert!(
-                e.contains("Invalid channel count"),
-                "unexpected error: {e}"
-            ),
+            Err(e) => assert!(e.contains("Invalid channel count"), "unexpected error: {e}"),
             Ok(_) => panic!("expected Err for 17 channels"),
         }
     }
@@ -270,8 +264,10 @@ mod tests {
         //
         // On macOS+hal this test would need a running HAL daemon, so we skip the
         // Plugin::parameters() check and just verify the id string constants.
-        assert_ne!("buffer_fill_level", "write_success_ratio",
-            "parameter was not renamed — this test itself is wrong");
+        assert_ne!(
+            "buffer_fill_level", "write_success_ratio",
+            "parameter was not renamed — this test itself is wrong"
+        );
 
         // The get_parameter implementation must recognise "write_success_ratio"
         // and must NOT recognise the old name "buffer_fill_level".
@@ -328,10 +324,7 @@ mod tests {
         let input = vec![0.0f32; 7];
         let mut output = vec![];
         let err = plugin.process(&input, &mut output, &ctx).unwrap_err();
-        assert!(
-            err.contains("mismatch"),
-            "unexpected error message: {err}"
-        );
+        assert!(err.contains("mismatch"), "unexpected error message: {err}");
     }
 
     /// Build a `HalOutputPlugin` directly (without the HAL writer) so tests

@@ -108,8 +108,7 @@ impl DelayPlugin {
         let sr = 44100;
         // Round to next power-of-two so modulo in read positions can be replaced
         // with a bitmask by the compiler (the buffer is used with % max_samples).
-        let max_samples =
-            ((MAX_DELAY_MS * 0.001 * sr as f32) as usize + 4).next_power_of_two();
+        let max_samples = ((MAX_DELAY_MS * 0.001 * sr as f32) as usize + 4).next_power_of_two();
         let mut p = Self {
             channels,
             sample_rate: sr,
@@ -699,8 +698,14 @@ mod tests {
         let num_frames = 64usize;
         let input: Vec<f32> = (0..num_frames).map(|n| (n + 1) as f32).collect();
         let mut buf = input.clone();
-        p.process_in_place(&mut buf, &ProcessContext { sample_rate: sr, num_frames })
-            .unwrap();
+        p.process_in_place(
+            &mut buf,
+            &ProcessContext {
+                sample_rate: sr,
+                num_frames,
+            },
+        )
+        .unwrap();
 
         // Compute effective mix per sample: mix[n] = 1 - output[n]/input[n]
         let ratios: Vec<f32> = buf
@@ -754,8 +759,14 @@ mod tests {
         // Snapshot the smoother position after processing 64 frames
         let num_frames = 64usize;
         let mut buf = vec![0.0f32; num_frames];
-        p.process_in_place(&mut buf, &ProcessContext { sample_rate: sr, num_frames })
-            .unwrap();
+        p.process_in_place(
+            &mut buf,
+            &ProcessContext {
+                sample_rate: sr,
+                num_frames,
+            },
+        )
+        .unwrap();
 
         // After 64 frames, the smoother current should have moved 64 steps
         // toward the target (200 ms * sr = 9600 samples).

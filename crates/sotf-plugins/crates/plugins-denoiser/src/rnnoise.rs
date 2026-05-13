@@ -130,26 +130,20 @@ impl RnnoiseBackend {
                             *s *= 32767.0;
                         }
 
-                        self.denoisers[ch].process_frame(
-                            &mut self.scratch_output[ch],
-                            &self.scratch_input[ch],
-                        );
+                        self.denoisers[ch]
+                            .process_frame(&mut self.scratch_output[ch], &self.scratch_input[ch]);
 
                         for s in &mut self.scratch_output[ch] {
                             *s /= 32767.0;
                         }
 
                         if ch == 0 {
-                            ch0_input_power = self.accum_buffers[0]
-                                .iter()
-                                .map(|x| x * x)
-                                .sum::<f32>()
-                                / RNNOISE_FRAME_SIZE as f32;
-                            ch0_output_power = self.scratch_output[0]
-                                .iter()
-                                .map(|x| x * x)
-                                .sum::<f32>()
-                                / RNNOISE_FRAME_SIZE as f32;
+                            ch0_input_power =
+                                self.accum_buffers[0].iter().map(|x| x * x).sum::<f32>()
+                                    / RNNOISE_FRAME_SIZE as f32;
+                            ch0_output_power =
+                                self.scratch_output[0].iter().map(|x| x * x).sum::<f32>()
+                                    / RNNOISE_FRAME_SIZE as f32;
                         }
 
                         let ring_size = self.output_buffers[ch].len();

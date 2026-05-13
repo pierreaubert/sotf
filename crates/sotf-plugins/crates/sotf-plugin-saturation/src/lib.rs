@@ -848,10 +848,7 @@ impl InPlacePlugin for SaturationPlugin {
                 // Only recombine for frames the oversampler actually wrote.
                 // Frames beyond frames_written are already zero (pre-zeroed by oversampler).
                 let valid = frames_written * nc;
-                for (out, &low) in buffer[..valid]
-                    .iter_mut()
-                    .zip(self.low_buf[..valid].iter())
-                {
+                for (out, &low) in buffer[..valid].iter_mut().zip(self.low_buf[..valid].iter()) {
                     *out += low;
                 }
                 // Remaining frames: pass through the low band only
@@ -1418,7 +1415,9 @@ mod tests {
         let ctx = make_context(num_frames);
 
         plugin_adaa.process_in_place(&mut buf_adaa, &ctx).unwrap();
-        plugin_direct.process_in_place(&mut buf_direct, &ctx).unwrap();
+        plugin_direct
+            .process_in_place(&mut buf_direct, &ctx)
+            .unwrap();
 
         // With the fix, ADAA Tube path uses direct tube(), outputs must be identical
         for i in 0..num_frames {
@@ -1548,9 +1547,7 @@ mod tests {
         let ctx = make_context(num_frames);
         // process_in_place operates on buffer but only touches [..total]
         // We pass a slice of exactly `total` to match the contract
-        plugin
-            .process_in_place(&mut buffer[..total], &ctx)
-            .unwrap();
+        plugin.process_in_place(&mut buffer[..total], &ctx).unwrap();
 
         // Sentinel values after total must be unchanged
         for (i, &s) in buffer[total..].iter().enumerate() {

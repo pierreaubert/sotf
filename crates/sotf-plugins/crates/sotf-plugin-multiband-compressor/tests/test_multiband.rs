@@ -86,8 +86,12 @@ fn test_multiband_compressor_ms_mode_roundtrip() {
     };
 
     // Process both blocks; the second block is in the settled region.
-    plugin.process_in_place(&mut signal[..block * 2], &context).unwrap();
-    plugin.process_in_place(&mut signal[block * 2..], &context).unwrap();
+    plugin
+        .process_in_place(&mut signal[..block * 2], &context)
+        .unwrap();
+    plugin
+        .process_in_place(&mut signal[block * 2..], &context)
+        .unwrap();
 
     // With ratio=1 (no compression), output should preserve energy and stereo image.
     // The crossover filters shift phase, so sample-level identity is not expected.
@@ -99,9 +103,8 @@ fn test_multiband_compressor_ms_mode_roundtrip() {
     let orig_rms: f32 = (original[skip..].iter().map(|x| x * x).sum::<f32>()
         / (original.len() - skip) as f32)
         .sqrt();
-    let out_rms: f32 = (signal[skip..].iter().map(|x| x * x).sum::<f32>()
-        / (signal.len() - skip) as f32)
-        .sqrt();
+    let out_rms: f32 =
+        (signal[skip..].iter().map(|x| x * x).sum::<f32>() / (signal.len() - skip) as f32).sqrt();
     let rms_ratio_db = 20.0 * (out_rms / orig_rms).log10();
 
     assert!(

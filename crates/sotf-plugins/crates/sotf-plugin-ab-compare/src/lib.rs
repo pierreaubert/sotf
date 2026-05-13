@@ -584,12 +584,12 @@ impl ABComparePlugin {
                 (Some(a), Some(b)) => format!(
                     "Latency compensation disabled: host_a build error: {a}; host_b build error: {b}"
                 ),
-                (Some(a), None) => format!(
-                    "Latency compensation disabled: host_a build error: {a}"
-                ),
-                (None, Some(b)) => format!(
-                    "Latency compensation disabled: host_b build error: {b}"
-                ),
+                (Some(a), None) => {
+                    format!("Latency compensation disabled: host_a build error: {a}")
+                }
+                (None, Some(b)) => {
+                    format!("Latency compensation disabled: host_b build error: {b}")
+                }
                 (None, None) => unreachable!(),
             };
             return Err(msg);

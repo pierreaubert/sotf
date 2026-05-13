@@ -117,8 +117,7 @@ pub fn calculate_vbap_gains(
     } else {
         // For in-triangle targets apply VBAP energy normalization to maintain constant
         // perceived loudness as the source moves between measurement positions.
-        let energy =
-            weights[0] * weights[0] + weights[1] * weights[1] + weights[2] * weights[2];
+        let energy = weights[0] * weights[0] + weights[1] * weights[1] + weights[2] * weights[2];
         if energy > 1e-6 {
             let scale = 1.0 / energy.sqrt();
             [weights[0] * scale, weights[1] * scale, weights[2] * scale]

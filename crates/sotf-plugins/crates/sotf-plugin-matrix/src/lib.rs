@@ -281,7 +281,11 @@ impl MatrixPlugin {
                     } else {
                         self.output_channel_map[out_ch]
                     };
-                    let phase_sign = if self.phase_invert[idx] { -1.0f32 } else { 1.0f32 };
+                    let phase_sign = if self.phase_invert[idx] {
+                        -1.0f32
+                    } else {
+                        1.0f32
+                    };
                     self.connection_phys.push((phys_in, phys_out, phase_sign));
                 }
             }
@@ -715,15 +719,16 @@ impl Plugin for MatrixPlugin {
         for frame in 0..num_frames {
             let base_out = frame * out_channels;
             let base_in = frame * in_channels;
-            for (&(_logical_in, logical_out, idx), &(phys_in, phys_out, phase_sign)) in
-                self.active_connections.iter().zip(self.connection_phys.iter())
+            for (&(_logical_in, logical_out, idx), &(phys_in, phys_out, phase_sign)) in self
+                .active_connections
+                .iter()
+                .zip(self.connection_phys.iter())
             {
                 // advance() is called once per sample per connection to maintain
                 // correct per-sample gain interpolation (5 ms smoother).
                 let gain = self.gain_smoothers[idx].advance() * phase_sign;
                 let ch_gain = self.ch_gains_buffer[base_out + logical_out];
-                output[base_out + phys_out] +=
-                    input[base_in + phys_in] * gain * ch_gain;
+                output[base_out + phys_out] += input[base_in + phys_in] * gain * ch_gain;
             }
         }
 

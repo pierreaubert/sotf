@@ -139,7 +139,11 @@ impl SplitPane {
         let divider_hover = theme.divider_hover;
         let _divider_active = theme.divider_active;
 
-        let mut container = div().id(self.id.clone()).size_full().flex().overflow_hidden();
+        let mut container = div()
+            .id(self.id.clone())
+            .size_full()
+            .flex()
+            .overflow_hidden();
 
         container = match self.direction {
             SplitDirection::Horizontal => container.flex_row(),
@@ -214,7 +218,10 @@ impl SplitPane {
             SplitDirection::Vertical => second_pane.w_full().min_h(self.min_second),
         };
 
-        container = container.child(first_pane).child(divider).child(second_pane);
+        container = container
+            .child(first_pane)
+            .child(divider)
+            .child(second_pane);
 
         // Drag move / end on the container so tracking continues when the
         // cursor leaves the thin divider.

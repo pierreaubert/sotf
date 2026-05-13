@@ -51,7 +51,10 @@ struct AuWindowPtr(*const AuWindow);
 impl AuWindowPtr {
     #[cfg(all(debug_assertions, not(test)))]
     fn assert_main_thread() {
-        use objc::{class, msg_send, runtime::{BOOL, YES}};
+        use objc::{
+            class, msg_send,
+            runtime::{BOOL, YES},
+        };
         unsafe {
             let is_main: BOOL = msg_send![class!(NSThread), isMainThread];
             assert!(

@@ -366,7 +366,11 @@ pub(crate) fn validate_range(min: f64, max: f64, field: &'static str) -> Result<
 }
 
 /// Validate that an explicit range is strictly positive (for log scale).
-pub(crate) fn validate_range_log(min: f64, max: f64, field: &'static str) -> Result<(), ChartError> {
+pub(crate) fn validate_range_log(
+    min: f64,
+    max: f64,
+    field: &'static str,
+) -> Result<(), ChartError> {
     validate_range(min, max, field)?;
     if min <= 0.0 || max <= 0.0 {
         return Err(ChartError::InvalidData {

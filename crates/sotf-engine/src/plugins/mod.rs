@@ -754,7 +754,6 @@ sotf_plugins::serde_param_default! {
     fn default_hiss_reducer_threshold_db() -> f64 = "threshold_db";
     fn default_hiss_reducer_frequency_hz() -> f64 = "frequency_hz";
     fn default_hiss_reducer_strength() -> f64 = "strength";
-    fn default_hiss_reducer_low_latency() -> bool = "low_latency";
 }
 
 sotf_plugins::serde_param_default! {
@@ -1579,8 +1578,6 @@ pub enum PluginSettings {
         frequency_hz: f64,
         #[serde(default = "default_hiss_reducer_strength")]
         strength: f64,
-        #[serde(default = "default_hiss_reducer_low_latency")]
-        low_latency: bool,
     },
     SpeechDenoiser {
         #[serde(default = "default_speech_denoiser_enabled")]
@@ -3035,7 +3032,6 @@ impl PluginSettings {
                 threshold_db,
                 frequency_hz,
                 strength,
-                low_latency,
             } => PluginConfig::new(
                 "hiss_reducer",
                 json!({
@@ -3043,7 +3039,6 @@ impl PluginSettings {
                     "threshold_db": threshold_db,
                     "frequency_hz": frequency_hz,
                     "strength": strength,
-                    "low_latency": low_latency,
                 }),
             ),
             Self::SpeechDenoiser { enabled } => PluginConfig::new(
@@ -3616,7 +3611,6 @@ impl PluginSettings {
                     threshold_db: p(hr, "threshold_db").default_f64(),
                     frequency_hz: p(hr, "frequency_hz").default_f64(),
                     strength: p(hr, "strength").default_f64(),
-                    low_latency: p(hr, "low_latency").default_bool(),
                 }
             }
             PluginType::SpeechDenoiser => {

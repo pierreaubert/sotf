@@ -384,8 +384,16 @@ impl Default for WheelConfig {
 /// Clamp log-scale domain bounds to a small positive epsilon and ensure min < max.
 fn clamp_log_domain(min: f64, max: f64) -> (f64, f64) {
     let epsilon = 1e-10;
-    let min = if min.is_finite() && min > epsilon { min } else { epsilon };
-    let max = if max.is_finite() && max > epsilon { max } else { epsilon };
+    let min = if min.is_finite() && min > epsilon {
+        min
+    } else {
+        epsilon
+    };
+    let max = if max.is_finite() && max > epsilon {
+        max
+    } else {
+        epsilon
+    };
     if min >= max {
         (min, min + epsilon)
     } else {
@@ -1167,8 +1175,16 @@ mod tests {
 
         let (x_min, x_max) = interaction.x_domain();
         let (y_min, y_max) = interaction.y_domain();
-        assert!(x_min > 0.0, "log x_min should be clamped above 0, got {}", x_min);
-        assert!(y_min > 0.0, "log y_min should be clamped above 0, got {}", y_min);
+        assert!(
+            x_min > 0.0,
+            "log x_min should be clamped above 0, got {}",
+            x_min
+        );
+        assert!(
+            y_min > 0.0,
+            "log y_min should be clamped above 0, got {}",
+            y_min
+        );
         assert!(x_min < x_max);
         assert!(y_min < y_max);
     }
@@ -1188,8 +1204,16 @@ mod tests {
 
             let (x_min, x_max) = state.x_domain();
             let (y_min, y_max) = state.y_domain();
-            assert!(x_min > 0.0, "log x_min should be clamped above 0, got {}", x_min);
-            assert!(y_min > 0.0, "log y_min should be clamped above 0, got {}", y_min);
+            assert!(
+                x_min > 0.0,
+                "log x_min should be clamped above 0, got {}",
+                x_min
+            );
+            assert!(
+                y_min > 0.0,
+                "log y_min should be clamped above 0, got {}",
+                y_min
+            );
             assert!(x_min < x_max);
             assert!(y_min < y_max);
         }

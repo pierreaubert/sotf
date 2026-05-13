@@ -177,7 +177,10 @@ mod tests {
                 "round-trip failed for acn={acn}: l={l}, m={m}"
             );
             // m is in [-l, l]
-            assert!(m >= -l && m <= l, "m={m} out of range [-{l},{l}] for acn={acn}");
+            assert!(
+                m >= -l && m <= l,
+                "m={m} out of range [-{l},{l}] for acn={acn}"
+            );
         }
     }
 

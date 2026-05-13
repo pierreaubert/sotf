@@ -340,11 +340,7 @@ mod tests {
 
     #[test]
     fn test_surface3d_builds() {
-        let z = vec![
-            1.0, 2.0, 3.0,
-            4.0, 5.0, 6.0,
-            7.0, 8.0, 9.0,
-        ];
+        let z = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
         let result = surface3d(&z, 3, 3).build();
         assert!(result.is_ok());
     }
@@ -354,10 +350,7 @@ mod tests {
         let z = vec![1.0, 2.0, 3.0, 4.0];
         let x = vec![0.0, 1.0];
         let y = vec![0.0, 1.0];
-        let result = surface3d(&z, 2, 2)
-            .x(&x)
-            .y(&y)
-            .build();
+        let result = surface3d(&z, 2, 2).x(&x).y(&y).build();
         assert!(result.is_ok());
     }
 }

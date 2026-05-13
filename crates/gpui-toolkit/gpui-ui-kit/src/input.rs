@@ -1570,8 +1570,10 @@ impl IntoElement for Input {
 
 #[cfg(test)]
 mod tests {
-    use super::{trim_thread_local_storage, TEXT_ORIGINS, MAX_THREAD_LOCAL_INPUT_STATES, keystroke_to_char};
-    use gpui::{ElementId, SharedString, Keystroke, Modifiers};
+    use super::{
+        MAX_THREAD_LOCAL_INPUT_STATES, TEXT_ORIGINS, keystroke_to_char, trim_thread_local_storage,
+    };
+    use gpui::{ElementId, Keystroke, Modifiers, SharedString};
 
     #[test]
     fn test_keystroke_to_char_space() {

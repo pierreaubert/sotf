@@ -1589,6 +1589,43 @@ fn handle_command(
                     state.store(Arc::new(new_state));
                     ManagerResponse::Ok
                 }
+                Err(e) if e == "No decoder" => {
+                    let current = state.load();
+                    let Some(source) = current.current_source.clone() else {
+                        return ManagerResponse::Error(e);
+                    };
+                    if current.playback_state == PlaybackState::Stopped {
+                        return ManagerResponse::Error(e);
+                    }
+                    drop(current);
+
+                    log::debug!(
+                        "[Manager Thread] Seek found no active decoder; reopening current source at {:.2}s",
+                        position
+                    );
+                    if let Err(play_err) =
+                        decoder.send_command(DecoderCommand::PlayAt(source.clone(), position))
+                    {
+                        return ManagerResponse::Error(play_err);
+                    }
+
+                    match wait_for_decoder_ack(
+                        decoder,
+                        std::time::Duration::from_millis(DECODER_COMMAND_TIMEOUT_MS),
+                    ) {
+                        Ok(()) => {
+                            let mut new_state = (**state.load()).clone();
+                            new_state.current_file = source.as_path().map(|p| p.to_path_buf());
+                            new_state.current_source = Some(source);
+                            new_state.playback_state = PlaybackState::Playing;
+                            new_state.position = position;
+                            new_state.seeking = true;
+                            state.store(Arc::new(new_state));
+                            ManagerResponse::Ok
+                        }
+                        Err(play_err) => ManagerResponse::Error(play_err),
+                    }
+                }
                 Err(e) => ManagerResponse::Error(e),
             }
         }

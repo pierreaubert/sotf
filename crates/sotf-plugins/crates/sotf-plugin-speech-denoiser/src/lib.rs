@@ -128,9 +128,9 @@ impl InPlacePlugin for SpeechDenoiserPlugin {
             ));
         }
 
-        let frames_written = self
-            .inner
-            .process(buffer, context.num_frames, self.channels, !self.enabled);
+        let frames_written =
+            self.inner
+                .process(buffer, context.num_frames, self.channels, !self.enabled);
         Ok(frames_written)
     }
 

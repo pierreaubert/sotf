@@ -853,6 +853,10 @@ mod tests {
     fn test_current_platform_returns_ok() {
         // On supported platforms current_platform should succeed.
         let result = current_platform();
-        assert!(result.is_ok(), "current_platform failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "current_platform failed: {:?}",
+            result.err()
+        );
     }
 }

@@ -1734,10 +1734,8 @@ fn compute_adjustment_ratio(
     // Line width = content_width_at_b - content_width_at_a + break_width - trailing_glue_at_b
     // Trailing glue (e.g., a space at the end of a line) is not rendered in
     // CSS-like text layout, so its width is excluded from the line width.
-    let line_width = items[b].total_width
-        - items[a].total_width
-        + break_width
-        - items[b].glue_width;
+    let line_width =
+        items[b].total_width - items[a].total_width + break_width - items[b].glue_width;
 
     let diff = max_width - line_width;
 
@@ -1747,9 +1745,7 @@ fn compute_adjustment_ratio(
 
     if diff > 0.0 {
         // Line is short, needs stretching.
-        let stretch = items[b].total_stretch
-            - items[a].total_stretch
-            - items[b].glue_stretch;
+        let stretch = items[b].total_stretch - items[a].total_stretch - items[b].glue_stretch;
         if stretch > 1e-6 {
             diff / stretch
         } else {
@@ -1758,9 +1754,7 @@ fn compute_adjustment_ratio(
         }
     } else {
         // Line is long, needs shrinking.
-        let shrink = items[b].total_shrink
-            - items[a].total_shrink
-            - items[b].glue_shrink;
+        let shrink = items[b].total_shrink - items[a].total_shrink - items[b].glue_shrink;
         if shrink > 1e-6 {
             diff / shrink
         } else {

@@ -557,7 +557,7 @@ impl InPlacePlugin for GatePlugin {
                 let coeff = if target > self.envelope[0] {
                     self.release_coeff // closing
                 } else {
-                    self.attack_coeff  // opening
+                    self.attack_coeff // opening
                 };
                 self.envelope[0] = target + coeff * (self.envelope[0] - target);
                 let gain = (1.0 - mix) + mix * fast_pow10(-self.envelope[0] / DB_CONVERSION_FACTOR);
@@ -604,7 +604,7 @@ impl InPlacePlugin for GatePlugin {
                     let coeff = if target > self.envelope[ch] {
                         self.release_coeff // closing
                     } else {
-                        self.attack_coeff  // opening
+                        self.attack_coeff // opening
                     };
                     self.envelope[ch] = target + coeff * (self.envelope[ch] - target);
                     let gain =

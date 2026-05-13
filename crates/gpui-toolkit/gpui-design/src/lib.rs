@@ -96,7 +96,13 @@ impl CornerRadii {
         assert!(md >= 0.0, "md must be >= 0");
         assert!(lg >= 0.0, "lg must be >= 0");
         assert!(xl >= 0.0, "xl must be >= 0");
-        Self { sm, md, lg, xl, style }
+        Self {
+            sm,
+            md,
+            lg,
+            xl,
+            style,
+        }
     }
 }
 
@@ -327,7 +333,10 @@ impl LayoutThresholds {
         slider_height_compact: f32,
     ) -> Self {
         assert!(vertical_threshold > 0.0, "vertical_threshold must be > 0");
-        assert!(group_stack_threshold > 0.0, "group_stack_threshold must be > 0");
+        assert!(
+            group_stack_threshold > 0.0,
+            "group_stack_threshold must be > 0"
+        );
         assert!(
             compact_slider_threshold > 0.0,
             "compact_slider_threshold must be > 0"

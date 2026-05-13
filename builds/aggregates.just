@@ -25,7 +25,7 @@ publish: publish-autoeq publish-math
 [group('qa')]
 qa: qa-autoeq \
 	qa-math \
-	plugins-qa \
+	qa-plugins \
 	qa-roomeq \
 	qa-engine \
 	qa-bridge \

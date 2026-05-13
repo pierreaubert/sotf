@@ -252,8 +252,7 @@ impl ChassisLayout {
                 && let Some(&i) = visible_indices.iter().max_by(|a, b| {
                     let pa = effective_priority(self.sections[**a].priority);
                     let pb = effective_priority(self.sections[**b].priority);
-                    pa.partial_cmp(&pb)
-                        .unwrap_or(std::cmp::Ordering::Equal)
+                    pa.partial_cmp(&pb).unwrap_or(std::cmp::Ordering::Equal)
                 })
             {
                 widths[i] += leftover;
@@ -286,7 +285,11 @@ impl ChassisLayout {
 
         SolvedChassis {
             sections: solved_sections,
-            total_width: if clipped { available_width } else { total_width },
+            total_width: if clipped {
+                available_width
+            } else {
+                total_width
+            },
         }
     }
 }
@@ -561,8 +564,14 @@ mod tests {
         );
         // Total min = 400; available 300 forces a drop.
         let solved = chassis.solve(300.0);
-        assert!(solved.section("b").unwrap().visible, "NaN priority section should remain visible");
-        assert!(!solved.section("a").unwrap().visible, "lower-priority section should be dropped");
+        assert!(
+            solved.section("b").unwrap().visible,
+            "NaN priority section should remain visible"
+        );
+        assert!(
+            !solved.section("a").unwrap().visible,
+            "lower-priority section should be dropped"
+        );
     }
 
     #[test]

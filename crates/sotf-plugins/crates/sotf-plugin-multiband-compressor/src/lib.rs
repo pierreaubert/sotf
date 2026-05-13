@@ -366,22 +366,22 @@ impl MultibandCompressorPlugin {
     fn set_param_value(&mut self, index: usize, value: f64) {
         match index {
             0 => self.num_bands = value.round() as usize, // num_bands (round, not truncate)
-            1 => self._crossover_preset = value as i32,        // crossover_preset
+            1 => self._crossover_preset = value as i32,   // crossover_preset
             2 => self.crossover_frequencies[0] = value as f32, // crossover_freq_1
             3 => self.crossover_frequencies[1] = value as f32, // crossover_freq_2
             4 => self.crossover_frequencies[2] = value as f32, // crossover_freq_3
             5 => self.crossover_frequencies[3] = value as f32, // crossover_freq_4
-            6 => self.threshold_db = value as f32,             // threshold
-            7 => self.ratio = value as f32,                    // ratio
-            8 => self.attack_ms = value as f32,                // attack
-            9 => self.release_ms = value as f32,               // release
-            10 => self.knee_db = value as f32,                 // knee
-            11 => self.mix = value as f32,                     // mix
-            12 => self.link_channels = value > 0.5,            // link_channels
+            6 => self.threshold_db = value as f32,        // threshold
+            7 => self.ratio = value as f32,               // ratio
+            8 => self.attack_ms = value as f32,           // attack
+            9 => self.release_ms = value as f32,          // release
+            10 => self.knee_db = value as f32,            // knee
+            11 => self.mix = value as f32,                // mix
+            12 => self.link_channels = value > 0.5,       // link_channels
             13 => self.per_band_lookahead_ms = (value as f32).clamp(0.0, 10.0), // per_band_lookahead_ms
-            14 => self.ms_mode = value > 0.5,                  // ms_mode
-            15 => self.sidechain_tilt_db = value as f32,       // sidechain_tilt_db
-            16 => self.link_amount = value as f32,             // link_amount
+            14 => self.ms_mode = value > 0.5,                                   // ms_mode
+            15 => self.sidechain_tilt_db = value as f32,                        // sidechain_tilt_db
+            16 => self.link_amount = value as f32,                              // link_amount
             _ => {}
         }
     }
@@ -997,9 +997,7 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                         "active" => Some(ParameterValue::Bool(bp.active)),
                         "solo" => Some(ParameterValue::Bool(bp.solo)),
                         "bypass" => Some(ParameterValue::Bool(bp.bypass)),
-                        "knee" => Some(ParameterValue::Float(
-                            bp.knee_db.unwrap_or(self.knee_db),
-                        )),
+                        "knee" => Some(ParameterValue::Float(bp.knee_db.unwrap_or(self.knee_db))),
                         _ => None,
                     }
                 } else {
@@ -1266,11 +1264,7 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                 // Update measured makeup once per frame using the max envelope across channels.
                 // Calling update() once per channel would halve the effective time constant on stereo.
                 if use_measured_makeup {
-                    let max_env = bcomp
-                        .envelope
-                        .iter()
-                        .cloned()
-                        .fold(0.0f32, f32::max);
+                    let max_env = bcomp.envelope.iter().cloned().fold(0.0f32, f32::max);
                     self.measured_makeups[b].update(max_env);
                     // Hoist makeup_linear() out of the ch loop — it's constant per frame.
                     let makeup = self.measured_makeups[b].makeup_linear();
@@ -1387,10 +1381,8 @@ mod tests {
         let out = &output[block..];
 
         // After crossover filter settling, RMS should be close to input
-        let rms_in: f32 =
-            (input.iter().map(|s| s * s).sum::<f32>() / input.len() as f32).sqrt();
-        let rms_out: f32 =
-            (out.iter().map(|s| s * s).sum::<f32>() / out.len() as f32).sqrt();
+        let rms_in: f32 = (input.iter().map(|s| s * s).sum::<f32>() / input.len() as f32).sqrt();
+        let rms_out: f32 = (out.iter().map(|s| s * s).sum::<f32>() / out.len() as f32).sqrt();
         let ratio = rms_out / rms_in;
         assert!(
             (0.85..1.15).contains(&ratio),
@@ -1505,11 +1497,12 @@ mod tests {
         let mut p = MultibandCompressorPlugin::new(2);
         p.initialize(48000).unwrap();
         // Set to 50 ms (over the 10 ms max) via lookahead_ms alias
-        p.set_parameter(ParameterId::from("lookahead_ms"), ParameterValue::Float(50.0))
-            .unwrap();
-        let got = p
-            .get_parameter(&ParameterId::from("lookahead_ms"))
-            .unwrap();
+        p.set_parameter(
+            ParameterId::from("lookahead_ms"),
+            ParameterValue::Float(50.0),
+        )
+        .unwrap();
+        let got = p.get_parameter(&ParameterId::from("lookahead_ms")).unwrap();
         assert_eq!(
             got,
             ParameterValue::Float(10.0),
@@ -1604,14 +1597,9 @@ mod tests {
         p.initialize(48000).unwrap();
 
         // Set knee for band 0
-        p.set_parameter(
-            ParameterId::from("band_0_knee"),
-            ParameterValue::Float(3.0),
-        )
-        .unwrap();
-        let got = p
-            .get_parameter(&ParameterId::from("band_0_knee"))
+        p.set_parameter(ParameterId::from("band_0_knee"), ParameterValue::Float(3.0))
             .unwrap();
+        let got = p.get_parameter(&ParameterId::from("band_0_knee")).unwrap();
         assert_eq!(
             got,
             ParameterValue::Float(3.0),
@@ -1655,14 +1643,28 @@ mod tests {
         let input_val = 0.5f32;
 
         let mut p_mono = make_plugin(1);
-        let ctx_mono = ProcessContext { sample_rate: 48000, num_frames: block };
+        let ctx_mono = ProcessContext {
+            sample_rate: 48000,
+            num_frames: block,
+        };
         let mut buf_mono = vec![input_val; block];
-        for _ in 0..2 { buf_mono.fill(input_val); p_mono.process_in_place(&mut buf_mono, &ctx_mono).unwrap(); }
+        for _ in 0..2 {
+            buf_mono.fill(input_val);
+            p_mono.process_in_place(&mut buf_mono, &ctx_mono).unwrap();
+        }
 
         let mut p_stereo = make_plugin(2);
-        let ctx_stereo = ProcessContext { sample_rate: 48000, num_frames: block };
+        let ctx_stereo = ProcessContext {
+            sample_rate: 48000,
+            num_frames: block,
+        };
         let mut buf_stereo = vec![input_val; block * 2];
-        for _ in 0..2 { buf_stereo.fill(input_val); p_stereo.process_in_place(&mut buf_stereo, &ctx_stereo).unwrap(); }
+        for _ in 0..2 {
+            buf_stereo.fill(input_val);
+            p_stereo
+                .process_in_place(&mut buf_stereo, &ctx_stereo)
+                .unwrap();
+        }
 
         // With the fix, mono and stereo should converge at approximately the same rate.
         // Before the fix, stereo updated twice per frame (once per channel), making the EMA

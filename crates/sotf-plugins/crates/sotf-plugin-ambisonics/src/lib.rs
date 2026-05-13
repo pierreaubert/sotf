@@ -34,8 +34,8 @@ pub type AmbisonicsDecoderParams = AmbisonicsDecoderConfig;
 const DUAL_BAND_CROSSOVER_HZ: f32 = 700.0;
 
 /// Maximum number of Ambisonics input channels: (MAX_ORDER+1)² = 16.
-const MAX_AMBI_CHANNELS: usize = (spherical_harmonics::MAX_ORDER + 1)
-    * (spherical_harmonics::MAX_ORDER + 1);
+const MAX_AMBI_CHANNELS: usize =
+    (spherical_harmonics::MAX_ORDER + 1) * (spherical_harmonics::MAX_ORDER + 1);
 
 /// Maximum block size pre-allocated in `initialize()` for dual-band scratch
 /// buffers.  Hosts should not request blocks larger than this; a

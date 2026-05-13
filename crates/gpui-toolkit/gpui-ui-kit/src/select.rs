@@ -266,7 +266,13 @@ impl Select {
     }
 
     /// Build into element
-    fn build(self, global_theme: &crate::theme::Theme, theme: &SelectTheme, window: &mut Window, cx: &mut App) -> Div {
+    fn build(
+        self,
+        global_theme: &crate::theme::Theme,
+        theme: &SelectTheme,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Div {
         let (py, _text_size_class) = match self.size {
             SelectSize::Xs => (px(2.0), "xs"),
             SelectSize::Sm => (px(4.0), "sm"),
@@ -557,14 +563,14 @@ impl Select {
 
             // Backdrop overlay to catch outside clicks and close the dropdown
             let toggle_for_backdrop = on_toggle_rc.clone();
-            let backdrop = div()
-                .absolute()
-                .inset_0()
-                .on_mouse_down(MouseButton::Left, move |_event, window, cx| {
+            let backdrop = div().absolute().inset_0().on_mouse_down(
+                MouseButton::Left,
+                move |_event, window, cx| {
                     if let Some(ref handler) = toggle_for_backdrop {
                         handler(false, window, cx);
                     }
-                });
+                },
+            );
 
             // Stop propagation on the dropdown so clicks inside it don't reach the backdrop
             dropdown = dropdown.on_mouse_down(MouseButton::Left, |_event, _window, cx| {

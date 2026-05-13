@@ -1471,7 +1471,8 @@ mod tests {
 
         let mut input = vec![0.0f32; num_frames * input_ch];
         for k in 0..num_frames {
-            let s = amplitude * (k as f32 * 2.0 * std::f32::consts::PI * freq_hz / sample_rate as f32).sin();
+            let s = amplitude
+                * (k as f32 * 2.0 * std::f32::consts::PI * freq_hz / sample_rate as f32).sin();
             input[k * input_ch + 2] = s; // center channel only
         }
 

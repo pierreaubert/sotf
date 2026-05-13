@@ -517,16 +517,10 @@ mod tests {
         // Toggle mono_bass multiple times before and during processing
         for _ in 0..5 {
             plugin
-                .set_parameter(
-                    ParameterId::from("mono_bass"),
-                    ParameterValue::Bool(true),
-                )
+                .set_parameter(ParameterId::from("mono_bass"), ParameterValue::Bool(true))
                 .unwrap();
             plugin
-                .set_parameter(
-                    ParameterId::from("mono_bass"),
-                    ParameterValue::Bool(false),
-                )
+                .set_parameter(ParameterId::from("mono_bass"), ParameterValue::Bool(false))
                 .unwrap();
         }
 
@@ -535,8 +529,14 @@ mod tests {
             .unwrap();
 
         for (i, &s) in buffer.iter().enumerate() {
-            assert!(!s.is_nan(), "NaN at sample {i} after rapid mono_bass toggle");
-            assert!(!s.is_infinite(), "Inf at sample {i} after rapid mono_bass toggle");
+            assert!(
+                !s.is_nan(),
+                "NaN at sample {i} after rapid mono_bass toggle"
+            );
+            assert!(
+                !s.is_infinite(),
+                "Inf at sample {i} after rapid mono_bass toggle"
+            );
         }
     }
 

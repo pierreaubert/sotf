@@ -654,18 +654,19 @@ impl InPlacePlugin for ConvolutionPlugin {
 
         // Check for asynchronously-loaded IR results and swap them in.
         if let Some(ref rx) = self.ir_load_result_rx
-            && let Ok(result) = rx.try_recv() {
-                self.ir_load_result_rx = None;
-                match result {
-                    Ok(loaded) => self.apply_ir_state(loaded),
-                    Err(e) => {
-                        log::error!("[Convolution] IR load failed: {e}");
-                        self.state.store(Arc::new(None));
-                        self.nupc_engines.clear();
-                        self.ir_file.clear();
-                    }
+            && let Ok(result) = rx.try_recv()
+        {
+            self.ir_load_result_rx = None;
+            match result {
+                Ok(loaded) => self.apply_ir_state(loaded),
+                Err(e) => {
+                    log::error!("[Convolution] IR load failed: {e}");
+                    self.state.store(Arc::new(None));
+                    self.nupc_engines.clear();
+                    self.ir_file.clear();
                 }
             }
+        }
 
         let state_guard = self.state.load();
         let state = match state_guard.as_ref() {
@@ -1431,8 +1432,13 @@ mod tests {
         for block_start in (0..total_frames).step_by(small_block) {
             let block_end = (block_start + small_block).min(total_frames);
             let nf = block_end - block_start;
-            let ctx = ProcessContext { sample_rate: sr, num_frames: nf };
-            plugin.process_in_place(&mut buffer[block_start..block_end], &ctx).unwrap();
+            let ctx = ProcessContext {
+                sample_rate: sr,
+                num_frames: nf,
+            };
+            plugin
+                .process_in_place(&mut buffer[block_start..block_end], &ctx)
+                .unwrap();
         }
 
         // After one full partition + flush, output[PARTITION_SIZE..2*PARTITION_SIZE]
@@ -1486,8 +1492,13 @@ mod tests {
         for block_start in (0..total_frames).step_by(small_block) {
             let block_end = (block_start + small_block).min(total_frames);
             let nf = block_end - block_start;
-            let ctx = ProcessContext { sample_rate: sr, num_frames: nf };
-            plugin.process_in_place(&mut buffer[block_start..block_end], &ctx).unwrap();
+            let ctx = ProcessContext {
+                sample_rate: sr,
+                num_frames: nf,
+            };
+            plugin
+                .process_in_place(&mut buffer[block_start..block_end], &ctx)
+                .unwrap();
         }
 
         // Collect settled output (skip the initial 1-partition latency).
@@ -1525,8 +1536,13 @@ mod tests {
         let mut buf1 = signal.clone();
         for block_start in (0..frames).step_by(PARTITION_SIZE) {
             let nf = PARTITION_SIZE.min(frames - block_start);
-            let ctx = ProcessContext { sample_rate: sr, num_frames: nf };
-            plugin.process_in_place(&mut buf1[block_start..block_start + nf], &ctx).unwrap();
+            let ctx = ProcessContext {
+                sample_rate: sr,
+                num_frames: nf,
+            };
+            plugin
+                .process_in_place(&mut buf1[block_start..block_start + nf], &ctx)
+                .unwrap();
         }
 
         // Reset and second run with same input — must produce same output
@@ -1534,8 +1550,13 @@ mod tests {
         let mut buf2 = signal.clone();
         for block_start in (0..frames).step_by(PARTITION_SIZE) {
             let nf = PARTITION_SIZE.min(frames - block_start);
-            let ctx = ProcessContext { sample_rate: sr, num_frames: nf };
-            plugin.process_in_place(&mut buf2[block_start..block_start + nf], &ctx).unwrap();
+            let ctx = ProcessContext {
+                sample_rate: sr,
+                num_frames: nf,
+            };
+            plugin
+                .process_in_place(&mut buf2[block_start..block_start + nf], &ctx)
+                .unwrap();
         }
 
         for (i, (&a, &b)) in buf1.iter().zip(buf2.iter()).enumerate() {

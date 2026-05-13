@@ -60,14 +60,14 @@ impl TransientSuppressor {
                     // Update the envelope with the *allowed* delta so the
                     // threshold adapts during a burst of clicks rather than
                     // staying frozen at its pre-click value (fix for issue 2).
-                    self.slope_envelope[ch] = self.slope_envelope[ch] * self.decay
-                        + threshold * self.one_minus_decay;
+                    self.slope_envelope[ch] =
+                        self.slope_envelope[ch] * self.decay + threshold * self.one_minus_decay;
                 } else {
                     if abs_delta > self.slope_envelope[ch] {
                         self.slope_envelope[ch] = abs_delta;
                     } else {
-                        self.slope_envelope[ch] = self.slope_envelope[ch] * self.decay
-                            + abs_delta * self.one_minus_decay;
+                        self.slope_envelope[ch] =
+                            self.slope_envelope[ch] * self.decay + abs_delta * self.one_minus_decay;
                     }
                 }
 

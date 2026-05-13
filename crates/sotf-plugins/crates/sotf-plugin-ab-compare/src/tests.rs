@@ -1393,19 +1393,29 @@ fn test_latency_compensation_returns_error_on_broken_host() {
     let node_a = cyclic_host
         .add_node(
             "a".to_string(),
-            Box::new(LatencyPassthrough { channels, latency: 0 }),
+            Box::new(LatencyPassthrough {
+                channels,
+                latency: 0,
+            }),
         )
         .unwrap();
     let node_b = cyclic_host
         .add_node(
             "b".to_string(),
-            Box::new(LatencyPassthrough { channels, latency: 0 }),
+            Box::new(LatencyPassthrough {
+                channels,
+                latency: 0,
+            }),
         )
         .unwrap();
 
     // Wire a→b and b→a: this creates a cycle
-    cyclic_host.add_edge(GraphEdge::new(node_a, node_b)).unwrap();
-    cyclic_host.add_edge(GraphEdge::new(node_b, node_a)).unwrap();
+    cyclic_host
+        .add_edge(GraphEdge::new(node_a, node_b))
+        .unwrap();
+    cyclic_host
+        .add_edge(GraphEdge::new(node_b, node_a))
+        .unwrap();
 
     // Replace host_b: update_latency_compensation will try to build this
     // cyclic host, which must fail.
@@ -1437,7 +1447,7 @@ fn test_latency_compensation_returns_error_on_broken_host() {
 #[test]
 fn test_band_mask_active_at_full_spectrum_edges() {
     let params = ABComparePluginParams {
-        band_mask_low_hz: 20.0,   // parameter minimum
+        band_mask_low_hz: 20.0,     // parameter minimum
         band_mask_high_hz: 20000.0, // parameter maximum
         ..Default::default()
     };

@@ -300,11 +300,8 @@ impl Plugin for CrossoverPlugin {
         let nyquist_limit = sample_rate as f32 * 0.5 * 0.99;
         let clamped_primary = self.freq_smoother.target().min(nyquist_limit);
         self.freq_smoother = LogSmoother::new(clamped_primary, 20.0, sample_rate);
-        self.crossover_2way.reinit(
-            clamped_primary,
-            sample_rate as f32,
-            self.num_channels,
-        );
+        self.crossover_2way
+            .reinit(clamped_primary, sample_rate as f32, self.num_channels);
         self.low_buf.resize(self.num_channels, 0.0);
         self.high_buf.resize(self.num_channels, 0.0);
 
@@ -991,22 +988,13 @@ mod tests {
     /// §4.2: CrossoverMode::from_str must be case-insensitive (no allocation path).
     #[test]
     fn test_crossover_mode_from_str_is_case_insensitive() {
-        assert_eq!(
-            CrossoverMode::from_str("LOW"),
-            Ok(CrossoverMode::Lowpass)
-        );
+        assert_eq!(CrossoverMode::from_str("LOW"), Ok(CrossoverMode::Lowpass));
         assert_eq!(
             CrossoverMode::from_str("Lowpass"),
             Ok(CrossoverMode::Lowpass)
         );
-        assert_eq!(
-            CrossoverMode::from_str("HP"),
-            Ok(CrossoverMode::Highpass)
-        );
-        assert_eq!(
-            CrossoverMode::from_str("BOTH"),
-            Ok(CrossoverMode::Both)
-        );
+        assert_eq!(CrossoverMode::from_str("HP"), Ok(CrossoverMode::Highpass));
+        assert_eq!(CrossoverMode::from_str("BOTH"), Ok(CrossoverMode::Both));
     }
 
     /// §4.3: reset() must snap smoothers to their targets to avoid a

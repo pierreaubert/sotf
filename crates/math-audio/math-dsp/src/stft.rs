@@ -158,7 +158,10 @@ impl BatchedRealFftProcessor {
     }
 
     fn new(channels: usize, fft_size: usize, include_inverse: bool) -> Self {
-        assert!(channels > 0, "BatchedRealFftProcessor requires at least one channel");
+        assert!(
+            channels > 0,
+            "BatchedRealFftProcessor requires at least one channel"
+        );
 
         let spectrum_size = fft_size / 2 + 1;
         let mut planner = RealFftPlanner::<f32>::new();
@@ -875,7 +878,11 @@ mod batched_real_fft_processor_tests {
                     .copy_from_slice(&inputs[ch * fft_size..(ch + 1) * fft_size]);
                 independent.forward();
 
-                for (actual, expected) in batched.freq_channel(ch).iter().zip(&independent.freq_buffer) {
+                for (actual, expected) in batched
+                    .freq_channel(ch)
+                    .iter()
+                    .zip(&independent.freq_buffer)
+                {
                     assert_complex_close(*actual, *expected);
                 }
             }
@@ -921,7 +928,12 @@ mod batched_real_fft_processor_tests {
             }
         }
 
-        assert_eq!(batched.time_buffers(), &[0.0, 1.0, 2.0, 3.0, 10.0, 11.0, 12.0, 13.0, 20.0, 21.0, 22.0, 23.0]);
+        assert_eq!(
+            batched.time_buffers(),
+            &[
+                0.0, 1.0, 2.0, 3.0, 10.0, 11.0, 12.0, 13.0, 20.0, 21.0, 22.0, 23.0
+            ]
+        );
         assert_eq!(batched.freq_buffers().len(), channels * spectrum_size);
         assert_eq!(batched.freq_channel(2)[1], Complex::new(21.0, 2.0));
     }

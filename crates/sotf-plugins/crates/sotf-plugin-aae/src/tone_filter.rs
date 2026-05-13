@@ -226,10 +226,7 @@ mod tests {
         let mut output = 0.0_f32;
         for _ in 0..100_000 {
             output = f.process(0.0);
-            assert!(
-                output.is_finite(),
-                "Output diverged: {output}"
-            );
+            assert!(output.is_finite(), "Output diverged: {output}");
         }
         // After 100k samples (> 2s at 48 kHz) signal must have decayed to at least
         // 10% of the initial peak — i.e., at least 20 dB attenuation.

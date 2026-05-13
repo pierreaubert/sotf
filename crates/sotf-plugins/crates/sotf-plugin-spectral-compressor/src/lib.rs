@@ -1313,8 +1313,14 @@ mod tests {
             "release_coeff should be finite when release_ms=0, got {}",
             plugin.release_coeff
         );
-        assert_eq!(plugin.attack_coeff, 0.0, "attack_ms=0 should give instant coeff=0");
-        assert_eq!(plugin.release_coeff, 0.0, "release_ms=0 should give instant coeff=0");
+        assert_eq!(
+            plugin.attack_coeff, 0.0,
+            "attack_ms=0 should give instant coeff=0"
+        );
+        assert_eq!(
+            plugin.release_coeff, 0.0,
+            "release_ms=0 should give instant coeff=0"
+        );
     }
 
     /// Verify that L and R channels are processed independently: feeding different
@@ -1331,10 +1337,8 @@ mod tests {
         let mut signal = vec![0.0f32; num_frames * channels];
         for i in 0..num_frames {
             let t = i as f32 / 48000.0;
-            signal[i * channels] =
-                amplitude * (2.0 * std::f32::consts::PI * 440.0 * t).sin();
-            signal[i * channels + 1] =
-                amplitude * (2.0 * std::f32::consts::PI * 880.0 * t).sin();
+            signal[i * channels] = amplitude * (2.0 * std::f32::consts::PI * 440.0 * t).sin();
+            signal[i * channels + 1] = amplitude * (2.0 * std::f32::consts::PI * 880.0 * t).sin();
         }
 
         let output = process_signal(&mut plugin, &signal);

@@ -567,7 +567,10 @@ impl IosWindow {
         #[cfg(debug_assertions)]
         unsafe {
             let is_main: BOOL = msg_send![class!(NSThread), isMainThread];
-            assert!(is_main == YES, "IosWindow must be created on the main thread");
+            assert!(
+                is_main == YES,
+                "IosWindow must be created on the main thread"
+            );
         }
 
         // Create the window on the main screen

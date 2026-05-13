@@ -715,9 +715,11 @@ impl WorkflowCanvas {
     fn handle_double_click(&mut self, position: Position, window: &mut Window, cx: &mut App) {
         // position is in screen coordinates (relative to canvas element)
         // Hit test using the actual viewport so zoom and pan are accounted for
-        let hit_result = self
-            .hit_tester
-            .hit_test_with_viewport(position, &self.state.graph, &self.state.viewport);
+        let hit_result = self.hit_tester.hit_test_with_viewport(
+            position,
+            &self.state.graph,
+            &self.state.viewport,
+        );
 
         // If a node was double-clicked and we have a callback, call it
         if let HitTestResult::Node(node_id) = hit_result

@@ -894,12 +894,7 @@ mod tests {
         plugin.process_in_place(&mut buffer, &ctx).unwrap();
 
         for (i, &s) in buffer.iter().enumerate() {
-            assert!(
-                s.is_finite(),
-                "sample {} is not finite: {}",
-                i,
-                s
-            );
+            assert!(s.is_finite(), "sample {} is not finite: {}", i, s);
             assert_eq!(s, 0.0, "silence in must be silence out at sample {}", i);
         }
     }

@@ -268,7 +268,7 @@ pub fn handle_drag(
 
 #[cfg(test)]
 mod tests {
-    use super::{handle_scroll, InteractionConfig, ScrollDelta};
+    use super::{InteractionConfig, ScrollDelta, handle_scroll};
     use crate::scale::Scale;
     use gpui::{Modifiers, point, px};
 

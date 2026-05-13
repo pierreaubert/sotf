@@ -513,15 +513,14 @@ impl EqPlugin {
                                 1.0 - (trans.samples_remaining as f64 / trans.total_samples as f64);
                             // Interpolate all stages so multi-order bands don't glitch
                             for (i, stage) in stages.iter_mut().enumerate() {
-                                let interpolated =
-                                    if let (Some(old), Some(new)) = (
-                                        trans.old_coeffs_per_stage.get(i),
-                                        trans.new_coeffs_per_stage.get(i),
-                                    ) {
-                                        old.lerp(new, t)
-                                    } else {
-                                        stage.coefficients()
-                                    };
+                                let interpolated = if let (Some(old), Some(new)) = (
+                                    trans.old_coeffs_per_stage.get(i),
+                                    trans.new_coeffs_per_stage.get(i),
+                                ) {
+                                    old.lerp(new, t)
+                                } else {
+                                    stage.coefficients()
+                                };
                                 s = stage.process_with_coefficients(s, &interpolated);
                             }
                         } else {
@@ -1677,8 +1676,14 @@ mod tests {
 
         // Warmup
         let mut buf = vec![0.5f32; 256];
-        p.process_in_place(&mut buf, &ProcessContext { sample_rate: 48000, num_frames: 256 })
-            .unwrap();
+        p.process_in_place(
+            &mut buf,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 256,
+            },
+        )
+        .unwrap();
 
         // Trigger transition
         InPlacePlugin::set_parameter(
@@ -1690,11 +1695,22 @@ mod tests {
 
         // Process during transition
         let mut buf = vec![0.5f32; 512];
-        p.process_in_place(&mut buf, &ProcessContext { sample_rate: 48000, num_frames: 512 })
-            .unwrap();
+        p.process_in_place(
+            &mut buf,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 512,
+            },
+        )
+        .unwrap();
 
         for (i, &s) in buf.iter().enumerate() {
-            assert!(s.is_finite(), "sample {} not finite during 4th-order transition: {}", i, s);
+            assert!(
+                s.is_finite(),
+                "sample {} not finite during 4th-order transition: {}",
+                i,
+                s
+            );
         }
     }
 

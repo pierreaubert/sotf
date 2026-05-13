@@ -983,8 +983,20 @@ mod tests {
         // would get 50 (total 100 > 80). The fix scales them down so the
         // total never exceeds the available space.
         let children = [
-            simple_slot("a", Sizing::Flex { min: 50.0, weight: 1.0 }),
-            simple_slot("b", Sizing::Flex { min: 50.0, weight: 1.0 }),
+            simple_slot(
+                "a",
+                Sizing::Flex {
+                    min: 50.0,
+                    weight: 1.0,
+                },
+            ),
+            simple_slot(
+                "b",
+                Sizing::Flex {
+                    min: 50.0,
+                    weight: 1.0,
+                },
+            ),
         ];
         let root = LayoutNode::Container(ContainerNode {
             id: "root",
@@ -998,7 +1010,11 @@ mod tests {
         let solved = solve(&root, 80.0, 600.0, &LayoutPreferences::default());
         let a = solved.find("a").unwrap();
         let b = solved.find("b").unwrap();
-        assert_eq!(a.width + b.width, 80.0, "total flex allocation should not exceed available space");
+        assert_eq!(
+            a.width + b.width,
+            80.0,
+            "total flex allocation should not exceed available space"
+        );
         assert!(a.width >= 0.0 && b.width >= 0.0);
     }
 

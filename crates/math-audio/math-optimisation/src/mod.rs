@@ -1599,9 +1599,10 @@ where
                     npop = current_npop;
 
                     if let Some(ref archive) = external_archive
-                        && let Ok(mut arch) = archive.write() {
-                            arch.resize(self.config.lshade.current_archive_size(current_npop));
-                        }
+                        && let Ok(mut arch) = archive.write()
+                    {
+                        arch.resize(self.config.lshade.current_archive_size(current_npop));
+                    }
                 }
             }
 

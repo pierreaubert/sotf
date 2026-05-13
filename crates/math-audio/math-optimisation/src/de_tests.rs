@@ -1,4 +1,6 @@
-use crate::{CallbackAction, DEConfigBuilder, DifferentialEvolution, LShadeConfig, PolishConfig, Strategy};
+use crate::{
+    CallbackAction, DEConfigBuilder, DifferentialEvolution, LShadeConfig, PolishConfig, Strategy,
+};
 use ndarray::{Array1, array};
 use rand::SeedableRng;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -405,8 +407,7 @@ mod config_validation_tests {
             .expect("popsize must be >= 4");
 
         let mut de =
-            DifferentialEvolution::new(&f, array![-5.0f64, -5.0], array![5.0f64, 5.0])
-                .unwrap();
+            DifferentialEvolution::new(&f, array![-5.0f64, -5.0], array![5.0f64, 5.0]).unwrap();
         *de.config_mut() = config;
         let report = de.solve();
 

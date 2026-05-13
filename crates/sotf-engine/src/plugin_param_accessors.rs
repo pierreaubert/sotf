@@ -906,7 +906,7 @@ impl PluginSettings {
                 self.param_value(index).map(|v| format!("{}", v as i64))
             }
             param_specs::ParamType::Float { .. } => {
-                self.param_value(index).map(|v| spec.format_value(v))
+                self.param_value(index).map(|v| spec.engine_value_string(v))
             }
         }
     }

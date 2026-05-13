@@ -765,11 +765,7 @@ mod tests {
             }
             // Pearson correlation: 1.0 = perfectly in-phase, near 0 = uncorrelated
             let denom = (sum_l2 * sum_r2).sqrt();
-            if denom < 1e-12 {
-                1.0
-            } else {
-                sum_l_r / denom
-            }
+            if denom < 1e-12 { 1.0 } else { sum_l_r / denom }
         }
 
         // decor_low_hz=300 (default): 150 Hz bins stay at 1+0j → L/R in-phase → correlation ≈ 1.

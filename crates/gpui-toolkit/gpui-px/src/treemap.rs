@@ -898,6 +898,9 @@ mod tests {
         let rects = tile_squarify(&children, 0.0, 0.0, 100.0, 100.0, 10.0);
         // Should not panic and should return at least the non-zero child's rect
         assert!(!rects.is_empty());
-        assert!(rects.iter().all(|(x0, y0, x1, y1)| x0.is_finite() && y0.is_finite() && x1.is_finite() && y1.is_finite()));
+        assert!(rects.iter().all(|(x0, y0, x1, y1)| x0.is_finite()
+            && y0.is_finite()
+            && x1.is_finite()
+            && y1.is_finite()));
     }
 }

@@ -185,8 +185,8 @@ mod tests {
         assert!((pos[3].0 - 0.15).abs() < 1e-6);
     }
 
-	#[test]
-	fn test_broadside_steering() {
+    #[test]
+    fn test_broadside_steering() {
         let geom = ArrayGeometry::Linear {
             num_mics: 2,
             spacing_m: 0.05,
@@ -199,7 +199,10 @@ mod tests {
         assert_eq!(sv.len(), 2);
         // Both elements should be real (zero phase delay at broadside)
         for c in &sv {
-            assert!(c.im.abs() < 1e-4, "Expected near-zero imag at broadside, got {c}");
+            assert!(
+                c.im.abs() < 1e-4,
+                "Expected near-zero imag at broadside, got {c}"
+            );
         }
     }
 
@@ -215,10 +218,16 @@ mod tests {
         let sv = compute_steering_vector(1000.0, &geom, 90.0, 0.0);
         assert_eq!(sv.len(), 2);
         // The first mic is at origin → zero phase; second mic has non-zero phase
-        assert!(sv[0].im.abs() < 1e-6, "mic 0 at origin should have zero phase");
+        assert!(
+            sv[0].im.abs() < 1e-6,
+            "mic 0 at origin should have zero phase"
+        );
         // At non-trivial frequency the second mic should have a different phase
         let phase_diff = (sv[1].re - sv[0].re).abs() + (sv[1].im - sv[0].im).abs();
-        assert!(phase_diff > 0.01, "Endfire steering should produce phase delay: {phase_diff}");
+        assert!(
+            phase_diff > 0.01,
+            "Endfire steering should produce phase delay: {phase_diff}"
+        );
     }
 
     #[test]

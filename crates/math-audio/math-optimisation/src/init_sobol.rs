@@ -72,11 +72,7 @@ fn is_prime(n: usize) -> bool {
 
 #[cfg(test)]
 fn gcd(a: usize, b: usize) -> usize {
-    if b == 0 {
-        a
-    } else {
-        gcd(b, a % b)
-    }
+    if b == 0 { a } else { gcd(b, a % b) }
 }
 
 /// Van der Corput sequence for quasi-random number generation.

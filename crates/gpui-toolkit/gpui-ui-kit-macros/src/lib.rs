@@ -315,10 +315,7 @@ pub fn derive_component_theme(input: TokenStream) -> TokenStream {
                     let ident = match nv.path.get_ident() {
                         Some(i) => i,
                         None => {
-                            errors.push(syn::Error::new(
-                                nv.path.span(),
-                                "Expected identifier",
-                            ));
+                            errors.push(syn::Error::new(nv.path.span(), "Expected identifier"));
                             continue;
                         }
                     };
@@ -346,19 +343,17 @@ pub fn derive_component_theme(input: TokenStream) -> TokenStream {
                         "default_f32" => {
                             if let Expr::Lit(lit) = &nv.value {
                                 match &lit.lit {
-                                    Lit::Float(f) => {
-                                        match f.base10_parse::<f64>() {
-                                            Ok(v) => default_f32 = Some(v),
-                                            Err(e) => {
-                                                errors.push(syn::Error::new(
+                                    Lit::Float(f) => match f.base10_parse::<f64>() {
+                                        Ok(v) => default_f32 = Some(v),
+                                        Err(e) => {
+                                            errors.push(syn::Error::new(
                                                     f.span(),
                                                     format!(
                                                         "Unable to parse default_f32 value for field `{field_name}`: {e}"
                                                     ),
                                                 ));
-                                            }
                                         }
-                                    }
+                                    },
                                     Lit::Int(i) => {
                                         // Allow integers like 0 or 1
                                         match i.base10_parse::<i64>() {
@@ -442,9 +437,7 @@ pub fn derive_component_theme(input: TokenStream) -> TokenStream {
             let is_rgba = default_hex_lit.as_ref().map_or_else(
                 || default_val > 0xFFFFFF,
                 |lit| {
-                    let digits = lit
-                        .trim_start_matches("0x")
-                        .trim_start_matches("0X");
+                    let digits = lit.trim_start_matches("0x").trim_start_matches("0X");
                     digits.len() == 8
                 },
             );
@@ -490,9 +483,7 @@ pub fn derive_component_theme(input: TokenStream) -> TokenStream {
         } else {
             errors.push(syn::Error::new(
                 field_span,
-                format!(
-                    "Field `{field_name}` needs either `from` or `from_expr` in #[theme(...)]"
-                ),
+                format!("Field `{field_name}` needs either `from` or `from_expr` in #[theme(...)]"),
             ));
             continue;
         }

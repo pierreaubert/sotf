@@ -1901,9 +1901,8 @@ impl InPlacePlugin for MultibandExpanderPlugin {
             // Using attack_coeff here caused slow-attack settings to hold the peak envelope
             // high after the signal decays, preventing the gate from closing promptly.
             const PEAK_DETECTOR_RELEASE_MS: f32 = 5.0;
-            let peak_release_coeff = (-1.0
-                / (PEAK_DETECTOR_RELEASE_MS * 0.001 * self.sample_rate as f32))
-                .exp();
+            let peak_release_coeff =
+                (-1.0 / (PEAK_DETECTOR_RELEASE_MS * 0.001 * self.sample_rate as f32)).exp();
 
             for frame in 0..nf {
                 // Update per-channel peak envelope followers first.
@@ -2494,7 +2493,10 @@ mod tests {
             },
         )
         .unwrap();
-        assert!(buf.iter().all(|s| s.is_finite()), "All samples must be finite");
+        assert!(
+            buf.iter().all(|s| s.is_finite()),
+            "All samples must be finite"
+        );
     }
 
     /// Regression: spectral mode latency must be fft_size - hop_size (not fft_size).
@@ -2555,8 +2557,14 @@ mod tests {
                 [s, s * 0.7]
             })
             .collect();
-        p.process_in_place(&mut buf, &ProcessContext { sample_rate: 48000, num_frames: nf })
-            .unwrap();
+        p.process_in_place(
+            &mut buf,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: nf,
+            },
+        )
+        .unwrap();
         assert!(
             buf.iter().all(|s| s.is_finite()),
             "Stereo measured auto-makeup must not produce NaN/inf"
@@ -2572,9 +2580,17 @@ mod tests {
 
         // Run a loud signal to drive up envelope state
         let nf = 4800usize;
-        let mut loud: Vec<f32> = (0..nf * 2).map(|i| if i % 2 == 0 { 0.8 } else { 0.8 }).collect();
-        p.process_in_place(&mut loud, &ProcessContext { sample_rate: 48000, num_frames: nf })
-            .unwrap();
+        let mut loud: Vec<f32> = (0..nf * 2)
+            .map(|i| if i % 2 == 0 { 0.8 } else { 0.8 })
+            .collect();
+        p.process_in_place(
+            &mut loud,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: nf,
+            },
+        )
+        .unwrap();
 
         // Re-initialize (simulates host sample-rate change)
         p.initialize(48000).unwrap();
@@ -2582,8 +2598,14 @@ mod tests {
         // Feed silence — if state was not cleared, residual envelope might still be active.
         // The output must be finite (not NaN/inf from a contaminated envelope).
         let mut silent = vec![0.0f32; nf * 2];
-        p.process_in_place(&mut silent, &ProcessContext { sample_rate: 48000, num_frames: nf })
-            .unwrap();
+        p.process_in_place(
+            &mut silent,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: nf,
+            },
+        )
+        .unwrap();
         assert!(
             silent.iter().all(|s| s.is_finite()),
             "Output after re-initialize must be finite"
@@ -2600,7 +2622,7 @@ mod tests {
         let params = MultibandExpanderPluginParams {
             num_bands: 2,
             lookahead_ms: la_ms,
-            mix: 0.0, // pure dry — output should be a delayed copy of input
+            mix: 0.0,            // pure dry — output should be a delayed copy of input
             threshold_db: -80.0, // gate always open
             ratio: 1.0,
             ..Default::default()
@@ -2614,8 +2636,14 @@ mod tests {
         let mut buf = vec![0.0f32; nf];
         buf[la_samples] = 1.0;
 
-        p.process_in_place(&mut buf, &ProcessContext { sample_rate: sr, num_frames: nf })
-            .unwrap();
+        p.process_in_place(
+            &mut buf,
+            &ProcessContext {
+                sample_rate: sr,
+                num_frames: nf,
+            },
+        )
+        .unwrap();
 
         // With latency-compensated dry path and mix=0:
         // The impulse at input[la_samples] should appear at output[la_samples + la_samples],

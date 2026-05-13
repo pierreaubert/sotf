@@ -380,7 +380,6 @@ fn bandpass_edges(freq: f32, q: f32) -> (f32, f32) {
     (f_low, f_high)
 }
 
-
 // ============================================================================
 // Plugin
 // ============================================================================
@@ -884,8 +883,7 @@ impl InPlacePlugin for DynamicEqPlugin {
                     let mut max_level = 0.0f32;
                     for ch in 0..nc {
                         let idx = frame * nc + ch;
-                        let filtered =
-                            band.apply_sidechain_bp(ch, self.dry_buf[idx] as f64) as f32;
+                        let filtered = band.apply_sidechain_bp(ch, self.dry_buf[idx] as f64) as f32;
                         let level = filtered.abs();
                         max_level = max_level.max(level);
                     }
@@ -896,7 +894,8 @@ impl InPlacePlugin for DynamicEqPlugin {
 
                     // Proportion of the full EQ band shape to apply this sample.
                     // EQ biquad is held at target_gain_db; blend avoids coefficient updates.
-                    let proportion = DynEqBand::modulation_proportion(band.target_gain_db, smoothed);
+                    let proportion =
+                        DynEqBand::modulation_proportion(band.target_gain_db, smoothed);
 
                     self.monitoring_gr[band_idx] = smoothed;
 
@@ -912,18 +911,15 @@ impl InPlacePlugin for DynamicEqPlugin {
                     // Sidechain reads dry_buf to avoid inter-band contamination.
                     for ch in 0..nc {
                         let idx = frame * nc + ch;
-                        let filtered =
-                            band.apply_sidechain_bp(ch, self.dry_buf[idx] as f64) as f32;
+                        let filtered = band.apply_sidechain_bp(ch, self.dry_buf[idx] as f64) as f32;
                         let level = filtered.abs();
                         let level_db = DB_CONVERSION_FACTOR * fast_log10(level.max(EPSILON));
                         let gr = band.cores[ch]
                             .calculate_gain_reduction(level_db, threshold, band_ratio, knee);
                         let smoothed = band.cores[ch].apply_envelope(ch, gr);
 
-                        let proportion = DynEqBand::modulation_proportion(
-                            band.target_gain_db,
-                            smoothed,
-                        );
+                        let proportion =
+                            DynEqBand::modulation_proportion(band.target_gain_db, smoothed);
 
                         let dry = buffer[idx];
                         let eq_out = band.eq_filters[ch].process(dry as f64) as f32;
@@ -1422,7 +1418,7 @@ mod tests {
                         },
                         DynEqBandParams {
                             frequency: 2000.0,
-                            q: 4.0, // narrow band at 2 kHz — only detects 2 kHz
+                            q: 4.0,    // narrow band at 2 kHz — only detects 2 kHz
                             gain: 0.0, // passthrough, but detection is what we test
                             band_threshold: -60.0,
                             band_ratio: 20.0,

@@ -630,41 +630,42 @@ fn apply_features_and_fallbacks(
         let mut keys = vec![kCTFontFeatureSettingsAttribute];
         let mut values = vec![feature_array as *const _];
 
-        let fallback_array = if let Some(fallbacks) = fallbacks.filter(|f| !f.fallback_list().is_empty()) {
-            let fallback_array =
-                CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks);
-            for user_fallback in fallbacks.fallback_list() {
-                let name = CFString::from(user_fallback.as_str());
-                let fallback_desc =
-                    CTFontDescriptorCreateWithNameAndSize(name.as_concrete_TypeRef(), 0.0);
-                CFArrayAppendValue(fallback_array, fallback_desc as _);
-                CFRelease(fallback_desc as _);
-            }
-            let preferred_languages: core_foundation::array::CFArray<CFString> = {
-                unsafe extern "C" {
-                    fn CFLocaleCopyPreferredLanguages() -> *const std::ffi::c_void;
+        let fallback_array =
+            if let Some(fallbacks) = fallbacks.filter(|f| !f.fallback_list().is_empty()) {
+                let fallback_array =
+                    CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks);
+                for user_fallback in fallbacks.fallback_list() {
+                    let name = CFString::from(user_fallback.as_str());
+                    let fallback_desc =
+                        CTFontDescriptorCreateWithNameAndSize(name.as_concrete_TypeRef(), 0.0);
+                    CFArrayAppendValue(fallback_array, fallback_desc as _);
+                    CFRelease(fallback_desc as _);
                 }
-                core_foundation::array::CFArray::wrap_under_create_rule(
-                    CFLocaleCopyPreferredLanguages() as _,
-                )
+                let preferred_languages: core_foundation::array::CFArray<CFString> = {
+                    unsafe extern "C" {
+                        fn CFLocaleCopyPreferredLanguages() -> *const std::ffi::c_void;
+                    }
+                    core_foundation::array::CFArray::wrap_under_create_rule(
+                        CFLocaleCopyPreferredLanguages() as _,
+                    )
+                };
+                let default_fallbacks = CTFontCopyDefaultCascadeListForLanguages(
+                    font.native_font().as_concrete_TypeRef(),
+                    preferred_languages.as_concrete_TypeRef(),
+                );
+                let default_fallbacks: core_foundation::array::CFArray<CTFontDescriptor> =
+                    core_foundation::array::CFArray::wrap_under_create_rule(default_fallbacks);
+                for desc in default_fallbacks.iter() {
+                    if desc.font_path().is_some() {
+                        CFArrayAppendValue(fallback_array, desc.as_concrete_TypeRef() as _);
+                    }
+                }
+                keys.push(kCTFontCascadeListAttribute);
+                values.push(fallback_array as *const _);
+                Some(fallback_array)
+            } else {
+                None
             };
-            let default_fallbacks = CTFontCopyDefaultCascadeListForLanguages(
-                font.native_font().as_concrete_TypeRef(),
-                preferred_languages.as_concrete_TypeRef(),
-            );
-            let default_fallbacks: core_foundation::array::CFArray<CTFontDescriptor> =
-                core_foundation::array::CFArray::wrap_under_create_rule(default_fallbacks);
-            for desc in default_fallbacks.iter() {
-                if desc.font_path().is_some() {
-                    CFArrayAppendValue(fallback_array, desc.as_concrete_TypeRef() as _);
-                }
-            }
-            keys.push(kCTFontCascadeListAttribute);
-            values.push(fallback_array as *const _);
-            Some(fallback_array)
-        } else {
-            None
-        };
 
         let attrs = CFDictionaryCreate(
             kCFAllocatorDefault,

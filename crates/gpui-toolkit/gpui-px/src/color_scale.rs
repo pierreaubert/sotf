@@ -77,7 +77,10 @@ impl ColorScale {
 // Helper function to interpolate between colors in a palette
 fn interpolate_palette(t: f64, colors: &[D3Color]) -> D3Color {
     if colors.len() < 2 {
-        return colors.first().cloned().unwrap_or(D3Color::from_hex(0x000000));
+        return colors
+            .first()
+            .cloned()
+            .unwrap_or(D3Color::from_hex(0x000000));
     }
     let idx = (t * (colors.len() - 1) as f64) as usize;
     let idx = idx.min(colors.len() - 2);

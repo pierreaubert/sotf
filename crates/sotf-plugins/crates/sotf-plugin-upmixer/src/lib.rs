@@ -2086,7 +2086,8 @@ impl Plugin for UpmixerPlugin {
                 // Guard: ensure the new block fits in the ring buffer before writing.
                 // Ring capacity is 4*fft_size frames; each block adds hop_size frames.
                 debug_assert!(
-                    self.output_accumulator_fill + self.hop_size <= self.output_accumulator_mask + 1,
+                    self.output_accumulator_fill + self.hop_size
+                        <= self.output_accumulator_mask + 1,
                     "Main accumulator overflow: fill {} + hop {} > capacity {}",
                     self.output_accumulator_fill,
                     self.hop_size,

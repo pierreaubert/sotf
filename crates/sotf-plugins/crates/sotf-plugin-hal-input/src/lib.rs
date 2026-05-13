@@ -111,8 +111,6 @@ impl Plugin for HalInputPlugin {
             .with_description("Reads audio from macOS apps via HAL driver")
     }
 
-
-
     fn input_channels(&self) -> usize {
         0 // Source plugin - no input
     }

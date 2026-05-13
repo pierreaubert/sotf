@@ -466,7 +466,11 @@ impl InPlacePlugin for ChannelMuteSoloPlugin {
         {
             *gain = smoother.current();
         }
-        for (gain, smoother) in self.cached_gains.iter_mut().zip(self.channel_smoothers.iter_mut()) {
+        for (gain, smoother) in self
+            .cached_gains
+            .iter_mut()
+            .zip(self.channel_smoothers.iter_mut())
+        {
             // next_n() advances the smoother's current value to the end-of-block state.
             *gain = smoother.next_n(num_frames);
         }

@@ -339,34 +339,28 @@ mod tests {
     fn test_set_parameter_rejects_out_of_range_gain() {
         let mut p = GainPlugin::new(2, 0.0);
         // +21 dB is above the param spec max of +20 dB — must be rejected.
-        let result = p.set_parameter(
-            ParameterId::from("gain_db"),
-            ParameterValue::Float(21.0),
-        );
+        let result = p.set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(21.0));
         assert!(
             result.is_err(),
             "gain_db=21.0 should be rejected (spec max is 20.0), but got Ok"
         );
         // -61 dB is below the param spec min of -60 dB — must be rejected.
-        let result = p.set_parameter(
-            ParameterId::from("gain_db"),
-            ParameterValue::Float(-61.0),
-        );
+        let result = p.set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(-61.0));
         assert!(
             result.is_err(),
             "gain_db=-61.0 should be rejected (spec min is -60.0), but got Ok"
         );
         // Values within spec range must be accepted.
-        let result = p.set_parameter(
-            ParameterId::from("gain_db"),
-            ParameterValue::Float(20.0),
+        let result = p.set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(20.0));
+        assert!(
+            result.is_ok(),
+            "gain_db=20.0 should be accepted (spec max), got Err"
         );
-        assert!(result.is_ok(), "gain_db=20.0 should be accepted (spec max), got Err");
-        let result = p.set_parameter(
-            ParameterId::from("gain_db"),
-            ParameterValue::Float(-60.0),
+        let result = p.set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(-60.0));
+        assert!(
+            result.is_ok(),
+            "gain_db=-60.0 should be accepted (spec min), got Err"
         );
-        assert!(result.is_ok(), "gain_db=-60.0 should be accepted (spec min), got Err");
     }
 
     /// from_params error message must include expected and actual channel counts.

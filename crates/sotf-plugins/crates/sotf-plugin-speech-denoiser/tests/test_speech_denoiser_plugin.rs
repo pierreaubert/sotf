@@ -98,10 +98,7 @@ fn latency_is_constant_regardless_of_enabled() {
     let latency_off = plugin.latency_samples();
 
     assert_eq!(latency_on, 480, "Latency when enabled must be 480");
-    assert_eq!(
-        latency_off, 480,
-        "Latency when disabled must still be 480"
-    );
+    assert_eq!(latency_off, 480, "Latency when disabled must still be 480");
 }
 
 /// 1.2 CRITICAL: non-multiple-of-480 block sizes must return an error.

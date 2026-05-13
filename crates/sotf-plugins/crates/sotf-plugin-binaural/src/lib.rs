@@ -2591,9 +2591,11 @@ mod tests {
         let reflections = calculate_reflections(&model, config, 48000);
 
         // Find a reflection close to front (|az| < 5°) and verify L ≈ R.
-        let near_front: Vec<_> = reflections.iter().flatten().filter(|r| {
-            r.azimuth_deg.abs() < 5.0
-        }).collect();
+        let near_front: Vec<_> = reflections
+            .iter()
+            .flatten()
+            .filter(|r| r.azimuth_deg.abs() < 5.0)
+            .collect();
 
         assert!(
             !near_front.is_empty(),
@@ -2604,7 +2606,9 @@ mod tests {
             assert!(
                 diff < 0.05,
                 "Front reflection should be nearly centred: L={:.3}, R={:.3}, diff={:.3}",
-                r.left_gain, r.right_gain, diff
+                r.left_gain,
+                r.right_gain,
+                diff
             );
         }
     }
@@ -2620,15 +2624,19 @@ mod tests {
         let config = get_speaker_config_by_channels(6).unwrap();
         let reflections = calculate_reflections(&model, config, 48000);
 
-        let right_side: Vec<_> = reflections.iter().flatten().filter(|r| {
-            r.azimuth_deg > 45.0 && r.azimuth_deg < 135.0
-        }).collect();
+        let right_side: Vec<_> = reflections
+            .iter()
+            .flatten()
+            .filter(|r| r.azimuth_deg > 45.0 && r.azimuth_deg < 135.0)
+            .collect();
 
         for r in right_side {
             assert!(
                 r.right_gain > r.left_gain,
                 "Right-side reflection (az={:.1}°) should have right_gain > left_gain: L={:.3}, R={:.3}",
-                r.azimuth_deg, r.left_gain, r.right_gain
+                r.azimuth_deg,
+                r.left_gain,
+                r.right_gain
             );
         }
     }
@@ -2639,9 +2647,7 @@ mod tests {
     fn test_lfe_gain_no_sqrt2_attenuation() {
         use filter::compute_lfe_filter;
         let (_filter, lfe_gain) = compute_lfe_filter(
-            2048,
-            48000,
-            120.0, // lfe_crossover Hz
+            2048, 48000, 120.0, // lfe_crossover Hz
             2.0,   // lfe_distance m → distance_atten = 0.5
             0.0,   // lfe_level dB → level_gain = 1.0
         );
@@ -2682,7 +2688,11 @@ mod tests {
 
         // The number of second-order reflections per channel must be < 30 (6×5 ordered).
         // Without dedup the code generates 30 per channel; with dedup it must be fewer.
-        for (ch, (r1, r2)) in reflections_1st.iter().zip(reflections_2nd.iter()).enumerate() {
+        for (ch, (r1, r2)) in reflections_1st
+            .iter()
+            .zip(reflections_2nd.iter())
+            .enumerate()
+        {
             let second_order_count = r2.len() - r1.len();
             // 30 = 6 walls × 5 non-self mirrors, all ordered pairs. Dedup must reduce this.
             assert!(
@@ -2701,7 +2711,17 @@ mod tests {
 
         // Build a plugin and inject a synthetic reflection with an enormous delay.
         let mut plugin = BinauralDecoderPlugin::new(
-            2, 1024, None, false, 0.0, 0.0, false, 120.0, 2.0, 0.0, RoomModel::default(),
+            2,
+            1024,
+            None,
+            false,
+            0.0,
+            0.0,
+            false,
+            120.0,
+            2.0,
+            0.0,
+            RoomModel::default(),
         );
         let sr = 48000_u32;
         plugin.initialize(sr).unwrap();
@@ -2745,22 +2765,21 @@ mod tests {
         // a target clearly outside — this exercises the clamping path.
         let mut sofa = make_test_sofa(48000.0, 64, 3);
         // Place the 3 measurements at known positions.
-        sofa.positions[0] = SourcePosition::new(0.0, 0.0, 1.0);   // front
-        sofa.positions[1] = SourcePosition::new(90.0, 0.0, 1.0);  // right
-        sofa.positions[2] = SourcePosition::new(0.0, 90.0, 1.0);  // above
+        sofa.positions[0] = SourcePosition::new(0.0, 0.0, 1.0); // front
+        sofa.positions[1] = SourcePosition::new(90.0, 0.0, 1.0); // right
+        sofa.positions[2] = SourcePosition::new(0.0, 90.0, 1.0); // above
 
         // Target well outside the triangle (behind-left), forces clamping.
         let target = SourcePosition::new(-135.0, -45.0, 1.0);
-        let nearest = [
-            (0, 0.0f32),
-            (1, 0.0f32),
-            (2, 0.0f32),
-        ];
+        let nearest = [(0, 0.0f32), (1, 0.0f32), (2, 0.0f32)];
         let gains = hrtf::calculate_vbap_gains(&target, &nearest, &sofa);
 
         // All gains must be non-negative (clamped).
         for g in &gains {
-            assert!(*g >= 0.0, "VBAP gain must be non-negative after clamping, got {g}");
+            assert!(
+                *g >= 0.0,
+                "VBAP gain must be non-negative after clamping, got {g}"
+            );
         }
 
         // Gains must sum to 1.0 (renormalized, no energy boost).
@@ -2783,7 +2802,17 @@ mod tests {
     #[test]
     fn test_dead_params_not_exposed_in_parameters() {
         let plugin = BinauralDecoderPlugin::new(
-            2, 1024, None, true, 0.0, 0.0, false, 120.0, 2.0, 0.0, RoomModel::default(),
+            2,
+            1024,
+            None,
+            true,
+            0.0,
+            0.0,
+            false,
+            120.0,
+            2.0,
+            0.0,
+            RoomModel::default(),
         );
         let params = plugin.parameters();
         let names: Vec<&str> = params.iter().map(|p| p.id.0.as_str()).collect();

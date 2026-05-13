@@ -1221,7 +1221,10 @@ mod tests {
                     buf[frame * nc + ch] = s;
                 }
             }
-            let ctx = ProcessContext { sample_rate: sr, num_frames };
+            let ctx = ProcessContext {
+                sample_rate: sr,
+                num_frames,
+            };
             plugin.process_in_place(&mut buf, &ctx).unwrap();
             if block >= measure_from && block * num_frames > latency + num_frames {
                 for &s in &buf {
@@ -1230,7 +1233,11 @@ mod tests {
                 }
             }
         }
-        if n > 0 { (sum_sq / n as f64).sqrt() } else { 0.0 }
+        if n > 0 {
+            (sum_sq / n as f64).sqrt()
+        } else {
+            0.0
+        }
     }
 
     /// Bug #2 (🔴): Highpass filter at 200 Hz should attenuate 50 Hz content.

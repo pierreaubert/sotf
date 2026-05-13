@@ -807,9 +807,7 @@ mod tests {
         // Use a 100-sample block — well within the 5 ms ramp (~240 samples at 48 kHz).
         let num_frames = 100;
         let mut buf: Vec<f32> = (0..num_frames)
-            .map(|i| {
-                0.5 * (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / sr as f32).sin()
-            })
+            .map(|i| 0.5 * (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / sr as f32).sin())
             .collect();
 
         // Capture the first sample's input value
@@ -876,9 +874,7 @@ mod tests {
 
         // One block of 100 samples — still in the ramp window
         let mut buf2: Vec<f32> = (0..num_frames)
-            .map(|i| {
-                0.5 * (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / sr as f32).sin()
-            })
+            .map(|i| 0.5 * (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / sr as f32).sin())
             .collect();
         let dry_ref = buf2.clone(); // original input (dry output when mix=0)
 

@@ -702,8 +702,8 @@ mod tests {
         app.selected_plugin_index = plugin_idx;
 
         let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
-        let (orig_sofa, orig_channels, orig_ext, orig_near, orig_crossfade) =
-            match &plugin.settings {
+        let (orig_sofa, orig_channels, orig_ext, orig_near, orig_crossfade) = match &plugin.settings
+        {
             PluginSettings::BinauralDecoder {
                 sofa_file,
                 input_channels,

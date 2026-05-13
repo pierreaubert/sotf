@@ -330,6 +330,9 @@ mod tests {
         let text = "مرحبا";
         let starts = vec![0, text.len()];
         let levels = compute_segment_levels(text, &starts).unwrap();
-        assert!(levels.iter().all(|&l| l > 0), "end offset should have RTL level, not 0");
+        assert!(
+            levels.iter().all(|&l| l > 0),
+            "end offset should have RTL level, not 0"
+        );
     }
 }

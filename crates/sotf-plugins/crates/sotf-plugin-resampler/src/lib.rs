@@ -402,7 +402,12 @@ impl ResamplerPlugin {
             ));
         }
 
-        Self::planar_to_interleaved(&self.output_buffer, output, output_frames, self.num_channels);
+        Self::planar_to_interleaved(
+            &self.output_buffer,
+            output,
+            output_frames,
+            self.num_channels,
+        );
         Ok(output_frames)
     }
 
@@ -423,7 +428,6 @@ impl ResamplerPlugin {
         self.rebuild_cached_parameters();
         Ok(())
     }
-
 }
 
 impl Plugin for ResamplerPlugin {
@@ -1288,7 +1292,10 @@ mod tests {
             num_frames: 0,
         };
         let produced = resampler.process(&input, &mut output, &ctx).unwrap();
-        assert_eq!(produced, 0, "zero-frame block should produce 0 output frames");
+        assert_eq!(
+            produced, 0,
+            "zero-frame block should produce 0 output frames"
+        );
     }
 
     /// Over a long run (10 s at 44.1 kHz → 48 kHz), total output frames should be

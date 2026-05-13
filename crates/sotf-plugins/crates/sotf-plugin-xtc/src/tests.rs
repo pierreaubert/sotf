@@ -1847,8 +1847,7 @@ fn test_latency_is_fft_size_minus_hop_size() {
     let expected = fft_size - hop_size;
     let reported = plugin.latency_samples();
     assert_eq!(
-        reported,
-        expected,
+        reported, expected,
         "latency_samples() should return fft_size - hop_size = {expected}, got {reported}"
     );
 }

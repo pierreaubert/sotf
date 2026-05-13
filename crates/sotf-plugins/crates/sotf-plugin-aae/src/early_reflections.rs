@@ -431,7 +431,11 @@ mod tests {
                 }
             }
         }
-        let rms = if count > 0 { (energy_sum / count as f64).sqrt() } else { 0.0 };
+        let rms = if count > 0 {
+            (energy_sum / count as f64).sqrt()
+        } else {
+            0.0
+        };
 
         // The RMS should be positive (modulation preserves energy through the tap)
         // and finite — a crash or NaN here indicates broken allpass state management.

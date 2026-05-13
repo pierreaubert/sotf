@@ -1502,7 +1502,12 @@ mod tests {
         let q1 = Array1::from_vec(vec![0.5]);
         let q2 = Array1::from_vec(vec![0.5 + 1e-7]);
         assert!(
-            !is_new_point(&normalize(&q2, &bounds_1d), &[normalize(&q1, &bounds_1d)], &[], &bounds_1d),
+            !is_new_point(
+                &normalize(&q2, &bounds_1d),
+                &[normalize(&q1, &bounds_1d)],
+                &[],
+                &bounds_1d
+            ),
             "points 1e-7 apart in 1D should be treated as duplicates"
         );
 
@@ -1517,7 +1522,12 @@ mod tests {
             p2[i] += 1e-8; // small but clear perturbation
         }
         assert!(
-            is_new_point(&normalize(&p2, &bounds_100d), &[normalize(&p1, &bounds_100d)], &[], &bounds_100d),
+            is_new_point(
+                &normalize(&p2, &bounds_100d),
+                &[normalize(&p1, &bounds_100d)],
+                &[],
+                &bounds_100d
+            ),
             "points differing by 1e-8 in every coordinate should be distinct in 100D"
         );
 
@@ -1525,7 +1535,12 @@ mod tests {
         let r1 = Array1::from_vec(vec![0.3; 50]);
         let r2 = r1.clone();
         assert!(
-            !is_new_point(&normalize(&r2, &bounds_100d), &[normalize(&r1, &bounds_100d)], &[], &bounds_100d),
+            !is_new_point(
+                &normalize(&r2, &bounds_100d),
+                &[normalize(&r1, &bounds_100d)],
+                &[],
+                &bounds_100d
+            ),
             "exact duplicates should be rejected in 50D"
         );
     }

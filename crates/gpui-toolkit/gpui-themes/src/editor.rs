@@ -1071,7 +1071,11 @@ impl ThemeEditor {
                                     } else {
                                         this.theme.to_rust_code()
                                     };
-                                    let filename = format!("{}_theme.{}", this.theme.name.to_lowercase().replace(' ', "_"), this.export_format);
+                                    let filename = format!(
+                                        "{}_theme.{}",
+                                        this.theme.name.to_lowercase().replace(' ', "_"),
+                                        this.export_format
+                                    );
                                     if let Err(e) = std::fs::write(&filename, content) {
                                         eprintln!("Failed to save theme to {filename}: {e}");
                                     } else {

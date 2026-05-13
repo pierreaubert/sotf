@@ -384,19 +384,13 @@ mod tests {
             offset: Position::new(0.0, 0.0),
             size: (800.0, 600.0),
         };
-        let result = tester.hit_test_with_viewport(
-            Position::new(150.0, 130.0),
-            &graph,
-            &zoomed_viewport,
-        );
+        let result =
+            tester.hit_test_with_viewport(Position::new(150.0, 130.0), &graph, &zoomed_viewport);
         assert_eq!(result, HitTestResult::Canvas);
 
         // Screen point (300, 250) should hit the zoomed node
-        let result = tester.hit_test_with_viewport(
-            Position::new(300.0, 250.0),
-            &graph,
-            &zoomed_viewport,
-        );
+        let result =
+            tester.hit_test_with_viewport(Position::new(300.0, 250.0), &graph, &zoomed_viewport);
         assert!(matches!(result, HitTestResult::Node(_)));
     }
 }

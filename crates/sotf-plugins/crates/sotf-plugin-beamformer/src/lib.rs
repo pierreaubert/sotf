@@ -228,7 +228,6 @@ impl BeamformerPlugin {
         );
         self.gsc = GscBeamformer::new(self.num_mics, &delays, 32, 0.01);
     }
-
 }
 
 impl Plugin for BeamformerPlugin {
@@ -522,7 +521,6 @@ mod tests {
         assert!(result.is_ok());
     }
 
-
     /// Regression test for §1.1 (STFT trigger fires every sample after hop).
     ///
     /// Before the fix `input_fill` was reset to `FFT_SIZE - hop = hop`, so on
@@ -551,7 +549,10 @@ mod tests {
             let result = plugin.process(&input, &mut output, &block);
             assert!(result.is_ok());
             for (i, &s) in output.iter().enumerate() {
-                assert!(s.is_finite(), "output[{i}] is not finite after hop-sized block");
+                assert!(
+                    s.is_finite(),
+                    "output[{i}] is not finite after hop-sized block"
+                );
             }
         }
     }

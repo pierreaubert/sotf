@@ -1723,13 +1723,19 @@ mod tests {
     fn test_auto_gain_measurement_not_stale_after_one_block() {
         let mut p = LoudnessCompensationPlugin::new(1, 100.0, 0.0, 10000.0, 0.0);
         InPlacePlugin::initialize(&mut p, 48000).unwrap();
-        p.set_parameter(ParameterId::from("auto_gain_enabled"), ParameterValue::Bool(true))
-            .unwrap();
+        p.set_parameter(
+            ParameterId::from("auto_gain_enabled"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
 
         // Process 9 small blocks (9 * 512 = 4608 samples) of silence.
         // With the old bug, the cache update counter fires on the 10th block only.
         let nf = 512;
-        let ctx = ProcessContext { sample_rate: 48000, num_frames: nf };
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: nf,
+        };
         for _ in 0..9 {
             let mut buf = vec![0.0_f32; nf];
             p.process_in_place(&mut buf, &ctx).unwrap();
@@ -1739,7 +1745,10 @@ mod tests {
         // (~19200 samples = 38 blocks of 512).  With the fix, measurement and cache
         // update happen on every block, so after these blocks input_lufs is live.
         let loud_nf = 19200;
-        let loud_ctx = ProcessContext { sample_rate: 48000, num_frames: loud_nf };
+        let loud_ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: loud_nf,
+        };
         let mut loud_buf: Vec<f32> = (0..loud_nf)
             .map(|i| if i % 2 == 0 { 0.5_f32 } else { -0.5_f32 })
             .collect();
@@ -1793,7 +1802,10 @@ mod tests {
         InPlacePlugin::initialize(&mut p, 48000).unwrap();
 
         let nf = 4800; // 100ms per block
-        let ctx = ProcessContext { sample_rate: 48000, num_frames: nf };
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: nf,
+        };
         let signal: Vec<f32> = (0..nf)
             .map(|i| 0.3 * (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / 48000.0).sin())
             .collect();
@@ -1865,10 +1877,15 @@ mod tests {
 
         // Process must succeed and produce finite output
         let nf = 480;
-        let mut buf: Vec<f32> =
-            (0..nf).map(|i| 0.2 * (i as f32 / 48.0).sin()).collect();
-        p.process_in_place(&mut buf, &ProcessContext { sample_rate: 48000, num_frames: nf })
-            .unwrap();
+        let mut buf: Vec<f32> = (0..nf).map(|i| 0.2 * (i as f32 / 48.0).sin()).collect();
+        p.process_in_place(
+            &mut buf,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: nf,
+            },
+        )
+        .unwrap();
         assert!(
             buf.iter().all(|s| s.is_finite()),
             "output should be finite after parameter change in manual mode"

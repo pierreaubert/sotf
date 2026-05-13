@@ -1202,7 +1202,10 @@ mod tests {
 
         // Process some audio to get internal resampler state dirty
         let nf = RESAMPLER_CHUNK_SIZE;
-        let ctx = ProcessContext { sample_rate: 44100, num_frames: nf };
+        let ctx = ProcessContext {
+            sample_rate: 44100,
+            num_frames: nf,
+        };
         let input: Vec<f32> = (0..nf * 2)
             .map(|i| 0.5 * (2.0 * std::f32::consts::PI * 440.0 * i as f32 / 44100.0).sin())
             .collect();
@@ -1247,7 +1250,10 @@ mod tests {
         .unwrap();
 
         let nf = 512;
-        let ctx = ProcessContext { sample_rate: 44100, num_frames: nf };
+        let ctx = ProcessContext {
+            sample_rate: 44100,
+            num_frames: nf,
+        };
         let input: Vec<f32> = (0..nf * 2)
             .map(|i| 0.5 * (2.0 * std::f32::consts::PI * 440.0 * i as f32 / 44100.0).sin())
             .collect();

@@ -105,8 +105,7 @@ mod tests {
     fn deserialize_old_preset_with_output_channels_ignores_unknown_field() {
         // Old presets that serialised `output_channels` must be accepted silently
         // via serde's default deny_unknown_fields absence.
-        let result: Result<Params, _> =
-            serde_json::from_str(r#"{"output_channels": 4}"#);
+        let result: Result<Params, _> = serde_json::from_str(r#"{"output_channels": 4}"#);
         // serde by default ignores unknown fields, so this should succeed.
         assert!(
             result.is_ok(),

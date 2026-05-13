@@ -1,8 +1,10 @@
 # 0.6.6
 
-## Apple Store and Microsoft Stor availability
+## Apple Store and Microsoft Store availability
 
-- Stable Apple releases are now available on the App Store: <https://apps.apple.com/ch/app/sound-of-the-future/id6754237332>
+- Stable releases are now available on the Apple App Store:
+<https://apps.apple.com/ch/app/sound-of-the-future/id6754237332> and
+Windows App Store 
 - Beta macOS releases and command-line artifacts remain available on GitHub Releases.
 
 ## New features

@@ -505,7 +505,10 @@ impl InPlacePlugin for LimiterPlugin {
             // This anticipates loud transients before they arrive at the output.
             let effective_peak = if use_feed_forward {
                 self.lookahead_peaks[self.lookahead_pos] = frame_peak;
-                self.lookahead_peaks.iter().copied().fold(frame_peak, f32::max)
+                self.lookahead_peaks
+                    .iter()
+                    .copied()
+                    .fold(frame_peak, f32::max)
             } else {
                 frame_peak
             };

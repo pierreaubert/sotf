@@ -1129,12 +1129,9 @@ fn test_harmonic_percussive_transient_gain_not_forced_to_half() {
     // Verify the formula in isolation: given a high Wiener gain and transient_weight=1,
     // the blended result must be >= the original gain (transients are preserved, not reduced).
     // New formula: gain * (1 - t) + t,  t = transient_weight * 0.5
-    for &(wiener_gain, transient_weight) in &[
-        (0.9_f32, 1.0_f32),
-        (0.8, 0.8),
-        (0.95, 0.6),
-        (0.7, 1.0),
-    ] {
+    for &(wiener_gain, transient_weight) in
+        &[(0.9_f32, 1.0_f32), (0.8, 0.8), (0.95, 0.6), (0.7, 1.0)]
+    {
         let t = transient_weight * 0.5;
         let new_result = wiener_gain * (1.0 - t) + t;
         // Result must be >= wiener_gain (blending toward 1.0 never reduces the gain)
@@ -1172,11 +1169,17 @@ fn test_harmonic_percussive_transient_gain_not_forced_to_half() {
 
     let num_frames = 8192;
     let mut buf = make_test_signal(num_frames, 1, 1000.0);
-    let ctx = ProcessContext { sample_rate: SAMPLE_RATE, num_frames };
+    let ctx = ProcessContext {
+        sample_rate: SAMPLE_RATE,
+        num_frames,
+    };
     plugin.process_in_place(&mut buf, &ctx).unwrap();
 
     let sum: f32 = buf.iter().map(|x| x.abs()).sum();
-    assert!(sum > 0.0, "Harmonic/percussive mode should produce non-zero output");
+    assert!(
+        sum > 0.0,
+        "Harmonic/percussive mode should produce non-zero output"
+    );
 }
 
 /// Issue #3: Multi-resolution temporal double-smoothing.

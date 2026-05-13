@@ -13,7 +13,9 @@ fn fuzz_all_inputs() {
     let profile = EngineProfile::default();
     let options = PrepareOptions::default();
     let kp = KnuthPlassParams::default();
-    let prewrap = PrepareOptions { white_space: WhiteSpaceMode::PreWrap };
+    let prewrap = PrepareOptions {
+        white_space: WhiteSpaceMode::PreWrap,
+    };
 
     let inputs = vec![
         "",
@@ -48,8 +50,11 @@ fn fuzz_all_inputs() {
         let prepared = prepare_with_segments(text, &measure, &profile, &options);
         let _ = layout_with_lines(&prepared, 10.0, 20.0, &profile);
         let _ = layout_with_lines_optimal(&prepared, 10.0, 20.0, &profile, &kp);
-        
-        let mut cursor = LayoutCursor { segment_index: 0, grapheme_index: 0 };
+
+        let mut cursor = LayoutCursor {
+            segment_index: 0,
+            grapheme_index: 0,
+        };
         while let Some(line) = layout_next_line(&prepared, cursor, 10.0, &profile) {
             cursor = line.end;
         }
