@@ -158,7 +158,11 @@ mod tests {
     fn test_cdt_protection_envelope_limits() {
         let envelope = cdt_protection_envelope(20.0, 500.0);
         for &(freq, max_cut) in &envelope {
-            assert!(freq >= 20.0 && freq <= 500.0, "Freq {} out of range", freq);
+            assert!(
+                (20.0..=500.0).contains(&freq),
+                "Freq {} out of range",
+                freq
+            );
             assert!(
                 max_cut <= 0.0,
                 "Max cut should be negative, got {}",

@@ -1068,7 +1068,7 @@ mod tests {
         let total_frames = signal_frames + PARTITION_SIZE;
         let mut buffer: Vec<f32> = (0..signal_frames)
             .map(|i| (i as f32 * 0.1).sin())
-            .chain(std::iter::repeat(0.0f32).take(PARTITION_SIZE))
+            .chain(std::iter::repeat_n(0.0f32, PARTITION_SIZE))
             .collect();
         let original = buffer[..signal_frames].to_vec();
 
@@ -1424,7 +1424,7 @@ mod tests {
         let total_frames = signal_frames + PARTITION_SIZE; // extra block to flush ring
         let mut buffer: Vec<f32> = (0..signal_frames)
             .map(|i| (i as f32 * 0.05).sin())
-            .chain(std::iter::repeat(0.0f32).take(PARTITION_SIZE))
+            .chain(std::iter::repeat_n(0.0f32, PARTITION_SIZE))
             .collect();
         let original = buffer[..signal_frames].to_vec();
 
@@ -1485,7 +1485,7 @@ mod tests {
         let total_frames = signal_frames + PARTITION_SIZE;
         let mut buffer: Vec<f32> = (0..signal_frames)
             .map(|i| (i as f32 * 0.07).sin() * 0.5)
-            .chain(std::iter::repeat(0.0f32).take(PARTITION_SIZE))
+            .chain(std::iter::repeat_n(0.0f32, PARTITION_SIZE))
             .collect();
         let input_energy: f32 = buffer[..signal_frames].iter().map(|s| s * s).sum();
 

@@ -312,6 +312,7 @@ pub(super) fn process_speaker_group(
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
     use crate::MeasurementSource;
@@ -534,7 +535,6 @@ mod tests {
 
     #[test]
     fn average_power_curve_preserves_phase_when_all_inputs_have_phase() {
-        use std::f64::consts::PI;
         let c1 = Curve {
             freq: array![100.0, 200.0, 400.0],
             spl: array![80.0, 80.0, 80.0],

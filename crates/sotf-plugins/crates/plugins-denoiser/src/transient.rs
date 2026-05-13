@@ -182,11 +182,10 @@ mod tests {
 
         // The three post-click samples must not be clamped to near zero;
         // they are well within the normal slew range of the pre-click signal.
-        for k in 1..4 {
+        for (k, &v) in buf.iter().enumerate().take(4).skip(1) {
             assert!(
-                buf[k] > 0.05,
-                "post-click sample buf[{k}] over-suppressed (value={})",
-                buf[k]
+                v > 0.05,
+                "post-click sample buf[{k}] over-suppressed (value={v})",
             );
         }
     }

@@ -1599,11 +1599,10 @@ mod upmixer_tests {
         let mut output = vec![0.0_f32; fft_size * nch];
         plugin.extract_output_and_scale(&mut output, 1.0);
 
-        for ch in 0..nch {
+        for (ch, &sample) in output.iter().take(nch).enumerate() {
             assert!(
-                output[ch].abs() < 1e-6,
-                "channel {ch} first sample should be synthesis-windowed to zero, got {}",
-                output[ch]
+                sample.abs() < 1e-6,
+                "channel {ch} first sample should be synthesis-windowed to zero, got {sample}",
             );
         }
 

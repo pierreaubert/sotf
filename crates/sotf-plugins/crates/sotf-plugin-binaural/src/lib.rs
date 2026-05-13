@@ -2585,8 +2585,10 @@ mod tests {
         use sotf_host::speaker_config::get_speaker_config_by_channels;
 
         // Use 5.1 speaker config (6 channels), first-order reflections only.
-        let mut model = RoomModel::default();
-        model.max_order = 1;
+        let model = RoomModel {
+            max_order: 1,
+            ..Default::default()
+        };
         let config = get_speaker_config_by_channels(6).unwrap();
         let reflections = calculate_reflections(&model, config, 48000);
 
@@ -2619,8 +2621,10 @@ mod tests {
         use room::{RoomModel, calculate_reflections};
         use sotf_host::speaker_config::get_speaker_config_by_channels;
 
-        let mut model = RoomModel::default();
-        model.max_order = 1;
+        let model = RoomModel {
+            max_order: 1,
+            ..Default::default()
+        };
         let config = get_speaker_config_by_channels(6).unwrap();
         let reflections = calculate_reflections(&model, config, 48000);
 
@@ -2676,14 +2680,18 @@ mod tests {
         use sotf_host::speaker_config::get_speaker_config_by_channels;
 
         // First compute with max_order=1 to get baseline count per channel.
-        let mut model1 = RoomModel::default();
-        model1.max_order = 1;
+        let model1 = RoomModel {
+            max_order: 1,
+            ..Default::default()
+        };
         let config = get_speaker_config_by_channels(2).unwrap();
         let reflections_1st = calculate_reflections(&model1, config, 48000);
 
         // Now compute with max_order=2 to get first+second order.
-        let mut model2 = RoomModel::default();
-        model2.max_order = 2;
+        let model2 = RoomModel {
+            max_order: 2,
+            ..Default::default()
+        };
         let reflections_2nd = calculate_reflections(&model2, config, 48000);
 
         // The number of second-order reflections per channel must be < 30 (6×5 ordered).

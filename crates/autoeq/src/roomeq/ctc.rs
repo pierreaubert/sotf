@@ -1828,9 +1828,11 @@ mod tests {
         write_stereo_delayed_impulse(&left_wav, 48, 30_000, 6_000);
         write_stereo_delayed_impulse(&right_wav, 48, 6_000, 30_000);
 
-        let mut window = CtcWindowConfig::default();
-        window.length_ms = 0.5;
-        window.fade_ms = 0.0;
+        let window = CtcWindowConfig {
+            length_ms: 0.5,
+            fade_ms: 0.0,
+            ..Default::default()
+        };
 
         let cfg = CtcConfig {
             enabled: true,
@@ -1911,9 +1913,11 @@ mod tests {
         write_stereo_split_impulse(&left_wav, 8, 30_000, 13, 7_000);
         write_stereo_split_impulse(&right_wav, 12, 6_500, 9, 30_000);
 
-        let mut window = CtcWindowConfig::default();
-        window.length_ms = 1.0;
-        window.fade_ms = 0.0;
+        let window = CtcWindowConfig {
+            length_ms: 1.0,
+            fade_ms: 0.0,
+            ..Default::default()
+        };
         let cfg = CtcConfig {
             enabled: true,
             matrix_source: "measured".to_string(),

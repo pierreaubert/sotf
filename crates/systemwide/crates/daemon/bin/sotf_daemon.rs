@@ -1744,6 +1744,7 @@ fn list_audio_devices() -> Result<Vec<serde_json::Value>, String> {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
 

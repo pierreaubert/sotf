@@ -4897,8 +4897,10 @@ mod tests {
 
     #[test]
     fn simple_preset_canonicalizes_multi_position_strategy_label() {
-        let mut preset = SimplePresetConfig::default();
-        preset.multi_position_strategy = "Minimize Variance".to_string();
+        let preset = SimplePresetConfig {
+            multi_position_strategy: "Minimize Variance".to_string(),
+            ..Default::default()
+        };
         let mut config = RoomEqOptimizerConfig::default();
 
         apply_simple_preset(&preset, &mut config);
@@ -4945,8 +4947,10 @@ mod tests {
 
     #[test]
     fn probe_arrival_map_returns_none_when_failed() {
-        let mut dd = DelayDetectionState::default();
-        dd.status = DelayDetectionStatus::Failed("mic unplugged".to_string());
+        let dd = DelayDetectionState {
+            status: DelayDetectionStatus::Failed("mic unplugged".to_string()),
+            ..Default::default()
+        };
         assert!(dd.probe_arrival_map().is_none());
     }
 

@@ -117,9 +117,8 @@ fn channel_order_preserved_through_symphonia_6ch() {
     );
     let frame = &chunk.samples[..channels as usize];
     eprintln!("first frame interleaved: {frame:?}");
-    for ch in 0..channels as usize {
+    for (ch, &actual) in frame.iter().enumerate() {
         let expected = 0.1_f32 * (ch as f32 + 1.0);
-        let actual = frame[ch];
         assert!(
             (actual - expected).abs() < 1e-4,
             "channel {ch}: expected {expected:.3}, got {actual:.3} — symphonia REORDERED channels"

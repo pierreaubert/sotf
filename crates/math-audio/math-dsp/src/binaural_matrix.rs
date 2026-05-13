@@ -587,7 +587,8 @@ mod tests {
             Complex64::new(1.0, 0.0),
         ];
 
-        let solved = solve_regularized_inverse_bin(&[h.clone()], &target, 1e-9, None).unwrap();
+        let solved =
+            solve_regularized_inverse_bin(std::slice::from_ref(&h), &target, 1e-9, None).unwrap();
         let f = DMatrix::from_row_slice(2, 2, &solved.values);
         let delivered = h.as_matrix() * f;
 
@@ -685,7 +686,7 @@ mod tests {
 
         let mut residue = vec![1.0; 128];
         suppress_log_sweep_harmonic_residues(&mut residue, 48_000.0, 1.0, 20.0, 20_000.0, 3, 1.0);
-        assert!(residue.iter().any(|v| *v == 0.0));
+        assert!(residue.contains(&0.0));
     }
 
     #[test]

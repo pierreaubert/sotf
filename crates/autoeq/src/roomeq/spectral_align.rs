@@ -1319,7 +1319,7 @@ mod tests {
         for ch in ["C", "R"] {
             let g = results[ch].flat_gain_db;
             assert!(
-                g >= 9.0 && g <= MAX_FLAT_GAIN_DB + 0.01,
+                (9.0..=MAX_FLAT_GAIN_DB + 0.01).contains(&g),
                 "{ch} flat_gain {g:.3} dB should stay near LS value (+10 dB); \
                  saturating L must not pull unsaturated channels"
             );
@@ -1398,7 +1398,7 @@ mod tests {
         curves.insert(
             "L".to_string(),
             make_curve(|f| {
-                if f >= 200.0 && f <= 4000.0 {
+                if (200.0..=4000.0).contains(&f) {
                     90.0
                 } else {
                     80.0
@@ -1408,7 +1408,7 @@ mod tests {
         curves.insert(
             "R".to_string(),
             make_curve(|f| {
-                if f >= 200.0 && f <= 4000.0 {
+                if (200.0..=4000.0).contains(&f) {
                     95.0
                 } else {
                     80.0

@@ -492,8 +492,8 @@ mod tests {
         let unwrapped = unwrap_phase(&phases);
         // The unwrapped second value should be close to +π/2 (~1.5708).
         assert!(
-            (unwrapped[1] - 1.5708).abs() < 0.01,
-            "Expected ~1.5708 for -3π/2 unwrapped, got {}",
+            (unwrapped[1] - std::f32::consts::FRAC_PI_2).abs() < 0.01,
+            "Expected ~π/2 for -3π/2 unwrapped, got {}",
             unwrapped[1]
         );
     }

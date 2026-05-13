@@ -102,22 +102,22 @@ doc:
 [group('run')]
 run-gpui:
 	cargo build --bin sotf-desktop --features "onnx, hal, gpu-2d, gpu-3d, iamf, dev-api"
-	codesign --force --deep --sign - --entitlements scripts/debug.entitlements target/debug/SotF
-	./target/debug/SotF
+	codesign --force --deep --sign - --entitlements scripts/debug.entitlements target/debug/sotf-desktop
+	./target/debug/sotf-desktop
 
 # Run the GPUI player (release mode)
 [group('run')]
 run-gpui-release:
 	cargo build --release --bin sotf-desktop --features "onnx, hal, gpu-2d, gpu-3d, iamf"
-	codesign --force --deep --sign - --entitlements scripts/entitlements.plist target/release/SotF
-	./target/release/SotF
+	codesign --force --deep --sign - --entitlements scripts/entitlements.plist target/release/sotf-desktop
+	./target/release/sotf-desktop
 
 # Run the GPUI player (release mode)
 [group('run')]
 run-gpui-leaks:
 	RUSTFLAGS="-C debuginfo=2" cargo build --release --bin sotf-desktop --features "onnx, hal, gpu-2d, gpu-3d, iamf"
-	codesign --force --deep --sign - --entitlements scripts/entitlements.plist target/release/SotF
-	./target/release/SotF
+	codesign --force --deep --sign - --entitlements scripts/entitlements.plist target/release/sotf-desktop
+	./target/release/sotf-desktop
 
 # Run the TUI player
 [group('run')]
@@ -208,9 +208,14 @@ tui:
 tui:
 	cargo run --release --bin sotf-tui -p sotf-tui --features="onnx,hal,iamf"
 
+alias terminal := gpui
+
 [group('build')]
 gpui:
 	cargo run --release --bin sotf-desktop -p sotf-gpui --features "onnx,hal,gpu-2d,gpu-3d,iamf"
+
+alias desktop := gpui
+alias native := gpui
 
 # ----------------------------------------------------------------------
 # CLEAN
@@ -225,7 +230,7 @@ clean:
 # DEV
 # ----------------------------------------------------------------------
 
-# Workspace debug build. Also builds SotF with the `dev-api` feature so
+# Workspace debug build. Also builds sotf-desktop with the `dev-api` feature so
 # scripted scenarios (sotf-dev-driver) can drive the running app.
 # Release builds (`prod-*`, `run-gpui-release`) intentionally omit `dev-api`.
 dev:

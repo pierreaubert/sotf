@@ -570,7 +570,7 @@ mod tests {
         // range when the initial state is properly matched).
         for (i, &v) in filtered.iter().enumerate() {
             assert!(
-                v >= -0.01 && v <= 1.01,
+                (-0.01..=1.01).contains(&v),
                 "sample {i} out of range: {v} (expected [0, 1])"
             );
         }

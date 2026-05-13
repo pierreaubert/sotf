@@ -212,6 +212,23 @@ impl From<&crate::roomeq::OptimizerConfig> for OptimParams {
     }
 }
 
+impl std::str::FromStr for PeqModel {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "pk" => Ok(PeqModel::Pk),
+            "hp-pk" => Ok(PeqModel::HpPk),
+            "hp-pk-lp" => Ok(PeqModel::HpPkLp),
+            "ls-pk" => Ok(PeqModel::LsPk),
+            "ls-pk-hs" => Ok(PeqModel::LsPkHs),
+            "free-pk-free" => Ok(PeqModel::FreePkFree),
+            "free" => Ok(PeqModel::Free),
+            _ => Err(format!("Unknown PEQ model: {}", s)),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -282,22 +299,5 @@ mod tests {
         assert_eq!(params.bo_posterior_std_threshold, 0.02);
         assert_eq!(params.bo_acquisition, "ei");
         assert!(params.bo_ehvi);
-    }
-}
-
-impl std::str::FromStr for PeqModel {
-    type Err = String;
-
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        match s {
-            "pk" => Ok(PeqModel::Pk),
-            "hp-pk" => Ok(PeqModel::HpPk),
-            "hp-pk-lp" => Ok(PeqModel::HpPkLp),
-            "ls-pk" => Ok(PeqModel::LsPk),
-            "ls-pk-hs" => Ok(PeqModel::LsPkHs),
-            "free-pk-free" => Ok(PeqModel::FreePkFree),
-            "free" => Ok(PeqModel::Free),
-            _ => Err(format!("Unknown PEQ model: {}", s)),
-        }
     }
 }

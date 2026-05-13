@@ -1024,7 +1024,7 @@ mod tests {
             alpha: 0.10,
             seed: 0,
         };
-        assert!(bootstrap_band(&[curve.clone()], &cfg, None).is_err());
+        assert!(bootstrap_band(std::slice::from_ref(&curve), &cfg, None).is_err());
         assert!(bootstrap_resampled_curves(&[curve], &cfg, None).is_err());
     }
 

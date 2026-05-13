@@ -451,7 +451,7 @@ mod tests {
 
         assert!((2..=10).contains(&resolved.num_filters));
         assert!(split.low_freq_config.max_q > split.high_freq_config.max_q);
-        assert_eq!(split.low_freq_config.allow_boost, false);
+        assert!(!split.low_freq_config.allow_boost);
         assert!(split.low_freq_config.max_db.unwrap() >= 6.0);
 
         let envelope = resolved.max_boost_envelope.as_ref().unwrap();

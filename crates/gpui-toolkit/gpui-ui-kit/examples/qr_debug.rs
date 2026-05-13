@@ -7,6 +7,8 @@
 //! Camera permission is requested on first scan. If denied or no camera
 //! is available, a clear error message is shown with instructions.
 
+#![allow(unexpected_cfgs)]
+
 use gpui::*;
 use gpui_miniapp::{MiniApp, MiniAppConfig};
 use gpui_ui_kit::qr::AnimatedQrCode;

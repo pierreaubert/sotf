@@ -1222,7 +1222,7 @@ fn test_multi_resolution_no_double_smoothing() {
     // All smoothed_gain values in the small-FFT path must be in [floor_linear, 1.0]
     for (k, &g) in mrs.channels[0].smoothed_gain.iter().enumerate() {
         assert!(
-            g.is_finite() && g >= 0.0 && g <= 1.0,
+            g.is_finite() && (0.0..=1.0).contains(&g),
             "small-FFT smoothed_gain[{}] = {} is out of range [0, 1]",
             k,
             g

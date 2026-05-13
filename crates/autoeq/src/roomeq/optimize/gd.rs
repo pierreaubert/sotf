@@ -675,8 +675,6 @@ pub(super) fn gd_phase_response_for_curve(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn phase_linear_fir_gd_respects_optimize_polarity_config() {
         // The try_run_phase_linear_fir_gd function passes

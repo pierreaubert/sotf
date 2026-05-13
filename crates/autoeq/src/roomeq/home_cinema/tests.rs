@@ -340,14 +340,16 @@ fn reports_partial_non_sub_multiseat_coverage() {
 
 #[test]
 fn derives_all_channel_multiseat_primary_weights() {
-    let mut optimizer = OptimizerConfig::default();
-    optimizer.multi_seat = Some(MultiSeatConfig {
-        enabled: false,
-        strategy: MultiSeatStrategy::PrimaryWithConstraints,
-        primary_seat: 1,
-        primary_seat_weight: 3.0,
+    let optimizer = OptimizerConfig {
+        multi_seat: Some(MultiSeatConfig {
+            enabled: false,
+            strategy: MultiSeatStrategy::PrimaryWithConstraints,
+            primary_seat: 1,
+            primary_seat_weight: 3.0,
+            ..Default::default()
+        }),
         ..Default::default()
-    });
+    };
     let source = MeasurementSource::InMemoryMultiple(vec![flat_curve(), flat_curve()]);
     let config = RoomConfig {
         version: "test".to_string(),
@@ -392,11 +394,13 @@ fn skips_all_channel_multiseat_on_grid_mismatch() {
 
 #[test]
 fn skips_all_channel_multiseat_on_invalid_weight_policy() {
-    let mut optimizer = OptimizerConfig::default();
-    optimizer.multi_seat = Some(MultiSeatConfig {
-        seat_weights: Some(vec![1.0]),
+    let optimizer = OptimizerConfig {
+        multi_seat: Some(MultiSeatConfig {
+            seat_weights: Some(vec![1.0]),
+            ..Default::default()
+        }),
         ..Default::default()
-    });
+    };
     let source = MeasurementSource::InMemoryMultiple(vec![flat_curve(), flat_curve()]);
     let config = RoomConfig {
         version: "test".to_string(),
@@ -471,11 +475,13 @@ fn reports_grid_mismatch_as_channel_skip() {
 
 #[test]
 fn skips_all_channel_multiseat_when_primary_seat_is_invalid() {
-    let mut optimizer = OptimizerConfig::default();
-    optimizer.multi_seat = Some(MultiSeatConfig {
-        primary_seat: 2,
+    let optimizer = OptimizerConfig {
+        multi_seat: Some(MultiSeatConfig {
+            primary_seat: 2,
+            ..Default::default()
+        }),
         ..Default::default()
-    });
+    };
     let source = MeasurementSource::InMemoryMultiple(vec![flat_curve(), flat_curve()]);
     let config = RoomConfig {
         version: "test".to_string(),
@@ -517,13 +523,15 @@ fn skips_all_channel_multiseat_when_primary_seat_is_invalid() {
 
 #[test]
 fn rejects_all_channel_multiseat_when_constraints_fail() {
-    let mut optimizer = OptimizerConfig::default();
-    optimizer.multi_seat = Some(MultiSeatConfig {
-        strategy: MultiSeatStrategy::PrimaryWithConstraints,
-        primary_seat: 0,
-        max_deviation_db: 6.0,
+    let optimizer = OptimizerConfig {
+        multi_seat: Some(MultiSeatConfig {
+            strategy: MultiSeatStrategy::PrimaryWithConstraints,
+            primary_seat: 0,
+            max_deviation_db: 6.0,
+            ..Default::default()
+        }),
         ..Default::default()
-    });
+    };
     let source = MeasurementSource::InMemoryMultiple(vec![flat_curve(), flat_curve()]);
     let config = RoomConfig {
         version: "test".to_string(),
@@ -637,14 +645,16 @@ fn reports_guardrail_rejection_without_claiming_applied() {
 
 #[test]
 fn reports_all_channel_multiseat_null_guard() {
-    let mut optimizer = OptimizerConfig::default();
-    optimizer.multi_seat = Some(MultiSeatConfig {
-        enabled: false,
-        strategy: MultiSeatStrategy::PrimaryWithConstraints,
-        primary_seat: 0,
-        max_deviation_db: 6.0,
+    let optimizer = OptimizerConfig {
+        multi_seat: Some(MultiSeatConfig {
+            enabled: false,
+            strategy: MultiSeatStrategy::PrimaryWithConstraints,
+            primary_seat: 0,
+            max_deviation_db: 6.0,
+            ..Default::default()
+        }),
         ..Default::default()
-    });
+    };
     let primary = flat_curve();
     let null_seat = curve_with_spl(vec![80.0, 45.0, 80.0]);
     let source = MeasurementSource::InMemoryMultiple(vec![primary.clone(), null_seat]);

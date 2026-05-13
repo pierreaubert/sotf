@@ -12,8 +12,10 @@ fn test_cjk_optimal_falls_back_to_greedy() {
     let measure = FixedMeasure;
     let profile = EngineProfile::default();
     let options = PrepareOptions::default();
-    let mut kp = KnuthPlassParams::default();
-    kp.looseness_recovery = false;
+    let kp = KnuthPlassParams {
+        looseness_recovery: false,
+        ..Default::default()
+    };
 
     // CJK text should be breakable in optimal mode, not fallback to greedy
     let prepared = prepare_with_segments("你好世界", &measure, &profile, &options);

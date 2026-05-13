@@ -57,16 +57,18 @@ fn one_speaker(name: &str, speaker: SpeakerConfig) -> HashMap<String, SpeakerCon
 
 #[test]
 fn i2_schroeder_split_with_target_response_slope_warns() {
-    let mut opt = OptimizerConfig::default();
-    opt.schroeder_split = Some(SchroederSplitConfig {
-        enabled: true,
-        ..SchroederSplitConfig::default()
-    });
-    opt.target_response = Some(TargetResponseConfig {
-        shape: TargetShape::Custom,
-        slope_db_per_octave: -0.8,
-        ..TargetResponseConfig::default()
-    });
+    let opt = OptimizerConfig {
+        schroeder_split: Some(SchroederSplitConfig {
+            enabled: true,
+            ..SchroederSplitConfig::default()
+        }),
+        target_response: Some(TargetResponseConfig {
+            shape: TargetShape::Custom,
+            slope_db_per_octave: -0.8,
+            ..TargetResponseConfig::default()
+        }),
+        ..Default::default()
+    };
 
     let config = base_config(one_speaker("L", single_speaker("l.csv", None)), opt);
     let result = validate_room_config(&config);
@@ -84,12 +86,14 @@ fn i2_schroeder_split_with_target_response_slope_warns() {
 #[test]
 fn i2_schroeder_split_with_flat_slope_no_warning() {
     // If both legs are flat, there's no slope to approximate, so no warning.
-    let mut opt = OptimizerConfig::default();
-    opt.schroeder_split = Some(SchroederSplitConfig {
-        enabled: true,
-        ..SchroederSplitConfig::default()
-    });
-    // Default target_response is absent.
+    let opt = OptimizerConfig {
+        schroeder_split: Some(SchroederSplitConfig {
+            enabled: true,
+            ..SchroederSplitConfig::default()
+        }),
+        // Default target_response is absent.
+        ..Default::default()
+    };
 
     let config = base_config(one_speaker("L", single_speaker("l.csv", None)), opt);
     let result = validate_room_config(&config);
@@ -110,9 +114,11 @@ fn i2_schroeder_split_with_flat_slope_no_warning() {
 
 #[test]
 fn i5_phase_linear_wide_band_warns() {
-    let mut opt = OptimizerConfig::default();
-    opt.processing_mode = ProcessingMode::PhaseLinear;
-    opt.max_freq = 20000.0;
+    let opt = OptimizerConfig {
+        processing_mode: ProcessingMode::PhaseLinear,
+        max_freq: 20000.0,
+        ..Default::default()
+    };
 
     let config = base_config(one_speaker("L", single_speaker("l.csv", None)), opt);
     let result = validate_room_config(&config);
@@ -129,9 +135,11 @@ fn i5_phase_linear_wide_band_warns() {
 
 #[test]
 fn i5_phase_linear_bass_only_no_warning() {
-    let mut opt = OptimizerConfig::default();
-    opt.processing_mode = ProcessingMode::PhaseLinear;
-    opt.max_freq = 1500.0;
+    let opt = OptimizerConfig {
+        processing_mode: ProcessingMode::PhaseLinear,
+        max_freq: 1500.0,
+        ..Default::default()
+    };
 
     let config = base_config(one_speaker("L", single_speaker("l.csv", None)), opt);
     let result = validate_room_config(&config);
@@ -148,9 +156,11 @@ fn i5_phase_linear_bass_only_no_warning() {
 
 #[test]
 fn i5_low_latency_mode_no_warning_even_at_20khz() {
-    let mut opt = OptimizerConfig::default();
-    opt.processing_mode = ProcessingMode::LowLatency;
-    opt.max_freq = 20000.0;
+    let opt = OptimizerConfig {
+        processing_mode: ProcessingMode::LowLatency,
+        max_freq: 20000.0,
+        ..Default::default()
+    };
 
     let config = base_config(one_speaker("L", single_speaker("l.csv", None)), opt);
     let result = validate_room_config(&config);
@@ -171,12 +181,14 @@ fn i5_low_latency_mode_no_warning_even_at_20khz() {
 
 #[test]
 fn b10_weights_length_mismatch_is_error() {
-    let mut opt = OptimizerConfig::default();
-    opt.multi_measurement = Some(MultiMeasurementConfig {
-        strategy: MultiMeasurementStrategy::WeightedSum,
-        weights: Some(vec![0.5, 0.5]), // 2 weights
-        ..MultiMeasurementConfig::default()
-    });
+    let opt = OptimizerConfig {
+        multi_measurement: Some(MultiMeasurementConfig {
+            strategy: MultiMeasurementStrategy::WeightedSum,
+            weights: Some(vec![0.5, 0.5]), // 2 weights
+            ..MultiMeasurementConfig::default()
+        }),
+        ..Default::default()
+    };
 
     let speakers = one_speaker(
         "L",
@@ -202,12 +214,14 @@ fn b10_weights_length_mismatch_is_error() {
 
 #[test]
 fn b10_weights_length_match_no_error() {
-    let mut opt = OptimizerConfig::default();
-    opt.multi_measurement = Some(MultiMeasurementConfig {
-        strategy: MultiMeasurementStrategy::WeightedSum,
-        weights: Some(vec![0.4, 0.3, 0.3]),
-        ..MultiMeasurementConfig::default()
-    });
+    let opt = OptimizerConfig {
+        multi_measurement: Some(MultiMeasurementConfig {
+            strategy: MultiMeasurementStrategy::WeightedSum,
+            weights: Some(vec![0.4, 0.3, 0.3]),
+            ..MultiMeasurementConfig::default()
+        }),
+        ..Default::default()
+    };
 
     let speakers = one_speaker("L", multi_speaker(&["m1.csv", "m2.csv", "m3.csv"]));
     let config = base_config(speakers, opt);
@@ -228,12 +242,14 @@ fn b10_single_measurement_source_ignored() {
     // A Single source doesn't have a count to compare against; no error even
     // if weights is populated (it's harmless until the channel actually has
     // multiple measurements).
-    let mut opt = OptimizerConfig::default();
-    opt.multi_measurement = Some(MultiMeasurementConfig {
-        strategy: MultiMeasurementStrategy::WeightedSum,
-        weights: Some(vec![0.5, 0.5]),
-        ..MultiMeasurementConfig::default()
-    });
+    let opt = OptimizerConfig {
+        multi_measurement: Some(MultiMeasurementConfig {
+            strategy: MultiMeasurementStrategy::WeightedSum,
+            weights: Some(vec![0.5, 0.5]),
+            ..MultiMeasurementConfig::default()
+        }),
+        ..Default::default()
+    };
 
     let config = base_config(one_speaker("L", single_speaker("l.csv", None)), opt);
     let result = validate_room_config(&config);
@@ -254,11 +270,13 @@ fn b10_single_measurement_source_ignored() {
 
 #[test]
 fn i4_cea2034_without_spinorama_source_warns() {
-    let mut opt = OptimizerConfig::default();
-    opt.cea2034_correction = Some(Cea2034CorrectionConfig {
-        enabled: true,
-        ..Cea2034CorrectionConfig::default()
-    });
+    let opt = OptimizerConfig {
+        cea2034_correction: Some(Cea2034CorrectionConfig {
+            enabled: true,
+            ..Cea2034CorrectionConfig::default()
+        }),
+        ..Default::default()
+    };
 
     let config = base_config(
         one_speaker("L", single_speaker("plain_room_measurement.csv", None)),
@@ -278,11 +296,13 @@ fn i4_cea2034_without_spinorama_source_warns() {
 
 #[test]
 fn i4_cea2034_with_speaker_name_no_warning() {
-    let mut opt = OptimizerConfig::default();
-    opt.cea2034_correction = Some(Cea2034CorrectionConfig {
-        enabled: true,
-        ..Cea2034CorrectionConfig::default()
-    });
+    let opt = OptimizerConfig {
+        cea2034_correction: Some(Cea2034CorrectionConfig {
+            enabled: true,
+            ..Cea2034CorrectionConfig::default()
+        }),
+        ..Default::default()
+    };
 
     let config = base_config(
         one_speaker("L", single_speaker("l.csv", Some("KEF R3"))),
@@ -302,11 +322,13 @@ fn i4_cea2034_with_speaker_name_no_warning() {
 
 #[test]
 fn i4_cea2034_with_path_hint_no_warning() {
-    let mut opt = OptimizerConfig::default();
-    opt.cea2034_correction = Some(Cea2034CorrectionConfig {
-        enabled: true,
-        ..Cea2034CorrectionConfig::default()
-    });
+    let opt = OptimizerConfig {
+        cea2034_correction: Some(Cea2034CorrectionConfig {
+            enabled: true,
+            ..Cea2034CorrectionConfig::default()
+        }),
+        ..Default::default()
+    };
 
     let config = base_config(
         one_speaker("L", single_speaker("speakers/KEF_R3_cea2034_asr.csv", None)),
@@ -326,11 +348,13 @@ fn i4_cea2034_with_path_hint_no_warning() {
 
 #[test]
 fn i4_cea2034_disabled_no_warning() {
-    let mut opt = OptimizerConfig::default();
-    opt.cea2034_correction = Some(Cea2034CorrectionConfig {
-        enabled: false,
-        ..Cea2034CorrectionConfig::default()
-    });
+    let opt = OptimizerConfig {
+        cea2034_correction: Some(Cea2034CorrectionConfig {
+            enabled: false,
+            ..Cea2034CorrectionConfig::default()
+        }),
+        ..Default::default()
+    };
 
     let config = base_config(one_speaker("L", single_speaker("plain.csv", None)), opt);
     let result = validate_room_config(&config);
@@ -351,12 +375,14 @@ fn i4_cea2034_disabled_no_warning() {
 
 #[test]
 fn b10_weights_mismatch_inside_speaker_group() {
-    let mut opt = OptimizerConfig::default();
-    opt.multi_measurement = Some(MultiMeasurementConfig {
-        strategy: MultiMeasurementStrategy::WeightedSum,
-        weights: Some(vec![0.5, 0.5]),
-        ..MultiMeasurementConfig::default()
-    });
+    let opt = OptimizerConfig {
+        multi_measurement: Some(MultiMeasurementConfig {
+            strategy: MultiMeasurementStrategy::WeightedSum,
+            weights: Some(vec![0.5, 0.5]),
+            ..MultiMeasurementConfig::default()
+        }),
+        ..Default::default()
+    };
 
     let group = SpeakerConfig::Group(SpeakerGroup {
         name: "mains".to_string(),

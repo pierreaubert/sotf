@@ -22,7 +22,7 @@ use sotf_plugin_gate::{GateData, GatePlugin};
 /// With correct semantics (attack = open speed):
 ///   - Experiment A: slow open → gain very low at 5ms (barely opened).
 ///   - Experiment B: fast open → gain much higher at 5ms (mostly opened).
-///   Condition: gain_B >> gain_A.
+///     Condition: gain_B >> gain_A.
 ///
 /// With reversed semantics (attack = close speed):
 ///   - release_coeff is used for opening, and release=1ms is fast in both.
@@ -108,7 +108,6 @@ fn test_attack_controls_gate_open_speed() {
 #[test]
 fn test_linked_mode_is_open_false_when_gated() {
     use sotf_host::{InPlacePlugin, ProcessContext};
-    use std::sync::Arc;
 
     let sr = 48000u32;
     // Linked stereo gate, threshold -30 dB.  No hold so gate closes cleanly.

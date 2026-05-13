@@ -2615,8 +2615,8 @@ mod tests {
         assert_eq!(order.len(), 6);
 
         // First node is Input, last is Output
-        assert!(g.special_nodes.get(&order[0]).is_some());
-        assert!(g.special_nodes.get(&order[5]).is_some());
+        assert!(g.special_nodes.contains_key(&order[0]));
+        assert!(g.special_nodes.contains_key(&order[5]));
 
         // Roles are in order
         let plugins: Vec<_> = g.plugins_linear().unwrap();

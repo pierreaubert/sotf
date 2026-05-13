@@ -59,8 +59,8 @@ mod tests {
         hadamard8(&mut x);
         // Should recover [1, 0, 0, 0, 0, 0, 0, 0]
         assert!((x[0] - 1.0).abs() < 1e-5, "x[0] = {}", x[0]);
-        for i in 1..8 {
-            assert!(x[i].abs() < 1e-5, "x[{i}] = {}", x[i]);
+        for (i, &v) in x.iter().enumerate().skip(1) {
+            assert!(v.abs() < 1e-5, "x[{i}] = {v}");
         }
     }
 
@@ -95,8 +95,8 @@ mod tests {
             x[0],
             expected_0
         );
-        for i in 1..8 {
-            assert!(x[i].abs() < 1e-5, "x[{i}] = {} should be 0", x[i]);
+        for (i, &v) in x.iter().enumerate().skip(1) {
+            assert!(v.abs() < 1e-5, "x[{i}] = {v} should be 0");
         }
     }
 

@@ -2580,9 +2580,7 @@ mod tests {
 
         // Run a loud signal to drive up envelope state
         let nf = 4800usize;
-        let mut loud: Vec<f32> = (0..nf * 2)
-            .map(|i| if i % 2 == 0 { 0.8 } else { 0.8 })
-            .collect();
+        let mut loud: Vec<f32> = (0..nf * 2).map(|_| 0.8).collect();
         p.process_in_place(
             &mut loud,
             &ProcessContext {

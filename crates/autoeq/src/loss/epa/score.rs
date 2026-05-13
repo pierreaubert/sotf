@@ -640,9 +640,11 @@ mod tests {
         let freqs = ndarray::Array1::from(vec![100.0, 1000.0, 5000.0, 10000.0]);
         let err = ndarray::Array1::from(vec![1.0, 1.0, 1.0, 1.0]);
 
-        let mut cfg = EpaConfig::default();
-        cfg.flatness_erb_weight = 1.0;
-        cfg.flatness_band_weight = 0.0;
+        let mut cfg = EpaConfig {
+            flatness_erb_weight: 1.0,
+            flatness_band_weight: 0.0,
+            ..Default::default()
+        };
         let got_erb = epa_flatness(&freqs, &err, 20.0, 20000.0, &cfg);
         let expected_erb = erb_weighted_loss(&freqs, &err);
         assert!(

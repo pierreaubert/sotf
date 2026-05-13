@@ -1471,7 +1471,6 @@ fn test_neumann_refinement_never_increases_error() {
 #[test]
 fn test_2x2_inverse_no_identity_fallback_for_small_transfer_functions() {
     use filters::compute_2x2_inverse;
-    use std::f32::consts::PI;
 
     // Small-magnitude transfer functions: magnitude ~1e-3 (e.g., deep in a notch but stable)
     // h_ipsi = 1e-3, h_contra = 0 (pure diagonal → matrix is trivially invertible)

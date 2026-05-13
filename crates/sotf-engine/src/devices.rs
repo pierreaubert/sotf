@@ -1730,10 +1730,10 @@ mod tests {
                         .get(&prefix.to_uppercase())
                         .copied()
                         .unwrap_or(0);
-                    if count > 1 {
-                        if let Some(content) = extract_paren_content(&device.name) {
-                            device.name = content.to_string();
-                        }
+                    if count > 1
+                        && let Some(content) = extract_paren_content(&device.name)
+                    {
+                        device.name = content.to_string();
                     }
                 }
                 device.name
@@ -1810,10 +1810,10 @@ mod tests {
                         .get(&prefix.to_uppercase())
                         .copied()
                         .unwrap_or(0);
-                    if count > 1 {
-                        if let Some(content) = extract_paren_content(&device.name) {
-                            device.name = content.to_string();
-                        }
+                    if count > 1
+                        && let Some(content) = extract_paren_content(&device.name)
+                    {
+                        device.name = content.to_string();
                     }
                 }
                 device.name

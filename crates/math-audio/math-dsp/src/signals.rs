@@ -1502,7 +1502,7 @@ mod tests {
         for (i, &w) in band_rms.iter().enumerate() {
             let ratio = if avg > 1e-9 { w / avg } else { 1.0 };
             assert!(
-                ratio >= 0.5 && ratio <= 2.0,
+                (0.5..=2.0).contains(&ratio),
                 "Window {i} RMS {w:.4} is outside ±3 dB of band avg {avg:.4}"
             );
         }
@@ -1747,7 +1747,7 @@ mod tests {
         for (k, c) in fft_proc.freq_buffer.iter().enumerate() {
             let freq = k as f32 * freq_res;
             let energy = c.norm_sqr();
-            if freq >= 800.0 && freq <= 2000.0 {
+            if (800.0..=2000.0).contains(&freq) {
                 in_band_energy += energy;
             } else {
                 out_band_energy += energy;

@@ -290,7 +290,6 @@ mod tests {
                 stopval: 0.0,
                 ..CobylaStopTols::default()
             },
-            ..Default::default()
         };
         let report = cobyla(&f, &[], cfg).expect("cobyla failed");
         assert!(report.fun < 1e-6, "fun = {} should be ~0", report.fun);

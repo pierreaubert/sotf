@@ -1658,11 +1658,13 @@ enum TrLoopState {
 mod tests {
     use super::*;
 
+    type TestConstraint = Box<dyn Fn(&[f64]) -> f64>;
+
     #[test]
     #[ignore = "manual probe; run with --ignored to print convergence details"]
     fn print_convergence() {
         let f = |x: &[f64]| (x[0] + 1.0).powi(2) + x[1].powi(2);
-        let cons: Vec<Box<dyn Fn(&[f64]) -> f64>> = Vec::new();
+        let cons: Vec<TestConstraint> = Vec::new();
         let mut x = vec![1.0, 1.0];
         let report = cobyla_native(
             2,
@@ -1685,7 +1687,7 @@ mod tests {
         );
 
         let f2 = |x: &[f64]| 10.0 * (x[0] + 1.0).powi(2) + x[1].powi(2);
-        let g0: Box<dyn Fn(&[f64]) -> f64> = Box::new(|x: &[f64]| -x[0]);
+        let g0: TestConstraint = Box::new(|x: &[f64]| -x[0]);
         let cons2 = vec![g0];
         let mut x = vec![1.0, 1.0];
         let report = cobyla_native(
@@ -1713,7 +1715,7 @@ mod tests {
     fn paraboloid_unconstrained() {
         // f(x) = (x0+1)^2 + x1^2, minimum at (-1, 0) with value 0.
         let f = |x: &[f64]| (x[0] + 1.0).powi(2) + x[1].powi(2);
-        let cons: Vec<Box<dyn Fn(&[f64]) -> f64>> = Vec::new();
+        let cons: Vec<TestConstraint> = Vec::new();
         let bounds = vec![(-10.0, 10.0), (-10.0, 10.0)];
         let mut x = vec![1.0, 1.0];
         let dx = vec![0.5, 0.5];
@@ -1740,7 +1742,7 @@ mod tests {
     fn bug1b_isotropic_bounds_with_active_bound() {
         // Same f as bug1 but uniform dx — no rescaling occurs.
         let f = |x: &[f64]| (x[0] - 5.0).powi(2) + (x[1] - 100.0).powi(2);
-        let cons: Vec<Box<dyn Fn(&[f64]) -> f64>> = Vec::new();
+        let cons: Vec<TestConstraint> = Vec::new();
         let bounds = vec![(-1.0, 1.0), (-1000.0, 1000.0)];
         let mut x = vec![0.0, 0.0];
         let dx = vec![1.0, 1.0]; // isotropic — s[i] = 1 for all i
@@ -1779,7 +1781,7 @@ mod tests {
         // dx anisotropic by 1000× to exercise rescaling. rhobeg = 1.0 in
         // rescaled space — enough to reach the bound from the centre.
         let f = |x: &[f64]| (x[0] - 5.0).powi(2) + (x[1] - 100.0).powi(2);
-        let cons: Vec<Box<dyn Fn(&[f64]) -> f64>> = Vec::new();
+        let cons: Vec<TestConstraint> = Vec::new();
         let bounds = vec![(-1.0, 1.0), (-1000.0, 1000.0)];
         let mut x = vec![0.0, 0.0];
         // dx[1]/dx[0] = 1000 → s[1] = 1000. Anisotropic rescaling exercises
@@ -1822,7 +1824,7 @@ mod tests {
     fn bug_a_fixed_dimension_does_not_explode() {
         // Two-dim problem; dim 0 is fixed at 0.5, dim 1 is free in [-1, 1].
         let f = |x: &[f64]| (x[0] - 0.5).powi(2) + (x[1] + 0.3).powi(2);
-        let cons: Vec<Box<dyn Fn(&[f64]) -> f64>> = Vec::new();
+        let cons: Vec<TestConstraint> = Vec::new();
         let bounds = vec![(0.5, 0.5), (-1.0, 1.0)];
         let mut x = vec![0.5, 0.0];
         // dx[0] tiny but non-zero, mirroring autoeq's behaviour for fixed
@@ -1866,7 +1868,7 @@ mod tests {
         // in the LP subproblem. With the fix, rhocur uses rho so the scale
         // is consistent across all dimensions.
         let f = |x: &[f64]| (x[0] - 0.5).powi(2) + (x[1] + 0.3).powi(2);
-        let cons: Vec<Box<dyn Fn(&[f64]) -> f64>> = Vec::new();
+        let cons: Vec<TestConstraint> = Vec::new();
         let bounds = vec![(0.5, 0.5), (-1.0, 1.0)];
         let mut x = vec![0.5, 0.0];
         let dx = vec![0.5, 0.5]; // typical scale, rhobeg = 0.5
@@ -1900,7 +1902,7 @@ mod tests {
         // Minimize (x0 + 5)^2 + x1^2 with x0 in [-1, 1], x1 in [-1, 1].
         // Unconstrained min at (-5, 0); constrained min at lower bound x0 = -1.
         let f = |x: &[f64]| (x[0] + 5.0).powi(2) + x[1].powi(2);
-        let cons: Vec<Box<dyn Fn(&[f64]) -> f64>> = Vec::new();
+        let cons: Vec<TestConstraint> = Vec::new();
         let bounds = vec![(-1.0, 1.0), (-1.0, 1.0)];
         let mut x = vec![0.5, 0.5];
         let dx = vec![0.5, 0.5];
@@ -1940,7 +1942,7 @@ mod tests {
     #[test]
     fn bug2_xtol_rel_controls_rhoend() {
         let f = |x: &[f64]| (x[0] + 1.0).powi(2) + x[1].powi(2);
-        let cons: Vec<Box<dyn Fn(&[f64]) -> f64>> = Vec::new();
+        let cons: Vec<TestConstraint> = Vec::new();
         let bounds = vec![(-10.0, 10.0); 2];
 
         let mut x_loose = vec![1.0, 1.0];
@@ -2000,7 +2002,7 @@ mod tests {
         // Minimize 10*(x0+1)^2 + x1^2 s.t. x0 >= 0  i.e. -x0 <= 0.
         // Constrained optimum at (0, 0) with value 10.
         let f = |x: &[f64]| 10.0 * (x[0] + 1.0).powi(2) + x[1].powi(2);
-        let g0: Box<dyn Fn(&[f64]) -> f64> = Box::new(|x: &[f64]| -x[0]);
+        let g0: TestConstraint = Box::new(|x: &[f64]| -x[0]);
         let cons = vec![g0];
         let bounds = vec![(-10.0, 10.0), (-10.0, 10.0)];
         let mut x = vec![1.0, 1.0];

@@ -47,16 +47,18 @@ fn single_speaker_config(
 
 #[test]
 fn i1_target_curve_plus_target_response_warns() {
-    let mut opt = OptimizerConfig::default();
-    opt.target_response = Some(TargetResponseConfig {
-        shape: TargetShape::Harman,
-        slope_db_per_octave: -0.8,
-        reference_freq: 1000.0,
-        curve_path: None,
-        preference: UserPreference::default(),
-        broadband_precorrection: false,
-        role_targets: None,
-    });
+    let opt = OptimizerConfig {
+        target_response: Some(TargetResponseConfig {
+            shape: TargetShape::Harman,
+            slope_db_per_octave: -0.8,
+            reference_freq: 1000.0,
+            curve_path: None,
+            preference: UserPreference::default(),
+            broadband_precorrection: false,
+            role_targets: None,
+        }),
+        ..Default::default()
+    };
 
     let config = single_speaker_config(
         opt,
@@ -77,8 +79,10 @@ fn i1_target_curve_plus_target_response_warns() {
 #[test]
 fn i1_target_curve_plus_flat_target_response_silent() {
     // A default/Flat target_response carries no information — don't warn.
-    let mut opt = OptimizerConfig::default();
-    opt.target_response = Some(TargetResponseConfig::default());
+    let opt = OptimizerConfig {
+        target_response: Some(TargetResponseConfig::default()),
+        ..Default::default()
+    };
 
     let config =
         single_speaker_config(opt, Some(TargetCurveConfig::Predefined("flat".to_string())));

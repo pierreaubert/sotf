@@ -138,15 +138,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     K2Control::Encoder(n) => {
                         println!("[K2] Encoder {}: {}", n + 1, value);
                     }
-                    K2Control::EncoderSwitch(n) => {
-                        if value > 0 {
-                            println!("[K2] Encoder {} Switch Pressed", n + 1);
-                        }
+                    K2Control::EncoderSwitch(n) if value > 0 => {
+                        println!("[K2] Encoder {} Switch Pressed", n + 1);
                     }
-                    K2Control::Button(n) => {
-                        if value > 0 {
-                            println!("[K2] Button {} Pressed", n + 1);
-                        }
+                    K2Control::Button(n) if value > 0 => {
+                        println!("[K2] Button {} Pressed", n + 1);
                     }
                     _ => {}
                 }

@@ -1640,7 +1640,7 @@ mod tests {
             .expect("BAND_TEMPLATE must have a filter_type param");
         if let ParamType::Choice { labels, .. } = filter_type_spec.param_type {
             assert!(
-                labels.iter().any(|&c| c == "AllPass"),
+                labels.contains(&"AllPass"),
                 "AllPass must be in BAND_TEMPLATE filter type choices; found: {:?}",
                 labels
             );

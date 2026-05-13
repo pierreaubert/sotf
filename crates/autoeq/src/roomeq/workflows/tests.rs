@@ -1158,7 +1158,7 @@ fn bass_management_objective_band_is_symmetric_around_crossover() {
     // For a 30 Hz crossover, the 20 Hz floor caps the low side.
     // Without symmetry fix, band would be 20-60 Hz (0.58 oct low, 1 oct high).
     // With symmetry fix, band should be 20-45 Hz (0.58 oct on each side).
-    let flat = Curve {
+    let _flat = Curve {
         freq: array![20.0, 30.0, 45.0, 60.0, 100.0],
         spl: array![80.0, 80.0, 80.0, 80.0, 80.0],
         phase: None,
@@ -1173,7 +1173,7 @@ fn bass_management_objective_band_is_symmetric_around_crossover() {
 
     // Actually, let me test using a curve that has different behavior inside
     // vs outside the symmetric band.
-    let curve = Curve {
+    let _curve = Curve {
         freq: array![20.0, 30.0, 45.0, 60.0, 100.0],
         spl: array![80.0, 80.0, 80.0, 90.0, 90.0],
         phase: None,

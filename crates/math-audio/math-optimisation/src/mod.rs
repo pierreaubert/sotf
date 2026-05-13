@@ -1751,7 +1751,7 @@ mod strategy_tests {
         let mut extreme = 0;
         for _ in 0..200 {
             let f = state.sample_f(&mut rng);
-            if f < 0.1 || f > 0.9 {
+            if !(0.1..=0.9).contains(&f) {
                 extreme += 1;
             }
         }
