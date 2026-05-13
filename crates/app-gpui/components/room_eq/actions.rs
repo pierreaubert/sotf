@@ -190,6 +190,8 @@ impl PlayerView {
 
                             // Capture optimizer config before speakers are consumed
                             let backend_optimizer = room_config.optimizer.clone();
+                            let backend_system = room_config.system.clone();
+                            let backend_crossovers = room_config.crossovers.clone();
                             let mut ctc_config = room_config.ctc.clone();
                             let mut ctc_measurements =
                                 ctc_config.as_ref().and_then(|ctc| ctc.measurements.clone());
@@ -198,10 +200,13 @@ impl PlayerView {
                             {
                                 measurements.resolve_paths(dir);
                             }
-                            if let Some(ctc) = ctc_config.as_mut()
-                                && let Some(dir) = file_dir.as_deref()
-                            {
-                                ctc.resolve_paths(dir);
+                            if let Some(ctc) = ctc_config.as_mut() {
+                                // app-gpui cannot capture binaural measurements yet.
+                                // Keep imported CTC metadata, but never enable it.
+                                ctc.enabled = false;
+                                if let Some(dir) = file_dir.as_deref() {
+                                    ctc.resolve_paths(dir);
+                                }
                             }
 
                             // Detect multi-position data before consuming speakers
@@ -306,6 +311,13 @@ impl PlayerView {
                                 state.app.measurement_state.room_eq_state.ctc_measurements =
                                     ctc_measurements;
                                 state.app.measurement_state.room_eq_state.ctc_config = ctc_config;
+                                state.app.measurement_state.room_eq_state.imported_system =
+                                    backend_system;
+                                state
+                                    .app
+                                    .measurement_state
+                                    .room_eq_state
+                                    .imported_crossovers = backend_crossovers;
                                 state.app.measurement_state.room_eq_state.speaker_configs =
                                     speaker_configs;
                                 state.app.measurement_state.room_eq_state.data_source =

@@ -29,6 +29,10 @@ mod step_4_optimise;
 mod step_5_review;
 pub mod step_6_export;
 
+pub use step_4_optimise::{
+    room_eq_channel_chain_by_name, room_eq_display_response_points, room_eq_initial_response_points,
+};
+
 impl PlayerView {
     /// Main Room EQ screen entry point
     pub(crate) fn render_room_eq_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {

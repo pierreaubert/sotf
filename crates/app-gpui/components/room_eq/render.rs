@@ -175,30 +175,6 @@ fn finite_positive_frequency_range(frequencies: &[f64]) -> Option<(f64, f64)> {
     (min_freq.is_finite() && max_freq.is_finite()).then_some((min_freq, max_freq))
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct CrossoverResponseOverlay {
-    pub main_highpass_label: String,
-    pub main_highpass: Vec<(f64, f64)>,
-    pub sub_lowpass_label: String,
-    pub sub_lowpass: Vec<(f64, f64)>,
-    pub crossover_label: String,
-    pub crossover_hz: f64,
-}
-
-fn trend_anchor_frequency(domain: (f64, f64)) -> f64 {
-    if domain.0 <= 1000.0 && domain.1 >= 1000.0 {
-        1000.0
-    } else {
-        (domain.0 * domain.1).sqrt()
-    }
-}
-
-fn trend_line_points(domain: (f64, f64), slope: f64, intercept: f64) -> (Vec<f64>, Vec<f64>) {
-    let x = vec![domain.0, domain.1];
-    let y = x.iter().map(|f| slope * f.log10() + intercept).collect();
-    (x, y)
-}
-
 pub fn sum_room_eq_responses_db(
     main: &[(f64, f64)],
     sub: &[(f64, f64)],
@@ -259,41 +235,6 @@ pub fn sum_room_eq_responses_db(
                 10.0 * power.max(1.0e-24).log10()
             };
             (f, sum_db)
-        })
-        .collect()
-}
-
-/// Interpolate a target curve (control points) at the given frequency values using log-frequency interpolation
-fn interpolate_target_at_frequencies(frequencies: &[f64], target: &[(f64, f64)]) -> Vec<f64> {
-    frequencies
-        .iter()
-        .map(|&f| {
-            let mut lower = (20.0, 0.0);
-            let mut upper = (20000.0, 0.0);
-            if let Some(first) = target.first()
-                && f < first.0
-            {
-                return first.1;
-            }
-            if let Some(last) = target.last()
-                && f > last.0
-            {
-                return last.1;
-            }
-            for win in target.windows(2) {
-                if f >= win[0].0 && f <= win[1].0 {
-                    lower = win[0];
-                    upper = win[1];
-                    break;
-                }
-            }
-            let denom = upper.0.ln() - lower.0.ln();
-            if denom.abs() < 1e-12 {
-                return lower.1;
-            }
-            let t = (f.ln() - lower.0.ln()) / denom;
-            let result = lower.1 + t * (upper.1 - lower.1);
-            if result.is_finite() { result } else { 0.0 }
         })
         .collect()
 }
@@ -496,23 +437,23 @@ fn render_crossover_dropdown(
 /// If interactive_state is provided, the chart will support pan/zoom interactions
 pub(crate) fn render_channel_result_card(
     d: Ds,
-    result: &crate::app::types::ChannelOptResult,
+    result: crate::app::types::ChannelOptResult,
     theme: &crate::theme::Theme,
     smoothing_octaves: f64,
     y_axis_auto: bool,
-    normalize_to_target: bool,
     interactive_state: Option<&gpui_px::interaction::InteractiveChartState>,
-    target_curve: Option<&[(f64, f64)]>,
     has_fir: bool,
-    crossover_overlay: Option<&CrossoverResponseOverlay>,
 ) -> impl IntoElement {
     use crate::components::graphs::format_frequency;
 
     let channel_name = result.channel_name.clone();
     let score_improvement = result.pre_score - result.post_score;
-    // Use normalized_response as the primary display (level-normalized optimized result)
-    let has_response_data =
-        result.original_response.is_some() && result.normalized_response.is_some();
+    let corrected_response = result
+        .normalized_response
+        .as_ref()
+        .or(result.corrected_response.as_ref());
+    let has_response_pair = result.original_response.is_some() && corrected_response.is_some();
+    let has_corrected_response = corrected_response.is_some();
 
     div()
         .flex()
@@ -567,7 +508,7 @@ pub(crate) fn render_channel_result_card(
         // broadband-only optimizations silently dropped the plot.
         .when(
             should_render_filter_plot(
-                has_response_data,
+                has_response_pair,
                 !result.eq_filters.is_empty(),
                 !result.broadband_filters.is_empty(),
             ),
@@ -592,32 +533,35 @@ pub(crate) fn render_channel_result_card(
                 ))
             },
         )
-        // Original vs Corrected with trendlines (if available)
-        .when(has_response_data, |div| {
-            let (Some(original), Some(normalized)) = (
-                result.original_response.as_ref(),
-                result.normalized_response.as_ref(),
-            ) else {
+        // Original vs corrected: a thin viewer over the precomputed JSON
+        // curves. If a JSON channel only has final_curve, render that alone.
+        .when(has_corrected_response, |div| {
+            let Some(corrected) = result
+                .normalized_response
+                .as_ref()
+                .or(result.corrected_response.as_ref())
+            else {
                 return div;
             };
+            let empty_original: Vec<(f64, f64)> = Vec::new();
+            let original = result
+                .original_response
+                .as_deref()
+                .unwrap_or(empty_original.as_slice());
             div.child(render_response_comparison_graph(
                 &result.channel_name,
                 original,
-                normalized,
+                corrected,
                 result.preamp_gain_db,
                 theme,
                 smoothing_octaves,
-                y_axis_auto,
-                normalize_to_target,
                 interactive_state,
-                target_curve,
-                crossover_overlay,
             ))
         })
         // Histogram (if trend data available)
         .when(
             (result.group_delay_before.is_some() || result.group_delay_after.is_some())
-                && has_response_data,
+                && has_response_pair,
             |div| {
                 let (Some(original), Some(normalized)) = (
                     result.original_response.as_ref(),
@@ -729,14 +673,10 @@ fn render_response_comparison_graph(
     channel_name: &str,
     original: &[(f64, f64)],
     corrected: &[(f64, f64)],
-    preamp_gain_db: f64,
+    _preamp_gain_db: f64,
     theme: &crate::theme::Theme,
     smoothing_octaves: f64,
-    y_axis_auto: bool,
-    normalize_to_target: bool,
     interactive_state: Option<&gpui_px::interaction::InteractiveChartState>,
-    target_curve: Option<&[(f64, f64)]>,
-    crossover_overlay: Option<&CrossoverResponseOverlay>,
 ) -> impl IntoElement {
     use crate::components::graphs::common::theme_to_chart_theme;
     use gpui_px::{LegendPosition, ScaleType, line};
@@ -746,162 +686,33 @@ fn render_response_comparison_graph(
 
     const BLUE: u32 = 0x1f77b4;
     const ORANGE: u32 = 0xff7f0e;
-    const RED: u32 = 0xd62728;
+    const TARGET_GREY: u32 = 0x999999;
 
-    let frequencies: Vec<f64> = original.iter().map(|(f, _)| *f).collect();
-    let original_values_raw: Vec<f64> = original.iter().map(|(_, db)| *db).collect();
-    // Strip the inter-channel level-match preamp from the Corrected curve.
-    // `preamp_gain_db` is a constant gain plugin pushed onto the chain by
-    // post-optimization stages (spectral-alignment, VoG). It shifts the
-    // channel's absolute level to match its neighbours but is not part of
-    // the per-channel EQ correction. Including it here makes one channel
-    // look uniformly lifted (positive preamp) or dropped (negative preamp)
-    // versus its Original, which obscures whether the EQ filter shape
-    // actually flattened the response.
-    let corrected_values_raw: Vec<f64> = corrected
-        .iter()
-        .map(|(_, db)| *db - preamp_gain_db)
-        .collect();
-
-    // When normalizing to target, subtract the interpolated target curve from all
-    // series so the target becomes a flat 0 dB line, then anchor inside the
-    // channel's trend-fit band.
-    let target_interpolated =
-        target_curve.map(|target| interpolate_target_at_frequencies(&frequencies, target));
-
-    let standard_offset = crate::app::types::RoomEqState::calculate_normalization_offset(
-        &frequencies,
-        &original_values_raw,
-    );
-
-    // normalize_to_target shifts are deferred until after trend computation.
-    // First, subtract the target curve (if normalizing) so the target becomes 0 dB.
-    let (original_values, corrected_values): (Vec<f64>, Vec<f64>) =
-        if normalize_to_target && let Some(ref target_vals) = target_interpolated {
-            // Subtract target from raw curves (target becomes 0 dB everywhere)
-            let orig: Vec<f64> = original_values_raw
-                .iter()
-                .zip(target_vals.iter())
-                .map(|(&o, &t)| o - t)
-                .collect();
-            let corr: Vec<f64> = corrected_values_raw
-                .iter()
-                .zip(target_vals.iter())
-                .map(|(&c, &t)| c - t)
-                .collect();
-            (orig, corr)
-        } else {
-            // Standard normalization: 1-2 kHz average
-            (
-                original_values_raw
-                    .iter()
-                    .map(|&db| db - standard_offset)
-                    .collect(),
-                corrected_values_raw
-                    .iter()
-                    .map(|&db| db - standard_offset)
-                    .collect(),
-            )
-        };
-
-    let original_smooth =
-        dsp::smooth_response_f64(&frequencies, &original_values, smoothing_octaves);
-    let corrected_smooth =
-        dsp::smooth_response_f64(&frequencies, &corrected_values, smoothing_octaves);
+    let original_frequencies: Vec<f64> = original.iter().map(|(f, _)| *f).collect();
+    let corrected_frequencies: Vec<f64> = corrected.iter().map(|(f, _)| *f).collect();
+    let original_values: Vec<f64> = original.iter().map(|(_, db)| *db).collect();
+    let corrected_values: Vec<f64> = corrected.iter().map(|(_, db)| *db).collect();
 
     let sanitize = |v: &[f64]| -> Vec<f64> {
         v.iter()
             .map(|&x| if x.is_finite() { x } else { 0.0 })
             .collect()
     };
-    let original_smooth = sanitize(&original_smooth);
-    let corrected_smooth = sanitize(&corrected_smooth);
 
-    // Overlay prep — `subtract_preamp` strips the main channel's level-match
-    // preamp from curves derived from `corrected_response` (main_highpass).
-    // The sub_lowpass is left alone because its absolute level (relative to
-    // the un-de-preamped mains) is what places it correctly in-room, and we
-    // want the combined "Main + Sub" sum to reflect that physical balance.
-    let prepare_overlay_series = |points: &[(f64, f64)],
-                                  subtract_preamp: bool|
-     -> Option<(Vec<f64>, Vec<f64>)> {
-        if points.is_empty() {
-            return None;
-        }
-        let preamp = if subtract_preamp { preamp_gain_db } else { 0.0 };
-        let overlay_freqs: Vec<f64> = points.iter().map(|(f, _)| *f).collect();
-        let overlay_raw: Vec<f64> = points.iter().map(|(_, db)| *db - preamp).collect();
-        let overlay_values: Vec<f64> = if normalize_to_target && let Some(target) = target_curve {
-            let target_vals = interpolate_target_at_frequencies(&overlay_freqs, target);
-            overlay_raw
-                .iter()
-                .zip(target_vals.iter())
-                .map(|(&v, &target)| v - target)
-                .collect()
-        } else {
-            overlay_raw.iter().map(|&db| db - standard_offset).collect()
-        };
-        let overlay_smooth =
-            dsp::smooth_response_f64(&overlay_freqs, &overlay_values, smoothing_octaves);
-        Some((overlay_freqs, sanitize(&overlay_smooth)))
-    };
+    let original_smooth = sanitize(&dsp::smooth_response_f64(
+        &original_frequencies,
+        &original_values,
+        smoothing_octaves,
+    ));
+    let corrected_smooth = sanitize(&dsp::smooth_response_f64(
+        &corrected_frequencies,
+        &corrected_values,
+        smoothing_octaves,
+    ));
 
-    // Power-sum two dB curves sharing a frequency grid.
-    // Returns the predicted combined SPL assuming uncorrelated summation —
-    // the standard worst-case approximation for in-room main + sub overlap,
-    // since the phase relationship at the listening position is unknown.
-    let power_sum_db = |freqs_a: &[f64],
-                        values_a: &[f64],
-                        freqs_b: &[f64],
-                        values_b: &[f64]|
-     -> Option<(Vec<f64>, Vec<f64>)> {
-        if freqs_a.len() != values_a.len()
-            || freqs_b.len() != values_b.len()
-            || freqs_a.is_empty()
-            || freqs_a.len() != freqs_b.len()
-        {
-            return None;
-        }
-        // Cheap grid check: if frequencies match index-for-index we sum
-        // directly. Different grids would need interpolation, which we
-        // skip here — main_highpass and sub_lowpass both come from
-        // `apply_crossover_route` and inherit the same measurement grid.
-        if freqs_a
-            .iter()
-            .zip(freqs_b.iter())
-            .any(|(a, b)| (a - b).abs() > a.abs() * 1e-6 + 1e-9)
-        {
-            return None;
-        }
-        let combined: Vec<f64> = values_a
-            .iter()
-            .zip(values_b.iter())
-            .map(|(&a, &b)| {
-                let pa = 10f64.powf(a / 10.0);
-                let pb = 10f64.powf(b / 10.0);
-                10.0 * (pa + pb).max(1e-30).log10()
-            })
-            .collect();
-        Some((freqs_a.to_vec(), combined))
-    };
-
-    let crossover_overlay_series = crossover_overlay.and_then(|overlay| {
-        let main_highpass = prepare_overlay_series(&overlay.main_highpass, true)?;
-        let sub_lowpass = prepare_overlay_series(&overlay.sub_lowpass, false)?;
-        let combined = power_sum_db(
-            &main_highpass.0,
-            &main_highpass.1,
-            &sub_lowpass.0,
-            &sub_lowpass.1,
-        );
-        Some((overlay, main_highpass, sub_lowpass, combined))
-    });
-
-    let mean_spl = if !original_smooth.is_empty() {
-        original_smooth.iter().sum::<f64>() / original_smooth.len() as f64
-    } else {
-        0.0
-    };
+    if corrected_frequencies.is_empty() {
+        return render_empty_state(IconName::AudioWaveform, "No data available", theme);
+    }
 
     let (y_min_auto, y_max_auto) = {
         let mut min_val = f64::INFINITY;
@@ -909,20 +720,6 @@ fn render_response_comparison_graph(
         for &v in original_smooth.iter().chain(corrected_smooth.iter()) {
             min_val = min_val.min(v);
             max_val = max_val.max(v);
-        }
-        if let Some((_, (_, highpass_values), (_, lowpass_values), combined)) =
-            crossover_overlay_series.as_ref()
-        {
-            for &v in highpass_values.iter().chain(lowpass_values.iter()) {
-                min_val = min_val.min(v);
-                max_val = max_val.max(v);
-            }
-            if let Some((_, combined_values)) = combined {
-                for &v in combined_values.iter() {
-                    min_val = min_val.min(v);
-                    max_val = max_val.max(v);
-                }
-            }
         }
         let max = if max_val.is_finite() {
             ((max_val / 5.0).ceil() * 5.0).max(5.0)
@@ -937,80 +734,7 @@ fn render_response_comparison_graph(
         (min, max)
     };
 
-    let (y_min_fixed, y_max_fixed) = if mean_spl > 30.0 {
-        (mean_spl - 40.0, mean_spl + 10.0)
-    } else {
-        (-40.0, 10.0)
-    };
-
-    let (y_min, y_max) = if y_axis_auto {
-        (y_min_auto, y_max_auto)
-    } else {
-        (y_min_fixed, y_max_fixed)
-    };
-
-    if frequencies.is_empty() {
-        return render_empty_state(IconName::AudioWaveform, "No data available", theme);
-    }
-
     let chart_theme = theme_to_chart_theme(theme);
-
-    let is_sub_or_lfe = is_room_eq_sub_or_lfe_channel(channel_name);
-    let orig_trend_domain = if is_sub_or_lfe {
-        room_eq_passband_trend_fit_domain(&frequencies, &original_smooth)
-    } else {
-        room_eq_trend_fit_domain(channel_name, &frequencies)
-    };
-    let corr_trend_domain = if is_sub_or_lfe {
-        room_eq_passband_trend_fit_domain(&frequencies, &corrected_smooth)
-    } else {
-        room_eq_trend_fit_domain(channel_name, &frequencies)
-    };
-    let orig_trend = orig_trend_domain
-        .and_then(|domain| calculate_room_eq_log_trend(&frequencies, &original_smooth, domain));
-    let corr_trend = corr_trend_domain
-        .and_then(|domain| calculate_room_eq_log_trend(&frequencies, &corrected_smooth, domain));
-
-    // When normalizing to target, shift each curve (and its trend) so its
-    // trend line crosses 0 dB at 1 kHz.  This makes deviations from the
-    // target directly readable without the broadband level difference
-    // obscuring them.
-    let (original_smooth, corrected_smooth, orig_trend, corr_trend) =
-        if normalize_to_target && target_interpolated.is_some() {
-            let orig_anchor_freq = orig_trend_domain
-                .map(trend_anchor_frequency)
-                .unwrap_or(1000.0);
-            let corr_anchor_freq = corr_trend_domain
-                .map(trend_anchor_frequency)
-                .unwrap_or(1000.0);
-            let orig_log_anchor = orig_anchor_freq.log10();
-            let corr_log_anchor = corr_anchor_freq.log10();
-            let orig_offset = orig_trend
-                .map(|(s, i)| s * orig_log_anchor + i)
-                .unwrap_or_else(|| {
-                    interpolate_value_at(&frequencies, &original_smooth, orig_anchor_freq)
-                });
-            let corr_offset = corr_trend
-                .map(|(s, i)| s * corr_log_anchor + i)
-                .unwrap_or_else(|| {
-                    interpolate_value_at(&frequencies, &corrected_smooth, corr_anchor_freq)
-                });
-            (
-                original_smooth
-                    .iter()
-                    .map(|&v| v - orig_offset)
-                    .collect::<Vec<_>>(),
-                corrected_smooth
-                    .iter()
-                    .map(|&v| v - corr_offset)
-                    .collect::<Vec<_>>(),
-                orig_trend.map(|(s, i)| (s, i - orig_offset)),
-                corr_trend.map(|(s, i)| (s, i - corr_offset)),
-            )
-        } else {
-            (original_smooth, corrected_smooth, orig_trend, corr_trend)
-        };
-
     let (x_min, x_max) = interactive_state
         .filter(|s| s.is_zoomed())
         .map(|s| s.x_domain())
@@ -1018,7 +742,7 @@ fn render_response_comparison_graph(
     let (y_min_domain, y_max_domain) = interactive_state
         .filter(|s| s.is_zoomed())
         .map(|s| s.y_domain())
-        .unwrap_or((y_min, y_max));
+        .unwrap_or((y_min_auto, y_max_auto));
 
     let y_min_domain = if y_min_domain.is_finite() {
         y_min_domain
@@ -1037,131 +761,55 @@ fn render_response_comparison_graph(
     };
 
     let original_label = format!("{} Original", channel_name);
-    let corrected_label = if preamp_gain_db.abs() >= 0.05 {
-        format!(
-            "{} Corrected (preamp {:+.1} dB removed)",
-            channel_name, preamp_gain_db
-        )
+    let corrected_label = format!("{} Corrected", channel_name);
+
+    let base_x = if !original_frequencies.is_empty() {
+        &original_frequencies
     } else {
-        format!("{} Corrected", channel_name)
+        &corrected_frequencies
+    };
+    let base_y = if !original_smooth.is_empty() {
+        &original_smooth
+    } else {
+        &corrected_smooth
     };
 
-    let mut chart_builder = line(&frequencies, &original_smooth)
+    let mut chart_builder = line(base_x, base_y)
         .x_scale(ScaleType::Log)
         .x_range(x_min, x_max)
         .y_range(y_min_domain, y_max_domain)
-        .y_label(if normalize_to_target && target_interpolated.is_some() {
-            "Deviation from Target (dB)"
+        .y_label("SPL (dB)")
+        .label(if !original_smooth.is_empty() {
+            original_label
         } else {
-            "SPL (dB)"
+            corrected_label.clone()
         })
-        .label(original_label)
         .legend_position(LegendPosition::Right)
         .color(BLUE)
         .stroke_width(2.0)
         .opacity(1.0)
         .theme(chart_theme.clone())
-        .size(GRAPH_WIDTH, GRAPH_HEIGHT)
-        .add_series(&corrected_smooth, Some(&corrected_label), ORANGE, 2.0, 1.0);
+        .size(GRAPH_WIDTH, GRAPH_HEIGHT);
 
-    if let Some((overlay, (highpass_x, highpass_y), (lowpass_x, lowpass_y), combined)) =
-        crossover_overlay_series.as_ref()
-    {
-        chart_builder = chart_builder
-            .add_series_with_x(
-                highpass_x,
-                highpass_y,
-                Some(&overlay.main_highpass_label),
-                0x2ca02c,
-                1.8,
-                0.9,
-            )
-            .add_series_with_x(
-                lowpass_x,
-                lowpass_y,
-                Some(&overlay.sub_lowpass_label),
-                0x17becf,
-                1.8,
-                0.9,
-            );
-
-        // Predicted combined response (Main HP + Sub LP, power-summed).
-        // The point of this overlay is to answer "does the sub fill the
-        // main's bass dip?" — if the combined line lifts the corrected
-        // curve back onto the trend below the crossover, bass management
-        // is doing its job; if it doesn't, the dip survives and the user
-        // needs to revisit sub level, crossover, or the sub's own EQ.
-        if let Some((combined_x, combined_y)) = combined.as_ref() {
-            chart_builder = chart_builder.add_series_with_x(
-                combined_x,
-                combined_y,
-                Some("Combined (Main HP + Sub LP)"),
-                0x9467bd,
-                2.0,
-                0.95,
-            );
-        }
-
-        if overlay.crossover_hz.is_finite() && overlay.crossover_hz > 0.0 {
-            chart_builder = chart_builder.add_series_with_x(
-                &[overlay.crossover_hz, overlay.crossover_hz],
-                &[y_min_domain, y_max_domain],
-                Some(&overlay.crossover_label),
-                0x666666,
-                1.0,
-                0.55,
-            );
-        }
-    }
-
-    if target_curve.is_some() {
-        if normalize_to_target {
-            // Target is now 0dB — draw a flat reference line
-            let flat_target: Vec<f64> = vec![0.0; frequencies.len()];
-            chart_builder =
-                chart_builder.add_series(&flat_target, Some("Target (0 dB)"), RED, 1.5, 0.6);
-        } else if let Some(ref target_vals) = target_interpolated {
-            // Normalize target using same method (1-2kHz band mean) so it aligns
-            // with original/corrected at the reference frequency range
-            let target_offset = crate::app::types::RoomEqState::calculate_normalization_offset(
-                &frequencies,
-                target_vals,
-            );
-            let relative_target: Vec<f64> = target_vals.iter().map(|v| v - target_offset).collect();
-            chart_builder =
-                chart_builder.add_series(&relative_target, Some("Target"), RED, 2.0, 0.8);
-        }
-    }
-
-    if let Some((slope, intercept)) = orig_trend {
-        let (trend_x, trend_y) = trend_line_points(
-            orig_trend_domain.unwrap_or((20.0, 20_000.0)),
-            slope,
-            intercept,
-        );
+    if !original_smooth.is_empty() {
         chart_builder = chart_builder.add_series_with_x(
-            &trend_x,
-            &trend_y,
-            Some(&format!("{:.2} dB/dec", slope)),
-            BLUE,
-            1.5,
-            0.6,
-        );
-    }
-
-    if let Some((slope, intercept)) = corr_trend {
-        let (trend_x, trend_y) = trend_line_points(
-            corr_trend_domain.unwrap_or((20.0, 20_000.0)),
-            slope,
-            intercept,
-        );
-        chart_builder = chart_builder.add_series_with_x(
-            &trend_x,
-            &trend_y,
-            Some(&format!("{:.2} dB/dec", slope)),
+            &corrected_frequencies,
+            &corrected_smooth,
+            Some(&corrected_label),
             ORANGE,
-            1.5,
-            0.6,
+            2.0,
+            1.0,
+        );
+    }
+
+    if let (Some(&x0), Some(&x1)) = (base_x.first(), base_x.last()) {
+        chart_builder = chart_builder.add_series_with_x(
+            &[x0, x1],
+            &[0.0, 0.0],
+            Some("Target (0 dB)"),
+            TARGET_GREY,
+            1.0,
+            0.5,
         );
     }
 
@@ -1180,14 +828,10 @@ fn render_response_comparison_graph(
     VStack::new()
         .spacing(StackSpacing::Xs)
         .child(
-            Text::new(if normalize_to_target && target_interpolated.is_some() {
-                "Original vs Corrected (Normalized to Target)"
-            } else {
-                "Original vs Corrected"
-            })
-            .weight(TextWeight::Semibold)
-            .size(TextSize::Xs)
-            .color(theme.text_primary),
+            Text::new("Original vs Corrected")
+                .weight(TextWeight::Semibold)
+                .size(TextSize::Xs)
+                .color(theme.text_primary),
         )
         .when_some(chart_element, |el, c| el.child(c))
         .into_any_element()

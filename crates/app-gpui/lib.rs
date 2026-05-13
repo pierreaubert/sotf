@@ -114,6 +114,10 @@ pub use components::room_eq::render::{
     room_eq_trend_fit_domain, should_render_filter_plot, sum_room_eq_responses_db,
 };
 #[cfg(not(test))]
+pub use components::room_eq::{
+    room_eq_channel_chain_by_name, room_eq_display_response_points, room_eq_initial_response_points,
+};
+#[cfg(not(test))]
 pub use sotf_audio_player::autoeq::{classify_channel_eq_filters, upsert_named_room_eq_plugins};
 
 // Re-export EQ chart functions and constants for testing

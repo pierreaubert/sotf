@@ -5,7 +5,7 @@
 use super::recording::{RecordingResult, RecordingState};
 use autoeq::roomeq::{
     CrossoverConfig as BackendCrossoverConfig, MeasurementSource, RoomConfig, SpeakerConfig,
-    SpeakerGroup,
+    SpeakerGroup, SystemConfig as BackendSystemConfig,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -163,6 +163,13 @@ pub struct RoomEqState {
     /// Recording wizard and forwarded to roomeq CTC optimization.
     pub ctc_measurements: Option<autoeq::roomeq::CtcMeasurementConfig>,
     pub ctc_config: Option<autoeq::roomeq::CtcConfig>,
+    /// Original `system` block imported from a RoomConfig file.
+    ///
+    /// This carries home-cinema role mapping and bass-management policy.
+    /// Rebuilding it from UI-only state can change the optimizer result.
+    pub imported_system: Option<BackendSystemConfig>,
+    /// Original crossover map imported from a RoomConfig file.
+    pub imported_crossovers: Option<HashMap<String, BackendCrossoverConfig>>,
 
     // === Step 2: Delay Detection (tone-burst probe) ===
     /// Shared state for the tone-burst delay-detection step. Business
@@ -217,10 +224,8 @@ pub struct RoomEqState {
     pub review_selected_channel: usize,
     /// Interactive chart state for review graph (zoom/pan) - initialized lazily
     pub review_chart_state: Option<InteractiveChartStateWrapper>,
-    /// Whether to auto-scale Y axis for review graph (if false, uses fixed range)
+    /// Whether to auto-scale Y axis for review graph.
     pub review_y_axis_auto: bool,
-    /// When true, normalize graphs relative to target curve (target becomes 0dB line)
-    pub review_normalize_to_target: bool,
     /// Interactive chart state for progress chart (zoom/pan) - initialized lazily
     pub progress_chart_state: Option<InteractiveChartStateWrapper>,
     /// Custom target curve for manual entry mode
@@ -268,6 +273,8 @@ impl Default for RoomEqState {
             channel_measurements: Vec::new(),
             ctc_measurements: None,
             ctc_config: None,
+            imported_system: None,
+            imported_crossovers: None,
             delay_detection: DelayDetectionState::default(),
             speaker_configs: Vec::new(),
             optimizer_config: RoomEqOptimizerConfig::default(),
@@ -288,7 +295,6 @@ impl Default for RoomEqState {
             review_selected_channel: 0,
             review_chart_state: None,
             review_y_axis_auto: true,
-            review_normalize_to_target: false,
             progress_chart_state: None,
             custom_target_curve: CustomTargetCurve::new_flat(),
             show_advanced_config: false,
@@ -566,7 +572,9 @@ impl RoomEqState {
         self.ctc_config = self.ctc_measurements.clone().map(|measurements| {
             let raw = ctc_exported_raw && recording_state.ctc_reference_sweep_path.is_some();
             autoeq::roomeq::CtcConfig {
-                enabled: true,
+                // The app cannot produce binaural recordings yet, so keep the
+                // CTC payload available but do not enable CTC optimization.
+                enabled: false,
                 matrix_source: if raw { "raw_sweep" } else { "measured" }.to_string(),
                 measurements: Some(measurements),
                 reference_sweep: if raw {
@@ -659,7 +667,8 @@ impl RoomEqState {
     /// Convert UI state to backend RoomConfig
     pub fn to_room_config(&self) -> RoomConfig {
         let mut speakers: HashMap<String, SpeakerConfig> = HashMap::new();
-        let mut crossovers: HashMap<String, BackendCrossoverConfig> = HashMap::new();
+        let mut crossovers: HashMap<String, BackendCrossoverConfig> =
+            self.imported_crossovers.clone().unwrap_or_default();
 
         // Helper to convert measurement to curve (preserving phase if available)
         let to_curve = |meas: &ChannelMeasurement| -> autoeq::Curve {
@@ -808,42 +817,56 @@ impl RoomEqState {
             self.optimizer_config.imported_from_file,
         );
 
-        let ctc = self.ctc_config.clone().or_else(|| {
-            self.ctc_measurements
-                .clone()
-                .map(|measurements| autoeq::roomeq::CtcConfig {
-                    enabled: true,
-                    matrix_source: "measured".to_string(),
-                    measurements: Some(measurements),
-                    ..Default::default()
-                })
-        });
-        let system = ctc.as_ref().filter(|ctc| ctc.enabled).and_then(|_| {
-            let has_bass_output = speakers
-                .keys()
-                .any(|name| room_eq_channel_is_bass_output(name));
+        let ctc = self
+            .ctc_config
+            .clone()
+            .or_else(|| {
+                self.ctc_measurements
+                    .clone()
+                    .map(|measurements| autoeq::roomeq::CtcConfig {
+                        enabled: false,
+                        matrix_source: "measured".to_string(),
+                        measurements: Some(measurements),
+                        ..Default::default()
+                    })
+            })
+            .map(|mut ctc| {
+                // CTC must stay disabled until the recording path can capture a
+                // real binaural transfer matrix. Preserve imported/exported fields
+                // so they remain visible and can be re-enabled deliberately later.
+                ctc.enabled = false;
+                ctc
+            });
+        let ctc_enabled = ctc.as_ref().is_some_and(|ctc| ctc.enabled);
+        let has_bass_output = speakers
+            .keys()
+            .any(|name| room_eq_channel_is_bass_output(name));
+        let system = if let Some(system) = self.imported_system.clone() {
+            Some(system)
+        } else if ctc_enabled || has_bass_output {
             let bass_management_crossover = has_bass_output.then(|| {
                 let xover_id = "bass_management".to_string();
                 let crossover_type = match self.simple_preset.crossover {
                     SimpleCrossoverChoice::Lr24 => "LR24",
                     SimpleCrossoverChoice::Lr48 => "LR48",
                 };
-                crossovers.insert(
-                    xover_id.clone(),
-                    BackendCrossoverConfig {
+                crossovers
+                    .entry(xover_id.clone())
+                    .or_insert_with(|| BackendCrossoverConfig {
                         crossover_type: crossover_type.to_string(),
                         frequency: Some(80.0),
                         frequencies: None,
                         frequency_range: None,
-                    },
-                );
+                    });
                 xover_id
             });
             ctc_system_config_for_speaker_names(
                 speakers.keys().map(String::as_str),
                 bass_management_crossover,
             )
-        });
+        } else {
+            None
+        };
 
         RoomConfig {
             version: autoeq::roomeq::default_config_version(),

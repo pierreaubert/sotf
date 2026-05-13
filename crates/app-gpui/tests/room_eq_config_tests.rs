@@ -9,6 +9,7 @@ use sotf_audio_player_gpui::{
     ChannelMeasurement, ChannelRecording, ChannelRecordingState, RecordingResult, RecordingState,
     RoomEqOptimizerConfig, RoomEqState, RoomEqStep,
 };
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 #[test]
@@ -87,12 +88,15 @@ fn test_room_eq_to_room_config_preserves_raw_sweep_ctc_config() {
 
     let config = state.to_room_config();
     let ctc = config.ctc.expect("ctc config");
+    assert!(!ctc.enabled, "app-gpui must not enable CTC yet");
     assert_eq!(ctc.matrix_source, "raw_sweep");
     assert_eq!(
         ctc.reference_sweep,
         Some(PathBuf::from("ctc_reference_sweep.wav"))
     );
-    let system = config.system.expect("ctc requires system config");
+    let system = config
+        .system
+        .expect("LFE requires system config for bass management");
     assert_eq!(system.speakers.get("L").map(String::as_str), Some("L"));
     assert_eq!(system.speakers.get("R").map(String::as_str), Some("R"));
     assert_eq!(
@@ -110,6 +114,127 @@ fn test_room_eq_to_room_config_preserves_raw_sweep_ctc_config() {
         .expect("bass-management crossover config");
     assert_eq!(crossover.crossover_type, "LR24");
     assert_eq!(crossover.frequency, Some(80.0));
+}
+
+#[test]
+fn test_room_eq_to_room_config_disables_imported_ctc_config() {
+    let mut state = RoomEqState::default();
+    state.channel_measurements = vec![make_dummy_measurement("L"), make_dummy_measurement("R")];
+    state.init_speaker_configs();
+    state.ctc_config = Some(autoeq::roomeq::CtcConfig {
+        enabled: true,
+        matrix_source: "measured".to_string(),
+        measurements: Some(autoeq::roomeq::CtcMeasurementConfig {
+            speakers: vec!["L".to_string(), "R".to_string()],
+            mics: vec!["left_ear".to_string(), "right_ear".to_string()],
+            head_positions: Vec::new(),
+            files: Vec::new(),
+        }),
+        ..Default::default()
+    });
+
+    let config = state.to_room_config();
+    let ctc = config.ctc.expect("ctc config metadata is preserved");
+    assert!(!ctc.enabled, "imported CTC must be clamped off");
+    assert_eq!(ctc.matrix_source, "measured");
+    assert!(
+        config.system.is_none(),
+        "disabled CTC alone must not require a system config"
+    );
+}
+
+#[test]
+fn test_room_eq_to_room_config_emits_bass_management_without_ctc() {
+    let mut state = RoomEqState::default();
+    state.channel_measurements = vec![
+        make_dummy_measurement("L"),
+        make_dummy_measurement("R"),
+        make_dummy_measurement("LFE"),
+    ];
+    state.init_speaker_configs();
+
+    let config = state.to_room_config();
+    let system = config
+        .system
+        .expect("LFE/sub output requires a system config for bass management");
+    assert_eq!(system.speakers.get("L").map(String::as_str), Some("L"));
+    assert_eq!(system.speakers.get("R").map(String::as_str), Some("R"));
+    assert_eq!(system.speakers.get("LFE").map(String::as_str), Some("LFE"));
+    let subwoofers = system
+        .subwoofers
+        .expect("LFE/sub output requires subwoofer config");
+    assert_eq!(subwoofers.crossover.as_deref(), Some("bass_management"));
+    assert!(
+        config
+            .crossovers
+            .as_ref()
+            .is_some_and(|crossovers| crossovers.contains_key("bass_management")),
+        "generated bass-management crossover must be present"
+    );
+}
+
+#[test]
+fn test_room_eq_to_room_config_preserves_imported_system_and_crossovers() {
+    let mut state = RoomEqState::default();
+    state.channel_measurements = vec![
+        make_dummy_measurement("L"),
+        make_dummy_measurement("R"),
+        make_dummy_measurement("LFE"),
+    ];
+    state.init_speaker_configs();
+
+    let mut speakers = HashMap::new();
+    speakers.insert("L".to_string(), "L".to_string());
+    speakers.insert("R".to_string(), "R".to_string());
+    speakers.insert("LFE".to_string(), "LFE".to_string());
+    state.imported_system = Some(autoeq::roomeq::SystemConfig {
+        model: autoeq::roomeq::SystemModel::HomeCinema,
+        speakers,
+        subwoofers: Some(autoeq::roomeq::SubwooferSystemConfig {
+            config: autoeq::roomeq::SubwooferStrategy::Single,
+            crossover: Some("cli_xover".to_string()),
+            mapping: HashMap::new(),
+        }),
+        bass_management: Some(autoeq::roomeq::BassManagementConfig {
+            max_sub_boost_db: 3.0,
+            ..Default::default()
+        }),
+    });
+    let mut crossovers = HashMap::new();
+    crossovers.insert(
+        "cli_xover".to_string(),
+        autoeq::roomeq::CrossoverConfig {
+            crossover_type: "LR48".to_string(),
+            frequency: Some(55.0),
+            frequencies: None,
+            frequency_range: None,
+        },
+    );
+    state.imported_crossovers = Some(crossovers);
+
+    let config = state.to_room_config();
+    let system = config.system.expect("imported system must be preserved");
+    assert_eq!(
+        system
+            .subwoofers
+            .as_ref()
+            .and_then(|subs| subs.crossover.as_deref()),
+        Some("cli_xover")
+    );
+    assert_eq!(
+        system
+            .bass_management
+            .as_ref()
+            .map(|bm| bm.max_sub_boost_db),
+        Some(3.0)
+    );
+    let crossover = config
+        .crossovers
+        .as_ref()
+        .and_then(|crossovers| crossovers.get("cli_xover"))
+        .expect("imported crossover must be preserved");
+    assert_eq!(crossover.crossover_type, "LR48");
+    assert_eq!(crossover.frequency, Some(55.0));
 }
 
 #[test]

@@ -1249,18 +1249,38 @@ impl PlayerView {
                         );
                     }
 
-                    // Build UI results from RoomOptimizationResult
-                    let all_results: Vec<ChannelOptResult> = channel_names
+                    let mut display_channel_names = channel_names.clone();
+                    for name in room_result.channel_results.keys() {
+                        if !display_channel_names.iter().any(|existing| existing == name) {
+                            display_channel_names.push(name.clone());
+                        }
+                    }
+                    for name in room_result.channels.keys() {
+                        if !display_channel_names.iter().any(|existing| existing == name) {
+                            display_channel_names.push(name.clone());
+                        }
+                    }
+
+                    // Build UI results from the serialized DSP channels first.
+                    // Those `initial_curve`/`final_curve` fields are the same
+                    // precomputed curves written to the roomeq JSON and plotted
+                    // by display-roomeq.py.
+                    let all_results: Vec<ChannelOptResult> = display_channel_names
                         .iter()
                         .filter_map(|name| {
-                            room_result.channel_results.get(name).map(|channel_res| {
+                            let chain = room_eq_channel_chain_by_name(&room_result.channels, name);
+                            let channel_res = room_eq_channel_result_by_name(
+                                &room_result.channel_results,
+                                name,
+                                chain,
+                            );
+                            if chain.is_none() && channel_res.is_none() {
+                                return None;
+                            }
+                            Some({
                                 // Extract broadband filters from the DSP chain
                                 // (labeled "broadband" EQ plugins)
-                                // Extract broadband filters from the DSP chain
-                                // (labeled "broadband" EQ plugins)
-                                let bb_filters: Vec<EqFilterConfig> = room_result
-                                    .channels
-                                    .get(name)
+                                let bb_filters: Vec<EqFilterConfig> = chain
                                     .map(|chain| {
                                         chain
                                             .plugins
@@ -1305,15 +1325,7 @@ impl PlayerView {
                                     })
                                     .unwrap_or_default();
 
-                                // Post-optimization stages (spectral-alignment, VoG)
-                                // push standalone "gain" plugins onto the chain when a
-                                // flat-gain correction is needed. They modify the
-                                // reported `final_curve` but never make it into
-                                // `channel_res.biquads`, so the EQ-filter Sum line
-                                // would otherwise be offset from the Corrected curve.
-                                let preamp_gain_db: f64 = room_result
-                                    .channels
-                                    .get(name)
+                                let preamp_gain_db: f64 = chain
                                     .map(|chain| {
                                         chain
                                             .plugins
@@ -1330,55 +1342,38 @@ impl PlayerView {
 
                                 ChannelOptResult {
                                     channel_name: name.clone(),
-                                    pre_score: channel_res.pre_score,
-                                    post_score: channel_res.post_score,
+                                    pre_score: channel_res.map(|r| r.pre_score).unwrap_or(0.0),
+                                    post_score: channel_res.map(|r| r.post_score).unwrap_or(0.0),
                                     eq_filters: channel_res
-                                        .biquads
-                                        .iter()
-                                        .map(|b| EqFilterConfig {
-                                            filter_type: format!("{:?}", b.filter_type),
-                                            frequency: b.freq,
-                                            q: b.q,
-                                            gain_db: b.db_gain,
+                                        .map(|r| {
+                                            r.biquads
+                                                .iter()
+                                                .map(|b| EqFilterConfig {
+                                                    filter_type: format!("{:?}", b.filter_type),
+                                                    frequency: b.freq,
+                                                    q: b.q,
+                                                    gain_db: b.db_gain,
+                                                })
+                                                .collect()
                                         })
-                                        .collect(),
+                                        .unwrap_or_default(),
                                     broadband_filters: bb_filters,
                                     preamp_gain_db,
                                     crossover_freqs: None,
                                     driver_gains: None,
-                                    original_response: Some(
-                                        channel_res
-                                            .initial_curve
-                                            .freq
-                                            .iter()
-                                            .zip(channel_res.initial_curve.spl.iter())
-                                            .filter(|(_, db)| **db > -150.0)
-                                            .map(|(&f, &db)| (f, db))
-                                            .collect(),
+                                    original_response: room_eq_initial_response_points(
+                                        chain,
+                                        channel_res.map(|r| &r.initial_curve),
                                     ),
-                                    corrected_response: Some(
-                                        channel_res
-                                            .final_curve
-                                            .freq
-                                            .iter()
-                                            .zip(channel_res.final_curve.spl.iter())
-                                            .filter(|(_, db)| **db > -150.0)
-                                            .map(|(&f, &db)| (f, db))
-                                            .collect(),
+                                    corrected_response: room_eq_display_response_points(
+                                        chain,
+                                        channel_res.map(|r| &r.final_curve),
                                     ),
-                                    normalized_response: Some(
-                                        channel_res
-                                            .final_curve
-                                            .freq
-                                            .iter()
-                                            .zip(channel_res.final_curve.spl.iter())
-                                            .filter(|(_, db)| **db > -150.0)
-                                            .map(|(&f, &db)| (f, db))
-                                            .collect(),
+                                    normalized_response: room_eq_display_response_points(
+                                        chain,
+                                        channel_res.map(|r| &r.final_curve),
                                     ),
-                                    target_curve: room_result
-                                        .channels
-                                        .get(name)
+                                    target_curve: chain
                                         .and_then(|chain| chain.target_curve.as_ref())
                                         .map(|tc| {
                                             tc.freq
@@ -1387,21 +1382,18 @@ impl PlayerView {
                                                 .map(|(&f, &db)| (f, db))
                                                 .collect()
                                         }),
-                                    group_delay_before: compute_group_delay_from_curve(
-                                        &channel_res.initial_curve,
-                                    ),
-                                    group_delay_after: compute_group_delay_from_curve(
-                                        &channel_res.final_curve,
-                                    ),
-                                    phase_response_before: compute_phase_response_from_curve(
-                                        &channel_res.initial_curve,
-                                    ),
-                                    phase_response_after: compute_phase_response_from_curve(
-                                        &channel_res.final_curve,
-                                    ),
-                                    impulse_response: room_result
-                                        .channels
-                                        .get(name)
+                                    group_delay_before: channel_res.and_then(|r| {
+                                        compute_group_delay_from_curve(&r.initial_curve)
+                                    }),
+                                    group_delay_after: channel_res
+                                        .and_then(|r| compute_group_delay_from_curve(&r.final_curve)),
+                                    phase_response_before: channel_res.and_then(|r| {
+                                        compute_phase_response_from_curve(&r.initial_curve)
+                                    }),
+                                    phase_response_after: channel_res.and_then(|r| {
+                                        compute_phase_response_from_curve(&r.final_curve)
+                                    }),
+                                    impulse_response: chain
                                         .and_then(|c| c.post_ir.as_ref())
                                         .map(|ir| {
                                             ir.time_ms
@@ -1668,4 +1660,71 @@ fn compute_phase_response_from_curve(curve: &autoeq::Curve) -> Option<Vec<(f64, 
             .map(|(&f, &p)| (f, p))
             .collect(),
     )
+}
+
+/// Pick the curve GPUI should display for a RoomEQ channel.
+///
+/// `ChannelDspChain.final_curve` is the same post-DSP curve written to the
+/// roomeq JSON and used by `display-roomeq.py`; it includes route-owned stages
+/// such as bass-management crossovers. `ChannelOptimizationResult.final_curve`
+/// remains the fallback for older/incomplete backend results.
+pub fn room_eq_display_response_points(
+    chain: Option<&autoeq::roomeq::ChannelDspChain>,
+    fallback_final_curve: Option<&autoeq::Curve>,
+) -> Option<Vec<(f64, f64)>> {
+    chain
+        .and_then(|chain| chain.final_curve.as_ref())
+        .map(room_eq_curve_data_response_points)
+        .or_else(|| fallback_final_curve.map(room_eq_curve_response_points))
+        .filter(|points| !points.is_empty())
+}
+
+pub fn room_eq_initial_response_points(
+    chain: Option<&autoeq::roomeq::ChannelDspChain>,
+    fallback_initial_curve: Option<&autoeq::Curve>,
+) -> Option<Vec<(f64, f64)>> {
+    chain
+        .and_then(|chain| chain.initial_curve.as_ref())
+        .map(room_eq_curve_data_response_points)
+        .or_else(|| fallback_initial_curve.map(room_eq_curve_response_points))
+        .filter(|points| !points.is_empty())
+}
+
+pub fn room_eq_channel_chain_by_name<'a>(
+    channels: &'a std::collections::HashMap<String, autoeq::roomeq::ChannelDspChain>,
+    name: &str,
+) -> Option<&'a autoeq::roomeq::ChannelDspChain> {
+    channels
+        .get(name)
+        .or_else(|| channels.values().find(|chain| chain.channel == name))
+}
+
+fn room_eq_channel_result_by_name<'a>(
+    results: &'a std::collections::HashMap<String, autoeq::roomeq::ChannelOptimizationResult>,
+    name: &str,
+    chain: Option<&autoeq::roomeq::ChannelDspChain>,
+) -> Option<&'a autoeq::roomeq::ChannelOptimizationResult> {
+    results
+        .get(name)
+        .or_else(|| chain.and_then(|chain| results.get(&chain.channel)))
+}
+
+fn room_eq_curve_data_response_points(curve: &autoeq::roomeq::CurveData) -> Vec<(f64, f64)> {
+    curve
+        .freq
+        .iter()
+        .zip(curve.spl.iter())
+        .filter(|(_, db)| db.is_finite() && **db > -150.0)
+        .map(|(&f, &db)| (f, db))
+        .collect()
+}
+
+fn room_eq_curve_response_points(curve: &autoeq::Curve) -> Vec<(f64, f64)> {
+    curve
+        .freq
+        .iter()
+        .zip(curve.spl.iter())
+        .filter(|(_, db)| db.is_finite() && **db > -150.0)
+        .map(|(&f, &db)| (f, db))
+        .collect()
 }
