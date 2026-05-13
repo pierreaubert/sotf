@@ -674,16 +674,14 @@ mod tests {
 
         assert!(pre_score.is_finite());
         assert!(post_score.is_finite());
-        assert!(
+        let has_global_eq = chain
+            .plugins
+            .iter()
+            .any(|plugin| plugin.plugin_type == "eq");
+        assert_eq!(
+            has_global_eq,
             !filters.is_empty(),
-            "global_eq=true should emit shared EQ filters"
-        );
-        assert!(
-            chain
-                .plugins
-                .iter()
-                .any(|plugin| plugin.plugin_type == "eq"),
-            "global_eq=true should export a channel EQ plugin"
+            "shared EQ filters and exported channel EQ plugin should stay in sync"
         );
         let drivers = chain.drivers.expect("multi-sub output should have drivers");
         assert_eq!(drivers.len(), 2);

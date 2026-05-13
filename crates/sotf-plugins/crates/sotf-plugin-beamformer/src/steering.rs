@@ -210,9 +210,9 @@ mod tests {
             spacing_m: 0.05,
         };
 
-        // At endfire (0°), the wave travels along the array axis, so mics
+        // At endfire (90°), the wave travels along the array axis, so mics
         // receive it at different times → phases should differ.
-        let sv = compute_steering_vector(1000.0, &geom, 0.0, 0.0);
+        let sv = compute_steering_vector(1000.0, &geom, 90.0, 0.0);
         assert_eq!(sv.len(), 2);
         // The first mic is at origin → zero phase; second mic has non-zero phase
         assert!(sv[0].im.abs() < 1e-6, "mic 0 at origin should have zero phase");

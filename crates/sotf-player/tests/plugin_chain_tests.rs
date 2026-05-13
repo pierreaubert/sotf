@@ -80,6 +80,13 @@ fn insert_plugin_grows_chain() {
 }
 
 #[test]
+fn add_binaural_decoder_does_not_require_removed_ui_params() {
+    let mut controller = PluginController::new();
+
+    let _ = controller.add_plugin(&PluginType::BinauralDecoder);
+}
+
+#[test]
 fn user_added_matrix_is_not_permanent() {
     let mut chain = PluginChain::with_default_rack();
     let insert_idx = chain.user_plugin_insert_index();

@@ -39,17 +39,6 @@ expression: plan
         16.0
       ],
       "read_only": true
-    },
-    {
-      "param_index": 2,
-      "param_name": "Optimization",
-      "control_type": "toggle",
-      "unit": "",
-      "range": [
-        0.0,
-        1.0
-      ],
-      "read_only": false
     }
   ],
   "main_groups": [
@@ -57,7 +46,7 @@ expression: plan
       "title": "CONTROLS",
       "controls": [
         {
-          "param_index": 3,
+          "param_index": 2,
           "param_name": "Externalization",
           "control_type": "knob",
           "unit": "",
@@ -68,7 +57,7 @@ expression: plan
           "read_only": false
         },
         {
-          "param_index": 4,
+          "param_index": 3,
           "param_name": "Near-field",
           "control_type": "knob",
           "unit": "",
@@ -79,7 +68,7 @@ expression: plan
           "read_only": false
         },
         {
-          "param_index": 5,
+          "param_index": 4,
           "param_name": "Crossfade Mode",
           "control_type": "selector",
           "unit": "",
@@ -98,7 +87,7 @@ expression: plan
       "name": "Reverb",
       "controls": [
         {
-          "param_index": 6,
+          "param_index": 5,
           "param_name": "Late Reverb",
           "control_type": "toggle",
           "unit": "",
@@ -109,7 +98,7 @@ expression: plan
           "read_only": false
         },
         {
-          "param_index": 7,
+          "param_index": 6,
           "param_name": "Reverb Mix",
           "control_type": "knob",
           "unit": "",
@@ -120,7 +109,7 @@ expression: plan
           "read_only": false
         },
         {
-          "param_index": 8,
+          "param_index": 7,
           "param_name": "Reverb Time",
           "control_type": "knob",
           "unit": "s",
@@ -131,25 +120,9 @@ expression: plan
           "read_only": false
         },
         {
-          "param_index": 9,
+          "param_index": 8,
           "param_name": "Reverb Damping",
           "control_type": "knob",
-          "unit": "",
-          "range": [
-            0.0,
-            1.0
-          ],
-          "read_only": false
-        }
-      ]
-    },
-    {
-      "name": "Headphone",
-      "controls": [
-        {
-          "param_index": 10,
-          "param_name": "Headphone EQ",
-          "control_type": "toggle",
           "unit": "",
           "range": [
             0.0,

@@ -776,8 +776,8 @@ impl PluginSettings {
         if matches!(spec.param_type, param_specs::ParamType::FilePath) {
             return None;
         }
-        let value = self.param_value(idx)?;
-        Some((spec.engine_key.to_string(), spec.engine_value_string(value)))
+        let value = self.param_value_string(idx)?;
+        Some((spec.engine_key.to_string(), value))
     }
 
     /// Format the current value of parameter at `index` as a string for engine communication.

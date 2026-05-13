@@ -92,6 +92,8 @@ pub struct ChannelMuteSoloPlugin {
     params_dirty: std::cell::Cell<bool>,
     /// Cache for SIMD optimization
     cached_gains: Vec<f32>,
+    /// Pre-allocated start-of-block gains for block ramping.
+    start_gains: Vec<f32>,
 }
 
 impl ChannelMuteSoloPlugin {
@@ -118,6 +120,7 @@ impl ChannelMuteSoloPlugin {
             cached_parameters: std::cell::RefCell::new(Vec::new()),
             params_dirty: std::cell::Cell::new(true),
             cached_gains: vec![1.0; channels],
+            start_gains: vec![1.0; channels],
         };
         // Build initial cache so validate_parameter works before any set_parameter call.
         p.rebuild_cached_parameters_if_dirty();
@@ -456,8 +459,11 @@ impl InPlacePlugin for ChannelMuteSoloPlugin {
         // across a 512-sample block — inaudible — while avoiding O(num_frames × channels)
         // individual smoother calls.
         let channels = self.channels;
-        let mut start_gains = self.cached_gains.clone(); // reuse pre-allocated buffer
-        for (gain, smoother) in start_gains.iter_mut().zip(self.channel_smoothers.iter()) {
+        for (gain, smoother) in self
+            .start_gains
+            .iter_mut()
+            .zip(self.channel_smoothers.iter())
+        {
             *gain = smoother.current();
         }
         for (gain, smoother) in self.cached_gains.iter_mut().zip(self.channel_smoothers.iter_mut()) {
@@ -479,7 +485,7 @@ impl InPlacePlugin for ChannelMuteSoloPlugin {
                 let frame_buf = &mut buffer[offset..offset + channels];
                 for (s, (&sg, &eg)) in frame_buf
                     .iter_mut()
-                    .zip(start_gains.iter().zip(self.cached_gains.iter()))
+                    .zip(self.start_gains.iter().zip(self.cached_gains.iter()))
                 {
                     *s *= sg + t * (eg - sg);
                 }

@@ -200,6 +200,11 @@ pub fn compute_epa_multichannel_normalized(
 }
 
 /// Compute EPA score from a frequency response.
+///
+/// The loudness path calibrates the response so its interpolated 1 kHz level
+/// equals `config.listening_level_phon`. Level-relative curves should still use
+/// [`compute_epa_normalized`] so level-dependent spectrum metrics see the same
+/// listening-level offset.
 pub fn compute_epa(freqs: &[f64], spl_db: &[f64], config: &EpaConfig) -> EpaScore {
     // 1. Compute specific loudness across Bark bands
     let specific = loudness::specific_loudness(freqs, spl_db, config.listening_level_phon);
@@ -251,9 +256,9 @@ pub fn compute_epa(freqs: &[f64], spl_db: &[f64], config: &EpaConfig) -> EpaScor
 /// EPA-based loss function for the optimizer.
 /// Lower = better (the optimizer minimizes this).
 ///
-/// `spl_db` is expected to be **absolute** dB SPL. If you are working with
-/// level-relative (mean-subtracted around 1 kHz) measurements such as those
-/// in `CurveData`, use [`epa_loss_normalized`] instead.
+/// If you are working with level-relative (mean-subtracted around 1 kHz)
+/// measurements such as those in `CurveData`, use [`epa_loss_normalized`] so
+/// level-dependent spectrum metrics are evaluated at `listening_level_phon`.
 pub fn epa_loss(freqs: &[f64], spl_db: &[f64], config: &EpaConfig, flatness_loss: f64) -> f64 {
     let epa = compute_epa(freqs, spl_db, config);
 
@@ -507,11 +512,10 @@ mod tests {
 
     #[test]
     fn test_normalized_calibration_prevents_silent_floor() {
-        // A level-relative flat curve (~0 dB everywhere) fed through the raw
-        // `compute_epa` looks like near-silence to the Zwicker model because
-        // its threshold-in-quiet is specified in absolute dB SPL. The
-        // `_normalized` variant denormalizes against `listening_level_phon`
-        // and must produce a non-trivial total loudness.
+        // A level-relative flat curve (~0 dB everywhere) only represents
+        // near-silence when calibrated at 0 phon. The `_normalized` variant
+        // denormalizes against `listening_level_phon` and must produce a
+        // non-trivial total loudness at the configured listening level.
         let (freqs, _) = make_flat_response(0.0);
         let spl_rel = vec![0.0_f64; freqs.len()];
 
@@ -520,13 +524,18 @@ mod tests {
             ..EpaConfig::default()
         };
 
-        let raw_score = compute_epa(&freqs, &spl_rel, &config);
+        let silent_floor_config = EpaConfig {
+            listening_level_phon: 0.0,
+            ..config.clone()
+        };
+
+        let raw_score = compute_epa(&freqs, &spl_rel, &silent_floor_config);
         let calibrated_score = compute_epa_normalized(&freqs, &spl_rel, &config);
 
-        // Raw path (uncalibrated) should be at or near the silent floor.
+        // Zero-level calibration should be at or near the silent floor.
         assert!(
             raw_score.total_loudness_sone < 0.5,
-            "raw normalized input should be near-silent, got {}",
+            "0 phon normalized input should be near-silent, got {}",
             raw_score.total_loudness_sone
         );
         // Calibrated path should show meaningful loudness (flat 75 dB ≈ 30+ sone).

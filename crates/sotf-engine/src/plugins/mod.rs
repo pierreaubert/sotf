@@ -532,10 +532,13 @@ fn default_de_esser_mode() -> String {
 
 sotf_plugins::serde_param_default! {
     binaural_specs::PARAMS;
-    fn default_binaural_enable_optimization() -> bool = "enable_optimization";
     fn default_binaural_late_reverb_mix() -> f64 = "late_reverb_mix";
     fn default_binaural_late_reverb_rt60() -> f64 = "late_reverb_rt60";
     fn default_binaural_late_reverb_damping() -> f64 = "late_reverb_damping";
+}
+
+fn default_binaural_enable_optimization() -> bool {
+    sotf_plugins::binaural_default_enable_optimization()
 }
 
 sotf_plugins::serde_param_default! {
@@ -3481,7 +3484,7 @@ impl PluginSettings {
                 Self::BinauralDecoder {
                     sofa_file: String::new(),
                     input_channels: 6, // Default to 5.1
-                    enable_optimization: p(b, "enable_optimization").default_bool(),
+                    enable_optimization: default_binaural_enable_optimization(),
                     externalization: p(b, "externalization").default_f64(),
                     near_field_strength: p(b, "near_field_strength").default_f64(),
                     crossfade_mode: p(b, "crossfade_mode").default_usize(),
@@ -3873,6 +3876,31 @@ impl PluginSettings {
                     solo_late: false,
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn binaural_decoder_defaults_do_not_require_removed_ui_params() {
+        let settings = PluginSettings::default_for(&PluginType::BinauralDecoder);
+
+        match settings {
+            PluginSettings::BinauralDecoder {
+                enable_optimization,
+                headphone_eq_enabled,
+                ..
+            } => {
+                assert_eq!(
+                    enable_optimization,
+                    sotf_plugins::binaural_default_enable_optimization()
+                );
+                assert!(!headphone_eq_enabled);
+            }
+            _ => panic!("expected BinauralDecoder settings"),
         }
     }
 }

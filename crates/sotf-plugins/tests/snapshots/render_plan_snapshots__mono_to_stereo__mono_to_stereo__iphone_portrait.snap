@@ -21,30 +21,7 @@ expression: plan
   "columns_collapsed": [
     "config"
   ],
-  "config_controls": [
-    {
-      "param_index": 2,
-      "param_name": "Comp EQ",
-      "control_type": "toggle",
-      "unit": "",
-      "range": [
-        0.0,
-        1.0
-      ],
-      "read_only": false
-    },
-    {
-      "param_index": 3,
-      "param_name": "Comp EQ Depth",
-      "control_type": "knob",
-      "unit": "dB",
-      "range": [
-        0.0,
-        3.0
-      ],
-      "read_only": false
-    }
-  ],
+  "config_controls": [],
   "main_groups": [
     {
       "title": "",
@@ -80,7 +57,7 @@ expression: plan
           "read_only": false
         },
         {
-          "param_index": 4,
+          "param_index": 2,
           "param_name": "Decor Low",
           "control_type": "knob",
           "unit": "Hz",
@@ -91,7 +68,7 @@ expression: plan
           "read_only": false
         },
         {
-          "param_index": 5,
+          "param_index": 3,
           "param_name": "Decor High",
           "control_type": "knob",
           "unit": "Hz",
@@ -102,7 +79,7 @@ expression: plan
           "read_only": false
         },
         {
-          "param_index": 6,
+          "param_index": 4,
           "param_name": "Freq Dependent",
           "control_type": "toggle",
           "unit": "",

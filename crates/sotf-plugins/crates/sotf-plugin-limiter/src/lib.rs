@@ -128,6 +128,8 @@ pub struct LimiterPlugin {
     monitoring_gr_db: f32,
     /// Per-channel ISP (inter-sample true peak) in linear, tracked across blocks
     monitoring_isp_linear: Vec<f32>,
+    /// Per-channel peak scratch for the current frame.
+    channel_peaks: Vec<f32>,
 }
 
 impl LimiterPlugin {
@@ -184,6 +186,7 @@ impl LimiterPlugin {
             monitoring_peak_db: -100.0,
             monitoring_gr_db: 0.0,
             monitoring_isp_linear: vec![0.0; channels],
+            channel_peaks: vec![0.0; channels],
         };
         p.rebuild_cached_parameters();
         p
@@ -211,10 +214,6 @@ impl LimiterPlugin {
             .with_description("Release time (ms)")
             .with_group("Timing")
             .with_importance(ParameterImportance::Critical),
-            Parameter::new_bool("soft", "Soft", self.soft)
-                .with_description("Use soft clipping instead of hard limiting")
-                .with_group("Dynamics")
-                .with_importance(ParameterImportance::Useful),
             Parameter::new_float(
                 "lookahead",
                 "Lookahead",
@@ -225,6 +224,10 @@ impl LimiterPlugin {
             .with_description("Lookahead time for peak detection (ms)")
             .with_group("Timing")
             .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool("soft", "Soft", self.soft)
+                .with_description("Use soft clipping instead of hard limiting")
+                .with_group("Dynamics")
+                .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("true_peak", "True Peak", self.true_peak)
                 .with_description("Use 4x oversampled true peak detection")
                 .with_group("Detection")
@@ -410,6 +413,8 @@ impl InPlacePlugin for LimiterPlugin {
             .resize_with(self.channels, TruePeakDetector::new);
         self.output_isp_detectors
             .resize_with(self.channels, TruePeakDetector::new);
+        self.channel_peaks.resize(self.channels, 0.0);
+        self.monitoring_isp_linear.resize(self.channels, 0.0);
         self.isp_correction_db = 0.0;
         self.dual_release_env =
             DualRelease::new(self.release_ms, self.release_ms * 5.0, sample_rate);
@@ -454,14 +459,14 @@ impl InPlacePlugin for LimiterPlugin {
 
         #[allow(clippy::needless_range_loop)]
         for frame in 0..num_frames {
-            // Detect per-channel peaks — use Vec to support any channel count.
+            // Detect per-channel peaks using pre-allocated scratch.
             let nc = self.channels;
-            let mut ch_peaks = vec![0.0f32; nc];
+            self.channel_peaks[..nc].fill(0.0);
             if use_true_peak {
                 for ch in 0..nc {
                     let idx = frame * self.channels + ch;
                     let tp = self.true_peak_detectors[ch].process_linear(buffer[idx]);
-                    ch_peaks[ch] = tp;
+                    self.channel_peaks[ch] = tp;
                     // Track per-channel ISP
                     if tp > self.monitoring_isp_linear[ch] {
                         self.monitoring_isp_linear[ch] = tp;
@@ -470,12 +475,15 @@ impl InPlacePlugin for LimiterPlugin {
             } else {
                 for ch in 0..nc {
                     let idx = frame * self.channels + ch;
-                    ch_peaks[ch] = buffer[idx].abs();
+                    self.channel_peaks[ch] = buffer[idx].abs();
                 }
             }
 
             // Apply channel linking: blend per-channel peaks toward max
-            let max_peak_ch = ch_peaks.iter().copied().fold(0.0f32, f32::max);
+            let max_peak_ch = self.channel_peaks[..nc]
+                .iter()
+                .copied()
+                .fold(0.0f32, f32::max);
             let frame_peak = if link >= 1.0 || nc <= 1 {
                 max_peak_ch
             } else {
@@ -483,7 +491,7 @@ impl InPlacePlugin for LimiterPlugin {
                 // Use the max of the linked peaks as the effective frame peak
                 let mut linked_max = 0.0f32;
                 for ch in 0..nc {
-                    let linked = ch_peaks[ch] * (1.0 - link) + max_peak_ch * link;
+                    let linked = self.channel_peaks[ch] * (1.0 - link) + max_peak_ch * link;
                     linked_max = linked_max.max(linked);
                 }
                 linked_max

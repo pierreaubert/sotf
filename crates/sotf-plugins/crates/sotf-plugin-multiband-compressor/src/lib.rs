@@ -1079,6 +1079,11 @@ impl InPlacePlugin for MultibandCompressorPlugin {
 
         // Real-time safety: buffers must be pre-allocated by initialize() up to 4096 frames.
         // Allocating inside the audio callback can cause dropouts.
+        if nf > 4096 {
+            return Err(format!(
+                "Multiband compressor block size {nf} exceeds max 4096 frames"
+            ));
+        }
         debug_assert!(
             self.dry_buffer.len() >= buffer.len(),
             "dry_buffer undersized: {} < {} (call initialize() before processing)",

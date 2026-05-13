@@ -96,8 +96,17 @@ fn run_roomeq_on_generated(scenario_name: &str) {
         );
     }
 
-    // Verify DSP chains were generated
+    // Verify DSP chains were generated for channels that should receive EQ.
+    // Sub/LFE channels may legitimately have no plugins when the "do no harm"
+    // guard rejects EQ that would make the response worse.
     for (channel_name, chain) in &result.channels {
+        let is_sub = sub_names
+            .iter()
+            .any(|s| channel_name.eq_ignore_ascii_case(s))
+            || channel_name.to_lowercase().starts_with("sub");
+        if is_sub {
+            continue;
+        }
         assert!(
             !chain.plugins.is_empty(),
             "{scenario_name}: channel '{channel_name}' has no plugins in DSP chain"

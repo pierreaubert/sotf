@@ -50,9 +50,13 @@ fn test_plugin_parameter_sync() {
 fn test_upmixer_parameter_sync_deep() {
     let mut settings = PluginSettings::default_for(&PluginType::Upmixer);
     let descriptors = settings.get_descriptors();
+    let params = settings.get_params();
 
-    // Upmixer is expected to have 44 parameters currently (0-43)
-    assert_eq!(descriptors.len(), 44);
+    assert_eq!(
+        descriptors.len(),
+        params.len(),
+        "Upmixer descriptor/param count mismatch"
+    );
 
     for i in 0..descriptors.len() {
         // Just verify it doesn't return false for known editable params

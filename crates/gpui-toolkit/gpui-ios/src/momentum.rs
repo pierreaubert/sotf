@@ -244,17 +244,21 @@ pub struct MomentumDelta {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     #[test]
     fn test_momentum_scroller_is_finished() {
         let mut scroller = MomentumScroller::new();
-        assert!(!scroller.is_finished());
+        assert!(scroller.is_finished());
 
         scroller.fling(100.0, 0.0, 0.0, 0.0);
         assert!(!scroller.is_finished());
 
         // Exhaust the fling
-        while scroller.step().is_some() {}
+        while scroller.is_active() {
+            scroller.last_time = Instant::now() - Duration::from_millis(33);
+            let _ = scroller.step();
+        }
         assert!(scroller.is_finished());
     }
 
@@ -264,20 +268,21 @@ mod tests {
         scroller.fling(100.0, 0.0, 0.0, 0.0);
 
         // First step should produce a delta
+        scroller.last_time = Instant::now() - Duration::from_millis(16);
         assert!(scroller.step().is_some());
 
-        // An immediate second step may have dt < 1e-6 and return None
+        // A sub-microsecond step returns None
         // without the scroller being finished.
+        scroller.last_time = Instant::now();
         let result = scroller.step();
-        if result.is_none() {
-            assert!(
-                scroller.is_active(),
-                "scroller should still be active after sub-microsecond dt"
-            );
-            assert!(
-                !scroller.is_finished(),
-                "scroller should not be finished after sub-microsecond dt"
-            );
-        }
+        assert!(result.is_none());
+        assert!(
+            scroller.is_active(),
+            "scroller should still be active after sub-microsecond dt"
+        );
+        assert!(
+            !scroller.is_finished(),
+            "scroller should not be finished after sub-microsecond dt"
+        );
     }
 }

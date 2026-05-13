@@ -331,10 +331,21 @@ fn test_engine_value_string_roundtrip_all_plugins() {
                         parsed
                     );
                 }
-                ParamType::Int { .. } | ParamType::Choice { .. } => {
+                ParamType::Int { .. } => {
                     assert!(
                         matches!(parsed, ParameterValue::Int(_)),
                         "{} param {} ({}): '{}' parsed as {:?}, expected Int",
+                        name,
+                        i,
+                        key,
+                        value_str,
+                        parsed
+                    );
+                }
+                ParamType::Choice { .. } => {
+                    assert!(
+                        matches!(parsed, ParameterValue::Int(_) | ParameterValue::String(_)),
+                        "{} param {} ({}): '{}' parsed as {:?}, expected Int or String choice",
                         name,
                         i,
                         key,

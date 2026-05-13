@@ -702,20 +702,21 @@ mod tests {
         app.selected_plugin_index = plugin_idx;
 
         let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
-        let (orig_sofa, orig_channels, orig_opt, orig_ext, orig_near) = match &plugin.settings {
+        let (orig_sofa, orig_channels, orig_ext, orig_near, orig_crossfade) =
+            match &plugin.settings {
             PluginSettings::BinauralDecoder {
                 sofa_file,
                 input_channels,
-                enable_optimization,
                 externalization,
                 near_field_strength,
+                crossfade_mode,
                 ..
             } => (
                 sofa_file.clone(),
                 *input_channels,
-                *enable_optimization,
                 *externalization,
                 *near_field_strength,
+                *crossfade_mode,
             ),
             _ => panic!("Expected BinauralDecoder plugin"),
         };
@@ -732,17 +733,17 @@ mod tests {
         if let PluginSettings::BinauralDecoder {
             sofa_file,
             input_channels,
-            enable_optimization,
             externalization,
             near_field_strength,
+            crossfade_mode,
             ..
         } = &plugin.settings
         {
             assert_eq!(*sofa_file, orig_sofa); // unchanged by adjust_selected_param
             assert_eq!(*input_channels, orig_channels);
-            assert_ne!(*enable_optimization, orig_opt);
             assert_ne!(*externalization, orig_ext);
             assert_ne!(*near_field_strength, orig_near);
+            assert_ne!(*crossfade_mode, orig_crossfade);
         } else {
             panic!("Expected BinauralDecoder plugin");
         }
