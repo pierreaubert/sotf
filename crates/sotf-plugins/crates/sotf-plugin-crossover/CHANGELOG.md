@@ -1,4 +1,51 @@
+# 0.5.25
+
+## Added
+
+- **Per-channel mode** for the RoomEQ factored graph: new constructor
+  `CrossoverPlugin::new_per_channel(crossover_type, channel_frequencies_hz, channel_modes)`
+  builds a plugin where each channel has its own LR24 crossover at its own
+  cutoff with its own op mode. JSON params gain optional
+  `channel_frequencies_hz: Vec<f32>` and `channel_modes: Vec<String>` fields;
+  when present they switch the plugin into per-channel mode. `is_per_channel()`
+  reports the mode.
+- **`PerChannelOpMode` enum** with four variants:
+  - `Lowpass` — channel runs the LP output of its LR24 cell.
+  - `Highpass` — channel runs the HP output.
+  - `Mute` — channel emits silence (used for source-less channels in routed
+    bass-management graphs).
+  - `Passthrough` — channel emits its input unchanged with no filtering or
+    smoothing state. Used by destination-only channels in the RoomEQ factored
+    graph so direct sub-feed signals reach the post-EQ stage without being
+    silenced.
+- Per-channel parameter ids: `channel_frequency_{N}` (Float, Hz) and
+  `channel_mode_{N}` (String, one of `lowpass`/`highpass`/`mute`/`passthrough`).
+  `set_parameter` validates the channel index and clamps frequency below
+  Nyquist; `get_parameter` reads back the stored (clamped) value.
+
+## Fixes
+
+- `initialize()` in per-channel mode now writes the Nyquist-clamped frequency
+  back into `channel_frequencies_hz`. Previously the clamped value was used
+  to build the filter but the stored vec kept the original; `get_parameter`
+  reported a frequency the plugin wasn't actually running at.
+- `set_parameter("frequency")` and `set_parameter("mode")` now hard-error
+  when the plugin is in per-channel mode. Previously they silently mutated
+  unused global state, masking routing bugs in the host.
+- `from_params(num_channels, params)` now hard-errors when
+  `params.channel_frequencies_hz.len() != num_channels`. Previously it
+  printed a warning to stderr and proceeded with the array length, producing
+  a plugin whose `input_channels()` disagreed with the host's expectation.
+- Clippy: `Result::and_then(|x| Ok(y))` → `.map(...)` in `from_params`.
+
 # 0.5.24
+
+## Added
+
+- Added `LinearPhase`/`FIR` crossover mode backed by `FirCrossover`, including
+  single-point and multiband processing, latency reporting, optional `fir_taps`
+  configuration, and a reconstruction test proving low+high bands sum to the
+  delayed input.
 
 ## Fixes
 

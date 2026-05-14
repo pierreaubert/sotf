@@ -14,6 +14,9 @@ fn main() {
         frequency: 1000.0,
         output: "both".to_string(),
         extra_frequencies: vec![],
+        fir_taps: None,
+        channel_frequencies_hz: vec![],
+        channel_modes: vec![],
     };
 
     let mut plugin = CrossoverPlugin::from_params(channels, &params).unwrap();
