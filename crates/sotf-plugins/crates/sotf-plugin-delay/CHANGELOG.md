@@ -1,3 +1,36 @@
+# 0.5.6
+
+## Added
+
+- **Per-channel delay mode** for the RoomEQ factored graph: new constructor
+  `DelayPlugin::new_per_channel(channel_delays_ms: Vec<f32>) -> Result<Self, String>`
+  builds a plugin with an independent delay time per channel. JSON params
+  gain an optional `channel_delays_ms: Vec<f32>` field which, when non-empty,
+  takes precedence over the scalar `delay_ms` and switches the plugin into
+  per-channel mode. Per-channel `delay_ms_{N}` parameter ids are exposed via
+  `parameters()` for runtime tweaks. `is_per_channel()` reports the mode.
+
+## Breaking
+
+- `DelayPlugin::from_params(channels, params)` now returns
+  `Result<Self, String>` instead of `Self`. The added error case is a
+  channel-count mismatch when `params.channel_delays_ms` is non-empty and
+  its length disagrees with the `channels` argument — previously this
+  silently sized from the array (producing buffer-size drift downstream).
+  Six call sites (the universal factory, the AB-compare sub-factory, the
+  plugins-bridge factory, the QA harness, the plugin fuzzer, and the
+  in-crate test) updated.
+
+## Fixes
+
+- `reset()` now snaps `delay_smoother`, `feedback_smoother`, `mix_smoother`,
+  and every per-channel smoother to their current targets. Previously a
+  reset-after-target-change left the smoother mid-ramp at the next process
+  call, causing ~50 ms of pitch glitch on the first block.
+- `debug_assert_eq!` on `channel_delays_ms.len() == channel_delay_smoothers.len()`
+  at the top of `process_in_place` surfaces invariant drift before it manifests
+  as a less-helpful indexing panic in release builds.
+
 # 0.5.5
 
 ## Fixes

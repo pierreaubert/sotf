@@ -15,9 +15,10 @@ fn main() {
         lfo_rate_hz: 0.0,
         lfo_depth_ms: 0.0,
         allpass_feedback: false,
+        channel_delays_ms: Vec::new(),
     };
 
-    let mut inner = DelayPlugin::from_params(channels, params);
+    let mut inner = DelayPlugin::from_params(channels, params).expect("valid params");
     inner.initialize(sample_rate).unwrap();
 
     println!("=== QA: Delay Plugin ===");

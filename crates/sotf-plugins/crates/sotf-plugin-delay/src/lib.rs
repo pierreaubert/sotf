@@ -27,6 +27,11 @@ pub struct DelayPluginParams {
     pub lfo_depth_ms: f32,
     #[serde(default)]
     pub allpass_feedback: bool,
+    /// Per-channel delay times in milliseconds. When non-empty, takes
+    /// precedence over the scalar `delay_ms` and switches the plugin into
+    /// per-channel mode (one independent delay per channel).
+    #[serde(default)]
+    pub channel_delays_ms: Vec<f32>,
 }
 
 fn default_delay_ms() -> f32 {
@@ -93,6 +98,11 @@ pub struct DelayPlugin {
     delay_smoother: Smoother,
     feedback_smoother: Smoother,
     mix_smoother: Smoother,
+    /// When non-empty, plugin runs in per-channel mode: each channel has
+    /// its own delay time (in ms) and its own smoother. The scalar
+    /// `delay_ms` / `delay_smoother` are unused in per-channel mode.
+    channel_delays_ms: Vec<f32>,
+    channel_delay_smoothers: Vec<Smoother>,
     buffer: Vec<f32>,
     write_pos: usize,
     max_samples: usize,
@@ -101,6 +111,13 @@ pub struct DelayPlugin {
     /// Per-channel allpass filter states for the feedback path
     allpass_states: Vec<AllpassState>,
     cached_parameters: Vec<Parameter>,
+}
+
+/// Parse a per-channel delay parameter id of the form `delay_ms_{N}`.
+/// Returns the channel index, or None if the id does not match.
+fn parse_channel_delay_id(id: &str) -> Option<usize> {
+    id.strip_prefix("delay_ms_")
+        .and_then(|tail| tail.parse::<usize>().ok())
 }
 
 impl DelayPlugin {
@@ -127,6 +144,8 @@ impl DelayPlugin {
             delay_smoother: Smoother::new(delay_ms * sr as f32 / 1000.0, 50.0, sr),
             feedback_smoother: Smoother::new(feedback, 5.0, sr),
             mix_smoother: Smoother::new(mix, 5.0, sr),
+            channel_delays_ms: Vec::new(),
+            channel_delay_smoothers: Vec::new(),
             buffer: vec![0.0; max_samples * channels],
             write_pos: 0,
             max_samples,
@@ -138,8 +157,60 @@ impl DelayPlugin {
         p
     }
 
+    /// Build a delay plugin in per-channel mode: each channel gets its own
+    /// independent delay time. Used by the RoomEQ factored graph to encode
+    /// all per-channel route delays in a single multichannel node.
+    pub fn new_per_channel(channel_delays_ms: Vec<f32>) -> Result<Self, String> {
+        if channel_delays_ms.is_empty() {
+            return Err("channel_delays_ms must not be empty".into());
+        }
+        let channels = channel_delays_ms.len();
+        let sr = 44100u32;
+        let max_samples = ((MAX_DELAY_MS * 0.001 * sr as f32) as usize + 4).next_power_of_two();
+        let smoothers: Vec<Smoother> = channel_delays_ms
+            .iter()
+            .map(|&ms| Smoother::new(ms * sr as f32 / 1000.0, 50.0, sr))
+            .collect();
+        let mut p = Self {
+            channels,
+            sample_rate: sr,
+            param_delay_ms: ParameterId::from("delay_ms"),
+            // Global delay_ms reports the channel-0 value for display.
+            delay_ms: channel_delays_ms[0],
+            param_feedback: ParameterId::from("feedback"),
+            feedback: 0.0,
+            param_mix: ParameterId::from("mix"),
+            // Per-channel RoomEQ delays are dry: mix=1.0, no feedback.
+            mix: 1.0,
+            param_lfo_rate_hz: ParameterId::from("lfo_rate_hz"),
+            lfo_rate_hz: 0.0,
+            param_lfo_depth_ms: ParameterId::from("lfo_depth_ms"),
+            lfo_depth_ms: 0.0,
+            param_allpass_feedback: ParameterId::from("allpass_feedback"),
+            allpass_feedback: false,
+            delay_smoother: Smoother::new(channel_delays_ms[0] * sr as f32 / 1000.0, 50.0, sr),
+            feedback_smoother: Smoother::new(0.0, 5.0, sr),
+            mix_smoother: Smoother::new(1.0, 5.0, sr),
+            channel_delays_ms,
+            channel_delay_smoothers: smoothers,
+            buffer: vec![0.0; max_samples * channels],
+            write_pos: 0,
+            max_samples,
+            lfo_phase: 0.0,
+            allpass_states: vec![AllpassState::new(0.5); channels],
+            cached_parameters: Vec::new(),
+        };
+        p.rebuild_cached_parameters();
+        Ok(p)
+    }
+
+    /// True when the plugin is configured with independent per-channel delays.
+    pub fn is_per_channel(&self) -> bool {
+        !self.channel_delays_ms.is_empty()
+    }
+
     fn rebuild_cached_parameters(&mut self) {
-        self.cached_parameters = vec![
+        let mut params = vec![
             Parameter::new_float("delay_ms", "Delay Time", self.delay_ms, 0.1, MAX_DELAY_MS),
             Parameter::new_float("feedback", "Feedback", self.feedback, 0.0, 0.95),
             Parameter::new_float("mix", "Mix", self.mix, 0.0, 1.0),
@@ -153,15 +224,48 @@ impl DelayPlugin {
                 self.allpass_feedback,
             ),
         ];
+        if self.is_per_channel() {
+            for (ch, &ms) in self.channel_delays_ms.iter().enumerate() {
+                let id = format!("delay_ms_{ch}");
+                let name = format!("Delay Ch{ch}");
+                params.push(
+                    Parameter::new_float(&id, &name, ms, 0.0, MAX_DELAY_MS).with_unit("ms"),
+                );
+            }
+        }
+        self.cached_parameters = params;
     }
 
-    pub fn from_params(channels: usize, params: DelayPluginParams) -> Self {
-        let mut p = Self::new(channels, params.delay_ms, params.feedback, params.mix);
-        p.lfo_rate_hz = params.lfo_rate_hz;
-        p.lfo_depth_ms = params.lfo_depth_ms;
-        p.allpass_feedback = params.allpass_feedback;
-        p.rebuild_cached_parameters();
-        p
+    pub fn from_params(channels: usize, params: DelayPluginParams) -> Result<Self, String> {
+        if !params.channel_delays_ms.is_empty() {
+            // Per-channel mode: the channels argument must match the
+            // per-channel array length — drift here is a wiring bug that
+            // produces silent buffer-size mismatches downstream, so error
+            // out instead of silently using the array length.
+            let expected = params.channel_delays_ms.len();
+            if expected != channels {
+                return Err(format!(
+                    "DelayPlugin::from_params: channels arg ({channels}) does not match channel_delays_ms.len() ({expected})"
+                ));
+            }
+            let mut p = Self::new_per_channel(params.channel_delays_ms.clone())?;
+            p.feedback = params.feedback;
+            p.mix = params.mix;
+            p.lfo_rate_hz = params.lfo_rate_hz;
+            p.lfo_depth_ms = params.lfo_depth_ms;
+            p.allpass_feedback = params.allpass_feedback;
+            p.feedback_smoother.set_target(p.feedback);
+            p.mix_smoother.set_target(p.mix);
+            p.rebuild_cached_parameters();
+            Ok(p)
+        } else {
+            let mut p = Self::new(channels, params.delay_ms, params.feedback, params.mix);
+            p.lfo_rate_hz = params.lfo_rate_hz;
+            p.lfo_depth_ms = params.lfo_depth_ms;
+            p.allpass_feedback = params.allpass_feedback;
+            p.rebuild_cached_parameters();
+            Ok(p)
+        }
     }
 
     /// 4-point Lagrange interpolation for fractional delay.
@@ -262,6 +366,20 @@ impl InPlacePlugin for DelayPlugin {
                     ap.reset();
                 }
             }
+        } else if let Some(ch) = parse_channel_delay_id(id.as_str()) {
+            if !self.is_per_channel() || ch >= self.channels {
+                return Err(format!("invalid per-channel delay id: {}", id.as_str()));
+            }
+            let v = value
+                .as_float()
+                .ok_or_else(|| "channel delay must be a float".to_string())?;
+            if v.is_finite() && v >= 0.0 {
+                self.channel_delays_ms[ch] = v;
+                let target_samples = v * self.sample_rate as f32 / 1000.0;
+                if ch < self.channel_delay_smoothers.len() {
+                    self.channel_delay_smoothers[ch].set_target(target_samples);
+                }
+            }
         }
         self.rebuild_cached_parameters();
         Ok(())
@@ -280,6 +398,8 @@ impl InPlacePlugin for DelayPlugin {
             Some(ParameterValue::Float(self.lfo_depth_ms))
         } else if id == &self.param_allpass_feedback {
             Some(ParameterValue::Bool(self.allpass_feedback))
+        } else if let Some(ch) = parse_channel_delay_id(id.as_str()) {
+            self.channel_delays_ms.get(ch).copied().map(ParameterValue::Float)
         } else {
             None
         }
@@ -296,6 +416,13 @@ impl InPlacePlugin for DelayPlugin {
             50.0,
             sample_rate,
         );
+        if self.is_per_channel() {
+            self.channel_delay_smoothers = self
+                .channel_delays_ms
+                .iter()
+                .map(|&ms| Smoother::new(ms * sample_rate as f32 / 1000.0, 50.0, sample_rate))
+                .collect();
+        }
         self.feedback_smoother.set_time(5.0, sample_rate);
         self.mix_smoother.set_time(5.0, sample_rate);
         self.lfo_phase = 0.0;
@@ -307,6 +434,20 @@ impl InPlacePlugin for DelayPlugin {
         self.buffer.fill(0.0);
         self.write_pos = 0;
         self.lfo_phase = 0.0;
+        // Snap smoothers to their targets so a reset followed by process
+        // starts at steady state instead of ramping from the smoother's
+        // previous mid-flight value (which causes ~50 ms of pitch glitch
+        // and makes per-channel delay testing flaky).
+        let global_target = self.delay_smoother.target();
+        self.delay_smoother.reset(global_target);
+        let fb_target = self.feedback_smoother.target();
+        self.feedback_smoother.reset(fb_target);
+        let mix_target = self.mix_smoother.target();
+        self.mix_smoother.reset(mix_target);
+        for s in &mut self.channel_delay_smoothers {
+            let t = s.target();
+            s.reset(t);
+        }
         for ap in &mut self.allpass_states {
             ap.reset();
         }
@@ -320,6 +461,16 @@ impl InPlacePlugin for DelayPlugin {
         enable_ftz_daz();
         let num_frames = context.num_frames;
 
+        // Invariant: when in per-channel mode, the smoother and dB arrays
+        // are parallel-sized. A drift here means a bug elsewhere — surface
+        // it in debug builds before the indexing in the inner loop ends up
+        // panicking with a less helpful message.
+        debug_assert_eq!(
+            self.channel_delays_ms.len(),
+            self.channel_delay_smoothers.len(),
+            "per-channel delay arrays drifted out of sync"
+        );
+
         let lfo_active = self.lfo_rate_hz > 0.0 && self.lfo_depth_ms > 0.0 && self.sample_rate > 0;
         let lfo_phase_inc = if lfo_active {
             self.lfo_rate_hz / self.sample_rate as f32
@@ -327,10 +478,11 @@ impl InPlacePlugin for DelayPlugin {
             0.0
         };
 
+        let per_channel = self.is_per_channel();
+
         for frame in 0..num_frames {
             // Advance smoothers once per sample so parameter changes ramp smoothly
             // instead of jumping at block boundaries (prevents zipper noise / pitch glitch).
-            let _base_delay_samples = self.delay_smoother.advance();
             let fb = self.feedback_smoother.advance();
             let mix = self.mix_smoother.advance();
 
@@ -345,12 +497,24 @@ impl InPlacePlugin for DelayPlugin {
                 0.0
             };
 
-            let base_delay_samples = self.delay_smoother.advance();
-            let delay_samples = self.effective_delay_samples(base_delay_samples, lfo_val);
-            let int_delay = delay_samples.floor() as usize;
-            let frac = delay_samples - int_delay as f32;
+            // Legacy parity: the global delay smoother is advanced twice per
+            // frame (matching prior code). In per-channel mode the value is
+            // unused, but the smoother still advances so its time constant
+            // stays consistent if the user later switches back.
+            let _ = self.delay_smoother.advance();
+            let global_base_delay = self.delay_smoother.advance();
 
             for ch in 0..self.channels {
+                let base_delay_samples = if per_channel {
+                    // Advance per-channel smoother once per frame.
+                    self.channel_delay_smoothers[ch].advance()
+                } else {
+                    global_base_delay
+                };
+                let delay_samples = self.effective_delay_samples(base_delay_samples, lfo_val);
+                let int_delay = delay_samples.floor() as usize;
+                let frac = delay_samples - int_delay as f32;
+
                 let idx = frame * self.channels + ch;
                 let input = buffer[idx];
 
@@ -540,12 +704,110 @@ mod tests {
             lfo_rate_hz: 3.0,
             lfo_depth_ms: 1.5,
             allpass_feedback: true,
+            channel_delays_ms: Vec::new(),
         };
-        let p = DelayPlugin::from_params(2, params);
+        let p = DelayPlugin::from_params(2, params).unwrap();
         assert_eq!(p.delay_ms, 50.0);
         assert_eq!(p.lfo_rate_hz, 3.0);
         assert_eq!(p.lfo_depth_ms, 1.5);
         assert!(p.allpass_feedback);
+        assert!(!p.is_per_channel());
+    }
+
+    #[test]
+    fn test_per_channel_construction() {
+        let p = DelayPlugin::new_per_channel(vec![2.0, 5.0, 10.0]).unwrap();
+        assert!(p.is_per_channel());
+        assert_eq!(p.channels, 3);
+        assert_eq!(p.channel_delays_ms, vec![2.0, 5.0, 10.0]);
+    }
+
+    #[test]
+    fn test_per_channel_from_params() {
+        let params = DelayPluginParams {
+            delay_ms: 100.0, // ignored when channel_delays_ms is non-empty
+            feedback: 0.0,
+            mix: 1.0,
+            lfo_rate_hz: 0.0,
+            lfo_depth_ms: 0.0,
+            allpass_feedback: false,
+            channel_delays_ms: vec![1.0, 3.0, 7.0],
+        };
+        let p = DelayPlugin::from_params(3, params).unwrap();
+        assert!(p.is_per_channel());
+        assert_eq!(p.channel_delays_ms, vec![1.0, 3.0, 7.0]);
+    }
+
+    #[test]
+    fn test_per_channel_from_params_rejects_channels_mismatch() {
+        let params = DelayPluginParams {
+            delay_ms: 100.0,
+            feedback: 0.0,
+            mix: 1.0,
+            lfo_rate_hz: 0.0,
+            lfo_depth_ms: 0.0,
+            allpass_feedback: false,
+            channel_delays_ms: vec![1.0, 3.0, 7.0],
+        };
+        // 3 per-channel delays but channels arg = 2: hard error.
+        assert!(DelayPlugin::from_params(2, params).is_err());
+    }
+
+    #[test]
+    fn test_per_channel_delays_independent() {
+        // Each channel should produce its delayed impulse at the right time.
+        let sr = 48000u32;
+        let delays_ms = vec![5.0, 10.0]; // 240 and 480 samples at 48kHz
+        let mut p = DelayPlugin::new_per_channel(delays_ms.clone()).unwrap();
+        // Per-channel mode constructor defaults to mix=1.0, feedback=0.
+        p.initialize(sr).unwrap();
+        // Snap smoothers to target so the impulse is delayed by the exact
+        // configured amount instead of seeing the 50 ms smoother ramp.
+        p.reset();
+
+        let channels = 2;
+        let num_frames = 1024;
+        let mut buf = vec![0.0f32; num_frames * channels];
+        // Interleaved impulse on both channels at frame 0
+        buf[0] = 1.0;
+        buf[1] = 1.0;
+
+        p.process_in_place(
+            &mut buf,
+            &ProcessContext {
+                sample_rate: sr,
+                num_frames,
+            },
+        )
+        .unwrap();
+
+        // Skip frame 0 (carries the dry input contribution); find the peak in
+        // each channel's tail. With smoothers snapped to target, the delayed
+        // impulse should land within a handful of samples of the expected
+        // position (Lagrange interpolation + integer floor introduce <2 sample
+        // wiggle).
+        let peak_ch0 = (10..num_frames)
+            .max_by(|&a, &b| {
+                buf[a * channels].abs().partial_cmp(&buf[b * channels].abs()).unwrap()
+            })
+            .unwrap();
+        let peak_ch1 = (10..num_frames)
+            .max_by(|&a, &b| {
+                buf[a * channels + 1]
+                    .abs()
+                    .partial_cmp(&buf[b * channels + 1].abs())
+                    .unwrap()
+            })
+            .unwrap();
+
+        assert!(
+            (peak_ch0 as i32 - 240).abs() <= 2,
+            "channel 0 delay peak at {peak_ch0}, expected near 240"
+        );
+        assert!(
+            (peak_ch1 as i32 - 480).abs() <= 2,
+            "channel 1 delay peak at {peak_ch1}, expected near 480"
+        );
     }
 
     #[test]
