@@ -19,9 +19,9 @@ use anyhow::{Context, Result, anyhow};
 #[cfg(feature = "plotly")]
 use autoeq::plot;
 use clap::Parser;
-use log::{error, info};
 #[cfg(feature = "plotly")]
 use log::warn;
+use log::{error, info};
 use std::path::PathBuf;
 
 // Include split modules

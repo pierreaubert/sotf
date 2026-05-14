@@ -91,6 +91,10 @@ struct PreparedSingleChannelEq {
 /// truncated IR.
 const SCHROEDER_PLAUSIBLE_MIN_HZ: f64 = 50.0;
 const SCHROEDER_PLAUSIBLE_MAX_HZ: f64 = 800.0;
+/// Bass decay above this is not credible for the small listening-room
+/// workflow this estimator feeds. Treat it as a contaminated low-frequency
+/// fit and fall back to the configured Schroeder value instead.
+const MAX_PLAUSIBLE_BASS_RT60_SECONDS: f32 = 3.0;
 
 /// Find the length (in samples) at which to truncate an impulse
 /// response so the Schroeder backward integration sees clean decay
@@ -242,10 +246,24 @@ fn measure_bass_rt60(mono_ir: &[f32], ir_sr: f32) -> Option<f64> {
     // region rather than under-covering it.
     let bass_centers = [125.0_f32, 250.0];
     let bass_rt60s = math_audio_dsp::analysis::compute_rt60_spectrum(trimmed, ir_sr, &bass_centers);
+    let rejected_rt60_max = bass_rt60s
+        .iter()
+        .copied()
+        .filter(|v| *v > MAX_PLAUSIBLE_BASS_RT60_SECONDS)
+        .fold(0.0_f32, f32::max);
+    if rejected_rt60_max > 0.0 {
+        log::warn!(
+            "  Ignoring implausible bass RT60 {:.3} s (> {:.1} s); \
+             likely low-frequency noise or an unreliable decay fit",
+            rejected_rt60_max,
+            MAX_PLAUSIBLE_BASS_RT60_SECONDS
+        );
+    }
+
     let rt60_max = bass_rt60s
         .iter()
         .copied()
-        .filter(|v| *v > 0.0)
+        .filter(|v| *v > 0.0 && *v <= MAX_PLAUSIBLE_BASS_RT60_SECONDS)
         .fold(0.0_f32, f32::max);
     if rt60_max > 0.0 {
         Some(rt60_max as f64)
@@ -284,7 +302,7 @@ fn decide_schroeder_override(
 
     log::info!(
         "  RT60 from measured IR (bass band, max of 125/250 Hz): {:.3} s \
-         (Schroeder backward integration, T20 × 3)",
+         (Schroeder backward integration, least-squares T30/T20)",
         rt60
     );
 

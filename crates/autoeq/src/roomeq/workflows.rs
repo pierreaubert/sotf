@@ -22,6 +22,7 @@ use super::eq;
 use super::multisub;
 use super::optimize::{ChannelOptimizationResult, RoomOptimizationResult};
 use super::output;
+use super::pipeline::{PipelineStepId, PipelineStepStatus};
 use super::types::{
     CardioidConfig, ChannelDspChain, CrossoverConfig, DBAConfig, DriverDspChain, MultiSubGroup,
     OptimizationMetadata, RoomConfig, SpeakerConfig, SubwooferStrategy, SystemConfig,
@@ -38,6 +39,22 @@ pub(super) struct WorkflowProgressCallback {
 
 pub(super) type WorkflowProgressCallbackFactory<'a> =
     dyn FnMut(&str, usize, usize, usize) -> Option<WorkflowProgressCallback> + 'a;
+
+pub(super) type WorkflowStageCallback<'a> =
+    dyn FnMut(PipelineStepId, PipelineStepStatus, &str, f64) -> Result<()> + 'a;
+
+fn workflow_stage_event(
+    stage_callback: &mut Option<&mut WorkflowStageCallback<'_>>,
+    step_id: PipelineStepId,
+    status: PipelineStepStatus,
+    message: &str,
+    overall_progress: f64,
+) -> Result<()> {
+    if let Some(callback) = stage_callback.as_deref_mut() {
+        callback(step_id, status, message, overall_progress)?;
+    }
+    Ok(())
+}
 
 fn workflow_progress_callback(
     progress_factory: &mut Option<&mut WorkflowProgressCallbackFactory<'_>>,
@@ -615,7 +632,7 @@ pub fn optimize_stereo_2_0(
     sample_rate: f64,
     output_dir: &Path,
 ) -> Result<RoomOptimizationResult> {
-    optimize_stereo_2_0_with_progress(config, sys, sample_rate, output_dir, None)
+    optimize_stereo_2_0_with_progress(config, sys, sample_rate, output_dir, None, None)
 }
 
 pub(super) fn optimize_stereo_2_0_with_progress(
@@ -624,6 +641,7 @@ pub(super) fn optimize_stereo_2_0_with_progress(
     sample_rate: f64,
     output_dir: &Path,
     mut progress_factory: Option<&mut WorkflowProgressCallbackFactory<'_>>,
+    mut stage_callback: Option<&mut WorkflowStageCallback<'_>>,
 ) -> Result<RoomOptimizationResult> {
     info!("Running Stereo 2.0 Optimization Workflow");
 
@@ -675,6 +693,13 @@ pub(super) fn optimize_stereo_2_0_with_progress(
         pre_scores.push(pre_score);
         post_scores.push(post_score);
     }
+    workflow_stage_event(
+        &mut stage_callback,
+        PipelineStepId::GenericChannelOptimization,
+        PipelineStepStatus::Completed,
+        "Optimized stereo channels",
+        0.90,
+    )?;
 
     let avg_pre = pre_scores.iter().sum::<f64>() / pre_scores.len() as f64;
     let avg_post = post_scores.iter().sum::<f64>() / post_scores.len() as f64;
@@ -688,7 +713,6 @@ pub(super) fn optimize_stereo_2_0_with_progress(
     let epa_per_channel = crate::roomeq::output::compute_epa_per_channel(&channel_chains, &epa_cfg);
     let epa_multichannel =
         crate::roomeq::output::compute_epa_multichannel(&channel_chains, &epa_cfg);
-
     Ok(RoomOptimizationResult {
         channels: channel_chains,
         channel_results,
@@ -730,7 +754,7 @@ pub fn optimize_stereo_2_1(
     sample_rate: f64,
     output_dir: &Path,
 ) -> Result<RoomOptimizationResult> {
-    optimize_stereo_2_1_with_progress(config, sys, sample_rate, output_dir, None)
+    optimize_stereo_2_1_with_progress(config, sys, sample_rate, output_dir, None, None)
 }
 
 pub(super) fn optimize_stereo_2_1_with_progress(
@@ -739,6 +763,7 @@ pub(super) fn optimize_stereo_2_1_with_progress(
     sample_rate: f64,
     output_dir: &Path,
     mut progress_factory: Option<&mut WorkflowProgressCallbackFactory<'_>>,
+    mut stage_callback: Option<&mut WorkflowStageCallback<'_>>,
 ) -> Result<RoomOptimizationResult> {
     info!("Running Stereo 2.1 Optimization Workflow");
 
@@ -927,6 +952,20 @@ pub(super) fn optimize_stereo_2_1_with_progress(
         pre_eq_plugins.insert(sub_role.clone(), chain.plugins);
         linearized_curves.insert(sub_role.clone(), ch_result.final_curve);
     }
+    workflow_stage_event(
+        &mut stage_callback,
+        PipelineStepId::GenericChannelOptimization,
+        PipelineStepStatus::Completed,
+        "Optimized stereo 2.1 channels",
+        0.90,
+    )?;
+    workflow_stage_event(
+        &mut stage_callback,
+        PipelineStepId::TopologyWorkflowExecution,
+        PipelineStepStatus::InProgress,
+        "Optimizing bass-management crossover",
+        0.91,
+    )?;
 
     // Aligned linearized curves: post-feature curves at the listening level
     // that the crossover optimizer operates on, and that `apply_chain`
@@ -1514,6 +1553,13 @@ pub(super) fn optimize_stereo_2_1_with_progress(
     let epa_per_channel = crate::roomeq::output::compute_epa_per_channel(&channel_chains, &epa_cfg);
     let epa_multichannel =
         crate::roomeq::output::compute_epa_multichannel(&channel_chains, &epa_cfg);
+    workflow_stage_event(
+        &mut stage_callback,
+        PipelineStepId::TopologyWorkflowExecution,
+        PipelineStepStatus::Completed,
+        "Stereo 2.1 bass-management topology complete",
+        0.94,
+    )?;
 
     Ok(RoomOptimizationResult {
         channels: channel_chains,
@@ -1560,7 +1606,7 @@ pub fn optimize_home_cinema(
     sample_rate: f64,
     _output_dir: &Path,
 ) -> Result<RoomOptimizationResult> {
-    optimize_home_cinema_with_progress(config, sys, sample_rate, _output_dir, None)
+    optimize_home_cinema_with_progress(config, sys, sample_rate, _output_dir, None, None)
 }
 
 pub(super) fn optimize_home_cinema_with_progress(
@@ -1569,6 +1615,7 @@ pub(super) fn optimize_home_cinema_with_progress(
     sample_rate: f64,
     _output_dir: &Path,
     mut progress_factory: Option<&mut WorkflowProgressCallbackFactory<'_>>,
+    mut stage_callback: Option<&mut WorkflowStageCallback<'_>>,
 ) -> Result<RoomOptimizationResult> {
     let sub_role = super::home_cinema::bass_output_role(config, sys);
     let has_sub = sys.speakers.contains_key(&sub_role);
@@ -1666,6 +1713,7 @@ pub(super) fn optimize_home_cinema_with_progress(
             sample_rate,
             _output_dir,
             &mut progress_factory,
+            &mut stage_callback,
             total_channels,
         )
     } else {
@@ -1678,6 +1726,7 @@ pub(super) fn optimize_home_cinema_with_progress(
             sample_rate,
             _output_dir,
             &mut progress_factory,
+            &mut stage_callback,
             total_channels,
         )
     }
@@ -1696,6 +1745,7 @@ fn optimize_home_cinema_no_sub(
     sample_rate: f64,
     output_dir: &Path,
     progress_factory: &mut Option<&mut WorkflowProgressCallbackFactory<'_>>,
+    stage_callback: &mut Option<&mut WorkflowStageCallback<'_>>,
     total_channels: usize,
 ) -> Result<RoomOptimizationResult> {
     // Level alignment: mains measured from 100 Hz to 2000 Hz
@@ -1745,6 +1795,13 @@ fn optimize_home_cinema_no_sub(
         pre_scores.push(pre_score);
         post_scores.push(post_score);
     }
+    workflow_stage_event(
+        stage_callback,
+        PipelineStepId::GenericChannelOptimization,
+        PipelineStepStatus::Completed,
+        "Optimized home-cinema channels",
+        0.90,
+    )?;
 
     let avg_pre = pre_scores.iter().sum::<f64>() / pre_scores.len() as f64;
     let avg_post = post_scores.iter().sum::<f64>() / post_scores.len() as f64;
@@ -1763,7 +1820,6 @@ fn optimize_home_cinema_no_sub(
         &channel_results,
         Some(&multi_seat_rejections),
     ));
-
     Ok(RoomOptimizationResult {
         channels: channel_chains,
         channel_results,
@@ -1806,6 +1862,7 @@ fn optimize_home_cinema_with_sub(
     sample_rate: f64,
     output_dir: &Path,
     progress_factory: &mut Option<&mut WorkflowProgressCallbackFactory<'_>>,
+    stage_callback: &mut Option<&mut WorkflowStageCallback<'_>>,
     total_channels: usize,
 ) -> Result<RoomOptimizationResult> {
     let sub_role = super::home_cinema::bass_output_role(config, sys);
@@ -1926,6 +1983,20 @@ fn optimize_home_cinema_with_sub(
         );
         linearized_curves.insert(sub_role.clone(), ch_result.final_curve);
     }
+    workflow_stage_event(
+        stage_callback,
+        PipelineStepId::GenericChannelOptimization,
+        PipelineStepStatus::Completed,
+        "Optimized home-cinema channels",
+        0.90,
+    )?;
+    workflow_stage_event(
+        stage_callback,
+        PipelineStepId::TopologyWorkflowExecution,
+        PipelineStepStatus::InProgress,
+        "Optimizing bass-management crossover and routing",
+        0.91,
+    )?;
 
     // Aligned linearized curves (post-feature, at listening level) — used
     // for crossover optimization and for the apply_chain step below.
@@ -2765,6 +2836,13 @@ fn optimize_home_cinema_with_sub(
         &channel_results,
         Some(&multi_seat_rejections),
     ));
+    workflow_stage_event(
+        stage_callback,
+        PipelineStepId::TopologyWorkflowExecution,
+        PipelineStepStatus::Completed,
+        "Home-cinema bass-management topology complete",
+        0.94,
+    )?;
 
     Ok(RoomOptimizationResult {
         channels: channel_chains,
