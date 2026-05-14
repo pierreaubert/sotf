@@ -140,8 +140,10 @@ docker-windows-arm64: docker-base-win-arm64
 		docker_env+=(-e WINDOWS_CERT_FILE -e WINDOWS_CERT_PASSWORD)
 		[ -n "${WINDOWS_TIMESTAMP_URL:-}" ] && docker_env+=(-e WINDOWS_TIMESTAMP_URL)
 	fi
+	# Release cuts use the `dist` profile (fat LTO + codegen-units=1).
+	# Artifacts land in /build-target/<triple>/dist/ instead of .../release/.
 	docker run --rm -v "$(pwd)":/project -v sotf-target-win-arm64:/build-target -w /project "${docker_env[@]}" sotf-win-arm64 \
-		bash -c 'cargo build --release --target aarch64-pc-windows-gnullvm -p sotf-tui --bin sotf-tui && ./scripts/build-msix.sh --sign --build-dir /build-target/aarch64-pc-windows-gnullvm/release --arch arm64 && cp /build-target/aarch64-pc-windows-gnullvm/release/sotf-tui.exe dist/'
+		bash -c 'cargo build --profile dist --target aarch64-pc-windows-gnullvm -p sotf-tui --bin sotf-tui && ./scripts/build-msix.sh --sign --build-dir /build-target/aarch64-pc-windows-gnullvm/dist --arch arm64 && cp /build-target/aarch64-pc-windows-gnullvm/dist/sotf-tui.exe dist/'
 	mv "dist/sotf-tui.exe" "dist/sotf-tui-${VERSION}-windows-arm64.exe"
 	echo "Done! dist/sotf-tui-${VERSION}-windows-arm64.exe + MSIX in dist/"
 
@@ -162,8 +164,9 @@ docker-windows-x86: docker-base-win-x86
 		docker_env+=(-e WINDOWS_CERT_FILE -e WINDOWS_CERT_PASSWORD)
 		[ -n "${WINDOWS_TIMESTAMP_URL:-}" ] && docker_env+=(-e WINDOWS_TIMESTAMP_URL)
 	fi
+	# Release cuts use the `dist` profile (fat LTO + codegen-units=1).
 	docker run --rm --platform linux/amd64 -v "$(pwd)":/project -v sotf-target-win-x86:/build-target -w /project "${docker_env[@]}" sotf-win-x86 \
-		bash -c 'cargo build --release --target x86_64-pc-windows-gnullvm -p sotf-tui --bin sotf-tui && ./scripts/build-msix.sh --sign --build-dir /build-target/x86_64-pc-windows-gnullvm/release --arch x86_64 && cp /build-target/x86_64-pc-windows-gnullvm/release/sotf-tui.exe dist/'
+		bash -c 'cargo build --profile dist --target x86_64-pc-windows-gnullvm -p sotf-tui --bin sotf-tui && ./scripts/build-msix.sh --sign --build-dir /build-target/x86_64-pc-windows-gnullvm/dist --arch x86_64 && cp /build-target/x86_64-pc-windows-gnullvm/dist/sotf-tui.exe dist/'
 	mv "dist/sotf-tui.exe" "dist/sotf-tui-${VERSION}-windows-x86_64.exe"
 	echo "Done! dist/sotf-tui-${VERSION}-windows-x86_64.exe + MSIX in dist/"
 
@@ -177,15 +180,16 @@ cross-macos-arm64:
 	#!/usr/bin/env bash
 	set -euo pipefail
 	VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
-	echo "Building macOS ARM64 binaries..."
+	echo "Building macOS ARM64 binaries (profile=dist)..."
 	rustup target add aarch64-apple-darwin 2>/dev/null || true
-	cargo build --release --target aarch64-apple-darwin -p sotf-tui --features hal,onnx
-	cargo build --release --target aarch64-apple-darwin -p sotf-gpui --features hal,onnx
+	# Release cuts use the `dist` profile (fat LTO + codegen-units=1).
+	cargo build --profile dist --target aarch64-apple-darwin -p sotf-tui --features hal,onnx
+	cargo build --profile dist --target aarch64-apple-darwin -p sotf-gpui --features hal,onnx
 	mkdir -p dist
-	cp target/aarch64-apple-darwin/release/sotf-tui "dist/sotf-tui-${VERSION}-macos-arm64"
-	cp target/aarch64-apple-darwin/release/sotf-desktop "dist/sotf-desktop-${VERSION}-macos-arm64"
+	cp target/aarch64-apple-darwin/dist/sotf-tui "dist/sotf-tui-${VERSION}-macos-arm64"
+	cp target/aarch64-apple-darwin/dist/sotf-desktop "dist/sotf-desktop-${VERSION}-macos-arm64"
 	echo "Building DMG..."
-	./scripts/build-dmg-sotf.sh --arch arm64 --binary target/aarch64-apple-darwin/release/sotf-desktop
+	./scripts/build-dmg-sotf.sh --arch arm64 --binary target/aarch64-apple-darwin/dist/sotf-desktop
 	echo "Done! Binaries and DMG copied to dist/"
 
 # macOS x86_64: SotF DMG + sotf-tui → dist/
@@ -194,15 +198,16 @@ cross-macos-x86:
 	#!/usr/bin/env bash
 	set -euo pipefail
 	VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
-	echo "Building macOS x86_64 binaries..."
+	echo "Building macOS x86_64 binaries (profile=dist)..."
 	rustup target add x86_64-apple-darwin 2>/dev/null || true
-	cargo build --release --target x86_64-apple-darwin -p sotf-tui --features hal
-	cargo build --release --target x86_64-apple-darwin -p sotf-gpui --features hal
+	# Release cuts use the `dist` profile (fat LTO + codegen-units=1).
+	cargo build --profile dist --target x86_64-apple-darwin -p sotf-tui --features hal
+	cargo build --profile dist --target x86_64-apple-darwin -p sotf-gpui --features hal
 	mkdir -p dist
-	cp target/x86_64-apple-darwin/release/sotf-tui "dist/sotf-tui-${VERSION}-macos-x86_64"
-	cp target/x86_64-apple-darwin/release/sotf-desktop "dist/sotf-desktop-${VERSION}-macos-x86_64"
+	cp target/x86_64-apple-darwin/dist/sotf-tui "dist/sotf-tui-${VERSION}-macos-x86_64"
+	cp target/x86_64-apple-darwin/dist/sotf-desktop "dist/sotf-desktop-${VERSION}-macos-x86_64"
 	echo "Building DMG..."
-	./scripts/build-dmg-sotf.sh --arch x86_64 --binary target/x86_64-apple-darwin/release/sotf-desktop
+	./scripts/build-dmg-sotf.sh --arch x86_64 --binary target/x86_64-apple-darwin/dist/sotf-desktop
 	echo "Done! Binaries and DMG copied to dist/"
 
 # macOS DMG (build only, sign separately with sign-macos.sh)

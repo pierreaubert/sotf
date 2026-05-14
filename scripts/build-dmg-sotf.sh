@@ -34,7 +34,11 @@ if [ -z "$VERSION" ]; then
     echo "ERROR: Could not extract version from Cargo.toml"
     exit 1
 fi
-BUILD_DIR="$PROJECT_ROOT/target-static/release"
+# Release cuts use the `dist` profile (fat LTO + codegen-units=1).
+# `--target-dir ./target-static` plus the `dist` profile makes cargo emit to
+# target-static/<triple>/dist/ for cross builds and target-static/dist/ for
+# host-arch builds.
+BUILD_DIR="$PROJECT_ROOT/target-static/dist"
 DMG_DIR="$PROJECT_ROOT/target-static/dmg"
 APP_BUNDLE="$DMG_DIR/$APP_NAME.app"
 
@@ -185,14 +189,14 @@ build_binary() {
         rustup target add x86_64-apple-darwin aarch64-apple-darwin
 
         # Build for both architectures
-        RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --package sotf-gpui --features hal --target x86_64-apple-darwin --target-dir ./target-static
-        RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --package sotf-gpui --features hal,onnx --target aarch64-apple-darwin --target-dir ./target-static
+        RUSTFLAGS="-C target-feature=+crt-static" cargo build --profile dist --package sotf-gpui --features hal --target x86_64-apple-darwin --target-dir ./target-static
+        RUSTFLAGS="-C target-feature=+crt-static" cargo build --profile dist --package sotf-gpui --features hal,onnx --target aarch64-apple-darwin --target-dir ./target-static
 
         # Create universal binary
         mkdir -p "$BUILD_DIR"
         lipo -create \
-            "$PROJECT_ROOT/target-static/x86_64-apple-darwin/release/$BINARY_NAME" \
-            "$PROJECT_ROOT/target-static/aarch64-apple-darwin/release/$BINARY_NAME" \
+            "$PROJECT_ROOT/target-static/x86_64-apple-darwin/dist/$BINARY_NAME" \
+            "$PROJECT_ROOT/target-static/aarch64-apple-darwin/dist/$BINARY_NAME" \
             -output "$BUILD_DIR/$BINARY_NAME"
 
         log_success "Universal binary created"
@@ -206,7 +210,7 @@ build_binary() {
         if [ "$effective_arch" != "x86_64" ]; then
             features="hal,onnx"
         fi
-        RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --package sotf-gpui --features "$features" --target-dir ./target-static
+        RUSTFLAGS="-C target-feature=+crt-static" cargo build --profile dist --package sotf-gpui --features "$features" --target-dir ./target-static
     fi
 
     if [ ! -f "$BUILD_DIR/$BINARY_NAME" ]; then

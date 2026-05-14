@@ -114,16 +114,19 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Set build directory based on target and CARGO_TARGET_DIR
+# Set build directory based on target and CARGO_TARGET_DIR.
+# Release cuts use the `dist` profile (fat LTO + codegen-units=1) — see
+# [profile.dist] in root Cargo.toml. Cargo emits to .../dist/ instead of
+# .../release/. Cross builds keep the per-triple subdirectory.
 TARGET_DIR="${CARGO_TARGET_DIR:-$PROJECT_ROOT/target}"
 if $CROSS_COMPILE; then
-    BUILD_DIR="$TARGET_DIR/$TARGET/release"
+    BUILD_DIR="$TARGET_DIR/$TARGET/dist"
 elif [ -n "${CARGO_BUILD_TARGET:-}" ]; then
-    # When CARGO_BUILD_TARGET is set (e.g. inside Docker), binaries go to <target_dir>/<triple>/release
+    # When CARGO_BUILD_TARGET is set (e.g. inside Docker), binaries go to <target_dir>/<triple>/dist
     TARGET="$CARGO_BUILD_TARGET"
-    BUILD_DIR="$TARGET_DIR/$TARGET/release"
+    BUILD_DIR="$TARGET_DIR/$TARGET/dist"
 else
-    BUILD_DIR="$TARGET_DIR/release"
+    BUILD_DIR="$TARGET_DIR/dist"
 fi
 
 # Color output
@@ -276,10 +279,10 @@ build_binary() {
     if ! $TUI_ONLY; then
         if $CROSS_COMPILE; then
             log_info "Cross-compiling for $TARGET..."
-            CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --package "$PACKAGE_NAME" --target "$TARGET"
+            CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --profile dist --package "$PACKAGE_NAME" --target "$TARGET"
         else
             log_info "Building native Linux binary..."
-            cargo build --release --package "$PACKAGE_NAME"
+            cargo build --profile dist --package "$PACKAGE_NAME"
         fi
 
         if [ ! -f "$BUILD_DIR/$BINARY_NAME" ]; then
@@ -295,9 +298,9 @@ build_binary() {
     # Build TUI binary
     log_info "Building TUI binary..."
     if $CROSS_COMPILE; then
-        CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --package "$TUI_PACKAGE_NAME" --target "$TARGET"
+        CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --profile dist --package "$TUI_PACKAGE_NAME" --target "$TARGET"
     else
-        cargo build --release --package "$TUI_PACKAGE_NAME"
+        cargo build --profile dist --package "$TUI_PACKAGE_NAME"
     fi
 
     if [ ! -f "$BUILD_DIR/$TUI_BINARY_NAME" ]; then

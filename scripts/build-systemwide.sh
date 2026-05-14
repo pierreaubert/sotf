@@ -104,13 +104,16 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Set build type
+# Set build type. Release cuts use the `dist` profile (fat LTO +
+# codegen-units=1) — see [profile.dist] in the root Cargo.toml. Cargo emits
+# artifacts to `target/dist/` instead of `target/release/`, and the matching
+# Swift recipes (dist-systemwide, dist-hal-driver) follow the same convention.
 if $DEBUG; then
     BUILD_TYPE="debug"
     CARGO_FLAGS=""
 else
-    BUILD_TYPE="release"
-    CARGO_FLAGS="--release"
+    BUILD_TYPE="dist"
+    CARGO_FLAGS="--profile dist"
 fi
 
 # Color output
@@ -278,19 +281,21 @@ build_components() {
 
         if $BUILD_HAL; then
             log_info "Building HAL driver (debug)..."
-            # For debug, we still use the same optimized Swift build
-            just prod-hal-driver
+            # The Swift HAL driver always builds optimised; reuse the dist
+            # recipe so its output ends up under target/dist/, matching the
+            # BUILD_DIR computed above in non-debug mode.
+            just dist-hal-driver
         fi
 
         log_info "Building Systemwide app (debug)..."
-        just prod-systemwide
+        just dist-systemwide
     else
-        # Release builds - use Justfile targets
+        # Release cuts use the dist Justfile recipes (fat LTO + cgu=1).
         if $BUILD_HAL; then
-            just prod-macos-daemon
+            just dist-macos-daemon
         else
-            just prod-daemon
-            just prod-systemwide
+            just dist-daemon
+            just dist-systemwide
         fi
     fi
 
@@ -310,7 +315,10 @@ copy_hal_driver() {
         return 0
     fi
 
-    local HAL_BUILD_DIR="$PROJECT_ROOT/target/release/SotFHAL.driver"
+    # Match the dist-hal-driver recipe's output dir; in debug mode the Swift
+    # build is still produced via dist-hal-driver (the binary is always
+    # optimised), so the path is the same regardless of BUILD_TYPE.
+    local HAL_BUILD_DIR="$PROJECT_ROOT/target/dist/SotFHAL.driver"
 
     if [ ! -d "$HAL_BUILD_DIR" ]; then
         log_warning "HAL driver not found at $HAL_BUILD_DIR"

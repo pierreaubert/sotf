@@ -201,6 +201,45 @@ prod-roomeq:
 	cargo build --release --bin roomeq
 	cargo build --release --bin roomeq-fuzzer -p autoeq --features plotly
 
+# ----------------------------------------------------------------------
+# DIST — release-cut profile (fat LTO + codegen-units = 1)
+# ----------------------------------------------------------------------
+# Builds land in `target/dist/` (NOT `target/release/`). Compile time is
+# noticeably longer than `prod-*`; only run these for actual release cuts.
+
+# Top-level umbrella — builds everything that ships, including the plot bins.
+[group('dist')]
+dist: dist-sotf-gpui dist-sotf-tui dist-sotf-recorder dist-roomeq dist-plot-bins
+
+[group('dist')]
+dist-sotf-gpui:
+	cargo build --profile dist --bin sotf-desktop -p sotf-gpui --features onnx
+
+[group('dist')]
+dist-sotf-tui:
+	cargo build --profile dist --bin sotf-tui -p sotf-tui --features onnx
+
+[group('dist')]
+dist-sotf-recorder:
+	cargo build --profile dist --bin sotf-recorder-cli -p app-cli
+
+[group('dist')]
+dist-roomeq:
+	cargo build --profile dist --bin roomeq
+	cargo build --profile dist --bin roomeq-fuzzer -p autoeq --features plotly
+
+# Plotly-gated bins (skipped by `--workspace` because of required-features).
+[group('dist')]
+dist-plot-bins:
+	cargo build --profile dist --bin roomeq-fuzzer -p autoeq --features plotly
+	cargo build --profile dist --bin plot-functions -p math-test-functions --features plotly
+	cargo build --profile dist --bin plot-de -p math-optimisation --features plotly
+
+# Whole workspace under the dist profile (slow — 10+ minutes typical).
+[group('dist')]
+dist-workspace: dist-plot-bins
+	cargo build --profile dist --workspace
+
 # shortcuts
 [group('build')]
 [macos]

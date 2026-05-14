@@ -165,20 +165,23 @@ build_all() {
         if should_build_arch "arm"; then
             log_info "=== macOS ARM64 (dynamic) ==="
             rustup target add aarch64-apple-darwin 2>/dev/null || true
-            cargo build --release --target aarch64-apple-darwin -p sotf-tui --features hal,onnx
-            cargo build --release --target aarch64-apple-darwin -p sotf-gpui --features hal,onnx
-            cp "target/aarch64-apple-darwin/release/sotf-tui"     "$DIST_DIR/sotf-tui-${VERSION}-macos-arm64"
-            cp "target/aarch64-apple-darwin/release/sotf-desktop" "$DIST_DIR/sotf-desktop-${VERSION}-macos-arm64"
-            ./scripts/build-dmg-sotf.sh --arch arm64 --binary "target/aarch64-apple-darwin/release/sotf-desktop"
+            # Release cuts use the `dist` profile (fat LTO + codegen-units=1).
+            # See [profile.dist] in root Cargo.toml. Artifacts land in
+            # target/<triple>/dist/ instead of target/<triple>/release/.
+            cargo build --profile dist --target aarch64-apple-darwin -p sotf-tui --features hal,onnx
+            cargo build --profile dist --target aarch64-apple-darwin -p sotf-gpui --features hal,onnx
+            cp "target/aarch64-apple-darwin/dist/sotf-tui"     "$DIST_DIR/sotf-tui-${VERSION}-macos-arm64"
+            cp "target/aarch64-apple-darwin/dist/sotf-desktop" "$DIST_DIR/sotf-desktop-${VERSION}-macos-arm64"
+            ./scripts/build-dmg-sotf.sh --arch arm64 --binary "target/aarch64-apple-darwin/dist/sotf-desktop"
         fi
         if should_build_arch "x86"; then
             log_info "=== macOS x86_64 (dynamic) ==="
             rustup target add x86_64-apple-darwin 2>/dev/null || true
-            cargo build --release --target x86_64-apple-darwin -p sotf-tui --features hal
-            cargo build --release --target x86_64-apple-darwin -p sotf-gpui --features hal
-            cp "target/x86_64-apple-darwin/release/sotf-tui"     "$DIST_DIR/sotf-tui-${VERSION}-macos-x86_64"
-            cp "target/x86_64-apple-darwin/release/sotf-desktop" "$DIST_DIR/sotf-desktop-${VERSION}-macos-x86_64"
-            ./scripts/build-dmg-sotf.sh --arch x86_64 --binary "target/x86_64-apple-darwin/release/sotf-desktop"
+            cargo build --profile dist --target x86_64-apple-darwin -p sotf-tui --features hal
+            cargo build --profile dist --target x86_64-apple-darwin -p sotf-gpui --features hal
+            cp "target/x86_64-apple-darwin/dist/sotf-tui"     "$DIST_DIR/sotf-tui-${VERSION}-macos-x86_64"
+            cp "target/x86_64-apple-darwin/dist/sotf-desktop" "$DIST_DIR/sotf-desktop-${VERSION}-macos-x86_64"
+            ./scripts/build-dmg-sotf.sh --arch x86_64 --binary "target/x86_64-apple-darwin/dist/sotf-desktop"
         fi
     fi
 

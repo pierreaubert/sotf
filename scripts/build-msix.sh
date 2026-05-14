@@ -320,20 +320,29 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# If no build dir specified, try to find binaries
+# If no build dir specified, try to find binaries. Release cuts now build
+# under the `dist` profile (target/<triple>/dist/). The `release` paths
+# remain as a fallback so manual `cargo build --release` invocations from a
+# dev shell still package — feel free to drop the legacy paths once the dist
+# profile is the only thing anyone uses.
 if [ -z "$BUILD_DIR" ]; then
     TARGET_DIR="${CARGO_TARGET_DIR:-$PROJECT_ROOT/target}"
-    # Try gnullvm targets first (Docker cross builds), then gnu
     for triple in x86_64-pc-windows-gnullvm x86_64-pc-windows-gnu aarch64-pc-windows-gnullvm aarch64-pc-windows-gnu; do
-        candidate="$TARGET_DIR/$triple/release"
-        if [ -f "$candidate/sotf-tui.exe" ]; then
-            BUILD_DIR="$candidate"
-            break
-        fi
+        for profile in dist release; do
+            candidate="$TARGET_DIR/$triple/$profile"
+            if [ -f "$candidate/sotf-tui.exe" ]; then
+                BUILD_DIR="$candidate"
+                break 2
+            fi
+        done
     done
-    # Fallback to plain release dir
+    # Fallback to plain dist / release dir
     if [ -z "$BUILD_DIR" ]; then
-        BUILD_DIR="$TARGET_DIR/release"
+        if [ -f "$TARGET_DIR/dist/sotf-tui.exe" ]; then
+            BUILD_DIR="$TARGET_DIR/dist"
+        else
+            BUILD_DIR="$TARGET_DIR/release"
+        fi
     fi
 fi
 

@@ -283,15 +283,28 @@ try {
 # Locate the build directory containing the .exe files.
 # ---------------------------------------------------------------------------
 if (-not $BuildDir) {
+    # Release cuts use the `dist` profile (fat LTO + cgu=1). Look in dist/
+    # first, fall back to release/ for manual `cargo build --release` from
+    # a dev shell.
     $cargoTargetDir = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $ProjectRoot 'target' }
     foreach ($triple in @(
         'x86_64-pc-windows-gnullvm','x86_64-pc-windows-gnu','x86_64-pc-windows-msvc',
         'aarch64-pc-windows-gnullvm','aarch64-pc-windows-gnu','aarch64-pc-windows-msvc'
     )) {
-        $cand = Join-Path $cargoTargetDir "$triple\release"
-        if (Test-Path (Join-Path $cand 'sotf-desktop.exe')) { $BuildDir = $cand; break }
+        foreach ($profile in @('dist','release')) {
+            $cand = Join-Path $cargoTargetDir "$triple\$profile"
+            if (Test-Path (Join-Path $cand 'sotf-desktop.exe')) { $BuildDir = $cand; break }
+        }
+        if ($BuildDir) { break }
     }
-    if (-not $BuildDir) { $BuildDir = Join-Path $cargoTargetDir 'release' }
+    if (-not $BuildDir) {
+        $distDir = Join-Path $cargoTargetDir 'dist'
+        if (Test-Path (Join-Path $distDir 'sotf-desktop.exe')) {
+            $BuildDir = $distDir
+        } else {
+            $BuildDir = Join-Path $cargoTargetDir 'release'
+        }
+    }
 }
 Write-Info "Build dir: $BuildDir"
 # The MSIX ships only sotf-desktop.exe (the GPUI app). sotf-tui.exe is
@@ -300,7 +313,7 @@ Write-Info "Build dir: $BuildDir"
 # HeadlessAppBypass waiver, or clutter the Start menu with a duplicate tile.
 if (-not (Test-Path (Join-Path $BuildDir 'sotf-desktop.exe'))) {
     Write-Err "sotf-desktop.exe not found in $BuildDir"
-    Write-Info "Build it first with: cargo build --release -p sotf-gpui --bin sotf-desktop"
+    Write-Info "Build it first with: cargo build --profile dist -p sotf-gpui --bin sotf-desktop"
     exit 1
 }
 Write-Info "  Found sotf-desktop.exe"

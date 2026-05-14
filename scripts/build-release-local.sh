@@ -619,19 +619,22 @@ build_macos() {
     # then asks the DMG script to package that exact binary.
 
     # --- macOS ARM64 ---
-    log_step "Building macOS ARM64 (dynamic) ..."
+    log_step "Building macOS ARM64 (dynamic, profile=dist) ..."
     if $DRY_RUN; then
-        log_dry "cargo build --release --target aarch64-apple-darwin (sotf-tui, sotf-desktop)"
-        log_dry "./scripts/build-dmg-sotf.sh --arch arm64 --binary target/aarch64-apple-darwin/release/sotf-desktop"
+        log_dry "cargo build --profile dist --target aarch64-apple-darwin (sotf-tui, sotf-desktop)"
+        log_dry "./scripts/build-dmg-sotf.sh --arch arm64 --binary target/aarch64-apple-darwin/dist/sotf-desktop"
     else
         rustup target add aarch64-apple-darwin 2>/dev/null || true
-        cargo build --release --target aarch64-apple-darwin -p sotf-tui --features hal,onnx
-        cargo build --release --target aarch64-apple-darwin -p sotf-gpui --features hal,onnx
+        # Release cuts use the `dist` profile (fat LTO + codegen-units=1).
+        # See [profile.dist] in root Cargo.toml. Artifacts land in
+        # target/<triple>/dist/ instead of target/<triple>/release/.
+        cargo build --profile dist --target aarch64-apple-darwin -p sotf-tui --features hal,onnx
+        cargo build --profile dist --target aarch64-apple-darwin -p sotf-gpui --features hal,onnx
         mkdir -p "$DIST_DIR"
-        cp "target/aarch64-apple-darwin/release/sotf-tui"     "$DIST_DIR/sotf-tui-${VERSION}-macos-arm64"
-        cp "target/aarch64-apple-darwin/release/sotf-desktop" "$DIST_DIR/sotf-desktop-${VERSION}-macos-arm64"
+        cp "target/aarch64-apple-darwin/dist/sotf-tui"     "$DIST_DIR/sotf-tui-${VERSION}-macos-arm64"
+        cp "target/aarch64-apple-darwin/dist/sotf-desktop" "$DIST_DIR/sotf-desktop-${VERSION}-macos-arm64"
         record_result "macOS ARM64: OK"
-        if ./scripts/build-dmg-sotf.sh --arch arm64 --binary "target/aarch64-apple-darwin/release/sotf-desktop"; then
+        if ./scripts/build-dmg-sotf.sh --arch arm64 --binary "target/aarch64-apple-darwin/dist/sotf-desktop"; then
             record_result "macOS ARM64 DMG: OK"
         else
             log_error "macOS ARM64 DMG packaging failed"
@@ -641,19 +644,19 @@ build_macos() {
     fi
 
     # --- macOS x86_64 ---
-    log_step "Building macOS x86_64 (dynamic) ..."
+    log_step "Building macOS x86_64 (dynamic, profile=dist) ..."
     if $DRY_RUN; then
-        log_dry "cargo build --release --target x86_64-apple-darwin (sotf-tui, sotf-desktop)"
-        log_dry "./scripts/build-dmg-sotf.sh --arch x86_64 --binary target/x86_64-apple-darwin/release/sotf-desktop"
+        log_dry "cargo build --profile dist --target x86_64-apple-darwin (sotf-tui, sotf-desktop)"
+        log_dry "./scripts/build-dmg-sotf.sh --arch x86_64 --binary target/x86_64-apple-darwin/dist/sotf-desktop"
     else
         rustup target add x86_64-apple-darwin 2>/dev/null || true
-        cargo build --release --target x86_64-apple-darwin -p sotf-tui --features hal
-        cargo build --release --target x86_64-apple-darwin -p sotf-gpui --features hal
+        cargo build --profile dist --target x86_64-apple-darwin -p sotf-tui --features hal
+        cargo build --profile dist --target x86_64-apple-darwin -p sotf-gpui --features hal
         mkdir -p "$DIST_DIR"
-        cp "target/x86_64-apple-darwin/release/sotf-tui"     "$DIST_DIR/sotf-tui-${VERSION}-macos-x86_64"
-        cp "target/x86_64-apple-darwin/release/sotf-desktop" "$DIST_DIR/sotf-desktop-${VERSION}-macos-x86_64"
+        cp "target/x86_64-apple-darwin/dist/sotf-tui"     "$DIST_DIR/sotf-tui-${VERSION}-macos-x86_64"
+        cp "target/x86_64-apple-darwin/dist/sotf-desktop" "$DIST_DIR/sotf-desktop-${VERSION}-macos-x86_64"
         record_result "macOS x86_64: OK"
-        if ./scripts/build-dmg-sotf.sh --arch x86_64 --binary "target/x86_64-apple-darwin/release/sotf-desktop"; then
+        if ./scripts/build-dmg-sotf.sh --arch x86_64 --binary "target/x86_64-apple-darwin/dist/sotf-desktop"; then
             record_result "macOS x86_64 DMG: OK"
         else
             log_error "macOS x86_64 DMG packaging failed"
@@ -868,12 +871,14 @@ build_windows() {
     # Build Windows x86_64 (host arch)
     # build-msix.ps1 needs both sotf-desktop.exe AND sotf-tui.exe present in
     # the corresponding target dir before it runs.
-    log_step "Building Windows x86_64 (native MSVC on remote)..."
+    log_step "Building Windows x86_64 (native MSVC on remote, profile=dist)..."
     local win_build_cmd="cd ${remote_dir} && mkdir -p dist"
-    win_build_cmd+=" && cargo build --release -p sotf-tui --bin sotf-tui"
-    win_build_cmd+=" && cargo build --release -p sotf-gpui --bin sotf-desktop"
+    # Release cuts use the `dist` profile (fat LTO + codegen-units=1).
+    # Artifacts land in target/dist/ instead of target/release/.
+    win_build_cmd+=" && cargo build --profile dist -p sotf-tui --bin sotf-tui"
+    win_build_cmd+=" && cargo build --profile dist -p sotf-gpui --bin sotf-desktop"
     # Canonical artifact naming: <product>-<version>-<os>-<arch>.<ext>
-    win_build_cmd+=" && cp target/release/sotf-tui.exe dist/sotf-tui-${VERSION}-windows-x86_64.exe"
+    win_build_cmd+=" && cp target/dist/sotf-tui.exe dist/sotf-tui-${VERSION}-windows-x86_64.exe"
 
     if $DRY_RUN; then
         log_dry "win_ssh_cmd ${host} '${win_build_cmd}'"
@@ -890,12 +895,12 @@ build_windows() {
     # Required for Microsoft Store ARM64 listing and for native execution on
     # Windows-on-ARM (Surface Pro X, Copilot+ PCs). Failure here doesn't kill
     # the x86_64 result; we just skip the arm64 MSIX.
-    log_step "Building Windows arm64 (cross-compiled on remote)..."
+    log_step "Building Windows arm64 (cross-compiled on remote, profile=dist)..."
     local win_arm_build_cmd="cd ${remote_dir}"
     win_arm_build_cmd+=" && rustup target add aarch64-pc-windows-msvc"
-    win_arm_build_cmd+=" && cargo build --release --target aarch64-pc-windows-msvc -p sotf-tui --bin sotf-tui"
-    win_arm_build_cmd+=" && cargo build --release --target aarch64-pc-windows-msvc -p sotf-gpui --bin sotf-desktop"
-    win_arm_build_cmd+=" && cp target/aarch64-pc-windows-msvc/release/sotf-tui.exe dist/sotf-tui-${VERSION}-windows-arm64.exe"
+    win_arm_build_cmd+=" && cargo build --profile dist --target aarch64-pc-windows-msvc -p sotf-tui --bin sotf-tui"
+    win_arm_build_cmd+=" && cargo build --profile dist --target aarch64-pc-windows-msvc -p sotf-gpui --bin sotf-desktop"
+    win_arm_build_cmd+=" && cp target/aarch64-pc-windows-msvc/dist/sotf-tui.exe dist/sotf-tui-${VERSION}-windows-arm64.exe"
 
     local windows_arm64_ok=false
     if $DRY_RUN; then

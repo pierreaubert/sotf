@@ -78,6 +78,71 @@ prod-hal-driver:
 prod-macos-daemon: prod-daemon prod-systemwide prod-hal-driver
 	@echo "✅ All macOS daemon components built"
 
+# ----------------------------------------------------------------------
+# DIST variants (release-cut profile = fat LTO + codegen-units=1).
+# Artifacts land in `target/dist/` instead of `target/release/`.
+# Swift outputs follow the same convention so build-systemwide.sh can
+# package every component from a single tree.
+# ----------------------------------------------------------------------
+
+[group('dist')]
+dist-daemon:
+	cargo build --profile dist -p sotf-daemon --features hal
+
+[group('dist')]
+dist-systemwide:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	CONFIGBAR_DIR="crates/systemwide/crates/daemon/configbar"
+	BUILD_DIR="target/dist"
+	mkdir -p "$BUILD_DIR"
+	echo "Building SotF Systemwide (dist)..."
+	swiftc \
+		-o "$BUILD_DIR/sotf-systemwide" \
+		"$CONFIGBAR_DIR"/src/*.swift \
+		-framework SwiftUI \
+		-framework WebKit \
+		-framework UserNotifications \
+		-framework CoreAudio \
+		-O
+	echo "✅ Systemwide built: $BUILD_DIR/sotf-systemwide"
+
+[group('dist')]
+dist-hal-driver:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	HAL_SWIFT_DIR="crates/systemwide/crates/driver-hal/swift"
+	BUILD_DIR="target/dist/SotFHAL.driver"
+	mkdir -p "$BUILD_DIR/Contents/MacOS"
+	mkdir -p "$BUILD_DIR/Contents/Resources"
+	echo "Building Swift HAL driver (dist)..."
+	swiftc \
+		-emit-library \
+		-o "$BUILD_DIR/Contents/MacOS/SotFHAL" \
+		-module-name SotFHAL \
+		-import-objc-header "$HAL_SWIFT_DIR/Sources/BridgingHeader.h" \
+		-Xlinker -bundle \
+		-Xlinker -rpath -Xlinker @loader_path/../Frameworks \
+		-framework CoreAudio \
+		-framework CoreFoundation \
+		-framework Foundation \
+		-O \
+		"$HAL_SWIFT_DIR/Sources/Timing.swift" \
+		"$HAL_SWIFT_DIR/Sources/RingBuffer.swift" \
+		"$HAL_SWIFT_DIR/Sources/SharedMemory.swift" \
+		"$HAL_SWIFT_DIR/Sources/Encryption.swift" \
+		"$HAL_SWIFT_DIR/Sources/SotFHALDriver.swift"
+	cp "$HAL_SWIFT_DIR/Info.plist" "$BUILD_DIR/Contents/Info.plist"
+	chmod 755 "$BUILD_DIR/Contents/MacOS/SotFHAL"
+	chmod 644 "$BUILD_DIR/Contents/Info.plist"
+	echo "Ad-hoc signing HAL driver..."
+	codesign --force --deep --sign - "$BUILD_DIR"
+	echo "✅ HAL driver built: $BUILD_DIR"
+
+[group('dist')]
+dist-macos-daemon: dist-daemon dist-systemwide dist-hal-driver
+	@echo "✅ All macOS daemon components built (dist)"
+
 [group('build-macos')]
 gpui-release-macos:
 	#!/usr/bin/env bash
