@@ -479,8 +479,20 @@ The **loss function** is selected by `loss_type`:
   (NBD + LFX + SM·PIR with bass-boost shaping).
 * **`epa`** — Zwicker/Fastl psychoacoustic composite of flatness +
   sharpness + roughness + loudness-balance + cubic-distortion-tone
-  level. Tunable via `OptimizerConfig.epa_config`. Pre/post EPA scores
-  are always emitted in the JSON metadata.
+  level + modal temporal masking. Tunable via
+  `OptimizerConfig.epa_config`. Pre/post EPA scores are always emitted
+  in the JSON metadata.
+
+When EPA is selected, RoomEQ also passes detected modal peaks into the
+optimizer as temporal-masking data. Each mode carries frequency, Q,
+prominence, and a perceptual temporal-severity value from
+`temporal_targets.rs`. The EPA loss estimates how much audible ringing
+remains after the candidate PEQ curve: cuts at severe modal peaks reduce
+the penalty, while boosts at those modes increase it. The
+`epa_config.temporal_masking.profile` setting changes the material
+assumption: `transient` penalizes ringing most strongly, `mixed` is the
+default, and `sustained` assumes more post-masking from ongoing tonal
+content.
 
 ### 3.8 FIR / mixed-phase post-generation
 
@@ -639,6 +651,11 @@ flowchart TB
 * **Decomposed correction** (Laborie/Bruno/Montoya, 2003) splits the
   IR into modal, early-reflection, and steady-state regions and
   applies different correction strategies to each.
+* **EPA temporal masking** reuses the detected modal peaks from
+  decomposed correction as optimizer-side perceptual data. This keeps
+  the loss cheap enough for every candidate evaluation while still
+  steering filters differently for transient-heavy versus sustained
+  programme material.
 * **First-reflection cancellation** (Johnston, AES 2008) subtracts a
   delayed low-passed copy of the input below ~500 Hz to cancel the
   measured first floor/ceiling reflection.
@@ -724,7 +741,7 @@ crates/autoeq/src/roomeq/
 ├── gd_opt.rs                 # group-delay optimisation v2 (LowLatency IIR)
 ├── frequency_grid.rs         # grid validation, common-range computation
 ├── slope.rs                  # broadband slope estimation
-├── temporal_targets.rs       # perceptual decay thresholds
+├── temporal_targets.rs       # perceptual decay / temporal-masking thresholds
 ├── synthetic.rs              # synthetic measurements for QA
 ├── progress.rs               # multi-stage progress reporter
 └── types/                    # config / output data structures

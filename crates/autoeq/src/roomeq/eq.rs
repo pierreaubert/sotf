@@ -561,6 +561,22 @@ fn prepare_single_channel_eq(
         }
         None => Vec::new(),
     };
+    let temporal_masking_modes: Vec<crate::loss::epa::score::TemporalMaskingMode> =
+        decomposed_result
+            .as_ref()
+            .map(|r| {
+                r.room_modes
+                    .iter()
+                    .filter(|m| m.temporal_severity_db > 0.0)
+                    .map(|m| crate::loss::epa::score::TemporalMaskingMode {
+                        frequency: m.frequency,
+                        q: m.q,
+                        prominence_db: m.prominence_db,
+                        temporal_severity_db: m.temporal_severity_db,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
 
     // Detect narrow nulls on the unsmoothed deviation curve and build a
     // per-sample suppression mask for the asymmetric loss dip branch.
@@ -716,6 +732,7 @@ fn prepare_single_channel_eq(
     // Propagate EPA config so compute_base_fitness uses user-provided
     // weights when loss_type == LossType::Epa.
     objective_data.epa_config = config.epa_config.clone();
+    objective_data.temporal_masking_modes = temporal_masking_modes;
     // Hand the SSIR / decomposed-correction mode list over to the DE
     // optimizer's smart initial-guess generator so filters actually
     // land on detected room modes instead of on whatever

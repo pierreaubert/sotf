@@ -111,7 +111,7 @@
     "version": {
       "description": "Configuration version (semantic versioning, e.g. \"1.0.0\")",
       "type": "string",
-      "default": "2.0.0"
+      "default": "2.1.0"
     }
   },
   "required": [
@@ -1395,6 +1395,15 @@
           "description": "Target sharpness in acum (1.0 = natural broadband noise character)",
           "type": "number",
           "format": "double"
+        },
+        "temporal_masking": {
+          "description": "Temporal-masking penalty for modal ringing.\n\nThe first implementation uses detected room-mode Q/prominence data as\nan optimizer-cheap proxy for post-masked modal decay audibility. Future\nIR-aware implementations can extend this with true pre/post ringing\nenergy when phase data is available.",
+          "$ref": "#/$defs/TemporalMaskingConfig",
+          "default": {
+            "enabled": true,
+            "profile": "mixed",
+            "weight": 0.15
+          }
         }
       },
       "required": [
@@ -3633,6 +3642,48 @@
           "description": "Derive slope from the input measurement curve at optimization time",
           "type": "string",
           "const": "from_measurement"
+        }
+      ]
+    },
+    "TemporalMaskingConfig": {
+      "description": "Temporal masking penalty configuration for EPA optimization.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Enable the temporal masking penalty when modal data is available.",
+          "type": "boolean",
+          "default": true
+        },
+        "profile": {
+          "description": "Material profile used to scale modal-ringing audibility.",
+          "$ref": "#/$defs/TemporalMaskingProfile",
+          "default": "mixed"
+        },
+        "weight": {
+          "description": "Weight applied to the normalized temporal masking penalty.",
+          "type": "number",
+          "format": "double",
+          "default": 0.15
+        }
+      }
+    },
+    "TemporalMaskingProfile": {
+      "description": "Program-material bias for temporal masking.",
+      "oneOf": [
+        {
+          "description": "Percussive material: modal ringing is least masked and should be cut\nmore decisively.",
+          "type": "string",
+          "const": "transient"
+        },
+        {
+          "description": "General music / film content.",
+          "type": "string",
+          "const": "mixed"
+        },
+        {
+          "description": "Sustained material: late modal decay is partly masked by ongoing tone.",
+          "type": "string",
+          "const": "sustained"
         }
       ]
     },

@@ -666,6 +666,7 @@ mod tests {
             max_boost_envelope: None,
             min_cut_envelope: None,
             epa_config: None,
+            temporal_masking_modes: Vec::new(),
             detected_problems: Vec::new(),
             null_suppression: None,
             smoothness_penalty: None,

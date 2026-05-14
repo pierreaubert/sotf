@@ -36,10 +36,78 @@ pub struct EpaConfig {
     /// Default 0.0 (see `flatness_erb_weight`).
     #[serde(default)]
     pub flatness_band_weight: f64,
+    /// Temporal-masking penalty for modal ringing.
+    ///
+    /// The first implementation uses detected room-mode Q/prominence data as
+    /// an optimizer-cheap proxy for post-masked modal decay audibility. Future
+    /// IR-aware implementations can extend this with true pre/post ringing
+    /// energy when phase data is available.
+    #[serde(default)]
+    pub temporal_masking: TemporalMaskingConfig,
 }
 
 fn default_flatness_erb_weight() -> f64 {
     1.0
+}
+
+fn default_temporal_masking_enabled() -> bool {
+    true
+}
+
+fn default_temporal_masking_weight() -> f64 {
+    0.15
+}
+
+/// Program-material bias for temporal masking.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TemporalMaskingProfile {
+    /// Percussive material: modal ringing is least masked and should be cut
+    /// more decisively.
+    Transient,
+    /// General music / film content.
+    Mixed,
+    /// Sustained material: late modal decay is partly masked by ongoing tone.
+    Sustained,
+}
+
+impl Default for TemporalMaskingProfile {
+    fn default() -> Self {
+        Self::Mixed
+    }
+}
+
+/// Temporal masking penalty configuration for EPA optimization.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct TemporalMaskingConfig {
+    /// Enable the temporal masking penalty when modal data is available.
+    #[serde(default = "default_temporal_masking_enabled")]
+    pub enabled: bool,
+    /// Weight applied to the normalized temporal masking penalty.
+    #[serde(default = "default_temporal_masking_weight")]
+    pub weight: f64,
+    /// Material profile used to scale modal-ringing audibility.
+    #[serde(default)]
+    pub profile: TemporalMaskingProfile,
+}
+
+impl Default for TemporalMaskingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_temporal_masking_enabled(),
+            weight: default_temporal_masking_weight(),
+            profile: TemporalMaskingProfile::Mixed,
+        }
+    }
+}
+
+/// Optimizer-side modal data used by the EPA temporal masking penalty.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TemporalMaskingMode {
+    pub frequency: f64,
+    pub q: f64,
+    pub prominence_db: f64,
+    pub temporal_severity_db: f64,
 }
 
 impl Default for EpaConfig {
@@ -54,6 +122,7 @@ impl Default for EpaConfig {
             flatness_band_weights: FrequencyBandWeights::default(),
             flatness_erb_weight: 1.0,
             flatness_band_weight: 0.0,
+            temporal_masking: TemporalMaskingConfig::default(),
         }
     }
 }
@@ -313,6 +382,54 @@ pub fn epa_loss_normalized(
     epa_loss(freqs, &spl_abs, config, flatness_loss)
 }
 
+/// Compute an optimizer-cheap temporal masking penalty from detected room modes.
+///
+/// The penalty estimates how much audible modal ringing remains after the
+/// candidate EQ correction. Cuts at severe, prominent modal peaks reduce the
+/// residual term; boosts at those modes increase it. This deliberately stays
+/// frequency-domain so it can run inside every optimizer evaluation.
+pub fn temporal_masking_penalty(
+    freqs: &[f64],
+    peq_spl: &[f64],
+    modes: &[TemporalMaskingMode],
+    config: &TemporalMaskingConfig,
+) -> f64 {
+    if !config.enabled || config.weight <= 0.0 || modes.is_empty() {
+        return 0.0;
+    }
+
+    let profile_scale = match config.profile {
+        TemporalMaskingProfile::Transient => 1.35,
+        TemporalMaskingProfile::Mixed => 1.0,
+        TemporalMaskingProfile::Sustained => 0.65,
+    };
+
+    let mut sum = 0.0;
+    let mut count = 0.0;
+    for mode in modes {
+        let severity = mode.temporal_severity_db.max(0.0);
+        let prominence = mode.prominence_db.max(0.0);
+        if severity <= 0.0 || prominence <= 0.0 {
+            continue;
+        }
+
+        let eq_at_mode = interpolate_log_frequency(freqs, peq_spl, mode.frequency).unwrap_or(0.0);
+        let residual_prominence = (prominence + eq_at_mode).max(0.0);
+        let residual_ratio = (residual_prominence / prominence.max(1e-6)).clamp(0.0, 4.0);
+        let boost_penalty = eq_at_mode.max(0.0) / prominence.max(1.0);
+        let q_scale = (mode.q.max(1.0) / 10.0).sqrt().clamp(0.5, 2.5);
+
+        sum += q_scale * severity.powi(2) * (residual_ratio.powi(2) + boost_penalty.powi(2));
+        count += 1.0;
+    }
+
+    if count == 0.0 {
+        0.0
+    } else {
+        config.weight * profile_scale * (sum / count)
+    }
+}
+
 /// Compute the flatness component of the EPA loss using the blend and
 /// band weights specified in `config`.
 ///
@@ -565,6 +682,54 @@ mod tests {
             "epa_loss_normalized should match epa_loss on denormalized input, got abs={} rel={}",
             loss_abs,
             loss_rel
+        );
+    }
+
+    #[test]
+    fn temporal_masking_penalty_rewards_cutting_audible_modes() {
+        let freqs = vec![50.0, 100.0, 200.0];
+        let modes = vec![TemporalMaskingMode {
+            frequency: 100.0,
+            q: 30.0,
+            prominence_db: 9.0,
+            temporal_severity_db: 6.0,
+        }];
+        let cfg = TemporalMaskingConfig::default();
+
+        let no_eq = vec![0.0, 0.0, 0.0];
+        let cut = vec![0.0, -6.0, 0.0];
+        let boost = vec![0.0, 3.0, 0.0];
+
+        let no_eq_penalty = temporal_masking_penalty(&freqs, &no_eq, &modes, &cfg);
+        let cut_penalty = temporal_masking_penalty(&freqs, &cut, &modes, &cfg);
+        let boost_penalty = temporal_masking_penalty(&freqs, &boost, &modes, &cfg);
+
+        assert!(cut_penalty < no_eq_penalty);
+        assert!(boost_penalty > no_eq_penalty);
+    }
+
+    #[test]
+    fn temporal_masking_profile_changes_audibility() {
+        let freqs = vec![50.0, 100.0, 200.0];
+        let peq = vec![0.0, 0.0, 0.0];
+        let modes = vec![TemporalMaskingMode {
+            frequency: 100.0,
+            q: 30.0,
+            prominence_db: 9.0,
+            temporal_severity_db: 6.0,
+        }];
+        let transient = TemporalMaskingConfig {
+            profile: TemporalMaskingProfile::Transient,
+            ..Default::default()
+        };
+        let sustained = TemporalMaskingConfig {
+            profile: TemporalMaskingProfile::Sustained,
+            ..Default::default()
+        };
+
+        assert!(
+            temporal_masking_penalty(&freqs, &peq, &modes, &transient)
+                > temporal_masking_penalty(&freqs, &peq, &modes, &sustained)
         );
     }
 

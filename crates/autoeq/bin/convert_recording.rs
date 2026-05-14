@@ -225,6 +225,16 @@ fn strip_deprecated_top_level_keys(value: &mut serde_json::Value) -> Vec<&'stati
     stripped
 }
 
+fn normalize_room_config_for_latest_schema(config: &mut RoomConfig) {
+    config.version = autoeq::roomeq::default_config_version();
+
+    if config.optimizer.loss_type.eq_ignore_ascii_case("epa")
+        && config.optimizer.epa_config.is_none()
+    {
+        config.optimizer.epa_config = Some(autoeq::loss::epa::score::EpaConfig::default());
+    }
+}
+
 fn parse_room_config_with_cleanup(json: &str) -> Result<(RoomConfig, Vec<&'static str>), String> {
     let mut value: serde_json::Value =
         serde_json::from_str(json).map_err(|e| format!("invalid JSON: {e}"))?;
@@ -232,7 +242,7 @@ fn parse_room_config_with_cleanup(json: &str) -> Result<(RoomConfig, Vec<&'stati
     let cleaned_json =
         serde_json::to_string(&value).map_err(|e| format!("failed to encode cleaned JSON: {e}"))?;
     let mut config: RoomConfig = serde_json::from_str(&cleaned_json).map_err(|e| format!("{e}"))?;
-    config.version = autoeq::roomeq::default_config_version();
+    normalize_room_config_for_latest_schema(&mut config);
     Ok((config, stripped))
 }
 

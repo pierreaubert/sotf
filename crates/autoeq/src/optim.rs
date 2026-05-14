@@ -173,6 +173,11 @@ pub struct ObjectiveData {
     /// Used only when `loss_type == LossType::Epa`. When `None`, the
     /// optimizer falls back to `EpaConfig::default()`.
     pub epa_config: Option<crate::loss::epa::score::EpaConfig>,
+    /// Detected modal ringing data used by the EPA temporal masking penalty.
+    ///
+    /// Empty when decomposed room-mode analysis did not run or when no modes
+    /// exceed the temporal audibility threshold.
+    pub temporal_masking_modes: Vec<crate::loss::epa::score::TemporalMaskingMode>,
     /// Pre-detected frequency problems (usually SSIR / decomposed-correction
     /// room modes) to seed the DE optimizer's smart initial-guess
     /// generator with.
@@ -760,6 +765,12 @@ fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
                 &epa_config,
                 flatness,
             );
+            let temporal_masking = crate::loss::epa::score::temporal_masking_penalty(
+                &freqs_vec,
+                peq_spl.as_slice().unwrap_or(&[]),
+                &data.temporal_masking_modes,
+                &epa_config.temporal_masking,
+            );
             let smoothness = data
                 .smoothness_penalty
                 .as_ref()
@@ -773,7 +784,7 @@ fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
                     )
                 })
                 .unwrap_or(0.0);
-            base_loss + smoothness
+            base_loss + temporal_masking + smoothness
         }
     }
 }
@@ -939,12 +950,19 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
             // it is not absolute dB SPL. The normalized helper denormalizes
             // against `epa_config.listening_level_phon` so the loudness /
             // loudness-balance penalties are properly calibrated.
-            crate::loss::epa::score::epa_loss_normalized(
+            let base_loss = crate::loss::epa::score::epa_loss_normalized(
                 &freqs_vec,
                 &corrected_spl,
                 &epa_config,
                 flatness,
-            )
+            );
+            let temporal_masking = crate::loss::epa::score::temporal_masking_penalty(
+                &freqs_vec,
+                peq_spl.as_slice().unwrap_or(&[]),
+                &data.temporal_masking_modes,
+                &epa_config.temporal_masking,
+            );
+            base_loss + temporal_masking
         }
     }
 }

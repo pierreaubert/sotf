@@ -628,6 +628,11 @@ EPA tuning knobs. Every field is optional and serde-defaulted, so omitting
       "activity_weight": 0.2,
       "flatness_erb_weight": 1.0,
       "flatness_band_weight": 0.0,
+      "temporal_masking": {
+        "enabled": true,
+        "weight": 0.15,
+        "profile": "mixed"
+      },
       "flatness_band_weights": {
         "bass_min": 20.0,
         "bass_max": 200.0,
@@ -657,6 +662,7 @@ EPA tuning knobs. Every field is optional and serde-defaulted, so omitting
 | `flatness_erb_weight` | number | `1.0` | ERB-weighted blend for the flatness term. Default pure ERB because EPA already has band-sensitive sharpness/roughness/loudness-balance terms. |
 | `flatness_band_weight` | number | `0.0` | Band-weighted blend for the flatness term. Increase to add an explicit bass/mid/treble bias on top of the ERB flatness. |
 | `flatness_band_weights` | object | see `FrequencyBandWeights` defaults | Per-band frequency ranges and weights. Only consulted when `flatness_band_weight > 0`. |
+| `temporal_masking` | object | `{ "enabled": true, "weight": 0.15, "profile": "mixed" }` | Modal temporal-masking penalty. When enabled, EPA optimization uses detected room-mode Q/prominence data to penalize audible post-masked ringing. `profile` is one of `"transient"`, `"mixed"`, or `"sustained"`; transient material applies the strongest ringing penalty. |
 
 **FrequencyBandWeights fields:**
 

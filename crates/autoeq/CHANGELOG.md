@@ -1,3 +1,17 @@
+# 0.4.45 (unreleased)
+
+## New features
+
+- Added EPA temporal masking integration for RoomEQ optimization. The EPA loss
+  now includes an optimizer-cheap modal ringing penalty based on detected
+  room-mode Q, prominence, and perceptual temporal-severity thresholds, with
+  `transient`, `mixed`, and `sustained` profiles under
+  `optimizer.epa_config.temporal_masking`.
+- `convert_recording` now materializes default EPA configuration when rewriting
+  RoomConfig files that select `loss_type = "epa"` but omit `epa_config`, so
+  converted configs expose the temporal masking defaults instead of silently
+  relying on runtime fallback state.
+
 # 0.4.44
 
 ## New features
