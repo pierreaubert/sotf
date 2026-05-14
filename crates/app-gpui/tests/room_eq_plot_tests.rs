@@ -196,6 +196,7 @@ fn make_report_channel(
         target_curve: None,
         pre_ir: None,
         post_ir: None,
+        fir_temporal_masking: None,
     }
 }
 
@@ -210,6 +211,7 @@ fn make_empty_report_channel(name: &str) -> autoeq::roomeq::ChannelDspChain {
         target_curve: None,
         pre_ir: None,
         post_ir: None,
+        fir_temporal_masking: None,
     }
 }
 

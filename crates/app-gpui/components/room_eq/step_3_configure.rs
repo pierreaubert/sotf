@@ -1870,7 +1870,231 @@ impl PlayerView {
             );
         }
 
+        content = content.child(self.render_epa_temporal_masking_card(cx));
+
         content.child(self.render_room_eq_validation_summary(cx))
+    }
+
+    /// Render the EPA Temporal Masking configuration card.
+    ///
+    /// Surfaces the most actionable knobs from
+    /// [`sotf_audio_player::room_eq_types::EpaTemporalMaskingConfig`]:
+    /// enable / weight / profile for modal masking, plus enable / weight for
+    /// FIR IR masking. The remaining pre/post window numerics stay at their
+    /// autoeq defaults (3 ms / 120 ms) unless a future iteration wires
+    /// dedicated numeric editors. The full-detail Step-3 form is already
+    /// dense, so the card keeps its inputs as cycling buttons.
+    fn render_epa_temporal_masking_card(&self, cx: &mut Context<Self>) -> AnyElement {
+        use sotf_audio_player::room_eq_types::{EpaTemporalMaskingConfig, EpaTemporalProfile};
+        let state = self.state.read(cx);
+        let d = Ds::from_cx(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let cfg = state
+            .app
+            .measurement_state
+            .room_eq_state
+            .optimizer_config
+            .epa_temporal_masking
+            .clone();
+        let _ = state;
+
+        const WEIGHT_CHOICES: &[f64] = &[0.0, 0.05, 0.1, 0.15, 0.2, 0.3, 0.5];
+
+        // Snap then step on the WEIGHT_CHOICES table, clamping at both ends
+        // so dialing down from the default doesn't wrap to the maximum.
+        // Imported configs with weights outside the table snap to the
+        // nearest entry on the first step.
+        let step_weight = |current: f64, delta: i32| -> f64 {
+            let idx = WEIGHT_CHOICES
+                .iter()
+                .position(|w| *w >= current - 1e-9)
+                .unwrap_or(WEIGHT_CHOICES.len() - 1);
+            let next = (idx as i32 + delta)
+                .clamp(0, WEIGHT_CHOICES.len() as i32 - 1) as usize;
+            WEIGHT_CHOICES[next]
+        };
+
+        let toggle_btn = |id: &'static str, label: String, active: bool| -> AnyElement {
+            Button::new(SharedString::from(id), label)
+                .variant(if active {
+                    ButtonVariant::Primary
+                } else {
+                    ButtonVariant::Secondary
+                })
+                .size(ButtonSize::Xs)
+                .theme(theme.to_button_theme())
+                .build()
+                .into_any_element()
+        };
+
+        let header = HStack::new()
+            .spacing(StackSpacing::Md)
+            .child(
+                Text::new("EPA Temporal Masking")
+                    .color(theme.text_primary)
+                    .weight(TextWeight::Semibold),
+            )
+            .child(
+                Text::new(if cfg.differs_from_default() {
+                    "(custom)"
+                } else {
+                    "(defaults)"
+                })
+                .size(TextSize::Xs)
+                .color(theme.text_muted),
+            );
+
+        let enabled = cfg.enabled;
+        let weight = cfg.weight;
+        let profile = cfg.profile;
+        let ir_enabled = cfg.ir_enabled;
+        let ir_weight = cfg.ir_weight;
+
+        let row_modal = HStack::new()
+            .spacing(StackSpacing::Md)
+            .child(Text::new("Modal").size(TextSize::Xs).color(theme.text_secondary))
+            .child({
+                let state_entity = self.state.clone();
+                let mut btn = toggle_btn(
+                    "epa-tm-enable",
+                    if enabled { "On" } else { "Off" }.to_string(),
+                    enabled,
+                );
+                btn = div()
+                    .id("epa-tm-enable-wrap")
+                    .cursor_pointer()
+                    .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                        state_entity.update(cx, |state, cx| {
+                            let c = &mut state
+                                .app
+                                .measurement_state
+                                .room_eq_state
+                                .optimizer_config
+                                .epa_temporal_masking;
+                            c.enabled = !c.enabled;
+                            cx.notify();
+                        });
+                    })
+                    .child(btn)
+                    .into_any_element();
+                btn
+            })
+            .child(render_weight_stepper(
+                "epa-tm-weight",
+                weight,
+                self.state.clone(),
+                step_weight,
+                |c| c.weight,
+                |c, w| c.weight = w,
+                theme.clone(),
+            ))
+            .child({
+                let state_entity = self.state.clone();
+                div()
+                    .id("epa-tm-profile")
+                    .cursor_pointer()
+                    .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                        state_entity.update(cx, |state, cx| {
+                            let c = &mut state
+                                .app
+                                .measurement_state
+                                .room_eq_state
+                                .optimizer_config
+                                .epa_temporal_masking;
+                            let all = EpaTemporalProfile::all();
+                            let idx = all.iter().position(|p| *p == c.profile).unwrap_or(0);
+                            c.profile = all[(idx + 1) % all.len()];
+                            cx.notify();
+                        });
+                    })
+                    .child(
+                        Button::new(SharedString::from("epa-tm-profile-btn"),
+                            format!("Profile: {}", profile.as_str()))
+                            .variant(ButtonVariant::Secondary)
+                            .size(ButtonSize::Xs)
+                            .theme(theme.to_button_theme())
+                            .build(),
+                    )
+                    .into_any_element()
+            });
+
+        let row_ir = HStack::new()
+            .spacing(StackSpacing::Md)
+            .child(Text::new("FIR IR").size(TextSize::Xs).color(theme.text_secondary))
+            .child({
+                let state_entity = self.state.clone();
+                div()
+                    .id("epa-tm-ir-enable-wrap")
+                    .cursor_pointer()
+                    .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                        state_entity.update(cx, |state, cx| {
+                            let c = &mut state
+                                .app
+                                .measurement_state
+                                .room_eq_state
+                                .optimizer_config
+                                .epa_temporal_masking;
+                            c.ir_enabled = !c.ir_enabled;
+                            cx.notify();
+                        });
+                    })
+                    .child(toggle_btn(
+                        "epa-tm-ir-enable",
+                        if ir_enabled { "On" } else { "Off" }.to_string(),
+                        ir_enabled,
+                    ))
+                    .into_any_element()
+            })
+            .child(render_weight_stepper(
+                "epa-tm-ir-weight",
+                ir_weight,
+                self.state.clone(),
+                step_weight,
+                |c| c.ir_weight,
+                |c, w| c.ir_weight = w,
+                theme.clone(),
+            ));
+
+        let reset_btn = {
+            let state_entity = self.state.clone();
+            div()
+                .id("epa-tm-reset")
+                .cursor_pointer()
+                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                    state_entity.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .epa_temporal_masking = EpaTemporalMaskingConfig::default();
+                        cx.notify();
+                    });
+                })
+                .child(
+                    Button::new(SharedString::from("epa-tm-reset-btn"), "Reset to defaults")
+                        .variant(ButtonVariant::Secondary)
+                        .size(ButtonSize::Xs)
+                        .theme(theme.to_button_theme())
+                        .build(),
+                )
+                .into_any_element()
+        };
+
+        let _ = d;
+        Card::new()
+            .background(theme.surface)
+            .header_background(theme.background_secondary)
+            .border(theme.border)
+            .header(header)
+            .content(
+                VStack::new()
+                    .spacing(StackSpacing::Sm)
+                    .child(row_modal)
+                    .child(row_ir)
+                    .child(reset_btn),
+            )
+            .into_any_element()
     }
 
     /// Render slope recommendation based on L and R channel measurements.
@@ -1974,6 +2198,16 @@ impl PlayerView {
             .room_eq_state
             .speaker_configs
             .clone();
+        // Read the optimizer's active sample rate so the linear-phase
+        // crossover latency readout matches the project — falls back to
+        // 48 kHz only when the config is unset.
+        let sample_rate_hz = state
+            .app
+            .measurement_state
+            .room_eq_state
+            .optimizer_config
+            .sample_rate
+            .max(1) as f64;
 
         if speaker_configs.is_empty() {
             return VStack::new()
@@ -1990,7 +2224,9 @@ impl PlayerView {
         let rows: Vec<_> = speaker_configs
             .iter()
             .enumerate()
-            .map(|(idx, config)| render_channel_config_row(idx, config, &theme, &view, d))
+            .map(|(idx, config)| {
+                render_channel_config_row(idx, config, &theme, &view, d, sample_rate_hz)
+            })
             .collect();
 
         VStack::new()
@@ -2349,4 +2585,68 @@ fn simple_dropdown_row(
                 })
                 .child(Text::label(current_value).color(value_color)),
         )
+}
+
+/// Render a `[-] value [+]` stepper for an EPA temporal-masking weight.
+///
+/// `read` extracts the current value from the live `EpaTemporalMaskingConfig`
+/// (used to snap+step), `write` stores the new value back, and `step` is the
+/// shared snap-and-clamp helper. The +/- buttons clamp at the ends of the
+/// preset table so users don't wrap around.
+fn render_weight_stepper(
+    id_prefix: &'static str,
+    current: f64,
+    state_entity: gpui::Entity<crate::app::AppState>,
+    step: impl Fn(f64, i32) -> f64 + Clone + 'static,
+    read: impl Fn(&sotf_audio_player::room_eq_types::EpaTemporalMaskingConfig) -> f64
+        + Clone
+        + 'static,
+    write: impl Fn(&mut sotf_audio_player::room_eq_types::EpaTemporalMaskingConfig, f64)
+        + Clone
+        + 'static,
+    theme: crate::theme::Theme,
+) -> impl IntoElement {
+    let make_button = |label: &'static str, suffix: &'static str, delta: i32| {
+        let state_entity = state_entity.clone();
+        let step = step.clone();
+        let read = read.clone();
+        let write = write.clone();
+        let theme = theme.clone();
+        gpui::div()
+            .id(SharedString::from(format!("{id_prefix}-{suffix}")))
+            .cursor_pointer()
+            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                state_entity.update(cx, |state, cx| {
+                    let c = &mut state
+                        .app
+                        .measurement_state
+                        .room_eq_state
+                        .optimizer_config
+                        .epa_temporal_masking;
+                    let next = step(read(c), delta);
+                    write(c, next);
+                    cx.notify();
+                });
+            })
+            .child(
+                Button::new(
+                    SharedString::from(format!("{id_prefix}-{suffix}-btn")),
+                    label,
+                )
+                .variant(ButtonVariant::Secondary)
+                .size(ButtonSize::Xs)
+                .theme(theme.to_button_theme())
+                .build(),
+            )
+    };
+
+    HStack::new()
+        .spacing(StackSpacing::Xs)
+        .child(make_button("-", "dec", -1))
+        .child(
+            Text::new(format!("Weight {current:.2}"))
+                .size(TextSize::Xs)
+                .color(theme.text_secondary),
+        )
+        .child(make_button("+", "inc", 1))
 }

@@ -56,7 +56,7 @@ pub fn create_plugin(
 
         "Delay" | "delay" => {
             let params: sotf_plugin_delay::DelayPluginParams = parse_params(config_json)?;
-            let plugin = sotf_plugin_delay::DelayPlugin::from_params(channels, params);
+            let plugin = sotf_plugin_delay::DelayPlugin::from_params(channels, params)?;
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 

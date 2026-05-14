@@ -535,6 +535,7 @@ impl RoomEqState {
                     Vec::new()
                 },
                 crossover_freq_hints: Vec::new(),
+                ..Default::default()
             })
             .collect();
     }
@@ -872,6 +873,7 @@ impl RoomEqState {
                             CrossoverType::LR48 => "LR48",
                             CrossoverType::Butterworth12 => "Butterworth12",
                             CrossoverType::Butterworth24 => "Butterworth24",
+                            CrossoverType::LinearPhase => "LinearPhase",
                         };
 
                         crossovers.insert(

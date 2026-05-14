@@ -7,7 +7,7 @@ pub mod utility;
 
 // Re-export main items from submodules
 pub use chain::PluginChain;
-pub use eq::EQFilter;
+pub use eq::{EQFilter, EqFilterTopology, KautzSectionConfig};
 pub use matrix::{
     apply_matrix_preset, available_matrix_presets, detect_matrix_preset, resize_matrix,
     upmixer_output_channels,
@@ -2313,8 +2313,14 @@ impl PluginSettings {
                 tdf2,
                 topology: _,
             } => {
-                // Helper to convert filters with mute/solo logic
+                // Helper to convert filters with mute/solo logic.
+                // Standard biquads emit the legacy four-field JSON. Warped /
+                // Kautz filters add `topology`, optional `lambda`, and the
+                // Kautz section list so the plugin's `BiquadFilterConfig`
+                // deserializer reconstructs the right runtime topology.
                 let convert_filters = |filters: &[EQFilter]| -> Vec<serde_json::Value> {
+                    use sotf_plugins::plugin_eq::EqFilterTopology;
+
                     let any_soloed = filters.iter().any(|f| f.solo);
                     filters
                         .iter()
@@ -2329,12 +2335,35 @@ impl PluginSettings {
                         })
                         .map(|f| {
                             let bq = f.to_biquad(sample_rate);
-                            json!({
+                            let mut value = json!({
                                 "filter_type": bq.filter_type.long_name().to_lowercase(),
                                 "freq": bq.freq,
                                 "q": bq.q,
                                 "db_gain": bq.db_gain,
-                            })
+                            });
+                            if !matches!(f.topology, EqFilterTopology::Biquad) {
+                                let obj = value.as_object_mut().expect("json! object");
+                                match f.topology {
+                                    EqFilterTopology::Biquad => unreachable!(),
+                                    EqFilterTopology::WarpedBiquad => {
+                                        obj.insert("topology".into(), json!("warped_biquad"));
+                                        if let Some(lambda) = f.lambda {
+                                            obj.insert("lambda".into(), json!(lambda));
+                                        }
+                                    }
+                                    EqFilterTopology::KautzFilter => {
+                                        obj.insert("topology".into(), json!("kautz_filter"));
+                                        if !f.kautz_sections.is_empty() {
+                                            obj.insert(
+                                                "kautz_sections".into(),
+                                                serde_json::to_value(&f.kautz_sections)
+                                                    .unwrap_or(serde_json::Value::Null),
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                            value
                         })
                         .collect()
                 };
@@ -3896,6 +3925,100 @@ mod tests {
             }
             _ => panic!("expected BinauralDecoder settings"),
         }
+    }
+
+    /// Plain biquad serialization stays minimal — no `topology` / `lambda`
+    /// / `kautz_sections` keys leak into legacy JSON. Pins the producer
+    /// contract: code that round-trips this JSON against an older parser
+    /// must not see unexpected fields.
+    #[test]
+    fn eq_to_plugin_config_omits_topology_for_plain_biquads() {
+        use math_audio_iir_fir::BiquadFilterType;
+        let filter = EQFilter::new(BiquadFilterType::Peak, 1000.0, 1.0, 3.0);
+        let settings = PluginSettings::EQ {
+            channels: 2,
+            filters: vec![filter],
+            channel_filters: None,
+            per_channel_mode: false,
+            max_filters: 10,
+            tdf2: false,
+            topology: 0.0,
+        };
+        let cfg = settings.to_plugin_config(48_000.0);
+        let filters = cfg.parameters.get("filters").expect("filters present");
+        let first = &filters.as_array().expect("array")[0];
+        assert!(first.get("topology").is_none());
+        assert!(first.get("lambda").is_none());
+        assert!(first.get("kautz_sections").is_none());
+    }
+
+    /// Warped-biquad topology + lambda survive the engine→plugin JSON
+    /// round-trip. Before this PR the producer dropped these fields,
+    /// silently downgrading RoomEQ-emitted warped filters to plain biquads.
+    #[test]
+    fn eq_to_plugin_config_emits_topology_and_lambda_for_warped() {
+        use math_audio_iir_fir::BiquadFilterType;
+        let filter = EQFilter::new_warped(BiquadFilterType::Peak, 80.0, 2.0, -4.0, Some(0.5));
+        let settings = PluginSettings::EQ {
+            channels: 2,
+            filters: vec![filter],
+            channel_filters: None,
+            per_channel_mode: false,
+            max_filters: 10,
+            tdf2: false,
+            topology: 0.0,
+        };
+        let cfg = settings.to_plugin_config(48_000.0);
+        let filters = cfg.parameters.get("filters").expect("filters present");
+        let first = &filters.as_array().expect("array")[0];
+        assert_eq!(
+            first.get("topology").and_then(|v| v.as_str()),
+            Some("warped_biquad")
+        );
+        assert_eq!(first.get("lambda").and_then(|v| v.as_f64()), Some(0.5));
+    }
+
+    /// Kautz topology serialises its pole sections so the plugin's runtime
+    /// can reconstruct the parallel modal correction. Sections with no
+    /// explicit gain still serialise (defaults to 0).
+    #[test]
+    fn eq_to_plugin_config_emits_kautz_sections() {
+        let sections = vec![
+            KautzSectionConfig {
+                pole_freq: 45.0,
+                q: 12.0,
+                gain: -3.0,
+            },
+            KautzSectionConfig {
+                pole_freq: 80.0,
+                q: 8.0,
+                gain: -2.0,
+            },
+        ];
+        let filter = EQFilter::new_kautz(100.0, 1.0, 0.0, sections);
+        let settings = PluginSettings::EQ {
+            channels: 2,
+            filters: vec![filter],
+            channel_filters: None,
+            per_channel_mode: false,
+            max_filters: 10,
+            tdf2: false,
+            topology: 0.0,
+        };
+        let cfg = settings.to_plugin_config(48_000.0);
+        let filters = cfg.parameters.get("filters").expect("filters present");
+        let first = &filters.as_array().expect("array")[0];
+        assert_eq!(
+            first.get("topology").and_then(|v| v.as_str()),
+            Some("kautz_filter")
+        );
+        let emitted = first
+            .get("kautz_sections")
+            .and_then(|v| v.as_array())
+            .expect("kautz_sections is an array");
+        assert_eq!(emitted.len(), 2);
+        assert_eq!(emitted[0].get("pole_freq").and_then(|v| v.as_f64()), Some(45.0));
+        assert_eq!(emitted[1].get("q").and_then(|v| v.as_f64()), Some(8.0));
     }
 }
 

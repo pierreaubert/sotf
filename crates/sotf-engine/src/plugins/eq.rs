@@ -3,7 +3,18 @@
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use serde::{Deserialize, Serialize};
 
-/// Configuration for a single EQ filter (biquad)
+// Re-exported so engine consumers and the plugin pipeline share a single source
+// of truth for the filter topology surface.
+pub use sotf_plugins::plugin_eq::{EqFilterTopology, KautzSectionConfig};
+
+/// Configuration for a single EQ filter.
+///
+/// `topology = Biquad` is the standard parametric biquad and uses
+/// `filter_type`/`frequency`/`q`/`gain_db` directly. `Warped` uses the same
+/// fields but routes them through a frequency-warped biquad with the optional
+/// `lambda` warping coefficient (None = auto-Bark for the active sample rate).
+/// `Kautz` uses `kautz_sections` as a parallel modal correction; the scalar
+/// frequency/q/gain are retained only as a fallback single-section descriptor.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EQFilter {
     pub filter_type: BiquadFilterType,
@@ -14,6 +25,12 @@ pub struct EQFilter {
     pub muted: bool,
     #[serde(default)]
     pub solo: bool,
+    #[serde(default)]
+    pub topology: EqFilterTopology,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lambda: Option<f64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub kautz_sections: Vec<KautzSectionConfig>,
 }
 
 impl EQFilter {
@@ -25,6 +42,53 @@ impl EQFilter {
             gain_db,
             muted: false,
             solo: false,
+            topology: EqFilterTopology::Biquad,
+            lambda: None,
+            kautz_sections: Vec::new(),
+        }
+    }
+
+    /// Construct a warped-biquad filter. `lambda = None` selects the
+    /// Bark-scale warping coefficient for the runtime sample rate.
+    pub fn new_warped(
+        filter_type: BiquadFilterType,
+        frequency: f64,
+        q: f64,
+        gain_db: f64,
+        lambda: Option<f64>,
+    ) -> Self {
+        Self {
+            filter_type,
+            frequency,
+            q,
+            gain_db,
+            muted: false,
+            solo: false,
+            topology: EqFilterTopology::WarpedBiquad,
+            lambda,
+            kautz_sections: Vec::new(),
+        }
+    }
+
+    /// Construct a Kautz modal filter from a list of pole sections. When the
+    /// section list is empty the scalar `frequency`/`q`/`gain_db` act as a
+    /// single-section fallback (matches the plugin's deserialization behaviour).
+    pub fn new_kautz(
+        frequency: f64,
+        q: f64,
+        gain_db: f64,
+        sections: Vec<KautzSectionConfig>,
+    ) -> Self {
+        Self {
+            filter_type: BiquadFilterType::Peak,
+            frequency,
+            q,
+            gain_db,
+            muted: false,
+            solo: false,
+            topology: EqFilterTopology::KautzFilter,
+            lambda: None,
+            kautz_sections: sections,
         }
     }
 

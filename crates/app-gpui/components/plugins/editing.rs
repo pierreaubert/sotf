@@ -46,6 +46,21 @@ pub trait PluginEditingManager {
     fn toggle_eq_band_mute(&mut self, band_idx: usize) -> Result<(), String>;
     fn toggle_eq_band_solo(&mut self, band_idx: usize) -> Result<(), String>;
     fn set_eq_per_channel_mode(&mut self, plugin_idx: usize, per_channel: bool);
+    /// Cycle the topology of an EQ band: Biquad → Warped → Kautz → Biquad.
+    fn cycle_eq_filter_topology(&mut self, plugin_idx: usize, band_idx: usize);
+    /// Cycle the warped-biquad `lambda` preset for the band.
+    fn cycle_eq_filter_lambda(&mut self, plugin_idx: usize, band_idx: usize);
+    /// Append a Kautz section. Only effective for Kautz-topology bands.
+    fn add_eq_kautz_section(
+        &mut self,
+        plugin_idx: usize,
+        band_idx: usize,
+        pole_freq: f64,
+        q: f64,
+        gain: f64,
+    );
+    /// Remove the last Kautz section.
+    fn pop_eq_kautz_section(&mut self, plugin_idx: usize, band_idx: usize);
     fn refresh_plugin_presets(&mut self);
     fn save_plugin_chain(&mut self);
     fn save_selected_preset(&mut self);
@@ -303,6 +318,41 @@ impl PluginEditingManager for App {
         let effect = self
             .plugin_state
             .set_eq_per_channel_mode(plugin_idx, per_channel);
+        self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+    }
+
+    fn cycle_eq_filter_topology(&mut self, plugin_idx: usize, band_idx: usize) {
+        let effect = self
+            .plugin_state
+            .cycle_eq_filter_topology(plugin_idx, band_idx);
+        self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+    }
+
+    fn cycle_eq_filter_lambda(&mut self, plugin_idx: usize, band_idx: usize) {
+        let effect = self
+            .plugin_state
+            .cycle_eq_filter_lambda(plugin_idx, band_idx);
+        self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+    }
+
+    fn add_eq_kautz_section(
+        &mut self,
+        plugin_idx: usize,
+        band_idx: usize,
+        pole_freq: f64,
+        q: f64,
+        gain: f64,
+    ) {
+        let effect = self
+            .plugin_state
+            .add_eq_kautz_section(plugin_idx, band_idx, pole_freq, q, gain);
+        self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+    }
+
+    fn pop_eq_kautz_section(&mut self, plugin_idx: usize, band_idx: usize) {
+        let effect = self
+            .plugin_state
+            .pop_eq_kautz_section(plugin_idx, band_idx);
         self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
     }
 

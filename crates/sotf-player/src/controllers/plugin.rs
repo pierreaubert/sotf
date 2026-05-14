@@ -267,6 +267,258 @@ impl PluginController {
         }
     }
 
+    /// Cycle the topology of an EQ filter band through Biquad → Warped → Kautz.
+    ///
+    /// Returns `Structural` so the engine rebuilds the EQ instance with the new
+    /// runtime topology (warped biquads need their own coefficient bank and
+    /// Kautz needs a parallel modal filter — the existing parameter-update
+    /// path can't reconfigure that in place).
+    pub fn cycle_eq_filter_topology(
+        &mut self,
+        plugin_idx: usize,
+        band_idx: usize,
+    ) -> PluginUpdateEffect {
+        use sotf_audio::plugins::eq::EqFilterTopology;
+
+        let Some(plugin) = self.graph.get_plugin_mut(plugin_idx) else {
+            return PluginUpdateEffect::None;
+        };
+        let sotf_audio::plugins::PluginSettings::EQ {
+            filters,
+            channel_filters,
+            ..
+        } = &mut plugin.settings
+        else {
+            return PluginUpdateEffect::None;
+        };
+
+        let cycle = |t: EqFilterTopology| -> EqFilterTopology {
+            match t {
+                EqFilterTopology::Biquad => EqFilterTopology::WarpedBiquad,
+                EqFilterTopology::WarpedBiquad => EqFilterTopology::KautzFilter,
+                EqFilterTopology::KautzFilter => EqFilterTopology::Biquad,
+            }
+        };
+
+        // Compute the next topology ONCE from the global band (or the first
+        // per-channel copy if the global slot is missing) so every replica
+        // converges on the same value — otherwise repeated calls would
+        // diverge per-channel state.
+        let Some(current) = filters
+            .get(band_idx)
+            .map(|f| f.topology)
+            .or_else(|| {
+                channel_filters
+                    .as_ref()
+                    .and_then(|cf| cf.first())
+                    .and_then(|ch| ch.get(band_idx).map(|f| f.topology))
+            })
+        else {
+            return PluginUpdateEffect::None;
+        };
+        let next_topology = cycle(current);
+
+        let mut mutated = false;
+        if let Some(f) = filters.get_mut(band_idx) {
+            f.topology = next_topology;
+            mutated = true;
+        }
+        if let Some(channel_filters) = channel_filters.as_mut() {
+            for per_channel in channel_filters.iter_mut() {
+                if let Some(f) = per_channel.get_mut(band_idx) {
+                    f.topology = next_topology;
+                    mutated = true;
+                }
+            }
+        }
+
+        if mutated {
+            PluginUpdateEffect::Structural
+        } else {
+            PluginUpdateEffect::None
+        }
+    }
+
+    /// Cycle the lambda (warping coefficient) for a warped-biquad EQ band.
+    ///
+    /// Cycles through `None` (auto-Bark for the active sample rate) → 0.4 →
+    /// 0.6 → 0.8 → back to `None`. No-op when the band isn't a warped biquad.
+    pub fn cycle_eq_filter_lambda(
+        &mut self,
+        plugin_idx: usize,
+        band_idx: usize,
+    ) -> PluginUpdateEffect {
+        use sotf_audio::plugins::eq::EqFilterTopology;
+
+        let Some(plugin) = self.graph.get_plugin_mut(plugin_idx) else {
+            return PluginUpdateEffect::None;
+        };
+        let sotf_audio::plugins::PluginSettings::EQ {
+            filters,
+            channel_filters,
+            ..
+        } = &mut plugin.settings
+        else {
+            return PluginUpdateEffect::None;
+        };
+
+        // Cycle: None → 0.4 → 0.6 → 0.8 → None. Built on top of "find the
+        // smallest preset strictly above current" so a hand-edited JSON
+        // value (e.g. 0.5 or 0.55) snaps onto the next preset rather than
+        // skipping a stop. Values past the last preset wrap back to None
+        // (auto-Bark).
+        const PRESETS: &[f64] = &[0.4, 0.6, 0.8];
+        let next = |current: Option<f64>| -> Option<f64> {
+            match current {
+                None => Some(PRESETS[0]),
+                Some(v) => PRESETS.iter().copied().find(|&p| p > v + 1e-9),
+            }
+        };
+
+        // Same rule as topology cycling: compute the next lambda once.
+        let current_lambda = filters
+            .get(band_idx)
+            .filter(|f| matches!(f.topology, EqFilterTopology::WarpedBiquad))
+            .map(|f| f.lambda)
+            .or_else(|| {
+                channel_filters
+                    .as_ref()
+                    .and_then(|cf| cf.first())
+                    .and_then(|ch| ch.get(band_idx))
+                    .filter(|f| matches!(f.topology, EqFilterTopology::WarpedBiquad))
+                    .map(|f| f.lambda)
+            });
+        let Some(current_lambda) = current_lambda else {
+            return PluginUpdateEffect::None;
+        };
+        let next_lambda = next(current_lambda);
+
+        let mut mutated = false;
+        if let Some(f) = filters.get_mut(band_idx)
+            && matches!(f.topology, EqFilterTopology::WarpedBiquad)
+        {
+            f.lambda = next_lambda;
+            mutated = true;
+        }
+        if let Some(channel_filters) = channel_filters.as_mut() {
+            for per_channel in channel_filters.iter_mut() {
+                if let Some(f) = per_channel.get_mut(band_idx)
+                    && matches!(f.topology, EqFilterTopology::WarpedBiquad)
+                {
+                    f.lambda = next_lambda;
+                    mutated = true;
+                }
+            }
+        }
+
+        if mutated {
+            PluginUpdateEffect::Structural
+        } else {
+            PluginUpdateEffect::None
+        }
+    }
+
+    /// Append a Kautz pole section to an EQ band. Only takes effect when the
+    /// band's topology is `KautzFilter`; otherwise returns `None`.
+    pub fn add_eq_kautz_section(
+        &mut self,
+        plugin_idx: usize,
+        band_idx: usize,
+        pole_freq: f64,
+        q: f64,
+        gain: f64,
+    ) -> PluginUpdateEffect {
+        use sotf_audio::plugins::eq::{EqFilterTopology, KautzSectionConfig};
+
+        let Some(plugin) = self.graph.get_plugin_mut(plugin_idx) else {
+            return PluginUpdateEffect::None;
+        };
+        let sotf_audio::plugins::PluginSettings::EQ {
+            filters,
+            channel_filters,
+            ..
+        } = &mut plugin.settings
+        else {
+            return PluginUpdateEffect::None;
+        };
+
+        let section = KautzSectionConfig {
+            pole_freq,
+            q,
+            gain,
+        };
+
+        let mut mutated = false;
+        if let Some(f) = filters.get_mut(band_idx)
+            && matches!(f.topology, EqFilterTopology::KautzFilter)
+        {
+            f.kautz_sections.push(section.clone());
+            mutated = true;
+        }
+        if let Some(channel_filters) = channel_filters.as_mut() {
+            for per_channel in channel_filters.iter_mut() {
+                if let Some(f) = per_channel.get_mut(band_idx)
+                    && matches!(f.topology, EqFilterTopology::KautzFilter)
+                {
+                    f.kautz_sections.push(section.clone());
+                    mutated = true;
+                }
+            }
+        }
+
+        if mutated {
+            PluginUpdateEffect::Structural
+        } else {
+            PluginUpdateEffect::None
+        }
+    }
+
+    /// Remove the last Kautz pole section from an EQ band. No-op when the
+    /// band's topology isn't `KautzFilter` or the section list is empty.
+    pub fn pop_eq_kautz_section(
+        &mut self,
+        plugin_idx: usize,
+        band_idx: usize,
+    ) -> PluginUpdateEffect {
+        use sotf_audio::plugins::eq::EqFilterTopology;
+
+        let Some(plugin) = self.graph.get_plugin_mut(plugin_idx) else {
+            return PluginUpdateEffect::None;
+        };
+        let sotf_audio::plugins::PluginSettings::EQ {
+            filters,
+            channel_filters,
+            ..
+        } = &mut plugin.settings
+        else {
+            return PluginUpdateEffect::None;
+        };
+
+        let mut mutated = false;
+        if let Some(f) = filters.get_mut(band_idx)
+            && matches!(f.topology, EqFilterTopology::KautzFilter)
+            && f.kautz_sections.pop().is_some()
+        {
+            mutated = true;
+        }
+        if let Some(channel_filters) = channel_filters.as_mut() {
+            for per_channel in channel_filters.iter_mut() {
+                if let Some(f) = per_channel.get_mut(band_idx)
+                    && matches!(f.topology, EqFilterTopology::KautzFilter)
+                    && f.kautz_sections.pop().is_some()
+                {
+                    mutated = true;
+                }
+            }
+        }
+
+        if mutated {
+            PluginUpdateEffect::Structural
+        } else {
+            PluginUpdateEffect::None
+        }
+    }
+
     /// Set a parameter value for a plugin identified by its graph node ID.
     ///
     /// Works for both linear and non-linear graph topologies, unlike
@@ -1952,5 +2204,181 @@ mod tests {
         ctrl.add_eq_band_by_node_id(a).unwrap();
         assert_eq!(eq_filter_count(&ctrl, a), a_before + 1);
         assert_eq!(eq_filter_count(&ctrl, b), b_before);
+    }
+
+    /// Construct a controller with a linear-rack-friendly EQ instance and
+    /// return both its linear index and the band count.
+    fn make_linear_eq() -> (PluginController, usize) {
+        let mut ctrl = PluginController::new();
+        // PluginController::new() starts with the default rack (a linear
+        // chain). Add an EQ via the same helper the UI uses so it's in the
+        // user portion of the rack and addressable by linear index.
+        let _ = ctrl.add_plugin(&PluginType::EQ);
+        let idx = ctrl.selected_plugin_index;
+        (ctrl, idx)
+    }
+
+    fn topology_at(ctrl: &PluginController, idx: usize, band: usize) -> sotf_audio::plugins::eq::EqFilterTopology {
+        match &ctrl.graph.get_plugin(idx).unwrap().settings {
+            PluginSettings::EQ { filters, .. } => filters[band].topology,
+            other => panic!("expected EQ settings, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn cycle_eq_filter_topology_walks_biquad_warped_kautz() {
+        use sotf_audio::plugins::eq::EqFilterTopology;
+        let (mut ctrl, idx) = make_linear_eq();
+        let band = 0;
+        assert_eq!(topology_at(&ctrl, idx, band), EqFilterTopology::Biquad);
+
+        let effect = ctrl.cycle_eq_filter_topology(idx, band);
+        assert!(matches!(effect, PluginUpdateEffect::Structural));
+        assert_eq!(topology_at(&ctrl, idx, band), EqFilterTopology::WarpedBiquad);
+
+        ctrl.cycle_eq_filter_topology(idx, band);
+        assert_eq!(topology_at(&ctrl, idx, band), EqFilterTopology::KautzFilter);
+
+        ctrl.cycle_eq_filter_topology(idx, band);
+        assert_eq!(topology_at(&ctrl, idx, band), EqFilterTopology::Biquad);
+    }
+
+    #[test]
+    fn cycle_eq_filter_topology_keeps_per_channel_filters_in_sync() {
+        // Regression test for the bug where per-channel filters cycled
+        // independently of the global slot, leaving them out of sync.
+        use sotf_audio::plugins::eq::EqFilterTopology;
+        let (mut ctrl, idx) = make_linear_eq();
+
+        // Seed per-channel filters from the current globals.
+        {
+            let plugin = ctrl.graph.get_plugin_mut(idx).unwrap();
+            if let PluginSettings::EQ {
+                filters,
+                channel_filters,
+                ..
+            } = &mut plugin.settings
+            {
+                *channel_filters = Some(vec![filters.clone(), filters.clone()]);
+            }
+        }
+
+        ctrl.cycle_eq_filter_topology(idx, 0);
+
+        let plugin = ctrl.graph.get_plugin(idx).unwrap();
+        let PluginSettings::EQ {
+            filters,
+            channel_filters,
+            ..
+        } = &plugin.settings
+        else {
+            panic!("expected EQ settings");
+        };
+        assert_eq!(filters[0].topology, EqFilterTopology::WarpedBiquad);
+        for ch in channel_filters.as_ref().expect("channel_filters set") {
+            assert_eq!(ch[0].topology, EqFilterTopology::WarpedBiquad);
+        }
+    }
+
+    #[test]
+    fn cycle_eq_filter_lambda_only_walks_when_warped() {
+        let (mut ctrl, idx) = make_linear_eq();
+
+        // Biquad band → no-op.
+        let effect = ctrl.cycle_eq_filter_lambda(idx, 0);
+        assert!(matches!(effect, PluginUpdateEffect::None));
+
+        // Switch to warped, then cycle through lambda presets.
+        ctrl.cycle_eq_filter_topology(idx, 0);
+        let lambda_at = |ctrl: &PluginController| {
+            let plugin = ctrl.graph.get_plugin(idx).unwrap();
+            let PluginSettings::EQ { filters, .. } = &plugin.settings else {
+                unreachable!()
+            };
+            filters[0].lambda
+        };
+        assert_eq!(lambda_at(&ctrl), None);
+        ctrl.cycle_eq_filter_lambda(idx, 0);
+        assert_eq!(lambda_at(&ctrl), Some(0.4));
+        ctrl.cycle_eq_filter_lambda(idx, 0);
+        assert_eq!(lambda_at(&ctrl), Some(0.6));
+        ctrl.cycle_eq_filter_lambda(idx, 0);
+        assert_eq!(lambda_at(&ctrl), Some(0.8));
+        ctrl.cycle_eq_filter_lambda(idx, 0);
+        assert_eq!(lambda_at(&ctrl), None);
+    }
+
+    /// Lambda values imported from JSON between the preset stops still walk
+    /// to the next preset — regression for the original strict `<` cycle
+    /// which skipped over 0.6 when starting from 0.5 or 0.55.
+    #[test]
+    fn cycle_eq_filter_lambda_snaps_off_preset_imports() {
+        let (mut ctrl, idx) = make_linear_eq();
+        ctrl.cycle_eq_filter_topology(idx, 0);
+
+        let set_lambda = |ctrl: &mut PluginController, v: f64| {
+            let plugin = ctrl.graph.get_plugin_mut(idx).unwrap();
+            if let PluginSettings::EQ { filters, .. } = &mut plugin.settings {
+                filters[0].lambda = Some(v);
+            }
+        };
+        let lambda_at = |ctrl: &PluginController| {
+            let plugin = ctrl.graph.get_plugin(idx).unwrap();
+            let PluginSettings::EQ { filters, .. } = &plugin.settings else {
+                unreachable!()
+            };
+            filters[0].lambda
+        };
+
+        // Imported as 0.5 — should snap up to the next preset (0.6), not
+        // skip it and jump straight to 0.8.
+        set_lambda(&mut ctrl, 0.5);
+        ctrl.cycle_eq_filter_lambda(idx, 0);
+        assert_eq!(lambda_at(&ctrl), Some(0.6));
+
+        // Imported as 0.55 — same snap behaviour.
+        set_lambda(&mut ctrl, 0.55);
+        ctrl.cycle_eq_filter_lambda(idx, 0);
+        assert_eq!(lambda_at(&ctrl), Some(0.6));
+
+        // Imported as 0.7 — the next step is the last preset (0.8), not None.
+        set_lambda(&mut ctrl, 0.7);
+        ctrl.cycle_eq_filter_lambda(idx, 0);
+        assert_eq!(lambda_at(&ctrl), Some(0.8));
+    }
+
+    #[test]
+    fn add_and_pop_eq_kautz_section() {
+        let (mut ctrl, idx) = make_linear_eq();
+
+        // Not Kautz yet → both calls are no-ops.
+        assert!(matches!(
+            ctrl.add_eq_kautz_section(idx, 0, 80.0, 10.0, -2.0),
+            PluginUpdateEffect::None
+        ));
+        assert!(matches!(
+            ctrl.pop_eq_kautz_section(idx, 0),
+            PluginUpdateEffect::None
+        ));
+
+        // Switch to Kautz topology.
+        ctrl.cycle_eq_filter_topology(idx, 0);
+        ctrl.cycle_eq_filter_topology(idx, 0);
+        let kautz_count = |ctrl: &PluginController| {
+            let plugin = ctrl.graph.get_plugin(idx).unwrap();
+            let PluginSettings::EQ { filters, .. } = &plugin.settings else {
+                unreachable!()
+            };
+            filters[0].kautz_sections.len()
+        };
+
+        let before = kautz_count(&ctrl);
+        let effect = ctrl.add_eq_kautz_section(idx, 0, 80.0, 10.0, -2.0);
+        assert!(matches!(effect, PluginUpdateEffect::Structural));
+        assert_eq!(kautz_count(&ctrl), before + 1);
+
+        let effect = ctrl.pop_eq_kautz_section(idx, 0);
+        assert!(matches!(effect, PluginUpdateEffect::Structural));
+        assert_eq!(kautz_count(&ctrl), before);
     }
 }

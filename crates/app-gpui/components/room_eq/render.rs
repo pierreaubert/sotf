@@ -410,6 +410,16 @@ pub struct RoomEqReportChannel {
     pub epa: Option<RoomEqReportEpaComparison>,
 }
 
+/// Aggregate FIR temporal-masking metrics derived from
+/// `PerceptualMetrics.fir_*`. Lower (more negative) audible dB values mean
+/// less audible ringing; lower penalty means a perceptually safer FIR.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RoomEqReportFirMasking {
+    pub pre_audible_db: Option<f64>,
+    pub post_audible_db: Option<f64>,
+    pub penalty: Option<f64>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct RoomEqReportData {
     pub version: String,
@@ -420,6 +430,7 @@ pub struct RoomEqReportData {
     pub iterations: Option<usize>,
     pub timestamp: Option<String>,
     pub epa_preference_avg: Option<(f64, f64)>,
+    pub fir_masking: Option<RoomEqReportFirMasking>,
     pub bass_management: Option<RoomEqReportBassManagement>,
     pub channels: Vec<RoomEqReportChannel>,
 }
@@ -575,6 +586,18 @@ pub fn room_eq_report_data_from_dsp_output(
         iterations: metadata.map(|m| m.iterations),
         timestamp: metadata.map(|m| m.timestamp.clone()),
         epa_preference_avg: metadata.and_then(room_eq_report_epa_preference_avg),
+        fir_masking: metadata
+            .and_then(|m| m.perceptual_metrics.as_ref())
+            .map(|pm| RoomEqReportFirMasking {
+                pre_audible_db: pm.fir_pre_ringing_audible_db,
+                post_audible_db: pm.fir_post_ringing_audible_db,
+                penalty: pm.fir_temporal_masking_penalty,
+            })
+            // Only surface the block when at least one field carries data —
+            // otherwise an all-None record would render an empty card.
+            .filter(|m| {
+                m.pre_audible_db.is_some() || m.post_audible_db.is_some() || m.penalty.is_some()
+            }),
         bass_management: metadata
             .and_then(|m| m.bass_management.as_ref())
             .map(room_eq_report_bass_management_from_report),
@@ -1041,6 +1064,29 @@ pub(crate) fn render_room_eq_report_summary(
                         delta >= 0.0,
                         theme,
                     ))
+                })
+                .when_some(report.fir_masking.as_ref(), |el, fm| {
+                    el.child(
+                        div()
+                            .grid()
+                            .grid_cols(3)
+                            .gap(d.gap_md)
+                            .child(render_room_eq_stat_item(
+                                "FIR pre-ring audible",
+                                &fmt_optional_number(fm.pre_audible_db, "{:.1} dB"),
+                                theme,
+                            ))
+                            .child(render_room_eq_stat_item(
+                                "FIR post-ring audible",
+                                &fmt_optional_number(fm.post_audible_db, "{:.1} dB"),
+                                theme,
+                            ))
+                            .child(render_room_eq_stat_item(
+                                "FIR masking penalty",
+                                &fmt_optional_number(fm.penalty, "{:.3}"),
+                                theme,
+                            )),
+                    )
                 }),
         )
         .into_any_element()
@@ -2742,19 +2788,28 @@ fn interpolate_value_at(frequencies: &[f64], values: &[f64], target_freq: f64) -
 
 // === Free functions for channel configuration UI ===
 
-/// Render a single channel configuration row
+/// Render a single channel configuration row.
+///
+/// `sample_rate_hz` drives the FIR-crossover latency readout. Pass the
+/// optimizer's active sample rate so latency reflects the actual project
+/// (`(taps - 1) / 2 / sample_rate_hz * 1000` ms).
 pub(crate) fn render_channel_config_row(
     idx: usize,
     config: &crate::app::types::RoomEqSpeakerConfig,
     theme: &crate::theme::Theme,
     view: &Entity<PlayerView>,
     d: Ds,
+    sample_rate_hz: f64,
 ) -> impl IntoElement {
     use crate::app::types::SpeakerConfigType;
+
+    use crate::app::types::CrossoverType;
 
     let channel_name = config.channel_name.clone();
     let is_multi = config.config_type == SpeakerConfigType::MultiDriver;
     let crossover_type = config.crossover_type;
+    let fir_taps = config.linear_phase_fir_taps;
+    let is_linear_phase = matches!(crossover_type, CrossoverType::LinearPhase);
 
     div()
         .flex()
@@ -2856,9 +2911,102 @@ pub(crate) fn render_channel_config_row(
                             .size(TextSize::Xs)
                             .color(theme.text_secondary),
                     )
-                    .child(render_crossover_dropdown(idx, crossover_type, view, theme)),
+                    .child(render_crossover_dropdown(idx, crossover_type, view, theme))
+                    // Linear-phase FIR taps + latency readout only when
+                    // the LinearPhase variant is currently selected. The
+                    // slider cycles power-of-two values so the FIR length
+                    // stays FFT-friendly and matches the plugin's defaults.
+                    .when(is_linear_phase, |el| {
+                        el.child(render_linear_phase_taps_controls(
+                            idx,
+                            fir_taps,
+                            view,
+                            theme,
+                            sample_rate_hz,
+                        ))
+                    }),
             )
         })
+}
+
+/// Render the FIR-taps +/- buttons + latency readout for linear-phase
+/// crossovers. Taps step through `[1024, 2048, 4096, 8192, 16384, 32768]`
+/// with clamping at both ends, so dialing latency down from the default
+/// doesn't wrap around through 32768. Latency is `(taps - 1) / 2` samples
+/// at the project's active sample rate.
+fn render_linear_phase_taps_controls(
+    channel_idx: usize,
+    fir_taps: usize,
+    view: &Entity<PlayerView>,
+    theme: &crate::theme::Theme,
+    sample_rate_hz: f64,
+) -> impl IntoElement {
+    const TAP_CHOICES: &[usize] = &[1024, 2048, 4096, 8192, 16384, 32768];
+
+    let display_taps = fir_taps.max(1);
+    let latency_samples = display_taps.saturating_sub(1) / 2;
+    let latency_ms = (latency_samples as f64) / sample_rate_hz.max(1.0) * 1000.0;
+    let readout = format!("FIR {display_taps} • {latency_ms:.1} ms");
+
+    let step_button = |label: &'static str, id: SharedString, delta: i32| {
+        let view = view.clone();
+        let theme = theme.clone();
+        Button::new(id, label)
+            .variant(ButtonVariant::Secondary)
+            .size(ButtonSize::Xs)
+            .theme(theme.to_button_theme())
+            .on_click(move |_, cx| {
+                view.update(cx, |this, cx| {
+                    this.state.update(cx, |state, _| {
+                        if let Some(cfg) = state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .speaker_configs
+                            .get_mut(channel_idx)
+                        {
+                            let current = cfg.linear_phase_fir_taps;
+                            // Snap onto the preset table, then step. Clamps
+                            // at both ends prevent wrap-around so dialing
+                            // down from default doesn't suddenly jump to
+                            // the longest FIR.
+                            let current_idx = TAP_CHOICES
+                                .iter()
+                                .position(|&t| t >= current)
+                                .unwrap_or(TAP_CHOICES.len() - 1);
+                            let next_idx = (current_idx as i32 + delta)
+                                .clamp(0, TAP_CHOICES.len() as i32 - 1)
+                                as usize;
+                            cfg.linear_phase_fir_taps = TAP_CHOICES[next_idx];
+                        }
+                    });
+                    cx.notify();
+                });
+            })
+            .build()
+    };
+
+    div()
+        .flex()
+        .items_center()
+        .gap(px(4.0))
+        .child(step_button(
+            "-",
+            SharedString::from(format!("fir-taps-dec-{channel_idx}")),
+            -1,
+        ))
+        .child(
+            div().min_w(px(120.0)).child(
+                Text::new(readout)
+                    .size(TextSize::Xs)
+                    .color(theme.text_secondary),
+            ),
+        )
+        .child(step_button(
+            "+",
+            SharedString::from(format!("fir-taps-inc-{channel_idx}")),
+            1,
+        ))
 }
 
 /// Render crossover type dropdown as a cycling button

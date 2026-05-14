@@ -135,6 +135,10 @@ impl PlayerView {
                     .and_then(|report| report.bass_management.as_ref()),
                 |vstack, bass| vstack.child(render_room_eq_bass_management_report(d, bass, &theme)),
             )
+            .when_some(
+                room_eq.dsp_output.as_ref(),
+                |vstack, dsp_output| vstack.child(render_fir_temporal_masking_summary(dsp_output, &theme)),
+            )
             // Selected channel result
             .child(self.render_selected_channel_result(cx))
     }
@@ -597,4 +601,74 @@ fn room_eq_smoothing_value(value: f64) -> &'static str {
         .find(|(candidate, _)| (value - *candidate).abs() < 1.0e-9)
         .map(|(_, key)| *key)
         .unwrap_or("0.16666666666666666")
+}
+
+/// Render a per-channel "FIR Temporal Masking" summary card.
+///
+/// The optimizer populates `ChannelDspChain.fir_temporal_masking` only when
+/// FIR / linear-phase correction coefficients were actually exported, so the
+/// card lists exactly the channels with measurable pre/post-ringing data.
+/// When no channel has the metrics, the function still returns an empty card
+/// stub that simply collapses to nothing — callers chain it unconditionally.
+fn render_fir_temporal_masking_summary(
+    dsp_output: &sotf_audio_player::room_eq_types::DspChainOutput,
+    theme: &crate::theme::Theme,
+) -> AnyElement {
+    let mut rows: Vec<(String, autoeq::loss::epa::score::TemporalIrMaskingMetrics)> = Vec::new();
+
+    for (name, chain) in dsp_output.channels.iter() {
+        if let Some(metrics) = chain.fir_temporal_masking.as_ref() {
+            rows.push((name.clone(), metrics.clone()));
+        }
+    }
+
+    if rows.is_empty() {
+        return div().into_any_element();
+    }
+
+    // Stable channel ordering so the table doesn't shuffle between renders.
+    rows.sort_by(|(a, _), (b, _)| {
+        crate::components::room_eq::render::room_eq_channel_sort_key(a)
+            .cmp(&crate::components::room_eq::render::room_eq_channel_sort_key(b))
+    });
+
+    let header_row = HStack::new()
+        .spacing(StackSpacing::Md)
+        .child(Text::label("Channel"))
+        .child(Text::label("Main (ms)"))
+        .child(Text::label("Pre peak (dB)"))
+        .child(Text::label("Post peak (dB)"))
+        .child(Text::label("Pre audible (dB)"))
+        .child(Text::label("Post audible (dB)"))
+        .child(Text::label("Penalty"));
+
+    let mut content = VStack::new()
+        .spacing(StackSpacing::Xs)
+        .child(header_row);
+
+    for (name, m) in rows {
+        content = content.child(
+            HStack::new()
+                .spacing(StackSpacing::Md)
+                .child(Text::new(name).color(theme.text_primary))
+                .child(Text::new(format!("{:.2}", m.main_time_ms)))
+                .child(Text::new(format!("{:.1}", m.pre_ringing_peak_db)))
+                .child(Text::new(format!("{:.1}", m.post_ringing_peak_db)))
+                .child(Text::new(format!("{:.1}", m.pre_ringing_audible_db)))
+                .child(Text::new(format!("{:.1}", m.post_ringing_audible_db)))
+                .child(Text::new(format!("{:.3}", m.penalty))),
+        );
+    }
+
+    Card::new()
+        .background(theme.surface)
+        .header_background(theme.background_secondary)
+        .border(theme.border)
+        .header(
+            Text::new("FIR Temporal Masking")
+                .color(theme.text_primary)
+                .weight(TextWeight::Semibold),
+        )
+        .content(content)
+        .into_any_element()
 }

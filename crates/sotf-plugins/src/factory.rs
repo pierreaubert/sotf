@@ -148,7 +148,7 @@ pub fn create_plugin(
         "delay" => {
             let params: DelayPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse delay params: {e}"))?;
-            let plugin = DelayPlugin::from_params(channels, params);
+            let plugin = DelayPlugin::from_params(channels, params)?;
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 

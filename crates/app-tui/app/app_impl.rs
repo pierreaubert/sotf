@@ -709,8 +709,7 @@ impl App {
     /// flush picks `update_plugins` (linear) or `update_plugin_graph`
     /// (non-linear) based on the resulting topology.
     pub fn apply_room_eq_to_chain(&mut self) -> Result<String, String> {
-        use sotf_audio_player::autoeq;
-        use sotf_audio_player::room_eq_types::DspChainOutputExt;
+        use sotf_audio_player::autoeq::{self, RoomEqApplyOutcome};
 
         let Some(dsp_output) = self.room_eq.dsp_output.clone() else {
             return Err("No optimization results to apply. Run the optimizer first.".to_string());
@@ -723,37 +722,35 @@ impl App {
             .map(|r| r.channel_name.clone())
             .collect();
 
-        if dsp_output.is_rack_compatible() {
-            let outcome = autoeq::apply_room_eq_rack_to_chain(
-                &mut self.plugin_graph,
-                &dsp_output,
-                &channel_names,
-            );
-            if outcome.total_filters == 0 && outcome.total_broadband == 0 {
-                return Err("No EQ filters found in optimization results".to_string());
+        let sample_rate = self
+            .current_sample_rate
+            .map(|r| r as f64)
+            .unwrap_or_else(|| self.get_current_sample_rate());
+
+        let outcome = autoeq::apply_room_eq_to_chain(
+            &mut self.plugin_graph,
+            &dsp_output,
+            sample_rate,
+            &channel_names,
+        )?;
+
+        self.plugin_graph.update_channel_dependent_plugins();
+        self.request_plugin_update();
+
+        match outcome {
+            RoomEqApplyOutcome::Rack(o) => {
+                if o.total_filters == 0 && o.total_broadband == 0 {
+                    return Err("No EQ filters found in optimization results".to_string());
+                }
+                Ok(format!(
+                    "Applied Room EQ to rack: {} channels, {} main filters, {} broadband",
+                    o.num_channels, o.total_filters, o.total_broadband
+                ))
             }
-            self.plugin_graph.update_channel_dependent_plugins();
-            self.request_plugin_update();
-            Ok(format!(
-                "Applied Room EQ to rack: {} channels, {} main filters, {} broadband",
-                outcome.num_channels, outcome.total_filters, outcome.total_broadband
-            ))
-        } else {
-            let sample_rate = self
-                .current_sample_rate
-                .map(|r| r as f64)
-                .unwrap_or_else(|| self.get_current_sample_rate());
-            let outcome = autoeq::apply_room_eq_graph_to_chain(
-                &mut self.plugin_graph,
-                &dsp_output,
-                sample_rate,
-            )?;
-            self.plugin_graph.update_channel_dependent_plugins();
-            self.request_plugin_update();
-            Ok(format!(
+            RoomEqApplyOutcome::Graph(o) => Ok(format!(
                 "Applied Room EQ as graph: {} nodes, {} edges",
-                outcome.num_nodes, outcome.num_edges
-            ))
+                o.num_nodes, o.num_edges
+            )),
         }
     }
 

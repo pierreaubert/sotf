@@ -543,11 +543,14 @@ impl PlayerView {
         }
     }
 
+    /// Apply the captured Room EQ optimization output to the live plugin
+    /// chain. Auto-dispatches between the linear-rack and routed-graph
+    /// paths based on `dsp_output.requires_room_eq_graph()`, mirroring the
+    /// TUI's apply behavior so the user only needs one "Apply" button.
+    /// The status toast reports which path was taken.
     fn apply_room_eq_to_player(&mut self, cx: &mut Context<Self>) {
-        // The roomeq apply algorithm lives in `sotf-player::autoeq::apply`
-        // so the TUI can use the same path. This function is now a thin
-        // GPUI wrapper: gather inputs from `self.state`, call the shared
-        // function, then flush the config to the engine.
+        use sotf_audio_player::autoeq::RoomEqApplyOutcome;
+
         let (dsp_output, channel_result_names) = {
             let state = self.state.read(cx);
             let names: Vec<String> = state
@@ -576,25 +579,7 @@ impl PlayerView {
             return;
         };
 
-        // Update the plugin graph AND immediately flush the config to
-        // the audio engine. We deliberately don't go through
-        // `pending_plugin_update` / the timer — calling `update_plugins`
-        // synchronously here guarantees the engine sees the new filters
-        // before we show the success toast.
         self.state.update(cx, |state, _| {
-            let outcome = sotf_audio_player::autoeq::apply_room_eq_rack_to_chain(
-                &mut state.app.plugin_state.graph,
-                &dsp_output,
-                &channel_result_names,
-            );
-
-            if outcome.total_filters == 0 && outcome.total_broadband == 0 {
-                log::warn!("No EQ filters found in optimization results");
-                state.app.measurement_state.room_eq_state.error_message =
-                    Some("No EQ filters found in optimization results".to_string());
-                return;
-            }
-
             let device_name = state
                 .app
                 .audio_device_state
@@ -602,19 +587,87 @@ impl PlayerView {
                 .as_deref();
             let track_sr = state.app.playback.sample_rate.unwrap_or(48000);
             let sr = sotf_audio::select_output_sample_rate(track_sr, device_name) as f64;
-            let plugins = state.app.plugin_state.graph.to_plugin_configs(sr);
-            log::info!(
-                "Flushing {} plugins to engine at {:.0} Hz",
-                plugins.len(),
-                sr
-            );
-            match state.player.lock().update_plugins(plugins) {
-                Ok(()) => {
-                    state.app.measurement_state.room_eq_state.status_message =
-                        "Room EQ applied to player!".to_string();
-                    state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(
-                        "Room EQ applied successfully",
-                    ));
+
+            let outcome = match sotf_audio_player::autoeq::apply_room_eq_to_chain(
+                &mut state.app.plugin_state.graph,
+                &dsp_output,
+                sr,
+                &channel_result_names,
+            ) {
+                Ok(o) => o,
+                Err(e) => {
+                    log::error!("Apply room EQ failed: {}", e);
+                    state.app.measurement_state.room_eq_state.error_message =
+                        Some(format!("Failed to apply room EQ: {}", e));
+                    return;
+                }
+            };
+
+            state.app.plugin_state.plugin_graph_modified = true;
+            // Invalidate the workflow canvas so the graph view rebuilds.
+            state.app.plugin_state.workflow_canvas = None;
+
+            // Flush the right way for each path: rack → `update_plugins`
+            // from the linear-chain projection; graph → `update_plugin_graph`
+            // with the routed `PluginGraphConfig`.
+            let flush_result: Result<(String, &'static str), String> = match outcome {
+                RoomEqApplyOutcome::Rack(rack) => {
+                    if rack.total_filters == 0 && rack.total_broadband == 0 {
+                        Err("No EQ filters found in optimization results".to_string())
+                    } else {
+                        let plugins = state.app.plugin_state.graph.to_plugin_configs(sr);
+                        log::info!(
+                            "Flushing {} rack plugins to engine at {:.0} Hz",
+                            plugins.len(),
+                            sr
+                        );
+                        state
+                            .player
+                            .lock()
+                            .update_plugins(plugins)
+                            .map(|()| {
+                                (
+                                    format!(
+                                        "Room EQ applied to rack: {} ch, {} main filters, {} broadband",
+                                        rack.num_channels, rack.total_filters, rack.total_broadband
+                                    ),
+                                    "rack",
+                                )
+                            })
+                            .map_err(|e| e.to_string())
+                    }
+                }
+                RoomEqApplyOutcome::Graph(graph) => {
+                    log::info!(
+                        "Flushing routed graph to engine: {} nodes, {} edges",
+                        graph.num_nodes,
+                        graph.num_edges
+                    );
+                    // Switch the UI to the plugin-graph view since rack
+                    // cannot represent the routed topology.
+                    state.app.ui_state.current_screen = crate::app::Screen::PluginGraph;
+                    state
+                        .player
+                        .lock()
+                        .update_plugin_graph(graph.config)
+                        .map(|()| {
+                            (
+                                format!(
+                                    "Room EQ applied as graph: {} nodes, {} edges",
+                                    graph.num_nodes, graph.num_edges
+                                ),
+                                "graph",
+                            )
+                        })
+                        .map_err(|e| e.to_string())
+                }
+            };
+
+            match flush_result {
+                Ok((status, _path)) => {
+                    state.app.measurement_state.room_eq_state.status_message = status.clone();
+                    state.app.ui_state.toast_message =
+                        Some(crate::app::ToastMessage::success(status));
                 }
                 Err(e) => {
                     log::error!("Failed to apply room EQ: {}", e);
@@ -622,9 +675,6 @@ impl PlayerView {
                         Some(format!("Failed to apply: {}", e));
                 }
             }
-            state.app.plugin_state.plugin_graph_modified = true;
-            // Invalidate the workflow canvas so the graph view rebuilds
-            state.app.plugin_state.workflow_canvas = None;
         });
 
         cx.notify();

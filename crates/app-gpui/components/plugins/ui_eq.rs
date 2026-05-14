@@ -217,6 +217,75 @@ pub struct EqRenderState<'a> {
     pub mode: EqViewMode,
 }
 
+/// Magnitude (dB) for a single filter at `freq`, branching on the band's
+/// topology. Standard biquads use the existing fast log-magnitude path.
+/// Warped biquads and Kautz modal filters instantiate the matching
+/// math-iir-fir runtime once and evaluate its complex response so the
+/// preview curve matches what the engine actually applies.
+fn filter_log_response(filter: &EQFilter, freq: f64) -> f64 {
+    use math_audio_iir_fir::{KautzFilter, WarpedBiquad, bark_lambda};
+    use sotf_audio::plugins::EqFilterTopology;
+
+    match filter.topology {
+        EqFilterTopology::Biquad => {
+            let biquad = Biquad::new(
+                filter.filter_type,
+                filter.frequency,
+                SAMPLE_RATE,
+                filter.q,
+                filter.gain_db,
+            );
+            biquad.log_result(freq)
+        }
+        EqFilterTopology::WarpedBiquad => {
+            let lambda = filter.lambda.unwrap_or_else(|| bark_lambda(SAMPLE_RATE));
+            let warped = WarpedBiquad::new(
+                filter.filter_type,
+                filter.frequency,
+                SAMPLE_RATE,
+                filter.q,
+                filter.gain_db,
+                lambda,
+            );
+            warped.log_result(freq)
+        }
+        EqFilterTopology::KautzFilter => {
+            let modes: Vec<(f64, f64)> = if filter.kautz_sections.is_empty() {
+                vec![(filter.frequency, filter.q)]
+            } else {
+                filter
+                    .kautz_sections
+                    .iter()
+                    .map(|s| (s.pole_freq, s.q))
+                    .collect()
+            };
+            let mut kf = KautzFilter::from_room_modes(&modes, SAMPLE_RATE);
+            // Section gains: explicit values from kautz_sections override
+            // the implicit scalar gain. Match the runtime behavior in
+            // sotf_plugin_eq::KautzRuntime::apply_sample_rate.
+            if filter.kautz_sections.is_empty() {
+                if let Some(section) = kf.sections.first_mut() {
+                    section.gain = filter.gain_db;
+                }
+            } else {
+                for (section, cfg) in kf.sections.iter_mut().zip(filter.kautz_sections.iter()) {
+                    section.gain = cfg.gain;
+                }
+            }
+            let h = kf.complex_response(freq);
+            // Kautz output is a parallel-summed correction added to the
+            // dry signal (matches `KautzRuntime::process: sample + filter`)
+            // so the effective magnitude is `|1 + H(f)|`.
+            let mag = (num_complex::Complex::new(1.0, 0.0) + h).norm();
+            if mag > 1.0e-12 {
+                20.0 * mag.log10()
+            } else {
+                -200.0
+            }
+        }
+    }
+}
+
 /// Calculate the combined response in dB at a given frequency
 pub fn calculate_response_at_freq(filters: &[EQFilter], freq: f64) -> f64 {
     if filters.is_empty() {
@@ -234,10 +303,7 @@ pub fn calculate_response_at_freq(filters: &[EQFilter], freq: f64) -> f64 {
             }
             true
         })
-        .map(|f| {
-            let biquad = Biquad::new(f.filter_type, f.frequency, SAMPLE_RATE, f.q, f.gain_db);
-            biquad.log_result(freq)
-        })
+        .map(|f| filter_log_response(f, freq))
         .sum()
 }
 
@@ -249,14 +315,7 @@ pub fn calculate_band_response(filter: &EQFilter, freq: f64) -> f64 {
     if filter.muted {
         return 0.0;
     }
-    let biquad = Biquad::new(
-        filter.filter_type,
-        filter.frequency,
-        SAMPLE_RATE,
-        filter.q,
-        filter.gain_db,
-    );
-    biquad.log_result(freq)
+    filter_log_response(filter, freq)
 }
 
 /// Chart layout constants for control point positioning
@@ -1318,7 +1377,7 @@ pub fn render_eq_plugin(
                     .p(ds.pad_x)
                     .bg(theme.background_secondary)
                     .rounded(ds.r_md)
-                    // Filter type selector
+                    // Filter type selector + topology controls
                     .child(
                         div()
                             .flex()
@@ -1326,9 +1385,23 @@ pub fn render_eq_plugin(
                             .gap(ds.grid)
                             .child(
                                 div()
-                                    .text_size(ds.text_xs)
-                                    .text_color(theme.text_muted)
-                                    .child("Type"),
+                                    .flex()
+                                    .items_center()
+                                    .gap(ds.grid)
+                                    .child(
+                                        div()
+                                            .text_size(ds.text_xs)
+                                            .text_color(theme.text_muted)
+                                            .child("Type"),
+                                    )
+                                    .child(render_topology_controls(
+                                        &ds,
+                                        entity.clone(),
+                                        plugin_idx,
+                                        selected_band_idx,
+                                        filter,
+                                        theme,
+                                    )),
                             )
                             .child(render_filter_type_selector(
                                 &ds,
@@ -1466,6 +1539,138 @@ pub fn calculate_plot_width<'a>(chart_width: f32, labels: impl Iterator<Item = &
 
     // Final plot width
     (chart_width - CHART_LEFT_MARGIN - CHART_RIGHT_MARGIN - width_for_legend).max(0.0)
+}
+
+/// Render topology controls for an EQ band: a cycling label that switches
+/// Biquad → Warped → Kautz, plus a contextual secondary control that only
+/// makes sense for the current topology (lambda preset for Warped, +/-
+/// section buttons for Kautz). Biquads still render the topology pill so the
+/// user can opt into a different runtime when authoring by hand.
+fn render_topology_controls(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    band_idx: usize,
+    filter: &EQFilter,
+    theme: &Theme,
+) -> AnyElement {
+    use sotf_audio::plugins::EqFilterTopology;
+
+    let label = match filter.topology {
+        EqFilterTopology::Biquad => "IIR",
+        EqFilterTopology::WarpedBiquad => "Warp",
+        EqFilterTopology::KautzFilter => "Kautz",
+    };
+
+    let pill = {
+        let entity_topology = entity.clone();
+        div()
+            .px(d.pad_y)
+            .py(d.pad_y_half)
+            .text_size(d.text_xs)
+            .font_weight(FontWeight::SEMIBOLD)
+            .rounded(d.r_sm)
+            .cursor_pointer()
+            .bg(theme.background_secondary)
+            .text_color(theme.text_primary)
+            .hover(|s| s.bg(theme.surface_hover))
+            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                entity_topology.update(cx, |state, _| {
+                    state.app.cycle_eq_filter_topology(plugin_idx, band_idx);
+                });
+            })
+            .child(label)
+    };
+
+    let secondary: AnyElement = match filter.topology {
+        EqFilterTopology::Biquad => div().into_any_element(),
+        EqFilterTopology::WarpedBiquad => {
+            let lambda_text = filter
+                .lambda
+                .map(|v| format!("λ={v:.2}"))
+                .unwrap_or_else(|| "λ=auto".to_string());
+            let entity_lambda = entity.clone();
+            div()
+                .px(d.pad_y)
+                .py(d.pad_y_half)
+                .text_size(d.text_xs)
+                .rounded(d.r_sm)
+                .cursor_pointer()
+                .bg(theme.background_secondary)
+                .text_color(theme.text_secondary)
+                .hover(|s| s.bg(theme.surface_hover))
+                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                    entity_lambda.update(cx, |state, _| {
+                        state.app.cycle_eq_filter_lambda(plugin_idx, band_idx);
+                    });
+                })
+                .child(lambda_text)
+                .into_any_element()
+        }
+        EqFilterTopology::KautzFilter => {
+            let count = filter.kautz_sections.len();
+            let pole_freq = filter.frequency;
+            let q = filter.q;
+            let gain = filter.gain_db;
+            let entity_add = entity.clone();
+            let entity_remove = entity.clone();
+            div()
+                .flex()
+                .items_center()
+                .gap(d.grid)
+                .child(
+                    div()
+                        .text_size(d.text_xs)
+                        .text_color(theme.text_muted)
+                        .child(format!("{count} section{}", if count == 1 { "" } else { "s" })),
+                )
+                .child(
+                    div()
+                        .px(d.pad_y)
+                        .py(d.pad_y_half)
+                        .text_size(d.text_xs)
+                        .rounded(d.r_sm)
+                        .cursor_pointer()
+                        .bg(theme.background_secondary)
+                        .text_color(theme.text_primary)
+                        .hover(|s| s.bg(theme.surface_hover))
+                        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                            entity_add.update(cx, |state, _| {
+                                state.app.add_eq_kautz_section(
+                                    plugin_idx, band_idx, pole_freq, q, gain,
+                                );
+                            });
+                        })
+                        .child("+"),
+                )
+                .child(
+                    div()
+                        .px(d.pad_y)
+                        .py(d.pad_y_half)
+                        .text_size(d.text_xs)
+                        .rounded(d.r_sm)
+                        .cursor_pointer()
+                        .bg(theme.background_secondary)
+                        .text_color(theme.text_primary)
+                        .hover(|s| s.bg(theme.surface_hover))
+                        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                            entity_remove.update(cx, |state, _| {
+                                state.app.pop_eq_kautz_section(plugin_idx, band_idx);
+                            });
+                        })
+                        .child("-"),
+                )
+                .into_any_element()
+        }
+    };
+
+    div()
+        .flex()
+        .items_center()
+        .gap(d.grid)
+        .child(pill)
+        .child(secondary)
+        .into_any_element()
 }
 
 /// Get the index of a filter type in the standard ordering

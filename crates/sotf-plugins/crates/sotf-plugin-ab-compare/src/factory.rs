@@ -74,7 +74,7 @@ fn create_plugin_builtin(
         "delay" => {
             let params: DelayPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Invalid Delay params: {}", e))?;
-            let plugin = DelayPlugin::from_params(num_channels, params);
+            let plugin = DelayPlugin::from_params(num_channels, params)?;
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
         _ => Err(format!("Unknown plugin type: {}", plugin_type)),

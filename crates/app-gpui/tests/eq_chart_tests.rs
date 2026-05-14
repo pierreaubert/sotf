@@ -299,6 +299,9 @@ fn test_calculate_response_at_freq() {
         filter_type: BiquadFilterType::Peak,
         muted: false,
         solo: false,
+        topology: Default::default(),
+        lambda: None,
+        kautz_sections: Vec::new(),
     }];
     let response = calculate_response_at_freq(&flat_filter, 1000.0);
     assert!(
@@ -314,6 +317,9 @@ fn test_calculate_response_at_freq() {
         filter_type: BiquadFilterType::Peak,
         muted: true,
         solo: false,
+        topology: Default::default(),
+        lambda: None,
+        kautz_sections: Vec::new(),
     }];
     let muted_response = calculate_response_at_freq(&muted_filter, 1000.0);
     assert!(
@@ -333,6 +339,9 @@ fn test_calculate_response_solo() {
             filter_type: BiquadFilterType::Peak,
             muted: false,
             solo: false,
+            topology: Default::default(),
+            lambda: None,
+            kautz_sections: Vec::new(),
         },
         EQFilter {
             frequency: 1000.0,
@@ -341,6 +350,9 @@ fn test_calculate_response_solo() {
             filter_type: BiquadFilterType::Peak,
             muted: false,
             solo: true,
+            topology: Default::default(),
+            lambda: None,
+            kautz_sections: Vec::new(),
         },
     ];
 
@@ -365,6 +377,9 @@ fn test_calculate_band_response() {
         filter_type: BiquadFilterType::Peak,
         muted: false,
         solo: false,
+        topology: Default::default(),
+        lambda: None,
+        kautz_sections: Vec::new(),
     };
 
     let response = calculate_band_response(&filter, 1000.0);

@@ -1,0 +1,21 @@
+[nodes]
+0 gain room_eq_gain_pre ch=10
+1 eq room_eq_eq_pre ch=10
+2 crossover room_eq_xover_hp ch=10
+3 delay room_eq_delay_hp ch=10
+4 crossover room_eq_xover_lp ch=10
+5 delay room_eq_delay_lp ch=10
+6 matrix room_eq_matrix_to_sub_bus ch=10
+7 eq room_eq_eq_post ch=10
+8 gain room_eq_gain_post ch=10
+
+[edges]
+room_eq_delay_hp -> room_eq_eq_post
+room_eq_delay_lp -> room_eq_matrix_to_sub_bus
+room_eq_eq_post -> room_eq_gain_post
+room_eq_eq_pre -> room_eq_xover_hp
+room_eq_eq_pre -> room_eq_xover_lp
+room_eq_gain_pre -> room_eq_eq_pre
+room_eq_matrix_to_sub_bus -> room_eq_eq_post
+room_eq_xover_hp -> room_eq_delay_hp
+room_eq_xover_lp -> room_eq_delay_lp

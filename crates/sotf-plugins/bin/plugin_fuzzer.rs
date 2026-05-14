@@ -654,6 +654,7 @@ impl PluginFuzzer for DelayFuzzer {
             lfo_rate_hz: 0.0,
             lfo_depth_ms: 0.0,
             allpass_feedback: false,
+            channel_delays_ms: Vec::new(),
         };
 
         let desc = format!(
@@ -662,9 +663,9 @@ impl PluginFuzzer for DelayFuzzer {
         );
 
         (
-            Box::new(InPlacePluginAdapter::new(DelayPlugin::from_params(
-                channels, params,
-            ))),
+            Box::new(InPlacePluginAdapter::new(
+                DelayPlugin::from_params(channels, params).expect("valid delay params"),
+            )),
             desc,
         )
     }
@@ -726,6 +727,9 @@ impl PluginFuzzer for CrossoverFuzzer {
             frequency,
             output: output.clone(),
             extra_frequencies: vec![],
+            fir_taps: None,
+            channel_frequencies_hz: vec![],
+            channel_modes: vec![],
         };
         let plugin = CrossoverPlugin::from_params(channels, &params).unwrap();
 

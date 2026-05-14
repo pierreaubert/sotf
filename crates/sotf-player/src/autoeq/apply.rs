@@ -303,8 +303,18 @@ fn derive_plugin_name(plugin_type_str: &str, parameters: &serde_json::Value) -> 
 
 /// Apply DSP output parameters to a `PluginSettings` in-place.
 ///
-/// Handles the common plugin types from roomeq: EQ (filters), Gain (gain_db),
-/// and Delay (delay_ms). Unknown types are left at their defaults.
+/// Handles the common plugin types from roomeq: EQ (filters / channel_filters),
+/// Gain (gain_db / channel_gains), and Delay (delay_ms / channel_delays_ms).
+///
+/// The factored RoomEQ builder emits multichannel plugins carrying
+/// per-channel parameter arrays (`channel_gains`, `channel_filters`,
+/// `channel_delays_ms`). `PluginSettings::EQ` carries `channel_filters` +
+/// `per_channel_mode` natively. `PluginSettings::Gain` and `::Delay` are
+/// scalar today — for those we surface the channel-0 value as a
+/// representative default so the UI plugin-graph editor displays
+/// something meaningful instead of an unrelated default. The actual
+/// engine plugin gets the full per-channel array via the JSON the
+/// factory consumes; this function only feeds the UI representation.
 fn apply_dsp_params_to_settings(
     settings: &mut PluginSettings,
     plugin_type_str: &str,
@@ -313,27 +323,75 @@ fn apply_dsp_params_to_settings(
     let lower = plugin_type_str.to_lowercase();
     match lower.as_str() {
         "eq" => {
-            if let PluginSettings::EQ { filters, .. } = settings
-                && let Some(filter_arr) = parameters.get("filters").and_then(|v| v.as_array())
+            if let PluginSettings::EQ {
+                filters,
+                channel_filters,
+                per_channel_mode,
+                ..
+            } = settings
             {
-                *filters = parse_eq_filters_from_json(filter_arr);
+                // Prefer per-channel filter list when present (factored builder).
+                if let Some(per_ch) =
+                    parameters.get("channel_filters").and_then(|v| v.as_array())
+                {
+                    let per_channel: Vec<Vec<EQFilter>> = per_ch
+                        .iter()
+                        .map(|ch| {
+                            ch.as_array()
+                                .map(|arr| parse_eq_filters_from_json(arr))
+                                .unwrap_or_default()
+                        })
+                        .collect();
+                    *channel_filters = Some(per_channel);
+                    *per_channel_mode = true;
+                    // Keep a representative `filters` vec so the legacy
+                    // single-channel-EQ UI path shows something useful when
+                    // per-channel mode is off.
+                    if let Some(first) = channel_filters.as_ref().and_then(|cf| cf.first()) {
+                        *filters = first.clone();
+                    }
+                } else if let Some(filter_arr) =
+                    parameters.get("filters").and_then(|v| v.as_array())
+                {
+                    *filters = parse_eq_filters_from_json(filter_arr);
+                }
             }
         }
         "gain" => {
-            if let PluginSettings::Gain { gain_db, .. } = settings
-                && let Some(v) = parameters.get("gain_db").and_then(|v| v.as_f64())
-            {
-                *gain_db = v;
+            if let PluginSettings::Gain { gain_db, .. } = settings {
+                // Per-channel array takes precedence; surface channel 0 as
+                // the scalar representative.
+                if let Some(per_ch) = parameters
+                    .get("channel_gains")
+                    .and_then(|v| v.as_array())
+                    .filter(|arr| !arr.is_empty())
+                {
+                    if let Some(v) = per_ch[0].as_f64() {
+                        *gain_db = v;
+                    }
+                } else if let Some(v) = parameters.get("gain_db").and_then(|v| v.as_f64()) {
+                    *gain_db = v;
+                }
             }
         }
         "delay" => {
-            if let PluginSettings::Delay { delay_ms, .. } = settings
-                && let Some(v) = parameters.get("delay_ms").and_then(|v| v.as_f64())
-            {
-                *delay_ms = v;
+            if let PluginSettings::Delay { delay_ms, .. } = settings {
+                if let Some(per_ch) = parameters
+                    .get("channel_delays_ms")
+                    .and_then(|v| v.as_array())
+                    .filter(|arr| !arr.is_empty())
+                {
+                    if let Some(v) = per_ch[0].as_f64() {
+                        *delay_ms = v;
+                    }
+                } else if let Some(v) = parameters.get("delay_ms").and_then(|v| v.as_f64()) {
+                    *delay_ms = v;
+                }
             }
         }
-        _ => {} // Other types keep defaults
+        _ => {} // Other types keep defaults (crossover lacks a PluginSettings
+                // variant today — its per-channel fields are visible via the
+                // parameters() API at runtime).
     }
 }
 
@@ -457,6 +515,43 @@ pub fn build_ui_graph_from_config(config: &PluginGraphConfig) -> PluginGraph {
     }
 
     graph
+}
+
+/// Dispatcher entry point: picks the rack or graph apply path based on the
+/// optimizer's output shape, so callers don't have to duplicate the
+/// `is_rack_compatible()` branch.
+///
+/// Returns a [`RoomEqApplyOutcome`] tag carrying the path-specific outcome.
+/// Caller flushes via `update_plugins` (rack) or `update_plugin_graph` (graph).
+#[derive(Debug, Clone)]
+pub enum RoomEqApplyOutcome {
+    Rack(RackApplyOutcome),
+    Graph(GraphApplyOutcome),
+}
+
+/// Apply a `DspChainOutput` to a UI plugin graph, auto-selecting between
+/// the linear-rack and routed-graph paths.
+///
+/// `channel_names` is consumed only by the rack path (used to map filter
+/// lists to output channel slots). The graph path derives channel order
+/// from `dsp_output.metadata.bass_management.routing_graph.input_channels`
+/// directly. Callers may pass an empty slice when the output is known to
+/// require a graph; the parameter is kept here so call sites that don't
+/// know in advance which path will be taken can hand it through unchanged.
+pub fn apply_room_eq_to_chain(
+    graph: &mut PluginGraph,
+    dsp_output: &DspChainOutput,
+    sample_rate: f64,
+    channel_names: &[String],
+) -> Result<RoomEqApplyOutcome, String> {
+    use crate::room_eq_types::DspChainOutputExt;
+    if dsp_output.is_rack_compatible() {
+        let outcome = apply_room_eq_rack_to_chain(graph, dsp_output, channel_names);
+        Ok(RoomEqApplyOutcome::Rack(outcome))
+    } else {
+        let outcome = apply_room_eq_graph_to_chain(graph, dsp_output, sample_rate)?;
+        Ok(RoomEqApplyOutcome::Graph(outcome))
+    }
 }
 
 /// Apply a routed `DspChainOutput` (multi-driver crossovers, bass
@@ -598,5 +693,104 @@ mod tests {
         let outcome = apply_room_eq_rack_to_chain(&mut graph, &dsp, &names);
         assert_eq!(outcome.num_channels, 2);
         assert!(graph.find_plugin_index_by_name("Room EQ").is_some());
+    }
+
+    // ========================================================================
+    // apply_dsp_params_to_settings — per-channel JSON handling (factored
+    // builder shapes).
+    // ========================================================================
+
+    #[test]
+    fn apply_dsp_params_to_settings_gain_picks_channel_zero_from_array() {
+        let mut settings = PluginSettings::Gain {
+            channels: 2,
+            gain_db: 0.0,
+            smoothing_ms: 20.0,
+        };
+        let params = serde_json::json!({
+            "channel_gains": [-3.0, -5.5],
+            "gain_db": 0.0,
+        });
+        apply_dsp_params_to_settings(&mut settings, "gain", &params);
+        match settings {
+            PluginSettings::Gain { gain_db, .. } => assert_eq!(gain_db, -3.0),
+            _ => panic!("expected Gain"),
+        }
+    }
+
+    #[test]
+    fn apply_dsp_params_to_settings_delay_picks_channel_zero_from_array() {
+        let mut settings = PluginSettings::Delay {
+            delay_ms: 0.0,
+            feedback: 0.0,
+            mix: 1.0,
+            lfo_rate_hz: 0.0,
+            lfo_depth_ms: 0.0,
+            allpass_feedback: false,
+        };
+        let params = serde_json::json!({
+            "channel_delays_ms": [10.0, 25.0],
+            "delay_ms": 0.0,
+        });
+        apply_dsp_params_to_settings(&mut settings, "delay", &params);
+        match settings {
+            PluginSettings::Delay { delay_ms, .. } => assert_eq!(delay_ms, 10.0),
+            _ => panic!("expected Delay"),
+        }
+    }
+
+    #[test]
+    fn apply_dsp_params_to_settings_eq_populates_channel_filters() {
+        let mut settings = PluginSettings::EQ {
+            channels: 2,
+            filters: Vec::new(),
+            channel_filters: None,
+            per_channel_mode: false,
+            max_filters: 10,
+            tdf2: false,
+            topology: 0.0,
+        };
+        let params = serde_json::json!({
+            "channel_filters": [
+                [{"filter_type": "peak", "freq": 100.0, "q": 1.0, "db_gain": -3.0}],
+                [{"filter_type": "peak", "freq": 200.0, "q": 2.0, "db_gain": 4.0}],
+            ],
+        });
+        apply_dsp_params_to_settings(&mut settings, "eq", &params);
+        match settings {
+            PluginSettings::EQ {
+                channel_filters,
+                per_channel_mode,
+                filters,
+                ..
+            } => {
+                assert!(per_channel_mode, "per_channel_mode must be set");
+                let per_ch = channel_filters.expect("channel_filters populated");
+                assert_eq!(per_ch.len(), 2);
+                assert_eq!(per_ch[0].len(), 1);
+                assert_eq!(per_ch[1].len(), 1);
+                // `filters` reflects channel 0 for legacy single-EQ UI paths.
+                assert_eq!(filters.len(), 1);
+            }
+            _ => panic!("expected EQ"),
+        }
+    }
+
+    #[test]
+    fn apply_dsp_params_to_settings_falls_back_to_scalar_when_no_per_channel() {
+        let mut settings = PluginSettings::Gain {
+            channels: 2,
+            gain_db: 0.0,
+            smoothing_ms: 20.0,
+        };
+        apply_dsp_params_to_settings(
+            &mut settings,
+            "gain",
+            &serde_json::json!({"gain_db": -7.5}),
+        );
+        match settings {
+            PluginSettings::Gain { gain_db, .. } => assert_eq!(gain_db, -7.5),
+            _ => panic!("expected Gain"),
+        }
     }
 }
