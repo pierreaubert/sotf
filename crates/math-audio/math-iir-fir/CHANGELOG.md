@@ -1,3 +1,7 @@
+# 0.5.12
+
+- Added support for linear phase crossover
+
 # 0.5.11
 
 ## Bug fixes
@@ -17,6 +21,9 @@
 
 ## Added
 
+- Exposed `DEFAULT_FIR_CROSSOVER_TAPS` plus lowpass/highpass coefficient
+  accessors on `FirCrossover`, so callers can model/export the same
+  linear-phase crossover response used by the realtime splitter.
 - Warped Linear Predictive Coding (LPC)
 - Kautz filters
 
@@ -29,4 +36,3 @@
 
 - added BiquadBank (can pack 2 or 4 operations in 1 clock depending on the hardware)
 - added PeakMatched filters (Vicanek matched analog response)
-

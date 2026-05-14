@@ -92,7 +92,7 @@ pub use phase_smooth::{interpolate_phase_complex, smooth_phase_via_group_delay, 
 pub use svf::{SvfFilter, SvfFilterType};
 
 // Re-export crossover types
-pub use fir_crossover::{FirCrossover, MultibandFirCrossover};
+pub use fir_crossover::{DEFAULT_FIR_CROSSOVER_TAPS, FirCrossover, MultibandFirCrossover};
 pub use lr4_crossover::{CROSSOVER_PRESETS, Lr4Crossover, MultibandLr4Crossover};
 pub use lr8_crossover::{Lr8Crossover, MultibandLr8Crossover};
 

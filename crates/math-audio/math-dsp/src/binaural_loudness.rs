@@ -302,13 +302,7 @@ impl BinauralDownmix {
         let a = std::f64::consts::FRAC_1_SQRT_2;
         let coeffs: Vec<[f64; 2]> = match layout {
             // L,  R,  C,    Ls,    Rs
-            SurroundLayout::FiveZero => vec![
-                [1.0, 0.0],
-                [0.0, 1.0],
-                [a, a],
-                [a, 0.0],
-                [0.0, a],
-            ],
+            SurroundLayout::FiveZero => vec![[1.0, 0.0], [0.0, 1.0], [a, a], [a, 0.0], [0.0, a]],
             // L,  R,  C,    LFE, Ls,    Rs
             SurroundLayout::FiveOne => vec![
                 [1.0, 0.0],

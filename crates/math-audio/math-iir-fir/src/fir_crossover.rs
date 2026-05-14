@@ -17,6 +17,9 @@
 use crate::traits::FilterFloat;
 use crate::{Fir, WindowType};
 
+/// Default number of taps for generated linear-phase crossover filters.
+pub const DEFAULT_FIR_CROSSOVER_TAPS: usize = 1025;
+
 // ============================================================================
 // Single-point FIR crossover
 // ============================================================================
@@ -127,6 +130,23 @@ impl<T: FilterFloat> FirCrossover<T> {
             low_out[ch] = l;
             high_out[ch] = h;
         }
+    }
+
+    /// Lowpass FIR coefficients.
+    pub fn lowpass_coefficients(&self) -> &[T] {
+        &self.coefficients
+    }
+
+    /// Highpass FIR coefficients computed as delayed-input minus lowpass.
+    pub fn highpass_coefficients(&self) -> Vec<T> {
+        let mut coefficients = self.coefficients.iter().map(|&c| -c).collect::<Vec<_>>();
+        coefficients[(self.n_taps - 1) / 2] += T::one();
+        coefficients
+    }
+
+    /// Number of FIR taps.
+    pub fn n_taps(&self) -> usize {
+        self.n_taps
     }
 
     /// Latency in samples (= (n_taps - 1) / 2).
