@@ -543,7 +543,7 @@ Controls the optimization algorithm, constraints, and advanced features.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `mode` | string | `"iir"` | Optimization mode: `"iir"`, `"fir"`, `"mixed"`, or `"mixed_phase"` |
-| `processing_mode` | string | `"low_latency"` | V2 processing mode: `"low_latency"`, `"phase_linear"`, `"hybrid"`, `"mixed_phase"` |
+| `processing_mode` | string | `"low_latency"` | V2 processing mode: `"low_latency"`, `"phase_linear"`, `"hybrid"`, `"mixed_phase"`, `"warped_iir"`, or `"kautz_modal"` |
 | `fir` | object | - | FIR configuration (when mode is `"fir"` or `"mixed"`) |
 | `mixed_config` | object | - | Mixed mode configuration for frequency-based crossover |
 | `mixed_phase` | object | - | Mixed-phase correction config (when processing_mode is `"mixed_phase"`) |
@@ -631,7 +631,14 @@ EPA tuning knobs. Every field is optional and serde-defaulted, so omitting
       "temporal_masking": {
         "enabled": true,
         "weight": 0.15,
-        "profile": "mixed"
+        "profile": "mixed",
+        "ir_enabled": true,
+        "ir_weight": 0.05,
+        "pre_mask_ms": 3.0,
+        "post_mask_ms": 120.0,
+        "pre_ringing_weight": 2.0,
+        "post_ringing_weight": 1.0,
+        "ir_audibility_threshold_db": -45.0
       },
       "flatness_band_weights": {
         "bass_min": 20.0,
@@ -662,7 +669,22 @@ EPA tuning knobs. Every field is optional and serde-defaulted, so omitting
 | `flatness_erb_weight` | number | `1.0` | ERB-weighted blend for the flatness term. Default pure ERB because EPA already has band-sensitive sharpness/roughness/loudness-balance terms. |
 | `flatness_band_weight` | number | `0.0` | Band-weighted blend for the flatness term. Increase to add an explicit bass/mid/treble bias on top of the ERB flatness. |
 | `flatness_band_weights` | object | see `FrequencyBandWeights` defaults | Per-band frequency ranges and weights. Only consulted when `flatness_band_weight > 0`. |
-| `temporal_masking` | object | `{ "enabled": true, "weight": 0.15, "profile": "mixed" }` | Modal temporal-masking penalty. When enabled, EPA optimization uses detected room-mode Q/prominence data to penalize audible post-masked ringing. `profile` is one of `"transient"`, `"mixed"`, or `"sustained"`; transient material applies the strongest ringing penalty. |
+| `temporal_masking` | object | see below | Modal and FIR impulse-response temporal-masking controls. The modal path uses detected room-mode Q/prominence data inside the EPA optimizer loss; the FIR path analyzes generated FIR impulse responses for pre/post ringing under pre- and post-masking windows. |
+
+**TemporalMaskingConfig fields:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | boolean | `true` | Enable modal temporal masking when detected room-mode data is available. |
+| `weight` | number | `0.15` | Weight for the modal ringing penalty in the EPA optimizer loss. |
+| `profile` | string | `"mixed"` | Programme material profile: `"transient"`, `"mixed"`, or `"sustained"`. Transient material applies the strongest temporal penalty. |
+| `ir_enabled` | boolean | `true` | Enable true FIR impulse-response temporal masking analysis when FIR coefficients are available. |
+| `ir_weight` | number | `0.05` | Weight used for the scalar FIR temporal masking penalty reported in output metrics. |
+| `pre_mask_ms` | number | `3.0` | Pre-masking window before the main impulse. Pre-ringing inside this window is partially masked; earlier pre-ringing is fully audible. |
+| `post_mask_ms` | number | `120.0` | Post-masking window after the main impulse. Post-ringing grows more audible as it decays beyond this window. |
+| `pre_ringing_weight` | number | `2.0` | Relative weight for audible pre-ringing, which is usually more objectionable than post-ringing. |
+| `post_ringing_weight` | number | `1.0` | Relative weight for audible post-ringing. |
+| `ir_audibility_threshold_db` | number | `-45.0` | Audibility floor for weighted FIR pre/post ringing energy, in dB relative to the main impulse peak. |
 
 **FrequencyBandWeights fields:**
 

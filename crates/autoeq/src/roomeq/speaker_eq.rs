@@ -210,6 +210,29 @@ fn broadband_correction_rejected(pre_bb_score: f64, post_bb_score: f64) -> bool 
     post_bb_score > pre_bb_score * MAX_WORSENING_RATIO
 }
 
+fn create_kautz_filter_config(sections: &[(f64, f64, f64)]) -> serde_json::Value {
+    let kautz_sections: Vec<serde_json::Value> = sections
+        .iter()
+        .map(|(pole_freq, q, gain)| {
+            serde_json::json!({
+                "pole_freq": pole_freq,
+                "q": q,
+                "gain": gain,
+            })
+        })
+        .collect();
+    let (freq, q, _) = sections.first().copied().unwrap_or((100.0, 1.0, 0.0));
+
+    serde_json::json!({
+        "topology": "kautz_filter",
+        "filter_type": "peak",
+        "freq": freq,
+        "q": q,
+        "db_gain": 0.0,
+        "kautz_sections": kautz_sections,
+    })
+}
+
 /// Process a simple speaker with a single measurement
 ///
 /// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms)
@@ -1466,8 +1489,13 @@ pub(super) fn process_single_speaker(
                 returned_fir,
             ))
         }
-        ProcessingMode::LowLatency => {
+        ProcessingMode::LowLatency | ProcessingMode::WarpedIir => {
             // Default IIR mode with enhanced processing
+            let warped_iir = matches!(
+                room_config.optimizer.processing_mode,
+                ProcessingMode::WarpedIir
+            );
+            let warped_lambda = warped_iir.then(|| math_audio_iir_fir::bark_lambda(sample_rate));
 
             // Apply target tilt to the curve (subtract tilt from measurement)
             let optimization_curve = if let Some(ref tilt_curve) = target_tilt_curve {
@@ -1604,10 +1632,18 @@ pub(super) fn process_single_speaker(
                 channel_name,
                 None,
                 pre_plugins,
-                &main_eq_filters,
+                if warped_iir { &[] } else { &main_eq_filters },
                 None,
                 None,
             );
+
+            if warped_iir && !main_eq_filters.is_empty() {
+                chain.plugins.push(output::create_warped_eq_plugin(
+                    &excursion_filters,
+                    &eq_filters,
+                    warped_lambda,
+                ));
+            }
 
             // Add Pass 3 preference EQ plugin if non-empty
             if !preference_filters.is_empty() {
@@ -1715,16 +1751,10 @@ pub(super) fn process_single_speaker(
             ))
         }
 
-        ProcessingMode::WarpedIir => Err(AutoeqError::InvalidConfiguration {
-            message: "processing_mode=warped_iir is not supported; roomeq currently exports \
-                      standard biquads, so using this mode would silently behave like low_latency"
-                .to_string(),
-        }),
-
         ProcessingMode::KautzModal => {
-            // KautzModal detects room modes and converts optimized Kautz gains
-            // to equivalent Peak biquads. If no modes are detected, returning
-            // an error is more truthful than silently using the LowLatency path.
+            // KautzModal detects room modes and exports optimized Kautz gains
+            // as a Kautz runtime topology. We keep approximate Peak biquads for
+            // response scoring/reporting because the report pipeline is PEQ-based.
             info!("  KautzModal mode: starting optimization...");
 
             let optimization_curve = if let Some(ref tilt_curve) = target_tilt_curve {
@@ -1772,24 +1802,23 @@ pub(super) fn process_single_speaker(
 
             kautz.optimize_gains(&freqs_f64, &measured_f64, &target_f64);
 
-            // Convert Kautz sections to equivalent Peak biquads.
-            let eq_filters: Vec<Biquad> = room_modes
+            let kautz_sections: Vec<(f64, f64, f64)> = room_modes
                 .iter()
                 .zip(kautz.sections.iter())
                 .filter(|(_, s)| s.gain.abs() > 0.1)
-                .map(|(mode, section)| {
+                .map(|(mode, section)| (mode.frequency, mode.q.max(0.5), section.gain))
+                .collect();
+
+            // Mirror Kautz sections as Peak biquads for score/display approximation.
+            let eq_filters: Vec<Biquad> = kautz_sections
+                .iter()
+                .map(|(freq, q, gain)| {
                     use math_audio_iir_fir::BiquadFilterType;
-                    Biquad::new(
-                        BiquadFilterType::Peak,
-                        mode.frequency,
-                        sample_rate,
-                        mode.q.max(0.5),
-                        section.gain,
-                    )
+                    Biquad::new(BiquadFilterType::Peak, *freq, sample_rate, *q, *gain)
                 })
                 .collect();
 
-            if eq_filters.is_empty() {
+            if kautz_sections.is_empty() {
                 return Err(AutoeqError::OptimizationFailed {
                     message: format!(
                         "KautzModal optimized zero usable filters for channel '{}'; use low_latency \
@@ -1800,12 +1829,13 @@ pub(super) fn process_single_speaker(
             };
 
             info!(
-                "  KautzModal: {} biquad filters from {} modes",
-                eq_filters.len(),
+                "  KautzModal: {} Kautz sections from {} modes",
+                kautz_sections.len(),
                 room_modes.len()
             );
 
-            // Combine all filters and build chain (same pattern as LowLatency)
+            // Combine all filters and build chain. The runtime chain gets a
+            // true Kautz filter; all_filters keeps the report approximation.
             let preference_filters = if cea2034_active {
                 if let Some(ref target_resp) = room_config.optimizer.target_response {
                     super::cea2034_correction::generate_preference_filters(
@@ -1825,9 +1855,6 @@ pub(super) fn process_single_speaker(
             all_filters.extend(eq_filters.clone());
             all_filters.extend(preference_filters.iter().cloned());
 
-            let mut main_eq_filters = excursion_filters.clone();
-            main_eq_filters.extend(eq_filters.clone());
-
             let mut pre_plugins = Vec::new();
             pre_plugins.extend(cea2034_plugins.iter().cloned());
             pre_plugins.extend(broadband_plugins.iter().cloned());
@@ -1836,10 +1863,21 @@ pub(super) fn process_single_speaker(
                 channel_name,
                 None,
                 pre_plugins,
-                &main_eq_filters,
+                &[],
                 None,
                 None,
             );
+            let mut main_filter_configs: Vec<serde_json::Value> = excursion_filters
+                .iter()
+                .map(output::biquad_to_json)
+                .collect();
+            main_filter_configs.push(create_kautz_filter_config(&kautz_sections));
+            chain
+                .plugins
+                .push(output::create_labeled_eq_plugin_from_filter_configs(
+                    main_filter_configs,
+                    "kautz_modal",
+                ));
 
             if !preference_filters.is_empty() {
                 chain.plugins.push(output::create_labeled_eq_plugin(
@@ -2057,6 +2095,26 @@ mod tests {
         assert!(!super::broadband_correction_rejected(1.0, 0.5));
         // Zero pre-score with any positive post-score is rejected.
         assert!(super::broadband_correction_rejected(0.0, 0.1));
+    }
+
+    #[test]
+    fn kautz_filter_config_serializes_modal_sections() {
+        let config = super::create_kautz_filter_config(&[(42.0, 8.0, -4.5), (71.0, 5.5, 2.0)]);
+
+        assert_eq!(
+            config.get("topology").unwrap().as_str().unwrap(),
+            "kautz_filter"
+        );
+        assert_eq!(config.get("freq").unwrap().as_f64().unwrap(), 42.0);
+        assert_eq!(
+            config
+                .get("kautz_sections")
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
     }
 
     #[test]

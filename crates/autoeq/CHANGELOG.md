@@ -7,10 +7,18 @@
   room-mode Q, prominence, and perceptual temporal-severity thresholds, with
   `transient`, `mixed`, and `sustained` profiles under
   `optimizer.epa_config.temporal_masking`.
+- Added true FIR impulse-response temporal masking analysis for phase/FIR
+  paths. PhaseLinear, Hybrid, MixedPhase, and standalone phase-correction FIRs
+  now report pre-ringing and post-ringing audibility metrics after applying
+  configurable pre/post masking windows.
 - `convert_recording` now materializes default EPA configuration when rewriting
   RoomConfig files that select `loss_type = "epa"` but omit `epa_config`, so
   converted configs expose the temporal masking defaults instead of silently
   relying on runtime fallback state.
+- RoomEQ `processing_mode=warped_iir` now validates and exports EQ filters with
+  the `warped_biquad` runtime topology, and `processing_mode=kautz_modal`
+  exports a true `kautz_filter` section bank instead of only serializing
+  approximate peak biquads.
 
 # 0.4.44
 

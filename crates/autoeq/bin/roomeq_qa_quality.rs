@@ -4096,6 +4096,7 @@ mod tests {
             target_curve: Some((&curve_with_slope(target_slope_db_per_octave)).into()),
             pre_ir: None,
             post_ir: None,
+            fir_temporal_masking: None,
         }
     }
 

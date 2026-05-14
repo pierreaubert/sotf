@@ -122,6 +122,17 @@
               "type": "null"
             }
           ]
+        },
+        "fir_temporal_masking": {
+          "description": "FIR impulse-response temporal masking metrics (optional, FIR/phase modes)",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TemporalIrMaskingMetrics"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -302,6 +313,17 @@
               "type": "null"
             }
           ]
+        },
+        "perceptual_metrics": {
+          "description": "Perceptual scorecard computed from final exported curves/DSP.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PerceptualMetrics"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -310,6 +332,107 @@
         "algorithm",
         "iterations",
         "timestamp"
+      ]
+    },
+    "PerceptualMetrics": {
+      "description": "Compact perceptual scorecard for downstream QA and UIs.",
+      "type": "object",
+      "properties": {
+        "epa_preference_pre": {
+          "description": "Average EPA preference before correction.",
+          "type": "number",
+          "format": "double"
+        },
+        "epa_preference_post": {
+          "description": "Average EPA preference after correction.",
+          "type": "number",
+          "format": "double"
+        },
+        "epa_preference_delta": {
+          "description": "EPA preference delta, positive means perceptual improvement.",
+          "type": "number",
+          "format": "double"
+        },
+        "fir_pre_ringing_audible_db": {
+          "description": "Maximum FIR pre-ringing audible energy across channels, dB relative to each FIR's main impulse peak.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "fir_post_ringing_audible_db": {
+          "description": "Maximum FIR post-ringing audible energy across channels, dB relative to each FIR's main impulse peak.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "fir_temporal_masking_penalty": {
+          "description": "Maximum FIR temporal masking penalty across channels.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        }
+      },
+      "required": [
+        "epa_preference_pre",
+        "epa_preference_post",
+        "epa_preference_delta"
+      ]
+    },
+    "TemporalIrMaskingMetrics": {
+      "description": "True impulse-response temporal masking metrics for FIR / phase correction.",
+      "type": "object",
+      "properties": {
+        "main_index": {
+          "description": "Main impulse sample index used as the transient reference.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "main_time_ms": {
+          "description": "Main impulse time in milliseconds from the start of the FIR.",
+          "type": "number",
+          "format": "double"
+        },
+        "pre_ringing_peak_db": {
+          "description": "Peak pre-ringing level before the main impulse, dB relative to main.",
+          "type": "number",
+          "format": "double"
+        },
+        "post_ringing_peak_db": {
+          "description": "Peak post-ringing level after the main impulse, dB relative to main.",
+          "type": "number",
+          "format": "double"
+        },
+        "pre_ringing_audible_db": {
+          "description": "Pre-masked audible pre-ringing energy, dB relative to main peak energy.",
+          "type": "number",
+          "format": "double"
+        },
+        "post_ringing_audible_db": {
+          "description": "Post-masked audible post-ringing energy, dB relative to main peak energy.",
+          "type": "number",
+          "format": "double"
+        },
+        "penalty": {
+          "description": "Scalar penalty using the configured material profile and IR weights.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "main_index",
+        "main_time_ms",
+        "pre_ringing_peak_db",
+        "post_ringing_peak_db",
+        "pre_ringing_audible_db",
+        "post_ringing_audible_db",
+        "penalty"
       ]
     },
     "InterChannelDeviation": {

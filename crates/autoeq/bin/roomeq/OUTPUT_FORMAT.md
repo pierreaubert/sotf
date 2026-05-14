@@ -49,7 +49,8 @@ Each channel contains an ordered list of plugins that process audio in sequence.
       "eq_response": { ... },
       "target_curve": { ... },
       "pre_ir": { ... },
-      "post_ir": { ... }
+      "post_ir": { ... },
+      "fir_temporal_masking": { ... }
     }
   }
 }
@@ -68,6 +69,7 @@ Each channel contains an ordered list of plugins that process audio in sequence.
 | `target_curve` | CurveData or null | Effective target curve the optimizer worked against (mean-shifted + tilt, in absolute SPL) |
 | `pre_ir` | IrWaveform or null | Impulse response before correction (requires phase data) |
 | `post_ir` | IrWaveform or null | Impulse response after correction (requires phase data) |
+| `fir_temporal_masking` | TemporalIrMaskingMetrics or null | True FIR impulse-response temporal masking metrics for FIR, mixed-phase, hybrid, or standalone phase-correction filters. |
 
 ---
 
@@ -111,6 +113,37 @@ Time-domain impulse response for visualization (pre/post correction comparison).
 
 ---
 
+## Temporal IR Masking Metrics
+
+FIR-specific time-domain metrics computed from the generated FIR coefficients.
+The main impulse peak is treated as the transient masker. Samples before it are
+pre-ringing; samples after it are post-ringing. Configured pre/post masking
+windows weight near-transient ringing down before reporting audible energy.
+
+```json
+{
+  "main_index": 2048,
+  "main_time_ms": 42.67,
+  "pre_ringing_peak_db": -32.4,
+  "post_ringing_peak_db": -38.1,
+  "pre_ringing_audible_db": -48.7,
+  "post_ringing_audible_db": -55.2,
+  "penalty": 0.0
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `main_index` | integer | Sample index of the main FIR impulse peak. |
+| `main_time_ms` | number | Main impulse time from the start of the FIR. |
+| `pre_ringing_peak_db` | number | Peak FIR pre-ringing level before the main impulse, dB relative to main. |
+| `post_ringing_peak_db` | number | Peak FIR post-ringing level after the main impulse, dB relative to main. |
+| `pre_ringing_audible_db` | number | Pre-masked audible pre-ringing energy, dB relative to main peak energy. |
+| `post_ringing_audible_db` | number | Post-masked audible post-ringing energy, dB relative to main peak energy. |
+| `penalty` | number | Scalar temporal masking penalty using `epa_config.temporal_masking` IR settings. |
+
+---
+
 ## Plugin Types
 
 ### Gain Plugin
@@ -148,6 +181,28 @@ Parametric EQ with multiple filter bands.
         "db_gain": 3.0
       },
       {
+        "topology": "warped_biquad",
+        "filter_type": "peak",
+        "freq": 80.0,
+        "q": 4.0,
+        "db_gain": -5.0,
+        "lambda": 0.75
+      },
+      {
+        "topology": "kautz_filter",
+        "filter_type": "peak",
+        "freq": 42.0,
+        "q": 8.0,
+        "db_gain": 0.0,
+        "kautz_sections": [
+          {
+            "pole_freq": 42.0,
+            "q": 8.0,
+            "gain": -4.5
+          }
+        ]
+      },
+      {
         "filter_type": "lowshelf",
         "freq": 100.0,
         "q": 0.707,
@@ -172,6 +227,9 @@ Parametric EQ with multiple filter bands.
 | `freq` | number (Hz) | Center/corner frequency |
 | `q` | number | Q factor (higher = narrower bandwidth) |
 | `db_gain` | number (dB) | Gain adjustment |
+| `topology` | string | Optional runtime topology. Omitted means standard `"biquad"`; Roomeq may emit `"warped_biquad"` or `"kautz_filter"` for the matching processing modes. |
+| `lambda` | number | Optional warping coefficient for `"warped_biquad"` filters. |
+| `kautz_sections` | array | Optional modal section list for `"kautz_filter"` filters; each section has `pole_freq`, `q`, and `gain`. |
 
 ### Crossover Plugin
 
@@ -402,6 +460,9 @@ Information about the optimization process.
 | `inter_channel_deviation` | object or null | Inter-channel SPL consistency metric (present when >1 channel) |
 | `epa_per_channel` | object or null | Per-channel EPA psychoacoustic metrics computed on the pre-EQ and post-EQ frequency responses. Emitted for every channel that has both `initial_curve` and `final_curve` populated, regardless of `loss_type`. See [EPA Per-Channel Metrics](#epa-per-channel-metrics). |
 | `epa_multichannel` | object or null | Whole-system EPA metrics after BS.1770-style channel-energy aggregation. Main/front channels use unit energy weight, surround channels use +1.5 dB, and LFE/subwoofer channels are excluded. |
+| `perceptual_metrics.fir_pre_ringing_audible_db` | number or null | Worst FIR pre-ringing audible energy across channels, dB relative to each FIR main impulse peak. |
+| `perceptual_metrics.fir_post_ringing_audible_db` | number or null | Worst FIR post-ringing audible energy across channels, dB relative to each FIR main impulse peak. |
+| `perceptual_metrics.fir_temporal_masking_penalty` | number or null | Worst scalar FIR temporal masking penalty across channels. |
 
 ### EPA Per-Channel Metrics
 

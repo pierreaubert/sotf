@@ -36,12 +36,11 @@ pub struct EpaConfig {
     /// Default 0.0 (see `flatness_erb_weight`).
     #[serde(default)]
     pub flatness_band_weight: f64,
-    /// Temporal-masking penalty for modal ringing.
+    /// Temporal-masking penalties for modal ringing and FIR phase behavior.
     ///
-    /// The first implementation uses detected room-mode Q/prominence data as
-    /// an optimizer-cheap proxy for post-masked modal decay audibility. Future
-    /// IR-aware implementations can extend this with true pre/post ringing
-    /// energy when phase data is available.
+    /// Modal data is used as an optimizer-cheap proxy for post-masked room
+    /// decay audibility. When FIR coefficients are exported, the FIR impulse
+    /// response is also analyzed directly for pre/post ringing audibility.
     #[serde(default)]
     pub temporal_masking: TemporalMaskingConfig,
 }
@@ -56,6 +55,34 @@ fn default_temporal_masking_enabled() -> bool {
 
 fn default_temporal_masking_weight() -> f64 {
     0.15
+}
+
+fn default_ir_temporal_masking_enabled() -> bool {
+    true
+}
+
+fn default_ir_temporal_masking_weight() -> f64 {
+    0.05
+}
+
+fn default_pre_mask_ms() -> f64 {
+    3.0
+}
+
+fn default_post_mask_ms() -> f64 {
+    120.0
+}
+
+fn default_pre_ringing_weight() -> f64 {
+    2.0
+}
+
+fn default_post_ringing_weight() -> f64 {
+    1.0
+}
+
+fn default_ir_audibility_threshold_db() -> f64 {
+    -45.0
 }
 
 /// Program-material bias for temporal masking.
@@ -89,6 +116,32 @@ pub struct TemporalMaskingConfig {
     /// Material profile used to scale modal-ringing audibility.
     #[serde(default)]
     pub profile: TemporalMaskingProfile,
+    /// Enable true FIR impulse-response pre/post masking analysis when FIR
+    /// coefficients are available.
+    #[serde(default = "default_ir_temporal_masking_enabled")]
+    pub ir_enabled: bool,
+    /// Weight applied to the IR masking penalty metric.
+    #[serde(default = "default_ir_temporal_masking_weight")]
+    pub ir_weight: f64,
+    /// Pre-masking window before the main impulse. Pre-ringing inside this
+    /// window is partially masked; earlier energy is fully audible.
+    #[serde(default = "default_pre_mask_ms")]
+    pub pre_mask_ms: f64,
+    /// Post-masking window after the main impulse. Ringing grows more audible
+    /// as it decays beyond this window.
+    #[serde(default = "default_post_mask_ms")]
+    pub post_mask_ms: f64,
+    /// Relative weight for audible pre-ringing. Usually higher than post
+    /// because pre-echo before a transient is especially objectionable.
+    #[serde(default = "default_pre_ringing_weight")]
+    pub pre_ringing_weight: f64,
+    /// Relative weight for audible post-ringing.
+    #[serde(default = "default_post_ringing_weight")]
+    pub post_ringing_weight: f64,
+    /// Audibility floor for weighted pre/post ringing energy, in dB relative
+    /// to the main impulse peak.
+    #[serde(default = "default_ir_audibility_threshold_db")]
+    pub ir_audibility_threshold_db: f64,
 }
 
 impl Default for TemporalMaskingConfig {
@@ -97,8 +150,34 @@ impl Default for TemporalMaskingConfig {
             enabled: default_temporal_masking_enabled(),
             weight: default_temporal_masking_weight(),
             profile: TemporalMaskingProfile::Mixed,
+            ir_enabled: default_ir_temporal_masking_enabled(),
+            ir_weight: default_ir_temporal_masking_weight(),
+            pre_mask_ms: default_pre_mask_ms(),
+            post_mask_ms: default_post_mask_ms(),
+            pre_ringing_weight: default_pre_ringing_weight(),
+            post_ringing_weight: default_post_ringing_weight(),
+            ir_audibility_threshold_db: default_ir_audibility_threshold_db(),
         }
     }
+}
+
+/// True impulse-response temporal masking metrics for FIR / phase correction.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct TemporalIrMaskingMetrics {
+    /// Main impulse sample index used as the transient reference.
+    pub main_index: usize,
+    /// Main impulse time in milliseconds from the start of the FIR.
+    pub main_time_ms: f64,
+    /// Peak pre-ringing level before the main impulse, dB relative to main.
+    pub pre_ringing_peak_db: f64,
+    /// Peak post-ringing level after the main impulse, dB relative to main.
+    pub post_ringing_peak_db: f64,
+    /// Pre-masked audible pre-ringing energy, dB relative to main peak energy.
+    pub pre_ringing_audible_db: f64,
+    /// Post-masked audible post-ringing energy, dB relative to main peak energy.
+    pub post_ringing_audible_db: f64,
+    /// Scalar penalty using the configured material profile and IR weights.
+    pub penalty: f64,
 }
 
 /// Optimizer-side modal data used by the EPA temporal masking penalty.
@@ -430,6 +509,106 @@ pub fn temporal_masking_penalty(
     }
 }
 
+fn db_from_ratio(ratio: f64) -> f64 {
+    if ratio <= 1e-24 {
+        -240.0
+    } else {
+        20.0 * ratio.log10()
+    }
+}
+
+fn db_from_energy_ratio(ratio: f64) -> f64 {
+    if ratio <= 1e-24 {
+        -240.0
+    } else {
+        10.0 * ratio.log10()
+    }
+}
+
+fn masking_weight(time_ms: f64, window_ms: f64) -> f64 {
+    if window_ms <= 0.0 {
+        1.0
+    } else {
+        (time_ms / window_ms).clamp(0.0, 1.0).powi(2)
+    }
+}
+
+/// Analyze true FIR impulse-response pre/post ringing with temporal masking.
+///
+/// The main impulse peak is treated as a transient masker. Energy before that
+/// peak is pre-ringing; energy after it is post-ringing. Samples close to the
+/// peak are partially masked by configurable pre/post masking windows, while
+/// distant ringing is treated as fully audible.
+pub fn temporal_ir_masking_metrics(
+    ir: &[f64],
+    sample_rate: f64,
+    config: &TemporalMaskingConfig,
+) -> Option<TemporalIrMaskingMetrics> {
+    if !config.ir_enabled || config.ir_weight <= 0.0 || sample_rate <= 0.0 || ir.is_empty() {
+        return None;
+    }
+
+    let (main_index, main_amp) = ir
+        .iter()
+        .enumerate()
+        .map(|(i, &v)| (i, v.abs()))
+        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))?;
+    if main_amp <= 1e-12 {
+        return None;
+    }
+
+    let main_energy = main_amp * main_amp;
+    let mut pre_peak = 0.0_f64;
+    let mut post_peak = 0.0_f64;
+    let mut pre_energy = 0.0_f64;
+    let mut post_energy = 0.0_f64;
+
+    for (idx, &sample) in ir.iter().enumerate() {
+        if idx == main_index {
+            continue;
+        }
+        let amp = sample.abs();
+        let energy = sample * sample;
+        if idx < main_index {
+            let time_ms = (main_index - idx) as f64 * 1000.0 / sample_rate;
+            let weight = masking_weight(time_ms, config.pre_mask_ms);
+            pre_peak = pre_peak.max(amp);
+            pre_energy += energy * weight;
+        } else {
+            let time_ms = (idx - main_index) as f64 * 1000.0 / sample_rate;
+            let weight = masking_weight(time_ms, config.post_mask_ms);
+            post_peak = post_peak.max(amp);
+            post_energy += energy * weight;
+        }
+    }
+
+    let pre_audible_db = db_from_energy_ratio(pre_energy / main_energy);
+    let post_audible_db = db_from_energy_ratio(post_energy / main_energy);
+    let threshold = config.ir_audibility_threshold_db;
+    let pre_excess = (pre_audible_db - threshold).max(0.0);
+    let post_excess = (post_audible_db - threshold).max(0.0);
+    let profile_scale = match config.profile {
+        TemporalMaskingProfile::Transient => 1.35,
+        TemporalMaskingProfile::Mixed => 1.0,
+        TemporalMaskingProfile::Sustained => 0.65,
+    };
+    let penalty = config.ir_weight
+        * profile_scale
+        * (config.pre_ringing_weight * pre_excess.powi(2)
+            + config.post_ringing_weight * post_excess.powi(2))
+        / 100.0;
+
+    Some(TemporalIrMaskingMetrics {
+        main_index,
+        main_time_ms: main_index as f64 * 1000.0 / sample_rate,
+        pre_ringing_peak_db: db_from_ratio(pre_peak / main_amp),
+        post_ringing_peak_db: db_from_ratio(post_peak / main_amp),
+        pre_ringing_audible_db: pre_audible_db,
+        post_ringing_audible_db: post_audible_db,
+        penalty,
+    })
+}
+
 /// Compute the flatness component of the EPA loss using the blend and
 /// band weights specified in `config`.
 ///
@@ -731,6 +910,40 @@ mod tests {
             temporal_masking_penalty(&freqs, &peq, &modes, &transient)
                 > temporal_masking_penalty(&freqs, &peq, &modes, &sustained)
         );
+    }
+
+    #[test]
+    fn temporal_ir_masking_detects_pre_ringing() {
+        let cfg = TemporalMaskingConfig {
+            pre_mask_ms: 0.0,
+            post_mask_ms: 0.0,
+            ..Default::default()
+        };
+        let clean = vec![0.0, 0.0, 1.0, 0.0, 0.0];
+        let ringing = vec![0.35, 0.0, 1.0, 0.0, 0.0];
+
+        let clean_metrics = temporal_ir_masking_metrics(&clean, 1000.0, &cfg).unwrap();
+        let ringing_metrics = temporal_ir_masking_metrics(&ringing, 1000.0, &cfg).unwrap();
+
+        assert!(clean_metrics.penalty <= 1e-12);
+        assert!(ringing_metrics.pre_ringing_audible_db > -10.0);
+        assert!(ringing_metrics.penalty > clean_metrics.penalty);
+    }
+
+    #[test]
+    fn temporal_ir_masking_applies_near_transient_pre_masking() {
+        let cfg = TemporalMaskingConfig {
+            pre_mask_ms: 3.0,
+            post_mask_ms: 0.0,
+            ..Default::default()
+        };
+        let near = vec![0.0, 0.3, 1.0, 0.0, 0.0, 0.0, 0.0];
+        let far = vec![0.3, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+
+        let near_metrics = temporal_ir_masking_metrics(&near, 1000.0, &cfg).unwrap();
+        let far_metrics = temporal_ir_masking_metrics(&far, 1000.0, &cfg).unwrap();
+
+        assert!(far_metrics.pre_ringing_audible_db > near_metrics.pre_ringing_audible_db);
     }
 
     #[test]

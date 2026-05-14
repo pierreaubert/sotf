@@ -127,6 +127,9 @@ pub struct ChannelDspChain {
     /// Impulse response after correction (optional, requires phase data)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub post_ir: Option<IrWaveform>,
+    /// FIR impulse-response temporal masking metrics (optional, FIR/phase modes)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fir_temporal_masking: Option<crate::loss::epa::score::TemporalIrMaskingMetrics>,
 }
 
 /// DSP chain for an individual driver in a multi-driver speaker
@@ -212,6 +215,17 @@ pub struct PerceptualMetrics {
     /// Human-readable timing/GD confidence label.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timing_confidence: Option<String>,
+    /// Maximum FIR pre-ringing audible energy across channels, dB relative to
+    /// each FIR's main impulse peak.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fir_pre_ringing_audible_db: Option<f64>,
+    /// Maximum FIR post-ringing audible energy across channels, dB relative to
+    /// each FIR's main impulse peak.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fir_post_ringing_audible_db: Option<f64>,
+    /// Maximum FIR temporal masking penalty across channels.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fir_temporal_masking_penalty: Option<f64>,
 }
 
 /// Optimization metadata

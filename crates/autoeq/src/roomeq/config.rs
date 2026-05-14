@@ -165,15 +165,6 @@ fn validate_optimizer_config(opt: &OptimizerConfig, result: &mut ValidationResul
         ));
     }
 
-    if opt.processing_mode == ProcessingMode::WarpedIir {
-        result.add_error(
-            "processing_mode=warped_iir is not supported; the roomeq output pipeline \
-             currently exports standard biquads, so warped IIR would silently behave \
-             like low_latency"
-                .to_string(),
-        );
-    }
-
     if let Some(auto) = &opt.auto_optimizer
         && auto.enabled
     {
@@ -1151,7 +1142,7 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_warped_iir_mode_is_invalid_until_implemented() {
+    fn test_validate_warped_iir_mode_is_valid() {
         let mut speakers = HashMap::new();
         speakers.insert(
             "left".to_string(),
@@ -1182,12 +1173,10 @@ mod tests {
 
         let result = validate_room_config(&config);
 
-        assert!(!result.is_valid);
         assert!(
-            result
-                .errors
-                .iter()
-                .any(|e| { e.contains("processing_mode=warped_iir is not supported") })
+            result.is_valid,
+            "expected valid warped_iir config, got {:?}",
+            result.errors
         );
     }
 

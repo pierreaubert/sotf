@@ -314,6 +314,7 @@ fn run_channel_via_generic_path(
         eq_response: raw_chain.eq_response,
         pre_ir: raw_chain.pre_ir,
         post_ir: raw_chain.post_ir,
+        fir_temporal_masking: raw_chain.fir_temporal_masking,
         target_curve: raw_chain.target_curve,
     };
 
@@ -1384,6 +1385,7 @@ pub(super) fn optimize_stereo_2_1_with_progress(
             eq_response: Some(eq_resp),
             pre_ir: None,
             post_ir: None,
+            fir_temporal_masking: None,
             target_curve: None,
         };
         channel_chains.insert(role.to_string(), chain);
@@ -1478,6 +1480,7 @@ pub(super) fn optimize_stereo_2_1_with_progress(
         eq_response: Some(sub_eq_resp),
         pre_ir: None,
         post_ir: None,
+        fir_temporal_masking: None,
         target_curve: None,
     };
     channel_chains.insert(sub_role.clone(), sub_chain);
@@ -2620,6 +2623,7 @@ fn optimize_home_cinema_with_sub(
             eq_response: Some(eq_resp),
             pre_ir: None,
             post_ir: None,
+            fir_temporal_masking: None,
             target_curve: None,
         };
         channel_chains.insert(role.clone(), chain);
@@ -2750,6 +2754,7 @@ fn optimize_home_cinema_with_sub(
         eq_response: Some(sub_eq_resp),
         pre_ir: None,
         post_ir: None,
+        fir_temporal_masking: None,
         target_curve: None,
     };
     channel_chains.insert(sub_role.clone(), sub_chain);

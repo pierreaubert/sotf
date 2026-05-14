@@ -2065,6 +2065,7 @@ mod tests {
             eq_response: None,
             pre_ir: None,
             post_ir: None,
+            fir_temporal_masking: None,
             target_curve: None,
         }
     }

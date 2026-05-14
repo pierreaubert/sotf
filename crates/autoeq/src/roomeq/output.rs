@@ -216,13 +216,24 @@ fn extrapolate_spl_log_slope(
 }
 
 /// Convert Biquad filter to JSON configuration
-fn biquad_to_json(biquad: &Biquad) -> serde_json::Value {
+pub(super) fn biquad_to_json(biquad: &Biquad) -> serde_json::Value {
     json!({
         "filter_type": biquad.filter_type.long_name().to_lowercase(),
         "freq": biquad.freq,
         "q": biquad.q,
         "db_gain": biquad.db_gain,
     })
+}
+
+pub(super) fn biquad_to_warped_json(biquad: &Biquad, lambda: Option<f64>) -> serde_json::Value {
+    let mut value = biquad_to_json(biquad);
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert("topology".to_string(), json!("warped_biquad"));
+        if let Some(lambda) = lambda {
+            obj.insert("lambda".to_string(), json!(lambda));
+        }
+    }
+    value
 }
 
 /// Create a gain plugin configuration
@@ -250,12 +261,51 @@ pub fn create_gain_plugin_with_invert(gain_db: f64, invert: bool) -> PluginConfi
 pub fn create_eq_plugin(filters: &[Biquad]) -> PluginConfigWrapper {
     let filter_configs: Vec<serde_json::Value> = filters.iter().map(biquad_to_json).collect();
 
+    create_eq_plugin_from_filter_configs(filter_configs)
+}
+
+/// Create an EQ plugin configuration from already-serialized filter configs.
+pub(super) fn create_eq_plugin_from_filter_configs(
+    filter_configs: Vec<serde_json::Value>,
+) -> PluginConfigWrapper {
     PluginConfigWrapper {
         plugin_type: "eq".to_string(),
         parameters: json!({
             "filters": filter_configs
         }),
     }
+}
+
+/// Create a labeled EQ plugin configuration from already-serialized filter configs.
+pub(super) fn create_labeled_eq_plugin_from_filter_configs(
+    filter_configs: Vec<serde_json::Value>,
+    label: &str,
+) -> PluginConfigWrapper {
+    PluginConfigWrapper {
+        plugin_type: "eq".to_string(),
+        parameters: json!({
+            "label": label,
+            "filters": filter_configs
+        }),
+    }
+}
+
+/// Create an EQ plugin configuration that emits standard biquads followed by
+/// warped-biquad room-EQ filters.
+pub(super) fn create_warped_eq_plugin(
+    standard_filters: &[Biquad],
+    warped_filters: &[Biquad],
+    lambda: Option<f64>,
+) -> PluginConfigWrapper {
+    let mut filter_configs: Vec<serde_json::Value> =
+        standard_filters.iter().map(biquad_to_json).collect();
+    filter_configs.extend(
+        warped_filters
+            .iter()
+            .map(|filter| biquad_to_warped_json(filter, lambda)),
+    );
+
+    create_eq_plugin_from_filter_configs(filter_configs)
 }
 
 /// Create a labeled EQ plugin configuration from Biquad filters.
@@ -354,6 +404,7 @@ pub fn build_channel_dsp_chain_with_curves(
         eq_response: None,
         pre_ir: None,
         post_ir: None,
+        fir_temporal_masking: None,
         target_curve: None,
     }
 }
@@ -542,6 +593,7 @@ pub fn build_multidriver_dsp_chain_with_curves(
         eq_response: None,
         pre_ir: None,
         post_ir: None,
+        fir_temporal_masking: None,
         target_curve: None,
     }
 }
@@ -737,6 +789,7 @@ pub fn build_multisub_dsp_chain_advanced(
         eq_response: None,
         pre_ir: None,
         post_ir: None,
+        fir_temporal_masking: None,
         target_curve: None,
     }
 }
@@ -819,6 +872,7 @@ pub fn build_dba_dsp_chain_with_curves(
         eq_response: None,
         pre_ir: None,
         post_ir: None,
+        fir_temporal_masking: None,
         target_curve: None,
     }
 }
@@ -892,6 +946,7 @@ pub fn build_cardioid_dsp_chain_with_curves(
         eq_response: None,
         pre_ir: None,
         post_ir: None,
+        fir_temporal_masking: None,
         target_curve: None,
     }
 }
@@ -1093,6 +1148,7 @@ pub fn build_mixed_mode_crossover_chain(
         eq_response: None,
         pre_ir: None,
         post_ir: None,
+        fir_temporal_masking: None,
         target_curve: None,
     }
 }
@@ -1156,6 +1212,41 @@ mod tests {
         assert_eq!(first_filter.get("freq").unwrap().as_f64().unwrap(), 1000.0);
         assert_eq!(first_filter.get("q").unwrap().as_f64().unwrap(), 2.0);
         assert_eq!(first_filter.get("db_gain").unwrap().as_f64().unwrap(), -3.0);
+    }
+
+    #[test]
+    fn test_create_warped_eq_plugin() {
+        let sample_rate = 48000.0;
+        let standard_filters = vec![Biquad::new(
+            BiquadFilterType::Highpass,
+            20.0,
+            sample_rate,
+            0.707,
+            0.0,
+        )];
+        let warped_filters = vec![Biquad::new(
+            BiquadFilterType::Peak,
+            80.0,
+            sample_rate,
+            4.0,
+            -5.0,
+        )];
+
+        let plugin = create_warped_eq_plugin(&standard_filters, &warped_filters, Some(0.75));
+        let filters = plugin
+            .parameters
+            .get("filters")
+            .unwrap()
+            .as_array()
+            .unwrap();
+
+        assert_eq!(filters.len(), 2);
+        assert!(filters[0].get("topology").is_none());
+        assert_eq!(
+            filters[1].get("topology").unwrap().as_str().unwrap(),
+            "warped_biquad"
+        );
+        assert_eq!(filters[1].get("lambda").unwrap().as_f64().unwrap(), 0.75);
     }
 
     #[test]
@@ -1393,6 +1484,7 @@ mod tests {
             eq_response: None,
             pre_ir: None,
             post_ir: None,
+            fir_temporal_masking: None,
             target_curve: None,
         };
 

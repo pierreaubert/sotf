@@ -366,13 +366,15 @@ pub enum ProcessingMode {
     /// Mixed-phase mode (IIR for minimum-phase + excess phase FIR)
     /// Requires phase data in measurements. Low latency (~10ms).
     MixedPhase,
-    /// Warped IIR mode — not currently supported by roomeq output/export.
-    /// Validation rejects this mode until warped filter design and serialization
-    /// are integrated end-to-end.
+    /// Warped IIR mode — exports RoomEQ filters as warped biquads using a
+    /// Bark-scale lambda. The optimizer currently uses the same biquad
+    /// placement/scoring path as low_latency, then serializes the runtime
+    /// topology as `warped_biquad`.
     WarpedIir,
     /// Kautz modal mode — pole-tuned filter targeting detected room modes.
     /// Uses room mode analysis to place filter poles at resonance frequencies.
     /// Gain optimization via linear least-squares (very fast, no DE needed).
+    /// Exports the runtime topology as `kautz_filter` with modal sections.
     /// Best for small, highly resonant rooms with clear modal problems.
     /// Returns an error if no room modes are detected.
     KautzModal,

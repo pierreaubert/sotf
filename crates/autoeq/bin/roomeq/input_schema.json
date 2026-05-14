@@ -1397,10 +1397,17 @@
           "format": "double"
         },
         "temporal_masking": {
-          "description": "Temporal-masking penalty for modal ringing.\n\nThe first implementation uses detected room-mode Q/prominence data as\nan optimizer-cheap proxy for post-masked modal decay audibility. Future\nIR-aware implementations can extend this with true pre/post ringing\nenergy when phase data is available.",
+          "description": "Temporal-masking penalties for modal ringing and FIR phase behavior.\n\nModal data is used as an optimizer-cheap proxy for post-masked room\ndecay audibility. When FIR coefficients are exported, the FIR impulse\nresponse is also analyzed directly for pre/post ringing audibility.",
           "$ref": "#/$defs/TemporalMaskingConfig",
           "default": {
             "enabled": true,
+            "ir_audibility_threshold_db": -45.0,
+            "ir_enabled": true,
+            "ir_weight": 0.05,
+            "post_mask_ms": 120.0,
+            "post_ringing_weight": 1.0,
+            "pre_mask_ms": 3.0,
+            "pre_ringing_weight": 2.0,
             "profile": "mixed",
             "weight": 0.15
           }
@@ -2716,12 +2723,12 @@
           "const": "mixed_phase"
         },
         {
-          "description": "Warped IIR mode — not currently supported by roomeq output/export.\nValidation rejects this mode until warped filter design and serialization\nare integrated end-to-end.",
+          "description": "Warped IIR mode — exports RoomEQ filters as warped biquads using a\nBark-scale lambda. The optimizer currently uses the same biquad\nplacement/scoring path as low_latency, then serializes the runtime\ntopology as `warped_biquad`.",
           "type": "string",
           "const": "warped_iir"
         },
         {
-          "description": "Kautz modal mode — pole-tuned filter targeting detected room modes.\nUses room mode analysis to place filter poles at resonance frequencies.\nGain optimization via linear least-squares (very fast, no DE needed).\nBest for small, highly resonant rooms with clear modal problems.\nReturns an error if no room modes are detected.",
+          "description": "Kautz modal mode — pole-tuned filter targeting detected room modes.\nUses room mode analysis to place filter poles at resonance frequencies.\nGain optimization via linear least-squares (very fast, no DE needed).\nExports the runtime topology as `kautz_filter` with modal sections.\nBest for small, highly resonant rooms with clear modal problems.\nReturns an error if no room modes are detected.",
           "type": "string",
           "const": "kautz_modal"
         }
@@ -3653,6 +3660,47 @@
           "description": "Enable the temporal masking penalty when modal data is available.",
           "type": "boolean",
           "default": true
+        },
+        "ir_audibility_threshold_db": {
+          "description": "Audibility floor for weighted pre/post ringing energy, in dB relative\nto the main impulse peak.",
+          "type": "number",
+          "format": "double",
+          "default": -45.0
+        },
+        "ir_enabled": {
+          "description": "Enable true FIR impulse-response pre/post masking analysis when FIR\ncoefficients are available.",
+          "type": "boolean",
+          "default": true
+        },
+        "ir_weight": {
+          "description": "Weight applied to the IR masking penalty metric.",
+          "type": "number",
+          "format": "double",
+          "default": 0.05
+        },
+        "post_mask_ms": {
+          "description": "Post-masking window after the main impulse. Ringing grows more audible\nas it decays beyond this window.",
+          "type": "number",
+          "format": "double",
+          "default": 120.0
+        },
+        "post_ringing_weight": {
+          "description": "Relative weight for audible post-ringing.",
+          "type": "number",
+          "format": "double",
+          "default": 1.0
+        },
+        "pre_mask_ms": {
+          "description": "Pre-masking window before the main impulse. Pre-ringing inside this\nwindow is partially masked; earlier energy is fully audible.",
+          "type": "number",
+          "format": "double",
+          "default": 3.0
+        },
+        "pre_ringing_weight": {
+          "description": "Relative weight for audible pre-ringing. Usually higher than post\nbecause pre-echo before a transient is especially objectionable.",
+          "type": "number",
+          "format": "double",
+          "default": 2.0
         },
         "profile": {
           "description": "Material profile used to scale modal-ringing audibility.",

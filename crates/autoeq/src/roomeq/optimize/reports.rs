@@ -143,7 +143,6 @@ pub(super) fn refresh_final_reports(
         crate::roomeq::output::compute_epa_per_channel(&result.channels, &epa_cfg);
     result.metadata.epa_multichannel =
         crate::roomeq::output::compute_epa_multichannel(&result.channels, &epa_cfg);
-    update_perceptual_metrics(&mut result.metadata, Some(&result.channels), Some(config));
 
     let ir_inputs: Vec<_> = result
         .channel_results
@@ -176,7 +175,20 @@ pub(super) fn refresh_final_reports(
             chain.pre_ir = Some(pre_ir);
             chain.post_ir = Some(post_ir);
         }
+
+        if let Some(coeffs) = fir_coeffs.as_deref()
+            && let Some(metrics) = crate::loss::epa::score::temporal_ir_masking_metrics(
+                coeffs,
+                sample_rate,
+                &epa_cfg.temporal_masking,
+            )
+            && let Some(chain) = result.channels.get_mut(&channel_name)
+        {
+            chain.fir_temporal_masking = Some(metrics);
+        }
     }
+
+    update_perceptual_metrics(&mut result.metadata, Some(&result.channels), Some(config));
 }
 
 pub(super) fn build_timing_diagnostics(
@@ -357,6 +369,29 @@ pub(super) fn update_perceptual_metrics(
     let bass_consistency_rms_db = channels.and_then(bass_consistency_rms_db);
     let dialog_band_roughness_rms_db = channels.and_then(dialog_band_roughness_rms_db);
     let headroom_peak_boost_db = channels.and_then(headroom_peak_boost_db);
+    let fir_pre_ringing_audible_db = channels.and_then(|channels| {
+        max_optional(channels.values().filter_map(|chain| {
+            chain
+                .fir_temporal_masking
+                .as_ref()
+                .map(|m| m.pre_ringing_audible_db)
+        }))
+    });
+    let fir_post_ringing_audible_db = channels.and_then(|channels| {
+        max_optional(channels.values().filter_map(|chain| {
+            chain
+                .fir_temporal_masking
+                .as_ref()
+                .map(|m| m.post_ringing_audible_db)
+        }))
+    });
+    let fir_temporal_masking_penalty = channels.and_then(|channels| {
+        max_optional(
+            channels
+                .values()
+                .filter_map(|chain| chain.fir_temporal_masking.as_ref().map(|m| m.penalty)),
+        )
+    });
     let headroom_risk = headroom_peak_boost_db.map(|peak_boost| {
         let margin_db = config
             .and_then(|cfg| cfg.system.as_ref())
@@ -392,7 +427,16 @@ pub(super) fn update_perceptual_metrics(
         headroom_peak_boost_db,
         headroom_risk,
         timing_confidence,
+        fir_pre_ringing_audible_db,
+        fir_post_ringing_audible_db,
+        fir_temporal_masking_penalty,
     });
+}
+
+fn max_optional(values: impl Iterator<Item = f64>) -> Option<f64> {
+    values
+        .filter(|v| v.is_finite())
+        .reduce(|a, b| if a > b { a } else { b })
 }
 
 pub(super) fn role_channel_matching_rms_db(

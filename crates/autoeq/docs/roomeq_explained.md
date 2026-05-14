@@ -494,12 +494,22 @@ assumption: `transient` penalizes ringing most strongly, `mixed` is the
 default, and `sustained` assumes more post-masking from ongoing tonal
 content.
 
+For FIR-bearing modes, the same temporal-masking configuration also drives a
+true impulse-response analysis after FIR generation. RoomEQ finds the FIR's
+main impulse peak, treats it as a transient masker, and separately measures
+pre-ringing and post-ringing energy after applying configurable pre- and
+post-masking windows. Those metrics are reported per channel as
+`fir_temporal_masking` and summarized in `metadata.perceptual_metrics`.
+
 ### 3.8 FIR / mixed-phase post-generation
 
 When `processing_mode` is `PhaseLinear` or `Hybrid`, the IIR result
 is converted to a phase-linear FIR by inverse-FFT of the magnitude
 response (windowed, length = `fir_taps`). The chain then gets a
 `convolution` plugin that loads `<channel>_fir.wav`.
+The generated coefficients are then analyzed directly for audible pre-ringing
+before the main tap and post-ringing after it, using
+`epa_config.temporal_masking.pre_mask_ms` and `post_mask_ms`.
 
 `MixedPhase` instead decomposes the impulse response into
 **minimum-phase** and **excess-phase** parts (cepstral folding) and
