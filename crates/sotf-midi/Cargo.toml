@@ -22,7 +22,7 @@ anyhow = { workspace = true }
 log = { workspace = true }
 tokio = { workspace = true }
 parking_lot = { workspace = true }
-dirs = { workspace = true }
+directories = { workspace = true }
 chrono = { workspace = true }
 
 # MIDI I/O (not available on tvOS — no CoreMIDI)

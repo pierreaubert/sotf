@@ -17,6 +17,7 @@ RUN apt-get update && \
     ninja-build \
     perl \
     libssl-dev \
+    libsqlite3-dev \
     libglib2.0-dev \
     libgtk-3-dev \
     libwebkit2gtk-4.1-dev \

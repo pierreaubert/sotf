@@ -36,7 +36,10 @@ realfft = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }
 directories = { workspace = true }
-rusqlite = { workspace = true }
+# Vendor SQLite into shipping binaries (deterministic builds, no system dep).
+# Library crates take the bare workspace dep; feature unification activates
+# `bundled` only when this app is in the build graph.
+rusqlite = { workspace = true, features = ["bundled"] }
 walkdir = { workspace = true }
 math-iir-fir = { workspace = true }
 sotf-plugins = { workspace = true }
@@ -59,7 +62,6 @@ symphonia-format-isomp4 = { workspace = true }
 hound = { workspace = true }
 rubato = { workspace = true }
 id3 = { workspace = true }
-metaflac = { workspace = true }
 rtrb = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]

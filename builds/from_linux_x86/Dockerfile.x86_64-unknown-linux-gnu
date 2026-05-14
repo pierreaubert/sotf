@@ -13,6 +13,7 @@ RUN apt-get update && \
     g++ \
     pkg-config \
     libssl-dev \
+    libsqlite3-dev \
     ca-certificates \
     cmake \
     ninja-build \

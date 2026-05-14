@@ -136,7 +136,6 @@ base64 = "0.22"
 byteorder = "1.5"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.5", features = ["derive"] }
-console_error_panic_hook = { version = "0.1" }
 csv = "1.4"
 ctrlc = "3.5"
 directories = "6"
@@ -150,7 +149,11 @@ notify = { version = "8.2" }
 num_cpus = "1.17"
 regex = "1.12"
 rfd = "0.16"
-rusqlite = { version = "0.38", features = ["bundled"] }
+# bundled SQLite is enabled per-app (app-gpui, app-tui, app-cli, sotf-tools);
+# library crates take the workspace dep bare so dev `cargo check -p <lib>`
+# doesn't pay for the C compile. Feature unification re-enables `bundled`
+# automatically when a shipping app is in the build graph.
+rusqlite = { version = "0.38" }
 rust-embed = "8"
 smol = "2.0"
 strsim = "0.11"
@@ -268,7 +271,6 @@ driver-hal = { path = "crates/systemwide/crates/driver-hal" }  # macOS only
 cpal = "0.17"
 hound = "3.5"
 id3 = "1.16"
-metaflac = "0.2"
 rubato = "1.0"
 audioadapter-buffers = "2.0"
 symphonia = { version = "0.5", default-features = false }
@@ -302,33 +304,18 @@ wgpu = { version="29.0.0", git = "https://github.com/zed-industries/wgpu.git", b
 # System and low-level
 objc = "0.2"
 cocoa = "0.26"
-dirs = "6"
 # sysinfo = "0.37"
 # memory-stats = "1.2"
 crossbeam = "0.8"
 arc-swap = "1"
 
-# WASM support
-wasm-bindgen = { version = "0.2" }
-wasm-bindgen-rayon = { version = "1.2" }
-wasm-bindgen-futures = "0.4"
-web-sys = { version = "0.3", features = [
-    "console",
-    "Window",
-    "Navigator",
-    "Performance",
-    "DomException",
-] }
-
 # Utilities
-md-5 = "0.10"
+sha2 = "0.10"
 toml = "0.8"
-spec_math = "0.1"
 approx = "0.5"
 unicode-normalization = "0.1"
 # toml = "0.8"
 uuid = { version = "1", features = ["v4", "v5", "serde"] }
-lazy_static = "1.4"
 bincode = { version = "2.0.1", features = ["serde"] }
 
 # Proc macro dependencies
@@ -354,14 +341,8 @@ core-foundation = "0.10"
 objc2 = "0.6"
 objc2-foundation = "0.3"
 objc2-core-foundation = "0.3"
-objc2-vision = "0.3"
-objc2-core-image = "0.3"
-objc2-core-video = "0.3"
-objc2-av-foundation = "0.3"
-objc2-core-media = "0.3"
 objc2-app-kit = "0.3"
 block2 = "0.6"
-dispatch = "0.2"
 
 # Media controls
 sotf-media-controls = { path = "crates/sotf-media-controls" }
@@ -375,8 +356,11 @@ rqrr = "0.10.0"
 # RNNoise (pure Rust)
 nnnoiseless = "0.1"
 
-# ONNX Runtime
-ort = "2.0.0-rc.12"
+# ONNX Runtime — tract-onnx is a pure-Rust CPU-only ONNX runtime maintained
+# by Sonos. Replaced the C++ Microsoft ORT (`ort` crate) here because we only
+# need single-tensor CPU inference for the upmixer's vocal detector and the
+# pure-Rust path eliminates the native libonnxruntime build dependency.
+tract-onnx = "0.22"
 
 # TUI extensions
 

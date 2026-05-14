@@ -64,9 +64,13 @@ chrono = { workspace = true }
 # Fuzzy string matching
 strsim = { workspace = true }
 
+# Vendor SQLite into the shipping binary (deterministic builds, no system dep).
+# Direct dep here is required so feature unification activates `bundled` for
+# the rusqlite that sotf-player / sotf-engine depend on.
+rusqlite = { workspace = true, features = ["bundled"] }
+
 # Audio
 id3 = { workspace = true }
-metaflac = { workspace = true }
 symphonia = { workspace = true }
 symphonia-core = { workspace = true }
 symphonia-metadata = { workspace = true }

@@ -116,7 +116,8 @@ impl TemplateRegistry {
 
     /// Get the default templates directory path
     pub fn default_dir() -> Option<PathBuf> {
-        dirs::config_dir().map(|d| d.join("sotf").join("midi").join("templates"))
+        directories::BaseDirs::new()
+            .map(|b| b.config_dir().join("sotf").join("midi").join("templates"))
     }
 
     /// Save a template to the templates directory

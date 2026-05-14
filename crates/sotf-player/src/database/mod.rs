@@ -250,13 +250,13 @@ pub fn backup_existing_database<P: AsRef<Path>>(
         None => return Ok(()),
     };
 
-    // Compute MD5 of the current database
-    let current_hash = md5_of_file(db_path)?;
+    // Compute SHA-256 of the current database
+    let current_hash = sha256_of_file(db_path)?;
 
     // Find the most recent backup and compare hashes
     if let Some(latest_backup) = find_latest_backup(&dir) {
         crate::security::validate_config_read_path(&latest_backup)?;
-        if let Ok(backup_hash) = md5_of_file(&latest_backup) {
+        if let Ok(backup_hash) = sha256_of_file(&latest_backup) {
             if current_hash == backup_hash {
                 log::debug!("Database unchanged since last backup, skipping");
                 return Ok(());
@@ -281,13 +281,13 @@ pub fn backup_existing_database<P: AsRef<Path>>(
     Ok(())
 }
 
-/// Compute the MD5 hash of a file, reading in 8 KiB chunks.
-fn md5_of_file(path: &Path) -> Result<[u8; 16], std::io::Error> {
-    use md5::{Digest, Md5};
+/// Compute the SHA-256 hash of a file, reading in 8 KiB chunks.
+fn sha256_of_file(path: &Path) -> Result<[u8; 32], std::io::Error> {
+    use sha2::{Digest, Sha256};
     use std::io::Read;
 
     let mut file = std::fs::File::open(path)?;
-    let mut hasher = Md5::new();
+    let mut hasher = Sha256::new();
     let mut buf = [0u8; 8192];
     loop {
         let n = file.read(&mut buf)?;
@@ -506,19 +506,21 @@ mod tests {
     }
 
     #[test]
-    fn test_md5_of_file() {
-        let dir = std::env::temp_dir().join("sotf_test_md5");
+    fn test_sha256_of_file() {
+        let dir = std::env::temp_dir().join("sotf_test_sha256");
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("test.bin");
         std::fs::write(&path, b"hello world").unwrap();
 
-        let hash = md5_of_file(&path).unwrap();
-        // MD5 of "hello world" is 5eb63bbbe01eeed093cb22bb8f5acdc3
+        let hash = sha256_of_file(&path).unwrap();
+        // SHA-256 of "hello world" is
+        // b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9
         assert_eq!(
             hash,
             [
-                0x5e, 0xb6, 0x3b, 0xbb, 0xe0, 0x1e, 0xee, 0xd0, 0x93, 0xcb, 0x22, 0xbb, 0x8f, 0x5a,
-                0xcd, 0xc3
+                0xb9, 0x4d, 0x27, 0xb9, 0x93, 0x4d, 0x3e, 0x08, 0xa5, 0x2e, 0x52, 0xd7, 0xda, 0x7d,
+                0xab, 0xfa, 0xc4, 0x84, 0xef, 0xe3, 0x7a, 0x53, 0x80, 0xee, 0x90, 0x88, 0xf7, 0xac,
+                0xe2, 0xef, 0xcd, 0xe9
             ]
         );
 

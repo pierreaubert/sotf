@@ -212,10 +212,11 @@ pub struct ConfigPaths {
 impl ConfigPaths {
     /// Get default configuration paths
     pub fn default_paths() -> Result<Self> {
-        let config_dir = dirs::config_dir()
+        let config_dir = directories::BaseDirs::new()
             .ok_or_else(|| {
                 crate::error::MidiError::ConfigError("Could not find config directory".to_string())
             })?
+            .config_dir()
             .join("sotf")
             .join("midi");
 

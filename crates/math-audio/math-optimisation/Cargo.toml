@@ -19,13 +19,17 @@ rayon = { workspace = true }
 clap = { workspace = true }
 thiserror = { workspace = true }
 directories = { workspace = true }
-plotly = { workspace = true }
+# `plotly` is gated behind the `plotly` feature (off by default). The library
+# never imports it; only the `plot-de` binary needs it.
+plotly = { workspace = true, optional = true }
 math-test-functions = { workspace = true }
 plotly_static = { workspace = true, optional = true }
 
 [features]
 default = []
-plotly_static = ["dep:plotly_static"]
+plotly = ["dep:plotly"]
+# Static PNG export needs both the plotly crate and the chrome-driver wrapper.
+plotly_static = ["plotly", "dep:plotly_static"]
 
 [dev-dependencies]
 
@@ -50,6 +54,7 @@ plotly_static = ["dep:plotly_static"]
 [[bin]]
 name = "plot-de"
 path = "bin/plot_de.rs"
+required-features = ["plotly"]
 
 [[bin]]
 name = "benchmark-convergence"

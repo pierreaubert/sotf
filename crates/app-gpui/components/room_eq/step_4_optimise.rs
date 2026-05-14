@@ -281,6 +281,14 @@ impl PlayerView {
                                         is_completed,
                                         is_failed,
                                     ))
+                                    .child(render_pipeline_phase_readout(
+                                        &theme,
+                                        current_step,
+                                        &step_history,
+                                        status_msg.clone(),
+                                        is_completed,
+                                        is_failed,
+                                    ))
                                     .child(Text::new(status_msg.clone()).size(TextSize::Xs).color(
                                         if is_completed {
                                             theme.success
@@ -972,10 +980,17 @@ impl PlayerView {
             Option<PipelineStepId>,
             Option<PipelineStepStatus>,
         );
-        let (progress_tx, progress_rx) = smol::channel::bounded::<ProgressMsg>(100);
+        // Use an unbounded progress channel and coalesce on the UI side.
+        // Iteration callbacks can arrive in bursts; with a bounded
+        // `try_send` queue, the sparse final pipeline events (IR,
+        // matching, metadata, sanity) were easy to drop behind old
+        // iteration messages. Those late events are exactly what tells the
+        // user why CPU is still busy after the visible channel rounds.
+        let (progress_tx, progress_rx) = smol::channel::unbounded::<ProgressMsg>();
 
         // Clone state for progress receiver task
         let state_for_progress = self.state.clone();
+        let progress_channel_names = channel_names.clone();
 
         // Spawn a task to receive progress updates and update UI.
         //
@@ -1032,8 +1047,14 @@ impl PlayerView {
                     // target test harness) still update the readout —
                     // the previous filter "iter is zero" silently
                     // dropped those.
-                    fn is_transition_only(speaker: &str, sid: Option<PipelineStepId>) -> bool {
-                        sid.is_some() && speaker.is_empty()
+                    fn is_transition_only(
+                        speaker: &str,
+                        sid: Option<PipelineStepId>,
+                        known_channels: &[String],
+                    ) -> bool {
+                        sid.is_some()
+                            && (speaker.is_empty()
+                                || !known_channels.iter().any(|channel| channel == speaker))
                     }
 
                     let mut latest_iteration = first_iteration;
@@ -1046,7 +1067,10 @@ impl PlayerView {
                     let mut batch: Vec<(usize, f64, String, Option<f64>)> = Vec::new();
                     let mut step_transitions: Vec<(PipelineStepId, PipelineStepStatus)> =
                         Vec::new();
-                    if !is_transition_only(&first_speaker, first_step_id) {
+                    let mut saw_transition_only =
+                        is_transition_only(&first_speaker, first_step_id, &progress_channel_names);
+                    let mut latest_was_transition_only = saw_transition_only;
+                    if !saw_transition_only {
                         batch.push((first_iteration, first_loss, first_speaker, first_epa));
                     }
                     if let (Some(sid), Some(sst)) = (first_step_id, first_step_status) {
@@ -1054,7 +1078,10 @@ impl PlayerView {
                     }
                     while let Ok((it, l, op, sp, msg, ep, sid, sst)) = progress_rx.try_recv() {
                         latest_overall_progress = op;
-                        if !is_transition_only(&sp, sid) {
+                        let transition_only = is_transition_only(&sp, sid, &progress_channel_names);
+                        saw_transition_only |= transition_only;
+                        latest_was_transition_only = transition_only;
+                        if !transition_only {
                             batch.push((it, l, sp.clone(), ep));
                             latest_iteration = it;
                             latest_loss = l;
@@ -1076,10 +1103,16 @@ impl PlayerView {
                         // per-iteration message arrived in this batch;
                         // otherwise we keep the previous values so the
                         // readout doesn't flicker on step boundaries.
-                        if !batch.is_empty() {
+                        if !batch.is_empty() && !latest_was_transition_only {
                             room_eq.current_iteration = latest_iteration;
                             room_eq.current_loss = latest_loss;
                             room_eq.current_channel = Some(latest_speaker);
+                        } else if (saw_transition_only || latest_was_transition_only)
+                            && latest_step_status.map(is_active_step).unwrap_or(false)
+                        {
+                            room_eq.current_channel = None;
+                            room_eq.current_iteration = 0;
+                            room_eq.current_loss = 0.0;
                         }
                         room_eq.overall_progress = latest_overall_progress;
                         if let Some(msg) = latest_message {
@@ -1547,6 +1580,83 @@ fn render_pipeline_step_strip(
     }
 
     row
+}
+
+fn render_pipeline_phase_readout(
+    theme: &crate::app::theme::Theme,
+    current_step: Option<sotf_audio_player::autoeq::PipelineStepId>,
+    step_history: &std::collections::HashMap<
+        sotf_audio_player::autoeq::PipelineStepId,
+        sotf_audio_player::autoeq::PipelineStepStatus,
+    >,
+    status_message: String,
+    is_completed: bool,
+    is_failed: bool,
+) -> impl IntoElement {
+    use sotf_audio_player::autoeq::{PipelineStepId, PipelineStepStatus};
+
+    let active_step = current_step
+        .or_else(|| {
+            PipelineStepId::ALL
+                .iter()
+                .rev()
+                .copied()
+                .find(|step| step_history.contains_key(step))
+        })
+        .unwrap_or(PipelineStepId::ConfigPreparation);
+    let status = step_history.get(&active_step).copied();
+    let status_text = if is_completed {
+        "completed"
+    } else if is_failed {
+        "failed"
+    } else {
+        match status {
+            Some(PipelineStepStatus::Started) => "started",
+            Some(PipelineStepStatus::InProgress) => "running",
+            Some(PipelineStepStatus::Completed) => "completed",
+            Some(PipelineStepStatus::Skipped) => "skipped",
+            None => "pending",
+        }
+    };
+    let detail = if status_message.is_empty() {
+        active_step.label().to_string()
+    } else {
+        status_message
+    };
+
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(2.0))
+        .child(
+            HStack::new()
+                .spacing(StackSpacing::Xs)
+                .child(
+                    Text::new("Current phase:")
+                        .size(TextSize::Xs)
+                        .color(theme.text_secondary),
+                )
+                .child(
+                    Text::new(active_step.label())
+                        .size(TextSize::Xs)
+                        .weight(TextWeight::Semibold)
+                        .color(if is_failed {
+                            theme.error
+                        } else {
+                            theme.text_primary
+                        }),
+                )
+                .child(
+                    Text::new(format!("({status_text})"))
+                        .size(TextSize::Xs)
+                        .color(theme.text_secondary),
+                ),
+        )
+        .child(
+            Text::new(detail)
+                .size(TextSize::Xs)
+                .color(theme.text_secondary),
+        )
 }
 
 fn flatten_json(value: &serde_json::Value, prefix: String, pairs: &mut Vec<(String, String)>) {

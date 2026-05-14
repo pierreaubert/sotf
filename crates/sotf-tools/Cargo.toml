@@ -49,7 +49,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 walkdir = { workspace = true }
-rusqlite = { workspace = true }
+# Vendor SQLite into shipping binaries (deterministic builds, no system dep).
+rusqlite = { workspace = true, features = ["bundled"] }
 tokio = { workspace = true }
 parking_lot = { workspace = true }
 uuid = { workspace = true }

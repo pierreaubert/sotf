@@ -14,7 +14,7 @@ path = "src/lib.rs"
 
 [features]
 default = []
-onnx = ["dep:ort"]
+onnx = ["dep:tract-onnx"]
 qa = ["sotf-host/qa"]
 
 [[bin]]
@@ -28,7 +28,7 @@ log = { workspace = true }
 math-dsp = { workspace = true }
 math-iir-fir = { workspace = true }
 ndarray = { workspace = true }
-ort = { workspace = true, optional = true }
+tract-onnx = { workspace = true, optional = true }
 realfft = { workspace = true }
 rtrb = { workspace = true }
 rustfft = { workspace = true }

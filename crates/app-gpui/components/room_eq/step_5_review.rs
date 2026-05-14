@@ -157,7 +157,7 @@ impl PlayerView {
                     state.app.measurement_state.room_eq_state.review_chart_state = Some(
                         InteractiveChartStateWrapper::new(20.0, 20000.0, -40.0, 10.0)
                             .with_log_x(true)
-                            .with_size(1200.0, 400.0),
+                            .with_size(800.0, 400.0),
                     );
                 });
             }

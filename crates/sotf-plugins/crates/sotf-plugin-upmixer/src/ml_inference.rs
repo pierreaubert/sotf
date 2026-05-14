@@ -9,12 +9,14 @@
 // and V_prob is read via a relaxed atomic load.
 
 use super::ml_features::{CONTEXT_FRAMES, FEATURE_SIZE, FRAME_FEATURE_SIZE};
-use ort::session::Session;
-use ort::session::builder::GraphOptimizationLevel;
-use ort::value::{TensorElementType, ValueType};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::thread::{self, JoinHandle};
+use tract_onnx::prelude::*;
+
+/// Optimised+runnable tract model. Type alias for the value returned by
+/// `TypedModel::into_runnable()`; keeps function signatures readable.
+type RunnableOnnxModel = TypedRunnableModel<TypedModel>;
 
 /// Ring buffer capacity in contexts (blocks arrive every ~21ms at 2048/48k with 50% overlap).
 const RING_BUFFER_CAPACITY: usize = 4;
@@ -49,17 +51,23 @@ impl MlInferenceHandle {
     ///
     /// Returns `Err` if the model cannot be loaded.
     pub fn new(model_path: &str) -> Result<Self, String> {
-        // Load the ONNX session on the current thread first to catch errors early
-        let session = Session::builder()
-            .map_err(|e| format!("Failed to create session builder: {}", e))?
-            .with_optimization_level(GraphOptimizationLevel::Level3)
-            .map_err(|e| format!("Failed to set optimization level: {}", e))?
-            .with_intra_threads(1)
-            .map_err(|e| format!("Failed to set intra threads: {}", e))?
-            .commit_from_file(model_path)
-            .map_err(|e| format!("Failed to load ONNX model '{}': {}", model_path, e))?;
-        validate_input_contract(&session)?;
-        validate_metadata_contract(&session)?;
+        // Load the raw ONNX proto first so we can validate optional metadata
+        // properties (informational; model still loads if absent).
+        let proto = tract_onnx::onnx()
+            .proto_model_for_path(model_path)
+            .map_err(|e| format!("Failed to read ONNX model '{}': {}", model_path, e))?;
+        validate_metadata_contract(&proto.metadata_props)?;
+
+        // Build the runnable model from the proto we already parsed.
+        let model = tract_onnx::onnx()
+            .model_for_proto_model(&proto)
+            .map_err(|e| format!("Failed to parse ONNX model '{}': {}", model_path, e))?
+            .into_optimized()
+            .map_err(|e| format!("Failed to optimise ONNX model: {}", e))?
+            .into_runnable()
+            .map_err(|e| format!("Failed to make ONNX model runnable: {}", e))?;
+
+        validate_input_contract(&model)?;
 
         let (producer, consumer) = rtrb::RingBuffer::<MfccFrame>::new(RING_BUFFER_CAPACITY);
 
@@ -73,7 +81,7 @@ impl MlInferenceHandle {
         let thread_handle = thread::Builder::new()
             .name("ml-vocal-detect".to_string())
             .spawn(move || {
-                inference_worker(consumer, session, shared_clone);
+                inference_worker(consumer, model, shared_clone);
             })
             .map_err(|e| format!("Failed to spawn inference thread: {}", e))?;
 
@@ -126,38 +134,34 @@ impl Drop for MlInferenceHandle {
     }
 }
 
-fn validate_input_contract(session: &Session) -> Result<(), String> {
-    let input = session
-        .inputs()
-        .first()
-        .ok_or_else(|| "ONNX model must expose one f32 input tensor".to_string())?;
+fn validate_input_contract(model: &RunnableOnnxModel) -> Result<(), String> {
+    let fact = model
+        .model()
+        .input_fact(0)
+        .map_err(|e| format!("ONNX model has no input #0: {}", e))?;
 
-    match input.dtype() {
-        ValueType::Tensor { ty, shape, .. } => {
-            if *ty != TensorElementType::Float32 {
-                return Err(format!(
-                    "ONNX model input '{}' must be f32, got {}",
-                    input.name(),
-                    ty
-                ));
-            }
-            if !shape_accepts_feature_size(shape) {
-                return Err(format!(
-                    "ONNX model input '{}' must have shape [1, {}] or [-1, {}], got {}",
-                    input.name(),
-                    FEATURE_SIZE,
-                    FEATURE_SIZE,
-                    shape
-                ));
-            }
-            Ok(())
-        }
-        other => Err(format!(
-            "ONNX model input '{}' must be a f32 tensor, got {:?}",
-            input.name(),
-            other
-        )),
+    if fact.datum_type != f32::datum_type() {
+        return Err(format!(
+            "ONNX model input must be f32, got {:?}",
+            fact.datum_type
+        ));
     }
+
+    // Convert tract's symbolic shape to a concrete `Vec<i64>`-style view that
+    // mirrors the original ort shape contract (dim or -1 wildcard).
+    let dims: Vec<i64> = fact
+        .shape
+        .iter()
+        .map(|d| d.to_i64().unwrap_or(-1))
+        .collect();
+
+    if !shape_accepts_feature_size(&dims) {
+        return Err(format!(
+            "ONNX model input must have shape [1, {}] or [-1, {}], got {:?}",
+            FEATURE_SIZE, FEATURE_SIZE, dims
+        ));
+    }
+    Ok(())
 }
 
 fn shape_accepts_feature_size(shape: &[i64]) -> bool {
@@ -166,9 +170,14 @@ fn shape_accepts_feature_size(shape: &[i64]) -> bool {
         && (shape[1] == FEATURE_SIZE as i64 || shape[1] == -1)
 }
 
-fn validate_metadata_contract(session: &Session) -> Result<(), String> {
-    let Ok(metadata) = session.metadata() else {
-        return Ok(());
+fn validate_metadata_contract(
+    props: &[tract_onnx::pb::StringStringEntryProto],
+) -> Result<(), String> {
+    let lookup = |key: &str| -> Option<&str> {
+        props
+            .iter()
+            .find(|p| p.key == key)
+            .map(|p| p.value.as_str())
     };
 
     for (key, expected) in [
@@ -176,14 +185,11 @@ fn validate_metadata_contract(session: &Session) -> Result<(), String> {
         ("frame_feature_size", FRAME_FEATURE_SIZE),
         ("context_frames", CONTEXT_FRAMES),
     ] {
-        let Some(value) = metadata.custom(key) else {
+        let Some(value) = lookup(key) else {
             continue;
         };
         let parsed = value.parse::<usize>().map_err(|_| {
-            format!(
-                "ONNX metadata '{}' must be an integer, got '{}'",
-                key, value
-            )
+            format!("ONNX metadata '{}' must be an integer, got '{}'", key, value)
         })?;
         if parsed != expected {
             return Err(format!(
@@ -193,7 +199,7 @@ fn validate_metadata_contract(session: &Session) -> Result<(), String> {
         }
     }
 
-    if let Some(threshold) = metadata.custom("recommended_threshold") {
+    if let Some(threshold) = lookup("recommended_threshold") {
         log::info!("ML vocal detector recommended threshold: {}", threshold);
     }
 
@@ -203,7 +209,7 @@ fn validate_metadata_contract(session: &Session) -> Result<(), String> {
 /// Inference worker function running on the dedicated thread.
 fn inference_worker(
     mut consumer: rtrb::Consumer<MfccFrame>,
-    mut session: Session,
+    model: RunnableOnnxModel,
     shared: Arc<SharedState>,
 ) {
     // Pre-allocate input buffer: shape [1, FEATURE_SIZE]
@@ -223,7 +229,7 @@ fn inference_worker(
 
         if got_frame {
             // Run inference
-            match run_inference(&mut session, &input_data) {
+            match run_inference(&model, &input_data) {
                 Ok(v_prob) => {
                     let clamped = v_prob.clamp(0.0, 1.0);
                     shared
@@ -243,30 +249,22 @@ fn inference_worker(
 }
 
 /// Run a single inference pass. Returns the vocal probability (0.0-1.0).
-fn run_inference(session: &mut Session, input_data: &[f32]) -> Result<f32, String> {
-    // Create an owned Tensor from the input data
-    let input_array = ndarray::Array2::from_shape_vec((1, FEATURE_SIZE), input_data.to_vec())
+fn run_inference(model: &RunnableOnnxModel, input_data: &[f32]) -> Result<f32, String> {
+    let input = tract_ndarray::Array2::from_shape_vec((1, FEATURE_SIZE), input_data.to_vec())
         .map_err(|e| format!("Failed to create input array: {}", e))?;
 
-    let input_tensor = ort::value::Tensor::from_array(input_array)
-        .map_err(|e| format!("Failed to create input tensor: {}", e))?;
-
-    let outputs = session
-        .run(ort::inputs![input_tensor])
+    let outputs = model
+        .run(tvec!(Tensor::from(input).into()))
         .map_err(|e| format!("Inference error: {}", e))?;
 
-    // Extract the first output tensor
-    let output = &outputs[0];
-
-    let (_shape, data) = output
-        .try_extract_tensor::<f32>()
+    let view = outputs[0]
+        .to_array_view::<f32>()
         .map_err(|e| format!("Failed to extract output tensor: {}", e))?;
 
-    let v_prob: f32 = *data
-        .first()
-        .ok_or_else(|| "Empty output tensor".to_string())?;
-
-    Ok(v_prob)
+    view.iter()
+        .next()
+        .copied()
+        .ok_or_else(|| "Empty output tensor".to_string())
 }
 
 #[cfg(test)]

@@ -15,7 +15,7 @@ path = "src/lib.rs"
 [features]
 default = ["iamf"]
 iamf = []
-onnx = ["dep:ort", "sotf-plugin-upmixer/onnx"]
+onnx = ["dep:tract-onnx", "sotf-plugin-upmixer/onnx"]
 hal = ["sotf-plugin-hal-input", "sotf-plugin-hal-input/hal", "sotf-plugin-hal-output", "sotf-plugin-hal-output/hal", "driver-hal"]
 qa = ["sotf-host/qa", "dep:criterion"]
 
@@ -104,12 +104,11 @@ symphonia-format-riff = { workspace = true }
 symphonia-format-ogg = { workspace = true }
 symphonia-format-isomp4 = { workspace = true }
 rtrb = { workspace = true }
-ort = { workspace = true, optional = true }
+tract-onnx = { workspace = true, optional = true }
 hound = { workspace = true }
 rubato = { workspace = true }
 audioadapter-buffers = { workspace = true }
 id3 = { workspace = true }
-metaflac = { workspace = true }
 bincode = { workspace = true }
 anyhow = { workspace = true }
 

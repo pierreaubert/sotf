@@ -25,6 +25,7 @@ RUN apt-get update && \
     libasound2-dev \
     libclang-dev \
     libssl-dev \
+    libsqlite3-dev \
     patchelf \
     gnome-browser-connector \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*

@@ -36,6 +36,11 @@ autoeq = { workspace = true }
 ratatui = { workspace = true }
 crossterm = { workspace = true }
 
+# Vendor SQLite into the shipping binary (deterministic builds, no system dep).
+# Direct dep here is required so feature unification activates `bundled` for
+# the rusqlite that sotf-player / sotf-engine depend on.
+rusqlite = { workspace = true, features = ["bundled"] }
+
 # Synchronous mutex (faster than std::sync::Mutex)
 parking_lot = { workspace = true }
 

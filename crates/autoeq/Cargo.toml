@@ -29,7 +29,7 @@ build_html = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 csv = { workspace = true }
-dirs = { workspace = true }
+directories = { workspace = true }
 env_logger = { workspace = true }
 log = { workspace = true }
 num_cpus = { workspace = true }
@@ -38,7 +38,10 @@ nalgebra = { workspace = true }
 metaheuristics-nature = { workspace = true }
 rustfft = { workspace = true }
 hound = { workspace = true }
-plotly = { workspace = true }
+# `plotly` is gated behind the `plotly` feature (off by default). Library code
+# under `src/plot/` and the `roomeq-fuzzer` binary require it; the main
+# `autoeq` binary degrades gracefully and skips chart generation when off.
+plotly = { workspace = true, optional = true }
 rand = { workspace = true }
 rand_chacha = "0.9"
 reqwest = { workspace = true }
@@ -67,7 +70,9 @@ rayon.workspace = true
 
 [features]
 default = []
-plotly_static = ["dep:plotly_static"]
+plotly = ["dep:plotly"]
+# Static PNG export needs both the plotly crate and the chrome-driver wrapper.
+plotly_static = ["plotly", "dep:plotly_static"]
 
 [target.'cfg(target_os = "macos")'.dependencies]
 
@@ -100,6 +105,7 @@ path = "bin/roomeq/main.rs"
 [[bin]]
 name = "roomeq-fuzzer"
 path = "bin/roomeq_fuzzer.rs"
+required-features = ["plotly"]
 
 [[bin]]
 name = "roomeq-qa-quality"
@@ -124,6 +130,10 @@ path = "bin/convert_recording.rs"
 [lib]
 name = "autoeq"
 path = "src/lib.rs"
+
+[[example]]
+name = "headphone_loss_demo"
+required-features = ["plotly"]
 
 [dev-dependencies]
 tempfile = "3.23"

@@ -16,9 +16,12 @@
 //! along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use anyhow::{Context, Result, anyhow};
+#[cfg(feature = "plotly")]
 use autoeq::plot;
 use clap::Parser;
-use log::{error, info, warn};
+use log::{error, info};
+#[cfg(feature = "plotly")]
+use log::warn;
 use std::path::PathBuf;
 
 // Include split modules
@@ -224,21 +227,31 @@ async fn run(args: autoeq::cli::Args) -> Result<()> {
         path
     });
 
-    info!("📊 Generating plots: {}", output_path.display());
-    if let Err(e) = plot::plot_results(
-        &args,
-        &opt_result.params,
-        &input_curve,
-        &target_curve,
-        &deviation_curve,
-        &spin_data,
-        &output_path,
-    )
-    .await
+    #[cfg(feature = "plotly")]
     {
-        warn!("Failed to generate plots: {}", e);
-    } else {
-        info!("✅ Plots generated successfully");
+        info!("📊 Generating plots: {}", output_path.display());
+        if let Err(e) = plot::plot_results(
+            &args,
+            &opt_result.params,
+            &input_curve,
+            &target_curve,
+            &deviation_curve,
+            &spin_data,
+            &output_path,
+        )
+        .await
+        {
+            warn!("Failed to generate plots: {}", e);
+        } else {
+            info!("✅ Plots generated successfully");
+        }
+    }
+    #[cfg(not(feature = "plotly"))]
+    {
+        info!(
+            "📊 Plot generation disabled (rebuild with --features plotly to enable). Output base: {}",
+            output_path.display()
+        );
     }
 
     // Save PEQ settings to APO format file
@@ -373,18 +386,29 @@ async fn run_multi_driver_optimization(args: &autoeq::cli::Args) -> Result<()> {
         path
     });
 
-    info!("📊 Generating plots: {}", output_path.display());
-    if let Err(e) = autoeq::plot::plot_drivers_results(
-        &drivers_data,
-        gains,
-        xover_freqs,
-        Some(delays),
-        args.sample_rate,
-        &output_path,
-    ) {
-        warn!("Failed to generate plots: {}", e);
-    } else {
-        info!("✅ Plots generated successfully");
+    #[cfg(feature = "plotly")]
+    {
+        info!("📊 Generating plots: {}", output_path.display());
+        if let Err(e) = autoeq::plot::plot_drivers_results(
+            &drivers_data,
+            gains,
+            xover_freqs,
+            Some(delays),
+            args.sample_rate,
+            &output_path,
+        ) {
+            warn!("Failed to generate plots: {}", e);
+        } else {
+            info!("✅ Plots generated successfully");
+        }
+    }
+    #[cfg(not(feature = "plotly"))]
+    {
+        let _ = (&drivers_data, gains, xover_freqs, &delays, args.sample_rate);
+        info!(
+            "📊 Plot generation disabled (rebuild with --features plotly to enable). Output base: {}",
+            output_path.display()
+        );
     }
 
     // QA mode output

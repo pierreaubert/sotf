@@ -18,6 +18,7 @@ RUN apt-get update && \
     ninja-build \
     perl \
     libssl-dev \
+    libsqlite3-dev \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp*
 
 # Install Rust 1.90 (pinned version for compatibility)

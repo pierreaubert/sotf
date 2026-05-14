@@ -169,8 +169,17 @@ prod-generate-audio-tests:
 	cargo build --release --bin generate-audio-tests -p sotf-tools
 
 [group('build')]
-prod-workspace:
+prod-workspace: prod-plot-bins
 	cargo build --release --workspace
+
+# Binaries gated by `required-features = ["plotly"]` are silently skipped by
+# `cargo build --workspace`; build them explicitly so a `prod-workspace` run
+# produces the full set of artifacts.
+[group('build')]
+prod-plot-bins:
+	cargo build --release --bin roomeq-fuzzer -p autoeq --features plotly
+	cargo build --release --bin plot-functions -p math-test-functions --features plotly
+	cargo build --release --bin plot-de -p math-optimisation --features plotly
 
 [group('build')]
 prod-sotf-player: prod-sotf-tui prod-sotf-gpui
@@ -190,7 +199,7 @@ prod-sotf-recorder:
 [group('build')]
 prod-roomeq:
 	cargo build --release --bin roomeq
-	cargo build --release --bin roomeq-fuzzer
+	cargo build --release --bin roomeq-fuzzer -p autoeq --features plotly
 
 # shortcuts
 [group('build')]
@@ -237,6 +246,10 @@ dev:
 	cargo build --workspace
 	cargo build -p sotf-gpui --bin sotf-desktop --features "onnx, hal, gpu-2d, gpu-3d, iamf, dev-api"
 	cargo build -p sotf-dev-driver
+	# Plotly-gated bins are skipped by `cargo build --workspace`; build them.
+	cargo build --bin roomeq-fuzzer -p autoeq --features plotly
+	cargo build --bin plot-functions -p math-test-functions --features plotly
+	cargo build --bin plot-de -p math-optimisation --features plotly
 
 # ----------------------------------------------------------------------
 # UPDATE

@@ -28,9 +28,10 @@ pub fn cache_root() -> PathBuf {
         return legacy;
     }
 
-    if let Some(mut base) = dirs::cache_dir() {
-        base.push(CACHE_BUNDLE_ID);
-        return base;
+    if let Some(base) = directories::BaseDirs::new() {
+        let mut p = base.cache_dir().to_path_buf();
+        p.push(CACHE_BUNDLE_ID);
+        return p;
     }
 
     legacy

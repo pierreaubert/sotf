@@ -1126,12 +1126,23 @@ pub(crate) fn render_room_eq_bass_management_report(
                             .color(theme.warning),
                     )
                 })
-                .when(!bass.routes.is_empty(), |el| {
-                    el.child(render_room_eq_bass_routing_chart(bass, theme))
-                        .child(render_room_eq_bass_routes_table(d, bass, theme))
+                .when(!bass.routes.is_empty() || bass.headroom.is_some(), |el| {
+                    el.child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .flex_wrap()
+                            .gap(d.gap_md)
+                            .when(!bass.routes.is_empty(), |row| {
+                                row.child(render_room_eq_bass_routing_chart(bass, theme))
+                            })
+                            .when_some(bass.headroom.as_ref(), |row, headroom| {
+                                row.child(render_room_eq_bass_headroom_chart(headroom, theme))
+                            }),
+                    )
                 })
-                .when_some(bass.headroom.as_ref(), |el, headroom| {
-                    el.child(render_room_eq_bass_headroom_chart(headroom, theme))
+                .when(!bass.routes.is_empty(), |el| {
+                    el.child(render_room_eq_bass_routes_table(d, bass, theme))
                 })
                 .when(!bass.groups.is_empty(), |el| {
                     el.child(render_room_eq_bass_groups_table(d, bass, theme))
@@ -1191,38 +1202,6 @@ fn render_room_eq_colored_stat_item(
         .into_any_element()
 }
 
-fn room_eq_sankey_display_routes(bass: &RoomEqReportBassManagement) -> Vec<RoomEqReportBassRoute> {
-    let mut routes = bass.routes.clone();
-    for output in &bass.output_channels {
-        if is_room_eq_sub_or_lfe_channel(output) {
-            continue;
-        }
-        if !bass.input_channels.iter().any(|input| input == output) {
-            continue;
-        }
-        if routes
-            .iter()
-            .any(|route| route.source_channel == *output && route.destination == *output)
-        {
-            continue;
-        }
-        routes.push(RoomEqReportBassRoute {
-            source_channel: output.clone(),
-            destination: output.clone(),
-            route_kind: "main_highpass_to_self".to_string(),
-            group_id: None,
-            crossover_type: bass.crossover_type.clone(),
-            high_pass_hz: bass.crossover_frequency_hz,
-            low_pass_hz: None,
-            gain_db: 0.0,
-            matrix_gain: 1.0,
-            delay_ms: 0.0,
-            polarity_inverted: false,
-        });
-    }
-    routes
-}
-
 fn render_room_eq_bass_routing_chart(
     bass: &RoomEqReportBassManagement,
     theme: &crate::theme::Theme,
@@ -1237,14 +1216,7 @@ fn render_room_eq_bass_routing_chart(
         }
     };
 
-    for channel in &bass.input_channels {
-        add_node(format!("in: {channel}"));
-    }
-    for channel in &bass.output_channels {
-        add_node(format!("out: {channel}"));
-    }
-
-    let display_routes = room_eq_sankey_display_routes(bass);
+    let display_routes = &bass.routes;
     let links: Vec<SankeyLinkInput> = display_routes
         .iter()
         .map(|route| {
@@ -1264,14 +1236,14 @@ fn render_room_eq_bass_routing_chart(
         return render_empty_state(IconName::AudioWaveform, "No routing graph data", theme);
     }
 
-    let width = 1200.0;
-    let height = (260.0 + 18.0 * display_routes.len() as f64).clamp(420.0, 760.0);
+    let width = 350.0;
+    let height = (220.0 + 12.0 * display_routes.len() as f64).clamp(260.0, 350.0);
     let result = SankeyLayout::new()
         .width(width)
         .height(height)
-        .margins(16.0, 24.0, 16.0, 24.0)
+        .margins(12.0, 18.0, 12.0, 18.0)
         .node_width(16.0)
-        .node_padding(18.0)
+        .node_padding(12.0)
         .compute(&node_names, &links);
 
     let mut paths = Vec::<d3rs::shape::path::Path>::new();
@@ -1393,15 +1365,19 @@ fn render_room_eq_bass_routing_chart(
         }))
         .into_any_element();
 
-    VStack::new()
-        .spacing(StackSpacing::Xs)
+    div()
+        .w(px(width as f32))
         .child(
-            Text::new("Bass Management Routing Graph")
-                .weight(TextWeight::Semibold)
-                .size(TextSize::Xs)
-                .color(theme.text_primary),
+            VStack::new()
+                .spacing(StackSpacing::Xs)
+                .child(
+                    Text::new("Bass Management Routing Graph")
+                        .weight(TextWeight::Semibold)
+                        .size(TextSize::Xs)
+                        .color(theme.text_primary),
+                )
+                .child(chart),
         )
-        .child(chart)
         .into_any_element()
 }
 
@@ -1444,7 +1420,7 @@ fn render_room_eq_bass_headroom_chart(
         .add_series(&lfe, Some("LFE contribution"), 0xe67e22, 0.72)
         .legend_position(LegendPosition::Bottom)
         .theme(bar_theme)
-        .size(1200.0, 320.0)
+        .size(350.0, 260.0)
         .build()
         .map(|chart| chart.into_any_element())
         .unwrap_or_else(|e| {
@@ -1456,21 +1432,25 @@ fn render_room_eq_bass_headroom_chart(
             )
         });
 
-    VStack::new()
-        .spacing(StackSpacing::Xs)
+    div()
+        .w(px(350.0))
         .child(
-            Text::new(format!(
-                "Bass Bus Headroom Simulation ({}, {}, margin {}, worst {})",
-                headroom.model,
-                if headroom.pass { "pass" } else { "fail" },
-                fmt_db(headroom.margin_db),
-                fmt_hz(headroom.worst_frequency_hz)
-            ))
-            .weight(TextWeight::Semibold)
-            .size(TextSize::Xs)
-            .color(theme.text_primary),
+            VStack::new()
+                .spacing(StackSpacing::Xs)
+                .child(
+                    Text::new(format!(
+                        "Bass Bus Headroom Simulation ({}, {}, margin {}, worst {})",
+                        headroom.model,
+                        if headroom.pass { "pass" } else { "fail" },
+                        fmt_db(headroom.margin_db),
+                        fmt_hz(headroom.worst_frequency_hz)
+                    ))
+                    .weight(TextWeight::Semibold)
+                    .size(TextSize::Xs)
+                    .color(theme.text_primary),
+                )
+                .child(chart),
         )
-        .child(chart)
         .into_any_element()
 }
 
@@ -2330,7 +2310,7 @@ fn render_room_eq_curve_chart(
         .stroke_width(first.stroke_width)
         .opacity(first.opacity)
         .theme(chart_theme)
-        .size(1200.0, 360.0);
+        .size(800.0, 360.0);
 
     if let Some(trend) = first_trend {
         chart = chart.add_series_with_x(
@@ -2589,7 +2569,7 @@ fn render_room_eq_ir_chart(
         .stroke_width(1.5)
         .opacity(0.9)
         .theme(theme_to_chart_theme(theme))
-        .size(1200.0, 260.0);
+        .size(800.0, 260.0);
 
     if channel.pre_ir.is_some()
         && let Some(post_ir) = channel.post_ir.as_ref()
@@ -3092,7 +3072,7 @@ fn render_response_comparison_graph(
     use crate::components::graphs::common::theme_to_chart_theme;
     use gpui_px::{LegendPosition, ScaleType, line};
 
-    const GRAPH_WIDTH: f32 = 1200.0;
+    const GRAPH_WIDTH: f32 = 800.0;
     const GRAPH_HEIGHT: f32 = 400.0;
 
     const BLUE: u32 = 0x1f77b4;
@@ -3270,7 +3250,7 @@ fn render_filter_plot(
     use gpui_px::{LegendPosition, ScaleType, StrokeDashArray, line};
     use math_audio_iir_fir::{Biquad, BiquadFilterType};
 
-    const GRAPH_WIDTH: f32 = 1200.0;
+    const GRAPH_WIDTH: f32 = 800.0;
     const GRAPH_HEIGHT: f32 = 400.0;
     const SAMPLE_RATE: f64 = sotf_plugins::DEFAULT_PREVIEW_SAMPLE_RATE;
 
@@ -3514,7 +3494,7 @@ fn render_tonal_histogram(
 ) -> impl IntoElement {
     use gpui_px::{BarTheme, LegendPosition, bar};
 
-    const GRAPH_WIDTH: f32 = 1200.0;
+    const GRAPH_WIDTH: f32 = 800.0;
     const GRAPH_HEIGHT: f32 = 200.0;
 
     const BLUE: u32 = 0x1f77b4;
@@ -3657,7 +3637,7 @@ fn render_phase_graph(
     use crate::components::graphs::common::theme_to_chart_theme;
     use gpui_px::{LegendPosition, ScaleType, line};
 
-    const GRAPH_WIDTH: f32 = 1200.0;
+    const GRAPH_WIDTH: f32 = 800.0;
     const GRAPH_HEIGHT: f32 = 200.0;
 
     const BLUE: u32 = 0x1f77b4;
@@ -3766,7 +3746,7 @@ fn render_impulse_response_graph(
     use crate::components::graphs::common::theme_to_chart_theme;
     use gpui_px::{LegendPosition, ScaleType, line};
 
-    const GRAPH_WIDTH: f32 = 1200.0;
+    const GRAPH_WIDTH: f32 = 800.0;
     const GRAPH_HEIGHT: f32 = 200.0;
 
     const BLUE: u32 = 0x1f77b4;
@@ -3920,7 +3900,7 @@ fn render_group_delay_graph(
     use crate::components::graphs::common::theme_to_chart_theme;
     use gpui_px::{LegendPosition, ScaleType, line};
 
-    const GRAPH_WIDTH: f32 = 1200.0;
+    const GRAPH_WIDTH: f32 = 800.0;
     const GRAPH_HEIGHT: f32 = 200.0;
     const BLUE: u32 = 0x1f77b4;
     const ORANGE: u32 = 0xff7f0e;

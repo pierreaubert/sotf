@@ -70,7 +70,6 @@ symphonia-format-isomp4 = { workspace = true }
 hound = { workspace = true }
 rubato = { workspace = true }
 id3 = { workspace = true }
-metaflac = { workspace = true }
 rtrb = { workspace = true }
 
 # Platform-specific: not available on iOS
