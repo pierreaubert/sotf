@@ -1,4 +1,4 @@
-# 0.4.44 (unreleased)
+# 0.4.44
 
 ## New features
 
