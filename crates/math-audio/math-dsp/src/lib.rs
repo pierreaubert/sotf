@@ -20,6 +20,7 @@
 
 pub mod analysis;
 pub mod audio_features;
+pub mod binaural_loudness;
 pub mod binaural_matrix;
 pub mod ebur128;
 pub mod esprit;
@@ -63,6 +64,11 @@ pub use analysis::{
 };
 
 pub use fdw::{FdwAnalysis, FdwConfig, analyze_impulse_response_fdw};
+
+pub use binaural_loudness::{
+    BinauralChannel, BinauralDownmix, BinauralLoudness, BinauralLoudnessResult, SurroundLayout,
+    measure_binaural, measure_binaural_from_surround,
+};
 
 pub use binaural_matrix::{
     MatrixInverseBin, TransferMatrixBin, align_ir_to_reference_peak, condition_number,

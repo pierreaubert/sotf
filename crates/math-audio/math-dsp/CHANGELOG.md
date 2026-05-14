@@ -1,3 +1,24 @@
+# 0.5.19
+
+## New features
+
+- Added `binaural_loudness` module: streaming binaural-loudness meter
+  (`BinauralLoudness`) applying ITU-R BS.1770-4 K-weighting and gated
+  integration to a 2-channel ear-signal pair. Provides momentary,
+  short-term, and integrated LUFS; cumulative sample peak and true peak
+  per ear; interleaved or separate L/R input; reset; and a
+  `BinauralLoudnessResult` snapshot. One-shot helper `measure_binaural`
+  for offline analysis.
+- Added surround → binaural downmix path: `BinauralDownmix` carries a
+  per-channel `[L_ear, R_ear]` linear gain matrix; preset constructors
+  `BinauralDownmix::bs775(SurroundLayout::{FiveZero, FiveOne, SevenOne})`
+  implement ITU-R BS.775 stereo-downmix coefficients (centre / surrounds
+  at −3 dB, LFE excluded per BS.1770-4). `BinauralLoudness::add_surround_f32`
+  and `measure_binaural_from_surround` feed multichannel programmes
+  through the matrix into the binaural meter. Documented as a level-only
+  approximation of true HRTF rendering; callers with HRTF magnitude data
+  can supply broadband per-channel gains via `BinauralDownmix::from_matrix`.
+
 # 0.5.18
 
 ## Bug fixes

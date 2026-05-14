@@ -86,6 +86,42 @@ Foundational papers and standards behind the algorithms in `math-dsp`.
 }
 ```
 
+## Binaural loudness and surround→stereo downmix
+
+```bibtex
+@techreport{itu_bs775,
+  author      = {{ITU-R}},
+  title       = {{Recommendation ITU-R BS.775-4 — Multichannel stereophonic sound system with and without accompanying picture}},
+  institution = {International Telecommunication Union},
+  year        = {2022},
+  note        = {Defines the L/R/C/Ls/Rs stereo downmix coefficients
+                 (centre and surrounds at -3 dB) used by
+                 \texttt{BinauralDownmix::bs775} as a level-only proxy
+                 for binaural rendering when measuring multichannel
+                 programme loudness.}
+}
+
+@techreport{itu_bs2051,
+  author      = {{ITU-R}},
+  title       = {{Recommendation ITU-R BS.2051-3 — Advanced sound system for programme production}},
+  institution = {International Telecommunication Union},
+  year        = {2022},
+  note        = {Defines the standard channel orderings
+                 (5.0, 5.1, 7.1, etc.) used by \texttt{SurroundLayout}.}
+}
+
+@techreport{itu_bs2127,
+  author      = {{ITU-R}},
+  title       = {{Recommendation ITU-R BS.2127-1 — Audio Definition Model renderer for advanced sound systems}},
+  institution = {International Telecommunication Union},
+  year        = {2023},
+  note        = {Reference for object-based/ADM binaural rendering. Out
+                 of scope for \texttt{math-dsp}; cited because true HRTF
+                 binaural loudness should ideally pre-render via a
+                 BS.2127-style renderer before applying BS.1770-4.}
+}
+```
+
 ## ESPRIT (frequency estimation)
 
 ```bibtex

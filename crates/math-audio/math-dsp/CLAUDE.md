@@ -1,4 +1,4 @@
-# math-dsp (lib: `math_audio_dsp`, version: 0.5.16)
+# math-dsp (lib: `math_audio_dsp`, version: 0.5.19)
 
 DSP utilities for signal generation, analysis, and audio feature extraction.
 
@@ -11,7 +11,8 @@ DSP utilities for signal generation, analysis, and audio feature extraction.
 | `simd` | SIMD-optimized DSP operations |
 | `stft` | Short-Time Fourier Transform |
 | `rtpghi` | Real-Time Phase Gradient Heap Integration (phase reconstruction) |
-| `ebur128` | EBU R128 loudness standard implementation |
+| `ebur128` | EBU R128 / ITU-R BS.1770-4 loudness implementation |
+| `binaural_loudness` | ITU-R BS.1770-4 loudness for binaural (2-ch headphone) signals; BS.775 surround→binaural downmix |
 | `esprit` | ESPRIT algorithm for frequency estimation |
 | `instantaneous_frequency` | Instantaneous frequency extraction |
 | `tonal_transient` | Tonal vs transient signal separation |

@@ -3,7 +3,7 @@
 DSP utilities for audio signal generation and FFT-based analysis.
 
 **Library name:** `math_audio_dsp`
-**Version:** 0.5.16
+**Version:** 0.5.19
 
 ## Overview
 
@@ -16,7 +16,8 @@ This crate provides signal generation, FFT-based analysis, and audio feature ext
 | **`simd`** | SIMD-optimized DSP operations |
 | **`stft`** | Short-Time Fourier Transform |
 | **`rtpghi`** | Real-Time Phase Gradient Heap Integration (phase reconstruction from magnitude STFT) |
-| **`ebur128`** | EBU R128 loudness standard implementation |
+| **`ebur128`** | EBU R128 / ITU-R BS.1770-4 loudness implementation |
+| **`binaural_loudness`** | ITU-R BS.1770-4 loudness meter for binaural (2-channel headphone) signals; ITU-R BS.775 surround→binaural downmix presets (5.0 / 5.1 / 7.1) and custom-matrix path |
 | **`esprit`** | ESPRIT algorithm for sinusoidal frequency estimation |
 | **`instantaneous_frequency`** | Instantaneous frequency extraction from analytic signal |
 | **`tonal_transient`** | Tonal vs transient signal separation |
