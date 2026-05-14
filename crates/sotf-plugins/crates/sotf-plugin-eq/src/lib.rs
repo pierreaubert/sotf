@@ -7,7 +7,9 @@ pub mod params;
 #[cfg(feature = "gpui-ui")]
 pub mod ui;
 
-use math_audio_iir_fir::{Biquad, BiquadCoefficients, SvfFilter, SvfFilterType};
+use math_audio_iir_fir::{
+    Biquad, BiquadCoefficients, KautzFilter, SvfFilter, SvfFilterType, WarpedBiquad, bark_lambda,
+};
 use serde::{Deserialize, Serialize};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_gain::{AutoGain, AutoGainData, AutoGainParams};
@@ -35,6 +37,24 @@ const Q_MAX: f32 = 10.0;
 const GAIN_MIN: f32 = -24.0;
 const GAIN_MAX: f32 = 24.0;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum EqFilterTopology {
+    #[default]
+    Biquad,
+    WarpedBiquad,
+    KautzFilter,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KautzSectionConfig {
+    #[serde(alias = "freq", alias = "frequency", alias = "pole_freq_hz")]
+    pub pole_freq: f64,
+    pub q: f64,
+    #[serde(default)]
+    pub gain: f64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BiquadFilterConfig {
     pub filter_type: String,
@@ -46,6 +66,18 @@ pub struct BiquadFilterConfig {
     /// Higher orders cascade N/2 biquads with Butterworth Q staggering.
     #[serde(default = "default_order")]
     pub order: usize,
+    /// Runtime filter topology. Defaults to standard biquad for backwards-compatible
+    /// Roomeq/host JSON.
+    #[serde(default)]
+    pub topology: EqFilterTopology,
+    /// Warping coefficient for `topology=warped_biquad`. If omitted, the plugin
+    /// uses the Bark-scale lambda for the active sample rate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lambda: Option<f64>,
+    /// Kautz sections for `topology=kautz_filter`. If omitted, the filter's
+    /// `freq`, `q`, and `db_gain` define a single section.
+    #[serde(default, alias = "sections", skip_serializing_if = "Vec::is_empty")]
+    pub kautz_sections: Vec<KautzSectionConfig>,
 }
 
 fn default_order() -> usize {
@@ -89,6 +121,156 @@ struct BandTransition {
     total_samples: usize,
 }
 
+struct KautzRuntime {
+    sections: Vec<KautzSectionConfig>,
+    filter: KautzFilter<f64>,
+}
+
+impl KautzRuntime {
+    fn new(sections: Vec<KautzSectionConfig>, sample_rate: f64) -> Result<Self, String> {
+        if sections.is_empty() {
+            return Err("Kautz filter needs at least one section".into());
+        }
+        validate_sample_rate(sample_rate)?;
+        for section in &sections {
+            validate_freq_q_gain(section.pole_freq, section.q, section.gain)?;
+        }
+        let mut runtime = Self {
+            sections,
+            filter: KautzFilter::from_room_modes(&[], sample_rate),
+        };
+        runtime.apply_sample_rate(sample_rate)?;
+        Ok(runtime)
+    }
+
+    fn apply_sample_rate(&mut self, sample_rate: f64) -> Result<(), String> {
+        validate_sample_rate(sample_rate)?;
+        let modes: Vec<(f64, f64)> = self.sections.iter().map(|s| (s.pole_freq, s.q)).collect();
+        let mut filter = KautzFilter::from_room_modes(&modes, sample_rate);
+        for (section, cfg) in filter.sections.iter_mut().zip(self.sections.iter()) {
+            section.gain = cfg.gain;
+        }
+        self.filter = filter;
+        Ok(())
+    }
+
+    fn process(&mut self, sample: f64) -> f64 {
+        sample + self.filter.process(sample)
+    }
+
+    fn reset(&mut self) {
+        self.filter.reset();
+    }
+}
+
+enum AdvancedFilter {
+    Warped(WarpedBiquad<f64>),
+    Kautz(KautzRuntime),
+}
+
+impl AdvancedFilter {
+    fn from_config(
+        config: &BiquadFilterConfig,
+        sample_rate: f64,
+        parse_filter_type: &dyn Fn(&str) -> Result<math_audio_iir_fir::BiquadFilterType, String>,
+    ) -> Result<Option<Self>, String> {
+        match config.topology {
+            EqFilterTopology::Biquad => Ok(None),
+            EqFilterTopology::WarpedBiquad => {
+                validate_freq_q_gain(config.freq, config.q, config.db_gain)?;
+                validate_sample_rate(sample_rate)?;
+                let lambda = config.lambda.unwrap_or_else(|| bark_lambda(sample_rate));
+                if !lambda.is_finite() || !(-0.9999..=0.9999).contains(&lambda) {
+                    return Err(format!(
+                        "Invalid warped_biquad lambda {lambda}: expected finite value in [-0.9999, 0.9999]"
+                    ));
+                }
+                Ok(Some(Self::Warped(WarpedBiquad::new(
+                    parse_filter_type(&config.filter_type)?,
+                    config.freq,
+                    sample_rate,
+                    config.q,
+                    config.db_gain,
+                    lambda,
+                ))))
+            }
+            EqFilterTopology::KautzFilter => {
+                let sections = if config.kautz_sections.is_empty() {
+                    vec![KautzSectionConfig {
+                        pole_freq: config.freq,
+                        q: config.q,
+                        gain: config.db_gain,
+                    }]
+                } else {
+                    config.kautz_sections.clone()
+                };
+                Ok(Some(Self::Kautz(KautzRuntime::new(sections, sample_rate)?)))
+            }
+        }
+    }
+
+    fn process(&mut self, sample: f64) -> f64 {
+        match self {
+            Self::Warped(filter) => filter.process(sample),
+            Self::Kautz(filter) => filter.process(sample),
+        }
+    }
+
+    fn apply_sample_rate(&mut self, sample_rate: f64) -> Result<(), String> {
+        match self {
+            Self::Warped(filter) => {
+                filter.update_params(
+                    filter.filter_type,
+                    filter.freq,
+                    sample_rate,
+                    filter.q,
+                    filter.db_gain,
+                    filter.lambda,
+                );
+                Ok(())
+            }
+            Self::Kautz(filter) => filter.apply_sample_rate(sample_rate),
+        }
+    }
+
+    fn reset(&mut self) {
+        match self {
+            Self::Warped(filter) => {
+                *filter = WarpedBiquad::new(
+                    filter.filter_type,
+                    filter.freq,
+                    filter.srate,
+                    filter.q,
+                    filter.db_gain,
+                    filter.lambda,
+                );
+            }
+            Self::Kautz(filter) => filter.reset(),
+        }
+    }
+}
+
+fn validate_sample_rate(sample_rate: f64) -> Result<(), String> {
+    if sample_rate.is_finite() && sample_rate > 0.0 {
+        Ok(())
+    } else {
+        Err(format!("Invalid sample rate: {sample_rate}"))
+    }
+}
+
+fn validate_freq_q_gain(freq: f64, q: f64, gain: f64) -> Result<(), String> {
+    if !freq.is_finite() || freq <= 0.0 {
+        return Err(format!("Invalid filter frequency: {freq}"));
+    }
+    if !q.is_finite() || q <= 0.0 {
+        return Err(format!("Invalid filter Q: {q}"));
+    }
+    if !gain.is_finite() {
+        return Err(format!("Invalid filter gain: {gain}"));
+    }
+    Ok(())
+}
+
 pub struct EqPlugin {
     num_channels: usize,
     /// filters[channel][band][stage] — for order=2, each band has 1 stage.
@@ -117,6 +299,9 @@ pub struct EqPlugin {
     /// SVF filter banks: svf_filters[channel][band] — single SVF per band (no cascading).
     /// Only populated when topology == 1.
     svf_filters: Vec<Vec<SvfFilter>>,
+    /// Advanced filter banks: advanced_filters[channel][filter].
+    /// Populated from per-filter `topology=warped_biquad` or `topology=kautz_filter`.
+    advanced_filters: Vec<Vec<AdvancedFilter>>,
 }
 
 /// Helper: create cascaded biquad stages for a given order.
@@ -181,6 +366,7 @@ impl EqPlugin {
             oversampler: None,
             topology: 0,
             svf_filters: Vec::new(),
+            advanced_filters: (0..num_channels).map(|_| Vec::new()).collect(),
         };
         p.rebuild_cached_parameters();
         p
@@ -336,6 +522,7 @@ impl EqPlugin {
             oversampler: None,
             topology: 0,
             svf_filters: Vec::new(),
+            advanced_filters: (0..num_channels).map(|_| Vec::new()).collect(),
         };
         p.rebuild_cached_parameters();
         Ok(p)
@@ -378,24 +565,34 @@ impl EqPlugin {
             );
             Ok((stages, order))
         };
+        let config_to_advanced =
+            |f: &BiquadFilterConfig| -> Result<Option<AdvancedFilter>, String> {
+                AdvancedFilter::from_config(f, sample_rate as f64, &parse_filter_type)
+            };
         let auto_gain = AutoGain::new(num_channels, sample_rate, params.auto_gain)?;
         let mut eq = if let Some(cfgs) = params.channel_filters {
             if cfgs.len() != num_channels {
                 return Err("Mismatched chains".into());
             }
-            // Per-channel: use order=2 for each band (no cascading in per-channel mode)
             let mut channel_filters = Vec::with_capacity(num_channels);
+            let mut advanced_filters = Vec::with_capacity(num_channels);
             let mut band_orders = Vec::new();
             for (ch_idx, c) in cfgs.iter().enumerate() {
                 let mut ch_bands = Vec::new();
+                let mut ch_advanced = Vec::new();
                 for f in c {
-                    let (stages, order) = config_to_stages(f)?;
-                    if ch_idx == 0 {
-                        band_orders.push(order);
+                    if f.topology == EqFilterTopology::Biquad {
+                        let (stages, order) = config_to_stages(f)?;
+                        if ch_idx == 0 {
+                            band_orders.push(order);
+                        }
+                        ch_bands.push(stages);
+                    } else if let Some(filter) = config_to_advanced(f)? {
+                        ch_advanced.push(filter);
                     }
-                    ch_bands.push(stages);
                 }
                 channel_filters.push(ch_bands);
+                advanced_filters.push(ch_advanced);
             }
             let num_bands = band_orders.len();
             Self {
@@ -413,19 +610,32 @@ impl EqPlugin {
                 oversampler: None,
                 topology: 0,
                 svf_filters: Vec::new(),
+                advanced_filters,
             }
         } else {
             let mut band_stages = Vec::new();
             let mut band_orders = Vec::new();
             for f in &params.filters {
-                let (stages, order) = config_to_stages(f)?;
-                band_stages.push(stages);
-                band_orders.push(order);
+                if f.topology == EqFilterTopology::Biquad {
+                    let (stages, order) = config_to_stages(f)?;
+                    band_stages.push(stages);
+                    band_orders.push(order);
+                }
             }
             let num_bands = band_stages.len();
             let mut channel_filters = Vec::with_capacity(num_channels);
+            let mut advanced_filters = Vec::with_capacity(num_channels);
             for _ in 0..num_channels {
                 channel_filters.push(band_stages.clone());
+                let mut ch_advanced = Vec::new();
+                for f in &params.filters {
+                    if f.topology != EqFilterTopology::Biquad
+                        && let Some(filter) = config_to_advanced(f)?
+                    {
+                        ch_advanced.push(filter);
+                    }
+                }
+                advanced_filters.push(ch_advanced);
             }
             Self {
                 num_channels,
@@ -442,6 +652,7 @@ impl EqPlugin {
                 oversampler: None,
                 topology: 0,
                 svf_filters: Vec::new(),
+                advanced_filters,
             }
         };
         eq.rebuild_cached_parameters();
@@ -456,6 +667,7 @@ impl EqPlugin {
                 .push(filters.iter().map(|f| vec![f.clone()]).collect());
         }
         self.transitions = (0..filters.len()).map(|_| None).collect();
+        self.advanced_filters = (0..self.num_channels).map(|_| Vec::new()).collect();
     }
 
     pub fn set_channel_filters(&mut self, channel_filters: Vec<Vec<Biquad>>) -> Result<(), String> {
@@ -469,6 +681,7 @@ impl EqPlugin {
             .map(|ch| ch.into_iter().map(|f| vec![f]).collect())
             .collect();
         self.transitions = (0..num_bands).map(|_| None).collect();
+        self.advanced_filters = (0..self.num_channels).map(|_| Vec::new()).collect();
         Ok(())
     }
 
@@ -491,6 +704,32 @@ impl EqPlugin {
         }
         for t in &mut self.transitions {
             *t = None;
+        }
+    }
+
+    fn apply_sample_rate_to_advanced_filters(&mut self, sample_rate: f64) -> Result<(), String> {
+        for chain in &mut self.advanced_filters {
+            for filter in chain {
+                filter.apply_sample_rate(sample_rate)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn process_advanced_interleaved(&mut self, buffer: &mut [f32], num_frames: usize) {
+        if self.advanced_filters.iter().all(Vec::is_empty) {
+            return;
+        }
+        let nc = self.num_channels;
+        for frame in 0..num_frames {
+            for ch in 0..nc {
+                let idx = frame * nc + ch;
+                let mut sample = buffer[idx] as f64;
+                for filter in &mut self.advanced_filters[ch] {
+                    sample = filter.process(sample);
+                }
+                buffer[idx] = sample as f32;
+            }
         }
     }
 
@@ -830,6 +1069,7 @@ impl InPlacePlugin for EqPlugin {
         for t in &mut self.transitions {
             *t = None;
         }
+        self.apply_sample_rate_to_advanced_filters(sample_rate as f64)?;
         self.auto_gain
             .set_sample_rate(sample_rate)
             .map_err(|e| e.to_string())?;
@@ -863,6 +1103,11 @@ impl InPlacePlugin for EqPlugin {
                 for f in stages {
                     *f = Biquad::new(f.filter_type, f.freq, f.srate, f.q, f.db_gain);
                 }
+            }
+        }
+        for chain in &mut self.advanced_filters {
+            for filter in chain {
+                filter.reset();
             }
         }
         for t in &mut self.transitions {
@@ -997,6 +1242,8 @@ impl InPlacePlugin for EqPlugin {
             result?;
         }
 
+        self.process_advanced_interleaved(buffer, num_frames);
+
         if do_measure {
             let _ = self.auto_gain.measure_output(buffer);
             let ag_data = self.auto_gain.get_data();
@@ -1110,6 +1357,9 @@ mod tests {
                 q: 0.707,
                 db_gain: 0.0,
                 order: 2,
+                topology: Default::default(),
+                lambda: None,
+                kautz_sections: Vec::new(),
             }],
             channel_filters: None,
             auto_gain: Default::default(),
@@ -1120,6 +1370,106 @@ mod tests {
             "EqPlugin should parse 'allpass' filter type, got: {:?}",
             result.err()
         );
+    }
+
+    #[test]
+    fn test_eq_warped_biquad_filter_processes() {
+        let params = EqPluginParams {
+            filters: vec![BiquadFilterConfig {
+                filter_type: "peak".to_string(),
+                freq: 1000.0,
+                q: 1.0,
+                db_gain: 6.0,
+                order: 2,
+                topology: EqFilterTopology::WarpedBiquad,
+                lambda: Some(0.5),
+                kautz_sections: Vec::new(),
+            }],
+            channel_filters: None,
+            auto_gain: Default::default(),
+        };
+        let mut p = EqPlugin::from_params(1, 48000, params).unwrap();
+        InPlacePlugin::initialize(&mut p, 48000).unwrap();
+        InPlacePlugin::set_parameter(
+            &mut p,
+            ParameterId::from("auto_gain_enabled"),
+            ParameterValue::Bool(false),
+        )
+        .unwrap();
+
+        assert_eq!(p.filters[0].len(), 0);
+        assert_eq!(p.advanced_filters[0].len(), 1);
+
+        let mut buf: Vec<f32> = (0..2048).map(|i| (i as f32 * 0.11).sin() * 0.25).collect();
+        let input = buf.clone();
+        p.process_in_place(
+            &mut buf,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 2048,
+            },
+        )
+        .unwrap();
+
+        assert!(buf.iter().all(|s| s.is_finite()));
+        let diff: f32 = buf
+            .iter()
+            .zip(input.iter())
+            .map(|(a, b)| (a - b).abs())
+            .sum();
+        assert!(diff > 0.01, "warped biquad should alter the signal");
+    }
+
+    #[test]
+    fn test_eq_kautz_filter_processes_as_dry_plus_correction() {
+        let params = EqPluginParams {
+            filters: vec![BiquadFilterConfig {
+                filter_type: "peak".to_string(),
+                freq: 100.0,
+                q: 5.0,
+                db_gain: 0.0,
+                order: 2,
+                topology: EqFilterTopology::KautzFilter,
+                lambda: None,
+                kautz_sections: vec![KautzSectionConfig {
+                    pole_freq: 100.0,
+                    q: 5.0,
+                    gain: 0.5,
+                }],
+            }],
+            channel_filters: None,
+            auto_gain: Default::default(),
+        };
+        let mut p = EqPlugin::from_params(1, 48000, params).unwrap();
+        InPlacePlugin::initialize(&mut p, 48000).unwrap();
+        InPlacePlugin::set_parameter(
+            &mut p,
+            ParameterId::from("auto_gain_enabled"),
+            ParameterValue::Bool(false),
+        )
+        .unwrap();
+
+        assert_eq!(p.filters[0].len(), 0);
+        assert_eq!(p.advanced_filters[0].len(), 1);
+
+        let mut buf: Vec<f32> = (0..4096).map(|i| (i as f32 * 0.013).sin() * 0.25).collect();
+        let input = buf.clone();
+        p.process_in_place(
+            &mut buf,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 4096,
+            },
+        )
+        .unwrap();
+
+        assert!(buf.iter().all(|s| s.is_finite()));
+        let diff: f32 = buf
+            .iter()
+            .zip(input.iter())
+            .map(|(a, b)| (a - b).abs())
+            .sum();
+        assert!(diff > 0.01, "Kautz correction should alter the signal");
     }
 
     #[test]
@@ -1593,6 +1943,9 @@ mod tests {
                 q: 1.0,
                 db_gain: 0.0,
                 order: 4, // 2 stages
+                topology: Default::default(),
+                lambda: None,
+                kautz_sections: Vec::new(),
             }],
             channel_filters: None,
             auto_gain: Default::default(),
@@ -1661,6 +2014,9 @@ mod tests {
                 q: 8.0, // high Q to stress test numerical stability
                 db_gain: 0.0,
                 order: 4,
+                topology: Default::default(),
+                lambda: None,
+                kautz_sections: Vec::new(),
             }],
             channel_filters: None,
             auto_gain: Default::default(),
@@ -1728,6 +2084,9 @@ mod tests {
                 q: 1.0,
                 db_gain: 3.0,
                 order: 2,
+                topology: Default::default(),
+                lambda: None,
+                kautz_sections: Vec::new(),
             }],
             channel_filters: None,
             auto_gain: Default::default(),

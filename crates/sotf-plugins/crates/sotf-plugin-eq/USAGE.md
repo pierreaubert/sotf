@@ -8,7 +8,7 @@ A fully parametric equalizer with up to 20 filter bands, supporting multiple fil
 
 ### Filter Bands
 
-Each band applies an independent biquad filter to the signal. Bands are processed in series (cascaded). All filter types use standard biquad implementations.
+Each band applies an independent filter to the signal. Bands are processed in series (cascaded). By default, bands use standard biquad implementations. Advanced configs may opt into `warped_biquad` or `kautz_filter` per band.
 
 **Per-Band Parameters:**
 
@@ -18,6 +18,8 @@ Each band applies an independent biquad filter to the signal. Bands are processe
 | Q | 0.1 to 10.0 | 1.0 | — | Quality factor (bandwidth) |
 | Gain | -24 to 24 | 0 | dB | Boost/cut amount (peak and shelf types only) |
 | Type | Peak/Lowshelf/Highshelf/Lowpass/Highpass/Bandpass/Notch | Peak | — | Filter type |
+| Topology | biquad/warped_biquad/kautz_filter | biquad | — | Runtime filter family |
+| Lambda | -0.9999 to 0.9999 | Bark lambda | — | Warping coefficient for warped biquads |
 
 ### Filter Types
 
@@ -30,6 +32,45 @@ Each band applies an independent biquad filter to the signal. Bands are processe
 | Highpass | Passes frequencies above the cutoff, attenuates below |
 | Bandpass | Passes a narrow band around the center frequency |
 | Notch | Removes a narrow band around the center frequency |
+
+### Advanced Topologies
+
+Warped biquad bands use the same `filter_type`, `freq`, `q`, and `db_gain` fields as standard biquads, plus `topology: "warped_biquad"`. If `lambda` is omitted, the plugin uses the Bark-scale lambda for the active sample rate.
+
+```json
+{
+  "filters": [
+    {
+      "topology": "warped_biquad",
+      "filter_type": "peak",
+      "freq": 80.0,
+      "q": 4.0,
+      "db_gain": -6.0,
+      "lambda": 0.876
+    }
+  ]
+}
+```
+
+Kautz filters are configured as a dry signal plus a parallel Kautz correction bank. Use `kautz_sections` for multiple pole-tuned sections; each section has `pole_freq`, `q`, and `gain`.
+
+```json
+{
+  "filters": [
+    {
+      "topology": "kautz_filter",
+      "filter_type": "peak",
+      "freq": 80.0,
+      "q": 6.0,
+      "db_gain": 0.0,
+      "kautz_sections": [
+        {"pole_freq": 63.0, "q": 8.0, "gain": -2.0},
+        {"pole_freq": 100.0, "q": 5.0, "gain": -1.5}
+      ]
+    }
+  ]
+}
+```
 
 ### Auto Gain
 

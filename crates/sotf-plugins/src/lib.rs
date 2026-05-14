@@ -251,7 +251,9 @@ pub use plugin_delay::{DelayPlugin, DelayPluginParams};
 pub use plugin_denoiser::{DenoiserData, DenoiserPlugin, DenoiserPluginParams};
 pub use plugin_downmix::{DownmixPlugin, DownmixPluginParams};
 pub use plugin_dynamic_eq::{DynamicEqData, DynamicEqPlugin, DynamicEqPluginParams};
-pub use plugin_eq::{BiquadFilterConfig, EqPlugin, EqPluginParams};
+pub use plugin_eq::{
+    BiquadFilterConfig, EqFilterTopology, EqPlugin, EqPluginParams, KautzSectionConfig,
+};
 pub use plugin_linear_phase_eq::{LinearPhaseEqPlugin, LinearPhaseEqPluginParams};
 pub use sotf_plugin_dither::{DitherPlugin, DitherPluginParams};
 pub type ExpanderPlugin = sotf_plugin_multiband_expander::MultibandExpanderPlugin;

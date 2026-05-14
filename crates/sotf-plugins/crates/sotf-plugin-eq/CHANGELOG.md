@@ -1,5 +1,13 @@
 # 0.5.66
 
+## New
+
+- Added config-driven advanced EQ filter families:
+  - `topology: "warped_biquad"` uses `math-iir-fir::WarpedBiquad` with optional `lambda`
+    and Bark-scale lambda by default.
+  - `topology: "kautz_filter"` uses `math-iir-fir::KautzFilter` as a dry-plus-correction
+    modal filter bank with `kautz_sections`.
+
 ## Fixes
 
 - **Multi-stage interpolation (lib.rs ~82, ~510, ~935):** `BandTransition` now stores

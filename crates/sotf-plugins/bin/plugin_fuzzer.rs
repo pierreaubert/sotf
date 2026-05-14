@@ -449,6 +449,9 @@ impl PluginFuzzer for EqFuzzer {
                 q,
                 db_gain,
                 order: 2,
+                topology: Default::default(),
+                lambda: None,
+                kautz_sections: Vec::new(),
             });
         }
 
