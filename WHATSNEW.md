@@ -4,7 +4,7 @@
 
 - Stable releases are now available on the Apple App Store:
 <https://apps.apple.com/ch/app/sound-of-the-future/id6754237332> and
-Windows App Store 
+Windows App Store
 - Beta macOS releases and command-line artifacts remain available on GitHub Releases.
 
 ## New features
@@ -12,18 +12,25 @@ Windows App Store
 ### UI
 
 - Added skins for plugins that can have distinct looks: Graphite / Studio Cream / Brutalist
-- In stereo mode we plot the width dynamically. Replaced it by peaks for 5.0 and larger.
+- Fixed UI for most plugins but still not pro looking
 
 ### RoomEQ
 
 - Added support for continuous area for optimisation (wrt to per measurement point)
 - Added bayesian optimisation for expensive calls: faster optimisation
+- Added support for pre and post ringing control
+- Added support for warped and Klauz filters
 
 ### Audio Plugins
 
 - Added a auto gain mode to AAE
+- Added support for warped and Klauz filters in EQ
 
-## bug fixes
+### Math
+
+- Added support for binaural loudness
+
+## Bug fixes
 
 ### Recording
 
@@ -31,7 +38,7 @@ Windows App Store
 
 ### RoomEQ
 
-- fix: user selected optimisation algo is now used everywhere (excep 1d optimisation)
+- fix: user selected optimisation algo is now used everywhere (except 1d optimisation)
 
 ### UI Library
 
@@ -43,7 +50,6 @@ Windows App Store
 
 - Hw interface UI was not activated properly
 - Fixed auto gain in Upmixer
-
 
 # 0.6.1 -> 0.6.5
 
