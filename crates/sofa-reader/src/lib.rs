@@ -4,7 +4,10 @@ mod hrtf;
 
 pub use error::{Result, SofaError};
 pub use hdf5::{AttrValue, DType, Hdf5File};
-pub use hrtf::{CoordinateSystem, HrtfData, SofaFile, SourcePosition};
+pub use hrtf::{
+    CoordinateSystem, HrtfData, SimpleFreeFieldHrtf, SofaFile, SourcePosition,
+    write_simple_free_field_hrtf,
+};
 
 use std::path::Path;
 
@@ -39,8 +42,16 @@ impl SofaReader {
         self.hdf5.read_f32(name)
     }
 
+    pub fn read_f64(&self, name: &str) -> Result<Vec<f64>> {
+        self.hdf5.read_f64(name)
+    }
+
     pub fn read_scalar_f32(&self, name: &str) -> Result<f32> {
         self.hdf5.read_scalar_f32(name)
+    }
+
+    pub fn read_scalar_f64(&self, name: &str) -> Result<f64> {
+        self.hdf5.read_scalar_f64(name)
     }
 
     pub fn attribute(&self, name: &str) -> Option<&AttrValue> {
@@ -67,6 +78,10 @@ impl SofaWriter {
         self.inner.add_attribute_f32(name, value);
     }
 
+    pub fn add_attribute_f64(&mut self, name: &str, value: f64) {
+        self.inner.add_attribute_f64(name, value);
+    }
+
     pub fn add_dimension(&mut self, name: &str, size: usize) {
         self.inner.add_dimension(name, size);
     }
@@ -75,12 +90,36 @@ impl SofaWriter {
         self.inner.add_variable_f32(name, dims);
     }
 
+    pub fn add_variable_f64(&mut self, name: &str, dims: &[&str]) {
+        self.inner.add_variable_f64(name, dims);
+    }
+
+    pub fn add_variable_attribute_str(&mut self, variable: &str, name: &str, value: &str) {
+        self.inner.add_variable_attribute_str(variable, name, value);
+    }
+
+    pub fn add_variable_attribute_f32(&mut self, variable: &str, name: &str, value: f32) {
+        self.inner.add_variable_attribute_f32(variable, name, value);
+    }
+
+    pub fn add_variable_attribute_f64(&mut self, variable: &str, name: &str, value: f64) {
+        self.inner.add_variable_attribute_f64(variable, name, value);
+    }
+
     pub fn write_scalar_f32(&mut self, name: &str, value: f32) -> Result<()> {
         self.inner.write_scalar_f32(name, value)
     }
 
+    pub fn write_scalar_f64(&mut self, name: &str, value: f64) -> Result<()> {
+        self.inner.write_scalar_f64(name, value)
+    }
+
     pub fn write_f32(&mut self, name: &str, data: &[f32]) -> Result<()> {
         self.inner.write_f32(name, data)
+    }
+
+    pub fn write_f64(&mut self, name: &str, data: &[f64]) -> Result<()> {
+        self.inner.write_f64(name, data)
     }
 
     pub fn finish<P: AsRef<Path>>(self, path: P) -> Result<()> {
@@ -149,6 +188,48 @@ mod tests {
         let ir = r.read_f32("Data.IR").unwrap();
         assert_eq!(ir.len(), 24);
         assert!((ir[0] - 0.1).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_write_simple_free_field_hrtf() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("hrtf.sofa");
+
+        let hrtf = SimpleFreeFieldHrtf {
+            real: &[1.0, 2.0, 3.0, 4.0],
+            imag: &[0.1, 0.2, 0.3, 0.4],
+            frequencies: &[100.0, 200.0],
+            source_position: &[1.0, 0.0, 0.0],
+            source_coords: CoordinateSystem::Cartesian,
+            receiver_position: &[0.0, 0.09, 0.0, 0.0, -0.09, 0.0],
+            receiver_coords: CoordinateSystem::Cartesian,
+            listener_position: None,
+            title: Some("frequency response"),
+            measurements: 1,
+            receivers: 2,
+        };
+
+        write_simple_free_field_hrtf(&path, &hrtf).unwrap();
+
+        let r = SofaReader::open(&path).unwrap();
+        assert_eq!(
+            r.attribute_string("SOFAConventions").unwrap(),
+            "SimpleFreeFieldHRTF"
+        );
+        assert_eq!(r.attribute_string("DataType").unwrap(), "TF");
+        assert_eq!(r.dimension("M").unwrap(), 1);
+        assert_eq!(r.dimension("R").unwrap(), 2);
+        assert_eq!(r.dimension("N").unwrap(), 2);
+        assert_eq!(r.read_f64("N").unwrap(), vec![100.0, 200.0]);
+        assert_eq!(r.read_f64("Data.Real").unwrap(), vec![1.0, 2.0, 3.0, 4.0]);
+        assert_eq!(
+            r.attribute("SourcePosition:Type"),
+            Some(&AttrValue::String("cartesian".to_string()))
+        );
+        assert_eq!(
+            r.attribute("N:Units"),
+            Some(&AttrValue::String("hertz".to_string()))
+        );
     }
 
     #[test]

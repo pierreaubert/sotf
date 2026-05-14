@@ -4,6 +4,7 @@
 //! paths: SimpleFreeFieldHRIR-style files with two receiver channels and
 //! nearest-position lookup for source azimuth/elevation/distance.
 
+use crate::{Result, SofaError, SofaWriter};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -75,6 +76,173 @@ pub struct HrtfData {
     pub ir_left: Vec<f32>,
     /// Right-ear impulse response.
     pub ir_right: Vec<f32>,
+}
+
+/// Inputs for a SimpleFreeFieldHRTF SOFA file in the frequency domain.
+#[derive(Debug, Clone)]
+pub struct SimpleFreeFieldHrtf<'a> {
+    /// Real part, row-major shape `[M, R, N frequencies]`.
+    pub real: &'a [f64],
+    /// Imaginary part, row-major shape `[M, R, N frequencies]`.
+    pub imag: &'a [f64],
+    /// Frequency bins in Hz, length `N`.
+    pub frequencies: &'a [f64],
+    /// Source positions, row-major shape `[M, 3]`.
+    pub source_position: &'a [f64],
+    /// Source coordinate system.
+    pub source_coords: CoordinateSystem,
+    /// Receiver positions, row-major shape `[R, 3]`.
+    pub receiver_position: &'a [f64],
+    /// Receiver coordinate system.
+    pub receiver_coords: CoordinateSystem,
+    /// Listener position `[x, y, z]` in metres. Defaults to origin.
+    pub listener_position: Option<[f64; 3]>,
+    /// Optional title attribute.
+    pub title: Option<&'a str>,
+    /// Number of source/evaluation positions (`M`).
+    pub measurements: usize,
+    /// Number of receivers (`R`).
+    pub receivers: usize,
+}
+
+/// Write a SimpleFreeFieldHRTF SOFA file.
+pub fn write_simple_free_field_hrtf<P: AsRef<Path>>(
+    path: P,
+    h: &SimpleFreeFieldHrtf<'_>,
+) -> Result<()> {
+    validate_simple_free_field_hrtf(h)?;
+
+    let n = h.frequencies.len();
+    let mut writer = SofaWriter::new();
+    write_common_global_attributes(
+        &mut writer,
+        "SimpleFreeFieldHRTF",
+        "TF",
+        h.title.unwrap_or("HRTF"),
+    );
+
+    writer.add_dimension("M", h.measurements);
+    writer.add_dimension("R", h.receivers);
+    writer.add_dimension("E", 1);
+    writer.add_dimension("N", n);
+    writer.add_dimension("C", 3);
+    writer.add_dimension("I", 1);
+
+    writer.add_variable_f64("Data.Real", &["M", "R", "N"]);
+    writer.write_f64("Data.Real", h.real)?;
+    writer.add_variable_f64("Data.Imag", &["M", "R", "N"]);
+    writer.write_f64("Data.Imag", h.imag)?;
+    writer.add_variable_f64("N", &["N"]);
+    writer.write_f64("N", h.frequencies)?;
+    writer.add_variable_attribute_str("N", "Units", "hertz");
+
+    writer.add_variable_f64("SourcePosition", &["M", "C"]);
+    writer.write_f64("SourcePosition", h.source_position)?;
+    add_coordinate_attributes(&mut writer, "SourcePosition", h.source_coords);
+
+    let receiver_position = receiver_position_sofa_layout(h.receiver_position, h.receivers);
+    writer.add_variable_f64("ReceiverPosition", &["R", "C", "I"]);
+    writer.write_f64("ReceiverPosition", &receiver_position)?;
+    add_coordinate_attributes(&mut writer, "ReceiverPosition", h.receiver_coords);
+
+    let listener_position = h.listener_position.unwrap_or([0.0, 0.0, 0.0]);
+    writer.add_variable_f64("ListenerPosition", &["I", "C"]);
+    writer.write_f64("ListenerPosition", &listener_position)?;
+    add_coordinate_attributes(&mut writer, "ListenerPosition", CoordinateSystem::Cartesian);
+
+    writer.add_variable_f64("EmitterPosition", &["E", "C", "I"]);
+    writer.write_f64("EmitterPosition", &[0.0, 0.0, 0.0])?;
+    add_coordinate_attributes(&mut writer, "EmitterPosition", CoordinateSystem::Cartesian);
+
+    writer.finish(path)
+}
+
+fn validate_simple_free_field_hrtf(h: &SimpleFreeFieldHrtf<'_>) -> Result<()> {
+    let expected_data = h.measurements * h.receivers * h.frequencies.len();
+    if h.real.len() != expected_data {
+        return Err(SofaError::InvalidStructure(format!(
+            "Data.Real length {} does not match M*R*N {}",
+            h.real.len(),
+            expected_data
+        )));
+    }
+    if h.imag.len() != expected_data {
+        return Err(SofaError::InvalidStructure(format!(
+            "Data.Imag length {} does not match M*R*N {}",
+            h.imag.len(),
+            expected_data
+        )));
+    }
+    let expected_sources = h.measurements * 3;
+    if h.source_position.len() != expected_sources {
+        return Err(SofaError::InvalidStructure(format!(
+            "SourcePosition length {} does not match M*C {}",
+            h.source_position.len(),
+            expected_sources
+        )));
+    }
+    let expected_receivers = h.receivers * 3;
+    if h.receiver_position.len() != expected_receivers {
+        return Err(SofaError::InvalidStructure(format!(
+            "ReceiverPosition length {} does not match R*C {}",
+            h.receiver_position.len(),
+            expected_receivers
+        )));
+    }
+    Ok(())
+}
+
+fn write_common_global_attributes(
+    writer: &mut SofaWriter,
+    convention: &str,
+    data_type: &str,
+    title: &str,
+) {
+    writer.add_attribute_str("Conventions", "SOFA");
+    writer.add_attribute_str("Version", "2.1");
+    writer.add_attribute_str("SOFAConventions", convention);
+    writer.add_attribute_str("SOFAConventionsVersion", "1.0");
+    writer.add_attribute_str("APIName", "sofa-reader");
+    writer.add_attribute_str("APIVersion", env!("CARGO_PKG_VERSION"));
+    writer.add_attribute_str("AuthorContact", "");
+    writer.add_attribute_str("Comment", "");
+    writer.add_attribute_str("DataType", data_type);
+    writer.add_attribute_str("History", "Created by sofa-reader");
+    writer.add_attribute_str("License", "No license specified, use as is");
+    writer.add_attribute_str("Organization", "");
+    writer.add_attribute_str("References", "");
+    writer.add_attribute_str("RoomType", "free field");
+    writer.add_attribute_str("Origin", "SOFA export");
+    writer.add_attribute_str("Title", title);
+}
+
+fn add_coordinate_attributes(writer: &mut SofaWriter, variable: &str, coords: CoordinateSystem) {
+    writer.add_variable_attribute_str(variable, "Type", coordinate_type(coords));
+    writer.add_variable_attribute_str(variable, "Units", coordinate_units(coords));
+}
+
+fn coordinate_type(coords: CoordinateSystem) -> &'static str {
+    match coords {
+        CoordinateSystem::Cartesian => "cartesian",
+        CoordinateSystem::Spherical => "spherical",
+    }
+}
+
+fn coordinate_units(coords: CoordinateSystem) -> &'static str {
+    match coords {
+        CoordinateSystem::Cartesian => "metre",
+        CoordinateSystem::Spherical => "degree, degree, metre",
+    }
+}
+
+fn receiver_position_sofa_layout(receiver_position: &[f64], receivers: usize) -> Vec<f64> {
+    let mut out = vec![0.0; receivers * 3];
+    for receiver in 0..receivers {
+        for coord in 0..3 {
+            out[(receiver * 3) + coord] = receiver_position[(receiver * 3) + coord];
+        }
+    }
+    out
 }
 
 /// SOFA/HRTF file data loaded into memory.

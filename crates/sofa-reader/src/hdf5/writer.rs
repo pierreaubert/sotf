@@ -15,20 +15,25 @@ pub struct Hdf5Writer {
     variables: Vec<VarDef>,
 }
 
+#[derive(Clone)]
 enum AttrData {
     String(String),
     Float32(f32),
+    Float64(f64),
 }
 
 struct VarDef {
     name: String,
     dim_names: Vec<String>,
     data: VarData,
+    attributes: Vec<(String, AttrData)>,
 }
 
 enum VarData {
     ScalarF32(f32),
     ArrayF32(Vec<f32>),
+    ScalarF64(f64),
+    ArrayF64(Vec<f64>),
 }
 
 impl Hdf5Writer {
@@ -50,6 +55,11 @@ impl Hdf5Writer {
             .push((name.to_string(), AttrData::Float32(value)));
     }
 
+    pub fn add_attribute_f64(&mut self, name: &str, value: f64) {
+        self.attributes
+            .push((name.to_string(), AttrData::Float64(value)));
+    }
+
     pub fn add_dimension(&mut self, name: &str, size: usize) {
         self.dimensions.insert(name.to_string(), size);
     }
@@ -59,6 +69,16 @@ impl Hdf5Writer {
             name: name.to_string(),
             dim_names: dim_names.iter().map(|s| s.to_string()).collect(),
             data: VarData::ArrayF32(Vec::new()),
+            attributes: Vec::new(),
+        });
+    }
+
+    pub fn add_variable_f64(&mut self, name: &str, dim_names: &[&str]) {
+        self.variables.push(VarDef {
+            name: name.to_string(),
+            dim_names: dim_names.iter().map(|s| s.to_string()).collect(),
+            data: VarData::ArrayF64(Vec::new()),
+            attributes: Vec::new(),
         });
     }
 
@@ -70,6 +90,21 @@ impl Hdf5Writer {
                 name: name.to_string(),
                 dim_names: Vec::new(),
                 data: VarData::ScalarF32(value),
+                attributes: Vec::new(),
+            });
+        }
+        Ok(())
+    }
+
+    pub fn write_scalar_f64(&mut self, name: &str, value: f64) -> Result<()> {
+        if let Some(var) = self.variables.iter_mut().find(|v| v.name == name) {
+            var.data = VarData::ScalarF64(value);
+        } else {
+            self.variables.push(VarDef {
+                name: name.to_string(),
+                dim_names: Vec::new(),
+                data: VarData::ScalarF64(value),
+                attributes: Vec::new(),
             });
         }
         Ok(())
@@ -83,9 +118,49 @@ impl Hdf5Writer {
                 name: name.to_string(),
                 dim_names: Vec::new(),
                 data: VarData::ArrayF32(data.to_vec()),
+                attributes: Vec::new(),
             });
         }
         Ok(())
+    }
+
+    pub fn write_f64(&mut self, name: &str, data: &[f64]) -> Result<()> {
+        if let Some(var) = self.variables.iter_mut().find(|v| v.name == name) {
+            var.data = VarData::ArrayF64(data.to_vec());
+        } else {
+            self.variables.push(VarDef {
+                name: name.to_string(),
+                dim_names: Vec::new(),
+                data: VarData::ArrayF64(data.to_vec()),
+                attributes: Vec::new(),
+            });
+        }
+        Ok(())
+    }
+
+    pub fn add_variable_attribute_str(&mut self, variable: &str, name: &str, value: &str) {
+        self.add_variable_attribute(variable, name, AttrData::String(value.to_string()));
+    }
+
+    pub fn add_variable_attribute_f32(&mut self, variable: &str, name: &str, value: f32) {
+        self.add_variable_attribute(variable, name, AttrData::Float32(value));
+    }
+
+    pub fn add_variable_attribute_f64(&mut self, variable: &str, name: &str, value: f64) {
+        self.add_variable_attribute(variable, name, AttrData::Float64(value));
+    }
+
+    fn add_variable_attribute(&mut self, variable: &str, name: &str, value: AttrData) {
+        if let Some(var) = self.variables.iter_mut().find(|v| v.name == variable) {
+            var.attributes.push((name.to_string(), value));
+        } else {
+            self.variables.push(VarDef {
+                name: variable.to_string(),
+                dim_names: Vec::new(),
+                data: VarData::ArrayF32(Vec::new()),
+                attributes: vec![(name.to_string(), value)],
+            });
+        }
     }
 
     pub fn finish<P: AsRef<Path>>(self, path: P) -> Result<()> {
@@ -123,6 +198,9 @@ impl Hdf5Writer {
 
         // Dimension scale datasets
         for (name, &size) in &self.dimensions {
+            if self.variables.iter().any(|var| var.name == *name) {
+                continue;
+            }
             children.push(ChildObject {
                 name: name.clone(),
                 dims: vec![size as u64],
@@ -130,6 +208,7 @@ impl Hdf5Writer {
                 dtype_class: 1,            // float
                 dtype_size: 4,
                 is_dim_scale: true,
+                attributes: Vec::new(),
             });
         }
 
@@ -150,6 +229,19 @@ impl Hdf5Writer {
                     }
                     d
                 }
+                VarData::ScalarF64(v) => v.to_le_bytes().to_vec(),
+                VarData::ArrayF64(arr) => {
+                    let mut d = Vec::with_capacity(arr.len() * 8);
+                    for &f in arr {
+                        d.extend_from_slice(&f.to_le_bytes());
+                    }
+                    d
+                }
+            };
+
+            let dtype_size = match &var.data {
+                VarData::ScalarF32(_) | VarData::ArrayF32(_) => 4,
+                VarData::ScalarF64(_) | VarData::ArrayF64(_) => 8,
             };
 
             children.push(ChildObject {
@@ -157,8 +249,9 @@ impl Hdf5Writer {
                 dims,
                 data,
                 dtype_class: 1, // float
-                dtype_size: 4,
+                dtype_size,
                 is_dim_scale: false,
+                attributes: var.attributes.clone(),
             });
         }
 
@@ -380,6 +473,10 @@ impl Hdf5Writer {
             msgs.push((0x0Cu8, name_attr));
         }
 
+        for (name, value) in &child.attributes {
+            msgs.push((0x0Cu8, self.build_attribute_msg(name, value)));
+        }
+
         // Total message size
         let total_msg_size: usize = msgs.iter().map(|(_, d)| 1 + 2 + 1 + d.len()).sum();
 
@@ -508,6 +605,11 @@ impl Hdf5Writer {
                 let ds = self.build_dataspace_msg(&[]);
                 (dt, ds, v.to_le_bytes().to_vec())
             }
+            AttrData::Float64(v) => {
+                let dt = self.build_datatype_msg(1, 8);
+                let ds = self.build_dataspace_msg(&[]);
+                (dt, ds, v.to_le_bytes().to_vec())
+            }
         };
 
         // Attribute message v3 format
@@ -632,4 +734,5 @@ struct ChildObject {
     dtype_class: u8,
     dtype_size: u32,
     is_dim_scale: bool,
+    attributes: Vec<(String, AttrData)>,
 }

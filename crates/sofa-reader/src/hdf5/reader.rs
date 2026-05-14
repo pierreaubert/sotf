@@ -21,7 +21,7 @@ const MSG_OH_CONTINUATION: u8 = 0x10;
 const MSG_SYMBOL_TABLE: u8 = 0x11;
 const MSG_ATTR_INFO: u8 = 0x15;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AttrValue {
     String(String),
     Float32(f32),
@@ -96,6 +96,7 @@ struct DatasetInfo {
     dims: Vec<u64>,
     dtype: DType,
     layout: Layout,
+    attributes: HashMap<String, AttrValue>,
 }
 
 #[derive(Debug)]
@@ -351,6 +352,10 @@ impl Hdf5File {
                         // For datasets with a single dimension and the same name as common dims
                         // they're likely dimension references
                         // We'll also store them as datasets for variable access
+                    }
+                    for (attr_name, attr_value) in &ds.attributes {
+                        self.attributes
+                            .insert(format!("{name}:{attr_name}"), attr_value.clone());
                     }
                     self.datasets.insert(name.clone(), ds);
                 }
@@ -1754,6 +1759,7 @@ impl Hdf5File {
                 address: UNDEF_ADDR,
                 size: 0,
             },
+            attributes: HashMap::new(),
         };
         let mut attrs = HashMap::new();
         let mut filters = Vec::new();
@@ -1772,6 +1778,8 @@ impl Hdf5File {
         {
             *layout_filters = filters;
         }
+
+        ds.attributes = attrs;
 
         Ok(ds)
     }
@@ -2198,8 +2206,35 @@ impl Hdf5File {
         }
     }
 
+    pub fn read_f64(&self, name: &str) -> Result<Vec<f64>> {
+        let ds = self.find_dataset(name)?;
+        let raw = self.read_dataset_raw(ds)?;
+
+        match ds.dtype {
+            DType::Float32 => Ok(raw
+                .chunks_exact(4)
+                .map(|c| f32::from_le_bytes(c.try_into().unwrap()) as f64)
+                .collect()),
+            DType::Float64 => Ok(raw
+                .chunks_exact(8)
+                .map(|c| f64::from_le_bytes(c.try_into().unwrap()))
+                .collect()),
+            _ => Err(SofaError::TypeMismatch {
+                expected: "f64".into(),
+                got: ds.dtype.to_string(),
+            }),
+        }
+    }
+
     pub fn read_scalar_f32(&self, name: &str) -> Result<f32> {
         let data = self.read_f32(name)?;
+        data.into_iter()
+            .next()
+            .ok_or_else(|| SofaError::InvalidStructure(format!("Empty dataset: {}", name)))
+    }
+
+    pub fn read_scalar_f64(&self, name: &str) -> Result<f64> {
+        let data = self.read_f64(name)?;
         data.into_iter()
             .next()
             .ok_or_else(|| SofaError::InvalidStructure(format!("Empty dataset: {}", name)))
