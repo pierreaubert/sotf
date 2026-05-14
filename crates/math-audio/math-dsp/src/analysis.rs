@@ -2299,23 +2299,185 @@ fn compute_schroeder_decay(impulse: &[f32]) -> Vec<f32> {
     decay
 }
 
-/// Compute RT60 from Impulse Response (Broadband)
-/// Uses T20 (-5dB to -25dB) extrapolation
-pub fn compute_rt60_broadband(impulse: &[f32], sample_rate: f32) -> f32 {
-    let decay = compute_schroeder_decay(impulse);
-    let decay_db: Vec<f32> = decay.iter().map(|&v| 10.0 * v.max(1e-9).log10()).collect();
+#[derive(Debug, Clone, Copy)]
+enum Rt60FitMethod {
+    T30,
+    T20,
+}
 
-    // Find -5dB and -25dB points
-    let t_minus_5 = decay_db.iter().position(|&v| v < -5.0);
-    let t_minus_25 = decay_db.iter().position(|&v| v < -25.0);
+#[derive(Debug, Clone, Copy)]
+struct Rt60Fit {
+    rt60_seconds: f32,
+    method: Rt60FitMethod,
+    r_squared: f32,
+    fit_start_seconds: f32,
+    fit_end_seconds: f32,
+}
 
-    match (t_minus_5, t_minus_25) {
-        (Some(start), Some(end)) if end > start => {
-            let dt = (end - start) as f32 / sample_rate; // Time for 20dB decay
-            dt * 3.0 // Extrapolate to 60dB (T20 * 3)
-        }
-        _ => 0.0,
+/// Trim late steady-state noise before Schroeder integration.
+///
+/// This is a lightweight Lundeby-style guard: estimate the tail noise from the
+/// last 10% of 10 ms windows, keep the last window that is at least 10 dB above
+/// that floor, and leave a short headroom after it.
+fn trim_impulse_to_noise_floor(impulse: &[f32], sample_rate: f32) -> &[f32] {
+    const WINDOW_MS: f32 = 10.0;
+    const TAIL_FRACTION: f32 = 0.10;
+    const SNR_THRESHOLD: f32 = 10.0;
+    const HEADROOM_WINDOWS: usize = 3;
+    const MIN_LENGTH_MS: f32 = 100.0;
+
+    if sample_rate <= 0.0 || impulse.is_empty() {
+        return impulse;
     }
+
+    let window_samples = (sample_rate * WINDOW_MS / 1000.0) as usize;
+    let min_samples = (sample_rate * MIN_LENGTH_MS / 1000.0) as usize;
+    if window_samples == 0 || impulse.len() < min_samples {
+        return impulse;
+    }
+
+    let num_windows = impulse.len() / window_samples;
+    if num_windows < 20 {
+        return impulse;
+    }
+
+    let energies: Vec<f32> = (0..num_windows)
+        .map(|window| {
+            let start = window * window_samples;
+            let end = start + window_samples;
+            impulse[start..end]
+                .iter()
+                .map(|sample| sample * sample)
+                .sum::<f32>()
+                / window_samples as f32
+        })
+        .collect();
+
+    let tail_count = ((num_windows as f32 * TAIL_FRACTION).ceil() as usize).max(1);
+    let tail_start = num_windows - tail_count;
+    let noise_floor = energies[tail_start..].iter().sum::<f32>() / tail_count as f32;
+    if noise_floor <= 0.0 || !noise_floor.is_finite() {
+        return impulse;
+    }
+
+    let signal_threshold = noise_floor * SNR_THRESHOLD;
+    let Some(last_signal_window) = energies
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, energy)| **energy > signal_threshold)
+        .map(|(idx, _)| idx)
+    else {
+        return impulse;
+    };
+
+    let keep_windows = (last_signal_window + 1 + HEADROOM_WINDOWS).min(num_windows);
+    let keep_samples = (keep_windows * window_samples).min(impulse.len());
+    if keep_samples >= impulse.len() {
+        impulse
+    } else {
+        &impulse[..keep_samples]
+    }
+}
+
+fn fit_rt60_decay(
+    decay_db: &[f32],
+    sample_rate: f32,
+    start_db: f32,
+    end_db: f32,
+    method: Rt60FitMethod,
+) -> Option<Rt60Fit> {
+    const MIN_FIT_POINTS: usize = 32;
+    const MIN_FIT_DURATION_SECONDS: f32 = 0.015;
+    const MIN_R_SQUARED: f32 = 0.97;
+
+    let start = decay_db.iter().position(|value| *value <= start_db)?;
+    let end = decay_db.iter().position(|value| *value <= end_db)?;
+    if end <= start || end - start + 1 < MIN_FIT_POINTS {
+        return None;
+    }
+
+    let fit_duration = (end - start) as f32 / sample_rate;
+    if fit_duration < MIN_FIT_DURATION_SECONDS {
+        return None;
+    }
+
+    let n = (end - start + 1) as f32;
+    let mut sum_x = 0.0_f32;
+    let mut sum_y = 0.0_f32;
+    let mut sum_xx = 0.0_f32;
+    let mut sum_xy = 0.0_f32;
+
+    for (offset, y) in decay_db[start..=end].iter().enumerate() {
+        let x = offset as f32 / sample_rate;
+        sum_x += x;
+        sum_y += *y;
+        sum_xx += x * x;
+        sum_xy += x * *y;
+    }
+
+    let denom = n * sum_xx - sum_x * sum_x;
+    if denom.abs() <= f32::EPSILON {
+        return None;
+    }
+
+    let slope = (n * sum_xy - sum_x * sum_y) / denom;
+    let intercept = (sum_y - slope * sum_x) / n;
+    if !slope.is_finite() || slope >= 0.0 {
+        return None;
+    }
+
+    let mean_y = sum_y / n;
+    let mut ss_total = 0.0_f32;
+    let mut ss_residual = 0.0_f32;
+    for (offset, y) in decay_db[start..=end].iter().enumerate() {
+        let x = offset as f32 / sample_rate;
+        let fitted = intercept + slope * x;
+        ss_total += (*y - mean_y).powi(2);
+        ss_residual += (*y - fitted).powi(2);
+    }
+
+    if ss_total <= f32::EPSILON {
+        return None;
+    }
+
+    let r_squared = 1.0 - ss_residual / ss_total;
+    let rt60_seconds = -60.0 / slope;
+    if !rt60_seconds.is_finite() || rt60_seconds <= 0.0 || r_squared < MIN_R_SQUARED {
+        return None;
+    }
+
+    Some(Rt60Fit {
+        rt60_seconds,
+        method,
+        r_squared,
+        fit_start_seconds: start as f32 / sample_rate,
+        fit_end_seconds: end as f32 / sample_rate,
+    })
+}
+
+fn estimate_rt60_broadband(impulse: &[f32], sample_rate: f32) -> Option<Rt60Fit> {
+    if impulse.is_empty() || sample_rate <= 0.0 {
+        return None;
+    }
+
+    let trimmed = trim_impulse_to_noise_floor(impulse, sample_rate);
+    let decay = compute_schroeder_decay(trimmed);
+    let decay_db: Vec<f32> = decay
+        .iter()
+        .map(|value| 10.0 * value.max(1e-12).log10())
+        .collect();
+
+    fit_rt60_decay(&decay_db, sample_rate, -5.0, -35.0, Rt60FitMethod::T30)
+        .or_else(|| fit_rt60_decay(&decay_db, sample_rate, -5.0, -25.0, Rt60FitMethod::T20))
+}
+
+/// Compute RT60 from Impulse Response (Broadband)
+/// Uses Schroeder backward integration and least-squares T30/T20 extrapolation.
+pub fn compute_rt60_broadband(impulse: &[f32], sample_rate: f32) -> f32 {
+    estimate_rt60_broadband(impulse, sample_rate)
+        .map(|fit| fit.rt60_seconds)
+        .unwrap_or(0.0)
 }
 
 /// Compute Clarity (C50, C80) from Impulse Response (Broadband)
@@ -2382,6 +2544,7 @@ pub fn compute_rt60_spectrum(impulse: &[f32], sample_rate: f32, frequencies: &[f
     ];
     let mut band_rt60s = Vec::with_capacity(centers.len());
     let mut valid_centers = Vec::with_capacity(centers.len());
+    let mut fit_summaries = Vec::with_capacity(centers.len());
 
     // Compute RT60 for each band
     for &freq in &centers {
@@ -2406,21 +2569,27 @@ pub fn compute_rt60_spectrum(impulse: &[f32], sample_rate: f32, frequencies: &[f
         let filtered_f32: Vec<f32> = filtered.iter().map(|&x| x as f32).collect();
 
         // Compute RT60 for this band
-        let rt60 = compute_rt60_broadband(&filtered_f32, sample_rate);
+        let fit = estimate_rt60_broadband(&filtered_f32, sample_rate);
+        let rt60 = fit.map(|fit| fit.rt60_seconds).unwrap_or(0.0);
+        fit_summaries.push(match fit {
+            Some(fit) => format!(
+                "{:.0}Hz:{:.3}s({:?},r2={:.3},{:.0}-{:.0}ms)",
+                freq,
+                fit.rt60_seconds,
+                fit.method,
+                fit.r_squared,
+                fit.fit_start_seconds * 1000.0,
+                fit.fit_end_seconds * 1000.0,
+            ),
+            None => format!("{:.0}Hz:invalid", freq),
+        });
 
         band_rt60s.push(rt60);
         valid_centers.push(freq);
     }
 
     // Log per-band values
-    log::info!(
-        "[RT60] Per-band values: {:?}",
-        valid_centers
-            .iter()
-            .zip(band_rt60s.iter())
-            .map(|(f, v)| format!("{:.0}Hz:{:.1}ms", f, v))
-            .collect::<Vec<_>>()
-    );
+    log::info!("[RT60] Per-band values: {:?}", fit_summaries);
 
     if valid_centers.is_empty() {
         return vec![0.0; frequencies.len()];

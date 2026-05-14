@@ -1,4 +1,4 @@
-use math_audio_dsp::analysis::find_db_point;
+use math_audio_dsp::analysis::{compute_rt60_broadband, find_db_point};
 
 #[test]
 fn test_find_db_point_flat() {
@@ -87,4 +87,63 @@ fn test_compute_average_response_log_spacing() {
     // Here we'll just test that it returns a value within range for now
     let avg = compute_average_response(&frequencies, &magnitude_db, None);
     assert!(avg > 0.0 && avg < 20.0);
+}
+
+fn make_exponential_decay(num_samples: usize, sample_rate: f32, rt60_seconds: f32) -> Vec<f32> {
+    let k = 3.0 * std::f32::consts::LN_10 / rt60_seconds;
+    (0..num_samples)
+        .map(|i| {
+            let t = i as f32 / sample_rate;
+            (-k * t).exp()
+        })
+        .collect()
+}
+
+fn lcg_noise(n: usize, seed: u32, amplitude: f32) -> Vec<f32> {
+    let mut state = seed;
+    (0..n)
+        .map(|_| {
+            state = state.wrapping_mul(1664525).wrapping_add(1013904223);
+            let normalised = (state as f32) / (u32::MAX as f32) - 0.5;
+            normalised * 2.0 * amplitude
+        })
+        .collect()
+}
+
+#[test]
+fn test_compute_rt60_broadband_recovers_exponential_decay() {
+    let sample_rate = 48_000.0_f32;
+    let expected_rt60 = 0.5_f32;
+    let impulse = make_exponential_decay((sample_rate * 2.0) as usize, sample_rate, expected_rt60);
+
+    let rt60 = compute_rt60_broadband(&impulse, sample_rate);
+
+    assert!(
+        (rt60 - expected_rt60).abs() < 0.03,
+        "expected RT60 near {expected_rt60:.3}s, got {rt60:.3}s"
+    );
+}
+
+#[test]
+fn test_compute_rt60_broadband_trims_noise_tail_before_fit() {
+    let sample_rate = 48_000.0_f32;
+    let expected_rt60 = 0.45_f32;
+    let mut impulse =
+        make_exponential_decay((sample_rate * 0.8) as usize, sample_rate, expected_rt60);
+    impulse.extend(lcg_noise((sample_rate * 1.2) as usize, 0x1234_5678, 0.0005));
+
+    let rt60 = compute_rt60_broadband(&impulse, sample_rate);
+
+    assert!(
+        (rt60 - expected_rt60).abs() < 0.06,
+        "expected tail-trimmed RT60 near {expected_rt60:.3}s, got {rt60:.3}s"
+    );
+}
+
+#[test]
+fn test_compute_rt60_broadband_rejects_insufficient_dynamic_range() {
+    let sample_rate = 48_000.0_f32;
+    let impulse = make_exponential_decay((sample_rate * 0.050) as usize, sample_rate, 0.5);
+
+    assert_eq!(compute_rt60_broadband(&impulse, sample_rate), 0.0);
 }

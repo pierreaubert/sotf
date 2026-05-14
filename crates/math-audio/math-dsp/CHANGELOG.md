@@ -1,3 +1,15 @@
+# 0.5.18
+
+## Bug fixes
+
+- `analysis::compute_rt60_broadband` now uses Schroeder backward integration
+  with least-squares T30/T20 extrapolation and fit-quality rejection instead
+  of first-crossing timing. This makes octave-band RT60 estimates less prone
+  to inflated values from noisy or flattened decay tails.
+- `analysis::compute_rt60_spectrum` now trims late steady-state noise on each
+  band-filtered impulse before fitting RT60 and logs the selected fit method,
+  `r²`, and fit window for easier diagnosis.
+
 # 0.5.17
 
 ## Bug fixes
