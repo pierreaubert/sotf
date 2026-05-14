@@ -5,6 +5,7 @@ use crate::components::icons::IconName;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_px::LegendPosition;
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, HStack, StackSpacing, Text, TextSize, TextWeight, VStack,
 };
@@ -1748,6 +1749,7 @@ pub(crate) fn render_room_eq_report_overview(
     original_controls: Option<gpui::AnyElement>,
     eq_controls: Option<gpui::AnyElement>,
     corrected_controls: Option<gpui::AnyElement>,
+    wide_layout: bool,
 ) -> impl IntoElement {
     let mut original_series = Vec::new();
     let mut corrected_series = Vec::new();
@@ -1803,6 +1805,83 @@ pub(crate) fn render_room_eq_report_overview(
     }
     add_room_eq_corrected_lfe_sums(report, &mut corrected_series);
 
+    let chart_size = if wide_layout {
+        (480.0, 260.0)
+    } else {
+        (800.0, 360.0)
+    };
+    let original_chart = render_room_eq_curve_chart(
+        "All Original Curves",
+        original_series,
+        theme,
+        original_settings,
+        (20.0, 20000.0),
+        (-40.0, 10.0),
+        "SPL (dB)",
+        "room-eq-overview-original",
+        None,
+        original_controls,
+        chart_size,
+        if wide_layout {
+            LegendPosition::Bottom
+        } else {
+            LegendPosition::Right
+        },
+    );
+    let eq_chart = render_room_eq_curve_chart(
+        "All EQ Responses",
+        eq_series,
+        theme,
+        eq_settings,
+        (20.0, 20000.0),
+        (-15.0, 15.0),
+        "EQ (dB)",
+        "room-eq-overview-eq",
+        None,
+        eq_controls,
+        chart_size,
+        if wide_layout {
+            LegendPosition::Bottom
+        } else {
+            LegendPosition::Right
+        },
+    );
+    let corrected_chart = render_room_eq_curve_chart(
+        "All Corrected Curves",
+        corrected_series,
+        theme,
+        corrected_settings,
+        (20.0, 20000.0),
+        (-40.0, 10.0),
+        "SPL (dB)",
+        "room-eq-overview-corrected",
+        None,
+        corrected_controls,
+        chart_size,
+        if wide_layout {
+            LegendPosition::Bottom
+        } else {
+            LegendPosition::Right
+        },
+    );
+    let charts = if wide_layout {
+        div()
+            .grid()
+            .grid_cols(3)
+            .gap(px(6.0))
+            .child(original_chart)
+            .child(eq_chart)
+            .child(corrected_chart)
+            .into_any_element()
+    } else {
+        VStack::new()
+            .spacing(StackSpacing::Md)
+            .child(original_chart)
+            .child(eq_chart)
+            .child(corrected_chart)
+            .into_any_element()
+    };
+
     div()
         .p(d.card)
         .w_full()
@@ -1819,42 +1898,7 @@ pub(crate) fn render_room_eq_report_overview(
                         .size(TextSize::Sm)
                         .color(theme.text_primary),
                 )
-                .child(render_room_eq_curve_chart(
-                    "All Original Curves",
-                    original_series,
-                    theme,
-                    original_settings,
-                    (20.0, 20000.0),
-                    (-40.0, 10.0),
-                    "SPL (dB)",
-                    "room-eq-overview-original",
-                    None,
-                    original_controls,
-                ))
-                .child(render_room_eq_curve_chart(
-                    "All EQ Responses",
-                    eq_series,
-                    theme,
-                    eq_settings,
-                    (20.0, 20000.0),
-                    (-15.0, 15.0),
-                    "EQ (dB)",
-                    "room-eq-overview-eq",
-                    None,
-                    eq_controls,
-                ))
-                .child(render_room_eq_curve_chart(
-                    "All Corrected Curves",
-                    corrected_series,
-                    theme,
-                    corrected_settings,
-                    (20.0, 20000.0),
-                    (-40.0, 10.0),
-                    "SPL (dB)",
-                    "room-eq-overview-corrected",
-                    None,
-                    corrected_controls,
-                )),
+                .child(charts),
         )
         .into_any_element()
 }
@@ -1963,6 +2007,7 @@ pub(crate) fn render_room_eq_report_channel(
     zoom_controls: Option<gpui::AnyElement>,
     eq_controls: Option<gpui::AnyElement>,
     interactive_state: Option<&gpui_px::interaction::InteractiveChartState>,
+    wide_layout: bool,
 ) -> impl IntoElement {
     let reference = channel
         .final_curve
@@ -2006,6 +2051,89 @@ pub(crate) fn render_room_eq_report_channel(
         });
     }
 
+    let curve_chart_size = if wide_layout {
+        (680.0, 300.0)
+    } else {
+        (800.0, 360.0)
+    };
+    let ir_chart_size = if wide_layout {
+        (680.0, 240.0)
+    } else {
+        (800.0, 260.0)
+    };
+    let full_chart = render_room_eq_curve_chart(
+        "Full Range",
+        full_series.clone(),
+        theme,
+        full_settings,
+        (20.0, 20000.0),
+        (-40.0, 10.0),
+        "SPL (dB)",
+        "room-eq-channel-full",
+        interactive_state,
+        full_controls,
+        curve_chart_size,
+        LegendPosition::Right,
+    );
+    let zoom_chart = render_room_eq_curve_chart(
+        "Zoomed 20-1200 Hz",
+        full_series,
+        theme,
+        zoom_settings,
+        (20.0, 1200.0),
+        (zoom_center - 10.0, zoom_center + 10.0),
+        "SPL (dB)",
+        "room-eq-channel-zoom",
+        None,
+        zoom_controls,
+        curve_chart_size,
+        LegendPosition::Right,
+    );
+    let eq_chart = render_room_eq_curve_chart(
+        "EQ Response",
+        eq_series,
+        theme,
+        eq_settings,
+        (20.0, 20000.0),
+        (-15.0, 15.0),
+        "EQ (dB)",
+        "room-eq-channel-eq",
+        None,
+        eq_controls,
+        curve_chart_size,
+        LegendPosition::Right,
+    );
+    let has_ir = channel.pre_ir.is_some() || channel.post_ir.is_some();
+    let channel_charts = if wide_layout {
+        div()
+            .grid()
+            .grid_cols(2)
+            .gap(d.section)
+            .child(full_chart)
+            .child(zoom_chart)
+            .child(eq_chart)
+            .when(has_ir, |el| {
+                el.child(render_room_eq_ir_chart(channel, theme, ir_chart_size))
+            })
+            .into_any_element()
+    } else {
+        VStack::new()
+            .spacing(StackSpacing::Md)
+            .child(
+                div()
+                    .grid()
+                    .grid_cols(2)
+                    .gap(d.section)
+                    .child(full_chart)
+                    .child(zoom_chart),
+            )
+            .child(eq_chart)
+            .when(has_ir, |el| {
+                el.child(render_room_eq_ir_chart(channel, theme, ir_chart_size))
+            })
+            .into_any_element()
+    };
+
     div()
         .w_full()
         .child(
@@ -2017,52 +2145,7 @@ pub(crate) fn render_room_eq_report_channel(
                         .size(TextSize::Sm)
                         .color(theme.text_primary),
                 )
-                .child(
-                    div()
-                        .grid()
-                        .grid_cols(2)
-                        .gap(d.section)
-                        .child(render_room_eq_curve_chart(
-                            "Full Range",
-                            full_series.clone(),
-                            theme,
-                            full_settings,
-                            (20.0, 20000.0),
-                            (-40.0, 10.0),
-                            "SPL (dB)",
-                            "room-eq-channel-full",
-                            interactive_state,
-                            full_controls,
-                        ))
-                        .child(render_room_eq_curve_chart(
-                            "Zoomed 20-1200 Hz",
-                            full_series,
-                            theme,
-                            zoom_settings,
-                            (20.0, 1200.0),
-                            (zoom_center - 10.0, zoom_center + 10.0),
-                            "SPL (dB)",
-                            "room-eq-channel-zoom",
-                            None,
-                            zoom_controls,
-                        )),
-                )
-                .child(render_room_eq_curve_chart(
-                    "EQ Response",
-                    eq_series,
-                    theme,
-                    eq_settings,
-                    (20.0, 20000.0),
-                    (-15.0, 15.0),
-                    "EQ (dB)",
-                    "room-eq-channel-eq",
-                    None,
-                    eq_controls,
-                ))
-                .when(
-                    channel.pre_ir.is_some() || channel.post_ir.is_some(),
-                    |el| el.child(render_room_eq_ir_chart(channel, theme)),
-                )
+                .child(channel_charts)
                 .when_some(channel.epa.as_ref(), |el, epa| {
                     el.child(render_room_eq_epa_table(d, epa, theme))
                 })
@@ -2256,9 +2339,11 @@ fn render_room_eq_curve_chart(
     interactive_id: &'static str,
     interactive_state: Option<&gpui_px::interaction::InteractiveChartState>,
     controls: Option<gpui::AnyElement>,
+    chart_size: (f32, f32),
+    legend_position: LegendPosition,
 ) -> gpui::AnyElement {
     use crate::components::graphs::common::theme_to_chart_theme;
-    use gpui_px::{LegendPosition, ScaleType, line};
+    use gpui_px::{ScaleType, line};
 
     series.retain(|series| !series.curve.is_empty());
     let Some(_) = series.first() else {
@@ -2305,12 +2390,12 @@ fn render_room_eq_curve_chart(
         .y_range(y_min, y_max)
         .y_label(y_label)
         .label(&first.label)
-        .legend_position(LegendPosition::Right)
+        .legend_position(legend_position)
         .color(first.color)
         .stroke_width(first.stroke_width)
         .opacity(first.opacity)
         .theme(chart_theme)
-        .size(800.0, 360.0);
+        .size(chart_size.0, chart_size.1);
 
     if let Some(trend) = first_trend {
         chart = chart.add_series_with_x(
@@ -2528,6 +2613,7 @@ fn room_eq_chart_y_range<'a>(
 fn render_room_eq_ir_chart(
     channel: &RoomEqReportChannel,
     theme: &crate::theme::Theme,
+    chart_size: (f32, f32),
 ) -> gpui::AnyElement {
     use crate::components::graphs::common::theme_to_chart_theme;
     use gpui_px::{LegendPosition, ScaleType, line};
@@ -2569,7 +2655,7 @@ fn render_room_eq_ir_chart(
         .stroke_width(1.5)
         .opacity(0.9)
         .theme(theme_to_chart_theme(theme))
-        .size(800.0, 260.0);
+        .size(chart_size.0, chart_size.1);
 
     if channel.pre_ir.is_some()
         && let Some(post_ir) = channel.post_ir.as_ref()

@@ -1129,6 +1129,10 @@ impl PlayerView {
                             && latest_step_status.map(is_active_step).unwrap_or(false)
                         {
                             room_eq.current_step = Some(sid);
+                        } else if let Some(sid) = latest_step_id
+                            && room_eq.current_step == Some(sid)
+                        {
+                            room_eq.current_step = None;
                         }
 
                         let history = &mut room_eq.progress_history;

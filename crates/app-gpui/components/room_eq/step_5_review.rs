@@ -14,6 +14,8 @@ use super::render::{
 };
 use crate::app::types::room_eq::{RoomEqReviewGraphId, RoomEqReviewGraphSettings};
 
+const ROOM_EQ_REVIEW_WIDE_BREAKPOINT_PX: f32 = 1600.0;
+
 impl PlayerView {
     pub(crate) fn render_room_eq_review(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
@@ -36,6 +38,8 @@ impl PlayerView {
             .unwrap_or_else(|| room_eq.average_post_score());
         let graph_settings = room_eq.review_graph_settings.clone();
         let view = cx.entity().clone();
+        let wide_review_layout =
+            state.app.ui_state.window_width > ROOM_EQ_REVIEW_WIDE_BREAKPOINT_PX;
 
         VStack::new()
             .spacing(StackSpacing::Md)
@@ -122,6 +126,7 @@ impl PlayerView {
                         view.clone(),
                         &theme,
                     )),
+                    wide_review_layout,
                 ))
             })
             .when_some(
@@ -173,6 +178,8 @@ impl PlayerView {
         let y_axis_auto = room_eq.review_y_axis_auto;
         let graph_settings = room_eq.review_graph_settings.clone();
         let chart_state = room_eq.review_chart_state.as_ref().map(|w| w.inner());
+        let wide_review_layout =
+            state.app.ui_state.window_width > ROOM_EQ_REVIEW_WIDE_BREAKPOINT_PX;
         let report = room_eq
             .dsp_output
             .as_ref()
@@ -243,6 +250,7 @@ impl PlayerView {
                             &theme,
                         )),
                         chart_state,
+                        wide_review_layout,
                     )
                     .into_any_element(),
                 )
