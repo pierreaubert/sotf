@@ -160,6 +160,7 @@ freq,spl
 - `LR48` or `LR8`: Linkwitz-Riley 48 dB/oct (8th order)
 - `Butterworth12` or `BW12`: Butterworth 12 dB/oct (2nd order)
 - `Butterworth24` or `BW24`: Butterworth 24 dB/oct (4th order)
+- `LinearPhase`, `FIR`, or `LPFIR`: complementary FIR crossover with constant group delay and no crossover-point phase rotation
 
 ## Advanced Audio Corrections
 

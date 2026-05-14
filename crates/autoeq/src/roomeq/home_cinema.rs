@@ -798,12 +798,36 @@ fn route_crossover_response(
         sample_rate,
     );
     if filters.is_empty() {
+        if is_linear_phase_crossover_type(&route.crossover_type) {
+            let crossover = math_audio_iir_fir::FirCrossover::new(
+                crossover_hz,
+                sample_rate,
+                1,
+                math_audio_iir_fir::DEFAULT_FIR_CROSSOVER_TAPS,
+            );
+            let coeffs = if is_lowpass {
+                crossover.lowpass_coefficients().to_vec()
+            } else {
+                crossover.highpass_coefficients()
+            };
+            let freqs = ndarray::arr1(&[freq]);
+            return crate::response::compute_fir_complex_response(&coeffs, &freqs, sample_rate)
+                .into_iter()
+                .next();
+        }
         return None;
     }
     let freqs = ndarray::arr1(&[freq]);
     crate::response::compute_peq_complex_response(&filters, &freqs, sample_rate)
         .into_iter()
         .next()
+}
+
+fn is_linear_phase_crossover_type(crossover_type: &str) -> bool {
+    matches!(
+        crossover_type.to_ascii_lowercase().as_str(),
+        "linearphase" | "linear_phase" | "linear-phase" | "linearphasefir" | "fir" | "lpfir"
+    )
 }
 
 fn crossover_filters_for_headroom(

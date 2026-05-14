@@ -799,7 +799,7 @@ impl DBAConfig {
 /// Crossover configuration
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CrossoverConfig {
-    /// Crossover type (e.g. "LR24", "LR48", "Butterworth24")
+    /// Crossover type (e.g. "LR24", "LR48", "Butterworth24", "LinearPhase")
     #[serde(rename = "type")]
     pub crossover_type: String,
     /// Crossover frequency in Hz (for 2-way speakers)

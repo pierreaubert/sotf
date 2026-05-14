@@ -331,13 +331,24 @@ pub fn create_crossover_plugin(
     frequency: f64,
     output: &str, // "low" or "high"
 ) -> PluginConfigWrapper {
+    let mut parameters = json!({
+        "type": crossover_type,
+        "frequency": frequency,
+        "output": output
+    });
+    if matches!(
+        crossover_type.to_ascii_lowercase().as_str(),
+        "linearphase" | "linear_phase" | "linear-phase" | "linearphasefir" | "fir" | "lpfir"
+    ) && let Some(obj) = parameters.as_object_mut()
+    {
+        obj.insert(
+            "fir_taps".to_string(),
+            json!(math_audio_iir_fir::DEFAULT_FIR_CROSSOVER_TAPS),
+        );
+    }
     PluginConfigWrapper {
         plugin_type: "crossover".to_string(),
-        parameters: json!({
-            "type": crossover_type,
-            "frequency": frequency,
-            "output": output
-        }),
+        parameters,
     }
 }
 

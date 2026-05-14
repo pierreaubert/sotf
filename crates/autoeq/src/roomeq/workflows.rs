@@ -501,12 +501,20 @@ fn predict_bass_management_sum(
         return None;
     }
 
-    let hp_biquads = create_crossover_filters(xover_type, xover_freq, sample_rate, false);
-    let lp_biquads = create_crossover_filters(xover_type, xover_freq, sample_rate, true);
-    let main_resp =
-        response::compute_peq_complex_response(&hp_biquads, &main_curve.freq, sample_rate);
-    let sub_resp =
-        response::compute_peq_complex_response(&lp_biquads, &sub_on_main_grid.freq, sample_rate);
+    let main_resp = compute_crossover_complex_response(
+        xover_type,
+        xover_freq,
+        sample_rate,
+        false,
+        &main_curve.freq,
+    );
+    let sub_resp = compute_crossover_complex_response(
+        xover_type,
+        xover_freq,
+        sample_rate,
+        true,
+        &sub_on_main_grid.freq,
+    );
 
     let mut main_filtered = response::apply_complex_response(main_curve, &main_resp);
     for spl in main_filtered.spl.iter_mut() {
@@ -1092,13 +1100,15 @@ pub(super) fn optimize_stereo_2_1_with_progress(
     // 6. Apply Crossover (Filters + Gain/Delay)
     // We calculate the post-crossover curves for Post-EQ using FINAL frequency
 
-    let hp_biquads = create_crossover_filters(xover_type_str, final_xo_freq, sample_rate, false);
-    let lp_biquads = create_crossover_filters(xover_type_str, final_xo_freq, sample_rate, true);
-
     let apply_chain =
-        |curve: &Curve, filters: &[Biquad], gain: f64, delay: f64, invert: bool| -> Curve {
-            let resp = response::compute_peq_complex_response(filters, &curve.freq, sample_rate);
-            let mut c = response::apply_complex_response(curve, &resp);
+        |curve: &Curve, is_lowpass: bool, gain: f64, delay: f64, invert: bool| -> Curve {
+            let mut c = apply_crossover_response_to_curve(
+                curve,
+                xover_type_str,
+                final_xo_freq,
+                sample_rate,
+                is_lowpass,
+            );
             for s in c.spl.iter_mut() {
                 *s += gain;
             }
@@ -1112,21 +1122,21 @@ pub(super) fn optimize_stereo_2_1_with_progress(
     // the post-crossover reference must carry the feature correction.
     let l_post = apply_chain(
         &aligned_pre_eq_curves["L"],
-        &hp_biquads,
+        false,
         main_gain_post,
         main_delay_post,
         false,
     );
     let r_post = apply_chain(
         &aligned_pre_eq_curves["R"],
-        &hp_biquads,
+        false,
         main_gain_post,
         main_delay_post,
         false,
     );
     let sub_post_initial = apply_chain(
         &aligned_pre_eq_curves[&sub_role],
-        &lp_biquads,
+        true,
         sub_gain_post,
         sub_delay_post,
         sub_inverted,
@@ -2145,18 +2155,26 @@ fn optimize_home_cinema_with_sub(
             .collect()
     };
     // 5. Apply crossover filters
-    let _hp_biquads = create_crossover_filters(xover_type_str, final_xo_freq, sample_rate, false);
-    let lp_biquads = create_crossover_filters(xover_type_str, final_xo_freq, sample_rate, true);
-
-    let apply_chain =
-        |curve: &Curve, filters: &[Biquad], gain: f64, delay: f64, invert: bool| -> Curve {
-            let resp = response::compute_peq_complex_response(filters, &curve.freq, sample_rate);
-            let mut c = response::apply_complex_response(curve, &resp);
-            for s in c.spl.iter_mut() {
-                *s += gain;
-            }
-            apply_delay_and_polarity_to_curve(&c, delay, invert)
-        };
+    let apply_chain = |curve: &Curve,
+                       xover_type: &str,
+                       xover_freq: f64,
+                       is_lowpass: bool,
+                       gain: f64,
+                       delay: f64,
+                       invert: bool|
+     -> Curve {
+        let mut c = apply_crossover_response_to_curve(
+            curve,
+            xover_type,
+            xover_freq,
+            sample_rate,
+            is_lowpass,
+        );
+        for s in c.spl.iter_mut() {
+            *s += gain;
+        }
+        apply_delay_and_polarity_to_curve(&c, delay, invert)
+    };
 
     // Post-crossover curves for all mains and sub.
     // Using aligned_pre_eq_curves (post-feature, post-align) so Post-EQ
@@ -2174,11 +2192,11 @@ fn optimize_home_cinema_with_sub(
             .and_then(|g| g.selected_crossover_hz)
             .unwrap_or(final_xo_freq);
         let role_main_delay = group.map(|g| g.main_delay_ms).unwrap_or(main_delay_post);
-        let role_hp_biquads =
-            create_crossover_filters(role_xover_type, role_xover_freq, sample_rate, false);
         let post = apply_chain(
             &aligned_pre_eq_curves[role],
-            &role_hp_biquads,
+            role_xover_type,
+            role_xover_freq,
+            false,
             main_gain_post,
             role_main_delay,
             false,
@@ -2244,7 +2262,9 @@ fn optimize_home_cinema_with_sub(
     } else {
         apply_chain(
             &aligned_pre_eq_curves[&sub_role],
-            &lp_biquads,
+            xover_type_str,
+            final_xo_freq,
+            true,
             sub_gain_post,
             sub_delay_post,
             sub_inverted,
@@ -2890,6 +2910,9 @@ fn create_crossover_filters(
     is_lowpass: bool,
 ) -> Vec<Biquad> {
     use math_audio_iir_fir::*;
+    if is_linear_phase_crossover_type(type_str) {
+        return Vec::new();
+    }
     let type_lower = type_str.to_lowercase();
     let peq = match type_lower.as_str() {
         "lr24" | "lr4" => {
@@ -2930,6 +2953,55 @@ fn create_crossover_filters(
         }
     };
     peq.into_iter().map(|(_, b)| b).collect()
+}
+
+fn is_linear_phase_crossover_type(type_str: &str) -> bool {
+    matches!(
+        type_str.to_ascii_lowercase().as_str(),
+        "linearphase" | "linear_phase" | "linear-phase" | "linearphasefir" | "fir" | "lpfir"
+    )
+}
+
+fn linear_phase_crossover_coefficients(freq: f64, sample_rate: f64, is_lowpass: bool) -> Vec<f64> {
+    let crossover = math_audio_iir_fir::FirCrossover::new(
+        freq,
+        sample_rate,
+        1,
+        math_audio_iir_fir::DEFAULT_FIR_CROSSOVER_TAPS,
+    );
+    if is_lowpass {
+        crossover.lowpass_coefficients().to_vec()
+    } else {
+        crossover.highpass_coefficients()
+    }
+}
+
+fn compute_crossover_complex_response(
+    type_str: &str,
+    freq: f64,
+    sample_rate: f64,
+    is_lowpass: bool,
+    freqs: &ndarray::Array1<f64>,
+) -> Vec<num_complex::Complex64> {
+    if is_linear_phase_crossover_type(type_str) {
+        let coeffs = linear_phase_crossover_coefficients(freq, sample_rate, is_lowpass);
+        crate::response::compute_fir_complex_response(&coeffs, freqs, sample_rate)
+    } else {
+        let filters = create_crossover_filters(type_str, freq, sample_rate, is_lowpass);
+        crate::response::compute_peq_complex_response(&filters, freqs, sample_rate)
+    }
+}
+
+fn apply_crossover_response_to_curve(
+    curve: &Curve,
+    type_str: &str,
+    freq: f64,
+    sample_rate: f64,
+    is_lowpass: bool,
+) -> Curve {
+    let resp =
+        compute_crossover_complex_response(type_str, freq, sample_rate, is_lowpass, &curve.freq);
+    response::apply_complex_response(curve, &resp)
 }
 
 #[cfg(test)]

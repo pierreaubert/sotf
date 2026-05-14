@@ -100,10 +100,31 @@ pub fn plot_drivers(
                     crate::loss::CrossoverType::LinkwitzRiley8 => {
                         crate::iir::peq_linkwitzriley_highpass(8, xover_freq, sample_rate)
                     }
+                    crate::loss::CrossoverType::LinearPhase => vec![],
                     crate::loss::CrossoverType::None => vec![],
                 };
-                let hp_response =
-                    crate::iir::compute_peq_response(driver_freq_grid, &hp_filter, sample_rate);
+                let hp_response = if matches!(
+                    drivers_data.crossover_type,
+                    crate::loss::CrossoverType::LinearPhase
+                ) {
+                    let crossover = math_audio_iir_fir::FirCrossover::new(
+                        xover_freq,
+                        sample_rate,
+                        1,
+                        math_audio_iir_fir::DEFAULT_FIR_CROSSOVER_TAPS,
+                    );
+                    ndarray::Array1::from_iter(
+                        crate::response::compute_fir_complex_response(
+                            &crossover.highpass_coefficients(),
+                            driver_freq_grid,
+                            sample_rate,
+                        )
+                        .into_iter()
+                        .map(|z| 20.0 * z.norm().max(1e-12).log10()),
+                    )
+                } else {
+                    crate::iir::compute_peq_response(driver_freq_grid, &hp_filter, sample_rate)
+                };
                 response = response + hp_response;
             }
 
@@ -123,10 +144,31 @@ pub fn plot_drivers(
                     crate::loss::CrossoverType::LinkwitzRiley8 => {
                         crate::iir::peq_linkwitzriley_lowpass(8, xover_freq, sample_rate)
                     }
+                    crate::loss::CrossoverType::LinearPhase => vec![],
                     crate::loss::CrossoverType::None => vec![],
                 };
-                let lp_response =
-                    crate::iir::compute_peq_response(driver_freq_grid, &lp_filter, sample_rate);
+                let lp_response = if matches!(
+                    drivers_data.crossover_type,
+                    crate::loss::CrossoverType::LinearPhase
+                ) {
+                    let crossover = math_audio_iir_fir::FirCrossover::new(
+                        xover_freq,
+                        sample_rate,
+                        1,
+                        math_audio_iir_fir::DEFAULT_FIR_CROSSOVER_TAPS,
+                    );
+                    ndarray::Array1::from_iter(
+                        crate::response::compute_fir_complex_response(
+                            crossover.lowpass_coefficients(),
+                            driver_freq_grid,
+                            sample_rate,
+                        )
+                        .into_iter()
+                        .map(|z| 20.0 * z.norm().max(1e-12).log10()),
+                    )
+                } else {
+                    crate::iir::compute_peq_response(driver_freq_grid, &lp_filter, sample_rate)
+                };
                 response = response + lp_response;
             }
         }

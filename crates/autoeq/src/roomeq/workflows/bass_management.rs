@@ -557,12 +557,14 @@ pub(super) fn optimize_home_cinema_group_crossovers(
             bass_delay_ms = bass_delay;
             polarity_inverted = inversions.get(1).copied().unwrap_or(false);
 
-            let hp = create_crossover_filters(selected_type_str, final_freq, sample_rate, false);
-            let lp = create_crossover_filters(selected_type_str, final_freq, sample_rate, true);
-            let apply = |curve: &Curve, filters: &[Biquad], gain: f64, delay: f64, invert: bool| {
-                let resp =
-                    response::compute_peq_complex_response(filters, &curve.freq, sample_rate);
-                let mut c = response::apply_complex_response(curve, &resp);
+            let apply = |curve: &Curve, is_lowpass: bool, gain: f64, delay: f64, invert: bool| {
+                let mut c = apply_crossover_response_to_curve(
+                    curve,
+                    selected_type_str,
+                    final_freq,
+                    sample_rate,
+                    is_lowpass,
+                );
                 for spl in c.spl.iter_mut() {
                     *spl += gain;
                 }
@@ -570,14 +572,14 @@ pub(super) fn optimize_home_cinema_group_crossovers(
             };
             let main_post = apply(
                 &virtual_main,
-                &hp,
+                false,
                 xo_gains.first().copied().unwrap_or(0.0),
                 main_delay_ms,
                 false,
             );
             let sub_post = apply(
                 sub_curve,
-                &lp,
+                true,
                 xo_gains.get(1).copied().unwrap_or(0.0),
                 bass_delay_ms,
                 polarity_inverted,
@@ -1704,13 +1706,17 @@ pub(super) fn predict_bass_output_curve_from_routes(
                 || route.route_kind == "lfe_lowpass_to_sub")
     }) {
         any_route = true;
-        let filters = if let Some(freq) = route.low_pass_hz {
-            create_crossover_filters(&route.crossover_type, freq, sample_rate, true)
+        let response = if let Some(freq) = route.low_pass_hz {
+            compute_crossover_complex_response(
+                &route.crossover_type,
+                freq,
+                sample_rate,
+                true,
+                &sub_curve.freq,
+            )
         } else {
-            Vec::new()
+            vec![Complex::new(1.0, 0.0); sub_curve.freq.len()]
         };
-        let response =
-            response::compute_peq_complex_response(&filters, &sub_curve.freq, sample_rate);
         let polarity_phase = if route.polarity_inverted { 180.0 } else { 0.0 };
         for idx in 0..sub_curve.freq.len() {
             let freq_hz = sub_curve.freq[idx];
@@ -1775,13 +1781,17 @@ pub(super) fn predict_bass_bus_curve_from_routes(
             continue;
         };
         any_route = true;
-        let filters = if let Some(freq) = route.low_pass_hz {
-            create_crossover_filters(&route.crossover_type, freq, sample_rate, true)
+        let response = if let Some(freq) = route.low_pass_hz {
+            compute_crossover_complex_response(
+                &route.crossover_type,
+                freq,
+                sample_rate,
+                true,
+                &reference_curve.freq,
+            )
         } else {
-            Vec::new()
+            vec![Complex::new(1.0, 0.0); reference_curve.freq.len()]
         };
-        let response =
-            response::compute_peq_complex_response(&filters, &reference_curve.freq, sample_rate);
         let polarity_phase = if route.polarity_inverted { 180.0 } else { 0.0 };
         for idx in 0..reference_curve.freq.len() {
             let freq_hz = reference_curve.freq[idx];

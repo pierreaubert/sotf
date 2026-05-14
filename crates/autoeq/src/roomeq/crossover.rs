@@ -372,6 +372,10 @@ mod tests {
             "lr48".parse::<CrossoverType>(),
             Ok(CrossoverType::LinkwitzRiley8)
         ));
+        assert!(matches!(
+            "LinearPhase".parse::<CrossoverType>(),
+            Ok(CrossoverType::LinearPhase)
+        ));
         assert!("invalid".parse::<CrossoverType>().is_err());
     }
 }

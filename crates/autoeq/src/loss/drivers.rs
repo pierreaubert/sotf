@@ -24,6 +24,9 @@ pub enum CrossoverType {
     /// 8th order Linkwitz-Riley (48 dB/octave)
     #[serde(alias = "LR48")]
     LinkwitzRiley8,
+    /// Linear-phase FIR crossover with complementary low/high bands
+    #[serde(alias = "LinearPhase")]
+    LinearPhase,
     /// No crossover filter (for multi-sub optimization)
     None,
 }
@@ -36,6 +39,7 @@ impl CrossoverType {
             CrossoverType::LinkwitzRiley2 => "LR12",
             CrossoverType::LinkwitzRiley4 => "LR24",
             CrossoverType::LinkwitzRiley8 => "LR48",
+            CrossoverType::LinearPhase => "LinearPhase",
             CrossoverType::None => "None",
         }
     }
@@ -47,6 +51,7 @@ impl CrossoverType {
             CrossoverType::LinkwitzRiley2 => "2nd order Linkwitz-Riley",
             CrossoverType::LinkwitzRiley4 => "4th order Linkwitz-Riley",
             CrossoverType::LinkwitzRiley8 => "8th order Linkwitz-Riley",
+            CrossoverType::LinearPhase => "Linear-phase FIR",
             CrossoverType::None => "No Crossover (Multi-Sub)",
         }
     }
@@ -67,6 +72,8 @@ impl std::str::FromStr for CrossoverType {
             "lr8" | "lr48" | "linkwitzriley8" | "linkwitzriley48" => {
                 Ok(CrossoverType::LinkwitzRiley8)
             }
+            "linearphase" | "linear_phase" | "linear-phase" | "linearphasefir" | "fir"
+            | "lpfir" => Ok(CrossoverType::LinearPhase),
             "none" => Ok(CrossoverType::None),
             _ => Err(format!("Unknown crossover type: {}", s)),
         }
@@ -236,6 +243,9 @@ fn build_crossover_filters_for_driver(
     if let CrossoverType::None = crossover_type {
         return filters;
     }
+    if let CrossoverType::LinearPhase = crossover_type {
+        return filters;
+    }
 
     if driver_index > 0 {
         let xover_freq = crossover_freqs[driver_index - 1];
@@ -244,6 +254,7 @@ fn build_crossover_filters_for_driver(
             CrossoverType::LinkwitzRiley2 => peq_linkwitzriley_highpass(2, xover_freq, sample_rate),
             CrossoverType::LinkwitzRiley4 => peq_linkwitzriley_highpass(4, xover_freq, sample_rate),
             CrossoverType::LinkwitzRiley8 => peq_linkwitzriley_highpass(8, xover_freq, sample_rate),
+            CrossoverType::LinearPhase => vec![],
             CrossoverType::None => vec![],
         };
         filters.extend(hp_peq);
@@ -255,11 +266,55 @@ fn build_crossover_filters_for_driver(
             CrossoverType::LinkwitzRiley2 => peq_linkwitzriley_lowpass(2, xover_freq, sample_rate),
             CrossoverType::LinkwitzRiley4 => peq_linkwitzriley_lowpass(4, xover_freq, sample_rate),
             CrossoverType::LinkwitzRiley8 => peq_linkwitzriley_lowpass(8, xover_freq, sample_rate),
+            CrossoverType::LinearPhase => vec![],
             CrossoverType::None => vec![],
         };
         filters.extend(lp_peq);
     }
     filters
+}
+
+fn build_fir_crossover_coefficients_for_driver(
+    driver_index: usize,
+    n_drivers: usize,
+    crossover_type: CrossoverType,
+    crossover_freqs: &[f64],
+    sample_rate: f64,
+) -> Vec<Vec<f64>> {
+    if !matches!(crossover_type, CrossoverType::LinearPhase) {
+        return Vec::new();
+    }
+
+    let mut filters = Vec::new();
+    if driver_index > 0 {
+        let crossover = math_audio_iir_fir::FirCrossover::new(
+            crossover_freqs[driver_index - 1],
+            sample_rate,
+            1,
+            math_audio_iir_fir::DEFAULT_FIR_CROSSOVER_TAPS,
+        );
+        filters.push(crossover.highpass_coefficients());
+    }
+    if driver_index < n_drivers - 1 {
+        let crossover = math_audio_iir_fir::FirCrossover::new(
+            crossover_freqs[driver_index],
+            sample_rate,
+            1,
+            math_audio_iir_fir::DEFAULT_FIR_CROSSOVER_TAPS,
+        );
+        filters.push(crossover.lowpass_coefficients().to_vec());
+    }
+    filters
+}
+
+fn fir_complex_response(coeffs: &[f64], freq: f64, sample_rate: f64) -> Complex64 {
+    let w = 2.0 * PI * freq / sample_rate;
+    coeffs
+        .iter()
+        .enumerate()
+        .fold(Complex64::new(0.0, 0.0), |acc, (n, &coeff)| {
+            acc + Complex64::from_polar(coeff, -w * n as f64)
+        })
 }
 
 /// Compute the complex response of a single driver at all frequency points
@@ -269,6 +324,8 @@ fn compute_single_driver_complex(
     gain: f64,
     delay_s: f64,
     filters: &[(f64, crate::iir::Biquad)],
+    fir_filters: &[Vec<f64>],
+    sample_rate: f64,
 ) -> Array1<Complex64> {
     let mag_factor = 10.0_f64.powf(gain / 20.0);
     let mut result = Array1::<Complex64>::zeros(freq_grid.len());
@@ -292,6 +349,9 @@ fn compute_single_driver_complex(
         let mut z_filters = Complex64::new(1.0, 0.0);
         for (_, biquad) in filters {
             z_filters *= biquad_complex_response(biquad, f);
+        }
+        for coeffs in fir_filters {
+            z_filters *= fir_complex_response(coeffs, f, sample_rate);
         }
 
         result[j] = z_driver * mag_factor * z_filters * z_delay;
@@ -352,12 +412,21 @@ pub fn compute_drivers_combined_response(
             crossover_freqs,
             sample_rate,
         );
+        let fir_filters = build_fir_crossover_coefficients_for_driver(
+            i,
+            n_drivers,
+            data.crossover_type,
+            crossover_freqs,
+            sample_rate,
+        );
         let driver_complex = compute_single_driver_complex(
             &data.freq_grid,
             &driver_curves[i],
             gains[i],
             delay_s,
             &filters,
+            &fir_filters,
+            sample_rate,
         );
         combined_complex += &driver_complex;
     }
@@ -393,12 +462,21 @@ pub fn compute_drivers_combined_response_complex(
             crossover_freqs,
             sample_rate,
         );
+        let fir_filters = build_fir_crossover_coefficients_for_driver(
+            i,
+            n_drivers,
+            data.crossover_type,
+            crossover_freqs,
+            sample_rate,
+        );
         let driver_complex = compute_single_driver_complex(
             &data.freq_grid,
             &driver_curves[i],
             gains[i],
             delay_s,
             &filters,
+            &fir_filters,
+            sample_rate,
         );
         combined_complex += &driver_complex;
     }
@@ -442,12 +520,21 @@ pub fn compute_per_driver_responses(
             crossover_freqs,
             sample_rate,
         );
+        let fir_filters = build_fir_crossover_coefficients_for_driver(
+            i,
+            n_drivers,
+            data.crossover_type,
+            crossover_freqs,
+            sample_rate,
+        );
         let driver_complex = compute_single_driver_complex(
             &data.freq_grid,
             &driver_curves[i],
             gains[i],
             delay_s,
             &filters,
+            &fir_filters,
+            sample_rate,
         );
         results.push(driver_complex.mapv(|z| 20.0 * z.norm().max(1e-12).log10()));
     }

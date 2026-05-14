@@ -2,6 +2,11 @@
 
 ## New features
 
+- RoomEQ crossovers now accept `LinearPhase`/`FIR`/`LPFIR` crossover types.
+  Bass-management prediction, route summing, headroom checks, multi-driver
+  combined-response modeling, and exported DSP chains now use complementary
+  FIR low/high responses for these crossovers instead of LR biquad phase
+  rotation.
 - Added EPA temporal masking integration for RoomEQ optimization. The EPA loss
   now includes an optimizer-cheap modal ringing penalty based on detected
   room-mode Q, prominence, and perceptual temporal-severity thresholds, with

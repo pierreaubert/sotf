@@ -461,6 +461,10 @@ Defines crossover types and frequencies for multi-driver speakers.
       "type": "LR24",
       "frequency": 2500
     },
+    "2way_linear_phase": {
+      "type": "LinearPhase",
+      "frequency": 2500
+    },
     "3way_auto": {
       "type": "LR24",
       "frequency_range": [200, 4000]
@@ -486,6 +490,7 @@ Defines crossover types and frequencies for multi-driver speakers.
 | `LR48` | `LR8` | Linkwitz-Riley 48 dB/oct (8th order) |
 | `Butterworth12` | `BW12` | Butterworth 12 dB/oct (2nd order) |
 | `Butterworth24` | `BW24` | Butterworth 24 dB/oct (4th order) |
+| `LinearPhase` | `FIR`, `LPFIR` | FIR complementary low/high crossover with constant group delay and no phase rotation |
 
 ---
 
