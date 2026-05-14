@@ -189,7 +189,10 @@ fn validate_metadata_contract(
             continue;
         };
         let parsed = value.parse::<usize>().map_err(|_| {
-            format!("ONNX metadata '{}' must be an integer, got '{}'", key, value)
+            format!(
+                "ONNX metadata '{}' must be an integer, got '{}'",
+                key, value
+            )
         })?;
         if parsed != expected {
             return Err(format!(
