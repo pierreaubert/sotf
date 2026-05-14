@@ -833,7 +833,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serial_test",
- "sotf-host",
+ "sofa-reader",
  "strsim",
  "tempfile",
  "thiserror 2.0.18",
@@ -10166,10 +10166,13 @@ dependencies = [
 
 [[package]]
 name = "sofa-reader"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
+ "bincode",
  "flate2",
  "log",
+ "rusqlite",
+ "serde",
  "tempfile",
  "thiserror 2.0.18",
 ]
@@ -10384,7 +10387,6 @@ version = "0.5.91"
 dependencies = [
  "arc-swap",
  "audioadapter-buffers",
- "bincode",
  "chrono",
  "clap",
  "criterion",
@@ -10398,7 +10400,6 @@ dependencies = [
  "realfft",
  "rtrb",
  "rubato",
- "rusqlite",
  "rustfft 6.4.1",
  "serde",
  "serde_json",

@@ -18,7 +18,7 @@ use num_complex::Complex64;
 use rustfft::FftPlanner;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use sotf_host::sofa::{SofaFile, SourcePosition};
+use sofa_reader::{SofaFile, SourcePosition};
 use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::path::{Path, PathBuf};

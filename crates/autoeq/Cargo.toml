@@ -58,7 +58,7 @@ math-iir-fir = { workspace = true }
 math-dsp = { workspace = true }
 math-optimisation = { workspace = true }
 math-rir = { workspace = true }
-sotf-host = { workspace = true }
+sofa-reader = { workspace = true }
 
 # Core numerical computing
 ndarray = { workspace = true }
