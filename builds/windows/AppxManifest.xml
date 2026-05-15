@@ -9,7 +9,7 @@
   <Identity
     Name="SotF.SotF"
     Publisher="CN=817DD0F7-95A7-40FF-AD7A-90E15D2F89AD"
-    Version="0.6.5"
+    Version="0.6.6"
     ProcessorArchitecture="x64" />
 
   <Properties>
