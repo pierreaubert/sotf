@@ -1,0 +1,122 @@
+@c -*-texinfo-*-
+@c Per-crate manual: sotf-plugins
+@node sotf-plugins Manual
+@chapter Crate @code{sotf-plugins}
+@cindex sotf-plugins
+
+@code{sotf-plugins} is a facade crate that re-exports the host
+(@code{sotf-host}) and every shipped DSP plugin
+(@code{sotf-plugin-*}). It is the single dependency an application
+needs to pull the whole plugin ecosystem.
+
+@menu
+* sotf-plugins User Guide::
+* sotf-plugins Developer Guide::
+@end menu
+
+@node sotf-plugins User Guide
+@section User Guide
+
+@subheading What you get
+
+@itemize @bullet
+@item @strong{Core plugin system} (@code{sotf-host}): traits, DAG host,
+  parameter system, analyser primitives.
+@item @strong{Processing plugins}: 30+ DSP plugins as individual crates
+  (EQ, dynamics, spatial, restoration, analysis -- see @ref{Plugins
+  Reference}).
+@item @strong{Analyser plugins}: spectrum analyser, EBU R128 loudness.
+@item @strong{Plugin host}: DAG-based, parallel-safe.
+@item @strong{Test utilities}: signal generators, allocation tracking,
+  performance profilers.
+@end itemize
+
+@subheading Using a plugin from JSON
+
+@example
+PluginConfig @{
+    plugin_type: "EQ".into(),
+    parameters: json!(@{
+        "filters": [
+            @{ "filter_type": "peak",
+              "frequency": 60.0, "q": 1.0, "gain_db": -4.0 @},
+            @{ "filter_type": "highshelf",
+              "frequency": 8000.0, "q": 0.7, "gain_db": 1.5 @}
+        ]
+    @})
+@}
+@end example
+
+Plugins may change channel count (e.g.@: a stereo upmixer expands 2 to
+5 channels); downstream plugins are configured accordingly.
+
+@node sotf-plugins Developer Guide
+@section Developer Guide
+
+@subheading Workspace shape
+
+@example
+crates/sotf-plugins/
+  src/lib.rs             facade: re-exports sotf-host + plugins
+  Cargo.toml             depends on sotf-host + every sotf-plugin-*
+  crates/
+    sotf-host/           Plugin trait, DawHost, ParamSpec, analysers
+    plugins-bridge/      common bridge code
+    plugins-ffi/         C FFI surface
+    plugins-au/          Audio Unit wrapper
+    plugins-nih/         nih-plug bridge (CLAP / VST3)
+    plugins-gpui/        GPUI editors shared across plugins
+    plugins-denoiser/    shared denoiser building blocks
+    plugins-spatial/     shared spatial building blocks
+    sotf-plugin-*        one crate per plugin
+@end example
+
+@subheading Adding a plugin
+
+@enumerate
+@item Create @file{sotf-plugin-foo/} with @file{Cargo.toml} +
+  @file{src/lib.rs}.
+@item Add it to the workspace and to the facade's @file{Cargo.toml}.
+@item Implement @code{Plugin} (see @ref{Plugin trait}).
+@item Define a @code{pub const PARAMS: &[ParamSpec]} array.
+@item Register the plugin in the host factory.
+@item Add a unit test (golden buffer / property test).
+@item Re-run @code{cargo run -p sotf-docs-gen} to regenerate the
+  reference page.
+@end enumerate
+
+@subheading The three-places rule for parameters
+
+@cindex parameter registration
+A parameter must be wired in:
+
+@enumerate
+@item @code{rebuild_cached_parameters} (else silent rejection).
+@item @code{set_parameter}.
+@item @code{get_parameter}.
+@end enumerate
+
+Missing @code{rebuild_cached_parameters} is the most common cause of
+"the slider does nothing".
+
+@subheading Bridge crates
+
+@table @code
+@item plugins-nih
+Wraps a SotF plugin behind @code{nih-plug} to produce CLAP and VST3
+binaries.
+@item plugins-au
+Audio Unit (AUv3) wrapper. Uses @code{gpui-au} for the editor view.
+@item plugins-ffi
+Bare C ABI for embedding in other hosts.
+@end table
+
+@subheading Testing
+
+@example
+cargo test -p sotf-plugins --no-default-features
+@end example
+
+Allocation regressions are caught by the allocation tracker in
+@code{sotf-host} (@code{AllocTracker}); a failing test is a clear
+signal that something is allocating in @code{process()}.

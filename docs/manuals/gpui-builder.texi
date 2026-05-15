@@ -1,0 +1,86 @@
+@c -*-texinfo-*-
+@node gpui-builder Manual
+@chapter Crate @code{gpui-builder}
+@cindex gpui-builder
+@cindex layout solver
+
+@code{gpui-builder} is a generic, constraint-based layout solver used
+by the SotF desktop player to handle resizable panels, collapsible
+sidebars and aspect-driven axis switching. The core solver is
+framework-agnostic; only the optional @code{showcase} feature pulls in
+GPUI.
+
+@menu
+* gpui-builder User Guide::
+* gpui-builder Developer Guide::
+@end menu
+
+@node gpui-builder User Guide
+@section User Guide
+
+End users experience the solver as:
+
+@itemize @bullet
+@item Sidebars that collapse when the window narrows.
+@item Panels that flip from horizontal to vertical layout based on
+  aspect ratio.
+@item Draggable dividers that remember their position via user
+  preferences.
+@item Smooth handling of headers, footers and toolbars that should not
+  shrink.
+@end itemize
+
+@node gpui-builder Developer Guide
+@section Developer Guide
+
+@subheading Sizing model
+
+@table @code
+@item Sizing::Fixed
+Hard constraint. Headers, footers, toolbars.
+@item Sizing::Fractional
+Soft constraint with target ratio and minimum.
+@item Sizing::Flex
+Pure flex: takes whatever is left.
+@end table
+
+@subheading Behaviour knobs
+
+@itemize @bullet
+@item Priority-based collapse: lowest-priority slots collapse first.
+@item Auto-axis switching: container flips H/V based on aspect ratio.
+@item Display tiers: slots report active mode (e.g.@: Full vs Mini)
+  based on resolved size.
+@item User preferences: ratio overrides and manual collapse state.
+@item Text-measured sizing: slots can be sized by text content via
+  the @code{TextMeasure} trait (from @ref{gpui-pretext Manual}).
+@end itemize
+
+@subheading Quick example
+
+@example
+let children = [
+    LayoutNode::Slot(SlotNode @{
+        id: "sidebar",
+        sizing: Sizing::fractional(0.2, 120.0),
+        priority: 0.5,
+        collapsible: true,
+        display_tiers: &[],
+        collapse_label: Some("Sidebar"),
+        @dots{}
+    @}),
+    @dots{}
+];
+let solved = solve(/* @dots{} */);
+@end example
+
+@subheading Showcase binary
+
+@example
+cargo run -p gpui-builder --features showcase
+@end example
+
+@subheading Testing
+
+The solver has dense unit-test coverage; run with
+@code{cargo test -p gpui-builder}.

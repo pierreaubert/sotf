@@ -1,0 +1,63 @@
+@c -*-texinfo-*-
+@c Per-plugin manual: pnd
+@node pnd Plugin
+@chapter Plugin: @code{pnd}
+@cindex pnd plugin
+
+Perceptual noise diffusion (PND) for improving perceived audio quality through controlled noise shaping.
+
+@menu
+* pnd Plugin Parameters::
+* pnd Plugin Developer Guide::
+@end menu
+
+@node pnd Plugin Parameters
+@section Parameters
+
+
+@subsection General
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Correction} @tab Float @tab 0 .. 2 @tab 1 @tab - @tab Pitch correction strength
+@item @code{Analysis Window} @tab Float @tab 20 .. 500 @tab 100 @tab ms @tab FFT analysis window size
+@item @code{Drift Smoothing} @tab Float @tab 0.001 .. 1 @tab 0.1 @tab - @tab Pitch drift low-pass smoothing
+@end multitable
+
+
+@subsection Analysis
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Multi-Channel} @tab Bool @tab On / Off @tab On @tab - @tab Analyze all channels together
+@end multitable
+
+
+@subsection Correction
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Confidence Threshold} @tab Float @tab 0 .. 1 @tab 0.5 @tab - @tab Min detection confidence to apply
+@item @code{Phase Vocoder} @tab Bool @tab On / Off @tab Off @tab - @tab Use phase vocoder for correction
+@end multitable
+
+
+@strong{Structural parameters} (Analysis Window, Multi-Channel, Phase Vocoder) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
+
+@node pnd Plugin Developer Guide
+@section Developer Guide
+
+SOTF PND plugin for Polyphonic Note Detection and Varispeed.
+
+Detects polyphonic notes and applies variable-speed playback using rubato for high-quality resampling.
+
+@subsubheading Parameter wiring
+
+All parameters reach the audio thread through the host's @code{rebuild_cached_parameters} / @code{set_parameter} / @code{get_parameter} triad. Structural parameters (marked in the notes below) trigger a rebuild; the rest update in real time with zero dropouts.
+
+@subsubheading Source
+
+@file{crates/sotf-plugins/crates/sotf-plugin-pnd/}
+
+Run the unit tests with @code{cargo test -p sotf-plugin-pnd}.
+

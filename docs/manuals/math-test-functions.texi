@@ -1,0 +1,58 @@
+@c -*-texinfo-*-
+@node math-test-functions Manual
+@chapter Crate @code{math-test-functions}
+@cindex math-test-functions
+@cindex optimisation benchmark
+
+@code{math-test-functions} is a curated library of 56+ non-linear
+optimisation test functions used to benchmark @ref{math-optimisation
+Manual} and to gate regressions in @code{just qa}.
+
+@menu
+* math-test-functions User Guide::
+* math-test-functions Developer Guide::
+@end menu
+
+@node math-test-functions User Guide
+@section User Guide
+
+End users never call this crate. It is what gives us confidence that
+the optimiser actually converges when the cost surface is hostile.
+
+@node math-test-functions Developer Guide
+@section Developer Guide
+
+@subheading Categories
+
+@table @asis
+@item Unimodal (convergence speed)
+@code{sphere}, @code{rosenbrock}, @code{powell}, @code{dixons_price},
+@code{zakharov}, @code{booth}, @code{matyas}, @code{sum_squares},
+@code{elliptic}, @code{cigar}, @code{tablet}, @code{discus},
+@code{ridge}, @code{sharp_ridge}, @code{brown}, @code{exponential}.
+@item Multimodal (global search)
+@code{ackley}, @code{rastrigin}, @code{griewank}, @code{schwefel},
+@code{hartman_3d}, @code{hartman_4d}, @code{hartman_6d},
+@code{michalewicz}, @code{alpine_n1}, @code{alpine_n2},
+@code{branin}, @code{goldstein_price}, @code{six_hump_camel},
+@code{eggholder}, @code{holder_table}, @code{cross_in_tray}.
+@item Constrained
+Selected non-linear constrained problems for COBYLA / SLSQP testing.
+@end table
+
+@subheading Usage
+
+Each function exposes a uniform signature
+(@code{Fn(&[f64]) -> f64}) and metadata (dimension, bounds, known
+global minimum). Benchmarks in @code{math-optimisation} consume this
+metadata to score solver runs automatically.
+
+@subheading Visualisation
+
+Interactive HTML plots live in @file{docs/interactive_plots.html}.
+
+@subheading Testing
+
+@example
+cargo test -p math-test-functions
+@end example

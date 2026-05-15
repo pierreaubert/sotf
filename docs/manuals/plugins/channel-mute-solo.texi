@@ -1,0 +1,35 @@
+@c -*-texinfo-*-
+@c Per-plugin manual: channel-mute-solo
+@node channel-mute-solo Plugin
+@chapter Plugin: @code{channel-mute-solo}
+@cindex channel-mute-solo plugin
+
+Per-channel mute, solo, and dim controls with smooth fade transitions.
+
+@menu
+* channel-mute-solo Plugin Parameters::
+* channel-mute-solo Plugin Developer Guide::
+@end menu
+
+@node channel-mute-solo Plugin Parameters
+@section Parameters
+
+This plugin has no user-tunable parameters.
+
+@node channel-mute-solo Plugin Developer Guide
+@section Developer Guide
+
+SOTF Channel Mute/Solo plugin for per-channel mute, solo, and dim.
+
+Provides independent mute, solo, and dim controls for each audio channel with smoothed gain transitions (~5ms fade) to avoid clicks.
+
+@subsubheading Parameter wiring
+
+All parameters reach the audio thread through the host's @code{rebuild_cached_parameters} / @code{set_parameter} / @code{get_parameter} triad. Structural parameters (marked in the notes below) trigger a rebuild; the rest update in real time with zero dropouts.
+
+@subsubheading Source
+
+@file{crates/sotf-plugins/crates/sotf-plugin-channel-mute-solo/}
+
+Run the unit tests with @code{cargo test -p sotf-plugin-channel-mute-solo}.
+

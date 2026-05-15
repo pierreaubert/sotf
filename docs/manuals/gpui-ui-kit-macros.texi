@@ -1,0 +1,64 @@
+@c -*-texinfo-*-
+@node gpui-ui-kit-macros Manual
+@chapter Crate @code{gpui-ui-kit-macros}
+@cindex gpui-ui-kit-macros
+
+@code{gpui-ui-kit-macros} ships the procedural macros used by
+@ref{gpui-ui-kit Manual}. There is exactly one macro:
+@code{#[derive(ComponentTheme)]}.
+
+@menu
+* gpui-ui-kit-macros User Guide::
+* gpui-ui-kit-macros Developer Guide::
+@end menu
+
+@node gpui-ui-kit-macros User Guide
+@section User Guide
+
+End users never use this crate. Component themes derived with it just
+"do the right thing" when the global theme changes.
+
+@node gpui-ui-kit-macros Developer Guide
+@section Developer Guide
+
+@subheading What the derive generates
+
+@itemize @bullet
+@item @code{impl Default for MyComponentTheme} using the @code{default}
+  attribute on each field.
+@item @code{impl From<&Theme> for MyComponentTheme} mapping each field
+  to a global theme token via the @code{from} attribute.
+@end itemize
+
+@subheading Example
+
+@example
+use gpui_ui_kit_macros::ComponentTheme;
+
+#[derive(Debug, Clone, ComponentTheme)]
+pub struct MyComponentTheme @{
+    #[theme(default = 0x007acc, from = accent)]
+    pub primary_color: Rgba,
+
+    #[theme(default = 0xffffff, from = text_primary)]
+    pub text_color: Rgba,
+
+    #[theme(default = 1.0, from = none)]
+    pub opacity: f32,
+@}
+@end example
+
+@subheading Attribute reference
+
+@table @code
+@item default = HEX or LITERAL
+Value used in @code{Default::default}.
+@item from = TOKEN
+Token name in @code{&Theme}. Use @code{none} to keep the default.
+@end table
+
+@subheading Testing
+
+@example
+cargo test -p gpui-ui-kit-macros
+@end example

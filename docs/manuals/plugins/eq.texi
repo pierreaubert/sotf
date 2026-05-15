@@ -1,0 +1,68 @@
+@c -*-texinfo-*-
+@c Per-plugin manual: eq
+@node eq Plugin
+@chapter Plugin: @code{eq}
+@cindex eq plugin
+
+Biquad-based parametric equalizer with peak, shelf, and pass filters. Supports multiple filter bands for precise frequency response shaping.
+
+@menu
+* eq Plugin Parameters::
+* eq Plugin Developer Guide::
+@end menu
+
+@node eq Plugin Parameters
+@section Parameters
+
+
+@subsection Global
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Max Filters} @tab Int @tab 1 .. 20 @tab 20 @tab - @tab Maximum number of EQ bands
+@end multitable
+
+
+@subsection Algorithm
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{TDF-II} @tab Bool @tab On / Off @tab Off @tab - @tab Use Transposed Direct Form II
+@item @code{Topology} @tab Choice (Biquad, SVF) @tab 2 options @tab Biquad @tab - @tab Filter topology: Biquad (classic) or SVF (zero-delay feedback, modulation-stable)
+@end multitable
+
+
+@subsection Per-band parameters
+
+The following parameters are repeated for each band:
+
+@subsubheading Per-band
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Frequency} @tab Float @tab 20 .. 20000 @tab 1000 @tab Hz @tab Filter center/corner frequency
+@item @code{Q} @tab Float @tab 0.1 .. 10 @tab 1 @tab - @tab Filter bandwidth (quality factor)
+@item @code{Gain} @tab Float @tab -24 .. 24 @tab 0 @tab dB @tab Boost or cut amount
+@item @code{Type} @tab Choice (Peak, Lowshelf, Highshelf, Lowpass, Highpass, Bandpass, Notch) @tab 7 options @tab Peak @tab - @tab Biquad filter shape
+@end multitable
+
+
+@strong{Structural parameters} (Max Filters, Topology) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
+
+@node eq Plugin Developer Guide
+@section Developer Guide
+
+SOTF EQ plugin with parametric biquad, warped biquad, and Kautz modal filters.
+
+Parametric equalizer supporting multiple filter types (peak, shelf, highpass, lowpass, etc.) with optional auto-gain normalization. Standard filters use cascaded biquads; advanced Roomeq paths can also load per-band @code{topology: "warped_biquad"} and @code{topology: "kautz_filter"} entries.
+
+@subsubheading Parameter wiring
+
+All parameters reach the audio thread through the host's @code{rebuild_cached_parameters} / @code{set_parameter} / @code{get_parameter} triad. Structural parameters (marked in the notes below) trigger a rebuild; the rest update in real time with zero dropouts.
+
+@subsubheading Source
+
+@file{crates/sotf-plugins/crates/sotf-plugin-eq/}
+
+Run the unit tests with @code{cargo test -p sotf-plugin-eq}.
+

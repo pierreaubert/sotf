@@ -1,0 +1,104 @@
+@c -*-texinfo-*-
+@c Per-plugin manual: stereo-imager
+@node stereo-imager Plugin
+@chapter Plugin: @code{stereo-imager}
+@cindex stereo-imager plugin
+
+Controls stereo width from mono to extra-wide, using mid/side processing.
+
+@menu
+* stereo-imager Plugin Parameters::
+* stereo-imager Plugin Developer Guide::
+@end menu
+
+@node stereo-imager Plugin Parameters
+@section Parameters
+
+
+@subsection Width
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Width} @tab Float @tab 0 .. 2 @tab 1 @tab - @tab Global stereo width (0%=mono, 100%=original, 200%=wide)
+@end multitable
+
+
+@subsection Crossover
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Low-Mid} @tab Float @tab 80 .. 1000 @tab 250 @tab Hz @tab Low/mid crossover frequency
+@item @code{Mid-High} @tab Float @tab 1000 .. 16000 @tab 4000 @tab Hz @tab Mid/high crossover frequency
+@end multitable
+
+
+@subsection Band Width
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Low Width} @tab Float @tab 0 .. 2 @tab 1 @tab - @tab Low band stereo width
+@item @code{Mid Width} @tab Float @tab 0 .. 2 @tab 1 @tab - @tab Mid band stereo width
+@item @code{High Width} @tab Float @tab 0 .. 2 @tab 1 @tab - @tab High band stereo width
+@end multitable
+
+
+@subsection Options
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Mono Bass} @tab Bool @tab On / Off @tab Off @tab - @tab Collapse stereo below low-mid crossover
+@end multitable
+
+
+@subsection Output
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Mix} @tab Float @tab 0 .. 1 @tab 1 @tab - @tab Dry/wet mix
+@end multitable
+
+@node stereo-imager Plugin Developer Guide
+@section Developer Guide
+
+Multi-band M/S stereo width control.
+
+@subsubheading What It Does
+
+Controls the stereo width of audio using Mid/Side processing. The signal is split into frequency bands, and each band's stereo width can be independently adjusted — from mono (0%) through natural (100%) to hyper-wide (200%+). Useful for widening the high frequencies while keeping bass centered, or for collapsing problematic stereo information.
+
+@subsubheading Features
+
+@itemize @bullet
+@item @strong{M/S processing}: Mid/Side encoding for precise width control
+@item @strong{Multi-band}: Independent width per frequency band
+@item @strong{Width range}: From mono (collapsed) to hyper-wide
+@item @strong{Frequency-dependent}: Widen highs while keeping bass centered
+@end itemize
+
+
+@subsubheading Architecture
+
+@example
+src/
+├── lib.rs     # StereoImagerPlugin implementation
+└── params.rs  # Parameter definitions
+@end example
+
+
+@subsubheading Testing
+
+@example
+cargo test -p sotf-plugin-stereo-imager
+@end example
+
+
+@subsubheading Parameter wiring
+
+All parameters reach the audio thread through the host's @code{rebuild_cached_parameters} / @code{set_parameter} / @code{get_parameter} triad. Structural parameters (marked in the notes below) trigger a rebuild; the rest update in real time with zero dropouts.
+
+@subsubheading Source
+
+@file{crates/sotf-plugins/crates/sotf-plugin-stereo-imager/}
+
+Run the unit tests with @code{cargo test -p sotf-plugin-stereo-imager}.
+

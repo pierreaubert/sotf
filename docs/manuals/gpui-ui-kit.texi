@@ -1,0 +1,63 @@
+@c -*-texinfo-*-
+@node gpui-ui-kit Manual
+@chapter Crate @code{gpui-ui-kit}
+@cindex gpui-ui-kit
+@cindex UI components
+
+@code{gpui-ui-kit} is the reusable UI component library used by the
+SotF desktop player. It provides 40+ composable, themed components
+covering the full surface of a desktop application: layout, forms,
+data display and audio-specific controls.
+
+@menu
+* gpui-ui-kit User Guide::
+* gpui-ui-kit Developer Guide::
+@end menu
+
+@node gpui-ui-kit User Guide
+@section User Guide
+
+End users experience this crate as every widget on screen: buttons,
+sliders, menus, dialogs, knobs, meters. The look respects the active
+theme (@ref{gpui-themes Manual}) and design system
+(@ref{gpui-design Manual}).
+
+@node gpui-ui-kit Developer Guide
+@section Developer Guide
+
+@subheading Component groups
+
+@table @asis
+@item Core
+@code{Button}, @code{IconButton}, @code{Card}, @code{Dialog},
+@code{Menu}, @code{Tabs}, @code{Toast}.
+@item Forms
+@code{Input}, @code{NumberInput}, @code{Checkbox}, @code{Toggle},
+@code{Select}, @code{Slider}, @code{ColorPicker}.
+@item Data display
+@code{Badge}, @code{Progress}, @code{Spinner}, @code{Avatar},
+@code{Typography}.
+@item Audio controls
+@code{Potentiometer}, @code{VerticalSlider}, @code{VolumeKnob}.
+@end table
+
+@subheading Theming a component
+
+@code{gpui-ui-kit-macros} provides @code{#[derive(ComponentTheme)]}
+that generates @code{Default} and @code{From<&Theme>} impls for a
+component theme struct.
+
+@subheading Text input gotcha
+
+@cindex text input
+When using an @code{Input} inside a view that also defines
+keybindings, ensure @code{is_input_editing()} is checked in
+@code{is_text_input_mode()}. Without this guard, single-character keys
+like @kbd{1} or @kbd{s} are intercepted by parent bindings instead of
+being typed into the input.
+
+@subheading Showcase
+
+@example
+cargo run -p gpui-ui-kit --example showcase
+@end example

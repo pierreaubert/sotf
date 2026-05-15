@@ -1,0 +1,82 @@
+@c -*-texinfo-*-
+@node math-optimisation Manual
+@chapter Crate @code{math-optimisation}
+@cindex math-optimisation
+@cindex Differential Evolution
+@cindex L-SHADE
+
+@code{math-optimisation} is a pure-Rust non-linear optimisation
+toolbox: Differential Evolution (including L-SHADE), Levenberg-
+Marquardt, COBYLA and ISRES. It is the core solver behind AutoEQ
+and RoomEQ.
+
+@menu
+* math-optimisation User Guide::
+* math-optimisation Developer Guide::
+@end menu
+
+@node math-optimisation User Guide
+@section User Guide
+
+Users experience this crate as the part of SotF that takes seconds
+(speaker EQ) to minutes (multi-position room EQ) and produces filter
+sets. The CLI exposes a few user-tweakable knobs:
+
+@itemize @bullet
+@item Population size and iteration budget.
+@item Strategy: classical DE, current-to-pbest, L-SHADE.
+@item Constraint handling: linear, non-linear, or penalty.
+@end itemize
+
+@node math-optimisation Developer Guide
+@section Developer Guide
+
+@subheading DE strategies
+
+@table @code
+@item DE/rand/1
+@code{x_trial = x_r1 + F * (x_r2 - x_r3)}.
+@item DE/best/1
+@code{x_trial = x_best + F * (x_r1 - x_r2)}.
+@item DE/current-to-best/1
+Blend of current and best.
+@item DE/rand/2
+Five-vector mutation.
+@item DE/current-to-pbest/1
+SHADE: blend with top-p% individual.
+@end table
+
+@subheading L-SHADE
+
+Linear population-size reduction with an external archive of discarded
+solutions. @code{F} and @code{CR} adapt via SHADE-style success
+histories.
+
+@subheading Other solvers
+
+@itemize @bullet
+@item @strong{Levenberg-Marquardt} -- non-linear least squares.
+@item @strong{COBYLA} -- non-linear constraints, derivative-free.
+@item @strong{ISRES} -- improved stochastic ranking evolution
+  strategy.
+@end itemize
+
+@subheading Recording evaluations
+
+The solver supports an evaluation recorder that captures every
+fitness computation for convergence plotting and regression testing.
+
+@subheading Visualisation
+
+The crate ships a @code{plot-de} binary that renders test functions
+and optimisation traces.
+
+@subheading Testing and QA
+
+@example
+cargo test -p math-optimisation
+just qa
+@end example
+
+The QA benchmark suite verifies convergence across the test function
+library (@ref{math-test-functions Manual}).

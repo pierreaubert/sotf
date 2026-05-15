@@ -1,0 +1,123 @@
+@c -*-texinfo-*-
+@c Per-plugin manual: xtc
+@node xtc Plugin
+@chapter Plugin: @code{xtc}
+@cindex xtc plugin
+
+Crosstalk cancellation for speaker playback. Creates a wider stereo image by cancelling inter-speaker interference.
+
+@menu
+* xtc Plugin Parameters::
+* xtc Plugin Developer Guide::
+@end menu
+
+@node xtc Plugin Parameters
+@section Parameters
+
+
+@subsection Geometry
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Distance} @tab Float @tab 0.5 .. 10 @tab 2 @tab m @tab Listener-to-speaker distance
+@item @code{Speaker Angle} @tab Float @tab 10 .. 90 @tab 30 @tab ° @tab Half-angle between speakers
+@item @code{Head Radius} @tab Float @tab 0.05 .. 0.12 @tab 0.0875 @tab m @tab Acoustic head radius
+@item @code{Head Model} @tab Choice (Woodworth, Brown-Duda) @tab 2 options @tab Woodworth @tab - @tab Head diffraction model: Woodworth (classic) or Brown-Duda (rigid sphere, more accurate above 1.5kHz)
+@end multitable
+
+
+@subsection Head Tracking
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Head Offset X} @tab Float @tab -0.5 .. 0.5 @tab 0 @tab m @tab Lateral head position offset
+@item @code{Head Offset Z} @tab Float @tab -0.5 .. 0.5 @tab 0 @tab m @tab Forward/back head position
+@item @code{Head Yaw} @tab Float @tab -90 .. 90 @tab 0 @tab ° @tab Head rotation angle
+@item @code{Head Tracking Smooth} @tab Float @tab 0 .. 1 @tab 0.1 @tab s @tab Tracking data smoothing time
+@end multitable
+
+
+@subsection Beta
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Beta Base} @tab Float @tab 0.0001 .. 0.1 @tab 0.001 @tab - @tab Regularization base level
+@item @code{Beta Low Boost} @tab Float @tab 0 .. 30 @tab 10 @tab - @tab Extra regularization at low freq
+@item @code{Beta High Boost} @tab Float @tab 0 .. 30 @tab 10 @tab - @tab Extra regularization at high freq
+@end multitable
+
+
+@subsection Shadow
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Shadow Cutoff} @tab Float @tab 1000 .. 10000 @tab 4000 @tab Hz @tab Head shadow filter onset freq
+@item @code{Shadow Slope} @tab Float @tab 0 .. 12 @tab 6 @tab dB/oct @tab Head shadow attenuation rate
+@end multitable
+
+
+@subsection Filter
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Max Gain} @tab Float @tab 3 .. 30 @tab 12 @tab dB @tab Maximum XTC filter boost
+@end multitable
+
+
+@subsection Advanced
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Spectral Norm} @tab Bool @tab On / Off @tab On @tab - @tab Normalize filter energy
+@item @code{Pinna Model} @tab Bool @tab On / Off @tab Off @tab - @tab Include pinna diffraction model
+@end multitable
+
+
+@subsection Room
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Room Reflections} @tab Bool @tab On / Off @tab Off @tab - @tab Include first-order reflections
+@item @code{Room Width} @tab Float @tab 2 .. 10 @tab 4 @tab m @tab Listening room width
+@item @code{Room Depth} @tab Float @tab 2 .. 15 @tab 5 @tab m @tab Listening room depth
+@item @code{Wall Absorption} @tab Float @tab 0 .. 1 @tab 0.3 @tab - @tab Wall absorption coefficient
+@item @code{Reflection Beta} @tab Float @tab 1 .. 10 @tab 3 @tab - @tab Reflection path regularization
+@end multitable
+
+
+@subsection Diagnostic
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Bypass XTC Filters} @tab Bool @tab On / Off @tab Off @tab - @tab Skip crosstalk cancellation
+@item @code{Bypass Spectral Norm} @tab Bool @tab On / Off @tab Off @tab - @tab Skip spectral normalization
+@item @code{Bypass Neumann} @tab Bool @tab On / Off @tab Off @tab - @tab Skip Neumann KH refinement
+@end multitable
+
+
+@subsection Auto Gain
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Auto Gain} @tab Bool @tab On / Off @tab On @tab - @tab Auto-normalize output level
+@item @code{AG Max} @tab Float @tab 0 .. 24 @tab 12 @tab dB @tab Maximum auto gain correction
+@item @code{AG Smoothing} @tab Float @tab 10 .. 500 @tab 100 @tab ms @tab Auto gain transition time
+@end multitable
+
+@node xtc Plugin Developer Guide
+@section Developer Guide
+
+SOTF XTC plugin for crosstalk cancellation.
+
+Removes acoustic crosstalk to deliver a binaural-like listening experience from stereo speakers. Uses FFT-based processing with overlap-add for real-time operation.
+
+@subsubheading Parameter wiring
+
+All parameters reach the audio thread through the host's @code{rebuild_cached_parameters} / @code{set_parameter} / @code{get_parameter} triad. Structural parameters (marked in the notes below) trigger a rebuild; the rest update in real time with zero dropouts.
+
+@subsubheading Source
+
+@file{crates/sotf-plugins/crates/sotf-plugin-xtc/}
+
+Run the unit tests with @code{cargo test -p sotf-plugin-xtc}.
+

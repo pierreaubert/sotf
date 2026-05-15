@@ -1,0 +1,73 @@
+@c -*-texinfo-*-
+@node gpui-keybinding Manual
+@chapter Crate @code{gpui-keybinding}
+@cindex gpui-keybinding
+@cindex keybindings
+
+@code{gpui-keybinding} is the reusable keybinding framework used by
+the SotF desktop player. It ships built-in presets -- Default, Vim,
+Emacs, VSCode -- and detects conflicts at registration time.
+
+@menu
+* gpui-keybinding User Guide::
+* gpui-keybinding Developer Guide::
+@end menu
+
+@node gpui-keybinding User Guide
+@section User Guide
+
+@subheading Switching preset
+
+The desktop player exposes preset selection in Settings. Choices:
+
+@itemize @bullet
+@item @strong{Default} -- discoverable defaults for new users.
+@item @strong{Vim} -- modal navigation for Vim users.
+@item @strong{Emacs} -- chord-based bindings.
+@item @strong{VSCode} -- familiar IDE-style bindings.
+@end itemize
+
+@subheading Platform mnemonics
+
+The framework formats key labels with the right modifier per OS:
+@kbd{@key{Cmd}} on macOS, @kbd{@key{Ctrl}} on Windows and Linux.
+
+@subheading Help screen
+
+Every binding carries a human-readable description, surfaced in the
+in-app help / cheat sheet.
+
+@node gpui-keybinding Developer Guide
+@section Developer Guide
+
+@subheading Provider pattern
+
+@example
+struct MyAppBindings;
+impl KeybindingProvider for MyAppBindings @{
+    fn keybindings(&self, preset: KeymapPreset)
+        -> Vec<DocumentedKeybinding>
+    @{ @dots{} @}
+@}
+@end example
+
+The application instantiates a @code{KeybindingRegistry} and registers
+one or more providers; the registry collects them and detects
+duplicates.
+
+@subheading Conflict detection
+
+At registry build time, duplicate @code{(key, context)} pairs panic in
+debug and emit a structured error in release. This means you cannot
+ship a build with shadowed bindings.
+
+@subheading Categories
+
+Bindings are tagged with a @code{KeybindingCategory} (Navigation,
+Editing, Playback, @dots{}) so the help UI can group them.
+
+@subheading Testing
+
+@example
+cargo test -p gpui-keybinding
+@end example

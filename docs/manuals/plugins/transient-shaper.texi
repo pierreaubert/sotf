@@ -1,0 +1,87 @@
+@c -*-texinfo-*-
+@c Per-plugin manual: transient-shaper
+@node transient-shaper Plugin
+@chapter Plugin: @code{transient-shaper}
+@cindex transient-shaper plugin
+
+Shapes attack and sustain characteristics of audio transients.
+
+@menu
+* transient-shaper Plugin Parameters::
+* transient-shaper Plugin Developer Guide::
+@end menu
+
+@node transient-shaper Plugin Parameters
+@section Parameters
+
+
+@subsection Shape
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Attack} @tab Float @tab -100 .. 100 @tab 0 @tab % @tab Transient emphasis (-100% to +100%)
+@item @code{Sustain} @tab Float @tab -100 .. 100 @tab 0 @tab % @tab Sustain emphasis (-100% to +100%)
+@end multitable
+
+
+@subsection Detection
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Sensitivity} @tab Float @tab -12 .. 12 @tab 0 @tab dB @tab Detection sensitivity offset
+@end multitable
+
+
+@subsection Output
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Output} @tab Float @tab -12 .. 12 @tab 0 @tab dB @tab Output gain compensation
+@item @code{Mix} @tab Float @tab 0 .. 1 @tab 1 @tab % @tab Dry/wet mix
+@end multitable
+
+@node transient-shaper Plugin Developer Guide
+@section Developer Guide
+
+Transient Shaper — SPL Transient Designer approach for attack/sustain control.
+
+@subsubheading What It Does
+
+Controls the attack (transient) and sustain portions of audio independently, without using a threshold. Based on the SPL Transient Designer approach: the signal's envelope is analyzed to separate the fast-changing transient portion from the slower sustain. Each can be boosted or cut independently — add punch by boosting attack, or smooth out percussive elements by reducing it.
+
+@subsubheading Features
+
+@itemize @bullet
+@item @strong{Threshold-independent}: Works on signal shape, not level
+@item @strong{Attack control}: Boost for punch, cut for smoothness
+@item @strong{Sustain control}: Boost for fullness, cut for tighter sound
+@item @strong{SPL Transient Designer approach}: Proven algorithm for natural-sounding results
+@end itemize
+
+
+@subsubheading Architecture
+
+@example
+src/
+├── lib.rs     # TransientShaperPlugin implementation
+└── params.rs  # Parameter definitions
+@end example
+
+
+@subsubheading Testing
+
+@example
+cargo test -p sotf-plugin-transient-shaper
+@end example
+
+
+@subsubheading Parameter wiring
+
+All parameters reach the audio thread through the host's @code{rebuild_cached_parameters} / @code{set_parameter} / @code{get_parameter} triad. Structural parameters (marked in the notes below) trigger a rebuild; the rest update in real time with zero dropouts.
+
+@subsubheading Source
+
+@file{crates/sotf-plugins/crates/sotf-plugin-transient-shaper/}
+
+Run the unit tests with @code{cargo test -p sotf-plugin-transient-shaper}.
+

@@ -1,0 +1,114 @@
+@c -*-texinfo-*-
+@c Per-plugin manual: denoiser
+@node denoiser Plugin
+@chapter Plugin: @code{denoiser}
+@cindex denoiser plugin
+
+Audio denoising using MCRA (Minima Controlled Recursive Averaging) and Wiener filtering.
+
+@menu
+* denoiser Plugin Parameters::
+* denoiser Plugin Developer Guide::
+@end menu
+
+@node denoiser Plugin Parameters
+@section Parameters
+
+
+@subsection General
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Reduction} @tab Float @tab 0 .. 40 @tab 10 @tab dB @tab Noise attenuation amount
+@item @code{Floor} @tab Float @tab -60 .. -10 @tab -20 @tab dB @tab Minimum gain floor (artifact limit)
+@item @code{Smoothing} @tab Float @tab 0 .. 0.99 @tab 0.3 @tab - @tab Gain curve temporal smoothing
+@item @code{Low Latency} @tab Bool @tab On / Off @tab Off @tab - @tab Smaller FFT for lower latency
+@item @code{Transparency} @tab Float @tab 0 .. 1 @tab 0 @tab - @tab Blend denoised toward dry signal
+@item @code{Multi-Res} @tab Bool @tab On / Off @tab Off @tab - @tab Multi-resolution FFT analysis
+@end multitable
+
+
+@subsection Timing
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Attack} @tab Float @tab 0.1 .. 100 @tab 5 @tab ms @tab Time to apply reduction
+@item @code{Release} @tab Float @tab 10 .. 500 @tab 50 @tab ms @tab Time to release reduction
+@end multitable
+
+
+@subsection Analysis
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Polyphonic} @tab Bool @tab On / Off @tab Off @tab - @tab Detect multiple pitched signals
+@item @code{DD SNR} @tab Bool @tab On / Off @tab On @tab - @tab Decision-Directed SNR estimator
+@item @code{DD Alpha} @tab Float @tab 0.5 .. 0.999 @tab 0.98 @tab - @tab DD SNR smoothing coefficient
+@item @code{Psychoacoustic} @tab Bool @tab On / Off @tab On @tab - @tab Use auditory masking curves
+@item @code{Spectral Smooth} @tab Bool @tab On / Off @tab On @tab - @tab Smooth gain across frequency bins
+@item @code{Temporal Smooth} @tab Bool @tab On / Off @tab On @tab - @tab Smooth gain across time frames
+@end multitable
+
+
+@subsection Advanced
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{MCRA Alpha S} @tab Float @tab 0.5 .. 0.99 @tab 0.9 @tab - @tab Noise spectrum smoothing factor
+@item @code{MCRA Alpha P} @tab Float @tab 0.1 .. 0.99 @tab 0.7 @tab - @tab Speech presence probability smooth
+@item @code{MCRA Window} @tab Int @tab 10 .. 200 @tab 50 @tab fr @tab Min statistics window length
+@item @code{MCRA Delta} @tab Float @tab 1 .. 20 @tab 5 @tab - @tab Speech/noise discrimination bias
+@item @code{Harmonic/Percussive} @tab Bool @tab On / Off @tab Off @tab - @tab Separate tonal and transient components for differential denoising
+@item @code{Spatial Denoise} @tab Bool @tab On / Off @tab Off @tab - @tab Use inter-channel coherence for noise detection (stereo+ only)
+@item @code{Spatial Strength} @tab Float @tab 0 .. 1 @tab 0.5 @tab - @tab Weight of inter-channel coherence in noise estimation
+@end multitable
+
+
+@subsection Spectral Sub
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Spectral Sub} @tab Bool @tab On / Off @tab Off @tab - @tab Enable spectral subtraction
+@item @code{Oversub Factor} @tab Float @tab 0.5 .. 6 @tab 2 @tab - @tab Over-subtraction factor (alpha)
+@item @code{Spectral Floor} @tab Float @tab 0.001 .. 0.5 @tab 0.02 @tab - @tab Spectral floor factor (beta)
+@end multitable
+
+
+@subsection Noise Profile
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Learn Noise} @tab Bool @tab On / Off @tab Off @tab - @tab Capture noise-only reference
+@item @code{Use Profile} @tab Bool @tab On / Off @tab Off @tab - @tab Use captured noise profile
+@item @code{Clear Profile} @tab Bool @tab On / Off @tab Off @tab - @tab Discard captured noise profile
+@end multitable
+
+
+@subsection Formant
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Formant Preserve} @tab Bool @tab On / Off @tab Off @tab - @tab Protect vocal formant structure
+@item @code{Formant Strength} @tab Float @tab 0 .. 1 @tab 0.5 @tab - @tab Formant preservation amount
+@end multitable
+
+
+@strong{Structural parameters} (Low Latency, Learn Noise, Clear Profile, Multi-Res) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
+
+@node denoiser Plugin Developer Guide
+@section Developer Guide
+
+SOTF Denoiser plugin for audio denoising.
+
+Removes noise from audio using MCRA (Minima Controlled Recursive Averaging) noise estimation combined with Wiener filtering, applied via STFT overlap-add processing.
+
+@subsubheading Parameter wiring
+
+All parameters reach the audio thread through the host's @code{rebuild_cached_parameters} / @code{set_parameter} / @code{get_parameter} triad. Structural parameters (marked in the notes below) trigger a rebuild; the rest update in real time with zero dropouts.
+
+@subsubheading Source
+
+@file{crates/sotf-plugins/crates/sotf-plugin-denoiser/}
+
+Run the unit tests with @code{cargo test -p sotf-plugin-denoiser}.
+

@@ -1,0 +1,56 @@
+@c -*-texinfo-*-
+@c Per-plugin manual: convolution
+@node convolution Plugin
+@chapter Plugin: @code{convolution}
+@cindex convolution plugin
+
+FFT-based convolution engine for applying impulse responses (room correction, cabinet simulation, reverb).
+
+@menu
+* convolution Plugin Parameters::
+* convolution Plugin Developer Guide::
+@end menu
+
+@node convolution Plugin Parameters
+@section Parameters
+
+
+@subsection General
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{IR File} @tab File Path @tab - @tab - @tab - @tab Impulse response WAV file path
+@item @code{Mix} @tab Float @tab 0 .. 1 @tab 1 @tab % @tab Dry/wet blend
+@item @code{Gain} @tab Float @tab -20 .. 20 @tab 0 @tab dB @tab Output level trim
+@item @code{Use NUPC} @tab Bool @tab On / Off @tab On @tab - @tab Non-uniform partitioned convolution
+@end multitable
+
+
+@subsection Quality
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Zero-Latency Head} @tab Bool @tab On / Off @tab Off @tab - @tab Time-domain processing of first IR taps for zero additional latency
+@item @code{Head Taps} @tab Int @tab 32 .. 512 @tab 128 @tab - @tab Number of IR taps processed in time domain (32-512)
+@end multitable
+
+
+@strong{Structural parameters} (IR File, Use NUPC, Zero-Latency Head, Head Taps) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
+
+@node convolution Plugin Developer Guide
+@section Developer Guide
+
+SOTF Convolution plugin for FFT-based impulse response processing.
+
+Applies impulse responses to audio using partitioned FFT convolution for efficient real-time operation with arbitrary IR lengths.
+
+@subsubheading Parameter wiring
+
+All parameters reach the audio thread through the host's @code{rebuild_cached_parameters} / @code{set_parameter} / @code{get_parameter} triad. Structural parameters (marked in the notes below) trigger a rebuild; the rest update in real time with zero dropouts.
+
+@subsubheading Source
+
+@file{crates/sotf-plugins/crates/sotf-plugin-convolution/}
+
+Run the unit tests with @code{cargo test -p sotf-plugin-convolution}.
+

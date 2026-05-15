@@ -1,0 +1,103 @@
+@c -*-texinfo-*-
+@c Per-plugin manual: dynamic-eq
+@node dynamic-eq Plugin
+@chapter Plugin: @code{dynamic-eq}
+@cindex dynamic-eq plugin
+
+Frequency-dependent dynamic equalizer that adjusts filter gain based on signal level.
+
+@menu
+* dynamic-eq Plugin Parameters::
+* dynamic-eq Plugin Developer Guide::
+@end menu
+
+@node dynamic-eq Plugin Parameters
+@section Parameters
+
+
+@subsection Setup
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Num Bands} @tab Int @tab 1 .. 8 @tab 4 @tab Bands @tab Number of dynamic EQ bands
+@end multitable
+
+
+@subsection Dynamics
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Threshold} @tab Float @tab -60 .. 0 @tab -20 @tab dB @tab Global detection threshold
+@item @code{Ratio} @tab Float @tab 1 .. 20 @tab 2 @tab :1 @tab Global dynamics ratio
+@item @code{Knee} @tab Float @tab 0 .. 20 @tab 6 @tab dB @tab Global soft knee
+@end multitable
+
+
+@subsection Timing
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Attack} @tab Float @tab 0.1 .. 100 @tab 5 @tab ms @tab Global attack time
+@item @code{Release} @tab Float @tab 10 .. 1000 @tab 50 @tab ms @tab Global release time
+@end multitable
+
+
+@subsection Channels
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Link Channels} @tab Bool @tab On / Off @tab Linked @tab - @tab Stereo-link detection
+@end multitable
+
+
+@subsection Output
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Mix} @tab Float @tab 0 .. 1 @tab 1 @tab % @tab Dry/wet mix
+@end multitable
+
+@node dynamic-eq Plugin Developer Guide
+@section Developer Guide
+
+Dynamic EQ — frequency-selective dynamics processing.
+
+@subsubheading What It Does
+
+A parametric EQ where each filter band only activates when the signal in that frequency range crosses a threshold. Unlike a static EQ that applies constant gain, a dynamic EQ adapts in real-time — useful for taming resonances that only appear at certain levels or for frequency-dependent compression.
+
+@subsubheading Features
+
+@itemize @bullet
+@item @strong{Per-band dynamics}: Each EQ band has its own threshold, ratio, attack, and release
+@item @strong{Parametric EQ base}: Standard frequency, Q, and gain per band
+@item @strong{Adaptive processing}: Gain changes dynamically based on signal level
+@end itemize
+
+
+@subsubheading Architecture
+
+@example
+src/
+├── lib.rs     # DynamicEqPlugin implementation
+└── params.rs  # Parameter definitions
+@end example
+
+
+@subsubheading Testing
+
+@example
+cargo test -p sotf-plugin-dynamic-eq
+@end example
+
+
+@subsubheading Parameter wiring
+
+All parameters reach the audio thread through the host's @code{rebuild_cached_parameters} / @code{set_parameter} / @code{get_parameter} triad. Structural parameters (marked in the notes below) trigger a rebuild; the rest update in real time with zero dropouts.
+
+@subsubheading Source
+
+@file{crates/sotf-plugins/crates/sotf-plugin-dynamic-eq/}
+
+Run the unit tests with @code{cargo test -p sotf-plugin-dynamic-eq}.
+

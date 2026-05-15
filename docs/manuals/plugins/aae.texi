@@ -1,0 +1,117 @@
+@c -*-texinfo-*-
+@c Per-plugin manual: aae
+@node aae Plugin
+@chapter Plugin: @code{aae}
+@cindex aae plugin
+
+Active acoustic enhancement using psychoacoustic processing to improve perceived clarity, presence, and depth.
+
+@menu
+* aae Plugin Parameters::
+* aae Plugin Developer Guide::
+@end menu
+
+@node aae Plugin Parameters
+@section Parameters
+
+
+@subsection Spatial
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Speaker Config} @tab Choice (5.0, 5.1, 7.1, 5.1.2, 5.1.4, 7.1.2, 7.1.4, 9.1.4, 9.1.6) @tab 9 options @tab 5.1 @tab - @tab Output speaker layout
+@item @code{Envelopment} @tab Float @tab 0 .. 1 @tab 0.7 @tab x @tab Rear/surround vs front reverb balance
+@item @code{Height Amount} @tab Float @tab 0 .. 1 @tab 0.5 @tab x @tab Height channel contribution
+@end multitable
+
+
+@subsection Room
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Room Size} @tab Float @tab 0.2 .. 3 @tab 1 @tab x @tab Scales all delay line lengths
+@item @code{RT60} @tab Float @tab 0.3 .. 6 @tab 1.8 @tab s @tab Mid-frequency reverberation time
+@item @code{Bass Ratio} @tab Float @tab 0.8 .. 2 @tab 1.2 @tab x @tab RT60_bass / RT60_mid ratio
+@item @code{Treble Ratio} @tab Float @tab 0.2 .. 1 @tab 0.5 @tab x @tab RT60_treble / RT60_mid ratio
+@item @code{Pre-delay} @tab Float @tab 0 .. 100 @tab 20 @tab ms @tab Gap before first reflection
+@item @code{Room Preset} @tab Choice (small, medium, large, cathedral) @tab 4 options @tab medium @tab - @tab Early reflection tap configuration
+@end multitable
+
+
+@subsection Levels
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Dry Level} @tab Float @tab 0 .. 1 @tab 0.5 @tab x @tab Direct signal level
+@item @code{ER Level} @tab Float @tab 0 .. 1 @tab 0.3 @tab x @tab Early reflection level
+@item @code{Late Level} @tab Float @tab 0 .. 1 @tab 0.2 @tab x @tab Late reverb (FDN) level
+@item @code{LFE Level} @tab Float @tab 0 .. 1 @tab 0.2 @tab x @tab Bass sent to LFE channel
+@end multitable
+
+
+@subsection Modulation
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Mod Depth} @tab Float @tab 0 .. 1 @tab 0.5 @tab x @tab FDN time-variant delay modulation (Griesinger)
+@item @code{ER Mod Depth} @tab Float @tab 0 .. 1 @tab 0.3 @tab x @tab Early reflection tap modulation
+@end multitable
+
+
+@subsection Character
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Input Diffusion} @tab Float @tab 0 .. 1 @tab 0.7 @tab x @tab Pre-FDN allpass diffusion
+@end multitable
+
+
+@subsection Intelligence
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Content Aware} @tab Bool @tab On / Off @tab On @tab - @tab Enable speech detection for reverb ducking
+@item @code{Dialogue Atten.} @tab Float @tab 0 .. 12 @tab 6 @tab dB @tab Reverb reduction during detected speech
+@item @code{Safety Limit} @tab Float @tab 0 .. 12 @tab 6 @tab dB @tab FDN feedback limiter threshold
+@end multitable
+
+
+@subsection Auto Gain
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Auto Gain} @tab Bool @tab On / Off @tab Off @tab - @tab Match rendered output loudness to the stereo input
+@item @code{AG Max} @tab Float @tab 0 .. 24 @tab 12 @tab dB @tab Maximum auto gain correction
+@item @code{AG Smoothing} @tab Float @tab 10 .. 500 @tab 100 @tab ms @tab Auto gain transition time
+@end multitable
+
+
+@subsection Diagnostic
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Bypass} @tab Bool @tab On / Off @tab Off @tab - @tab Pass-through mode
+@item @code{Solo Early} @tab Bool @tab On / Off @tab Off @tab - @tab Hear only early reflections
+@item @code{Solo Late} @tab Bool @tab On / Off @tab Off @tab - @tab Hear only late reverb
+@end multitable
+
+
+@strong{Structural parameters} (Speaker Config) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
+
+@node aae Plugin Developer Guide
+@section Developer Guide
+
+SOTF Active Acoustic Enhancement plugin — LARES-inspired multichannel reverb.
+
+Takes stereo input and outputs multichannel audio (5.0–9.1.6) with synthesized early reflections and late reverberation (8-line Hadamard FDN, time-variant) distributed across speakers via VBAP.
+
+@subsubheading Parameter wiring
+
+All parameters reach the audio thread through the host's @code{rebuild_cached_parameters} / @code{set_parameter} / @code{get_parameter} triad. Structural parameters (marked in the notes below) trigger a rebuild; the rest update in real time with zero dropouts.
+
+@subsubheading Source
+
+@file{crates/sotf-plugins/crates/sotf-plugin-aae/}
+
+Run the unit tests with @code{cargo test -p sotf-plugin-aae}.
+

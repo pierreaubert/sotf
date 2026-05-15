@@ -1,0 +1,96 @@
+@c -*-texinfo-*-
+@c Per-plugin manual: de-esser
+@node de-esser Plugin
+@chapter Plugin: @code{de-esser}
+@cindex de-esser plugin
+
+Sibilance reduction targeting harsh high-frequency content (s, t, sh sounds).
+
+@menu
+* de-esser Plugin Parameters::
+* de-esser Plugin Developer Guide::
+@end menu
+
+@node de-esser Plugin Parameters
+@section Parameters
+
+
+@subsection Detection
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Frequency} @tab Float @tab 2000 .. 16000 @tab 7000 @tab Hz @tab Center frequency for sibilance detection
+@item @code{Q} @tab Float @tab 0.5 .. 5 @tab 1.5 @tab - @tab Bandwidth of detection filter
+@end multitable
+
+
+@subsection Dynamics
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Threshold} @tab Float @tab -60 .. 0 @tab -20 @tab dB @tab Sibilance detection threshold
+@item @code{Ratio} @tab Float @tab 1 .. 20 @tab 4 @tab :1 @tab Compression ratio for sibilance
+@item @code{Attack} @tab Float @tab 0.1 .. 10 @tab 0.5 @tab ms @tab Attack time
+@item @code{Release} @tab Float @tab 5 .. 200 @tab 20 @tab ms @tab Release time
+@end multitable
+
+
+@subsection Mode
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Mode} @tab Choice (Wideband, Split-Band) @tab 2 options @tab Split-Band @tab - @tab Wideband reduces full signal; Split-band only reduces HF
+@end multitable
+
+
+@subsection Output
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Mix} @tab Float @tab 0 .. 1 @tab 1 @tab % @tab Dry/wet mix
+@end multitable
+
+@node de-esser Plugin Developer Guide
+@section Developer Guide
+
+De-esser — sibilance reduction for audio.
+
+@subsubheading What It Does
+
+Reduces harsh sibilant sounds ("s", "sh", "ch") in vocals and other audio. Applies frequency-selective dynamic compression to the sibilance range (typically 4-10 kHz) without affecting the rest of the spectrum.
+
+@subsubheading Features
+
+@itemize @bullet
+@item @strong{Frequency-selective processing}: Targets only the sibilance band
+@item @strong{Dynamic compression}: Reduces sibilance only when it exceeds the threshold
+@item @strong{Transparent operation}: Preserves the natural character of the audio
+@end itemize
+
+
+@subsubheading Architecture
+
+@example
+src/
+├── lib.rs     # DeEsserPlugin implementation
+└── params.rs  # Parameter definitions
+@end example
+
+
+@subsubheading Testing
+
+@example
+cargo test -p sotf-plugin-de-esser
+@end example
+
+
+@subsubheading Parameter wiring
+
+All parameters reach the audio thread through the host's @code{rebuild_cached_parameters} / @code{set_parameter} / @code{get_parameter} triad. Structural parameters (marked in the notes below) trigger a rebuild; the rest update in real time with zero dropouts.
+
+@subsubheading Source
+
+@file{crates/sotf-plugins/crates/sotf-plugin-de-esser/}
+
+Run the unit tests with @code{cargo test -p sotf-plugin-de-esser}.
+

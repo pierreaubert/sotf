@@ -1,0 +1,62 @@
+@c -*-texinfo-*-
+@node math-delaunay Manual
+@chapter Crate @code{math-delaunay}
+@cindex math-delaunay
+@cindex Voronoi
+
+@code{math-delaunay} is a faithful Rust port of D3's
+@code{d3-delaunay}. It computes Delaunay triangulations and Voronoi
+diagrams, using @code{delaunator} as the triangulation backend, and is
+consumed by @ref{gpui-d3rs Manual} for spatial visualisations.
+
+@menu
+* math-delaunay User Guide::
+* math-delaunay Developer Guide::
+@end menu
+
+@node math-delaunay User Guide
+@section User Guide
+
+This crate has no user-facing surface. It powers Voronoi-style charts
+(directivity maps, polar plots) inside the desktop player.
+
+@node math-delaunay Developer Guide
+@section Developer Guide
+
+@subheading Key types
+
+@table @code
+@item Delaunay
+Delaunay triangulation from a set of 2D points.
+@item Voronoi
+Voronoi diagram derived from a Delaunay triangulation, clipped to a
+bounding box.
+@end table
+
+@subheading Example
+
+@example
+use math_delaunay::Delaunay;
+
+let points = vec![(0.0, 0.0), (1.0, 0.0), (0.5, 1.0)];
+let d = Delaunay::from_points(&points);
+let v = d.voronoi([0.0, 0.0, 2.0, 2.0]);
+if let Some(cell) = v.cell_polygon(0) @{
+    println!("Cell 0 has @{@} vertices", cell.len());
+@}
+@end example
+
+@subheading Module layout
+
+@table @code
+@item delaunay.rs
+Triangulation construction and queries.
+@item voronoi.rs
+Voronoi diagram computation and cell polygon extraction.
+@end table
+
+@subheading Testing
+
+@example
+cargo test -p math-delaunay
+@end example

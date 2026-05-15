@@ -1,0 +1,35 @@
+@c -*-texinfo-*-
+@c Per-plugin manual: matrix
+@node matrix Plugin
+@chapter Plugin: @code{matrix}
+@cindex matrix plugin
+
+Channel matrix mixing with per-routing gain control. Route any input channel to any output channel.
+
+@menu
+* matrix Plugin Parameters::
+* matrix Plugin Developer Guide::
+@end menu
+
+@node matrix Plugin Parameters
+@section Parameters
+
+This plugin has no user-tunable parameters.
+
+@node matrix Plugin Developer Guide
+@section Developer Guide
+
+SOTF Matrix plugin for channel matrix mixing.
+
+Arbitrary N-to-P channel routing with per-crosspoint gain control and smoothed gain transitions to avoid clicks during changes.
+
+@subsubheading Parameter wiring
+
+All parameters reach the audio thread through the host's @code{rebuild_cached_parameters} / @code{set_parameter} / @code{get_parameter} triad. Structural parameters (marked in the notes below) trigger a rebuild; the rest update in real time with zero dropouts.
+
+@subsubheading Source
+
+@file{crates/sotf-plugins/crates/sotf-plugin-matrix/}
+
+Run the unit tests with @code{cargo test -p sotf-plugin-matrix}.
+

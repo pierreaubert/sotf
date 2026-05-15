@@ -1,0 +1,122 @@
+@c -*-texinfo-*-
+@c Per-plugin manual: multiband-expander
+@node multiband-expander Plugin
+@chapter Plugin: @code{multiband-expander}
+@cindex multiband-expander plugin
+
+Per-band dynamic range expansion with 2-5 frequency bands and independent expander settings per band.
+
+@menu
+* multiband-expander Plugin Parameters::
+* multiband-expander Plugin Developer Guide::
+@end menu
+
+@node multiband-expander Plugin Parameters
+@section Parameters
+
+
+@subsection Global
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Bands} @tab Int @tab 2 .. 5 @tab 3 @tab - @tab Number of frequency bands
+@item @code{Preset} @tab Int @tab 0 .. 3 @tab 1 @tab - @tab Crossover frequency preset
+@item @code{Crossover 1} @tab Float @tab 20 .. 500 @tab 200 @tab Hz @tab Low/mid split frequency
+@item @code{Crossover 2} @tab Float @tab 500 .. 5000 @tab 2000 @tab Hz @tab Mid/high split frequency
+@item @code{Crossover 3} @tab Float @tab 5000 .. 15000 @tab 8000 @tab Hz @tab High/air split frequency
+@item @code{Crossover 4} @tab Float @tab 10000 .. 18000 @tab 12000 @tab Hz @tab Band 4/5 split frequency
+@item @code{Threshold} @tab Float @tab -80 .. 0 @tab -40 @tab dB @tab Global expansion threshold
+@item @code{Ratio} @tab Float @tab 1 .. 20 @tab 2 @tab :1 @tab Global expansion ratio
+@item @code{Attack} @tab Float @tab 0.1 .. 50 @tab 1 @tab ms @tab Global attack time
+@item @code{Release} @tab Float @tab 10 .. 2000 @tab 100 @tab ms @tab Global release time
+@item @code{Range} @tab Float @tab 0 .. 80 @tab 40 @tab dB @tab Max attenuation below threshold
+@item @code{Knee} @tab Float @tab 0 .. 20 @tab 6 @tab dB @tab Global knee softness
+@item @code{Hysteresis} @tab Float @tab 0 .. 12 @tab 4 @tab dB @tab Open/close threshold difference
+@item @code{Hold} @tab Float @tab 0 .. 500 @tab 10 @tab ms @tab Minimum open time after trigger
+@item @code{Mix} @tab Float @tab 0 .. 1 @tab 1 @tab % @tab Dry/wet blend
+@item @code{Link Channels} @tab Bool @tab On / Off @tab Linked @tab - @tab Stereo-link detector for L/R
+@item @code{Detection Mode} @tab Choice (Peak, RMS) @tab 2 options @tab Peak @tab - @tab Peak or RMS level detection
+@end multitable
+
+
+@subsection Timing
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Lookahead} @tab Float @tab 0 .. 20 @tab 0 @tab ms @tab Pre-delay for transient catching
+@end multitable
+
+
+@subsection Per-band parameters
+
+The following parameters are repeated for each band:
+
+@subsubheading Dynamics
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Threshold} @tab Float @tab -80 .. 0 @tab -40 @tab dB @tab Level below which expansion starts
+@item @code{Ratio} @tab Float @tab 1 .. 20 @tab 2 @tab :1 @tab Expansion amount (input:output)
+@item @code{Range} @tab Float @tab 0 .. 80 @tab 40 @tab dB @tab Max attenuation below threshold
+@item @code{Knee} @tab Float @tab 0 .. 20 @tab 6 @tab dB @tab Softness of threshold transition
+@item @code{Hysteresis} @tab Float @tab 0 .. 12 @tab 4 @tab dB @tab Open/close threshold difference
+@end multitable
+
+
+@subsubheading Timing
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Attack} @tab Float @tab 0.1 .. 50 @tab 1 @tab ms @tab Time to reach full expansion
+@item @code{Release} @tab Float @tab 10 .. 2000 @tab 100 @tab ms @tab Time to return to unity gain
+@item @code{Hold} @tab Float @tab 0 .. 500 @tab 10 @tab ms @tab Minimum open time after trigger
+@item @code{Lookahead} @tab Float @tab 0 .. 20 @tab 0 @tab ms @tab Pre-delay for transient catching
+@end multitable
+
+
+@subsubheading Output
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Mix} @tab Float @tab 0 .. 1 @tab 1 @tab % @tab Dry/wet blend
+@item @code{Auto Makeup} @tab Bool @tab On / Off @tab Off @tab - @tab Auto-compensate for gain reduction
+@item @code{Measured Auto Makeup} @tab Bool @tab On / Off @tab Off @tab - @tab Makeup based on measured reduction
+@end multitable
+
+
+@subsubheading Channels
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Link Channels} @tab Bool @tab On / Off @tab Linked @tab - @tab Stereo-link detector for L/R
+@end multitable
+
+
+@subsubheading Sidechain
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Sidechain HPF} @tab Float @tab 0 .. 500 @tab 80 @tab Hz @tab High-pass on detector input
+@item @code{Detection Mode} @tab Choice (Peak, RMS) @tab 2 options @tab Peak @tab - @tab Peak or RMS level detection
+@end multitable
+
+
+@strong{Structural parameters} (Bands, Preset, Crossover 1, Crossover 2, Crossover 3, Crossover 4) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
+
+@node multiband-expander Plugin Developer Guide
+@section Developer Guide
+
+SOTF Multiband Expander plugin for multiband dynamic range expansion.
+
+Splits the signal into frequency bands and applies independent expansion to each band for frequency-selective dynamics processing.
+
+@subsubheading Parameter wiring
+
+All parameters reach the audio thread through the host's @code{rebuild_cached_parameters} / @code{set_parameter} / @code{get_parameter} triad. Structural parameters (marked in the notes below) trigger a rebuild; the rest update in real time with zero dropouts.
+
+@subsubheading Source
+
+@file{crates/sotf-plugins/crates/sotf-plugin-multiband-expander/}
+
+Run the unit tests with @code{cargo test -p sotf-plugin-multiband-expander}.
+

@@ -1,0 +1,72 @@
+@c -*-texinfo-*-
+@node math-rir Manual
+@chapter Crate @code{math-rir}
+@cindex math-rir
+@cindex room impulse response
+@cindex SSIR
+
+@code{math-rir} segments a measured Room Impulse Response into
+direct sound + early reflections using SSIR (Spatial Segmentation of
+Impulse Response), based on Pawlak & Lee (2026). It powers reflection
+analysis in the RoomEQ workflow.
+
+@menu
+* math-rir User Guide::
+* math-rir Developer Guide::
+@end menu
+
+@node math-rir User Guide
+@section User Guide
+
+Users see this crate as the @samp{reflection analysis} card in the
+Room EQ wizard: a list of detected reflections with arrival time,
+energy and (for B-format measurements) direction.
+
+@node math-rir Developer Guide
+@section Developer Guide
+
+@subheading What it does
+
+Segments a measured RIR into consecutive, variable-length events
+(direct sound + reflections) each with a constant direction of
+arrival. The temporal energy profile is preserved while per-reflection
+analysis becomes possible.
+
+@subheading Key algorithms
+
+@itemize @bullet
+@item @strong{Direct-sound onset detection}: log-magnitude peak with
+  an 11 dB threshold (Algorithm 1 of the paper).
+@item @strong{Local Energy Ratio reflection detection}: 1 ms windows,
+  median energy threshold, DOA/TOA validation.
+@item @strong{Onset refinement}: per-segment onset detection inside
+  pre-onset windows.
+@item @strong{Mixing-time estimation}: Abel & Huang echo density.
+@end itemize
+
+@subheading API
+
+@example
+use math_rir::@{analyze_rir, analyze_srir, SsirConfig@};
+
+// Mono RIR (energy-based detection only)
+let result = analyze_rir(&rir_samples, &SsirConfig::new(48000.0));
+
+// B-format SRIR (full DOA estimation + validation)
+let result = analyze_srir(&[&w, &x, &y, &z], &SsirConfig::new(48000.0));
+
+println!("@{@} events, mixing time @{:.1@}ms",
+    result.num_events(), result.mixing_time_ms());
+@end example
+
+@subheading Offline filter design
+
+Filters used for analysis are designed for zero phase (linear-phase /
+@code{filtfilt} via @ref{math-iir-fir Manual}), so onsets are not
+shifted by phase distortion.
+
+@subheading Testing
+
+@example
+cargo test -p math-rir
+@end example

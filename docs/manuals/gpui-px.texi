@@ -1,0 +1,69 @@
+@c -*-texinfo-*-
+@node gpui-px Manual
+@chapter Crate @code{gpui-px}
+@cindex gpui-px
+
+@code{gpui-px} is a high-level charting API in the spirit of
+Plotly Express, built on top of @ref{gpui-d3rs Manual}. It is the
+front-door for "I just want a chart" use cases inside SotF and ships
+on crates.io.
+
+@menu
+* gpui-px User Guide::
+* gpui-px Developer Guide::
+@end menu
+
+@node gpui-px User Guide
+@section User Guide
+
+In the desktop player, @code{gpui-px} is the layer that turns a slice
+of points into a chart with axes, ticks and a colour scale, without
+boilerplate.
+
+Six chart types:
+
+@itemize @bullet
+@item Scatter
+@item Line
+@item Bar
+@item Heatmap
+@item Contour
+@item Isoline
+@end itemize
+
+Colour scales: Viridis, Plasma, Inferno, Magma, Heat, Coolwarm, Greys
+or custom. Both axes support log scaling for multi-magnitude data.
+
+@node gpui-px Developer Guide
+@section Developer Guide
+
+@subheading Fluent API
+
+@example
+use gpui_px::scatter;
+
+let chart = scatter(&data)
+    .x_log()
+    .colour_scale(ColorScale::Viridis)
+    .title("Frequency response")
+    .x_label("Hz")
+    .y_label("dB");
+@end example
+
+@subheading Validation
+
+Every constructor validates input data (non-empty, finite values,
+monotonic axes where required) and returns a typed error. There is no
+implicit fallback to garbage output.
+
+@subheading Layer below
+
+@code{gpui-px} owns the high-level builders; @ref{gpui-d3rs Manual}
+owns scales, shapes and colours. If you need something more bespoke,
+drop down to @code{gpui-d3rs} directly.
+
+@subheading Testing
+
+@example
+cargo test -p gpui-px
+@end example

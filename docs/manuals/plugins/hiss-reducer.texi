@@ -1,0 +1,38 @@
+@c -*-texinfo-*-
+@c Per-plugin manual: hiss-reducer
+@node hiss-reducer Plugin
+@chapter Plugin: @code{hiss-reducer}
+@cindex hiss-reducer plugin
+
+Reduces high-frequency hiss and tape noise while preserving program content.
+
+@menu
+* hiss-reducer Plugin Parameters::
+* hiss-reducer Plugin Developer Guide::
+@end menu
+
+@node hiss-reducer Plugin Parameters
+@section Parameters
+
+This plugin has no user-tunable parameters.
+
+
+@strong{Structural parameters} (Low Latency) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
+
+@node hiss-reducer Plugin Developer Guide
+@section Developer Guide
+
+SOTF hiss reducer plugin — stationary high-frequency noise reduction.
+
+Wraps the @code{HissReducer} block from @code{plugins-denoiser} in the SOTF host plugin trait.
+
+@subsubheading Parameter wiring
+
+All parameters reach the audio thread through the host's @code{rebuild_cached_parameters} / @code{set_parameter} / @code{get_parameter} triad. Structural parameters (marked in the notes below) trigger a rebuild; the rest update in real time with zero dropouts.
+
+@subsubheading Source
+
+@file{crates/sotf-plugins/crates/sotf-plugin-hiss-reducer/}
+
+Run the unit tests with @code{cargo test -p sotf-plugin-hiss-reducer}.
+

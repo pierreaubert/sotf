@@ -1,0 +1,50 @@
+@c -*-texinfo-*-
+@node gpui-miniapp Manual
+@chapter Crate @code{gpui-miniapp}
+@cindex gpui-miniapp
+
+@code{gpui-miniapp} is a minimal application shell for GPUI examples
+and showcases. It bundles platform-backend selection so individual
+demo binaries do not have to re-implement it.
+
+@menu
+* gpui-miniapp User Guide::
+* gpui-miniapp Developer Guide::
+@end menu
+
+@node gpui-miniapp User Guide
+@section User Guide
+
+End users never see this crate. It exists so the @code{gpui-d3rs} and
+@code{gpui-ui-kit} showcase binaries can ship with a few lines of
+glue instead of duplicating window-creation boilerplate.
+
+@node gpui-miniapp Developer Guide
+@section Developer Guide
+
+@subheading What it provides
+
+@itemize @bullet
+@item A function to start a GPUI app from a single setup closure.
+@item Platform-backend selection (Metal on macOS, equivalent
+  elsewhere) hidden behind a feature flag.
+@item A default theme and design-system wiring so showcases look
+  consistent.
+@end itemize
+
+@subheading Usage
+
+@example
+gpui_miniapp::run("Showcase title", |cx| @{
+    cx.activate(true);
+    cx.open_window(/* @dots{} */, |window, cx| @{
+        cx.new(|cx| MyView::new(cx))
+    @}).unwrap();
+@});
+@end example
+
+@subheading When to reach for it
+
+Use it for examples and integration tests. Production apps
+(@code{app-gpui}, plugin editors) should configure their own shell so
+they can manage menubar items, deep links and IPC explicitly.

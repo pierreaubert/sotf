@@ -1,0 +1,86 @@
+@c -*-texinfo-*-
+@c Per-plugin manual: beamformer
+@node beamformer Plugin
+@chapter Plugin: @code{beamformer}
+@cindex beamformer plugin
+
+Microphone array beamforming for directional audio capture.
+
+@menu
+* beamformer Plugin Parameters::
+* beamformer Plugin Developer Guide::
+@end menu
+
+@node beamformer Plugin Parameters
+@section Parameters
+
+
+@subsection Array
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Microphones} @tab Int @tab 2 .. 8 @tab 2 @tab - @tab Number of array microphones
+@item @code{Mic Spacing} @tab Float @tab 1 .. 50 @tab 5 @tab cm @tab Distance between microphones
+@end multitable
+
+
+@subsection General
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Steer Angle} @tab Float @tab -180 .. 180 @tab 0 @tab ° @tab Beam steering direction
+@item @code{Algorithm} @tab Choice (MVDR, Superdirective, GSC) @tab 3 options @tab MVDR @tab - @tab Beamforming algorithm
+@end multitable
+
+
+@strong{Structural parameters} (Microphones, Mic Spacing, Algorithm) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
+
+@node beamformer Plugin Developer Guide
+@section Developer Guide
+
+Beamformer plugin — MVDR, superdirective, and GSC beamformers.
+
+@subsubheading What It Does
+
+Combines signals from multiple microphones to focus on sound from a specific direction while rejecting noise and interference from other directions. Supports three beamforming algorithms for different use cases.
+
+@subsubheading Features
+
+@itemize @bullet
+@item @strong{MVDR beamformer}: Minimum Variance Distortionless Response — optimal noise rejection
+@item @strong{Superdirective beamformer}: Maximum directivity for diffuse noise fields
+@item @strong{GSC beamformer}: Generalized Sidelobe Canceller — adaptive interference rejection
+@item @strong{Configurable steering}: Point the beam in any direction
+@end itemize
+
+
+@subsubheading Architecture
+
+@example
+src/
+├── lib.rs              # BeamformerPlugin
+├── mvdr.rs             # MVDR beamformer
+├── superdirective.rs   # Superdirective beamformer
+├── gsc.rs              # Generalized Sidelobe Canceller
+├── steering.rs         # Steering vector computation
+└── params.rs           # Parameters
+@end example
+
+
+@subsubheading Testing
+
+@example
+cargo test -p sotf-plugin-beamformer
+@end example
+
+
+@subsubheading Parameter wiring
+
+All parameters reach the audio thread through the host's @code{rebuild_cached_parameters} / @code{set_parameter} / @code{get_parameter} triad. Structural parameters (marked in the notes below) trigger a rebuild; the rest update in real time with zero dropouts.
+
+@subsubheading Source
+
+@file{crates/sotf-plugins/crates/sotf-plugin-beamformer/}
+
+Run the unit tests with @code{cargo test -p sotf-plugin-beamformer}.
+

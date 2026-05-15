@@ -1,0 +1,78 @@
+@c -*-texinfo-*-
+@c Per-plugin manual: ab-compare
+@node ab-compare Plugin
+@chapter Plugin: @code{ab-compare}
+@cindex ab-compare plugin
+
+Side-by-side A/B comparison. Instantly toggle between processed and bypass to evaluate your plugin chain.
+
+@menu
+* ab-compare Plugin Parameters::
+* ab-compare Plugin Developer Guide::
+@end menu
+
+@node ab-compare Plugin Parameters
+@section Parameters
+
+
+@subsection Mix
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Mix (A/B)} @tab Float @tab -1 .. 1 @tab 0 @tab - @tab Crossfade between path A and B
+@item @code{Mix Mode} @tab Choice (Pot, Binary) @tab 2 options @tab Pot @tab - @tab Smooth pot or instant switch
+@item @code{Selected Path} @tab Choice (A, B) @tab 2 options @tab A @tab - @tab Active path in binary mode
+@item @code{Bypass} @tab Bool @tab On / Off @tab No @tab - @tab Bypass both paths (dry signal)
+@item @code{Mix Transition} @tab Float @tab 1 .. 500 @tab 50 @tab ms @tab A/B crossfade duration
+@item @code{Difference Mode} @tab Bool @tab On / Off @tab Off @tab - @tab Output A minus B difference
+@end multitable
+
+
+@subsection Auto Gain
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Auto Gain} @tab Bool @tab On / Off @tab On @tab - @tab Loudness-match A and B paths
+@item @code{Loudness Type} @tab Choice (Momentary, ShortTerm) @tab 2 options @tab Momentary @tab - @tab Loudness measurement window
+@item @code{Max Auto Gain} @tab Float @tab 0 .. 24 @tab 12 @tab dB @tab Maximum auto gain correction
+@item @code{Gain Smoothing} @tab Float @tab 1 .. 500 @tab 100 @tab ms @tab Auto gain transition time
+@end multitable
+
+
+@subsection Configuration
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Path A Config} @tab File Path @tab - @tab - @tab - @tab Plugin chain config for path A
+@item @code{Path B Config} @tab File Path @tab - @tab - @tab - @tab Plugin chain config for path B
+@end multitable
+
+
+@subsection Phase
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Phase Invert A} @tab Bool @tab On / Off @tab Off @tab - @tab Invert polarity of path A
+@item @code{Phase Invert B} @tab Bool @tab On / Off @tab Off @tab - @tab Invert polarity of path B
+@end multitable
+
+
+@strong{Structural parameters} (Path A Config, Path B Config) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
+
+@node ab-compare Plugin Developer Guide
+@section Developer Guide
+
+SOTF AB Compare plugin for A/B comparison.
+
+Enables fair comparison between two audio processing chains with automatic loudness matching. Supports comparing a single plugin, a full rack, or arbitrary graph paths.
+
+@subsubheading Parameter wiring
+
+All parameters reach the audio thread through the host's @code{rebuild_cached_parameters} / @code{set_parameter} / @code{get_parameter} triad. Structural parameters (marked in the notes below) trigger a rebuild; the rest update in real time with zero dropouts.
+
+@subsubheading Source
+
+@file{crates/sotf-plugins/crates/sotf-plugin-ab-compare/}
+
+Run the unit tests with @code{cargo test -p sotf-plugin-ab-compare}.
+

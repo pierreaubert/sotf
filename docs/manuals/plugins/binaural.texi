@@ -1,0 +1,75 @@
+@c -*-texinfo-*-
+@c Per-plugin manual: binaural
+@node binaural Plugin
+@chapter Plugin: @code{binaural}
+@cindex binaural plugin
+
+HRTF-based 3D spatial audio rendering. Converts multichannel audio to binaural headphone output using SOFA files.
+
+@menu
+* binaural Plugin Parameters::
+* binaural Plugin Developer Guide::
+@end menu
+
+@node binaural Plugin Parameters
+@section Parameters
+
+
+@subsection General
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{SOFA File} @tab File Path @tab - @tab - @tab - @tab HRTF data file (SOFA format)
+@item @code{Input Channels} @tab Int @tab 2 .. 16 @tab 2 @tab ch @tab Number of surround input channels
+@item @code{Optimization} @tab Bool @tab On / Off @tab On @tab - @tab Enable HRIR filter optimization
+@item @code{Externalization} @tab Float @tab 0 .. 1 @tab 0 @tab - @tab Out-of-head perception strength
+@item @code{Near-field} @tab Float @tab 0 .. 1 @tab 0 @tab - @tab Near-field compensation amount
+@end multitable
+
+
+@subsection Quality
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Crossfade Mode} @tab Choice (Linear, Spectral) @tab 2 options @tab Linear @tab - @tab Linear: simple blend (may cause tonal shift). Spectral: magnitude interpolation + phase reconstruction (smoother)
+@end multitable
+
+
+@subsection Room
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Late Reverb} @tab Bool @tab On / Off @tab Off @tab - @tab Add FDN-based late reverb tail after early reflections
+@item @code{Reverb Mix} @tab Float @tab 0 .. 1 @tab 0.3 @tab - @tab Late reverb wet/dry mix
+@item @code{Reverb Time} @tab Float @tab 0.1 .. 5 @tab 1 @tab s @tab RT60 decay time for late reverb
+@item @code{Reverb Damping} @tab Float @tab 0 .. 1 @tab 0.3 @tab - @tab High-frequency damping (0=bright, 1=dark)
+@end multitable
+
+
+@subsection Headphone
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Headphone EQ} @tab Bool @tab On / Off @tab Off @tab - @tab Apply headphone compensation EQ
+@end multitable
+
+
+@strong{Structural parameters} (SOFA File, Input Channels, Optimization, Near-field) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
+
+@node binaural Plugin Developer Guide
+@section Developer Guide
+
+SOTF Binaural Decoder plugin for HRTF-based binaural rendering.
+
+Renders multichannel audio to binaural stereo using FFT-based convolution with SOFA HRTF files. Speaker configuration aware for accurate spatial reproduction over headphones.
+
+@subsubheading Parameter wiring
+
+All parameters reach the audio thread through the host's @code{rebuild_cached_parameters} / @code{set_parameter} / @code{get_parameter} triad. Structural parameters (marked in the notes below) trigger a rebuild; the rest update in real time with zero dropouts.
+
+@subsubheading Source
+
+@file{crates/sotf-plugins/crates/sotf-plugin-binaural/}
+
+Run the unit tests with @code{cargo test -p sotf-plugin-binaural}.
+

@@ -1,0 +1,36 @@
+@c -*-texinfo-*-
+@c Per-plugin manual: spectrum-analyzer
+@node spectrum-analyzer Plugin
+@chapter Plugin: @code{spectrum-analyzer}
+@cindex spectrum-analyzer plugin
+
+FFT-based spectrum analysis with configurable bin count, frequency range, smoothing, and tilt correction.
+
+@menu
+* spectrum-analyzer Plugin Parameters::
+* spectrum-analyzer Plugin Developer Guide::
+@end menu
+
+@node spectrum-analyzer Plugin Parameters
+@section Parameters
+
+This plugin has no user-tunable parameters.
+
+
+@strong{Structural parameters} (Num Bins) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
+
+@node spectrum-analyzer Plugin Developer Guide
+@section Developer Guide
+
+Tap-style analyser. Audio is windowed (Hann by default) and fed through an FFT; magnitudes are smoothed across frames and passed to the UI through a lock-free SPSC channel. No processing is applied to the audio signal.
+
+@subsubheading Parameter wiring
+
+All parameters reach the audio thread through the host's @code{rebuild_cached_parameters} / @code{set_parameter} / @code{get_parameter} triad. Structural parameters (marked in the notes below) trigger a rebuild; the rest update in real time with zero dropouts.
+
+@subsubheading Source
+
+The @code{spectrum-analyzer} plugin does not have a dedicated crate at the time of writing; its implementation lives under @file{crates/sotf-plugins/crates/sotf-host/} or one of the multi-component crates. Search the workspace for the plugin type key @code{"spectrum-analyzer"} to locate it.
+
+Run the unit tests with @code{cargo test -p sotf-plugin-spectrum-analyzer}.
+

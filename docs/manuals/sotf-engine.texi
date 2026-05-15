@@ -1,0 +1,117 @@
+@c -*-texinfo-*-
+@c Per-crate manual: sotf-engine
+@node sotf-engine Manual
+@chapter Crate @code{sotf-engine}
+@cindex sotf-engine
+@cindex audio engine
+
+@code{sotf-engine} (library name @code{sotf_audio}) is the native
+multi-threaded audio engine. It owns the decode / process / playback
+pipeline, the plugin host wiring, the recorder and the device
+abstraction.
+
+@menu
+* sotf-engine User Guide::
+* sotf-engine Developer Guide::
+@end menu
+
+@node sotf-engine User Guide
+@section User Guide
+
+End users rarely touch the engine directly -- it is driven by the
+desktop and TUI players. The interesting user-facing capabilities are:
+
+@itemize @bullet
+@item Multi-format playback: FLAC, MP3, AAC, WAV, AIFF, ALAC, Vorbis
+  via Symphonia; optional IAMF via feature flag.
+@item High-quality resampling via @code{rubato} for arbitrary device
+  sample-rate conversion.
+@item Live config reload: drop a new config file in place and the
+  engine picks it up (SIGHUP on Unix).
+@item Multi-channel recording for measurement.
+@end itemize
+
+A minimal headless invocation is the @code{sotf-server} binary; for
+embedded use, see the @ref{sotf-engine Developer Guide}.
+
+@node sotf-engine Developer Guide
+@section Developer Guide
+
+@subheading Four-thread pipeline
+
+@example
+Manager  ──┬──> Decoder  ──> Processing  ──> Playback (cpal)
+           │
+           ├──> Config watcher / signal handler
+           └──> Recorder
+@end example
+
+Each stage owns a lock-free queue. The audio callback runs on the
+playback thread; it must never allocate or lock.
+
+@subheading Key types
+
+@table @code
+@item Engine
+The pipeline owner. Constructed with @code{Engine::new(config)},
+started with @code{start()}, stopped with @code{stop()}.
+@item NodeBuffer
+Single-writer / single-reader buffer used between graph nodes. Replaces
+the old @code{Arc<Mutex<Vec<f32>>>}: no locks, no clones, slice reads.
+Note: @code{clear()} only resets @code{actual_len}; it does not zero
+memory. @code{read()} returns the full buffer when
+@code{actual_len == 0}.
+@item AudioFrame
+Owned @code{Vec<f32>} of interleaved samples for one quantum.
+@item DawHost
+Wraps @code{Arc<Mutex<Box<dyn Plugin>>>} per node; the mutex is only
+ever taken outside the audio path.
+@item ProcessBuffers
+Extracted buffer struct that lets @code{process()} hold a mutable
+borrow on its buffers and an immutable borrow on the graph topology
+via @code{Option::take()} put-back.
+@end table
+
+@subheading Real-time discipline (mandatory)
+
+@itemize @bullet
+@item No allocations in @code{process()}; pre-allocate in
+  @code{build()}.
+@item No locks per frame; cache per-frame predicates (e.g.@:
+  @code{has_variable_frame_plugin}) at build time.
+@item STFT plugins return @code{context.num_frames}, not the actual
+  draining count, so the ring buffer stays aligned.
+@item Output clipping (@code{sample.clamp(-1.0, 1.0)}) belongs in the
+  cpal callback, not inside plugins.
+@item Debug builds on macOS must keep @code{opt-level = 0}; aggressive
+  optimisation breaks cpal/CoreAudio device enumeration.
+@end itemize
+
+@subheading Layout
+
+@example
+crates/sotf-engine/
+  src/
+    engine/                pipeline + threads
+    decoder/               symphonia integration, sample-rate hop
+    output/                cpal device, callback
+    recorder/              multi-channel capture
+    config/                schema + file watcher
+    analysis/              spectrum / loudness taps
+@end example
+
+@subheading Build flags
+
+@itemize @bullet
+@item @code{--no-default-features} when @code{hdf5-metno-sys} is in
+  scope.
+@item @code{iamf} feature enables IAMF support.
+@item @code{hal}, @code{onnx}, @code{gpu-2d}, @code{gpu-3d} enable
+  optional integrations.
+@end itemize
+
+@subheading Testing
+
+@example
+cargo test -p sotf-engine --no-default-features
+@end example

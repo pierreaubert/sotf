@@ -1,0 +1,1470 @@
+\input texinfo   @c -*-texinfo-*-
+@c %**start of header
+@setfilename sotf.info
+@settitle Sound of the Future (SotF) Manual
+@documentencoding UTF-8
+@documentlanguage en
+@c %**end of header
+
+@set VERSION 0.6.6
+@set EDITION 0.6.6
+@set UPDATED May 2026
+
+@copying
+This manual is for Sound of the Future (SotF), version @value{VERSION}.
+
+Copyright @copyright{} 2024--2026 Pierre Aubert and contributors.
+
+@quotation
+Released under the terms of the project licence (see @file{LICENCE.md} in
+the source tree). Documentation is distributed under the same terms.
+@end quotation
+@end copying
+
+@dircategory Audio
+@direntry
+* SotF: (sotf).             Audio player and AutoEQ / RoomEQ toolkit.
+@end direntry
+
+@titlepage
+@title Sound of the Future
+@subtitle Audio Player, AutoEQ and RoomEQ
+@subtitle Edition @value{EDITION}, @value{UPDATED}
+@author Pierre Aubert and contributors
+
+@page
+@vskip 0pt plus 1filll
+@insertcopying
+@end titlepage
+
+@contents
+
+@ifnottex
+@node Top
+@top Sound of the Future
+
+This manual documents @strong{Sound of the Future} (@code{SotF}),
+a Rust audio DSP workspace covering an audio player (TUI and native
+desktop), AutoEQ for speakers and headphones, RoomEQ for in-room
+correction, a plugin host, a CoreAudio HAL driver, and a collection
+of math/DSP crates.
+
+Edition @value{EDITION}, @value{UPDATED}.
+@end ifnottex
+
+@menu
+* Introduction::                What SotF is and is not.
+* User Guide::                  How to use SotF as an end user.
+* Plugins Reference::           Every plugin shipped with SotF.
+* CLI Reference::               Command-line tools.
+* Concepts::                    Background on DSP, optimisation and acoustics.
+* Developer Guide::             Building, testing and contributing.
+* Workspace and Crates::        Tour of the Cargo workspace.
+* API Reference::               Public APIs of the main crates.
+* Configuration Reference::     Files, formats and locations.
+* Troubleshooting::             Common problems and remedies.
+* FAQ::                         Frequently asked questions.
+
+Per-crate manuals:
+
+* autoeq Manual::               Speaker / headphone / room optimiser.
+* sotf-engine Manual::          4-thread audio engine.
+* sotf-plugins Manual::         Plugin host + plugins facade.
+* gpui-au Manual::              macOS Audio Unit GPUI backend.
+* gpui-builder Manual::         Constraint-based layout solver.
+* gpui-d3rs Manual::            D3-inspired plotting primitives.
+* gpui-design Manual::          Platform-adaptive design system.
+* gpui-ios Manual::             iOS GPUI platform backend.
+* gpui-keybinding Manual::      Keybinding framework with presets.
+* gpui-miniapp Manual::         Minimal GPUI showcase shell.
+* gpui-pretext Manual::         Cached multiline text layout.
+* gpui-px Manual::              Plotly-Express-style chart API.
+* gpui-themes Manual::          Theme editing and management.
+* gpui-ui-kit Manual::          40+ themed GPUI components.
+* gpui-ui-kit-macros Manual::   @code{ComponentTheme} derive macro.
+* math-delaunay Manual::        Delaunay / Voronoi.
+* math-dsp Manual::             Signal generation and FFT analysis.
+* math-iir-fir Manual::         IIR / FIR / SVF / crossovers / PEQ.
+* math-optimisation Manual::    DE / L-SHADE / LM / COBYLA / ISRES.
+* math-rir Manual::             SSIR room impulse response analysis.
+* math-test-functions Manual::  Optimisation benchmark library.
+
+Per-plugin manuals:
+
+* aae Plugin::
+* ab-compare Plugin::
+* aec Plugin::
+* ambisonics Plugin::
+* band-merge Plugin::
+* band-split Plugin::
+* beamformer Plugin::
+* binaural Plugin::
+* channel-mute-solo Plugin::
+* compressor Plugin::
+* convolution Plugin::
+* crossfeed Plugin::
+* de-esser Plugin::
+* declick Plugin::
+* delay Plugin::
+* denoiser Plugin::
+* dither Plugin::
+* downmix Plugin::
+* dynamic-eq Plugin::
+* eq Plugin::
+* expander Plugin::
+* gain Plugin::
+* gate Plugin::
+* hiss-reducer Plugin::
+* limiter Plugin::
+* linear-phase-eq Plugin::
+* loudness-compensation Plugin::
+* matrix Plugin::
+* mono-to-stereo Plugin::
+* multiband-compressor Plugin::
+* multiband-expander Plugin::
+* pnd Plugin::
+* saturation Plugin::
+* spectral-compressor Plugin::
+* spectrum-analyzer Plugin::
+* speech-denoiser Plugin::
+* stereo-imager Plugin::
+* transient-shaper Plugin::
+* upmixer Plugin::
+* xtc Plugin::
+
+* Index::                       Concept and function index.
+@end menu
+
+@c =====================================================================
+@node Introduction
+@chapter Introduction
+
+@cindex SotF
+@cindex Sound of the Future
+
+@menu
+* What is SotF::
+* Feature Highlights::
+* Audience::
+* Project Philosophy::
+* Where to Get It::
+@end menu
+
+@node What is SotF
+@section What is SotF
+
+SotF (@emph{Sound of the Future}, after the Giorgio Moroder song) is a
+free, open-source desktop audio stack written almost entirely in Rust.
+A single workspace contains:
+
+@itemize @bullet
+@item
+A native audio player with a TUI front-end (terminal) and a desktop
+front-end built on GPUI.
+@item
+An offline @strong{AutoEQ} optimiser that turns measurement data into
+parametric EQ filters for speakers and headphones.
+@item
+An offline @strong{RoomEQ} optimiser that designs per-channel EQ,
+delays and crossovers from in-room measurements.
+@item
+A plugin @strong{host} (mini DAW) that runs SotF plugins in a rack or
+a graph, plus CLAP / VST3 / AU bridges.
+@item
+A library of audio plugins (EQ, dynamics, spatial, denoising, analysis,
+A/B testing, @dots{}).
+@item
+On macOS, a system-wide HAL driver and menubar daemon so the plugin
+chain can be applied to any application's output.
+@end itemize
+
+@node Feature Highlights
+@section Feature Highlights
+
+@itemize @bullet
+@item
+@strong{Optimisation:} differential evolution (forked from SciPy)
+with JADE/adaptive variants, plus bridges to NLopt and metaheuristics.
+@item
+@strong{Filters:} IIR/FIR with parametric EQ, linear-phase EQ,
+linear-phase crossovers, warped/Kautz topologies.
+@item
+@strong{Spatial audio:} 2.0 to 9.1.6 upmixing, binaural rendering,
+cross-talk cancellation, ambisonics, beamforming.
+@item
+@strong{Analysis:} CEA2034 / Spinorama metrics, room impulse-response
+analysis, spectrum and loudness meters.
+@item
+@strong{Portability:} pure Rust where possible, BLAS via Accelerate
+(macOS), OpenBLAS (Linux, Windows ARM) or MKL (Windows x64).
+@end itemize
+
+@node Audience
+@section Audience
+
+This manual targets three overlapping audiences:
+
+@table @asis
+@item Listeners
+People who want their headphones, speakers or room to sound right.
+Read @ref{User Guide} and the @ref{Concepts} chapter.
+@item Power users / measurers
+People who already have REW or Klippel data and want to design their
+own filters. Read @ref{User Guide}, @ref{CLI Reference} and the
+@ref{Plugins Reference}.
+@item Developers
+Contributors and integrators. Read @ref{Developer Guide},
+@ref{Workspace and Crates} and @ref{API Reference}.
+@end table
+
+@node Project Philosophy
+@section Project Philosophy
+
+@itemize @bullet
+@item
+@strong{Rust first.} C/C++ dependencies are minimised so the stack
+stays portable and auditable.
+@item
+@strong{Business logic in libraries.} The @code{sotf-player} crate
+owns playback logic; @code{app-tui} and @code{app-gpui} are thin
+front-ends. No duplication.
+@item
+@strong{Real-time correctness.} Audio callbacks must never allocate or
+lock. Pre-allocate in @code{build()}, reuse via @code{Option::take()}
+in @code{process()}.
+@item
+@strong{Measurement-driven.} Filters and metrics are validated against
+published data (Spinorama, CEA2034, Equalizer APO output).
+@end itemize
+
+@node Where to Get It
+@section Where to Get It
+
+@table @asis
+@item Microsoft Store
+@uref{https://apps.microsoft.com/detail/9NXCMV37NXJ7}
+@item Apple App Store
+@uref{https://apps.apple.com/ch/app/sound-of-the-future/id6754237332}
+@item GitHub Releases
+@uref{https://github.com/pierreaubert/sotf/releases}
+@item Project site
+@uref{https://sotf.spinorama.org}
+@item Discussions
+@uref{https://github.com/pierreaubert/sotf/discussions}
+@end table
+
+@c =====================================================================
+@node User Guide
+@chapter User Guide
+
+@menu
+* Installation::                Getting binaries on your machine.
+* First Run::                   Library, playback, plugin chain.
+* The Desktop Player::          GPUI app overview.
+* The TUI Player::              Terminal app overview.
+* Headphone EQ Workflow::
+* Speaker EQ Workflow::
+* Room EQ Workflow::
+* Plugin Chains::               Building rack and graph topologies.
+* Recording for Measurement::
+* macOS System-wide Audio::
+* Listening Profiles::
+* A/B Comparison::
+@end menu
+
+@node Installation
+@section Installation
+@cindex installation
+
+Stable builds are published to the platform stores. Beta builds and
+command-line artefacts live on GitHub Releases.
+
+If you build from source, see @ref{Building from Source}.
+
+@node First Run
+@section First Run
+
+On first launch SotF asks for a music library root. Point it at a
+directory of FLAC/MP3/WAV/AIFF/Opus files; the indexer scans in the
+background. You can:
+
+@itemize @bullet
+@item Play a track to confirm the audio device works.
+@item Open the @samp{Plugins} screen to add an EQ in the chain.
+@item Open @samp{Headphone EQ} or @samp{Room EQ} to design filters.
+@end itemize
+
+@node The Desktop Player
+@section The Desktop Player
+
+@cindex GPUI player
+@cindex desktop player
+
+The desktop player (binary @code{sotf-desktop}, crate @code{app-gpui})
+is built on GPUI. It exposes:
+
+@table @asis
+@item Library
+Album / artist / track browsing with sort and filter.
+@item Queue
+Drag-to-reorder play queue with persistence.
+@item Plugins
+Per-track or global plugin rack/graph editor.
+@item Spectrum / Loudness
+Real-time analysers wired to the audio engine taps.
+@item Headphone EQ, Room EQ
+Wizards that drive the optimiser and write filters into the chain.
+@end table
+
+@node The TUI Player
+@section The TUI Player
+@cindex TUI player
+
+The TUI (@code{sotf-tui}, crate @code{app-tui}) gives the same
+functionality from a terminal. It is the recommended target for
+remote, headless or low-latency setups. Default keybindings are
+listed in the project's reference docs.
+
+@node Headphone EQ Workflow
+@section Headphone EQ Workflow
+
+@enumerate
+@item
+Pick your headphone model from the bundled measurement databases (or
+load a custom CSV / REW export).
+@item
+Choose a target curve (Harman, custom, flat, listening profile).
+@item
+Run the optimiser. The result is a parametric EQ filter set plus an
+optional preamp gain.
+@item
+Send the filters to the plugin chain or export them as
+Equalizer APO @file{config.txt}.
+@end enumerate
+
+@xref{Plugin EQ}, for parameter details.
+
+@node Speaker EQ Workflow
+@section Speaker EQ Workflow
+
+Same flow as headphones, but the input is an anechoic measurement
+(CEA2034 / Spinorama-style). The optimiser respects the measurement
+frequency bounds and produces filters intended for on-axis correction
+plus optional preference-score tuning. @xref{Concepts on CEA2034}.
+
+@node Room EQ Workflow
+@section Room EQ Workflow
+
+@cindex RoomEQ
+@cindex room correction
+
+Room correction is multichannel and topology-aware. SotF supports:
+
+@itemize @bullet
+@item Per-channel parametric EQ (IIR).
+@item Linear-phase EQ stages.
+@item Linear-phase crossovers (with phase-linear filters).
+@item Per-channel delays.
+@item Warped and Kautz topologies for low-frequency rooms.
+@item Excess-phase / EPA temporal-masking analysis.
+@end itemize
+
+The optimiser builds a routed graph (a 9-node order with matrix-gain
+folding, @code{Passthrough}-for-destination-only, and chain-override
+on LFE self-routes) so the runtime cost is minimal.
+
+@node Plugin Chains
+@section Plugin Chains
+
+The plugin host (@code{sotf-host}) accepts either:
+
+@table @asis
+@item Rack mode
+A linear list of plugins with one input and one output per stage.
+@item Graph mode
+An explicit DAG with named nodes and per-channel routing. Useful for
+multichannel processing where channels go through different chains.
+@end table
+
+A plugin is instantiated from a @code{PluginConfig}:
+
+@example
+PluginConfig @{
+    plugin_type: "EQ".into(),
+    parameters: json!(@{
+        "filters": [@{
+            "filter_type": "peak",
+            "frequency": 1000.0,
+            "q": 1.5,
+            "gain_db": 3.0
+        @}]
+    @})
+@}
+@end example
+
+Channel count can change between stages (e.g.@: a stereo upmixer
+expands 2 to 5 channels).
+
+@node Recording for Measurement
+@section Recording for Measurement
+
+The recorder produces multichannel WAVs suitable for AutoEQ/RoomEQ.
+See the @code{recording} CLI guide and the @samp{Recording} screen.
+
+@node macOS System-wide Audio
+@section macOS System-wide Audio
+@cindex macOS daemon
+@cindex HAL driver
+
+macOS does not let applications insert DSP between an output device
+and the speakers. SotF ships three optional components:
+
+@table @asis
+@item @code{driver-hal}
+A Core Audio HAL driver, similar in spirit to BlackHole, that exposes
+a virtual device whose output is read by the daemon.
+@item @code{systemwide} daemon
+Reads audio from the HAL, runs a plugin chain (typically a room or
+headphone EQ), and writes the processed signal back to a real device.
+@item @code{sotf-macos-configbar}
+A menubar app to configure the daemon and HAL driver.
+@end table
+
+This stack is currently the easiest path to true system-wide EQ on
+macOS without rebooting into recovery.
+
+@node Listening Profiles
+@section Listening Profiles
+
+A @emph{listening profile} is a saved bundle of (plugin chain +
+device + target curve) that can be switched as a single action.
+Profiles live in the user config directory.
+
+@node A/B Comparison
+@section A/B Comparison
+
+The @code{ab-compare} plugin and screen let you switch between two
+plugin sub-chains under controlled gain to compare them blind.
+
+@c =====================================================================
+@node Plugins Reference
+@chapter Plugins Reference
+
+@cindex plugins
+@cindex DSP plugins
+
+All plugins live under @file{crates/sotf-plugins/crates/}.  Each
+plugin is its own crate (@code{sotf-plugin-*}). The full per-parameter
+table is auto-generated by @code{sotf-docs-gen} and shipped on the web
+site under @samp{reference/plugins/}. This chapter is the quick index.
+
+@menu
+* Classical Plugins::           EQ, dynamics, gain, matrix, delay.
+* Spatial Plugins::             Upmix, binaural, XTC, ambisonics.
+* Restoration Plugins::         Denoise, declick, hiss, de-ess.
+* Analysis Plugins::            Spectrum, loudness, PND, A/B compare.
+* Filter Plugins::              Crossovers, linear phase, dither.
+@end menu
+
+@node Classical Plugins
+@section Classical Plugins
+
+@table @code
+@item eq
+@anchor{Plugin EQ}
+Parametric IIR EQ. Filter types: @code{peak}, @code{lowshelf},
+@code{highshelf}, @code{lowpass}, @code{highpass}, @code{bandpass},
+@code{notch}. Filter list is dynamic; the underlying type is
+@code{autoeq_iir::Biquad}.
+@item dynamic-eq
+EQ with per-band side-chain detection (compressor + EQ hybrid).
+@item linear-phase-eq
+FIR-based EQ with zero phase distortion.
+@item compressor
+Single-band feedforward compressor with knee, attack, release, makeup.
+@item multiband-compressor
+N-band compressor with split filterbank.
+@item multiband-expander
+N-band expander / downward gate.
+@item expander
+Single-band expander.
+@item gate
+Noise gate with hysteresis.
+@item limiter
+Brick-wall limiter, look-ahead.
+@item gain
+Per-channel gain in dB.
+@item matrix
+Channel routing / mixing matrix.
+@item delay
+Per-channel delay in samples or ms.
+@item loudness-compensation
+Equal-loudness compensation (ISO 226).
+@item saturation
+Soft saturation / harmonic shaper.
+@item transient-shaper
+Attack/sustain enhancer.
+@item stereo-imager
+M/S width and balance.
+@item de-esser
+Sibilance reducer.
+@item convolution
+FIR convolution (IR loaded from WAV/F32).
+@item resampler
+Sample-rate converter.
+@item spectral-compressor
+Block-frequency compressor (STFT).
+@item channel-mute-solo
+Per-channel mute and solo.
+@end table
+
+@node Spatial Plugins
+@section Spatial Plugins
+
+@table @code
+@item upmixer
+2.0 to 5.1 / 7.1 / 9.1.6 upmix. Channel count expands.
+@item downmix
+Multichannel to stereo or mono downmix.
+@item mono-to-stereo
+Pseudo-stereo from a mono source.
+@item binaural
+HRTF-based binaural renderer (uses SOFA files via
+@code{sofa-reader}).
+@item xtc
+Cross-talk cancellation for speakers.
+@item crossfeed
+Headphone crossfeed (Meier-style and variants).
+@item ambisonics
+First-order Ambisonics encode/decode.
+@item beamformer
+Multichannel beamforming.
+@end table
+
+@node Restoration Plugins
+@section Restoration Plugins
+
+@table @code
+@item denoiser
+General-purpose spectral denoiser.
+@item speech-denoiser
+Speech-tuned denoiser.
+@item hiss-reducer
+Steady-state hiss reduction.
+@item declick
+Click/pop removal.
+@item aae
+Acoustic anomaly enhancer.
+@item aec
+Acoustic echo cancellation.
+@end table
+
+@node Analysis Plugins
+@section Analysis Plugins
+
+@table @code
+@item spectrum-analyzer
+FFT-based spectrum tap.
+@item pnd
+Polyphonic note detector.
+@item ab-compare
+A/B switcher with gain-matching.
+@end table
+
+@node Filter Plugins
+@section Filter Plugins
+
+@table @code
+@item crossover
+N-way crossover (Butterworth, Linkwitz-Riley, linear-phase variants).
+@item band-split
+Split a signal into bands.
+@item band-merge
+Sum bands back into one signal.
+@item dither
+TPDF / shaped dither for bit-depth reduction.
+@end table
+
+@c =====================================================================
+@node CLI Reference
+@chapter CLI Reference
+
+@cindex CLI
+@cindex command line
+
+SotF ships several command-line tools. Detailed flag descriptions
+are on the documentation site under @samp{reference/cli/}. This
+chapter lists them and what they do.
+
+@menu
+* autoeq CLI::
+* roomeq CLI::
+* convert-recording CLI::
+* download-speakers CLI::
+* wav2csv CLI::
+* generate-audio-tests CLI::
+@end menu
+
+@node autoeq CLI
+@section @code{autoeq}
+
+Offline AutoEQ optimiser. Given an anechoic speaker measurement or
+a headphone measurement plus a target curve, produces parametric
+filters. Output formats include JSON, Equalizer APO, REW, and SotF
+plugin presets.
+
+@example
+autoeq --speaker "Genelec 8341A" --target harman --filters 10 \
+       --output out.txt --format apo
+@end example
+
+@node roomeq CLI
+@section @code{roomeq}
+
+Multichannel in-room optimiser. Input is a measurement bundle (per-
+channel impulse responses or sweeps); output is a per-channel filter
++ delay + crossover description that can be loaded as a SotF plugin
+graph.
+
+See @file{crates/autoeq/bin/roomeq/INPUT_FORMAT.md} and
+@file{OUTPUT_FORMAT.md} for the file formats.
+
+@node convert-recording CLI
+@section @code{convert-recording}
+
+Migrates older SotF recording bundles to the current format.
+
+@node download-speakers CLI
+@section @code{autoeq-download-speakers}
+
+Pulls speaker measurements from the Spinorama API (see
+@ref{Spinorama API}) into the local cache.
+
+@node wav2csv CLI
+@section @code{wav2csv}
+
+Converts a WAV file to a CSV of samples; useful for offline analysis.
+
+@node generate-audio-tests CLI
+@section @code{generate-audio-tests}
+
+Generates the synthetic test signals (sine, sweep, noise, multitone)
+used by the QA suite.
+
+@c =====================================================================
+@node Concepts
+@chapter Concepts
+
+@menu
+* Psychoacoustics Primer::
+* Concepts on CEA2034::
+* IIR vs FIR Filters::
+* Optimisation::
+* Audio Engine Architecture::
+* Room Acoustics::
+@end menu
+
+@node Psychoacoustics Primer
+@section Psychoacoustics Primer
+
+The human auditory system is not flat. Equal-loudness contours
+(ISO 226) describe how perceived loudness varies with frequency and
+SPL. EQ matters because:
+
+@itemize @bullet
+@item Speakers and headphones are not flat by design or by accident.
+@item Rooms add modal peaks below ~300 Hz that swamp tonal balance.
+@item Critical bands set the resolution of perception (Bark/ERB).
+@end itemize
+
+@node Concepts on CEA2034
+@section Concepts on CEA2034
+
+@cindex CEA2034
+@cindex Spinorama
+
+CEA-2034 (also called Spinorama) is a standardised speaker measurement
+representation: on-axis, listening window, early reflections, sound
+power and the derived predicted in-room response. SotF computes the
+full set in @code{autoeq-cea2034}, together with the preference
+score model (Olive). The AutoEQ optimiser can target either the
+on-axis curve or the preference score directly.
+
+@node IIR vs FIR Filters
+@section IIR vs FIR Filters
+
+@itemize @bullet
+@item @strong{IIR} (@code{Biquad}) is cheap and minimum-phase; it
+  introduces phase shifts but no pre-ringing.
+@item @strong{FIR} can be designed for linear phase (zero phase
+  distortion), at the cost of more CPU and an inherent latency equal
+  to half its tap count.
+@item Linear-phase crossovers eliminate the phase mismatch between
+  ways that classical IIR crossovers introduce.
+@end itemize
+
+For room EQ, IIR is usually a better default below the Schroeder
+frequency (peaks are minimum-phase by nature), while FIR may be
+preferred for headphone correction where pre-ringing is masked by
+the IR shape.
+
+@node Optimisation
+@section Optimisation
+
+The optimiser lives in @code{math-de} (differential evolution, forked
+from SciPy) with bridges to NLopt and a metaheuristics library. Key
+points:
+
+@itemize @bullet
+@item DE is global, derivative-free, and tolerant of multimodal cost
+  surfaces.
+@item JADE / adaptive variants are available.
+@item Linear and non-linear constraints are supported.
+@item Filters must be placed within the measurement's frequency
+  bounds.
+@item Passband detection uses @emph{relative-to-peak} thresholds, not
+  absolute dB values.
+@end itemize
+
+@node Audio Engine Architecture
+@section Audio Engine Architecture
+@cindex audio engine
+
+The engine (@code{sotf-engine}) runs on a four-thread pipeline:
+
+@enumerate
+@item @strong{Decoder} thread pulls and decodes audio frames.
+@item @strong{Processing} thread runs the plugin graph.
+@item @strong{Playback} thread feeds the cpal callback.
+@item @strong{Manager} thread coordinates state transitions.
+@end enumerate
+
+Hard rules in the audio path:
+
+@itemize @bullet
+@item Never allocate or lock in the audio callback (frame period
+  ~21 ms).
+@item Pre-allocate buffers in @code{build()}, reuse with
+  @code{Option::take()} in @code{process()}.
+@item STFT plugins must return @code{context.num_frames}, not the
+  actual draining count, or the ring buffer underruns.
+@item @code{NodeBuffer::clear()} only resets @code{actual_len}; it
+  does not zero memory.
+@item Output clipping is applied in the cpal callback to prevent
+  saturation.
+@end itemize
+
+@node Room Acoustics
+@section Room Acoustics
+
+Small-room acoustics is dominated below the Schroeder frequency by
+discrete modal behaviour; above it, by diffuse reflections. SotF
+provides:
+
+@itemize @bullet
+@item @code{math-rir} for impulse-response analysis (windowing,
+  smoothing, regularisation).
+@item @code{math-bem} for boundary-element solutions of simple
+  geometries.
+@item @code{autoeq-roomsim} for WASM-targeted in-browser simulation.
+@end itemize
+
+@c =====================================================================
+@node Developer Guide
+@chapter Developer Guide
+
+@menu
+* Building from Source::
+* Workflow and Tooling::
+* Coding Rules::
+* Real-time Discipline::
+* Adding a Plugin::
+* Plugin Parameter Registration::
+* Testing and QA::
+* Code Review::
+* Releasing::
+@end menu
+
+@node Building from Source
+@section Building from Source
+
+Install Rust via @uref{https://rustup.rs}, then:
+
+@example
+cargo install just
+just                       # list targets
+just install-macos         # or just install-linux-* / windows
+just post-install
+just download-once         # speaker / SOFA data
+just build
+just test
+@end example
+
+Front-ends:
+
+@example
+cargo build -p app-cli --release       # CLI player
+just tui                               # TUI player
+just gpui                              # desktop GPUI player
+@end example
+
+Signed macOS builds:
+
+@example
+./scripts/build-systemwide.sh
+./scripts/build-dmg-sotf.sh
+@end example
+
+@node Workflow and Tooling
+@section Workflow and Tooling
+
+@itemize @bullet
+@item @code{cargo check --workspace} and @code{cargo clippy
+  --workspace} after every change.
+@item @code{cargo test --workspace} (or @code{-p <crate>}) before
+  reporting a task done. Compilation is not proof of correctness.
+@item Plugins and engine crates: build with
+  @code{--no-default-features} when @code{hdf5-metno-sys} is in the
+  dep tree.
+@item Python tooling: use @file{./venv/bin/python} and
+  @file{./venv/bin/pyright}. Never the system Python.
+@item @code{just qa} runs the optimiser benchmark suite.
+@end itemize
+
+@node Coding Rules
+@section Coding Rules
+
+@itemize @bullet
+@item @strong{Never use @code{unsafe} without asking.}
+@item Business logic goes in @code{sotf-player} (or in the relevant
+  @code{math-*} / @code{autoeq} crate). App crates are thin UI
+  wrappers.
+@item Before editing a file, verify it is actively compiled (not
+  behind a disabled feature, not orphaned).
+@item @code{cargo check} after edits. The editor reporting success
+  means bytes hit disk, not that code compiles.
+@item Crash hard on unknown enum values. Do not add a default arm
+  that silently absorbs them.
+@end itemize
+
+Naming:
+
+@table @asis
+@item User-facing binaries
+@code{kebab-case} (@code{sotf-desktop}, @code{sotf-tui},
+@code{sotf-systemwide}).
+@item Internal CLI tools
+@code{snake_case} (@code{autoeq_download_speakers}).
+@item Dist artefacts
+@code{name-version-os-arch.format}, lowercase. Debian @code{.deb}
+keeps its @code{_}-separated convention.
+@item Crates
+@code{kebab-case}.
+@item Module files
+@code{snake_case}.
+@end table
+
+@node Real-time Discipline
+@section Real-time Discipline
+
+Audio is real-time soft. A late frame is a click. Rules:
+
+@itemize @bullet
+@item No allocation in @code{process()}.
+@item No locking in @code{process()}. Cache per-frame predicates in
+  @code{build()}.
+@item No @code{println!}, no @code{log::*} from the audio thread.
+  Use lock-free SPSC channels to signal the UI.
+@item Output saturation must be clamped in the cpal callback, not
+  inside plugins.
+@end itemize
+
+@node Adding a Plugin
+@section Adding a Plugin
+
+@enumerate
+@item Create @file{crates/sotf-plugins/crates/sotf-plugin-foo/}.
+@item Add the crate to the workspace @file{Cargo.toml}.
+@item Implement the @code{Plugin} trait (see
+  @ref{Plugin trait}).
+@item Define a @code{PARAMS: &[ParamSpec]} array (see
+  @ref{Plugin Parameter Registration}).
+@item Register the plugin in the host's factory.
+@item Add a unit test (golden buffer or property test).
+@item Run @code{cargo run -p sotf-docs-gen} to regenerate the
+  reference page.
+@end enumerate
+
+@node Plugin Parameter Registration
+@section Plugin Parameter Registration
+
+@cindex parameter registration
+A plugin parameter must be wired in @strong{three} places, or it is
+silently ignored:
+
+@enumerate
+@item @code{rebuild_cached_parameters}: insert the parameter into
+  @code{cached_parameters}.
+@item @code{set_parameter}: handle inbound updates.
+@item @code{get_parameter}: report current value.
+@end enumerate
+
+Missing the @code{cached_parameters} step causes silent rejection of
+updates -- the most common foot-gun when adding parameters.
+
+@node Testing and QA
+@section Testing and QA
+
+@itemize @bullet
+@item Unit tests live next to the code they cover.
+@item Integration tests live in @file{tests/} of each crate.
+@item @code{just qa} runs the optimisation benchmark suite
+  (long-running).
+@item Audio bugs (crackling, saturation, pitch shift) need
+  signal-chain tracing, not surface patches.
+@end itemize
+
+@node Code Review
+@section Code Review
+
+@itemize @bullet
+@item Every change to @code{sotf-engine} or @code{sotf-plugins} is
+  its own PR and must go through the @code{pr-review-toolkit:code-reviewer}.
+@item Other crates: use @code{/code-review}.
+@item Reviews must include: correctness bugs with test cases, edge
+  cases in algorithm logic, missing error handling, and concrete
+  fixes. Surface reviews are rejected.
+@end itemize
+
+@node Releasing
+@section Releasing
+
+See @file{RELEASE.md} and @file{RELEASE-HOWTO.md} in the project
+root.
+
+@c =====================================================================
+@node Workspace and Crates
+@chapter Workspace and Crates
+
+@menu
+* Workspace Layout::
+* App Crates::
+* Engine and Player::
+* Plugin Crates::
+* AutoEQ and Math Crates::
+* GPUI Toolkit Crates::
+* macOS-specific Crates::
+* Tools and Helpers::
+@end menu
+
+@node Workspace Layout
+@section Workspace Layout
+
+@example
+crates/
+  3rdparties/
+  app-cli/                 minimal CLI player (testing)
+  app-gpui/                desktop player on GPUI
+  app-tui/                 terminal player
+  app-ios/, app-tvos/      iOS / tvOS app shells
+  autoeq/                  AutoEQ + RoomEQ CLIs + optimiser glue
+  gpui-toolkit/            UI kit, D3-like plotting, Plotly-Express API
+  math-audio/              shared audio DSP utilities
+  sofa-reader/             SOFA file reader (HRTF databases)
+  sotf-dev-driver/         developer driver / harness
+  sotf-docs-gen/           reference doc generator (markdown)
+  sotf-engine/             4-thread audio engine
+  sotf-iamf/               IAMF / spatial bitstream support
+  sotf-media-controls/     OS media-key integration
+  sotf-midi/               MIDI integration
+  sotf-player/             playback business logic (shared lib)
+  sotf-plugins/            host + plugin crates + bridges
+  sotf-server/             headless server
+  sotf-tools/              standalone tools (sofa-to-sqlite, etc.)
+  sotf-types/              shared types
+  systemwide/              macOS system-wide daemon + menubar
+@end example
+
+@node App Crates
+@section App Crates
+
+@table @code
+@item app-cli
+Minimal binary for testing the engine without a UI.
+@item app-tui
+Production-quality terminal player. Layout under
+@file{events/}, @file{ui/}.
+@item app-gpui
+Native desktop player. Required reading: @file{GPUI.md}.
+@item app-ios, app-tvos
+Apple-platform shells around @code{sotf-player}.
+@end table
+
+@node Engine and Player
+@section Engine and Player
+
+@table @code
+@item sotf-engine
+Decoder, processing, playback and manager threads. See
+@ref{Audio Engine Architecture}.
+@item sotf-player
+All playback business logic: library, queue, playback state,
+controllers. Used by every app crate.
+@end table
+
+The split is strict. App crates must never re-implement playback
+logic.
+
+@node Plugin Crates
+@section Plugin Crates
+
+The plugin tree under @file{crates/sotf-plugins/crates/} contains:
+
+@itemize @bullet
+@item @code{sotf-host} -- the mini-DAW host (rack + graph).
+@item @code{sotf-plugin-*} -- one crate per plugin.
+@item @code{plugins-bridge}, @code{plugins-ffi}, @code{plugins-gpui},
+  @code{plugins-au}, @code{plugins-nih} -- bridges to CLAP, VST3, AU,
+  the GPUI editors and the FFI surface.
+@item @code{plugins-denoiser}, @code{plugins-spatial} -- shared
+  building blocks reused by several plugins.
+@end itemize
+
+@node AutoEQ and Math Crates
+@section AutoEQ and Math Crates
+
+@table @code
+@item autoeq
+Speaker / headphone optimiser, CLI binaries (@code{autoeq},
+@code{roomeq}, @code{convert-recording}).
+@item autoeq-cea2034
+CEA2034 / Spinorama computation and preference score.
+@item autoeq-roomsim
+Browser/WASM room simulator using BEM.
+@item autoeq-datagen
+Test data generation from BEM/FEM.
+@item math-iir, math-iir-fir
+IIR (Biquad) and FIR filter primitives.
+@item math-de
+Differential evolution + NLopt + metaheuristics bridges.
+@item math-rir
+Room impulse-response analysis.
+@item math-bem, math-fem, math-xem-common
+Boundary / finite element solvers.
+@item math-solvers
+Sparse / dense solvers with BLAS/LAPACK + WASM support.
+@item math-wave
+Analytical wave-equation solutions.
+@item math-convexhull3d
+3-D convex hull (used by spatial plugins).
+@item math-testfunctions
+Non-linear optimisation test problems.
+@end table
+
+@node GPUI Toolkit Crates
+@section GPUI Toolkit Crates
+
+@table @code
+@item gpui-ui-kit
+40+ UI components: Button, Card, Dialog, Menu, Tabs, Toast, Input,
+NumberInput, Checkbox, Toggle, Select, Slider, ColorPicker, Badge,
+Progress, Spinner, Avatar, Typography, Potentiometer, VerticalSlider,
+VolumeKnob.
+@item gpui-d3rs
+D3-like primitives in Rust: scales, shapes, colours, projections,
+QuadTree / Delaunay / Voronoi, transitions.
+@item gpui-px
+High-level charts inspired by Plotly Express: Scatter, Line, Bar,
+Heatmap, Contour, Isoline, log scales, Viridis/Plasma/etc.
+@end table
+
+@node macOS-specific Crates
+@section macOS-specific Crates
+
+@table @code
+@item systemwide
+Daemon that reads from the HAL, runs a plugin chain, and writes to a
+real output device.
+@item sotf-macos-hal
+The HAL driver crate (CoreAudio plugin).
+@item sotf-macos-configbar
+Menubar configuration app.
+@end table
+
+@node Tools and Helpers
+@section Tools and Helpers
+
+@table @code
+@item sotf-tools
+Standalone tools (e.g. @code{sofa-to-sqlite}).
+@item sotf-dev-driver
+Developer harness for plugin / engine tests.
+@item sotf-docs-gen
+Generates the markdown reference pages on the documentation site
+from the compiled @code{ParamSpec} arrays.
+@end table
+
+@c =====================================================================
+@node API Reference
+@chapter API Reference
+
+This chapter is a hand-curated overview of the public Rust APIs.
+For complete signatures use @code{cargo doc --workspace --no-deps
+--open}.
+
+@menu
+* sotf-engine API::
+* sotf-player API::
+* Plugin trait::
+* Plugin Config and ParamSpec::
+* autoeq API::
+* math-iir API::
+* math-de API::
+* Spinorama API::
+@end menu
+
+@node sotf-engine API
+@section @code{sotf-engine} API
+
+Key types:
+
+@table @code
+@item Engine
+The owner of the four-thread pipeline. Construct with
+@code{Engine::new(config)}, drive with @code{start()} / @code{stop()}.
+@item NodeBuffer
+Lock-free, single-writer/single-reader buffer used between processing
+nodes. Replaces the older @code{AudioBuffer = Arc<Mutex<Vec<f32>>>}.
+@item AudioFrame
+Owned @code{Vec<f32>} of interleaved samples for a single processing
+quantum. Allocated once, sent across the channel.
+@item DawHost
+Wraps an @code{Arc<Mutex<Box<dyn Plugin>>>} per node so plugins can
+optionally be touched cross-thread.
+@end table
+
+@noindent
+Real-time invariants:
+
+@itemize @bullet
+@item @code{process()} takes @code{&mut self} (processing is single-
+  threaded).
+@item Buffers are split out into a @code{ProcessBuffers} struct so
+  the borrow checker accepts the mutable-buffer / immutable-graph
+  pattern; put-back is done with @code{Option::take()}.
+@end itemize
+
+@node sotf-player API
+@section @code{sotf-player} API
+
+Controllers (in @file{controllers/}):
+
+@table @code
+@item LibraryController
+Filtering, sorting, pagination, navigation, directory management.
+@item QueueController
+Wraps @code{Queue}; mutations return a @code{QueuePlaybackEffect}.
+Implements @code{Deref}, @code{DerefMut}, @code{IntoIterator}.
+@item PlaybackController
+Volume, mute, replay gain, play tracking.
+@item ScanController
+Wraps the ReplayGain, Waveform and Bliss managers
+(@code{update_all}, @code{stop_all}).
+@item PluginController
+(In progress.) Plugin chain manipulation.
+@end table
+
+App-side state types (@code{app/state/} in each app crate) are
+thin wrappers around these controllers via @code{Deref}.
+
+@node Plugin trait
+@section The @code{Plugin} trait
+@cindex Plugin trait
+
+Every DSP plugin implements a trait roughly shaped as:
+
+@example
+pub trait Plugin: Send @{
+    fn build(&mut self, ctx: &BuildContext) -> Result<()>;
+    fn process(&mut self, ctx: &mut ProcessContext) -> Result<usize>;
+    fn set_parameter(&mut self, id: ParamId, value: ParamValue);
+    fn get_parameter(&self, id: ParamId) -> ParamValue;
+    fn params(&self) -> &'static [ParamSpec];
+    fn rebuild_cached_parameters(&mut self);
+@}
+@end example
+
+@noindent
+Notes:
+
+@itemize @bullet
+@item @code{process()} must return @code{context.num_frames} for
+  STFT-style plugins to keep the ring buffer aligned.
+@item Per-frame checks must be cached in @code{build()}; locking a
+  plugin mutex per frame causes audible jitter.
+@item Plugin parameter changes must reach
+  @code{rebuild_cached_parameters()}, @code{set_parameter()} and
+  @code{get_parameter()} or they are silently dropped.
+@end itemize
+
+@node Plugin Config and ParamSpec
+@section @code{PluginConfig} and @code{ParamSpec}
+
+@code{PluginConfig} is the JSON-friendly description used to
+instantiate plugins from configs, sessions and the CLI:
+
+@example
+pub struct PluginConfig @{
+    pub plugin_type: String,
+    pub parameters: serde_json::Value,
+@}
+@end example
+
+@code{ParamSpec} is the static description used by the docs
+generator, the UI editor and the host's param indexer:
+
+@example
+pub struct ParamSpec @{
+    pub name: &'static str,
+    pub kind: ParamType,        // Float, Int, Bool, Choice, FilePath
+    pub update_mode: UpdateMode,// rt, rebuild
+    pub display_scale: f32,     // 1.0, 100.0 (%) , 1000.0 (x1000)
+    pub default: ParamValue,
+    pub range: ParamRange,
+    pub unit: &'static str,
+    pub group: &'static str,
+    pub description: &'static str,
+@}
+@end example
+
+@node autoeq API
+@section @code{autoeq} API
+
+Library entry points:
+
+@table @code
+@item autoeq::optimize::optimize
+Generic optimisation entry point. Takes a target curve, a measured
+curve, a filter budget, constraints, and returns a vector of
+@code{Biquad}s plus a preamp.
+@item autoeq::roomeq::optimize::optimize
+RoomEQ-specific optimiser. Builds the factored routed graph.
+@item autoeq::roomeq::workflows
+End-to-end workflows that wrap optimiser calls with the
+measurement-bundle conventions.
+@end table
+
+@node math-iir API
+@section @code{math-iir} API
+
+@table @code
+@item autoeq_iir::Biquad
+The canonical biquad. Construction helpers exist for peak, low/high
+shelf, low/high pass, bandpass and notch.
+@item ParametricEQ
+A list of @code{Biquad}s with a preamp gain.
+@end table
+
+@node math-de API
+@section @code{math-de} API
+
+@table @code
+@item DifferentialEvolution
+The DE driver. Supports JADE, adaptive variants, linear and non-
+linear constraints, parallel evaluation.
+@item ProblemBuilder
+Compose objective, constraints and bounds.
+@item NLopt bridge
+Wraps NLopt's algorithms behind the same trait.
+@end table
+
+@node Spinorama API
+@section Spinorama API (external)
+@cindex Spinorama API
+
+SotF consumes the public Spinorama API for speaker data:
+
+@example
+GET http://api.spinorama.org/v1/speakers
+GET http://api.spinorama.org/v1/speakers/@{speaker@}/versions
+GET http://api.spinorama.org/v1/speakers/@{speaker@}/versions/
+    @{version@}/measurements
+@end example
+
+The @code{autoeq-download-speakers} CLI populates the local cache
+from these endpoints.
+
+@c =====================================================================
+@node Configuration Reference
+@chapter Configuration Reference
+
+@menu
+* User Config Locations::
+* Engine Configuration::
+* Listening Profile File::
+* Recording Bundle Format::
+* RoomEQ Input Format::
+* RoomEQ Output Format::
+@end menu
+
+@node User Config Locations
+@section User Config Locations
+
+@table @asis
+@item Linux
+@code{$XDG_CONFIG_HOME/sotf/} (typically @code{~/.config/sotf/}).
+@item macOS
+@code{~/Library/Application Support/sotf/}.
+@item Windows
+@code{%APPDATA%\sotf\}.
+@end table
+
+@node Engine Configuration
+@section Engine Configuration
+
+The engine accepts a config file or constructor argument. See
+@samp{reference/config/engine-config.md} on the docs site for the
+full schema. Key fields:
+
+@itemize @bullet
+@item @code{sample_rate}: 44100, 48000, 88200, 96000, ...
+@item @code{frames_per_period}: usually 512 or 1024.
+@item @code{channels}: input and output channel counts.
+@item @code{plugin_chain}: ordered list of @code{PluginConfig}.
+@item @code{device}: cpal device selector.
+@end itemize
+
+@node Listening Profile File
+@section Listening Profile File
+
+A listening profile is a JSON bundle of @code{(plugin_chain,
+device, target_curve, name)}.
+
+@node Recording Bundle Format
+@section Recording Bundle Format
+
+Recordings live in a directory with a @file{manifest.json} plus
+per-channel WAVs. The @code{convert-recording} CLI migrates older
+bundles.
+
+@node RoomEQ Input Format
+@section RoomEQ Input Format
+
+See @file{crates/autoeq/bin/roomeq/INPUT_FORMAT.md}.
+
+@node RoomEQ Output Format
+@section RoomEQ Output Format
+
+See @file{crates/autoeq/bin/roomeq/OUTPUT_FORMAT.md}.
+
+@c =====================================================================
+@node Troubleshooting
+@chapter Troubleshooting
+
+@cindex troubleshooting
+@cindex crackling
+@cindex saturation
+
+@table @asis
+@item Audio crackles on macOS, debug builds
+Aggressive debug optimisation breaks cpal/CoreAudio device
+enumeration. Keep @code{opt-level = 0} for debug.
+@item Audio crackles in any build
+You almost certainly allocated or locked in the audio path. Pre-
+allocate in @code{build()} and use @code{Option::take()} in
+@code{process()}. Cache per-frame predicates.
+@item Plugin parameter changes have no effect
+Check that the parameter is registered in all three places
+(@code{rebuild_cached_parameters}, @code{set_parameter},
+@code{get_parameter}). Most common cause: missing
+@code{cached_parameters} entry.
+@item @code{hdf5-metno-sys} fails to build
+Build with @code{--no-default-features} on @code{sotf-plugins} or
+@code{sotf-engine}.
+@item @code{clap} CLI complains about duplicate fields
+Look for duplicate field names across flattened structs (e.g.@: a
+shared @code{enabled} between two sub-args).
+@item Output is saturated or clipped
+The clamp lives in the cpal callback. Don't clip inside plugins.
+Check pre-gain and the limiter's ceiling.
+@item Filters from RoomEQ are placed outside the measurement band
+Verify the optimiser frequency range matches the measurement bounds.
+Passband detection uses @emph{relative-to-peak} thresholds.
+@item Bug reports without logs
+Always capture the raw log first; do not guess from a symptom.
+@end table
+
+@c =====================================================================
+@node FAQ
+@chapter FAQ
+
+@table @asis
+@item Why is so much of this re-implemented in Rust?
+The project is partly a learning vehicle and partly a portability
+play: pure Rust avoids C/C++ build pain across macOS, Linux and
+Windows and lets the optimiser run in WASM in the browser.
+
+@item Could I use Camilla DSP instead of @code{sotf-engine}?
+Yes -- early versions did. The engine was rewritten so plugin
+authoring, profiling and UI integration could live in one tree.
+
+@item Why GPUI and not Tauri / egui / Qt?
+GPUI keeps the entire stack in Rust without a TypeScript context
+switch, and gives enough control to wire audio meters to the
+renderer cheaply.
+
+@item Are AU plugins supported?
+CLAP and VST3 work. AU works with a Swift wrapper around the FFI
+crate. Native AU UIs from GPUI are still experimental.
+
+@item Why is the macOS system-wide daemon not the default?
+Loading a HAL driver and a daemon to capture system audio is
+intrusive on macOS. It is opt-in and lives in @file{systemwide/}
+plus @code{sotf-macos-configbar}.
+
+@item How do I make my own listening profile?
+Build a plugin chain that sounds right, then @samp{Save as profile}
+from the desktop player. Profiles are JSON; you can edit them by
+hand.
+@end table
+
+@c =====================================================================
+@c Per-crate manuals. Each file defines its own @chapter and
+@c @section User Guide / @section Developer Guide.
+@c =====================================================================
+
+@include manuals/autoeq.texi
+@include manuals/sotf-engine.texi
+@include manuals/sotf-plugins.texi
+@include manuals/gpui-au.texi
+@include manuals/gpui-builder.texi
+@include manuals/gpui-d3rs.texi
+@include manuals/gpui-design.texi
+@include manuals/gpui-ios.texi
+@include manuals/gpui-keybinding.texi
+@include manuals/gpui-miniapp.texi
+@include manuals/gpui-pretext.texi
+@include manuals/gpui-px.texi
+@include manuals/gpui-themes.texi
+@include manuals/gpui-ui-kit.texi
+@include manuals/gpui-ui-kit-macros.texi
+@include manuals/math-delaunay.texi
+@include manuals/math-dsp.texi
+@include manuals/math-iir-fir.texi
+@include manuals/math-optimisation.texi
+@include manuals/math-rir.texi
+@include manuals/math-test-functions.texi
+
+@c =====================================================================
+@c Per-plugin manuals (generated by scripts/gen_plugin_texinfo.py).
+@c =====================================================================
+
+@include manuals/plugins/_include.texi
+
+@c =====================================================================
+@node Index
+@unnumbered Index
+
+@printindex cp
+
+@bye

@@ -1,0 +1,88 @@
+@c -*-texinfo-*-
+@c Per-plugin manual: crossfeed
+@node crossfeed Plugin
+@chapter Plugin: @code{crossfeed}
+@cindex crossfeed plugin
+
+Headphone crossfeed that simulates speaker spacing. Supports Bauer, Meier, and multiband algorithms.
+
+@menu
+* crossfeed Plugin Parameters::
+* crossfeed Plugin Developer Guide::
+@end menu
+
+@node crossfeed Plugin Parameters
+@section Parameters
+
+
+@subsection General
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Mode} @tab Choice (Disable, Bauer, Meier, Multiband) @tab 4 options @tab Multiband @tab - @tab Crossfeed algorithm selection
+@item @code{Preset} @tab Choice (Default, Cmoy, Meier, Mb, Off) @tab 5 options @tab Default @tab - @tab Load preset parameter values
+@item @code{Enabled} @tab Bool @tab On / Off @tab On @tab - @tab Enable crossfeed processing
+@item @code{Mix} @tab Float @tab 0 .. 1 @tab 1 @tab % @tab Dry/wet blend
+@item @code{ITD Delay} @tab Float @tab 0 .. 1 @tab 0 @tab ms @tab Interaural time difference
+@end multitable
+
+
+@subsection Bauer
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Bauer Cutoff} @tab Float @tab 400 .. 1000 @tab 700 @tab Hz @tab Bauer shelving filter frequency
+@item @code{Bauer Feed} @tab Float @tab 0 .. 15 @tab 4.5 @tab dB @tab Bauer cross-feed level
+@end multitable
+
+
+@subsection Meier
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Meier Level} @tab Float @tab 0 .. 100 @tab 30 @tab % @tab Meier crossfeed strength
+@end multitable
+
+
+@subsection Multiband
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{MB Low Freq} @tab Float @tab 50 .. 500 @tab 150 @tab Hz @tab Low/mid band split frequency
+@item @code{MB Mid/High Freq} @tab Float @tab 2000 .. 15000 @tab 5700 @tab Hz @tab Mid/high band split frequency
+@item @code{MB Low Feed} @tab Float @tab -20 .. 0 @tab 0 @tab dB @tab Low band cross-feed level
+@item @code{MB Mid Feed} @tab Float @tab 0 .. 15 @tab 6 @tab dB @tab Mid band cross-feed level
+@item @code{MB High Feed} @tab Float @tab 0 .. 15 @tab 3 @tab dB @tab High band cross-feed level
+@end multitable
+
+
+@subsection Auto Gain
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Auto Gain} @tab Bool @tab On / Off @tab Off @tab - @tab Auto-normalize output level
+@item @code{Target LUFS} @tab Float @tab -40 .. -12 @tab -18 @tab LUFS @tab Target loudness level
+@item @code{Max Gain} @tab Float @tab 0 .. 24 @tab 12 @tab dB @tab Maximum auto gain correction
+@item @code{Smoothing} @tab Float @tab 10 .. 5000 @tab 100 @tab ms @tab Auto gain transition time
+@end multitable
+
+
+@strong{Structural parameters} (Mode, Preset) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
+
+@node crossfeed Plugin Developer Guide
+@section Developer Guide
+
+SOTF Crossfeed plugin for stereo crossfeed on headphones.
+
+Blends a controlled amount of each stereo channel into the opposite ear to simulate a speaker-like stereo image when listening on headphones.
+
+@subsubheading Parameter wiring
+
+All parameters reach the audio thread through the host's @code{rebuild_cached_parameters} / @code{set_parameter} / @code{get_parameter} triad. Structural parameters (marked in the notes below) trigger a rebuild; the rest update in real time with zero dropouts.
+
+@subsubheading Source
+
+@file{crates/sotf-plugins/crates/sotf-plugin-crossfeed/}
+
+Run the unit tests with @code{cargo test -p sotf-plugin-crossfeed}.
+

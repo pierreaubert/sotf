@@ -1,0 +1,83 @@
+@c -*-texinfo-*-
+@c Per-plugin manual: gate
+@node gate Plugin
+@chapter Plugin: @code{gate}
+@cindex gate plugin
+
+Noise gate that silences audio below a configurable threshold.
+
+@menu
+* gate Plugin Parameters::
+* gate Plugin Developer Guide::
+@end menu
+
+@node gate Plugin Parameters
+@section Parameters
+
+
+@subsection Dynamics
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Threshold} @tab Float @tab -80 .. 0 @tab -40 @tab dB @tab Level below which gate closes
+@item @code{Ratio} @tab Float @tab 1 .. 100 @tab 10 @tab :1 @tab Attenuation depth when closed
+@item @code{Range} @tab Float @tab 0 .. 120 @tab 80 @tab dB @tab Max attenuation when gate closed
+@item @code{Hysteresis} @tab Float @tab 0 .. 12 @tab 4 @tab dB @tab Open/close threshold difference
+@item @code{Knee} @tab Float @tab 0 .. 20 @tab 0 @tab dB @tab Softness of threshold transition
+@end multitable
+
+
+@subsection Timing
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Attack} @tab Float @tab 0.1 .. 50 @tab 1 @tab ms @tab Time for gate to open
+@item @code{Hold} @tab Float @tab 0 .. 1000 @tab 10 @tab ms @tab Minimum open time after trigger
+@item @code{Release} @tab Float @tab 10 .. 2000 @tab 100 @tab ms @tab Time for gate to close
+@item @code{Lookahead} @tab Float @tab 0 .. 20 @tab 0 @tab ms @tab Pre-delay for transient catching
+@end multitable
+
+
+@subsection Output
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Mix} @tab Float @tab 0 .. 1 @tab 1 @tab % @tab Dry/wet blend
+@end multitable
+
+
+@subsection Channels
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Link Channels} @tab Bool @tab On / Off @tab Linked @tab - @tab Stereo-link detector for L/R
+@end multitable
+
+
+@subsection Sidechain
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Sidechain HPF} @tab Float @tab 0 .. 200 @tab 0 @tab Hz @tab High-pass on detector input
+@item @code{HPF Order} @tab Choice (2nd, 4th) @tab 2 options @tab 2nd @tab - @tab Sidechain HPF filter order
+@item @code{Detection} @tab Choice (Peak, RMS) @tab 2 options @tab Peak @tab - @tab Level detection mode
+@item @code{Ext Sidechain} @tab Bool @tab On / Off @tab Off @tab - @tab Use external sidechain input
+@end multitable
+
+@node gate Plugin Developer Guide
+@section Developer Guide
+
+SOTF Gate plugin for noise gating.
+
+Attenuates audio below a configurable threshold to remove low-level noise and unwanted background sound.
+
+@subsubheading Parameter wiring
+
+All parameters reach the audio thread through the host's @code{rebuild_cached_parameters} / @code{set_parameter} / @code{get_parameter} triad. Structural parameters (marked in the notes below) trigger a rebuild; the rest update in real time with zero dropouts.
+
+@subsubheading Source
+
+@file{crates/sotf-plugins/crates/sotf-plugin-gate/}
+
+Run the unit tests with @code{cargo test -p sotf-plugin-gate}.
+

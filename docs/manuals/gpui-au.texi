@@ -1,0 +1,74 @@
+@c -*-texinfo-*-
+@node gpui-au Manual
+@chapter Crate @code{gpui-au}
+@cindex gpui-au
+@cindex Audio Unit
+
+@code{gpui-au} is the macOS Audio Unit platform backend for GPUI. It
+embeds GPUI rendering inside an AUv3 @code{AUViewController} so SotF
+plugins can present a native GPUI editor when loaded by Logic Pro,
+GarageBand, MainStage or any AUv3 host.
+
+@menu
+* gpui-au User Guide::
+* gpui-au Developer Guide::
+@end menu
+
+@node gpui-au User Guide
+@section User Guide
+
+End users do not interact with this crate directly. It is responsible
+for the editor windows that appear when a SotF plugin is instantiated
+as an Audio Unit. Symptoms relevant to users:
+
+@itemize @bullet
+@item Editor window appears empty: usually means
+  @code{gpui_au_request_frame} is not being called by the Swift host
+  (CADisplayLink/timer issue).
+@item Mouse/keyboard events not forwarded: AUv3 sandboxing, see the
+  developer guide.
+@end itemize
+
+@node gpui-au Developer Guide
+@section Developer Guide
+
+@subheading How it works
+
+@example
+Swift AUViewController
+  └── NSView (host-provided)
+       └── CAMetalLayer
+            └── wgpu (Metal backend)
+                 └── GPUI rendering
+@end example
+
+@enumerate
+@item Swift creates an @code{AUViewController} with an
+  @code{NSView}.
+@item Rust @code{AuPlatform} initialises GPUI against that external
+  @code{NSView}.
+@item Swift calls @code{gpui_au_request_frame()} per display refresh.
+@item Mouse/keyboard events are forwarded
+  @code{NSView -> FFI -> GPUI}.
+@end enumerate
+
+@subheading Key entry points
+
+@table @code
+@item gpui_au_init
+Initialise the GPUI platform against an external NSView pointer.
+@item gpui_au_request_frame
+Pump one render frame; driven by Swift CVDisplayLink / timer.
+@item gpui_au_forward_event
+Push a Cocoa event into the GPUI dispatcher.
+@end table
+
+@subheading Notes
+
+@itemize @bullet
+@item AUv3 sandbox forbids window creation; that is why an external
+  NSView is required.
+@item CoreText is used for text rendering to match Apple HIG.
+@item Display-driven rendering avoids spinning a redraw loop when the
+  plugin is idle.
+@end itemize

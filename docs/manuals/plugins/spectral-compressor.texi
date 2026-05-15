@@ -1,0 +1,104 @@
+@c -*-texinfo-*-
+@c Per-plugin manual: spectral-compressor
+@node spectral-compressor Plugin
+@chapter Plugin: @code{spectral-compressor}
+@cindex spectral-compressor plugin
+
+Frequency-dependent compression operating in the spectral domain for transparent dynamic control.
+
+@menu
+* spectral-compressor Plugin Parameters::
+* spectral-compressor Plugin Developer Guide::
+@end menu
+
+@node spectral-compressor Plugin Parameters
+@section Parameters
+
+
+@subsection Analysis
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{FFT Size} @tab Choice (1024, 2048, 4096) @tab 3 options @tab 2048 @tab - @tab FFT window size (higher = better frequency resolution, more latency)
+@item @code{Target} @tab Choice (All, Tonal, Transient) @tab 3 options @tab All @tab - @tab Compress all bins, tonal only, or transient only
+@item @code{Adaptive Threshold} @tab Bool @tab On / Off @tab Off @tab - @tab Auto-set threshold relative to long-term spectral average per bin
+@item @code{Adaptive Offset} @tab Float @tab -20 .. 20 @tab 0 @tab dB @tab Offset from adaptive threshold (positive = less compression)
+@end multitable
+
+
+@subsection Dynamics
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Threshold} @tab Float @tab -60 .. 0 @tab -20 @tab dB @tab Compression threshold per bin
+@item @code{Ratio} @tab Float @tab 1 .. 20 @tab 2 @tab :1 @tab Compression ratio
+@item @code{Attack} @tab Float @tab 0.1 .. 100 @tab 5 @tab ms @tab Per-bin attack time
+@item @code{Release} @tab Float @tab 10 .. 1000 @tab 50 @tab ms @tab Per-bin release time
+@item @code{Knee} @tab Float @tab 0 .. 20 @tab 6 @tab dB @tab Soft knee width
+@end multitable
+
+
+@subsection Quality
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Spectral Smooth} @tab Float @tab 0 .. 1 @tab 0.3 @tab - @tab Frequency-axis smoothing (reduces musical artifacts)
+@end multitable
+
+
+@subsection Output
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Mix} @tab Float @tab 0 .. 1 @tab 1 @tab % @tab Dry/wet blend
+@item @code{Delta Listen} @tab Bool @tab On / Off @tab Off @tab - @tab Solo the compression delta (hear what's being removed)
+@end multitable
+
+
+@strong{Structural parameters} (FFT Size) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
+
+@node spectral-compressor Plugin Developer Guide
+@section Developer Guide
+
+Spectral compressor — per-bin frequency domain dynamics processing.
+
+@subsubheading What It Does
+
+Applies dynamic range compression independently to each frequency bin in the STFT domain. Unlike a multiband compressor (2-5 bands), a spectral compressor operates on hundreds of individual frequency bins, enabling extremely transparent dynamics control. Particularly effective for taming harsh resonances without affecting surrounding frequencies.
+
+@subsubheading Features
+
+@itemize @bullet
+@item @strong{Per-bin compression}: Independent dynamics for each frequency bin
+@item @strong{STFT-based}: Operates in the frequency domain via Short-Time Fourier Transform
+@item @strong{Transparent dynamics}: Far more granular than multiband compression
+@item @strong{Spectral taming}: Reduces resonances without coloring surrounding frequencies
+@end itemize
+
+
+@subsubheading Architecture
+
+@example
+src/
+├── lib.rs     # SpectralCompressorPlugin implementation
+└── params.rs  # Parameter definitions
+@end example
+
+
+@subsubheading Testing
+
+@example
+cargo test -p sotf-plugin-spectral-compressor
+@end example
+
+
+@subsubheading Parameter wiring
+
+All parameters reach the audio thread through the host's @code{rebuild_cached_parameters} / @code{set_parameter} / @code{get_parameter} triad. Structural parameters (marked in the notes below) trigger a rebuild; the rest update in real time with zero dropouts.
+
+@subsubheading Source
+
+@file{crates/sotf-plugins/crates/sotf-plugin-spectral-compressor/}
+
+Run the unit tests with @code{cargo test -p sotf-plugin-spectral-compressor}.
+

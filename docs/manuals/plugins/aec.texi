@@ -1,0 +1,63 @@
+@c -*-texinfo-*-
+@c Per-plugin manual: aec
+@node aec Plugin
+@chapter Plugin: @code{aec}
+@cindex aec plugin
+
+Cancels acoustic echoes from microphone input using reference signal correlation.
+
+@menu
+* aec Plugin Parameters::
+* aec Plugin Developer Guide::
+@end menu
+
+@node aec Plugin Parameters
+@section Parameters
+
+This plugin has no user-tunable parameters.
+
+@node aec Plugin Developer Guide
+@section Developer Guide
+
+Acoustic Echo Cancellation plugin — PBFDAF with two-path and post-filter.
+
+@subsubheading What It Does
+
+Removes echo from audio streams in real-time. When a microphone picks up audio playing through speakers, the AEC plugin subtracts the known playback signal to produce clean microphone audio. Uses a Partitioned Block Frequency Domain Adaptive Filter (PBFDAF) for efficient cancellation.
+
+@subsubheading Features
+
+@itemize @bullet
+@item @strong{PBFDAF algorithm}: Efficient frequency-domain adaptive filtering
+@item @strong{Two-path architecture}: Robust convergence with separate foreground/background filters
+@item @strong{Post-filter}: Residual echo suppression for additional cleanup
+@item @strong{Real-time processing}: Low-latency operation suitable for live audio
+@end itemize
+
+
+@subsubheading Architecture
+
+@example
+src/
+├── lib.rs     # AecPlugin implementation
+└── params.rs  # Parameter definitions
+@end example
+
+
+@subsubheading Testing
+
+@example
+cargo test -p sotf-plugin-aec
+@end example
+
+
+@subsubheading Parameter wiring
+
+All parameters reach the audio thread through the host's @code{rebuild_cached_parameters} / @code{set_parameter} / @code{get_parameter} triad. Structural parameters (marked in the notes below) trigger a rebuild; the rest update in real time with zero dropouts.
+
+@subsubheading Source
+
+@file{crates/sotf-plugins/crates/sotf-plugin-aec/}
+
+Run the unit tests with @code{cargo test -p sotf-plugin-aec}.
+

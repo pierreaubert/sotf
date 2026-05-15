@@ -1,0 +1,82 @@
+@c -*-texinfo-*-
+@c Per-plugin manual: compressor
+@node compressor Plugin
+@chapter Plugin: @code{compressor}
+@cindex compressor plugin
+
+Dynamic range compression with configurable threshold, ratio, attack, release, and makeup gain.
+
+@menu
+* compressor Plugin Parameters::
+* compressor Plugin Developer Guide::
+@end menu
+
+@node compressor Plugin Parameters
+@section Parameters
+
+
+@subsection Dynamics
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Threshold} @tab Float @tab -60 .. 0 @tab -20 @tab dB @tab Level above which compression starts
+@item @code{Ratio} @tab Float @tab 1 .. 20 @tab 4 @tab :1 @tab Compression amount (input:output)
+@item @code{Knee} @tab Float @tab 0 .. 20 @tab 6 @tab dB @tab Softness of threshold transition
+@end multitable
+
+
+@subsection Timing
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Attack} @tab Float @tab 0.1 .. 100 @tab 5 @tab ms @tab Time to reach full compression
+@item @code{Release} @tab Float @tab 10 .. 1000 @tab 50 @tab ms @tab Time to return to unity gain
+@item @code{Lookahead} @tab Float @tab 0 .. 20 @tab 0 @tab ms @tab Pre-delay for transient catching
+@item @code{Program Dependent Release} @tab Bool @tab On / Off @tab Off @tab - @tab Adapts release to signal content
+@end multitable
+
+
+@subsection Output
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Makeup Gain} @tab Float @tab -24 .. 24 @tab 0 @tab dB @tab Post-compression gain boost
+@item @code{Mix} @tab Float @tab 0 .. 1 @tab 1 @tab % @tab Dry/wet blend (parallel comp)
+@item @code{Auto Makeup} @tab Bool @tab On / Off @tab Off @tab - @tab Auto-compensate for gain reduction
+@item @code{Measured Auto Makeup} @tab Bool @tab On / Off @tab Off @tab - @tab Makeup based on measured reduction
+@end multitable
+
+
+@subsection Channels
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Link Channels} @tab Bool @tab On / Off @tab Linked @tab - @tab Stereo-link detector for L/R
+@end multitable
+
+
+@subsection Sidechain
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Sidechain HPF} @tab Float @tab 0 .. 200 @tab 80 @tab Hz @tab High-pass on detector input
+@item @code{Sidechain HPF Order} @tab Choice (2nd, 4th) @tab 2 options @tab 2nd @tab - @tab Butterworth HPF slope
+@item @code{Detection Mode} @tab Choice (Peak, RMS) @tab 2 options @tab Peak @tab - @tab Peak or RMS level detection
+@item @code{External Sidechain} @tab Bool @tab On / Off @tab Off @tab - @tab Use external signal for detection
+@end multitable
+
+@node compressor Plugin Developer Guide
+@section Developer Guide
+
+Standard feedforward dynamics processor. Detector path: optional Butterworth high-pass on the sidechain, peak or RMS level detection, attack/release smoothing. Gain computer applies the ratio above the (soft-knee) threshold. Output stage applies make-up gain and optional dry/wet mix for parallel compression. Look-ahead inserts a delay line on the audio path so the detector sees the future of the signal.
+
+@subsubheading Parameter wiring
+
+All parameters reach the audio thread through the host's @code{rebuild_cached_parameters} / @code{set_parameter} / @code{get_parameter} triad. Structural parameters (marked in the notes below) trigger a rebuild; the rest update in real time with zero dropouts.
+
+@subsubheading Source
+
+The @code{compressor} plugin does not have a dedicated crate at the time of writing; its implementation lives under @file{crates/sotf-plugins/crates/sotf-host/} or one of the multi-component crates. Search the workspace for the plugin type key @code{"compressor"} to locate it.
+
+Run the unit tests with @code{cargo test -p sotf-plugin-compressor}.
+

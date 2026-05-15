@@ -1,0 +1,69 @@
+@c -*-texinfo-*-
+@node gpui-design Manual
+@chapter Crate @code{gpui-design}
+@cindex gpui-design
+@cindex design system
+
+@code{gpui-design} is a platform-adaptive design system. It defines
+shape, spacing, interaction and animation rules that vary per
+platform; @code{gpui-themes} handles colours independently. The two
+layers compose: any colour theme works with any design system.
+
+@menu
+* gpui-design User Guide::
+* gpui-design Developer Guide::
+@end menu
+
+@node gpui-design User Guide
+@section User Guide
+
+End users do not configure this directly. The effect is visible:
+
+@itemize @bullet
+@item On macOS: continuous corners, 44 px touch targets, spring
+  animations (Apple HIG).
+@item On Windows: compact spacing, pill toggles, Segoe UI Variable
+  (Fluent).
+@item On Android-ish: 48 px touch targets, card separators, Roboto
+  (Material 3).
+@item Elsewhere: the @code{Neutral} fallback.
+@end itemize
+
+@node gpui-design Developer Guide
+@section Developer Guide
+
+@subheading Presets
+
+@multitable @columnfractions .30 .25 .45
+@headitem Preset @tab Platform @tab Key traits
+@item @code{DesignSystem::neutral()} @tab Cross-platform default @tab
+  matches existing hardcoded values
+@item @code{DesignSystem::apple_hig()} @tab macOS / iOS @tab continuous
+  corners, 44 px targets, spring anim.
+@item @code{DesignSystem::material3()} @tab Android / ChromeOS @tab
+  48 px targets, card separators, Roboto
+@item @code{DesignSystem::fluent()} @tab Windows 10/11 @tab compact,
+  pill toggles, Segoe UI Variable
+@item @code{DesignSystem::platform_default()} @tab Auto @tab selects
+  via @code{target_os}
+@end multitable
+
+@subheading Usage
+
+@example
+let ds = DesignSystem::platform_default();
+let padding = ds.spacing.card_padding;
+let gap     = ds.spacing.control_gap;
+let radius  = ds.corners.md;
+@end example
+
+@subheading What lives where
+
+@itemize @bullet
+@item Spacing tokens: padding, gap, inset.
+@item Corner tokens: radii per size class.
+@item Interaction tokens: touch-target minimums, hover/pressed scale.
+@item Animation tokens: durations, easing curves.
+@end itemize
+
+Colours @strong{never} live here. Use @ref{gpui-themes Manual}.

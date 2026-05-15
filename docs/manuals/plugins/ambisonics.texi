@@ -1,0 +1,69 @@
+@c -*-texinfo-*-
+@c Per-plugin manual: ambisonics
+@node ambisonics Plugin
+@chapter Plugin: @code{ambisonics}
+@cindex ambisonics plugin
+
+Ambisonics encoding and decoding for immersive spatial audio.
+
+@menu
+* ambisonics Plugin Parameters::
+* ambisonics Plugin Developer Guide::
+@end menu
+
+@node ambisonics Plugin Parameters
+@section Parameters
+
+This plugin has no user-tunable parameters.
+
+
+@strong{Structural parameters} (Order, Target Layout) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
+
+@node ambisonics Plugin Developer Guide
+@section Developer Guide
+
+Ambisonics Decoder — AllRAD decoding from Higher-Order Ambisonics to speaker layouts.
+
+@subsubheading What It Does
+
+Decodes Higher-Order Ambisonics (HOA) audio into speaker feeds for any loudspeaker arrangement. Uses the AllRAD (All-Round Ambisonic Decoding) algorithm which combines VBAP panning with Ambisonics theory for robust decoding to irregular speaker layouts.
+
+@subsubheading Features
+
+@itemize @bullet
+@item @strong{AllRAD decoding}: Robust decoding for arbitrary speaker layouts
+@item @strong{Higher-Order Ambisonics}: Supports multiple Ambisonics orders
+@item @strong{Spherical harmonics}: Full SH evaluation for spatial processing
+@item @strong{Flexible layouts}: Works with any speaker configuration via VBAP
+@end itemize
+
+
+@subsubheading Architecture
+
+@example
+src/
+├── lib.rs                  # AmbisonicsDecoderPlugin
+├── config.rs               # Decoder configuration
+├── decode_matrix.rs        # Decoding matrix computation
+├── spherical_harmonics.rs  # SH evaluation
+└── params.rs               # Parameters
+@end example
+
+
+@subsubheading Testing
+
+@example
+cargo test -p sotf-plugin-ambisonics
+@end example
+
+
+@subsubheading Parameter wiring
+
+All parameters reach the audio thread through the host's @code{rebuild_cached_parameters} / @code{set_parameter} / @code{get_parameter} triad. Structural parameters (marked in the notes below) trigger a rebuild; the rest update in real time with zero dropouts.
+
+@subsubheading Source
+
+@file{crates/sotf-plugins/crates/sotf-plugin-ambisonics/}
+
+Run the unit tests with @code{cargo test -p sotf-plugin-ambisonics}.
+

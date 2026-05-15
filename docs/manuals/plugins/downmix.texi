@@ -1,0 +1,62 @@
+@c -*-texinfo-*-
+@c Per-plugin manual: downmix
+@node downmix Plugin
+@chapter Plugin: @code{downmix}
+@cindex downmix plugin
+
+Surround to stereo downmixing with configurable channel contributions.
+
+@menu
+* downmix Plugin Parameters::
+* downmix Plugin Developer Guide::
+@end menu
+
+@node downmix Plugin Parameters
+@section Parameters
+
+
+@subsection Gains
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Center Gain} @tab Float @tab -12 .. 0 @tab -3 @tab dB @tab Center channel fold-down level
+@item @code{Surround Gain} @tab Float @tab -12 .. 0 @tab -3 @tab dB @tab Surround channels fold-down level
+@item @code{Height Gain} @tab Float @tab -60 .. 0 @tab -6 @tab dB @tab Height channels fold-down level
+@item @code{LFE Gain} @tab Float @tab -60 .. 0 @tab -10 @tab dB @tab LFE channel fold-down level
+@end multitable
+
+
+@subsection Phase
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Phase Coherence} @tab Bool @tab On / Off @tab On @tab - @tab Phase-align channels before mix
+@item @code{Phase Blend Low} @tab Float @tab 100 .. 1000 @tab 500 @tab Hz @tab Phase correction low crossover
+@item @code{Phase Blend High} @tab Float @tab 1000 .. 5000 @tab 2000 @tab Hz @tab Phase correction high crossover
+@end multitable
+
+
+@subsection Mode
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{ITU-R BS.775 Mode} @tab Bool @tab On / Off @tab Off @tab - @tab Use ITU standard downmix coeffs
+@end multitable
+
+@node downmix Plugin Developer Guide
+@section Developer Guide
+
+SOTF Downmix plugin for multichannel to stereo downmixing.
+
+Phase-coherent downmix from multichannel formats to stereo with speaker configuration awareness for correct channel summation.
+
+@subsubheading Parameter wiring
+
+All parameters reach the audio thread through the host's @code{rebuild_cached_parameters} / @code{set_parameter} / @code{get_parameter} triad. Structural parameters (marked in the notes below) trigger a rebuild; the rest update in real time with zero dropouts.
+
+@subsubheading Source
+
+@file{crates/sotf-plugins/crates/sotf-plugin-downmix/}
+
+Run the unit tests with @code{cargo test -p sotf-plugin-downmix}.
+

@@ -1,0 +1,81 @@
+@c -*-texinfo-*-
+@c Per-plugin manual: expander
+@node expander Plugin
+@chapter Plugin: @code{expander}
+@cindex expander plugin
+
+Dynamic range expansion with configurable threshold, ratio, attack, release, and range. Opens up dynamics below the threshold.
+
+@menu
+* expander Plugin Parameters::
+* expander Plugin Developer Guide::
+@end menu
+
+@node expander Plugin Parameters
+@section Parameters
+
+
+@subsection Dynamics
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Threshold} @tab Float @tab -80 .. 0 @tab -40 @tab dB @tab Level below which expansion starts
+@item @code{Ratio} @tab Float @tab 1 .. 20 @tab 2 @tab :1 @tab Expansion amount (input:output)
+@item @code{Range} @tab Float @tab 0 .. 80 @tab 40 @tab dB @tab Max attenuation below threshold
+@item @code{Knee} @tab Float @tab 0 .. 20 @tab 6 @tab dB @tab Softness of threshold transition
+@item @code{Hysteresis} @tab Float @tab 0 .. 12 @tab 4 @tab dB @tab Open/close threshold difference
+@end multitable
+
+
+@subsection Timing
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Attack} @tab Float @tab 0.1 .. 50 @tab 1 @tab ms @tab Time to reach full expansion
+@item @code{Release} @tab Float @tab 10 .. 2000 @tab 100 @tab ms @tab Time to return to unity gain
+@item @code{Hold} @tab Float @tab 0 .. 500 @tab 10 @tab ms @tab Minimum open time after trigger
+@item @code{Lookahead} @tab Float @tab 0 .. 20 @tab 0 @tab ms @tab Pre-delay for transient catching
+@end multitable
+
+
+@subsection Output
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Mix} @tab Float @tab 0 .. 1 @tab 1 @tab % @tab Dry/wet blend
+@item @code{Auto Makeup} @tab Bool @tab On / Off @tab Off @tab - @tab Auto-compensate for gain reduction
+@item @code{Measured Auto Makeup} @tab Bool @tab On / Off @tab Off @tab - @tab Makeup based on measured reduction
+@end multitable
+
+
+@subsection Channels
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Link Channels} @tab Bool @tab On / Off @tab Linked @tab - @tab Stereo-link detector for L/R
+@end multitable
+
+
+@subsection Sidechain
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Sidechain HPF} @tab Float @tab 0 .. 500 @tab 80 @tab Hz @tab High-pass on detector input
+@item @code{Detection Mode} @tab Choice (Peak, RMS) @tab 2 options @tab Peak @tab - @tab Peak or RMS level detection
+@end multitable
+
+@node expander Plugin Developer Guide
+@section Developer Guide
+
+Inverse of the compressor: gain reduction is applied @emph{below} the threshold so quiet content gets quieter. Useful as a soft noise gate. Same detector / smoother / gain computer skeleton as the compressor.
+
+@subsubheading Parameter wiring
+
+All parameters reach the audio thread through the host's @code{rebuild_cached_parameters} / @code{set_parameter} / @code{get_parameter} triad. Structural parameters (marked in the notes below) trigger a rebuild; the rest update in real time with zero dropouts.
+
+@subsubheading Source
+
+The @code{expander} plugin does not have a dedicated crate at the time of writing; its implementation lives under @file{crates/sotf-plugins/crates/sotf-host/} or one of the multi-component crates. Search the workspace for the plugin type key @code{"expander"} to locate it.
+
+Run the unit tests with @code{cargo test -p sotf-plugin-expander}.
+

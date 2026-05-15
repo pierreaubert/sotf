@@ -1,0 +1,74 @@
+@c -*-texinfo-*-
+@node gpui-d3rs Manual
+@chapter Crate @code{gpui-d3rs}
+@cindex gpui-d3rs
+@cindex plotting
+
+@code{gpui-d3rs} ports D3.js concepts to Rust with idiomatic builder
+patterns. It powers every plot inside SotF -- Spinorama curves, room
+impulse responses, contour and 3D plots -- and is also published
+standalone on crates.io.
+
+@menu
+* gpui-d3rs User Guide::
+* gpui-d3rs Developer Guide::
+@end menu
+
+@node gpui-d3rs User Guide
+@section User Guide
+
+Users see @code{gpui-d3rs} as the rendering layer behind every chart
+in the desktop player:
+
+@itemize @bullet
+@item Line / scatter plots for measurements.
+@item Iso-line and contour plots for predicted-in-room response and
+  directivity.
+@item Radar, polar, 3D contour for advanced views.
+@end itemize
+
+There is no user-facing configuration; chart appearance follows the
+active theme (@ref{gpui-themes Manual}).
+
+@node gpui-d3rs Developer Guide
+@section Developer Guide
+
+@subheading Primitives
+
+@table @code
+@item Scales
+@code{LinearScale}, @code{LogScale}, with automatic tick generation.
+@item Shapes
+Lines, bars, areas, arcs, pies, scatter.
+@item Colours
+RGB/HSL, interpolation, categorical schemes.
+@item Geographic projections
+Mercator, orthographic.
+@item Spatial
+QuadTree, Delaunay (via @ref{math-delaunay Manual}), Voronoi.
+@item Animation
+Transitions, easing functions, timers.
+@end table
+
+@subheading Builder-style API
+
+D3's functional chaining is replaced by Rust builders:
+
+@example
+let chart = LineChart::new()
+    .data(&points)
+    .x_scale(LinearScale::new(0.0, 20_000.0))
+    .y_scale(LinearScale::new(-30.0, 10.0))
+    .stroke(theme.accent);
+@end example
+
+@subheading Showcases
+
+Two demo binaries ship with the crate; see the README and
+@file{examples/}.
+
+@subheading Testing
+
+@example
+cargo test -p gpui-d3rs
+@end example

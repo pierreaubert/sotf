@@ -1,0 +1,38 @@
+@c -*-texinfo-*-
+@c Per-plugin manual: band-merge
+@node band-merge Plugin
+@chapter Plugin: @code{band-merge}
+@cindex band-merge plugin
+
+Merges previously split frequency bands back into a single signal.
+
+@menu
+* band-merge Plugin Parameters::
+* band-merge Plugin Developer Guide::
+@end menu
+
+@node band-merge Plugin Parameters
+@section Parameters
+
+This plugin has no user-tunable parameters.
+
+
+@strong{Structural parameters} (Bands) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
+
+@node band-merge Plugin Developer Guide
+@section Developer Guide
+
+SOTF Band Merge plugin for merging frequency bands.
+
+Recombines frequency bands that were previously split by the Band Split plugin back into a single full-range signal.
+
+@subsubheading Parameter wiring
+
+All parameters reach the audio thread through the host's @code{rebuild_cached_parameters} / @code{set_parameter} / @code{get_parameter} triad. Structural parameters (marked in the notes below) trigger a rebuild; the rest update in real time with zero dropouts.
+
+@subsubheading Source
+
+@file{crates/sotf-plugins/crates/sotf-plugin-band-merge/}
+
+Run the unit tests with @code{cargo test -p sotf-plugin-band-merge}.
+

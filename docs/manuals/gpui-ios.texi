@@ -1,0 +1,75 @@
+@c -*-texinfo-*-
+@node gpui-ios Manual
+@chapter Crate @code{gpui-ios}
+@cindex gpui-ios
+
+@code{gpui-ios} is the iOS platform backend for GPUI. It enables any
+GPUI application -- including the SotF desktop player -- to run
+natively on iOS with Metal rendering, touch input, momentum scrolling
+and software keyboard support. Vendored from
+@uref{https://github.com/itsbalamurali/gpui-mobile, gpui-mobile} and
+adapted to the SotF-tracked GPUI revision.
+
+@menu
+* gpui-ios User Guide::
+* gpui-ios Developer Guide::
+@end menu
+
+@node gpui-ios User Guide
+@section User Guide
+
+This crate is what makes the iOS build of SotF a real iOS app rather
+than a Catalyst port. End users do not interact with it directly;
+they just see native touch gestures, scrolling and a software keyboard
+that behaves the way iOS users expect.
+
+@node gpui-ios Developer Guide
+@section Developer Guide
+
+@subheading Architecture
+
+@example
+Swift AppDelegate
+  |-- sotf_ios_start()       Rust FFI: registers app callback + run_app
+  |-- CADisplayLink          Drives gpui_ios_request_frame() per frame
+  |-- UIKit lifecycle        Forwarded to Rust via FFI
+
+Rust (staticlib)
+  |-- set_app_callback()     Register GPUI app setup
+  |-- run_app()              Init GPUI platform, start event loop
+  |-- IosPlatform            Implements gpui::Platform for iOS
+  |-- IosWindow              Metal rendering, touch dispatch, safe areas
+@end example
+
+@subheading Porting a GPUI app
+
+@enumerate
+@item Create a Rust @code{staticlib} crate that depends on
+  @code{gpui-ios}.
+@item Register your GPUI setup function via @code{set_app_callback}.
+@item Call @code{run_app()} from Swift through the
+  @code{sotf_ios_start()} FFI entry point.
+@item In Swift, drive @code{gpui_ios_request_frame()} from a
+  @code{CADisplayLink}.
+@item Forward UIKit touch events into Rust via the documented FFI.
+@end enumerate
+
+@subheading Key FFI symbols
+
+@table @code
+@item sotf_ios_start
+Entry from Swift; registers the app callback and runs the event loop.
+@item gpui_ios_request_frame
+Pumps one render frame.
+@item gpui_ios_dispatch_touch
+Forwards a UIKit touch event into GPUI's input system.
+@end table
+
+@subheading Caveats
+
+@itemize @bullet
+@item Metal-only; no GL fallback.
+@item Safe-area insets are propagated from UIKit, not assumed.
+@item The static library must be force-loaded
+  (@code{-force_load}) so all platform symbols are kept by the linker.
+@end itemize

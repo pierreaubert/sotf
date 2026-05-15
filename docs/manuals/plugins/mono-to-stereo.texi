@@ -1,0 +1,54 @@
+@c -*-texinfo-*-
+@c Per-plugin manual: mono-to-stereo
+@node mono-to-stereo Plugin
+@chapter Plugin: @code{mono-to-stereo}
+@cindex mono-to-stereo plugin
+
+Converts mono signals to stereo output.
+
+@menu
+* mono-to-stereo Plugin Parameters::
+* mono-to-stereo Plugin Developer Guide::
+@end menu
+
+@node mono-to-stereo Plugin Parameters
+@section Parameters
+
+
+@subsection General
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Width} @tab Float @tab 0 .. 1 @tab 0.5 @tab - @tab Stereo spread amount
+@item @code{Haas Delay} @tab Float @tab 0 .. 5 @tab 1.5 @tab ms @tab Inter-channel delay for Haas effect
+@item @code{Decor Low} @tab Float @tab 100 .. 500 @tab 300 @tab Hz @tab Decorrelation low crossover
+@item @code{Decor High} @tab Float @tab 1000 .. 5000 @tab 2000 @tab Hz @tab Decorrelation high crossover
+@item @code{Freq Dependent} @tab Bool @tab On / Off @tab On @tab - @tab Vary width by frequency band
+@end multitable
+
+
+@subsection EQ
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Comp EQ} @tab Bool @tab On / Off @tab On @tab - @tab Compensate comb filter coloration
+@item @code{Comp EQ Depth} @tab Float @tab 0 .. 3 @tab 1 @tab dB @tab Compensation EQ strength
+@end multitable
+
+@node mono-to-stereo Plugin Developer Guide
+@section Developer Guide
+
+SOTF Mono to Stereo plugin for stereo widening.
+
+Converts a mono signal to stereo using FFT-based processing to create a widened stereo image.
+
+@subsubheading Parameter wiring
+
+All parameters reach the audio thread through the host's @code{rebuild_cached_parameters} / @code{set_parameter} / @code{get_parameter} triad. Structural parameters (marked in the notes below) trigger a rebuild; the rest update in real time with zero dropouts.
+
+@subsubheading Source
+
+@file{crates/sotf-plugins/crates/sotf-plugin-mono-to-stereo/}
+
+Run the unit tests with @code{cargo test -p sotf-plugin-mono-to-stereo}.
+

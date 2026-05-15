@@ -1,0 +1,70 @@
+@c -*-texinfo-*-
+@node gpui-pretext Manual
+@chapter Crate @code{gpui-pretext}
+@cindex gpui-pretext
+@cindex text layout
+
+@code{gpui-pretext} is a high-performance text measurement and
+multiline layout library, a Rust port of @code{chenglou/pretext}. It
+is what makes resizable panels in the SotF desktop player feel
+instant: line-breaking is pure arithmetic on cached widths, not a
+re-measurement.
+
+@menu
+* gpui-pretext User Guide::
+* gpui-pretext Developer Guide::
+@end menu
+
+@node gpui-pretext User Guide
+@section User Guide
+
+End users see the result -- smooth, jank-free re-wrap when resizing a
+panel containing labels, track titles or long descriptions. There is
+no user-facing configuration.
+
+@node gpui-pretext Developer Guide
+@section Developer Guide
+
+@subheading Two-phase model
+
+@enumerate
+@item @strong{Prepare} (@code{prepare} / @code{prepare_with_segments})
+  segments the text and measures segment widths via the
+  @code{TextMeasure} trait. Run once per text block.
+@item @strong{Layout} (@code{layout} / @code{layout_with_lines} /
+  @code{layout_next_line}) is pure arithmetic over cached widths.
+  Fast enough to run on every resize.
+@end enumerate
+
+@subheading TextMeasure trait
+
+Backend-agnostic: implement @code{measure_width(&str) -> f64} against
+whatever rendering layer you have. The SotF app provides an impl that
+uses CoreText / DirectWrite / FreeType through GPUI.
+
+@subheading Example
+
+@example
+struct MyMeasure;
+impl TextMeasure for MyMeasure @{
+    fn measure_width(&self, text: &str) -> f64 @{
+        // delegate to a real text renderer
+        text.len() as f64 * 8.0
+    @}
+@}
+
+let prepared = prepare(text, &MyMeasure, PrepareOptions::default());
+let layout   = layout(&prepared, available_width);
+@end example
+
+@subheading Use in @code{gpui-builder}
+
+The constraint layout solver calls into @code{TextMeasure} so that
+slots can be sized from their text content
+(@ref{gpui-builder Manual}).
+
+@subheading Testing
+
+@example
+cargo test -p gpui-pretext
+@end example

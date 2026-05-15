@@ -1,0 +1,74 @@
+@c -*-texinfo-*-
+@node math-iir-fir Manual
+@chapter Crate @code{math-iir-fir}
+@cindex math-iir-fir
+@cindex IIR
+@cindex FIR
+
+@code{math-iir-fir} is the filter foundation: IIR, FIR and SVF
+implementations, generic over @code{f32} and @code{f64}, plus
+crossover designs and a parametric EQ with export to nine formats.
+Everything else in the project depends on it directly or transitively.
+
+@menu
+* math-iir-fir User Guide::
+* math-iir-fir Developer Guide::
+@end menu
+
+@node math-iir-fir User Guide
+@section User Guide
+
+End users do not call this crate. They see the result:
+
+@itemize @bullet
+@item The @code{eq} and @code{linear-phase-eq} plugins.
+@item The crossover plugin (Linkwitz-Riley and linear-phase variants).
+@item Filter exports in Equalizer APO, RME, AU Preset, CamillaDSP,
+  EasyEffects, PipeWire, Roon and Wavelet formats.
+@end itemize
+
+@node math-iir-fir Developer Guide
+@section Developer Guide
+
+@subheading Generic precision
+
+All filter types (@code{Biquad}, @code{SvfFilter}, @code{Fir},
+@code{BiquadBank}) are generic over @code{FilterFloat} and default to
+@code{f64}. Convenience aliases @code{BiquadF32}, @code{SvfFilterF32},
+@dots{} exist when throughput matters more than precision.
+
+@subheading Filter types
+
+@table @asis
+@item Biquad
+@code{Peak}, @code{Lowpass}, @code{Highpass}, @code{Lowshelf},
+@code{Highshelf}, @code{Bandpass}, @code{Notch}, @code{AllPass}.
+@item SVF (state-variable filter)
+Zero-delay-feedback topology (Zavalishin TPT) for artefact-free
+parameter changes.
+@item FIR
+Windowed sinc bank for linear-phase filtering, FIR design from
+frequency response, Kirkeby correction, pre-ringing suppression.
+@item Crossovers
+Linkwitz-Riley 4th-order IIR and linear-phase FIR.
+@end table
+
+@subheading Offline analysis
+
+@code{filtfilt} and @code{sosfilt} provide zero-phase filtering for
+analysis tasks (e.g.@: in @code{math-rir}).
+
+@subheading PEQ
+
+The @code{ParametricEQ} type owns a list of biquads plus a preamp. It
+can compute SPL response, apply loudness compensation, and export to
+the nine formats above.
+
+@subheading Testing
+
+@example
+cargo test -p math-iir-fir
+@end example
+
+Biquad benchmarks live in @file{benches/}; run with
+@code{cargo bench -p math-iir-fir}.

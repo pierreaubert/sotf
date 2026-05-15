@@ -1,0 +1,880 @@
+@c -*-texinfo-*-
+@c Per-crate manual: autoeq
+@node autoeq Manual
+@chapter Crate @code{autoeq}
+@cindex autoeq
+@cindex RoomEQ
+
+@code{autoeq} is the offline optimisation engine that turns measurement
+data into corrective filters for speakers, headphones and rooms. It
+ships several binaries -- @code{autoeq}, @code{roomeq},
+@code{convert-recording}, @code{autoeq-download-speakers} and a family
+of QA harnesses -- plus a library used by the GPUI and TUI front-ends.
+
+@menu
+* autoeq User Guide::               Overview, capabilities, exports.
+* autoeq Binary::                   Speaker / headphone CLI with examples.
+* roomeq Binary::                   Room CLI with examples.
+* How RoomEQ Works::                Pipeline, stages, algorithms.
+* RoomEQ Config Schema::             Configuration JSON schema.
+* RoomEQ DSP Chain Schema::            DSP chain JSON schema.
+* autoeq Developer Guide::          Layout, public API, conventions.
+@end menu
+
+@node autoeq User Guide
+@section User Guide
+
+@subheading What it does
+
+@itemize @bullet
+@item @strong{Speaker EQ}: parametric IIR from CEA2034 / Spinorama
+  measurements (anechoic).
+@item @strong{Headphone EQ}: filters targeting Harman or custom
+  curves.
+@item @strong{Room EQ}: stereo through full home-cinema, multi-sub
+  alignment, Double Bass Array (DBA), gradient cardioid pairs --
+  IIR, FIR or hybrid output.
+@end itemize
+
+@subheading Optimisation back-ends
+
+Optimiser names are looked up in @code{src/optim/registry.rs}. The
+core back-ends:
+
+@multitable @columnfractions .30 .50 .20
+@headitem Backend @tab What it is @tab Best for
+@item @code{autoeq:de} @tab Differential Evolution + JADE / L-SHADE
+  variants @tab global, multimodal
+@item @code{autoeq:cobyla} @tab Pure-Rust COBYLA @tab fast local
+  refinement
+@item @code{autoeq:isres} @tab Improved Stochastic Ranking ES @tab
+  constrained global
+@item @code{autoeq:cmaes} @tab CMA-ES @tab ill-conditioned problems
+@item @code{autoeq:nsga2}, @code{autoeq:nsga3} @tab Pareto multi-
+  objective @tab multi-curve fitting
+@item @code{mh:pso}, @code{mh:firefly}, @dots{} @tab Metaheuristics
+  bridge @tab experimentation
+@end multitable
+
+The historical @code{nlopt:*} names are compatibility aliases mapped
+to pure-Rust back-ends with a warning. The NLopt C-FFI backend has
+been removed.
+
+@subheading Loss types
+
+@table @code
+@item speaker-flat
+ERB-weighted MSE between corrected curve and target.
+@item speaker-flat-asymmetric
+Penalises boosts more than cuts.
+@item speaker-score
+Olive / Toole preference score (NBD + LFX + SM-PIR).
+@item headphone-flat, headphone-score
+Headphone variants.
+@item drivers-flat
+Multi-driver crossover fit.
+@item multi-sub-flat
+Multi-subwoofer combined-response fit.
+@item epa
+Zwicker/Fastl perceptual composite (flatness + sharpness + roughness
++ loudness balance + cubic-distortion-tone level + modal temporal
+masking).
+@end table
+
+@subheading Export formats
+
+JSON (canonical), Equalizer APO / Peace, CamillaDSP YAML,
+EasyEffects preset, Wavelet GraphicEQ, PipeWire SPA-JSON, Roon DSP
+preset, RME, AU Preset. Some targets (EasyEffects, Wavelet GraphicEQ)
+do not support routing matrices or convolution; the exporter refuses
+those configurations explicitly rather than silently dropping plugins.
+
+@c =====================================================================
+@node autoeq Binary
+@section The @code{autoeq} Binary
+@cindex autoeq binary
+
+The @code{autoeq} binary fits a small number of IIR filters to a
+single measured curve (speaker on-axis / listening window, or a
+headphone measurement). Usage:
+
+@example
+autoeq [OPTIONS]
+@end example
+
+@subheading Key flags
+
+@multitable @columnfractions .35 .15 .50
+@headitem Flag @tab Default @tab What it does
+@item @code{-n, --num-filters} @tab 7 @tab Number of IIR filters.
+@item @code{-c, --curve} @tab @tab Measured CSV (@code{freq,spl}); or
+  use @code{--speaker --version --measurement} to fetch from the API.
+@item @code{-t, --target} @tab @tab Target CSV (flat 0 dB if omitted).
+@item @code{-s, --sample-rate} @tab 48000 @tab IIR design rate (Hz).
+@item @code{--max-db / --min-db} @tab 3.0 / 1.0 @tab Per-filter gain
+  bounds (absolute dB).
+@item @code{--max-q / --min-q} @tab 3.0 / 1.0 @tab Per-filter Q bounds.
+@item @code{--min-freq / --max-freq} @tab 60 / 16000 @tab Filter
+  placement frequency bounds (Hz).
+@item @code{--algo} @tab @code{nlopt:cobyla} @tab Optimiser back-end.
+@item @code{--loss} @tab @code{speaker-flat} @tab Loss type
+  (@pxref{autoeq User Guide}).
+@item @code{--peq-model} @tab @code{pk} @tab PEQ filter structure.
+@item @code{--maxeval} @tab 2000 @tab Optimiser evaluation budget.
+@item @code{--refine} @tab off @tab Run local refinement after global.
+@item @code{--local-algo} @tab @code{cobyla} @tab Local refiner.
+@item @code{--smooth / --smooth-n} @tab on / 2 @tab 1/N-octave
+  smoothing of the inverted target.
+@item @code{--smoothness-weight} @tab 0.0 @tab TV^2 curvature
+  regulariser (try 0.05 as a starting point).
+@item @code{--min-spacing-oct} @tab 0.2 @tab Minimum inter-filter
+  spacing in octaves.
+@item @code{-o, --output} @tab @tab Output PNG for the result plot
+  (requires @code{--features plotly}).
+@item @code{--algo-list / --peq-model-list} @tab @tab List options
+  and exit.
+@end multitable
+
+@subheading Examples
+
+@strong{Headphone EQ from a CSV measurement, target Harman.}
+
+@example
+autoeq \
+  --curve  measurements/my_headphone.csv \
+  --target targets/harman_oe_2018.csv \
+  --num-filters 10 \
+  --min-freq 20 --max-freq 20000 \
+  --max-db 6 --min-db 0.2 \
+  --max-q 6 --min-q 0.5 \
+  --algo autoeq:de --maxeval 5000 \
+  --output result.png
+@end example
+
+@strong{Speaker EQ from the Spinorama API.}
+
+@example
+autoeq \
+  --speaker     "Genelec 8341A" \
+  --version     "vendor-pattern" \
+  --measurement "CEA2034" \
+  --curve-name  "Listening Window" \
+  --num-filters 8 \
+  --loss speaker-score \
+  --algo autoeq:de --refine --local-algo cobyla \
+  --output 8341a.png
+@end example
+
+@strong{Score-driven optimisation with smoothness regularisation.}
+
+@example
+autoeq \
+  --curve   measurements/spk.csv \
+  --target  targets/in_room_-0.8db.csv \
+  --loss    speaker-score \
+  --num-filters 6 \
+  --smoothness-weight 0.05 \
+  --smoothness-exponent 1.0 \
+  --smoothness-schroeder-hz 250 \
+  --algo autoeq:de --maxeval 4000
+@end example
+
+@strong{Multi-driver crossover optimisation} runs through a separate
+code path triggered by passing a multi-driver speaker configuration;
+in production this is exercised through @code{roomeq} (which can carry
+multi-driver speakers in its config). The library entry point is
+@code{autoeq::optim::optimize_multi_driver}.
+
+@subheading Helper commands
+
+@table @code
+@item autoeq --algo-list
+List every optimiser back-end with a short description.
+@item autoeq --peq-model-list
+List every supported PEQ model (peak only, peak + shelves, etc.).
+@end table
+
+@c =====================================================================
+@node roomeq Binary
+@section The @code{roomeq} Binary
+@cindex roomeq binary
+
+@code{roomeq} optimises a multi-channel speaker system from real-room
+measurements and emits a per-channel DSP chain.
+
+@example
+roomeq --config <config.json> --output <output.json> [OPTIONS]
+@end example
+
+@subheading Key flags
+
+@multitable @columnfractions .30 .15 .55
+@headitem Flag @tab Default @tab What it does
+@item @code{--config} @tab @i{required} @tab Room configuration JSON
+  (see @ref{RoomEQ Config Schema}).
+@item @code{--output} @tab @i{required} @tab Output DSP chain JSON
+  (see @ref{RoomEQ DSP Chain Schema}).
+@item @code{--sample-rate} @tab 48000 @tab Filter design rate (Hz).
+@item @code{--verbose} @tab off @tab Verbose progress output.
+@item @code{--help} @tab @tab Print help and exit.
+@end multitable
+
+All algorithmic choices (algorithm, filter count, bounds, loss,
+features) live in the config file, not in CLI flags. This means the
+exact run is reproducible from the config alone.
+
+@subheading Examples
+
+@strong{Stereo, single COBYLA pass.}
+
+@example
+roomeq \
+  --config  measurements/stereo.json \
+  --output  /tmp/stereo_dsp.json
+@end example
+
+Minimal @file{stereo.json}:
+
+@example
+@{
+  "speakers": @{
+    "left":  "measurements/left.csv",
+    "right": "measurements/right.csv"
+  @},
+  "optimizer": @{
+    "num_filters": 10,
+    "algorithm": "nlopt:cobyla",
+    "max_iter": 5000,
+    "min_freq": 20.0,
+    "max_freq": 20000.0,
+    "min_q": 0.5, "max_q": 10.0,
+    "min_db": -12.0, "max_db": 12.0,
+    "loss_type": "flat"
+  @}
+@}
+@end example
+
+@strong{Stereo 2.1 with explicit topology and bass management.}
+
+@example
+@{
+  "system": @{
+    "model": "stereo",
+    "speakers": @{ "L": "left_meas", "R": "right_meas",
+                  "LFE": "sub_meas" @},
+    "subwoofers": @{
+      "config": "single",
+      "crossover": "bass_xo",
+      "sub_meas": "L"
+    @}
+  @},
+  "crossovers": @{
+    "bass_xo": @{ "type": "LR24", "frequency": 80.0 @}
+  @},
+  "speakers": @{
+    "left_meas":  "measurements/L.csv",
+    "right_meas": "measurements/R.csv",
+    "sub_meas":   "measurements/sub.csv"
+  @},
+  "optimizer": @{ "num_filters": 8, "algorithm": "autoeq:de" @}
+@}
+@end example
+
+@strong{Multi-subwoofer, modal-basis seat optimisation.}
+
+@example
+@{
+  "speakers": @{
+    "lfe": @{
+      "name": "subs",
+      "subwoofers": [
+        @{ "measurements":
+            ["sub1_seat0.csv","sub1_seat1.csv","sub1_seat2.csv"] @},
+        @{ "measurements":
+            ["sub2_seat0.csv","sub2_seat1.csv","sub2_seat2.csv"] @}
+      ]
+    @}
+  @},
+  "optimizer": @{
+    "multi_seat": @{
+      "enabled": true,
+      "strategy": "modal_basis",
+      "per_sub_peq": true,
+      "global_eq": true,
+      "allpass_filters_per_sub": 1
+    @}
+  @}
+@}
+@end example
+
+@strong{Home cinema with group-aware crossover search.}
+
+The same @code{system.model: "home_cinema"} block carries all front /
+surround / surround-back / height / LFE channels. Roles are grouped
+so a single crossover decision covers each group rather than fighting
+across symmetric channels.
+
+@subheading Targeted run from the test suite
+
+@example
+cargo run --release --bin roomeq -- \
+  --config crates/autoeq/tests/data/roomeq/test_config_stereo.json \
+  --output /tmp/out.json
+@end example
+
+@subheading QA harnesses
+
+The crate also ships @code{roomeq-fuzzer},
+@code{roomeq-qa-quality}, @code{roomeq-qa-coverage},
+@code{roomeq-qa-features} and @code{roomeq-qa-synthetic}. Invoke
+through @code{just qa-roomeq} for the convergence suite.
+
+@c =====================================================================
+@node How RoomEQ Works
+@section How RoomEQ Works
+@cindex roomeq pipeline
+
+This section is a condensed version of
+@file{crates/autoeq/docs/roomeq_explained.md}. Read that file for
+the mermaid diagrams and the full equation set.
+
+@subheading Big picture
+
+A run is fully described by a single JSON configuration:
+
+@table @code
+@item speakers
+Map from logical name to measurement source (CSV / WAV / API curve /
+@code{Group} / @code{MultiSubGroup} / @code{DBA} / @code{Cardioid}
+aggregate).
+@item system
+(Optional.) Explicit topology -- @code{Stereo}, @code{Stereo 2.1},
+@code{HomeCinema}, @code{Custom}. When present, selects a specialised
+workflow instead of the generic per-channel path.
+@item crossovers
+Named filter blocks used by multi-driver speakers and bass management
+(@code{LR24}, @code{LR48}, @code{BW12}, @code{BW24}).
+@item optimizer
+Target curve, algorithm, filter count, Q / gain / freq bounds, and
+feature toggles (Schroeder split, excursion protection, phase
+alignment, multi-seat, CEA-2034 pre-correction, mixed-phase, @dots{}).
+@end table
+
+@subheading Pipeline stages
+
+@code{optimize_room()} (entry point in @file{src/roomeq/optimize.rs})
+dispatches into @code{RoomPipeline::run()}, which emits these stages:
+
+@enumerate
+@item @code{ConfigPreparation} -- clone config; if
+  @code{cea2034_correction.enabled}, fetch Spinorama bundles into a
+  cache used by the per-channel workflow.
+@item @code{Validation} -- structural checks: every role points to a
+  real speaker, every named crossover is defined, every measurement
+  source loads and parses, phase data is present where required, and
+  filter frequency bounds lie within the measurement support of every
+  channel.
+@item @code{TopologyRouteSelection} -- pick the workflow:
+  @code{Stereo} / @code{Stereo 2.1} / @code{HomeCinema} or the generic
+  per-channel path.
+@item @code{TopologyWorkflowExecution} @i{or}
+  @code{GenericChannelOptimization} -- the actual optimisation.
+@item @code{FirGeneration} when @code{processing_mode} is
+  @code{PhaseLinear} or @code{Hybrid}.
+@item @code{MixedPhaseFirGeneration} when @code{MixedPhase}.
+@item @code{PhaseCorrection} when configured (rePhase-style all-pass).
+@item @code{GroupDelayOptimization} when configured.
+@item @code{ImpulseResponseComputation} -- pre/post IR for plotting.
+@item @code{ChannelMatching} (>= 2 channels) -- inter-channel
+  deviation report + spectral alignment + ``voice of god'' timbre
+  matching.
+@item @code{MetadataRefresh} -- pre/post scores, EPA, bass-management
+  report.
+@item @code{SanityCheck} -- non-NaN, length-matched arrays;
+  @code{debug_assert!} in debug, clean @code{Err} in release.
+@end enumerate
+
+@subheading Per-channel optimisation
+
+Every channel -- whether reached from a topology workflow or the
+generic path -- goes through @code{process_single_speaker}:
+
+@enumerate
+@item @strong{Load measurement} via @code{load_source}; resample onto
+  the optimiser grid; 1/N-octave smooth.
+@item @strong{Build target} (@code{target_tilt.rs}): base shape
+  (@code{flat}, @code{harman}, @code{custom}, @code{file},
+  @code{from_measurement}) plus user-preference bass / treble shelves.
+@item @strong{Detect F3} and generate a highpass to keep the optimiser
+  from boosting below the driver rolloff (excursion protection).
+@item @strong{Phase alignment} (@code{phase_alignment.rs}): coarse
+  0.5 ms / refined 0.1 ms grid over sub vs main delay and polarity.
+@item @strong{Multi-seat / SFM} (@code{multiseat.rs}): per-sub PEQ,
+  then MSO/SFM over the corrected matrix for per-sub gain, delay,
+  polarity and optional all-pass. Strategies:
+  @code{minimize_variance}, @code{primary_with_constraints},
+  @code{average}, @code{modal_basis} (SVD over complex per-sub /
+  per-seat transfer functions, picks dominant non-common modes).
+@item @strong{EQ search} (@code{speaker_eq/schroeder.rs}): single-pass
+  or Schroeder-split (modal band high-Q / statistical band low-Q),
+  driven by the chosen optimiser back-end.
+@item @strong{FIR post-generation} (@code{fir.rs}): for
+  @code{PhaseLinear} / @code{Hybrid}, inverse-FFT the magnitude
+  response; for @code{MixedPhase}, cepstral decomposition + excess-
+  phase corrector.
+@item @strong{Group-delay optimisation} (@code{gd_opt.rs}): emits
+  delay / polarity / all-pass plugins, or folds delay into the FIR
+  shift in @code{PhaseLinear} mode.
+@item @strong{Build chain} (@code{output.rs}): assemble the per-
+  channel plugin list in order
+  @code{gain -> delay -> eq -> convolution -> @dots{}}.
+@end enumerate
+
+@subheading Optional advanced corrections
+
+@table @asis
+@item Decomposed correction (Laborie/Bruno/Montoya, 2003)
+Split the IR into modal, early-reflection and steady-state regions
+and apply different strategies to each.
+@item First-reflection cancellation (Johnston, AES 2008)
+Subtract a delayed low-passed copy below ~500 Hz.
+@item Spatial robustness (Brännmark / Sternad, AES 2008)
+Trade single-point flatness for cross-position robustness with a
+spatial zero-clustering pre-ringing constraint.
+@item Mixed-phase / phase correction
+Short FIR that corrects excess phase without doubling latency.
+@end table
+
+@subheading Schroeder split
+
+The Schroeder frequency separates modal (sparse high-Q resonances)
+from statistical (overlapping modes) room behaviour. Estimated by
+@code{estimate_schroeder_frequency} as
+@code{2000 * sqrt(T_60 / V)} or, when only volume is known, by
+@code{11885 / sqrt(V)}. When @code{schroeder_split.enabled = true}
+the optimiser runs two passes:
+
+@itemize @bullet
+@item @strong{Low band} (@code{min_freq} -- @code{f_S}): high Q, no
+  boost.
+@item @strong{High band} (@code{f_S} -- @code{max_freq}): low Q,
+  optionally shelves only.
+@end itemize
+
+The biquad sets are concatenated.
+
+@subheading Output
+
+@code{DspChainOutput} carries per-channel @code{plugins} arrays,
+@code{global_plugins} (sparse matrix for bass-management routing),
+and a metadata block with pre/post scores, EPA per channel, optimiser
+algorithm, iteration counts, version stamp, and a full
+@code{BassManagementReport}.
+
+@subheading References
+
+The roomeq pipeline cites: CTA-2034-A (spinorama), Olive preference
+score (AES 2004), Harman in-room target (Olive/Welti/McMullin),
+Schroeder (JASA 1962/1996), Brännmark & Sternad (AES 2008 +
+EP2104374B1), Laborie/Bruno/Montoya (AES 2003), Johnston (AES 2008),
+Glasberg/Moore ERB, Zwicker/Fastl psychoacoustics, ISO 226,
+DIN 45692, Sobol sequences, NSGA-II, Welti/Devantier multi-sub
+optimisation. Full bibliography: @file{crates/autoeq/REFERENCES.md};
+optimisation algorithms:
+@file{crates/math-audio/math-optimisation/REFERENCES.md}; filters:
+@file{crates/math-audio/math-iir-fir/REFERENCES.md}.
+
+@c =====================================================================
+@node RoomEQ Config Schema
+@section RoomEQ Input Format
+@cindex roomeq input format
+
+The complete schema lives in
+@file{crates/autoeq/bin/roomeq/input_schema.json} and is documented in
+@file{INPUT_FORMAT.md}. Validate a config with:
+
+@example
+npx ajv validate -s input_schema.json -d your_config.json
+# or
+check-jsonschema --schemafile input_schema.json your_config.json
+@end example
+
+@subheading Root structure
+
+@example
+@{
+  "version":          "3.0.0",
+  "system":           @{ @dots{} @},
+  "speakers":         @{ @dots{} @},
+  "crossovers":       @{ @dots{} @},
+  "target_curve":     "@dots{}",
+  "optimizer":        @{ @dots{} @},
+  "recording_config": @{ @dots{} @},
+  "ctc":              @{ @dots{} @}
+@}
+@end example
+
+@multitable @columnfractions .20 .12 .12 .56
+@headitem Field @tab Type @tab Required @tab Description
+@item @code{version} @tab string @tab no @tab Config version
+  (semver). Default @code{"3.0.0"}.
+@item @code{system} @tab object @tab no @tab Topology and logical
+  channel mapping.
+@item @code{speakers} @tab object @tab @strong{yes} @tab Map of
+  channel names to speaker configurations.
+@item @code{crossovers} @tab object @tab no @tab Named crossover
+  filter blocks.
+@item @code{target_curve} @tab string @tab no @tab Target frequency
+  response curve.
+@item @code{optimizer} @tab object @tab no @tab Optimisation
+  parameters.
+@item @code{recording_config} @tab object @tab no @tab Capture
+  device / signal config.
+@item @code{ctc} @tab object @tab no @tab Cross-talk cancellation /
+  binaural correction using measured two-ear IRs or HRTF/SOFA data.
+@end multitable
+
+@subheading System block
+
+@table @code
+@item model
+@code{stereo}, @code{home_cinema} or @code{custom}.
+@item speakers
+Map from logical role (@code{L}, @code{R}, @code{C}, @code{LS},
+@code{RS}, @code{LB}, @code{RB}, @code{LFE}, @dots{}) to a speaker
+key.
+@item subwoofers
+@code{config}: @code{single}, @code{multi}, @code{dba} or
+@code{cardioid}; @code{crossover}: name of a crossover block;
+@code{sub_meas}: routing.
+@end table
+
+@subheading Speakers block
+
+A speaker entry is one of:
+
+@itemize @bullet
+@item @strong{Measurement reference} -- path to a CSV
+  (@code{freq,spl[,phase]}) or a stringified speaker key.
+@item @strong{Single speaker} -- inline measurement + optional
+  smoothing.
+@item @strong{Multi-driver Group} -- multiple drivers + their own
+  crossovers.
+@item @strong{MultiSub} -- multiple subs treated as a virtual channel
+  (legacy gain/delay, or full multi-seat when paired with
+  @code{optimizer.multi_seat}).
+@item @strong{DBA} -- Double Bass Array (front wall + delayed back
+  wall).
+@item @strong{Cardioid} -- gradient cardioid pair for sidewall
+  cancellation.
+@end itemize
+
+@subheading Crossovers
+
+@example
+"crossovers": @{
+  "bass_xo": @{ "type": "LR24", "frequency": 80.0 @}
+@}
+@end example
+
+Types: @code{LR24}, @code{LR48}, @code{BW12}, @code{BW24}.
+
+@subheading Optimizer block
+
+The optimiser block is large; the most useful keys are:
+
+@table @code
+@item num_filters
+Number of IIR filters per channel.
+@item algorithm
+Optimiser back-end (e.g.@: @code{autoeq:de}, @code{autoeq:cobyla}).
+@item max_iter
+Evaluation budget.
+@item min_freq, max_freq
+Filter placement bounds in Hz.
+@item min_q, max_q
+Q bounds.
+@item min_db, max_db
+Per-filter gain bounds.
+@item loss_type
+@code{flat}, @code{score}, @code{epa}, @dots{} (@pxref{autoeq User
+Guide}).
+@item peq_model
+Filter-set structure (@code{pk}, @code{pk+shelf}, @dots{}).
+@item smoothness_penalty
+TV^2 curvature regularisation
+(@code{tv2_weight}, @code{schroeder_hz}, @code{modal_weight_scale},
+@code{exponent}).
+@item schroeder_split
+Modal-vs-statistical split toggle.
+@item excursion_protection
+F3 detection + HPF generation.
+@item phase_alignment
+Sub-vs-main delay/polarity grid.
+@item multi_seat
+Multi-seat / SFM / modal-basis controls.
+@item cea2034_correction
+3-pass speaker pre-correction using on-axis / LW / SP curves.
+@item processing_mode
+@code{IIR}, @code{PhaseLinear}, @code{Hybrid}, @code{MixedPhase},
+@code{LowLatency}.
+@item fir
+@code{taps}, @code{window}, @code{minimum_phase} settings.
+@item group_delay
+GD-Opt v2 controls (delay / polarity / all-pass or FIR shift).
+@end table
+
+@subheading CTC block
+
+The optional @code{ctc} block exports a
+@file{recommended_xtc_matrix.json} artefact loadable by the XTC
+plugin with @code{source_mode: "roomeq_recommended"}. Supports
+measured two-ear IRs (one stereo WAV per speaker x head position) or
+HRTF/SOFA data, with a configurable window, regularisation
+(@code{beta_db}, @code{beta_lf_db}, @code{beta_hf_db},
+@code{max_gain_db}), robustness mode, and tap count.
+
+@subheading Measurement CSV format
+
+Two or three columns, header line optional:
+
+@example
+freq,spl[,phase]
+20.0,-3.2[,0.0]
+@dots{}
+@end example
+
+Frequency in Hz, SPL in dB, phase (optional) in radians or degrees as
+indicated by header.
+
+@c =====================================================================
+@node RoomEQ DSP Chain Schema
+@section RoomEQ Output Format
+@cindex roomeq output format
+
+The complete schema lives in
+@file{crates/autoeq/bin/roomeq/output_schema.json} and is documented
+in @file{OUTPUT_FORMAT.md}.
+
+@subheading Root structure
+
+@example
+@{
+  "version":  "1.4.0",
+  "channels": @{ @dots{} @},
+  "metadata": @{ @dots{} @}
+@}
+@end example
+
+@subheading Channel DSP chain
+
+Each channel has an ordered list of plugins that processes audio in
+sequence, plus optional pre/post curves and IRs:
+
+@example
+"left": @{
+  "channel":      "left",
+  "plugins":      [ @dots{} ],
+  "drivers":      [ @dots{} ],     // per-driver chains for multi-way speakers
+  "initial_curve":           @{ @dots{} @},
+  "final_curve":             @{ @dots{} @},
+  "eq_response":             @{ @dots{} @},
+  "target_curve":            @{ @dots{} @},
+  "pre_ir":                  @{ @dots{} @},
+  "post_ir":                 @{ @dots{} @},
+  "fir_temporal_masking":    @{ @dots{} @}
+@}
+@end example
+
+@subheading Plugin types
+
+The output may contain any of these plugin entries, in chain order
+(typically @code{gain -> delay -> eq -> convolution}):
+
+@table @code
+@item gain
+Scalar dB gain.
+@item eq
+List of IIR biquads (@code{type}, @code{frequency}, @code{q},
+@code{gain_db}).
+@item crossover
+@code{type} (@code{LR24} / @code{LR48} / @code{BW12} / @code{BW24}),
+@code{frequency}.
+@item delay
+Time delay (samples or ms).
+@item convolution
+WAV file with FIR coefficients.
+@item band_split
+Split into bands by crossover frequencies.
+@item band_merge
+Sum bands back together.
+@end table
+
+@subheading Global plugins and routing
+
+When bass management is active, @code{global_plugins} holds a sparse
+matrix @code{crossover} plugin that the audio engine renders as a
+routing stage before any per-channel plugins.
+
+@subheading Curves
+
+@example
+@{
+  "freq": [20.0, 25.0, @dots{}, 20000.0],
+  "spl":  [@dots{}],
+  "phase":[@dots{}]
+@}
+@end example
+
+Frequencies in Hz, SPL in dB, phase in radians.
+
+@subheading Impulse response waveform
+
+@example
+@{
+  "sample_rate": 48000,
+  "samples":     [@dots{}],
+  "peak_index":  @dots{}
+@}
+@end example
+
+@subheading Metadata block
+
+@table @code
+@item pre_score, post_score
+Combined optimisation score before and after.
+@item per_channel_epa
+EPA decomposition per channel (flatness, sharpness, roughness,
+loudness balance, modal temporal masking, CDT level).
+@item multichannel_epa
+EPA over the matched channel set.
+@item inter_channel_deviation
+Per-band SPL delta heatmap.
+@item bass_management_report
+Routing graph, group crossovers, headroom simulation, advisories.
+@item perceptual_metrics
+FIR pre/post-ringing summary when FIR is generated.
+@item optimizer
+Algorithm, iteration counts.
+@item version
+Output schema version stamp.
+@end table
+
+@subheading Worked output examples
+
+The format doc carries four complete worked examples: simple stereo
+EQ, 2-way active speaker with crossover, FIR mode with convolution,
+and mixed mode with band splitting. See
+@file{OUTPUT_FORMAT.md} for the verbatim JSON.
+
+@c =====================================================================
+@node autoeq Developer Guide
+@section Developer Guide
+
+@subheading Crate layout
+
+@example
+crates/autoeq/
+  src/
+    lib.rs
+    cli.rs                 shared CLI arg parsing
+    read/                  ingest + normalise measurement data
+    loss/                  flat / score / epa / multi-driver loss
+    optim/                 optimiser back-ends + registry
+    response.rs, x2peq.rs  vector <-> filters + responses
+    cea2034.rs             CTA-2034 metrics + preference score
+    roomeq/
+      pipeline.rs          RoomPipeline / events / observer
+      optimize.rs          optimize_room, optimize_speaker
+      workflows.rs         topology dispatch
+      speaker_eq/          process_single_speaker + schroeder split
+      group_processing.rs  multi-driver xover, multisub, DBA, cardioid
+      target_tilt.rs       build_complete_target_curve
+      excursion.rs         F3 + protection HPF
+      phase_alignment.rs   sub/main delay+polarity
+      multiseat.rs         MSO + modal-basis SFM
+      multisub.rs          multi-sub flat optimisation
+      dba.rs               double bass array
+      cea2034_correction.rs    3-pass speaker pre-correction
+      mixed_phase.rs       IIR + excess-phase FIR
+      impulse_analysis.rs  decomposed correction
+      reflection_cancel.rs Johnston canceller
+      spatial_robustness.rs    Brännmark / Sternad
+      spectral_align.rs    inter-channel shelves + gain
+      voice_of_god.rs      timbre matching
+      fir.rs               FIR generation from biquads
+      gd_opt.rs            group-delay optimisation v2
+      ir_waveform.rs       pre/post IR computation
+      output.rs            DSP-chain construction
+      export.rs            APO / CamillaDSP / EE / Wavelet / @dots{}
+      home_cinema.rs       bass management report + advisories
+      frequency_grid.rs    grid validation
+      types/               config / output data structures
+  bin/
+    autoeq/                speaker / headphone CLI
+    roomeq/                room CLI + INPUT_FORMAT + OUTPUT_FORMAT
+    convert-recording/     bundle format migrator
+    autoeq_benchmark_speaker.rs
+    autoeq_download_speaker.rs
+    roomeq_fuzzer.rs
+    roomeq_qa_*.rs         QA harnesses
+  docs/
+    roomeq_explained.md    canonical implementation map
+  REFERENCES.md            full bibtex bibliography
+@end example
+
+@subheading Key public API
+
+@table @code
+@item autoeq::optim::optimize_filters
+Generic optimiser entry point.
+@item autoeq::optim::optimize_multi_driver
+Multi-driver crossover optimiser.
+@item autoeq::roomeq::optimize::optimize_room
+Top-level RoomEQ entry point.
+@item autoeq::roomeq::optimize::optimize_room_with_probe_arrivals
+RoomEQ entry that skips WAV-onset detection and uses caller-supplied
+per-channel arrival times.
+@item autoeq::roomeq::workflows::*
+Specialised topology workflows (stereo 2.0, stereo 2.1, home cinema).
+@end table
+
+@subheading Conventions
+
+@itemize @bullet
+@item Filters must be placed @strong{within} the measurement frequency
+  bounds. The validator refuses configurations that violate this.
+@item Passband detection uses @emph{relative-to-peak} thresholds, not
+  absolute dB values.
+@item The core filter type is @code{autoeq_iir::Biquad}; @code{Peak},
+  @code{Lowshelf}, @code{Highshelf}, @code{Lowpass}, @code{Highpass},
+  @code{Bandpass} and @code{Notch} are supported.
+@item Optimiser backend names are looked up in
+  @code{src/optim/registry.rs}; the @code{nlopt:*} aliases are
+  deprecated but accepted.
+@end itemize
+
+@subheading Testing
+
+@example
+cargo test  -p autoeq --lib
+cargo check -p autoeq
+cargo clippy -p autoeq --no-deps
+just qa-roomeq
+just qa-roomeq-convergence
+@end example
+
+The QA benchmark suite measures convergence and preference score over
+a fixed corpus; regressions should not be merged.
+
+@subheading Docs to keep in sync
+
+@itemize @bullet
+@item @file{CHANGELOG.md}
+@item @file{docs/roomeq_explained.md}
+@item @file{bin/roomeq/INPUT_FORMAT.md}
+@item @file{bin/roomeq/input_schema.json}
+@item @file{bin/roomeq/OUTPUT_FORMAT.md}
+@item @file{bin/roomeq/output_schema.json}
+@item This manual (@file{docs/manuals/autoeq.texi}).
+@end itemize

@@ -1,0 +1,65 @@
+@c -*-texinfo-*-
+@node gpui-themes Manual
+@chapter Crate @code{gpui-themes}
+@cindex gpui-themes
+@cindex themes
+
+@code{gpui-themes} provides theme editing and management for GPUI
+applications. It is a serializable theme system with JSON and Rust
+export, a colour picker, a component showcase and a built-in theme
+editor used to preview themes interactively.
+
+@menu
+* gpui-themes User Guide::
+* gpui-themes Developer Guide::
+@end menu
+
+@node gpui-themes User Guide
+@section User Guide
+
+@subheading Switching theme
+
+The desktop player ships several themes (dark, light, high-contrast,
+and custom). Pick one from Settings.
+
+@subheading Customising
+
+The bundled theme editor lets you tweak any colour token, see the
+result on the component showcase, and export the result as JSON. Drop
+the JSON into the user config directory and SotF will pick it up.
+
+@node gpui-themes Developer Guide
+@section Developer Guide
+
+@subheading What's in a theme
+
+A theme is a struct of named colour tokens (accent, surface,
+text-primary, text-secondary, danger, @dots{}). It is independent of
+@ref{gpui-design Manual}: design controls shape and motion, themes
+control colour.
+
+@subheading Loading order
+
+@enumerate
+@item Built-in default.
+@item User-overridden theme JSON from the config directory.
+@item Runtime override (e.g.@: from a CLI flag or unit test).
+@end enumerate
+
+@subheading Exporters
+
+@itemize @bullet
+@item @strong{JSON} -- the canonical user-facing format.
+@item @strong{Rust} -- emits a @code{const Theme} declaration suitable
+  for embedding into a binary.
+@end itemize
+
+@subheading Hooks into other crates
+
+@itemize @bullet
+@item @ref{gpui-ui-kit Manual} components read the current theme.
+@item @ref{gpui-ui-kit-macros Manual} provides @code{#[derive(ComponentTheme)]}
+  to wire a component theme to global tokens with one line.
+@item @ref{gpui-d3rs Manual} and @ref{gpui-px Manual} read theme
+  colours for chart styling.
+@end itemize

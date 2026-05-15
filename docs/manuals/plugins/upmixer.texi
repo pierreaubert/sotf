@@ -1,0 +1,157 @@
+@c -*-texinfo-*-
+@c Per-plugin manual: upmixer
+@node upmixer Plugin
+@chapter Plugin: @code{upmixer}
+@cindex upmixer plugin
+
+Stereo to surround upmixing (2ch to 5.0/5.1/7.1) using FFT-based spatial decomposition and VBAP panning.
+
+@menu
+* upmixer Plugin Parameters::
+* upmixer Plugin Developer Guide::
+@end menu
+
+@node upmixer Plugin Parameters
+@section Parameters
+
+
+@subsection Output
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Speaker Config} @tab Choice (2.0, 5.0, 5.1, 7.1, 5.1.2, 5.1.4, 7.1.2, 7.1.4, 9.1.4, 9.1.6) @tab 10 options @tab 5.1 @tab - @tab Target surround speaker layout
+@item @code{Safety Cap} @tab Float @tab 0 .. 3 @tab 3 @tab dB @tab Max output headroom limit
+@item @code{Binaural Preview} @tab Bool @tab On / Off @tab Off @tab - @tab Preview surround output binaurally (headphone monitoring, changes output to 2ch)
+@end multitable
+
+
+@subsection Gains
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Front Direct} @tab Float @tab 0 .. 2 @tab 1 @tab x @tab Direct sound to front speakers
+@item @code{Front Ambient} @tab Float @tab 0 .. 2 @tab 0.5 @tab x @tab Ambient sound to front speakers
+@item @code{Rear Ambient} @tab Float @tab 0 .. 2 @tab 1 @tab x @tab Ambient sound to rear speakers
+@item @code{Height Gain} @tab Float @tab 0 .. 2 @tab 1 @tab x @tab Level sent to height speakers
+@end multitable
+
+
+@subsection LFE
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{LFE Gain} @tab Float @tab 0 .. 2 @tab 1 @tab x @tab Subwoofer channel level
+@item @code{LFE Cutoff} @tab Float @tab 20 .. 180 @tab 120 @tab Hz @tab LFE low-pass filter frequency
+@item @code{Subharmonic Synth} @tab Bool @tab On / Off @tab Off @tab - @tab Generate sub-bass harmonics
+@item @code{Sub Gain} @tab Float @tab 0 .. 1 @tab 0.5 @tab x @tab Synthesized sub-bass level
+@item @code{Sub Freq} @tab Float @tab 20 .. 80 @tab 40 @tab Hz @tab Sub-harmonic target frequency
+@item @code{Sub Attack} @tab Float @tab 1 .. 100 @tab 10 @tab ms @tab Sub-harmonic envelope attack
+@item @code{Sub Release} @tab Float @tab 10 .. 500 @tab 50 @tab ms @tab Sub-harmonic envelope release
+@end multitable
+
+
+@subsection Spatial
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Stereo Width} @tab Float @tab 0 .. 1 @tab 0.5 @tab - @tab Front L/R separation amount
+@item @code{Center Spread} @tab Float @tab 0 .. 1 @tab 0 @tab - @tab Center image width to L/R
+@item @code{Upmix Crossover} @tab Float @tab 150 .. 350 @tab 250 @tab Hz @tab Direct/ambient split frequency
+@end multitable
+
+
+@subsection HR Direct
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{HR Direct} @tab Bool @tab On / Off @tab On @tab - @tab Enable high-resolution direct path
+@item @code{HR Sharpen} @tab Float @tab 0 .. 1 @tab 1 @tab - @tab Spatial image sharpening
+@item @code{Ambient Boost} @tab Float @tab 0.5 .. 2 @tab 1.2 @tab x @tab Incoherent signal boost factor
+@end multitable
+
+
+@subsection Decorrelation
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Decor Mode} @tab Choice (Velvet Noise, LFO Phase) @tab 2 options @tab Velvet Noise @tab - @tab Channel decorrelation method
+@item @code{Decor LFO Rate} @tab Float @tab 0.01 .. 1 @tab 0.15 @tab Hz @tab LFO decorrelation modulation rate
+@item @code{Velvet Duration} @tab Float @tab 10 .. 100 @tab 30 @tab ms @tab Velvet noise impulse length
+@item @code{Velvet Density} @tab Float @tab 500 .. 5000 @tab 2000 @tab - @tab Velvet noise pulses per second
+@end multitable
+
+
+@subsection Height
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Height HF Cap} @tab Float @tab 8000 .. 20000 @tab 16000 @tab Hz @tab High-frequency limit for heights
+@item @code{Height Trans Red} @tab Float @tab 0 .. 1 @tab 0.6 @tab - @tab Soften transients in height feed
+@item @code{Height Direct Leak} @tab Float @tab 0 .. 0.5 @tab 0.15 @tab - @tab Direct signal bleed into heights
+@end multitable
+
+
+@subsection Surround
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Surround Bleed} @tab Float @tab 0 .. 1 @tab 0.5 @tab - @tab Direct signal bleed to surrounds
+@item @code{Rear Amb Boost} @tab Float @tab 1 .. 3 @tab 1.5 @tab x @tab Extra gain for rear ambience
+@item @code{Rear Late Refl} @tab Float @tab 0 .. 0.5 @tab 0.1 @tab - @tab Simulated rear room reflections
+@end multitable
+
+
+@subsection Dialogue
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Dialogue Weight} @tab Float @tab 0 .. 1 @tab 0.4 @tab - @tab Voice routing to center channel
+@item @code{Voice Freq Min} @tab Float @tab 200 .. 800 @tab 500 @tab Hz @tab Voice detection low bound
+@item @code{Voice Freq Max} @tab Float @tab 2000 .. 5000 @tab 3000 @tab Hz @tab Voice detection high bound
+@item @code{Diag Centroid W} @tab Float @tab 0 .. 1 @tab 0.3 @tab - @tab Spectral centroid score weight
+@item @code{Diag Variance W} @tab Float @tab 0 .. 1 @tab 0.2 @tab - @tab Spectral variance score weight
+@item @code{Diag Coherence W} @tab Float @tab 0 .. 1 @tab 0.5 @tab - @tab L/R coherence score weight
+@end multitable
+
+
+@subsection Analysis
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Low Latency} @tab Bool @tab On / Off @tab Off @tab - @tab Smaller FFT for lower latency
+@item @code{Freq Resolution} @tab Choice (ERB, Fine ERB, Per Bin) @tab 3 options @tab ERB @tab - @tab Frequency band grouping method
+@item @code{Multi-Source Extraction} @tab Bool @tab On / Off @tab Off @tab - @tab Extract multiple sound sources
+@item @code{Multi-Source Threshold} @tab Float @tab 0.05 .. 0.5 @tab 0.1 @tab - @tab Source separation sensitivity
+@end multitable
+
+
+@subsection Diagnostics
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Bypass Decor} @tab Bool @tab On / Off @tab Off @tab - @tab Skip channel decorrelation
+@item @code{Bypass Transients} @tab Bool @tab On / Off @tab Off @tab - @tab Skip transient detection
+@item @code{Bypass All} @tab Bool @tab On / Off @tab Off @tab - @tab Pass audio through unprocessed
+@item @code{ML Detection} @tab Bool @tab On / Off @tab Off @tab - @tab Use ML model for source detect
+@end multitable
+
+
+@strong{Structural parameters} (Speaker Config, Decor Mode, Velvet Duration, Velvet Density, Low Latency, Freq Resolution, Bypass Decor, Binaural Preview) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
+
+@node upmixer Plugin Developer Guide
+@section Developer Guide
+
+SOTF Upmixer plugin for stereo to surround upmixing.
+
+Converts stereo audio to surround formats (5.1 through 9.1.6) using FFT-based Direct/Ambient decomposition combined with VBAP panning for spatial placement.
+
+@subsubheading Parameter wiring
+
+All parameters reach the audio thread through the host's @code{rebuild_cached_parameters} / @code{set_parameter} / @code{get_parameter} triad. Structural parameters (marked in the notes below) trigger a rebuild; the rest update in real time with zero dropouts.
+
+@subsubheading Source
+
+@file{crates/sotf-plugins/crates/sotf-plugin-upmixer/}
+
+Run the unit tests with @code{cargo test -p sotf-plugin-upmixer}.
+
