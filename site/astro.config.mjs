@@ -43,29 +43,29 @@ export default defineConfig({
           items: [
             {
               label: 'Plugins',
-              autogenerate: { directory: 'reference/plugins' },
+              items: [{ autogenerate: { directory: 'reference/plugins' } }],
             },
             {
               label: 'Keybindings',
-              autogenerate: { directory: 'reference/keybindings' },
+              items: [{ autogenerate: { directory: 'reference/keybindings' } }],
             },
             {
               label: 'Screens',
-              autogenerate: { directory: 'reference/screens' },
+              items: [{ autogenerate: { directory: 'reference/screens' } }],
             },
             {
               label: 'CLI',
-              autogenerate: { directory: 'reference/cli' },
+              items: [{ autogenerate: { directory: 'reference/cli' } }],
             },
             {
               label: 'Configuration',
-              autogenerate: { directory: 'reference/config' },
+              items: [{ autogenerate: { directory: 'reference/config' } }],
             },
           ],
         },
         {
           label: 'Concepts',
-          autogenerate: { directory: 'concepts' },
+          items: [{ autogenerate: { directory: 'concepts' } }],
         },
         {
           label: 'Troubleshooting',

@@ -970,8 +970,12 @@ build_windows() {
         fi
     fi
     local msix_cleanup="cd ${remote_dir} && rm -f dist/sotf-desktop-${VERSION}-windows-*.msix"
-    local msix_x86="powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-msix.ps1 -Arch x86_64${ps_sign}"
-    local msix_arm="powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-msix.ps1 -Arch arm64${ps_sign}"
+    # Pass -BuildDir explicitly so build-msix.ps1 can't auto-detect the wrong
+    # cargo output dir. The x86_64 cargo build above is native (no --target),
+    # so its binaries land in target/dist/; arm64 is cross-compiled to
+    # target/aarch64-pc-windows-msvc/dist/.
+    local msix_x86="powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-msix.ps1 -Arch x86_64 -BuildDir target/dist${ps_sign}"
+    local msix_arm="powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-msix.ps1 -Arch arm64 -BuildDir target/aarch64-pc-windows-msvc/dist${ps_sign}"
 
     if $DRY_RUN; then
         log_dry "win_ssh_cmd ${host} '${msix_cleanup}'"

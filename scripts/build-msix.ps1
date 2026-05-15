@@ -287,23 +287,32 @@ if (-not $BuildDir) {
     # first, fall back to release/ for manual `cargo build --release` from
     # a dev shell.
     $cargoTargetDir = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $ProjectRoot 'target' }
-    foreach ($triple in @(
-        'x86_64-pc-windows-gnullvm','x86_64-pc-windows-gnu','x86_64-pc-windows-msvc',
-        'aarch64-pc-windows-gnullvm','aarch64-pc-windows-gnu','aarch64-pc-windows-msvc'
-    )) {
+    # Only consider triples that match the requested $Arch. Otherwise a stale
+    # arm64 cross-build can be picked up for an x86_64 MSIX (and vice versa),
+    # producing an MSIX whose binary architecture disagrees with its manifest.
+    $triples = if ($MsixArch -eq 'x64') {
+        @('x86_64-pc-windows-gnullvm','x86_64-pc-windows-gnu','x86_64-pc-windows-msvc')
+    } else {
+        @('aarch64-pc-windows-gnullvm','aarch64-pc-windows-gnu','aarch64-pc-windows-msvc')
+    }
+    foreach ($triple in $triples) {
         foreach ($profile in @('dist','release')) {
             $cand = Join-Path $cargoTargetDir "$triple\$profile"
             if (Test-Path (Join-Path $cand 'sotf-desktop.exe')) { $BuildDir = $cand; break }
         }
         if ($BuildDir) { break }
     }
-    if (-not $BuildDir) {
-        $distDir = Join-Path $cargoTargetDir 'dist'
-        if (Test-Path (Join-Path $distDir 'sotf-desktop.exe')) {
-            $BuildDir = $distDir
-        } else {
-            $BuildDir = Join-Path $cargoTargetDir 'release'
+    # Native (no --target) builds land in target/{dist,release}/ with no
+    # triple subdir. Only trust these when building for x86_64, since that
+    # matches the host arch of the Windows builder.
+    if (-not $BuildDir -and $MsixArch -eq 'x64') {
+        foreach ($profile in @('dist','release')) {
+            $cand = Join-Path $cargoTargetDir $profile
+            if (Test-Path (Join-Path $cand 'sotf-desktop.exe')) { $BuildDir = $cand; break }
         }
+    }
+    if (-not $BuildDir) {
+        $BuildDir = Join-Path $cargoTargetDir 'release'
     }
 }
 Write-Info "Build dir: $BuildDir"
