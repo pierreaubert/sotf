@@ -7,12 +7,17 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_px::LegendPosition;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, HStack, StackSpacing, Text, TextSize, TextWeight, VStack,
+    Button, ButtonSize, ButtonVariant, Card, HStack, StackSpacing, Text, TextSize, TextWeight,
+    VStack,
 };
 use sotf_audio::signal_analysis as dsp;
 use std::collections::BTreeSet;
 
 const ROOM_EQ_PYTHON_DEFAULT_SMOOTHING_OCTAVES: f64 = 1.0 / 6.0;
+
+/// Window-width threshold above which the per-channel review charts
+/// switch from stacked to a 2-column grid.
+const ROOM_EQ_REVIEW_WIDE_BREAKPOINT_PX: f32 = 1600.0;
 const ROOM_EQ_CHANNEL_COLORS: [u32; 10] = [
     0x1f77b4, // blue
     0xff7f0e, // orange
@@ -728,8 +733,10 @@ fn room_eq_report_filter_from_json(value: &serde_json::Value) -> Option<RoomEqRe
 fn room_eq_report_pass_display_name(label: &str) -> &'static str {
     match label {
         "cea2034_speaker_correction" => "Pass 1: Speaker Correction (CEA2034)",
-        "room_eq_correction" => "Pass 2: Room EQ",
+        "broadband" => "Broadband Matching",
+        "room_eq_correction" => "Pre-EQ: Room Correction",
         "user_preference" => "Pass 3: User Preference",
+        "post_eq" => "Post-EQ: Cleanup (post-crossover)",
         _ => "Room EQ",
     }
 }
@@ -737,8 +744,10 @@ fn room_eq_report_pass_display_name(label: &str) -> &'static str {
 fn room_eq_report_pass_color(label: &str) -> u32 {
     match label {
         "cea2034_speaker_correction" => 0xffa500,
+        "broadband" => 0x4fc3f7,
         "room_eq_correction" => 0x6464ff,
         "user_preference" => 0xb464ff,
+        "post_eq" => 0x66bb6a,
         _ => 0x6464ff,
     }
 }
@@ -994,22 +1003,18 @@ pub(crate) fn render_room_eq_report_summary(
         .zip(report.post_score)
         .map(|(pre, post)| pre - post);
 
-    div()
-        .p(d.card)
-        .w_full()
-        .bg(theme.surface)
-        .rounded(d.r_lg)
-        .border_1()
-        .border_color(theme.border)
-        .child(
+    Card::new()
+        .background(theme.surface)
+        .header_background(theme.background_secondary)
+        .border(theme.border)
+        .header(
+            Text::new("Optimization Summary")
+                .color(theme.text_primary)
+                .weight(TextWeight::Semibold),
+        )
+        .content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(
-                    Text::new("Optimization Summary")
-                        .weight(TextWeight::Semibold)
-                        .size(TextSize::Sm)
-                        .color(theme.text_primary),
-                )
                 .child(
                     div()
                         .grid()
@@ -1097,24 +1102,29 @@ pub(crate) fn render_room_eq_bass_management_report(
     bass: &RoomEqReportBassManagement,
     theme: &crate::theme::Theme,
 ) -> impl IntoElement {
-    div()
-        .p(d.card)
-        .w_full()
-        .bg(theme.surface)
-        .rounded(d.r_lg)
-        .border_1()
-        .border_color(theme.success)
-        .child(
+    Card::new()
+        .background(theme.surface)
+        .header_background(theme.background_secondary)
+        // Keep the green-accent nuance from the previous design: bass
+        // management succeeded → tint the border with `theme.success`.
+        .border(theme.success)
+        .header(
+            Text::new("Bass Management")
+                .color(theme.text_primary)
+                .weight(TextWeight::Semibold),
+        )
+        .content(
             VStack::new()
                 .spacing(StackSpacing::Md)
                 .child(
-                    Text::new("Bass Management")
-                        .weight(TextWeight::Semibold)
-                        .size(TextSize::Sm)
-                        .color(theme.text_primary),
-                )
-                .child(
+                    // The summary grid carries seven short scalar values
+                    // — letting it stretch to 100 % of a wide card creates
+                    // 200-px-wide cells of mostly whitespace. Cap the
+                    // width so the grid sits compactly at the left edge.
+                    // intentional: stat-grid width is layout-driven px.
                     div()
+                        .flex_none()
+                        .max_w(px(720.0))
                         .grid()
                         .grid_cols(4)
                         .gap(d.gap_md)
@@ -1174,11 +1184,18 @@ pub(crate) fn render_room_eq_bass_management_report(
                     )
                 })
                 .when(!bass.routes.is_empty() || bass.headroom.is_some(), |el| {
+                    // Wrap charts in a flex-row that owns its own
+                    // x AND y gap so the headroom plot doesn't overlap
+                    // the routing plot when the card narrows enough to
+                    // force the second chart onto a new line. `.gap(_)`
+                    // in GPUI sets both axes, which is what we want here.
                     el.child(
                         div()
+                            .w_full()
                             .flex()
                             .flex_row()
                             .flex_wrap()
+                            .justify_start()
                             .gap(d.gap_md)
                             .when(!bass.routes.is_empty(), |row| {
                                 row.child(render_room_eq_bass_routing_chart(bass, theme))
@@ -1619,16 +1636,16 @@ fn render_room_eq_table(
 ) -> gpui::AnyElement {
     let rows: Vec<Vec<String>> = rows.into_iter().collect();
     let cols = headers.len().min(u16::MAX as usize) as u16;
+    // Tables are sized to content with a hard cap so they don't stretch
+    // to fill the parent in wide windows. ~720px fits 6–9 columns
+    // comfortably.
     VStack::new()
         .spacing(StackSpacing::Xs)
-        .child(
-            Text::new(title.to_string())
-                .weight(TextWeight::Semibold)
-                .size(TextSize::Xs)
-                .color(theme.text_primary),
-        )
+        .child(Text::label(title.to_string()))
         .child(
             div()
+                .flex_none()
+                .max_w(px(720.0)) // intentional: table widths are layout-driven
                 .flex()
                 .flex_col()
                 .border_1()
@@ -1641,12 +1658,10 @@ fn render_room_eq_table(
                         .grid_cols(cols)
                         .bg(theme.background_secondary)
                         .children(headers.iter().map(|header| {
-                            div().p(d.pad_y_half).child(
-                                Text::new((*header).to_string())
-                                    .size(TextSize::Xs)
-                                    .weight(TextWeight::Semibold)
-                                    .color(theme.text_secondary),
-                            )
+                            div()
+                                .px(d.pad_x)
+                                .py(d.pad_y_half)
+                                .child(Text::label((*header).to_string()))
                         })),
                 )
                 .children(rows.into_iter().map(|row| {
@@ -1655,7 +1670,8 @@ fn render_room_eq_table(
                         .grid_cols(cols)
                         .children(row.into_iter().map(|cell| {
                             div()
-                                .p(d.pad_y_half)
+                                .px(d.pad_x)
+                                .py(d.pad_y_half)
                                 .border_t_1()
                                 .border_color(theme.border)
                                 .child(Text::new(cell).size(TextSize::Xs).color(theme.text_primary))
@@ -1795,7 +1811,7 @@ pub(crate) fn render_room_eq_report_overview(
     original_controls: Option<gpui::AnyElement>,
     eq_controls: Option<gpui::AnyElement>,
     corrected_controls: Option<gpui::AnyElement>,
-    wide_layout: bool,
+    window_width: f32,
 ) -> impl IntoElement {
     let mut original_series = Vec::new();
     let mut corrected_series = Vec::new();
@@ -1851,11 +1867,21 @@ pub(crate) fn render_room_eq_report_overview(
     }
     add_room_eq_corrected_lfe_sums(report, &mut corrected_series);
 
-    let chart_size = if wide_layout {
-        (480.0, 260.0)
-    } else {
-        (800.0, 360.0)
-    };
+    // Always render the three overview plots in a 3-column grid so each
+    // plot occupies 1/3 of the card width. A Right legend would steal
+    // horizontal room inside a 1/3 column, so use the Bottom legend
+    // position unconditionally.
+    //
+    // gpui-px charts draw onto a fixed-size canvas (no flex-fill) so we
+    // size them from the actual window width at render time. Chrome
+    // budget = page side padding (≈48) + card horizontal padding (≈32)
+    // + 2 × grid gap (≈24). Floor at 280 px so charts stay legible on
+    // narrow windows.
+    // intentional-file: chart canvas dimensions are layout-driven px.
+    let overview_chart_width =
+        ((window_width - 104.0) / 3.0).clamp(280.0, 900.0);
+    let overview_chart_height = (overview_chart_width * 0.62).clamp(220.0, 520.0);
+    let chart_size = (overview_chart_width, overview_chart_height);
     let original_chart = render_room_eq_curve_chart(
         "All Original Curves",
         original_series,
@@ -1868,11 +1894,7 @@ pub(crate) fn render_room_eq_report_overview(
         None,
         original_controls,
         chart_size,
-        if wide_layout {
-            LegendPosition::Bottom
-        } else {
-            LegendPosition::Right
-        },
+        LegendPosition::Bottom,
     );
     let eq_chart = render_room_eq_curve_chart(
         "All EQ Responses",
@@ -1886,11 +1908,7 @@ pub(crate) fn render_room_eq_report_overview(
         None,
         eq_controls,
         chart_size,
-        if wide_layout {
-            LegendPosition::Bottom
-        } else {
-            LegendPosition::Right
-        },
+        LegendPosition::Bottom,
     );
     let corrected_chart = render_room_eq_curve_chart(
         "All Corrected Curves",
@@ -1904,48 +1922,27 @@ pub(crate) fn render_room_eq_report_overview(
         None,
         corrected_controls,
         chart_size,
-        if wide_layout {
-            LegendPosition::Bottom
-        } else {
-            LegendPosition::Right
-        },
+        LegendPosition::Bottom,
     );
-    let charts = if wide_layout {
-        div()
-            .grid()
-            .grid_cols(3)
-            .gap(px(6.0))
-            .child(original_chart)
-            .child(eq_chart)
-            .child(corrected_chart)
-            .into_any_element()
-    } else {
-        VStack::new()
-            .spacing(StackSpacing::Md)
-            .child(original_chart)
-            .child(eq_chart)
-            .child(corrected_chart)
-            .into_any_element()
-    };
+    let charts = div()
+        .grid()
+        .grid_cols(3)
+        .gap(d.gap_md)
+        .child(original_chart)
+        .child(eq_chart)
+        .child(corrected_chart)
+        .into_any_element();
 
-    div()
-        .p(d.card)
-        .w_full()
-        .bg(theme.surface)
-        .rounded(d.r_lg)
-        .border_1()
-        .border_color(theme.border)
-        .child(
-            VStack::new()
-                .spacing(StackSpacing::Md)
-                .child(
-                    Text::new("All Channels Overview")
-                        .weight(TextWeight::Semibold)
-                        .size(TextSize::Sm)
-                        .color(theme.text_primary),
-                )
-                .child(charts),
+    Card::new()
+        .background(theme.surface)
+        .header_background(theme.background_secondary)
+        .border(theme.border)
+        .header(
+            Text::new("All Channels Overview")
+                .color(theme.text_primary)
+                .weight(TextWeight::Semibold),
         )
+        .content(VStack::new().spacing(StackSpacing::Md).child(charts))
         .into_any_element()
 }
 
@@ -2053,7 +2050,7 @@ pub(crate) fn render_room_eq_report_channel(
     zoom_controls: Option<gpui::AnyElement>,
     eq_controls: Option<gpui::AnyElement>,
     interactive_state: Option<&gpui_px::interaction::InteractiveChartState>,
-    wide_layout: bool,
+    window_width: f32,
 ) -> impl IntoElement {
     let reference = channel
         .final_curve
@@ -2097,16 +2094,21 @@ pub(crate) fn render_room_eq_report_channel(
         });
     }
 
-    let curve_chart_size = if wide_layout {
-        (680.0, 300.0)
+    // Decide per-channel layout from the actual viewport width: when
+    // the inner column is wide enough to host two charts side by side
+    // we use a 2-column grid, otherwise we stack to keep each chart
+    // legible. gpui-px charts are fixed-canvas so we size them from
+    // window_width with sensible floors/ceilings.
+    // intentional-file: chart canvas dimensions are layout-driven px.
+    let two_col = window_width >= ROOM_EQ_REVIEW_WIDE_BREAKPOINT_PX;
+    let curve_chart_width = if two_col {
+        ((window_width - 120.0) / 2.0).clamp(420.0, 1100.0)
     } else {
-        (800.0, 360.0)
+        (window_width - 120.0).clamp(640.0, 1400.0)
     };
-    let ir_chart_size = if wide_layout {
-        (680.0, 240.0)
-    } else {
-        (800.0, 260.0)
-    };
+    let curve_chart_height = (curve_chart_width * 0.5).clamp(260.0, 540.0);
+    let curve_chart_size = (curve_chart_width, curve_chart_height);
+    let ir_chart_size = (curve_chart_width, (curve_chart_height * 0.85).max(220.0));
     let full_chart = render_room_eq_curve_chart(
         "Full Range",
         full_series.clone(),
@@ -2150,7 +2152,7 @@ pub(crate) fn render_room_eq_report_channel(
         LegendPosition::Right,
     );
     let has_ir = channel.pre_ir.is_some() || channel.post_ir.is_some();
-    let channel_charts = if wide_layout {
+    let channel_charts = if two_col {
         div()
             .grid()
             .grid_cols(2)
@@ -2165,14 +2167,8 @@ pub(crate) fn render_room_eq_report_channel(
     } else {
         VStack::new()
             .spacing(StackSpacing::Md)
-            .child(
-                div()
-                    .grid()
-                    .grid_cols(2)
-                    .gap(d.section)
-                    .child(full_chart)
-                    .child(zoom_chart),
-            )
+            .child(full_chart)
+            .child(zoom_chart)
             .child(eq_chart)
             .when(has_ir, |el| {
                 el.child(render_room_eq_ir_chart(channel, theme, ir_chart_size))
@@ -2180,6 +2176,12 @@ pub(crate) fn render_room_eq_report_channel(
             .into_any_element()
     };
 
+    // EPA scores and EQ filter passes are intentionally NOT rendered
+    // here: both have been lifted to their own top-level cards in
+    // `render_room_eq_review` so the user can scan EPA per channel and
+    // copy filter values for every channel without having to switch the
+    // channel tab. Charts remain per-tab because they are heavy and
+    // user-driven.
     div()
         .w_full()
         .child(
@@ -2191,13 +2193,7 @@ pub(crate) fn render_room_eq_report_channel(
                         .size(TextSize::Sm)
                         .color(theme.text_primary),
                 )
-                .child(channel_charts)
-                .when_some(channel.epa.as_ref(), |el, epa| {
-                    el.child(render_room_eq_epa_table(d, epa, theme))
-                })
-                .when(!channel.eq_passes.is_empty(), |el| {
-                    el.child(render_room_eq_filter_details(d, &channel.eq_passes, theme))
-                }),
+                .child(channel_charts),
         )
         .into_any_element()
 }
@@ -2268,20 +2264,119 @@ fn render_room_eq_epa_table(
 
     VStack::new()
         .spacing(StackSpacing::Xs)
-        .child(render_room_eq_table(
-            d,
-            "EPA Psychoacoustic Scores",
-            &["Metric", "Before EQ", "After EQ", "Delta"],
-            rows.into_iter()
-                .map(|(_, label, pre, post, delta, _)| vec![label, pre, post, delta]),
-            theme,
-        ))
+        .child(render_room_eq_epa_metric_table(d, &rows, theme))
         .child(
             Text::new(
                 "Higher is better for Preference / Evaluation / Total loudness / Loudness balance; lower is better for Activity / Sharpness deviation / Roughness.",
             )
             .size(TextSize::Xs)
             .color(theme.text_secondary),
+        )
+        .into_any_element()
+}
+
+/// Specialized EPA metric table that paints the "After EQ" and "Delta"
+/// cells green when the metric improved and red when it regressed.
+/// Whether higher is better varies per metric (see the legend below the
+/// table), so a single ✓/✗ glyph in the After EQ and Delta columns
+/// short-circuits the cognitive overhead of remembering the rule for
+/// every row.
+fn render_room_eq_epa_metric_table(
+    d: Ds,
+    rows: &[(bool, String, String, String, String, bool)],
+    theme: &crate::theme::Theme,
+) -> gpui::AnyElement {
+    let headers = ["Metric", "Before EQ", "After EQ", "Delta"];
+    let cols = headers.len() as u16;
+    VStack::new()
+        .spacing(StackSpacing::Xs)
+        .child(
+            Text::new("EPA Psychoacoustic Scores")
+                .weight(TextWeight::Semibold)
+                .size(TextSize::Xs)
+                .color(theme.text_primary),
+        )
+        .child(
+            div()
+                .flex_none()
+                .max_w(px(720.0)) // intentional: epa table compact width.
+                .flex()
+                .flex_col()
+                .border_1()
+                .border_color(theme.border)
+                .rounded(d.r_md)
+                .overflow_hidden()
+                .child(
+                    div()
+                        .grid()
+                        .grid_cols(cols)
+                        .bg(theme.background_secondary)
+                        .children(headers.iter().map(|header| {
+                            div().p(d.pad_y_half).px(d.pad_x).child(
+                                Text::new((*header).to_string())
+                                    .size(TextSize::Xs)
+                                    .weight(TextWeight::Semibold)
+                                    .color(theme.text_secondary),
+                            )
+                        })),
+                )
+                .children(rows.iter().map(|(_, label, pre, post, delta, improved)| {
+                    let verdict_color = if *improved { theme.success } else { theme.error };
+                    let mark = if *improved { "✓ " } else { "✗ " };
+                    div()
+                        .grid()
+                        .grid_cols(cols)
+                        .child(
+                            div()
+                                .p(d.pad_y_half)
+                                .px(d.pad_x)
+                                .border_t_1()
+                                .border_color(theme.border)
+                                .child(
+                                    Text::new(label.clone())
+                                        .size(TextSize::Xs)
+                                        .color(theme.text_primary),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .p(d.pad_y_half)
+                                .px(d.pad_x)
+                                .border_t_1()
+                                .border_color(theme.border)
+                                .child(
+                                    Text::new(pre.clone())
+                                        .size(TextSize::Xs)
+                                        .color(theme.text_primary),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .p(d.pad_y_half)
+                                .px(d.pad_x)
+                                .border_t_1()
+                                .border_color(theme.border)
+                                .child(
+                                    Text::new(format!("{mark}{post}"))
+                                        .size(TextSize::Xs)
+                                        .weight(TextWeight::Semibold)
+                                        .color(verdict_color),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .p(d.pad_y_half)
+                                .px(d.pad_x)
+                                .border_t_1()
+                                .border_color(theme.border)
+                                .child(
+                                    Text::new(format!("{mark}{delta}"))
+                                        .size(TextSize::Xs)
+                                        .weight(TextWeight::Semibold)
+                                        .color(verdict_color),
+                                ),
+                        )
+                })),
         )
         .into_any_element()
 }
@@ -2318,20 +2413,12 @@ fn render_room_eq_filter_details(
     passes: &[RoomEqReportEqPass],
     theme: &crate::theme::Theme,
 ) -> gpui::AnyElement {
-    let has_labeled = passes.iter().any(|pass| !pass.label.is_empty());
-
+    // The wrapping card already carries the "EQ Filters" title, so we
+    // skip a redundant sub-header here. Each pass renders with its
+    // colored `display_name` as the per-section legend, which is the
+    // real signal of what each filter group is for.
     VStack::new()
         .spacing(StackSpacing::Sm)
-        .child(
-            Text::new(if has_labeled {
-                "EQ Filters (3-Pass Pipeline)"
-            } else {
-                "EQ Filters"
-            })
-            .weight(TextWeight::Semibold)
-            .size(TextSize::Xs)
-            .color(theme.text_primary),
-        )
         .children(passes.iter().map(|pass| {
             VStack::new()
                 .spacing(StackSpacing::Xs)
@@ -2357,6 +2444,106 @@ fn render_room_eq_filter_details(
                     theme,
                 ))
         }))
+        .into_any_element()
+}
+
+/// Top-level card listing EPA Psychoacoustic Scores for every channel.
+///
+/// Lifted out of the per-channel "Selected channel result" panel so the
+/// user can compare metrics across channels without switching tabs.
+/// Each channel renders its own sub-block with a heading carrying the
+/// channel name, and only channels that have EPA data populated are
+/// included; if no channel has EPA, the function returns an empty stub
+/// so callers can chain it unconditionally.
+pub(crate) fn render_room_eq_epa_card(
+    d: Ds,
+    report: &RoomEqReportData,
+    theme: &crate::theme::Theme,
+) -> gpui::AnyElement {
+    let channels_with_epa: Vec<&RoomEqReportChannel> = report
+        .channels
+        .iter()
+        .filter(|channel| channel.epa.is_some())
+        .collect();
+    if channels_with_epa.is_empty() {
+        return div().into_any_element();
+    }
+
+    let mut content = VStack::new().spacing(StackSpacing::Md);
+    for channel in channels_with_epa {
+        let epa = channel.epa.as_ref().unwrap();
+        content = content.child(
+            VStack::new()
+                .spacing(StackSpacing::Xs)
+                .child(
+                    Text::new(format!("Channel: {}", channel.name))
+                        .weight(TextWeight::Semibold)
+                        .size(TextSize::Sm)
+                        .color(theme.text_primary),
+                )
+                .child(render_room_eq_epa_table(d, epa, theme)),
+        );
+    }
+
+    Card::new()
+        .background(theme.surface)
+        .header_background(theme.background_secondary)
+        .border(theme.border)
+        .header(
+            Text::new("EPA Psychoacoustic Scores")
+                .color(theme.text_primary)
+                .weight(TextWeight::Semibold),
+        )
+        .content(content)
+        .into_any_element()
+}
+
+/// Top-level card listing the EQ filter pipeline for every channel.
+///
+/// Each channel appears with its name as a sub-heading and its filter
+/// passes rendered as compact tables. This replaces the previous design
+/// where filter details only showed for the currently-selected channel
+/// tab — copying or auditing filters across channels required tab
+/// switching, which made it impossible to compare passes side-by-side.
+pub(crate) fn render_room_eq_filters_card(
+    d: Ds,
+    report: &RoomEqReportData,
+    theme: &crate::theme::Theme,
+) -> gpui::AnyElement {
+    let channels_with_filters: Vec<&RoomEqReportChannel> = report
+        .channels
+        .iter()
+        .filter(|channel| !channel.eq_passes.is_empty())
+        .collect();
+    if channels_with_filters.is_empty() {
+        return div().into_any_element();
+    }
+
+    let mut content = VStack::new().spacing(StackSpacing::Md);
+    for channel in channels_with_filters {
+        content = content.child(
+            VStack::new()
+                .spacing(StackSpacing::Xs)
+                .child(
+                    Text::new(format!("Channel: {}", channel.name))
+                        .weight(TextWeight::Semibold)
+                        .size(TextSize::Sm)
+                        .color(theme.text_primary),
+                )
+                .child(render_room_eq_filter_details(d, &channel.eq_passes, theme)),
+        );
+    }
+
+    Card::new()
+        .background(theme.surface)
+        .header_background(theme.background_secondary)
+        .border(theme.border)
+        .header(
+            Text::new("EQ Filters")
+                .color(theme.text_primary)
+                .weight(TextWeight::Semibold),
+        )
+        .content(content)
         .into_any_element()
 }
 

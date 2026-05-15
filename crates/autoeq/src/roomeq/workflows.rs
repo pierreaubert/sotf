@@ -25,7 +25,8 @@ use super::output;
 use super::pipeline::{PipelineStepId, PipelineStepStatus};
 use super::types::{
     CardioidConfig, ChannelDspChain, CrossoverConfig, DBAConfig, DriverDspChain, MultiSubGroup,
-    OptimizationMetadata, RoomConfig, SpeakerConfig, SubwooferStrategy, SystemConfig,
+    OptimizationMetadata, OptimizerConfig, RoomConfig, SpeakerConfig, SubwooferStrategy,
+    SystemConfig, TargetCurveConfig,
 };
 
 mod bass_management;
@@ -66,6 +67,41 @@ fn workflow_progress_callback(
     progress_factory
         .as_deref_mut()
         .and_then(|factory| factory(role, channel_index, total_channels, max_iterations))
+}
+
+/// Run a Post-EQ pass with optional per-iteration progress feedback.
+///
+/// The bass-management workflows run `eq::optimize_channel_eq` once for
+/// each role (L, R, sub) after the per-channel Pre-EQ has finished. Each
+/// pass is a full DE run that can take several seconds, so the workflow
+/// hands it a callback derived from the same `WorkflowProgressCallback`
+/// factory that drives Pre-EQ iteration reporting. The UI ends up
+/// receiving the same iteration / loss / EPA stream during Post-EQ that
+/// it gets during Pre-EQ — without it the progress bar appears frozen
+/// for the duration of each pass.
+fn run_post_eq(
+    curve: &Curve,
+    opt_config: &OptimizerConfig,
+    target: Option<&TargetCurveConfig>,
+    sample_rate: f64,
+    progress: Option<WorkflowProgressCallback>,
+) -> Result<(Vec<Biquad>, f64)> {
+    let result = if let Some(WorkflowProgressCallback { callback, stopped }) = progress {
+        let res = eq::optimize_channel_eq_with_callback(
+            curve,
+            opt_config,
+            target,
+            sample_rate,
+            callback,
+        );
+        workflow_progress_stopped(&Some(stopped), "Post-EQ")?;
+        res
+    } else {
+        eq::optimize_channel_eq(curve, opt_config, target, sample_rate)
+    };
+    result.map_err(|e| AutoeqError::OptimizationFailed {
+        message: e.to_string(),
+    })
 }
 
 fn workflow_progress_stopped(stopped: &Option<Arc<AtomicBool>>, step: &'static str) -> Result<()> {
@@ -1261,20 +1297,37 @@ pub(super) fn optimize_stereo_2_1_with_progress(
     let mut post_eq_filters = HashMap::new();
 
     let main_post_max_freq = config.optimizer.max_freq;
-    for role in ["L", "R"] {
+    for (role_index, role) in ["L", "R"].iter().enumerate() {
+        let role = *role;
+        // Surface this Post-EQ pass to the UI before it runs. Without
+        // these heartbeats the progress bar appears frozen during the
+        // post-channel Post-EQ optimization (each pass is a full DE run
+        // that can take seconds).
+        workflow_stage_event(
+            &mut stage_callback,
+            PipelineStepId::TopologyWorkflowExecution,
+            PipelineStepStatus::InProgress,
+            &format!("Post-EQ for {role}"),
+            0.92 + role_index as f64 * 0.005,
+        )?;
         let mut opt_config = config.optimizer.clone();
         opt_config.min_freq = final_xo_freq + 20.0;
 
         let post_curve = if role == "L" { &l_post } else { &r_post };
-        let (filters, _) = eq::optimize_channel_eq(
+        let post_eq_callback = workflow_progress_callback(
+            &mut progress_factory,
+            &format!("Post-EQ {role}"),
+            role_index,
+            3,
+            opt_config.max_iter,
+        );
+        let (filters, _) = run_post_eq(
             post_curve,
             &opt_config,
             config.target_curve.as_ref(),
             sample_rate,
-        )
-        .map_err(|e| AutoeqError::OptimizationFailed {
-            message: e.to_string(),
-        })?;
+            post_eq_callback,
+        )?;
 
         // B7 — "do no harm" guard on the Mains Post-EQ. When Pre-EQ +
         // Crossover already leaves the post-crossover curve flat, a tight
@@ -1301,18 +1354,30 @@ pub(super) fn optimize_stereo_2_1_with_progress(
 
     // Sub Post-EQ
     {
+        workflow_stage_event(
+            &mut stage_callback,
+            PipelineStepId::TopologyWorkflowExecution,
+            PipelineStepStatus::InProgress,
+            &format!("Post-EQ for {sub_role}"),
+            0.93,
+        )?;
         let mut opt_config = config.optimizer.clone();
         opt_config.max_freq = final_xo_freq - 20.0;
         let sub_min_score = config.optimizer.min_freq.max(20.0);
-        let (filters, _) = eq::optimize_channel_eq(
+        let sub_callback = workflow_progress_callback(
+            &mut progress_factory,
+            &format!("Post-EQ {sub_role}"),
+            2,
+            3,
+            opt_config.max_iter,
+        );
+        let (filters, _) = run_post_eq(
             &sub_post,
             &opt_config,
             config.target_curve.as_ref(),
             sample_rate,
-        )
-        .map_err(|e| AutoeqError::OptimizationFailed {
-            message: e.to_string(),
-        })?;
+            sub_callback,
+        )?;
 
         // "Do no harm" guard: discard Post-EQ if it makes the sub worse
         // (e.g., cardioid subs with steep low-frequency rolloff)
@@ -1371,7 +1436,7 @@ pub(super) fn optimize_stereo_2_1_with_progress(
 
         let eqs = post_eq_filters.get(role);
         if let Some(e) = eqs {
-            plugins.push(output::create_eq_plugin(e));
+            plugins.push(output::create_labeled_eq_plugin(e, "post_eq"));
         }
 
         // Compute final curve
@@ -1435,7 +1500,7 @@ pub(super) fn optimize_stereo_2_1_with_progress(
 
     let sub_eqs = post_eq_filters.get(&sub_role);
     if let Some(e) = sub_eqs {
-        sub_plugins.push(output::create_eq_plugin(e));
+        sub_plugins.push(output::create_labeled_eq_plugin(e, "post_eq"));
     }
 
     // Compute final curve
@@ -2489,8 +2554,20 @@ fn optimize_home_cinema_with_sub(
     // 6. Post-EQ
     let mut post_eq_filters = HashMap::new();
     let main_post_max_freq = config.optimizer.max_freq;
+    let total_post_eq_passes = main_roles.len() + 1;
 
-    for role in main_roles {
+    for (role_index, role) in main_roles.iter().enumerate() {
+        // Heartbeat so the UI doesn't appear frozen during the
+        // potentially long DE pass for each main's Post-EQ.
+        let role_progress_base = 0.91
+            + (role_index as f64 / total_post_eq_passes as f64) * 0.03;
+        workflow_stage_event(
+            stage_callback,
+            PipelineStepId::TopologyWorkflowExecution,
+            PipelineStepStatus::InProgress,
+            &format!("Post-EQ for {role}"),
+            role_progress_base,
+        )?;
         let mut opt_config = config.optimizer.clone();
         let group_id =
             super::home_cinema::group_id_for_role(super::home_cinema::role_for_channel(role));
@@ -2501,15 +2578,20 @@ fn optimize_home_cinema_with_sub(
         opt_config.min_freq = role_xover_freq + 20.0;
 
         let post_curve = &main_post_curves[role];
-        let (filters, _) = eq::optimize_channel_eq(
+        let post_eq_callback = workflow_progress_callback(
+            progress_factory,
+            &format!("Post-EQ {role}"),
+            role_index,
+            total_post_eq_passes,
+            opt_config.max_iter,
+        );
+        let (filters, _) = run_post_eq(
             post_curve,
             &opt_config,
             config.target_curve.as_ref(),
             sample_rate,
-        )
-        .map_err(|e| AutoeqError::OptimizationFailed {
-            message: e.to_string(),
-        })?;
+            post_eq_callback,
+        )?;
 
         // B7 — "do no harm" guard on the Mains Post-EQ, mirroring the
         // long-standing Sub guard below.
@@ -2533,18 +2615,32 @@ fn optimize_home_cinema_with_sub(
 
     // Sub Post-EQ
     {
+        let sub_progress_base =
+            0.91 + (main_roles.len() as f64 / total_post_eq_passes as f64) * 0.03;
+        workflow_stage_event(
+            stage_callback,
+            PipelineStepId::TopologyWorkflowExecution,
+            PipelineStepStatus::InProgress,
+            &format!("Post-EQ for {sub_role}"),
+            sub_progress_base,
+        )?;
         let mut opt_config = config.optimizer.clone();
         opt_config.max_freq = bass_route_upper_hz - 20.0;
         let sub_min_score = config.optimizer.min_freq.max(20.0);
-        let (filters, _) = eq::optimize_channel_eq(
+        let sub_callback = workflow_progress_callback(
+            progress_factory,
+            &format!("Post-EQ {sub_role}"),
+            main_roles.len(),
+            total_post_eq_passes,
+            opt_config.max_iter,
+        );
+        let (filters, _) = run_post_eq(
             &sub_post,
             &opt_config,
             config.target_curve.as_ref(),
             sample_rate,
-        )
-        .map_err(|e| AutoeqError::OptimizationFailed {
-            message: e.to_string(),
-        })?;
+            sub_callback,
+        )?;
 
         // "Do no harm" guard: discard Post-EQ if it makes the sub worse
         let pre = compute_flat_loss(&sub_post, sub_min_score, bass_route_upper_hz);
@@ -2615,7 +2711,10 @@ fn optimize_home_cinema_with_sub(
         if let Some(e) = eqs
             && !e.is_empty()
         {
-            plugins.push(mark_plugin_stage(output::create_eq_plugin(e), "post_route"));
+            plugins.push(mark_plugin_stage(
+                output::create_labeled_eq_plugin(e, "post_eq"),
+                "post_route",
+            ));
         }
 
         let intermediate = &main_post_curves[role];
@@ -2690,7 +2789,10 @@ fn optimize_home_cinema_with_sub(
     if let Some(e) = sub_eqs
         && !e.is_empty()
     {
-        sub_plugins.push(mark_plugin_stage(output::create_eq_plugin(e), "post_route"));
+        sub_plugins.push(mark_plugin_stage(
+            output::create_labeled_eq_plugin(e, "post_eq"),
+            "post_route",
+        ));
     }
 
     let final_sub_curve = if let Some(e) = sub_eqs {

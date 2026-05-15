@@ -1516,6 +1516,25 @@ fn optimize_room_impl(
                     )
                     .with_overall_progress(0.965),
                 )?;
+                // Heartbeat: GD optimization can take several seconds on
+                // wide configurations. Without this InProgress event the
+                // UI stays on "Running GD optimization" Started state for
+                // the whole duration which reads as a hang.
+                emit_pipeline_event(
+                    &observer_shared,
+                    PipelineEvent::new(
+                        PipelineStepId::GroupDelayOptimization,
+                        PipelineStepStatus::InProgress,
+                    )
+                    .with_message(
+                        if config.optimizer.processing_mode == ProcessingMode::PhaseLinear {
+                            "Phase-linear FIR group-delay optimization..."
+                        } else {
+                            "Group-delay optimization..."
+                        },
+                    )
+                    .with_overall_progress(0.965),
+                )?;
                 let workflow_group_delay_summary =
                     if config.optimizer.processing_mode == ProcessingMode::PhaseLinear {
                         try_run_phase_linear_fir_gd(
@@ -1565,17 +1584,41 @@ fn optimize_room_impl(
                         step_status: None,
                     },
                 )?;
-                for (channel_name, ch_result) in &result.channel_results {
+                let ir_total = result.channel_results.len();
+                let ir_names: Vec<String> = result.channel_results.keys().cloned().collect();
+                for (ir_index, channel_name) in ir_names.iter().enumerate() {
+                    // Per-channel heartbeat: long IR convolutions can run
+                    // for hundreds of milliseconds each, so users see one
+                    // chip moving instead of a single "Started" stuck for
+                    // the whole loop.
+                    emit_pipeline_event(
+                        &observer_shared,
+                        PipelineEvent::new(
+                            PipelineStepId::ImpulseResponseComputation,
+                            PipelineStepStatus::InProgress,
+                        )
+                        .with_channel(channel_name.clone())
+                        .with_channels(ir_index, ir_total)
+                        .with_message(format!("Computing impulse response for {channel_name}"))
+                        .with_overall_progress(0.97),
+                    )?;
+                    let ch_result = match result.channel_results.get(channel_name) {
+                        Some(ch) => ch,
+                        None => continue,
+                    };
                     let delay_ms = result
                         .channels
                         .get(channel_name)
                         .map(total_chain_delay_ms)
                         .unwrap_or(0.0);
+                    let initial_curve = ch_result.initial_curve.clone();
+                    let biquads = ch_result.biquads.clone();
+                    let fir_coeffs = ch_result.fir_coeffs.clone();
                     if let Some((pre_ir, post_ir)) =
                         super::ir_waveform::compute_channel_ir_waveforms(
-                            &ch_result.initial_curve,
-                            &ch_result.biquads,
-                            ch_result.fir_coeffs.as_deref(),
+                            &initial_curve,
+                            &biquads,
+                            fir_coeffs.as_deref(),
                             delay_ms,
                             sample_rate,
                         )
@@ -2689,6 +2732,20 @@ fn optimize_room_impl(
             "Running GD optimization",
         ),
     )?;
+    emit_pipeline_event(
+        &observer_shared,
+        PipelineEvent::new(
+            PipelineStepId::GroupDelayOptimization,
+            PipelineStepStatus::InProgress,
+        )
+        .with_message(
+            if config.optimizer.processing_mode == ProcessingMode::PhaseLinear {
+                "Phase-linear FIR group-delay optimization..."
+            } else {
+                "Group-delay optimization..."
+            },
+        ),
+    )?;
     let group_delay_summary = if config.optimizer.processing_mode == ProcessingMode::PhaseLinear {
         try_run_phase_linear_fir_gd(
             config,
@@ -2738,7 +2795,19 @@ fn optimize_room_impl(
             step_status: None,
         },
     )?;
-    for (channel_name, result) in &channel_results {
+    let ir_total = channel_results.len();
+    for (ir_index, (channel_name, result)) in channel_results.iter().enumerate() {
+        emit_pipeline_event(
+            &observer_shared,
+            PipelineEvent::new(
+                PipelineStepId::ImpulseResponseComputation,
+                PipelineStepStatus::InProgress,
+            )
+            .with_channel(channel_name.clone())
+            .with_channels(ir_index, ir_total)
+            .with_message(format!("Computing impulse response for {channel_name}"))
+            .with_overall_progress(0.97),
+        )?;
         let delay_ms = channel_chains
             .get(channel_name)
             .map(total_chain_delay_ms)

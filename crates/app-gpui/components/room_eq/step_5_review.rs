@@ -8,13 +8,13 @@ use gpui_ui_kit::{
 };
 
 use super::render::{
-    render_channel_result_card, render_room_eq_bass_management_report,
-    render_room_eq_report_channel, render_room_eq_report_overview, render_room_eq_report_summary,
-    room_eq_report_channel_has_renderable_data, room_eq_report_data_from_dsp_output,
+    render_channel_result_card, render_room_eq_bass_management_report, render_room_eq_epa_card,
+    render_room_eq_filters_card, render_room_eq_report_channel, render_room_eq_report_overview,
+    render_room_eq_report_summary, room_eq_report_channel_has_renderable_data,
+    room_eq_report_data_from_dsp_output,
 };
 use crate::app::types::room_eq::{RoomEqReviewGraphId, RoomEqReviewGraphSettings};
 
-const ROOM_EQ_REVIEW_WIDE_BREAKPOINT_PX: f32 = 1600.0;
 
 impl PlayerView {
     pub(crate) fn render_room_eq_review(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -38,8 +38,12 @@ impl PlayerView {
             .unwrap_or_else(|| room_eq.average_post_score());
         let graph_settings = room_eq.review_graph_settings.clone();
         let view = cx.entity().clone();
-        let wide_review_layout =
-            state.app.ui_state.window_width > ROOM_EQ_REVIEW_WIDE_BREAKPOINT_PX;
+        let window_width = state.app.ui_state.window_width;
+
+        // Score Summary card is intentionally omitted here: the
+        // "Optimization Summary" card below already shows Score Before /
+        // Score After / Improvement, so this would duplicate information.
+        let _ = (pre_score, post_score);
 
         VStack::new()
             .spacing(StackSpacing::Md)
@@ -52,44 +56,6 @@ impl PlayerView {
                 Text::new(translations.roomeq_review_desc)
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
-            )
-            .child(
-                Card::new()
-                    .background(theme.surface)
-                    .header_background(theme.background_secondary)
-                    .border(theme.border)
-                    .header(
-                        Text::new(translations.roomeq_score_summary)
-                            .color(theme.text_primary)
-                            .weight(TextWeight::Semibold),
-                    )
-                    .content(
-                        VStack::new().spacing(StackSpacing::Xs).child(
-                            HStack::new()
-                                .spacing(StackSpacing::Md)
-                                .child(
-                                    Text::new(format!("Before: {:.2}", pre_score))
-                                        .color(theme.text_primary),
-                                )
-                                .child(
-                                    Text::new(format!("After: {:.2}", post_score))
-                                        .color(theme.text_primary),
-                                )
-                                .child(
-                                    Text::new(format!(
-                                        "Improvement: {:.2}",
-                                        pre_score - post_score
-                                    ))
-                                    .color(
-                                        if post_score < pre_score {
-                                            theme.success
-                                        } else {
-                                            theme.error
-                                        },
-                                    ),
-                                ),
-                        ),
-                    ),
             )
             .when_some(report.as_ref(), |vstack, report| {
                 vstack.child(render_room_eq_report_summary(d, report, &theme))
@@ -126,7 +92,7 @@ impl PlayerView {
                         view.clone(),
                         &theme,
                     )),
-                    wide_review_layout,
+                    window_width,
                 ))
             })
             .when_some(
@@ -141,6 +107,14 @@ impl PlayerView {
             )
             // Selected channel result
             .child(self.render_selected_channel_result(cx))
+            // EPA + EQ filter cards: lifted out of the per-channel
+            // panel so each channel is visible without tab switching.
+            .when_some(report.as_ref(), |vstack, report| {
+                vstack.child(render_room_eq_epa_card(d, report, &theme))
+            })
+            .when_some(report.as_ref(), |vstack, report| {
+                vstack.child(render_room_eq_filters_card(d, report, &theme))
+            })
     }
 
     /// Render the selected channel's optimization result
@@ -182,8 +156,7 @@ impl PlayerView {
         let y_axis_auto = room_eq.review_y_axis_auto;
         let graph_settings = room_eq.review_graph_settings.clone();
         let chart_state = room_eq.review_chart_state.as_ref().map(|w| w.inner());
-        let wide_review_layout =
-            state.app.ui_state.window_width > ROOM_EQ_REVIEW_WIDE_BREAKPOINT_PX;
+        let window_width = state.app.ui_state.window_width;
         let report = room_eq
             .dsp_output
             .as_ref()
@@ -254,7 +227,7 @@ impl PlayerView {
                             &theme,
                         )),
                         chart_state,
-                        wide_review_layout,
+                        window_width,
                     )
                     .into_any_element(),
                 )
@@ -632,8 +605,9 @@ fn render_fir_temporal_masking_summary(
             .cmp(&crate::components::room_eq::render::room_eq_channel_sort_key(b))
     });
 
+    // Compact, content-sized table that doesn't stretch full-width.
     let header_row = HStack::new()
-        .spacing(StackSpacing::Md)
+        .spacing(StackSpacing::Sm)
         .child(Text::label("Channel"))
         .child(Text::label("Main (ms)"))
         .child(Text::label("Pre peak (dB)"))
@@ -649,14 +623,18 @@ fn render_fir_temporal_masking_summary(
     for (name, m) in rows {
         content = content.child(
             HStack::new()
-                .spacing(StackSpacing::Md)
-                .child(Text::new(name).color(theme.text_primary))
-                .child(Text::new(format!("{:.2}", m.main_time_ms)))
-                .child(Text::new(format!("{:.1}", m.pre_ringing_peak_db)))
-                .child(Text::new(format!("{:.1}", m.post_ringing_peak_db)))
-                .child(Text::new(format!("{:.1}", m.pre_ringing_audible_db)))
-                .child(Text::new(format!("{:.1}", m.post_ringing_audible_db)))
-                .child(Text::new(format!("{:.3}", m.penalty))),
+                .spacing(StackSpacing::Sm)
+                .child(
+                    Text::new(name)
+                        .size(TextSize::Sm)
+                        .color(theme.text_primary),
+                )
+                .child(Text::new(format!("{:.2}", m.main_time_ms)).size(TextSize::Sm))
+                .child(Text::new(format!("{:.1}", m.pre_ringing_peak_db)).size(TextSize::Sm))
+                .child(Text::new(format!("{:.1}", m.post_ringing_peak_db)).size(TextSize::Sm))
+                .child(Text::new(format!("{:.1}", m.pre_ringing_audible_db)).size(TextSize::Sm))
+                .child(Text::new(format!("{:.1}", m.post_ringing_audible_db)).size(TextSize::Sm))
+                .child(Text::new(format!("{:.3}", m.penalty)).size(TextSize::Sm)),
         );
     }
 

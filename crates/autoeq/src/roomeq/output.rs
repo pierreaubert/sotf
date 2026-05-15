@@ -292,6 +292,11 @@ pub(super) fn create_labeled_eq_plugin_from_filter_configs(
 
 /// Create an EQ plugin configuration that emits standard biquads followed by
 /// warped-biquad room-EQ filters.
+///
+/// Tagged with the `"room_eq_correction"` label so the UI's per-channel
+/// EQ filters card can distinguish the main DE-optimized Pre-EQ pass
+/// from later cleanup passes (Post-EQ) or feature passes (CEA2034,
+/// broadband, user preference).
 pub(super) fn create_warped_eq_plugin(
     standard_filters: &[Biquad],
     warped_filters: &[Biquad],
@@ -305,7 +310,7 @@ pub(super) fn create_warped_eq_plugin(
             .map(|filter| biquad_to_warped_json(filter, lambda)),
     );
 
-    create_eq_plugin_from_filter_configs(filter_configs)
+    create_labeled_eq_plugin_from_filter_configs(filter_configs, "room_eq_correction")
 }
 
 /// Create a labeled EQ plugin configuration from Biquad filters.
@@ -401,9 +406,12 @@ pub fn build_channel_dsp_chain_with_curves(
     // Add crossover filters
     plugins.extend(crossovers);
 
-    // Add EQ
+    // Add EQ. Tagged with `room_eq_correction` so the UI's per-channel
+    // EQ filters card identifies this as the main DE-optimized Pre-EQ
+    // pass (Pass 2 of the 3-pass pipeline) and not as a generic
+    // "Room EQ" fallback indistinguishable from the Post-EQ cleanup.
     if !eq_filters.is_empty() {
-        plugins.push(create_eq_plugin(eq_filters));
+        plugins.push(create_labeled_eq_plugin(eq_filters, "room_eq_correction"));
     }
 
     ChannelDspChain {
