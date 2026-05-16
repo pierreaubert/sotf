@@ -293,10 +293,13 @@ impl Plugin for SpectrumAnalyzerPlugin {
         output.copy_from_slice(input);
 
         // Downmix to mono for analysis
+        let mut dropped = 0usize;
         if self.num_channels == 2 {
             for i in 0..context.num_frames {
                 let s = (input[i * 2] + input[i * 2 + 1]) * 0.5;
-                let _ = self.producer.push(s);
+                if self.producer.push(s).is_err() {
+                    dropped += 1;
+                }
             }
         } else {
             let inv_ch = 1.0 / self.num_channels as f32;
@@ -305,8 +308,17 @@ impl Plugin for SpectrumAnalyzerPlugin {
                 for ch in 0..self.num_channels {
                     sum += input[i * self.num_channels + ch];
                 }
-                let _ = self.producer.push(sum * inv_ch);
+                if self.producer.push(sum * inv_ch).is_err() {
+                    dropped += 1;
+                }
             }
+        }
+        if dropped > 0 {
+            crate::rate_limited_log!(
+                warn,
+                5,
+                "spectrum ring buffer full, dropped {dropped} samples"
+            );
         }
 
         let slots = self.consumer.slots();
@@ -329,9 +341,13 @@ impl Plugin for SpectrumAnalyzerPlugin {
 
                 chunk.commit_all();
             }
-            self.fft_r2c
+            if let Err(e) = self
+                .fft_r2c
                 .process(&mut self.windowed, &mut self.fft_output)
-                .unwrap();
+            {
+                crate::rate_limited_log!(error, 5, "spectrum FFT process failed: {e}");
+                return Ok(context.num_frames);
+            }
             let scale = 2.0 / FFT_SIZE as f32;
             let scale_sq = scale * scale;
             self.new_mags.fill(-100.0);

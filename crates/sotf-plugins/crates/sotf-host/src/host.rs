@@ -287,8 +287,10 @@ pub struct DawHost {
     analyzer_indices: Vec<usize>,
     /// Cached total latency in samples, computed during build() and invalidated on graph changes
     cached_latency: Option<usize>,
-    /// Per-node bypass flags, indexed by NodeId. When true, the node's plugin is skipped
-    /// and input is passed directly to output during processing.
+    /// Flat cache of bypass state for O(1) audio-thread lookup. **Mirror** of
+    /// the authoritative `GraphNode::bypassed`; rebuilt in `build()` and kept
+    /// in sync exclusively through `Self::set_bypass_state` so the two flags
+    /// can never disagree.
     bypassed: Vec<bool>,
     /// Per-node cumulative latency from graph inputs, computed during build().
     /// Used to calculate compensation delays at merge points.
@@ -619,32 +621,41 @@ impl DawHost {
     /// When bypassed, input is passed directly to output.
     /// Only works for nodes with matching input/output channel counts.
     pub fn bypass_node(&mut self, id: NodeId) -> Result<(), String> {
-        let node = self.nodes.get_mut(&id).ok_or("Node not found")?;
-        if node.input_channels != node.output_channels {
-            return Err(format!(
-                "Cannot bypass node '{}': input channels ({}) != output channels ({})",
-                node.name, node.input_channels, node.output_channels
-            ));
+        {
+            let node = self.nodes.get(&id).ok_or("Node not found")?;
+            if node.input_channels != node.output_channels {
+                return Err(format!(
+                    "Cannot bypass node '{}': input channels ({}) != output channels ({})",
+                    node.name, node.input_channels, node.output_channels
+                ));
+            }
         }
-        node.bypassed = true;
-        if id < self.bypassed.len() {
-            self.bypassed[id] = true;
-        }
-        self.cached_latency = None;
-        self.built = false;
+        self.set_bypass_state(id, true);
         Ok(())
     }
 
     /// Unbypass a node so its plugin resumes processing.
     pub fn unbypass_node(&mut self, id: NodeId) -> Result<(), String> {
-        let node = self.nodes.get_mut(&id).ok_or("Node not found")?;
-        node.bypassed = false;
+        if !self.nodes.contains_key(&id) {
+            return Err("Node not found".into());
+        }
+        self.set_bypass_state(id, false);
+        Ok(())
+    }
+
+    /// Single write-through helper that keeps `GraphNode::bypassed` (the
+    /// authoritative model) and the flat `self.bypassed[id]` cache in sync.
+    /// All bypass mutations must funnel through here so the two views can
+    /// never diverge.
+    fn set_bypass_state(&mut self, id: NodeId, bypassed: bool) {
+        if let Some(node) = self.nodes.get_mut(&id) {
+            node.bypassed = bypassed;
+        }
         if id < self.bypassed.len() {
-            self.bypassed[id] = false;
+            self.bypassed[id] = bypassed;
         }
         self.cached_latency = None;
         self.built = false;
-        Ok(())
     }
 
     /// Returns true if the given node is bypassed.

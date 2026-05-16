@@ -22,6 +22,7 @@ pub mod parameters;
 pub mod plugin;
 pub mod plugin_layout;
 pub mod plugin_params;
+pub mod rate_limit;
 pub mod render_plan;
 pub mod serialization;
 pub mod sofa;

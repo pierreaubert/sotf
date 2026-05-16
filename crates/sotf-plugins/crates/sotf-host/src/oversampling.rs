@@ -314,12 +314,21 @@ impl Oversampler {
         let up_out_max = self.resampler_up.output_frames_max();
         {
             let in_adapter = SequentialSliceOfVecs::new(&self.up_in, nc, OS_CHUNK_SIZE)
-                .map_err(|e| format!("up in adapter: {:?}", e))?;
+                .map_err(|e| {
+                    crate::rate_limited_log!(error, 5, "oversampling up_in adapter: {e:?}");
+                    format!("up in adapter: {:?}", e)
+                })?;
             let mut out_adapter = SequentialSliceOfVecs::new_mut(&mut self.up_out, nc, up_out_max)
-                .map_err(|e| format!("up out adapter: {:?}", e))?;
+                .map_err(|e| {
+                    crate::rate_limited_log!(error, 5, "oversampling up_out adapter: {e:?}");
+                    format!("up out adapter: {:?}", e)
+                })?;
             self.resampler_up
                 .process_into_buffer(&in_adapter, &mut out_adapter, None)
-                .map_err(|e| format!("upsample: {:?}", e))?;
+                .map_err(|e| {
+                    crate::rate_limited_log!(error, 5, "oversampling upsample failed: {e:?}");
+                    format!("upsample: {:?}", e)
+                })?;
         }
 
         // The upsampled frame count is OS_CHUNK_SIZE * factor
@@ -337,14 +346,27 @@ impl Oversampler {
         let down_out_max = self.resampler_down.output_frames_max();
         let down_frames = {
             let in_adapter = SequentialSliceOfVecs::new(&self.down_in, nc, OS_CHUNK_SIZE * factor)
-                .map_err(|e| format!("down in adapter: {:?}", e))?;
+                .map_err(|e| {
+                    crate::rate_limited_log!(error, 5, "oversampling down_in adapter: {e:?}");
+                    format!("down in adapter: {:?}", e)
+                })?;
             let mut out_adapter =
                 SequentialSliceOfVecs::new_mut(&mut self.down_out, nc, down_out_max)
-                    .map_err(|e| format!("down out adapter: {:?}", e))?;
+                    .map_err(|e| {
+                        crate::rate_limited_log!(
+                            error,
+                            5,
+                            "oversampling down_out adapter: {e:?}"
+                        );
+                        format!("down out adapter: {:?}", e)
+                    })?;
             let (_, out_frames) = self
                 .resampler_down
                 .process_into_buffer(&in_adapter, &mut out_adapter, None)
-                .map_err(|e| format!("downsample: {:?}", e))?;
+                .map_err(|e| {
+                    crate::rate_limited_log!(error, 5, "oversampling downsample failed: {e:?}");
+                    format!("downsample: {:?}", e)
+                })?;
             out_frames
         };
 
@@ -519,7 +541,20 @@ impl<P: InPlacePlugin> InPlacePlugin for OversampledPlugin<P> {
                     return;
                 }
                 let total_os = os_frames * nc;
-                // Ensure buffer is large enough
+                // Ensure buffer is large enough. A grow here means the pre-
+                // allocation in `build()` was too small for this block; log so
+                // the offending block size is visible. Allocation on the audio
+                // thread is acceptable as a one-shot fallback but not as a
+                // steady state.
+                if os_interleaved.capacity() < total_os {
+                    crate::rate_limited_log!(
+                        warn,
+                        5,
+                        "oversampling: os_interleaved grew from {} to {} on hot path",
+                        os_interleaved.capacity(),
+                        total_os
+                    );
+                }
                 if os_interleaved.len() < total_os {
                     os_interleaved.resize(total_os, 0.0);
                 }

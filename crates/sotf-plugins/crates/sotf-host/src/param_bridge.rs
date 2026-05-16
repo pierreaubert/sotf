@@ -80,7 +80,18 @@ pub fn set_parameter(
         .iter()
         .enumerate()
         .find(|(_, s)| s.engine_key == id.0)
-        .ok_or_else(|| format!("Unknown parameter: {}", id))?;
+        .ok_or_else(|| {
+            log::warn!(
+                "param_bridge::set_parameter rejected unknown parameter '{}' (known: {})",
+                id,
+                specs
+                    .iter()
+                    .map(|s| s.engine_key)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            format!("Unknown parameter: {}", id)
+        })?;
 
     let f64_val = param_value_to_f64(spec, value)?;
     set_value(idx, f64_val);
