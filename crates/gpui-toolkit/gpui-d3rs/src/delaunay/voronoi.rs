@@ -17,17 +17,12 @@ impl<'a> Voronoi<'a> {
 
     /// Get the clipping bounds.
     pub fn bounds(&self) -> [f64; 4] {
-        [
-            self.inner.xmin,
-            self.inner.ymin,
-            self.inner.xmax,
-            self.inner.ymax,
-        ]
+        self.inner.bounds()
     }
 
     /// Number of cells (= number of input points).
     pub fn cell_count(&self) -> usize {
-        self.inner.delaunay.len()
+        self.inner.delaunay().len()
     }
 
     /// Get the polygon for cell i, clipped to bounds.
@@ -47,6 +42,6 @@ impl<'a> Voronoi<'a> {
 
     /// Neighboring cell indices.
     pub fn neighbors(&self, i: usize) -> impl Iterator<Item = usize> {
-        self.inner.delaunay.neighbors(i).into_iter()
+        self.inner.delaunay().neighbors(i).into_iter()
     }
 }

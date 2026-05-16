@@ -42,7 +42,10 @@ pub struct Player {
     restart_count: u32,
     /// One-shot flag: engine was restarted, cleared after `get_playback_state` returns it.
     engine_restarted_flag: bool,
-    /// Sticky flag: engine crashed fatally (second crash), cleared on next `load_and_play_at`.
+    /// One-shot flag: engine crashed fatally (second crash). Cleared after
+    /// `get_playback_state` returns it, mirroring `engine_restarted_flag`.
+    /// Also reset on `stop` / `load_and_play_at` / `load_and_play_source_at` /
+    /// `switch_to_source_at` to keep the flag clean across track loads.
     engine_fatal_flag: bool,
 }
 
@@ -458,6 +461,7 @@ impl Player {
         let engine_restarted = self.engine_restarted_flag;
         self.engine_restarted_flag = false;
         let engine_fatal = self.engine_fatal_flag;
+        self.engine_fatal_flag = false;
 
         PlaybackState {
             position_secs,
@@ -535,5 +539,26 @@ mod tests {
         let mut player = Player::new();
         let result = player.update_plugins(Vec::new());
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn engine_fatal_flag_is_one_shot() {
+        let mut player = Player::new();
+        // Simulate a fatal flag being set by the crash path.
+        player.engine_fatal_flag = true;
+
+        // First poll returns true.
+        let first = player.get_playback_state();
+        assert!(
+            first.engine_fatal,
+            "engine_fatal should be reported on first poll after the flag is set"
+        );
+
+        // Subsequent polls return false — the flag is one-shot.
+        let second = player.get_playback_state();
+        assert!(
+            !second.engine_fatal,
+            "engine_fatal should be cleared after being read once"
+        );
     }
 }

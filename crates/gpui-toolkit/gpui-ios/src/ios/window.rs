@@ -1102,9 +1102,10 @@ impl IosWindow {
 
     /// Query the safe area insets from the UIView.
     ///
-    /// Returns `(top, bottom, left, right)` in logical points.
-    /// These represent the areas occupied by system UI (status bar,
-    /// home indicator, camera notch) that content should avoid.
+    /// Returns `(top, left, bottom, right)` in logical points (matching
+    /// `UIEdgeInsets` field order — see implementation below). These
+    /// represent the areas occupied by system UI (status bar, home
+    /// indicator, camera notch) that content should avoid.
     pub fn safe_area_insets(&self) -> (f32, f32, f32, f32) {
         if self.view.is_null() {
             return (0.0, 0.0, 0.0, 0.0);

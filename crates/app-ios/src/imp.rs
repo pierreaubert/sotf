@@ -5,6 +5,9 @@ use sotf_audio_player_gpui::app::state::ui::LayoutState;
 use sotf_audio_player_gpui::app::{App, AppState};
 use sotf_audio_player_gpui::ui;
 use std::borrow::Cow;
+use std::collections::VecDeque;
+use std::ffi::CString;
+use std::panic::{AssertUnwindSafe, UnwindSafe};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -29,6 +32,59 @@ unsafe extern "C" {
 /// Set once during app initialization, never changes.
 static GLOBAL_PLAYER: OnceLock<Arc<parking_lot::Mutex<Player>>> = OnceLock::new();
 
+/// Remote control commands that require AppState/Queue access. The GPUI event
+/// loop is expected to drain this queue on each tick (see TODO in
+/// `pending_remote_commands`). Until that drain is wired up, lock-screen
+/// next/prev events are recorded here but do not yet move the queue.
+#[derive(Debug, Clone)]
+pub enum RemoteCommand {
+    NextTrack,
+    PrevTrack,
+    /// File paths imported from the iOS document picker. The consumer should
+    /// either add them to the library or push them onto the playback queue.
+    ImportFiles(Vec<PathBuf>),
+}
+
+static PENDING_REMOTE_COMMANDS: OnceLock<parking_lot::Mutex<VecDeque<RemoteCommand>>> =
+    OnceLock::new();
+
+fn pending_queue() -> &'static parking_lot::Mutex<VecDeque<RemoteCommand>> {
+    PENDING_REMOTE_COMMANDS.get_or_init(|| parking_lot::Mutex::new(VecDeque::new()))
+}
+
+/// Push a remote command for the GPUI loop to drain.
+///
+/// TODO(cross-crate-plumbing): the GPUI side (sotf-gpui / AppState) needs to
+/// call `drain_pending_remote_commands()` on each tick and act on the
+/// commands (e.g. `QueueController::next()` / `::prev()` / library import).
+/// That drain consumer cannot be added from this crate alone.
+fn push_remote_command(cmd: RemoteCommand) {
+    pending_queue().lock().push_back(cmd);
+}
+
+/// Drain pending remote commands. Intended for the GPUI tick consumer (TODO).
+#[allow(dead_code)]
+pub fn drain_pending_remote_commands() -> Vec<RemoteCommand> {
+    pending_queue().lock().drain(..).collect()
+}
+
+/// FFI panic guard. Wrap every `extern "C"` body in this so a Rust panic does
+/// not unwind across the C ABI (which is UB under the workspace's
+/// `panic = "unwind"` strategy).
+fn ffi_guard<F, R>(f: F) -> R
+where
+    F: FnOnce() -> R + UnwindSafe,
+    R: Default,
+{
+    match std::panic::catch_unwind(f) {
+        Ok(r) => r,
+        Err(_) => {
+            log::error!("[iOS] FFI call panicked; returning default");
+            R::default()
+        }
+    }
+}
+
 /// Embedded assets including Lucide SVG icons and brand images
 #[derive(RustEmbed)]
 #[folder = "../app-gpui/assets"]
@@ -44,97 +100,114 @@ struct Assets;
 /// Called from Swift to start the GPUI application.
 #[unsafe(no_mangle)]
 pub extern "C" fn sotf_ios_start() {
-    // Set up logging to os_log
-    oslog::OsLogger::new("org.spinorama.sotf")
-        .level_filter(log::LevelFilter::Info)
-        .init()
-        .ok();
-
-    log::info!("sotf_ios_start: registering app callback");
-
-    // Register asset source so SVG icons, fonts, and brand images load correctly.
-    gpui_ios::ios::ffi::set_asset_source(Assets);
-
-    gpui_ios::ios::ffi::set_app_callback(Box::new(|cx: &mut gpui::App| {
-        log::info!("GPUI app callback: setting up SotF player");
-
-        // Load custom fonts
-        let fonts = vec![
-            "fonts/B612-Regular.ttf",
-            "fonts/B612-Italic.ttf",
-            "fonts/B612-Bold.ttf",
-            "fonts/B612-BoldItalic.ttf",
-        ];
-
-        let mut font_data = Vec::new();
-        for path in fonts {
-            if let Some(file) = Assets::get(path) {
-                font_data.push(file.data);
-            } else {
-                log::warn!("Failed to load font: {}", path);
-            }
+    ffi_guard(|| {
+        // Set up logging to os_log
+        if let Err(e) = oslog::OsLogger::new("org.spinorama.sotf")
+            .level_filter(log::LevelFilter::Info)
+            .init()
+        {
+            eprintln!("[iOS] oslog init failed: {e}");
         }
 
-        if !font_data.is_empty() {
-            cx.text_system().add_fonts(font_data).unwrap();
-        }
+        log::info!("sotf_ios_start: registering app callback");
 
-        // Open a fullscreen window with the player
-        cx.open_window(
-            WindowOptions {
-                window_bounds: None,
-                ..Default::default()
-            },
-            |_, cx| {
-                // Load configuration before creating entities
-                let mut temp_app = App::new();
-                let layout_state = match temp_app.load_config() {
-                    Ok(l) => l,
-                    Err(e) => {
-                        log::warn!("Could not load saved configuration: {}", e);
-                        LayoutState::default()
-                    }
-                };
+        // Register asset source so SVG icons, fonts, and brand images load correctly.
+        gpui_ios::ios::ffi::set_asset_source(Assets);
 
-                let player = Player::new();
-                if let Err(e) = player.set_volume(temp_app.playback.volume) {
-                    log::warn!("Failed to set initial volume: {}", e);
+        gpui_ios::ios::ffi::set_app_callback(Box::new(|cx: &mut gpui::App| {
+            log::info!("GPUI app callback: setting up SotF player");
+
+            // Load custom fonts
+            let fonts = vec![
+                "fonts/B612-Regular.ttf",
+                "fonts/B612-Italic.ttf",
+                "fonts/B612-Bold.ttf",
+                "fonts/B612-BoldItalic.ttf",
+            ];
+
+            let mut font_data = Vec::new();
+            for path in fonts {
+                if let Some(file) = Assets::get(path) {
+                    font_data.push(file.data);
+                } else {
+                    log::warn!("Failed to load font: {}", path);
                 }
+            }
 
-                let layout = cx.new(|_| layout_state);
-                #[allow(clippy::arc_with_non_send_sync)]
-                let player_arc = Arc::new(parking_lot::Mutex::new(player));
+            if !font_data.is_empty() {
+                if let Err(e) = cx.text_system().add_fonts(font_data) {
+                    log::error!("[iOS] add_fonts failed: {e}");
+                }
+            }
 
-                // Store global handle for C FFI callbacks (interruptions, remote commands)
-                GLOBAL_PLAYER.set(Arc::clone(&player_arc)).ok();
+            // Open a fullscreen window with the player
+            let open_result = cx.open_window(
+                WindowOptions {
+                    window_bounds: None,
+                    ..Default::default()
+                },
+                |_, cx| {
+                    // Load configuration before creating entities
+                    let mut temp_app = App::new();
+                    let layout_state = match temp_app.load_config() {
+                        Ok(l) => l,
+                        Err(e) => {
+                            log::warn!("Could not load saved configuration: {}", e);
+                            LayoutState::default()
+                        }
+                    };
 
-                let app_state = cx.new(|_cx| {
-                    let mut app = temp_app;
-                    app.load_audio_devices();
-
-                    // Auto-add the iOS sandbox Music directory to the library
-                    if let Some(music_dir) = get_ios_music_directory() {
-                        log::info!("Adding iOS music directory: {}", music_dir.display());
-                        app.add_directory_quiet(music_dir);
+                    let player = Player::new();
+                    if let Err(e) = player.set_volume(temp_app.playback.volume) {
+                        log::warn!("Failed to set initial volume: {}", e);
                     }
 
-                    AppState {
-                        app,
-                        layout,
-                        player: player_arc,
+                    let layout = cx.new(|_| layout_state);
+                    #[allow(clippy::arc_with_non_send_sync)]
+                    // Player is !Send + !Sync because of internal *const pointers used
+                    // by the audio engine. The Arc<Mutex<_>> wrapper is the agreed
+                    // pattern for cross-thread access on this type.
+                    let player_arc = Arc::new(parking_lot::Mutex::new(player));
+
+                    // Store global handle for C FFI callbacks (interruptions, remote commands)
+                    if GLOBAL_PLAYER.set(Arc::clone(&player_arc)).is_err() {
+                        log::error!(
+                            "[iOS] GLOBAL_PLAYER already set — re-entry into sotf_ios_start"
+                        );
                     }
-                });
 
-                cx.new(|cx| ui::PlayerView::new(app_state.clone(), cx))
-            },
-        )
-        .expect("Failed to open player window");
+                    let app_state = cx.new(|_cx| {
+                        let mut app = temp_app;
+                        app.load_audio_devices();
 
-        cx.activate(true);
-    }));
+                        // Auto-add the iOS sandbox Music directory to the library
+                        if let Some(music_dir) = get_ios_music_directory() {
+                            log::info!("Adding iOS music directory: {}", music_dir.display());
+                            app.add_directory_quiet(music_dir);
+                        }
 
-    log::info!("sotf_ios_start: calling run_app");
-    gpui_ios::ios::ffi::run_app();
+                        AppState {
+                            app,
+                            layout,
+                            player: player_arc,
+                        }
+                    });
+
+                    cx.new(|cx| ui::PlayerView::new(app_state.clone(), cx))
+                },
+            );
+
+            if let Err(e) = open_result {
+                log::error!("[iOS] Failed to open player window: {e}");
+                return;
+            }
+
+            cx.activate(true);
+        }));
+
+        log::info!("sotf_ios_start: calling run_app");
+        gpui_ios::ios::ffi::run_app();
+    })
 }
 
 // ============================================================================
@@ -143,41 +216,85 @@ pub extern "C" fn sotf_ios_start() {
 
 /// Get the iOS sandbox music directory path from Swift.
 fn get_ios_music_directory() -> Option<PathBuf> {
+    // SAFETY: `sotf_ios_get_music_directory` is implemented on the Swift side
+    // and is documented to return either NULL or a pointer to a NUL-terminated
+    // UTF-8 C string whose storage outlives this call (it is held by Swift in
+    // an autoreleased NSString backing buffer). We check NULL below, then
+    // immediately copy the bytes into an owned `PathBuf` so the Swift-owned
+    // pointer is not retained past this function.
     let c_str = unsafe { sotf_ios_get_music_directory() };
     if c_str.is_null() {
         return None;
     }
+    // SAFETY: see the comment above — `c_str` is non-null and points to a
+    // NUL-terminated UTF-8 buffer valid for the duration of this call.
     let path_str = unsafe { std::ffi::CStr::from_ptr(c_str) }.to_str().ok()?;
     Some(PathBuf::from(path_str))
 }
 
 /// Called from Swift when the user imports files via the document picker.
+///
+/// The JSON payload is an array of absolute paths. Each entry that points to
+/// an audio file is forwarded to the playback queue via `Player::queue_next`,
+/// and the full list is also pushed onto the pending remote-command queue so
+/// the GPUI side can perform a full library import when the drain consumer
+/// lands.
+///
+/// TODO(cross-crate-plumbing): the proper destination is
+/// `App::add_directory_quiet` / a dedicated import API in app-gpui, which can
+/// scan metadata and register the tracks with the library. That requires a
+/// drain consumer in the GPUI event loop — see `drain_pending_remote_commands`.
 #[unsafe(no_mangle)]
 pub extern "C" fn sotf_ios_files_imported(paths_json: *const std::ffi::c_char) {
-    if paths_json.is_null() {
-        return;
-    }
-
-    let json_str = match unsafe { std::ffi::CStr::from_ptr(paths_json) }.to_str() {
-        Ok(s) => s,
-        Err(e) => {
-            log::error!("[iOS] Invalid UTF-8 in imported paths: {}", e);
+    ffi_guard(AssertUnwindSafe(|| {
+        if paths_json.is_null() {
             return;
         }
-    };
 
-    let paths: Vec<String> = match serde_json::from_str(json_str) {
-        Ok(p) => p,
-        Err(e) => {
-            log::error!("[iOS] Failed to parse imported paths JSON: {}", e);
-            return;
+        // SAFETY: caller (Swift) guarantees `paths_json` is non-null (checked
+        // above), points to a NUL-terminated UTF-8 buffer, and remains valid
+        // for the duration of this call.
+        let json_str = match unsafe { std::ffi::CStr::from_ptr(paths_json) }.to_str() {
+            Ok(s) => s,
+            Err(e) => {
+                log::error!("[iOS] Invalid UTF-8 in imported paths: {}", e);
+                return;
+            }
+        };
+
+        let paths: Vec<String> = match serde_json::from_str(json_str) {
+            Ok(p) => p,
+            Err(e) => {
+                log::error!("[iOS] Failed to parse imported paths JSON: {}", e);
+                return;
+            }
+        };
+
+        log::info!("[iOS] Files imported: {} files", paths.len());
+        let path_bufs: Vec<PathBuf> = paths.iter().map(PathBuf::from).collect();
+
+        // Minimum-viable wiring: queue each imported audio file for gapless
+        // playback. `queue_next` is a no-op when no engine is running, so this
+        // is safe even before the user has started playback.
+        if let Some(player) = GLOBAL_PLAYER.get() {
+            for path in &path_bufs {
+                log::info!("[iOS]   {}", path.display());
+                let res = player.lock().queue_next(path.clone());
+                if let Err(e) = res {
+                    log::warn!("[iOS] queue_next({}) failed: {}", path.display(), e);
+                }
+            }
+        } else {
+            log::warn!(
+                "[iOS] Imported files but GLOBAL_PLAYER not set yet ({} paths)",
+                path_bufs.len()
+            );
         }
-    };
 
-    log::info!("[iOS] Files imported: {} files", paths.len());
-    for path in &paths {
-        log::info!("[iOS]   {}", path);
-    }
+        // Also enqueue for the (future) full library-import consumer. See
+        // TODO on `RemoteCommand::ImportFiles`.
+        push_remote_command(RemoteCommand::ImportFiles(path_bufs));
+    }))
 }
 
 // ============================================================================
@@ -188,28 +305,32 @@ pub extern "C" fn sotf_ios_files_imported(paths_json: *const std::ffi::c_char) {
 /// `began` = true means pause, false means resume.
 #[unsafe(no_mangle)]
 pub extern "C" fn sotf_ios_audio_interrupted(began: bool) {
-    let Some(player) = GLOBAL_PLAYER.get() else {
-        return;
-    };
+    ffi_guard(|| {
+        let Some(player) = GLOBAL_PLAYER.get() else {
+            return;
+        };
 
-    if began {
-        log::info!("[iOS] Audio interrupted — pausing");
-        let _ = player.lock().pause();
-    } else {
-        log::info!("[iOS] Audio interruption ended — resuming");
-        let _ = player.lock().resume();
-    }
+        if began {
+            log::info!("[iOS] Audio interrupted — pausing");
+            let _ = player.lock().pause();
+        } else {
+            log::info!("[iOS] Audio interruption ended — resuming");
+            let _ = player.lock().resume();
+        }
+    })
 }
 
 /// Called when the audio route changes (headphone unplug → pause).
 #[unsafe(no_mangle)]
 pub extern "C" fn sotf_ios_audio_route_changed() {
-    let Some(player) = GLOBAL_PLAYER.get() else {
-        return;
-    };
+    ffi_guard(|| {
+        let Some(player) = GLOBAL_PLAYER.get() else {
+            return;
+        };
 
-    log::info!("[iOS] Audio route changed — pausing");
-    let _ = player.lock().pause();
+        log::info!("[iOS] Audio route changed — pausing");
+        let _ = player.lock().pause();
+    })
 }
 
 // ============================================================================
@@ -219,71 +340,103 @@ pub extern "C" fn sotf_ios_audio_route_changed() {
 /// Play from lock screen or Control Center.
 #[unsafe(no_mangle)]
 pub extern "C" fn sotf_ios_remote_play() {
-    let Some(player) = GLOBAL_PLAYER.get() else {
-        return;
-    };
-    log::info!("[iOS] Remote: play");
-    let _ = player.lock().resume();
+    ffi_guard(|| {
+        let Some(player) = GLOBAL_PLAYER.get() else {
+            return;
+        };
+        log::info!("[iOS] Remote: play");
+        let _ = player.lock().resume();
+    })
 }
 
 /// Pause from lock screen or Control Center.
 #[unsafe(no_mangle)]
 pub extern "C" fn sotf_ios_remote_pause() {
-    let Some(player) = GLOBAL_PLAYER.get() else {
-        return;
-    };
-    log::info!("[iOS] Remote: pause");
-    let _ = player.lock().pause();
+    ffi_guard(|| {
+        let Some(player) = GLOBAL_PLAYER.get() else {
+            return;
+        };
+        log::info!("[iOS] Remote: pause");
+        let _ = player.lock().pause();
+    })
 }
 
 /// Toggle play/pause from lock screen or Control Center.
 #[unsafe(no_mangle)]
 pub extern "C" fn sotf_ios_remote_toggle_play_pause() {
-    let Some(player) = GLOBAL_PLAYER.get() else {
-        return;
-    };
+    ffi_guard(|| {
+        let Some(player) = GLOBAL_PLAYER.get() else {
+            return;
+        };
 
-    let p = player.lock();
-    if p.is_playing() {
-        log::info!("[iOS] Remote: pause");
-        let _ = p.pause();
-    } else {
-        log::info!("[iOS] Remote: play");
-        let _ = p.resume();
-    }
+        // Release the lock between is_playing() and pause()/resume() so that
+        // any re-entrant callback (e.g. route-changed reaching back through
+        // the engine state observer) does not deadlock — `parking_lot::Mutex`
+        // is not reentrant. The tiny TOCTOU window is harmless for a UI
+        // toggle.
+        let is_playing = player.lock().is_playing();
+        if is_playing {
+            log::info!("[iOS] Remote: pause");
+            let _ = player.lock().pause();
+        } else {
+            log::info!("[iOS] Remote: play");
+            let _ = player.lock().resume();
+        }
+    })
 }
 
 /// Next track from lock screen or Control Center.
+///
+/// Implementation note: track navigation lives on the AppState's
+/// `QueueController`, not on the engine-level `Player`. We therefore push a
+/// `RemoteCommand::NextTrack` onto the pending queue, which the GPUI tick
+/// must drain (see TODO on `drain_pending_remote_commands`). Until the drain
+/// is wired, the command will accumulate but will not advance the queue.
 #[unsafe(no_mangle)]
 pub extern "C" fn sotf_ios_remote_next_track() {
-    log::info!("[iOS] Remote: next track");
-    // Note: Next/prev track requires access to the queue which lives in AppState.
-    // The global player handle only controls the engine (pause/resume/seek).
-    // For now, log the event. Full implementation requires a global command channel
-    // to the GPUI event loop, which is a future enhancement.
+    ffi_guard(|| {
+        log::info!("[iOS] Remote: next track (enqueued for GPUI drain)");
+        push_remote_command(RemoteCommand::NextTrack);
+    })
 }
 
-/// Previous track from lock screen or Control Center.
+/// Previous track from lock screen or Control Center. See `next_track`.
 #[unsafe(no_mangle)]
 pub extern "C" fn sotf_ios_remote_prev_track() {
-    log::info!("[iOS] Remote: prev track");
-    // Same note as next_track — requires queue access.
+    ffi_guard(|| {
+        log::info!("[iOS] Remote: prev track (enqueued for GPUI drain)");
+        push_remote_command(RemoteCommand::PrevTrack);
+    })
 }
 
 /// Seek to position from lock screen scrubber.
 #[unsafe(no_mangle)]
 pub extern "C" fn sotf_ios_remote_seek(position: f64) {
-    let Some(player) = GLOBAL_PLAYER.get() else {
-        return;
-    };
+    ffi_guard(|| {
+        let Some(player) = GLOBAL_PLAYER.get() else {
+            return;
+        };
 
-    log::info!("[iOS] Remote: seek to {:.1}s", position);
-    let _ = player.lock().seek(position);
+        log::info!("[iOS] Remote: seek to {:.1}s", position);
+        let _ = player.lock().seek(position);
+    })
 }
 
 // ============================================================================
 // Now Playing Update (Rust → Swift)
 // ============================================================================
+
+/// Build a `CString` from a `&str`, logging and substituting on interior NUL.
+fn cstring_or_unknown(value: &str, field: &str) -> CString {
+    match CString::new(value) {
+        Ok(c) => c,
+        Err(_) => {
+            log::warn!("[iOS] interior NUL in {field}; substituting <unknown>");
+            // "<unknown>" contains no NUL — unwrap is infallible.
+            CString::new("<unknown>").expect("static literal has no NUL")
+        }
+    }
+}
 
 /// Update the lock screen Now Playing info with full track metadata.
 pub fn update_now_playing_info(
@@ -294,10 +447,14 @@ pub fn update_now_playing_info(
     position: f64,
     is_playing: bool,
 ) {
-    let c_title = std::ffi::CString::new(title).unwrap_or_default();
-    let c_artist = std::ffi::CString::new(artist).unwrap_or_default();
-    let c_album = std::ffi::CString::new(album).unwrap_or_default();
+    let c_title = cstring_or_unknown(title, "title");
+    let c_artist = cstring_or_unknown(artist, "artist");
+    let c_album = cstring_or_unknown(album, "album");
 
+    // SAFETY: all three pointers come from `CString`s owned in this stack
+    // frame and remain valid for the entire duration of the call. The Swift
+    // implementation copies the strings synchronously, so we may drop them
+    // when this scope ends.
     unsafe {
         sotf_ios_update_now_playing(
             c_title.as_ptr(),
@@ -312,6 +469,8 @@ pub fn update_now_playing_info(
 
 /// Update just the playback position (called periodically, no metadata change).
 pub fn update_now_playing_position(position: f64, is_playing: bool) {
+    // SAFETY: `sotf_ios_update_now_playing_position` takes only scalar
+    // arguments — no pointer lifetime to uphold.
     unsafe {
         sotf_ios_update_now_playing_position(position, is_playing);
     }
@@ -333,6 +492,9 @@ impl gpui::AssetSource for Assets {
     }
 
     fn list(&self, path: &str) -> Result<Vec<SharedString>> {
+        if path.is_empty() {
+            return Ok(Vec::new());
+        }
         Ok(Self::iter()
             .filter_map(|p| {
                 if p.starts_with(path) {

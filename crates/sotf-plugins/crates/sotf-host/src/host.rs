@@ -763,7 +763,17 @@ impl DawHost {
                         &mut bufs.channel_map_buffer,
                         &mut bufs.delay_scratch,
                         &mut bufs.compensation_delays,
-                    )?;
+                    )
+                    .map_err(|e| {
+                        crate::rate_limited_log!(
+                            error,
+                            5,
+                            "host: merge_inputs_into failed for node {} '{}': {e}",
+                            nid,
+                            node.name
+                        );
+                        e
+                    })?;
                     ensure_len(&mut bufs.scratch_input, il);
                     bufs.scratch_input[..il].copy_from_slice(&bufs.merge_buffer[..il]);
                     il
@@ -794,11 +804,22 @@ impl DawHost {
                         ol
                     };
                     ensure_len(&mut bufs.scratch_output, process_output_len);
-                    let out_frames = p.process(
-                        &bufs.scratch_input[..in_len],
-                        &mut bufs.scratch_output[..process_output_len],
-                        &context,
-                    )?;
+                    let out_frames = p
+                        .process(
+                            &bufs.scratch_input[..in_len],
+                            &mut bufs.scratch_output[..process_output_len],
+                            &context,
+                        )
+                        .map_err(|e| {
+                            crate::rate_limited_log!(
+                                error,
+                                5,
+                                "host: plugin '{}' (node {}) process failed: {e}",
+                                node.name,
+                                nid
+                            );
+                            e
+                        })?;
                     bufs.node_buffers[nid]
                         .as_mut()
                         .unwrap()
@@ -814,7 +835,15 @@ impl DawHost {
                 cf = scf;
             }
         }
-        Self::collect_output_from_buffers(&self.output_nodes, &bufs.node_buffers, output, cf)?;
+        Self::collect_output_from_buffers(&self.output_nodes, &bufs.node_buffers, output, cf)
+            .map_err(|e| {
+                crate::rate_limited_log!(
+                    error,
+                    5,
+                    "host: collect_output_from_buffers failed: {e}"
+                );
+                e
+            })?;
         if cf < nf && self.has_variable_frame_plugin {
             output[cf * out_ch..].fill(0.0);
             cf = nf;
@@ -822,8 +851,8 @@ impl DawHost {
         // Advance playback position for automation
         self.playback_position += nf;
 
-        // BufferGuard's Drop impl returns bufs to self.process_buffers
-        drop(guard);
+        // BufferGuard's Drop impl returns bufs to self.process_buffers when
+        // `guard` falls out of scope here.
         Ok(cf)
     }
 

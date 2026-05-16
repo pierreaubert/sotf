@@ -300,9 +300,12 @@ impl MidiMappingEngine {
         overlay
     }
 
-    /// Calculate the MIDI value to send for LED feedback given a parameter's current value
+    /// Calculate the MIDI value to send for LED feedback given a parameter's
+    /// current value. The `plugin_index` argument disambiguates chains containing
+    /// multiple instances of the same plugin type.
     pub fn feedback_value(
         &self,
+        plugin_index: usize,
         param_index: usize,
         current_value: f64,
         spec: &ParamSpec,
@@ -312,7 +315,7 @@ impl MidiMappingEngine {
             _ => return None,
         };
 
-        let binding = mapping.binding_for_param(0, param_index)?; // TODO: plugin_index
+        let binding = mapping.binding_for_param(plugin_index, param_index)?;
         let control = layout.find_by_id(&binding.control_id)?;
         let (min, max) = param_range(spec);
         let midi_val = param_to_midi(current_value, min, max, binding.scaling);

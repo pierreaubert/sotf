@@ -369,7 +369,8 @@ impl RingAccumulator {
 ///
 /// Uses a long analysis window for frequency resolution and a shorter
 /// synthesis window for low-latency output. The output latency equals
-/// the synthesis window size, not the analysis window size.
+/// the **analysis** window size: the ring buffer must fill `analysis_size`
+/// samples before the first hop fires and produces output.
 pub struct DualWindowStft {
     analysis_window: Vec<f32>,
     synthesis_window: Vec<f32>,
@@ -507,11 +508,20 @@ impl DualWindowStft {
     /// Call this after `analyze()` returns `true` and the spectrum has been modified
     /// via `freq_buffer_mut()`. The output samples accumulate in the internal buffer
     /// and can be read via `read_output()`.
+    ///
+    /// # Scaling convention
+    /// `realfft`'s IFFT output is unnormalized: `IFFT(FFT(x))[n] = N * x[n]`.
+    /// `design_dual_windows` normalizes the synthesis window so that the COLA
+    /// overlap-add sum equals 1 assuming a hypothetical normalized IFFT (output = 1).
+    /// The `1/N` factor corrects for `realfft`'s unnormalized output.
+    /// The two normalizations serve distinct roles: synthesis window → COLA unity;
+    /// `1/N` → IFFT scale convention. Neither makes the other redundant.
     pub fn synthesize_in_place(&mut self) {
         // Inverse FFT (operates on self.fft.freq_buffer directly)
         self.fft.inverse();
 
-        // Apply synthesis window and overlap-add
+        // Apply synthesis window and overlap-add.
+        // 1/analysis_size compensates for realfft's unnormalized IFFT (output × N).
         let scale = 1.0 / self.analysis_size as f32;
         for i in 0..self.analysis_size {
             let pos = (self.output_read_pos + i) % self.output_accum.len();
@@ -547,6 +557,10 @@ impl DualWindowStft {
     }
 
     /// Get the output latency in samples.
+    ///
+    /// Returns the analysis window size. The ring accumulator must fill
+    /// `analysis_size` samples before the first hop triggers, so valid
+    /// output first appears at sample index `analysis_size`.
     pub fn latency_samples(&self) -> usize {
         self.analysis_size
     }
@@ -804,6 +818,47 @@ mod tests {
             assert!(
                 rms_error < 1.0,
                 "Dual-window STFT passthrough RMS error too high: {rms_error:.6}"
+            );
+        }
+    }
+
+    /// Round-trip identity test for DualWindowStft.
+    ///
+    /// A pass-through (no spectral modification) on a DC signal must recover
+    /// unit amplitude after the latency period. This verifies that the synthesis
+    /// window COLA normalization and the 1/N IFFT correction yield unity gain.
+    #[test]
+    fn test_dual_window_stft_roundtrip_unity_gain() {
+        let analysis_size = 512;
+        let synthesis_size = 128;
+        let hop_size = 64;
+
+        let mut stft = DualWindowStft::new(analysis_size, synthesis_size, hop_size);
+
+        // DC signal at amplitude 0.5 — easy to verify amplitude recovery.
+        let num_samples = 6144;
+        let signal = vec![0.5_f32; num_samples];
+        let mut output = vec![0.0_f32; num_samples];
+
+        stft.process_block(&signal, &mut output, |_spectrum| {});
+
+        // Skip latency + two extra analysis windows for transient to settle.
+        let latency = stft.latency_samples();
+        let check_start = latency + 2 * analysis_size;
+        let check_end = num_samples - analysis_size;
+
+        if check_end > check_start {
+            let rms_error: f32 = output[check_start..check_end]
+                .iter()
+                .zip(&signal[check_start - latency..check_end - latency])
+                .map(|(o, s)| (o - s).powi(2))
+                .sum::<f32>()
+                / (check_end - check_start) as f32;
+
+            assert!(
+                rms_error < 1e-4,
+                "DualWindowStft round-trip RMS error too high ({rms_error:.6}); \
+                 IFFT scale or synthesis-window normalization may be wrong"
             );
         }
     }

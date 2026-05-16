@@ -11,6 +11,26 @@ use std::sync::Arc;
 /// Callback type for MIDI input messages
 pub type MidiCallback = Arc<dyn Fn(MidiMessage) + Send + Sync>;
 
+/// Per-callback reusable buffer for the MIDI input thread. Channel-voice messages
+/// are at most 3 bytes; SysEx falls back to heap. Held inside the midir callback
+/// closure (via midir's user-data parameter) so the same allocation is reused on
+/// every dispatch instead of allocating a fresh `Vec<u8>` per message.
+struct InputBuffer {
+    /// Stack-sized inline buffer (covers all channel-voice messages).
+    inline: [u8; 3],
+    /// Heap fallback for SysEx and other multi-byte system messages.
+    heap: Vec<u8>,
+}
+
+impl InputBuffer {
+    fn new() -> Self {
+        Self {
+            inline: [0; 3],
+            heap: Vec::with_capacity(64),
+        }
+    }
+}
+
 /// Main MIDI manager for handling all MIDI operations
 pub struct MidiManager {
     /// MIDI input client
@@ -19,17 +39,14 @@ pub struct MidiManager {
     /// MIDI output client
     midi_output: Option<MidiOutput>,
 
-    /// Active input connection
-    input_connection: Option<MidiInputConnection<()>>,
+    /// Active input connection (parameterized over the per-callback buffer state)
+    input_connection: Option<MidiInputConnection<InputBuffer>>,
 
     /// Active output connection
     output_connection: Arc<Mutex<Option<MidiOutputConnection>>>,
 
     /// MIDI configuration
     config: MidiConfig,
-
-    /// Callback for received MIDI messages
-    _callback: Option<MidiCallback>,
 }
 
 impl MidiManager {
@@ -41,7 +58,6 @@ impl MidiManager {
             input_connection: None,
             output_connection: Arc::new(Mutex::new(None)),
             config: MidiConfig::default(),
-            _callback: None,
         })
     }
 
@@ -53,7 +69,6 @@ impl MidiManager {
             input_connection: None,
             output_connection: Arc::new(Mutex::new(None)),
             config,
-            _callback: None,
         })
     }
 
@@ -115,7 +130,12 @@ impl MidiManager {
         Ok(devices)
     }
 
-    /// Connect to a MIDI input device by index
+    /// Connect to a MIDI input device by index.
+    ///
+    /// If `MidiConfig::listen_channel` is set, only channel-voice messages on that
+    /// channel are forwarded to `callback` (system messages always pass through).
+    /// The channel filter is snapshotted at connect time; change it and reconnect
+    /// to apply a new filter.
     pub fn connect_input<F>(&mut self, port_index: usize, callback: F) -> Result<()>
     where
         F: Fn(MidiMessage) + Send + Sync + 'static,
@@ -141,16 +161,36 @@ impl MidiManager {
 
         log::info!("Connecting to MIDI input: {}", port_name);
 
-        // Connect with callback
+        let listen_channel = self.config.listen_channel;
+        let buffer = InputBuffer::new();
+
         let connection = midi_in.connect(
             port,
             &format!("SOTF Input {}", port_name),
-            move |_timestamp, message, _| {
-                if let Ok(midi_msg) = MidiMessage::from_bytes(message) {
-                    callback(midi_msg);
+            move |_timestamp, message, buf: &mut InputBuffer| {
+                // Use the pre-allocated buffers to avoid per-message heap allocation
+                // on the hot path. Channel-voice messages fit in the 3-byte inline
+                // buffer; longer messages spill to the heap fallback.
+                let parsed = if message.len() <= buf.inline.len() {
+                    buf.inline[..message.len()].copy_from_slice(message);
+                    MidiMessage::from_bytes(&buf.inline[..message.len()])
+                } else {
+                    buf.heap.clear();
+                    buf.heap.extend_from_slice(message);
+                    MidiMessage::from_bytes(&buf.heap)
+                };
+                let Ok(midi_msg) = parsed else {
+                    return;
+                };
+                if let Some(want) = listen_channel
+                    && let Some(ch) = channel_of(&midi_msg)
+                    && ch != want
+                {
+                    return;
                 }
+                callback(midi_msg);
             },
-            (),
+            buffer,
         )?;
 
         self.input_connection = Some(connection);
@@ -230,32 +270,34 @@ impl MidiManager {
         }
     }
 
-    /// Send a MIDI message
+    /// Send a MIDI message.
+    ///
+    /// Bytes are encoded **outside** the output mutex (using a 3-byte stack
+    /// buffer for channel-voice messages, with a heap fallback for SysEx),
+    /// so contention is reduced to the OS send call itself.
     pub fn send_message(&self, message: &MidiMessage) -> Result<()> {
-        let mut conn = self.output_connection.lock();
-        let connection = conn.as_mut().ok_or(MidiError::NotConnected)?;
+        let mut stack_buf = [0u8; 3];
+        let needed = message.write_to(&mut stack_buf);
+        let heap_bytes: Option<Vec<u8>> = if needed > stack_buf.len() {
+            Some(message.to_bytes())
+        } else {
+            None
+        };
+        let bytes: &[u8] = heap_bytes.as_deref().unwrap_or(&stack_buf[..needed]);
 
-        let bytes = message.to_bytes();
-        connection
-            .send(&bytes)
-            .map_err(|e| MidiError::SendError(e.to_string()))?;
-
+        self.send_raw(bytes)?;
         log::debug!("Sent MIDI: {}", message.description());
-
         Ok(())
     }
 
-    /// Send raw MIDI bytes
+    /// Send raw MIDI bytes. The lock is held only for the actual `send()` call.
     pub fn send_raw(&self, bytes: &[u8]) -> Result<()> {
         let mut conn = self.output_connection.lock();
         let connection = conn.as_mut().ok_or(MidiError::NotConnected)?;
-
         connection
             .send(bytes)
             .map_err(|e| MidiError::SendError(e.to_string()))?;
-
         log::debug!("Sent raw MIDI: {:?}", bytes);
-
         Ok(())
     }
 
@@ -296,6 +338,20 @@ impl MidiManager {
             );
         }
         Ok(())
+    }
+}
+
+/// Returns the channel of a channel-voice message, or `None` for system messages.
+fn channel_of(msg: &MidiMessage) -> Option<u8> {
+    match msg {
+        MidiMessage::NoteOff { channel, .. }
+        | MidiMessage::NoteOn { channel, .. }
+        | MidiMessage::PolyphonicAftertouch { channel, .. }
+        | MidiMessage::ControlChange { channel, .. }
+        | MidiMessage::ProgramChange { channel, .. }
+        | MidiMessage::ChannelAftertouch { channel, .. }
+        | MidiMessage::PitchBend { channel, .. } => Some(*channel),
+        MidiMessage::SystemExclusive { .. } | MidiMessage::Raw { .. } => None,
     }
 }
 

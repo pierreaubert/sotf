@@ -10441,6 +10441,7 @@ name = "sotf-media-controls"
 version = "0.1.0"
 dependencies = [
  "block2",
+ "dispatch2",
  "log",
  "mpris-server",
  "objc2",
@@ -10490,6 +10491,7 @@ dependencies = [
  "autoeq",
  "chrono",
  "clap",
+ "crossbeam",
  "directories",
  "env_logger",
  "image",

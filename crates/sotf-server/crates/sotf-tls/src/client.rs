@@ -4,6 +4,29 @@ use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{DigitallySignedStruct, Error, SignatureScheme};
 use std::sync::{Arc, Mutex};
 
+/// Canonicalize a `ServerName` + port into a stable TOFU key.
+///
+/// - DNS names are lowercased.
+/// - IP addresses are normalized via `IpAddr::to_string()` (no `Debug` form),
+///   IPv6 is bracketed.
+/// - Port is always appended so that pinning `host:6600` does NOT authorize
+///   `host:22`.
+pub fn canonical_host_port(server_name: &ServerName<'_>, port: u16) -> String {
+    match server_name {
+        ServerName::DnsName(dns) => format!("{}:{port}", dns.as_ref().to_ascii_lowercase()),
+        ServerName::IpAddress(ip) => {
+            let ip: std::net::IpAddr = (*ip).into();
+            match ip {
+                std::net::IpAddr::V4(v4) => format!("{v4}:{port}"),
+                std::net::IpAddr::V6(v6) => format!("[{v6}]:{port}"),
+            }
+        }
+        // ServerName is `#[non_exhaustive]`; fall back to the (host-only)
+        // debug form to remain available rather than crash.
+        _ => format!("{server_name:?}:{port}"),
+    }
+}
+
 /// Custom certificate verifier using Trust-On-First-Use.
 ///
 /// On first connection to an unknown host, returns an error containing the fingerprint.
@@ -11,14 +34,31 @@ use std::sync::{Arc, Mutex};
 /// `TofuStore::accept()` if the user approves.
 ///
 /// On subsequent connections, the stored fingerprint is checked.
+///
+/// The TOFU key is `(canonical-host-or-ip, port)` so pinning a host on one
+/// port doesn't auto-pin every other port on the same host.
 #[derive(Debug)]
 pub struct TofuVerifier {
     store: Arc<Mutex<TofuStore>>,
+    target_port: u16,
 }
 
 impl TofuVerifier {
+    /// Create a verifier without a known target port. Kept for backward
+    /// compatibility — prefer `with_port` so the TOFU key is endpoint-scoped.
     pub fn new(store: Arc<Mutex<TofuStore>>) -> Self {
-        Self { store }
+        Self {
+            store,
+            target_port: 0,
+        }
+    }
+
+    /// Create a verifier that scopes TOFU entries to the given target port.
+    pub fn with_port(store: Arc<Mutex<TofuStore>>, target_port: u16) -> Self {
+        Self {
+            store,
+            target_port,
+        }
     }
 }
 
@@ -36,14 +76,14 @@ impl ServerCertVerifier for TofuVerifier {
         _now: UnixTime,
     ) -> Result<ServerCertVerified, Error> {
         let fp = crate::cert_gen::fingerprint(end_entity);
-        let host = server_name.to_str();
+        let key = canonical_host_port(server_name, self.target_port);
 
         let store = self
             .store
             .lock()
             .map_err(|e| Error::General(format!("TOFU store lock poisoned: {e}")))?;
 
-        match store.check(&host, &fp) {
+        match store.check(&key, &fp) {
             TofuResult::Trusted => Ok(ServerCertVerified::assertion()),
             TofuResult::Unknown { fingerprint } => Err(Error::General(format!(
                 "{TOFU_UNKNOWN_PREFIX}{fingerprint}"

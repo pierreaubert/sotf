@@ -38,7 +38,13 @@ impl SourcePosition {
         }
     }
 
-    /// Calculate angular distance between two positions, in degrees.
+    /// Calculate the great-circle (angular) distance between two positions, in degrees.
+    ///
+    /// Uses the haversine formula on the unit sphere, mapping (azimuth, elevation)
+    /// to (longitude, latitude). The `distance` (radius) component is
+    /// intentionally ignored — two positions in the same direction at different
+    /// radii return zero. Callers that handle near-field measurements must
+    /// branch on `distance` separately.
     pub fn angular_distance(&self, other: &SourcePosition) -> f32 {
         let az1 = self.azimuth.to_radians();
         let el1 = self.elevation.to_radians();
@@ -48,7 +54,11 @@ impl SourcePosition {
         let dlat = el2 - el1;
         let dlon = az2 - az1;
 
+        // Haversine: a = sin²(Δφ/2) + cos φ1 · cos φ2 · sin²(Δλ/2)
         let a = (dlat / 2.0).sin().powi(2) + el1.cos() * el2.cos() * (dlon / 2.0).sin().powi(2);
+        // Clamp to [0, 1] to guard against tiny floating-point overshoot that
+        // would make `sqrt(1 - a)` NaN at near-antipodes.
+        let a = a.clamp(0.0, 1.0);
         let c = 2.0 * a.sqrt().atan2((1.0 - a).sqrt());
 
         c.to_degrees()
@@ -64,6 +74,21 @@ impl SourcePosition {
         let z = el.sin();
 
         [x, y, z]
+    }
+
+    /// Build a spherical position from a Cartesian `[x, y, z]` triple in metres.
+    ///
+    /// Uses x=front, y=left, z=up. Returns `SourcePosition { 0, 0, 0 }` when
+    /// the input is the origin (otherwise `atan2(0, 0) == 0` plus
+    /// `asin(z/0) == NaN` would poison nearest-neighbour search).
+    pub fn from_cartesian(x: f32, y: f32, z: f32) -> Self {
+        let distance = (x * x + y * y + z * z).sqrt();
+        if !distance.is_finite() || distance <= f32::EPSILON {
+            return Self::new(0.0, 0.0, 0.0);
+        }
+        let azimuth = y.atan2(x).to_degrees();
+        let elevation = (z / distance).clamp(-1.0, 1.0).asin().to_degrees();
+        Self::new(azimuth, elevation, distance)
     }
 }
 
@@ -429,10 +454,7 @@ impl SofaFile {
                 }
                 CoordinateSystem::Cartesian => {
                     let (x, y, z) = (pos_data[idx], pos_data[idx + 1], pos_data[idx + 2]);
-                    let distance = (x * x + y * y + z * z).sqrt();
-                    let azimuth = y.atan2(x).to_degrees();
-                    let elevation = (z / distance).asin().to_degrees();
-                    SourcePosition::new(azimuth, elevation, distance)
+                    SourcePosition::from_cartesian(x, y, z)
                 }
             };
             positions.push(pos);
@@ -556,5 +578,97 @@ mod tests {
 
         let dist = pos1.angular_distance(&pos2);
         assert!(dist < 0.01, "Expected ~0 degrees, got {}", dist);
+    }
+
+    #[test]
+    fn test_angular_distance_antipodes() {
+        let pos1 = SourcePosition::new(0.0, 0.0, 1.0);
+        let pos2 = SourcePosition::new(180.0, 0.0, 1.0);
+        let dist = pos1.angular_distance(&pos2);
+        assert!(
+            (dist - 180.0).abs() < 0.01,
+            "Antipodal points should be 180°, got {}",
+            dist
+        );
+        assert!(dist.is_finite(), "Antipodal distance must not be NaN");
+    }
+
+    #[test]
+    fn test_angular_distance_ninety_degrees() {
+        let pos1 = SourcePosition::new(0.0, 90.0, 1.0);
+        let pos2 = SourcePosition::new(0.0, 0.0, 1.0);
+        let dist = pos1.angular_distance(&pos2);
+        assert!(
+            (dist - 90.0).abs() < 0.01,
+            "Pole-to-equator should be 90°, got {}",
+            dist
+        );
+    }
+
+    #[test]
+    fn test_angular_distance_ignores_radius() {
+        let pos1 = SourcePosition::new(30.0, 15.0, 0.2);
+        let pos2 = SourcePosition::new(30.0, 15.0, 2.0);
+        let dist = pos1.angular_distance(&pos2);
+        assert!(
+            dist < 0.01,
+            "Angular distance should ignore radius, got {}",
+            dist
+        );
+    }
+
+    #[test]
+    fn test_angular_distance_wrap_around() {
+        let pos1 = SourcePosition::new(-179.0, 0.0, 1.0);
+        let pos2 = SourcePosition::new(179.0, 0.0, 1.0);
+        let dist = pos1.angular_distance(&pos2);
+        assert!(
+            (dist - 2.0).abs() < 0.01,
+            "Azimuth wrap-around should give 2°, got {}",
+            dist
+        );
+    }
+
+    #[test]
+    fn test_cartesian_to_spherical_origin() {
+        let pos = SourcePosition::from_cartesian(0.0, 0.0, 0.0);
+        assert_eq!(pos.azimuth, 0.0);
+        assert_eq!(pos.elevation, 0.0);
+        assert_eq!(pos.distance, 0.0);
+        assert!(pos.azimuth.is_finite());
+        assert!(pos.elevation.is_finite());
+        assert!(pos.distance.is_finite());
+    }
+
+    #[test]
+    fn test_cartesian_to_spherical_known_points() {
+        let pos = SourcePosition::from_cartesian(1.0, 0.0, 0.0);
+        assert!(pos.azimuth.abs() < 0.01);
+        assert!(pos.elevation.abs() < 0.01);
+        assert!((pos.distance - 1.0).abs() < 0.01);
+
+        let pos = SourcePosition::from_cartesian(0.0, 0.0, 1.0);
+        assert!((pos.elevation - 90.0).abs() < 0.01);
+        assert!((pos.distance - 1.0).abs() < 0.01);
+
+        let pos = SourcePosition::from_cartesian(0.0, 1.0, 0.0);
+        assert!((pos.azimuth - 90.0).abs() < 0.01);
+        assert!((pos.distance - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_find_nearest_never_returns_nan() {
+        let sf = SofaFile {
+            sample_rate: 48000.0,
+            num_measurements: 1,
+            ir_length: 1,
+            positions: vec![SourcePosition::from_cartesian(0.0, 0.0, 0.0)],
+            impulse_responses: vec![0.0, 0.0],
+            convention: "test".to_string(),
+            data_sample_rate: Some(48000.0),
+        };
+        let (idx, dist) = sf.find_nearest(&SourcePosition::new(45.0, 30.0, 1.0));
+        assert_eq!(idx, 0);
+        assert!(dist.is_finite(), "find_nearest should never return NaN");
     }
 }

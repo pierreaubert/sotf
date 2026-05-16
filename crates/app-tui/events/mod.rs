@@ -28,7 +28,8 @@ pub use conf_headphoneeq::{
     poll_headphone_download, poll_headphone_eq_optimization, poll_headphone_list_load,
 };
 pub use conf_recordings::{
-    poll_bass_anchor_capture, poll_probe_capture, poll_recording, poll_spl_calibration_capture,
+    poll_bass_anchor_capture, poll_probe_capture, poll_recording, poll_save_recordings,
+    poll_spl_calibration_capture,
 };
 pub use conf_roomeq::{poll_delay_detection, poll_room_eq_optimization};
 pub use conf_spinoramaeq::{poll_spinorama_optimization, poll_spinorama_speaker_load};
@@ -210,10 +211,10 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     }
 
     match key.code {
-        KeyCode::Esc => {
-            app.should_quit = true;
-            None
-        }
+        // Esc in Normal mode is a no-op — quitting must be explicit
+        // (Ctrl-C, Ctrl-Q, Cmd-Q) so a stray Esc on the Library or
+        // Queue screen does not exit without confirmation.
+        KeyCode::Esc => None,
         // TAB to cycle through screens
         KeyCode::Tab => {
             app.current_screen = match app.current_screen {
@@ -291,11 +292,14 @@ fn handle_channel_conflict_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCo
             None
         }
         KeyCode::Enter => {
+            // Project rule: crash hard on unknown values. The Up/Down
+            // handler clamps to [0, NUM_OPTIONS), but if any future
+            // code path pokes this field out of range we want to know.
             let choice = match app.channel_conflict_selection {
                 0 => ChannelConflictChoice::SuspendIncompatible,
                 1 => ChannelConflictChoice::RemoveIncompatible,
                 2 => ChannelConflictChoice::Cancel,
-                _ => ChannelConflictChoice::Cancel,
+                n => unreachable!("channel_conflict_selection out of range: {}", n),
             };
 
             let path = app.channel_conflict_path.take();

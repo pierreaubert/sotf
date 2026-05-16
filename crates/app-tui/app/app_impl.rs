@@ -134,6 +134,24 @@ pub struct App {
     pub needs_rescan: bool,
     pub needs_redraw: bool,
 
+    // Cached media-control metadata. `update_media_controls` runs
+    // every tick (~10 Hz); without this cache it clones strings and
+    // crosses an FFI boundary on every call. Set only when one of
+    // these values actually changes.
+    pub mc_last_queue_index: Option<usize>,
+    pub mc_last_title: Option<String>,
+    pub mc_last_artist: Option<String>,
+    pub mc_last_album: Option<String>,
+    pub mc_last_cover_url: Option<String>,
+    pub mc_last_duration_secs: Option<u64>,
+
+    // Cached redraw-relevant state. The tick handler sets
+    // `needs_redraw` only when one of these actually changes,
+    // avoiding a full screen redraw every 100 ms.
+    pub last_position_secs: f64,
+    pub last_is_playing_state: bool,
+    pub last_loudness_signature: u64,
+
     // Scan progress
     pub scan_in_progress: bool,
     pub scan_progress_tracks: usize,
@@ -327,6 +345,15 @@ impl App {
             should_quit: false,
             needs_rescan: false,
             needs_redraw: true,
+            mc_last_queue_index: None,
+            mc_last_title: None,
+            mc_last_artist: None,
+            mc_last_album: None,
+            mc_last_cover_url: None,
+            mc_last_duration_secs: None,
+            last_position_secs: f64::NAN,
+            last_is_playing_state: false,
+            last_loudness_signature: 0,
             scan_in_progress: false,
             scan_progress_tracks: 0,
             scan_progress_albums: 0,

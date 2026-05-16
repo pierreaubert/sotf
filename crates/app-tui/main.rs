@@ -13,8 +13,8 @@ use sotf_audio_player_tui::events::{
     AppEvent, PlayerCommand, handle_events, handle_key_event, handle_media_control_event,
     poll_bass_anchor_capture, poll_delay_detection, poll_federation_scan, poll_federation_test,
     poll_headphone_download, poll_headphone_eq_optimization, poll_headphone_list_load,
-    poll_probe_capture, poll_recording, poll_room_eq_optimization, poll_spinorama_optimization,
-    poll_spinorama_speaker_load, poll_spl_calibration_capture,
+    poll_probe_capture, poll_recording, poll_room_eq_optimization, poll_save_recordings,
+    poll_spinorama_optimization, poll_spinorama_speaker_load, poll_spl_calibration_capture,
 };
 use sotf_audio_player_tui::media_controls::{self, TuiMediaControls};
 use sotf_audio_player_tui::ui;
@@ -457,6 +457,9 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                     if poll_bass_anchor_capture(app) {
                         app.needs_redraw = true;
                     }
+                    if poll_save_recordings(app) {
+                        app.needs_redraw = true;
+                    }
                     // Poll speaker-load result (non-blocking, no-op when not loading)
                     if poll_spinorama_speaker_load(app) {
                         app.needs_redraw = true;
@@ -480,16 +483,34 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                         std::sync::atomic::Ordering::Relaxed,
                     );
 
-                    // Update app state
-                    app.position_secs = state.position_secs;
-                    // Read loudness from cache using plugin chain's engine index
-                    app.loudness_info = app
+                    // Update app state — gate the redraw flag on actual
+                    // visible state changes. Position is compared at
+                    // deci-second resolution (matches the transport bar);
+                    // loudness uses a cheap signature so meter ticks
+                    // still drive redraws but noise-floor jitter does not.
+                    let new_position = state.position_secs;
+                    let new_loudness = app
                         .plugin_graph
                         .output_monitor_engine_index()
                         .and_then(|idx| player.get_cached_plugin_data(idx))
                         .and_then(|d| d.downcast_ref::<sotf_audio_player::LoudnessData>().cloned());
                     app.current_sample_rate = state.sample_rate;
-                    app.needs_redraw = true; // Always redraw on tick to update meters/position
+
+                    let pos_changed =
+                        (new_position * 10.0).round() != (app.last_position_secs * 10.0).round();
+                    let play_state_changed = state.is_playing != app.last_is_playing_state;
+                    let new_loudness_signature = loudness_redraw_signature(new_loudness.as_ref());
+                    let loudness_changed = new_loudness_signature != app.last_loudness_signature;
+
+                    if pos_changed || play_state_changed || loudness_changed {
+                        app.needs_redraw = true;
+                    }
+
+                    app.position_secs = new_position;
+                    app.loudness_info = new_loudness;
+                    app.last_position_secs = new_position;
+                    app.last_is_playing_state = state.is_playing;
+                    app.last_loudness_signature = new_loudness_signature;
 
                     // Redraw while scanning or processing
                     if app.scan_in_progress
@@ -761,6 +782,36 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
     Ok(())
 }
 
+/// Compute a cheap signature of loudness data for redraw gating.
+/// Rounded to 0.1 dB so the meter "ticks" register as changes while
+/// noise-floor jitter does not force a redraw every tick.
+fn loudness_redraw_signature(l: Option<&sotf_audio_player::LoudnessData>) -> u64 {
+    let Some(l) = l else {
+        return 0;
+    };
+    let q = |x: f64| -> u64 {
+        if !x.is_finite() {
+            return u64::MAX;
+        }
+        ((x * 10.0).round() as i64).wrapping_add(i64::MAX / 2) as u64
+    };
+    let mut sig = q(l.momentary_lufs)
+        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        .wrapping_add(q(l.shortterm_lufs));
+    sig = sig
+        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        .wrapping_add(q(l.integrated_lufs));
+    for p in l.channel_peaks.iter() {
+        let v = if *p > 0.0 {
+            (20.0 * (*p).log10()).max(-120.0)
+        } else {
+            -120.0
+        };
+        sig = sig.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(q(v));
+    }
+    sig
+}
+
 /// Start playback for an audio source, handling matrix adaptation and channel clamping.
 fn start_playback(
     player: &mut Player,
@@ -786,6 +837,21 @@ fn start_playback(
     // Apply ReplayGain correction to the permanent Gain plugin
     let rg_gain = app.get_replay_gain_for_current_track();
     app.plugin_graph.set_replay_gain(rg_gain);
+
+    // `load_and_play_source` only accepts a flat `Vec<PluginConfig>`,
+    // which cannot express the DAG topology a non-linear plugin
+    // graph (parallel branches, routed bass management) needs. If the
+    // graph is non-linear, schedule a structural-flush plugin update
+    // on the next tick so the real `PluginGraphConfig` is uploaded
+    // via `update_plugin_graph` (the same path `run_app` uses for
+    // in-place updates). Without this, pressing Play silently drops
+    // routed RoomEQ topology until a parameter twiddle re-triggers a
+    // structural flush.
+    if !app.plugin_graph.is_linear() {
+        app.needs_plugin_update = true;
+        app.plugin_update_retry_count = 0;
+        app.plugin_update_last_attempt = None;
+    }
 
     let plugins = app.plugin_graph.to_plugin_configs(sample_rate);
     let mut output_channels = app.plugin_graph.output_channels_for_input(track_channels);
@@ -926,7 +992,7 @@ fn handle_player_command(
 }
 
 fn update_media_controls(
-    app: &App,
+    app: &mut App,
     player: &Player,
     media_controls: &mut Option<TuiMediaControls>,
 ) {
@@ -934,50 +1000,55 @@ fn update_media_controls(
         return;
     };
 
-    // Update metadata from current track
+    // Snapshot the desired metadata.
     let track = app.current_track();
     let album_title = app
         .current_queue_index
         .and_then(|idx| app.queue.get(idx))
-        .map(|entry| entry.item.album.title.as_str());
+        .map(|entry| entry.item.album.title.clone())
+        .filter(|s| !s.is_empty());
 
-    let title_owned: String;
-    let artist_owned: String;
+    let title = track
+        .and_then(|t| t.title.clone())
+        .filter(|s| !s.is_empty());
+    let artist = track
+        .and_then(|t| t.artist.clone())
+        .filter(|s| !s.is_empty());
+    let duration_secs = track.and_then(|t| t.duration_secs);
 
-    let (title, artist) = match track {
-        Some(t) => {
-            title_owned = t.title.clone().unwrap_or_default();
-            artist_owned = t.artist.clone().unwrap_or_default();
-            (
-                if title_owned.is_empty() {
-                    None
-                } else {
-                    Some(title_owned.as_str())
-                },
-                if artist_owned.is_empty() {
-                    None
-                } else {
-                    Some(artist_owned.as_str())
-                },
-            )
-        }
-        None => (None, None),
-    };
-
-    let duration = track.and_then(|t| t.duration_secs).map(Duration::from_secs);
-
-    // Build cover URL from album art path (file:// URL for macOS)
-    let cover_url_owned = app
+    let cover_url = app
         .current_queue_index
         .and_then(|idx| app.queue.get(idx))
         .and_then(|entry| entry.item.album.album_art_path.as_ref())
         .filter(|path| path.exists())
         .map(|path| format!("file://{}", path.display()));
-    let cover_url = cover_url_owned.as_deref();
 
-    mc.set_metadata(title, artist, album_title, duration, cover_url);
+    // Only push metadata to the OS when something actually changed —
+    // every call crosses an FFI boundary (e.g. macOS
+    // MPNowPlayingInfoCenter) and we tick at ~10 Hz.
+    let metadata_changed = app.mc_last_queue_index != app.current_queue_index
+        || app.mc_last_title != title
+        || app.mc_last_artist != artist
+        || app.mc_last_album != album_title
+        || app.mc_last_cover_url != cover_url
+        || app.mc_last_duration_secs != duration_secs;
 
-    // Update playback state
+    if metadata_changed {
+        mc.set_metadata(
+            title.as_deref(),
+            artist.as_deref(),
+            album_title.as_deref(),
+            duration_secs.map(Duration::from_secs),
+            cover_url.as_deref(),
+        );
+        app.mc_last_queue_index = app.current_queue_index;
+        app.mc_last_title = title;
+        app.mc_last_artist = artist;
+        app.mc_last_album = album_title;
+        app.mc_last_cover_url = cover_url;
+        app.mc_last_duration_secs = duration_secs;
+    }
+
     let position_secs = player.get_position();
     let progress = Some(MediaPosition(Duration::from_secs_f64(position_secs)));
 

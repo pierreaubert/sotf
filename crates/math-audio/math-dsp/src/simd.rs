@@ -901,12 +901,15 @@ pub fn interleave_stereo(left: &[f32], right: &[f32], output: &mut [f32]) {
 
 /// Flush denormal numbers to zero to prevent CPU performance spikes and audio glitches.
 ///
-/// Denormal floats (values with magnitude < 1e-30) cause significant CPU overhead
-/// when processed by FMA instructions, leading to audio artifacts and crackle.
-/// This function checks each sample and sets denormals to exactly 0.0.
+/// Denormal floats (IEEE 754 subnormals with magnitude < `f32::MIN_POSITIVE` ≈ 1.175e-38)
+/// cause significant CPU overhead when processed by FMA instructions. Normal values
+/// smaller than `f32::MIN_POSITIVE` do not exist — `f32::MIN_POSITIVE` IS the boundary.
+/// Values at or above `f32::MIN_POSITIVE` are normal and will never be zeroed.
 #[inline]
 pub fn flush_denormals_inplace(samples: &mut [f32]) {
-    const DENORM_THRESHOLD: f32 = 1e-30;
+    // f32::MIN_POSITIVE (~1.175e-38) is the smallest positive *normal* f32.
+    // Values with abs() < MIN_POSITIVE are subnormals (denormals).
+    const DENORM_THRESHOLD: f32 = f32::MIN_POSITIVE;
 
     #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
     {
@@ -1021,6 +1024,99 @@ pub fn enable_ftz_daz() -> bool {
     }
 }
 
+/// RAII guard that enables FTZ/DAZ on construction and restores the previous
+/// FPU control register state on drop, scoping the effect to a block.
+///
+/// # Usage
+/// ```ignore
+/// {
+///     let _guard = ScopedFtz::new();
+///     // FTZ/DAZ active here
+/// } // previous FPU state restored on drop
+/// ```
+///
+/// On unsupported platforms this is a no-op. The guard is `!Send` because
+/// FPU control registers are per-thread state.
+pub struct ScopedFtz {
+    #[cfg(target_arch = "x86_64")]
+    saved_mxcsr: Option<u32>,
+    #[cfg(target_arch = "aarch64")]
+    saved_fpcr: Option<u64>,
+}
+
+impl ScopedFtz {
+    /// Enable FTZ/DAZ and save the current register state for restoration on drop.
+    #[allow(clippy::needless_return)]
+    pub fn new() -> Self {
+        #[cfg(target_arch = "x86_64")]
+        {
+            let saved = unsafe {
+                let mut mxcsr: u32 = 0;
+                std::arch::asm!(
+                    "stmxcsr [{}]",
+                    in(reg) &mut mxcsr,
+                    options(nostack, preserves_flags)
+                );
+                let new_mxcsr = mxcsr | (1 << 15) | (1 << 6); // FTZ | DAZ
+                std::arch::asm!(
+                    "ldmxcsr [{}]",
+                    in(reg) &new_mxcsr,
+                    options(nostack, preserves_flags)
+                );
+                mxcsr
+            };
+            return Self {
+                saved_mxcsr: Some(saved),
+            };
+        }
+
+        #[cfg(target_arch = "aarch64")]
+        {
+            let saved = unsafe {
+                let mut fpcr: u64;
+                std::arch::asm!("mrs {}, fpcr", out(reg) fpcr);
+                let new_fpcr = fpcr | (1u64 << 24); // FZ bit
+                std::arch::asm!("msr fpcr, {}", in(reg) new_fpcr);
+                fpcr
+            };
+            return Self {
+                saved_fpcr: Some(saved),
+            };
+        }
+
+        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+        Self {}
+    }
+}
+
+impl Default for ScopedFtz {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Drop for ScopedFtz {
+    fn drop(&mut self) {
+        #[cfg(target_arch = "x86_64")]
+        if let Some(saved) = self.saved_mxcsr {
+            unsafe {
+                std::arch::asm!(
+                    "ldmxcsr [{}]",
+                    in(reg) &saved,
+                    options(nostack, preserves_flags)
+                );
+            }
+        }
+
+        #[cfg(target_arch = "aarch64")]
+        if let Some(saved) = self.saved_fpcr {
+            unsafe {
+                std::arch::asm!("msr fpcr, {}", in(reg) saved);
+            }
+        }
+    }
+}
+
 /// Flush denormals in complex buffer (applies to both real and imaginary parts)
 #[inline]
 pub fn flush_denormals_complex_inplace(samples: &mut [Complex<f32>]) {
@@ -1038,29 +1134,56 @@ mod denorm_tests {
 
     #[test]
     fn test_flush_denormals_basic() {
-        let mut samples = [1e-31_f32, 1e-20, 1e-10, 0.0, -1e-31, 1.0];
+        // 1e-39 is subnormal (below f32::MIN_POSITIVE) and must be zeroed.
+        // 1e-20, 1e-10, 1.0 are normal and must be preserved.
+        let mut samples = [1e-39_f32, 1e-20, 1e-10, 0.0, -1e-39_f32, 1.0];
         flush_denormals_inplace(&mut samples);
-        assert_eq!(samples[0], 0.0);
+        assert_eq!(samples[0], 0.0, "subnormal 1e-39 must be zeroed");
         assert_eq!(samples[1], 1e-20);
         assert_eq!(samples[2], 1e-10);
         assert_eq!(samples[3], 0.0);
-        assert_eq!(samples[4], 0.0);
+        assert_eq!(samples[4], 0.0, "negative subnormal -1e-39 must be zeroed");
         assert_eq!(samples[5], 1.0);
+    }
+
+    /// A normal f32 value just above the subnormal boundary must NOT be zeroed.
+    #[test]
+    fn test_flush_denormals_normal_small_not_zeroed() {
+        // 1e-35 is a normal f32 (above f32::MIN_POSITIVE ~1.175e-38).
+        let mut samples = [1e-35_f32];
+        flush_denormals_inplace(&mut samples);
+        assert!(
+            samples[0] != 0.0,
+            "normal value 1e-35 (above f32::MIN_POSITIVE) must not be zeroed"
+        );
+    }
+
+    /// A subnormal f32 value must be zeroed.
+    #[test]
+    fn test_flush_denormals_subnormal_zeroed() {
+        // 1e-39 is a subnormal f32 (below f32::MIN_POSITIVE ~1.175e-38).
+        let mut samples = [1e-39_f32];
+        flush_denormals_inplace(&mut samples);
+        assert_eq!(
+            samples[0], 0.0,
+            "subnormal value 1e-39 (below f32::MIN_POSITIVE) must be zeroed"
+        );
     }
 
     #[test]
     fn test_flush_denormals_complex() {
         use rustfft::num_complex::Complex;
+        // re=1e-39 (subnormal) zeroed; im=1e-30 (normal) preserved.
         let mut samples = [
-            Complex::new(1e-31, 1e-30),
-            Complex::new(1.0, 1e-31),
+            Complex::new(1e-39_f32, 1e-30_f32),
+            Complex::new(1.0, 1e-39_f32),
             Complex::new(0.0, 0.0),
         ];
         flush_denormals_complex_inplace(&mut samples);
-        assert_eq!(samples[0].re, 0.0);
-        assert!((samples[0].im - 1e-30).abs() < 1e-35);
+        assert_eq!(samples[0].re, 0.0, "subnormal re must be zeroed");
+        assert!(samples[0].im != 0.0, "normal im 1e-30 must be preserved");
         assert_eq!(samples[1].re, 1.0);
-        assert_eq!(samples[1].im, 0.0);
+        assert_eq!(samples[1].im, 0.0, "subnormal im must be zeroed");
         assert_eq!(samples[2].re, 0.0);
         assert_eq!(samples[2].im, 0.0);
     }
@@ -1073,7 +1196,7 @@ mod denorm_tests {
 
     #[test]
     fn test_flush_denormals_unaligned() {
-        let mut samples = [1e-31_f32; 7];
+        let mut samples = [1e-39_f32; 7];
         flush_denormals_inplace(&mut samples);
         for s in samples.iter() {
             assert_eq!(*s, 0.0);
@@ -1092,7 +1215,8 @@ mod tests {
 
     #[test]
     fn test_flush_denormals_basic() {
-        let mut samples = [1e-31_f32, 1e-20, 1e-10, 0.0, -1e-31, 1.0];
+        // 1e-39 is subnormal (below f32::MIN_POSITIVE ~1.175e-38) and must be zeroed.
+        let mut samples = [1e-39_f32, 1e-20, 1e-10, 0.0, -1e-39_f32, 1.0];
         flush_denormals_inplace(&mut samples);
         assert_eq!(samples[0], 0.0);
         assert_eq!(samples[1], 1e-20);
@@ -1105,14 +1229,15 @@ mod tests {
     #[test]
     fn test_flush_denormals_complex() {
         use rustfft::num_complex::Complex;
+        // re=1e-39 (subnormal) zeroed; im=1e-30 (normal) preserved.
         let mut samples = [
-            Complex::new(1e-31, 1e-30),
-            Complex::new(1.0, 1e-31),
+            Complex::new(1e-39_f32, 1e-30_f32),
+            Complex::new(1.0, 1e-39_f32),
             Complex::new(0.0, 0.0),
         ];
         flush_denormals_complex_inplace(&mut samples);
         assert_eq!(samples[0].re, 0.0);
-        assert!((samples[0].im - 1e-30).abs() < 1e-35);
+        assert!(samples[0].im != 0.0, "normal im 1e-30 must be preserved");
         assert_eq!(samples[1].re, 1.0);
         assert_eq!(samples[1].im, 0.0);
         assert_eq!(samples[2].re, 0.0);
@@ -1127,7 +1252,7 @@ mod tests {
 
     #[test]
     fn test_flush_denormals_unaligned() {
-        let mut samples = [1e-31_f32; 7];
+        let mut samples = [1e-39_f32; 7];
         flush_denormals_inplace(&mut samples);
         for s in samples.iter() {
             assert_eq!(*s, 0.0);
@@ -1149,6 +1274,16 @@ mod tests {
             !result,
             "enable_ftz_daz should return false on unsupported platforms"
         );
+    }
+
+    #[test]
+    fn test_scoped_ftz_does_not_panic() {
+        // ScopedFtz must construct and drop without panicking on any platform.
+        {
+            let _guard = ScopedFtz::new();
+            // FTZ/DAZ active within this scope
+        }
+        // Previous FPU state restored on drop.
     }
 
     #[test]

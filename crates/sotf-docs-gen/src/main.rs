@@ -345,15 +345,53 @@ fn plugin_registry() -> Vec<PluginEntry> {
             global_params: None,
             band_template: None,
         },
-        PluginEntry {
-            slug: "dither",
-            name: "Dither",
-            description: "Adds dither noise for bit-depth reduction, minimizing quantization distortion.",
-            params: param_specs::dither::PARAMS,
-            global_params: None,
-            band_template: None,
-        },
     ]
+}
+
+// ---------------------------------------------------------------------------
+// Escaping helpers
+// ---------------------------------------------------------------------------
+
+/// Escape a string so it is safe to embed inside a single markdown table cell.
+///
+/// Markdown pipe tables use `|` as a column separator and treat each row as a
+/// single line. Backslashes also need escaping so they do not consume the
+/// following character. Newlines and carriage returns are replaced with `<br>`
+/// so the cell continues to render on a single row.
+fn md_cell(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for ch in s.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '|' => out.push_str("\\|"),
+            '\n' | '\r' => out.push_str("<br>"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+/// Escape a string for use inside a YAML double-quoted scalar.
+///
+/// We restrict ourselves to single-line strings: any newline or carriage
+/// return is replaced with a space so the value stays a single-line scalar.
+/// Backslashes and double quotes get backslash-escaped; control characters
+/// (other than the newline replacement above) are also stripped because they
+/// are not allowed in double-quoted YAML scalars without unicode escapes,
+/// which we deliberately avoid here.
+fn yaml_double_quoted(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    for ch in s.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' | '\r' => out.push(' '),
+            // Strip other control characters to keep the scalar valid.
+            c if (c as u32) < 0x20 => out.push(' '),
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -406,7 +444,16 @@ fn format_default(param: &ParamSpec) -> String {
         ParamType::Choice {
             default_index,
             labels,
-        } => labels.get(*default_index).unwrap_or(&"?").to_string(),
+        } => labels
+            .get(*default_index)
+            .unwrap_or_else(|| {
+                panic!(
+                    "Choice default_index {} out of range (labels.len() = {})",
+                    default_index,
+                    labels.len()
+                )
+            })
+            .to_string(),
         ParamType::FilePath => "-".to_string(),
     }
 }
@@ -450,12 +497,12 @@ fn generate_params_table(params: &[ParamSpec]) -> String {
             writeln!(
                 md,
                 "| {} | {} | {} | {} | {} | {} |",
-                p.name,
-                format_param_type(p),
-                format_range(p),
-                format_default(p),
-                unit,
-                doc,
+                md_cell(p.name),
+                md_cell(&format_param_type(p)),
+                md_cell(&format_range(p)),
+                md_cell(&format_default(p)),
+                md_cell(unit),
+                md_cell(doc),
             )
             .unwrap();
         }
@@ -469,8 +516,13 @@ fn generate_plugin_page(entry: &PluginEntry) -> String {
 
     // Frontmatter
     writeln!(md, "---").unwrap();
-    writeln!(md, "title: \"{}\"", entry.name).unwrap();
-    writeln!(md, "description: \"{}\"", entry.description).unwrap();
+    writeln!(md, "title: \"{}\"", yaml_double_quoted(entry.name)).unwrap();
+    writeln!(
+        md,
+        "description: \"{}\"",
+        yaml_double_quoted(entry.description)
+    )
+    .unwrap();
     writeln!(md, "---").unwrap();
     writeln!(md).unwrap();
 
@@ -566,7 +618,9 @@ fn generate_plugin_index(entries: &[PluginEntry]) -> String {
         writeln!(
             md,
             "| [{}](/reference/plugins/{}/) | {} |",
-            e.name, e.slug, e.description
+            md_cell(e.name),
+            e.slug,
+            md_cell(e.description),
         )
         .unwrap();
     }
@@ -631,4 +685,202 @@ fn main() {
     }
 
     println!("Done. Generated {} plugin reference pages.", registry.len());
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sotf_host::param_specs::ParamCategory;
+
+    fn make_float_spec(
+        name: &'static str,
+        doc: &'static str,
+        unit: &'static str,
+    ) -> ParamSpec {
+        ParamSpec {
+            name,
+            engine_key: "test_key",
+            param_type: ParamType::Float {
+                default: 0.5,
+                min: 0.0,
+                max: 1.0,
+                step: 0.01,
+            },
+            unit,
+            group: "",
+            update_mode: UpdateMode::Realtime,
+            display_scale: 1.0,
+            category: ParamCategory::Primary,
+            doc,
+        }
+    }
+
+    #[test]
+    fn md_cell_escapes_pipes_backslashes_and_newlines() {
+        assert_eq!(md_cell("a|b"), "a\\|b");
+        assert_eq!(md_cell("a\\b"), "a\\\\b");
+        assert_eq!(md_cell("line1\nline2"), "line1<br>line2");
+        assert_eq!(md_cell("a\rb"), "a<br>b");
+        assert_eq!(md_cell("a|b\\c\nd"), "a\\|b\\\\c<br>d");
+        assert_eq!(md_cell("hello world"), "hello world");
+    }
+
+    #[test]
+    fn yaml_double_quoted_escapes_quotes_and_backslashes() {
+        assert_eq!(yaml_double_quoted("a\"b"), "a\\\"b");
+        assert_eq!(yaml_double_quoted("a\\b"), "a\\\\b");
+        assert_eq!(yaml_double_quoted("a\nb"), "a b");
+        assert_eq!(yaml_double_quoted("a\rb"), "a b");
+        assert_eq!(
+            yaml_double_quoted("Adds \"warmth\"\nto signal"),
+            "Adds \\\"warmth\\\" to signal"
+        );
+    }
+
+    /// Pipe-table rows must be single-line and have the expected number of
+    /// non-escaped column separators (one more than the cell count).
+    fn assert_single_row(row: &str, expected_cells: usize) {
+        assert!(!row.contains('\n'), "row contains a raw newline: {row:?}");
+        assert!(row.starts_with('|'), "row does not start with '|': {row:?}");
+        assert!(row.ends_with('|'), "row does not end with '|': {row:?}");
+        let bytes = row.as_bytes();
+        let separator_count = bytes
+            .iter()
+            .enumerate()
+            .filter(|&(i, &c)| c == b'|' && (i == 0 || bytes[i - 1] != b'\\'))
+            .count();
+        assert_eq!(
+            separator_count,
+            expected_cells + 1,
+            "expected {} cells in row but found {} separators: {row:?}",
+            expected_cells,
+            separator_count.saturating_sub(1),
+        );
+    }
+
+    #[test]
+    fn params_table_round_trips_pipes_quotes_and_newlines() {
+        let evil_name = "Gain | \"main\"";
+        let evil_doc = "Sets the \"main\" gain.\nUse with |care|.\\nope";
+        let evil_unit = "dB|FS";
+        let spec = make_float_spec(evil_name, evil_doc, evil_unit);
+
+        let table = generate_params_table(std::slice::from_ref(&spec));
+
+        let lines: Vec<&str> = table.lines().filter(|l| !l.is_empty()).collect();
+        assert_eq!(lines.len(), 3, "expected 3 lines, got: {table}");
+        assert_single_row(lines[0], 6); // header
+        // lines[1] is the |---|---| separator row — skip strict check.
+        assert_single_row(lines[2], 6); // data row
+
+        // The pipe in the name must be escaped; quotes are valid markdown
+        // and pass through unchanged.
+        assert!(
+            lines[2].contains("Gain \\| \"main\""),
+            "name not escaped properly: {}",
+            lines[2]
+        );
+        assert!(
+            lines[2].contains("dB\\|FS"),
+            "unit pipe not escaped: {}",
+            lines[2]
+        );
+        assert!(
+            lines[2].contains("<br>"),
+            "newline in doc not converted: {}",
+            lines[2]
+        );
+    }
+
+    #[test]
+    fn plugin_page_yaml_frontmatter_is_valid_for_quotes_and_newlines() {
+        let entry = PluginEntry {
+            slug: "evil",
+            name: "Plugin \"X\" \\ alpha",
+            description: "Adds \"warmth\".\nLine two with a \\ backslash.",
+            params: &[],
+            global_params: None,
+            band_template: None,
+        };
+
+        let page = generate_plugin_page(&entry);
+        let mut lines = page.lines();
+
+        assert_eq!(lines.next(), Some("---"), "missing opening frontmatter");
+        let title_line = lines.next().expect("title line");
+        let desc_line = lines.next().expect("description line");
+        let close = lines.next().expect("closing frontmatter line");
+        assert_eq!(close, "---", "frontmatter must close after title+description");
+
+        assert!(
+            title_line.starts_with("title: \"") && title_line.ends_with('"'),
+            "title line not properly quoted: {title_line:?}"
+        );
+        assert!(
+            desc_line.starts_with("description: \"") && desc_line.ends_with('"'),
+            "description line not properly quoted: {desc_line:?}"
+        );
+
+        // No raw newlines or carriage returns inside the quoted values.
+        let title_inner = &title_line["title: \"".len()..title_line.len() - 1];
+        let desc_inner = &desc_line["description: \"".len()..desc_line.len() - 1];
+        assert!(!title_inner.contains('\n') && !title_inner.contains('\r'));
+        assert!(!desc_inner.contains('\n') && !desc_inner.contains('\r'));
+
+        // Quotes must be escaped, backslashes doubled.
+        assert!(
+            title_line.contains("\\\"X\\\""),
+            "title quote not escaped: {title_line:?}"
+        );
+        assert!(
+            title_line.contains("\\\\"),
+            "title backslash not escaped: {title_line:?}"
+        );
+        assert!(
+            desc_line.contains("\\\"warmth\\\""),
+            "desc quote not escaped: {desc_line:?}"
+        );
+        assert!(
+            desc_line.contains("\\\\"),
+            "desc backslash not escaped: {desc_line:?}"
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "out of range")]
+    fn choice_default_index_out_of_range_panics() {
+        let spec = ParamSpec {
+            name: "Mode",
+            engine_key: "mode",
+            param_type: ParamType::Choice {
+                default_index: 99,
+                labels: &["A", "B"],
+            },
+            unit: "",
+            group: "",
+            update_mode: UpdateMode::Realtime,
+            display_scale: 1.0,
+            category: ParamCategory::Primary,
+            doc: "",
+        };
+        let _ = format_default(&spec);
+    }
+
+    #[test]
+    fn registry_has_no_duplicate_slugs() {
+        use std::collections::HashSet;
+        let reg = plugin_registry();
+        let mut seen: HashSet<&str> = HashSet::new();
+        for e in &reg {
+            assert!(
+                seen.insert(e.slug),
+                "duplicate slug in plugin registry: {}",
+                e.slug
+            );
+        }
+    }
 }

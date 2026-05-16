@@ -20,6 +20,10 @@ pub enum QueuePlaybackEffect {
     Play(AudioSource),
     /// Stop playback (queue is empty or current item was removed).
     Stop,
+    /// The currently-playing item changed identity (e.g. it was removed and
+    /// another item shifted into its slot). UI must reload the player from
+    /// this source so playback follows the new `current_index`.
+    Reload(AudioSource),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -127,6 +131,14 @@ impl QueueController {
 
     /// Remove the album at `index`.
     /// Returns `(effect, was_current)`.
+    ///
+    /// When the removed album was the currently-playing one:
+    ///   - Empty queue → `Stop`
+    ///   - Otherwise → `Reload(<new current source>)` so the UI replaces the
+    ///     player's source with whatever shifted into `current_index`.
+    ///
+    /// When the removed album was *not* current, returns `None` (the existing
+    /// playback continues; `Queue::remove` already adjusted `current_index`).
     pub fn remove(&mut self, index: usize) -> (QueuePlaybackEffect, bool) {
         if index >= self.queue.len() {
             return (QueuePlaybackEffect::None, false);
@@ -139,10 +151,21 @@ impl QueueController {
             self.selected_index = self.queue.len() - 1;
         }
 
-        if was_current && self.queue.is_empty() {
-            (QueuePlaybackEffect::Stop, true)
+        if was_current {
+            if self.queue.is_empty() {
+                (QueuePlaybackEffect::Stop, true)
+            } else {
+                // The successor item is now at `current_index`. Tell the UI to
+                // reload the player from it. If for some reason no source can
+                // be produced (album with zero tracks), fall back to Stop so
+                // the UI doesn't keep playing the now-removed audio.
+                match self.queue.current_track_source() {
+                    Some(source) => (QueuePlaybackEffect::Reload(source), true),
+                    None => (QueuePlaybackEffect::Stop, true),
+                }
+            }
         } else {
-            (QueuePlaybackEffect::None, was_current)
+            (QueuePlaybackEffect::None, false)
         }
     }
 
@@ -366,6 +389,52 @@ mod tests {
         let (effect, was_current) = ctrl.remove(0);
         assert!(was_current);
         assert_eq!(effect, QueuePlaybackEffect::Stop);
+    }
+
+    #[test]
+    fn test_remove_current_reloads_successor() {
+        // Removing the playing album with a successor must emit Reload(source)
+        // so the UI knows to swap the player's source to the new current item.
+        let mut ctrl = QueueController::new();
+        add_test_album(&mut ctrl, make_album("A", 2));
+        add_test_album(&mut ctrl, make_album("B", 3));
+        ctrl.start(); // current = album A, track 1
+
+        let (effect, was_current) = ctrl.remove(0);
+        assert!(was_current, "removed the currently-playing album");
+        assert_eq!(
+            ctrl.current_index(),
+            Some(0),
+            "B shifted into index 0 and is now current"
+        );
+
+        match effect {
+            QueuePlaybackEffect::Reload(source) => {
+                assert!(
+                    source.to_string().contains("/B/track_1"),
+                    "Reload source should point at first track of new current album, got: {}",
+                    source
+                );
+            }
+            other => panic!(
+                "expected Reload(<B/track_1>) when removing the playing album, got {:?}",
+                other
+            ),
+        }
+    }
+
+    #[test]
+    fn test_remove_non_current_keeps_playing() {
+        // Removing a non-current item leaves playback alone: effect=None.
+        let mut ctrl = QueueController::new();
+        add_test_album(&mut ctrl, make_album("A", 1));
+        add_test_album(&mut ctrl, make_album("B", 1));
+        ctrl.start();
+
+        let (effect, was_current) = ctrl.remove(1); // remove B
+        assert!(!was_current);
+        assert_eq!(effect, QueuePlaybackEffect::None);
+        assert_eq!(ctrl.current_index(), Some(0));
     }
 
     #[test]

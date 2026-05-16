@@ -260,10 +260,18 @@ impl BoxPlotChart {
         let (x_min, x_max) = extent_padded(&self.x, DEFAULT_PADDING_FRACTION);
         let (y_min, y_max) = extent_padded(&self.y, DEFAULT_PADDING_FRACTION);
 
-        // Calculate number of bins
+        // Calculate number of bins. Reject zero up-front so the
+        // `num_bins - 1` underflow and division by `num_bins` in
+        // calculate_boxes cannot fire even when callers pass `.bins(0)`.
         let num_bins = self
             .num_bins
             .unwrap_or_else(|| (plot_width / 40.0).max(3.0) as usize);
+        if num_bins == 0 {
+            return Err(ChartError::InvalidData {
+                field: "bins",
+                reason: "boxplot bin count must be at least 1",
+            });
+        }
 
         // Bin the data
         let boxes = self.calculate_boxes(x_min, x_max, num_bins);

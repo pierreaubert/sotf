@@ -10,8 +10,8 @@ const UNDEF_ADDR: u64 = 0xFFFF_FFFF_FFFF_FFFF;
 const MSG_DATASPACE: u8 = 0x01;
 const MSG_LINK_INFO: u8 = 0x02;
 const MSG_DATATYPE: u8 = 0x03;
-const _MSG_FILL_VALUE_OLD: u8 = 0x04;
-const _MSG_FILL_VALUE: u8 = 0x05;
+const MSG_FILL_VALUE_OLD: u8 = 0x04;
+const MSG_FILL_VALUE: u8 = 0x05;
 const MSG_LINK: u8 = 0x06;
 const MSG_DATA_LAYOUT: u8 = 0x08;
 const _MSG_GROUP_INFO: u8 = 0x0A;
@@ -20,6 +20,36 @@ const MSG_ATTRIBUTE: u8 = 0x0C;
 const MSG_OH_CONTINUATION: u8 = 0x10;
 const MSG_SYMBOL_TABLE: u8 = 0x11;
 const MSG_ATTR_INFO: u8 = 0x15;
+
+/// Byte order of a numeric type, parsed from the datatype message's bit field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum ByteOrder {
+    #[default]
+    Little,
+    Big,
+}
+
+/// Result of parsing a dataspace message. Distinguishes a NULL dataspace (v2 only)
+/// from a scalar so callers do not silently produce a phantom value.
+#[derive(Debug, Clone)]
+enum DataspaceKind {
+    Scalar,
+    Simple(Vec<u64>),
+    Null,
+}
+
+impl DataspaceKind {
+    fn dims(&self) -> Vec<u64> {
+        match self {
+            DataspaceKind::Scalar => Vec::new(),
+            DataspaceKind::Simple(d) => d.clone(),
+            DataspaceKind::Null => Vec::new(),
+        }
+    }
+    fn is_null(&self) -> bool {
+        matches!(self, DataspaceKind::Null)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AttrValue {
@@ -97,6 +127,9 @@ struct DatasetInfo {
     dtype: DType,
     layout: Layout,
     attributes: HashMap<String, AttrValue>,
+    byte_order: ByteOrder,
+    is_null_dataspace: bool,
+    has_non_zero_fill: bool,
 }
 
 #[derive(Debug)]
@@ -224,6 +257,88 @@ impl<'a> Cursor<'a> {
             });
         }
         Ok(&self.data[offset..])
+    }
+}
+
+/// Read a 4-byte float from a slice, honouring byte order.
+fn read_f32_bytes(c: &[u8], bo: ByteOrder) -> f32 {
+    let arr: [u8; 4] = c.try_into().expect("chunks_exact(4) yields 4-byte slices");
+    match bo {
+        ByteOrder::Little => f32::from_le_bytes(arr),
+        ByteOrder::Big => f32::from_be_bytes(arr),
+    }
+}
+
+/// Read an 8-byte float from a slice, honouring byte order.
+fn read_f64_bytes(c: &[u8], bo: ByteOrder) -> f64 {
+    let arr: [u8; 8] = c.try_into().expect("chunks_exact(8) yields 8-byte slices");
+    match bo {
+        ByteOrder::Little => f64::from_le_bytes(arr),
+        ByteOrder::Big => f64::from_be_bytes(arr),
+    }
+}
+
+/// Return `true` if the given fill-value message describes a non-trivial
+/// fill value (defined and not all-zero bytes). We only need presence
+/// detection because we currently refuse to read datasets that rely on a
+/// non-zero fill value — full fill-value materialisation is deferred.
+fn parse_fill_value_non_zero(data: &[u8], msg_type: u8) -> bool {
+    if data.is_empty() {
+        return false;
+    }
+    match msg_type {
+        MSG_FILL_VALUE_OLD => {
+            // u32 size + payload
+            if data.len() < 4 {
+                return false;
+            }
+            let size = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
+            if size == 0 || data.len() < 4 + size {
+                return false;
+            }
+            data[4..4 + size].iter().any(|&b| b != 0)
+        }
+        MSG_FILL_VALUE => {
+            let version = data[0];
+            match version {
+                1 | 2 => {
+                    if data.len() < 4 {
+                        return false;
+                    }
+                    let fill_defined = data[3];
+                    if fill_defined == 0 || data.len() < 8 {
+                        return false;
+                    }
+                    let size =
+                        u32::from_le_bytes([data[4], data[5], data[6], data[7]]) as usize;
+                    if size == 0 || data.len() < 8 + size {
+                        return false;
+                    }
+                    data[8..8 + size].iter().any(|&b| b != 0)
+                }
+                3 => {
+                    // version(1) + flags(1) + [u32 size + payload if flag bit 5 set]
+                    if data.len() < 2 {
+                        return false;
+                    }
+                    let flags = data[1];
+                    if flags & 0x20 == 0 {
+                        return false;
+                    }
+                    if data.len() < 6 {
+                        return false;
+                    }
+                    let size =
+                        u32::from_le_bytes([data[2], data[3], data[4], data[5]]) as usize;
+                    if size == 0 || data.len() < 6 + size {
+                        return false;
+                    }
+                    data[6..6 + size].iter().any(|&b| b != 0)
+                }
+                _ => false,
+            }
+        }
+        _ => false,
     }
 }
 
@@ -912,6 +1027,59 @@ struct HeapRecord {
     heap_id: Vec<u8>,
 }
 
+/// Cached parameters of a v2 B-tree, used to compute the variable-width child
+/// pointer fields encountered when descending an internal node.
+#[derive(Debug, Clone, Copy)]
+struct BtreeV2Params {
+    node_size: u32,
+    record_size: u16,
+    off_size: u8,
+    len_size: u8,
+}
+
+impl BtreeV2Params {
+    /// Maximum number of records that can fit in a leaf at depth 0.
+    /// Layout: 4-byte signature + 1 version + 1 type + records + 4-byte checksum.
+    fn max_records_leaf(&self) -> u64 {
+        let overhead: u64 = 4 + 1 + 1 + 4;
+        if (self.node_size as u64) <= overhead || self.record_size == 0 {
+            return 0;
+        }
+        (self.node_size as u64 - overhead) / self.record_size as u64
+    }
+
+    /// Maximum records at an internal node at the given depth (>=1).
+    fn max_records_internal(&self, depth: u16) -> u64 {
+        let overhead: u64 = 4 + 1 + 1 + 4;
+        if self.node_size as u64 <= overhead || self.record_size == 0 {
+            return 0;
+        }
+        let mut max_below = self.max_records_leaf();
+        let mut cur_max = max_below;
+        for d in 1..=depth {
+            let nrec_bytes = Self::bytes_for(max_below);
+            let total_bytes = if d > 1 { self.len_size as u64 } else { 0 };
+            let ptr_size = self.off_size as u64 + nrec_bytes + total_bytes;
+            let avail = (self.node_size as u64).saturating_sub(overhead + ptr_size);
+            cur_max = avail / (self.record_size as u64 + ptr_size);
+            max_below = cur_max;
+            if d == depth {
+                return cur_max;
+            }
+        }
+        cur_max
+    }
+
+    /// Number of bytes needed to encode a value `<= max_value`.
+    fn bytes_for(max_value: u64) -> u64 {
+        if max_value == 0 {
+            return 1;
+        }
+        let bits = 64 - max_value.leading_zeros() as u64;
+        bits.div_ceil(8).max(1)
+    }
+}
+
 impl Hdf5File {
     fn parse_fractal_heap_header(&self, addr: u64) -> Result<FractalHeapInfo> {
         let mut c = self.cursor_at(addr);
@@ -972,7 +1140,7 @@ impl Hdf5File {
         }
         let _version = c.u8()?;
         let btype = c.u8()?;
-        let _node_size = c.u32()?;
+        let node_size = c.u32()?;
         let record_size = c.u16()?;
         let depth = c.u16()?;
         let _split_percent = c.u8()?;
@@ -986,13 +1154,20 @@ impl Hdf5File {
             return Ok(Vec::new());
         }
 
+        let params = BtreeV2Params {
+            node_size,
+            record_size,
+            off_size: self.off_size,
+            len_size: self.len_size,
+        };
+
         let mut records = Vec::new();
         self.parse_btree_v2_node(
             root_addr,
             depth,
             num_records_root,
-            record_size,
             btype,
+            &params,
             fh,
             &mut records,
         )?;
@@ -1005,12 +1180,13 @@ impl Hdf5File {
         addr: u64,
         depth: u16,
         num_records: u16,
-        record_size: u16,
         btype: u8,
+        params: &BtreeV2Params,
         fh: &FractalHeapInfo,
         records: &mut Vec<HeapRecord>,
     ) -> Result<()> {
         let mut c = self.cursor_at(addr);
+        let record_size = params.record_size;
 
         if depth == 0 {
             // Leaf node: BTLF
@@ -1081,25 +1257,45 @@ impl Hdf5File {
                 records.push(HeapRecord { heap_id });
             }
 
-            // Child node pointers: (num_records + 1) entries
-            // Each: address(off_size) + num_records(variable) + total_records(variable)
-            // The num_records and total_records sizes depend on depth and max records
-            // For simplicity, we'll recursively process by finding child nodes
+            // Child node pointers: (num_records + 1) entries.
+            // Each: address(off_size) + child_num_records(variable) + [total_records(length_size) if depth > 1]
+            //
+            // The width of child_num_records is computed from the max records the
+            // child node can hold (per HDF5 spec section IV.A.2.) — NOT a fixed u16.
+            let max_below = if depth > 1 {
+                params.max_records_internal(depth - 1)
+            } else {
+                params.max_records_leaf()
+            };
+            let nrec_bytes = BtreeV2Params::bytes_for(max_below) as usize;
+            if nrec_bytes > 8 {
+                return Err(SofaError::InvalidStructure(format!(
+                    "B-tree v2 child num_records field width {} > 8 bytes; \
+                     refusing to read to avoid silent corruption",
+                    nrec_bytes
+                )));
+            }
+
             for _ in 0..=num_records {
                 let child_addr = c.offset()?;
-                // num_records_in_child size depends on the max records possible at depth-1
-                // For simplicity, read as 2 bytes (which handles up to 65535 records)
-                let child_num_records = c.u16()?;
+                let child_num_records_u64 = c.read_sized(nrec_bytes as u8)?;
                 if depth > 1 {
                     let _total_in_subtree = c.length()?;
                 }
+                if child_num_records_u64 > u16::MAX as u64 {
+                    return Err(SofaError::InvalidStructure(format!(
+                        "B-tree v2 child has {} records, exceeds reader limit of u16::MAX",
+                        child_num_records_u64
+                    )));
+                }
+                let child_num_records = child_num_records_u64 as u16;
                 if child_addr != UNDEF_ADDR {
                     self.parse_btree_v2_node(
                         child_addr,
                         depth - 1,
                         child_num_records,
-                        record_size,
                         btype,
+                        params,
                         fh,
                         records,
                     )?;
@@ -1396,7 +1592,7 @@ impl Hdf5File {
 
         // Datatype
         let dt_start = c.pos;
-        let dtype = self.parse_datatype_msg(&data[dt_start..])?;
+        let (dtype, bo) = self.parse_datatype_msg_with_order(&data[dt_start..])?;
         if version < 3 {
             c.pos = dt_start + ((dt_size + 7) & !7);
         } else {
@@ -1405,16 +1601,21 @@ impl Hdf5File {
 
         // Dataspace
         let ds_start = c.pos;
-        let dims = self.parse_dataspace_msg(&data[ds_start..])?;
+        let dspace = self.parse_dataspace_msg(&data[ds_start..])?;
         if version < 3 {
             c.pos = ds_start + ((ds_size + 7) & !7);
         } else {
             c.pos = ds_start + ds_size;
         }
 
+        if dspace.is_null() {
+            return Ok(());
+        }
+
         // Data
+        let dims = dspace.dims();
         let attr_data = &data[c.pos..];
-        let value = self.interpret_attr_value(&dtype, &dims, attr_data);
+        let value = self.interpret_attr_value(&dtype, bo, &dims, attr_data);
         if let Some(v) = value {
             attrs.insert(name, v);
         }
@@ -1461,17 +1662,22 @@ impl Hdf5File {
 
         // Datatype
         let dt_start = c.pos;
-        let dtype = self.parse_datatype_msg(&data[dt_start..])?;
+        let (dtype, bo) = self.parse_datatype_msg_with_order(&data[dt_start..])?;
         c.pos = dt_start + dt_size;
 
         // Dataspace
         let ds_start = c.pos;
-        let dims = self.parse_dataspace_msg(&data[ds_start..])?;
+        let dspace = self.parse_dataspace_msg(&data[ds_start..])?;
         c.pos = ds_start + ds_size;
 
+        if dspace.is_null() {
+            return Ok(());
+        }
+
         // Data
+        let dims = dspace.dims();
         let attr_data = &data[c.pos..];
-        let value = self.interpret_attr_value(&dtype, &dims, attr_data);
+        let value = self.interpret_attr_value(&dtype, bo, &dims, attr_data);
         if let Some(v) = value {
             attrs.insert(name, v);
         }
@@ -1484,13 +1690,27 @@ impl Hdf5File {
         String::from_utf8_lossy(&bytes[..end]).into_owned()
     }
 
-    fn interpret_attr_value(&self, dtype: &DType, dims: &[u64], data: &[u8]) -> Option<AttrValue> {
+    fn interpret_attr_value(
+        &self,
+        dtype: &DType,
+        bo: ByteOrder,
+        dims: &[u64],
+        data: &[u8],
+    ) -> Option<AttrValue> {
         let total_elements: u64 = dims.iter().product::<u64>().max(1);
         let elem_size = dtype.element_size();
         let needed = total_elements as usize * elem_size;
         if data.len() < needed {
             return None;
         }
+
+        let i32_from = |c: &[u8]| -> i32 {
+            let arr: [u8; 4] = c.try_into().expect("4-byte chunk");
+            match bo {
+                ByteOrder::Little => i32::from_le_bytes(arr),
+                ByteOrder::Big => i32::from_be_bytes(arr),
+            }
+        };
 
         match dtype {
             DType::FixedString(n) => {
@@ -1538,42 +1758,36 @@ impl Hdf5File {
             }
             DType::Float32 => {
                 if total_elements == 1 && data.len() >= 4 {
-                    Some(AttrValue::Float32(f32::from_le_bytes(
-                        data[..4].try_into().ok()?,
-                    )))
+                    Some(AttrValue::Float32(read_f32_bytes(&data[..4], bo)))
                 } else {
                     let arr: Vec<f32> = data
                         .chunks_exact(4)
                         .take(total_elements as usize)
-                        .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+                        .map(|c| read_f32_bytes(c, bo))
                         .collect();
                     Some(AttrValue::Float32Array(arr))
                 }
             }
             DType::Float64 => {
                 if total_elements == 1 && data.len() >= 8 {
-                    Some(AttrValue::Float64(f64::from_le_bytes(
-                        data[..8].try_into().ok()?,
-                    )))
+                    Some(AttrValue::Float64(read_f64_bytes(&data[..8], bo)))
                 } else {
                     let arr: Vec<f64> = data
                         .chunks_exact(8)
                         .take(total_elements as usize)
-                        .map(|c| f64::from_le_bytes(c.try_into().unwrap()))
+                        .map(|c| read_f64_bytes(c, bo))
                         .collect();
                     Some(AttrValue::Float64Array(arr))
                 }
             }
             DType::Int32 => {
                 if total_elements == 1 && data.len() >= 4 {
-                    Some(AttrValue::Int32(i32::from_le_bytes(
-                        data[..4].try_into().ok()?,
-                    )))
+                    Some(AttrValue::Int32(i32_from(&data[..4])))
                 } else {
                     let arr: Vec<i32> = data
                         .chunks_exact(4)
                         .take(total_elements as usize)
-                        .map(|c| i32::from_le_bytes(c.try_into().unwrap()))
+                        .map(i32_from)
                         .collect();
                     Some(AttrValue::Int32Array(arr))
                 }
@@ -1637,7 +1851,9 @@ impl Hdf5File {
 
     // ---- Datatype parsing ----
 
-    fn parse_datatype_msg(&self, data: &[u8]) -> Result<DType> {
+    /// Parse a datatype message and also return the byte-order bit (bit 0 of `bit_field_0`).
+    /// For non-numeric classes the byte-order bit is reserved and we return Little.
+    fn parse_datatype_msg_with_order(&self, data: &[u8]) -> Result<(DType, ByteOrder)> {
         if data.len() < 8 {
             return Err(SofaError::Truncated {
                 offset: 0,
@@ -1654,65 +1870,71 @@ impl Hdf5File {
         let _bit_field_2 = data[3];
         let size = u32::from_le_bytes(data[4..8].try_into().unwrap());
 
-        match class {
+        let byte_order = match class {
+            0 | 1 => {
+                if bit_field_0 & 0x01 != 0 {
+                    ByteOrder::Big
+                } else {
+                    ByteOrder::Little
+                }
+            }
+            _ => ByteOrder::Little,
+        };
+
+        let dtype = match class {
             0 => {
                 // Fixed-point (integer)
                 let signed = bit_field_0 & 0x08 != 0;
                 match (size, signed) {
-                    (1, false) => Ok(DType::Uint8),
-                    (1, true) => Ok(DType::Int8),
-                    (2, false) => Ok(DType::Uint16),
-                    (2, true) => Ok(DType::Int16),
-                    (4, false) => Ok(DType::Uint32),
-                    (4, true) => Ok(DType::Int32),
-                    (8, false) => Ok(DType::Uint64),
-                    (8, true) => Ok(DType::Int64),
-                    _ => Err(SofaError::Unsupported(format!(
-                        "Integer type: size={}, signed={}",
-                        size, signed
-                    ))),
+                    (1, false) => DType::Uint8,
+                    (1, true) => DType::Int8,
+                    (2, false) => DType::Uint16,
+                    (2, true) => DType::Int16,
+                    (4, false) => DType::Uint32,
+                    (4, true) => DType::Int32,
+                    (8, false) => DType::Uint64,
+                    (8, true) => DType::Int64,
+                    _ => {
+                        return Err(SofaError::Unsupported(format!(
+                            "Integer type: size={}, signed={}",
+                            size, signed
+                        )));
+                    }
                 }
             }
-            1 => {
-                // Floating-point
-                match size {
-                    4 => Ok(DType::Float32),
-                    8 => Ok(DType::Float64),
-                    _ => Err(SofaError::Unsupported(format!("Float size: {}", size))),
-                }
-            }
+            1 => match size {
+                4 => DType::Float32,
+                8 => DType::Float64,
+                _ => return Err(SofaError::Unsupported(format!("Float size: {}", size))),
+            },
             3 => {
-                // String
                 let _padding = bit_field_0 & 0x0F;
-                // padding: 0=null-terminate, 1=null-pad, 2=space-pad
-                Ok(DType::FixedString(size as usize))
+                DType::FixedString(size as usize)
             }
             9 => {
-                // Variable-length
-                // Check if it's a string type
                 let vl_type = bit_field_0 & 0x0F;
                 if vl_type == 1 {
-                    // Variable-length string
-                    Ok(DType::VariableString)
+                    DType::VariableString
                 } else {
-                    // Variable-length sequence - treat as opaque
-                    Ok(DType::VariableString) // approximation
+                    DType::VariableString // approximation for vlen sequences
                 }
             }
             6 => {
-                // Compound type - used by NetCDF4 dimension scales
-                // We don't need to decode the members, just return a placeholder
-                Ok(DType::Uint8) // placeholder - we only care about dataspace dims
+                // Compound type - used by NetCDF4 dimension scales.
+                // We don't need to decode the members.
+                DType::Uint8
             }
-            _ => Err(SofaError::Unsupported(format!("Datatype class: {}", class))),
-        }
+            _ => return Err(SofaError::Unsupported(format!("Datatype class: {}", class))),
+        };
+
+        Ok((dtype, byte_order))
     }
 
     // ---- Dataspace parsing ----
 
-    fn parse_dataspace_msg(&self, data: &[u8]) -> Result<Vec<u64>> {
+    fn parse_dataspace_msg(&self, data: &[u8]) -> Result<DataspaceKind> {
         if data.is_empty() {
-            return Ok(Vec::new());
+            return Ok(DataspaceKind::Scalar);
         }
 
         let mut c = Cursor::new(data, 0, self.off_size, self.len_size);
@@ -1720,10 +1942,16 @@ impl Hdf5File {
         let rank = c.u8()? as usize;
         let flags = c.u8()?;
 
+        let mut ds_type_v2: Option<u8> = None;
         if version == 1 {
             c.skip(5)?; // reserved
         } else if version == 2 {
-            let _ds_type = c.u8()?; // 0=scalar, 1=simple, 2=null
+            ds_type_v2 = Some(c.u8()?); // 0=scalar, 1=simple, 2=null
+        }
+
+        // v2 NULL dataspace: explicit "no data" marker. Distinct from scalar.
+        if let Some(2) = ds_type_v2 {
+            return Ok(DataspaceKind::Null);
         }
 
         let mut dims = Vec::with_capacity(rank);
@@ -1745,7 +1973,11 @@ impl Hdf5File {
             }
         }
 
-        Ok(dims)
+        if rank == 0 {
+            Ok(DataspaceKind::Scalar)
+        } else {
+            Ok(DataspaceKind::Simple(dims))
+        }
     }
 
     // ---- Dataset parsing ----
@@ -1760,6 +1992,9 @@ impl Hdf5File {
                 size: 0,
             },
             attributes: HashMap::new(),
+            byte_order: ByteOrder::Little,
+            is_null_dataspace: false,
+            has_non_zero_fill: false,
         };
         let mut attrs = HashMap::new();
         let mut filters = Vec::new();
@@ -1782,6 +2017,49 @@ impl Hdf5File {
         ds.attributes = attrs;
 
         Ok(ds)
+    }
+
+    /// Apply a single dataset-level message into the in-progress `DatasetInfo`.
+    /// Used by both v1 and v2 OH parsers so byte-order, NULL-dataspace, and
+    /// fill-value detection only live in one place.
+    fn apply_dataset_msg(
+        &self,
+        msg_type: u8,
+        msg_data: &[u8],
+        ds: &mut DatasetInfo,
+        attrs: &mut HashMap<String, AttrValue>,
+        filters: &mut Vec<Filter>,
+        is_v2_attr: bool,
+    ) -> Result<()> {
+        match msg_type {
+            MSG_DATASPACE => {
+                let dspace = self.parse_dataspace_msg(msg_data)?;
+                ds.is_null_dataspace = dspace.is_null();
+                ds.dims = dspace.dims();
+            }
+            MSG_DATATYPE => {
+                let (dt, bo) = self.parse_datatype_msg_with_order(msg_data)?;
+                ds.dtype = dt;
+                ds.byte_order = bo;
+            }
+            MSG_DATA_LAYOUT => ds.layout = self.parse_layout_msg(msg_data)?,
+            MSG_FILTER_PIPELINE => *filters = self.parse_filter_pipeline_msg(msg_data)?,
+            MSG_ATTRIBUTE => {
+                if is_v2_attr {
+                    self.parse_attribute_msg_v2(msg_data, attrs)?;
+                } else {
+                    self.parse_attribute_msg_v1(msg_data, attrs)?;
+                }
+            }
+            MSG_ATTR_INFO => self.parse_attr_info_msg(msg_data, attrs)?,
+            MSG_FILL_VALUE | MSG_FILL_VALUE_OLD => {
+                if parse_fill_value_non_zero(msg_data, msg_type) {
+                    ds.has_non_zero_fill = true;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
     }
 
     fn parse_dataset_oh_v1(
@@ -1814,38 +2092,22 @@ impl Hdf5File {
             let msg_data_start = c.pos;
             let msg_data = &self.data[msg_data_start..msg_data_start + msg_size];
 
-            match msg_type {
-                MSG_DATASPACE => {
-                    ds.dims = self.parse_dataspace_msg(msg_data)?;
+            if msg_type == MSG_OH_CONTINUATION {
+                let mut mc = Cursor::new(
+                    self.data.as_slice(),
+                    msg_data_start,
+                    self.off_size,
+                    self.len_size,
+                );
+                let cont_addr = mc.offset()?;
+                let cont_len = mc.length()?;
+                if cont_addr != UNDEF_ADDR {
+                    self.parse_dataset_oh_v1_continuation(
+                        cont_addr, cont_len, ds, attrs, filters,
+                    )?;
                 }
-                MSG_DATATYPE => {
-                    ds.dtype = self.parse_datatype_msg(msg_data)?;
-                }
-                MSG_DATA_LAYOUT => {
-                    ds.layout = self.parse_layout_msg(msg_data)?;
-                }
-                MSG_FILTER_PIPELINE => {
-                    *filters = self.parse_filter_pipeline_msg(msg_data)?;
-                }
-                MSG_ATTRIBUTE => {
-                    self.parse_attribute_msg_v1(msg_data, attrs)?;
-                }
-                MSG_OH_CONTINUATION => {
-                    let mut mc = Cursor::new(
-                        self.data.as_slice(),
-                        msg_data_start,
-                        self.off_size,
-                        self.len_size,
-                    );
-                    let cont_addr = mc.offset()?;
-                    let cont_len = mc.length()?;
-                    if cont_addr != UNDEF_ADDR {
-                        self.parse_dataset_oh_v1_continuation(
-                            cont_addr, cont_len, ds, attrs, filters,
-                        )?;
-                    }
-                }
-                _ => {}
+            } else {
+                self.apply_dataset_msg(msg_type, msg_data, ds, attrs, filters, false)?;
             }
 
             c.pos = msg_data_start + msg_size;
@@ -1874,14 +2136,7 @@ impl Hdf5File {
             let msg_data_start = c.pos;
             let msg_data = &self.data[msg_data_start..msg_data_start + msg_size];
 
-            match msg_type {
-                MSG_DATASPACE => ds.dims = self.parse_dataspace_msg(msg_data)?,
-                MSG_DATATYPE => ds.dtype = self.parse_datatype_msg(msg_data)?,
-                MSG_DATA_LAYOUT => ds.layout = self.parse_layout_msg(msg_data)?,
-                MSG_FILTER_PIPELINE => *filters = self.parse_filter_pipeline_msg(msg_data)?,
-                MSG_ATTRIBUTE => self.parse_attribute_msg_v1(msg_data, attrs)?,
-                _ => {}
-            }
+            self.apply_dataset_msg(msg_type, msg_data, ds, attrs, filters, false)?;
 
             c.pos = msg_data_start + msg_size;
         }
@@ -1956,34 +2211,27 @@ impl Hdf5File {
             }
             let msg_data = &self.data[msg_data_start..msg_data_start + msg_size];
 
-            match msg_type {
-                MSG_DATASPACE => ds.dims = self.parse_dataspace_msg(msg_data)?,
-                MSG_DATATYPE => ds.dtype = self.parse_datatype_msg(msg_data)?,
-                MSG_DATA_LAYOUT => ds.layout = self.parse_layout_msg(msg_data)?,
-                MSG_FILTER_PIPELINE => *filters = self.parse_filter_pipeline_msg(msg_data)?,
-                MSG_ATTRIBUTE => self.parse_attribute_msg_v2(msg_data, attrs)?,
-                MSG_ATTR_INFO => self.parse_attr_info_msg(msg_data, attrs)?,
-                MSG_OH_CONTINUATION => {
-                    let mut mc = Cursor::new(
-                        self.data.as_slice(),
-                        msg_data_start,
-                        self.off_size,
-                        self.len_size,
-                    );
-                    let cont_addr = mc.offset()?;
-                    let cont_len = mc.length()?;
-                    if cont_addr != UNDEF_ADDR {
-                        self.parse_dataset_oh_v2_continuation(
-                            cont_addr,
-                            cont_len,
-                            creation_order_tracked,
-                            ds,
-                            attrs,
-                            filters,
-                        )?;
-                    }
+            if msg_type == MSG_OH_CONTINUATION {
+                let mut mc = Cursor::new(
+                    self.data.as_slice(),
+                    msg_data_start,
+                    self.off_size,
+                    self.len_size,
+                );
+                let cont_addr = mc.offset()?;
+                let cont_len = mc.length()?;
+                if cont_addr != UNDEF_ADDR {
+                    self.parse_dataset_oh_v2_continuation(
+                        cont_addr,
+                        cont_len,
+                        creation_order_tracked,
+                        ds,
+                        attrs,
+                        filters,
+                    )?;
                 }
-                _ => {}
+            } else {
+                self.apply_dataset_msg(msg_type, msg_data, ds, attrs, filters, true)?;
             }
 
             c.pos = msg_data_start + msg_size;
@@ -2188,16 +2436,18 @@ impl Hdf5File {
 
     pub fn read_f32(&self, name: &str) -> Result<Vec<f32>> {
         let ds = self.find_dataset(name)?;
+        self.check_dataset_readable(name, ds)?;
         let raw = self.read_dataset_raw(ds)?;
+        let bo = ds.byte_order;
 
         match ds.dtype {
             DType::Float32 => Ok(raw
                 .chunks_exact(4)
-                .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+                .map(|c| read_f32_bytes(c, bo))
                 .collect()),
             DType::Float64 => Ok(raw
                 .chunks_exact(8)
-                .map(|c| f64::from_le_bytes(c.try_into().unwrap()) as f32)
+                .map(|c| read_f64_bytes(c, bo) as f32)
                 .collect()),
             _ => Err(SofaError::TypeMismatch {
                 expected: "f32".into(),
@@ -2208,22 +2458,58 @@ impl Hdf5File {
 
     pub fn read_f64(&self, name: &str) -> Result<Vec<f64>> {
         let ds = self.find_dataset(name)?;
+        self.check_dataset_readable(name, ds)?;
         let raw = self.read_dataset_raw(ds)?;
+        let bo = ds.byte_order;
 
         match ds.dtype {
             DType::Float32 => Ok(raw
                 .chunks_exact(4)
-                .map(|c| f32::from_le_bytes(c.try_into().unwrap()) as f64)
+                .map(|c| read_f32_bytes(c, bo) as f64)
                 .collect()),
             DType::Float64 => Ok(raw
                 .chunks_exact(8)
-                .map(|c| f64::from_le_bytes(c.try_into().unwrap()))
+                .map(|c| read_f64_bytes(c, bo))
                 .collect()),
             _ => Err(SofaError::TypeMismatch {
                 expected: "f64".into(),
                 got: ds.dtype.to_string(),
             }),
         }
+    }
+
+    /// Reject datasets that cannot be read correctly: NULL dataspaces, and
+    /// unallocated datasets that rely on a non-zero fill value (we would
+    /// silently return zeros). Byte order is fully supported (LE/BE).
+    ///
+    /// A non-zero fill value is only relevant for storage that may have
+    /// unallocated regions — i.e. contiguous with `UNDEF_ADDR` or chunked
+    /// with `UNDEF_ADDR` index. Fully-allocated layouts override the fill
+    /// value with real data, so we accept those even when a non-zero fill
+    /// is declared (e.g. HDF5 1.10 writes NaN as a fill value but still
+    /// allocates and writes the full dataset).
+    fn check_dataset_readable(&self, name: &str, ds: &DatasetInfo) -> Result<()> {
+        if ds.is_null_dataspace {
+            return Err(SofaError::Unsupported(format!(
+                "Dataset '{}' has a NULL dataspace (no data)",
+                name
+            )));
+        }
+        if ds.has_non_zero_fill {
+            let unallocated = match &ds.layout {
+                Layout::Compact { .. } => false,
+                Layout::Contiguous { address, .. } => *address == UNDEF_ADDR,
+                Layout::Chunked { address, .. } => *address == UNDEF_ADDR,
+            };
+            if unallocated {
+                return Err(SofaError::Unsupported(format!(
+                    "Dataset '{}' is unallocated with a non-zero fill value; \
+                     full fill-value materialisation is not yet implemented",
+                    name
+                )));
+            }
+        }
+        Ok(())
     }
 
     pub fn read_scalar_f32(&self, name: &str) -> Result<f32> {
@@ -2552,5 +2838,107 @@ impl Hdf5File {
     pub fn dataset_dims(&self, name: &str) -> Result<Vec<u64>> {
         let ds = self.find_dataset(name)?;
         Ok(ds.dims.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stub() -> Hdf5File {
+        Hdf5File {
+            data: Vec::new(),
+            off_size: 8,
+            len_size: 8,
+            base_addr: 0,
+            datasets: HashMap::new(),
+            attributes: HashMap::new(),
+            dimensions: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn test_byte_order_helpers_le() {
+        let f = 1.5f32;
+        let bytes = f.to_le_bytes();
+        assert_eq!(read_f32_bytes(&bytes, ByteOrder::Little), 1.5);
+    }
+
+    #[test]
+    fn test_byte_order_helpers_be_decoded_correctly() {
+        // The point of the BE-handling fix: bytes stored big-endian must
+        // round-trip through `ByteOrder::Big` and NOT silently corrupt as LE.
+        let f = 1.5f32;
+        let be_bytes = f.to_be_bytes();
+        assert_eq!(read_f32_bytes(&be_bytes, ByteOrder::Big), 1.5);
+        // Same bytes decoded as LE must produce a different value — proving
+        // we'd silently corrupt data without the byte-order propagation.
+        assert_ne!(read_f32_bytes(&be_bytes, ByteOrder::Little), 1.5);
+    }
+
+    #[test]
+    fn test_byte_order_helpers_f64() {
+        let f = -2.75f64;
+        assert_eq!(read_f64_bytes(&f.to_le_bytes(), ByteOrder::Little), -2.75);
+        assert_eq!(read_f64_bytes(&f.to_be_bytes(), ByteOrder::Big), -2.75);
+    }
+
+    #[test]
+    fn test_parse_datatype_be_flag() {
+        // class=1 (float), version=1 << 4, bit_field_0 bit 0 = 1 (big-endian), size=4.
+        let data: [u8; 8] = [0x11, 0x01, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00];
+        let h = stub();
+        let (dt, bo) = h.parse_datatype_msg_with_order(&data).unwrap();
+        assert_eq!(dt, DType::Float32);
+        assert_eq!(bo, ByteOrder::Big);
+
+        let data_le: [u8; 8] = [0x11, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00];
+        let (dt, bo) = h.parse_datatype_msg_with_order(&data_le).unwrap();
+        assert_eq!(dt, DType::Float32);
+        assert_eq!(bo, ByteOrder::Little);
+    }
+
+    #[test]
+    fn test_parse_dataspace_v2_null_distinct_from_scalar() {
+        let h = stub();
+        // v2 dataspace: version=2, rank=0, flags=0, type=2 (NULL).
+        let null_data = [2u8, 0, 0, 2];
+        assert!(matches!(
+            h.parse_dataspace_msg(&null_data).unwrap(),
+            DataspaceKind::Null
+        ));
+        // v2 scalar: version=2, rank=0, flags=0, type=0.
+        let scalar_data = [2u8, 0, 0, 0];
+        assert!(matches!(
+            h.parse_dataspace_msg(&scalar_data).unwrap(),
+            DataspaceKind::Scalar
+        ));
+    }
+
+    #[test]
+    fn test_fill_value_zero_default_is_not_flagged() {
+        // The writer emits `[3, 2, 0, 0, 0]` (version=3, flags=0, size=0) for
+        // "no fill value" — must NOT be flagged as non-zero.
+        let msg = [3u8, 2, 0, 0, 0];
+        assert!(!parse_fill_value_non_zero(&msg, MSG_FILL_VALUE));
+    }
+
+    #[test]
+    fn test_fill_value_non_zero_flagged() {
+        // version=3, flags=0x20 (defined), u32 size=4, then NaN bytes.
+        let mut msg = vec![3u8, 0x20];
+        msg.extend_from_slice(&4u32.to_le_bytes());
+        msg.extend_from_slice(&f32::NAN.to_le_bytes());
+        assert!(parse_fill_value_non_zero(&msg, MSG_FILL_VALUE));
+    }
+
+    #[test]
+    fn test_btree_v2_bytes_for() {
+        assert_eq!(BtreeV2Params::bytes_for(0), 1);
+        assert_eq!(BtreeV2Params::bytes_for(255), 1);
+        assert_eq!(BtreeV2Params::bytes_for(256), 2);
+        assert_eq!(BtreeV2Params::bytes_for(65535), 2);
+        assert_eq!(BtreeV2Params::bytes_for(65536), 3);
+        assert_eq!(BtreeV2Params::bytes_for(u32::MAX as u64), 4);
     }
 }

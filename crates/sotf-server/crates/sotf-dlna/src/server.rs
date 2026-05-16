@@ -7,11 +7,13 @@
 
 use crate::device::DlnaDevice;
 use crate::didl::{self, DidlContainer, DidlItem};
+use crate::http_io;
 use crate::ssdp;
 use crate::xml;
 use std::net::Ipv4Addr;
+use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 
 const CD_SERVICE: &str = "urn:schemas-upnp-org:service:ContentDirectory:1";
@@ -44,6 +46,14 @@ pub struct MediaTrack {
     pub file_size: Option<u64>,
 }
 
+/// Resolved metadata for a `/media/{id}` request.
+pub struct MediaSource {
+    /// Filesystem path to the audio file.
+    pub path: PathBuf,
+    /// MIME type to advertise.
+    pub mime_type: String,
+}
+
 /// Trait for bridging ContentDirectory requests to the SOTF library.
 pub trait MediaServerAdapter: Send + Sync + 'static {
     /// Browse root: return top-level albums.
@@ -57,6 +67,15 @@ pub trait MediaServerAdapter: Send + Sync + 'static {
 
     /// Total number of albums.
     fn album_count(&self) -> u32;
+
+    /// Resolve a `/media/{id}` URL to a filesystem path and MIME type.
+    ///
+    /// Returning `None` means the adapter cannot map ids to files — the
+    /// HTTP handler will respond with `501 Not Implemented` (NOT 404),
+    /// per `reviews/review-sotf-dlna.md` §4.
+    fn media_path(&self, _track_id: &str) -> Option<MediaSource> {
+        None
+    }
 }
 
 /// DLNA MediaServer — serves library content to DLNA controllers.
@@ -135,65 +154,133 @@ async fn handle_server_request(
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
 
-    let mut request_line = String::new();
-    reader
-        .read_line(&mut request_line)
-        .await
-        .map_err(|e| e.to_string())?;
+    // Hardened read: caps line length / header count / Content-Length
+    // BEFORE allocating the body (review §2).
+    let req = http_io::read_http_request(&mut reader).await?;
+    let body_str = String::from_utf8_lossy(&req.body);
 
-    let parts: Vec<&str> = request_line.split_whitespace().collect();
-    if parts.len() < 2 {
-        return Ok(());
-    }
-    let method = parts[0];
-    let path = parts[1];
-
-    let mut content_length = 0usize;
-    loop {
-        let mut line = String::new();
-        reader
-            .read_line(&mut line)
-            .await
-            .map_err(|e| e.to_string())?;
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            break;
-        }
-        if let Some((key, value)) = trimmed.split_once(':')
-            && key.to_lowercase() == "content-length"
-        {
-            content_length = value.trim().parse().unwrap_or(0);
-        }
-    }
-
-    const MAX_BODY: usize = 1024 * 1024;
-    if content_length > MAX_BODY {
-        return Err(format!("Request body too large: {} bytes", content_length));
-    }
-    let mut body = vec![0u8; content_length];
-    if content_length > 0 {
-        tokio::io::AsyncReadExt::read_exact(&mut reader, &mut body)
-            .await
-            .map_err(|e| e.to_string())?;
-    }
-    let body_str = String::from_utf8_lossy(&body);
-
-    let response = match (method, path) {
+    match (req.method.as_str(), req.path.as_str()) {
         ("GET", "/description.xml") => {
             let xml_body = device.description_xml(base_url);
-            http_response(200, "text/xml", &xml_body)
+            let response = http_response(200, "text/xml", &xml_body);
+            writer
+                .write_all(response.as_bytes())
+                .await
+                .map_err(|e| e.to_string())?;
         }
         ("POST", "/ContentDirectory/control") => {
-            handle_content_directory(&body_str, adapter, base_url)
+            let response = handle_content_directory(&body_str, adapter, base_url);
+            writer
+                .write_all(response.as_bytes())
+                .await
+                .map_err(|e| e.to_string())?;
         }
-        ("POST", "/ConnectionManager/control") => handle_cm_action(&body_str),
-        _ => http_response(404, "text/plain", "Not Found"),
+        ("POST", "/ConnectionManager/control") => {
+            let response = handle_cm_action(&body_str);
+            writer
+                .write_all(response.as_bytes())
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        (method, path) if path.starts_with("/media/") && (method == "GET" || method == "HEAD") => {
+            // Basic /media/{id} handler. Range requests + DLNA profile
+            // flags are NOT in this bug-fix pass — see review §4.
+            handle_media(&mut writer, method, path, adapter).await?;
+        }
+        // GENA event + SCPD endpoints are NOT implemented in this
+        // bug-fix pass. Return 501 so controllers can distinguish
+        // "device wrong" from "feature missing" (review §4).
+        ("SUBSCRIBE" | "UNSUBSCRIBE", p) if p.ends_with("/event") => {
+            let response = http_response(501, "text/plain", "GENA eventing not implemented");
+            writer
+                .write_all(response.as_bytes())
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        ("GET", p) if p.ends_with("/scpd.xml") => {
+            let response = http_response(501, "text/plain", "SCPD endpoints not implemented");
+            writer
+                .write_all(response.as_bytes())
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        _ => {
+            let response = http_response(404, "text/plain", "Not Found");
+            writer
+                .write_all(response.as_bytes())
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+async fn handle_media(
+    writer: &mut tokio::net::tcp::OwnedWriteHalf,
+    method: &str,
+    path: &str,
+    adapter: &Arc<dyn MediaServerAdapter>,
+) -> Result<(), String> {
+    let id = path.trim_start_matches("/media/");
+    // Defend against path-traversal in `{id}`.
+    if id.is_empty() || id.contains('/') || id.contains("..") {
+        let response = http_response(400, "text/plain", "Bad media id");
+        return writer
+            .write_all(response.as_bytes())
+            .await
+            .map_err(|e| e.to_string());
+    }
+
+    let Some(src) = adapter.media_path(id) else {
+        // Review requirement: if no source is available, return 501 (NOT
+        // 404). 404 would imply "no such track" — a lie when the same
+        // id is browsable through ContentDirectory.
+        let response = http_response(
+            501,
+            "text/plain",
+            "Media streaming not implemented by this adapter",
+        );
+        return writer
+            .write_all(response.as_bytes())
+            .await
+            .map_err(|e| e.to_string());
     };
 
+    // Whole-file read. Music files are typically a few tens of MB. Range
+    // support is intentionally deferred (see review §4).
+    let bytes = match tokio::fs::read(&src.path).await {
+        Ok(b) => b,
+        Err(e) => {
+            log::warn!("[DLNA Server] media_path {:?} read error: {}", src.path, e);
+            let response = http_response(404, "text/plain", "Not Found");
+            return writer
+                .write_all(response.as_bytes())
+                .await
+                .map_err(|e| e.to_string());
+        }
+    };
+
+    let header = format!(
+        "HTTP/1.1 200 OK\r\n\
+         Content-Type: {}\r\n\
+         Content-Length: {}\r\n\
+         Accept-Ranges: none\r\n\
+         transferMode.dlna.org: Streaming\r\n\
+         Connection: close\r\n\
+         \r\n",
+        src.mime_type,
+        bytes.len()
+    );
     writer
-        .write_all(response.as_bytes())
+        .write_all(header.as_bytes())
         .await
         .map_err(|e| e.to_string())?;
+    if method == "GET" {
+        writer
+            .write_all(&bytes)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 
@@ -206,10 +293,13 @@ fn handle_content_directory(
         return http_soap_fault(402, "Invalid SOAP");
     };
 
-    let find_arg =
-        |name: &str| -> Option<&str> { args.iter().find(|(k, _)| *k == name).map(|(_, v)| *v) };
+    let find_arg = |name: &str| -> Option<&str> {
+        args.iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
+    };
 
-    match action {
+    match action.as_str() {
         "Browse" => {
             let object_id = find_arg("ObjectID").unwrap_or("0");
             let flag = find_arg("BrowseFlag").unwrap_or("BrowseDirectChildren");
@@ -308,7 +398,11 @@ fn handle_content_directory(
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(50);
 
-            let (tracks, total) = adapter.search_tracks(query, start, count);
+            let (mut tracks, total) = adapter.search_tracks(query, start, count);
+            // Review requirement: defensively enforce the `count` bound
+            // on the response side. Adapters are *expected* to clamp,
+            // but if they don't we must not blow past `RequestedCount`.
+            tracks.truncate(count as usize);
             let items: Vec<DidlItem> = tracks
                 .iter()
                 .map(|t| DidlItem {
@@ -347,12 +441,12 @@ fn handle_content_directory(
             http_soap_response(&resp)
         }
         "GetSystemUpdateID" => {
-            let resp = xml::soap_response(action, CD_SERVICE, &[("Id", "1")]);
+            let resp = xml::soap_response(&action, CD_SERVICE, &[("Id", "1")]);
             http_soap_response(&resp)
         }
         "GetSearchCapabilities" => {
             let resp = xml::soap_response(
-                action,
+                &action,
                 CD_SERVICE,
                 &[(
                     "SearchCaps",
@@ -363,7 +457,7 @@ fn handle_content_directory(
         }
         "GetSortCapabilities" => {
             let resp = xml::soap_response(
-                action,
+                &action,
                 CD_SERVICE,
                 &[("SortCaps", "dc:title,dc:creator,upnp:album")],
             );
@@ -378,11 +472,11 @@ fn handle_cm_action(body: &str) -> String {
         return http_soap_fault(402, "Invalid SOAP");
     };
 
-    match action {
+    match action.as_str() {
         "GetProtocolInfo" => {
             let protocols = "http-get:*:audio/flac:*,http-get:*:audio/mpeg:*,http-get:*:audio/wav:*,http-get:*:audio/ogg:*,http-get:*:audio/aac:*";
             let resp =
-                xml::soap_response(action, CM_SERVICE, &[("Source", protocols), ("Sink", "")]);
+                xml::soap_response(&action, CM_SERVICE, &[("Source", protocols), ("Sink", "")]);
             http_soap_response(&resp)
         }
         _ => http_soap_fault(401, &format!("Invalid Action: {}", action)),
@@ -392,7 +486,9 @@ fn handle_cm_action(body: &str) -> String {
 fn http_response(status: u16, content_type: &str, body: &str) -> String {
     let status_text = match status {
         200 => "OK",
+        400 => "Bad Request",
         404 => "Not Found",
+        501 => "Not Implemented",
         _ => "Error",
     };
     format!(
@@ -412,4 +508,103 @@ fn http_soap_response(soap_body: &str) -> String {
 fn http_soap_fault(code: u32, description: &str) -> String {
     let fault = xml::soap_fault(code, description);
     http_response(500, "text/xml; charset=\"utf-8\"", &fault)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Adapter that misbehaves by ignoring the `count` argument — used to
+    /// prove the response-side truncation kicks in.
+    struct SearchStub {
+        rows: Vec<MediaTrack>,
+        total: u32,
+    }
+
+    impl MediaServerAdapter for SearchStub {
+        fn browse_albums(&self, _start: u32, _count: u32) -> (Vec<MediaAlbum>, u32) {
+            (Vec::new(), 0)
+        }
+        fn browse_album_tracks(&self, _album_id: &str) -> Vec<MediaTrack> {
+            Vec::new()
+        }
+        fn search_tracks(&self, _query: &str, _start: u32, _count: u32) -> (Vec<MediaTrack>, u32) {
+            (self.rows.iter().map(clone_track).collect(), self.total)
+        }
+        fn album_count(&self) -> u32 {
+            0
+        }
+    }
+
+    fn clone_track(t: &MediaTrack) -> MediaTrack {
+        MediaTrack {
+            id: t.id.clone(),
+            album_id: t.album_id.clone(),
+            title: t.title.clone(),
+            artist: t.artist.clone(),
+            album: t.album.clone(),
+            genre: t.genre.clone(),
+            track_number: t.track_number,
+            duration_secs: t.duration_secs,
+            file_path: t.file_path.clone(),
+            mime_type: t.mime_type.clone(),
+            sample_rate: t.sample_rate,
+            channels: t.channels,
+            bit_depth: t.bit_depth,
+            file_size: t.file_size,
+        }
+    }
+
+    fn make_track(id: &str) -> MediaTrack {
+        MediaTrack {
+            id: id.to_string(),
+            album_id: "a".to_string(),
+            title: id.to_string(),
+            artist: "x".to_string(),
+            album: "x".to_string(),
+            genre: None,
+            track_number: None,
+            duration_secs: None,
+            file_path: String::new(),
+            mime_type: "audio/flac".to_string(),
+            sample_rate: None,
+            channels: None,
+            bit_depth: None,
+            file_size: None,
+        }
+    }
+
+    /// Review requirement: `Search` must honour `RequestedCount` on the
+    /// response side even when the adapter misbehaves.
+    #[test]
+    fn search_truncates_response_to_requested_count() {
+        let stub: Arc<dyn MediaServerAdapter> = Arc::new(SearchStub {
+            rows: (0..50).map(|i| make_track(&format!("t{}", i))).collect(),
+            total: 1000,
+        });
+        let soap = r#"<?xml version="1.0"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+  <s:Body>
+    <u:Search xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
+      <ContainerID>0</ContainerID>
+      <SearchCriteria>*</SearchCriteria>
+      <Filter>*</Filter>
+      <StartingIndex>0</StartingIndex>
+      <RequestedCount>5</RequestedCount>
+      <SortCriteria></SortCriteria>
+    </u:Search>
+  </s:Body>
+</s:Envelope>"#;
+        let resp = handle_content_directory(soap, &stub, "http://1.2.3.4:80");
+        assert!(
+            resp.contains("<NumberReturned>5</NumberReturned>"),
+            "got: {}",
+            resp
+        );
+        assert!(
+            resp.contains("<TotalMatches>1000</TotalMatches>"),
+            "got: {}",
+            resp
+        );
+    }
 }

@@ -128,8 +128,12 @@ impl PieChart {
         // Generate slices
         let slices = pie.generate(&self.values, |v| *v);
 
-        // Determine colors
-        let colors: Vec<u32> = match self.colors {
+        // Determine colors. An empty custom palette would make `cycle()`
+        // produce an empty iterator and the later `colors[i % colors.len()]`
+        // indexing would divide by zero. Treat an empty user palette like
+        // `None` and fall back to the default palette.
+        let custom_palette = self.colors.filter(|c| !c.is_empty());
+        let colors: Vec<u32> = match custom_palette {
             Some(c) => c.iter().cycle().take(slices.len()).copied().collect(),
             None => DEFAULT_PALETTE
                 .iter()

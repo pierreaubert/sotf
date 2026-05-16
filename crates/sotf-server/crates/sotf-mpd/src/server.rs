@@ -9,8 +9,15 @@
 use crate::handler::{PlayerAdapter, handle_command};
 use crate::protocol::{self, MPD_VERSION, MpdCommand, MpdResponse};
 use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
+
+/// Maximum length, in bytes, of a single MPD protocol line. The reference MPD
+/// server caps at ~32 KiB; we use a tighter 8 KiB which still comfortably
+/// fits realistic commands while keeping the per-session memory bound small
+/// enough that an unauthenticated peer cannot exhaust the host by streaming
+/// gigabytes without a newline.
+const MAX_LINE_BYTES: usize = 8 * 1024;
 
 /// Authentication mode for the MPD server.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -99,6 +106,24 @@ impl MpdServer {
     /// Returns an error if the server cannot bind to the configured address.
     pub async fn run(&self, cancel: tokio::sync::watch::Receiver<bool>) -> Result<(), String> {
         let addr = format!("{}:{}", self.config.bind_address, self.config.port);
+
+        // Refuse to start in a misconfigured TLS state: if the integrator asked
+        // for TLS (`tls_enabled = true`) but never installed an acceptor, every
+        // connection would silently fall through to plaintext while the
+        // surrounding configuration suggests otherwise. That is the worst
+        // failure mode for a network-facing service, so bail out instead of
+        // silently accepting cleartext on `0.0.0.0:6600`.
+        #[cfg(feature = "tls")]
+        {
+            if self.config.tls_enabled && self.tls_acceptor.is_none() {
+                return Err(format!(
+                    "MPD configured with tls_enabled=true but no TLS acceptor installed; \
+                     refusing to bind {addr} to avoid silently accepting plaintext. \
+                     Call MpdServer::set_tls_acceptor() before run(), or set tls_enabled=false."
+                ));
+            }
+        }
+
         let listener = TcpListener::bind(&addr)
             .await
             .map_err(|e| format!("Failed to bind to {addr}: {e}"))?;
@@ -187,6 +212,81 @@ impl MpdServer {
     }
 }
 
+/// Outcome of [`read_line_bounded`].
+enum LineRead {
+    /// A complete line (without trailing CR/LF).
+    Line(String),
+    /// EOF before any bytes were read.
+    Eof,
+    /// The line exceeded `max_bytes` without a newline. Connection should be
+    /// terminated after an ACK is sent.
+    TooLong,
+    /// Bytes that did not form valid UTF-8 once the newline was reached.
+    InvalidUtf8,
+}
+
+/// Read a single newline-terminated line, but cap the maximum length so an
+/// unauthenticated client cannot exhaust memory by streaming an unbounded
+/// stream without a `\n`. `tokio::io::AsyncBufReadExt::read_line` has no such
+/// bound — the underlying buffer grows without limit — so this implements
+/// the loop manually with a byte-count budget.
+async fn read_line_bounded<R>(reader: &mut BufReader<R>, max_bytes: usize) -> LineRead
+where
+    R: AsyncRead + Unpin,
+{
+    let mut buf: Vec<u8> = Vec::new();
+    let mut byte = [0u8; 1];
+    loop {
+        match reader.read(&mut byte).await {
+            Ok(0) => {
+                if buf.is_empty() {
+                    return LineRead::Eof;
+                }
+                // Trailing partial line without newline at EOF — treat as a
+                // complete line.
+                break;
+            }
+            Ok(_) => {
+                if byte[0] == b'\n' {
+                    break;
+                }
+                if buf.len() >= max_bytes {
+                    return LineRead::TooLong;
+                }
+                buf.push(byte[0]);
+            }
+            Err(_) => return LineRead::Eof,
+        }
+    }
+    // Strip a trailing CR so CRLF and LF endings are both handled uniformly.
+    if buf.last() == Some(&b'\r') {
+        buf.pop();
+    }
+    match String::from_utf8(buf) {
+        Ok(s) => LineRead::Line(s),
+        Err(_) => LineRead::InvalidUtf8,
+    }
+}
+
+/// Redact sensitive arguments before emitting a trace log of a command line.
+///
+/// Currently strips the `password` argument so plaintext credentials never
+/// reach the log sink, even at `trace` level.
+fn redact_for_log(line: &str) -> String {
+    let trimmed = line.trim_start();
+    // Compare case-insensitively against the `password` command name. Only
+    // ASCII matters here — MPD commands are ASCII — but `to_ascii_lowercase`
+    // on the first few bytes avoids allocating a full lowercased copy.
+    let first_word_end = trimmed
+        .find(|c: char| c.is_whitespace())
+        .unwrap_or(trimmed.len());
+    if trimmed[..first_word_end].eq_ignore_ascii_case("password") {
+        let lead_ws = &line[..line.len() - trimmed.len()];
+        return format!("{lead_ws}password <redacted>");
+    }
+    line.to_string()
+}
+
 async fn wait_for_cancel(cancel: &tokio::sync::watch::Receiver<bool>) {
     let mut cancel = cancel.clone();
     loop {
@@ -212,7 +312,6 @@ where
     W: AsyncWrite + Unpin,
 {
     let mut reader = BufReader::new(reader);
-    let mut line_buf = String::new();
     let mut authenticated = password.is_none(); // no password = auto-authenticated
 
     // Send greeting
@@ -227,29 +326,49 @@ where
     let mut command_list_ok = false;
 
     loop {
-        line_buf.clear();
+        let read_outcome = tokio::select! {
+            outcome = read_line_bounded(&mut reader, MAX_LINE_BYTES) => outcome,
+            _ = wait_for_cancel(&cancel) => break,
+        };
 
-        tokio::select! {
-            result = reader.read_line(&mut line_buf) => {
-                match result {
-                    Ok(0) => break, // EOF
-                    Ok(_) => {}
-                    Err(e) => {
-                        return Err(format!("Read error: {e}"));
-                    }
-                }
-            }
-            _ = wait_for_cancel(&cancel) => {
+        let line_buf = match read_outcome {
+            LineRead::Eof => break,
+            LineRead::TooLong => {
+                // Refuse the line — an unauthenticated peer streaming a huge
+                // pre-newline payload is a classic DoS vector. Send a generic
+                // ACK and close the connection rather than re-syncing on
+                // attacker-controlled bytes.
+                let err = protocol::MpdError::new(
+                    protocol::MpdErrorCode::Arg,
+                    "input",
+                    "line too long",
+                );
+                let _ = writer.write_all(err.format().as_bytes()).await;
                 break;
             }
-        }
+            LineRead::InvalidUtf8 => {
+                let err = protocol::MpdError::new(
+                    protocol::MpdErrorCode::Arg,
+                    "input",
+                    "invalid UTF-8",
+                );
+                writer
+                    .write_all(err.format().as_bytes())
+                    .await
+                    .map_err(|e| e.to_string())?;
+                continue;
+            }
+            LineRead::Line(s) => s,
+        };
 
-        let line = line_buf.trim_end_matches('\n').trim_end_matches('\r');
+        let line = line_buf.as_str();
         if line.is_empty() {
             continue;
         }
 
-        log::trace!("[MPD] <- {line}");
+        // Redact `password` commands before logging so plaintext credentials
+        // never reach the trace sink even when trace logging is enabled.
+        log::trace!("[MPD] <- {}", redact_for_log(line));
 
         // Parse the command
         let cmd = match protocol::parse_command(line) {
@@ -291,9 +410,14 @@ where
 
         // Require authentication for non-password commands (except ping/close)
         if !authenticated && !matches!(cmd, MpdCommand::Ping | MpdCommand::Close) {
+            // Echo back at most 32 chars of the (possibly attacker-controlled)
+            // command name so an unauthenticated peer cannot probe by reading
+            // arbitrary bytes back through the ACK.
+            let raw_cmd_name = line.split_whitespace().next().unwrap_or("unknown");
+            let safe_cmd_name: String = raw_cmd_name.chars().take(32).collect();
             let err = protocol::MpdError::new(
                 protocol::MpdErrorCode::Permission,
-                line.split_whitespace().next().unwrap_or("unknown"),
+                &safe_cmd_name,
                 "you don't have permission for this command",
             );
             writer
@@ -516,5 +640,123 @@ mod tests {
         let result = execute_command_list(&cmds, true, &adapter);
         assert_eq!(result.matches("list_OK").count(), 2);
         assert!(result.ends_with("OK\n"));
+    }
+
+    // ===== Regression: bounded line read rejects DoS payloads =====
+    //
+    // `tokio::io::AsyncBufReadExt::read_line` has no length cap, so an
+    // unauthenticated peer could stream gigabytes without a newline and OOM
+    // the host. `read_line_bounded` enforces a byte budget and signals
+    // `TooLong` instead of growing its buffer indefinitely.
+
+    #[tokio::test]
+    async fn test_read_line_bounded_accepts_short_line() {
+        let input: &[u8] = b"ping\n";
+        let mut reader = BufReader::new(input);
+        match read_line_bounded(&mut reader, MAX_LINE_BYTES).await {
+            LineRead::Line(s) => assert_eq!(s, "ping"),
+            other => panic!("unexpected: {other:?}", other = format_outcome(&other)),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_read_line_bounded_rejects_oversized_payload() {
+        // 16 KiB of `a` without any newline — twice the 8 KiB limit. The old
+        // code would happily accept the entire payload (and would keep
+        // accepting an unbounded continuation) before passing it to the
+        // parser, allowing a trivial OOM-by-streaming.
+        let oversized = vec![b'a'; MAX_LINE_BYTES * 2];
+        let mut reader = BufReader::new(&oversized[..]);
+        match read_line_bounded(&mut reader, MAX_LINE_BYTES).await {
+            LineRead::TooLong => {}
+            other => panic!(
+                "expected TooLong, got {other:?}",
+                other = format_outcome(&other)
+            ),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_read_line_bounded_handles_crlf() {
+        let input: &[u8] = b"status\r\n";
+        let mut reader = BufReader::new(input);
+        match read_line_bounded(&mut reader, MAX_LINE_BYTES).await {
+            LineRead::Line(s) => assert_eq!(s, "status"),
+            other => panic!("unexpected: {other:?}", other = format_outcome(&other)),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_read_line_bounded_eof_returns_eof() {
+        let input: &[u8] = b"";
+        let mut reader = BufReader::new(input);
+        match read_line_bounded(&mut reader, MAX_LINE_BYTES).await {
+            LineRead::Eof => {}
+            other => panic!(
+                "expected Eof, got {other:?}",
+                other = format_outcome(&other)
+            ),
+        }
+    }
+
+    fn format_outcome(r: &LineRead) -> String {
+        match r {
+            LineRead::Line(s) => format!("Line({s:?})"),
+            LineRead::Eof => "Eof".into(),
+            LineRead::TooLong => "TooLong".into(),
+            LineRead::InvalidUtf8 => "InvalidUtf8".into(),
+        }
+    }
+
+    // ===== Regression: password lines are redacted before logging =====
+
+    #[test]
+    fn test_redact_for_log_strips_password_argument() {
+        // Trace logging used to emit the raw command line, leaking plaintext
+        // credentials whenever trace was enabled.
+        assert_eq!(redact_for_log("password hunter2"), "password <redacted>");
+        // Case-insensitive on the command name (MPD commands are ASCII).
+        assert_eq!(redact_for_log("Password hunter2"), "password <redacted>");
+        // Leading whitespace is preserved so the log columns still line up.
+        assert_eq!(redact_for_log("  password hunter2"), "  password <redacted>");
+        // Non-password commands pass through unmodified.
+        assert_eq!(redact_for_log("status"), "status");
+        // A command that merely starts with the prefix `pass` is NOT a
+        // password command and must not be redacted.
+        assert_eq!(redact_for_log("passive 1"), "passive 1");
+    }
+
+    // ===== Regression: TLS misconfiguration refused at start =====
+
+    #[cfg(feature = "tls")]
+    #[tokio::test]
+    async fn test_run_refuses_tls_enabled_without_acceptor() {
+        // tls_enabled=true with no acceptor installed used to silently fall
+        // through to plaintext. Now `run()` must return an error before
+        // binding, so a misconfigured deployment fails fast instead of
+        // accepting cleartext on an apparently-encrypted port.
+        let adapter: Arc<dyn PlayerAdapter> = Arc::new(DummyAdapter);
+        let config = MpdServerConfig {
+            // Bind to an ephemeral port and localhost; the test should bail
+            // before bind() is reached anyway.
+            bind_address: "127.0.0.1".into(),
+            port: 0,
+            tls_enabled: true,
+            auth_mode: MpdAuthMode::Certificate,
+            password: None,
+            trusted_client_fingerprints: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashSet::new(),
+            )),
+        };
+        let server = MpdServer::with_config(config, adapter);
+        let (_tx, rx) = tokio::sync::watch::channel(false);
+        let err = server
+            .run(rx)
+            .await
+            .expect_err("expected misconfiguration error");
+        assert!(
+            err.contains("tls_enabled=true") || err.to_lowercase().contains("tls"),
+            "error should mention TLS, got: {err}"
+        );
     }
 }

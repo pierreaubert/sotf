@@ -53,6 +53,7 @@ rusqlite = { workspace = true }
 tokio = { workspace = true }
 parking_lot = { workspace = true }
 uuid = { workspace = true }
+crossbeam = { workspace = true }
 
 # Image processing for album art thumbnails
 image = { workspace = true }

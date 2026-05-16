@@ -503,7 +503,10 @@ impl RoomEqTuiState {
 }
 
 /// TUI state for the Recording wizard
-#[derive(Debug, Clone)]
+// Note: not `Clone` because `save_receiver` (mpsc::Receiver) is not
+// `Clone`. The state is owned by `App` and accessed via `&mut`; no
+// caller needs to clone the wizard wholesale.
+#[derive(Debug)]
 pub struct RecordingTuiState {
     pub step: RecordingStep,
     /// When true, the wizard step tab bar has focus (Left/Right change step).
@@ -588,6 +591,12 @@ pub struct RecordingTuiState {
     pub channel_speakers: Vec<String>,
     pub save_error: Option<String>,
     pub save_success: bool,
+    /// True while a background save thread is serializing and writing
+    /// the JSON. The save step shows a "Saving…" indicator while set.
+    pub save_in_progress: bool,
+    /// Receiver for the background save result. Drained each tick by
+    /// `poll_save_recordings`.
+    pub save_receiver: Option<std::sync::mpsc::Receiver<Result<(), String>>>,
 }
 
 impl Default for RecordingTuiState {
@@ -640,6 +649,8 @@ impl Default for RecordingTuiState {
             channel_speakers: Vec::new(),
             save_error: None,
             save_success: false,
+            save_in_progress: false,
+            save_receiver: None,
         }
     }
 }

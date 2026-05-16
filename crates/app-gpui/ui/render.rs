@@ -90,25 +90,44 @@ impl Render for PlayerView {
                 width: window_bounds.size.width.into(),
                 height: window_bounds.size.height.into(),
             };
+            self.last_saved_window_bounds = Some(window_bounds);
+            // Always update the pending geometry — the in-flight task will
+            // read it right before writing.
+            *self.pending_geometry_save.lock() = Some(geometry);
 
-            // Debounce saving to avoid disk IO pressure during active resizing
-            self.geometry_save_task = Some(cx.spawn(async move |this, cx| {
-                // Wait for a period of stability (1 second) before saving
-                cx.background_executor().timer(Duration::from_secs(1)).await;
-                
-                let _ = this.update(cx, |view, cx| {
-                    view.state.update(cx, |state, cx| {
-                        let layout = state.layout.read(cx);
-                        if let Err(e) = state.app.save_config_with_geometry(layout, Some(geometry)) {
-                            log::warn!("Failed to save window geometry: {}", e);
-                        } else {
-                            log::debug!("Debounced window geometry saved successfully");
+            // Only spawn a new debounce task if none is in flight. Without
+            // this guard, every render frame the window moved ≥1 px would
+            // schedule a fresh 1 s timer task — a 3 s drag would fire 30+
+            // disk writes 1 s after the drag ended. The running task drains
+            // `pending_geometry_save` when its timer fires so the final
+            // position is always the one persisted.
+            if !self.geometry_save_pending {
+                self.geometry_save_pending = true;
+                let pending = self.pending_geometry_save.clone();
+                self.geometry_save_task = Some(cx.spawn(async move |this, cx| {
+                    // Wait for a period of stability (1 second) before saving
+                    cx.background_executor().timer(Duration::from_secs(1)).await;
+
+                    let geometry = pending.lock().take();
+                    let _ = this.update(cx, |view, cx| {
+                        view.geometry_save_pending = false;
+                        if let Some(geometry) = geometry {
+                            view.state.update(cx, |state, cx| {
+                                let layout = state.layout.read(cx);
+                                if let Err(e) =
+                                    state.app.save_config_with_geometry(layout, Some(geometry))
+                                {
+                                    log::warn!("Failed to save window geometry: {}", e);
+                                } else {
+                                    log::debug!(
+                                        "Debounced window geometry saved successfully"
+                                    );
+                                }
+                            });
                         }
                     });
-                });
-            }));
-
-            self.last_saved_window_bounds = Some(window_bounds);
+                }));
+            }
         }
 
         // Batch all state reads into a single scope to minimize locking overhead

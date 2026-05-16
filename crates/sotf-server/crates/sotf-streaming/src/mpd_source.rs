@@ -72,11 +72,17 @@ impl MpdStreamUrl {
             })
         });
 
+        let file_path = file_path.to_string();
+        reject_mpd_control_chars(&file_path, "file_path")?;
+        if let Some(ref pw) = password {
+            reject_mpd_control_chars(pw, "password")?;
+        }
+
         Ok(Self {
             host,
             control_port,
             httpd_port,
-            file_path: file_path.to_string(),
+            file_path,
             password,
         })
     }
@@ -101,10 +107,39 @@ fn urlencoding_decode(s: &str) -> String {
     result
 }
 
+/// Reject any control char (0x00–0x1F, 0x7F) — MPD treats them as command
+/// terminators or in-quote escapes and they let a hostile path/password
+/// inject extra commands or break the connection.
+fn reject_mpd_control_chars(s: &str, field: &str) -> Result<(), String> {
+    for (i, b) in s.bytes().enumerate() {
+        if b < 0x20 || b == 0x7F {
+            return Err(format!(
+                "{field} contains forbidden control char 0x{b:02X} at byte {i}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Quote a value for the MPD protocol: wrap in `"…"`, escaping `\` and `"`.
+/// The caller MUST first run `reject_mpd_control_chars` so this can't be used
+/// to inject newline-separated commands.
+fn mpd_quote(s: &str) -> String {
+    let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
+    format!("\"{escaped}\"")
+}
+
 /// Tell MPD to play a specific track, then return the httpd stream URL.
 ///
 /// This is a blocking operation (TCP connect + a few commands).
 fn prepare_mpd_playback(parsed: &MpdStreamUrl) -> Result<(), String> {
+    // Defence in depth: parsing may already have caught these (see
+    // `MpdStreamUrl::parse`), but if any caller routes around the parser we
+    // refuse to forward them to MPD here.
+    reject_mpd_control_chars(&parsed.file_path, "file_path")?;
+    if let Some(ref pw) = parsed.password {
+        reject_mpd_control_chars(pw, "password")?;
+    }
     let addr = format!("{}:{}", parsed.host, parsed.control_port);
     let stream = TcpStream::connect_timeout(
         &addr
@@ -130,14 +165,12 @@ fn prepare_mpd_playback(parsed: &MpdStreamUrl) -> Result<(), String> {
 
     // Authenticate if needed
     if let Some(ref pw) = parsed.password {
-        send_mpd(&mut reader, &format!("password \"{pw}\""))?;
+        send_mpd(&mut reader, &format!("password {}", mpd_quote(pw)))?;
     }
 
     // Clear queue, add track, play
     send_mpd(&mut reader, "clear")?;
-
-    let escaped = parsed.file_path.replace('\\', "\\\\").replace('"', "\\\"");
-    send_mpd(&mut reader, &format!("add \"{escaped}\""))?;
+    send_mpd(&mut reader, &format!("add {}", mpd_quote(&parsed.file_path)))?;
     send_mpd(&mut reader, "play")?;
 
     Ok(())

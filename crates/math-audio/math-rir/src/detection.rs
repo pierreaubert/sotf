@@ -15,9 +15,22 @@ pub(crate) struct DetectedReflection {
 /// Find the direct sound arrival time in a RIR.
 ///
 /// Implements Algorithm 1 from Pawlak & Lee (2026):
-/// 1. Compute log magnitude: L_x = 20 * log10(|x|)
-/// 2. Find peaks with minimum spacing delta_min
-/// 3. Direct sound = first peak within 11 dB of the global maximum
+/// 1. Compute log magnitude: L_x = 20 · log10(|x|)
+/// 2. Find peaks with minimum spacing `delta_min`
+/// 3. Direct sound = **earliest** peak within `DIRECT_SOUND_TIE_DB` (1 dB)
+///    of the global maximum. Magnitude-greedy suppression guarantees the
+///    global max is in the candidate set, so this is equivalent to
+///    "strongest peak" when peaks are well separated in magnitude and to
+///    "earliest arrival of the dominant cluster" when several peaks share
+///    the top level.
+///
+/// **Bug fixed.** Previously the function returned the first peak in time
+/// order above `global_max − 11 dB`. `find_peaks_with_min_distance`
+/// performs magnitude-greedy non-maximum suppression, so an early weaker
+/// pre-blip above `−11 dB` (e.g. measurement noise) could outrank the
+/// actual direct sound in the time-ordered peak list. With the new
+/// 1 dB tie band, such pre-blips are no longer eligible to "shadow" the
+/// global max.
 pub(crate) fn find_direct_sound_toa(rir: &[f32], config: &SsirConfig) -> Option<usize> {
     if rir.is_empty() {
         return None;
@@ -53,15 +66,21 @@ pub(crate) fn find_direct_sound_toa(rir: &[f32], config: &SsirConfig) -> Option<
         return None;
     }
 
-    // Step 3: Find the global maximum of log magnitude
+    // Step 3: Find the global maximum of log magnitude among peaks
     let global_max = peaks
         .iter()
         .map(|&i| log_mag[i])
         .fold(f64::NEG_INFINITY, f64::max);
 
-    // Step 4: Direct sound = first peak within 11 dB of global max
-    let threshold = global_max - 11.0;
-    peaks.into_iter().find(|&i| log_mag[i] >= threshold)
+    // Step 4: Earliest peak within DIRECT_SOUND_TIE_DB of the global max.
+    // `find_peaks_with_min_distance` returns peaks ascending by sample
+    // index, so `.find(...)` returns the earliest qualifying peak.
+    // Magnitude-greedy suppression in `find_peaks_with_min_distance`
+    // always preserves the global max, so the result is never `None`
+    // here (the global max itself is in the tie band).
+    const DIRECT_SOUND_TIE_DB: f64 = 1.0;
+    let tie_threshold = global_max - DIRECT_SOUND_TIE_DB;
+    peaks.into_iter().find(|&i| log_mag[i] >= tie_threshold)
 }
 
 /// Detect early reflections using Local Energy Ratio (LER).
@@ -379,6 +398,54 @@ mod tests {
         let config = SsirConfig::new(48000.0);
         let toa = find_direct_sound_toa(&rir, &config);
         assert_eq!(toa, Some(1), "should find the global max in a 2-sample RIR");
+    }
+
+    #[test]
+    fn test_find_direct_sound_strongest_within_envelope() {
+        // The OLD implementation returned the first peak above
+        // `global_max − 11 dB` in time order — even when an earlier
+        // pre-blip was nowhere near the global max in magnitude. With
+        // the new "earliest peak in 1 dB tie band" rule we return the
+        // true direct sound (the global max) here.
+        //
+        // Three peaks:
+        //   sample  50 → 0.30 (≈ −10.5 dB pre-blip, INSIDE 11 dB envelope)
+        //   sample 100 → 1.00 (global max — true direct sound)
+        //   sample 300 → 0.18 (≈ −14.9 dB late reflection, outside envelope)
+        //
+        // OLD code: returns 50 (first peak above −11 dB threshold).
+        // NEW code: returns 100 (only peak in the 1 dB tie band).
+        let mut rir = vec![0.0001f32; 500];
+        rir[50] = 0.30;
+        rir[100] = 1.0;
+        rir[300] = 0.18;
+
+        let config = SsirConfig::new(48000.0);
+        let toa = find_direct_sound_toa(&rir, &config);
+        assert_eq!(
+            toa,
+            Some(100),
+            "should return the strongest peak (sample 100), not the earlier \
+             pre-blip at sample 50 that the OLD code returned"
+        );
+    }
+
+    #[test]
+    fn test_find_direct_sound_earliest_in_tie_band() {
+        // When several peaks are within DIRECT_SOUND_TIE_DB (1 dB) of the
+        // global max, return the earliest — the earliest arrival of the
+        // dominant cluster is the physical direct sound.
+        let mut rir = vec![0.0001f32; 500];
+        rir[100] = 1.0;
+        rir[200] = 1.0;
+
+        let config = SsirConfig::new(48000.0);
+        let toa = find_direct_sound_toa(&rir, &config);
+        assert_eq!(
+            toa,
+            Some(100),
+            "earliest peak in the tie band should be the direct sound"
+        );
     }
 
     #[test]
