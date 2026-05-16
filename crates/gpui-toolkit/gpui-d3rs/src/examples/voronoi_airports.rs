@@ -95,10 +95,10 @@ pub fn compute_with_zoom(
     // The circumcenters in stereographic space need to be inverse-projected
     // back to (lon, lat), then projected through orthographic.
     let mut mesh_builder = PathBuilder::new();
-    let n_tri = delaunay.inner().triangles.len();
+    let n_tri = delaunay.inner().triangles().len();
 
     for e in 0..n_tri {
-        let he = delaunay.inner().halfedges[e];
+        let he = delaunay.inner().halfedges()[e];
         if he == delaunator::EMPTY || e > he {
             continue;
         } // each edge once
