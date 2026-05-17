@@ -2,19 +2,7 @@
 
 /// Format channel count as common surround notation (e.g., Mono, 2.0, 5.1, 7.1)
 pub fn format_channel_count(n: u32) -> String {
-    match n {
-        1 => "Mono".to_string(),
-        2 => "2.0".to_string(),
-        4 => "4.0".to_string(),
-        5 => "5.0".to_string(),
-        6 => "5.1".to_string(),
-        8 => "7.1".to_string(),
-        10 => "7.1.2".to_string(),
-        12 => "7.1.4".to_string(),
-        14 => "9.1.4".to_string(),
-        16 => "9.1.6".to_string(),
-        _ => format!("{}ch", n),
-    }
+    sotf_audio_player::format_channel_count(n)
 }
 
 /// Clean up track/song titles by:

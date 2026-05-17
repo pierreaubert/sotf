@@ -14,6 +14,21 @@ use walkdir::WalkDir;
 
 use crate::database::MusicDatabase;
 
+/// File extensions that the library should import as playable local audio.
+///
+/// Keep this in sync with `sotf-engine`'s decoder support. Symphonia 0.5 can
+/// parse Ogg/MP4 Opus containers, but this build does not include an Opus
+/// decoder, so `.opus` is intentionally absent here.
+pub const SUPPORTED_AUDIO_EXTENSIONS: &[&str] = &[
+    "flac", "mp3", "m4a", "mp4", "aac", "ogg", "oga", "wav", "aiff", "aif",
+];
+
+pub fn is_supported_audio_extension(ext: &str) -> bool {
+    SUPPORTED_AUDIO_EXTENSIONS
+        .iter()
+        .any(|supported| supported.eq_ignore_ascii_case(ext))
+}
+
 /// Normalize an artist or album name for consistent grouping
 /// Converts to lowercase, trims whitespace, removes diacritics and special characters
 /// Keeps ASCII letters, numbers, periods, and UTF-8 letters/numbers
@@ -1148,7 +1163,7 @@ impl MusicLibrary {
 
             // Record scan history for each directory
             for dir_info in &self.directories {
-                db.record_scan(&dir_info.path, total_tracks, self.albums.len())?;
+                db.record_scan(&dir_info.path, dir_info.file_count, dir_info.album_count)?;
             }
 
             // Checkpoint the WAL to prevent unbounded growth during scanning.
@@ -1251,10 +1266,7 @@ impl MusicLibrary {
 
             if let Some(ext) = path.extension() {
                 let ext = ext.to_string_lossy().to_lowercase();
-                if matches!(
-                    ext.as_str(),
-                    "flac" | "mp3" | "m4a" | "aac" | "ogg" | "opus" | "wav"
-                ) {
+                if is_supported_audio_extension(&ext) {
                     total_tracks += 1;
 
                     // Update stats for the parent directory of this file.
@@ -1283,7 +1295,10 @@ impl MusicLibrary {
                             // When a track has no album tag, create a standalone
                             // single-track album keyed by file path so that loose
                             // files are not all lumped into one giant "Unknown Album".
-                            let has_album_tag = metadata.album.is_some();
+                            let has_album_tag = metadata
+                                .album
+                                .as_ref()
+                                .is_some_and(|album| !album.trim().is_empty());
 
                             let raw_album_title = if has_album_tag {
                                 metadata.album.clone().unwrap()
@@ -1585,18 +1600,24 @@ fn extract_metadata(path: &Path) -> Result<TrackMetadata, Box<dyn std::error::Er
     // Extract metadata tags
     use symphonia::core::meta::StandardTagKey;
 
+    let non_empty_tag_value = |value: &symphonia::core::meta::Value| {
+        let value = value.to_string();
+        let trimmed = value.trim();
+        (!trimmed.is_empty()).then(|| trimmed.to_string())
+    };
+
     // Helper to process tags from a metadata revision
     let mut process_tags = |metadata_rev: &symphonia::core::meta::MetadataRevision| {
         for tag in metadata_rev.tags() {
             match tag.std_key {
                 Some(StandardTagKey::TrackTitle) => {
-                    metadata.title = Some(tag.value.to_string());
+                    metadata.title = non_empty_tag_value(&tag.value);
                 }
                 Some(StandardTagKey::Artist) => {
-                    metadata.artist = Some(tag.value.to_string());
+                    metadata.artist = non_empty_tag_value(&tag.value);
                 }
                 Some(StandardTagKey::Album) => {
-                    metadata.album = Some(tag.value.to_string());
+                    metadata.album = non_empty_tag_value(&tag.value);
                 }
                 Some(StandardTagKey::TrackNumber) => {
                     // Handle "1/12" format (track/total)
@@ -1616,10 +1637,10 @@ fn extract_metadata(path: &Path) -> Result<TrackMetadata, Box<dyn std::error::Er
                     }
                 }
                 Some(StandardTagKey::Genre) => {
-                    metadata.genre = Some(tag.value.to_string());
+                    metadata.genre = non_empty_tag_value(&tag.value);
                 }
                 Some(StandardTagKey::Composer) => {
-                    metadata.composer = Some(tag.value.to_string());
+                    metadata.composer = non_empty_tag_value(&tag.value);
                 }
                 Some(StandardTagKey::DiscNumber) => {
                     // Handle "1/2" format (disc/total)
@@ -1630,19 +1651,19 @@ fn extract_metadata(path: &Path) -> Result<TrackMetadata, Box<dyn std::error::Er
                     }
                 }
                 Some(StandardTagKey::Conductor) => {
-                    metadata.conductor = Some(tag.value.to_string());
+                    metadata.conductor = non_empty_tag_value(&tag.value);
                 }
                 Some(StandardTagKey::Performer) => {
-                    metadata.performer = Some(tag.value.to_string());
+                    metadata.performer = non_empty_tag_value(&tag.value);
                 }
                 Some(StandardTagKey::IdentIsrc) => {
-                    metadata.isrc = Some(tag.value.to_string());
+                    metadata.isrc = non_empty_tag_value(&tag.value);
                 }
                 Some(StandardTagKey::AlbumArtist) => {
-                    metadata.album_artist = Some(tag.value.to_string());
+                    metadata.album_artist = non_empty_tag_value(&tag.value);
                 }
                 Some(StandardTagKey::Ensemble) => {
-                    metadata.ensemble = Some(tag.value.to_string());
+                    metadata.ensemble = non_empty_tag_value(&tag.value);
                 }
                 _ => {}
             }
@@ -1793,6 +1814,32 @@ fn compute_aggregate_stats_for_path(
     (total_tracks, album_union.len())
 }
 
+fn directory_album_key(album: &Album) -> String {
+    if let Some(id) = album.id {
+        return format!("id:{id}");
+    }
+
+    if let Some(uuid) = &album.uuid {
+        return format!("uuid:{uuid}");
+    }
+
+    let first_parent = album
+        .tracks
+        .iter()
+        .find_map(|track| track.path.parent())
+        .map(|parent| parent.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let edition = album.edition.as_deref().unwrap_or_default();
+
+    format!(
+        "fallback:{}|{}|{}|{}",
+        normalize_album_key(&album.title),
+        normalize_album_key(edition),
+        normalize_album_key(&album.artist()),
+        first_parent,
+    )
+}
+
 /// Compute directory stats from albums in the library.
 /// Returns a map of `directory path -> (track count, album-key set)`.
 /// Each entry covers tracks that live *directly* in that directory; the
@@ -1813,7 +1860,7 @@ fn compute_directory_stats(
     let mut canonical_cache: HashMap<PathBuf, Option<PathBuf>> = HashMap::new();
 
     for album in albums {
-        let album_key = album.title.clone();
+        let album_key = directory_album_key(album);
 
         for track in &album.tracks {
             if let Some(parent) = track.path.parent() {

@@ -611,7 +611,7 @@ impl_param_accessors! {
     Delay {
         params: param_specs::delay::PARAMS,
         layout: Some(&param_specs::delay::LAYOUT),
-        fields: [delay_ms: f64, feedback: f64, mix: f64, lfo_rate_hz: f64, lfo_depth_ms: f64, allpass_feedback: bool]
+        fields: [delay_ms: f64, feedback: f64, mix: f64, lfo_rate_hz: f64, lfo_depth_ms: f64, allpass_coeff: f64, allpass_feedback: bool]
     },
     Aec {
         params: param_specs::aec::PARAMS,

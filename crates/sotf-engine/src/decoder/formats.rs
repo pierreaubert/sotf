@@ -883,6 +883,10 @@ mod tests {
             AudioFormat::from_path("test.m4a").unwrap(),
             AudioFormat::Aac
         );
+        assert_eq!(
+            AudioFormat::from_path("test.mp4").unwrap(),
+            AudioFormat::Aac
+        );
 
         // Test WAV
         assert_eq!(
@@ -893,6 +897,10 @@ mod tests {
         // Test Vorbis/OGG
         assert_eq!(
             AudioFormat::from_path("test.ogg").unwrap(),
+            AudioFormat::Vorbis
+        );
+        assert_eq!(
+            AudioFormat::from_path("test.oga").unwrap(),
             AudioFormat::Vorbis
         );
 
@@ -914,6 +922,8 @@ mod tests {
 
         // Test unsupported format
         assert!(AudioFormat::from_path("test.xyz").is_err());
+        assert!(AudioFormat::from_path("test.opus").is_err());
+        assert!(AudioFormat::from_path("test.wv").is_err());
         assert!(AudioFormat::from_path("test").is_err());
     }
 
