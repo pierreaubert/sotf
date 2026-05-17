@@ -264,9 +264,8 @@ pub struct CrossfeedPlugin {
     sample_rate: u32,
     params: CrossfeedPluginParams,
 
-    // Bauer: LPF filters (crossfeed low frequencies per bs2b spec)
-    bauer_lpf_l: Biquad,
-    bauer_lpf_r: Biquad,
+    // Bauer: low-shelf cut on the difference signal (L-R)
+    bauer_shelf: Biquad,
 
     meier_lpf_l: Biquad,
     meier_lpf_r: Biquad,
@@ -333,20 +332,13 @@ impl CrossfeedPlugin {
             sample_rate: sr,
             params: params.clone(),
 
-            // Bauer: LPF (lowpass) per bs2b specification
-            bauer_lpf_l: Biquad::new(
-                math_audio_iir_fir::BiquadFilterType::Lowpass,
+            // Bauer: low-shelf cut on the difference signal
+            bauer_shelf: Biquad::new(
+                math_audio_iir_fir::BiquadFilterType::Lowshelf,
                 params.bauer_fcut_hz as f64,
                 sr as f64,
                 0.707,
-                0.0,
-            ),
-            bauer_lpf_r: Biquad::new(
-                math_audio_iir_fir::BiquadFilterType::Lowpass,
-                params.bauer_fcut_hz as f64,
-                sr as f64,
-                0.707,
-                0.0,
+                -(params.bauer_feed_db as f64),
             ),
 
             meier_lpf_l: Biquad::new(
@@ -513,20 +505,13 @@ impl CrossfeedPlugin {
     fn update_filters(&mut self) {
         let sr = self.sample_rate as f64;
 
-        // Bauer: LPF (lowpass) per bs2b specification
-        self.bauer_lpf_l = Biquad::new(
-            math_audio_iir_fir::BiquadFilterType::Lowpass,
+        // Bauer: low-shelf cut on the difference signal
+        self.bauer_shelf = Biquad::new(
+            math_audio_iir_fir::BiquadFilterType::Lowshelf,
             self.params.bauer_fcut_hz as f64,
             sr,
             0.707,
-            0.0,
-        );
-        self.bauer_lpf_r = Biquad::new(
-            math_audio_iir_fir::BiquadFilterType::Lowpass,
-            self.params.bauer_fcut_hz as f64,
-            sr,
-            0.707,
-            0.0,
+            -(self.params.bauer_feed_db as f64),
         );
 
         // Meier: LPF + allpass — must be recomputed for every sample rate change
@@ -604,21 +589,23 @@ impl CrossfeedPlugin {
 
     #[inline(always)]
     fn process_bauer(&mut self, nf: usize) {
-        let feed = fast_pow10(self.params.bauer_feed_db / 20.0);
         let has_itd = self.params.itd_delay_ms > 0.0;
         for i in 0..nf {
             let x_l = self.dry_l[i];
             let x_r = self.dry_r[i];
-            // LPF crossfeed: extract low frequencies from opposite channel (bs2b spec)
-            let mut cross_r = self.bauer_lpf_r.process(x_r as f64) as f32;
-            let mut cross_l = self.bauer_lpf_l.process(x_l as f64) as f32;
+            // Low-shelf cut on the difference signal: reduces stereo width at low frequencies
+            let diff = x_l - x_r;
+            let diff_f = self.bauer_shelf.process(diff as f64) as f32;
+            // Crossfeed is derived from the part of the difference signal that was removed
+            let mut cross_r = (diff_f - diff) * 0.5;
+            let mut cross_l = (diff - diff_f) * 0.5;
             // Apply ITD delay to the crossfeed path
             if has_itd {
                 cross_r = self.itd_delay_r.process(cross_r);
                 cross_l = self.itd_delay_l.process(cross_l);
             }
-            self.wet_l[i] = x_l + feed * cross_r;
-            self.wet_r[i] = x_r + feed * cross_l;
+            self.wet_l[i] = x_l + cross_r;
+            self.wet_r[i] = x_r + cross_l;
         }
     }
 
@@ -938,6 +925,121 @@ mod tests {
         assert!(b[1].abs() > 0.0);
     }
 
+    /// Regression: Bauer mode used a plain lowpass on the per-channel crossfeed path,
+    /// which caused a bass boost on mono signals and a steep roll-off. A proper Bauer
+    /// crossfeed applies a low-shelf cut to the difference signal (L-R), preserving
+    /// mono energy and gently attenuating low-frequency stereo width.
+    #[test]
+    fn test_bauer_mono_preserved() {
+        let mut params = CrossfeedPluginParams::from_preset(CrossfeedPreset::Default);
+        params.mode = CrossfeedMode::Bauer;
+        params.bauer_feed_db = 6.0;
+        let mut p = CrossfeedPlugin::new(params).unwrap();
+        p.initialize(48000).unwrap();
+
+        let n = 4000;
+        let mut buf: Vec<f32> = (0..n).flat_map(|_| [0.5f32, 0.5]).collect();
+        p.process_in_place(
+            &mut buf,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: n,
+            },
+        )
+        .unwrap();
+
+        let last_l = buf[(n - 1) * 2];
+        let last_r = buf[(n - 1) * 2 + 1];
+        // Old lowpass code boosted mono by feed*lowpass(mono) ≈ 3.0.
+        // Proper low-shelf on difference leaves mono unchanged.
+        assert!(
+            (last_l - 0.5).abs() < 0.01 && (last_r - 0.5).abs() < 0.01,
+            "Mono signal should be preserved, got L={last_l}, R={last_r}"
+        );
+    }
+
+    /// Regression: Bauer mode should apply a low-shelf cut to the difference signal,
+    /// attenuating low-frequency stereo width while preserving high-frequency width.
+    #[test]
+    fn test_bauer_difference_shelved() {
+        let mut params = CrossfeedPluginParams::from_preset(CrossfeedPreset::Default);
+        params.mode = CrossfeedMode::Bauer;
+        params.bauer_feed_db = 6.0;
+        let sr = 48000u32;
+        let n = 8000;
+
+        // Low-frequency stereo difference
+        let mut buf_lf: Vec<f32> = (0..n)
+            .flat_map(|i| {
+                let t = i as f32 / sr as f32;
+                let s = (2.0 * std::f32::consts::PI * 200.0 * t).sin() * 0.5;
+                [s, -s]
+            })
+            .collect();
+        let mut p = CrossfeedPlugin::new(params.clone()).unwrap();
+        p.initialize(sr).unwrap();
+        p.process_in_place(
+            &mut buf_lf,
+            &ProcessContext {
+                sample_rate: sr,
+                num_frames: n,
+            },
+        )
+        .unwrap();
+
+        let tail_start = (n - 2000) * 2;
+        let diff_rms_lf: f32 = buf_lf[tail_start..]
+            .chunks(2)
+            .map(|c| {
+                let d = c[0] - c[1];
+                d * d
+            })
+            .sum::<f32>()
+            .sqrt()
+            / (2000.0f32).sqrt();
+
+        // With a -6 dB shelf, low-frequency difference should be attenuated
+        assert!(
+            diff_rms_lf < 0.5,
+            "Low-frequency difference should be attenuated by shelf, got {diff_rms_lf}"
+        );
+
+        // High-frequency stereo difference
+        let mut buf_hf: Vec<f32> = (0..n)
+            .flat_map(|i| {
+                let t = i as f32 / sr as f32;
+                let s = (2.0 * std::f32::consts::PI * 10000.0 * t).sin() * 0.5;
+                [s, -s]
+            })
+            .collect();
+        let mut p2 = CrossfeedPlugin::new(params).unwrap();
+        p2.initialize(sr).unwrap();
+        p2.process_in_place(
+            &mut buf_hf,
+            &ProcessContext {
+                sample_rate: sr,
+                num_frames: n,
+            },
+        )
+        .unwrap();
+
+        let diff_rms_hf: f32 = buf_hf[tail_start..]
+            .chunks(2)
+            .map(|c| {
+                let d = c[0] - c[1];
+                d * d
+            })
+            .sum::<f32>()
+            .sqrt()
+            / (2000.0f32).sqrt();
+
+        // High-frequency difference should be nearly unchanged
+        assert!(
+            diff_rms_hf > 0.6,
+            "High-frequency difference should be preserved, got {diff_rms_hf}"
+        );
+    }
+
     #[test]
     fn test_bauer_basic() {
         let mut params = CrossfeedPluginParams::from_preset(CrossfeedPreset::Default);
@@ -960,7 +1062,7 @@ mod tests {
 
     #[test]
     fn test_bauer_uses_lowpass() {
-        // Bauer mode should crossfeed low frequencies (LPF, per bs2b spec).
+        // Bauer mode should crossfeed low frequencies (low-shelf on difference, per bs2b spec).
         // A DC signal should produce significant crossfeed;
         // a high-frequency signal should produce minimal crossfeed.
         let mut params = CrossfeedPluginParams::from_preset(CrossfeedPreset::Default);
