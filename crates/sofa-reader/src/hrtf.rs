@@ -465,6 +465,23 @@ impl SofaFile {
             .read_f32("Data.IR")
             .map_err(|e| format!("Failed to read IR data: {}", e))?;
 
+        let expected_ir_len = num_measurements
+            .checked_mul(num_receivers)
+            .and_then(|v| v.checked_mul(ir_length))
+            .ok_or_else(|| {
+                format!(
+                    "SOFA dimensions overflow: M={}, R={}, N={}",
+                    num_measurements, num_receivers, ir_length
+                )
+            })?;
+        if ir_data.len() != expected_ir_len {
+            return Err(format!(
+                "Data.IR size mismatch: expected M*R*N = {}, got {}",
+                expected_ir_len,
+                ir_data.len()
+            ));
+        }
+
         log::info!(
             "[SOFA] Loaded {} IR samples ({}x{}x{})",
             ir_data.len(),
@@ -485,23 +502,50 @@ impl SofaFile {
     }
 
     /// Get HRTF data for a measurement index.
+    ///
+    /// Allocates two new `Vec<f32>` for the impulse responses. Use
+    /// [`Self::get_hrtf_slices`] or [`Self::get_hrtf_into`] in audio-thread
+    /// paths where allocation is forbidden.
     pub fn get_hrtf(&self, index: usize) -> Option<HrtfData> {
+        let (position, left, right) = self.get_hrtf_slices(index)?;
+        Some(HrtfData {
+            position,
+            ir_left: left.to_vec(),
+            ir_right: right.to_vec(),
+        })
+    }
+
+    /// Borrow the left/right impulse responses for a measurement index.
+    /// Returns `(position, ir_left, ir_right)` borrowed directly from the
+    /// internal `impulse_responses` buffer — no allocation, audio-thread safe.
+    pub fn get_hrtf_slices(&self, index: usize) -> Option<(SourcePosition, &[f32], &[f32])> {
         if index >= self.num_measurements {
             return None;
         }
-
         let position = self.positions[index];
         let offset = index * 2 * self.ir_length;
+        let left = &self.impulse_responses[offset..offset + self.ir_length];
+        let right = &self.impulse_responses[offset + self.ir_length..offset + 2 * self.ir_length];
+        Some((position, left, right))
+    }
 
-        let ir_left = self.impulse_responses[offset..offset + self.ir_length].to_vec();
-        let ir_right =
-            self.impulse_responses[offset + self.ir_length..offset + 2 * self.ir_length].to_vec();
-
-        Some(HrtfData {
-            position,
-            ir_left,
-            ir_right,
-        })
+    /// Copy the left/right impulse responses for a measurement index into
+    /// caller-supplied buffers. Returns the position on success. Each output
+    /// buffer must have at least `ir_length()` elements; only that prefix is
+    /// overwritten.
+    pub fn get_hrtf_into(
+        &self,
+        index: usize,
+        left_out: &mut [f32],
+        right_out: &mut [f32],
+    ) -> Option<SourcePosition> {
+        let (position, left, right) = self.get_hrtf_slices(index)?;
+        if left_out.len() < left.len() || right_out.len() < right.len() {
+            return None;
+        }
+        left_out[..left.len()].copy_from_slice(left);
+        right_out[..right.len()].copy_from_slice(right);
+        Some(position)
     }
 
     /// Find the nearest HRTF measurement for a source position.
@@ -546,6 +590,59 @@ impl SofaFile {
 
         let (index, _dist) = self.find_nearest(position);
         self.get_hrtf(index)
+    }
+
+    /// Get an HRTF interpolated across the three nearest measurements using
+    /// inverse-angular-distance weights, eliminating the audible "snap" of
+    /// nearest-neighbor lookup when sources move continuously.
+    ///
+    /// Falls back to the nearest measurement if any of the three lookups
+    /// collapse onto the same index. Returns `None` if the database is empty.
+    pub fn get_hrtf_interpolated(&self, position: &SourcePosition) -> Option<HrtfData> {
+        if self.num_measurements == 0 {
+            return None;
+        }
+        let nbrs = self.find_three_nearest(position);
+        // Degenerate case: only one unique neighbor — return it directly.
+        if nbrs[0].0 == nbrs[1].0 && nbrs[1].0 == nbrs[2].0 {
+            return self.get_hrtf(nbrs[0].0);
+        }
+
+        // Inverse-distance weights with epsilon to avoid div-by-zero when a
+        // neighbour lies exactly on the query point. Normalise so weights sum
+        // to 1.
+        const EPS: f32 = 1e-4;
+        let mut weights = [0.0f32; 3];
+        let mut total = 0.0f32;
+        for (slot, (_idx, dist)) in weights.iter_mut().zip(nbrs.iter()) {
+            let w = 1.0 / (*dist + EPS);
+            *slot = w;
+            total += w;
+        }
+        if total <= 0.0 {
+            return self.get_hrtf(nbrs[0].0);
+        }
+        for w in weights.iter_mut() {
+            *w /= total;
+        }
+
+        let position_out = self.positions[nbrs[0].0];
+        let mut ir_left = vec![0.0f32; self.ir_length];
+        let mut ir_right = vec![0.0f32; self.ir_length];
+        for ((idx, _dist), w) in nbrs.iter().zip(weights.iter()) {
+            let (_pos, left, right) = self.get_hrtf_slices(*idx)?;
+            for (dst, src) in ir_left.iter_mut().zip(left.iter()) {
+                *dst += src * (*w);
+            }
+            for (dst, src) in ir_right.iter_mut().zip(right.iter()) {
+                *dst += src * (*w);
+            }
+        }
+        Some(HrtfData {
+            position: position_out,
+            ir_left,
+            ir_right,
+        })
     }
 
     /// Get all available source positions.
