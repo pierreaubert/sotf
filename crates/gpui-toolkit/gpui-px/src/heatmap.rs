@@ -15,7 +15,7 @@ use d3rs::scale::{LinearScale, LogScale};
 #[cfg(not(feature = "gpu-2d"))]
 use d3rs::shape::render_heatmap;
 use d3rs::shape::{ContourConfig, HeatmapData};
-use d3rs::text::{VectorFontConfig, render_vector_text};
+use d3rs::text::{GlyphTextConfig, render_glyph_text};
 use gpui::prelude::*;
 use gpui::{AnyElement, IntoElement, div, hsla, px, rgb};
 
@@ -489,7 +489,7 @@ impl HeatmapChart {
         // Add title if present
         if let Some(title) = &self.title {
             let font_config =
-                VectorFontConfig::horizontal(DEFAULT_TITLE_FONT_SIZE, hsla(0.0, 0.0, 0.2, 1.0));
+                GlyphTextConfig::horizontal(DEFAULT_TITLE_FONT_SIZE, hsla(0.0, 0.0, 0.2, 1.0));
             container = container.child(
                 div()
                     .w_full()
@@ -497,7 +497,7 @@ impl HeatmapChart {
                     .flex()
                     .justify_center()
                     .items_center()
-                    .child(render_vector_text(title, &font_config)),
+                    .child(render_glyph_text(title, &font_config)),
             );
         }
 

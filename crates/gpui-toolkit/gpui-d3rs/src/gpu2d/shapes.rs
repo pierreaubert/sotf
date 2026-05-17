@@ -663,6 +663,7 @@ where
     let minor_tick_size = config.minor_tick_size;
     let tick_padding = config.tick_padding;
     let label_font_size = config.label_font_size;
+    let label_angle = config.label_angle.to_radians();
     let show_domain = config.show_domain_line;
     let domain_width = config.domain_line_width;
     let line_color = theme.line_color;
@@ -692,12 +693,13 @@ where
                     // Label (centered below tick)
                     let label_y = tick_size + tick_padding + label_font_size * 0.8;
                     let label_width = label.len() as f32 * label_font_size * 0.6;
-                    renderer.draw_text(
+                    renderer.draw_text_rotated(
                         label,
                         x - label_width / 2.0,
                         label_y,
                         label_font_size,
                         label_color,
+                        label_angle,
                     );
                 }
 
@@ -742,12 +744,13 @@ where
                     // Label (centered above tick)
                     let label_y = base_y - tick_size - tick_padding;
                     let label_width = label.len() as f32 * label_font_size * 0.6;
-                    renderer.draw_text(
+                    renderer.draw_text_rotated(
                         label,
                         x - label_width / 2.0,
                         label_y,
                         label_font_size,
                         label_color,
+                        label_angle,
                     );
                 }
 
@@ -804,15 +807,15 @@ where
                     );
                 }
 
-                // Title (note: rotation not yet supported, using horizontal for now)
                 if let Some(ref title_text) = title {
                     let title_width = title_text.len() as f32 * title_font_size * 0.6;
-                    renderer.draw_text(
+                    renderer.draw_text_rotated(
                         title_text,
                         2.0,
                         height / 2.0 + title_width / 2.0,
                         title_font_size,
                         label_color,
+                        -std::f32::consts::FRAC_PI_2,
                     );
                 }
             }

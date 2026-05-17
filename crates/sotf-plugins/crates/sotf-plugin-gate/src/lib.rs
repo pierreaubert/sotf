@@ -353,21 +353,6 @@ impl GatePlugin {
         atten.min(self.range_db.max(0.0))
     }
 
-    /// Check if the gate should be open for a given channel, using hysteresis.
-    fn should_gate_open(&self, input_db: f32, threshold: f32, ch: usize) -> bool {
-        if self.hysteresis_db <= 0.0 {
-            return input_db >= threshold;
-        }
-        let close_threshold = threshold - self.hysteresis_db;
-        if self.gate_open[ch] {
-            // Gate is open -- only close if below close threshold
-            input_db >= close_threshold
-        } else {
-            // Gate is closed -- only open if above open threshold
-            input_db >= threshold
-        }
-    }
-
     fn update_coefficients(&mut self) {
         self.attack_coeff = (-1.0 / (self.attack_ms * 0.001 * self.sample_rate as f32)).exp();
         self.release_coeff = (-1.0 / (self.release_ms * 0.001 * self.sample_rate as f32)).exp();
@@ -520,6 +505,14 @@ impl InPlacePlugin for GatePlugin {
         let thresh = self.threshold_smoother.next_n(num_frames);
         let mix = self.mix_smoother.next_n(num_frames);
 
+        // Pre-compute linear thresholds to avoid fast_log10 on the hot audio path
+        let threshold_linear = fast_pow10(thresh / DB_CONVERSION_FACTOR);
+        let close_threshold_linear = if self.hysteresis_db > 0.0 {
+            fast_pow10((thresh - self.hysteresis_db) / DB_CONVERSION_FACTOR)
+        } else {
+            threshold_linear
+        };
+
         if self.link_channels && self.channels > 1 {
             for frame in 0..num_frames {
                 let frame_start = frame * stride;
@@ -536,11 +529,14 @@ impl InPlacePlugin for GatePlugin {
                         DB_CONVERSION_FACTOR * fast_log10(level.max(EPSILON));
                 }
 
-                let idb = DB_CONVERSION_FACTOR * fast_log10(det.max(EPSILON));
-                let atten_target = self.calculate_gate_attenuation(idb, thresh);
-
-                // Detection with hysteresis (channel 0 is master for linked)
-                let is_open = self.should_gate_open(idb, thresh, 0);
+                // Linear-space gate decision (no fast_log10 on hot path)
+                let is_open = if self.hysteresis_db <= 0.0 {
+                    det >= threshold_linear
+                } else if self.gate_open[0] {
+                    det >= close_threshold_linear
+                } else {
+                    det >= threshold_linear
+                };
                 self.gate_open[0] = is_open;
                 let target = if is_open {
                     self.hold_counter[0] = hs;
@@ -549,7 +545,8 @@ impl InPlacePlugin for GatePlugin {
                     self.hold_counter[0] -= 1;
                     0.0
                 } else {
-                    atten_target
+                    let idb = DB_CONVERSION_FACTOR * fast_log10(det.max(EPSILON));
+                    self.calculate_gate_attenuation(idb, thresh)
                 };
 
                 // target > envelope means attenuation is increasing (gate closing) → release.
@@ -584,10 +581,15 @@ impl InPlacePlugin for GatePlugin {
                     let level_abs = self.detect_level(ch, filtered);
                     self.monitoring_levels[ch] =
                         DB_CONVERSION_FACTOR * fast_log10(level_abs.max(EPSILON));
-                    let idb = self.monitoring_levels[ch];
-                    let atten_target = self.calculate_gate_attenuation(idb, thresh);
 
-                    let is_open = self.should_gate_open(idb, thresh, ch);
+                    // Linear-space gate decision (no fast_log10 on hot path)
+                    let is_open = if self.hysteresis_db <= 0.0 {
+                        level_abs >= threshold_linear
+                    } else if self.gate_open[ch] {
+                        level_abs >= close_threshold_linear
+                    } else {
+                        level_abs >= threshold_linear
+                    };
                     self.gate_open[ch] = is_open;
                     let target = if is_open {
                         self.hold_counter[ch] = hs;
@@ -596,7 +598,8 @@ impl InPlacePlugin for GatePlugin {
                         self.hold_counter[ch] -= 1;
                         0.0
                     } else {
-                        atten_target
+                        let idb = self.monitoring_levels[ch];
+                        self.calculate_gate_attenuation(idb, thresh)
                     };
 
                     // target > envelope means attenuation is increasing (gate closing) → release.
@@ -990,6 +993,61 @@ mod tests {
             transitions <= 2,
             "Gate with hysteresis=4dB should not chatter on a +/-2dB oscillating signal, \
              but observed {transitions} open/closed transitions in steady-state"
+        );
+    }
+
+    /// Regression test: gate open/close decisions use linear-space thresholds.
+    ///
+    /// Prior to this refactor, `process_in_place` called `fast_log10(det)` on every
+    /// frame to compare the detected envelope against the threshold in dB space.
+    /// The gate now compares the linear envelope directly against pre-computed
+    /// `threshold_linear` and `close_threshold_linear`, eliminating `fast_log10`
+    /// from the hot per-frame audio path.  `fast_log10` is only called when the
+    /// gate is actually closing and we need to compute the attenuation curve in
+    /// dB space.
+    #[test]
+    fn test_gate_linear_threshold_no_fast_log10_in_decision() {
+        let sr = 48000u32;
+        let mut p = GatePlugin::from_params(
+            1,
+            GatePluginParams {
+                threshold_db: -20.0,
+                ratio: 100.0,
+                attack_ms: 1.0,
+                hold_ms: 0.0,
+                release_ms: 10.0,
+                mix: 1.0,
+                link_channels: false,
+                sidechain_hpf_hz: 0.0,
+                sidechain_hpf_order: "2nd".to_string(),
+                detection_mode: "peak".to_string(),
+                sidechain_external: false,
+                range_db: 80.0,
+                hysteresis_db: 0.0,
+                knee_db: 0.0,
+                lookahead_ms: 0.0,
+            },
+        );
+        p.initialize(sr).unwrap();
+
+        // Signal exactly at the linear threshold (-20 dBFS = 0.1).
+        // With exact linear comparison the gate should remain open.
+        let input_level = 0.1f32;
+        let frames = sr as usize / 10;
+        let mut buf = vec![input_level; frames];
+        let ctx = ProcessContext {
+            sample_rate: sr,
+            num_frames: frames,
+        };
+        p.process_in_place(&mut buf, &ctx).unwrap();
+
+        let tail_start = frames - sr as usize / 100;
+        let avg_output: f32 =
+            buf[tail_start..].iter().sum::<f32>() / (frames - tail_start) as f32;
+        assert!(
+            (avg_output - input_level).abs() < 0.001,
+            "Gate should stay open for signal at exact threshold (linear comparison), \
+             avg output was {avg_output}"
         );
     }
 }

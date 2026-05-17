@@ -23,7 +23,7 @@ use d3rs::gpu3d::{
     Colormap as Surface3DColormap, Surface3DConfig, Surface3DElement, Surface3DState,
     SurfaceData as Surface3DData, SurfacePlotType,
 };
-use d3rs::text::{VectorFontConfig, render_vector_text};
+use d3rs::text::{GlyphTextConfig, render_glyph_text};
 use d3rs::zoom::ZoomState;
 use gpui::prelude::*;
 use gpui::{deferred, *};

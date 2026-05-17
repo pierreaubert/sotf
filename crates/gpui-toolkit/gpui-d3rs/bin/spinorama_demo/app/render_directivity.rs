@@ -119,7 +119,7 @@ impl SpinoramaApp {
             })
             // Angle legend
             .child({
-                let font_config = VectorFontConfig::horizontal((10.0 * s).round(), Hsla::from(theme.text_primary));
+                let font_config = GlyphTextConfig::horizontal((10.0 * s).round(), Hsla::from(theme.text_primary));
 
                 div()
                     .flex()
@@ -128,7 +128,7 @@ impl SpinoramaApp {
                     .p(px(ds.spacing.card_padding))
                     .bg(theme.muted)
                     .rounded(px(ds.corners.md))
-                    .child(render_vector_text(
+                    .child(render_glyph_text(
                         &format!("{:.0}°", angle_min),
                         &font_config,
                     ))
@@ -143,7 +143,7 @@ impl SpinoramaApp {
                         );
                         div().flex_1().h(px(16.0)).bg(rgb((r << 16) | (g << 8) | b))
                     }))
-                    .child(render_vector_text(
+                    .child(render_glyph_text(
                         &format!("{:.0}°", angle_max),
                         &font_config,
                     ))

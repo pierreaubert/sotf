@@ -77,6 +77,20 @@ impl DenoiseState {
     pub fn process_frame(&mut self, output: &mut [f32], input: &[f32]) {
         process_frame(self, output, input);
     }
+
+    /// Resets all internal state to zero without heap allocation.
+    pub fn reset(&mut self) {
+        self.analysis_mem.fill(0.0);
+        self.cepstral_mem = [[0.0; crate::NB_BANDS]; crate::CEPS_MEM];
+        self.mem_id = 0;
+        self.synthesis_mem.fill(0.0);
+        self.pitch_buf.fill(0.0);
+        self.last_gain = 0.0;
+        self.last_period = 0;
+        self.mem_hp_x.fill(0.0);
+        self.lastg.fill(0.0);
+        self.rnn.reset();
+    }
 }
 
 fn frame_analysis(state: &mut DenoiseState, x: &mut [Complex], ex: &mut [f32], input: &[f32]) {

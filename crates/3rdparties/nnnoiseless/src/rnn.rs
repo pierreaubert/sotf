@@ -121,6 +121,12 @@ impl RnnState {
             denoise_gru_state,
         }
     }
+
+    pub fn reset(&mut self) {
+        self.vad_gru_state.fill(0.0);
+        self.noise_gru_state.fill(0.0);
+        self.denoise_gru_state.fill(0.0);
+    }
 }
 
 fn inner_p(xs: &[i8], ys: &[f32]) -> f32 {
