@@ -54,6 +54,72 @@ fn drain_capture<T>(consumer: &mut rtrb::Consumer<T>, expected_len: usize) -> Ve
     out
 }
 
+#[cfg(not(target_os = "ios"))]
+fn write_selected_channel_to_ring(
+    producer: &mut rtrb::Producer<f32>,
+    data: &[f32],
+    channels: usize,
+    channel_idx: usize,
+) -> usize {
+    if channels == 0 || channel_idx >= channels {
+        return 0;
+    }
+
+    let frames = data.len() / channels;
+    let writable = producer.slots().min(frames);
+    if writable == 0 {
+        return 0;
+    }
+
+    let Ok(mut chunk) = producer.write_chunk_uninit(writable) else {
+        return 0;
+    };
+
+    let (first, second) = chunk.as_mut_slices();
+    let mut frame_idx = 0;
+    for slot in first.iter_mut().chain(second.iter_mut()) {
+        slot.write(data[frame_idx * channels + channel_idx]);
+        frame_idx += 1;
+    }
+    unsafe { chunk.commit(writable) };
+    writable
+}
+
+#[cfg(not(target_os = "ios"))]
+fn write_capture_pairs_to_ring(
+    producer: &mut rtrb::Producer<(f32, f32)>,
+    data: &[f32],
+    channels: usize,
+    input_idx: usize,
+    loopback_idx: Option<usize>,
+) -> usize {
+    if channels == 0 || input_idx >= channels || loopback_idx.is_some_and(|idx| idx >= channels) {
+        return 0;
+    }
+
+    let frames = data.len() / channels;
+    let writable = producer.slots().min(frames);
+    if writable == 0 {
+        return 0;
+    }
+
+    let Ok(mut chunk) = producer.write_chunk_uninit(writable) else {
+        return 0;
+    };
+
+    let (first, second) = chunk.as_mut_slices();
+    let mut frame_idx = 0;
+    for slot in first.iter_mut().chain(second.iter_mut()) {
+        let base = frame_idx * channels;
+        let mic_sample = data[base + input_idx];
+        let loopback_sample = loopback_idx.map(|idx| data[base + idx]).unwrap_or(0.0);
+        slot.write((mic_sample, loopback_sample));
+        frame_idx += 1;
+    }
+    unsafe { chunk.commit(writable) };
+    writable
+}
+
 fn measurement_amplitude_from_level_db(level_db: f32) -> f32 {
     10.0_f32.powf(level_db.clamp(-40.0, 20.0) / 20.0)
 }
@@ -569,28 +635,31 @@ pub fn record_and_analyze(
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
                 // Extract only the specified input channel
                 // Data is interleaved: [ch0, ch1, ..., chN, ch0, ch1, ..., chN, ...]
-                for frame in data.chunks(hardware_input_channels) {
-                    if input_channel_idx < frame.len() {
-                        if recorded_producer.push(frame[input_channel_idx]).is_ok() {
-                            recorded_count_callback.fetch_add(1, Ordering::Relaxed);
-                        } else {
-                            recorded_overruns_callback.fetch_add(1, Ordering::Relaxed);
-                            crate::rate_limited_log!(
-                                warn,
-                                5,
-                                "[record_and_analyze] Input capture ring buffer overrun"
-                            );
-                        }
-                    } else {
-                        log::info!(
-                            "[record_and_analyze] ERROR: Tried to access channel {} but frame has {} channels",
-                            input_channel_idx,
-                            frame.len()
-                        );
-                    }
+                let frames = data.len() / hardware_input_channels;
+                let written = write_selected_channel_to_ring(
+                    &mut recorded_producer,
+                    data,
+                    hardware_input_channels,
+                    input_channel_idx,
+                );
+                recorded_count_callback.fetch_add(written, Ordering::Relaxed);
+                if written < frames {
+                    recorded_overruns_callback.fetch_add(1, Ordering::Relaxed);
+                    crate::rate_limited_log!(
+                        warn,
+                        5,
+                        "[record_and_analyze] Input capture ring buffer overrun"
+                    );
                 }
             },
-            |err| log::debug!("[record_and_analyze] Input stream error: {}", err),
+            |err| {
+                crate::rate_limited_log!(
+                    warn,
+                    5,
+                    "[record_and_analyze] Input stream error: {}",
+                    err
+                )
+            },
             None,
         )
         .map_err(|e| format!("Failed to build input stream: {}", e))?;
@@ -1019,24 +1088,33 @@ pub fn record_and_analyze_multi(
         .build_input_stream(
             &input_config,
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                for frame in data.chunks(hardware_input_channels) {
-                    for (mic_i, &ch_idx) in input_channels_vec.iter().enumerate() {
-                        if ch_idx < frame.len() {
-                            if recorded_producers[mic_i].push(frame[ch_idx]).is_ok() {
-                                counts_callback[mic_i].fetch_add(1, Ordering::Relaxed);
-                            } else {
-                                recorded_overruns_callback.fetch_add(1, Ordering::Relaxed);
-                                crate::rate_limited_log!(
-                                    warn,
-                                    5,
-                                    "[record_and_analyze_multi] Input capture ring buffer overrun"
-                                );
-                            }
-                        }
+                let frames = data.len() / hardware_input_channels;
+                for (mic_i, &ch_idx) in input_channels_vec.iter().enumerate() {
+                    let written = write_selected_channel_to_ring(
+                        &mut recorded_producers[mic_i],
+                        data,
+                        hardware_input_channels,
+                        ch_idx,
+                    );
+                    counts_callback[mic_i].fetch_add(written, Ordering::Relaxed);
+                    if ch_idx < hardware_input_channels && written < frames {
+                        recorded_overruns_callback.fetch_add(1, Ordering::Relaxed);
+                        crate::rate_limited_log!(
+                            warn,
+                            5,
+                            "[record_and_analyze_multi] Input capture ring buffer overrun"
+                        );
                     }
                 }
             },
-            |err| log::debug!("[record_and_analyze_multi] Input stream error: {}", err),
+            |err| {
+                crate::rate_limited_log!(
+                    warn,
+                    5,
+                    "[record_and_analyze_multi] Input stream error: {}",
+                    err
+                )
+            },
             None,
         )
         .map_err(|e| format!("Failed to build input stream: {}", e))?;
@@ -1654,38 +1732,32 @@ fn play_per_channel_and_record_mono(
         .build_input_stream(
             &input_config,
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                for frame in data.chunks(hw_ch) {
-                    if input_ch_idx >= frame.len() {
-                        continue;
-                    }
-                    let mic_sample = frame[input_ch_idx];
-                    let lb_sample = match loopback_ch_idx {
-                        Some(idx) if idx < frame.len() => Some(frame[idx]),
-                        Some(_) => None,
-                        None => None,
-                    };
-                    // Only push when we have BOTH samples (or no
-                    // loopback configured) so the two vectors stay
-                    // exactly in lock-step.
-                    if loopback_ch_idx.is_some() && lb_sample.is_none() {
-                        continue;
-                    }
-                    if capture_producer
-                        .push((mic_sample, lb_sample.unwrap_or(0.0)))
-                        .is_ok()
-                    {
-                        capture_count_callback.fetch_add(1, AtomicOrdering::Relaxed);
-                    } else {
-                        capture_overruns_callback.fetch_add(1, AtomicOrdering::Relaxed);
-                        crate::rate_limited_log!(
-                            warn,
-                            5,
-                            "[{log_tag_for_data}] Input capture ring buffer overrun"
-                        );
-                    }
+                let frames = data.len() / hw_ch;
+                let written = write_capture_pairs_to_ring(
+                    &mut capture_producer,
+                    data,
+                    hw_ch,
+                    input_ch_idx,
+                    loopback_ch_idx,
+                );
+                capture_count_callback.fetch_add(written, AtomicOrdering::Relaxed);
+                if written < frames {
+                    capture_overruns_callback.fetch_add(1, AtomicOrdering::Relaxed);
+                    crate::rate_limited_log!(
+                        warn,
+                        5,
+                        "[{log_tag_for_data}] Input capture ring buffer overrun"
+                    );
                 }
             },
-            move |err| log::debug!("[{log_tag_for_error}] Input stream error: {}", err),
+            move |err| {
+                crate::rate_limited_log!(
+                    warn,
+                    5,
+                    "[{log_tag_for_error}] Input stream error: {}",
+                    err
+                )
+            },
             None,
         )
         .map_err(|e| format!("[{log_tag}] Failed to build input stream: {}", e))?;
@@ -3311,6 +3383,54 @@ mod tests {
         assert!(
             !source.contains(concat!("Mut", "ex<")),
             "signal_recorder capture buffers should stay lock-free"
+        );
+    }
+
+    #[test]
+    fn cpal_input_callbacks_use_chunked_ring_buffer_writes() {
+        let source = include_str!("signal_recorder.rs");
+
+        assert!(
+            !source.contains(concat!("recorded_producer.", "push(")),
+            "single-channel input callback should commit captured samples in ring-buffer chunks"
+        );
+        assert!(
+            !source.contains(concat!("recorded_producers[mic_i].", "push(")),
+            "multi-mic input callback should commit captured samples in ring-buffer chunks"
+        );
+        assert!(
+            !source.contains(concat!(
+                "capture_producer\n                        .",
+                "push("
+            )),
+            "loopback capture callback should commit sample pairs in ring-buffer chunks"
+        );
+    }
+
+    #[test]
+    fn cpal_input_stream_errors_are_warn_rate_limited() {
+        let source = include_str!("signal_recorder.rs");
+
+        assert!(
+            !source.contains(concat!(
+                "log::debug!(\"[record_and_analyze] ",
+                "Input stream error:"
+            )),
+            "single-channel input stream errors should be visible and rate-limited"
+        );
+        assert!(
+            !source.contains(concat!(
+                "log::debug!(\"[record_and_analyze_multi] ",
+                "Input stream error:"
+            )),
+            "multi-channel input stream errors should be visible and rate-limited"
+        );
+        assert!(
+            !source.contains(concat!(
+                "log::debug!(\"[{log_tag_for_error}] ",
+                "Input stream error:"
+            )),
+            "direct capture input stream errors should be visible and rate-limited"
         );
     }
 

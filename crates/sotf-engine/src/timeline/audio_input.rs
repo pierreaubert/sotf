@@ -8,6 +8,21 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
+use rtrb::{CopyToUninit, chunks::WriteChunkUninit};
+
+fn write_chunk_bulk(mut chunk: WriteChunkUninit<'_, f32>, data: &[f32]) {
+    let (first, second) = chunk.as_mut_slices();
+    let first_len = first.len().min(data.len());
+    data[..first_len].copy_to_uninit(&mut first[..first_len]);
+    let remaining = data.len() - first_len;
+    if remaining > 0 {
+        let second_len = second.len().min(remaining);
+        data[first_len..first_len + second_len].copy_to_uninit(&mut second[..second_len]);
+    }
+    // Safety: every committed slot above was initialized by copy_to_uninit.
+    unsafe { chunk.commit(data.len()) };
+}
+
 /// Configuration for audio input.
 #[derive(Debug, Clone)]
 pub struct AudioInputConfig {
@@ -120,8 +135,20 @@ impl AudioInput {
                     let available = producer.slots();
                     let full_frames = (available / channels).min(data.len() / channels);
                     let samples_to_write = full_frames * channels;
-                    for &sample in &data[..samples_to_write] {
-                        let _ = producer.push(sample);
+                    if samples_to_write > 0 {
+                        match producer.write_chunk_uninit(samples_to_write) {
+                            Ok(chunk) => write_chunk_bulk(chunk, &data[..samples_to_write]),
+                            Err(_) => {
+                                state_clone.overruns.fetch_add(1, Ordering::Relaxed);
+                                crate::rate_limited_log!(
+                                    warn,
+                                    5,
+                                    "[AudioInput] Input ring buffer overrun while reserving {} samples",
+                                    samples_to_write
+                                );
+                                return;
+                            }
+                        }
                     }
                     if samples_to_write < data.len() {
                         state_clone.overruns.fetch_add(1, Ordering::Relaxed);

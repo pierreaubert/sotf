@@ -1869,15 +1869,12 @@ fn build_output_stream_f32(
                     .stream_error_count
                     .fetch_add(1, Ordering::Relaxed);
                 crate::rate_limited_log!(warn, 5, "[Playback Thread] Stream error: {}", err);
-                if let Err(e) = event_tx.send(ThreadEvent::ProcessingWarning(format!(
-                    "Stream error: {}",
-                    err
-                ))) {
-                    crate::rate_limited_log!(
-                        trace,
-                        5,
-                        "[Playback Thread] Dropped stream-error event: {}",
-                        e
+                static EVENT_GATE: AtomicU64 = AtomicU64::new(0);
+                if crate::rate_limit::allow(&EVENT_GATE, 5_000_000_000) {
+                    send_playback_event(
+                        &event_tx,
+                        ThreadEvent::ProcessingWarning(format!("Stream error: {}", err)),
+                        "f32 stream error",
                     );
                 }
             },
@@ -1944,15 +1941,12 @@ where
                     .stream_error_count
                     .fetch_add(1, Ordering::Relaxed);
                 crate::rate_limited_log!(warn, 5, "[Playback Thread] Stream error: {}", err);
-                if let Err(e) = event_tx.send(ThreadEvent::ProcessingWarning(format!(
-                    "Stream error: {}",
-                    err
-                ))) {
-                    crate::rate_limited_log!(
-                        trace,
-                        5,
-                        "[Playback Thread] Dropped stream-error event: {}",
-                        e
+                static EVENT_GATE: AtomicU64 = AtomicU64::new(0);
+                if crate::rate_limit::allow(&EVENT_GATE, 5_000_000_000) {
+                    send_playback_event(
+                        &event_tx,
+                        ThreadEvent::ProcessingWarning(format!("Stream error: {}", err)),
+                        "integer stream error",
                     );
                 }
             },
@@ -1972,6 +1966,26 @@ mod tests {
     use cpal::SampleFormat;
     use rtrb::RingBuffer;
     use std::sync::atomic::Ordering;
+
+    #[test]
+    fn playback_stream_error_callbacks_gate_event_formatting() {
+        let source = include_str!("playback_thread.rs");
+
+        assert!(
+            source.contains("if crate::rate_limit::allow(&EVENT_GATE, 5_000_000_000)"),
+            "playback stream-error callbacks must rate-limit event formatting/sending"
+        );
+    }
+
+    #[test]
+    fn ios_stub_writes_frame_data_to_ring_buffer_in_bulk() {
+        let source = include_str!("playback_thread_stub.rs");
+
+        assert!(
+            !source.contains(concat!("fill_from_iter(frame.data.", "iter().copied())")),
+            "iOS playback feeder should bulk-copy frame data into ring-buffer chunks"
+        );
+    }
 
     #[test]
     fn read_ring_buffer_discards_samples_while_flush_requested() {

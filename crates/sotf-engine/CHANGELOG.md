@@ -1,3 +1,28 @@
+# 1.0.28
+
+## Engine review regression hardening
+
+- Added regression coverage for the P0-P2 engine review findings, including
+  decoder backpressure interruption, decoder frame-buffer recycle misses,
+  render-path allocation guards, MIDI event iteration, callback error event
+  throttling, signal-recorder ring-buffer usage, manager mutex poisoning, and
+  iOS playback feeder bulk writes.
+- Made silent-source decoder frame sends interruptible under downstream
+  backpressure so `Stop`/`Shutdown` commands cannot wedge behind a full queue.
+- Prepared audio-track decoders during `build()` and reused them across seeks so
+  `render_block` no longer opens decoders or allocates active-index vectors.
+- Added non-allocating MIDI event visitor APIs and switched MIDI track rendering
+  to use them instead of allocating per-block event vectors.
+- Replaced signal-recorder CPAL callback per-sample ring pushes with chunked
+  ring-buffer commits, and promoted input stream errors to rate-limited warnings.
+- Rate-limited CPAL/playback stream-error event formatting and sending from
+  callback paths.
+- Recovered engine-manager mutex poisoning instead of panicking public state
+  accessors and serialized command paths.
+- Added decoder-local spare frame buffers and processing scratch-buffer helpers
+  to remove reviewed hot-path allocation fallbacks.
+- Updated the iOS playback feeder to bulk-copy frame data into `rtrb` chunks.
+
 # 1.0.27
 
 ## Engine review P0-P2 hardening
@@ -27,9 +52,16 @@
   `sotf-midi`.
 - Added a local timeline instrument interface for MIDI tracks so timeline
   tests compile cleanly against the current plugin host API.
+- Exported project persistence from `sotf-engine`, rebuilt MIDI tracks from
+  saved `test_synth` configs, preserved timeline plugin-chain provenance for
+  audio, MIDI, and master tracks, and added project bridge roundtrip coverage.
 - Cached per-clip dB-to-linear gain conversion while still tracking direct
   public `gain_db` edits, fixed punch-out state after partial recording
   blocks, and pinned same-sample MIDI event ordering with regression coverage.
+- Replaced the audio-input callback's per-sample ring-buffer pushes with the
+  same `rtrb` bulk-copy chunk path used by playback output.
+- Promoted decoder-thread and decoder-stream failure diagnostics from debug-only
+  logging to rate-limited warnings.
 
 ## Engine playback transparency and gapless fixes
 

@@ -93,7 +93,28 @@ impl Track {
 
     /// Build the track's plugin chain. Must be called after adding plugins.
     pub fn build(&mut self) -> Result<(), String> {
+        self.prepare_decoders()?;
         self.chain.build()
+    }
+
+    fn prepare_decoders(&mut self) -> Result<(), String> {
+        for (region_idx, region) in self.regions.iter().enumerate() {
+            if self.decoders.contains_key(&region_idx) {
+                continue;
+            }
+
+            let decoder = crate::decoder::core::create_decoder_from_source(&region.clip.source)
+                .map_err(|e| format!("Failed to open source: {e}"))?;
+            self.decoders.insert(
+                region_idx,
+                ActiveDecoder {
+                    decoder,
+                    source_position: 0,
+                },
+            );
+        }
+
+        Ok(())
     }
 
     /// Render one block of audio at the given timeline position.
@@ -157,35 +178,16 @@ impl Track {
             });
         }
 
-        // Remove decoders for regions no longer overlapping
-        let active_indices: Vec<usize> = self.overlap_work.iter().map(|w| w.region_idx).collect();
-        self.decoders.retain(|k, _| active_indices.contains(k));
-
         // Phase 2: Decode and mix (mutable access to decoders and buffers)
         // Use take() to move the Vec without allocating (put back after loop)
         let work_items = std::mem::take(&mut self.overlap_work);
         for work in &work_items {
             // Ensure decoder exists and is seeked
             if !self.decoders.contains_key(&work.region_idx) {
-                let region = &self.regions[work.region_idx];
-                let mut decoder =
-                    crate::decoder::core::create_decoder_from_source(&region.clip.source)
-                        .map_err(|e| format!("Failed to open source: {e}"))?;
-                if work.source_position > 0 {
-                    if let Err(e) = decoder.seek(work.source_position) {
-                        return Err(format!(
-                            "Seek failed for region {} on track '{}': {e}",
-                            work.region_idx, self.name
-                        ));
-                    }
-                }
-                self.decoders.insert(
-                    work.region_idx,
-                    ActiveDecoder {
-                        decoder,
-                        source_position: work.source_position,
-                    },
-                );
+                return Err(format!(
+                    "Decoder for region {} on track '{}' is not prepared; call build() before rendering",
+                    work.region_idx, self.name
+                ));
             } else {
                 let dec = self.decoders.get_mut(&work.region_idx).ok_or_else(|| {
                     format!(
@@ -287,7 +289,10 @@ impl Track {
 
     /// Reset all decoders (e.g., after a seek).
     pub fn reset_decoders(&mut self) {
-        self.decoders.clear();
+        for active in self.decoders.values_mut() {
+            active.decoder.seek(0).ok();
+            active.source_position = 0;
+        }
     }
 
     /// Apply volume and pan to interleaved audio in-place.
@@ -379,5 +384,30 @@ mod tests {
 
         assert!(err.contains("Seek failed for region 0"));
         assert_eq!(track.decoders.get(&0).unwrap().source_position, 0);
+    }
+
+    #[test]
+    fn render_block_does_not_allocate_active_region_index_vec() {
+        let source = include_str!("track.rs");
+
+        assert!(
+            !source.contains(concat!("let active_indices: Vec", "<usize>")),
+            "audio track render must retain active decoders without allocating an index Vec per block"
+        );
+    }
+
+    #[test]
+    fn render_block_does_not_open_decoders_in_render_path() {
+        let source = include_str!("track.rs");
+        let render_start = source
+            .find("pub fn render_block")
+            .expect("render_block should exist");
+        let render_body = &source[render_start..];
+        let decode_factory = concat!("create_decoder", "_from_source");
+
+        assert!(
+            !render_body.contains(decode_factory),
+            "audio track render must not open/create decoders from the render path"
+        );
     }
 }

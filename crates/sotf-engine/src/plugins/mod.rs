@@ -4017,7 +4017,10 @@ mod tests {
             .and_then(|v| v.as_array())
             .expect("kautz_sections is an array");
         assert_eq!(emitted.len(), 2);
-        assert_eq!(emitted[0].get("pole_freq").and_then(|v| v.as_f64()), Some(45.0));
+        assert_eq!(
+            emitted[0].get("pole_freq").and_then(|v| v.as_f64()),
+            Some(45.0)
+        );
         assert_eq!(emitted[1].get("q").and_then(|v| v.as_f64()), Some(8.0));
     }
 }

@@ -30,6 +30,8 @@ pub use manager::{
 pub mod preflight;
 pub use preflight::{PreflightError, run_preflight_checks};
 
+pub mod project;
+
 pub mod rate_limit;
 
 pub mod replaygain;

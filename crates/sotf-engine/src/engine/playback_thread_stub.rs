@@ -10,12 +10,24 @@
 //   ProcessingThread → mpsc → FeederThread → rtrb → CoreAudio callback → hardware
 
 use super::{PlaybackCommand, ProcessingMessage, ThreadEvent};
-use rtrb::{Consumer, Producer, RingBuffer};
+use rtrb::{Consumer, CopyToUninit, Producer, RingBuffer, chunks::WriteChunkUninit};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
 
 const SPIN_MS_RINGBUFFER: u64 = 5;
+
+fn write_chunk_bulk(mut chunk: WriteChunkUninit<'_, f32>, data: &[f32]) {
+    let (first, second) = chunk.as_mut_slices();
+    let first_len = first.len().min(data.len());
+    data[..first_len].copy_to_uninit(&mut first[..first_len]);
+    let remaining = data.len() - first_len;
+    if remaining > 0 {
+        let second_len = second.len().min(remaining);
+        data[first_len..first_len + second_len].copy_to_uninit(&mut second[..second_len]);
+    }
+    unsafe { chunk.commit(data.len()) };
+}
 
 // ============================================================================
 // CoreAudio FFI bindings (minimal subset for RemoteIO output)
@@ -634,7 +646,7 @@ fn run_playback_ios(
                 let frame_samples = frame.data.len();
                 match producer.write_chunk_uninit(frame_samples) {
                     Ok(chunk) => {
-                        chunk.fill_from_iter(frame.data.iter().copied());
+                        write_chunk_bulk(chunk, &frame.data);
                     }
                     Err(_) => {
                         // Ring buffer full — drop frame

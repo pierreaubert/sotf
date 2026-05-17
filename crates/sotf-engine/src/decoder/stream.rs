@@ -208,7 +208,7 @@ impl AudioStream {
             if let Err(e) =
                 Self::decoder_thread_main(path, config, state, cmd_rx, event_tx, recycle_rx)
             {
-                log::debug!("[AudioStream] Decoder thread error: {:?}", e);
+                crate::rate_limited_log!(warn, 5, "[AudioStream] Decoder thread error: {:?}", e);
             }
             if let Err(e) = decoder_done_tx.send(()) {
                 crate::rate_limited_log!(

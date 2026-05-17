@@ -137,31 +137,34 @@ impl MidiTrack {
             if !region.overlaps(position_samples, num_frames as u64) {
                 continue;
             }
-            let events = region.events_in_timeline_range(position_samples, num_frames as u64);
-            for (relative_time, msg) in events {
-                let kind = match msg {
-                    MidiMessage::NoteOn { note, velocity, .. } => NoteEventKind::NoteOn {
-                        note: *note,
-                        velocity: *velocity,
-                    },
-                    MidiMessage::NoteOff { note, .. } => NoteEventKind::NoteOff { note: *note },
-                    MidiMessage::ControlChange {
-                        controller, value, ..
-                    } => NoteEventKind::ControlChange {
-                        controller: *controller,
-                        value: *value,
-                    },
-                    MidiMessage::PitchBend { value, .. } => NoteEventKind::PitchBend {
-                        value: *value as i16 - 8192,
-                    },
-                    _ => continue,
-                };
-                self.event_buf.push(NoteEvent {
-                    sample_offset: relative_time as u32,
-                    channel: 0,
-                    kind,
-                });
-            }
+            region.for_each_event_in_timeline_range(
+                position_samples,
+                num_frames as u64,
+                |relative_time, msg| {
+                    let kind = match msg {
+                        MidiMessage::NoteOn { note, velocity, .. } => NoteEventKind::NoteOn {
+                            note: *note,
+                            velocity: *velocity,
+                        },
+                        MidiMessage::NoteOff { note, .. } => NoteEventKind::NoteOff { note: *note },
+                        MidiMessage::ControlChange {
+                            controller, value, ..
+                        } => NoteEventKind::ControlChange {
+                            controller: *controller,
+                            value: *value,
+                        },
+                        MidiMessage::PitchBend { value, .. } => NoteEventKind::PitchBend {
+                            value: *value as i16 - 8192,
+                        },
+                        _ => return,
+                    };
+                    self.event_buf.push(NoteEvent {
+                        sample_offset: relative_time as u32,
+                        channel: 0,
+                        kind,
+                    });
+                },
+            );
         }
 
         // Stable ordering at the same sample offset preserves MIDI clip/region order.
@@ -455,6 +458,20 @@ mod tests {
         assert!(
             rms > 0.01,
             "same-sample note-off then note-on order should leave the note active, RMS={rms}"
+        );
+    }
+
+    #[test]
+    fn render_block_uses_non_allocating_midi_event_iteration() {
+        let source = include_str!("midi_track.rs");
+        let render_start = source
+            .find("pub fn render_block")
+            .expect("render_block should exist");
+        let render_body = &source[render_start..];
+
+        assert!(
+            !render_body.contains(concat!("events_in", "_timeline_range(")),
+            "MIDI render must iterate region events without allocating a Vec per block"
         );
     }
 }

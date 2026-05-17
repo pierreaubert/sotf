@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
 
 use crate::decoder::AudioSource;
 use crate::devices::verify_working_sample_rate;
@@ -19,6 +19,18 @@ use crate::{AudioDecoderError, AudioDecoderResult, AudioFormat, AudioSpec, probe
 type VerifiedRateCacheKey = (Option<String>, usize);
 static VERIFIED_RATE_CACHE: LazyLock<Mutex<HashMap<VerifiedRateCacheKey, u32>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn lock_recover<'a, T>(mutex: &'a Mutex<T>, context: &str) -> MutexGuard<'a, T> {
+    mutex.lock().unwrap_or_else(|poisoned| {
+        crate::rate_limited_log!(
+            warn,
+            5,
+            "[AudioEngineManager] Recovering poisoned mutex: {}",
+            context
+        );
+        poisoned.into_inner()
+    })
+}
 
 /// Clear the verified rate cache (e.g., when the output device changes)
 pub fn clear_verified_rate_cache() {
@@ -285,7 +297,7 @@ impl AudioEngineManager {
             audio_info.duration_seconds
         );
 
-        *self.current_audio_info.lock().unwrap() = Some(audio_info.clone());
+        *lock_recover(&self.current_audio_info, "current_audio_info") = Some(audio_info.clone());
         self.set_state(StreamingState::Ready);
 
         Ok(audio_info)
@@ -338,7 +350,8 @@ impl AudioEngineManager {
                     audio_info.duration_seconds,
                 );
 
-                *self.current_audio_info.lock().unwrap() = Some(audio_info.clone());
+                *lock_recover(&self.current_audio_info, "current_audio_info") =
+                    Some(audio_info.clone());
                 self.set_state(StreamingState::Ready);
                 Ok(audio_info)
             }
@@ -372,7 +385,8 @@ impl AudioEngineManager {
                     duration_seconds: None,
                 };
 
-                *self.current_audio_info.lock().unwrap() = Some(audio_info.clone());
+                *lock_recover(&self.current_audio_info, "current_audio_info") =
+                    Some(audio_info.clone());
                 self.set_state(StreamingState::Ready);
                 Ok(audio_info)
             }
@@ -400,12 +414,9 @@ impl AudioEngineManager {
         output_channels: usize,
         position: Option<f64>,
     ) -> AudioDecoderResult<()> {
-        let _guard = self.cmd_mutex.lock().unwrap();
+        let _guard = lock_recover(&self.cmd_mutex, "cmd_mutex");
 
-        let audio_info = self
-            .current_audio_info
-            .lock()
-            .unwrap()
+        let audio_info = lock_recover(&self.current_audio_info, "current_audio_info")
             .clone()
             .ok_or_else(|| AudioDecoderError::ConfigError("No file loaded".to_string()))?;
 
@@ -482,7 +493,7 @@ impl AudioEngineManager {
         self.set_state(StreamingState::Playing);
 
         // Track current source for gapless transition detection
-        *self.last_seen_source.lock().unwrap() =
+        *lock_recover(&self.last_seen_source, "last_seen_source") =
             Some(crate::decoder::AudioSource::File(audio_info.path.clone()));
 
         log::debug!("[AudioEngineManager] Playback started");
@@ -500,7 +511,7 @@ impl AudioEngineManager {
         source: AudioSource,
         position: Option<f64>,
     ) -> AudioDecoderResult<()> {
-        let _guard = self.cmd_mutex.lock().unwrap();
+        let _guard = lock_recover(&self.cmd_mutex, "cmd_mutex");
 
         let Some(engine) = &*self.engine.load() else {
             return Err(AudioDecoderError::ConfigError(
@@ -561,8 +572,8 @@ impl AudioEngineManager {
 
         // Keep gapless-transition polling from treating this explicit manual
         // source change as an automatic queue advance.
-        *self.last_seen_source.lock().unwrap() = Some(source.clone());
-        *self.current_audio_info.lock().unwrap() = Some(audio_info);
+        *lock_recover(&self.last_seen_source, "last_seen_source") = Some(source.clone());
+        *lock_recover(&self.current_audio_info, "current_audio_info") = Some(audio_info);
         self.set_state(StreamingState::Playing);
 
         Ok(())
@@ -608,7 +619,7 @@ impl AudioEngineManager {
         sample_rate: u32,
         input_channels: usize,
     ) -> AudioDecoderResult<()> {
-        let _guard = self.cmd_mutex.lock().unwrap();
+        let _guard = lock_recover(&self.cmd_mutex, "cmd_mutex");
         let input_channels = input_channels.max(1);
 
         log::debug!(
@@ -701,7 +712,7 @@ impl AudioEngineManager {
 
     /// Pause streaming
     pub fn pause(&self) -> AudioDecoderResult<()> {
-        let _guard = self.cmd_mutex.lock().unwrap();
+        let _guard = lock_recover(&self.cmd_mutex, "cmd_mutex");
         log::debug!("[AudioEngineManager] Pausing");
 
         if let Some(engine) = &*self.engine.load() {
@@ -714,7 +725,7 @@ impl AudioEngineManager {
 
     /// Resume streaming
     pub fn resume(&self) -> AudioDecoderResult<()> {
-        let _guard = self.cmd_mutex.lock().unwrap();
+        let _guard = lock_recover(&self.cmd_mutex, "cmd_mutex");
         log::debug!("[AudioEngineManager] Resuming");
 
         if let Some(engine) = &*self.engine.load() {
@@ -727,7 +738,7 @@ impl AudioEngineManager {
 
     /// Stop streaming and cleanup
     pub fn stop(&mut self) -> AudioDecoderResult<()> {
-        let _guard = self.cmd_mutex.lock().unwrap();
+        let _guard = lock_recover(&self.cmd_mutex, "cmd_mutex");
         log::debug!("[AudioEngineManager] Stopping");
 
         let mut shutdown_error = None;
@@ -761,7 +772,7 @@ impl AudioEngineManager {
         }
 
         self.set_state(StreamingState::Idle);
-        *self.last_seen_source.lock().unwrap() = None;
+        *lock_recover(&self.last_seen_source, "last_seen_source") = None;
 
         if let Some(e) = shutdown_error {
             Err(e)
@@ -772,7 +783,7 @@ impl AudioEngineManager {
 
     /// Seek to position in seconds
     pub fn seek(&self, seconds: f64) -> AudioDecoderResult<()> {
-        let _guard = self.cmd_mutex.lock().unwrap();
+        let _guard = lock_recover(&self.cmd_mutex, "cmd_mutex");
         log::debug!("[AudioEngineManager] Seeking to {:.2}s", seconds);
 
         self.set_state(StreamingState::Seeking);
@@ -838,7 +849,7 @@ impl AudioEngineManager {
 
     /// Get current audio file info
     pub fn get_audio_info(&self) -> Option<AudioFileInfo> {
-        self.current_audio_info.lock().unwrap().clone()
+        lock_recover(&self.current_audio_info, "current_audio_info").clone()
     }
 
     /// Get current position in seconds (lock-free)
@@ -896,7 +907,7 @@ impl AudioEngineManager {
 
     /// Update plugin chain
     pub fn update_plugin_chain(&self, plugins: Vec<PluginConfig>) -> Result<(), String> {
-        let _guard = self.cmd_mutex.lock().unwrap();
+        let _guard = lock_recover(&self.cmd_mutex, "cmd_mutex");
         log::info!(
             "[AudioEngineManager] Updating plugin chain with {} plugins",
             plugins.len()
@@ -916,7 +927,7 @@ impl AudioEngineManager {
         &self,
         config: crate::engine::PluginGraphConfig,
     ) -> Result<(), String> {
-        let _guard = self.cmd_mutex.lock().unwrap();
+        let _guard = lock_recover(&self.cmd_mutex, "cmd_mutex");
         log::info!(
             "[AudioEngineManager] Updating plugin graph with {} nodes",
             config.nodes.len()
@@ -937,7 +948,7 @@ impl AudioEngineManager {
         param_id: String,
         value: String,
     ) -> Result<(), String> {
-        let _guard = self.cmd_mutex.lock().unwrap();
+        let _guard = lock_recover(&self.cmd_mutex, "cmd_mutex");
         log::debug!(
             "[AudioEngineManager] Setting plugin {} parameter {} = {}",
             plugin_index,
@@ -959,7 +970,7 @@ impl AudioEngineManager {
         &self,
         index: usize,
     ) -> AudioDecoderResult<std::sync::Arc<dyn std::any::Any + Send + Sync>> {
-        let _guard = self.cmd_mutex.lock().unwrap();
+        let _guard = lock_recover(&self.cmd_mutex, "cmd_mutex");
         if let Some(engine) = &*self.engine.load() {
             engine
                 .get_plugin_data(index)
@@ -1027,7 +1038,7 @@ impl AudioEngineManager {
         if engine_state.playback_state == PlaybackState::Playing
             && current_state == StreamingState::Playing
         {
-            let mut last_source = self.last_seen_source.lock().unwrap();
+            let mut last_source = lock_recover(&self.last_seen_source, "last_seen_source");
             if let Some(ref current) = engine_state.current_source
                 && last_source.as_ref() != Some(current)
             {
@@ -1175,5 +1186,18 @@ mod tests {
 
         clear_verified_rate_cache();
         assert_eq!(get_cached_verified_rate(&built_in), None);
+    }
+
+    #[test]
+    fn public_state_accessors_recover_after_mutex_poisoning() {
+        let manager = AudioEngineManager::new();
+        let poisoned_audio_info = Arc::clone(&manager.current_audio_info);
+
+        let _ = std::panic::catch_unwind(move || {
+            let _guard = poisoned_audio_info.lock().unwrap();
+            panic!("poison current_audio_info");
+        });
+
+        assert!(manager.get_audio_info().is_none());
     }
 }

@@ -804,11 +804,14 @@ fn build_output_stream_f32(
             },
             move |err| {
                 crate::rate_limited_log!(warn, 5, "[CpalSink] Stream error: {}", err);
-                send_thread_event(
-                    &event_tx,
-                    ThreadEvent::ProcessingError(format!("Stream error: {}", err)),
-                    "f32 stream error",
-                );
+                static EVENT_GATE: AtomicU64 = AtomicU64::new(0);
+                if crate::rate_limit::allow(&EVENT_GATE, 5_000_000_000) {
+                    send_thread_event(
+                        &event_tx,
+                        ThreadEvent::ProcessingError(format!("Stream error: {}", err)),
+                        "f32 stream error",
+                    );
+                }
             },
             None,
         )
@@ -859,11 +862,14 @@ where
             },
             move |err| {
                 crate::rate_limited_log!(warn, 5, "[CpalSink] Stream error: {}", err);
-                send_thread_event(
-                    &event_tx,
-                    ThreadEvent::ProcessingError(format!("Stream error: {}", err)),
-                    "integer stream error",
-                );
+                static EVENT_GATE: AtomicU64 = AtomicU64::new(0);
+                if crate::rate_limit::allow(&EVENT_GATE, 5_000_000_000) {
+                    send_thread_event(
+                        &event_tx,
+                        ThreadEvent::ProcessingError(format!("Stream error: {}", err)),
+                        "integer stream error",
+                    );
+                }
             },
             None,
         )
@@ -875,6 +881,16 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stream_error_callbacks_gate_event_formatting() {
+        let source = include_str!("cpal_sink.rs");
+
+        assert!(
+            source.contains("if crate::rate_limit::allow(&EVENT_GATE, 5_000_000_000)"),
+            "CPAL sink stream-error callbacks must rate-limit event formatting/sending"
+        );
+    }
 
     #[test]
     fn playback_buffer_capacity_uses_configured_buffer_ms() {
