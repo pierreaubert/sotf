@@ -16,8 +16,8 @@ fn load_gen514_fixture() -> DspChainOutput {
         .join("tests")
         .join("fixtures")
         .join("roomeq_gen514_dsp.json");
-    let bytes = std::fs::read(&path)
-        .unwrap_or_else(|e| panic!("read fixture {}: {e}", path.display()));
+    let bytes =
+        std::fs::read(&path).unwrap_or_else(|e| panic!("read fixture {}: {e}", path.display()));
     serde_json::from_slice(&bytes)
         .unwrap_or_else(|e| panic!("parse fixture {}: {e}", path.display()))
 }
@@ -56,7 +56,8 @@ fn gen514_factored_graph_has_one_node_per_role_for_10_channels() {
     // sub-graphs at narrower widths.
     for node in &config.nodes {
         assert_eq!(
-            node.input_channels, 10,
+            node.input_channels,
+            10,
             "node '{}' should be at 10-channel width, got {}",
             node.parameters
                 .get("label")
@@ -75,7 +76,9 @@ fn gen514_factored_graph_matrix_sums_redirected_bass_onto_lfe_row() {
     let matrix_node = config
         .nodes
         .iter()
-        .find(|n| n.parameters.get("label").and_then(|l| l.as_str()) == Some("room_eq_matrix_to_sub_bus"))
+        .find(|n| {
+            n.parameters.get("label").and_then(|l| l.as_str()) == Some("room_eq_matrix_to_sub_bus")
+        })
         .expect("factored sub-bus matrix node");
     let matrix: Vec<f32> = matrix_node.parameters["matrix"]
         .as_array()
@@ -92,13 +95,17 @@ fn gen514_factored_graph_matrix_sums_redirected_bass_onto_lfe_row() {
     // 10 non-zero entries.
     let lfe_row: Vec<f32> = (0..n).map(|src| matrix[3 * n + src]).collect();
     let nonzero = lfe_row.iter().filter(|c| **c > 0.0).count();
-    assert_eq!(nonzero, 10, "LFE row should sum from every source: {lfe_row:?}");
+    assert_eq!(
+        nonzero, 10,
+        "LFE row should sum from every source: {lfe_row:?}"
+    );
 
     // Other rows should be all zero (no other sub destinations in gen514).
     for dst in (0..n).filter(|&d| d != 3) {
         for src in 0..n {
             assert_eq!(
-                matrix[dst * n + src], 0.0,
+                matrix[dst * n + src],
+                0.0,
                 "matrix[{dst}][{src}] must be 0 for non-LFE destination row"
             );
         }

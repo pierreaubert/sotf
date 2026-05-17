@@ -331,9 +331,7 @@ fn apply_dsp_params_to_settings(
             } = settings
             {
                 // Prefer per-channel filter list when present (factored builder).
-                if let Some(per_ch) =
-                    parameters.get("channel_filters").and_then(|v| v.as_array())
-                {
+                if let Some(per_ch) = parameters.get("channel_filters").and_then(|v| v.as_array()) {
                     let per_channel: Vec<Vec<EQFilter>> = per_ch
                         .iter()
                         .map(|ch| {
@@ -783,11 +781,7 @@ mod tests {
             gain_db: 0.0,
             smoothing_ms: 20.0,
         };
-        apply_dsp_params_to_settings(
-            &mut settings,
-            "gain",
-            &serde_json::json!({"gain_db": -7.5}),
-        );
+        apply_dsp_params_to_settings(&mut settings, "gain", &serde_json::json!({"gain_db": -7.5}));
         match settings {
             PluginSettings::Gain { gain_db, .. } => assert_eq!(gain_db, -7.5),
             _ => panic!("expected Gain"),

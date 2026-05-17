@@ -11,11 +11,11 @@
 //!   sotf-bliss-scan \<file\>       # Analyze a single file
 
 use clap::Parser;
+use crossbeam::channel::TryRecvError;
 use sotf_audio_player::bliss::{BlissScanManager, BlissScanMessage, analyze_file};
 use sotf_audio_player::config;
 use sotf_audio_player::database::MusicDatabase;
 use std::path::{Path, PathBuf};
-use crossbeam::channel::TryRecvError;
 use std::time::Instant;
 
 #[derive(Parser, Debug)]

@@ -2,10 +2,10 @@
 // Audio Streaming Manager
 // ============================================================================
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, LazyLock, Mutex};
 
 use crate::decoder::AudioSource;
 use crate::devices::verify_working_sample_rate;
@@ -16,13 +16,14 @@ use crate::{AudioDecoderError, AudioDecoderResult, AudioFormat, AudioSpec, probe
 /// The verification probe (creating test streams) is expensive (~300ms per rate)
 /// and can cause ALSA device locking issues if called repeatedly. Cache the result
 /// so subsequent calls for the same device return immediately.
-type VerifiedRateCacheEntry = ((Option<String>, usize), u32);
-static VERIFIED_RATE_CACHE: Mutex<Option<VerifiedRateCacheEntry>> = Mutex::new(None);
+type VerifiedRateCacheKey = (Option<String>, usize);
+static VERIFIED_RATE_CACHE: LazyLock<Mutex<HashMap<VerifiedRateCacheKey, u32>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Clear the verified rate cache (e.g., when the output device changes)
 pub fn clear_verified_rate_cache() {
     if let Ok(mut cache) = VERIFIED_RATE_CACHE.lock() {
-        *cache = None;
+        cache.clear();
     }
 }
 
@@ -41,8 +42,21 @@ pub fn select_output_sample_rate(file_sample_rate: u32, output_device: Option<&s
 fn verified_rate_cache_key(
     output_device: Option<&str>,
     output_channels: usize,
-) -> (Option<String>, usize) {
+) -> VerifiedRateCacheKey {
     (output_device.map(|s| s.to_string()), output_channels)
+}
+
+fn get_cached_verified_rate(cache_key: &VerifiedRateCacheKey) -> Option<u32> {
+    VERIFIED_RATE_CACHE
+        .lock()
+        .ok()
+        .and_then(|cache| cache.get(cache_key).copied())
+}
+
+fn cache_verified_rate(cache_key: VerifiedRateCacheKey, verified_rate: u32) {
+    if let Ok(mut cache) = VERIFIED_RATE_CACHE.lock() {
+        cache.insert(cache_key, verified_rate);
+    }
 }
 
 pub fn select_output_sample_rate_for_channels(
@@ -53,10 +67,7 @@ pub fn select_output_sample_rate_for_channels(
     // Check cache first — avoids repeated 300ms+ probes that can block the UI
     // and cause ALSA device locking issues
     let cache_key = verified_rate_cache_key(output_device, output_channels);
-    if let Ok(cache) = VERIFIED_RATE_CACHE.lock()
-        && let Some((ref cached_key, cached_rate)) = *cache
-        && cached_key == &cache_key
-    {
+    if let Some(cached_rate) = get_cached_verified_rate(&cache_key) {
         if cached_rate == file_sample_rate {
             log::debug!(
                 "[AudioEngineManager] Using cached device rate: {}Hz (matches file, no resampling)",
@@ -95,10 +106,7 @@ pub fn select_output_sample_rate_for_channels(
             );
         }
 
-        // Cache the verified rate
-        if let Ok(mut cache) = VERIFIED_RATE_CACHE.lock() {
-            *cache = Some((cache_key, verified_rate));
-        }
+        cache_verified_rate(cache_key, verified_rate);
 
         return verified_rate;
     }
@@ -437,7 +445,7 @@ impl AudioEngineManager {
             sink_type: Default::default(),
         };
 
-        log::warn!(
+        log::info!(
             "[AudioEngineManager] Creating engine: file_sr={}Hz, device_sr={}Hz, output_sr={}Hz, input_ch={}, output_ch={}, plugins={}{}",
             file_sample_rate,
             output_sample_rate,
@@ -1147,5 +1155,25 @@ mod tests {
             verified_rate_cache_key(Some("Built-in Output"), 2),
             verified_rate_cache_key(Some("Built-in Output"), 6)
         );
+    }
+
+    #[test]
+    fn verified_rate_cache_stores_multiple_device_channel_entries() {
+        clear_verified_rate_cache();
+
+        let built_in = verified_rate_cache_key(Some("Built-in Output"), 2);
+        let surround = verified_rate_cache_key(Some("Built-in Output"), 6);
+        let default = verified_rate_cache_key(None, 2);
+
+        cache_verified_rate(built_in.clone(), 48_000);
+        cache_verified_rate(surround.clone(), 96_000);
+        cache_verified_rate(default.clone(), 44_100);
+
+        assert_eq!(get_cached_verified_rate(&built_in), Some(48_000));
+        assert_eq!(get_cached_verified_rate(&surround), Some(96_000));
+        assert_eq!(get_cached_verified_rate(&default), Some(44_100));
+
+        clear_verified_rate_cache();
+        assert_eq!(get_cached_verified_rate(&built_in), None);
     }
 }

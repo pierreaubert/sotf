@@ -536,7 +536,7 @@ impl DecoderState {
             let decode_buffer = self
                 .decode_buffer
                 .as_mut()
-                .expect("decode buffer must be initialized before decoding");
+                .ok_or("Decoder invariant violated: decode buffer missing before decoding")?;
             decoder.decode_into(decode_buffer)
         };
 
@@ -549,13 +549,12 @@ impl DecoderState {
                 let mut total_send_time = Duration::ZERO;
 
                 // Add to buffer (reusing resampler_buffer as general sample buffer)
-                self.resampler_buffer.extend_from_slice(
-                    &self
-                        .decode_buffer
-                        .as_ref()
-                        .expect("decode buffer must exist after successful decode")
-                        .samples,
-                );
+                let decoded_samples = &self
+                    .decode_buffer
+                    .as_ref()
+                    .ok_or("Decoder invariant violated: decode buffer missing after decode")?
+                    .samples;
+                self.resampler_buffer.extend_from_slice(decoded_samples);
 
                 // Process buffer in frame_size chunks
                 while self.resampler_buffer.len() >= frame_size * channels {
@@ -732,10 +731,9 @@ impl DecoderState {
                         self.chunk_buffer[copy_len..padded_len].fill(0.0);
                         self.resampler_buffer.clear();
 
-                        let resampler = self
-                            .resampler
-                            .as_mut()
-                            .expect("resampler must exist in resampled EOS flush path");
+                        let resampler = self.resampler.as_mut().ok_or(
+                            "Decoder invariant violated: resampler missing in EOS flush path",
+                        )?;
                         let max_output_frames = resampler.output_frames_for_input(frame_size);
                         let output_len = max_output_frames * channels;
 
@@ -1037,10 +1035,9 @@ impl DecoderState {
                     self.resample_output_buffer.clear();
                 }
 
-                let resampler = self
-                    .resampler
-                    .as_mut()
-                    .expect("HAL resampler must exist after creation/config validation");
+                let resampler = self.resampler.as_mut().ok_or(
+                    "Decoder invariant violated: HAL resampler missing after configuration",
+                )?;
                 let max_output_frames = resampler.output_frames_for_input(frame_size);
                 let output_len = max_output_frames * hal_channels;
 

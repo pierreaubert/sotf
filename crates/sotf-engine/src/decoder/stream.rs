@@ -121,6 +121,21 @@ fn lock_stream_state(state: &Mutex<StreamState>) -> MutexGuard<'_, StreamState> 
     })
 }
 
+fn send_stream_event(event_tx: &Sender<StreamEvent>, event: StreamEvent, context: &str) -> bool {
+    if let Err(e) = event_tx.send(event) {
+        crate::rate_limited_log!(
+            trace,
+            5,
+            "[AudioStream] Dropped stream event in {}: {}",
+            context,
+            e
+        );
+        false
+    } else {
+        true
+    }
+}
+
 /// High-level audio streaming manager
 pub struct AudioStream {
     /// Audio specification
@@ -195,7 +210,14 @@ impl AudioStream {
             {
                 log::debug!("[AudioStream] Decoder thread error: {:?}", e);
             }
-            let _ = decoder_done_tx.send(());
+            if let Err(e) = decoder_done_tx.send(()) {
+                crate::rate_limited_log!(
+                    trace,
+                    5,
+                    "[AudioStream] Decoder completion receiver dropped: {}",
+                    e
+                );
+            }
         });
 
         self.command_tx = Some(cmd_tx);
@@ -213,7 +235,12 @@ impl AudioStream {
     /// Stop the audio stream
     pub fn stop(&mut self) -> AudioDecoderResult<()> {
         if let Some(ref cmd_tx) = self.command_tx {
-            let _ = cmd_tx.send(StreamCommand::Stop);
+            if let Err(e) = cmd_tx.send(StreamCommand::Stop) {
+                log::trace!(
+                    "[AudioStream] Decoder command receiver dropped during stop: {}",
+                    e
+                );
+            }
         }
 
         if let Some(handle) = self.decoder_thread.take() {
@@ -223,7 +250,9 @@ impl AudioStream {
                 .and_then(|rx| rx.recv_timeout(STREAM_STOP_JOIN_TIMEOUT).ok())
                 .is_some();
             if completed {
-                let _ = handle.join();
+                if let Err(e) = handle.join() {
+                    log::warn!("[AudioStream] Decoder thread panicked during stop: {:?}", e);
+                }
             } else {
                 log::warn!(
                     "[AudioStream] Decoder thread did not stop within {:?}; detaching",
@@ -336,7 +365,7 @@ impl AudioStream {
             let mut state_lock = lock_stream_state(&state);
             *state_lock = StreamState::Buffering;
         }
-        let _ = event_tx.send(StreamEvent::Started);
+        send_stream_event(&event_tx, StreamEvent::Started, "started");
 
         loop {
             Self::drain_recycled_audio_buffers(
@@ -354,7 +383,7 @@ impl AudioStream {
                             let mut state_lock = lock_stream_state(&state);
                             *state_lock = StreamState::Playing;
                         }
-                        let _ = event_tx.send(StreamEvent::Playing);
+                        send_stream_event(&event_tx, StreamEvent::Playing, "play command");
                     }
                     StreamCommand::Pause => {
                         playing = false;
@@ -362,24 +391,27 @@ impl AudioStream {
                             let mut state_lock = lock_stream_state(&state);
                             *state_lock = StreamState::Paused;
                         }
-                        let _ = event_tx.send(StreamEvent::Paused);
+                        send_stream_event(&event_tx, StreamEvent::Paused, "pause command");
                     }
                     StreamCommand::Stop => {
                         {
                             let mut state_lock = lock_stream_state(&state);
                             *state_lock = StreamState::Stopped;
                         }
-                        let _ = event_tx.send(StreamEvent::Stopped);
+                        send_stream_event(&event_tx, StreamEvent::Stopped, "stop command");
                         break;
                     }
                     StreamCommand::Seek(frame_pos) => {
                         if !config.enable_seeking {
-                            let _ =
-                                event_tx.send(StreamEvent::Error(AudioDecoderError::SeekFailed(
+                            send_stream_event(
+                                &event_tx,
+                                StreamEvent::Error(AudioDecoderError::SeekFailed(
                                     "Seeking is disabled for this stream".to_string(),
-                                )));
+                                )),
+                                "seek disabled",
+                            );
                         } else if let Err(e) = decoder.seek(frame_pos) {
-                            let _ = event_tx.send(StreamEvent::Error(e));
+                            send_stream_event(&event_tx, StreamEvent::Error(e), "seek error");
                         } else {
                             position = decoder.position();
                         }
@@ -393,7 +425,7 @@ impl AudioStream {
                             ),
                             total_duration: spec.duration(),
                         };
-                        let _ = event_tx.send(StreamEvent::Position(stream_pos));
+                        send_stream_event(&event_tx, StreamEvent::Position(stream_pos), "position");
                     }
                 }
             }
@@ -404,7 +436,7 @@ impl AudioStream {
                 match decoder.decode_into(&mut decoded) {
                     Ok(frames) if frames > 0 => {
                         position = decoded.frame_position + decoded.frame_count() as u64;
-                        if event_tx.send(StreamEvent::Audio(decoded)).is_err() {
+                        if !send_stream_event(&event_tx, StreamEvent::Audio(decoded), "audio") {
                             break;
                         }
                         thread::sleep(Duration::from_millis(10));
@@ -412,7 +444,7 @@ impl AudioStream {
                     Ok(_) => {
                         recycled_audio.push(decoded);
                         // End of stream
-                        let _ = event_tx.send(StreamEvent::EndOfStream);
+                        send_stream_event(&event_tx, StreamEvent::EndOfStream, "end of stream");
                         playing = false;
                         {
                             let mut state_lock = lock_stream_state(&state);
@@ -420,7 +452,7 @@ impl AudioStream {
                         }
                     }
                     Err(e) => {
-                        let _ = event_tx.send(StreamEvent::Error(e));
+                        send_stream_event(&event_tx, StreamEvent::Error(e), "decode error");
                         {
                             let mut state_lock = lock_stream_state(&state);
                             *state_lock = StreamState::Error;

@@ -7,9 +7,9 @@ script and translates each verb into an HTTP call against a running
 ## Run a scenario
 
 ```bash
-# Terminal 1: launch SotF with the dev API + an isolated QA config dir.
+# Terminal 1: launch SotF with the debug-only dev API + an isolated QA config dir.
 QA_DIR=$(mktemp -d)
-cargo run -p sotf-gpui --features dev-api --bin SotF -- --qa "$QA_DIR"
+cargo run -p sotf-gpui --features dev-api --bin sotf-desktop -- --qa "$QA_DIR"
 
 # Terminal 2: drive a scenario.
 cargo run -p sotf-dev-driver -- crates/sotf-dev-driver/scenarios/smoke.scn -v
@@ -19,6 +19,8 @@ The `--qa <dir>` flag points SotF at a clean, throwaway config directory so
 runs are reproducible (no leftover library scans, plugin presets, or window
 geometry from a previous session). Each scenario in `scenarios/` assumes the
 process was launched this way — `mktemp -d` per run, deleted after.
+The app refuses to compile `dev-api` in release builds, and even debug builds
+only start the HTTP endpoint when `--qa <dir>` is present.
 
 Override the URL with `--url http://127.0.0.1:9999`. Override the
 server port with `SOTF_DEV_API_PORT=9999`.

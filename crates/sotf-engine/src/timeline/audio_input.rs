@@ -125,13 +125,19 @@ impl AudioInput {
                     }
                     if samples_to_write < data.len() {
                         state_clone.overruns.fetch_add(1, Ordering::Relaxed);
+                        crate::rate_limited_log!(
+                            warn,
+                            5,
+                            "[AudioInput] Input ring buffer overrun: dropped {} samples",
+                            data.len() - samples_to_write
+                        );
                     }
                     state_clone
                         .frames_captured
                         .fetch_add(full_frames as u64, Ordering::Relaxed);
                 },
                 |err| {
-                    log::error!("[AudioInput] Stream error: {err}");
+                    crate::rate_limited_log!(error, 5, "[AudioInput] Stream error: {err}");
                 },
                 None,
             )
@@ -235,7 +241,7 @@ mod tests {
 
     #[test]
     fn test_dummy_input_not_started() {
-        let (mut input, _producer) = AudioInput::dummy(1, 48000, 1024);
+        let (input, _producer) = AudioInput::dummy(1, 48000, 1024);
         // Not started — state should reflect that
         assert!(!input.state.active.load(Ordering::Relaxed));
         input.start();

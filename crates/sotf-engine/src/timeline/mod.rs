@@ -13,7 +13,7 @@ pub mod transport;
 
 pub use audio_input::{AudioInput, AudioInputConfig};
 pub use clip::{Clip, FadeCurve, Region};
-pub use midi_track::{MidiTrack, TestSynth};
+pub use midi_track::{InstrumentPlugin, MidiTrack, NoteEvent, NoteEventKind, TestSynth};
 pub use processor::TimelineProcessor;
 pub use recording::{RecordingConfig, RecordingResult, RecordingSession};
 pub use timeline::Timeline;

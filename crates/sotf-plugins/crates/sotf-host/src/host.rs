@@ -6,11 +6,16 @@ use crate::automation::{ParameterAutomation, automation_utils};
 use crate::lookahead::LookaheadBuffer;
 use crate::parameters::{ParameterId, ParameterValue};
 use crate::plugin::{Plugin, ProcessContext};
-#[allow(unused_imports)]
+use arc_swap::ArcSwap;
 use rayon::prelude::*;
+use rtrb::{Consumer, Producer, RingBuffer};
 use std::any::Any;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+const PARAMETER_EVENT_QUEUE_CAPACITY: usize = 1024;
+const GRAPH_MUTATION_QUEUE_CAPACITY: usize = 128;
 
 // ============================================================================
 // Node Buffer - Simple non-thread-safe buffer for audio data (zero-allocation)
@@ -57,15 +62,21 @@ fn ensure_len(buffer: &mut Vec<f32>, len: usize) {
     }
 }
 
+fn ensure_len_f64(buffer: &mut Vec<f64>, len: usize) {
+    if buffer.len() < len {
+        buffer.resize(len, 0.0);
+    }
+}
+
 struct ProcessBuffers {
     node_buffers: Vec<Option<NodeBuffer>>,
     scratch_input: Vec<f32>,
     scratch_output: Vec<f32>,
     merge_buffer: Vec<f32>,
     channel_map_buffer: Vec<f32>,
-    /// Per-edge latency compensation delay buffers.
-    /// Keyed by (from_node, to_node). Only present for edges that need compensation.
-    compensation_delays: HashMap<(NodeId, NodeId), LookaheadBuffer>,
+    /// Per-edge latency compensation delay buffers, indexed by `GraphEdge::id`.
+    /// `None` means the edge is already aligned and needs no delay.
+    compensation_delays: CompensationDelays,
     /// Scratch buffer for frame-by-frame delay processing (avoids per-frame allocation).
     delay_scratch: Vec<f32>,
     /// Per-node scratch buffers for parallel stage processing.
@@ -73,6 +84,61 @@ struct ProcessBuffers {
     /// Only allocated for nodes in stages with 2+ nodes.
     #[allow(dead_code)]
     parallel_scratch: Vec<(Vec<f32>, Vec<f32>, Vec<f32>)>,
+}
+
+struct CompensationDelays {
+    #[allow(dead_code)]
+    edge_keys: Vec<(NodeId, NodeId)>,
+    delays: Vec<Option<LookaheadBuffer>>,
+}
+
+impl CompensationDelays {
+    fn new(edges: &[GraphEdge]) -> Self {
+        Self {
+            edge_keys: edges.iter().map(|e| (e.from_node, e.to_node)).collect(),
+            delays: (0..edges.len()).map(|_| None).collect(),
+        }
+    }
+
+    #[allow(dead_code)]
+    fn empty() -> Self {
+        Self {
+            edge_keys: Vec::new(),
+            delays: Vec::new(),
+        }
+    }
+
+    fn set(&mut self, edge_id: usize, delay: LookaheadBuffer) {
+        if edge_id < self.delays.len() {
+            self.delays[edge_id] = Some(delay);
+        }
+    }
+
+    fn get_mut_edge(&mut self, edge_id: usize) -> Option<&mut LookaheadBuffer> {
+        self.delays.get_mut(edge_id).and_then(Option::as_mut)
+    }
+
+    #[cfg(test)]
+    fn contains_key(&self, key: &(NodeId, NodeId)) -> bool {
+        self.edge_keys
+            .iter()
+            .position(|candidate| candidate == key)
+            .is_some_and(|idx| self.delays.get(idx).is_some_and(Option::is_some))
+    }
+
+    #[cfg(test)]
+    fn get(&self, key: &(NodeId, NodeId)) -> Option<&LookaheadBuffer> {
+        let idx = self
+            .edge_keys
+            .iter()
+            .position(|candidate| candidate == key)?;
+        self.delays.get(idx)?.as_ref()
+    }
+
+    #[allow(dead_code)]
+    fn is_empty(&self) -> bool {
+        self.delays.iter().all(Option::is_none)
+    }
 }
 
 // ============================================================================
@@ -125,6 +191,7 @@ pub trait Host {
         Err("set_plugin_parameter not implemented for this host".to_string())
     }
     fn process(&mut self, input: &[f32], output: &mut [f32]) -> Result<usize, String>;
+    fn process_f64(&mut self, input: &[f64], output: &mut [f64]) -> Result<usize, String>;
     fn reset(&mut self);
     fn total_latency_samples(&self) -> usize;
     /// RT diagnostics: collect cache contention stats from all analyzer plugins.
@@ -179,6 +246,7 @@ pub struct GraphEdge {
     pub to_node: NodeId,
     pub channel_map: Option<Vec<usize>>,
     pub edge_type: EdgeType,
+    id: usize,
 }
 
 impl GraphEdge {
@@ -188,6 +256,7 @@ impl GraphEdge {
             to_node: to,
             channel_map: None,
             edge_type: EdgeType::Audio,
+            id: usize::MAX,
         }
     }
     pub fn with_channels(from: NodeId, to: NodeId, channels: Vec<usize>) -> Self {
@@ -196,6 +265,7 @@ impl GraphEdge {
             to_node: to,
             channel_map: Some(channels),
             edge_type: EdgeType::Audio,
+            id: usize::MAX,
         }
     }
     pub fn sidechain(from: NodeId, to: NodeId) -> Self {
@@ -204,7 +274,12 @@ impl GraphEdge {
             to_node: to,
             channel_map: None,
             edge_type: EdgeType::Sidechain,
+            id: usize::MAX,
         }
+    }
+
+    pub fn id(&self) -> usize {
+        self.id
     }
 }
 
@@ -255,6 +330,158 @@ impl GraphTopology {
     }
 }
 
+struct AutomationSlot {
+    node_id: NodeId,
+    param_id: ParameterId,
+    automation: ParameterAutomation,
+}
+
+struct ParameterEvent {
+    node_id: NodeId,
+    param_id: ParameterId,
+    value: ParameterValue,
+    sample_offset: usize,
+}
+
+impl ParameterEvent {
+    fn new(
+        node_id: NodeId,
+        param_id: ParameterId,
+        value: ParameterValue,
+        sample_offset: usize,
+    ) -> Self {
+        Self {
+            node_id,
+            param_id,
+            value,
+            sample_offset,
+        }
+    }
+}
+
+/// Single-producer handle for lock-free parameter updates into `DawHost`.
+///
+/// Move this to the control/UI thread and call `queue_node_parameter()` there;
+/// the host drains events during `process()`.
+pub struct ParameterEventSender {
+    producer: Producer<ParameterEvent>,
+    dropped_events: u64,
+}
+
+impl ParameterEventSender {
+    /// Queue a parameter update at the start of the next processed block.
+    pub fn queue_node_parameter(
+        &mut self,
+        node_id: NodeId,
+        param_id: ParameterId,
+        value: ParameterValue,
+    ) -> Result<(), String> {
+        self.queue_node_parameter_at(node_id, param_id, value, 0)
+    }
+
+    /// Queue a parameter update for `sample_offset` frames into the next block.
+    ///
+    /// Offsets beyond the current block are applied after that block, before
+    /// the next one begins.
+    pub fn queue_node_parameter_at(
+        &mut self,
+        node_id: NodeId,
+        param_id: ParameterId,
+        value: ParameterValue,
+        sample_offset: usize,
+    ) -> Result<(), String> {
+        let event = ParameterEvent::new(node_id, param_id, value, sample_offset);
+        self.producer.push(event).map_err(|err| {
+            self.dropped_events = self.dropped_events.saturating_add(1);
+            crate::rate_limited_log!(
+                warn,
+                5,
+                "host: external parameter event queue full; dropped {} events",
+                self.dropped_events
+            );
+            format!("parameter event queue full: {err:?}")
+        })
+    }
+
+    pub fn dropped_events(&self) -> u64 {
+        self.dropped_events
+    }
+}
+
+enum GraphMutation {
+    AddNode {
+        id: NodeId,
+        name: String,
+        plugin: Box<dyn Plugin>,
+    },
+    AddPlugin {
+        plugin: Box<dyn Plugin>,
+    },
+    AddEdge(GraphEdge),
+    RemovePlugin {
+        index: usize,
+    },
+}
+
+/// Single-producer handle for lock-free graph mutations into `DawHost`.
+///
+/// Move this to the control/UI thread and queue graph changes there; `DawHost`
+/// applies them on the audio side before the next block is built or processed.
+pub struct GraphMutationSender {
+    producer: Producer<GraphMutation>,
+    next_node_id: Arc<AtomicUsize>,
+    dropped_mutations: u64,
+}
+
+impl GraphMutationSender {
+    /// Reserve a node id and queue a named node insertion.
+    ///
+    /// The returned `NodeId` can be used when queueing edges before the audio
+    /// side applies the mutation.
+    pub fn queue_add_node(
+        &mut self,
+        name: String,
+        plugin: Box<dyn Plugin>,
+    ) -> Result<NodeId, String> {
+        let id = self.next_node_id.fetch_add(1, Ordering::AcqRel);
+        let mutation = GraphMutation::AddNode { id, name, plugin };
+        self.push_mutation(mutation).map(|()| id)
+    }
+
+    /// Queue a plugin append for the linear chain host API.
+    pub fn queue_add_plugin(&mut self, plugin: Box<dyn Plugin>) -> Result<(), String> {
+        self.push_mutation(GraphMutation::AddPlugin { plugin })
+    }
+
+    /// Queue an edge insertion between existing or pre-reserved nodes.
+    pub fn queue_add_edge(&mut self, edge: GraphEdge) -> Result<(), String> {
+        self.push_mutation(GraphMutation::AddEdge(edge))
+    }
+
+    /// Queue a plugin removal by linear chain index.
+    pub fn queue_remove_plugin(&mut self, index: usize) -> Result<(), String> {
+        self.push_mutation(GraphMutation::RemovePlugin { index })
+    }
+
+    /// Number of graph mutations dropped because the RT queue was full.
+    pub fn dropped_mutations(&self) -> u64 {
+        self.dropped_mutations
+    }
+
+    fn push_mutation(&mut self, mutation: GraphMutation) -> Result<(), String> {
+        self.producer.push(mutation).map_err(|err| {
+            self.dropped_mutations = self.dropped_mutations.saturating_add(1);
+            crate::rate_limited_log!(
+                warn,
+                5,
+                "host: graph mutation queue full; dropped {} mutations",
+                self.dropped_mutations
+            );
+            format!("graph mutation queue full: {err:?}")
+        })
+    }
+}
+
 pub struct DawHost {
     nodes: HashMap<NodeId, GraphNode>,
     /// Plugin storage indexed by NodeId — disjoint from `nodes` for borrow checker.
@@ -297,15 +524,36 @@ pub struct DawHost {
     node_latency_from_input: Vec<usize>,
     /// Parameter automation state. Key = (NodeId, ParameterId).
     /// Evaluated before each processing stage.
-    automation: HashMap<(NodeId, ParameterId), ParameterAutomation>,
+    automation: Vec<AutomationSlot>,
+    /// Control-thread lookup for automation slots. The audio path iterates
+    /// `automation` by index and never hashes `(NodeId, ParameterId)`.
+    automation_index: HashMap<(NodeId, ParameterId), usize>,
     /// Current playback position in samples, advanced each process() call.
     playback_position: usize,
     /// Pre-allocated scratch buffer for automation updates (avoids per-process() heap allocation).
-    automation_scratch: Vec<(NodeId, ParameterId, f32)>,
+    automation_scratch: Vec<(usize, f32)>,
+    /// Current immutable topology snapshot, published with ArcSwap after build.
+    topology: Arc<ArcSwap<GraphTopology>>,
+    f64_input_scratch: Vec<f32>,
+    f64_output_scratch: Vec<f32>,
+    f64_chain_scratch: Vec<f64>,
+    f64_chain_scratch_alt: Vec<f64>,
+    parameter_event_tx: Option<Producer<ParameterEvent>>,
+    parameter_event_rx: Consumer<ParameterEvent>,
+    parameter_event_scratch: Vec<ParameterEvent>,
+    dropped_parameter_events: u64,
+    graph_mutation_tx: Option<Producer<GraphMutation>>,
+    graph_mutation_rx: Consumer<GraphMutation>,
+    graph_next_node_id: Arc<AtomicUsize>,
+    dropped_graph_mutations: u64,
 }
 
 impl DawHost {
     pub fn new(channels: usize, sample_rate: u32) -> Self {
+        let (parameter_event_tx, parameter_event_rx) =
+            RingBuffer::new(PARAMETER_EVENT_QUEUE_CAPACITY);
+        let (graph_mutation_tx, graph_mutation_rx) = RingBuffer::new(GRAPH_MUTATION_QUEUE_CAPACITY);
+        let graph_next_node_id = Arc::new(AtomicUsize::new(0));
         Self {
             nodes: HashMap::new(),
             plugins: Vec::new(),
@@ -331,15 +579,28 @@ impl DawHost {
             cached_latency: None,
             bypassed: Vec::new(),
             node_latency_from_input: Vec::new(),
-            automation: HashMap::new(),
+            automation: Vec::new(),
+            automation_index: HashMap::new(),
             playback_position: 0,
             automation_scratch: Vec::new(),
+            topology: Arc::new(ArcSwap::from_pointee(GraphTopology::empty())),
+            f64_input_scratch: Vec::new(),
+            f64_output_scratch: Vec::new(),
+            f64_chain_scratch: Vec::new(),
+            f64_chain_scratch_alt: Vec::new(),
+            parameter_event_tx: Some(parameter_event_tx),
+            parameter_event_rx,
+            parameter_event_scratch: Vec::new(),
+            dropped_parameter_events: 0,
+            graph_mutation_tx: Some(graph_mutation_tx),
+            graph_mutation_rx,
+            graph_next_node_id,
+            dropped_graph_mutations: 0,
         }
     }
     pub fn new_default(sr: u32) -> Self {
         Self::new(2, sr)
     }
-    #[deprecated(note = "parallel execution is not yet implemented; this flag has no effect")]
     pub fn set_parallel_enabled(&mut self, e: bool) {
         self.parallel_enabled = e;
     }
@@ -360,24 +621,45 @@ impl DawHost {
             base_value: 0.0,
             last_value: 0.0,
         };
-        self.automation.insert((node_id, param_id), auto);
+        let key = (node_id, param_id.clone());
+        if let Some(&idx) = self.automation_index.get(&key) {
+            self.automation[idx].automation = auto;
+            return;
+        }
+        let idx = self.automation.len();
+        self.automation.push(AutomationSlot {
+            node_id,
+            param_id,
+            automation: auto,
+        });
+        self.automation_index.insert(key, idx);
     }
 
     /// Remove automation for a specific parameter on a node.
     pub fn clear_automation(&mut self, node_id: NodeId, param_id: &ParameterId) {
-        self.automation.remove(&(node_id, param_id.clone()));
+        let key = (node_id, param_id.clone());
+        let Some(idx) = self.automation_index.remove(&key) else {
+            return;
+        };
+        self.automation.swap_remove(idx);
+        if idx < self.automation.len() {
+            let moved = &self.automation[idx];
+            self.automation_index
+                .insert((moved.node_id, moved.param_id.clone()), idx);
+        }
     }
 
     /// Remove all automation.
     pub fn clear_all_automation(&mut self) {
         self.automation.clear();
+        self.automation_index.clear();
     }
 
     /// Reset playback position to 0.
     pub fn reset_playback_position(&mut self) {
         self.playback_position = 0;
-        for auto in self.automation.values_mut() {
-            auto.position = 0;
+        for slot in &mut self.automation {
+            slot.automation.position = 0;
         }
     }
 
@@ -396,13 +678,53 @@ impl DawHost {
         }
     }
 
-    pub fn add_node(
-        &mut self,
-        name: String,
-        mut plugin: Box<dyn Plugin>,
-    ) -> Result<NodeId, String> {
+    /// Returns a lock-free handle to the current immutable topology snapshot.
+    pub fn topology_handle(&self) -> Arc<ArcSwap<GraphTopology>> {
+        Arc::clone(&self.topology)
+    }
+
+    /// Atomically load the current topology snapshot.
+    pub fn current_topology(&self) -> Arc<GraphTopology> {
+        self.topology.load_full()
+    }
+
+    fn publish_topology_snapshot(&self) {
+        self.topology.store(Arc::new(self.topology_snapshot()));
+    }
+
+    fn reserve_node_id(&mut self) -> NodeId {
+        let externally_reserved = self.graph_next_node_id.load(Ordering::Acquire);
+        if externally_reserved > self.next_node_id {
+            self.next_node_id = externally_reserved;
+        }
         let id = self.next_node_id;
         self.next_node_id += 1;
+        self.graph_next_node_id
+            .store(self.next_node_id, Ordering::Release);
+        id
+    }
+
+    pub fn add_node(&mut self, name: String, plugin: Box<dyn Plugin>) -> Result<NodeId, String> {
+        let id = self.reserve_node_id();
+        self.add_node_with_id(id, name, plugin)?;
+        Ok(id)
+    }
+
+    fn add_node_with_id(
+        &mut self,
+        id: NodeId,
+        name: String,
+        mut plugin: Box<dyn Plugin>,
+    ) -> Result<(), String> {
+        if self.nodes.contains_key(&id) {
+            return Err(format!("Node {id} already exists"));
+        }
+        if id >= self.next_node_id {
+            self.next_node_id = id + 1;
+            self.graph_next_node_id
+                .store(self.next_node_id, Ordering::Release);
+        }
+        plugin = Self::auto_oversample_plugin(plugin)?;
         plugin.initialize(self.sample_rate)?;
         let input_channels = plugin.input_channels();
         let output_channels = plugin.output_channels();
@@ -417,20 +739,47 @@ impl DawHost {
         self.plugins[id] = Some(plugin);
         self.built = false;
         self.cached_latency = None;
-        Ok(id)
+        Ok(())
     }
 
-    pub fn add_edge(&mut self, edge: GraphEdge) -> Result<(), String> {
+    pub fn add_edge(&mut self, mut edge: GraphEdge) -> Result<(), String> {
         if !self.nodes.contains_key(&edge.from_node) || !self.nodes.contains_key(&edge.to_node) {
             return Err("Node not found".into());
         }
         if edge.from_node == edge.to_node {
             return Err("Self-loop".into());
         }
+        edge.id = self.edges.len();
         self.edges.push(edge);
         self.built = false;
         self.cached_latency = None;
         Ok(())
+    }
+
+    fn auto_oversample_plugin(plugin: Box<dyn Plugin>) -> Result<Box<dyn Plugin>, String> {
+        let Some(factor) = plugin.preferred_oversampling() else {
+            return Ok(plugin);
+        };
+        if factor != 2 && factor != 4 {
+            return Err(format!(
+                "Invalid preferred oversampling factor {factor}: expected 2 or 4"
+            ));
+        }
+        if plugin.input_channels() != plugin.output_channels() {
+            crate::rate_limited_log!(
+                warn,
+                5,
+                "host: plugin '{}' requested {}x oversampling but has mismatched I/O channels ({} -> {}); leaving unwrapped",
+                plugin.info().name,
+                factor,
+                plugin.input_channels(),
+                plugin.output_channels()
+            );
+            return Ok(plugin);
+        }
+        Ok(Box::new(crate::oversampling::AutoOversampledPlugin::new(
+            plugin, factor,
+        )?))
     }
 
     /// Add a sidechain edge: the output of `from` is routed as sidechain input
@@ -509,6 +858,7 @@ impl DawHost {
         // Cache total latency so total_latency_samples() is O(1)
         self.cached_latency = Some(self.compute_latency());
         self.built = true;
+        self.publish_topology_snapshot();
         Ok(())
     }
 
@@ -537,6 +887,7 @@ impl DawHost {
         }
         let id = self.chain_nodes.remove(index);
         self.edges.retain(|e| e.from_node != id && e.to_node != id);
+        self.renumber_edges();
         if index > 0 && index < self.chain_nodes.len() {
             self.add_edge(GraphEdge::new(
                 self.chain_nodes[index - 1],
@@ -547,6 +898,12 @@ impl DawHost {
         self.built = false;
         self.cached_latency = None;
         Ok(self.plugins[id].take().unwrap())
+    }
+
+    fn renumber_edges(&mut self) {
+        for (idx, edge) in self.edges.iter_mut().enumerate() {
+            edge.id = idx;
+        }
     }
 
     pub fn plugin_count(&self) -> usize {
@@ -611,10 +968,221 @@ impl DawHost {
         val: super::parameters::ParameterValue,
     ) -> Result<(), String> {
         let &nid = self.chain_nodes.get(index).ok_or("oob")?;
-        self.plugins[nid]
-            .as_mut()
-            .unwrap()
-            .set_parameter(super::parameters::ParameterId(id.to_string()), val)
+        self.queue_node_parameter(nid, super::parameters::ParameterId(id.to_string()), val)
+    }
+
+    /// Queue a parameter change for audio-thread application at `sample_offset`
+    /// frames into the next `process()` call.
+    pub fn set_plugin_parameter_at(
+        &mut self,
+        index: usize,
+        id: &str,
+        val: super::parameters::ParameterValue,
+        sample_offset: usize,
+    ) -> Result<(), String> {
+        let &nid = self.chain_nodes.get(index).ok_or("oob")?;
+        self.queue_node_parameter_at(
+            nid,
+            super::parameters::ParameterId(id.to_string()),
+            val,
+            sample_offset,
+        )
+    }
+
+    /// Queue a parameter change for audio-thread application at the start of
+    /// the next `process()` call.
+    pub fn queue_node_parameter(
+        &mut self,
+        node_id: NodeId,
+        param_id: ParameterId,
+        value: ParameterValue,
+    ) -> Result<(), String> {
+        self.queue_node_parameter_at(node_id, param_id, value, 0)
+    }
+
+    /// Queue a parameter change for audio-thread application at `sample_offset`
+    /// frames into the next `process()` call.
+    pub fn queue_node_parameter_at(
+        &mut self,
+        node_id: NodeId,
+        param_id: ParameterId,
+        value: ParameterValue,
+        sample_offset: usize,
+    ) -> Result<(), String> {
+        if !self.nodes.contains_key(&node_id) {
+            return Err("Node not found".into());
+        }
+
+        let event = ParameterEvent::new(node_id, param_id, value, sample_offset);
+        let producer = self.parameter_event_tx.as_mut().ok_or_else(|| {
+            "parameter event sender has been taken; use the returned ParameterEventSender"
+                .to_string()
+        })?;
+        producer.push(event).map_err(|err| {
+            self.dropped_parameter_events = self.dropped_parameter_events.saturating_add(1);
+            crate::rate_limited_log!(
+                warn,
+                5,
+                "host: parameter event queue full; dropped {} events",
+                self.dropped_parameter_events
+            );
+            format!("parameter event queue full: {err:?}")
+        })
+    }
+
+    /// Move the parameter-event producer out of the host.
+    ///
+    /// After this is called, use the returned `ParameterEventSender` from the
+    /// control/UI side. `DawHost` keeps the consumer and continues draining
+    /// events in `process()`.
+    pub fn take_parameter_event_sender(&mut self) -> Option<ParameterEventSender> {
+        self.parameter_event_tx
+            .take()
+            .map(|producer| ParameterEventSender {
+                producer,
+                dropped_events: 0,
+            })
+    }
+
+    /// Move the graph-mutation producer out of the host.
+    ///
+    /// After this is called, use the returned `GraphMutationSender` from the
+    /// control/UI side. `DawHost` keeps the consumer, applies queued graph
+    /// changes before processing, and publishes the rebuilt topology snapshot.
+    pub fn take_graph_mutation_sender(&mut self) -> Option<GraphMutationSender> {
+        self.graph_mutation_tx
+            .take()
+            .map(|producer| GraphMutationSender {
+                producer,
+                next_node_id: Arc::clone(&self.graph_next_node_id),
+                dropped_mutations: 0,
+            })
+    }
+
+    /// Apply a parameter immediately on the calling thread.
+    ///
+    /// This is intended for offline setup, tests, and migration code. Real-time
+    /// control paths should use `set_plugin_parameter()` / `queue_node_parameter()`.
+    pub fn set_plugin_parameter_immediate(
+        &mut self,
+        index: usize,
+        id: &str,
+        val: super::parameters::ParameterValue,
+    ) -> Result<(), String> {
+        let &nid = self.chain_nodes.get(index).ok_or("oob")?;
+        self.apply_parameter_event(ParameterEvent {
+            node_id: nid,
+            param_id: super::parameters::ParameterId(id.to_string()),
+            value: val,
+            sample_offset: 0,
+        })
+    }
+
+    fn drain_parameter_events_into(&mut self, events: &mut Vec<ParameterEvent>) {
+        events.clear();
+        while let Ok(event) = self.parameter_event_rx.pop() {
+            events.push(event);
+        }
+    }
+
+    fn apply_parameter_event(&mut self, event: ParameterEvent) -> Result<(), String> {
+        let ParameterEvent {
+            node_id,
+            param_id,
+            value,
+            sample_offset: _,
+        } = event;
+        let node = self
+            .nodes
+            .get(&node_id)
+            .ok_or_else(|| format!("Node {node_id} not found"))?;
+        let plugin = self
+            .plugins
+            .get_mut(node_id)
+            .and_then(Option::as_mut)
+            .ok_or_else(|| format!("Plugin for node {node_id} not found"))?;
+        plugin.set_parameter(param_id, value).map_err(|err| {
+            crate::rate_limited_log!(
+                warn,
+                5,
+                "host: queued parameter event failed for node {} '{}': {err}",
+                node_id,
+                node.name
+            );
+            err
+        })
+    }
+
+    /// Number of parameter events dropped because the RT queue was full.
+    pub fn dropped_parameter_events(&self) -> u64 {
+        self.dropped_parameter_events
+    }
+
+    /// Queue a graph mutation through the host-owned producer.
+    ///
+    /// This is useful before handing the producer to another thread. After
+    /// `take_graph_mutation_sender()` is called, use that sender instead.
+    fn queue_graph_mutation(&mut self, mutation: GraphMutation) -> Result<(), String> {
+        let producer = self.graph_mutation_tx.as_mut().ok_or_else(|| {
+            "graph mutation sender has been taken; use the returned GraphMutationSender".to_string()
+        })?;
+        producer.push(mutation).map_err(|err| {
+            self.dropped_graph_mutations = self.dropped_graph_mutations.saturating_add(1);
+            crate::rate_limited_log!(
+                warn,
+                5,
+                "host: graph mutation queue full; dropped {} mutations",
+                self.dropped_graph_mutations
+            );
+            format!("graph mutation queue full: {err:?}")
+        })
+    }
+
+    /// Queue a linear-chain plugin append for audio-thread application.
+    pub fn queue_add_plugin(&mut self, plugin: Box<dyn Plugin>) -> Result<(), String> {
+        self.queue_graph_mutation(GraphMutation::AddPlugin { plugin })
+    }
+
+    /// Reserve a node id and queue a named node insertion for audio-thread application.
+    pub fn queue_add_node(
+        &mut self,
+        name: String,
+        plugin: Box<dyn Plugin>,
+    ) -> Result<NodeId, String> {
+        let id = self.reserve_node_id();
+        self.queue_graph_mutation(GraphMutation::AddNode { id, name, plugin })
+            .map(|()| id)
+    }
+
+    /// Queue an edge insertion for audio-thread application.
+    pub fn queue_add_edge(&mut self, edge: GraphEdge) -> Result<(), String> {
+        self.queue_graph_mutation(GraphMutation::AddEdge(edge))
+    }
+
+    /// Queue a linear-chain plugin removal for audio-thread application.
+    pub fn queue_remove_plugin(&mut self, index: usize) -> Result<(), String> {
+        self.queue_graph_mutation(GraphMutation::RemovePlugin { index })
+    }
+
+    /// Number of graph mutations dropped because the RT queue was full.
+    pub fn dropped_graph_mutations(&self) -> u64 {
+        self.dropped_graph_mutations
+    }
+
+    fn drain_graph_mutations(&mut self) -> Result<(), String> {
+        while let Ok(mutation) = self.graph_mutation_rx.pop() {
+            self.apply_graph_mutation(mutation)?;
+        }
+        Ok(())
+    }
+
+    fn apply_graph_mutation(&mut self, mutation: GraphMutation) -> Result<(), String> {
+        match mutation {
+            GraphMutation::AddNode { id, name, plugin } => self.add_node_with_id(id, name, plugin),
+            GraphMutation::AddPlugin { plugin } => self.add_plugin(plugin).map(|_| ()),
+            GraphMutation::AddEdge(edge) => self.add_edge(edge),
+            GraphMutation::RemovePlugin { index } => self.remove_plugin(index).map(|_| ()),
+        }
     }
 
     /// Bypass a node so its plugin is skipped during processing.
@@ -689,9 +1257,114 @@ impl DawHost {
     }
 
     pub fn process(&mut self, input: &[f32], output: &mut [f32]) -> Result<usize, String> {
+        self.drain_graph_mutations()?;
         if !self.built {
             self.build()?;
         }
+        let mut events = std::mem::take(&mut self.parameter_event_scratch);
+        self.drain_parameter_events_into(&mut events);
+        let result = self.process_with_parameter_events(input, output, &mut events);
+        self.parameter_event_scratch = events;
+        result
+    }
+
+    fn process_with_parameter_events(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        events: &mut Vec<ParameterEvent>,
+    ) -> Result<usize, String> {
+        if events.is_empty() {
+            return self.process_block_without_parameter_events(input, output);
+        }
+
+        if events.iter().any(|event| event.sample_offset > 0)
+            && self.can_split_parameter_event_block(input, output)
+        {
+            return self.process_split_parameter_events(input, output, events);
+        }
+
+        for event in events.drain(..) {
+            self.apply_parameter_event(event)?;
+        }
+        self.process_block_without_parameter_events(input, output)
+    }
+
+    fn can_split_parameter_event_block(&self, input: &[f32], output: &[f32]) -> bool {
+        if !self.automation.is_empty()
+            || self.has_variable_frame_plugin
+            || !self.cached_frames_identity
+            || !self.cached_rate_identity
+        {
+            return false;
+        }
+        let input_channels = self.input_channels();
+        if input_channels == 0 || !input.len().is_multiple_of(input_channels) {
+            return false;
+        }
+        let frames = input.len() / input_channels;
+        output.len() >= frames * self.output_channels()
+    }
+
+    fn process_split_parameter_events(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        events: &mut Vec<ParameterEvent>,
+    ) -> Result<usize, String> {
+        let input_channels = self.input_channels();
+        let output_channels = self.output_channels();
+        let frames = input.len() / input_channels;
+        events.sort_by_key(|event| event.sample_offset);
+        events.reverse();
+
+        let mut frame_cursor = 0;
+        let mut processed_frames = 0;
+
+        while events.last().is_some_and(|event| event.sample_offset == 0) {
+            let event = events.pop().unwrap();
+            self.apply_parameter_event(event)?;
+        }
+
+        while frame_cursor < frames {
+            let next_event_frame = events
+                .last()
+                .map_or(frames, |event| event.sample_offset.min(frames));
+
+            if next_event_frame > frame_cursor {
+                let in_start = frame_cursor * input_channels;
+                let in_end = next_event_frame * input_channels;
+                let out_start = frame_cursor * output_channels;
+                let out_end = next_event_frame * output_channels;
+                let segment_frames = self.process_block_without_parameter_events(
+                    &input[in_start..in_end],
+                    &mut output[out_start..out_end],
+                )?;
+                processed_frames += segment_frames;
+                frame_cursor = next_event_frame;
+            }
+
+            while events
+                .last()
+                .is_some_and(|event| event.sample_offset <= frame_cursor)
+            {
+                let event = events.pop().unwrap();
+                self.apply_parameter_event(event)?;
+            }
+        }
+
+        while let Some(event) = events.pop() {
+            self.apply_parameter_event(event)?;
+        }
+
+        Ok(processed_frames)
+    }
+
+    fn process_block_without_parameter_events(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+    ) -> Result<usize, String> {
         if self.nodes.is_empty() {
             output.copy_from_slice(input);
             return Ok(input.len() / self.input_channels());
@@ -715,7 +1388,8 @@ impl DawHost {
         if !self.automation.is_empty() {
             // Re-use pre-allocated scratch buffer (clear does not deallocate).
             self.automation_scratch.clear();
-            for ((nid, _pid), auto) in &self.automation {
+            for (idx, slot) in self.automation.iter().enumerate() {
+                let auto = &slot.automation;
                 if let Some(curve) = auto.curve.as_ref() {
                     let total_frames = match curve {
                         crate::automation::AutomationCurve::Step {
@@ -740,23 +1414,38 @@ impl DawHost {
                     };
                     let pos = auto.position.min(total_frames.saturating_sub(1));
                     let val = automation_utils::eval_curve(curve, pos, total_frames);
-                    self.automation_scratch
-                        .push((*nid, auto.param_id.clone(), val));
+                    self.automation_scratch.push((idx, val));
                 }
             }
             for i in 0..self.automation_scratch.len() {
-                let (nid, ref pid, val) = self.automation_scratch[i];
-                if let Some(p) = self.plugins[nid].as_mut() {
-                    let _ = p.set_parameter(pid.clone(), ParameterValue::Float(val));
+                let (idx, val) = self.automation_scratch[i];
+                let slot = &mut self.automation[idx];
+                if let Some(p) = self.plugins[slot.node_id].as_mut() {
+                    let _ = p.set_parameter(slot.param_id.clone(), ParameterValue::Float(val));
                 }
-                if let Some(auto) = self.automation.get_mut(&(nid, pid.clone())) {
-                    auto.last_value = val;
-                    auto.position += nf;
-                }
+                slot.automation.last_value = val;
+                slot.automation.position += nf;
             }
         }
 
         for stage in &self.stages {
+            if let Some(parallel_result) = Self::process_stage_parallel(
+                self.parallel_enabled,
+                stage,
+                input,
+                self.sample_rate,
+                cf,
+                &mut self.plugins,
+                &self.nodes,
+                &self.predecessors,
+                &self.is_input_node,
+                &self.bypassed,
+                bufs,
+            ) {
+                cf = parallel_result?;
+                continue;
+            }
+
             let mut stage_cf: Option<usize> = None;
             for &nid in &stage.nodes {
                 let node = &self.nodes[&nid];
@@ -848,11 +1537,7 @@ impl DawHost {
         }
         Self::collect_output_from_buffers(&self.output_nodes, &bufs.node_buffers, output, cf)
             .map_err(|e| {
-                crate::rate_limited_log!(
-                    error,
-                    5,
-                    "host: collect_output_from_buffers failed: {e}"
-                );
+                crate::rate_limited_log!(error, 5, "host: collect_output_from_buffers failed: {e}");
                 e
             })?;
         if cf < nf && self.has_variable_frame_plugin {
@@ -867,6 +1552,452 @@ impl DawHost {
         Ok(cf)
     }
 
+    /// Process an f64 buffer through the host.
+    ///
+    /// The current graph buffer cache is f32-native, so this path keeps the API
+    /// available without per-call heap allocation by reusing conversion
+    /// scratch. Individual plugins can still expose true f64 processing through
+    /// `Plugin::process_f64` for direct hosts and future graph-native f64 buffers.
+    pub fn process_f64(&mut self, input: &[f64], output: &mut [f64]) -> Result<usize, String> {
+        self.drain_graph_mutations()?;
+        if !self.built {
+            self.build()?;
+        }
+        let mut events = std::mem::take(&mut self.parameter_event_scratch);
+        self.drain_parameter_events_into(&mut events);
+        let result = self.process_f64_with_parameter_events(input, output, &mut events);
+        self.parameter_event_scratch = events;
+        result
+    }
+
+    fn process_f64_with_parameter_events(
+        &mut self,
+        input: &[f64],
+        output: &mut [f64],
+        events: &mut Vec<ParameterEvent>,
+    ) -> Result<usize, String> {
+        if events.is_empty() {
+            return self.process_f64_without_parameter_events(input, output);
+        }
+
+        if events.iter().any(|event| event.sample_offset > 0)
+            && self.can_split_parameter_event_block_f64(input, output)
+        {
+            return self.process_f64_split_parameter_events(input, output, events);
+        }
+
+        for event in events.drain(..) {
+            self.apply_parameter_event(event)?;
+        }
+        self.process_f64_without_parameter_events(input, output)
+    }
+
+    fn can_split_parameter_event_block_f64(&self, input: &[f64], output: &[f64]) -> bool {
+        if !self.automation.is_empty()
+            || !self.cached_frames_identity
+            || !self.cached_rate_identity
+            || !self.can_process_f64_chain_native()
+        {
+            return false;
+        }
+        let input_channels = self.input_channels();
+        if input_channels == 0 || !input.len().is_multiple_of(input_channels) {
+            return false;
+        }
+        let frames = input.len() / input_channels;
+        output.len() >= frames * self.output_channels()
+    }
+
+    fn process_f64_split_parameter_events(
+        &mut self,
+        input: &[f64],
+        output: &mut [f64],
+        events: &mut Vec<ParameterEvent>,
+    ) -> Result<usize, String> {
+        let input_channels = self.input_channels();
+        let output_channels = self.output_channels();
+        let frames = input.len() / input_channels;
+        events.sort_by_key(|event| event.sample_offset);
+        events.reverse();
+
+        let mut frame_cursor = 0;
+        let mut processed_frames = 0;
+
+        while events.last().is_some_and(|event| event.sample_offset == 0) {
+            let event = events.pop().unwrap();
+            self.apply_parameter_event(event)?;
+        }
+
+        while frame_cursor < frames {
+            let next_event_frame = events
+                .last()
+                .map_or(frames, |event| event.sample_offset.min(frames));
+
+            if next_event_frame > frame_cursor {
+                let in_start = frame_cursor * input_channels;
+                let in_end = next_event_frame * input_channels;
+                let out_start = frame_cursor * output_channels;
+                let out_end = next_event_frame * output_channels;
+                let segment_frames = self.process_f64_chain_native(
+                    &input[in_start..in_end],
+                    &mut output[out_start..out_end],
+                )?;
+                processed_frames += segment_frames;
+                frame_cursor = next_event_frame;
+            }
+
+            while events
+                .last()
+                .is_some_and(|event| event.sample_offset <= frame_cursor)
+            {
+                let event = events.pop().unwrap();
+                self.apply_parameter_event(event)?;
+            }
+        }
+
+        while let Some(event) = events.pop() {
+            self.apply_parameter_event(event)?;
+        }
+
+        Ok(processed_frames)
+    }
+
+    fn process_f64_without_parameter_events(
+        &mut self,
+        input: &[f64],
+        output: &mut [f64],
+    ) -> Result<usize, String> {
+        if self.nodes.is_empty() {
+            output.copy_from_slice(input);
+            return Ok(input.len() / self.input_channels());
+        }
+        if self.can_process_f64_chain_native() {
+            return self.process_f64_chain_native(input, output);
+        }
+
+        let mut input_scratch = std::mem::take(&mut self.f64_input_scratch);
+        let mut output_scratch = std::mem::take(&mut self.f64_output_scratch);
+
+        ensure_len(&mut input_scratch, input.len());
+        for (dst, &src) in input_scratch[..input.len()].iter_mut().zip(input.iter()) {
+            *dst = src as f32;
+        }
+
+        ensure_len(&mut output_scratch, output.len());
+        let in_len = input.len();
+        let out_len = output.len();
+        let result = self.process(&input_scratch[..in_len], &mut output_scratch[..out_len]);
+        let frames = match result {
+            Ok(frames) => frames,
+            Err(err) => {
+                self.f64_input_scratch = input_scratch;
+                self.f64_output_scratch = output_scratch;
+                return Err(err);
+            }
+        };
+        for (dst, &src) in output.iter_mut().zip(output_scratch[..out_len].iter()) {
+            *dst = src as f64;
+        }
+
+        self.f64_input_scratch = input_scratch;
+        self.f64_output_scratch = output_scratch;
+        Ok(frames)
+    }
+
+    fn can_process_f64_chain_native(&self) -> bool {
+        if self.chain_nodes.is_empty() || self.chain_nodes.len() != self.nodes.len() {
+            return false;
+        }
+        if self.edges.len() != self.chain_nodes.len().saturating_sub(1) {
+            return false;
+        }
+        for pair in self.chain_nodes.windows(2) {
+            let from = pair[0];
+            let to = pair[1];
+            let Some(edge) = self
+                .edges
+                .iter()
+                .find(|e| e.from_node == from && e.to_node == to)
+            else {
+                return false;
+            };
+            if edge.edge_type != EdgeType::Audio || edge.channel_map.is_some() {
+                return false;
+            }
+        }
+        self.chain_nodes.iter().all(|&nid| {
+            self.bypassed.get(nid).copied().unwrap_or(false)
+                || self.plugins[nid]
+                    .as_ref()
+                    .is_some_and(|plugin| plugin.supports_f64())
+        })
+    }
+
+    fn process_f64_chain_native(
+        &mut self,
+        input: &[f64],
+        output: &mut [f64],
+    ) -> Result<usize, String> {
+        let mut scratch_a = std::mem::take(&mut self.f64_chain_scratch);
+        let mut scratch_b = std::mem::take(&mut self.f64_chain_scratch_alt);
+
+        ensure_len_f64(&mut scratch_a, input.len());
+        scratch_a[..input.len()].copy_from_slice(input);
+
+        let mut current_in_a = true;
+        let mut current_len = input.len();
+        let mut current_frames = input.len() / self.input_channels();
+        let mut current_rate = self.sample_rate;
+
+        for idx in 0..self.chain_nodes.len() {
+            let nid = self.chain_nodes[idx];
+            let node = self
+                .nodes
+                .get(&nid)
+                .ok_or_else(|| format!("Missing node {nid} during f64 processing"))?;
+            let is_last = idx + 1 == self.chain_nodes.len();
+            let output_frames = self.plugins[nid]
+                .as_ref()
+                .unwrap()
+                .output_frames_for_input(current_frames);
+            let output_len = output_frames * node.output_channels();
+
+            let frames = if is_last {
+                if output.len() < output_len {
+                    self.f64_chain_scratch = scratch_a;
+                    self.f64_chain_scratch_alt = scratch_b;
+                    return Err(format!(
+                        "f64 output too small: need {output_len} samples, got {}",
+                        output.len()
+                    ));
+                }
+                if current_in_a {
+                    Self::process_f64_node(
+                        self.plugins[nid].as_mut().unwrap().as_mut(),
+                        self.bypassed.get(nid).copied().unwrap_or(false),
+                        &scratch_a[..current_len],
+                        &mut output[..output_len],
+                        current_rate,
+                        current_frames,
+                    )?
+                } else {
+                    Self::process_f64_node(
+                        self.plugins[nid].as_mut().unwrap().as_mut(),
+                        self.bypassed.get(nid).copied().unwrap_or(false),
+                        &scratch_b[..current_len],
+                        &mut output[..output_len],
+                        current_rate,
+                        current_frames,
+                    )?
+                }
+            } else if current_in_a {
+                ensure_len_f64(&mut scratch_b, output_len);
+                let frames = Self::process_f64_node(
+                    self.plugins[nid].as_mut().unwrap().as_mut(),
+                    self.bypassed.get(nid).copied().unwrap_or(false),
+                    &scratch_a[..current_len],
+                    &mut scratch_b[..output_len],
+                    current_rate,
+                    current_frames,
+                )?;
+                current_in_a = false;
+                frames
+            } else {
+                ensure_len_f64(&mut scratch_a, output_len);
+                let frames = Self::process_f64_node(
+                    self.plugins[nid].as_mut().unwrap().as_mut(),
+                    self.bypassed.get(nid).copied().unwrap_or(false),
+                    &scratch_b[..current_len],
+                    &mut scratch_a[..output_len],
+                    current_rate,
+                    current_frames,
+                )?;
+                current_in_a = true;
+                frames
+            };
+
+            current_frames = frames;
+            current_len = frames * node.output_channels();
+            current_rate = self.plugins[nid]
+                .as_ref()
+                .unwrap()
+                .output_sample_rate(current_rate);
+        }
+
+        self.f64_chain_scratch = scratch_a;
+        self.f64_chain_scratch_alt = scratch_b;
+        self.playback_position += input.len() / self.input_channels();
+        Ok(current_frames)
+    }
+
+    fn process_f64_node(
+        plugin: &mut dyn Plugin,
+        bypassed: bool,
+        input: &[f64],
+        output: &mut [f64],
+        sample_rate: u32,
+        num_frames: usize,
+    ) -> Result<usize, String> {
+        if bypassed {
+            output[..input.len()].copy_from_slice(input);
+            return Ok(num_frames);
+        }
+        let context = ProcessContext {
+            sample_rate,
+            num_frames,
+        };
+        plugin.process_f64(input, output, &context)
+    }
+
+    fn process_stage_parallel(
+        parallel_enabled: bool,
+        stage: &ProcessingStage,
+        input: &[f32],
+        sample_rate: u32,
+        cf: usize,
+        plugins: &mut [Option<Box<dyn Plugin>>],
+        nodes: &HashMap<NodeId, GraphNode>,
+        predecessors: &[Vec<GraphEdge>],
+        is_input_node: &[bool],
+        bypassed: &[bool],
+        bufs: &mut ProcessBuffers,
+    ) -> Option<Result<usize, String>> {
+        if !parallel_enabled || stage.nodes.len() < 2 {
+            return None;
+        }
+
+        for &nid in &stage.nodes {
+            if nid >= plugins.len() || nid >= bufs.node_buffers.len() {
+                return None;
+            }
+            if !is_input_node.get(nid).copied().unwrap_or(false) {
+                let preds = predecessors.get(nid)?;
+                if preds.len() != 1 {
+                    return None;
+                }
+                let edge = &preds[0];
+                if edge.edge_type != EdgeType::Audio || edge.channel_map.is_some() {
+                    return None;
+                }
+            }
+        }
+
+        while bufs.parallel_scratch.len() < plugins.len() {
+            bufs.parallel_scratch
+                .push((Vec::new(), Vec::new(), Vec::new()));
+        }
+
+        let plugins_addr = plugins.as_mut_ptr() as usize;
+        let node_buffers_addr = bufs.node_buffers.as_mut_ptr() as usize;
+        let scratch_addr = bufs.parallel_scratch.as_mut_ptr() as usize;
+        let results = stage
+            .nodes
+            .par_iter()
+            .map(|&nid| {
+                let node = nodes
+                    .get(&nid)
+                    .ok_or_else(|| format!("Missing node {nid} during parallel stage"))?;
+                // SAFETY: `stage.nodes` is produced by topological sorting and contains
+                // each node at most once. This closure mutates only the plugin, output
+                // buffer, and scratch slot for its own `nid`. Reads are limited to
+                // predecessor node buffers from earlier stages; this fast path rejects
+                // merge nodes, so it never reads a buffer written by the same stage.
+                unsafe {
+                    let plugin_slot =
+                        &mut *((plugins_addr as *mut Option<Box<dyn Plugin>>).add(nid));
+                    let node_buffer_slot =
+                        &mut *((node_buffers_addr as *mut Option<NodeBuffer>).add(nid));
+                    let (scratch_input, scratch_output, merge_buffer) =
+                        &mut *((scratch_addr as *mut (Vec<f32>, Vec<f32>, Vec<f32>)).add(nid));
+
+                    let in_len = if is_input_node.get(nid).copied().unwrap_or(false) {
+                        ensure_len(scratch_input, input.len());
+                        scratch_input[..input.len()].copy_from_slice(input);
+                        input.len()
+                    } else {
+                        let edge = &predecessors[nid][0];
+                        let source = (&*((node_buffers_addr as *const Option<NodeBuffer>)
+                            .add(edge.from_node)))
+                            .as_ref()
+                            .ok_or_else(|| {
+                                format!("Missing predecessor buffer for node {}", edge.from_node)
+                            })?;
+                        let source_data = source.read();
+                        let input_len = cf * node.input_channels();
+                        ensure_len(merge_buffer, input_len);
+                        merge_buffer[..input_len].fill(0.0);
+                        let route_channels = source.num_channels.min(node.input_channels());
+                        for frame in 0..cf {
+                            let src = frame * source.num_channels;
+                            let dst = frame * node.input_channels();
+                            let src_end = (src + route_channels).min(source_data.len());
+                            let copied = src_end.saturating_sub(src);
+                            if copied > 0 {
+                                merge_buffer[dst..dst + copied]
+                                    .copy_from_slice(&source_data[src..src_end]);
+                            }
+                        }
+                        ensure_len(scratch_input, input_len);
+                        scratch_input[..input_len].copy_from_slice(&merge_buffer[..input_len]);
+                        input_len
+                    };
+
+                    let out_frames = if bypassed.get(nid).copied().unwrap_or(false) {
+                        node_buffer_slot
+                            .as_mut()
+                            .unwrap()
+                            .write(&scratch_input[..in_len]);
+                        cf
+                    } else {
+                        let plugin = plugin_slot.as_mut().unwrap();
+                        let context = ProcessContext {
+                            sample_rate,
+                            num_frames: cf,
+                        };
+                        let max_output_frames = plugin.output_frames_for_input(cf);
+                        let output_len = max_output_frames * node.output_channels();
+                        ensure_len(scratch_output, output_len);
+                        let frames = plugin
+                            .process(
+                                &scratch_input[..in_len],
+                                &mut scratch_output[..output_len],
+                                &context,
+                            )
+                            .map_err(|e| {
+                                crate::rate_limited_log!(
+                                    error,
+                                    5,
+                                    "host: plugin '{}' (node {}) parallel process failed: {e}",
+                                    node.name,
+                                    nid
+                                );
+                                e
+                            })?;
+                        node_buffer_slot
+                            .as_mut()
+                            .unwrap()
+                            .write(&scratch_output[..frames * node.output_channels()]);
+                        frames
+                    };
+
+                    Ok::<usize, String>(out_frames)
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let mut stage_cf = None;
+        for result in results {
+            match result {
+                Ok(frames) => {
+                    stage_cf = Some(stage_cf.map_or(frames, |prev: usize| prev.min(frames)));
+                }
+                Err(err) => return Some(Err(err)),
+            }
+        }
+
+        stage_cf.map(Ok)
+    }
+
     fn merge_inputs_into(
         n: &GraphNode,
         preds: &[Vec<GraphEdge>],
@@ -875,7 +2006,7 @@ impl DawHost {
         mb: &mut Vec<f32>,
         cmb: &mut Vec<f32>,
         delay_scratch: &mut Vec<f32>,
-        compensation_delays: &mut HashMap<(NodeId, NodeId), LookaheadBuffer>,
+        compensation_delays: &mut CompensationDelays,
     ) -> Result<usize, String> {
         let is = nf * n.input_channels();
         ensure_len(mb, is);
@@ -939,30 +2070,44 @@ impl DawHost {
             } else {
                 let route_channels = sb.num_channels.min(available_dest_channels);
                 let ms = nf * route_channels;
-                ensure_len(cmb, ms);
-                for f in 0..nf {
-                    let src = f * sb.num_channels;
-                    let dst = f * route_channels;
-                    let src_end = (src + route_channels).min(sd.len());
-                    let copied = src_end.saturating_sub(src);
-                    if copied > 0 {
-                        cmb[dst..dst + copied].copy_from_slice(&sd[src..src_end]);
+                if route_channels == sb.num_channels && sd.len() >= ms {
+                    Self::apply_compensation_and_sum_at(
+                        e,
+                        route_channels,
+                        nf,
+                        &sd[..ms],
+                        mb,
+                        n.input_channels(),
+                        dest_offset,
+                        delay_scratch,
+                        compensation_delays,
+                    );
+                } else {
+                    ensure_len(cmb, ms);
+                    for f in 0..nf {
+                        let src = f * sb.num_channels;
+                        let dst = f * route_channels;
+                        let src_end = (src + route_channels).min(sd.len());
+                        let copied = src_end.saturating_sub(src);
+                        if copied > 0 {
+                            cmb[dst..dst + copied].copy_from_slice(&sd[src..src_end]);
+                        }
+                        if copied < route_channels {
+                            cmb[dst + copied..dst + route_channels].fill(0.0);
+                        }
                     }
-                    if copied < route_channels {
-                        cmb[dst + copied..dst + route_channels].fill(0.0);
-                    }
+                    Self::apply_compensation_and_sum_at(
+                        e,
+                        route_channels,
+                        nf,
+                        &cmb[..ms],
+                        mb,
+                        n.input_channels(),
+                        dest_offset,
+                        delay_scratch,
+                        compensation_delays,
+                    );
                 }
-                Self::apply_compensation_and_sum_at(
-                    e,
-                    route_channels,
-                    nf,
-                    &cmb[..ms],
-                    mb,
-                    n.input_channels(),
-                    dest_offset,
-                    delay_scratch,
-                    compensation_delays,
-                );
             }
         }
         Ok(is)
@@ -979,10 +2124,9 @@ impl DawHost {
         dest_channels: usize,
         dest_offset: usize,
         delay_scratch: &mut Vec<f32>,
-        compensation_delays: &mut HashMap<(NodeId, NodeId), LookaheadBuffer>,
+        compensation_delays: &mut CompensationDelays,
     ) {
-        let key = (edge.from_node, edge.to_node);
-        if let Some(delay_buf) = compensation_delays.get_mut(&key) {
+        if let Some(delay_buf) = compensation_delays.get_mut_edge(edge.id) {
             // Process frame-by-frame through the compensation delay.
             // delay_scratch is split: first `total` samples for output,
             // next `channels` samples as a reusable silence frame.
@@ -1007,22 +2151,50 @@ impl DawHost {
                     delay_buf.process_frame(&silence_part[..channels], &mut frame_part[start..end]);
                 }
             }
-            for frame in 0..num_frames {
-                let src = frame * channels;
-                let dst = frame * dest_channels + dest_offset;
-                for ch in 0..channels {
-                    dest[dst + ch] += delay_scratch[src + ch];
-                }
-            }
+            Self::sum_interleaved_at(
+                &delay_scratch[..total],
+                dest,
+                channels,
+                dest_channels,
+                dest_offset,
+                num_frames,
+            );
         } else {
-            // No compensation, sum directly
-            for frame in 0..num_frames {
-                let src = frame * channels;
-                let dst = frame * dest_channels + dest_offset;
-                for ch in 0..channels {
-                    if src + ch < src_data.len() && dst + ch < dest.len() {
-                        dest[dst + ch] += src_data[src + ch];
-                    }
+            Self::sum_interleaved_at(
+                src_data,
+                dest,
+                channels,
+                dest_channels,
+                dest_offset,
+                num_frames,
+            );
+        }
+    }
+
+    fn sum_interleaved_at(
+        src_data: &[f32],
+        dest: &mut [f32],
+        channels: usize,
+        dest_channels: usize,
+        dest_offset: usize,
+        num_frames: usize,
+    ) {
+        let total = num_frames * channels;
+        if dest_offset == 0
+            && channels == dest_channels
+            && src_data.len() >= total
+            && dest.len() >= total
+        {
+            crate::simd::scale_add_simd(&mut dest[..total], &src_data[..total], 1.0);
+            return;
+        }
+
+        for frame in 0..num_frames {
+            let src = frame * channels;
+            let dst = frame * dest_channels + dest_offset;
+            for ch in 0..channels {
+                if src + ch < src_data.len() && dst + ch < dest.len() {
+                    dest[dst + ch] += src_data[src + ch];
                 }
             }
         }
@@ -1043,9 +2215,7 @@ impl DawHost {
             for &id in ons {
                 let d = nbs[id].as_ref().unwrap().read();
                 let l = d.len().min(out.len());
-                for (dst, &s) in out[..l].iter_mut().zip(d[..l].iter()) {
-                    *dst += s;
-                }
+                crate::simd::scale_add_simd(&mut out[..l], &d[..l], 1.0);
             }
         }
         Ok(())
@@ -1105,10 +2275,7 @@ impl DawHost {
     /// compensation delay buffers for edges feeding into merge points where path
     /// latencies differ. This ensures all paths through the DAG are time-aligned
     /// at merge points.
-    fn compute_compensation_delays(
-        &mut self,
-        num_slots: usize,
-    ) -> HashMap<(NodeId, NodeId), LookaheadBuffer> {
+    fn compute_compensation_delays(&mut self, num_slots: usize) -> CompensationDelays {
         // Step 1: Compute cumulative latency from inputs to each node using topological order.
         // For each node, the cumulative latency is:
         //   node's own latency + max(cumulative latency of predecessors)
@@ -1138,7 +2305,7 @@ impl DawHost {
 
         // Step 2: For each merge point (node with multiple predecessors), compute
         // compensation delays for shorter paths.
-        let mut delays = HashMap::new();
+        let mut delays = CompensationDelays::new(&self.edges);
 
         for stage in &self.stages {
             for &nid in &stage.nodes {
@@ -1186,10 +2353,7 @@ impl DawHost {
                         if delay_channels == 0 {
                             continue;
                         }
-                        delays.insert(
-                            (edge.from_node, edge.to_node),
-                            LookaheadBuffer::new(compensation, delay_channels),
-                        );
+                        delays.set(edge.id, LookaheadBuffer::new(compensation, delay_channels));
                     } else if edge.edge_type == EdgeType::Sidechain {
                         let pred_channels = self
                             .nodes
@@ -1365,6 +2529,9 @@ impl Host for DawHost {
     fn process(&mut self, i: &[f32], o: &mut [f32]) -> Result<usize, String> {
         self.process(i, o)
     }
+    fn process_f64(&mut self, i: &[f64], o: &mut [f64]) -> Result<usize, String> {
+        self.process_f64(i, o)
+    }
     fn reset(&mut self) {
         self.reset()
     }
@@ -1404,6 +2571,258 @@ mod tests {
         let mut o = vec![0.0; 96];
         assert!(g.process(&i, &mut o).is_ok());
         assert_eq!(o, i);
+    }
+
+    #[test]
+    fn test_process_f64_empty_graph() {
+        let mut g = DawHost::new(2, 48000);
+        let input = vec![0.25_f64, -0.5, 1.0, -1.0];
+        let mut output = vec![0.0_f64; input.len()];
+        let frames = g.process_f64(&input, &mut output).unwrap();
+        assert_eq!(frames, 2);
+        assert_eq!(output, input);
+    }
+
+    struct F64ScalePlugin {
+        channels: usize,
+        factor: f64,
+    }
+
+    impl Plugin for F64ScalePlugin {
+        fn info(&self) -> crate::plugin::PluginInfo {
+            crate::plugin::PluginInfo::new("F64Scale", "0.1", "test")
+        }
+        fn input_channels(&self) -> usize {
+            self.channels
+        }
+        fn output_channels(&self) -> usize {
+            self.channels
+        }
+        fn parameters(&self) -> Vec<crate::parameters::Parameter> {
+            vec![crate::parameters::Parameter::new_float(
+                "factor", "Factor", 1.0, 0.0, 8.0,
+            )]
+        }
+        fn set_parameter(
+            &mut self,
+            id: crate::parameters::ParameterId,
+            value: crate::parameters::ParameterValue,
+        ) -> Result<(), String> {
+            if id.0 == "factor"
+                && let crate::parameters::ParameterValue::Float(value) = value
+            {
+                self.factor = value as f64;
+                return Ok(());
+            }
+            Err(format!("unknown parameter: {}", id.0))
+        }
+        fn get_parameter(
+            &self,
+            id: &crate::parameters::ParameterId,
+        ) -> Option<crate::parameters::ParameterValue> {
+            if id.0 == "factor" {
+                Some(crate::parameters::ParameterValue::Float(self.factor as f32))
+            } else {
+                None
+            }
+        }
+        fn process(
+            &mut self,
+            _: &[f32],
+            _: &mut [f32],
+            _: &crate::plugin::ProcessContext,
+        ) -> Result<usize, String> {
+            Err("f32 path should not be used".into())
+        }
+        fn process_f64(
+            &mut self,
+            input: &[f64],
+            output: &mut [f64],
+            ctx: &crate::plugin::ProcessContext,
+        ) -> Result<usize, String> {
+            for (o, &i) in output.iter_mut().zip(input.iter()) {
+                *o = i * self.factor;
+            }
+            Ok(ctx.num_frames)
+        }
+        fn supports_f64(&self) -> bool {
+            true
+        }
+    }
+
+    #[test]
+    fn test_process_f64_uses_native_chain_when_supported() {
+        let mut g = DawHost::new(2, 48000);
+        g.add_plugin(Box::new(F64ScalePlugin {
+            channels: 2,
+            factor: 2.0,
+        }))
+        .unwrap();
+        g.add_plugin(Box::new(F64ScalePlugin {
+            channels: 2,
+            factor: 3.0,
+        }))
+        .unwrap();
+
+        let input = vec![0.25_f64, -0.5, 1.0, -1.0];
+        let mut output = vec![0.0_f64; input.len()];
+        let frames = g.process_f64(&input, &mut output).unwrap();
+
+        assert_eq!(frames, 2);
+        assert_eq!(output, vec![1.5, -3.0, 6.0, -6.0]);
+    }
+
+    #[test]
+    fn test_process_f64_sample_offset_parameter_event_splits_native_chain() {
+        let mut g = DawHost::new(2, 48000);
+        g.add_plugin(Box::new(F64ScalePlugin {
+            channels: 2,
+            factor: 1.0,
+        }))
+        .unwrap();
+        g.build().unwrap();
+
+        g.set_plugin_parameter_at(
+            0,
+            "factor",
+            crate::parameters::ParameterValue::Float(0.5),
+            2,
+        )
+        .unwrap();
+
+        let input = vec![1.0_f64; 8];
+        let mut output = vec![0.0_f64; 8];
+        let frames = g.process_f64(&input, &mut output).unwrap();
+
+        assert_eq!(frames, 4);
+        assert_eq!(output, vec![1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5]);
+    }
+
+    #[test]
+    fn test_topology_handle_updates_after_build() {
+        let mut g = DawHost::new(2, 48000);
+        let topology = g.topology_handle();
+        assert!(topology.load().nodes.is_empty());
+
+        g.add_plugin(Box::new(ScalerPlugin::new(2, 1.0))).unwrap();
+        g.build().unwrap();
+
+        let snapshot = topology.load_full();
+        assert_eq!(snapshot.nodes.len(), 1);
+        assert_eq!(snapshot.stages.len(), 1);
+    }
+
+    #[test]
+    fn test_graph_mutation_sender_appends_plugin_before_process() {
+        let mut g = DawHost::new(2, 48000);
+        let topology = g.topology_handle();
+        let mut sender = g
+            .take_graph_mutation_sender()
+            .expect("graph sender should be available once");
+        assert!(g.take_graph_mutation_sender().is_none());
+
+        sender
+            .queue_add_plugin(Box::new(ScalerPlugin::new(2, 2.0)))
+            .unwrap();
+
+        let input = vec![1.0, 2.0, 3.0, 4.0];
+        let mut output = vec![0.0; 4];
+        let frames = g.process(&input, &mut output).unwrap();
+
+        assert_eq!(frames, 2);
+        assert_eq!(output, vec![2.0, 4.0, 6.0, 8.0]);
+        assert_eq!(sender.dropped_mutations(), 0);
+
+        let snapshot = topology.load_full();
+        assert_eq!(snapshot.nodes.len(), 1);
+        assert_eq!(snapshot.stages.len(), 1);
+    }
+
+    #[test]
+    fn test_graph_mutation_sender_reserves_node_ids_for_edges() {
+        let mut g = DawHost::new(2, 48000);
+        let topology = g.topology_handle();
+        let mut sender = g.take_graph_mutation_sender().unwrap();
+
+        let first = sender
+            .queue_add_node("first".into(), Box::new(ScalerPlugin::new(2, 2.0)))
+            .unwrap();
+        let second = sender
+            .queue_add_node("second".into(), Box::new(ScalerPlugin::new(2, 3.0)))
+            .unwrap();
+        sender
+            .queue_add_edge(GraphEdge::new(first, second))
+            .unwrap();
+
+        let input = vec![1.0, 2.0, 3.0, 4.0];
+        let mut output = vec![0.0; 4];
+        let frames = g.process(&input, &mut output).unwrap();
+
+        assert_eq!(frames, 2);
+        assert_eq!(output, vec![6.0, 12.0, 18.0, 24.0]);
+
+        let snapshot = topology.load_full();
+        assert!(snapshot.nodes.contains_key(&first));
+        assert!(snapshot.nodes.contains_key(&second));
+        assert_eq!(snapshot.edges.len(), 1);
+    }
+
+    struct PrefersOversamplingPlugin {
+        inner: ScalerPlugin,
+        factor: u32,
+    }
+
+    impl Plugin for PrefersOversamplingPlugin {
+        fn info(&self) -> crate::plugin::PluginInfo {
+            crate::plugin::PluginInfo::new("PrefersOversampling", "0.1", "test")
+        }
+        fn input_channels(&self) -> usize {
+            self.inner.channels
+        }
+        fn output_channels(&self) -> usize {
+            self.inner.channels
+        }
+        fn parameters(&self) -> Vec<crate::parameters::Parameter> {
+            vec![]
+        }
+        fn set_parameter(
+            &mut self,
+            _: crate::parameters::ParameterId,
+            _: crate::parameters::ParameterValue,
+        ) -> Result<(), String> {
+            Err("none".into())
+        }
+        fn get_parameter(
+            &self,
+            _: &crate::parameters::ParameterId,
+        ) -> Option<crate::parameters::ParameterValue> {
+            None
+        }
+        fn process(
+            &mut self,
+            input: &[f32],
+            output: &mut [f32],
+            ctx: &crate::plugin::ProcessContext,
+        ) -> Result<usize, String> {
+            self.inner.process(input, output, ctx)
+        }
+        fn preferred_oversampling(&self) -> Option<u32> {
+            Some(self.factor)
+        }
+    }
+
+    #[test]
+    fn test_add_node_auto_wraps_preferred_oversampling_plugin() {
+        let mut g = DawHost::new(2, 48000);
+        g.add_plugin(Box::new(PrefersOversamplingPlugin {
+            inner: ScalerPlugin::new(2, 1.0),
+            factor: 2,
+        }))
+        .unwrap();
+
+        let info = g.get_plugin(0).unwrap().info();
+        assert_eq!(info.name, "PrefersOversampling(2x)");
+        assert_eq!(g.get_plugin(0).unwrap().preferred_oversampling(), None);
     }
 
     /// Mock variable-frame plugin that returns a configurable output frame count.
@@ -2240,7 +3659,7 @@ mod tests {
             scratch_output: vec![],
             merge_buffer: vec![],
             channel_map_buffer: vec![],
-            compensation_delays: HashMap::new(),
+            compensation_delays: CompensationDelays::empty(),
             delay_scratch: vec![],
             parallel_scratch: Vec::new(),
         });
@@ -2264,7 +3683,7 @@ mod tests {
             scratch_output: vec![],
             merge_buffer: vec![],
             channel_map_buffer: vec![],
-            compensation_delays: HashMap::new(),
+            compensation_delays: CompensationDelays::empty(),
             delay_scratch: vec![],
             parallel_scratch: Vec::new(),
         });
@@ -2368,6 +3787,76 @@ mod tests {
             }
             Ok(ctx.num_frames)
         }
+    }
+
+    #[test]
+    fn test_set_plugin_parameter_queues_until_next_process() {
+        let mut g = DawHost::new(2, 48000);
+        g.add_plugin(Box::new(GainPlugin::new(2, 1.0))).unwrap();
+        g.build().unwrap();
+
+        let param_id = crate::parameters::ParameterId::from("gain");
+        g.set_plugin_parameter(0, "gain", crate::parameters::ParameterValue::Float(0.5))
+            .unwrap();
+
+        let queued_value = g
+            .get_plugin(0)
+            .unwrap()
+            .get_parameter(&param_id)
+            .and_then(|v| v.as_float())
+            .unwrap();
+        assert_eq!(queued_value, 1.0);
+
+        let input = vec![1.0f32; 4];
+        let mut output = vec![0.0f32; 4];
+        g.process(&input, &mut output).unwrap();
+
+        assert_eq!(output, vec![0.5; 4]);
+    }
+
+    #[test]
+    fn test_external_parameter_sender_queues_without_host_borrow() {
+        let mut g = DawHost::new(2, 48000);
+        g.add_plugin(Box::new(GainPlugin::new(2, 1.0))).unwrap();
+        g.build().unwrap();
+
+        let node_id = g.chain_nodes[0];
+        let mut sender = g
+            .take_parameter_event_sender()
+            .expect("sender should be available once");
+        assert!(g.take_parameter_event_sender().is_none());
+
+        sender
+            .queue_node_parameter(
+                node_id,
+                crate::parameters::ParameterId::from("gain"),
+                crate::parameters::ParameterValue::Float(0.25),
+            )
+            .unwrap();
+
+        let input = vec![1.0f32; 4];
+        let mut output = vec![0.0f32; 4];
+        g.process(&input, &mut output).unwrap();
+
+        assert_eq!(output, vec![0.25; 4]);
+        assert_eq!(sender.dropped_events(), 0);
+    }
+
+    #[test]
+    fn test_parameter_event_sample_offset_splits_block() {
+        let mut g = DawHost::new(2, 48000);
+        g.add_plugin(Box::new(GainPlugin::new(2, 1.0))).unwrap();
+        g.build().unwrap();
+
+        g.set_plugin_parameter_at(0, "gain", crate::parameters::ParameterValue::Float(0.5), 2)
+            .unwrap();
+
+        let input = vec![1.0f32; 8];
+        let mut output = vec![0.0f32; 8];
+        let frames = g.process(&input, &mut output).unwrap();
+
+        assert_eq!(frames, 4);
+        assert_eq!(output, vec![1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5]);
     }
 
     // ---- Automation tests ----

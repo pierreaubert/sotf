@@ -18,7 +18,8 @@ gpu-2d = ["gpui-px/gpu-2d"]
 gpu-3d = ["gpui-px/gpu-3d"]
 tidal = ["dep:sotf-services", "sotf-services/tidal"]
 spotify = ["dep:sotf-services", "sotf-services/spotify"]
-# Dev-only HTTP API for scripted E2E testing. NEVER enable in release builds.
+# QA/debug-only HTTP API for scripted E2E testing. Compile errors in release builds
+# and only starts at runtime when `sotf-desktop --qa <dir>` is used.
 dev-api = []
 
 [dependencies]

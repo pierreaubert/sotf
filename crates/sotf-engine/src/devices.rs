@@ -619,7 +619,9 @@ pub fn get_device_current_sample_rate(device_identifier: Option<&str>) -> Option
         let devices = match host.output_devices() {
             Ok(d) => d,
             Err(e) => {
-                log::warn!(
+                crate::rate_limited_log!(
+                    warn,
+                    5,
                     "[AUDIO] Failed to enumerate output devices for sample rate query: {}",
                     e
                 );
@@ -632,7 +634,9 @@ pub fn get_device_current_sample_rate(device_identifier: Option<&str>) -> Option
         {
             Some(d) => d,
             None => {
-                log::warn!(
+                crate::rate_limited_log!(
+                    warn,
+                    5,
                     "[AUDIO] Device '{}' not found for sample rate query",
                     identifier
                 );
@@ -643,7 +647,11 @@ pub fn get_device_current_sample_rate(device_identifier: Option<&str>) -> Option
         match find_real_output_device(&host) {
             Some(d) => d,
             None => {
-                log::warn!("[AUDIO] No default output device available for sample rate query");
+                crate::rate_limited_log!(
+                    warn,
+                    5,
+                    "[AUDIO] No default output device available for sample rate query"
+                );
                 return None;
             }
         }
@@ -656,7 +664,9 @@ pub fn get_device_current_sample_rate(device_identifier: Option<&str>) -> Option
             Some(rate)
         }
         Err(e) => {
-            log::warn!(
+            crate::rate_limited_log!(
+                warn,
+                5,
                 "[AUDIO] Failed to get default output config for sample rate: {}",
                 e
             );
@@ -702,19 +712,18 @@ pub fn verify_working_sample_rate(
     };
 
     let device_default = device.default_output_config().map(|c| c.sample_rate()).ok();
-
-    // Build candidate list: requested rate first, then common alternatives
-    let mut candidates = vec![requested_rate];
-    for &rate in &[48000, 44100, 96000, 192000] {
-        if !candidates.contains(&rate) {
-            candidates.push(rate);
-        }
-    }
-    if let Some(dr) = device_default
-        && !candidates.contains(&dr)
-    {
-        candidates.push(dr);
-    }
+    let advertised_ranges = device
+        .supported_output_configs()
+        .ok()
+        .map(|configs| configs.collect::<Vec<_>>());
+    let candidates = build_sample_rate_candidates(requested_rate, device_default);
+    let filtered_candidates =
+        filter_advertised_sample_rates(&candidates, advertised_ranges.as_deref());
+    let candidates = if filtered_candidates.is_empty() {
+        candidates
+    } else {
+        filtered_candidates
+    };
 
     // Get device's default channel count for test streams
     let default_channels = device
@@ -911,6 +920,48 @@ fn probe_channel_order(requested_channels: usize, default_channels: u16) -> Vec<
     }
 
     order
+}
+
+fn build_sample_rate_candidates(requested_rate: u32, device_default: Option<u32>) -> Vec<u32> {
+    let mut candidates = vec![requested_rate];
+    for rate in [48_000, 44_100, 96_000, 192_000] {
+        if !candidates.contains(&rate) {
+            candidates.push(rate);
+        }
+    }
+    if let Some(rate) = device_default
+        && !candidates.contains(&rate)
+    {
+        candidates.push(rate);
+    }
+    candidates
+}
+
+fn filter_advertised_sample_rates(
+    candidates: &[u32],
+    advertised_ranges: Option<&[cpal::SupportedStreamConfigRange]>,
+) -> Vec<u32> {
+    let Some(advertised_ranges) = advertised_ranges else {
+        return candidates.to_vec();
+    };
+
+    let advertised_bounds: Vec<(u32, u32)> = advertised_ranges
+        .iter()
+        .map(|range| (range.min_sample_rate(), range.max_sample_rate()))
+        .collect();
+    filter_sample_rates_by_bounds(candidates, &advertised_bounds)
+}
+
+fn filter_sample_rates_by_bounds(candidates: &[u32], advertised_bounds: &[(u32, u32)]) -> Vec<u32> {
+    candidates
+        .iter()
+        .copied()
+        .filter(|rate| {
+            advertised_bounds
+                .iter()
+                .any(|(min, max)| min <= rate && rate <= max)
+        })
+        .collect()
 }
 
 /// Check if a device name looks like a virtual null/discard sink that won't produce real audio.
@@ -1648,6 +1699,29 @@ mod tests {
     #[test]
     fn test_probe_channel_order_deduplicates_matching_default() {
         assert_eq!(probe_channel_order(2, 2), vec![2]);
+    }
+
+    #[test]
+    fn test_build_sample_rate_candidates_deduplicates_and_keeps_requested_first() {
+        assert_eq!(
+            build_sample_rate_candidates(44_100, Some(48_000)),
+            vec![44_100, 48_000, 96_000, 192_000]
+        );
+        assert_eq!(
+            build_sample_rate_candidates(88_200, Some(176_400)),
+            vec![88_200, 48_000, 44_100, 96_000, 192_000, 176_400]
+        );
+    }
+
+    #[test]
+    fn test_filter_sample_rates_by_bounds_skips_unadvertised_rates() {
+        let candidates = vec![44_100, 48_000, 88_200, 96_000, 192_000];
+        let advertised = vec![(48_000, 96_000)];
+
+        assert_eq!(
+            filter_sample_rates_by_bounds(&candidates, &advertised),
+            vec![48_000, 88_200, 96_000]
+        );
     }
 
     fn make_device(name: &str) -> AudioDevice {

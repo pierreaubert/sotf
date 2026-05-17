@@ -4,6 +4,7 @@
 
 use super::clip::Region;
 use crate::decoder::core::{AudioDecoder, AudioSpec, DecodedAudio};
+use crate::engine::PluginConfig;
 use sotf_plugins::DawHost;
 use std::collections::HashMap;
 
@@ -18,6 +19,8 @@ pub struct Track {
     pub regions: Vec<Region>,
     /// Per-track plugin chain
     pub chain: DawHost,
+    /// Serializable plugin configs used to rebuild `chain`.
+    pub plugin_configs: Vec<PluginConfig>,
     /// Track volume (linear, 1.0 = unity)
     pub volume: f32,
     /// Track pan (-1.0 = full left, 0.0 = center, 1.0 = full right)
@@ -69,6 +72,7 @@ impl Track {
             name: name.into(),
             regions: Vec::new(),
             chain: DawHost::new(channels, sample_rate),
+            plugin_configs: Vec::new(),
             volume: 1.0,
             pan: 0.0,
             muted: false,
@@ -159,7 +163,7 @@ impl Track {
 
         // Phase 2: Decode and mix (mutable access to decoders and buffers)
         // Use take() to move the Vec without allocating (put back after loop)
-        let mut work_items = std::mem::take(&mut self.overlap_work);
+        let work_items = std::mem::take(&mut self.overlap_work);
         for work in &work_items {
             // Ensure decoder exists and is seeked
             if !self.decoders.contains_key(&work.region_idx) {
@@ -235,8 +239,7 @@ impl Track {
             let region = &self.regions[work.region_idx];
             let clip_gain = region.clip.linear_gain();
             for frame in 0..usable_frames {
-                let gain =
-                    clip_gain * region.clip.fade_gain_at(work.clip_position + frame as u64);
+                let gain = clip_gain * region.clip.fade_gain_at(work.clip_position + frame as u64);
                 for ch in 0..self.channels.min(src_channels) {
                     let src_idx = frame * src_channels + ch;
                     let dst_idx = (work.offset_in_block + frame) * self.channels + ch;

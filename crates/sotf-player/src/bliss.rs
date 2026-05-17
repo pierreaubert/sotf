@@ -16,13 +16,13 @@
 
 use crate::database::MusicDatabase;
 use audioadapter_buffers::direct::SequentialSliceOfVecs;
+use crossbeam::channel::{self, Receiver, Sender};
 use math_audio_dsp::audio_features;
 use rubato::{Fft, FixedSync, Resampler};
 use sotf_audio::decoder::create_decoder;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
-use crossbeam::channel::{self, Receiver, Sender};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
 /// Number of audio analysis features stored

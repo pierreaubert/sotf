@@ -41,7 +41,7 @@ fn should_fallback_from_virtual_default(
 
 fn send_thread_event(event_tx: &Sender<ThreadEvent>, event: ThreadEvent, context: &str) {
     if let Err(e) = event_tx.send(event) {
-        log::trace!("[CpalSink] Dropped event in {}: {}", context, e);
+        crate::rate_limited_log!(trace, 5, "[CpalSink] Dropped event in {}: {}", context, e);
     }
 }
 
@@ -803,7 +803,7 @@ fn build_output_stream_f32(
                 apply_volume(data, &state_clone);
             },
             move |err| {
-                log::warn!("[CpalSink] Stream error: {}", err);
+                crate::rate_limited_log!(warn, 5, "[CpalSink] Stream error: {}", err);
                 send_thread_event(
                     &event_tx,
                     ThreadEvent::ProcessingError(format!("Stream error: {}", err)),
@@ -858,7 +858,7 @@ where
                 }
             },
             move |err| {
-                log::warn!("[CpalSink] Stream error: {}", err);
+                crate::rate_limited_log!(warn, 5, "[CpalSink] Stream error: {}", err);
                 send_thread_event(
                     &event_tx,
                     ThreadEvent::ProcessingError(format!("Stream error: {}", err)),

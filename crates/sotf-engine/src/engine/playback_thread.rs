@@ -35,6 +35,30 @@ fn write_chunk_bulk(mut chunk: WriteChunkUninit<'_, f32>, data: &[f32]) {
     unsafe { chunk.commit(data.len()) };
 }
 
+fn send_playback_event(event_tx: &Sender<ThreadEvent>, event: ThreadEvent, context: &str) {
+    if let Err(e) = event_tx.send(event) {
+        crate::rate_limited_log!(
+            trace,
+            5,
+            "[Playback Thread] Dropped event in {}: {}",
+            context,
+            e
+        );
+    }
+}
+
+fn recycle_frame_data(recycle_tx: &SyncSender<Vec<f32>>, data: Vec<f32>, context: &str) {
+    if let Err(e) = recycle_tx.try_send(data) {
+        crate::rate_limited_log!(
+            trace,
+            5,
+            "[Playback Thread] Dropped recycled frame buffer in {}: {}",
+            context,
+            e
+        );
+    }
+}
+
 fn is_virtual_output_device_name(name: &str) -> bool {
     let lower = name.to_lowercase();
     lower.contains("sotf")
@@ -86,12 +110,11 @@ impl PlaybackThread {
                     allow_virtual_output,
                 ) {
                     log::debug!("[Playback Thread] Error: {}", e);
-                    error_tx
-                        .send(ThreadEvent::ProcessingError(format!(
-                            "Playback thread error: {}",
-                            e
-                        )))
-                        .ok();
+                    send_playback_event(
+                        &error_tx,
+                        ThreadEvent::ProcessingError(format!("Playback thread error: {}", e)),
+                        "thread error",
+                    );
                 }
             })
             .map_err(|e| format!("Failed to spawn playback thread: {}", e))?;
@@ -111,9 +134,13 @@ impl PlaybackThread {
 
     /// Shutdown the playback thread
     pub fn shutdown(&mut self) {
-        self.send_command(PlaybackCommand::Shutdown).ok();
+        if let Err(e) = self.send_command(PlaybackCommand::Shutdown) {
+            log::trace!("[Playback Thread] Shutdown command receiver dropped: {}", e);
+        }
         if let Some(handle) = self.thread_handle.take() {
-            handle.join().ok();
+            if let Err(e) = handle.join() {
+                log::warn!("[Playback Thread] Thread panicked during shutdown: {:?}", e);
+            }
         }
     }
 }
@@ -256,7 +283,7 @@ fn select_playback_device(
         let name = get_name(&default_dev);
 
         if is_virtual_output_device_name(&name) && !allow_virtual_output {
-            log::warn!(
+            log::info!(
                 "[Playback Thread] Default device is '{}' (virtual/null) - finding fallback physical device",
                 name
             );
@@ -308,7 +335,7 @@ fn rebuild_playback_stream(
 
     let (output_format, hw_channels) = choose_output_format(&device, &config);
     if hw_channels != config.channels {
-        log::warn!(
+        log::info!(
             "[Playback Thread] Recovery adjusted channels from {} to {} for '{}'",
             config.channels,
             hw_channels,
@@ -424,7 +451,7 @@ fn run_playback_thread(
     // the requested channel count (e.g. 6ch file on a 2ch HDMI device).
     let (mut output_format, hw_channels) = choose_output_format(&device, &config);
     if hw_channels != channels as u16 {
-        log::warn!(
+        log::info!(
             "[Playback Thread] Adjusting output channels from {} to {} (device limitation)",
             channels,
             hw_channels
@@ -502,9 +529,11 @@ fn run_playback_thread(
     stream
         .play()
         .map_err(|e| format!("Failed to start stream: {}", e))?;
-    event_tx
-        .send(ThreadEvent::PlaybackChannelsChanged(channels))
-        .ok();
+    send_playback_event(
+        &event_tx,
+        ThreadEvent::PlaybackChannelsChanged(channels),
+        "initial playback channels",
+    );
 
     // Get device name for logging
     let mut device_name = device
@@ -582,7 +611,7 @@ fn run_playback_thread(
                     state.muted.store(muted, Ordering::Relaxed);
                 }
                 PlaybackCommand::UpdateSampleRate(new_sample_rate) => {
-                    log::warn!(
+                    log::debug!(
                         "[Playback Thread] RECEIVED UpdateSampleRate({}) command, current sample_rate={}",
                         new_sample_rate,
                         config.sample_rate
@@ -673,12 +702,14 @@ fn run_playback_thread(
                                         "[Playback Thread] Failed to start new stream: {}",
                                         e
                                     );
-                                    event_tx
-                                        .send(ThreadEvent::ProcessingError(format!(
+                                    send_playback_event(
+                                        &event_tx,
+                                        ThreadEvent::ProcessingError(format!(
                                             "Playback stream start failed for {} sample rate: {}",
                                             new_sample_rate, e
-                                        )))
-                                        .ok();
+                                        )),
+                                        "sample-rate stream start failure",
+                                    );
                                 } else {
                                     stream = new_stream;
                                     config = new_config;
@@ -686,14 +717,16 @@ fn run_playback_thread(
                                     channels = new_channels;
                                     producer = new_producer;
                                     buffer_capacity = new_buffer_capacity;
-                                    event_tx
-                                        .send(ThreadEvent::PlaybackChannelsChanged(channels))
-                                        .ok();
+                                    send_playback_event(
+                                        &event_tx,
+                                        ThreadEvent::PlaybackChannelsChanged(channels),
+                                        "sample-rate rebuild channels",
+                                    );
 
                                     // Final drain
                                     while message_rx.try_recv().is_ok() {}
 
-                                    log::warn!(
+                                    log::info!(
                                         "[Playback Thread] STREAM REBUILT successfully with {}Hz {}ch",
                                         new_sample_rate,
                                         channels
@@ -713,12 +746,14 @@ fn run_playback_thread(
                                         resume_err
                                     );
                                 }
-                                event_tx
-                                    .send(ThreadEvent::ProcessingError(format!(
+                                send_playback_event(
+                                    &event_tx,
+                                    ThreadEvent::ProcessingError(format!(
                                         "Playback stream rebuild failed for sample rate {}: {}",
                                         new_sample_rate, e
-                                    )))
-                                    .ok();
+                                    )),
+                                    "sample-rate rebuild failure",
+                                );
                             }
                         }
                     } else {
@@ -729,7 +764,7 @@ fn run_playback_thread(
                     }
                 }
                 PlaybackCommand::UpdateChannels(mut new_channels) => {
-                    log::warn!(
+                    log::debug!(
                         "[Playback Thread] RECEIVED UpdateChannels({}) command, current channels={}",
                         new_channels,
                         channels
@@ -750,7 +785,7 @@ fn run_playback_thread(
                         };
                         let (new_format, new_hw_ch) = choose_output_format(&device, &probe_config);
                         if new_hw_ch as usize != new_channels {
-                            log::warn!(
+                            log::info!(
                                 "[Playback Thread] Device adjusts requested {}ch to {}ch",
                                 new_channels,
                                 new_hw_ch
@@ -834,12 +869,14 @@ fn run_playback_thread(
                                             "[Playback Thread] Failed to start new stream: {}",
                                             e
                                         );
-                                        event_tx
-                                            .send(ThreadEvent::ProcessingError(format!(
+                                        send_playback_event(
+                                            &event_tx,
+                                            ThreadEvent::ProcessingError(format!(
                                                 "Playback stream start failed for {} channels: {}",
                                                 new_channels, e
-                                            )))
-                                            .ok();
+                                            )),
+                                            "channel stream start failure",
+                                        );
                                     } else {
                                         stream = new_stream;
                                         config = new_config;
@@ -847,9 +884,11 @@ fn run_playback_thread(
                                         channels = new_channels;
                                         producer = new_producer;
                                         buffer_capacity = new_buffer_capacity;
-                                        event_tx
-                                            .send(ThreadEvent::PlaybackChannelsChanged(channels))
-                                            .ok();
+                                        send_playback_event(
+                                            &event_tx,
+                                            ThreadEvent::PlaybackChannelsChanged(channels),
+                                            "channel rebuild channels",
+                                        );
 
                                         let mut final_drained = 0;
                                         while message_rx.try_recv().is_ok() {
@@ -882,13 +921,15 @@ fn run_playback_thread(
                                              Playback is dead, exiting playback loop.",
                                             resume_err
                                         );
-                                        event_tx
-                                            .send(ThreadEvent::ProcessingError(format!(
+                                        send_playback_event(
+                                            &event_tx,
+                                            ThreadEvent::ProcessingError(format!(
                                                 "Playback stream unrecoverable: rebuild failed ({}) \
                                                  and old stream failed to resume ({})",
                                                 e, resume_err
-                                            )))
-                                            .ok();
+                                            )),
+                                            "unrecoverable channel rebuild failure",
+                                        );
                                         break;
                                     }
                                     // Resume succeeded — the callback stall detector will
@@ -900,12 +941,14 @@ fn run_playback_thread(
                                         "[Playback Thread] Falling back to old stream ({} channels) after rebuild failure",
                                         channels
                                     );
-                                    event_tx
-                                        .send(ThreadEvent::ProcessingWarning(format!(
+                                    send_playback_event(
+                                        &event_tx,
+                                        ThreadEvent::ProcessingWarning(format!(
                                             "Playback stream rebuild failed for {} channels, falling back to previous configuration",
                                             new_channels
-                                        )))
-                                        .ok();
+                                        )),
+                                        "channel rebuild fallback",
+                                    );
                                 }
                             }
                         }
@@ -986,7 +1029,11 @@ fn run_playback_thread(
                     warning,
                     drained_count
                 );
-                event_tx.send(ThreadEvent::ProcessingWarning(warning)).ok();
+                send_playback_event(
+                    &event_tx,
+                    ThreadEvent::ProcessingWarning(warning),
+                    "stream recovery warning",
+                );
 
                 if let Err(e) = stream.pause() {
                     log::warn!(
@@ -1009,7 +1056,7 @@ fn run_playback_thread(
                     },
                 ) {
                     Ok(rebuilt) => {
-                        log::warn!(
+                        log::info!(
                             "[Playback Thread] Recovered playback stream: device='{}', {}Hz, {}ch, format={:?}",
                             rebuilt.device_name,
                             rebuilt.config.sample_rate,
@@ -1033,9 +1080,11 @@ fn run_playback_thread(
                         flush_mode = FlushMode::Normal;
                         end_of_stream = false;
                         drain_start = None;
-                        event_tx
-                            .send(ThreadEvent::PlaybackChannelsChanged(channels))
-                            .ok();
+                        send_playback_event(
+                            &event_tx,
+                            ThreadEvent::PlaybackChannelsChanged(channels),
+                            "playback channels changed",
+                        );
                         continue;
                     }
                     Err(e) => {
@@ -1044,7 +1093,11 @@ fn run_playback_thread(
                             device_name, e
                         );
                         log::error!("[Playback Thread] {}", msg);
-                        event_tx.send(ThreadEvent::ProcessingWarning(msg)).ok();
+                        send_playback_event(
+                            &event_tx,
+                            ThreadEvent::ProcessingWarning(msg),
+                            "stream recovery failure",
+                        );
                         if let Err(resume_err) = stream.play() {
                             log::warn!(
                                 "[Playback Thread] Failed to resume previous stream after recovery failure: {}",
@@ -1065,9 +1118,11 @@ fn run_playback_thread(
                 || current_underruns.is_multiple_of(100)
                 || last_reported_underruns == 0)
         {
-            event_tx
-                .send(ThreadEvent::PlaybackUnderrun(current_underruns))
-                .ok();
+            send_playback_event(
+                &event_tx,
+                ThreadEvent::PlaybackUnderrun(current_underruns),
+                "playback underrun",
+            );
             last_reported_underruns = current_underruns;
         }
 
@@ -1122,7 +1177,7 @@ fn run_playback_thread(
             Ok(ProcessingMessage::Frame(frame)) => {
                 if matches!(flush_mode, FlushMode::DroppingUntilFlush) {
                     frames_dropped += 1;
-                    recycle_tx.try_send(frame.data).ok();
+                    recycle_frame_data(&recycle_tx, frame.data, "flush drop");
                     continue;
                 }
 
@@ -1239,7 +1294,7 @@ fn run_playback_thread(
                         Err(_) => {
                             // Not enough space — recycle frame data and wait
                             frames_dropped += 1;
-                            recycle_tx.try_send(frame.data).ok();
+                            recycle_frame_data(&recycle_tx, frame.data, "converted frame drop");
                             std::thread::sleep(std::time::Duration::from_millis(
                                 SPIN_MS_RINGBUFFER,
                             ));
@@ -1247,7 +1302,7 @@ fn run_playback_thread(
                         }
                     };
                     write_chunk_bulk(chunk, &conversion_buffer);
-                    recycle_tx.try_send(frame.data).ok();
+                    recycle_frame_data(&recycle_tx, frame.data, "converted frame written");
                     frames_written += 1;
                     total_samples_written += conversion_buffer.len() as u64;
                     continue;
@@ -1266,13 +1321,13 @@ fn run_playback_thread(
                                 frames_dropped
                             );
                         }
-                        recycle_tx.try_send(frame.data).ok();
+                        recycle_frame_data(&recycle_tx, frame.data, "frame drop");
                         std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_RINGBUFFER));
                         continue;
                     }
                 };
                 write_chunk_bulk(chunk, &frame.data);
-                recycle_tx.try_send(frame.data).ok();
+                recycle_frame_data(&recycle_tx, frame.data, "frame written");
                 frames_written += 1;
                 total_samples_written += frame_samples as u64;
             }
@@ -1299,7 +1354,11 @@ fn run_playback_thread(
                     // Check if ring buffer has been fully consumed by cpal callback
                     if producer.slots() >= buffer_capacity {
                         log::info!("[Playback Thread] Ring buffer drained, signaling completion");
-                        event_tx.send(ThreadEvent::PlaybackDrained).ok();
+                        send_playback_event(
+                            &event_tx,
+                            ThreadEvent::PlaybackDrained,
+                            "ring buffer drained",
+                        );
                         break;
                     }
                     // Safety timeout: if drain takes too long (cpal callback stopped?),
@@ -1322,13 +1381,21 @@ fn run_playback_thread(
                                 device_name,
                             );
                             log::error!("[Playback Thread] {}", msg);
-                            event_tx.send(ThreadEvent::ProcessingError(msg)).ok();
+                            send_playback_event(
+                                &event_tx,
+                                ThreadEvent::ProcessingError(msg),
+                                "drain timeout error",
+                            );
                         } else {
                             log::warn!(
                                 "[Playback Thread] Drain timeout, buffer mostly empty ({}% drained), signaling completion",
                                 drain_percent
                             );
-                            event_tx.send(ThreadEvent::PlaybackDrained).ok();
+                            send_playback_event(
+                                &event_tx,
+                                ThreadEvent::PlaybackDrained,
+                                "drain timeout completion",
+                            );
                         }
                         break;
                     }
@@ -1352,7 +1419,11 @@ fn run_playback_thread(
                             log::info!(
                                 "[Playback Thread] Ring buffer drained (post-disconnect), signaling completion"
                             );
-                            event_tx.send(ThreadEvent::PlaybackDrained).ok();
+                            send_playback_event(
+                                &event_tx,
+                                ThreadEvent::PlaybackDrained,
+                                "post-disconnect drained",
+                            );
                             break;
                         }
                         if drain_start.elapsed() > drain_timeout {
@@ -1367,13 +1438,21 @@ fn run_playback_thread(
                                     device_name,
                                 );
                                 log::error!("[Playback Thread] {}", msg);
-                                event_tx.send(ThreadEvent::ProcessingError(msg)).ok();
+                                send_playback_event(
+                                    &event_tx,
+                                    ThreadEvent::ProcessingError(msg),
+                                    "post-disconnect drain timeout error",
+                                );
                             } else {
                                 log::warn!(
                                     "[Playback Thread] Drain timeout after disconnect, buffer mostly empty ({}% drained)",
                                     drain_percent
                                 );
-                                event_tx.send(ThreadEvent::PlaybackDrained).ok();
+                                send_playback_event(
+                                    &event_tx,
+                                    ThreadEvent::PlaybackDrained,
+                                    "post-disconnect drain timeout completion",
+                                );
                             }
                             break;
                         }
@@ -1537,7 +1616,7 @@ fn choose_output_format(device: &Device, config: &StreamConfig) -> (SampleFormat
     if let Some(ch) = alt_ch
         && let Some(fmt) = pick_preferred_output_format(&candidates, ch, config.sample_rate)
     {
-        log::warn!(
+        log::info!(
             "[Playback Thread] Device doesn't support {}ch; using {}ch {:?} (will downmix). Device configs: {:?}",
             config.channels,
             ch,
@@ -1547,7 +1626,7 @@ fn choose_output_format(device: &Device, config: &StreamConfig) -> (SampleFormat
         return (fmt, ch);
     }
 
-    log::warn!(
+    log::info!(
         "[Playback Thread] No compatible config for {}ch {}Hz among device formats, falling back to default format. Device configs: {:?}",
         config.channels,
         config.sample_rate,
@@ -1789,13 +1868,18 @@ fn build_output_stream_f32(
                 error_state
                     .stream_error_count
                     .fetch_add(1, Ordering::Relaxed);
-                log::warn!("[Playback Thread] Stream error: {}", err);
-                event_tx
-                    .send(ThreadEvent::ProcessingWarning(format!(
-                        "Stream error: {}",
-                        err
-                    )))
-                    .ok();
+                crate::rate_limited_log!(warn, 5, "[Playback Thread] Stream error: {}", err);
+                if let Err(e) = event_tx.send(ThreadEvent::ProcessingWarning(format!(
+                    "Stream error: {}",
+                    err
+                ))) {
+                    crate::rate_limited_log!(
+                        trace,
+                        5,
+                        "[Playback Thread] Dropped stream-error event: {}",
+                        e
+                    );
+                }
             },
             None,
         )
@@ -1859,13 +1943,18 @@ where
                 error_state
                     .stream_error_count
                     .fetch_add(1, Ordering::Relaxed);
-                log::warn!("[Playback Thread] Stream error: {}", err);
-                event_tx
-                    .send(ThreadEvent::ProcessingWarning(format!(
-                        "Stream error: {}",
-                        err
-                    )))
-                    .ok();
+                crate::rate_limited_log!(warn, 5, "[Playback Thread] Stream error: {}", err);
+                if let Err(e) = event_tx.send(ThreadEvent::ProcessingWarning(format!(
+                    "Stream error: {}",
+                    err
+                ))) {
+                    crate::rate_limited_log!(
+                        trace,
+                        5,
+                        "[Playback Thread] Dropped stream-error event: {}",
+                        e
+                    );
+                }
             },
             None,
         )

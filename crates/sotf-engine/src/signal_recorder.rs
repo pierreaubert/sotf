@@ -10,7 +10,7 @@ use hound::{SampleFormat, WavSpec, WavWriter};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tempfile::NamedTempFile;
 
 /// Cooperative cancellation flag for recording-side capture loops.
@@ -38,6 +38,20 @@ pub const DEFAULT_AUXILIARY_SIGNAL_LEVEL_DB: f32 = -6.0206;
 #[inline]
 fn cancel_requested(cancel: Option<&CancelFlag>) -> bool {
     cancel.is_some_and(|c| c.load(Ordering::Relaxed))
+}
+
+#[cfg(not(target_os = "ios"))]
+fn capture_capacity(sample_rate: u32, duration_secs: f64, extra_tail_secs: f64) -> usize {
+    ((duration_secs + extra_tail_secs).max(1.0) * sample_rate as f64).ceil() as usize
+}
+
+#[cfg(not(target_os = "ios"))]
+fn drain_capture<T>(consumer: &mut rtrb::Consumer<T>, expected_len: usize) -> Vec<T> {
+    let mut out = Vec::with_capacity(expected_len);
+    while let Ok(sample) = consumer.pop() {
+        out.push(sample);
+    }
+    out
 }
 
 fn measurement_amplitude_from_level_db(level_db: f32) -> f32 {
@@ -413,8 +427,6 @@ pub fn record_and_analyze(
 ) -> Result<crate::signal_analysis::AnalysisResult, String> {
     use crate::AudioEngineManager;
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-    use std::sync::Arc;
-    use std::sync::Mutex;
     use std::thread::sleep;
     use std::time::Duration;
 
@@ -541,9 +553,13 @@ pub fn record_and_analyze(
         input_sample_rate,
     );
 
-    // Shared state for recording
-    let recorded_samples: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
-    let recorded_samples_clone = Arc::clone(&recorded_samples);
+    let capture_capacity = capture_capacity(input_sample_rate, expected_duration, 4.5);
+    let (mut recorded_producer, mut recorded_consumer) =
+        rtrb::RingBuffer::<f32>::new(capture_capacity);
+    let recorded_count = Arc::new(AtomicUsize::new(0));
+    let recorded_count_callback = Arc::clone(&recorded_count);
+    let recorded_overruns = Arc::new(AtomicUsize::new(0));
+    let recorded_overruns_callback = Arc::clone(&recorded_overruns);
 
     // Create input stream
     let input_channel_idx = input_channel as usize;
@@ -551,17 +567,20 @@ pub fn record_and_analyze(
         .build_input_stream(
             &input_config,
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                let mut recorded = match recorded_samples_clone.try_lock() {
-                    Ok(guard) => guard,
-                    Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
-                    Err(std::sync::TryLockError::WouldBlock) => return,
-                };
-
                 // Extract only the specified input channel
                 // Data is interleaved: [ch0, ch1, ..., chN, ch0, ch1, ..., chN, ...]
                 for frame in data.chunks(hardware_input_channels) {
                     if input_channel_idx < frame.len() {
-                        recorded.push(frame[input_channel_idx]);
+                        if recorded_producer.push(frame[input_channel_idx]).is_ok() {
+                            recorded_count_callback.fetch_add(1, Ordering::Relaxed);
+                        } else {
+                            recorded_overruns_callback.fetch_add(1, Ordering::Relaxed);
+                            crate::rate_limited_log!(
+                                warn,
+                                5,
+                                "[record_and_analyze] Input capture ring buffer overrun"
+                            );
+                        }
                     } else {
                         log::info!(
                             "[record_and_analyze] ERROR: Tried to access channel {} but frame has {} channels",
@@ -708,7 +727,7 @@ pub fn record_and_analyze(
         elapsed += check_interval;
 
         // Check recording progress
-        let current_sample_count = recorded_samples.lock().unwrap().len();
+        let current_sample_count = recorded_count.load(Ordering::Relaxed);
 
         // Print progress every second
         if elapsed.as_millis() % 1000 < check_interval.as_millis() {
@@ -763,7 +782,17 @@ pub fn record_and_analyze(
     sleep(Duration::from_millis(100));
 
     // Get recorded samples
-    let recorded = recorded_samples.lock().unwrap().clone();
+    let recorded = drain_capture(
+        &mut recorded_consumer,
+        recorded_count.load(Ordering::Relaxed),
+    );
+    let dropped_samples = recorded_overruns.load(Ordering::Relaxed);
+    if dropped_samples > 0 {
+        log::warn!(
+            "[record_and_analyze] Dropped {} input samples because the capture ring buffer filled",
+            dropped_samples
+        );
+    }
     // Use the actual input sample rate for duration/WAV/analysis calculations
     let analysis_sample_rate = input_sample_rate;
     let recorded_duration = recorded.len() as f64 / analysis_sample_rate as f64;
@@ -884,8 +913,6 @@ pub fn record_and_analyze_multi(
 ) -> Result<Vec<crate::signal_analysis::AnalysisResult>, String> {
     use crate::AudioEngineManager;
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-    use std::sync::Arc;
-    use std::sync::Mutex;
     use std::thread::sleep;
     use std::time::Duration;
 
@@ -970,12 +997,21 @@ pub fn record_and_analyze_multi(
         buffer_size: cpal::BufferSize::Default,
     };
 
-    // --- Shared recording buffers (one Vec<f32> per mic) ---
-    let recorded_buffers: Vec<Arc<Mutex<Vec<f32>>>> = (0..num_mics)
-        .map(|_| Arc::new(Mutex::new(Vec::new())))
+    // --- Lock-free recording buffers (one SPSC ring per mic) ---
+    let capture_capacity = capture_capacity(input_sample_rate, expected_duration, 4.5);
+    let mut recorded_producers = Vec::with_capacity(num_mics);
+    let mut recorded_consumers = Vec::with_capacity(num_mics);
+    for _ in 0..num_mics {
+        let (producer, consumer) = rtrb::RingBuffer::<f32>::new(capture_capacity);
+        recorded_producers.push(producer);
+        recorded_consumers.push(consumer);
+    }
+    let recorded_counts: Vec<Arc<AtomicUsize>> = (0..num_mics)
+        .map(|_| Arc::new(AtomicUsize::new(0)))
         .collect();
-    let buffers_clone: Vec<Arc<Mutex<Vec<f32>>>> =
-        recorded_buffers.iter().map(Arc::clone).collect();
+    let counts_callback: Vec<Arc<AtomicUsize>> = recorded_counts.iter().map(Arc::clone).collect();
+    let recorded_overruns = Arc::new(AtomicUsize::new(0));
+    let recorded_overruns_callback = Arc::clone(&recorded_overruns);
 
     let input_channels_vec: Vec<usize> = input_channels.iter().map(|&c| c as usize).collect();
 
@@ -986,14 +1022,16 @@ pub fn record_and_analyze_multi(
                 for frame in data.chunks(hardware_input_channels) {
                     for (mic_i, &ch_idx) in input_channels_vec.iter().enumerate() {
                         if ch_idx < frame.len() {
-                            let mut buffer = match buffers_clone[mic_i].try_lock() {
-                                Ok(guard) => guard,
-                                Err(std::sync::TryLockError::Poisoned(poisoned)) => {
-                                    poisoned.into_inner()
-                                }
-                                Err(std::sync::TryLockError::WouldBlock) => continue,
-                            };
-                            buffer.push(frame[ch_idx]);
+                            if recorded_producers[mic_i].push(frame[ch_idx]).is_ok() {
+                                counts_callback[mic_i].fetch_add(1, Ordering::Relaxed);
+                            } else {
+                                recorded_overruns_callback.fetch_add(1, Ordering::Relaxed);
+                                crate::rate_limited_log!(
+                                    warn,
+                                    5,
+                                    "[record_and_analyze_multi] Input capture ring buffer overrun"
+                                );
+                            }
                         }
                     }
                 }
@@ -1084,7 +1122,7 @@ pub fn record_and_analyze_multi(
         sleep(check_interval);
         elapsed += check_interval;
 
-        let current_sample_count = recorded_buffers[0].lock().unwrap().len();
+        let current_sample_count = recorded_counts[0].load(Ordering::Relaxed);
 
         if elapsed.as_millis() % 1000 < check_interval.as_millis() {
             let recorded_duration = current_sample_count as f64 / sample_rate as f64;
@@ -1121,9 +1159,19 @@ pub fn record_and_analyze_multi(
     // --- Analyze each mic channel independently ---
     let analysis_sample_rate = input_sample_rate;
     let mut results = Vec::with_capacity(num_mics);
+    let dropped_samples = recorded_overruns.load(Ordering::Relaxed);
+    if dropped_samples > 0 {
+        log::warn!(
+            "[record_and_analyze_multi] Dropped {} input samples because capture ring buffers filled",
+            dropped_samples
+        );
+    }
 
     for mic_i in 0..num_mics {
-        let recorded = recorded_buffers[mic_i].lock().unwrap().clone();
+        let recorded = drain_capture(
+            &mut recorded_consumers[mic_i],
+            recorded_counts[mic_i].load(Ordering::Relaxed),
+        );
         let recorded_duration = recorded.len() as f64 / analysis_sample_rate as f64;
         log::info!(
             "[record_and_analyze_multi] Mic {}: {} samples ({:.2}s)",
@@ -1436,7 +1484,6 @@ fn play_per_channel_and_record_mono(
     cancel: Option<&CancelFlag>,
 ) -> Result<PlayPerChannelOutput, String> {
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-    use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
     use std::thread::sleep;
     use std::time::Duration;
@@ -1586,39 +1633,27 @@ fn play_per_channel_and_record_mono(
         sample_rate: input_sr,
         buffer_size: cpal::BufferSize::Default,
     };
-    // Mic + loopback are pushed under the SAME Mutex so a callback can
-    // never advance one stream while the other waits — downstream code
-    // (especially `analyze_bass_anchor_recording`) relies on
-    // `mic.len() == loopback.len()` to slice per-channel offsets in
-    // both with the same indices.
-    //
-    // Pre-allocate enough capacity to cover the playback duration plus
-    // the 0.5 s settle tail at the host's input rate; that keeps every
-    // realloc out of the cpal callback.
+    // Mic + optional loopback are pushed into one SPSC ring as a pair, so
+    // they stay exactly in lock-step without locking inside the input callback.
     let expected_input_samples = ((total_frames as f64 * input_sr as f64 / sample_rate as f64)
         as usize)
         + (input_sr as usize / 2);
-    #[allow(clippy::type_complexity)]
-    let capture_buffers: Arc<Mutex<(Vec<f32>, Option<Vec<f32>>)>> = Arc::new(Mutex::new((
-        Vec::with_capacity(expected_input_samples),
-        loopback_input_channel.map(|_| Vec::with_capacity(expected_input_samples)),
-    )));
-    let capture_clone = Arc::clone(&capture_buffers);
+    let (mut capture_producer, mut capture_consumer) =
+        rtrb::RingBuffer::<(f32, f32)>::new(expected_input_samples.max(1024));
+    let capture_count = Arc::new(AtomicUsize::new(0));
+    let capture_count_callback = Arc::clone(&capture_count);
+    let capture_overruns = Arc::new(AtomicUsize::new(0));
+    let capture_overruns_callback = Arc::clone(&capture_overruns);
     let loopback_ch_idx = loopback_input_channel.map(|c| c as usize);
     let input_ch_idx = input_channel as usize;
     let hw_ch = hw_input_ch;
 
-    let log_tag_owned = log_tag.to_string();
+    let log_tag_for_data = log_tag.to_string();
+    let log_tag_for_error = log_tag.to_string();
     let input_stream = input_device
         .build_input_stream(
             &input_config,
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                let mut guard = match capture_clone.try_lock() {
-                    Ok(guard) => guard,
-                    Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
-                    Err(std::sync::TryLockError::WouldBlock) => return,
-                };
-                let (recorded, loopback_opt) = &mut *guard;
                 for frame in data.chunks(hw_ch) {
                     if input_ch_idx >= frame.len() {
                         continue;
@@ -1632,16 +1667,25 @@ fn play_per_channel_and_record_mono(
                     // Only push when we have BOTH samples (or no
                     // loopback configured) so the two vectors stay
                     // exactly in lock-step.
-                    if loopback_opt.is_some() && lb_sample.is_none() {
+                    if loopback_ch_idx.is_some() && lb_sample.is_none() {
                         continue;
                     }
-                    recorded.push(mic_sample);
-                    if let (Some(loopback), Some(s)) = (loopback_opt.as_mut(), lb_sample) {
-                        loopback.push(s);
+                    if capture_producer
+                        .push((mic_sample, lb_sample.unwrap_or(0.0)))
+                        .is_ok()
+                    {
+                        capture_count_callback.fetch_add(1, AtomicOrdering::Relaxed);
+                    } else {
+                        capture_overruns_callback.fetch_add(1, AtomicOrdering::Relaxed);
+                        crate::rate_limited_log!(
+                            warn,
+                            5,
+                            "[{log_tag_for_data}] Input capture ring buffer overrun"
+                        );
                     }
                 }
             },
-            move |err| log::debug!("[{log_tag_owned}] Input stream error: {}", err),
+            move |err| log::debug!("[{log_tag_for_error}] Input stream error: {}", err),
             None,
         )
         .map_err(|e| format!("[{log_tag}] Failed to build input stream: {}", e))?;
@@ -1686,7 +1730,7 @@ fn play_per_channel_and_record_mono(
             break;
         }
         let played = playback_cursor.load(AtomicOrdering::Relaxed);
-        let count = capture_buffers.lock().unwrap().0.len();
+        let count = capture_count.load(AtomicOrdering::Relaxed);
         if count == last_count && count > 0 {
             stable += 1;
             if stable >= 3 && played >= playback.len() {
@@ -1716,10 +1760,26 @@ fn play_per_channel_and_record_mono(
         return Err(CANCELLED_ERR.to_string());
     }
 
-    let (recorded, loopback_recorded) = {
-        let guard = capture_buffers.lock().unwrap();
-        (guard.0.clone(), guard.1.clone())
-    };
+    let capture_pairs = drain_capture(
+        &mut capture_consumer,
+        capture_count.load(AtomicOrdering::Relaxed),
+    );
+    let mut recorded = Vec::with_capacity(capture_pairs.len());
+    let mut loopback_recorded =
+        loopback_input_channel.map(|_| Vec::with_capacity(capture_pairs.len()));
+    for (mic, loopback) in capture_pairs {
+        recorded.push(mic);
+        if let Some(lb) = loopback_recorded.as_mut() {
+            lb.push(loopback);
+        }
+    }
+    let dropped_samples = capture_overruns.load(AtomicOrdering::Relaxed);
+    if dropped_samples > 0 {
+        log::warn!(
+            "[{log_tag}] Dropped {} input frames because the capture ring buffer filled",
+            dropped_samples
+        );
+    }
     log::info!(
         "[{log_tag}] Recorded {} samples ({:.2}s) at {} Hz",
         recorded.len(),
@@ -2370,7 +2430,9 @@ pub fn run_bass_anchor_with_recording(
         .map_err(|e| format!("Failed to create bass-anchor recording WAV: {}", e))?;
     if let Some(ref lb) = loopback_recorded {
         if lb.len() != recorded.len() {
-            log::warn!(
+            crate::rate_limited_log!(
+                warn,
+                5,
                 "[run_bass_anchor_with_recording] Mic/loopback length mismatch (mic={}, lb={}) — \
                  padding shorter side with zeros so the WAV stays interleaved. \
                  Live result is consistent; offline re-analysis of the WAV may report \
@@ -3237,6 +3299,20 @@ mod tests {
     use super::*;
     use hound::WavReader;
     use tempfile::tempdir;
+
+    #[test]
+    fn cpal_input_callbacks_stay_lock_free() {
+        let source = include_str!("signal_recorder.rs");
+
+        assert!(
+            !source.contains(concat!("try", "_", "lock")),
+            "signal_recorder input callbacks must not use mutex try-locks"
+        );
+        assert!(
+            !source.contains(concat!("Mut", "ex<")),
+            "signal_recorder capture buffers should stay lock-free"
+        );
+    }
 
     #[test]
     fn test_effective_calibration_per_channel_priority() {

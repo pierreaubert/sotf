@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
+pub const APP_BUNDLE_ID: &str = "org.spinorama.sotf";
+
 /// Global override for the app config directory (set via `--qa` flag).
 static CONFIG_DIR_OVERRIDE: OnceLock<PathBuf> = OnceLock::new();
 
@@ -51,9 +53,54 @@ impl Default for AppConfig {
     }
 }
 
-/// Get the application configuration directory
+#[cfg(any(target_os = "macos", test))]
+fn macos_home_dir_from_env(
+    home: Option<&std::ffi::OsStr>,
+    cf_fixed_user_home: Option<&std::ffi::OsStr>,
+    app_sandbox_container_id: Option<&std::ffi::OsStr>,
+) -> Option<PathBuf> {
+    let sandbox_id = app_sandbox_container_id
+        .and_then(|id| id.to_str())
+        .filter(|id| !id.is_empty());
+
+    if sandbox_id.is_some()
+        && let Some(fixed_home) = cf_fixed_user_home
+        && !fixed_home.is_empty()
+    {
+        return Some(PathBuf::from(fixed_home));
+    }
+
+    let home = home.filter(|home| !home.is_empty()).map(PathBuf::from)?;
+
+    if let Some(sandbox_id) = sandbox_id {
+        let container_data_suffix = PathBuf::from("Library")
+            .join("Containers")
+            .join(sandbox_id)
+            .join("Data");
+
+        if home.ends_with(&container_data_suffix) {
+            Some(home)
+        } else {
+            Some(home.join(container_data_suffix))
+        }
+    } else {
+        Some(home)
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn macos_home_dir() -> Option<PathBuf> {
+    macos_home_dir_from_env(
+        std::env::var_os("HOME").as_deref(),
+        std::env::var_os("CFFIXED_USER_HOME").as_deref(),
+        std::env::var_os("APP_SANDBOX_CONTAINER_ID").as_deref(),
+    )
+}
+
+/// Get the application configuration directory.
 /// - Linux: ~/.config/sotf
-/// - macOS: ~/Library/Application Support/org.spinorama.sotf
+/// - macOS direct: ~/Library/Application Support/org.spinorama.sotf
+/// - macOS sandbox: ~/Library/Containers/org.spinorama.sotf/Data/Library/Application Support/org.spinorama.sotf
 /// - Windows: ~/.config/sotf (same as Linux)
 /// - iOS: ~/Library/Application Support/org.spinorama.sotf (same as macOS)
 pub fn get_app_config_dir() -> Option<PathBuf> {
@@ -63,11 +110,11 @@ pub fn get_app_config_dir() -> Option<PathBuf> {
 
     #[cfg(target_os = "macos")]
     {
-        if let Ok(home) = std::env::var("HOME") {
-            let config_dir = PathBuf::from(home)
+        if let Some(home) = macos_home_dir() {
+            let config_dir = home
                 .join("Library")
                 .join("Application Support")
-                .join("org.spinorama.sotf");
+                .join(APP_BUNDLE_ID);
             std::fs::create_dir_all(&config_dir).ok()?;
             return Some(config_dir);
         }
@@ -79,7 +126,7 @@ pub fn get_app_config_dir() -> Option<PathBuf> {
             let config_dir = PathBuf::from(home)
                 .join("Library")
                 .join("Application Support")
-                .join("org.spinorama.sotf");
+                .join(APP_BUNDLE_ID);
             std::fs::create_dir_all(&config_dir).ok()?;
             return Some(config_dir);
         }
@@ -173,6 +220,18 @@ pub fn get_plugin_presets_dir() -> Option<PathBuf> {
         let presets_dir = dir.join("plugin_presets");
         std::fs::create_dir_all(&presets_dir).ok();
         presets_dir
+    })
+}
+
+/// Get the default recording directory.
+///
+/// This lives under the app support directory so Mac App Store builds can
+/// record without relying on a security-scoped external folder.
+pub fn get_recordings_dir() -> Option<PathBuf> {
+    get_app_config_dir().map(|dir| {
+        let recordings_dir = dir.join("Recordings");
+        std::fs::create_dir_all(&recordings_dir).ok();
+        recordings_dir
     })
 }
 
@@ -370,5 +429,45 @@ mod tests {
         if let Some(dir) = presets_dir {
             assert!(dir.to_string_lossy().ends_with("plugin_presets"));
         }
+    }
+
+    #[test]
+    fn test_recordings_dir() {
+        let recordings_dir = get_recordings_dir();
+        assert!(recordings_dir.is_some());
+
+        if let Some(dir) = recordings_dir {
+            assert!(dir.to_string_lossy().ends_with("Recordings"));
+        }
+    }
+
+    #[test]
+    fn test_macos_sandbox_home_uses_container() {
+        let home = std::ffi::OsStr::new("/Users/alice");
+        let sandbox_id = std::ffi::OsStr::new(APP_BUNDLE_ID);
+        let dir = macos_home_dir_from_env(Some(home), None, Some(sandbox_id)).unwrap();
+
+        assert_eq!(
+            dir,
+            PathBuf::from("/Users/alice")
+                .join("Library")
+                .join("Containers")
+                .join(APP_BUNDLE_ID)
+                .join("Data")
+        );
+    }
+
+    #[test]
+    fn test_macos_sandbox_home_prefers_cf_fixed_home() {
+        let home = std::ffi::OsStr::new("/Users/alice");
+        let fixed_home =
+            std::ffi::OsStr::new("/Users/alice/Library/Containers/org.spinorama.sotf/Data");
+        let sandbox_id = std::ffi::OsStr::new(APP_BUNDLE_ID);
+        let dir = macos_home_dir_from_env(Some(home), Some(fixed_home), Some(sandbox_id)).unwrap();
+
+        assert_eq!(
+            dir,
+            PathBuf::from("/Users/alice/Library/Containers/org.spinorama.sotf/Data")
+        );
     }
 }

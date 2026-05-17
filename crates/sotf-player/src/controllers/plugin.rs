@@ -304,16 +304,12 @@ impl PluginController {
         // per-channel copy if the global slot is missing) so every replica
         // converges on the same value — otherwise repeated calls would
         // diverge per-channel state.
-        let Some(current) = filters
-            .get(band_idx)
-            .map(|f| f.topology)
-            .or_else(|| {
-                channel_filters
-                    .as_ref()
-                    .and_then(|cf| cf.first())
-                    .and_then(|ch| ch.get(band_idx).map(|f| f.topology))
-            })
-        else {
+        let Some(current) = filters.get(band_idx).map(|f| f.topology).or_else(|| {
+            channel_filters
+                .as_ref()
+                .and_then(|cf| cf.first())
+                .and_then(|ch| ch.get(band_idx).map(|f| f.topology))
+        }) else {
             return PluginUpdateEffect::None;
         };
         let next_topology = cycle(current);
@@ -442,11 +438,7 @@ impl PluginController {
             return PluginUpdateEffect::None;
         };
 
-        let section = KautzSectionConfig {
-            pole_freq,
-            q,
-            gain,
-        };
+        let section = KautzSectionConfig { pole_freq, q, gain };
 
         let mut mutated = false;
         if let Some(f) = filters.get_mut(band_idx)
@@ -2185,7 +2177,11 @@ mod tests {
         (ctrl, idx)
     }
 
-    fn topology_at(ctrl: &PluginController, idx: usize, band: usize) -> sotf_audio::plugins::eq::EqFilterTopology {
+    fn topology_at(
+        ctrl: &PluginController,
+        idx: usize,
+        band: usize,
+    ) -> sotf_audio::plugins::eq::EqFilterTopology {
         match &ctrl.graph.get_plugin(idx).unwrap().settings {
             PluginSettings::EQ { filters, .. } => filters[band].topology,
             other => panic!("expected EQ settings, got {:?}", other),
@@ -2201,7 +2197,10 @@ mod tests {
 
         let effect = ctrl.cycle_eq_filter_topology(idx, band);
         assert!(matches!(effect, PluginUpdateEffect::Structural));
-        assert_eq!(topology_at(&ctrl, idx, band), EqFilterTopology::WarpedBiquad);
+        assert_eq!(
+            topology_at(&ctrl, idx, band),
+            EqFilterTopology::WarpedBiquad
+        );
 
         ctrl.cycle_eq_filter_topology(idx, band);
         assert_eq!(topology_at(&ctrl, idx, band), EqFilterTopology::KautzFilter);

@@ -4,10 +4,12 @@
 
 use crate::decoder::source::AudioSource;
 use crate::engine::{PluginConfig, build_plugin_host};
-use crate::project::project::{Project, RegionConfig, TrackConfig};
+use crate::project::project::{MidiRegionConfig, MidiTrackConfig, Project, RegionConfig, TrackConfig};
 use crate::timeline::clip::{Clip, FadeCurve, Region};
+use crate::timeline::midi_track::{InstrumentPlugin, MidiTrack, TestSynth};
 use crate::timeline::timeline::Timeline;
 use crate::timeline::track::Track;
+use sotf_audio_player_midi::sequencer::{MidiClip, MidiRegion};
 use std::path::Path;
 
 impl Project {
@@ -28,6 +30,7 @@ impl Project {
             track.pan = track_config.pan;
             track.muted = track_config.muted;
             track.solo = track_config.solo;
+            track.plugin_configs = track_config.plugins.clone();
 
             for region_config in &track_config.regions {
                 let region = region_config_to_region(region_config, base_dir);
@@ -54,7 +57,45 @@ impl Project {
             timeline.add_track(track);
         }
 
+        for midi_config in &self.midi_tracks {
+            let instrument = instrument_from_config(
+                &midi_config.instrument,
+                self.output_channels,
+                self.sample_rate,
+            )?;
+            let mut midi_track = MidiTrack::new(&midi_config.name, instrument, self.sample_rate);
+            midi_track.volume = midi_config.volume;
+            midi_track.pan = midi_config.pan;
+            midi_track.muted = midi_config.muted;
+            midi_track.solo = midi_config.solo;
+            midi_track.instrument_config = Some(midi_config.instrument.clone());
+            midi_track.plugin_configs = midi_config.plugins.clone();
+
+            for region_config in &midi_config.regions {
+                midi_track.add_region(midi_region_config_to_region(region_config)?);
+            }
+
+            if !midi_config.plugins.is_empty() {
+                match build_plugin_host(
+                    &midi_config.plugins,
+                    self.sample_rate,
+                    midi_track.output_channels(),
+                ) {
+                    Ok((host, _warnings)) => midi_track.chain = host,
+                    Err(e) => {
+                        log::warn!(
+                            "Failed to rebuild MIDI plugin chain for track '{}': {e}",
+                            midi_config.name
+                        );
+                    }
+                }
+            }
+
+            timeline.add_midi_track(midi_track);
+        }
+
         // Reconstruct master plugin chain
+        timeline.master_plugin_configs = self.master_plugins.clone();
         if !self.master_plugins.is_empty() {
             match build_plugin_host(
                 &self.master_plugins,
@@ -98,15 +139,97 @@ impl Project {
                     .regions
                     .push(region_to_region_config(region, base_dir));
             }
+            track_config.plugins = track.plugin_configs.clone();
 
             project.tracks.push(track_config);
         }
 
-        // TODO: Serialize MIDI tracks
-        // TODO: Serialize plugin chains
+        for midi_track in &timeline.midi_tracks {
+            let instrument = midi_track
+                .instrument_config
+                .clone()
+                .unwrap_or_else(default_test_synth_config);
+            let mut midi_config = MidiTrackConfig {
+                name: midi_track.name.clone(),
+                regions: Vec::new(),
+                instrument,
+                plugins: midi_track.plugin_configs.clone(),
+                volume: midi_track.volume,
+                pan: midi_track.pan,
+                muted: midi_track.muted,
+                solo: midi_track.solo,
+            };
+
+            for region in &midi_track.regions {
+                match midi_region_to_region_config(region) {
+                    Ok(region_config) => midi_config.regions.push(region_config),
+                    Err(e) => {
+                        log::warn!(
+                            "Failed to serialize MIDI region on track '{}': {e}",
+                            midi_track.name
+                        );
+                    }
+                }
+            }
+
+            project.midi_tracks.push(midi_config);
+        }
+
+        project.master_plugins = timeline.master_plugin_configs.clone();
 
         project
     }
+}
+
+fn instrument_from_config(
+    config: &PluginConfig,
+    default_channels: usize,
+    sample_rate: u32,
+) -> Result<Box<dyn InstrumentPlugin>, String> {
+    if is_test_synth_config(config) {
+        let channels = config
+            .parameters
+            .get("channels")
+            .and_then(serde_json::Value::as_u64)
+            .map(|channels| channels as usize)
+            .unwrap_or(default_channels)
+            .max(1);
+        return Ok(Box::new(TestSynth::new(channels, sample_rate)));
+    }
+
+    Err(format!(
+        "Unsupported MIDI instrument plugin '{}'",
+        config.plugin_type
+    ))
+}
+
+fn is_test_synth_config(config: &PluginConfig) -> bool {
+    matches!(
+        config.plugin_type.to_ascii_lowercase().as_str(),
+        "test_synth" | "testsynth"
+    )
+}
+
+fn default_test_synth_config() -> PluginConfig {
+    PluginConfig::new("test_synth", serde_json::json!({}))
+}
+
+fn midi_region_config_to_region(config: &MidiRegionConfig) -> Result<MidiRegion, String> {
+    let mut clip: MidiClip = serde_json::from_str(&config.events_json)
+        .map_err(|e| format!("Failed to parse MIDI clip JSON: {e}"))?;
+    clip.duration_samples = config.duration_samples;
+    clip.sort();
+    Ok(MidiRegion::new(clip, config.position_samples))
+}
+
+fn midi_region_to_region_config(region: &MidiRegion) -> Result<MidiRegionConfig, String> {
+    let events_json = serde_json::to_string(&region.clip)
+        .map_err(|e| format!("Failed to serialize MIDI clip: {e}"))?;
+    Ok(MidiRegionConfig {
+        position_samples: region.position_samples,
+        duration_samples: region.clip.duration_samples,
+        events_json,
+    })
 }
 
 fn region_config_to_region(config: &RegionConfig, base_dir: &Path) -> Region {

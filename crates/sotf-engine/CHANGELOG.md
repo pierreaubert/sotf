@@ -1,5 +1,36 @@
 # 1.0.27
 
+## Engine review P0-P2 hardening
+
+- Added engine-side rate-limited logging helpers, matching the pattern used in
+  `sotf-host`, and applied them to hot/error paths in playback, CPAL sink,
+  decoder stream events, device polling, audio input overruns, plugin channel
+  updates, matrix presets, and recorder mismatch diagnostics.
+- Removed blocking mutex use from `signal_recorder` CPAL callbacks by routing
+  captured samples through lock-free `rtrb` rings and atomics.
+- Replaced decoder-thread hot-path unwrap/expect invariants with structured
+  errors for missing decode buffers and resamplers.
+- Made `PluginChain` track configurable input channel counts instead of
+  assuming stereo when updating channel-dependent plugins.
+- Downgraded normal engine-manager creation summaries from warning to info.
+- Logged decoder stream send/join failures instead of silently discarding them.
+- Logged playback/manager shutdown command drops, thread join panics, playback
+  events, and recycled-buffer send failures instead of silently discarding them.
+- Downgraded normal playback/manager operational status logs, including
+  channel negotiation, stream rebuild success, and plugin-update queue/apply
+  status, while keeping failures and recovery warnings at warning/error levels.
+- Expanded verified output sample-rate caching from a single entry to a keyed
+  per-device/per-channel cache, and filtered verification candidates against
+  advertised device sample-rate ranges before building test streams.
+- Exported the timeline module from `sotf-engine`, added the MIDI dependency
+  required by timeline MIDI tracks, and exposed the MIDI sequencer API from
+  `sotf-midi`.
+- Added a local timeline instrument interface for MIDI tracks so timeline
+  tests compile cleanly against the current plugin host API.
+- Cached per-clip dB-to-linear gain conversion while still tracking direct
+  public `gain_db` edits, fixed punch-out state after partial recording
+  blocks, and pinned same-sample MIDI event ordering with regression coverage.
+
 ## Engine playback transparency and gapless fixes
 
 - Preserved pending decoder frames when `QueueNext` or `CancelNext` arrives

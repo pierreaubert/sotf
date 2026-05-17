@@ -5,6 +5,7 @@
 use super::midi_track::MidiTrack;
 use super::track::Track;
 use super::transport::Transport;
+use crate::engine::PluginConfig;
 use sotf_plugins::DawHost;
 
 /// A multi-track audio timeline with global transport and master plugin chain.
@@ -26,6 +27,8 @@ pub struct Timeline {
     pub transport: Transport,
     /// Master plugin chain (applied after mixing all tracks)
     pub master_chain: DawHost,
+    /// Serializable plugin configs used to rebuild `master_chain`.
+    pub master_plugin_configs: Vec<PluginConfig>,
     /// Number of output channels (master bus)
     pub output_channels: usize,
     /// Processing block size in frames
@@ -44,6 +47,7 @@ impl Timeline {
             midi_tracks: Vec::new(),
             transport: Transport::new(sample_rate),
             master_chain: DawHost::new(output_channels, sample_rate),
+            master_plugin_configs: Vec::new(),
             output_channels,
             frame_size,
             track_buf: vec![0.0; buf_size],
