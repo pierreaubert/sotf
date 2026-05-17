@@ -170,6 +170,6 @@ impl InPlacePlugin for HissReducerPlugin {
     }
 
     fn latency_samples(&self) -> usize {
-        0
+        self.reducer.latency_samples()
     }
 }

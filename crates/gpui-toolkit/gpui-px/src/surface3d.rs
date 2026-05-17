@@ -6,7 +6,7 @@ use crate::{
     validate_dimensions, validate_grid_dimensions, validate_monotonic, validate_positive,
 };
 use d3rs::gpu3d::{Colormap, Surface3DConfig, Surface3DElement, Surface3DState, SurfaceData};
-use d3rs::text::{VectorFontConfig, render_vector_text};
+use d3rs::text::{GlyphTextConfig, render_glyph_text};
 use gpui::prelude::*;
 use gpui::{IntoElement, div, hsla, px};
 use std::cell::RefCell;
@@ -256,7 +256,7 @@ impl Surface3DChart {
         // Add title if present
         if let Some(title) = &self.title {
             let font_config =
-                VectorFontConfig::horizontal(DEFAULT_TITLE_FONT_SIZE, hsla(0.0, 0.0, 0.2, 1.0));
+                GlyphTextConfig::horizontal(DEFAULT_TITLE_FONT_SIZE, hsla(0.0, 0.0, 0.2, 1.0));
             container = container.child(
                 div()
                     .w_full()
@@ -264,7 +264,7 @@ impl Surface3DChart {
                     .flex()
                     .justify_center()
                     .items_center()
-                    .child(render_vector_text(title, &font_config)),
+                    .child(render_glyph_text(title, &font_config)),
             );
         }
 

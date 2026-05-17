@@ -16,7 +16,7 @@ use d3rs::shape::{
     BarConfig, BarDatum, GroupedBarConfig, GroupedBarDatum, GroupedBarMeta, analyze_grouped_data,
     render_bars, render_grouped_bars,
 };
-use d3rs::text::{VectorFontConfig, render_vector_text};
+use d3rs::text::{GlyphTextConfig, render_glyph_text};
 use gpui::prelude::*;
 use gpui::{AnyElement, IntoElement, Rgba, div, hsla, px, rgb};
 
@@ -623,10 +623,8 @@ impl BarChart {
 
         // Add title if present
         if let Some(title) = &self.title {
-            let font_config = VectorFontConfig::horizontal(
-                DEFAULT_TITLE_FONT_SIZE,
-                self.theme.title_color.into(),
-            );
+            let font_config =
+                GlyphTextConfig::horizontal(DEFAULT_TITLE_FONT_SIZE, self.theme.title_color);
             container = container.child(
                 div()
                     .w_full()
@@ -634,7 +632,7 @@ impl BarChart {
                     .flex()
                     .justify_center()
                     .items_center()
-                    .child(render_vector_text(title, &font_config)),
+                    .child(render_glyph_text(title, &font_config)),
             );
         }
 

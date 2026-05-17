@@ -197,9 +197,9 @@ pub struct MultibandCompressorPlugin {
     program_dependent_release: bool,
     /// External sidechain (single-band compatibility, not yet applied to DSP)
     sidechain_external: bool,
-    /// Per-band, per-channel high-shelf biquad for sidechain tilt.
+    /// Per-band, per-channel tilt biquad pair (lowshelf + highshelf) for sidechain tilt.
     /// Layout: [band][channel]. Empty when tilt_db ≈ 0.
-    sidechain_tilt_biquads: Vec<Vec<Biquad>>,
+    sidechain_tilt_biquads: Vec<Vec<(Biquad, Biquad)>>,
     band_params: Vec<BandCompressorParams>,
     crossover_points: Vec<Lr4Crossover<f32>>,
     band_compressors: Vec<BandCompressor>,
@@ -578,18 +578,29 @@ impl MultibandCompressorPlugin {
             self.sidechain_tilt_biquads.clear();
             return;
         }
-        // Create per-band, per-channel tilt biquads so each band has independent state
+        // Create per-band, per-channel tilt biquads so each band has independent state.
+        // A true tilt is a lowshelf cut + highshelf boost (or vice versa) with
+        // complementary gains so the combined response is a straight-line slope.
+        let half_tilt = self.sidechain_tilt_db as f64 * 0.5;
         self.sidechain_tilt_biquads = (0..self.num_bands)
             .map(|_| {
                 (0..self.channels)
                     .map(|_| {
-                        Biquad::new(
+                        let lowshelf = Biquad::new(
+                            BiquadFilterType::Lowshelf,
+                            1000.0,
+                            self.sample_rate as f64,
+                            0.707,
+                            -half_tilt,
+                        );
+                        let highshelf = Biquad::new(
                             BiquadFilterType::Highshelf,
                             1000.0,
                             self.sample_rate as f64,
                             0.707,
-                            self.sidechain_tilt_db as f64,
-                        )
+                            half_tilt,
+                        );
+                        (lowshelf, highshelf)
                     })
                     .collect()
             })
@@ -1199,7 +1210,8 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                 if use_ms {
                     let raw = self.band_buffers[off + frame * self.channels];
                     let filtered = if has_tilt {
-                        self.sidechain_tilt_biquads[b][0].process(raw as f64) as f32
+                        let (low, high) = &mut self.sidechain_tilt_biquads[b][0];
+                        high.process(low.process(raw as f64)) as f32
                     } else {
                         raw
                     };
@@ -1208,7 +1220,8 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                     for ch in 0..self.channels {
                         let raw = self.band_buffers[off + frame * self.channels + ch];
                         let filtered = if has_tilt && ch < self.sidechain_tilt_biquads[b].len() {
-                            self.sidechain_tilt_biquads[b][ch].process(raw as f64) as f32
+                            let (low, high) = &mut self.sidechain_tilt_biquads[b][ch];
+                            high.process(low.process(raw as f64)) as f32
                         } else {
                             raw
                         };
@@ -1760,5 +1773,64 @@ mod tests {
             "Should reject blocks larger than 4096 frames"
         );
         assert!(result.unwrap_err().contains("exceeds max 4096"));
+    }
+
+    /// Regression: sidechain tilt must be a true tilt (lowshelf + highshelf),
+    /// not a single highshelf. A true tilt cuts lows and boosts highs (or vice
+    /// versa) with a straight-line slope in dB vs log-frequency.
+    #[test]
+    fn test_sidechain_tilt_is_true_tilt() {
+        let mut p = MultibandCompressorPlugin::new(1);
+        p.initialize(48000).unwrap();
+        p.set_parameter(
+            ParameterId::from("sidechain_tilt_db"),
+            ParameterValue::Float(6.0),
+        )
+        .unwrap();
+
+        assert!(
+            !p.sidechain_tilt_biquads.is_empty(),
+            "Tilt biquads should exist"
+        );
+
+        // Measure the combined magnitude response of the tilt filter at a given frequency.
+        let measure_gain = |freq_hz: f64| -> f64 {
+            let (mut low, mut high) = p.sidechain_tilt_biquads[0][0].clone();
+            let sr = 48000.0f64;
+            let samples = (sr * 0.2) as usize; // 200 ms for settling
+            let mut max_out = 0.0f64;
+            for n in 0..samples {
+                let t = n as f64 / sr;
+                let input = (2.0 * std::f64::consts::PI * freq_hz * t).sin();
+                let output = high.process(low.process(input));
+                if n > samples * 3 / 4 {
+                    max_out = max_out.max(output.abs());
+                }
+            }
+            20.0 * max_out.log10()
+        };
+
+        let gain_20hz = measure_gain(20.0);
+        let gain_10khz = measure_gain(10000.0);
+
+        // A single highshelf would leave 20 Hz at ~0 dB; a true tilt of +6 dB
+        // should be approximately –3 dB at the low end and +3 dB at the high end.
+        assert!(
+            gain_20hz < -1.0,
+            "True tilt should cut low frequencies, but 20 Hz gain was {:.2} dB",
+            gain_20hz
+        );
+        assert!(
+            gain_10khz > 1.0,
+            "True tilt should boost high frequencies, but 10 kHz gain was {:.2} dB",
+            gain_10khz
+        );
+
+        let span = gain_10khz - gain_20hz;
+        assert!(
+            span > 4.0 && span < 8.0,
+            "True tilt span should be ~6 dB, got {:.2} dB",
+            span
+        );
     }
 }

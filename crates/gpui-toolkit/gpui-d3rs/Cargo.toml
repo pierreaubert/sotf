@@ -15,10 +15,10 @@ name = "d3rs"
 
 [features]
 default = ["gpui", "gpu-2d", "gpu-3d"]
-gpui = ["dep:gpui", "dep:gpui-ui-kit", "dep:gpui-miniapp", "dep:gpui-builder", "dep:gpui-design", "gpui-design/gpui", "dep:smol"]
+gpui = ["dep:gpui", "dep:gpui-ui-kit", "dep:gpui-miniapp", "dep:gpui-builder", "dep:gpui-design", "gpui-design/gpui", "dep:smol", "dep:fontdue", "dep:image"]
 spinorama = ["dep:autoeq", "dep:tokio", "dep:ndarray", "dep:reqwest", "dep:urlencoding", "gpui"]
-gpu-3d = ["dep:wgpu", "dep:bytemuck", "dep:glam", "dep:pollster", "dep:image", "gpui"]
-gpu-2d = ["dep:wgpu", "dep:bytemuck", "dep:glam", "dep:pollster", "dep:image", "dep:fontdue", "gpui"]
+gpu-3d = ["dep:wgpu", "dep:bytemuck", "dep:glam", "dep:pollster", "gpui"]
+gpu-2d = ["dep:wgpu", "dep:bytemuck", "dep:glam", "dep:pollster", "gpui"]
 
 [dependencies]
 gpui = { workspace = true, optional = true }

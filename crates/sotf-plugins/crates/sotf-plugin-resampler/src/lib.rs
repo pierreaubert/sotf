@@ -7,8 +7,8 @@
 
 use audioadapter_buffers::direct::SequentialSliceOfVecs;
 use rubato::{
-    Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType,
-    WindowFunction,
+    calculate_cutoff, Async, FixedAsync, Resampler, SincInterpolationParameters,
+    SincInterpolationType, WindowFunction,
 };
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
@@ -39,6 +39,10 @@ impl ResamplerQuality {
             Self::Medium => 256,
             Self::High => 256,
         }
+    }
+
+    fn f_cutoff(self) -> f32 {
+        calculate_cutoff(self.sinc_len(), WindowFunction::BlackmanHarris2)
     }
 
     fn as_str(self) -> &'static str {
@@ -197,7 +201,7 @@ impl ResamplerPlugin {
     ) -> Result<Async<f32>, String> {
         let params = SincInterpolationParameters {
             sinc_len: quality.sinc_len(),
-            f_cutoff: 0.95,
+            f_cutoff: quality.f_cutoff(),
             interpolation: SincInterpolationType::Linear,
             oversampling_factor: quality.oversampling_factor(),
             window: WindowFunction::BlackmanHarris2,
@@ -1359,6 +1363,111 @@ mod tests {
         assert!(
             (resampler.current_ratio() - nominal).abs() < 1e-10,
             "Disabling dynamic_ratio should reset to nominal"
+        );
+    }
+
+    /// f_cutoff must be quality-dependent — a fixed 0.95 for all presets leaves
+    /// short sinc kernels (Fast) with an unrealistically narrow transition band,
+    /// reducing stopband attenuation and risking aliasing on downsampling.
+    #[test]
+    fn test_f_cutoff_is_quality_dependent() {
+        let fast = ResamplerQuality::Fast.f_cutoff();
+        let medium = ResamplerQuality::Medium.f_cutoff();
+        let high = ResamplerQuality::High.f_cutoff();
+
+        // All values must be in (0, 1)
+        assert!(fast > 0.0 && fast < 1.0, "Fast f_cutoff out of range: {}", fast);
+        assert!(medium > 0.0 && medium < 1.0, "Medium f_cutoff out of range: {}", medium);
+        assert!(high > 0.0 && high < 1.0, "High f_cutoff out of range: {}", high);
+
+        // Shorter kernels need lower cutoffs to keep the transition band feasible
+        assert!(
+            fast < medium,
+            "Fast cutoff ({}) should be lower than Medium ({})",
+            fast,
+            medium
+        );
+        assert!(
+            medium < high,
+            "Medium cutoff ({}) should be lower than High ({})",
+            medium,
+            high
+        );
+
+        // Sanity-check against rubato's calculate_cutoff for BlackmanHarris2
+        assert!(
+            (fast - 0.7891).abs() < 0.01,
+            "Fast f_cutoff ({}) unexpectedly far from rubato's ~0.789",
+            fast
+        );
+        assert!(
+            (high - 0.9471).abs() < 0.01,
+            "High f_cutoff ({}) unexpectedly far from rubato's ~0.947",
+            high
+        );
+    }
+
+    /// Downsampling must attenuate frequencies above the output Nyquist to prevent aliasing.
+    /// Regression test: with a fixed 0.95 cutoff, Fast quality (64 taps) had
+    /// insufficient transition-band width, risking aliasing.
+    #[test]
+    fn test_downsampling_anti_aliasing_fast() {
+        let input_sr = 96000;
+        let output_sr = 44100;
+        let chunk_size = 1024;
+        let mut resampler = ResamplerPlugin::with_quality(
+            1,
+            input_sr,
+            output_sr,
+            chunk_size,
+            ResamplerQuality::Fast,
+        )
+        .unwrap();
+        resampler.initialize(input_sr).unwrap();
+
+        // 22.5 kHz — just above output Nyquist (22.05 kHz).
+        // With a short filter and a too-high cutoff, this frequency leaks through;
+        // with a quality-adjusted cutoff it is strongly attenuated.
+        let freq = 22500.0;
+        let num_frames = chunk_size * 8;
+        let mut input = vec![0.0_f32; num_frames];
+        for i in 0..num_frames {
+            let phase = 2.0 * std::f32::consts::PI * freq * i as f32 / input_sr as f32;
+            input[i] = phase.sin() * 0.5;
+        }
+
+        let max_output = resampler.output_frames_for_input(num_frames);
+        let mut output = vec![0.0_f32; max_output];
+        let ctx = ProcessContext {
+            sample_rate: input_sr,
+            num_frames,
+        };
+        let produced = resampler.process(&input, &mut output, &ctx).unwrap();
+
+        let max_flush = resampler.output_frames_for_input(0);
+        let mut flush_out = vec![0.0_f32; max_flush];
+        let flushed = resampler.flush(&mut flush_out).unwrap();
+
+        let total_out = produced + flushed;
+        let all_output: Vec<f32> = output[..produced]
+            .iter()
+            .chain(&flush_out[..flushed])
+            .copied()
+            .collect();
+
+        let skip = (total_out / 5).max(1);
+        let steady_state = &all_output[skip.min(total_out)..];
+        assert!(
+            !steady_state.is_empty(),
+            "need non-empty steady-state output to compute RMS"
+        );
+
+        let rms: f32 =
+            (steady_state.iter().map(|x| x * x).sum::<f32>() / steady_state.len() as f32).sqrt();
+        assert!(
+            rms < 0.05,
+            "Aliasing detected: RMS should be strongly attenuated for freq above output Nyquist, got {:.6}",
+            rms
         );
     }
 }

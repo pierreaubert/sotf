@@ -9,7 +9,7 @@ use super::projection::{
     PerspectiveProjection, Point2D, Projection, ProjectionType,
 };
 use crate::color::D3Color;
-use crate::text::paint_vector_text_at;
+use crate::text::paint_glyph_text_at;
 use gpui::prelude::*;
 use gpui::*;
 use std::f32::consts::PI;
@@ -715,7 +715,6 @@ impl Element for SurfaceElement {
             let tick_size = 0.03;
             let num_ticks = 5;
             let tick_font_size = self.config.axis_font_size;
-            let tick_stroke = 1.0;
 
             for i in 0..=num_ticks {
                 let t = i as f64 / num_ticks as f64;
@@ -736,13 +735,12 @@ impl Element for SurfaceElement {
                 if let Some(((x_min, x_max), _, _)) = self.config.axis_ranges {
                     let value = x_min + t * (x_max - x_min);
                     let label = format_tick_value(value, x_min, x_max);
-                    paint_vector_text_at(
+                    paint_glyph_text_at(
                         window,
                         &label,
                         p2.x as f32,
                         p2.y as f32 + 12.0,
                         tick_font_size,
-                        tick_stroke,
                         axis_color,
                         0.0,
                     );
@@ -764,13 +762,12 @@ impl Element for SurfaceElement {
                 if let Some((_, (y_min, y_max), _)) = self.config.axis_ranges {
                     let value = y_min + t * (y_max - y_min);
                     let label = format_tick_value(value, y_min, y_max);
-                    paint_vector_text_at(
+                    paint_glyph_text_at(
                         window,
                         &label,
                         p2.x as f32 - 18.0,
                         p2.y as f32,
                         tick_font_size,
-                        tick_stroke,
                         axis_color,
                         0.0,
                     );
@@ -792,13 +789,12 @@ impl Element for SurfaceElement {
                 if let Some((_, _, (z_min, z_max))) = self.config.axis_ranges {
                     let value = z_min + t * (z_max - z_min);
                     let label = format_tick_value(value, z_min, z_max);
-                    paint_vector_text_at(
+                    paint_glyph_text_at(
                         window,
                         &label,
                         p2.x as f32 - 20.0,
                         p2.y as f32,
                         tick_font_size,
-                        tick_stroke,
                         axis_color,
                         0.0,
                     );
@@ -808,43 +804,39 @@ impl Element for SurfaceElement {
             // Draw axis labels if configured
             if let Some((x_label, y_label, z_label)) = &self.config.axis_labels {
                 let font_size = 11.0;
-                let stroke_width = 1.2;
 
                 // X axis label - positioned at the end of the X axis
                 let x_label_pos = projection.project(0.7, -0.5, -0.5);
-                paint_vector_text_at(
+                paint_glyph_text_at(
                     window,
                     x_label,
                     x_label_pos.x as f32,
                     x_label_pos.y as f32 + 15.0,
                     font_size,
-                    stroke_width,
                     axis_color,
                     0.0,
                 );
 
                 // Y axis label - positioned at the end of the Y axis
                 let y_label_pos = projection.project(-0.5, 0.7, -0.5);
-                paint_vector_text_at(
+                paint_glyph_text_at(
                     window,
                     y_label,
                     y_label_pos.x as f32 - 15.0,
                     y_label_pos.y as f32,
                     font_size,
-                    stroke_width,
                     axis_color,
                     -PI / 2.0, // Vertical text
                 );
 
                 // Z axis label - positioned at the end of the Z axis
                 let z_label_pos = projection.project(-0.5, -0.5, 0.7);
-                paint_vector_text_at(
+                paint_glyph_text_at(
                     window,
                     z_label,
                     z_label_pos.x as f32 - 15.0,
                     z_label_pos.y as f32,
                     font_size,
-                    stroke_width,
                     axis_color,
                     -PI / 2.0, // Vertical text
                 );
