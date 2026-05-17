@@ -50,6 +50,15 @@ impl HissReducer {
         self.noise_env.fill(0.0);
     }
 
+    /// Algorithmic latency in samples.
+    ///
+    /// HissReducer is a sample-by-sample first-order IIR lowpass with an
+    /// envelope follower. It has no lookahead, FFT buffering, or block
+    /// processing, so its latency is zero.
+    pub fn latency_samples(&self) -> usize {
+        0
+    }
+
     pub fn process(&mut self, buffer: &mut [f32]) {
         if self.channels == 0 {
             return;

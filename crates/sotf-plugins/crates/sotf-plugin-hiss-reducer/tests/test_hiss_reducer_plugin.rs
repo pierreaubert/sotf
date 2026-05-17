@@ -86,6 +86,16 @@ fn param_change_preserves_state() {
     );
 }
 
+/// Bug fix: latency_samples() used to hardcode 0 without querying the reducer.
+/// HissReducer is a sample-by-sample IIR filter with no lookahead, so its
+/// latency is correctly zero. The test verifies the plugin delegates to the
+/// reducer and reports the actual value.
+#[test]
+fn latency_is_zero_for_iir_filter() {
+    let plugin = HissReducerPlugin::new(2);
+    assert_eq!(plugin.latency_samples(), 0, "IIR-based HissReducer has zero latency");
+}
+
 /// Bug fix: the plugin used to store sample_rate=44100 before initialize() was
 /// called, but HissReducer::new() internally defaults to 48000. After the fix,
 /// both default to the same rate so the plugin's stored sample_rate is
