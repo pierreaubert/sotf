@@ -1,0 +1,208 @@
+# ============================================================================
+# Upmixer Configuration
+# ============================================================================
+# All fields are optional — missing values use the defaults shown below.
+
+# ---------------------------------------------------------------------------
+# Output / Speaker Layout
+# ---------------------------------------------------------------------------
+
+# Target surround speaker layout.
+# Choices: "2.0", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4", "9.1.4", "9.1.6"
+speaker_config = "5.1"
+
+# Preview surround output binaurally (headphone monitoring).
+# When true, output is downmixed to 2 channels for headphone listening.
+binaural_preview = false
+
+# ---------------------------------------------------------------------------
+# Gains
+# ---------------------------------------------------------------------------
+
+# Direct sound (correlated L+R) sent to front speakers. Range: 0.0 to 2.0
+gain_front_direct = 1.0
+
+# Ambient sound (uncorrelated L−R) sent to front speakers. Range: 0.0 to 2.0
+gain_front_ambient = 0.5
+
+# Ambient sound sent to rear/surround speakers. Range: 0.0 to 2.0
+gain_rear_ambient = 1.0
+
+# Level sent to height/overhead speakers. Range: 0.0 to 2.0
+height_gain = 0.5
+
+# ---------------------------------------------------------------------------
+# LFE & Bass
+# ---------------------------------------------------------------------------
+
+# Subwoofer channel level. Range: 0.0 to 2.0
+lfe_gain = 1.0
+
+# LFE low-pass filter cutoff frequency. Range: 20.0 to 180.0 Hz
+lfe_cutoff_hz = 120.0
+
+# Enable sub-harmonic synthesis for extra low-end punch.
+enable_subharmonic_synth = false
+
+# Synthesized sub-bass level. Range: 0.0 to 1.0
+subharmonic_gain = 0.5
+
+# Sub-harmonic target frequency. Range: 20.0 to 80.0 Hz
+subharmonic_freq_hz = 40.0
+
+# Sub-harmonic envelope attack time. Range: 1.0 to 100.0 ms
+subharmonic_attack_ms = 10.0
+
+# Sub-harmonic envelope release time. Range: 10.0 to 500.0 ms
+subharmonic_release_ms = 50.0
+
+# ---------------------------------------------------------------------------
+# Spatial
+# ---------------------------------------------------------------------------
+
+# Front L/R separation amount. 0.0 = mono, 1.0 = full stereo. Range: 0.0 to 1.0
+stereo_width = 0.5
+
+# Center image width spread to L/R speakers. Range: 0.0 to 1.0
+center_spread = 0.0
+
+# Direct/ambient split crossover frequency. Range: 150.0 to 350.0 Hz
+bandpass_hz = 250.0
+
+# ---------------------------------------------------------------------------
+# HR Direct (High-Resolution Direct Path Enhancement)
+# ---------------------------------------------------------------------------
+
+# Enable high-resolution direct path enhancement for sharper imaging.
+enable_hr_direct = true
+
+# Spatial image sharpening strength. Range: 0.0 to 1.0
+hr_sharpen = 1.0
+
+# Incoherent (ambient) signal boost factor. Range: 0.5 to 2.0
+ambient_boost = 1.0
+
+# ---------------------------------------------------------------------------
+# Decorrelation
+# ---------------------------------------------------------------------------
+
+# Channel decorrelation method.
+# Choices: 0 = "Velvet Noise", 1 = "LFO Phase"
+decorrelation_mode = 0
+
+# LFO decorrelation modulation rate. Range: 0.01 to 1.0 Hz
+decorrelation_lfo_rate_hz = 0.15
+
+# Velvet noise impulse length. Range: 10.0 to 100.0 ms
+velvet_noise_duration_ms = 30.0
+
+# Velvet noise pulse density. Range: 500.0 to 5000.0 pulses/sec
+velvet_noise_density = 2000.0
+
+# ---------------------------------------------------------------------------
+# Height (Overhead Speakers)
+# ---------------------------------------------------------------------------
+
+# High-frequency limit for height channels. Range: 8000.0 to 20000.0 Hz
+height_hf_cap_hz = 16000.0
+
+# Soften transients in height feed to reduce listener fatigue. Range: 0.0 to 1.0
+height_transient_reduction = 0.6
+
+# Direct signal bleed into height channels. Range: 0.0 to 0.5
+height_direct_leak = 0.05
+
+# ---------------------------------------------------------------------------
+# Surround
+# ---------------------------------------------------------------------------
+
+# Direct signal bleed into surround/height channels. Range: 0.0 to 1.0
+surround_direct_bleed = 0.15
+
+# Extra gain multiplier for rear ambience. Range: 1.0 to 3.0
+rear_ambient_boost = 1.0
+
+# Simulated rear room reflections level. Range: 0.0 to 0.5
+rear_late_reflection = 0.10
+
+# ---------------------------------------------------------------------------
+# Dialogue (Voice Detection & Center Channel Routing)
+# ---------------------------------------------------------------------------
+
+# Amount of voice routed to center channel. Range: 0.0 to 1.0
+dialogue_weight = 0.4
+
+# Voice detection low frequency bound. Range: 200.0 to 800.0 Hz
+voice_freq_min_hz = 500.0
+
+# Voice detection high frequency bound. Range: 2000.0 to 5000.0 Hz
+voice_freq_max_hz = 3000.0
+
+# Spectral centroid score weight for dialogue detection. Range: 0.0 to 1.0
+dialogue_centroid_weight = 0.3
+
+# Spectral variance score weight for dialogue detection. Range: 0.0 to 1.0
+dialogue_variance_weight = 0.2
+
+# L/R coherence score weight for dialogue detection. Range: 0.0 to 1.0
+dialogue_coherence_weight = 0.5
+
+# ---------------------------------------------------------------------------
+# Analysis
+# ---------------------------------------------------------------------------
+
+# Use smaller FFT (1024 vs 2048) for lower latency (21ms vs 43ms at 48kHz).
+# Halves frequency resolution in spatial analysis.
+low_latency = false
+
+# Frequency band grouping method for analysis.
+# Choices: 0 = "ERB", 1 = "Fine ERB", 2 = "Per Bin"
+frequency_resolution = "Per Bin"
+
+# Extract multiple sound sources simultaneously.
+multi_source_extraction = true
+
+# Source separation sensitivity threshold. Range: 0.05 to 0.5
+multi_source_threshold = 0.1
+
+# ---------------------------------------------------------------------------
+# Output
+# ---------------------------------------------------------------------------
+
+# Maximum output headroom limit (safety cap). Range: 0.0 to 3.0 dB
+safety_cap_db = 3.0
+
+# Match rendered output loudness to the stereo input level.
+auto_gain_enabled = true
+
+# Maximum auto gain correction. Range: 0.0 to 24.0 dB
+auto_gain_max_db = 12.0
+
+# Auto gain transition time. Range: 10.0 to 500.0 ms
+auto_gain_smoothing_ms = 100.0
+
+# ---------------------------------------------------------------------------
+# Diagnostics / Bypass (for debugging / A/B comparison)
+# ---------------------------------------------------------------------------
+
+# Skip channel decorrelation.
+bypass_decorrelation = false
+
+# Skip transient detection.
+bypass_transient_detection = false
+
+# Pass audio through completely unprocessed.
+bypass_all_processing = false
+
+# Use ML model for source detection (requires ONNX feature).
+enable_ml_detection = false
+
+# ---------------------------------------------------------------------------
+# Internal / Advanced
+# ---------------------------------------------------------------------------
+
+# FFT analysis window size. Must be power of 2. Default: 2048
+fft_size = 2048
+
+# Path to ONNX ML model for vocal detection (empty = disabled).
+ml_model_path = ""
