@@ -20,8 +20,7 @@ mod security;
 use driver_manager::{DriverManager, get_driver_status};
 use security::{
     KeyManager, PeerClass, classify_peer, current_uid as security_current_uid,
-    ensure_secure_socket_dir, get_secure_socket_path, peer_allows_command,
-    verify_peer_credentials,
+    ensure_secure_socket_dir, get_secure_socket_path, peer_allows_command, verify_peer_credentials,
 };
 
 use driver_common::DriverConfig;
@@ -40,6 +39,7 @@ use std::sync::Arc;
 const LEGACY_SOCKET_PATH: &str = "/tmp/autoeq_audio.sock";
 const OUTPUT_DEVICE_ENV: &str = "SOTF_OUTPUT_DEVICE";
 const MAX_HAL_CHANNELS: usize = 32;
+const MAX_IPC_COMMAND_BYTES: usize = 64 * 1024;
 
 fn default_input_channels() -> usize {
     0
@@ -225,6 +225,64 @@ fn serialize_response_safely(response: &Response) -> String {
                 r#"{"success":false,"error":"internal error: response serialization failed"}"#,
             )
         }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum IpcLine {
+    Eof,
+    Empty,
+    TooLarge,
+    InvalidUtf8,
+    Line(String),
+}
+
+fn read_ipc_line_bounded<R: BufRead>(
+    reader: &mut R,
+    buffer: &mut Vec<u8>,
+) -> std::io::Result<IpcLine> {
+    buffer.clear();
+
+    loop {
+        let available = reader.fill_buf()?;
+        if available.is_empty() {
+            if buffer.is_empty() {
+                return Ok(IpcLine::Eof);
+            }
+            break;
+        }
+
+        let bytes_to_consume = match available.iter().position(|&b| b == b'\n') {
+            Some(index) => index + 1,
+            None => available.len(),
+        };
+
+        if buffer.len().saturating_add(bytes_to_consume) > MAX_IPC_COMMAND_BYTES {
+            reader.consume(bytes_to_consume);
+            return Ok(IpcLine::TooLarge);
+        }
+
+        buffer.extend_from_slice(&available[..bytes_to_consume]);
+        reader.consume(bytes_to_consume);
+
+        if buffer.last() == Some(&b'\n') {
+            break;
+        }
+    }
+
+    while matches!(buffer.last(), Some(b'\n' | b'\r')) {
+        buffer.pop();
+    }
+
+    let line = match std::str::from_utf8(buffer) {
+        Ok(line) => line.trim(),
+        Err(_) => return Ok(IpcLine::InvalidUtf8),
+    };
+
+    if line.is_empty() {
+        Ok(IpcLine::Empty)
+    } else {
+        Ok(IpcLine::Line(line.to_string()))
     }
 }
 
@@ -793,7 +851,9 @@ impl AudioDaemon {
                 // Set engine_ready so driver starts sending audio
                 self.driver_manager.lock().set_engine_ready(true);
                 log::info!("Set engine_ready=true via driver");
-                self.sync_encryption_to_shared_memory(false);
+                if let Err(e) = self.sync_encryption_to_shared_memory(false) {
+                    log::warn!("{}", e);
+                }
 
                 Response::ok_empty()
             }
@@ -1035,16 +1095,21 @@ impl AudioDaemon {
     // =========================================================================
 
     #[cfg(all(target_os = "macos", feature = "hal"))]
-    fn sync_encryption_to_shared_memory(&self, flush_audio: bool) {
+    fn sync_encryption_to_shared_memory(&self, flush_audio: bool) -> Result<(), String> {
         let key_manager = self.key_manager.lock();
-        Self::apply_encryption_to_shared_memory(&key_manager, flush_audio);
+        Self::apply_encryption_to_shared_memory(&key_manager, flush_audio)
     }
 
     #[cfg(not(all(target_os = "macos", feature = "hal")))]
-    fn sync_encryption_to_shared_memory(&self, _flush_audio: bool) {}
+    fn sync_encryption_to_shared_memory(&self, _flush_audio: bool) -> Result<(), String> {
+        Ok(())
+    }
 
     #[cfg(all(target_os = "macos", feature = "hal"))]
-    fn apply_encryption_to_shared_memory(key_manager: &KeyManager, flush_audio: bool) {
+    fn apply_encryption_to_shared_memory(
+        key_manager: &KeyManager,
+        flush_audio: bool,
+    ) -> Result<(), String> {
         match driver_hal::SharedAudioBuffer::open_default() {
             Ok(mut buffer) => {
                 if flush_audio {
@@ -1055,21 +1120,29 @@ impl AudioDaemon {
                 }
                 buffer.set_encrypted(key_manager.is_enabled());
                 buffer.set_config_changed();
+                Ok(())
             }
             Err(e) => {
-                log::warn!("Failed to sync encryption state to shared memory: {}", e);
+                let message = format!("Failed to sync encryption state to shared memory: {}", e);
+                log::warn!("{}", message);
+                Err(message)
             }
         }
     }
 
     async fn handle_set_encryption(&self, enabled: bool) -> Response {
         let mut key_manager = self.key_manager.lock();
+        #[cfg(all(target_os = "macos", feature = "hal"))]
+        let previous_enabled = key_manager.is_enabled();
         key_manager.set_enabled(enabled);
 
         // On macOS with HAL, update shared memory encryption flag
         #[cfg(all(target_os = "macos", feature = "hal"))]
         {
-            Self::apply_encryption_to_shared_memory(&key_manager, true);
+            if let Err(e) = Self::apply_encryption_to_shared_memory(&key_manager, true) {
+                key_manager.set_enabled(previous_enabled);
+                return Response::err(e);
+            }
         }
 
         Response::ok(serde_json::json!({
@@ -1097,7 +1170,9 @@ impl AudioDaemon {
                 // On macOS with HAL, update shared memory fingerprint
                 #[cfg(all(target_os = "macos", feature = "hal"))]
                 {
-                    Self::apply_encryption_to_shared_memory(&key_manager, true);
+                    if let Err(e) = Self::apply_encryption_to_shared_memory(&key_manager, true) {
+                        return Response::err(e);
+                    }
                 }
 
                 Response::ok(serde_json::json!({
@@ -1205,19 +1280,28 @@ impl AudioDaemon {
             }
         };
         let mut reader = BufReader::new(reader_stream);
-        let mut line = String::new();
+        let mut line = Vec::new();
 
         loop {
-            line.clear();
-            match reader.read_line(&mut line) {
-                Ok(0) => break, // EOF
-                Ok(_) => {
-                    let trimmed = line.trim();
-                    if trimmed.is_empty() {
-                        continue;
+            match read_ipc_line_bounded(&mut reader, &mut line) {
+                Ok(IpcLine::Eof) => break,
+                Ok(IpcLine::Empty) => continue,
+                Ok(IpcLine::TooLarge) => {
+                    let response = Response::err("Request too large");
+                    let json = serialize_response_safely(&response);
+                    let _ = writeln!(stream, "{}", json);
+                    break;
+                }
+                Ok(IpcLine::InvalidUtf8) => {
+                    let response = Response::err("Invalid UTF-8 in command");
+                    let json = serialize_response_safely(&response);
+                    if let Err(e) = writeln!(stream, "{}", json) {
+                        log::error!("Failed to write response: {}", e);
+                        break;
                     }
-
-                    let response = match serde_json::from_str::<Command>(trimmed) {
+                }
+                Ok(IpcLine::Line(command_line)) => {
+                    let response = match serde_json::from_str::<Command>(&command_line) {
                         Ok(cmd) => {
                             // Defense-in-depth: gate which commands the
                             // peer's UID class may invoke. The macOS HAL
@@ -2073,6 +2157,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod ipc_safety_tests {
     use super::*;
+    use std::io::Cursor;
 
     /// `serialize_response_safely` must produce valid JSON on the OK
     /// path with no behavioural change versus the original
@@ -2149,6 +2234,59 @@ mod ipc_safety_tests {
         // is the property we care about for the IPC hot path.
         let r = Response::err("normal");
         let _ = serialize_response_safely(&r); // must not panic
+    }
+
+    #[test]
+    fn read_ipc_line_bounded_accepts_normal_command() {
+        let input = Cursor::new(b"  {\"command\":\"status\"}  \n");
+        let mut reader = BufReader::new(input);
+        let mut buffer = Vec::new();
+
+        assert_eq!(
+            read_ipc_line_bounded(&mut reader, &mut buffer).unwrap(),
+            IpcLine::Line(r#"{"command":"status"}"#.to_string())
+        );
+    }
+
+    #[test]
+    fn read_ipc_line_bounded_handles_crlf_and_empty_lines() {
+        let input = Cursor::new(b"\r\n{\"command\":\"status\"}\r\n");
+        let mut reader = BufReader::new(input);
+        let mut buffer = Vec::new();
+
+        assert_eq!(
+            read_ipc_line_bounded(&mut reader, &mut buffer).unwrap(),
+            IpcLine::Empty
+        );
+        assert_eq!(
+            read_ipc_line_bounded(&mut reader, &mut buffer).unwrap(),
+            IpcLine::Line(r#"{"command":"status"}"#.to_string())
+        );
+    }
+
+    #[test]
+    fn read_ipc_line_bounded_rejects_oversized_line() {
+        let mut input = vec![b'a'; MAX_IPC_COMMAND_BYTES + 1];
+        input.push(b'\n');
+        let mut reader = BufReader::new(Cursor::new(input));
+        let mut buffer = Vec::new();
+
+        assert_eq!(
+            read_ipc_line_bounded(&mut reader, &mut buffer).unwrap(),
+            IpcLine::TooLarge
+        );
+    }
+
+    #[test]
+    fn read_ipc_line_bounded_rejects_oversized_unterminated_line() {
+        let input = vec![b'a'; MAX_IPC_COMMAND_BYTES + 1];
+        let mut reader = BufReader::new(Cursor::new(input));
+        let mut buffer = Vec::new();
+
+        assert_eq!(
+            read_ipc_line_bounded(&mut reader, &mut buffer).unwrap(),
+            IpcLine::TooLarge
+        );
     }
 
     /// `Command::name()` must stay in sync with `#[serde(rename)]`,

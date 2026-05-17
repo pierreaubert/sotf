@@ -180,6 +180,148 @@ pub fn get_shared_memory_path() -> std::path::PathBuf {
     std::path::PathBuf::from(format!("/tmp/sotf-{}/audio.shm", uid))
 }
 
+#[cfg(unix)]
+fn current_uid() -> u32 {
+    // SAFETY: `libc::getuid` has no preconditions and cannot fail.
+    unsafe { libc::getuid() }
+}
+
+#[cfg(unix)]
+fn protected_shared_memory_parent() -> std::path::PathBuf {
+    std::path::PathBuf::from(format!("/tmp/sotf-{}", current_uid()))
+}
+
+#[cfg(unix)]
+fn is_protected_shared_memory_parent(path: &Path) -> bool {
+    path == protected_shared_memory_parent()
+}
+
+#[cfg(unix)]
+fn ensure_secure_parent_dir(parent: &Path) -> io::Result<()> {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+    if !parent.exists() {
+        std::fs::create_dir_all(parent)?;
+        std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))?;
+    }
+
+    if is_protected_shared_memory_parent(parent) {
+        let metadata = std::fs::symlink_metadata(parent)?;
+        if !metadata.file_type().is_dir() {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!("{} is not a directory", parent.display()),
+            ));
+        }
+        if metadata.uid() != current_uid() {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!(
+                    "{} is owned by uid {}, expected {}",
+                    parent.display(),
+                    metadata.uid(),
+                    current_uid()
+                ),
+            ));
+        }
+        if metadata.permissions().mode() & 0o077 != 0 {
+            std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))?;
+        }
+        grant_coreaudiod_shared_memory_access(parent);
+    }
+
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn ensure_secure_parent_dir(parent: &Path) -> io::Result<()> {
+    if !parent.exists() {
+        std::fs::create_dir_all(parent)?;
+    }
+    Ok(())
+}
+
+fn open_shared_memory_file(path: &Path) -> io::Result<std::fs::File> {
+    let mut options = OpenOptions::new();
+    options.read(true).write(true).create(true).truncate(false);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW);
+        options.mode(0o600);
+    }
+
+    let file = options.open(path)?;
+    validate_shared_memory_file(&file, path)?;
+    Ok(file)
+}
+
+#[cfg(unix)]
+fn validate_shared_memory_file(file: &std::fs::File, path: &Path) -> io::Result<()> {
+    use std::os::unix::fs::MetadataExt;
+
+    let metadata = file.metadata()?;
+    if !metadata.file_type().is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("{} is not a regular file", path.display()),
+        ));
+    }
+    if metadata.uid() != current_uid() {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!(
+                "{} is owned by uid {}, expected {}",
+                path.display(),
+                metadata.uid(),
+                current_uid()
+            ),
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn validate_shared_memory_file(_file: &std::fs::File, _path: &Path) -> io::Result<()> {
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn grant_coreaudiod_shared_memory_access(path: &Path) {
+    let acl = if path.is_dir() {
+        "_coreaudiod allow search,readattr"
+    } else {
+        "_coreaudiod allow read,write,readattr,writeattr"
+    };
+
+    match std::process::Command::new("/bin/chmod")
+        .arg("+a")
+        .arg(acl)
+        .arg(path)
+        .status()
+    {
+        Ok(status) if status.success() => {}
+        Ok(status) => {
+            log::warn!(
+                "Failed to grant _coreaudiod shared-memory access on {}: chmod exited with {}",
+                path.display(),
+                status
+            );
+        }
+        Err(e) => {
+            log::warn!(
+                "Failed to grant _coreaudiod shared-memory access on {}: {}",
+                path.display(),
+                e
+            );
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn grant_coreaudiod_shared_memory_access(_path: &Path) {}
+
 /// Header structure for shared memory region.
 ///
 /// Must match the Swift side exactly. All cross-process fields are atomic
@@ -438,28 +580,17 @@ impl SharedAudioBuffer {
         let (_, max_audio_capacity, total_size) =
             Self::audio_layout(max_buffer_frames, max_channel_count)?;
 
-        if let Some(parent) = path.parent()
-            && !parent.exists()
-        {
-            std::fs::create_dir_all(parent)?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o777))?;
-            }
+        if let Some(parent) = path.parent() {
+            ensure_secure_parent_dir(parent)?;
         }
 
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(path)?;
+        let file = open_shared_memory_file(path)?;
         file.set_len(total_size as u64)?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            file.set_permissions(std::fs::Permissions::from_mode(0o666))?;
+            file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+            grant_coreaudiod_shared_memory_access(path);
         }
 
         // SAFETY: We hold the only handle to the file we just sized; the
@@ -893,7 +1024,9 @@ impl SharedAudioBuffer {
 
     /// Get the requested buffer frames (set by the config change requester).
     pub fn requested_buffer_frames(&self) -> u32 {
-        self.header().requested_buffer_frames.load(Ordering::Acquire)
+        self.header()
+            .requested_buffer_frames
+            .load(Ordering::Acquire)
     }
 
     /// Set the actual sample rate (response from the handler).
@@ -993,7 +1126,9 @@ impl SharedAudioBuffer {
         header
             .actual_buffer_frames
             .store(actual_frames, Ordering::Release);
-        header.config_error_code.store(error_code, Ordering::Release);
+        header
+            .config_error_code
+            .store(error_code, Ordering::Release);
         header.config_status.store(status, Ordering::Release);
         header.config_changed.store(0, Ordering::Release);
     }
@@ -1388,9 +1523,12 @@ impl SharedAudioBuffer {
             return EncryptedRecordRead::Empty;
         }
 
-        let Some(record) =
-            self.peek_encrypted_record_header(read_pos, available_slots, encrypted_buf, ciphertext_buf)
-        else {
+        let Some(record) = self.peek_encrypted_record_header(
+            read_pos,
+            available_slots,
+            encrypted_buf,
+            ciphertext_buf,
+        ) else {
             log::warn!("Invalid encrypted audio record header; flushing encrypted ring");
             self.commit_read_position(write_pos);
             return EncryptedRecordRead::InvalidHeader;
@@ -2095,7 +2233,7 @@ impl HalOutputWriter {
 mod tests {
     use super::*;
     use std::io::Write;
-    use tempfile::NamedTempFile;
+    use tempfile::{NamedTempFile, tempdir};
 
     #[test]
     fn test_header_size() {
@@ -2138,6 +2276,58 @@ mod tests {
         assert_eq!(reopened.sample_rate(), 48_000);
         assert_eq!(reopened.buffer_frames(), 512);
         assert_eq!(reopened.channel_count(), 2);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_create_or_open_rejects_symlink_shared_memory_file() {
+        let dir = tempdir().expect("Failed to create temp dir");
+        let target = dir.path().join("target");
+        std::fs::write(&target, b"not shared memory").expect("Failed to create target file");
+        let link = dir.path().join("audio.shm");
+        std::os::unix::fs::symlink(&target, &link).expect("Failed to create symlink");
+
+        assert!(
+            SharedAudioBuffer::create_or_open(&link, 48_000, 512, 2).is_err(),
+            "symlink shared-memory path must be rejected"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_create_or_open_clamps_file_mode_to_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempdir().expect("Failed to create temp dir");
+        let path = dir.path().join("audio.shm");
+        let _buffer = SharedAudioBuffer::create_or_open(&path, 48_000, 512, 2)
+            .expect("Failed to create shared memory");
+
+        let mode = std::fs::metadata(&path)
+            .expect("metadata")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_create_or_open_creates_missing_parent_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempdir().expect("Failed to create temp dir");
+        let parent = dir.path().join("new-parent");
+        let path = parent.join("audio.shm");
+        let _buffer = SharedAudioBuffer::create_or_open(&path, 48_000, 512, 2)
+            .expect("Failed to create shared memory");
+
+        let mode = std::fs::metadata(&parent)
+            .expect("metadata")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o700);
     }
 
     /// Regression test for the `&mut SharedAudioHeader` data-race fix:

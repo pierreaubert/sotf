@@ -307,6 +307,25 @@ fn swift_shared_memory_is_open_only_for_restricted_hal_process() {
 }
 
 #[test]
+fn swift_shared_memory_protocol_matches_rust_v5_configuring_handshake() {
+    let source =
+        read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/SharedMemory.swift");
+
+    assert!(
+        source.contains("private let kSharedMemoryVersion: UInt32 = 5"),
+        "Swift shared-memory protocol version must match Rust v5"
+    );
+    assert!(
+        source.contains("var configuring: UInt32"),
+        "Swift SharedAudioHeader must include the Rust v5 configuring field"
+    );
+    assert!(
+        source.contains("header.pointee.configuring != 0"),
+        "HAL write/config paths must observe the daemon configuring flag"
+    );
+}
+
+#[test]
 fn swift_read_input_does_not_consume_capture_ring() {
     let source =
         read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/SotFHALDriver.swift");
