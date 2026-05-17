@@ -13,7 +13,7 @@ use d3rs::color::D3Color;
 use d3rs::grid::{GridConfig, render_grid};
 use d3rs::scale::{LinearScale, LogScale};
 use d3rs::shape::{ScatterConfig, ScatterPoint, render_scatter};
-use d3rs::text::{VectorFontConfig, render_vector_text};
+use d3rs::text::{GlyphTextConfig, render_glyph_text};
 use gpui::prelude::*;
 use gpui::{AnyElement, IntoElement, Rgba, div, hsla, px, rgb};
 
@@ -633,10 +633,8 @@ impl ScatterChart {
 
         // Add title if present
         if let Some(title) = &self.title {
-            let font_config = VectorFontConfig::horizontal(
-                DEFAULT_TITLE_FONT_SIZE,
-                self.theme.title_color.into(),
-            );
+            let font_config =
+                GlyphTextConfig::horizontal(DEFAULT_TITLE_FONT_SIZE, self.theme.title_color);
             container = container.child(
                 div()
                     .w_full()
@@ -644,7 +642,7 @@ impl ScatterChart {
                     .flex()
                     .justify_center()
                     .items_center()
-                    .child(render_vector_text(title, &font_config)),
+                    .child(render_glyph_text(title, &font_config)),
             );
         }
 

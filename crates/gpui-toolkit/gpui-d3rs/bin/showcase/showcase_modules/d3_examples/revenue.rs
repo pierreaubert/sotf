@@ -10,7 +10,7 @@ use d3rs::scale::{LinearScale, Scale};
 use d3rs::shape::area::Area;
 use d3rs::shape::curve::Curve;
 use d3rs::shape::stack::{Stack, StackOffset, StackOrder};
-use d3rs::text::{VectorFontConfig, render_vector_text};
+use d3rs::text::{GlyphTextConfig, render_glyph_text};
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::theme::ThemeExt;
@@ -222,9 +222,9 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                         .absolute()
                         .left(px(2.0))
                         .top(px((margin_top + chart_height / 2.0 - 30.0) as f32))
-                        .child(render_vector_text(
+                        .child(render_glyph_text(
                             "Revenue ($)",
-                            &VectorFontConfig::vertical_bottom_to_top(10.0, rgb(0x666666).into()),
+                            &GlyphTextConfig::vertical_bottom_to_top(10.0, rgb(0x666666)),
                         )),
                 )
                 // Y-axis line
@@ -257,7 +257,7 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                     } else {
                         format!("{:.0}", val)
                     };
-                    let label_config = VectorFontConfig::horizontal(9.0, rgb(0x666666).into());
+                    let label_config = GlyphTextConfig::horizontal(9.0, rgb(0x666666));
                     div()
                         .absolute()
                         .left(px((margin_left - 40.0) as f32))
@@ -265,7 +265,7 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                         .w(px(35.0))
                         .flex()
                         .justify_end()
-                        .child(render_vector_text(&label, &label_config))
+                        .child(render_glyph_text(&label, &label_config))
                 }))
                 // Y grid lines
                 .children(y_ticks.iter().map(|&val| {
@@ -292,7 +292,7 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                 // X-axis ticks and labels
                 .children(x_ticks.iter().map(|&year| {
                     let x = x_scale.scale(year as f64);
-                    let label_config = VectorFontConfig::horizontal(9.0, rgb(0x333333).into());
+                    let label_config = GlyphTextConfig::horizontal(9.0, rgb(0x333333));
                     div()
                         .absolute()
                         .left(px((margin_left + x - 15.0) as f32))
@@ -302,7 +302,7 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                         .flex_col()
                         .items_center()
                         .child(div().w(px(1.0)).h(px(5.0)).bg(rgb(0xcccccc)))
-                        .child(render_vector_text(&format!("{}", year), &label_config))
+                        .child(render_glyph_text(&format!("{}", year), &label_config))
                 }))
                 // X-axis label
                 .child(
@@ -310,9 +310,9 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                         .absolute()
                         .left(px((margin_left + chart_width / 2.0 - 10.0) as f32))
                         .top(px((height - 16.0) as f32))
-                        .child(render_vector_text(
+                        .child(render_glyph_text(
                             "Year",
-                            &VectorFontConfig::horizontal(10.0, rgb(0x666666).into()),
+                            &GlyphTextConfig::horizontal(10.0, rgb(0x666666)),
                         )),
                 )
                 // Chart area with stacked areas

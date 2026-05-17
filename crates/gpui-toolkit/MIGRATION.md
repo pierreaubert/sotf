@@ -44,9 +44,9 @@ let bg = theme.surface;
 config.background_color(bg.r, bg.g, bg.b)
 ```
 
-**Vector font text** uses `Hsla::from(theme.text_primary)`:
+**Glyph chart text** uses `Hsla::from(theme.text_primary)`:
 ```rust
-VectorFontConfig::horizontal((10.0 * s).round(), Hsla::from(theme.text_primary))
+GlyphTextConfig::horizontal((10.0 * s).round(), Hsla::from(theme.text_primary))
 ```
 
 ### 2. All Spacing from the Design System
@@ -163,8 +163,8 @@ let s = self.font_scale();
 div().text_size(px(ds.typography.large_size * s))   // titles
 div().text_size(px(ds.typography.small_size * s))    // labels
 
-// Vector font labels
-VectorFontConfig::horizontal((10.0 * s).round(), Hsla::from(theme.text_primary))
+// Glyph chart labels
+GlyphTextConfig::horizontal((10.0 * s).round(), Hsla::from(theme.text_primary))
 
 // d3rs axis configs
 AxisConfig::bottom()

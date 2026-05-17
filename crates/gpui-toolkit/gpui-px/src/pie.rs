@@ -7,7 +7,7 @@ use crate::{
 };
 use d3rs::color::D3Color;
 use d3rs::shape::{Arc, Pie};
-use d3rs::text::{VectorFontConfig, render_vector_text};
+use d3rs::text::{GlyphTextConfig, render_glyph_text};
 use gpui::prelude::*;
 use gpui::{IntoElement, PathBuilder, canvas, div, hsla, point, px};
 
@@ -195,7 +195,7 @@ impl PieChart {
         // Add title if present
         if let Some(title) = &self.title {
             let font_config =
-                VectorFontConfig::horizontal(DEFAULT_TITLE_FONT_SIZE, hsla(0.0, 0.0, 0.2, 1.0));
+                GlyphTextConfig::horizontal(DEFAULT_TITLE_FONT_SIZE, hsla(0.0, 0.0, 0.2, 1.0));
             container = container.child(
                 div()
                     .w_full()
@@ -203,7 +203,7 @@ impl PieChart {
                     .flex()
                     .justify_center()
                     .items_center()
-                    .child(render_vector_text(title, &font_config)),
+                    .child(render_glyph_text(title, &font_config)),
             );
         }
 

@@ -16,7 +16,7 @@ use d3rs::axis::{AxisConfig, DefaultAxisTheme, render_axis};
 use d3rs::color::D3Color;
 use d3rs::grid::{GridConfig, render_grid};
 use d3rs::scale::{LinearScale, LogScale, Scale};
-use d3rs::text::{VectorFontConfig, render_vector_text};
+use d3rs::text::{GlyphTextConfig, render_glyph_text};
 use gpui::prelude::*;
 use gpui::{AnyElement, IntoElement, div, hsla, px, rgb};
 
@@ -291,7 +291,7 @@ impl BoxPlotChart {
         // Add title if present
         if let Some(title) = &self.title {
             let font_config =
-                VectorFontConfig::horizontal(DEFAULT_TITLE_FONT_SIZE, hsla(0.0, 0.0, 0.2, 1.0));
+                GlyphTextConfig::horizontal(DEFAULT_TITLE_FONT_SIZE, hsla(0.0, 0.0, 0.2, 1.0));
             container = container.child(
                 div()
                     .w_full()
@@ -299,7 +299,7 @@ impl BoxPlotChart {
                     .flex()
                     .justify_center()
                     .items_center()
-                    .child(render_vector_text(title, &font_config)),
+                    .child(render_glyph_text(title, &font_config)),
             );
         }
 

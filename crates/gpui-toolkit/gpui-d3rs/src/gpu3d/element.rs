@@ -6,7 +6,7 @@ use super::config::SurfacePlotType;
 use super::data::SurfaceData;
 use super::mesh::SurfaceMesh;
 use super::renderer::Surface3DRenderer;
-use crate::text::{measure_text_width, paint_vector_text_at};
+use crate::text::{measure_glyph_text_width, paint_glyph_text_at};
 use gpui::*;
 use image::{Frame, RgbaImage};
 use std::cell::RefCell;
@@ -276,6 +276,18 @@ impl Element for Surface3DElement {
         };
         // Re-use width/height f32 from above
 
+        let billboard_rotation = |pos: glam::Vec3| -> f32 {
+            let (right, _) = camera.billboard_axes();
+            if let (Some(a), Some(b)) = (
+                camera.project_to_screen(pos, width, height),
+                camera.project_to_screen(pos + right * 0.08, width, height),
+            ) {
+                (b.y - a.y).atan2(b.x - a.x)
+            } else {
+                0.0
+            }
+        };
+
         // Helper to draw text at 3D position
         let draw_label = |window: &mut Window,
                           text: String,
@@ -290,11 +302,13 @@ impl Element for Surface3DElement {
 
                     let font_size = 10.0;
                     let color = overlay_color;
+                    let text_width = measure_glyph_text_width(&text, font_size);
 
                     // Simple alignment adjustment
                     if align_right {
-                        let text_width = measure_text_width(&text, font_size);
                         x -= text_width;
+                    } else {
+                        x -= text_width / 2.0;
                     }
 
                     // Center vertically on point (approximate)
@@ -306,9 +320,14 @@ impl Element for Surface3DElement {
                         // Default is centered.
                     }
 
-                    paint_vector_text_at(
-                        window, &text, x, y, font_size, 1.0, // stroke width
-                        color, 0.0, // rotation
+                    paint_glyph_text_at(
+                        window,
+                        &text,
+                        x,
+                        y,
+                        font_size,
+                        color,
+                        billboard_rotation(pos),
                     );
                 }
             }
@@ -358,7 +377,7 @@ impl Element for Surface3DElement {
                         (to_screen(pos), to_screen(tick_end), to_screen(label_pos_3d))
                     {
                         let font_size = 8.0;
-                        let text_width = measure_text_width(&label, font_size);
+                        let text_width = measure_glyph_text_width(&label, font_size);
 
                         // Compute tick direction in screen space
                         let tick_dx = tick_end_screen.x - tick_start_screen.x;
@@ -388,15 +407,14 @@ impl Element for Surface3DElement {
                         let screen_y = label_screen.y + f32::from(bounds.origin.y) + offset_y
                             - font_size / 2.0;
 
-                        paint_vector_text_at(
+                        paint_glyph_text_at(
                             window,
                             &label,
                             screen_x,
                             screen_y,
                             font_size,
-                            1.0,
                             overlay_color,
-                            0.0, // Always upright (face camera)
+                            billboard_rotation(label_pos_3d),
                         );
                     }
                 };
@@ -618,7 +636,7 @@ impl Element for Surface3DElement {
                         (to_screen(pos), to_screen(tick_end), to_screen(label_pos_3d))
                     {
                         let font_size = 8.0;
-                        let text_width = measure_text_width(&label, font_size);
+                        let text_width = measure_glyph_text_width(&label, font_size);
 
                         // Compute tick direction in screen space
                         let tick_dx = tick_end_screen.x - tick_start_screen.x;
@@ -644,15 +662,14 @@ impl Element for Surface3DElement {
                         let screen_y = label_screen.y + f32::from(bounds.origin.y) + offset_y
                             - font_size / 2.0;
 
-                        paint_vector_text_at(
+                        paint_glyph_text_at(
                             window,
                             &label,
                             screen_x,
                             screen_y,
                             font_size,
-                            1.0,
                             overlay_color,
-                            0.0,
+                            billboard_rotation(label_pos_3d),
                         );
                     }
                 };
@@ -791,13 +808,12 @@ impl Element for Surface3DElement {
 
                 // Draw label
                 let label = format!("{:.0}", value);
-                paint_vector_text_at(
+                paint_glyph_text_at(
                     window,
                     &label,
                     colorbar_x + colorbar_width + 6.0,
                     y - font_size / 2.0,
                     font_size,
-                    1.0,
                     overlay_color,
                     0.0,
                 );
@@ -807,14 +823,13 @@ impl Element for Surface3DElement {
             if let Some(ref z_label) = self.data.z_label {
                 let label_x = colorbar_x + colorbar_width / 2.0;
                 let label_y = colorbar_y - 15.0;
-                let text_width = measure_text_width(z_label, 10.0);
-                paint_vector_text_at(
+                let text_width = measure_glyph_text_width(z_label, 10.0);
+                paint_glyph_text_at(
                     window,
                     z_label,
                     label_x - text_width / 2.0,
                     label_y,
                     10.0,
-                    1.0,
                     overlay_color,
                     0.0,
                 );

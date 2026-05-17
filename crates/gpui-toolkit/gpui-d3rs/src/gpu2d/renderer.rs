@@ -554,6 +554,19 @@ impl Chart2DRenderer {
 
     /// Draw text at the given position
     pub fn draw_text(&mut self, text: &str, x: f32, y: f32, size: f32, color: Color4) {
+        self.draw_text_rotated(text, x, y, size, color, 0.0);
+    }
+
+    /// Draw text at the given position, rotating glyph quads around the origin point.
+    pub fn draw_text_rotated(
+        &mut self,
+        text: &str,
+        x: f32,
+        y: f32,
+        size: f32,
+        color: Color4,
+        rotation: f32,
+    ) {
         let atlas = match &mut self.text_atlas {
             Some(a) => a,
             None => return,
@@ -562,6 +575,13 @@ impl Chart2DRenderer {
         let mut cursor_x = x;
         let base_idx = self.text_batch.vertices.len() as u32;
         let mut idx_offset = 0u32;
+        let cos_r = rotation.cos();
+        let sin_r = rotation.sin();
+        let rotate = |px: f32, py: f32| -> [f32; 2] {
+            let lx = px - x;
+            let ly = py - y;
+            [x + lx * cos_r - ly * sin_r, y + lx * sin_r + ly * cos_r]
+        };
 
         for c in text.chars() {
             if let Some(glyph) = atlas.get_glyph(c, size) {
@@ -575,22 +595,22 @@ impl Chart2DRenderer {
 
                     // Four vertices for the glyph quad
                     self.text_batch.vertices.push(TextVertex::new(
-                        [gx, gy],
+                        rotate(gx, gy),
                         [glyph.uv[0], glyph.uv[1]],
                         color,
                     ));
                     self.text_batch.vertices.push(TextVertex::new(
-                        [gx + gw, gy],
+                        rotate(gx + gw, gy),
                         [glyph.uv[2], glyph.uv[1]],
                         color,
                     ));
                     self.text_batch.vertices.push(TextVertex::new(
-                        [gx, gy + gh],
+                        rotate(gx, gy + gh),
                         [glyph.uv[0], glyph.uv[3]],
                         color,
                     ));
                     self.text_batch.vertices.push(TextVertex::new(
-                        [gx + gw, gy + gh],
+                        rotate(gx + gw, gy + gh),
                         [glyph.uv[2], glyph.uv[3]],
                         color,
                     ));

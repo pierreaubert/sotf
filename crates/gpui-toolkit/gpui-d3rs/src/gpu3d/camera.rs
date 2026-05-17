@@ -103,6 +103,16 @@ impl Camera3D {
         right.normalize()
     }
 
+    /// Get camera-facing billboard plane axes in world space.
+    pub fn billboard_axes(&self) -> (Vec3, Vec3) {
+        let right = self.right();
+        let up = right.cross(self.forward());
+        if up.length_squared() < 1e-12 {
+            return (right, self.up.normalize_or_zero());
+        }
+        (right, up.normalize())
+    }
+
     /// Project a world point to screen coordinates (0..width, 0..height)
     /// Returns None if the point is behind the camera
     pub fn project_to_screen(&self, world_pos: Vec3, width: f32, height: f32) -> Option<Vec3> {
