@@ -387,9 +387,7 @@ impl CrossoverPlugin {
             for (ch, &freq) in self.channel_frequencies_hz.iter().enumerate() {
                 let id = format!("channel_frequency_{ch}");
                 let name = format!("Frequency Ch{ch}");
-                params.push(
-                    Parameter::new_float(&id, &name, freq, 20.0, 20000.0).with_unit("Hz"),
-                );
+                params.push(Parameter::new_float(&id, &name, freq, 20.0, 20000.0).with_unit("Hz"));
                 let mode_id = format!("channel_mode_{ch}");
                 let mode_name = format!("Mode Ch{ch}");
                 let mode_str = match self
@@ -403,7 +401,11 @@ impl CrossoverPlugin {
                     PerChannelOpMode::Mute => "mute",
                     PerChannelOpMode::Passthrough => "passthrough",
                 };
-                params.push(Parameter::new_string(&mode_id, &mode_name, mode_str.to_string()));
+                params.push(Parameter::new_string(
+                    &mode_id,
+                    &mode_name,
+                    mode_str.to_string(),
+                ));
             }
         }
 
@@ -601,8 +603,7 @@ impl Plugin for CrossoverPlugin {
                 let nyquist_limit = self.sample_rate as f32 * 0.5 * 0.99;
                 let clamped = val.min(nyquist_limit);
                 self.channel_frequencies_hz[ch] = clamped;
-                self.per_channel_lr4[ch] =
-                    Lr4Crossover::new(clamped, self.sample_rate as f32, 1);
+                self.per_channel_lr4[ch] = Lr4Crossover::new(clamped, self.sample_rate as f32, 1);
                 self.rebuild_cached_parameters();
             }
             Ok(())
@@ -1751,7 +1752,8 @@ mod tests {
         for f in 0..num_frames {
             // ch1 (Passthrough) must be exactly the input — bit-for-bit.
             assert_eq!(
-                output[f * 2 + 1], input[f * 2 + 1],
+                output[f * 2 + 1],
+                input[f * 2 + 1],
                 "passthrough channel must be bitwise identical to input at frame {f}"
             );
         }
@@ -1772,7 +1774,9 @@ mod tests {
             ParameterValue::Float(250.0),
         )
         .unwrap();
-        let got = p.get_parameter(&ParameterId::from("channel_frequency_0")).unwrap();
+        let got = p
+            .get_parameter(&ParameterId::from("channel_frequency_0"))
+            .unwrap();
         assert_eq!(got, ParameterValue::Float(250.0));
         // Update channel 1 mode to passthrough.
         p.set_parameter(
@@ -1780,7 +1784,9 @@ mod tests {
             ParameterValue::String("passthrough".to_string()),
         )
         .unwrap();
-        let got = p.get_parameter(&ParameterId::from("channel_mode_1")).unwrap();
+        let got = p
+            .get_parameter(&ParameterId::from("channel_mode_1"))
+            .unwrap();
         assert_eq!(got, ParameterValue::String("passthrough".to_string()));
     }
 
@@ -1794,8 +1800,12 @@ mod tests {
         .unwrap();
         // Initialize at 32 kHz: Nyquist limit ~15840. Channel 1 (20kHz) clamps.
         p.initialize(32000).unwrap();
-        let ch0 = p.get_parameter(&ParameterId::from("channel_frequency_0")).unwrap();
-        let ch1 = p.get_parameter(&ParameterId::from("channel_frequency_1")).unwrap();
+        let ch0 = p
+            .get_parameter(&ParameterId::from("channel_frequency_0"))
+            .unwrap();
+        let ch1 = p
+            .get_parameter(&ParameterId::from("channel_frequency_1"))
+            .unwrap();
         assert_eq!(ch0, ParameterValue::Float(10_000.0));
         // ch1 should reflect the clamped value, not the original 20 kHz.
         match ch1 {
@@ -1871,6 +1881,9 @@ mod tests {
         };
         let p = CrossoverPlugin::from_params(2, &params).unwrap();
         assert!(p.is_per_channel());
-        assert_eq!(p.op_modes, vec![PerChannelOpMode::Highpass, PerChannelOpMode::Mute]);
+        assert_eq!(
+            p.op_modes,
+            vec![PerChannelOpMode::Highpass, PerChannelOpMode::Mute]
+        );
     }
 }
