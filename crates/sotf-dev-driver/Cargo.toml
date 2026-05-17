@@ -15,6 +15,8 @@ clap = { workspace = true }
 reqwest = { workspace = true, features = ["json", "blocking"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+tempfile = { workspace = true }
+toml = { workspace = true }
 
 [[bin]]
 name = "sotf-dev-driver"

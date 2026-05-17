@@ -23,20 +23,36 @@ use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow, bail};
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use serde_json::Value;
+
+mod suite;
 
 #[derive(Parser, Debug)]
 #[command(name = "sotf-dev-driver", version)]
 struct Args {
-    /// Path to a .scn scenario file.
-    script: PathBuf,
+    #[command(subcommand)]
+    command: Option<Command>,
+    /// Path to a .scn scenario file (legacy single-scenario mode).
+    script: Option<PathBuf>,
     /// Base URL of the running SotF dev API.
     #[arg(long, default_value = "http://127.0.0.1:7777")]
     url: String,
     /// Print every verb + result.
-    #[arg(long)]
+    #[arg(short, long)]
     verbose: bool,
+}
+
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Start SotF with --qa and run every scenario in a suite TOML file.
+    RunSuite {
+        /// Path to a suite TOML file.
+        suite: PathBuf,
+        /// Print process and scenario details.
+        #[arg(short, long)]
+        verbose: bool,
+    },
 }
 
 fn main() {
@@ -49,15 +65,27 @@ fn main() {
 }
 
 fn run(args: &Args) -> Result<()> {
-    let source =
-        fs::read_to_string(&args.script).with_context(|| format!("reading {:?}", args.script))?;
+    match &args.command {
+        Some(Command::RunSuite { suite, verbose }) => suite::run_suite(suite, *verbose),
+        None => {
+            let script = args
+                .script
+                .as_ref()
+                .ok_or_else(|| anyhow!("missing scenario path or subcommand"))?;
+            run_script(script, &args.url, args.verbose)
+        }
+    }
+}
+
+pub(crate) fn run_script(script: &PathBuf, url: &str, verbose: bool) -> Result<()> {
+    let source = fs::read_to_string(script).with_context(|| format!("reading {:?}", script))?;
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(30))
         .build()?;
     let ctx = Ctx {
         client,
-        base: args.url.trim_end_matches('/').to_string(),
-        verbose: args.verbose,
+        base: url.trim_end_matches('/').to_string(),
+        verbose,
     };
 
     for (lineno, raw) in source.lines().enumerate() {

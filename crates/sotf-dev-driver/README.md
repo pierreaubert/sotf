@@ -25,6 +25,35 @@ only start the HTTP endpoint when `--qa <dir>` is present.
 Override the URL with `--url http://127.0.0.1:9999`. Override the
 server port with `SOTF_DEV_API_PORT=9999`.
 
+## Run a suite
+
+Suites start a fresh `sotf-desktop --qa <dir>` process per scenario,
+assign a free dev-api port, seed fixtures, run the `.scn`, collect app
+stdout/stderr under `target/qa-gpui`, and then call `/quit`.
+
+```bash
+cargo build -p sotf-gpui --bin sotf-desktop --features "onnx, hal, gpu-2d, gpu-3d, iamf, dev-api"
+cargo run -p sotf-dev-driver -- run-suite crates/sotf-dev-driver/suites/smoke.toml -v
+```
+
+Suite entries use `[[scenario]]`:
+
+```toml
+[[scenario]]
+name = "recording-fake-capture"
+path = "crates/sotf-dev-driver/scenarios/recording_fake_capture.scn"
+timeout = "30s"
+
+[scenario.fake_recording]
+channels = 2
+points = 48
+```
+
+`seed_demo_audio = true` copies the checked-in demo audio fixtures into
+the scenario artifact directory and sends them to `/qa/seed`.
+`require_virtual_audio = true` skips the scenario unless `AEQ_E2E_DEVICE`
+is set; use it for BlackHole/SotF HAL loopback smoke tests.
+
 ## Per-screen scenarios
 
 One scenario per main user-facing screen lives in `scenarios/`:
@@ -93,6 +122,13 @@ See `crates/app-gpui/app/dev_api/queries.rs` — currently:
 - `screen.focused`         → string (Screen variant)
 - `queue.length`           → number
 - `queue.current_index`    → number | null
+- `library.directory_count`, `library.album_count`, `library.track_count`
+- `recording.step`, `recording.channel_count`, `recording.done_count`,
+  `recording.all_done`, `recording.status`
+- `roomeq.step`, `roomeq.measurement_count`, `roomeq.result_count`,
+  `roomeq.has_dsp_output`, `roomeq.status`
+- `settings.theme`, `settings.language`, `settings.release_channel`
+- `audio.input_device`, `audio.output_device`, and device counts
 
 Adding a new path is two lines in that file (one match arm).
 

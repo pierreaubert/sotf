@@ -1,0 +1,16 @@
+# Recording fake-capture QA scenario.
+#
+# This scenario expects the suite runner to call
+# POST /qa/recording/fake-capture before executing the script.
+
+focus       recording
+assert      screen.focused == "Recording"
+assert      recording.all_done == true
+assert      recording.channel_count == 2
+assert      recording.done_count == 2
+assert      recording.step == "Evaluating"
+
+focus       room-e-q
+assert      screen.focused == "RoomEq"
+assert      roomeq.measurement_count == 2
+
