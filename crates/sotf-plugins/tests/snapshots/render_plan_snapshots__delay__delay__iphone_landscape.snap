@@ -49,6 +49,17 @@ expression: plan
         },
         {
           "param_index": 5,
+          "param_name": "Allpass Coeff",
+          "control_type": "knob",
+          "unit": "",
+          "range": [
+            0.0,
+            0.99
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 6,
           "param_name": "Allpass Feedback",
           "control_type": "toggle",
           "unit": "",
