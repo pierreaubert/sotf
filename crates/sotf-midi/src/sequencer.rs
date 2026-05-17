@@ -136,6 +136,33 @@ impl MidiRegion {
             })
             .collect()
     }
+
+    /// Iterate over events in the timeline range without allocating.
+    pub fn for_each_event_in_timeline_range<F>(
+        &self,
+        timeline_start: u64,
+        length: u64,
+        mut f: F,
+    ) where
+        F: FnMut(u64, &MidiMessage),
+    {
+        let clip_start = timeline_start.saturating_sub(self.position_samples);
+        let clip_end = (timeline_start + length).saturating_sub(self.position_samples);
+        if clip_end <= clip_start {
+            return;
+        }
+        for e in &self.clip.events {
+            if e.time_samples < clip_start {
+                continue;
+            }
+            if e.time_samples >= clip_end {
+                break;
+            }
+            let timeline_time = self.position_samples + e.time_samples;
+            let relative_time = timeline_time.saturating_sub(timeline_start);
+            f(relative_time, &e.message);
+        }
+    }
 }
 
 #[cfg(test)]

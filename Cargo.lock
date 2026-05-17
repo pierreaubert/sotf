@@ -10217,6 +10217,8 @@ dependencies = [
  "reqwest 0.13.3",
  "serde",
  "serde_json",
+ "tempfile",
+ "toml 0.8.23",
 ]
 
 [[package]]
@@ -10239,7 +10241,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-engine"
-version = "1.0.27"
+version = "1.0.28"
 dependencies = [
  "arc-swap",
  "bytemuck",
@@ -10384,7 +10386,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-host"
-version = "0.5.92"
+version = "0.5.93"
 dependencies = [
  "arc-swap",
  "audioadapter-buffers",
@@ -11115,6 +11117,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
+ "toml 0.8.23",
  "tract-onnx",
  "walkdir",
  "which 8.0.2",
