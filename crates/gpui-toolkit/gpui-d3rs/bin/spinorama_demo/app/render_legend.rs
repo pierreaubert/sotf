@@ -17,14 +17,14 @@ impl SpinoramaApp {
                     (color.g * 255.0) as u32,
                     (color.b * 255.0) as u32,
                 );
-                let font_config = VectorFontConfig::horizontal((12.0 * self.font_scale()).round(), Hsla::from(theme.text_primary));
+                let font_config = GlyphTextConfig::horizontal((12.0 * self.font_scale()).round(), Hsla::from(theme.text_primary));
 
                 div()
                     .flex()
                     .items_center()
                     .gap(px(ds.spacing.control_gap))
                     .child(div().w(px(16.0)).h(px(3.0)).bg(rgb(r << 16 | g << 8 | b)))
-                    .child(render_vector_text(name, &font_config))
+                    .child(render_glyph_text(name, &font_config))
             }))
     }
 }

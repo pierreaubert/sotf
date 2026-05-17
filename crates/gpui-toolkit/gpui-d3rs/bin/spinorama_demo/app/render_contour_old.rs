@@ -260,7 +260,7 @@ impl SpinoramaApp {
                 )
                 // Color legend
                 .child({
-                    let font_config = VectorFontConfig::horizontal((10.0 * font_scale).round(), Hsla::from(theme.text_primary));
+                    let font_config = GlyphTextConfig::horizontal((10.0 * font_scale).round(), Hsla::from(theme.text_primary));
                     div()
                         .flex()
                         .items_center()
@@ -268,7 +268,7 @@ impl SpinoramaApp {
                         .py(px(ds.spacing.control_padding_y))
                         .bg(theme.muted)
                         .rounded(px(ds.corners.md))
-                        .child(render_vector_text(
+                        .child(render_glyph_text(
                             &format!("{:.0} dB", spl_min),
                             &font_config,
                         ))
@@ -285,7 +285,7 @@ impl SpinoramaApp {
                                 .h(px(15.0))
                                 .bg(rgb((r << 16) | (g << 8) | b))
                         }))
-                        .child(render_vector_text(
+                        .child(render_glyph_text(
                             &format!("{:.0} dB", spl_max),
                             &font_config,
                         ))

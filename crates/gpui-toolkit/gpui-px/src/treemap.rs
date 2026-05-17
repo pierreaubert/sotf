@@ -23,7 +23,7 @@
 use crate::error::ChartError;
 use crate::{DEFAULT_HEIGHT, DEFAULT_WIDTH, TITLE_AREA_HEIGHT, validate_dimensions};
 use d3rs::color::ColorScheme;
-use d3rs::text::{VectorFontConfig, render_vector_text};
+use d3rs::text::{GlyphTextConfig, render_glyph_text};
 use gpui::prelude::*;
 use gpui::{IntoElement, MouseButton, Rgba, div, hsla, px, rgb};
 use std::rc::Rc;
@@ -332,7 +332,7 @@ impl Treemap {
                     hsla(0.0, 0.0, 0.95, 1.0) // White text for dark backgrounds
                 };
 
-                let font_config = VectorFontConfig::horizontal(font_size as f32, text_color);
+                let font_config = GlyphTextConfig::horizontal(font_size as f32, text_color);
 
                 rect_div
                     .flex()
@@ -344,7 +344,7 @@ impl Treemap {
                             .overflow_hidden()
                             .text_ellipsis()
                             .px_1()
-                            .child(render_vector_text(&rect.name, &font_config)),
+                            .child(render_glyph_text(&rect.name, &font_config)),
                     )
             } else {
                 rect_div
@@ -363,7 +363,7 @@ impl Treemap {
 
         // Add title if present
         if let Some(title) = &self.title {
-            let font_config = VectorFontConfig::horizontal(16.0, hsla(0.0, 0.0, 0.2, 1.0));
+            let font_config = GlyphTextConfig::horizontal(16.0, hsla(0.0, 0.0, 0.2, 1.0));
             container = container.child(
                 div()
                     .w_full()
@@ -371,7 +371,7 @@ impl Treemap {
                     .flex()
                     .justify_center()
                     .items_center()
-                    .child(render_vector_text(title, &font_config)),
+                    .child(render_glyph_text(title, &font_config)),
             );
         }
 

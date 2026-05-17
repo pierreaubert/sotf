@@ -189,8 +189,8 @@ impl SpinoramaApp {
                         )
                 }));
 
-        // Angle labels using render_vector_text
-        let font_config = VectorFontConfig::horizontal((10.0 * s).round(), Hsla::from(theme.text_primary));
+        // Angle labels using render_glyph_text
+        let font_config = GlyphTextConfig::horizontal((10.0 * s).round(), Hsla::from(theme.text_primary));
         let angle_labels = div().absolute().inset_0().children((0..12).map(|i| {
             let angle_deg = i as f64 * 30.0;
             let angle_rad = (angle_deg - 90.0).to_radians();
@@ -208,14 +208,14 @@ impl SpinoramaApp {
                 .absolute()
                 .left(px(x - 15.0))
                 .top(px(y - 6.0))
-                .child(render_vector_text(
+                .child(render_glyph_text(
                     &format!("{}°", display_angle),
                     &font_config,
                 ))
         }));
 
         // dB labels on radial axis
-        let db_font_config = VectorFontConfig::horizontal((9.0 * s).round(), Hsla::from(theme.text_secondary));
+        let db_font_config = GlyphTextConfig::horizontal((9.0 * s).round(), Hsla::from(theme.text_secondary));
         let db_labels = div()
             .absolute()
             .inset_0()
@@ -229,7 +229,7 @@ impl SpinoramaApp {
                     .absolute()
                     .left(px(x - 20.0))
                     .top(px(y))
-                    .child(render_vector_text(
+                    .child(render_glyph_text(
                         &format!("{} dB", db as i32),
                         &db_font_config,
                     ))

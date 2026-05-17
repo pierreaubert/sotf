@@ -64,6 +64,31 @@ fn compress_gr(input_db: f32, threshold: f32, ratio: f32, knee: f32) -> f32 {
     }
 }
 
+/// Apply symmetric frequency-axis EMA smoothing to a spectral envelope.
+///
+/// Runs a forward pass (low-to-high) followed by a backward pass (high-to-low)
+/// so that every bin is visited by both directions.
+fn smooth_spectral_envelope(envelope: &mut [f32], alpha: f32) {
+    if envelope.len() < 2 {
+        return;
+    }
+    let one_minus_alpha = 1.0 - alpha;
+    // Forward pass
+    let mut prev = envelope[0];
+    for k in 0..envelope.len() {
+        let smoothed = alpha * prev + one_minus_alpha * envelope[k];
+        envelope[k] = smoothed;
+        prev = smoothed;
+    }
+    // Backward pass for symmetric smoothing
+    prev = envelope[envelope.len() - 1];
+    for k in (0..envelope.len()).rev() {
+        let smoothed = alpha * prev + one_minus_alpha * envelope[k];
+        envelope[k] = smoothed;
+        prev = smoothed;
+    }
+}
+
 // ============================================================================
 // Plugin Params (serde)
 // ============================================================================
@@ -530,22 +555,7 @@ impl SpectralCompressorPlugin {
 
             // --- Frequency-axis EMA smoothing (optional) ---
             if spectral_smoothing > 0.001 {
-                let alpha = spectral_smoothing;
-                let one_minus_alpha = 1.0 - alpha;
-                // Forward pass
-                let mut prev = self.stft.bin_envelopes[ch][0];
-                for k in 1..num_bins {
-                    let smoothed = alpha * prev + one_minus_alpha * self.stft.bin_envelopes[ch][k];
-                    self.stft.bin_envelopes[ch][k] = smoothed;
-                    prev = smoothed;
-                }
-                // Backward pass for symmetric smoothing
-                prev = self.stft.bin_envelopes[ch][num_bins - 1];
-                for k in (0..num_bins.saturating_sub(1)).rev() {
-                    let smoothed = alpha * prev + one_minus_alpha * self.stft.bin_envelopes[ch][k];
-                    self.stft.bin_envelopes[ch][k] = smoothed;
-                    prev = smoothed;
-                }
+                smooth_spectral_envelope(&mut self.stft.bin_envelopes[ch], spectral_smoothing);
             }
 
             // --- Apply gain reduction to frequency bins ---
@@ -1373,6 +1383,36 @@ mod tests {
         // just verify they were processed (both nonzero).
         assert!(rms_l > 1e-6, "L channel output is silence");
         assert!(rms_r > 1e-6, "R channel output is silence");
+    }
+
+    #[test]
+    fn test_spectral_smoothing_symmetric_bounds() {
+        // Regression test for asymmetric smoothing loop ranges.
+        // Forward and backward passes must visit the same set of bins.
+        let alpha = 0.5;
+
+        // Spike at DC (bin 0)
+        let mut dc_spike = vec![10.0, 0.0, 0.0, 0.0];
+        smooth_spectral_envelope(&mut dc_spike, alpha);
+        // Forward:  [10.0, 5.0, 2.5, 1.25]
+        // Backward: [6.71875, 3.4375, 1.875, 1.25]
+        assert!((dc_spike[0] - 6.71875).abs() < 1e-6);
+        assert!((dc_spike[1] - 3.4375).abs() < 1e-6);
+        assert!((dc_spike[2] - 1.875).abs() < 1e-6);
+        assert!((dc_spike[3] - 1.25).abs() < 1e-6);
+
+        // Spike at Nyquist (last bin)
+        let mut nyq_spike = vec![0.0, 0.0, 0.0, 10.0];
+        smooth_spectral_envelope(&mut nyq_spike, alpha);
+        // Forward:  [0.0, 0.0, 0.0, 5.0]
+        // Backward: [0.625, 1.25, 2.5, 5.0]
+        assert!((nyq_spike[0] - 0.625).abs() < 1e-6);
+        assert!((nyq_spike[1] - 1.25).abs() < 1e-6);
+        assert!((nyq_spike[2] - 2.5).abs() < 1e-6);
+        assert!((nyq_spike[3] - 5.0).abs() < 1e-6);
+
+        // Both boundary spikes should propagate through the full range,
+        // confirming that forward visits bin 0 and backward visits bin N-1.
     }
 
     #[test]
